@@ -105,72 +105,33 @@ body {
   font-weight: 500;
 }
 
-.agent-avatar {
-  --agent-avatar-background: var(--muted);
-  --agent-avatar-foreground: var(--foreground);
+.wisp-eyes {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: wisp-blink 6.5s ease-in-out infinite;
+  animation-delay: var(--wisp-blink-delay, 0s);
 }
 
-.agent-avatar [data-slot="avatar-fallback"] {
-  background: var(--agent-avatar-background);
-  color: var(--agent-avatar-foreground);
-  font-weight: 600;
+@keyframes wisp-blink {
+  0%,
+  4%,
+  9%,
+  14%,
+  100% {
+    transform: scaleY(1);
+  }
+
+  2%,
+  7%,
+  12% {
+    transform: scaleY(0.08);
+  }
 }
 
-.a-chief {
-  --wisp-color: #35a37c;
-}
-
-.a-sales {
-  --wisp-color: #f2993f;
-}
-
-.a-inbox {
-  --wisp-color: #7c5cfc;
-}
-
-.a-account {
-  --wisp-color: #9b59f0;
-}
-
-.a-talent {
-  --wisp-color: #3b82f6;
-}
-
-.a-expense {
-  --wisp-color: #f2762e;
-}
-
-.crew-mark {
-  position: relative;
-  display: block;
-  width: 100%;
-  height: 100%;
-}
-
-.crew-mark span {
-  position: absolute;
-  width: 45%;
-  aspect-ratio: 1;
-  border: 1.5px solid var(--background);
-  border-radius: 50%;
-}
-
-.crew-mark [data-agent="chief"] {
-  top: 10%;
-  left: 14%;
-  background: #35a37c;
-}
-
-.crew-mark [data-agent="inbox"] {
-  bottom: 9%;
-  left: 35%;
-  background: #7c5cfc;
-}
-
-.crew-mark [data-agent="account"] {
-  top: 24%;
-  right: 9%;
-  background: #9b59f0;
+@media (prefers-reduced-motion: reduce) {
+  .wisp-eyes {
+    animation: none;
+  }
 }
 
 .main {

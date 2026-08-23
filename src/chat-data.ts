@@ -34,8 +34,6 @@ export type Message = TextMessage | TimeMessage | CardMessage;
 export interface Chat {
   id: ChatId;
   name: string;
-  avatarClass: string;
-  avatarText: string;
   preview: string;
   timestamp: string;
   messages: ReadonlyArray<Message>;
@@ -47,8 +45,6 @@ export const initialChats: ChatCollection = {
   chief: {
     id: "chief",
     name: "Chief",
-    avatarClass: "a-chief",
-    avatarText: "C",
     preview: "booked the venue and sent the con…",
     timestamp: "Yesterday",
     messages: [
@@ -94,8 +90,6 @@ export const initialChats: ChatCollection = {
   sales: {
     id: "sales",
     name: "Sales Outbound",
-    avatarClass: "a-sales",
-    avatarText: "S",
     preview: "Done.",
     timestamp: "Yesterday",
     messages: [
@@ -108,8 +102,6 @@ export const initialChats: ChatCollection = {
   inbox: {
     id: "inbox",
     name: "Inbox Manager",
-    avatarClass: "a-inbox",
-    avatarText: "I",
     preview: "sent. inbox at zero, 5 drafts parked …",
     timestamp: "Yesterday",
     messages: [
@@ -122,8 +114,6 @@ export const initialChats: ChatCollection = {
   account: {
     id: "account",
     name: "Account Manager",
-    avatarClass: "a-account",
-    avatarText: "A",
     preview: "invite's out to vicky. globex note he…",
     timestamp: "Yesterday",
     messages: [
@@ -136,8 +126,6 @@ export const initialChats: ChatCollection = {
   talent: {
     id: "talent",
     name: "Talent Scout",
-    avatarClass: "a-talent",
-    avatarText: "T",
     preview: "3 intros drafted in your voice, held …",
     timestamp: "Yesterday",
     messages: [
@@ -150,8 +138,6 @@ export const initialChats: ChatCollection = {
   expense: {
     id: "expense",
     name: "Expense Manager",
-    avatarClass: "a-expense",
-    avatarText: "E",
     preview: "report filed. 9 receipts, nothing out…",
     timestamp: "Yesterday",
     messages: [
@@ -164,8 +150,6 @@ export const initialChats: ChatCollection = {
   offsite: {
     id: "offsite",
     name: "Offsite crew",
-    avatarClass: "a-offsite",
-    avatarText: "O",
     preview: "that leaves the pipeline. i'd spin up …",
     timestamp: "Yesterday",
     messages: [

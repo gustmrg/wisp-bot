@@ -57,7 +57,6 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { cn } from "@/lib/utils";
 import {
   chatOrder,
   initialChats,
@@ -73,27 +72,7 @@ interface ChatAvatarProps {
 }
 
 function ChatAvatar({ chat, size = "default" }: ChatAvatarProps) {
-  if (chat.id === "offsite") {
-    return (
-      <Avatar
-        aria-hidden="true"
-        className={cn("agent-avatar", chat.avatarClass)}
-        size={size}
-      >
-        <AvatarFallback>
-          <span className="crew-mark">
-            <span data-agent="chief" />
-            <span data-agent="inbox" />
-            <span data-agent="account" />
-          </span>
-        </AvatarFallback>
-      </Avatar>
-    );
-  }
-
-  return (
-    <Wisp aria-hidden="true" className={chat.avatarClass} size={size} />
-  );
+  return <Wisp aria-hidden="true" name={chat.name} size={size} />;
 }
 
 interface SidebarProps {
