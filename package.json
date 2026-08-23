@@ -24,11 +24,12 @@
     "typecheck": "tsc --noEmit && tsc -p tsconfig.electron.json --noEmit && tsc -p tsconfig.vite.json --noEmit",
     "start": "npm run build && electron .",
     "preview": "vite preview",
-    "ui:add": "shadcn add"
+    "ui:add": "cross-env npm_config_allow_scripts= shadcn add"
   },
   "dependencies": {
     "@base-ui/react": "^1.7.0",
     "@fontsource-variable/geist": "^5.3.0",
+    "@shadcn/react": "^0.3.0",
     "@tailwindcss/vite": "^4.3.3",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",

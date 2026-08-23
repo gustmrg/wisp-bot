@@ -57,6 +57,7 @@ wisp-bot/
 ├── src/
 │   ├── App.tsx          # React application and UI components
 │   ├── chat-data.ts     # Typed mock conversations
+│   ├── components/wisp.tsx # Wisp agent avatar
 │   ├── components/ui/   # Locally owned shadcn components
 │   ├── lib/utils.ts     # Shared shadcn class-name utility
 │   ├── main.tsx         # React renderer entry point
