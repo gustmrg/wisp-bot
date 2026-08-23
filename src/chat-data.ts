@@ -1,4 +1,6 @@
-export const chatOrder = [
+export type ChatId = string;
+
+export const chatOrder: ReadonlyArray<ChatId> = [
   "chief",
   "sales",
   "inbox",
@@ -6,9 +8,7 @@ export const chatOrder = [
   "talent",
   "expense",
   "offsite",
-] as const;
-
-export type ChatId = (typeof chatOrder)[number];
+];
 
 interface TextMessage {
   type: "incoming" | "outgoing";
@@ -32,9 +32,13 @@ interface CardMessage {
 export type Message = TextMessage | TimeMessage | CardMessage;
 
 export interface Chat {
+  color?: string;
+  description?: string;
   id: ChatId;
+  model?: string;
   name: string;
   preview: string;
+  provider?: string;
   timestamp: string;
   messages: ReadonlyArray<Message>;
 }
@@ -72,7 +76,7 @@ export const initialChats: ChatCollection = {
         text: "the marina house is the pick: seats all 40, the mid-week rate came in 15% under budget, and they'll hold the date until tomorrow.",
       },
       { type: "time", text: "Yesterday 1:59 AM" },
-      { type: "outgoing", text: "book it", reaction: "👍" },
+      { type: "outgoing", text: "book it" },
       {
         type: "card",
         items: [

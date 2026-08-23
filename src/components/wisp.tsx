@@ -3,6 +3,7 @@ import type { CSSProperties, ComponentProps } from "react"
 import { cn } from "@/lib/utils"
 
 interface WispProps extends ComponentProps<"svg"> {
+  color?: string
   name?: string
   size?: "default" | "sm" | "lg"
 }
@@ -37,6 +38,7 @@ function generatedWisp(seed: string) {
 }
 
 function Wisp({
+  color,
   name = "agent",
   size = "default",
   className,
@@ -57,7 +59,7 @@ function Wisp({
       )}
       style={
         {
-          "--wisp-color": avatar.color,
+          "--wisp-color": color || avatar.color,
           "--wisp-blink-delay": `${avatar.blinkDelay}s`,
           ...style,
         } as CSSProperties
@@ -91,5 +93,5 @@ function Wisp({
   )
 }
 
-export { Wisp }
+export { WISP_COLORS, Wisp }
 export type { WispProps }
