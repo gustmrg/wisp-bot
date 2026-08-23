@@ -4,7 +4,7 @@ Wisp Bot gives you a squad of AI agents that work around the clock and actually 
 
 This repository contains an interactive mock UI of the Wisp Bot desktop app, built with [Electron](https://www.electronjs.org/), React 19, TypeScript 7, and Vite.
 
-The renderer uses Tailwind CSS 4 and shadcn/ui with the Radix Nova preset. shadcn components are copied into the project so they can be customized locally.
+The renderer uses Tailwind CSS 4 and shadcn/ui with the Base Nova preset. shadcn components are copied into the project so they can be customized locally.
 
 ## Getting Started
 
