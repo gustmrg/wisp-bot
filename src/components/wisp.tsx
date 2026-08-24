@@ -8,13 +8,16 @@ interface WispProps extends ComponentProps<"svg"> {
   size?: "default" | "sm" | "lg"
 }
 
-const WISP_COLORS = [
-  "#35a37c",
-  "#f2993f",
-  "#7c5cfc",
-  "#3b82f6",
-  "#e56b6f",
-  "#16a6a0",
+export const AVATAR_COLORS = [
+  { id: "red", label: "Red", value: "#FF263C" },
+  { id: "orange", label: "Orange", value: "#FF6700" },
+  { id: "yellow", label: "Yellow", value: "#FF9800" },
+  { id: "green", label: "Green", value: "#00C972" },
+  { id: "cyan", label: "Cyan", value: "#00BCA6" },
+  { id: "blue", label: "Blue", value: "#1084FE" },
+  { id: "violet", label: "Violet", value: "#9159FE" },
+  { id: "magenta", label: "Magenta", value: "#FF309B" },
+  { id: "gray", label: "Gray", value: "#777777" },
 ] as const
 
 function hashSeed(seed: string) {
@@ -30,9 +33,11 @@ function hashSeed(seed: string) {
 
 function generatedWisp(seed: string) {
   const hash = hashSeed(seed || "agent")
+  const color =
+    AVATAR_COLORS[hash % AVATAR_COLORS.length] ?? AVATAR_COLORS[0]
 
   return {
-    color: WISP_COLORS[hash % WISP_COLORS.length],
+    color: color.value,
     blinkDelay: -((hash >>> 16) % 48) / 10,
   }
 }
@@ -93,5 +98,5 @@ function Wisp({
   )
 }
 
-export { WISP_COLORS, Wisp }
+export { Wisp }
 export type { WispProps }

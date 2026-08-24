@@ -7,6 +7,8 @@ import {
   type NewAgent,
 } from "@/components/create-agent-dialog";
 import { Sidebar } from "@/components/sidebar";
+import { ModelSettingsDialog } from "@/components/model-settings-dialog";
+import { DEFAULT_MODEL_DEFAULTS, type ModelDefaults } from "@/components/model-options";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import {
   initialChats,
@@ -60,6 +62,7 @@ export default function App() {
   const [query, setQuery] = useState("");
   const [draft, setDraft] = useState("");
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [modelDefaults, setModelDefaults] = useState<ModelDefaults>(DEFAULT_MODEL_DEFAULTS);
   const composerInputRef = useRef<HTMLInputElement>(null);
   const replyTimersRef = useRef<Set<number>>(new Set());
   const activeChat = chats[activeChatId];
@@ -133,9 +136,11 @@ export default function App() {
             createAgentAction={
               <CreateAgentDialog
                 compact={sidebarCollapsed}
+                defaults={modelDefaults}
                 onCreate={handleCreateAgent}
               />
             }
+            settingsAction={<ModelSettingsDialog defaults={modelDefaults} onSave={setModelDefaults} />}
             query={query}
             onCollapsedChange={setSidebarCollapsed}
             onQueryChange={setQuery}

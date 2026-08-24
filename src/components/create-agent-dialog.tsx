@@ -1,6 +1,11 @@
 import { useState } from "react"
 import type { FormEvent } from "react"
-import { PlusIcon } from "lucide-react"
+import {
+  CpuIcon,
+  PlusIcon,
+  RotateCcwIcon,
+  SlidersHorizontalIcon,
+} from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import {
@@ -33,93 +38,106 @@ import {
   ToggleGroupItem,
 } from "@/components/ui/toggle-group"
 import { Textarea } from "@/components/ui/textarea"
-import { WISP_COLORS, Wisp } from "@/components/wisp"
+import {
+  Item,
+  ItemActions,
+  ItemContent,
+  ItemDescription,
+  ItemFooter,
+  ItemMedia,
+  ItemTitle,
+} from "@/components/ui/item"
+import { AVATAR_COLORS, Wisp } from "@/components/wisp"
+import type { AgentSettings, ReasoningEffort } from "@/chat-data"
+import {
+  DEFAULT_MODEL_DEFAULTS,
+  PROVIDERS,
+  REASONING_EFFORT_LABELS,
+  type ModelDefaults,
+} from "@/components/model-options"
 import { cn } from "@/lib/utils"
 
-interface NewAgent {
+type NewAgent = Pick<
+  AgentSettings,
+  | "description"
+  | "isGroup"
+  | "model"
+  | "name"
+  | "notifyOnUpdatesEnabled"
+  | "provider"
+  | "reasoningEffort"
+> & {
   color: string
-  description: string
-  model: string
-  name: string
-  provider: string
 }
 
 interface CreateAgentDialogProps {
   compact?: boolean
+  defaults?: ModelDefaults
   onCreate: (agent: NewAgent) => void
 }
 
-const WISP_COLOR_NAMES = [
-  "Emerald",
-  "Amber",
-  "Violet",
-  "Blue",
-  "Coral",
-  "Teal",
-] as const
-const DEFAULT_COLOR = WISP_COLORS[0]
-
-const PROVIDERS = [
-  {
-    label: "OpenAI",
-    value: "openai",
-    models: [
-      { label: "GPT-5.6 Sol", value: "gpt-5.6-sol" },
-      { label: "GPT-5.6 Terra", value: "gpt-5.6-terra" },
-      { label: "GPT-5.6 Luna", value: "gpt-5.6-luna" },
-    ],
-  },
-  {
-    label: "Anthropic",
-    value: "anthropic",
-    models: [
-      { label: "Claude Opus 5", value: "claude-opus-5" },
-      { label: "Claude Sonnet 5", value: "claude-sonnet-5" },
-      { label: "Claude Haiku 4.5", value: "claude-haiku-4-5" },
-    ],
-  },
-  {
-    label: "Google",
-    value: "google",
-    models: [
-      { label: "Gemini 3.7 Flash", value: "gemini-3.7-flash" },
-      { label: "Gemini 3.6 Flash", value: "gemini-3.6-flash" },
-      { label: "Gemini 3.5 Flash-Lite", value: "gemini-3.5-flash-lite" },
-    ],
-  },
-] as const
-
-const DEFAULT_PROVIDER = PROVIDERS[0]
-const DEFAULT_MODEL = DEFAULT_PROVIDER.models[1]
+const DEFAULT_COLOR = AVATAR_COLORS[0].value
 
 function CreateAgentDialog({
   compact = false,
+  defaults = DEFAULT_MODEL_DEFAULTS,
   onCreate,
 }: CreateAgentDialogProps) {
   const [open, setOpen] = useState(false)
   const [name, setName] = useState("")
   const [description, setDescription] = useState("")
   const [color, setColor] = useState<string>(DEFAULT_COLOR)
-  const [provider, setProvider] = useState<string>(DEFAULT_PROVIDER.value)
-  const [model, setModel] = useState<string>(DEFAULT_MODEL.value)
+  const [overrideSettings, setOverrideSettings] = useState(false)
+  const [provider, setProvider] = useState<string>(defaults.provider)
+  const [model, setModel] = useState<string>(defaults.model)
+  const [reasoningEffort, setReasoningEffort] = useState<
+    "default" | ReasoningEffort
+  >("default")
   const selectedProvider =
-    PROVIDERS.find((option) => option.value === provider) ?? DEFAULT_PROVIDER
-  const previewName = name.trim() || "New agent"
+    PROVIDERS.find((option) => option.value === provider) ?? PROVIDERS[0]
+  const selectedModel =
+    selectedProvider.models.find((option) => option.value === model) ??
+    selectedProvider.models[0]
+  const defaultProvider =
+    PROVIDERS.find((option) => option.value === defaults.provider) ?? PROVIDERS[0]
+  const defaultModel =
+    defaultProvider.models.find((option) => option.value === defaults.model) ??
+    defaultProvider.models[0]
+  const displayedProvider = overrideSettings
+    ? selectedProvider
+    : defaultProvider
+  const displayedModel = overrideSettings ? selectedModel : defaultModel
+  const reasoningEffortOptions: ReadonlyArray<{
+    label: string
+    value: "default" | ReasoningEffort
+  }> = [
+    { label: "Provider default", value: "default" },
+    ...selectedModel.reasoningEfforts.map((effort) => ({
+      label: REASONING_EFFORT_LABELS[effort],
+      value: effort,
+    })),
+  ]
+  const previewName = name.trim() || "New Wisp"
   const previewDescription =
-    description.trim() || "Describe what this agent is responsible for."
+    description.trim() || "Describe what this Wisp is responsible for."
 
   function resetForm() {
     setName("")
     setDescription("")
     setColor(DEFAULT_COLOR)
-    setProvider(DEFAULT_PROVIDER.value)
-    setModel(DEFAULT_MODEL.value)
+    setOverrideSettings(false)
+    setProvider(defaults.provider)
+    setModel(defaults.model)
+    setReasoningEffort("default")
   }
 
   function handleOpenChange(nextOpen: boolean) {
     setOpen(nextOpen)
 
-    if (!nextOpen) {
+    if (nextOpen) {
+      setProvider(defaults.provider)
+      setModel(defaults.model)
+    } else {
       resetForm()
     }
   }
@@ -135,9 +153,14 @@ function CreateAgentDialog({
     onCreate({
       color,
       description: description.trim(),
-      model,
+      isGroup: false,
+      model: overrideSettings ? model : defaults.model,
       name: trimmedName,
-      provider,
+      notifyOnUpdatesEnabled: true,
+      provider: overrideSettings ? provider : defaults.provider,
+      ...(overrideSettings && reasoningEffort !== "default"
+        ? { reasoningEffort }
+        : {}),
     })
     setOpen(false)
     resetForm()
@@ -151,21 +174,21 @@ function CreateAgentDialog({
             variant="ghost"
             size={compact ? "icon-sm" : "sm"}
             type="button"
-            aria-label={compact ? "Create agent" : undefined}
+            aria-label={compact ? "Create Wisp" : undefined}
             className={cn(!compact && "w-full justify-start")}
-            title={compact ? "Create agent" : undefined}
+            title={compact ? "Create Wisp" : undefined}
           />
         }
       >
         <PlusIcon data-icon="inline-start" />
-        {compact ? null : "Create agent"}
+        {compact ? null : "Create Wisp"}
       </DialogTrigger>
 
-      <DialogContent className="max-h-[calc(100dvh-2rem)] overflow-y-auto">
+      <DialogContent className="max-h-[calc(100dvh-2rem)] overflow-y-auto sm:max-w-xl">
         <DialogHeader>
-          <DialogTitle>Create a new agent</DialogTitle>
+          <DialogTitle>Create a new Wisp</DialogTitle>
           <DialogDescription>
-            Give your agent an identity. You can change its responsibilities
+            Give your Wisp an identity. You can change its responsibilities
             later.
           </DialogDescription>
         </DialogHeader>
@@ -211,22 +234,22 @@ function CreateAgentDialog({
                   }
                 }}
               >
-                {WISP_COLORS.map((wispColor, index) => (
+                {AVATAR_COLORS.map((avatarColor) => (
                   <ToggleGroupItem
-                    aria-label={WISP_COLOR_NAMES[index]}
-                    key={wispColor}
-                    value={wispColor}
+                    aria-label={avatarColor.label}
+                    key={avatarColor.id}
+                    value={avatarColor.value}
                   >
                     <span
                       aria-hidden="true"
                       className="size-full rounded-full border border-foreground/10"
-                      style={{ backgroundColor: wispColor }}
+                      style={{ backgroundColor: avatarColor.value }}
                     />
                   </ToggleGroupItem>
                 ))}
               </ToggleGroup>
               <FieldDescription>
-                This color identifies the agent throughout the app.
+                This color identifies the Wisp throughout the app.
               </FieldDescription>
             </Field>
 
@@ -235,7 +258,7 @@ function CreateAgentDialog({
               <Textarea
                 id="agent-description"
                 maxLength={240}
-                placeholder="What should this agent take care of?"
+                placeholder="What should this Wisp take care of?"
                 value={description}
                 onChange={(event) =>
                   setDescription(event.currentTarget.value)
@@ -243,68 +266,142 @@ function CreateAgentDialog({
               />
             </Field>
 
-            <Field>
-              <FieldLabel htmlFor="agent-provider">Provider</FieldLabel>
-              <Select
-                id="agent-provider"
-                items={PROVIDERS}
-                required
-                value={provider}
-                onValueChange={(value) => {
-                  const nextProvider =
-                    PROVIDERS.find(
-                      (option) => option.value === value,
-                    ) ?? DEFAULT_PROVIDER
+            <Item variant="outline" className="items-start">
+              <ItemMedia variant="icon">
+                <CpuIcon aria-hidden="true" />
+              </ItemMedia>
+              <ItemContent className="min-w-0">
+                <ItemTitle>Model &amp; provider</ItemTitle>
+                <ItemDescription className="truncate">
+                  {displayedProvider.label} · {displayedModel.label} ·{" "}
+                  {overrideSettings ? "Custom" : "App default"}
+                </ItemDescription>
+              </ItemContent>
+              <ItemActions>
+                <Button
+                  aria-controls="agent-model-options"
+                  aria-expanded={overrideSettings}
+                  size="sm"
+                  type="button"
+                  variant="ghost"
+                  onClick={() => setOverrideSettings((current) => !current)}
+                >
+                  {overrideSettings ? (
+                    <RotateCcwIcon data-icon="inline-start" />
+                  ) : (
+                    <SlidersHorizontalIcon data-icon="inline-start" />
+                  )}
+                  {overrideSettings ? "Use defaults" : "Customize"}
+                </Button>
+              </ItemActions>
 
-                  setProvider(nextProvider.value)
-                  setModel(nextProvider.models[0].value)
-                }}
-              >
-                <SelectTrigger className="w-full">
-                  <SelectValue placeholder="Select a provider" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectGroup>
-                    {PROVIDERS.map((option) => (
-                      <SelectItem key={option.value} value={option.value}>
-                        {option.label}
-                      </SelectItem>
-                    ))}
-                  </SelectGroup>
-                </SelectContent>
-              </Select>
-            </Field>
+              {overrideSettings ? (
+                <ItemFooter id="agent-model-options">
+                  <FieldGroup className="grid w-full sm:grid-cols-3">
+                    <Field>
+                      <FieldLabel htmlFor="agent-provider">Provider</FieldLabel>
+                      <Select
+                        id="agent-provider"
+                        items={PROVIDERS}
+                        value={provider}
+                        onValueChange={(value) => {
+                          const nextProvider =
+                            PROVIDERS.find(
+                              (option) => option.value === value,
+                            ) ?? PROVIDERS[0]
 
-            <Field>
-              <FieldLabel htmlFor="agent-model">Model</FieldLabel>
-              <Select
-                id="agent-model"
-                items={selectedProvider.models}
-                required
-                value={model}
-                onValueChange={(value) => {
-                  if (value) {
-                    setModel(value)
-                  }
-                }}
-              >
-                <SelectTrigger className="w-full">
-                  <SelectValue placeholder="Select a model" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectGroup>
-                    {selectedProvider.models.map((option) => (
-                      <SelectItem key={option.value} value={option.value}>
-                        {option.label}
-                      </SelectItem>
-                    ))}
-                  </SelectGroup>
-                </SelectContent>
-              </Select>
-              <FieldDescription>
-                Models available for {selectedProvider.label}.
-              </FieldDescription>
-            </Field>
+                          setProvider(nextProvider.value)
+                          setModel(nextProvider.models[0].value)
+                          setReasoningEffort("default")
+                        }}
+                      >
+                        <SelectTrigger className="w-full">
+                          <SelectValue placeholder="Select a provider" />
+                        </SelectTrigger>
+                        <SelectContent
+                          align="start"
+                          alignItemWithTrigger={false}
+                          side="bottom"
+                        >
+                          <SelectGroup>
+                            {PROVIDERS.map((option) => (
+                              <SelectItem key={option.value} value={option.value}>
+                                {option.label}
+                              </SelectItem>
+                            ))}
+                          </SelectGroup>
+                        </SelectContent>
+                      </Select>
+                    </Field>
+
+                    <Field>
+                      <FieldLabel htmlFor="agent-model">Model</FieldLabel>
+                      <Select
+                        id="agent-model"
+                        items={selectedProvider.models}
+                        value={model}
+                        onValueChange={(value) => {
+                          if (value) {
+                            setModel(value)
+                            setReasoningEffort("default")
+                          }
+                        }}
+                      >
+                        <SelectTrigger className="w-full">
+                          <SelectValue placeholder="Select a model" />
+                        </SelectTrigger>
+                        <SelectContent
+                          align="start"
+                          alignItemWithTrigger={false}
+                          side="bottom"
+                        >
+                          <SelectGroup>
+                            {selectedProvider.models.map((option) => (
+                              <SelectItem key={option.value} value={option.value}>
+                                {option.label}
+                              </SelectItem>
+                            ))}
+                          </SelectGroup>
+                        </SelectContent>
+                      </Select>
+                    </Field>
+
+                    <Field>
+                      <FieldLabel htmlFor="agent-reasoning-effort">
+                        Reasoning
+                      </FieldLabel>
+                      <Select
+                        id="agent-reasoning-effort"
+                        items={reasoningEffortOptions}
+                        value={reasoningEffort}
+                        onValueChange={(value) => {
+                          if (value) {
+                            setReasoningEffort(value)
+                          }
+                        }}
+                      >
+                        <SelectTrigger className="w-full">
+                          <SelectValue placeholder="Provider default" />
+                        </SelectTrigger>
+                        <SelectContent
+                          align="start"
+                          alignItemWithTrigger={false}
+                          side="bottom"
+                        >
+                          <SelectGroup>
+                            {reasoningEffortOptions.map((option) => (
+                              <SelectItem key={option.value} value={option.value}>
+                                {option.label}
+                              </SelectItem>
+                            ))}
+                          </SelectGroup>
+                        </SelectContent>
+                      </Select>
+                    </Field>
+                  </FieldGroup>
+                </ItemFooter>
+              ) : null}
+            </Item>
           </FieldGroup>
 
           <DialogFooter>
@@ -314,7 +411,7 @@ function CreateAgentDialog({
               Cancel
             </DialogClose>
             <Button type="submit" disabled={!name.trim()}>
-              Create agent
+              Create Wisp
             </Button>
           </DialogFooter>
         </form>

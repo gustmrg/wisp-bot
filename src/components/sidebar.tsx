@@ -43,6 +43,7 @@ interface SidebarProps {
   chats: ChatCollection;
   collapsed: boolean;
   createAgentAction: ReactNode;
+  settingsAction: ReactNode;
   query: string;
   onCollapsedChange: (collapsed: boolean) => void;
   onQueryChange: (query: string) => void;
@@ -55,6 +56,7 @@ function Sidebar({
   chats,
   collapsed,
   createAgentAction,
+  settingsAction,
   query,
   onCollapsedChange,
   onQueryChange,
@@ -125,7 +127,7 @@ function Sidebar({
                   render={<button type="button" />}
                   className={cn(
                     "chat-item",
-                    collapsed && "chat-item-collapsed size-11 shrink-0",
+                    collapsed && "chat-item-collapsed h-11 w-full shrink-0",
                   )}
                   variant={isActive ? "muted" : "default"}
                   size="sm"
@@ -166,17 +168,22 @@ function Sidebar({
         <div className="create-agent-action">{createAgentAction}</div>
       </nav>
 
-      {collapsed ? null : (
-        <>
-          <Separator />
-          <div className="profile">
-            <Avatar size="sm" aria-hidden="true">
-              <AvatarFallback>AS</AvatarFallback>
-            </Avatar>
+      <Separator />
+      <div className="profile">
+        <Avatar
+          size="sm"
+          aria-hidden={collapsed ? undefined : true}
+          aria-label={collapsed ? "Armand Segall" : undefined}
+        >
+          <AvatarFallback>AS</AvatarFallback>
+        </Avatar>
+        {collapsed ? null : (
+          <>
             <span>Armand Segall</span>
-          </div>
-        </>
-      )}
+            {settingsAction}
+          </>
+        )}
+      </div>
     </aside>
   );
 }

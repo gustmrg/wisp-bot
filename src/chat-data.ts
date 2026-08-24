@@ -1,5 +1,26 @@
 export type ChatId = string;
 
+export type ReasoningEffort =
+  | "none"
+  | "minimal"
+  | "low"
+  | "medium"
+  | "high"
+  | "xhigh"
+  | "max";
+
+export interface AgentSettings {
+  id: string;
+  name: string;
+  description: string;
+  provider: string;
+  model: string;
+  reasoningEffort?: ReasoningEffort;
+  isGroup: boolean;
+  notifyOnUpdatesEnabled: boolean;
+  [key: string]: unknown;
+}
+
 export const chatOrder: ReadonlyArray<ChatId> = [
   "chief",
   "sales",
@@ -31,14 +52,9 @@ interface CardMessage {
 
 export type Message = TextMessage | TimeMessage | CardMessage;
 
-export interface Chat {
+export interface Chat extends AgentSettings {
   color?: string;
-  description?: string;
-  id: ChatId;
-  model?: string;
-  name: string;
   preview: string;
-  provider?: string;
   timestamp: string;
   messages: ReadonlyArray<Message>;
 }
@@ -47,8 +63,13 @@ export type ChatCollection = Record<ChatId, Chat>;
 
 export const initialChats: ChatCollection = {
   chief: {
+    description: "Coordinates priorities and keeps work moving.",
     id: "chief",
+    isGroup: false,
     name: "Chief",
+    notifyOnUpdatesEnabled: true,
+    provider: "openai",
+    model: "gpt-5.6-terra",
     preview: "booked the venue and sent the con…",
     timestamp: "Yesterday",
     messages: [
@@ -92,8 +113,13 @@ export const initialChats: ChatCollection = {
     ],
   },
   sales: {
+    description: "Qualifies opportunities and prepares sales follow-ups.",
     id: "sales",
+    isGroup: false,
     name: "Sales Outbound",
+    notifyOnUpdatesEnabled: true,
+    provider: "openai",
+    model: "gpt-5.6-terra",
     preview: "Done.",
     timestamp: "Yesterday",
     messages: [
@@ -104,8 +130,13 @@ export const initialChats: ChatCollection = {
     ],
   },
   inbox: {
+    description: "Triages incoming messages and drafts responses.",
     id: "inbox",
+    isGroup: false,
     name: "Inbox Manager",
+    notifyOnUpdatesEnabled: true,
+    provider: "openai",
+    model: "gpt-5.6-terra",
     preview: "sent. inbox at zero, 5 drafts parked …",
     timestamp: "Yesterday",
     messages: [
@@ -116,8 +147,13 @@ export const initialChats: ChatCollection = {
     ],
   },
   account: {
+    description: "Monitors account activity and customer requests.",
     id: "account",
+    isGroup: false,
     name: "Account Manager",
+    notifyOnUpdatesEnabled: true,
+    provider: "openai",
+    model: "gpt-5.6-terra",
     preview: "invite's out to vicky. globex note he…",
     timestamp: "Yesterday",
     messages: [
@@ -128,8 +164,13 @@ export const initialChats: ChatCollection = {
     ],
   },
   talent: {
+    description: "Supports recruiting and candidate coordination.",
     id: "talent",
+    isGroup: false,
     name: "Talent Scout",
+    notifyOnUpdatesEnabled: true,
+    provider: "openai",
+    model: "gpt-5.6-terra",
     preview: "3 intros drafted in your voice, held …",
     timestamp: "Yesterday",
     messages: [
@@ -140,8 +181,13 @@ export const initialChats: ChatCollection = {
     ],
   },
   expense: {
+    description: "Reviews receipts and prepares expense reports.",
     id: "expense",
+    isGroup: false,
     name: "Expense Manager",
+    notifyOnUpdatesEnabled: true,
+    provider: "openai",
+    model: "gpt-5.6-terra",
     preview: "report filed. 9 receipts, nothing out…",
     timestamp: "Yesterday",
     messages: [
@@ -152,8 +198,13 @@ export const initialChats: ChatCollection = {
     ],
   },
   offsite: {
+    description: "Plans offsites and coordinates event logistics.",
     id: "offsite",
+    isGroup: false,
     name: "Offsite crew",
+    notifyOnUpdatesEnabled: true,
+    provider: "openai",
+    model: "gpt-5.6-terra",
     preview: "that leaves the pipeline. i'd spin up …",
     timestamp: "Yesterday",
     messages: [
