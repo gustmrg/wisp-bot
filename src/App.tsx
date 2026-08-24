@@ -59,6 +59,7 @@ export default function App() {
   const [activeChatId, setActiveChatId] = useState<ChatId>("chief");
   const [query, setQuery] = useState("");
   const [draft, setDraft] = useState("");
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const composerInputRef = useRef<HTMLInputElement>(null);
   const replyTimersRef = useRef<Set<number>>(new Set());
   const activeChat = chats[activeChatId];
@@ -128,10 +129,15 @@ export default function App() {
             activeChatId={activeChatId}
             chatIds={chatIds}
             chats={chats}
+            collapsed={sidebarCollapsed}
             createAgentAction={
-              <CreateAgentDialog onCreate={handleCreateAgent} />
+              <CreateAgentDialog
+                compact={sidebarCollapsed}
+                onCreate={handleCreateAgent}
+              />
             }
             query={query}
+            onCollapsedChange={setSidebarCollapsed}
             onQueryChange={setQuery}
             onSelectChat={setActiveChatId}
           />

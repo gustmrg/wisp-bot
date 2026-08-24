@@ -34,6 +34,7 @@ import {
 } from "@/components/ui/toggle-group"
 import { Textarea } from "@/components/ui/textarea"
 import { WISP_COLORS, Wisp } from "@/components/wisp"
+import { cn } from "@/lib/utils"
 
 interface NewAgent {
   color: string
@@ -44,6 +45,7 @@ interface NewAgent {
 }
 
 interface CreateAgentDialogProps {
+  compact?: boolean
   onCreate: (agent: NewAgent) => void
 }
 
@@ -90,7 +92,10 @@ const PROVIDERS = [
 const DEFAULT_PROVIDER = PROVIDERS[0]
 const DEFAULT_MODEL = DEFAULT_PROVIDER.models[1]
 
-function CreateAgentDialog({ onCreate }: CreateAgentDialogProps) {
+function CreateAgentDialog({
+  compact = false,
+  onCreate,
+}: CreateAgentDialogProps) {
   const [open, setOpen] = useState(false)
   const [name, setName] = useState("")
   const [description, setDescription] = useState("")
@@ -144,14 +149,16 @@ function CreateAgentDialog({ onCreate }: CreateAgentDialogProps) {
         render={
           <Button
             variant="ghost"
-            size="sm"
+            size={compact ? "icon-sm" : "sm"}
             type="button"
-            className="w-full justify-start"
+            aria-label={compact ? "Create agent" : undefined}
+            className={cn(!compact && "w-full justify-start")}
+            title={compact ? "Create agent" : undefined}
           />
         }
       >
         <PlusIcon data-icon="inline-start" />
-        Create agent
+        {compact ? null : "Create agent"}
       </DialogTrigger>
 
       <DialogContent className="max-h-[calc(100dvh-2rem)] overflow-y-auto">

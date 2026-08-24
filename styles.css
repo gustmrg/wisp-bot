@@ -48,10 +48,29 @@ body {
   min-height: 0;
   padding: 0 12px;
   border-right: 1px solid var(--border);
+  transition: width 160ms ease, padding 160ms ease;
+}
+
+.sidebar[data-collapsed="true"] {
+  width: 64px;
+  padding: 0 10px;
+}
+
+.sidebar-header {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 0 10px;
+}
+
+.sidebar[data-collapsed="true"] .sidebar-header {
+  justify-content: center;
 }
 
 .search {
-  margin: 6px 2px 10px;
+  min-width: 0;
+  flex: 1;
 }
 
 .chat-list {
@@ -73,12 +92,23 @@ body {
   padding: 12px 0 8px;
 }
 
+.sidebar[data-collapsed="true"] .create-agent-action {
+  display: flex;
+  justify-content: center;
+}
+
 .chat-item {
   cursor: pointer;
 }
 
 .chat-item:hover {
   background: var(--muted);
+}
+
+.chat-item-collapsed {
+  justify-content: center;
+  gap: 0;
+  padding: 2px;
 }
 
 .chat-time {
