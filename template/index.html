@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Grok Bot</title>
+<link rel="stylesheet" href="styles.css">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='9' fill='%23e5484d'/%3E%3Cellipse cx='12' cy='13' rx='2.2' ry='3.2' fill='%23330f0d' transform='rotate(-8 12 13)'/%3E%3Cellipse cx='20' cy='13' rx='2.2' ry='3.2' fill='%23330f0d' transform='rotate(8 20 13)'/%3E%3C/svg%3E">
+</head>
+<body>
+<div id="app" class="app">
+
+  <!-- ============ SIDEBAR ============ -->
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-top">
+      <button class="icon-pill" id="btnToggleCompact" title="Toggle compact sidebar" aria-label="Toggle compact sidebar">
+        <svg viewBox="0 0 16 16" width="14" height="14"><rect x="1.5" y="2.5" width="13" height="11" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.3"/><rect x="1.5" y="2.5" width="6" height="11" rx="2.5" fill="currentColor"/></svg>
+      </button>
+      <div class="sidebar-top-right">
+        <button class="icon-btn" id="btnToggleDetails" title="Toggle details panel" aria-label="Toggle details panel">
+          <svg viewBox="0 0 16 16" width="14" height="14"><rect x="1.5" y="2.5" width="13" height="11" rx="2.5" fill="none" stroke="currentColor" stroke-width="1.3"/><rect x="9" y="2.5" width="5.5" height="11" rx="2" fill="currentColor" opacity="0.9"/></svg>
+        </button>
+        <button class="icon-btn" id="btnNewMenu" title="New Bot or Channel" aria-label="New Bot or Channel">
+          <svg viewBox="0 0 16 16" width="15" height="15"><path d="M8 3v10M3 8h10" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
+        </button>
+      </div>
+    </div>
+
+    <div class="sidebar-search" id="sidebarSearchBtn" role="button" tabindex="0" aria-label="Search">
+      <svg viewBox="0 0 16 16" width="13" height="13"><circle cx="7" cy="7" r="4.6" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M10.5 10.5L14 14" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
+      <span>Search</span>
+    </div>
+
+    <nav class="bot-list" id="botList" aria-label="Bot list"><!-- rendered --></nav>
+
+    <div class="sidebar-bottom">
+      <button class="account-row" id="btnAccount" aria-haspopup="menu">
+        <span class="avatar avatar-gm">GM</span>
+        <span class="account-name">Gustavo Miranda</span>
+      </button>
+    </div>
+
+    <div class="sidebar-resizer" id="sidebarResizer"></div>
+  </aside>
+
+  <!-- ============ MAIN ============ -->
+  <main class="main" id="main">
+    <header class="chat-header" id="chatHeader">
+      <div class="chat-header-left">
+        <span class="avatar-wrap header-avatar" id="headerAvatar"></span>
+        <span class="chat-title" id="chatTitle">Chief of Staff</span>
+      </div>
+      <div class="chat-header-right" id="headerActions"></div>
+    </header>
+
+    <div class="transcript" id="transcript" tabindex="0">
+      <div class="transcript-inner" id="transcriptInner"><!-- messages --></div>
+    </div>
+
+    <div class="composer-zone">
+      <div class="status-line" id="statusLine"></div>
+      <div class="composer" id="composer">
+        <button class="attach-btn" id="btnAttach" title="Attach file" aria-label="Attach file">
+          <svg viewBox="0 0 16 16" width="13" height="13"><path d="M8 3.5v9M3.5 8h9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+        </button>
+        <textarea id="promptInput" rows="1" placeholder="Message Chief of Staff"></textarea>
+        <button class="mic-btn" id="btnMic" title="Start voice input" aria-label="Start voice input">
+          <svg viewBox="0 0 16 16" width="14" height="14"><rect x="6" y="1.5" width="4" height="8" rx="2" fill="currentColor"/><path d="M3.5 7.5a4.5 4.5 0 0 0 9 0M8 12v2.5" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
+        </button>
+      </div>
+    </div>
+  </main>
+
+  <!-- ============ DETAILS PANEL ============ -->
+  <aside class="details-panel" id="detailsPanel" hidden>
+    <header class="details-header">
+      <button class="icon-btn" id="btnDetailsBack" title="Back to details" aria-label="Back to details">
+        <svg viewBox="0 0 16 16" width="14" height="14"><path d="M10 3L5 8l5 5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </button>
+      <span class="details-title" id="detailsTitle">Settings</span>
+      <button class="icon-btn" id="btnDetailsClose" title="Close details" aria-label="Close details">
+        <svg viewBox="0 0 16 16" width="15" height="15"><path d="M3 4l5 4-5 4M13 4L8 8l5 4" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </button>
+    </header>
+
+    <!-- Settings view -->
+    <div class="details-view" id="detailsSettings">
+      <div class="settings-scroll">
+        <button class="edit-avatar-btn" id="btnEditAvatar" aria-haspopup="dialog" aria-expanded="false">
+          <span class="avatar-wrap big-avatar" id="bigAvatar"></span>
+          <span class="avatar-edit-overlay" aria-hidden="true">
+            <svg viewBox="0 0 24 24" width="24" height="24"><path d="M4.2 19.8l.9-3.9L15.7 5.3a2.05 2.05 0 0 1 2.9 2.9L8 18.9l-3.8.9z" fill="#fff"/><path d="M14.4 6.6l3 3" stroke="rgba(0,0,0,0.45)" stroke-width="1.2" stroke-linecap="round"/></svg>
+          </span>
+          <span class="avatar-edit-tip">Edit Avatar</span>
+        </button>
+        <label class="field">
+          <span class="field-label">Name</span>
+          <input type="text" id="fieldName" class="field-input">
+        </label>
+        <label class="field">
+          <span class="field-label">Label (optional)</span>
+          <input type="text" id="fieldLabel" class="field-input" placeholder="Research, marketing, admin">
+        </label>
+        <label class="field">
+          <span class="field-label">Description</span>
+          <textarea id="fieldDesc" class="field-textarea" rows="2"></textarea>
+        </label>
+        <div class="notif-card">
+          <div class="notif-text">
+            <div class="notif-title">Notifications</div>
+            <div class="notif-sub">Get notified when this Bot finishes or needs input</div>
+          </div>
+          <button class="toggle on" id="notifToggle" role="switch" aria-checked="true" aria-label="Notifications"><span class="knob"></span></button>
+        </div>
+        <div class="danger-zone" id="dangerZone" hidden>
+          <button class="danger-btn" id="btnDeleteBot">Delete Bot</button>
+        </div>
+      </div>
+      <!-- Avatar editor sheet -->
+      <div class="avatar-editor" id="avatarEditor" hidden>
+        <div class="ae-tabs" role="tablist">
+          <button class="ae-tab on" data-ae-tab="bot" role="tab">Bot</button>
+          <button class="ae-tab" data-ae-tab="generate" role="tab">Generate</button>
+          <button class="ae-tab" data-ae-tab="upload" role="tab">Upload</button>
+        </div>
+        <div class="ae-body" id="aeBody"></div>
+      </div>
+      <div class="details-footer">
+        <button class="footer-btn" id="btnShareTemplate">
+          <svg viewBox="0 0 16 16" width="13" height="13"><path d="M8 2v8M5 4.5L8 2l3 2.5M3.5 9v3.5a1 1 0 0 0 1 1h7a1 1 0 0 0 1-1V9" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          Share as template
+        </button>
+      </div>
+    </div>
+
+    <!-- Computer view -->
+    <div class="details-view" id="detailsComputer" hidden>
+      <div class="settings-scroll computer-scroll">
+        <button class="computer-preview" id="computerPreview" title="Open computer">
+          <span class="computer-wallpaper"></span>
+          <span class="computer-dock">
+            <span class="dock-dot" style="background:#e8eaed"></span>
+            <span class="dock-dot" style="background:#fbbc04"></span>
+            <span class="dock-dot" style="background:#8ab4f8"></span>
+          </span>
+        </button>
+        <div class="computer-caption" id="computerCaption">Chief of Staff's screen</div>
+        <div class="routines-empty">
+          <p>Routines are recurring tasks this Bot runs on a schedule.</p>
+          <button class="routine-btn" id="btnCreateRoutine">Create Routine</button>
+        </div>
+      </div>
+    </div>
+    <div class="details-resizer" id="detailsResizer"></div>
+  </aside>
+</div>
+
+<!-- ============ POPOVER LAYER ============ -->
+<div id="popoverLayer"></div>
+
+<!-- ============ PLUGINS MODAL ============ -->
+<div class="overlay" id="pluginsOverlay" hidden>
+  <div class="plugins-modal" role="dialog" aria-label="Plugins">
+    <button class="modal-close" id="btnPluginsClose" aria-label="Close">
+      <svg viewBox="0 0 16 16" width="14" height="14"><path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
+    </button>
+    <h2 class="plugins-title">Plugins</h2>
+    <button class="installed-row" id="installedRow">
+      <span class="installed-ic">
+        <svg viewBox="0 0 16 16" width="14" height="14"><rect x="2" y="2" width="12" height="12" rx="3.5" fill="#3b82f6"/><path d="M5.5 8l1.8 1.8L10.7 6" fill="none" stroke="#fff" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </span>
+      <span id="installedCount">1 installed</span>
+      <svg viewBox="0 0 16 16" width="11" height="11"><path d="M6 3.5L10.5 8 6 12.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    </button>
+    <div class="plugin-search">
+      <svg viewBox="0 0 16 16" width="13" height="13"><circle cx="7" cy="7" r="4.6" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M10.5 10.5L14 14" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
+      <input type="text" id="pluginSearchInput" placeholder="Search plugins">
+    </div>
+    <div class="plugin-chips" id="pluginChips"></div>
+    <div class="plugin-list" id="pluginList"></div>
+  </div>
+</div>
+
+<!-- ============ SETTINGS MODAL ============ -->
+<div class="overlay settings-overlay" id="settingsOverlay" hidden>
+  <div class="settings-modal" role="dialog" aria-label="Grok Bot settings">
+    <button class="modal-close" id="btnSettingsClose" aria-label="Close">
+      <svg viewBox="0 0 16 16" width="14" height="14"><path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
+    </button>
+    <div class="settings-body">
+      <nav class="settings-nav" id="settingsNav" aria-label="Settings sections"></nav>
+      <div class="settings-content" id="settingsContent"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ SEARCH MODAL ============ -->
+<div class="overlay search-overlay" id="searchOverlay" hidden>
+  <div class="search-modal" role="dialog" aria-label="Search">
+    <div class="search-input-row">
+      <svg viewBox="0 0 16 16" width="14" height="14"><circle cx="7" cy="7" r="4.6" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M10.5 10.5L14 14" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
+      <input type="text" id="searchInput" placeholder="Search" autocomplete="off">
+    </div>
+    <div class="search-tabs" id="searchTabs"></div>
+    <div class="search-results" id="searchResults"></div>
+  </div>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>

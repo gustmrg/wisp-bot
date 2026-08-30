@@ -1,190 +1,136 @@
-import type { ReactNode } from "react";
-import {
-  PanelLeftCloseIcon,
-  PanelLeftOpenIcon,
-  SearchIcon,
-} from "lucide-react";
+import type { PointerEvent as ReactPointerEvent } from "react";
+import { PanelLeftCloseIcon, SearchIcon } from "lucide-react";
 
-import { ChatAvatar } from "@/components/chat-avatar";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { Button } from "@/components/ui/button";
-import {
-  Empty,
-  EmptyDescription,
-  EmptyHeader,
-  EmptyTitle,
-} from "@/components/ui/empty";
-import {
-  InputGroup,
-  InputGroupAddon,
-  InputGroupInput,
-} from "@/components/ui/input-group";
-import {
-  Item,
-  ItemContent,
-  ItemDescription,
-  ItemGroup,
-  ItemHeader,
-  ItemMedia,
-  ItemTitle,
-} from "@/components/ui/item";
-import { Separator } from "@/components/ui/separator";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
 import type { ChatCollection, ChatId } from "@/chat-data";
+import { ChatAvatar } from "@/components/chat-avatar";
+import { CreateAgentDialog, type NewAgent } from "@/components/create-agent-dialog";
+import { panelResizer, profileAvatar } from "@/lib/ui-classes";
 import { cn } from "@/lib/utils";
 
 interface SidebarProps {
   activeChatId: ChatId;
-  chatIds: ReadonlyArray<ChatId>;
   chats: ChatCollection;
   collapsed: boolean;
-  createAgentAction: ReactNode;
-  settingsAction: ReactNode;
-  query: string;
+  width: number;
   onCollapsedChange: (collapsed: boolean) => void;
-  onQueryChange: (query: string) => void;
+  onCreate: (agent: NewAgent) => void;
+  onOpenSearch: () => void;
+  onOpenSettings: () => void;
+  onResizeStart: (event: ReactPointerEvent<HTMLDivElement>) => void;
   onSelectChat: (chatId: ChatId) => void;
 }
 
 function Sidebar({
   activeChatId,
-  chatIds,
   chats,
   collapsed,
-  createAgentAction,
-  settingsAction,
-  query,
+  width,
   onCollapsedChange,
-  onQueryChange,
+  onCreate,
+  onOpenSearch,
+  onOpenSettings,
+  onResizeStart,
   onSelectChat,
 }: SidebarProps) {
-  const normalizedQuery = query.trim().toLocaleLowerCase();
-  const visibleChatIds = chatIds.filter((chatId) =>
-    chats[chatId]?.name.toLocaleLowerCase().includes(normalizedQuery),
-  );
+  const chatIds = Object.keys(chats);
 
   return (
-    <aside className="sidebar" data-collapsed={collapsed}>
-      <div className="sidebar-header">
-        {collapsed ? null : (
-          <InputGroup className="search">
-            <InputGroupInput
-              type="search"
-              aria-label="Search chats"
-              placeholder="Search"
-              value={query}
-              onChange={(event) => onQueryChange(event.currentTarget.value)}
-            />
-            <InputGroupAddon>
-              <SearchIcon aria-hidden="true" />
-            </InputGroupAddon>
-          </InputGroup>
+    <>
+      <aside
+        className="group/sidebar relative z-[2] my-2 ml-3 flex min-h-0 min-w-[68px] flex-none flex-col overflow-hidden rounded-xl bg-sidebar transition-[width] duration-[180ms] max-[620px]:data-[collapsed=false]:w-[220px]!"
+        data-collapsed={collapsed}
+        style={{ width: collapsed ? 68 : width }}
+      >
+      <button
+        className={cn(
+          "flex h-8 flex-none items-center gap-2 rounded-lg border text-left text-[#686868] hover:text-[#5c5c5c] dark:text-[#8a8a8a] dark:hover:text-[#b8b8b8]",
+          "border-black/[0.07] bg-white hover:border-black/[0.14] dark:border-white/[0.09] dark:bg-[#262626] dark:hover:border-white/[0.16]",
+          "[&_svg]:size-[13px] [&_svg]:flex-none [&_span]:flex-1",
+          collapsed ? "mx-auto w-9 justify-center p-0" : "mt-3 mb-2 ml-[17px] mr-[10px] px-[9px]",
         )}
+        type="button"
+        aria-label={collapsed ? "Search" : undefined}
+        onClick={onOpenSearch}
+      >
+        <SearchIcon aria-hidden="true" />
+        {collapsed ? null : <span>Search</span>}
+      </button>
 
-        <Tooltip>
-          <TooltipTrigger
-            render={
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                type="button"
-                aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
-                onClick={() => {
-                  onCollapsedChange(!collapsed);
+      <nav className={cn("min-h-0 flex-1 overflow-x-hidden overflow-y-auto [&::-webkit-scrollbar]:w-0", collapsed ? "px-2" : "pl-[17px] pr-[10px]")} aria-label="Wisps and circles">
+        {chatIds.map((chatId) => {
+          const chat = chats[chatId];
+          if (!chat) return null;
+          const selected = chatId === activeChatId;
 
-                  if (!collapsed) {
-                    onQueryChange("");
-                  }
-                }}
-              />
-            }
-          >
-            {collapsed ? <PanelLeftOpenIcon /> : <PanelLeftCloseIcon />}
-          </TooltipTrigger>
-          <TooltipContent>
-            {collapsed ? "Expand sidebar" : "Collapse sidebar"}
-          </TooltipContent>
-        </Tooltip>
-      </div>
-
-      <nav className="chat-list" aria-label="Chats">
-        {visibleChatIds.length > 0 ? (
-          <ItemGroup className="chat-items">
-            {visibleChatIds.map((chatId) => {
-              const chat = chats[chatId];
-              const isActive = chatId === activeChatId;
-
-              if (!chat) {
-                return null;
-              }
-
-              return (
-                <Item
-                  render={<button type="button" />}
-                  className={cn(
-                    "chat-item",
-                    collapsed && "chat-item-collapsed h-11 w-full shrink-0",
-                  )}
-                  variant={isActive ? "muted" : "default"}
-                  size="sm"
-                  aria-current={isActive ? "page" : undefined}
-                  aria-label={collapsed ? chat.name : undefined}
-                  title={collapsed ? chat.name : undefined}
-                  key={chatId}
-                  onClick={() => onSelectChat(chatId)}
-                >
-                  <ItemMedia>
-                    <ChatAvatar chat={chat} size="lg" />
-                  </ItemMedia>
-                  {collapsed ? null : (
-                    <ItemContent className="min-w-0">
-                      <ItemHeader>
-                        <ItemTitle className="min-w-0 flex-1 text-left">
-                          <span className="truncate">{chat.name}</span>
-                        </ItemTitle>
-                        <span className="chat-time">{chat.timestamp}</span>
-                      </ItemHeader>
-                      <ItemDescription className="truncate">
-                        {chat.preview}
-                      </ItemDescription>
-                    </ItemContent>
-                  )}
-                </Item>
-              );
-            })}
-          </ItemGroup>
-        ) : collapsed ? null : (
-          <Empty className="chat-empty">
-            <EmptyHeader>
-              <EmptyTitle>No chats found</EmptyTitle>
-              <EmptyDescription>Try a different search.</EmptyDescription>
-            </EmptyHeader>
-          </Empty>
-        )}
-        <div className="create-agent-action">{createAgentAction}</div>
+          return (
+            <button
+              className={cn(
+                "group/item relative mb-1 flex w-full min-w-0 items-center gap-[9px] rounded-[10px] border-0 bg-transparent p-2 text-left hover:bg-[#ebebeb] data-[selected=true]:bg-[#e6e6e6] dark:hover:bg-[#212120] dark:data-[selected=true]:bg-[#262626]",
+                collapsed && "h-[46px] justify-center py-[5px] px-0",
+              )}
+              data-selected={selected}
+              type="button"
+              aria-current={selected ? "page" : undefined}
+              aria-label={collapsed ? chat.name : undefined}
+              title={collapsed ? chat.name : undefined}
+              key={chatId}
+              onClick={() => onSelectChat(chatId)}
+            >
+              <span className="relative inline-flex flex-none">
+                <ChatAvatar chat={chat} chats={chats} />
+                {chat.unread ? <span className="unread-dot absolute -top-1 -right-1 size-[10px] rounded-full border-2 border-sidebar bg-[#ff3b30]" aria-label="Unread activity" /> : null}
+              </span>
+              {collapsed ? null : (
+                <span className="flex min-w-0 flex-1 flex-col">
+                  <span className="flex min-w-0 items-baseline gap-2">
+                    <strong className="min-w-0 flex-1 overflow-hidden text-[13px] leading-[17px] font-semibold text-ellipsis whitespace-nowrap">{chat.name}</strong>
+                    <time className="flex-none text-faint text-[10.5px] leading-[17px]">{chat.timestamp}</time>
+                  </span>
+                  <span className="mt-px overflow-hidden text-faint text-[12.5px] leading-[17px] text-ellipsis whitespace-nowrap">{chat.preview}</span>
+                </span>
+              )}
+            </button>
+          );
+        })}
       </nav>
 
-      <Separator />
-      <div className="profile">
-        <Avatar
-          size="sm"
-          aria-hidden={collapsed ? undefined : true}
-          aria-label={collapsed ? "Armand Segall" : undefined}
-        >
-          <AvatarFallback>AS</AvatarFallback>
-        </Avatar>
-        {collapsed ? null : (
-          <>
-            <span>Armand Segall</span>
-            {settingsAction}
-          </>
+      <div
+        className={cn(
+          "mt-4 mb-1 flex flex-none items-center justify-between gap-2 pt-2 mx-2.5 [&>button]:h-[29px] [&>button]:w-9 [&>button]:flex-none [&>button]:rounded-lg [&>button]:[&_svg]:size-[13px]!",
+          collapsed && "flex-col",
         )}
+      >
+        <CreateAgentDialog chats={chats} onCreate={onCreate} />
       </div>
-    </aside>
+
+      <button
+        className={cn(
+          "flex min-w-0 flex-none items-center gap-[9px] rounded-[9px] border-0 bg-transparent p-1.5 text-left hover:bg-[#ebebeb] dark:hover:bg-[#212120]",
+          "mt-[5px] mx-3 mb-[9px]",
+          collapsed && "mx-2 justify-center px-0",
+        )}
+        type="button"
+        aria-label="Open user settings"
+        title="User settings"
+        onClick={onOpenSettings}
+      >
+        <span className={profileAvatar}>JD</span>
+        {collapsed ? null : <span className="min-w-0 flex-1 truncate">John Doe</span>}
+      </button>
+
+      {collapsed ? null : <div className={cn(panelResizer, "-right-1")} role="separator" aria-orientation="vertical" onPointerDown={onResizeStart} />}
+      </aside>
+      <button
+        className="z-[3] flex size-[22px] flex-none self-start items-center justify-center rounded-md border border-black/[0.12] bg-[#f7f7f7] text-[#686868] transition-[background-color,color] duration-[120ms] hover:bg-[#eaeaea] hover:text-[#444444] dark:border-white/[0.12] dark:bg-[#262626] dark:text-[#9a9a9a] dark:hover:bg-[#313131] dark:hover:text-[#dddddd] -mx-[11px] mt-[15px] [&_svg]:size-[13px] [&_svg]:transition-transform [&_svg]:duration-[180ms] data-[collapsed=true]:[&_svg]:rotate-180"
+        type="button"
+        data-collapsed={collapsed}
+        aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+        title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+        onClick={() => onCollapsedChange(!collapsed)}
+      >
+        <PanelLeftCloseIcon aria-hidden="true" />
+      </button>
+    </>
   );
 }
 
