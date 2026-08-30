@@ -37,16 +37,29 @@ function Sidebar({
   return (
     <>
       <aside
-        className="group/sidebar relative z-[2] my-2 ml-3 flex min-h-0 min-w-[68px] flex-none flex-col overflow-hidden rounded-xl bg-sidebar transition-[width] duration-[180ms] max-[620px]:data-[collapsed=false]:w-[220px]!"
+        className="group/sidebar relative z-[2] flex min-h-0 min-w-[68px] flex-none flex-col overflow-hidden bg-sidebar transition-[width] duration-[180ms] max-[620px]:data-[collapsed=false]:w-[220px]!"
         data-collapsed={collapsed}
         style={{ width: collapsed ? 68 : width }}
       >
+      <div className={cn("flex h-11 flex-none items-center px-2", collapsed ? "justify-center" : "justify-end")}>
+        <button
+          className="flex size-7 items-center justify-center border-0 bg-transparent text-[#777777] transition-colors duration-[120ms] hover:text-[#333333] dark:text-[#888888] dark:hover:text-[#dddddd] [&_svg]:size-[15px] [&_svg]:transition-transform [&_svg]:duration-[180ms] data-[collapsed=true]:[&_svg]:rotate-180"
+          type="button"
+          data-collapsed={collapsed}
+          aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+          title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+          onClick={() => onCollapsedChange(!collapsed)}
+        >
+          <PanelLeftCloseIcon aria-hidden="true" />
+        </button>
+      </div>
+
       <button
         className={cn(
           "flex h-8 flex-none items-center gap-2 rounded-lg border text-left text-[#686868] hover:text-[#5c5c5c] dark:text-[#8a8a8a] dark:hover:text-[#b8b8b8]",
           "border-black/[0.07] bg-white hover:border-black/[0.14] dark:border-white/[0.09] dark:bg-[#262626] dark:hover:border-white/[0.16]",
-          "[&_svg]:size-[13px] [&_svg]:flex-none [&_span]:flex-1",
-          collapsed ? "mx-auto w-9 justify-center p-0" : "mt-3 mb-2 ml-[17px] mr-[10px] px-[9px]",
+          "mb-2 [&_svg]:size-[13px] [&_svg]:flex-none [&_span]:flex-1",
+          collapsed ? "mx-auto w-9 justify-center p-0" : "ml-[17px] mr-[10px] px-[9px]",
         )}
         type="button"
         aria-label={collapsed ? "Search" : undefined}
@@ -96,7 +109,7 @@ function Sidebar({
 
       <div
         className={cn(
-          "mt-4 mb-1 flex flex-none items-center justify-between gap-2 pt-2 mx-2.5 [&>button]:h-[29px] [&>button]:w-9 [&>button]:flex-none [&>button]:rounded-lg [&>button]:[&_svg]:size-[13px]!",
+          "mt-4 mb-1 mx-2.5 flex flex-none items-center justify-between gap-2 pt-2 [&>button]:h-[46px] [&>button]:flex-none [&>button]:rounded-[10px] [&>button]:[&_svg]:size-[13px]!",
           collapsed && "flex-col",
         )}
       >
@@ -120,16 +133,6 @@ function Sidebar({
 
       {collapsed ? null : <div className={cn(panelResizer, "-right-1")} role="separator" aria-orientation="vertical" onPointerDown={onResizeStart} />}
       </aside>
-      <button
-        className="z-[3] flex size-[22px] flex-none self-start items-center justify-center rounded-md border border-black/[0.12] bg-[#f7f7f7] text-[#686868] transition-[background-color,color] duration-[120ms] hover:bg-[#eaeaea] hover:text-[#444444] dark:border-white/[0.12] dark:bg-[#262626] dark:text-[#9a9a9a] dark:hover:bg-[#313131] dark:hover:text-[#dddddd] -mx-[11px] mt-[15px] [&_svg]:size-[13px] [&_svg]:transition-transform [&_svg]:duration-[180ms] data-[collapsed=true]:[&_svg]:rotate-180"
-        type="button"
-        data-collapsed={collapsed}
-        aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
-        title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
-        onClick={() => onCollapsedChange(!collapsed)}
-      >
-        <PanelLeftCloseIcon aria-hidden="true" />
-      </button>
     </>
   );
 }

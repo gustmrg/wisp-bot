@@ -1,0 +1,59 @@
+import { describe, expect, it } from "vitest";
+
+import { WispBackendError } from "../electron/backend/backend-error.js";
+import {
+  parseApplyModelRequest,
+  parseConversationRequest,
+  parseSendMessageRequest,
+} from "../electron/ipc/validators.js";
+
+describe("IPC request validators", () => {
+  it("accepts valid conversation and message requests", () => {
+    expect(parseConversationRequest({ conversationId: "wisp:one" })).toEqual({
+      conversationId: "wisp:one",
+    });
+    expect(parseSendMessageRequest({
+      conversationId: "wisp:one",
+      requestId: "request-1",
+      text: "  keep intentional whitespace  ",
+    })).toEqual({
+      conversationId: "wisp:one",
+      requestId: "request-1",
+      text: "  keep intentional whitespace  ",
+    });
+  });
+
+  it.each([
+    null,
+    {},
+    { conversationId: "" },
+    { conversationId: "../escape" },
+    { conversationId: "a".repeat(129) },
+  ])("rejects invalid conversation payload %#", (payload) => {
+    expect(() => parseConversationRequest(payload)).toThrow(WispBackendError);
+  });
+
+  it.each([
+    { conversationId: "wisp-1", requestId: "request-1", text: "" },
+    { conversationId: "wisp-1", requestId: "request-1", text: "   " },
+    { conversationId: "wisp-1", requestId: "bad id", text: "Hello" },
+    { conversationId: "wisp-1", requestId: "request-1", text: "x".repeat(100_001) },
+  ])("rejects invalid message payload %#", (payload) => {
+    expect(() => parseSendMessageRequest(payload)).toThrow(WispBackendError);
+  });
+
+  it("validates both provider and model identifiers", () => {
+    expect(parseApplyModelRequest({
+      conversationId: "wisp-1",
+      model: { providerId: "anthropic", modelId: "claude.example-1" },
+    })).toEqual({
+      conversationId: "wisp-1",
+      model: { providerId: "anthropic", modelId: "claude.example-1" },
+    });
+
+    expect(() => parseApplyModelRequest({
+      conversationId: "wisp-1",
+      model: { providerId: "anthropic", modelId: "bad model" },
+    })).toThrow(WispBackendError);
+  });
+});

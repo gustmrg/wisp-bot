@@ -13,7 +13,7 @@
   "license": "MIT",
   "author": "",
   "type": "commonjs",
-  "main": "dist-electron/main.js",
+  "main": "dist-electron/electron/main.js",
   "scripts": {
     "dev": "concurrently --kill-others \"npm:dev:renderer\" \"npm:dev:electron\"",
     "dev:renderer": "vite",
@@ -21,6 +21,7 @@
     "build": "npm run typecheck && npm run build:renderer && npm run build:electron",
     "build:renderer": "vite build",
     "build:electron": "tsc -p tsconfig.electron.json",
+    "test": "vitest run",
     "typecheck": "tsc --noEmit && tsc -p tsconfig.electron.json --noEmit && tsc -p tsconfig.vite.json --noEmit",
     "start": "npm run build && electron .",
     "preview": "vite preview",
@@ -51,6 +52,7 @@
     "electron": "^43.4.1",
     "typescript": "^7.0.2",
     "vite": "^8.2.2",
+    "vitest": "^4.1.11",
     "wait-on": "^9.1.0"
   },
   "engines": {

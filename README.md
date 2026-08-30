@@ -32,6 +32,15 @@ This starts Vite with fast refresh and opens the Electron app.
 npm run typecheck
 ```
 
+### Test
+
+```bash
+npm test
+```
+
+The backend boundary is covered by unit tests for request validation and the
+deterministic fake conversation agent.
+
 ### Add shadcn components
 
 ```bash

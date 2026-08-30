@@ -62,7 +62,7 @@ function ChatPanel({
       </header>
 
       <div className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto outline-none" ref={transcriptRef} tabIndex={0} aria-label={`${chat.name} conversation`}>
-        <div className="mx-auto flex max-w-[1080px] flex-col px-3.5 pt-1.5 pb-[22px]" role="log" aria-live="polite">
+        <div className="mx-auto flex w-full max-w-[1400px] flex-col px-3.5 pt-1.5 pb-[22px]" role="log" aria-live="polite">
           {chat.messages.map((message, index) => (
             <MessageView
               key={`${chat.id}-${message.type}-${index}`}
@@ -78,7 +78,7 @@ function ChatPanel({
 
       <form className="flex-none px-3 pb-3" onSubmit={onSubmit}>
         {working ? <div className="h-[22px] pl-2.5 text-faint text-[11px]">Working on your request</div> : null}
-        <div className="mx-auto flex min-h-[42px] w-full max-w-[1080px] items-end gap-2 rounded-[13px] border border-black/[0.07] bg-[#f0f0f0] px-2 py-[7px] transition-[border-color] duration-[120ms] focus-within:border-black/[0.16] dark:border-white/[0.07] dark:bg-[#282828] dark:focus-within:border-white/[0.16]">
+        <div className="mx-auto flex min-h-[42px] w-full max-w-[1400px] items-end gap-2 rounded-[13px] border border-black/[0.07] bg-[#f0f0f0] px-2 py-[7px] transition-[border-color] duration-[120ms] focus-within:border-black/[0.16] dark:border-white/[0.07] dark:bg-[#282828] dark:focus-within:border-white/[0.16]">
           <textarea
             ref={composerInputRef}
             rows={1}
