@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import type { FormEvent } from "react";
 import { XIcon } from "lucide-react";
 
+import { TimezoneCombobox } from "@/components/timezone-combobox";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -19,17 +20,18 @@ interface SettingsOption {
   label: string;
 }
 
-function SettingsSelect({ id, value, options, onChange }: {
+function SettingsSelect({ id, value, options, onChange, contentClassName }: {
   id: string;
   value: string;
   options: SettingsOption[];
   onChange: (value: string) => void;
+  contentClassName?: string;
 }) {
   return (
     <Select items={options} value={value} onValueChange={(next) => { if (next !== null) onChange(next); }}>
       <SelectTrigger id={id} size="sm" className="settings-select"><SelectValue /></SelectTrigger>
-      <SelectContent align="end" alignItemWithTrigger={false}>
-        <SelectGroup>{options.map((option) => <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>)}</SelectGroup>
+      <SelectContent align="end" alignItemWithTrigger={false} className={contentClassName}>
+        <SelectGroup>{options.map((option) => <SelectItem className="pr-10" key={option.value} value={option.value}>{option.label}</SelectItem>)}</SelectGroup>
       </SelectContent>
     </Select>
   );
@@ -112,7 +114,7 @@ function GeneralSettingsSections({ preferences, onPreferencesChange }: GeneralSe
       <section className="settings-card" aria-labelledby="wisp-settings-heading">
         <div className="settings-row">
           <span><label htmlFor="app-timezone"><strong>Timezone</strong></label></span>
-          <SettingsSelect id="app-timezone" value={preferences.timezone} options={timezoneOptions} onChange={(timezone) => onPreferencesChange({ ...preferences, timezone })} />
+          <TimezoneCombobox id="app-timezone" value={preferences.timezone} options={timezoneOptions} onChange={(timezone) => onPreferencesChange({ ...preferences, timezone })} />
         </div>
         <div className="settings-row">
           <span><strong>Auto-review</strong><small>Choose when Wisp should ask before acting. Add rules to customize what it can do automatically.</small></span>
@@ -139,7 +141,7 @@ function GeneralSettingsSections({ preferences, onPreferencesChange }: GeneralSe
             <Input id="rule-action" maxLength={240} placeholder="e.g. reply to emails for me" value={ruleAction} onChange={(event) => { setRuleAction(event.currentTarget.value); setRuleNotice(""); }} />
             <label htmlFor="rule-behavior">It should:</label>
             <div className="review-rule-actions">
-              <SettingsSelect id="rule-behavior" value={ruleBehavior} options={RULE_BEHAVIORS} onChange={(behavior) => { if (isRuleBehavior(behavior)) setRuleBehavior(behavior); }} />
+              <SettingsSelect id="rule-behavior" value={ruleBehavior} options={RULE_BEHAVIORS} contentClassName="min-w-56" onChange={(behavior) => { if (isRuleBehavior(behavior)) setRuleBehavior(behavior); }} />
               <Button type="submit" variant="secondary" size="sm" disabled={!ruleAction.trim() || duplicateRule}>Add Rule</Button>
             </div>
             {duplicateRule ? <p>This rule already exists.</p> : null}
