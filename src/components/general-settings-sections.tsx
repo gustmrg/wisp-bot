@@ -5,8 +5,11 @@ import { XIcon } from "lucide-react";
 import { TimezoneCombobox } from "@/components/timezone-combobox";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { ToggleSwitch } from "@/components/ui/toggle-switch";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { isRuleBehavior, type AppPreferences, type RuleBehavior } from "@/lib/app-preferences";
+import { settingsCardStack, settingsGroupLabel, settingsRow, settingsRowCopy, settingsSelect } from "@/lib/ui-classes";
+import { cn } from "@/lib/utils";
 
 const RULE_BEHAVIORS = [
   { value: "allow", label: "Allow automatically" },
@@ -29,7 +32,7 @@ function SettingsSelect({ id, value, options, onChange, contentClassName }: {
 }) {
   return (
     <Select items={options} value={value} onValueChange={(next) => { if (next !== null) onChange(next); }}>
-      <SelectTrigger id={id} size="sm" className="settings-select"><SelectValue /></SelectTrigger>
+      <SelectTrigger id={id} size="sm" className={settingsSelect}><SelectValue /></SelectTrigger>
       <SelectContent align="end" alignItemWithTrigger={false} className={contentClassName}>
         <SelectGroup>{options.map((option) => <SelectItem className="pr-10" key={option.value} value={option.value}>{option.label}</SelectItem>)}</SelectGroup>
       </SelectContent>
@@ -38,7 +41,7 @@ function SettingsSelect({ id, value, options, onChange, contentClassName }: {
 }
 
 function PreferenceSwitch({ label, checked, onChange }: { label: string; checked: boolean; onChange: () => void }) {
-  return <button className="switch" data-on={checked} type="button" role="switch" aria-checked={checked} aria-label={label} onClick={onChange}><span /></button>;
+  return <ToggleSwitch checked={checked} label={label} onChange={onChange} />;
 }
 
 interface GeneralSettingsSectionsProps {
@@ -97,37 +100,37 @@ function GeneralSettingsSections({ preferences, onPreferencesChange }: GeneralSe
 
   return (
     <>
-      <h3 className="settings-group-label" id="system-settings-heading">System</h3>
-      <section className="settings-card" aria-labelledby="system-settings-heading">
-        <div className="settings-row">
-          <span><label htmlFor="app-microphone"><strong>Microphone</strong></label></span>
+      <h3 className={settingsGroupLabel} id="system-settings-heading">System</h3>
+      <section className={settingsCardStack} aria-labelledby="system-settings-heading">
+        <div className={settingsRow}>
+          <span className={settingsRowCopy}><label htmlFor="app-microphone"><strong>Microphone</strong></label></span>
           <SettingsSelect id="app-microphone" value={preferences.microphone} options={microphoneOptions} onChange={(microphone) => onPreferencesChange({ ...preferences, microphone })} />
         </div>
-        <div className="settings-row">
-          <span><strong>Use hardware acceleration</strong></span>
+        <div className={settingsRow}>
+          <span className={settingsRowCopy}><strong>Use hardware acceleration</strong></span>
           <PreferenceSwitch label="Use hardware acceleration" checked={preferences.hardwareAcceleration} onChange={() => onPreferencesChange({ ...preferences, hardwareAcceleration: !preferences.hardwareAcceleration })} />
         </div>
       </section>
-      <p className="settings-integration-note">Microphone and hardware preferences are saved locally; desktop integration is not connected yet.</p>
+      <p className="mx-0.5 mt-[7px] text-dim text-[11px] leading-[1.45]">Microphone and hardware preferences are saved locally; desktop integration is not connected yet.</p>
 
-      <h3 className="settings-group-label" id="wisp-settings-heading">Wisp</h3>
-      <section className="settings-card" aria-labelledby="wisp-settings-heading">
-        <div className="settings-row">
-          <span><label htmlFor="app-timezone"><strong>Timezone</strong></label></span>
+      <h3 className={settingsGroupLabel} id="wisp-settings-heading">Wisp</h3>
+      <section className={settingsCardStack} aria-labelledby="wisp-settings-heading">
+        <div className={settingsRow}>
+          <span className={settingsRowCopy}><label htmlFor="app-timezone"><strong>Timezone</strong></label></span>
           <TimezoneCombobox id="app-timezone" value={preferences.timezone} options={timezoneOptions} onChange={(timezone) => onPreferencesChange({ ...preferences, timezone })} />
         </div>
-        <div className="settings-row">
-          <span><strong>Auto-review</strong><small>Choose when Wisp should ask before acting. Add rules to customize what it can do automatically.</small></span>
+        <div className={settingsRow}>
+          <span className={settingsRowCopy}><strong>Auto-review</strong><small className="text-dim text-[11.5px]">Choose when Wisp should ask before acting. Add rules to customize what it can do automatically.</small></span>
           <PreferenceSwitch label="Auto-review" checked={preferences.autoReview} onChange={() => onPreferencesChange({ ...preferences, autoReview: !preferences.autoReview })} />
         </div>
-        <div className="settings-row review-rules">
+        <div className={cn(settingsRow, "flex-col items-stretch gap-[5px]")}>
           <strong>Auto-review Rules</strong>
-          <p>Write one short, natural-language rule for each action. &quot;Ask first&quot; takes priority if rules conflict.</p>
+          <p className="m-0 text-dim text-[11.5px] leading-[1.5]">Write one short, natural-language rule for each action. &quot;Ask first&quot; takes priority if rules conflict.</p>
           {preferences.autoReviewRules.length ? (
-            <ul className="review-rules-list" aria-label="Auto-review rules">
+            <ul className="m-0 mt-[7px] flex list-none flex-col p-0" aria-label="Auto-review rules">
               {preferences.autoReviewRules.map((rule) => (
-                <li key={rule.id}>
-                  <span>{rule.action}<small>{RULE_BEHAVIORS.find((behavior) => behavior.value === rule.behavior)?.label}</small></span>
+                <li key={rule.id} className="flex items-center gap-3 border-b border-border py-2">
+                  <span className="min-w-0 flex-1 text-xs [overflow-wrap:anywhere]">{rule.action}<small className="mt-0.5 block">{RULE_BEHAVIORS.find((behavior) => behavior.value === rule.behavior)?.label}</small></span>
                   <Button variant="ghost" size="icon-xs" aria-label={`Remove rule: ${rule.action}`} onClick={() => {
                     onPreferencesChange({ ...preferences, autoReviewRules: preferences.autoReviewRules.filter((item) => item.id !== rule.id) });
                     setRuleNotice("Rule removed.");
@@ -136,18 +139,18 @@ function GeneralSettingsSections({ preferences, onPreferencesChange }: GeneralSe
               ))}
             </ul>
           ) : null}
-          <form className="review-rule-form" onSubmit={addRule}>
-            <label htmlFor="rule-action">When Wisp wants to:</label>
-            <Input id="rule-action" maxLength={240} placeholder="e.g. reply to emails for me" value={ruleAction} onChange={(event) => { setRuleAction(event.currentTarget.value); setRuleNotice(""); }} />
-            <label htmlFor="rule-behavior">It should:</label>
-            <div className="review-rule-actions">
+          <form className="my-[7px] flex flex-col gap-[5px]" onSubmit={addRule}>
+            <label className="m-0 text-dim text-[11.5px] leading-[1.5]" htmlFor="rule-action">When Wisp wants to:</label>
+            <Input id="rule-action" className="h-7 text-xs" maxLength={240} placeholder="e.g. reply to emails for me" value={ruleAction} onChange={(event) => { setRuleAction(event.currentTarget.value); setRuleNotice(""); }} />
+            <label className="m-0 mt-[5px] text-dim text-[11.5px] leading-[1.5]" htmlFor="rule-behavior">It should:</label>
+            <div className="flex items-center justify-between gap-2.5">
               <SettingsSelect id="rule-behavior" value={ruleBehavior} options={RULE_BEHAVIORS} contentClassName="min-w-56" onChange={(behavior) => { if (isRuleBehavior(behavior)) setRuleBehavior(behavior); }} />
               <Button type="submit" variant="secondary" size="sm" disabled={!ruleAction.trim() || duplicateRule}>Add Rule</Button>
             </div>
-            {duplicateRule ? <p>This rule already exists.</p> : null}
+            {duplicateRule ? <p className="m-0 text-dim text-[11.5px] leading-[1.5]">This rule already exists.</p> : null}
           </form>
           <span className="sr-only" role="status">{ruleNotice}</span>
-          <p>These rules apply only to you. Timezone and auto-review preferences are saved locally; Wisp execution is not connected yet.</p>
+          <p className="m-0 text-dim text-[11.5px] leading-[1.5]">These rules apply only to you. Timezone and auto-review preferences are saved locally; Wisp execution is not connected yet.</p>
         </div>
       </section>
     </>

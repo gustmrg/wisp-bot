@@ -4,6 +4,8 @@ import { CheckIcon, ChevronDownIcon, SearchIcon } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { settingsSelect } from "@/lib/ui-classes";
+import { cn } from "@/lib/utils";
 
 interface TimezoneOption {
   value: string;
@@ -35,7 +37,7 @@ function TimezoneCombobox({ id, value, options, onChange }: TimezoneComboboxProp
       filter={(option, search) => contains(option.label.replaceAll("_", " "), search.trim().replaceAll("_", " "))}
       autoHighlight
     >
-      <Combobox.Trigger id={id} render={<Button variant="outline" size="sm" className="settings-select gap-2 font-normal" />}>
+      <Combobox.Trigger id={id} render={<Button variant="outline" size="sm" className={cn(settingsSelect, "gap-2 font-normal")} />}>
         <span className="min-w-0 truncate"><Combobox.Value /></span>
         <ChevronDownIcon aria-hidden="true" className="size-3.5 shrink-0 text-muted-foreground" />
       </Combobox.Trigger>

@@ -1,29 +1,42 @@
 import { CheckIcon } from "lucide-react";
 
 import type { Message } from "@/chat-data";
+import { cn } from "@/lib/utils";
 
 interface MessageViewProps {
   message: Message;
   onAnswer?: (answer: string) => void;
 }
 
-function MessageTools({ time }: { time?: string }) {
+function MessageTools({ time, outgoing }: { time?: string; outgoing: boolean }) {
   if (!time) return null;
-  return <span className="message-tools"><time>{time}</time></span>;
+  return (
+    <span
+      className={cn(
+        "flex flex-none items-center gap-px opacity-0 transition-opacity duration-100 group-hover/message-row:opacity-100 focus-within:opacity-100",
+        outgoing ? "mr-[7px]" : "ml-[7px]",
+      )}
+    >
+      <time className="mr-[3px] text-faint text-[10px]">{time}</time>
+    </span>
+  );
 }
 
 function MessageView({ message, onAnswer }: MessageViewProps) {
   if (message.type === "time") {
-    return <div className="time-divider"><span>{message.text}</span></div>;
+    return <div className="mt-[13px] mb-[5px] flex items-center justify-center text-faint text-[10.5px]"><span>{message.text}</span></div>;
   }
 
   if (message.type === "card") {
     return (
-      <div className="message-row incoming">
-        <div className="message-bubble status-card">
-          <ul>
+      <div className="relative mt-[5px] flex animate-message-in flex-col items-start">
+        <div className="max-w-[min(820px,78vw)] rounded-[11px] border border-black/[0.06] bg-[#f6f6f6] px-[11px] py-[9px] leading-[1.42] select-text dark:border-white/[0.06] dark:bg-[#1b1b1b]">
+          <ul className="m-0 flex list-none flex-col gap-1 p-0">
             {message.items.map((item) => (
-              <li key={item.label}><CheckIcon aria-hidden="true" /><span><strong>{item.label}</strong> — {item.text}</span></li>
+              <li key={item.label} className="flex items-start gap-[7px]">
+                <CheckIcon aria-hidden="true" className="mt-0.5 size-[13px] flex-none text-[#666666] dark:text-[#a7a7a7]" />
+                <span><strong className="font-[650]">{item.label}</strong> — {item.text}</span>
+              </li>
             ))}
           </ul>
         </div>
@@ -33,16 +46,25 @@ function MessageView({ message, onAnswer }: MessageViewProps) {
 
   if (message.type === "prompt") {
     return (
-      <div className="message-row incoming">
-        <section className="prompt-card" aria-label={message.question}>
-          <strong>{message.question}</strong>
+      <div className="relative mt-[5px] flex animate-message-in flex-col items-start">
+        <section className="w-[min(820px,78vw)] rounded-[11px] border border-black/[0.07] bg-[#f4f4f4] p-2.5 dark:border-white/[0.07] dark:bg-[#202020]" aria-label={message.question}>
+          <strong className="mb-[9px] block">{message.question}</strong>
           {message.answer ? (
-            <div className="prompt-answer"><span>{message.answer}</span><CheckIcon aria-hidden="true" /></div>
+            <div className="flex w-full items-center gap-2 rounded-lg border border-black/[0.07] bg-white px-2 py-[7px] text-left dark:border-white/[0.07] dark:bg-[#191919]">
+              <span className="flex-1 text-[#555555] dark:text-[#bdbdbd]">{message.answer}</span>
+              <CheckIcon aria-hidden="true" className="size-3.5 text-green" />
+            </div>
           ) : (
-            <div className="prompt-options">
+            <div className="flex flex-col gap-1.5">
               {message.options.map((option) => (
-                <button type="button" key={option.key} onClick={() => onAnswer?.(option.label)}>
-                  <kbd>{option.key}</kbd><span>{option.label}</span>
+                <button
+                  type="button"
+                  key={option.key}
+                  className="flex w-full items-center gap-2 rounded-lg border border-black/[0.07] bg-white px-2 py-[7px] text-left hover:border-black/[0.13] hover:bg-[#eeeeee] dark:border-white/[0.07] dark:bg-[#191919] dark:hover:border-white/[0.13] dark:hover:bg-[#252525]"
+                  onClick={() => onAnswer?.(option.label)}
+                >
+                  <kbd className="inline-flex size-5 items-center justify-center rounded-[5px] bg-[#e9e9e9] text-[10px] text-[#606060] [font-family:inherit] dark:bg-[#292929] dark:text-[#aaaaaa]">{option.key}</kbd>
+                  <span>{option.label}</span>
                 </button>
               ))}
             </div>
@@ -54,13 +76,30 @@ function MessageView({ message, onAnswer }: MessageViewProps) {
 
   const outgoing = message.type === "outgoing";
   return (
-    <div className={`message-row ${outgoing ? "outgoing" : "incoming"}`}>
-      <div className="message-with-tools">
-        <div className="message-bubble">{message.text}</div>
-        <MessageTools time={message.time} />
+    <div className={cn("relative mt-[5px] flex animate-message-in flex-col", outgoing ? "items-end" : "items-start")}>
+      <div className={cn("group/message-row flex max-w-full items-center", outgoing && "flex-row-reverse")}>
+        <div
+          className={cn(
+            "max-w-[min(820px,78vw)] rounded-[11px] px-2.5 py-[7px] text-[#262626] leading-[1.42] select-text whitespace-pre-wrap dark:text-[#e8e8e8]",
+            outgoing ? "bg-bubble-out" : "bg-bubble-in",
+          )}
+        >
+          {message.text}
+        </div>
+        <MessageTools time={message.time} outgoing={outgoing} />
       </div>
       {message.reactions?.length ? (
-        <div className="message-reactions">{message.reactions.map((reaction) => <button type="button" key={reaction}>{reaction}</button>)}</div>
+        <div className="mt-[3px] flex gap-1">
+          {message.reactions.map((reaction) => (
+            <button
+              type="button"
+              key={reaction}
+              className="rounded-[10px] border border-black/[0.08] bg-[#f0f0f0] px-[7px] py-0.5 text-[11px] text-[#555555] dark:border-white/[0.08] dark:bg-[#1c1c1c] dark:text-[#bbbbbb]"
+            >
+              {reaction}
+            </button>
+          ))}
+        </div>
       ) : null}
     </div>
   );

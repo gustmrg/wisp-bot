@@ -13,6 +13,8 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { applyTheme } from "@/lib/theme";
 import { DEFAULT_PREFERENCES, normalizePreferences, type AppPreferences } from "@/lib/app-preferences";
 import { migrateLegacyChats } from "@/lib/circle-members";
+import { mainPanel } from "@/lib/ui-classes";
+import { cn } from "@/lib/utils";
 
 const STORAGE_KEY = "wisp-bot-ui-v2";
 
@@ -211,7 +213,7 @@ export default function App() {
 
   return (
     <TooltipProvider delay={300}>
-      <div className="window">
+      <div className="flex h-full w-full min-h-0 min-w-0 overflow-hidden bg-background">
         <Sidebar
           activeChatId={activeChatId}
           chats={chats}
@@ -236,7 +238,7 @@ export default function App() {
             onOpenDetails={() => setDetailsOpen(true)}
             onSubmit={handleSubmit}
           />
-        ) : <main className="main empty-workspace">Create a Wisp to get started.</main>}
+        ) : <main className={cn(mainPanel, "items-center justify-center text-dim")}>Create a Wisp to get started.</main>}
         {detailsOpen && activeChat ? (
           <DetailsPanel
             chat={activeChat}

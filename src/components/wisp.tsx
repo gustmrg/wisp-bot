@@ -104,11 +104,11 @@ function Wisp({
       } as CSSProperties}
       {...props}
     >
-      {outlined ? <g className="wisp-outline" fill="none" stroke="currentColor" strokeWidth="2" transform="translate(-3.2 -3.2) scale(1.1)"><WispBody shape={shape} /></g> : null}
+      {outlined ? <g className="text-[#5c5c5c] dark:text-[#b8b8b8]" fill="none" stroke="currentColor" strokeWidth="2" transform="translate(-3.2 -3.2) scale(1.1)"><WispBody shape={shape} /></g> : null}
       <g fill="var(--wisp-color)">
         <WispBody shape={shape} />
       </g>
-      <g className="wisp-eyes" aria-hidden="true" fill="white" transform={`${shape === "triangle" || shape === "drop" || shape === "diamond" ? "translate(-6 8) " : ""}rotate(-18 38 27)`}>
+      <g aria-hidden="true" fill="white" transform={`${shape === "triangle" || shape === "drop" || shape === "diamond" ? "translate(-6 8) " : ""}rotate(-18 38 27)`}>
         <rect x="31" y="23" width="4.5" height="10" rx="2.25" />
         <rect x="46" y="23" width="4.5" height="10" rx="2.25" />
       </g>
