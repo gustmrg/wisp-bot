@@ -80,7 +80,7 @@ function AvatarEditor({ chat, onChange }: AvatarEditorProps) {
   return (
     <div className="avatar-editor-root">
       <Popover.Root open={open} onOpenChange={setOpen}>
-        <Popover.Trigger className="edit-avatar-button" aria-label="Upload avatar image" openOnHover delay={250} closeDelay={200}>
+        <Popover.Trigger className="edit-avatar-button" aria-label="Upload avatar image">
           <span className="editable-avatar"><ChatAvatar chat={chat} size="xl" /></span>
           <span className="avatar-edit-overlay" aria-hidden="true"><UploadIcon /></span>
           <span className="avatar-edit-tip">Upload image</span>
@@ -112,7 +112,6 @@ function AvatarEditor({ chat, onChange }: AvatarEditorProps) {
       <section className="wisp-appearance" aria-label="Wisp appearance">
         <header className="wisp-appearance-header">
           <strong>Appearance</strong>
-          <button className="avatar-action" type="button" onClick={generateWisp}><ShuffleIcon aria-hidden="true" />Random Wisp</button>
         </header>
                   <div className="shape-grid" role="group" aria-label="Wisp shape">
                     {WISP_SHAPES.map((shape) => {
@@ -130,6 +129,9 @@ function AvatarEditor({ chat, onChange }: AvatarEditorProps) {
                       return <button type="button" data-selected={selected} aria-pressed={selected} aria-label={color.label} title={color.label} key={color.id} style={{ backgroundColor: color.value }} onClick={() => selectWisp({ color: color.value })} />;
                     })}
                   </div>
+        <div className="wisp-appearance-random">
+          <button className="avatar-action" type="button" onClick={generateWisp}><ShuffleIcon aria-hidden="true" />Random Wisp</button>
+        </div>
         {chat.avatarImage ? <p className="wisp-appearance-hint">Choosing a shape, color, or random Wisp replaces the uploaded image.</p> : null}
       </section>
     </div>

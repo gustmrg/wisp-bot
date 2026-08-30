@@ -1,7 +1,7 @@
 import { useState } from "react";
 import type { FormEvent, ReactElement } from "react";
 import { Checkbox } from "@base-ui/react/checkbox";
-import { CheckIcon, HashIcon, PlusIcon, XIcon } from "lucide-react";
+import { CheckIcon, CircleIcon, PlusIcon, XIcon } from "lucide-react";
 
 import type { AgentSettings, ChatCollection } from "@/chat-data";
 import { ChatAvatar } from "@/components/chat-avatar";
@@ -36,7 +36,7 @@ const DEFAULT_WISP: AgentSettings = {
   description: "",
   color: AVATAR_COLORS.find((color) => color.id === "violet")?.value,
   shape: "hexagon",
-  isGroup: false,
+  isCircle: false,
   notifyOnUpdatesEnabled: true,
 };
 
@@ -44,14 +44,14 @@ function CreateAgentDialog({ chats, onCreate, trigger }: CreateAgentDialogProps)
   const [open, setOpen] = useState(false);
   const [settings, setSettings] = useState<AgentSettings>(DEFAULT_WISP);
   const { name, description, color } = settings;
-  const [isGroup, setIsGroup] = useState(false);
+  const [isCircle, setIsCircle] = useState(false);
   const [memberIds, setMemberIds] = useState<string[]>([]);
-  const availableWisps = Object.values(chats).filter((chat) => !chat.isGroup);
+  const availableWisps = Object.values(chats).filter((chat) => !chat.isCircle);
   const selectedWisps = availableWisps.filter((chat) => memberIds.includes(chat.id));
 
   function resetForm() {
     setSettings(DEFAULT_WISP);
-    setIsGroup(false);
+    setIsCircle(false);
     setMemberIds([]);
   }
 
@@ -62,14 +62,14 @@ function CreateAgentDialog({ chats, onCreate, trigger }: CreateAgentDialogProps)
 
     onCreate({
       name: trimmedName,
-      label: isGroup ? "Channel" : settings.label.trim(),
-      description: isGroup ? "" : description.trim(),
+      label: isCircle ? "Circle" : settings.label.trim(),
+      description: isCircle ? "" : description.trim(),
       color,
-      shape: isGroup ? "circle" : settings.shape,
-      avatarImage: isGroup ? undefined : settings.avatarImage,
-      isGroup,
-      ...(isGroup ? { memberIds: selectedWisps.map((chat) => chat.id) } : {}),
-      notifyOnUpdatesEnabled: isGroup || settings.notifyOnUpdatesEnabled,
+      shape: isCircle ? "circle" : settings.shape,
+      avatarImage: isCircle ? undefined : settings.avatarImage,
+      isCircle,
+      ...(isCircle ? { memberIds: selectedWisps.map((chat) => chat.id) } : {}),
+      notifyOnUpdatesEnabled: isCircle || settings.notifyOnUpdatesEnabled,
     });
     setOpen(false);
     resetForm();
@@ -86,66 +86,66 @@ function CreateAgentDialog({ chats, onCreate, trigger }: CreateAgentDialogProps)
       <DialogTrigger
         render={
           trigger ?? (
-            <Button variant="ghost" size="icon-sm" type="button" aria-label="New Wisp or channel" />
+            <Button variant="ghost" size="icon-sm" type="button" aria-label="New Wisp or circle" />
           )
         }
       >
         {trigger ? null : <PlusIcon />}
       </DialogTrigger>
 
-      <DialogContent className={isGroup ? "create-dialog channel-dialog" : "create-dialog"}>
+      <DialogContent className={isCircle ? "create-dialog circle-dialog" : "create-dialog"}>
         <DialogHeader>
-          <DialogTitle>{isGroup ? "New channel" : "Create new"}</DialogTitle>
-          <DialogDescription className={isGroup ? "sr-only" : undefined}>{isGroup ? "Name your channel and choose the Wisps to add." : "Create a Wisp for focused work or a channel for a shared project."}</DialogDescription>
+          <DialogTitle>{isCircle ? "New circle" : "Create new"}</DialogTitle>
+          <DialogDescription className={isCircle ? "sr-only" : undefined}>{isCircle ? "Name your circle and choose the Wisps to add." : "Create a Wisp for focused work or a circle for a shared project."}</DialogDescription>
         </DialogHeader>
 
-        {!isGroup ? <div className="create-kind" role="group" aria-label="Creation type">
-          <button className={!isGroup ? "selected" : ""} type="button" onClick={() => setIsGroup(false)}>
+        <div className="create-kind" role="group" aria-label="Creation type">
+          <button className={!isCircle ? "selected" : ""} type="button" onClick={() => setIsCircle(false)}>
             <Wisp color={color} shape={settings.shape} name={name || "New Wisp"} size="sm" />
             <span><strong>Wisp</strong><small>An autonomous teammate</small></span>
           </button>
-          <button className={isGroup ? "selected" : ""} type="button" onClick={() => setIsGroup(true)}>
-            <HashIcon aria-hidden="true" />
-            <span><strong>Channel</strong><small>A shared workspace</small></span>
+          <button className={isCircle ? "selected" : ""} type="button" onClick={() => setIsCircle(true)}>
+            <CircleIcon aria-hidden="true" />
+            <span><strong>Circle</strong><small>A shared workspace</small></span>
           </button>
-        </div> : null}
+        </div>
 
         <form className="create-form" onSubmit={handleSubmit}>
-          {!isGroup ? <div className="wisp-create-fields"><WispSettingsFields settings={settings} onChange={(changes) => setSettings((current) => ({ ...current, ...changes }))} /></div> : <FieldGroup className="channel-form-body">
+          {!isCircle ? <div className="wisp-create-fields"><WispSettingsFields settings={settings} onChange={(changes) => setSettings((current) => ({ ...current, ...changes }))} /></div> : <FieldGroup className="circle-form-body">
             <Field>
               <FieldLabel htmlFor="agent-name">Name</FieldLabel>
               <Input id="agent-name" autoFocus maxLength={64} placeholder="Ex: Project Falcon" required value={name} onChange={(event) => setSettings((current) => ({ ...current, name: event.currentTarget.value }))} />
             </Field>
             <Field>
-              <FieldLabel id="channel-wisps-label">Add Wisps</FieldLabel>
-              <div className="channel-wisp-picker" role="group" aria-labelledby="channel-wisps-label">
-                <div className="channel-selected-wisps" aria-label="Selected Wisps">
+              <FieldLabel id="circle-wisps-label">Add Wisps</FieldLabel>
+              <div className="circle-wisp-picker" role="group" aria-labelledby="circle-wisps-label">
+                <div className="circle-selected-wisps" aria-label="Selected Wisps">
                   {selectedWisps.length ? selectedWisps.map((chat) => (
-                    <span className="channel-wisp-chip" key={chat.id}>
+                    <span className="circle-wisp-chip" key={chat.id}>
                       <ChatAvatar chat={chat} size="sm" />
                       <span>{chat.name}</span>
                       <button type="button" aria-label={`Remove ${chat.name}`} onClick={() => setMemberIds((current) => current.filter((id) => id !== chat.id))}><XIcon aria-hidden="true" /></button>
                     </span>
-                  )) : <span className="channel-picker-placeholder">Select Wisps to add to this channel</span>}
+                  )) : <span className="circle-picker-placeholder">Select Wisps to add to this circle</span>}
                 </div>
-                <div className="channel-wisp-options">
+                <div className="circle-wisp-options">
                   {availableWisps.map((chat) => (
-                    <label className="channel-wisp-option" key={chat.id}>
-                      <Checkbox.Root className="channel-wisp-checkbox" checked={memberIds.includes(chat.id)} onCheckedChange={(checked) => setMemberIds((current) => checked ? [...current, chat.id] : current.filter((id) => id !== chat.id))}>
+                    <label className="circle-wisp-option" key={chat.id}>
+                      <Checkbox.Root className="circle-wisp-checkbox" checked={memberIds.includes(chat.id)} onCheckedChange={(checked) => setMemberIds((current) => checked ? [...current, chat.id] : current.filter((id) => id !== chat.id))}>
                         <Checkbox.Indicator><CheckIcon aria-hidden="true" /></Checkbox.Indicator>
                       </Checkbox.Root>
                       <ChatAvatar chat={chat} />
                       <span>{chat.name}</span>
                     </label>
                   ))}
-                  {!availableWisps.length ? <p className="channel-picker-placeholder">No Wisps yet. You can create an empty channel.</p> : null}
+                  {!availableWisps.length ? <p className="circle-picker-placeholder">No Wisps yet. You can create an empty circle.</p> : null}
                 </div>
               </div>
             </Field>
           </FieldGroup>}
           <DialogFooter>
-            {!isGroup ? <DialogClose render={<Button variant="outline" type="button" />}>Cancel</DialogClose> : null}
-            <Button type="submit" disabled={!name.trim()}>{isGroup ? "Create" : "Create Wisp"}</Button>
+            {!isCircle ? <DialogClose render={<Button variant="outline" type="button" />}>Cancel</DialogClose> : null}
+            <Button type="submit" disabled={!name.trim()}>{isCircle ? "Create" : "Create Wisp"}</Button>
           </DialogFooter>
         </form>
       </DialogContent>

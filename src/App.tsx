@@ -12,7 +12,7 @@ import { Sidebar } from "@/components/sidebar";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { applyTheme } from "@/lib/theme";
 import { DEFAULT_PREFERENCES, normalizePreferences, type AppPreferences } from "@/lib/app-preferences";
-import { migrateLegacyChannelMembers } from "@/lib/channel-members";
+import { migrateLegacyChats } from "@/lib/circle-members";
 
 const STORAGE_KEY = "wisp-bot-ui-v2";
 
@@ -27,7 +27,7 @@ function loadState(): PersistedState {
     if (raw) {
       const saved = JSON.parse(raw) as Partial<PersistedState>;
       if (saved.chats && Object.keys(saved.chats).length) {
-        return { chats: migrateLegacyChannelMembers(saved.chats), preferences: normalizePreferences(saved.preferences) };
+        return { chats: migrateLegacyChats(saved.chats), preferences: normalizePreferences(saved.preferences) };
       }
     }
   } catch {
@@ -158,11 +158,11 @@ export default function App() {
       [id]: {
         ...agent,
         id,
-        isActive: !agent.isGroup,
-        preview: agent.isGroup ? "This is the beginning of the channel." : "Ready for the first task.",
+        isActive: !agent.isCircle,
+        preview: agent.isCircle ? "This is the beginning of the circle." : "Ready for the first task.",
         timestamp: "Now",
-        messages: agent.isGroup
-          ? [{ type: "time", text: "This is the beginning of the channel" }]
+        messages: agent.isCircle
+          ? [{ type: "time", text: "This is the beginning of the circle" }]
           : [{ type: "incoming", text: `Hey John, I'm here. What do you want me on first?`, time: "Now" }],
       },
     }));

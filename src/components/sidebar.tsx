@@ -40,7 +40,7 @@ function Sidebar({
         {collapsed ? null : <kbd>⌘ K</kbd>}
       </button>
 
-      <nav className="chat-list" aria-label="Wisps and channels">
+      <nav className="chat-list" aria-label="Wisps and circles">
         {chatIds.map((chatId) => {
           const chat = chats[chatId];
           if (!chat) return null;

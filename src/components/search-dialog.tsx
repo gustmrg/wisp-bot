@@ -24,15 +24,15 @@ function SearchDialog({ chats, open, onOpenChange, onSelectChat }: SearchDialogP
   return (
     <Dialog open={open} onOpenChange={(nextOpen) => { onOpenChange(nextOpen); if (!nextOpen) setQuery(""); }}>
       <DialogContent className="search-dialog" showCloseButton={false}>
-        <DialogHeader className="sr-only"><DialogTitle>Search</DialogTitle><DialogDescription>Search Wisps, channels, and messages.</DialogDescription></DialogHeader>
-        <div className="search-input-row"><SearchIcon aria-hidden="true" /><input autoFocus aria-label="Search" placeholder="Search Wisps, channels, and messages" value={query} onChange={(event) => setQuery(event.currentTarget.value)} /><kbd>esc</kbd></div>
+        <DialogHeader className="sr-only"><DialogTitle>Search</DialogTitle><DialogDescription>Search Wisps, circles, and messages.</DialogDescription></DialogHeader>
+        <div className="search-input-row"><SearchIcon aria-hidden="true" /><input autoFocus aria-label="Search" placeholder="Search Wisps, circles, and messages" value={query} onChange={(event) => setQuery(event.currentTarget.value)} /><kbd>esc</kbd></div>
         <div className="search-tabs"><span>All</span><span>Wisps</span><span>Messages</span></div>
         <div className="search-results">
           {matches.length ? matches.map((chat) => (
             <button type="button" key={chat.id} onClick={() => { onSelectChat(chat.id); onOpenChange(false); }}>
               <ChatAvatar chat={chat} chats={chats} />
               <span><strong>{chat.name}</strong><small>{chat.preview}</small></span>
-              <em>{chat.isGroup ? "Channel" : "Wisp"}</em>
+              <em>{chat.isCircle ? "Circle" : "Wisp"}</em>
             </button>
           )) : <p>No results found</p>}
         </div>

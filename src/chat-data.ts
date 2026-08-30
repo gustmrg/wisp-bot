@@ -19,7 +19,7 @@ export interface AgentSettings {
   color?: string;
   avatarImage?: string;
   shape: WispShape;
-  isGroup: boolean;
+  isCircle: boolean;
   memberIds?: ChatId[];
   notifyOnUpdatesEnabled: boolean;
   isActive?: boolean;
@@ -68,7 +68,7 @@ export const initialChats: ChatCollection = {
     description: "Coordinates priorities and keeps work moving.",
     color: "#e5484d",
     shape: "square",
-    isGroup: false,
+    isCircle: false,
     notifyOnUpdatesEnabled: true,
     isActive: true,
     preview: "booked the venue and sent the confirmation…",
@@ -113,39 +113,39 @@ export const initialChats: ChatCollection = {
   },
   sales: {
     id: "sales", name: "Sales Outbound", label: "Sales", description: "Qualifies opportunities and prepares follow-ups.",
-    color: "#8b70f6", shape: "hexagon", isGroup: false, notifyOnUpdatesEnabled: true, isActive: true,
+    color: "#8b70f6", shape: "hexagon", isCircle: false, notifyOnUpdatesEnabled: true, isActive: true,
     preview: "120 accounts sequenced, 3 meetings booked.", timestamp: "Yesterday",
     messages: [{ type: "incoming", text: "done. 120 accounts sequenced, 14 replies, 3 meetings booked for next week.", time: "4:12 PM" }],
   },
   inbox: {
     id: "inbox", name: "Inbox Manager", label: "Admin", description: "Triages incoming messages and drafts responses.",
-    color: "#8e8e8e", shape: "circle", isGroup: false, notifyOnUpdatesEnabled: true, unread: true,
+    color: "#8e8e8e", shape: "circle", isCircle: false, notifyOnUpdatesEnabled: true, unread: true,
     preview: "sent. inbox at zero, 5 drafts parked…", timestamp: "Yesterday",
     messages: [{ type: "incoming", text: "sent. inbox at zero, 5 drafts parked for your review.", time: "3:48 PM" }],
   },
   account: {
     id: "account", name: "Account Manager", label: "Success", description: "Monitors account activity and customer requests.",
-    color: "#f59e0b", shape: "pill", isGroup: false, notifyOnUpdatesEnabled: true, isActive: true,
+    color: "#f59e0b", shape: "pill", isCircle: false, notifyOnUpdatesEnabled: true, isActive: true,
     preview: "invite's out to vicky. globex note heads…", timestamp: "Yesterday",
     messages: [{ type: "incoming", text: "invite's out to vicky. globex note heads to finance monday.", time: "2:31 PM" }],
   },
   talent: {
     id: "talent", name: "Talent Scout", label: "People", description: "Supports recruiting and candidate coordination.",
-    color: "#ff309b", shape: "drop", isGroup: false, notifyOnUpdatesEnabled: true,
+    color: "#ff309b", shape: "drop", isCircle: false, notifyOnUpdatesEnabled: true,
     preview: "3 intros drafted in your voice, held…", timestamp: "Yesterday",
     messages: [{ type: "incoming", text: "3 intros drafted in your voice, held for sign-off.", time: "1:45 PM" }],
   },
   expense: {
     id: "expense", name: "Expense Manager", label: "Finance", description: "Reviews receipts and prepares expense reports.",
-    color: "#00c972", shape: "diamond", isGroup: false, notifyOnUpdatesEnabled: true,
+    color: "#00c972", shape: "diamond", isCircle: false, notifyOnUpdatesEnabled: true,
     preview: "report filed. 9 receipts, nothing out…", timestamp: "Yesterday",
     messages: [{ type: "incoming", text: "report filed. 9 receipts, nothing out of policy.", time: "12:18 PM" }],
   },
   offsite: {
-    id: "offsite", name: "Offsite Crew", label: "Channel", description: "Plans the company offsite and coordinates logistics.",
+    id: "offsite", name: "Offsite Crew", label: "Circle", description: "Plans the company offsite and coordinates logistics.",
     memberIds: ["chief", "account", "expense"],
-    color: "#4a9eff", shape: "circle", isGroup: true, notifyOnUpdatesEnabled: true,
+    color: "#4a9eff", shape: "circle", isCircle: true, notifyOnUpdatesEnabled: true,
     preview: "that leaves the pipeline. i'd spin up…", timestamp: "Yesterday",
-    messages: [{ type: "incoming", text: "that leaves the pipeline. i'd spin up the retreat channel next.", time: "11:52 AM" }],
+    messages: [{ type: "incoming", text: "that leaves the pipeline. i'd spin up the retreat circle next.", time: "11:52 AM" }],
   },
 };

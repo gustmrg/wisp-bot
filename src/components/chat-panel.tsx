@@ -3,7 +3,7 @@ import type { FormEvent, KeyboardEvent, RefObject } from "react";
 import { ArrowUpIcon, MicIcon, SettingsIcon } from "lucide-react";
 
 import type { Chat, ChatCollection } from "@/chat-data";
-import { getChannelMembers } from "@/lib/channel-members";
+import { getCircleMembers } from "@/lib/circle-members";
 import { ChatAvatar } from "@/components/chat-avatar";
 import { MessageView } from "@/components/message-view";
 
@@ -31,7 +31,7 @@ function ChatPanel({
   onSubmit,
 }: ChatPanelProps) {
   const transcriptRef = useRef<HTMLDivElement>(null);
-  const members = getChannelMembers(chat, chats);
+  const members = getCircleMembers(chat, chats);
 
   useEffect(() => {
     const transcript = transcriptRef.current;
@@ -53,8 +53,8 @@ function ChatPanel({
           <span>{chat.name}</span>
         </div>
         <div className="chat-header-actions">
-          {chat.isGroup ? <button className="channel-member-count" type="button" aria-label={`View channel participants (${members.length})`} title={members.map((member) => member.name).join(", ") || "No Wisps in this channel"} onClick={onOpenDetails}>{members.length} {members.length === 1 ? "Wisp" : "Wisps"}</button> : null}
-        <button className="icon-button" type="button" aria-label={chat.isGroup ? "Open channel settings" : "Open Wisp settings"} title={chat.isGroup ? "Channel settings" : "Wisp settings"} onClick={onOpenDetails}>
+          {chat.isCircle ? <button className="circle-member-count" type="button" aria-label={`View circle participants (${members.length})`} title={members.map((member) => member.name).join(", ") || "No Wisps in this circle"} onClick={onOpenDetails}>{members.length} {members.length === 1 ? "Wisp" : "Wisps"}</button> : null}
+        <button className="icon-button" type="button" aria-label={chat.isCircle ? "Open circle settings" : "Open Wisp settings"} title={chat.isCircle ? "Circle settings" : "Wisp settings"} onClick={onOpenDetails}>
           <SettingsIcon aria-hidden="true" />
         </button>
         </div>
