@@ -1,34 +1,19 @@
-import type { FormEvent, RefObject } from "react";
-import { PaperclipIcon, SendIcon } from "lucide-react";
+import { useEffect, useRef } from "react";
+import type { FormEvent, KeyboardEvent, RefObject } from "react";
+import { MicIcon, PaperclipIcon, SendIcon, SettingsIcon } from "lucide-react";
 
+import type { Chat } from "@/chat-data";
 import { ChatAvatar } from "@/components/chat-avatar";
 import { MessageView } from "@/components/message-view";
-import {
-  InputGroup,
-  InputGroupAddon,
-  InputGroupButton,
-  InputGroupInput,
-} from "@/components/ui/input-group";
-import {
-  MessageScroller,
-  MessageScrollerButton,
-  MessageScrollerContent,
-  MessageScrollerItem,
-  MessageScrollerProvider,
-  MessageScrollerViewport,
-} from "@/components/ui/message-scroller";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
-import type { Chat } from "@/chat-data";
 
 interface ChatPanelProps {
   chat: Chat;
   draft: string;
-  composerInputRef: RefObject<HTMLInputElement | null>;
+  composerInputRef: RefObject<HTMLTextAreaElement | null>;
+  working: boolean;
+  onAnswerPrompt: (messageIndex: number, answer: string) => void;
   onDraftChange: (draft: string) => void;
+  onOpenDetails: () => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
 }
 
@@ -36,90 +21,72 @@ function ChatPanel({
   chat,
   draft,
   composerInputRef,
+  working,
+  onAnswerPrompt,
   onDraftChange,
+  onOpenDetails,
   onSubmit,
 }: ChatPanelProps) {
+  const transcriptRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const transcript = transcriptRef.current;
+    if (transcript) transcript.scrollTop = transcript.scrollHeight;
+  }, [chat.id, chat.messages.length, working]);
+
+  function handleComposerKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
+    if (event.key === "Enter" && !event.shiftKey) {
+      event.preventDefault();
+      event.currentTarget.form?.requestSubmit();
+    }
+  }
+
   return (
     <main className="main">
       <header className="chat-header">
-        <ChatAvatar chat={chat} size="sm" />
-        <h1>{chat.name}</h1>
+        <div className="chat-heading">
+          <ChatAvatar chat={chat} size="sm" />
+          <span>{chat.name}</span>
+        </div>
+        <button className="icon-button" type="button" aria-label="Open Wisp settings" title="Wisp settings" onClick={onOpenDetails}>
+          <SettingsIcon aria-hidden="true" />
+        </button>
       </header>
 
-      <MessageScrollerProvider
-        key={chat.id}
-        autoScroll
-        defaultScrollPosition="end"
-      >
-        <MessageScroller className="messages">
-          <MessageScrollerViewport
-            aria-label={`${chat.name} conversation`}
-            aria-live="polite"
-          >
-            <MessageScrollerContent className="message-list">
-              {chat.messages.map((message, index) => (
-                <MessageScrollerItem
-                  messageId={`${chat.id}-${index}`}
-                  scrollAnchor={message.type === "outgoing"}
-                  key={`${chat.id}-${message.type}-${index}`}
-                >
-                  <MessageView message={message} />
-                </MessageScrollerItem>
-              ))}
-            </MessageScrollerContent>
-          </MessageScrollerViewport>
-          <MessageScrollerButton />
-        </MessageScroller>
-      </MessageScrollerProvider>
+      <div className="transcript" ref={transcriptRef} tabIndex={0} aria-label={`${chat.name} conversation`}>
+        <div className="transcript-inner" role="log" aria-live="polite">
+          {chat.messages.map((message, index) => (
+            <MessageView
+              key={`${chat.id}-${message.type}-${index}`}
+              message={message}
+              onAnswer={(answer) => onAnswerPrompt(index, answer)}
+            />
+          ))}
+          {working ? (
+            <div className="working-row"><ChatAvatar chat={chat} size="sm" /><span>{chat.name} is working…</span></div>
+          ) : null}
+        </div>
+      </div>
 
-      <form className="composer" onSubmit={onSubmit}>
-        <InputGroup className="composer-input">
-          <InputGroupInput
+      <form className="composer-zone" onSubmit={onSubmit}>
+        {working ? <div className="status-line">Working on your request</div> : null}
+        <div className="composer">
+          <button type="button" className="composer-button" aria-label="Attach file" onClick={() => composerInputRef.current?.focus()}>
+            <PaperclipIcon aria-hidden="true" />
+          </button>
+          <textarea
             ref={composerInputRef}
-            type="text"
+            rows={1}
             aria-label={`Message ${chat.name}`}
             placeholder={`Message ${chat.name}`}
-            autoComplete="off"
             value={draft}
             onChange={(event) => onDraftChange(event.currentTarget.value)}
+            onKeyDown={handleComposerKeyDown}
           />
-          <InputGroupAddon align="inline-start">
-            <Tooltip>
-              <TooltipTrigger
-                render={
-                  <InputGroupButton
-                    variant="ghost"
-                    size="icon-sm"
-                    type="button"
-                    aria-label="Add attachment"
-                    onClick={() => composerInputRef.current?.focus()}
-                  />
-                }
-              >
-                <PaperclipIcon />
-              </TooltipTrigger>
-              <TooltipContent>Add attachment</TooltipContent>
-            </Tooltip>
-          </InputGroupAddon>
-          <InputGroupAddon align="inline-end">
-            <Tooltip>
-              <TooltipTrigger
-                render={
-                  <InputGroupButton
-                    variant="default"
-                    size="icon-sm"
-                    type="submit"
-                    aria-label="Send message"
-                    disabled={!draft.trim()}
-                  />
-                }
-              >
-                <SendIcon />
-              </TooltipTrigger>
-              <TooltipContent>Send message</TooltipContent>
-            </Tooltip>
-          </InputGroupAddon>
-        </InputGroup>
+          <button type={draft.trim() ? "submit" : "button"} className="voice-button" aria-label={draft.trim() ? "Send message" : "Start voice input"}>
+            {draft.trim() ? <SendIcon aria-hidden="true" /> : <MicIcon aria-hidden="true" />}
+          </button>
+        </div>
       </form>
     </main>
   );

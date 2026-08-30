@@ -1,69 +1,75 @@
-import {
-  Bubble,
-  BubbleContent,
-  BubbleReactions,
-} from "@/components/ui/bubble";
-import { Marker, MarkerContent } from "@/components/ui/marker";
-import {
-  Message as MessageRow,
-  MessageContent,
-} from "@/components/ui/message";
+import { CheckIcon, CopyIcon, MoreHorizontalIcon, ReplyIcon, SmilePlusIcon } from "lucide-react";
+
 import type { Message } from "@/chat-data";
 
 interface MessageViewProps {
   message: Message;
+  onAnswer?: (answer: string) => void;
 }
 
-function MessageView({ message }: MessageViewProps) {
+function MessageTools({ text, time }: { text: string; time?: string }) {
+  return (
+    <span className="message-tools">
+      {time ? <time>{time}</time> : null}
+      <button type="button" aria-label="Add reaction"><SmilePlusIcon /></button>
+      <button type="button" aria-label="Reply"><ReplyIcon /></button>
+      <button type="button" aria-label="Copy message" onClick={() => void navigator.clipboard?.writeText(text)}><CopyIcon /></button>
+      <button type="button" aria-label="More message actions"><MoreHorizontalIcon /></button>
+    </span>
+  );
+}
+
+function MessageView({ message, onAnswer }: MessageViewProps) {
   if (message.type === "time") {
-    return (
-      <Marker className="justify-center py-2">
-        <MarkerContent>{message.text}</MarkerContent>
-      </Marker>
-    );
+    return <div className="time-divider"><span>{message.text}</span></div>;
   }
 
   if (message.type === "card") {
     return (
-      <MessageRow align="start">
-        <MessageContent>
-          <Bubble variant="outline" align="start">
-            <BubbleContent>
-              <ul className="status-list">
-                {message.items.map((item) => (
-                  <li key={item.label}>
-                    <span className="status-check" aria-hidden="true">
-                      ✓
-                    </span>
-                    <span>
-                      <strong>{item.label}</strong> → {item.text}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            </BubbleContent>
-          </Bubble>
-        </MessageContent>
-      </MessageRow>
+      <div className="message-row incoming">
+        <div className="message-bubble status-card">
+          <ul>
+            {message.items.map((item) => (
+              <li key={item.label}><CheckIcon aria-hidden="true" /><span><strong>{item.label}</strong> — {item.text}</span></li>
+            ))}
+          </ul>
+        </div>
+      </div>
     );
   }
 
-  const isOutgoing = message.type === "outgoing";
-  const alignment = isOutgoing ? "end" : "start";
+  if (message.type === "prompt") {
+    return (
+      <div className="message-row incoming">
+        <section className="prompt-card" aria-label={message.question}>
+          <strong>{message.question}</strong>
+          {message.answer ? (
+            <div className="prompt-answer"><span>{message.answer}</span><CheckIcon aria-hidden="true" /></div>
+          ) : (
+            <div className="prompt-options">
+              {message.options.map((option) => (
+                <button type="button" key={option.key} onClick={() => onAnswer?.(option.label)}>
+                  <kbd>{option.key}</kbd><span>{option.label}</span>
+                </button>
+              ))}
+            </div>
+          )}
+        </section>
+      </div>
+    );
+  }
 
+  const outgoing = message.type === "outgoing";
   return (
-    <MessageRow align={alignment}>
-      <MessageContent>
-        <Bubble variant={isOutgoing ? "default" : "muted"} align={alignment}>
-          <BubbleContent>{message.text}</BubbleContent>
-          {message.reaction ? (
-            <BubbleReactions side="bottom" align="end">
-              {message.reaction}
-            </BubbleReactions>
-          ) : null}
-        </Bubble>
-      </MessageContent>
-    </MessageRow>
+    <div className={`message-row ${outgoing ? "outgoing" : "incoming"}`}>
+      <div className="message-with-tools">
+        <div className="message-bubble">{message.text}</div>
+        <MessageTools text={message.text} time={message.time} />
+      </div>
+      {message.reactions?.length ? (
+        <div className="message-reactions">{message.reactions.map((reaction) => <button type="button" key={reaction}>{reaction}</button>)}</div>
+      ) : null}
+    </div>
   );
 }
 

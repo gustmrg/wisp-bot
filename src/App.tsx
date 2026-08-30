@@ -1,162 +1,239 @@
 import { useEffect, useRef, useState } from "react";
-import type { FormEvent } from "react";
+import type { Dispatch, FormEvent, PointerEvent as ReactPointerEvent, SetStateAction } from "react";
 
+import type { AgentSettings, ChatCollection, ChatId, Message } from "@/chat-data";
+import { initialChats } from "@/chat-data";
+import { AppSettingsDialog, type AppPreferences } from "@/components/app-settings-dialog";
 import { ChatPanel } from "@/components/chat-panel";
-import {
-  CreateAgentDialog,
-  type NewAgent,
-} from "@/components/create-agent-dialog";
+import type { NewAgent } from "@/components/create-agent-dialog";
+import { DetailsPanel } from "@/components/details-panel";
+import { SearchDialog } from "@/components/search-dialog";
 import { Sidebar } from "@/components/sidebar";
-import { ModelSettingsDialog } from "@/components/model-settings-dialog";
-import { DEFAULT_MODEL_DEFAULTS, type ModelDefaults } from "@/components/model-options";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import {
-  initialChats,
-  type ChatCollection,
-  type ChatId,
-  type Message,
-} from "./chat-data";
 
-function appendMessage(
-  chats: ChatCollection,
-  chatId: ChatId,
-  message: Message,
-): ChatCollection {
-  const chat = chats[chatId];
+const STORAGE_KEY = "wisp-bot-ui-v2";
+const DEFAULT_PREFERENCES: AppPreferences = { launchAtLogin: false, notificationSounds: true };
 
-  if (!chat) {
-    return chats;
+interface PersistedState {
+  chats: ChatCollection;
+  preferences: AppPreferences;
+}
+
+function loadState(): PersistedState {
+  try {
+    const raw = window.localStorage.getItem(STORAGE_KEY);
+    if (raw) {
+      const saved = JSON.parse(raw) as Partial<PersistedState>;
+      if (saved.chats && Object.keys(saved.chats).length) {
+        return { chats: saved.chats, preferences: { ...DEFAULT_PREFERENCES, ...saved.preferences } };
+      }
+    }
+  } catch {
+    // A corrupt mock state should never prevent the desktop UI from opening.
   }
+  return { chats: initialChats, preferences: DEFAULT_PREFERENCES };
+}
 
+function appendMessage(chats: ChatCollection, chatId: ChatId, message: Message): ChatCollection {
+  const chat = chats[chatId];
+  if (!chat) return chats;
   return {
     ...chats,
     [chatId]: {
       ...chat,
       messages: [...chat.messages, message],
+      preview: "text" in message ? message.text : chat.preview,
+      timestamp: "Now",
     },
   };
 }
 
 function uniqueAgentId(name: string, chats: ChatCollection): ChatId {
-  const baseId =
-    name
-      .toLocaleLowerCase()
-      .normalize("NFKD")
-      .replace(/[\u0300-\u036f]/g, "")
-      .replace(/[^a-z0-9]+/g, "-")
-      .replace(/(^-|-$)/g, "") || "agent";
+  const baseId = name.toLocaleLowerCase().normalize("NFKD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "") || "wisp";
   let id = baseId;
   let suffix = 2;
-
-  while (chats[id]) {
-    id = `${baseId}-${suffix}`;
-    suffix += 1;
-  }
-
+  while (chats[id]) id = `${baseId}-${suffix++}`;
   return id;
 }
 
+function startResize(
+  event: ReactPointerEvent<HTMLDivElement>,
+  current: number,
+  setValue: Dispatch<SetStateAction<number>>,
+  direction: 1 | -1,
+  min: number,
+  max: number,
+) {
+  event.preventDefault();
+  const startX = event.clientX;
+  const move = (moveEvent: PointerEvent) => setValue(Math.min(max, Math.max(min, current + ((moveEvent.clientX - startX) * direction))));
+  const stop = () => {
+    document.removeEventListener("pointermove", move);
+    document.removeEventListener("pointerup", stop);
+    document.body.classList.remove("resizing");
+  };
+  document.body.classList.add("resizing");
+  document.addEventListener("pointermove", move);
+  document.addEventListener("pointerup", stop);
+}
+
 export default function App() {
-  const [chats, setChats] = useState<ChatCollection>(initialChats);
-  const [activeChatId, setActiveChatId] = useState<ChatId>("chief");
-  const [query, setQuery] = useState("");
+  const [savedState] = useState(loadState);
+  const [chats, setChats] = useState<ChatCollection>(savedState.chats);
+  const [preferences, setPreferences] = useState<AppPreferences>(savedState.preferences);
+  const [activeChatId, setActiveChatId] = useState<ChatId>(() => savedState.chats.chief ? "chief" : Object.keys(savedState.chats)[0] ?? "");
   const [draft, setDraft] = useState("");
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
-  const [modelDefaults, setModelDefaults] = useState<ModelDefaults>(DEFAULT_MODEL_DEFAULTS);
-  const composerInputRef = useRef<HTMLInputElement>(null);
+  const [sidebarWidth, setSidebarWidth] = useState(280);
+  const [detailsWidth, setDetailsWidth] = useState(318);
+  const [detailsOpen, setDetailsOpen] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [workingChatId, setWorkingChatId] = useState<ChatId | null>(null);
+  const composerInputRef = useRef<HTMLTextAreaElement>(null);
   const replyTimersRef = useRef<Set<number>>(new Set());
   const activeChat = chats[activeChatId];
-  const chatIds = Object.keys(chats);
 
-  useEffect(
-    () => () => {
-      replyTimersRef.current.forEach(window.clearTimeout);
-    },
-    [],
-  );
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      window.localStorage.setItem(STORAGE_KEY, JSON.stringify({ chats, preferences } satisfies PersistedState));
+    }, 180);
+    return () => window.clearTimeout(timer);
+  }, [chats, preferences]);
+
+  useEffect(() => {
+    function handleKeyDown(event: KeyboardEvent) {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLocaleLowerCase() === "k") {
+        event.preventDefault();
+        setSearchOpen(true);
+      }
+    }
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, []);
+
+  useEffect(() => () => replyTimersRef.current.forEach(window.clearTimeout), []);
+
+  function handleSelectChat(chatId: ChatId) {
+    setActiveChatId(chatId);
+    setDraft("");
+    setChats((current) => {
+      const chat = current[chatId];
+      return chat?.unread ? { ...current, [chatId]: { ...chat, unread: false } } : current;
+    });
+    window.setTimeout(() => composerInputRef.current?.focus(), 0);
+  }
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const messageText = draft.trim();
+    const text = draft.trim();
+    if (!text || !activeChat) return;
 
-    if (!messageText) {
-      return;
-    }
-
-    const chatId = activeChatId;
-    setChats((currentChats) =>
-      appendMessage(currentChats, chatId, {
-        type: "outgoing",
-        text: messageText,
-      }),
-    );
+    const chatId = activeChat.id;
+    const time = new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+    setChats((current) => appendMessage(current, chatId, { type: "outgoing", text, time }));
     setDraft("");
+    setWorkingChatId(chatId);
 
     const timer = window.setTimeout(() => {
-      setChats((currentChats) =>
-        appendMessage(currentChats, chatId, {
-          type: "incoming",
-          text: "on it — i'll report back when it's done.",
-        }),
-      );
+      setChats((current) => appendMessage(current, chatId, {
+        type: "incoming",
+        text: "On it. I’ll line up the pieces and pull you in if anything needs a decision.",
+        time: new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }),
+      }));
+      setWorkingChatId((current) => current === chatId ? null : current);
       replyTimersRef.current.delete(timer);
-    }, 700);
-
+    }, 1100);
     replyTimersRef.current.add(timer);
   }
 
   function handleCreateAgent(agent: NewAgent) {
     const id = uniqueAgentId(agent.name, chats);
-    const preview = agent.description || "Ready for the first task.";
-
-    setChats((currentChats) => ({
-      ...currentChats,
+    setChats((current) => ({
+      ...current,
       [id]: {
         ...agent,
         id,
-        messages: [],
-        preview,
+        isActive: !agent.isGroup,
+        preview: agent.isGroup ? "This is the beginning of the channel." : "Ready for the first task.",
         timestamp: "Now",
+        messages: agent.isGroup
+          ? [{ type: "time", text: "This is the beginning of the channel" }]
+          : [{ type: "incoming", text: `Hey Gustavo, I'm here. What do you want me on first?`, time: "Now" }],
       },
     }));
     setActiveChatId(id);
-    setQuery("");
-    setDraft("");
+    setDetailsOpen(true);
+  }
+
+  function handleUpdateChat(changes: Partial<AgentSettings>) {
+    setChats((current) => {
+      const chat = current[activeChatId];
+      return chat ? { ...current, [activeChatId]: { ...chat, ...changes } } : current;
+    });
+  }
+
+  function handleDeleteChat() {
+    setChats((current) => {
+      const next = { ...current };
+      delete next[activeChatId];
+      const nextId = Object.keys(next)[0] ?? "";
+      setActiveChatId(nextId);
+      return next;
+    });
+    setDetailsOpen(false);
+  }
+
+  function handleAnswerPrompt(messageIndex: number, answer: string) {
+    setChats((current) => {
+      const chat = current[activeChatId];
+      if (!chat) return current;
+      const messages = chat.messages.map((message, index) => index === messageIndex && message.type === "prompt" ? { ...message, answer } : message);
+      return { ...current, [activeChatId]: { ...chat, messages } };
+    });
   }
 
   return (
     <TooltipProvider delay={300}>
       <div className="window">
-        <div className="body">
-          <Sidebar
-            activeChatId={activeChatId}
-            chatIds={chatIds}
-            chats={chats}
-            collapsed={sidebarCollapsed}
-            createAgentAction={
-              <CreateAgentDialog
-                compact={sidebarCollapsed}
-                defaults={modelDefaults}
-                onCreate={handleCreateAgent}
-              />
-            }
-            settingsAction={<ModelSettingsDialog defaults={modelDefaults} onSave={setModelDefaults} />}
-            query={query}
-            onCollapsedChange={setSidebarCollapsed}
-            onQueryChange={setQuery}
-            onSelectChat={setActiveChatId}
+        <Sidebar
+          activeChatId={activeChatId}
+          chats={chats}
+          collapsed={sidebarCollapsed}
+          width={sidebarWidth}
+          onCollapsedChange={setSidebarCollapsed}
+          onCreate={handleCreateAgent}
+          onOpenDetails={() => setDetailsOpen((open) => !open)}
+          onOpenSearch={() => setSearchOpen(true)}
+          onOpenSettings={() => setSettingsOpen(true)}
+          onResizeStart={(event) => startResize(event, sidebarWidth, setSidebarWidth, 1, 220, 400)}
+          onSelectChat={handleSelectChat}
+        />
+        {activeChat ? (
+          <ChatPanel
+            chat={activeChat}
+            draft={draft}
+            composerInputRef={composerInputRef}
+            working={workingChatId === activeChat.id}
+            onAnswerPrompt={handleAnswerPrompt}
+            onDraftChange={setDraft}
+            onOpenDetails={() => setDetailsOpen(true)}
+            onSubmit={handleSubmit}
           />
-          {activeChat ? (
-            <ChatPanel
-              chat={activeChat}
-              draft={draft}
-              composerInputRef={composerInputRef}
-              onDraftChange={setDraft}
-              onSubmit={handleSubmit}
-            />
-          ) : null}
-        </div>
+        ) : <main className="main empty-workspace">Create a Wisp to get started.</main>}
+        {detailsOpen && activeChat ? (
+          <DetailsPanel
+            chat={activeChat}
+            width={detailsWidth}
+            onChange={handleUpdateChat}
+            onClose={() => setDetailsOpen(false)}
+            onDelete={handleDeleteChat}
+            onResizeStart={(event) => startResize(event, detailsWidth, setDetailsWidth, -1, 280, 480)}
+          />
+        ) : null}
       </div>
+      <SearchDialog chats={chats} open={searchOpen} onOpenChange={setSearchOpen} onSelectChat={handleSelectChat} />
+      <AppSettingsDialog open={settingsOpen} preferences={preferences} onOpenChange={setSettingsOpen} onPreferencesChange={setPreferences} />
     </TooltipProvider>
   );
 }

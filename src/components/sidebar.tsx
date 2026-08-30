@@ -1,189 +1,98 @@
-import type { ReactNode } from "react";
-import {
-  PanelLeftCloseIcon,
-  PanelLeftOpenIcon,
-  SearchIcon,
-} from "lucide-react";
+import type { PointerEvent as ReactPointerEvent } from "react";
+import { PanelLeftCloseIcon, PanelRightIcon, SearchIcon, Settings2Icon } from "lucide-react";
 
-import { ChatAvatar } from "@/components/chat-avatar";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { Button } from "@/components/ui/button";
-import {
-  Empty,
-  EmptyDescription,
-  EmptyHeader,
-  EmptyTitle,
-} from "@/components/ui/empty";
-import {
-  InputGroup,
-  InputGroupAddon,
-  InputGroupInput,
-} from "@/components/ui/input-group";
-import {
-  Item,
-  ItemContent,
-  ItemDescription,
-  ItemGroup,
-  ItemHeader,
-  ItemMedia,
-  ItemTitle,
-} from "@/components/ui/item";
-import { Separator } from "@/components/ui/separator";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
 import type { ChatCollection, ChatId } from "@/chat-data";
-import { cn } from "@/lib/utils";
+import { ChatAvatar } from "@/components/chat-avatar";
+import { CreateAgentDialog, type NewAgent } from "@/components/create-agent-dialog";
 
 interface SidebarProps {
   activeChatId: ChatId;
-  chatIds: ReadonlyArray<ChatId>;
   chats: ChatCollection;
   collapsed: boolean;
-  createAgentAction: ReactNode;
-  settingsAction: ReactNode;
-  query: string;
+  width: number;
   onCollapsedChange: (collapsed: boolean) => void;
-  onQueryChange: (query: string) => void;
+  onCreate: (agent: NewAgent) => void;
+  onOpenDetails: () => void;
+  onOpenSearch: () => void;
+  onOpenSettings: () => void;
+  onResizeStart: (event: ReactPointerEvent<HTMLDivElement>) => void;
   onSelectChat: (chatId: ChatId) => void;
 }
 
 function Sidebar({
   activeChatId,
-  chatIds,
   chats,
   collapsed,
-  createAgentAction,
-  settingsAction,
-  query,
+  width,
   onCollapsedChange,
-  onQueryChange,
+  onCreate,
+  onOpenDetails,
+  onOpenSearch,
+  onOpenSettings,
+  onResizeStart,
   onSelectChat,
 }: SidebarProps) {
-  const normalizedQuery = query.trim().toLocaleLowerCase();
-  const visibleChatIds = chatIds.filter((chatId) =>
-    chats[chatId]?.name.toLocaleLowerCase().includes(normalizedQuery),
-  );
+  const chatIds = Object.keys(chats);
 
   return (
-    <aside className="sidebar" data-collapsed={collapsed}>
-      <div className="sidebar-header">
-        {collapsed ? null : (
-          <InputGroup className="search">
-            <InputGroupInput
-              type="search"
-              aria-label="Search chats"
-              placeholder="Search"
-              value={query}
-              onChange={(event) => onQueryChange(event.currentTarget.value)}
-            />
-            <InputGroupAddon>
-              <SearchIcon aria-hidden="true" />
-            </InputGroupAddon>
-          </InputGroup>
-        )}
-
-        <Tooltip>
-          <TooltipTrigger
-            render={
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                type="button"
-                aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
-                onClick={() => {
-                  onCollapsedChange(!collapsed);
-
-                  if (!collapsed) {
-                    onQueryChange("");
-                  }
-                }}
-              />
-            }
-          >
-            {collapsed ? <PanelLeftOpenIcon /> : <PanelLeftCloseIcon />}
-          </TooltipTrigger>
-          <TooltipContent>
-            {collapsed ? "Expand sidebar" : "Collapse sidebar"}
-          </TooltipContent>
-        </Tooltip>
+    <aside className="sidebar" data-collapsed={collapsed} style={{ width: collapsed ? 68 : width }}>
+      <div className="sidebar-top">
+        <button className="icon-pill" type="button" aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"} onClick={() => onCollapsedChange(!collapsed)}>
+          <PanelLeftCloseIcon aria-hidden="true" />
+        </button>
+        <div className="sidebar-actions">
+          <button className="icon-button" type="button" aria-label="Toggle details panel" onClick={onOpenDetails}>
+            <PanelRightIcon aria-hidden="true" />
+          </button>
+          <CreateAgentDialog onCreate={onCreate} />
+        </div>
       </div>
 
-      <nav className="chat-list" aria-label="Chats">
-        {visibleChatIds.length > 0 ? (
-          <ItemGroup className="chat-items">
-            {visibleChatIds.map((chatId) => {
-              const chat = chats[chatId];
-              const isActive = chatId === activeChatId;
+      <button className="sidebar-search" type="button" onClick={onOpenSearch}>
+        <SearchIcon aria-hidden="true" />
+        {collapsed ? null : <span>Search</span>}
+        {collapsed ? null : <kbd>⌘ K</kbd>}
+      </button>
 
-              if (!chat) {
-                return null;
-              }
+      <nav className="chat-list" aria-label="Wisps and channels">
+        {chatIds.map((chatId) => {
+          const chat = chats[chatId];
+          if (!chat) return null;
+          const selected = chatId === activeChatId;
 
-              return (
-                <Item
-                  render={<button type="button" />}
-                  className={cn(
-                    "chat-item",
-                    collapsed && "chat-item-collapsed h-11 w-full shrink-0",
-                  )}
-                  variant={isActive ? "muted" : "default"}
-                  size="sm"
-                  aria-current={isActive ? "page" : undefined}
-                  aria-label={collapsed ? chat.name : undefined}
-                  title={collapsed ? chat.name : undefined}
-                  key={chatId}
-                  onClick={() => onSelectChat(chatId)}
-                >
-                  <ItemMedia>
-                    <ChatAvatar chat={chat} size="lg" />
-                  </ItemMedia>
-                  {collapsed ? null : (
-                    <ItemContent className="min-w-0">
-                      <ItemHeader>
-                        <ItemTitle className="min-w-0 flex-1 text-left">
-                          <span className="truncate">{chat.name}</span>
-                        </ItemTitle>
-                        <span className="chat-time">{chat.timestamp}</span>
-                      </ItemHeader>
-                      <ItemDescription className="truncate">
-                        {chat.preview}
-                      </ItemDescription>
-                    </ItemContent>
-                  )}
-                </Item>
-              );
-            })}
-          </ItemGroup>
-        ) : collapsed ? null : (
-          <Empty className="chat-empty">
-            <EmptyHeader>
-              <EmptyTitle>No chats found</EmptyTitle>
-              <EmptyDescription>Try a different search.</EmptyDescription>
-            </EmptyHeader>
-          </Empty>
-        )}
-        <div className="create-agent-action">{createAgentAction}</div>
+          return (
+            <button
+              className="chat-item"
+              data-selected={selected}
+              type="button"
+              aria-current={selected ? "page" : undefined}
+              aria-label={collapsed ? chat.name : undefined}
+              title={collapsed ? chat.name : undefined}
+              key={chatId}
+              onClick={() => onSelectChat(chatId)}
+            >
+              <span className="chat-avatar-wrap">
+                <ChatAvatar chat={chat} />
+                {chat.isActive ? <span className="presence-dot" aria-label="Active" /> : null}
+              </span>
+              {collapsed ? null : (
+                <span className="chat-item-copy">
+                  <span className="chat-item-title"><strong>{chat.name}</strong><time>{chat.timestamp}</time></span>
+                  <span className="chat-item-preview">{chat.preview}</span>
+                </span>
+              )}
+              {chat.unread ? <span className="unread-dot" aria-label="Unread activity" /> : null}
+            </button>
+          );
+        })}
       </nav>
 
-      <Separator />
-      <div className="profile">
-        <Avatar
-          size="sm"
-          aria-hidden={collapsed ? undefined : true}
-          aria-label={collapsed ? "Armand Segall" : undefined}
-        >
-          <AvatarFallback>AS</AvatarFallback>
-        </Avatar>
-        {collapsed ? null : (
-          <>
-            <span>Armand Segall</span>
-            {settingsAction}
-          </>
-        )}
-      </div>
+      <button className="profile" type="button" onClick={onOpenSettings}>
+        <span className="profile-avatar">GM</span>
+        {collapsed ? null : <><span>Gustavo Miranda</span><Settings2Icon aria-hidden="true" /></>}
+      </button>
+
+      {collapsed ? null : <div className="sidebar-resizer" role="separator" aria-orientation="vertical" onPointerDown={onResizeStart} />}
     </aside>
   );
 }
