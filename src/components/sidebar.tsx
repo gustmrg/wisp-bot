@@ -1,5 +1,5 @@
 import type { PointerEvent as ReactPointerEvent } from "react";
-import { PanelLeftCloseIcon, PanelRightIcon, SearchIcon } from "lucide-react";
+import { PanelLeftCloseIcon, SearchIcon } from "lucide-react";
 
 import type { ChatCollection, ChatId } from "@/chat-data";
 import { ChatAvatar } from "@/components/chat-avatar";
@@ -12,7 +12,6 @@ interface SidebarProps {
   width: number;
   onCollapsedChange: (collapsed: boolean) => void;
   onCreate: (agent: NewAgent) => void;
-  onOpenDetails: () => void;
   onOpenSearch: () => void;
   onOpenSettings: () => void;
   onResizeStart: (event: ReactPointerEvent<HTMLDivElement>) => void;
@@ -26,7 +25,6 @@ function Sidebar({
   width,
   onCollapsedChange,
   onCreate,
-  onOpenDetails,
   onOpenSearch,
   onOpenSettings,
   onResizeStart,
@@ -41,9 +39,6 @@ function Sidebar({
           <PanelLeftCloseIcon aria-hidden="true" />
         </button>
         <div className="sidebar-actions">
-          <button className="icon-button" type="button" aria-label="Toggle details panel" onClick={onOpenDetails}>
-            <PanelRightIcon aria-hidden="true" />
-          </button>
           <CreateAgentDialog onCreate={onCreate} />
         </div>
       </div>

@@ -1,18 +1,19 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { Dispatch, FormEvent, PointerEvent as ReactPointerEvent, SetStateAction } from "react";
 
 import type { AgentSettings, ChatCollection, ChatId, Message } from "@/chat-data";
 import { initialChats } from "@/chat-data";
-import { AppSettingsDialog, type AppPreferences } from "@/components/app-settings-dialog";
+import { AppSettingsDialog } from "@/components/app-settings-dialog";
 import { ChatPanel } from "@/components/chat-panel";
 import type { NewAgent } from "@/components/create-agent-dialog";
 import { DetailsPanel } from "@/components/details-panel";
 import { SearchDialog } from "@/components/search-dialog";
 import { Sidebar } from "@/components/sidebar";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { applyTheme } from "@/lib/theme";
+import { DEFAULT_PREFERENCES, normalizePreferences, type AppPreferences } from "@/lib/app-preferences";
 
 const STORAGE_KEY = "wisp-bot-ui-v2";
-const DEFAULT_PREFERENCES: AppPreferences = { launchAtLogin: false, notificationSounds: true };
 
 interface PersistedState {
   chats: ChatCollection;
@@ -25,7 +26,7 @@ function loadState(): PersistedState {
     if (raw) {
       const saved = JSON.parse(raw) as Partial<PersistedState>;
       if (saved.chats && Object.keys(saved.chats).length) {
-        return { chats: saved.chats, preferences: { ...DEFAULT_PREFERENCES, ...saved.preferences } };
+        return { chats: saved.chats, preferences: normalizePreferences(saved.preferences) };
       }
     }
   } catch {
@@ -93,6 +94,8 @@ export default function App() {
   const composerInputRef = useRef<HTMLTextAreaElement>(null);
   const replyTimersRef = useRef<Set<number>>(new Set());
   const activeChat = chats[activeChatId];
+
+  useLayoutEffect(() => applyTheme(preferences.theme), [preferences.theme]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -203,7 +206,6 @@ export default function App() {
           width={sidebarWidth}
           onCollapsedChange={setSidebarCollapsed}
           onCreate={handleCreateAgent}
-          onOpenDetails={() => setDetailsOpen((open) => !open)}
           onOpenSearch={() => setSearchOpen(true)}
           onOpenSettings={() => setSettingsOpen(true)}
           onResizeStart={(event) => startResize(event, sidebarWidth, setSidebarWidth, 1, 220, 400)}
