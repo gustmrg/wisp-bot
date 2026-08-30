@@ -114,7 +114,6 @@ body.resizing { cursor: col-resize; user-select: none; }
 .profile:hover { background: #171717; }
 .profile-avatar { display: inline-flex; width: 25px; height: 25px; align-items: center; justify-content: center; flex: none; border-radius: 50%; background: #2e2e2e; color: #ddd; font-size: 9px; font-weight: 650; }
 .profile > span:nth-child(2) { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.profile > svg { width: 14px; height: 14px; color: #707070; }
 .sidebar[data-collapsed="true"] .profile { justify-content: center; margin-inline: 8px; padding-inline: 0; }
 .sidebar-resizer, .details-resizer { position: absolute; z-index: 20; top: 0; bottom: 0; width: 6px; cursor: col-resize; }
 .sidebar-resizer { right: -3px; }

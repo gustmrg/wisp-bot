@@ -1,5 +1,5 @@
 import type { PointerEvent as ReactPointerEvent } from "react";
-import { PanelLeftCloseIcon, PanelRightIcon, SearchIcon, Settings2Icon } from "lucide-react";
+import { PanelLeftCloseIcon, PanelRightIcon, SearchIcon } from "lucide-react";
 
 import type { ChatCollection, ChatId } from "@/chat-data";
 import { ChatAvatar } from "@/components/chat-avatar";
@@ -87,9 +87,9 @@ function Sidebar({
         })}
       </nav>
 
-      <button className="profile" type="button" onClick={onOpenSettings}>
+      <button className="profile" type="button" aria-label="Open user settings" title="User settings" onClick={onOpenSettings}>
         <span className="profile-avatar">GM</span>
-        {collapsed ? null : <><span>Gustavo Miranda</span><Settings2Icon aria-hidden="true" /></>}
+        {collapsed ? null : <span>Gustavo Miranda</span>}
       </button>
 
       {collapsed ? null : <div className="sidebar-resizer" role="separator" aria-orientation="vertical" onPointerDown={onResizeStart} />}

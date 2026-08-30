@@ -1,4 +1,4 @@
-import { BellIcon, CircleUserRoundIcon, InfoIcon, KeyboardIcon, SettingsIcon } from "lucide-react";
+import { BellIcon, InfoIcon, KeyboardIcon, RefreshCwIcon, SettingsIcon } from "lucide-react";
 
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 
@@ -44,7 +44,7 @@ function AppSettingsDialog({ open, preferences, onOpenChange, onPreferencesChang
             <div className="settings-row"><span><strong>Notification sounds</strong><small>Play a sound when a Wisp finishes or needs input.</small></span><PreferenceSwitch label="Notification sounds" checked={preferences.notificationSounds} onChange={() => onPreferencesChange({ ...preferences, notificationSounds: !preferences.notificationSounds })} /></div>
           </div>
           <span className="settings-group-label">Version</span>
-          <div className="settings-card"><div className="settings-row"><span><strong>Wisp Bot</strong><small>Version 0.1.0 · You are up to date.</small></span><CircleUserRoundIcon /></div></div>
+          <div className="settings-card"><div className="settings-row"><span><strong>Wisp Bot</strong><small>Version 0.1.0</small></span><button className="icon-button" type="button" aria-label="Check for updates" title="Update checks are not available yet" disabled><RefreshCwIcon aria-hidden="true" /></button></div></div>
         </section>
       </DialogContent>
     </Dialog>
