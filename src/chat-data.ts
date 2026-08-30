@@ -20,6 +20,7 @@ export interface AgentSettings {
   avatarImage?: string;
   shape: WispShape;
   isGroup: boolean;
+  memberIds?: ChatId[];
   notifyOnUpdatesEnabled: boolean;
   isActive?: boolean;
   unread?: boolean;
@@ -142,6 +143,7 @@ export const initialChats: ChatCollection = {
   },
   offsite: {
     id: "offsite", name: "Offsite Crew", label: "Channel", description: "Plans the company offsite and coordinates logistics.",
+    memberIds: ["chief", "account", "expense"],
     color: "#4a9eff", shape: "circle", isGroup: true, notifyOnUpdatesEnabled: true,
     preview: "that leaves the pipeline. i'd spin up…", timestamp: "Yesterday",
     messages: [{ type: "incoming", text: "that leaves the pipeline. i'd spin up the retreat channel next.", time: "11:52 AM" }],

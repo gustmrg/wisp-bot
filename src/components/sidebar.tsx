@@ -34,16 +34,7 @@ function Sidebar({
 
   return (
     <aside className="sidebar" data-collapsed={collapsed} style={{ width: collapsed ? 68 : width }}>
-      <div className="sidebar-top">
-        <button className="icon-pill" type="button" aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"} onClick={() => onCollapsedChange(!collapsed)}>
-          <PanelLeftCloseIcon aria-hidden="true" />
-        </button>
-        <div className="sidebar-actions">
-          <CreateAgentDialog onCreate={onCreate} />
-        </div>
-      </div>
-
-      <button className="sidebar-search" type="button" onClick={onOpenSearch}>
+      <button className="sidebar-search" type="button" aria-label={collapsed ? "Search" : undefined} onClick={onOpenSearch}>
         <SearchIcon aria-hidden="true" />
         {collapsed ? null : <span>Search</span>}
         {collapsed ? null : <kbd>⌘ K</kbd>}
@@ -67,7 +58,7 @@ function Sidebar({
               onClick={() => onSelectChat(chatId)}
             >
               <span className="chat-avatar-wrap">
-                <ChatAvatar chat={chat} />
+                <ChatAvatar chat={chat} chats={chats} />
                 {chat.isActive ? <span className="presence-dot" aria-label="Active" /> : null}
               </span>
               {collapsed ? null : (
@@ -82,9 +73,16 @@ function Sidebar({
         })}
       </nav>
 
+      <div className="sidebar-bottom-actions">
+        <button className="icon-pill" type="button" aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"} onClick={() => onCollapsedChange(!collapsed)}>
+          <PanelLeftCloseIcon aria-hidden="true" />
+        </button>
+        <CreateAgentDialog chats={chats} onCreate={onCreate} />
+      </div>
+
       <button className="profile" type="button" aria-label="Open user settings" title="User settings" onClick={onOpenSettings}>
-        <span className="profile-avatar">GM</span>
-        {collapsed ? null : <span>Gustavo Miranda</span>}
+        <span className="profile-avatar">JD</span>
+        {collapsed ? null : <span>John Doe</span>}
       </button>
 
       {collapsed ? null : <div className="sidebar-resizer" role="separator" aria-orientation="vertical" onPointerDown={onResizeStart} />}

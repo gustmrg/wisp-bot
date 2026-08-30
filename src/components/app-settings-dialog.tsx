@@ -41,8 +41,8 @@ function AppSettingsDialog({ open, preferences, onOpenChange, onPreferencesChang
           <h2 id="general-settings-title">General</h2>
           <span className="settings-group-label">Account</span>
           <div className="settings-card account-card">
-            <span className="profile-avatar">GM</span>
-            <span><strong>Gustavo Miranda</strong><small>gustmrg@gmail.com</small></span>
+            <span className="profile-avatar">JD</span>
+            <span><strong>John Doe</strong><small>john.doe@example.com</small></span>
             <button type="button">Sign out</button>
           </div>
           <span className="settings-group-label">Application</span>

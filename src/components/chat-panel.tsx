@@ -1,13 +1,15 @@
 import { useEffect, useRef } from "react";
 import type { FormEvent, KeyboardEvent, RefObject } from "react";
-import { MicIcon, PaperclipIcon, SendIcon, SettingsIcon } from "lucide-react";
+import { ArrowUpIcon, MicIcon, SettingsIcon } from "lucide-react";
 
-import type { Chat } from "@/chat-data";
+import type { Chat, ChatCollection } from "@/chat-data";
+import { getChannelMembers } from "@/lib/channel-members";
 import { ChatAvatar } from "@/components/chat-avatar";
 import { MessageView } from "@/components/message-view";
 
 interface ChatPanelProps {
   chat: Chat;
+  chats: ChatCollection;
   draft: string;
   composerInputRef: RefObject<HTMLTextAreaElement | null>;
   working: boolean;
@@ -19,6 +21,7 @@ interface ChatPanelProps {
 
 function ChatPanel({
   chat,
+  chats,
   draft,
   composerInputRef,
   working,
@@ -28,6 +31,7 @@ function ChatPanel({
   onSubmit,
 }: ChatPanelProps) {
   const transcriptRef = useRef<HTMLDivElement>(null);
+  const members = getChannelMembers(chat, chats);
 
   useEffect(() => {
     const transcript = transcriptRef.current;
@@ -45,12 +49,15 @@ function ChatPanel({
     <main className="main">
       <header className="chat-header">
         <div className="chat-heading">
-          <ChatAvatar chat={chat} size="sm" />
+          <ChatAvatar chat={chat} chats={chats} size="sm" />
           <span>{chat.name}</span>
         </div>
-        <button className="icon-button" type="button" aria-label="Open Wisp settings" title="Wisp settings" onClick={onOpenDetails}>
+        <div className="chat-header-actions">
+          {chat.isGroup ? <button className="channel-member-count" type="button" aria-label={`View channel participants (${members.length})`} title={members.map((member) => member.name).join(", ") || "No Wisps in this channel"} onClick={onOpenDetails}>{members.length} {members.length === 1 ? "Wisp" : "Wisps"}</button> : null}
+        <button className="icon-button" type="button" aria-label={chat.isGroup ? "Open channel settings" : "Open Wisp settings"} title={chat.isGroup ? "Channel settings" : "Wisp settings"} onClick={onOpenDetails}>
           <SettingsIcon aria-hidden="true" />
         </button>
+        </div>
       </header>
 
       <div className="transcript" ref={transcriptRef} tabIndex={0} aria-label={`${chat.name} conversation`}>
@@ -63,7 +70,7 @@ function ChatPanel({
             />
           ))}
           {working ? (
-            <div className="working-row"><ChatAvatar chat={chat} size="sm" /><span>{chat.name} is working…</span></div>
+            <div className="working-row"><ChatAvatar chat={chat} chats={chats} size="sm" /><span>{chat.name} is working…</span></div>
           ) : null}
         </div>
       </div>
@@ -71,9 +78,6 @@ function ChatPanel({
       <form className="composer-zone" onSubmit={onSubmit}>
         {working ? <div className="status-line">Working on your request</div> : null}
         <div className="composer">
-          <button type="button" className="composer-button" aria-label="Attach file" onClick={() => composerInputRef.current?.focus()}>
-            <PaperclipIcon aria-hidden="true" />
-          </button>
           <textarea
             ref={composerInputRef}
             rows={1}
@@ -83,8 +87,11 @@ function ChatPanel({
             onChange={(event) => onDraftChange(event.currentTarget.value)}
             onKeyDown={handleComposerKeyDown}
           />
-          <button type={draft.trim() ? "submit" : "button"} className="voice-button" aria-label={draft.trim() ? "Send message" : "Start voice input"}>
-            {draft.trim() ? <SendIcon aria-hidden="true" /> : <MicIcon aria-hidden="true" />}
+          <button type="button" className="voice-button" aria-label="Start voice input">
+            <MicIcon aria-hidden="true" />
+          </button>
+          <button type="submit" className="send-button" aria-label="Send message" disabled={!draft.trim()}>
+            <ArrowUpIcon aria-hidden="true" />
           </button>
         </div>
       </form>

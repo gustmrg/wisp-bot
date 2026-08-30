@@ -30,7 +30,7 @@ function SearchDialog({ chats, open, onOpenChange, onSelectChat }: SearchDialogP
         <div className="search-results">
           {matches.length ? matches.map((chat) => (
             <button type="button" key={chat.id} onClick={() => { onSelectChat(chat.id); onOpenChange(false); }}>
-              <ChatAvatar chat={chat} />
+              <ChatAvatar chat={chat} chats={chats} />
               <span><strong>{chat.name}</strong><small>{chat.preview}</small></span>
               <em>{chat.isGroup ? "Channel" : "Wisp"}</em>
             </button>

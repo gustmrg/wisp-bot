@@ -12,6 +12,7 @@ import { Sidebar } from "@/components/sidebar";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { applyTheme } from "@/lib/theme";
 import { DEFAULT_PREFERENCES, normalizePreferences, type AppPreferences } from "@/lib/app-preferences";
+import { migrateLegacyChannelMembers } from "@/lib/channel-members";
 
 const STORAGE_KEY = "wisp-bot-ui-v2";
 
@@ -26,7 +27,7 @@ function loadState(): PersistedState {
     if (raw) {
       const saved = JSON.parse(raw) as Partial<PersistedState>;
       if (saved.chats && Object.keys(saved.chats).length) {
-        return { chats: saved.chats, preferences: normalizePreferences(saved.preferences) };
+        return { chats: migrateLegacyChannelMembers(saved.chats), preferences: normalizePreferences(saved.preferences) };
       }
     }
   } catch {
@@ -162,7 +163,7 @@ export default function App() {
         timestamp: "Now",
         messages: agent.isGroup
           ? [{ type: "time", text: "This is the beginning of the channel" }]
-          : [{ type: "incoming", text: `Hey Gustavo, I'm here. What do you want me on first?`, time: "Now" }],
+          : [{ type: "incoming", text: `Hey John, I'm here. What do you want me on first?`, time: "Now" }],
       },
     }));
     setActiveChatId(id);
@@ -214,6 +215,7 @@ export default function App() {
         {activeChat ? (
           <ChatPanel
             chat={activeChat}
+            chats={chats}
             draft={draft}
             composerInputRef={composerInputRef}
             working={workingChatId === activeChat.id}
@@ -226,6 +228,7 @@ export default function App() {
         {detailsOpen && activeChat ? (
           <DetailsPanel
             chat={activeChat}
+            chats={chats}
             width={detailsWidth}
             onChange={handleUpdateChat}
             onClose={() => setDetailsOpen(false)}
