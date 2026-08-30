@@ -16,7 +16,7 @@ import { migrateLegacyChats } from "@/lib/circle-members";
 import { mainPanel } from "@/lib/ui-classes";
 import { cn } from "@/lib/utils";
 
-const STORAGE_KEY = "wisp-bot-ui-v2";
+const STORAGE_KEY = "wisp-bot-ui-v3";
 
 interface PersistedState {
   chats: ChatCollection;

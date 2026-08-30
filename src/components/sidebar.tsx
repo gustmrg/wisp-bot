@@ -37,16 +37,16 @@ function Sidebar({
   return (
     <>
       <aside
-        className="group/sidebar relative z-[2] flex min-h-0 min-w-[68px] flex-none flex-col overflow-hidden border-r border-black/[0.055] bg-sidebar transition-[width] duration-[180ms] dark:border-white/[0.055] max-[620px]:data-[collapsed=false]:w-[220px]!"
+        className="group/sidebar relative z-[2] my-2 ml-3 flex min-h-0 min-w-[68px] flex-none flex-col overflow-hidden rounded-xl bg-sidebar transition-[width] duration-[180ms] max-[620px]:data-[collapsed=false]:w-[220px]!"
         data-collapsed={collapsed}
         style={{ width: collapsed ? 68 : width }}
       >
       <button
         className={cn(
-          "flex h-[29px] flex-none items-center gap-[7px] rounded-lg border-0 px-[9px] text-left text-[#686868] hover:bg-[#f4f4f4] hover:text-[#5c5c5c] dark:bg-[#1a1a1a] dark:text-[#828282] dark:hover:bg-[#202020] dark:hover:text-[#b8b8b8]",
-          "[&_svg]:size-[13px] [&_svg]:flex-none [&_span]:flex-1 [&_kbd]:text-[10px] [&_kbd]:text-[#737373] [&_kbd]:[font-family:inherit] dark:[&_kbd]:text-[#666666]",
-          "mt-3 mx-2.5 mb-2",
-          collapsed && "mx-auto w-9 justify-center p-0",
+          "flex h-8 flex-none items-center gap-2 rounded-lg border text-left text-[#686868] hover:text-[#5c5c5c] dark:text-[#8a8a8a] dark:hover:text-[#b8b8b8]",
+          "border-black/[0.07] bg-white hover:border-black/[0.14] dark:border-white/[0.09] dark:bg-[#262626] dark:hover:border-white/[0.16]",
+          "[&_svg]:size-[13px] [&_svg]:flex-none [&_span]:flex-1",
+          collapsed ? "mx-auto w-9 justify-center p-0" : "mt-3 mb-2 ml-[17px] mr-[10px] px-[9px]",
         )}
         type="button"
         aria-label={collapsed ? "Search" : undefined}
@@ -54,10 +54,9 @@ function Sidebar({
       >
         <SearchIcon aria-hidden="true" />
         {collapsed ? null : <span>Search</span>}
-        {collapsed ? null : <kbd>⌘ K</kbd>}
       </button>
 
-      <nav className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto px-2 [&::-webkit-scrollbar]:w-0" aria-label="Wisps and circles">
+      <nav className={cn("min-h-0 flex-1 overflow-x-hidden overflow-y-auto [&::-webkit-scrollbar]:w-0", collapsed ? "px-2" : "pl-[17px] pr-[10px]")} aria-label="Wisps and circles">
         {chatIds.map((chatId) => {
           const chat = chats[chatId];
           if (!chat) return null;
@@ -66,7 +65,7 @@ function Sidebar({
           return (
             <button
               className={cn(
-                "group/item relative mb-px flex w-full min-w-0 items-center gap-[9px] rounded-[10px] border-0 bg-transparent p-2 text-left hover:bg-[#ebebeb] data-[selected=true]:bg-[#e6e6e6] dark:hover:bg-[#171717] dark:data-[selected=true]:bg-[#303030]",
+                "group/item relative mb-1 flex w-full min-w-0 items-center gap-[9px] rounded-[10px] border-0 bg-transparent p-2 text-left hover:bg-[#ebebeb] data-[selected=true]:bg-[#e6e6e6] dark:hover:bg-[#212120] dark:data-[selected=true]:bg-[#262626]",
                 collapsed && "h-[46px] justify-center py-[5px] px-0",
               )}
               data-selected={selected}
@@ -79,26 +78,17 @@ function Sidebar({
             >
               <span className="relative inline-flex flex-none">
                 <ChatAvatar chat={chat} chats={chats} />
-                {chat.isActive ? <span className="absolute -bottom-0.5 -left-0.5 size-2.5 rounded-full border-[2.5px] border-sidebar bg-green" aria-label="Active" /> : null}
+                {chat.unread ? <span className="unread-dot absolute -top-1 -right-1 size-[10px] rounded-full border-2 border-sidebar bg-[#ff3b30]" aria-label="Unread activity" /> : null}
               </span>
               {collapsed ? null : (
                 <span className="flex min-w-0 flex-1 flex-col">
                   <span className="flex min-w-0 items-baseline gap-2">
-                    <strong className="min-w-0 flex-1 overflow-hidden text-[13px] font-semibold text-ellipsis whitespace-nowrap">{chat.name}</strong>
-                    <time className="flex-none text-faint text-[10.5px] group-has-[.unread-dot]/item:invisible">{chat.timestamp}</time>
+                    <strong className="min-w-0 flex-1 overflow-hidden text-[13px] leading-[17px] font-semibold text-ellipsis whitespace-nowrap">{chat.name}</strong>
+                    <time className="flex-none text-faint text-[10.5px] leading-[17px]">{chat.timestamp}</time>
                   </span>
-                  <span className="mt-px overflow-hidden text-dim text-[12.5px] text-ellipsis whitespace-nowrap">{chat.preview}</span>
+                  <span className="mt-px overflow-hidden text-faint text-[12.5px] leading-[17px] text-ellipsis whitespace-nowrap">{chat.preview}</span>
                 </span>
               )}
-              {chat.unread ? (
-                <span
-                  className={cn(
-                    "absolute size-[7px] rounded-full bg-blue",
-                    collapsed ? "top-[7px] right-[5px]" : "right-[9px]",
-                  )}
-                  aria-label="Unread activity"
-                />
-              ) : null}
             </button>
           );
         })}
@@ -115,8 +105,8 @@ function Sidebar({
 
       <button
         className={cn(
-          "flex min-w-0 flex-none items-center gap-[9px] rounded-[9px] border-0 bg-transparent p-1.5 text-left hover:bg-[#ebebeb] dark:hover:bg-[#171717]",
-          "mt-[5px] mx-[9px] mb-[9px]",
+          "flex min-w-0 flex-none items-center gap-[9px] rounded-[9px] border-0 bg-transparent p-1.5 text-left hover:bg-[#ebebeb] dark:hover:bg-[#212120]",
+          "mt-[5px] mx-3 mb-[9px]",
           collapsed && "mx-2 justify-center px-0",
         )}
         type="button"

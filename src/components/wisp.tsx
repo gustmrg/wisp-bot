@@ -1,4 +1,4 @@
-import type { CSSProperties, ComponentProps, ReactNode } from "react";
+import { useId, type CSSProperties, type ComponentProps, type ReactNode } from "react";
 
 import type { WispShape } from "@/chat-data";
 import { cn } from "@/lib/utils";
@@ -13,14 +13,13 @@ interface WispProps extends ComponentProps<"svg"> {
 
 export const AVATAR_COLORS = [
   { id: "charcoal", label: "Charcoal", value: "#262626" },
-  { id: "brown", label: "Brown", value: "#8b6b52" },
-  { id: "red", label: "Red", value: "#e5484d" },
-  { id: "orange", label: "Orange", value: "#f0762b" },
-  { id: "yellow", label: "Yellow", value: "#eebb4d" },
-  { id: "green", label: "Green", value: "#35b06f" },
-  { id: "cyan", label: "Cyan", value: "#40c4aa" },
-  { id: "blue", label: "Blue", value: "#4a9eff" },
-  { id: "violet", label: "Violet", value: "#8b70f6" },
+  { id: "red", label: "Red", value: "#ff3b30" },
+  { id: "orange", label: "Orange", value: "#ed712e" },
+  { id: "amber", label: "Amber", value: "#f19d38" },
+  { id: "teal", label: "Teal", value: "#54b9a6" },
+  { id: "blue", label: "Blue", value: "#3c82f6" },
+  { id: "indigo", label: "Indigo", value: "#6464ef" },
+  { id: "violet", label: "Violet", value: "#885cf5" },
   { id: "magenta", label: "Magenta", value: "#e5498f" },
   { id: "gray", label: "Gray", value: "#8e8e8e" },
 ] as const;
@@ -51,6 +50,15 @@ function generatedWisp(seed: string) {
     color: AVATAR_COLORS[hash % AVATAR_COLORS.length]?.value ?? AVATAR_COLORS[0].value,
     blinkDelay: -((hash >>> 16) % 48) / 10,
   };
+}
+
+function WispEyes({ shape }: { shape: WispShape }): ReactNode {
+  return (
+    <g transform={`${shape === "triangle" || shape === "drop" || shape === "diamond" ? "translate(-6 8) " : ""}rotate(-18 38 27)`}>
+      <rect x="31" y="23" width="4.5" height="10" rx="2.25" />
+      <rect x="46" y="23" width="4.5" height="10" rx="2.25" />
+    </g>
+  );
 }
 
 function WispBody({ shape }: { shape: WispShape }): ReactNode {
@@ -87,6 +95,7 @@ function Wisp({
   ...props
 }: WispProps) {
   const avatar = generatedWisp(name);
+  const eyeMaskId = `wisp-eyes-${useId().replace(/[^a-zA-Z0-9-]/g, "")}`;
 
   return (
     <svg
@@ -105,12 +114,16 @@ function Wisp({
       {...props}
     >
       {outlined ? <g className="text-[#5c5c5c] dark:text-[#b8b8b8]" fill="none" stroke="currentColor" strokeWidth="2" transform="translate(-3.2 -3.2) scale(1.1)"><WispBody shape={shape} /></g> : null}
-      <g fill="var(--wisp-color)">
+      <mask id={eyeMaskId} maskUnits="userSpaceOnUse" x="0" y="0" width="64" height="64">
+        <g fill="#ffffff">
+          <WispBody shape={shape} />
+        </g>
+        <g fill="#000000">
+          <WispEyes shape={shape} />
+        </g>
+      </mask>
+      <g fill="var(--wisp-color)" mask={`url(#${eyeMaskId})`}>
         <WispBody shape={shape} />
-      </g>
-      <g aria-hidden="true" fill="white" transform={`${shape === "triangle" || shape === "drop" || shape === "diamond" ? "translate(-6 8) " : ""}rotate(-18 38 27)`}>
-        <rect x="31" y="23" width="4.5" height="10" rx="2.25" />
-        <rect x="46" y="23" width="4.5" height="10" rx="2.25" />
       </g>
     </svg>
   );
