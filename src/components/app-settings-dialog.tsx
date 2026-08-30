@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { BellIcon, InfoIcon, KeyboardIcon, RefreshCwIcon, SettingsIcon } from "lucide-react";
 
 import { GeneralSettingsSections, PreferenceSwitch } from "@/components/general-settings-sections";
@@ -20,19 +21,24 @@ interface AppSettingsDialogProps {
 }
 
 function AppSettingsDialog({ open, preferences, onOpenChange, onPreferencesChange }: AppSettingsDialogProps) {
+  const [section, setSection] = useState<"general" | "about">("general");
+
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={(nextOpen) => {
+      onOpenChange(nextOpen);
+      if (!nextOpen) setSection("general");
+    }}>
       <DialogContent className="app-settings-dialog">
         <DialogHeader className="sr-only"><DialogTitle>Wisp settings</DialogTitle><DialogDescription>Manage your account and application preferences.</DialogDescription></DialogHeader>
         <nav aria-label="Settings sections">
           <strong>Settings</strong>
-          <button className="selected" type="button"><SettingsIcon /><span>General</span></button>
+          <button className={section === "general" ? "selected" : undefined} type="button" aria-label="General" aria-current={section === "general" ? "page" : undefined} aria-controls="general-settings-panel" onClick={() => setSection("general")}><SettingsIcon aria-hidden="true" /><span>General</span></button>
           <button type="button"><BellIcon /><span>Notifications</span></button>
           <button type="button"><KeyboardIcon /><span>Shortcuts</span></button>
-          <button type="button"><InfoIcon /><span>About</span></button>
+          <button className={section === "about" ? "selected" : undefined} type="button" aria-label="About" aria-current={section === "about" ? "page" : undefined} aria-controls="about-settings-panel" onClick={() => setSection("about")}><InfoIcon aria-hidden="true" /><span>About</span></button>
         </nav>
-        <section className="settings-content">
-          <h2>General</h2>
+        <section className="settings-content" id="general-settings-panel" aria-labelledby="general-settings-title" hidden={section !== "general"}>
+          <h2 id="general-settings-title">General</h2>
           <span className="settings-group-label">Account</span>
           <div className="settings-card account-card">
             <span className="profile-avatar">GM</span>
@@ -58,6 +64,9 @@ function AppSettingsDialog({ open, preferences, onOpenChange, onPreferencesChang
             <div className="settings-row"><span><strong>Notification sounds</strong><small>Play a sound when a Wisp finishes or needs input.</small></span><PreferenceSwitch label="Notification sounds" checked={preferences.notificationSounds} onChange={() => onPreferencesChange({ ...preferences, notificationSounds: !preferences.notificationSounds })} /></div>
           </div>
           <GeneralSettingsSections preferences={preferences} onPreferencesChange={onPreferencesChange} />
+        </section>
+        <section className="settings-content" id="about-settings-panel" aria-labelledby="about-settings-title" hidden={section !== "about"}>
+          <h2 id="about-settings-title">About</h2>
           <span className="settings-group-label">Version</span>
           <div className="settings-card"><div className="settings-row"><span><strong>Wisp Bot</strong><small>Version 0.1.0</small></span><button className="icon-button" type="button" aria-label="Check for updates" title="Update checks are not available yet" disabled><RefreshCwIcon aria-hidden="true" /></button></div></div>
         </section>
