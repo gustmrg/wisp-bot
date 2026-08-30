@@ -1,4 +1,4 @@
-import { CheckIcon, CopyIcon, MoreHorizontalIcon, ReplyIcon, SmilePlusIcon } from "lucide-react";
+import { CheckIcon } from "lucide-react";
 
 import type { Message } from "@/chat-data";
 
@@ -7,16 +7,9 @@ interface MessageViewProps {
   onAnswer?: (answer: string) => void;
 }
 
-function MessageTools({ text, time }: { text: string; time?: string }) {
-  return (
-    <span className="message-tools">
-      {time ? <time>{time}</time> : null}
-      <button type="button" aria-label="Add reaction"><SmilePlusIcon /></button>
-      <button type="button" aria-label="Reply"><ReplyIcon /></button>
-      <button type="button" aria-label="Copy message" onClick={() => void navigator.clipboard?.writeText(text)}><CopyIcon /></button>
-      <button type="button" aria-label="More message actions"><MoreHorizontalIcon /></button>
-    </span>
-  );
+function MessageTools({ time }: { time?: string }) {
+  if (!time) return null;
+  return <span className="message-tools"><time>{time}</time></span>;
 }
 
 function MessageView({ message, onAnswer }: MessageViewProps) {
@@ -64,7 +57,7 @@ function MessageView({ message, onAnswer }: MessageViewProps) {
     <div className={`message-row ${outgoing ? "outgoing" : "incoming"}`}>
       <div className="message-with-tools">
         <div className="message-bubble">{message.text}</div>
-        <MessageTools text={message.text} time={message.time} />
+        <MessageTools time={message.time} />
       </div>
       {message.reactions?.length ? (
         <div className="message-reactions">{message.reactions.map((reaction) => <button type="button" key={reaction}>{reaction}</button>)}</div>

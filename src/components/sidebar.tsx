@@ -33,7 +33,8 @@ function Sidebar({
   const chatIds = Object.keys(chats);
 
   return (
-    <aside className="sidebar" data-collapsed={collapsed} style={{ width: collapsed ? 68 : width }}>
+    <>
+      <aside className="sidebar" data-collapsed={collapsed} style={{ width: collapsed ? 68 : width }}>
       <button className="sidebar-search" type="button" aria-label={collapsed ? "Search" : undefined} onClick={onOpenSearch}>
         <SearchIcon aria-hidden="true" />
         {collapsed ? null : <span>Search</span>}
@@ -74,9 +75,6 @@ function Sidebar({
       </nav>
 
       <div className="sidebar-bottom-actions">
-        <button className="icon-pill" type="button" aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"} onClick={() => onCollapsedChange(!collapsed)}>
-          <PanelLeftCloseIcon aria-hidden="true" />
-        </button>
         <CreateAgentDialog chats={chats} onCreate={onCreate} />
       </div>
 
@@ -86,7 +84,11 @@ function Sidebar({
       </button>
 
       {collapsed ? null : <div className="sidebar-resizer" role="separator" aria-orientation="vertical" onPointerDown={onResizeStart} />}
-    </aside>
+      </aside>
+      <button className="sidebar-toggle" type="button" data-collapsed={collapsed} aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"} title={collapsed ? "Expand sidebar" : "Collapse sidebar"} onClick={() => onCollapsedChange(!collapsed)}>
+        <PanelLeftCloseIcon aria-hidden="true" />
+      </button>
+    </>
   );
 }
 

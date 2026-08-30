@@ -163,11 +163,23 @@ export default function App() {
         timestamp: "Now",
         messages: agent.isCircle
           ? [{ type: "time", text: "This is the beginning of the circle" }]
-          : [{ type: "incoming", text: `Hey John, I'm here. What do you want me on first?`, time: "Now" }],
+          : [],
       },
     }));
     setActiveChatId(id);
-    setDetailsOpen(true);
+    if (!agent.isCircle) {
+      setWorkingChatId(id);
+      const timer = window.setTimeout(() => {
+        setChats((current) => appendMessage(current, id, {
+          type: "incoming",
+          text: `Hey John, I'm here. What do you want me on first?`,
+          time: new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }),
+        }));
+        setWorkingChatId((current) => current === id ? null : current);
+        replyTimersRef.current.delete(timer);
+      }, 1400);
+      replyTimersRef.current.add(timer);
+    }
   }
 
   function handleUpdateChat(changes: Partial<AgentSettings>) {
