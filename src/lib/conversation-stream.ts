@@ -5,6 +5,14 @@ import type {
   Message,
   TextMessage,
 } from "../../shared/conversations";
+import type { ToolApprovalRequest } from "../../shared/tool-policy";
+
+export interface ToolActivityView {
+  toolCallId: string;
+  toolName: string;
+  phase: "started" | "updated" | "completed";
+  isError?: boolean;
+}
 
 export interface ConversationRuntimeState {
   sequence: number;
@@ -12,13 +20,34 @@ export interface ConversationRuntimeState {
   messages: Record<string, ReadonlyArray<Message>>;
   errors: Record<string, BackendError | undefined>;
   activity: Record<string, string | undefined>;
+  toolActivities: Record<string, ReadonlyArray<ToolActivityView>>;
+  approvals: Record<string, ReadonlyArray<ToolApprovalRequest>>;
 }
 
 export function createConversationRuntime(
   sequence: number,
   statuses: Record<string, ManagedConversationStatus>,
+  pendingApprovals: ReadonlyArray<ToolApprovalRequest> = [],
 ): ConversationRuntimeState {
-  return { sequence, statuses, messages: {}, errors: {}, activity: {} };
+  return {
+    sequence,
+    statuses,
+    messages: {},
+    errors: {},
+    activity: {},
+    toolActivities: {},
+    approvals: groupApprovals(pendingApprovals),
+  };
+}
+
+function groupApprovals(
+  approvals: ReadonlyArray<ToolApprovalRequest>,
+): Record<string, ReadonlyArray<ToolApprovalRequest>> {
+  const grouped: Record<string, ToolApprovalRequest[]> = {};
+  for (const approval of approvals) {
+    (grouped[approval.conversationId] ??= []).push(approval);
+  }
+  return grouped;
 }
 
 export function stageOutgoingMessage(
@@ -139,6 +168,13 @@ export function reduceConversationAgentEvent(
             ? undefined
             : toolActivityLabel(event.toolName),
         },
+        toolActivities: {
+          ...next.toolActivities,
+          [event.conversationId]: upsertToolActivity(
+            next.toolActivities[event.conversationId] ?? [],
+            event,
+          ),
+        },
       };
     case "conversation_notice":
       return {
@@ -146,6 +182,29 @@ export function reduceConversationAgentEvent(
         activity: {
           ...next.activity,
           [event.conversationId]: noticeLabel(event.kind),
+        },
+      };
+    case "tool_approval_requested":
+      return {
+        ...next,
+        approvals: {
+          ...next.approvals,
+          [event.conversationId]: [
+            ...(next.approvals[event.conversationId] ?? []).filter(({ approvalId }) => (
+              approvalId !== event.request.approvalId
+            )),
+            event.request,
+          ],
+        },
+      };
+    case "tool_approval_resolved":
+      return {
+        ...next,
+        approvals: {
+          ...next.approvals,
+          [event.conversationId]: (next.approvals[event.conversationId] ?? []).filter(({ approvalId }) => (
+            approvalId !== event.approvalId
+          )),
         },
       };
   }
@@ -240,7 +299,31 @@ function findMessage(
 function toolActivityLabel(toolName: string): string {
   if (toolName === "read") return "Reading files…";
   if (toolName === "grep" || toolName === "find") return "Searching the workspace…";
+  if (toolName === "edit") return "Editing a file…";
+  if (toolName === "write") return "Writing a file…";
   return "Inspecting the workspace…";
+}
+
+function upsertToolActivity(
+  activities: ReadonlyArray<ToolActivityView>,
+  event: Extract<ConversationAgentEvent, { type: "tool_activity" }>,
+): ReadonlyArray<ToolActivityView> {
+  const next = activities.some(({ toolCallId }) => toolCallId === event.toolCallId)
+    ? activities.map((activity) => activity.toolCallId === event.toolCallId
+      ? {
+          toolCallId: event.toolCallId,
+          toolName: event.toolName,
+          phase: event.phase,
+          ...(event.isError === undefined ? {} : { isError: event.isError }),
+        }
+      : activity)
+    : [...activities, {
+        toolCallId: event.toolCallId,
+        toolName: event.toolName,
+        phase: event.phase,
+        ...(event.isError === undefined ? {} : { isError: event.isError }),
+      }];
+  return next.slice(-20);
 }
 
 function noticeLabel(

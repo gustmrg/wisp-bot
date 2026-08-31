@@ -6,6 +6,7 @@ import type {
   ConversationStateView,
   Message,
 } from "../../shared/conversations.js";
+import type { ToolApprovalRequest } from "../../shared/tool-policy.js";
 import type { AgentRegistry } from "./agent-registry.js";
 import type { ConversationRepository } from "./conversation-repository.js";
 
@@ -14,10 +15,16 @@ export class ConversationService {
   private readonly registry: AgentRegistry;
   private model: ModelSelection | null = null;
   private readonly liveMessages = new Map<string, Map<string, Message>>();
+  private readonly pendingApprovals: () => ReadonlyArray<ToolApprovalRequest>;
 
-  constructor(repository: ConversationRepository, registry: AgentRegistry) {
+  constructor(
+    repository: ConversationRepository,
+    registry: AgentRegistry,
+    pendingApprovals: () => ReadonlyArray<ToolApprovalRequest> = () => [],
+  ) {
     this.repository = repository;
     this.registry = registry;
+    this.pendingApprovals = pendingApprovals;
   }
 
   async start(model: ModelSelection | null): Promise<void> {
@@ -32,6 +39,7 @@ export class ConversationService {
       chats: this.withLiveMessages(this.repository.getChats()),
       statuses: this.registry.statuses(),
       agentEventSequence: this.registry.getEventSequence(),
+      pendingToolApprovals: this.pendingApprovals(),
       recoveredCorruptState: this.repository.didRecoverCorruptState(),
     };
   }

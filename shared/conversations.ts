@@ -1,3 +1,5 @@
+import type { ToolApprovalRequest } from "./tool-policy.js";
+
 export type ChatId = string;
 
 export type WispShape =
@@ -79,6 +81,7 @@ export interface ConversationStateView {
   chats: ChatCollection;
   statuses: Record<ChatId, ManagedConversationStatus>;
   agentEventSequence: number;
+  pendingToolApprovals: ReadonlyArray<ToolApprovalRequest>;
   recoveredCorruptState: boolean;
 }
 

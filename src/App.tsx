@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { Dispatch, FormEvent, PointerEvent as ReactPointerEvent, SetStateAction } from "react";
 
 import type { AgentSettings, ChatCollection, ChatId } from "@/chat-data";
+import type { ToolApprovalDecision, ToolApprovalRequest } from "../shared/tool-policy";
 import { AppSettingsDialog } from "@/components/app-settings-dialog";
 import { ChatPanel } from "@/components/chat-panel";
 import type { NewAgent } from "@/components/create-agent-dialog";
@@ -62,6 +63,7 @@ export default function App() {
   const conversations = useConversations();
   const chats = conversations.chats;
   const [preferences, setPreferences] = useState<AppPreferences>(loadPreferences);
+  const [toolPolicyLoaded, setToolPolicyLoaded] = useState(false);
   const [activeChatId, setActiveChatId] = useState<ChatId>("");
   const [draft, setDraft] = useState("");
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
@@ -77,6 +79,35 @@ export default function App() {
     applyTheme(preferences.theme);
     window.localStorage.setItem(PREFERENCES_STORAGE_KEY, JSON.stringify(preferences));
   }, [preferences]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void window.wisp.getToolPolicy().then((result) => {
+      if (cancelled) return;
+      if (result.ok) {
+        setPreferences((current) => {
+          const backendIsDefault = result.value.autoReview && result.value.rules.length === 0;
+          const localHasPolicy = !current.autoReview || current.autoReviewRules.length > 0;
+          if (backendIsDefault && localHasPolicy) return current;
+          return {
+            ...current,
+            autoReview: result.value.autoReview,
+            autoReviewRules: [...result.value.rules],
+          };
+        });
+      }
+      setToolPolicyLoaded(true);
+    });
+    return () => { cancelled = true; };
+  }, []);
+
+  useEffect(() => {
+    if (!toolPolicyLoaded) return;
+    void window.wisp.saveToolPolicy({
+      autoReview: preferences.autoReview,
+      rules: preferences.autoReviewRules,
+    });
+  }, [preferences.autoReview, preferences.autoReviewRules, toolPolicyLoaded]);
 
   useEffect(() => {
     if (!chats[activeChatId]) {
@@ -149,6 +180,19 @@ export default function App() {
     void conversations.retryMessage(activeChatId, messageId.slice(0, -":assistant".length));
   }
 
+  async function handleResolveApproval(request: ToolApprovalRequest, decision: ToolApprovalDecision) {
+    const resolved = await conversations.resolveApproval(request, decision);
+    if (!resolved || decision !== "block") return;
+    const policy = await window.wisp.getToolPolicy();
+    if (policy.ok) {
+      setPreferences((current) => ({
+        ...current,
+        autoReview: policy.value.autoReview,
+        autoReviewRules: [...policy.value.rules],
+      }));
+    }
+  }
+
   return (
     <TooltipProvider delay={300}>
       <div className="flex h-full w-full min-h-0 min-w-0 overflow-hidden bg-background">
@@ -174,11 +218,14 @@ export default function App() {
             activity={conversations.activity[activeChat.id]}
             error={conversations.conversationErrors[activeChat.id]?.message}
             acknowledging={Boolean(conversations.acknowledging[activeChat.id])}
+            approvals={conversations.approvals[activeChat.id] ?? []}
+            toolActivities={conversations.toolActivities[activeChat.id] ?? []}
             onAnswerPrompt={handleAnswerPrompt}
             onAbort={() => void conversations.abort(activeChat.id)}
             onDraftChange={setDraft}
             onOpenDetails={() => setDetailsOpen(true)}
             onRetry={handleRetry}
+            onResolveApproval={(request, decision) => void handleResolveApproval(request, decision)}
             onSubmit={handleSubmit}
           />
         ) : <main className={cn(mainPanel, "items-center justify-center text-dim")}>

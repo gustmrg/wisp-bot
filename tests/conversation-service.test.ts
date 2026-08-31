@@ -110,4 +110,29 @@ describe("ConversationService", () => {
     });
     await service.dispose();
   });
+
+  it("deletes a Wisp during active work without resurrecting its stream", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "wisp-service-delete-active-"));
+    const repository = new ConversationRepository({ dataDirectory: directory });
+    let service: ConversationService;
+    const registry = new AgentRegistry(
+      new FakeConversationAgentFactory({ latencyMs: 100 }),
+      (event) => service.handleAgentEvent(event),
+    );
+    service = new ConversationService(repository, registry);
+    await service.start(null);
+    await service.initialize({ one: chat("one") });
+    await service.applyModel({ providerId: "provider", modelId: "model" });
+    await service.appendMessage("one", { id: "request-1", type: "outgoing", text: "Wait", status: "queued" });
+    registry.dispatch({ conversationId: "one", requestId: "request-1", text: "Wait" });
+    await vi.waitFor(() => expect(service.getState().statuses.one).toBe("working"));
+
+    await service.delete("one");
+
+    expect(registry.has("one")).toBe(false);
+    expect(service.getState().chats.one).toBeUndefined();
+    await new Promise((resolve) => setTimeout(resolve, 120));
+    expect(service.getState().chats.one).toBeUndefined();
+    await service.dispose();
+  });
 });

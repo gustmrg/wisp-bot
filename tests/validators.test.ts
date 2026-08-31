@@ -5,6 +5,7 @@ import {
   parseApplyModelRequest,
   parseConversationRequest,
   parseRemoveProviderCredentialRequest,
+  parseResolveToolApprovalRequest,
   parseSaveAiSettingsRequest,
   parseSendMessageRequest,
 } from "../electron/ipc/validators.js";
@@ -39,7 +40,7 @@ describe("IPC request validators", () => {
     { conversationId: "wisp-1", requestId: "request-1", text: "" },
     { conversationId: "wisp-1", requestId: "request-1", text: "   " },
     { conversationId: "wisp-1", requestId: "bad id", text: "Hello" },
-    { conversationId: "wisp-1", requestId: "request-1", text: "x".repeat(100_001) },
+    { conversationId: "wisp-1", requestId: "request-1", text: "x".repeat(32_001) },
   ])("rejects invalid message payload %#", (payload) => {
     expect(() => parseSendMessageRequest(payload)).toThrow(WispBackendError);
   });
@@ -70,5 +71,25 @@ describe("IPC request validators", () => {
     expect(parseRemoveProviderCredentialRequest({ providerId: "openrouter" })).toEqual({
       providerId: "openrouter",
     });
+  });
+
+  it("binds tool approval decisions to stable identifiers", () => {
+    expect(parseResolveToolApprovalRequest({
+      approvalId: "approval-1",
+      conversationId: "wisp-1",
+      toolCallId: "tool-1",
+      decision: "allow_once",
+    })).toEqual({
+      approvalId: "approval-1",
+      conversationId: "wisp-1",
+      toolCallId: "tool-1",
+      decision: "allow_once",
+    });
+    expect(() => parseResolveToolApprovalRequest({
+      approvalId: "approval-1",
+      conversationId: "wisp-1",
+      toolCallId: "tool-1",
+      decision: "allow_forever",
+    })).toThrow(WispBackendError);
   });
 });

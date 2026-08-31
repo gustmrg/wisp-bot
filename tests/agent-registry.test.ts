@@ -93,4 +93,71 @@ describe("AgentRegistry", () => {
     expect(JSON.stringify(published)).not.toContain("raw Pi restore failure");
     await registry.disposeAll();
   });
+
+  it("limits per-Wisp queue depth and simultaneous active agents", async () => {
+    let active = 0;
+    let maximumActive = 0;
+    const factory: ConversationAgentFactory = {
+      create: (agentContext) => {
+        const agent = new FakeConversationAgent(agentContext.conversationId, { latencyMs: 20 });
+        const send = agent.send.bind(agent);
+        agent.send = async (request) => {
+          active += 1;
+          maximumActive = Math.max(maximumActive, active);
+          try {
+            await send(request);
+          } finally {
+            active -= 1;
+          }
+        };
+        return agent;
+      },
+    };
+    const registry = new AgentRegistry(factory, () => undefined);
+    const contexts = Array.from({ length: 8 }, (_value, index) => context(`wisp-${index}`));
+    await registry.restore(contexts, null);
+    await Promise.all(contexts.map(({ conversationId }, index) => registry.send({
+      conversationId,
+      requestId: `load-${index}`,
+      text: "Load test",
+    })));
+    expect(maximumActive).toBeLessThanOrEqual(4);
+
+    const queued = Array.from({ length: 8 }, (_value, index) => registry.send({
+      conversationId: "wisp-0",
+      requestId: `queued-${index}`,
+      text: "Queued",
+    }));
+    await expect(Promise.resolve().then(() => registry.send({
+      conversationId: "wisp-0",
+      requestId: "queued-overflow",
+      text: "Overflow",
+    }))).rejects.toMatchObject({ code: "invalid_request" });
+    await Promise.all(queued);
+    await registry.disposeAll();
+  });
+
+  it("does not run queued work after its conversation is deleted", async () => {
+    const disposed = vi.fn();
+    let markStarted: (() => void) | undefined;
+    const started = new Promise<void>((resolve) => {
+      markStarted = resolve;
+    });
+    const registry = new AgentRegistry({
+      create: (agentContext) => new FakeConversationAgent(agentContext.conversationId, { latencyMs: 50 }),
+    }, (event) => {
+      if (event.type === "assistant_message_started" && event.requestId === "first") markStarted?.();
+    }, disposed);
+    await registry.restore([context("one")], null);
+
+    const first = registry.send({ conversationId: "one", requestId: "first", text: "First" });
+    await started;
+    const second = registry.send({ conversationId: "one", requestId: "second", text: "Second" });
+    const secondExpectation = expect(second).rejects.toMatchObject({ code: "disposed" });
+    await registry.delete("one");
+
+    await first;
+    await secondExpectation;
+    expect(disposed).toHaveBeenCalledWith("one");
+  });
 });

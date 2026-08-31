@@ -4,12 +4,14 @@ import type { BackendError, BackendResult, SequencedConversationAgentEvent, Wisp
 import type {
   AgentSettings, Chat, ChatCollection, ConversationStateView, ManagedConversationStatus, Message, TextMessage,
 } from "../../shared/conversations";
+import type { ToolApprovalDecision, ToolApprovalRequest } from "../../shared/tool-policy";
 import { initialChats } from "@/chat-data";
 import { migrateLegacyChats } from "@/lib/circle-members";
 import {
   createConversationRuntime, getRuntimeMessage, markOutgoingFailed, overlayRuntimeMessages,
   reduceConversationAgentEvent, removeRuntimeMessage, stageOutgoingMessage,
   type ConversationRuntimeState,
+  type ToolActivityView,
 } from "@/lib/conversation-stream";
 
 export const LEGACY_STORAGE_KEY = "wisp-bot-ui-v3";
@@ -19,6 +21,7 @@ const EMPTY_STATE: ConversationStateView = {
   chats: {},
   statuses: {},
   agentEventSequence: 0,
+  pendingToolApprovals: [],
   recoveredCorruptState: false,
 };
 
@@ -58,6 +61,8 @@ export interface ConversationsController {
   activity: Record<string, string | undefined>;
   conversationErrors: Record<string, BackendError | undefined>;
   acknowledging: Record<string, boolean | undefined>;
+  approvals: Record<string, ReadonlyArray<ToolApprovalRequest>>;
+  toolActivities: Record<string, ReadonlyArray<ToolActivityView>>;
   loading: boolean;
   error: string | null;
   create: (conversation: Chat) => Promise<boolean>;
@@ -69,6 +74,7 @@ export interface ConversationsController {
   sendMessage: (conversationId: string, text: string) => Promise<boolean>;
   retryMessage: (conversationId: string, requestId: string) => Promise<boolean>;
   abort: (conversationId: string) => Promise<boolean>;
+  resolveApproval: (request: ToolApprovalRequest, decision: ToolApprovalDecision) => Promise<boolean>;
 }
 
 export function useConversations(): ConversationsController {
@@ -157,7 +163,11 @@ export function useConversations(): ConversationsController {
         const next = await bootstrapConversationState(window.wisp, window.localStorage);
         if (cancelled) return;
         replaceState(next);
-        replaceRuntime(createConversationRuntime(next.agentEventSequence, next.statuses));
+        replaceRuntime(createConversationRuntime(
+          next.agentEventSequence,
+          next.statuses,
+          next.pendingToolApprovals,
+        ));
         readyRef.current = true;
         const pending = bufferedEvents.current
           .filter(({ sequence }) => sequence > next.agentEventSequence)
@@ -222,6 +232,21 @@ export function useConversations(): ConversationsController {
     return false;
   }, []);
 
+  const resolveApproval = useCallback(async (
+    request: ToolApprovalRequest,
+    decision: ToolApprovalDecision,
+  ): Promise<boolean> => {
+    const result = await window.wisp.resolveToolApproval({
+      approvalId: request.approvalId,
+      conversationId: request.conversationId,
+      toolCallId: request.toolCallId,
+      decision,
+    });
+    if (result.ok) return true;
+    setError(result.error.message);
+    return false;
+  }, []);
+
   const chats = useMemo(() => overlayRuntimeMessages(state.chats, runtime.messages), [runtime.messages, state.chats]);
 
   return {
@@ -230,6 +255,8 @@ export function useConversations(): ConversationsController {
     activity: runtime.activity,
     conversationErrors: runtime.errors,
     acknowledging,
+    approvals: runtime.approvals,
+    toolActivities: runtime.toolActivities,
     loading,
     error,
     create: useCallback((conversation) => enqueue(() => window.wisp.createConversation({ conversation })), [enqueue]),
@@ -241,5 +268,6 @@ export function useConversations(): ConversationsController {
     sendMessage,
     retryMessage,
     abort,
+    resolveApproval,
   };
 }

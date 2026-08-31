@@ -78,4 +78,27 @@ describe("PiEventTranslator", () => {
     expect(JSON.stringify(failed)).not.toContain("provider secret");
     expect(failed.some(({ type }) => type === "assistant_message_completed")).toBe(false);
   });
+
+  it("bounds individual event payloads and the total streamed response", () => {
+    const events: ConversationAgentEvent[] = [];
+    const translator = new PiEventTranslator("wisp-1", (event) => events.push(event), 100);
+    translator.begin({ conversationId: "wisp-1", requestId: "large-1", text: "Large" });
+    translator.handle({
+      type: "message_update",
+      assistantMessageEvent: { type: "text_delta", delta: "x".repeat(500_001) },
+    });
+    translator.handle({ type: "tool_execution_start", toolCallId: "edit-1", toolName: "edit" });
+    translator.handle({ type: "agent_settled" });
+
+    const deltas = events.filter((event): event is Extract<ConversationAgentEvent, { type: "assistant_text_delta" }> => (
+      event.type === "assistant_text_delta"
+    ));
+    expect(deltas.every(({ delta }) => delta.length <= 8_000)).toBe(true);
+    expect(deltas.reduce((total, { delta }) => total + delta.length, 0)).toBe(500_000);
+    expect(events).toContainEqual(expect.objectContaining({
+      type: "conversation_error",
+      error: expect.objectContaining({ retryable: false }),
+    }));
+    expect(events).toContainEqual(expect.objectContaining({ type: "tool_activity", toolName: "edit" }));
+  });
 });

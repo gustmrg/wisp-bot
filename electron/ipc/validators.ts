@@ -15,6 +15,7 @@ import type {
   MarkConversationReadRequest,
   UpdateConversationRequest,
 } from "../../shared/conversations.js";
+import type { ResolveToolApprovalRequest } from "../../shared/tool-policy.js";
 import { WispBackendError } from "../backend/backend-error.js";
 import {
   normalizeAgentSettingsChanges,
@@ -25,7 +26,7 @@ import {
 
 const ID_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9._:-]*$/;
 const MAX_ID_LENGTH = 128;
-const MAX_MESSAGE_LENGTH = 100_000;
+const MAX_MESSAGE_LENGTH = 32_000;
 
 function asRecord(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
@@ -151,6 +152,18 @@ export function parseAnswerConversationPromptRequest(value: unknown): AnswerConv
 export function parseMarkConversationReadRequest(value: unknown): MarkConversationReadRequest {
   const request = asRecord(value);
   return { conversationId: parseId(request.conversationId) };
+}
+
+export function parseResolveToolApprovalRequest(value: unknown): ResolveToolApprovalRequest {
+  const request = asRecord(value);
+  const decision = request.decision;
+  if (decision !== "allow_once" && decision !== "deny" && decision !== "block") throw invalidRequest();
+  return {
+    approvalId: parseId(request.approvalId),
+    conversationId: parseId(request.conversationId),
+    toolCallId: parseId(request.toolCallId),
+    decision,
+  };
 }
 
 function stringValue(value: unknown, maxLength: number): string {

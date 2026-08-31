@@ -86,6 +86,10 @@ describe("conversation stream reducer", () => {
       phase: "started",
     }, chats);
     expect(state.activity.one).toBe("Reading files…");
+    expect(state.toolActivities.one).toContainEqual(expect.objectContaining({
+      toolCallId: "read-1",
+      phase: "started",
+    }));
 
     state = reduceConversationAgentEvent(state, {
       sequence: 2,
@@ -106,5 +110,34 @@ describe("conversation stream reducer", () => {
     expect(visible.two.messages).toContainEqual(expect.objectContaining({ status: "failed", text: "Try again." }));
     expect(state.errors.one).toBeUndefined();
     expect(state.errors.two?.retryable).toBe(true);
+  });
+
+  it("tracks approval requests until the matching resolution arrives", () => {
+    const chats: ChatCollection = { one: chat("one") };
+    let state = createConversationRuntime(0, {});
+    state = reduceConversationAgentEvent(state, {
+      sequence: 1,
+      type: "tool_approval_requested",
+      conversationId: "one",
+      request: {
+        approvalId: "approval-1",
+        conversationId: "one",
+        toolCallId: "write-1",
+        toolName: "write",
+        category: "create_file",
+        summary: "Create notes.txt",
+        expiresAt: "2026-08-31T12:01:00.000Z",
+      },
+    }, chats);
+    expect(state.approvals.one).toHaveLength(1);
+    state = reduceConversationAgentEvent(state, {
+      sequence: 2,
+      type: "tool_approval_resolved",
+      conversationId: "one",
+      approvalId: "approval-1",
+      toolCallId: "write-1",
+      decision: "allow_once",
+    }, chats);
+    expect(state.approvals.one).toEqual([]);
   });
 });

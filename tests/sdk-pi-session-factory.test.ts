@@ -17,7 +17,7 @@ const sdk = vi.hoisted(() => {
     abort: vi.fn(async () => undefined),
     waitForIdle: vi.fn(async () => undefined),
     setModel: vi.fn(async () => undefined),
-    getActiveToolNames: vi.fn(() => ["read", "grep", "find", "ls"]),
+    getActiveToolNames: vi.fn(() => ["read", "grep", "find", "ls", "edit", "write"]),
     setActiveToolsByName: vi.fn(),
     dispose: vi.fn(),
   };
@@ -60,6 +60,8 @@ vi.mock("@earendil-works/pi-coding-agent", () => ({
   createGrepToolDefinition: () => toolDefinition("grep"),
   createFindToolDefinition: () => toolDefinition("find"),
   createLsToolDefinition: () => toolDefinition("ls"),
+  createEditToolDefinition: () => toolDefinition("edit"),
+  createWriteToolDefinition: () => toolDefinition("write"),
 }));
 
 import { SdkPiSessionFactory } from "../electron/backend/pi-conversation-agent.js";
@@ -70,8 +72,8 @@ describe("SdkPiSessionFactory", () => {
     sdk.loaderOptions.length = 0;
   });
 
-  it("restores the persisted session with explicit model, resources, and read-only tools", async () => {
-    sdk.session.getActiveToolNames.mockReturnValueOnce(["read", "grep", "find"]);
+  it("restores the persisted session with explicit model, resources, and policy-wrapped tools", async () => {
+    sdk.session.getActiveToolNames.mockReturnValueOnce(["read", "grep", "find", "ls", "edit"]);
     const directory = await mkdtemp(path.join(os.tmpdir(), "wisp-pi-sdk-"));
     const sessionFile = path.join(directory, "persisted.jsonl");
     await writeFile(sessionFile, "session", "utf8");
@@ -96,7 +98,8 @@ describe("SdkPiSessionFactory", () => {
     };
     await mkdir(context.workspaceDirectory, { recursive: true });
 
-    await new SdkPiSessionFactory(runtime).create(context, {
+    const authorize = vi.fn(async () => undefined);
+    await new SdkPiSessionFactory(runtime, { authorize }).create(context, {
       providerId: "provider",
       modelId: "model",
     });
@@ -107,16 +110,18 @@ describe("SdkPiSessionFactory", () => {
       agentDir: context.configDirectory,
       model,
       modelRuntime: runtime,
-      tools: ["read", "grep", "find", "ls"],
-      excludeTools: ["bash", "powershell", "edit", "write"],
+      tools: ["read", "grep", "find", "ls", "edit", "write"],
+      excludeTools: ["bash", "powershell"],
       customTools: expect.arrayContaining([
         expect.objectContaining({ name: "read" }),
         expect.objectContaining({ name: "grep" }),
         expect.objectContaining({ name: "find" }),
         expect.objectContaining({ name: "ls" }),
+        expect.objectContaining({ name: "edit" }),
+        expect.objectContaining({ name: "write" }),
       ]),
     }));
-    expect(sdk.session.setActiveToolsByName).toHaveBeenCalledWith(["read", "grep", "find", "ls"]);
+    expect(sdk.session.setActiveToolsByName).toHaveBeenCalledWith(["read", "grep", "find", "ls", "edit", "write"]);
     expect(sdk.loaderOptions[0]).toEqual(expect.objectContaining({
       noExtensions: true,
       noSkills: true,
@@ -125,7 +130,8 @@ describe("SdkPiSessionFactory", () => {
     }));
     const prompt = (sdk.loaderOptions[0] as { systemPromptOverride: () => string }).systemPromptOverride();
     expect(prompt).toContain("Research Wisp");
-    expect(prompt).toContain("must not modify files or execute shell commands");
+    expect(prompt).toContain("subject to app policy and user approval");
+    expect(prompt).toContain("must not execute shell commands");
     expect(savePiSessionIdentity).toHaveBeenCalledWith({
       sessionId: "pi-session-id",
       sessionFile: "/sessions/concrete.jsonl",
@@ -143,9 +149,45 @@ describe("SdkPiSessionFactory", () => {
     await expect(read.execute("tool-2", { path: "escape.txt" }, undefined, undefined, {}))
       .rejects.toMatchObject({ code: "invalid_request" });
     await writeFile(path.join(context.workspaceDirectory, "inside.txt"), "inside", "utf8");
-    await expect(read.execute("tool-3", { path: "inside.txt" }, undefined, undefined, {}))
+    sdk.toolExecute.mockResolvedValueOnce({ content: [{ type: "text", text: "x".repeat(70_000) }], details: {} });
+    const boundedResult = await read.execute("tool-3", { path: "inside.txt" }, undefined, undefined, {});
+    expect((boundedResult as { content: Array<{ text: string }> }).content[0]?.text.length).toBeLessThanOrEqual(64_000);
+    const write = options.customTools.find(({ name }) => name === "write")!;
+    await expect(write.execute("tool-4", { path: "new.txt", content: "safe" }, undefined, undefined, {}))
       .resolves.toBeDefined();
-    expect(sdk.toolExecute).toHaveBeenCalledTimes(1);
+    expect(authorize).toHaveBeenCalledWith(expect.objectContaining({
+      conversationId: "one",
+      toolCallId: "tool-4",
+      category: "create_file",
+      summary: "Create new.txt",
+    }), undefined);
+    expect(JSON.stringify(authorize.mock.calls)).not.toContain("safe");
+    await expect(write.execute(
+      "tool-large",
+      { path: "large.txt", content: "x".repeat(1_000_001) },
+      undefined,
+      undefined,
+      {},
+    )).rejects.toMatchObject({ code: "invalid_request" });
+    const outsideDirectory = path.join(directory, "outside-directory");
+    await mkdir(outsideDirectory);
+    await symlink(outsideDirectory, path.join(context.workspaceDirectory, "escape-directory"));
+    await expect(write.execute(
+      "tool-5",
+      { path: "escape-directory/new.txt", content: "blocked" },
+      undefined,
+      undefined,
+      {},
+    )).rejects.toMatchObject({ code: "invalid_request" });
+    await symlink(path.join(directory, "missing-outside-directory"), path.join(context.workspaceDirectory, "broken-escape"));
+    await expect(write.execute(
+      "tool-6",
+      { path: "broken-escape/new.txt", content: "blocked" },
+      undefined,
+      undefined,
+      {},
+    )).rejects.toMatchObject({ code: "invalid_request" });
+    expect(sdk.toolExecute).toHaveBeenCalledTimes(2);
   });
 
   it("rejects missing credentials and unavailable models without selecting a fallback", () => {

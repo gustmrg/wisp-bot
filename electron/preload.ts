@@ -22,6 +22,9 @@ const WISP_IPC_CHANNELS = {
   appendConversationMessage: "wisp:conversations:append-message",
   answerConversationPrompt: "wisp:conversations:answer-prompt",
   markConversationRead: "wisp:conversations:mark-read",
+  getToolPolicy: "wisp:tool-policy:get",
+  saveToolPolicy: "wisp:tool-policy:save",
+  resolveToolApproval: "wisp:tool-policy:resolve-approval",
 } as const;
 
 const wispApi: WispApi = {
@@ -63,6 +66,9 @@ const wispApi: WispApi = {
     WISP_IPC_CHANNELS.markConversationRead,
     request,
   ),
+  getToolPolicy: () => ipcRenderer.invoke(WISP_IPC_CHANNELS.getToolPolicy),
+  saveToolPolicy: (settings) => ipcRenderer.invoke(WISP_IPC_CHANNELS.saveToolPolicy, settings),
+  resolveToolApproval: (request) => ipcRenderer.invoke(WISP_IPC_CHANNELS.resolveToolApproval, request),
 };
 
 contextBridge.exposeInMainWorld("wisp", Object.freeze(wispApi));

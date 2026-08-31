@@ -11,6 +11,7 @@ const emptyState: ConversationStateView = {
   chats: {},
   statuses: {},
   agentEventSequence: 0,
+  pendingToolApprovals: [],
   recoveredCorruptState: false,
 };
 

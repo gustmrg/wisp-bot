@@ -8,6 +8,11 @@ import type {
   MarkConversationReadRequest,
   UpdateConversationRequest,
 } from "./conversations.js";
+import type {
+  ResolveToolApprovalRequest,
+  ToolApprovalRequest,
+  ToolPolicySettings,
+} from "./tool-policy.js";
 
 export const WISP_IPC_CHANNELS = {
   startConversation: "wisp:agent:start",
@@ -27,6 +32,9 @@ export const WISP_IPC_CHANNELS = {
   appendConversationMessage: "wisp:conversations:append-message",
   answerConversationPrompt: "wisp:conversations:answer-prompt",
   markConversationRead: "wisp:conversations:mark-read",
+  getToolPolicy: "wisp:tool-policy:get",
+  saveToolPolicy: "wisp:tool-policy:save",
+  resolveToolApproval: "wisp:tool-policy:resolve-approval",
 } as const;
 
 export interface ConversationRequest {
@@ -87,6 +95,8 @@ export type BackendErrorCode =
   | "invalid_request"
   | "not_found"
   | "model_unavailable"
+  | "approval_expired"
+  | "tool_blocked"
   | "secure_storage_unavailable";
 
 export interface BackendError {
@@ -154,6 +164,18 @@ export type ConversationAgentEvent =
       conversationId: string;
       requestId?: string;
       kind: "retry_started" | "retry_finished" | "compaction_started" | "compaction_finished";
+    }
+  | {
+      type: "tool_approval_requested";
+      conversationId: string;
+      request: ToolApprovalRequest;
+    }
+  | {
+      type: "tool_approval_resolved";
+      conversationId: string;
+      approvalId: string;
+      toolCallId: string;
+      decision: "allow_once" | "deny" | "block" | "expired";
     };
 
 export type SequencedConversationAgentEvent = ConversationAgentEvent & { sequence: number };
@@ -192,4 +214,7 @@ export interface WispApi {
   markConversationRead(
     request: MarkConversationReadRequest,
   ): Promise<BackendResult<ConversationStateView>>;
+  getToolPolicy(): Promise<BackendResult<ToolPolicySettings>>;
+  saveToolPolicy(settings: ToolPolicySettings): Promise<BackendResult<ToolPolicySettings>>;
+  resolveToolApproval(request: ResolveToolApprovalRequest): Promise<EmptyResult>;
 }

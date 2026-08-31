@@ -4,7 +4,9 @@ import type {
   SendMessageRequest,
 } from "../../shared/contracts.js";
 
-const READ_ONLY_TOOLS = new Set(["read", "grep", "find", "ls"]);
+const ALLOWED_TOOLS = new Set(["read", "grep", "find", "ls", "edit", "write"]);
+const MAX_DELTA_CHARACTERS = 8_000;
+const MAX_RESPONSE_CHARACTERS = 500_000;
 
 export type PiAgentEvent =
   | { type: "agent_start" }
@@ -35,6 +37,7 @@ export class PiEventTranslator {
   private flushTimer: ReturnType<typeof setTimeout> | undefined;
   private failed = false;
   private cancelled = false;
+  private responseCharacters = 0;
 
   constructor(conversationId: string, publish: EventPublisher, flushDelayMs = 24) {
     this.conversationId = conversationId;
@@ -50,6 +53,7 @@ export class PiEventTranslator {
     this.pendingDelta = "";
     this.failed = false;
     this.cancelled = false;
+    this.responseCharacters = 0;
   }
 
   handle(event: PiAgentEvent): void {
@@ -158,8 +162,22 @@ export class PiEventTranslator {
   }
 
   private queueDelta(delta: string): void {
-    if (!delta) return;
-    this.pendingDelta += delta;
+    if (!delta || this.failed) return;
+    const remaining = MAX_RESPONSE_CHARACTERS - this.responseCharacters;
+    if (remaining <= 0) {
+      this.reportError({ code: "internal_error", message: "The model response exceeded the supported size.", retryable: false });
+      return;
+    }
+    const accepted = delta.slice(0, remaining);
+    this.responseCharacters += accepted.length;
+    for (let offset = 0; offset < accepted.length; offset += MAX_DELTA_CHARACTERS) {
+      this.pendingDelta += accepted.slice(offset, offset + MAX_DELTA_CHARACTERS);
+      if (this.pendingDelta.length >= MAX_DELTA_CHARACTERS) this.flush();
+    }
+    if (accepted.length < delta.length) {
+      this.reportError({ code: "internal_error", message: "The model response exceeded the supported size.", retryable: false });
+      return;
+    }
     if (this.flushDelayMs <= 0) {
       this.flush();
       return;
@@ -186,7 +204,7 @@ export class PiEventTranslator {
     phase: "started" | "updated" | "completed",
     isError?: boolean,
   ): void {
-    if (!this.request || !READ_ONLY_TOOLS.has(event.toolName)) return;
+    if (!this.request || !ALLOWED_TOOLS.has(event.toolName)) return;
     this.flush();
     this.publish({
       type: "tool_activity",

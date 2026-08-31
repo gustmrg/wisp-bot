@@ -4,10 +4,13 @@ import { ArrowUpIcon, MicIcon, SettingsIcon, SquareIcon } from "lucide-react";
 
 import type { Chat, ChatCollection } from "@/chat-data";
 import type { ManagedConversationStatus } from "../../shared/conversations";
+import type { ToolApprovalDecision, ToolApprovalRequest } from "../../shared/tool-policy";
+import type { ToolActivityView } from "@/lib/conversation-stream";
 import { getCircleMembers } from "@/lib/circle-members";
 import { iconButton, mainPanel } from "@/lib/ui-classes";
 import { ChatAvatar } from "@/components/chat-avatar";
 import { MessageView } from "@/components/message-view";
+import { ToolApprovalCard } from "@/components/tool-approval-card";
 
 interface ChatPanelProps {
   chat: Chat;
@@ -18,11 +21,14 @@ interface ChatPanelProps {
   activity?: string;
   error?: string;
   acknowledging: boolean;
+  approvals: ReadonlyArray<ToolApprovalRequest>;
+  toolActivities: ReadonlyArray<ToolActivityView>;
   onAnswerPrompt: (messageId: string | undefined, answer: string) => void;
   onAbort: () => void;
   onDraftChange: (draft: string) => void;
   onOpenDetails: () => void;
   onRetry: (messageId: string | undefined) => void;
+  onResolveApproval: (request: ToolApprovalRequest, decision: ToolApprovalDecision) => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
 }
 
@@ -35,11 +41,14 @@ function ChatPanel({
   activity,
   error,
   acknowledging,
+  approvals,
+  toolActivities,
   onAnswerPrompt,
   onAbort,
   onDraftChange,
   onOpenDetails,
   onRetry,
+  onResolveApproval,
   onSubmit,
 }: ChatPanelProps) {
   const transcriptRef = useRef<HTMLDivElement>(null);
@@ -83,6 +92,25 @@ function ChatPanel({
               message={message}
               onAnswer={(answer) => onAnswerPrompt(message.id, answer)}
               onRetry={() => onRetry(message.id)}
+            />
+          ))}
+          {toolActivities.length ? (
+            <ol className="my-2 flex list-none flex-col gap-1 p-0" aria-label="Recent tool activity">
+              {toolActivities.map((tool) => (
+                <li key={tool.toolCallId} className="flex items-center gap-2 text-[11px] text-faint">
+                  <span className="size-1.5 rounded-full bg-current" aria-hidden="true" />
+                  <span>{toolLabel(tool.toolName)} — {tool.phase === "completed"
+                    ? tool.isError ? "failed" : "completed"
+                    : "running"}</span>
+                </li>
+              ))}
+            </ol>
+          ) : null}
+          {approvals.map((request) => (
+            <ToolApprovalCard
+              key={request.approvalId}
+              request={request}
+              onResolve={(decision) => onResolveApproval(request, decision)}
             />
           ))}
           {working ? (
@@ -132,3 +160,12 @@ function ChatPanel({
 
 export { ChatPanel };
 export type { ChatPanelProps };
+
+function toolLabel(toolName: string): string {
+  if (toolName === "read") return "Read file";
+  if (toolName === "grep" || toolName === "find") return "Search workspace";
+  if (toolName === "ls") return "List files";
+  if (toolName === "edit") return "Edit file";
+  if (toolName === "write") return "Write file";
+  return "Tool action";
+}

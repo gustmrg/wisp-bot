@@ -18,7 +18,12 @@ interface AgentEntry {
   status: ManagedConversationStatus;
   commandQueue: Promise<void>;
   reportedRequestErrors: Set<string>;
+  pendingCommands: number;
+  disposed: boolean;
 }
+
+const MAX_PENDING_COMMANDS_PER_CONVERSATION = 8;
+const MAX_SIMULTANEOUS_AGENTS = 4;
 
 type EventPublisher = (event: SequencedConversationAgentEvent) => void;
 
@@ -26,12 +31,20 @@ export class AgentRegistry {
   private readonly entries = new Map<string, AgentEntry>();
   private readonly factory: ConversationAgentFactory;
   private readonly publish: EventPublisher;
+  private readonly onConversationDisposed: (conversationId: string) => void;
   private model: ModelSelection | null = null;
   private eventSequence = 0;
+  private activeAgents = 0;
+  private readonly activeWaiters: Array<() => void> = [];
 
-  constructor(factory: ConversationAgentFactory, publish: EventPublisher) {
+  constructor(
+    factory: ConversationAgentFactory,
+    publish: EventPublisher,
+    onConversationDisposed: (conversationId: string) => void = () => undefined,
+  ) {
     this.factory = factory;
     this.publish = publish;
+    this.onConversationDisposed = onConversationDisposed;
   }
 
   async restore(contexts: ReadonlyArray<ConversationAgentContext>, model: ModelSelection | null): Promise<void> {
@@ -53,6 +66,8 @@ export class AgentRegistry {
       status: this.model ? "idle" : "configuration_required",
       commandQueue: Promise.resolve(),
       reportedRequestErrors: new Set(),
+      pendingCommands: 0,
+      disposed: false,
     };
     entry.unsubscribe = agent.subscribe((event) => {
       if (event.type === "conversation_status") {
@@ -108,9 +123,30 @@ export class AgentRegistry {
     return this.eventSequence;
   }
 
+  publishExternalEvent(event: ConversationAgentEvent): void {
+    if (!this.entries.has(event.conversationId)) return;
+    this.publishEvent(event);
+  }
+
   send(request: SendMessageRequest): Promise<void> {
     const entry = this.require(request.conversationId);
-    const operation = entry.commandQueue.then(() => entry.agent.send(request));
+    if (entry.pendingCommands >= MAX_PENDING_COMMANDS_PER_CONVERSATION) {
+      throw new WispBackendError("invalid_request", "This conversation already has too many queued requests.");
+    }
+    entry.pendingCommands += 1;
+    const operation = entry.commandQueue.then(async () => {
+      await this.acquireActiveSlot();
+      try {
+        if (entry.disposed) {
+          throw new WispBackendError("disposed", "The conversation was deleted before this request could run.");
+        }
+        await entry.agent.send(request);
+      } finally {
+        this.releaseActiveSlot();
+      }
+    }).finally(() => {
+      entry.pendingCommands -= 1;
+    });
     entry.commandQueue = operation.catch(() => undefined);
     return operation;
   }
@@ -119,6 +155,7 @@ export class AgentRegistry {
     const entry = this.require(request.conversationId);
     void this.send(request)
       .catch((error) => {
+        if (this.entries.get(request.conversationId) !== entry) return;
         if (entry.reportedRequestErrors.has(request.requestId)) return;
         this.publishEvent({
           type: "conversation_error",
@@ -156,6 +193,8 @@ export class AgentRegistry {
     const entry = this.entries.get(conversationId);
     if (!entry) return;
     this.entries.delete(conversationId);
+    entry.disposed = true;
+    this.onConversationDisposed(conversationId);
     entry.unsubscribe();
     await entry.agent.dispose();
   }
@@ -174,5 +213,23 @@ export class AgentRegistry {
   private publishEvent(event: ConversationAgentEvent): void {
     this.eventSequence += 1;
     this.publish({ ...event, sequence: this.eventSequence });
+  }
+
+  private acquireActiveSlot(): Promise<void> {
+    if (this.activeAgents < MAX_SIMULTANEOUS_AGENTS) {
+      this.activeAgents += 1;
+      return Promise.resolve();
+    }
+    return new Promise((resolve) => {
+      this.activeWaiters.push(() => {
+        this.activeAgents += 1;
+        resolve();
+      });
+    });
+  }
+
+  private releaseActiveSlot(): void {
+    this.activeAgents -= 1;
+    this.activeWaiters.shift()?.();
   }
 }

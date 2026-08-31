@@ -53,9 +53,15 @@ Electron's operating-system-backed `safeStorage` API and are never exposed to
 the renderer. Wisp refuses to persist keys when secure storage is unavailable.
 
 Each non-circle Wisp owns a persistent Pi session in an application-managed
-workspace. Pi is configured with only the `read`, `grep`, `find`, and `ls`
-tools; project extensions, skills, prompt templates, context files, shell, and
-file mutation tools are disabled.
+workspace. Pi can use `read`, `grep`, `find`, and `ls` inside that workspace.
+The `edit` and `write` tools are guarded by a main-process policy and default to
+an expiring user approval. Canonical-path checks run before and after approval.
+Project extensions, project skills, prompt templates, context files, and shell
+execution remain disabled.
+
+Tool policy is configured under Settings → General → Auto-review. Unknown
+actions are blocked, conflicting rules use `block` → `ask` → `allow`
+precedence, and “Always block” decisions are persisted by the backend.
 
 ### Optional live Pi smoke
 
