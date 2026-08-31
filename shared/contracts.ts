@@ -156,13 +156,15 @@ export type ConversationAgentEvent =
       kind: "retry_started" | "retry_finished" | "compaction_started" | "compaction_finished";
     };
 
+export type SequencedConversationAgentEvent = ConversationAgentEvent & { sequence: number };
+
 export interface WispApi {
   startConversation(request: ConversationRequest): Promise<EmptyResult>;
   sendMessage(request: SendMessageRequest): Promise<EmptyResult>;
   abortConversation(request: ConversationRequest): Promise<EmptyResult>;
   applyModel(request: ApplyModelRequest): Promise<EmptyResult>;
   disposeConversation(request: ConversationRequest): Promise<EmptyResult>;
-  subscribeToAgentEvents(listener: (event: ConversationAgentEvent) => void): () => void;
+  subscribeToAgentEvents(listener: (event: SequencedConversationAgentEvent) => void): () => void;
   getAiSettings(): Promise<BackendResult<AiSettingsView>>;
   saveAiSettings(request: SaveAiSettingsRequest): Promise<BackendResult<AiSettingsView>>;
   removeProviderCredential(

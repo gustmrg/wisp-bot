@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import { AgentRegistry } from "../electron/backend/agent-registry.js";
 import type { ConversationAgentContext, ConversationAgentFactory } from "../electron/backend/conversation-agent.js";
 import { FakeConversationAgent } from "../electron/backend/fake-conversation-agent.js";
-import type { ConversationAgentEvent } from "../shared/contracts.js";
+import type { ConversationAgentEvent, SequencedConversationAgentEvent } from "../shared/contracts.js";
 
 function context(conversationId: string): ConversationAgentContext {
   return {
@@ -39,7 +39,7 @@ describe("AgentRegistry", () => {
   });
 
   it("keeps FIFO order within a Wisp while independent Wisps run concurrently", async () => {
-    const events: ConversationAgentEvent[] = [];
+    const events: SequencedConversationAgentEvent[] = [];
     const factory: ConversationAgentFactory = {
       create: (agentContext) => new FakeConversationAgent(agentContext.conversationId, { latencyMs: 15 }),
     };
@@ -59,6 +59,10 @@ describe("AgentRegistry", () => {
       .toBeLessThan(lifecycle.indexOf("assistant_message_started:one-b"));
     expect(lifecycle.indexOf("assistant_message_started:two-a"))
       .toBeLessThan(lifecycle.indexOf("assistant_message_completed:one-a"));
+    expect(events.map(({ sequence }) => sequence)).toEqual(
+      events.map((_event, index) => index + 1),
+    );
+    expect(registry.getEventSequence()).toBe(events.length);
     await registry.disposeAll();
   });
 

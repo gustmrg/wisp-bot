@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer } from "electron";
 
-import type { ConversationAgentEvent, WispApi } from "../shared/contracts.js";
+import type { SequencedConversationAgentEvent, WispApi } from "../shared/contracts.js";
 
 // Sandboxed preload scripts cannot require application modules at runtime.
 // Keep this allowlist local and let the shared WispApi type enforce its shape.
@@ -31,7 +31,7 @@ const wispApi: WispApi = {
   applyModel: (request) => ipcRenderer.invoke(WISP_IPC_CHANNELS.applyModel, request),
   disposeConversation: (request) => ipcRenderer.invoke(WISP_IPC_CHANNELS.disposeConversation, request),
   subscribeToAgentEvents: (listener) => {
-    const handleEvent = (_event: Electron.IpcRendererEvent, agentEvent: ConversationAgentEvent): void => {
+    const handleEvent = (_event: Electron.IpcRendererEvent, agentEvent: SequencedConversationAgentEvent): void => {
       listener(agentEvent);
     };
     ipcRenderer.on(WISP_IPC_CHANNELS.agentEvent, handleEvent);

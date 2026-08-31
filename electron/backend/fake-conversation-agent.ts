@@ -119,7 +119,7 @@ export class FakeConversationAgent implements ConversationAgent {
   }
 
   private async processMessage(request: SendMessageRequest): Promise<void> {
-    const messageId = `fake-${request.requestId}`;
+    const messageId = `${request.requestId}:assistant`;
     const abortController = new AbortController();
     this.activeAbortController = abortController;
     this.emit({ type: "conversation_status", conversationId: this.conversationId, status: "working" });

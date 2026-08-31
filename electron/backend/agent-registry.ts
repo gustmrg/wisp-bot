@@ -1,6 +1,7 @@
 import type {
   ConversationAgentEvent,
   ModelSelection,
+  SequencedConversationAgentEvent,
   SendMessageRequest,
 } from "../../shared/contracts.js";
 import type { ManagedConversationStatus } from "../../shared/conversations.js";
@@ -16,15 +17,17 @@ interface AgentEntry {
   unsubscribe: () => void;
   status: ManagedConversationStatus;
   commandQueue: Promise<void>;
+  reportedRequestErrors: Set<string>;
 }
 
-type EventPublisher = (event: ConversationAgentEvent) => void;
+type EventPublisher = (event: SequencedConversationAgentEvent) => void;
 
 export class AgentRegistry {
   private readonly entries = new Map<string, AgentEntry>();
   private readonly factory: ConversationAgentFactory;
   private readonly publish: EventPublisher;
   private model: ModelSelection | null = null;
+  private eventSequence = 0;
 
   constructor(factory: ConversationAgentFactory, publish: EventPublisher) {
     this.factory = factory;
@@ -49,6 +52,7 @@ export class AgentRegistry {
       unsubscribe: () => undefined,
       status: this.model ? "idle" : "configuration_required",
       commandQueue: Promise.resolve(),
+      reportedRequestErrors: new Set(),
     };
     entry.unsubscribe = agent.subscribe((event) => {
       if (event.type === "conversation_status") {
@@ -56,7 +60,10 @@ export class AgentRegistry {
           ? event.status
           : "configuration_required";
       }
-      this.publish(event);
+      if (event.type === "conversation_error" && event.requestId) {
+        entry.reportedRequestErrors.add(event.requestId);
+      }
+      this.publishEvent(event);
     });
     this.entries.set(conversationId, entry);
     try {
@@ -72,7 +79,7 @@ export class AgentRegistry {
         await agent.applyModel(this.model);
       } catch (error) {
         entry.status = "configuration_required";
-        this.publish({
+        this.publishEvent({
           type: "conversation_error",
           conversationId,
           error: sanitizeBackendError(error),
@@ -97,11 +104,30 @@ export class AgentRegistry {
     return Object.fromEntries([...this.entries].map(([id, entry]) => [id, entry.status]));
   }
 
+  getEventSequence(): number {
+    return this.eventSequence;
+  }
+
   send(request: SendMessageRequest): Promise<void> {
     const entry = this.require(request.conversationId);
     const operation = entry.commandQueue.then(() => entry.agent.send(request));
     entry.commandQueue = operation.catch(() => undefined);
     return operation;
+  }
+
+  dispatch(request: SendMessageRequest): void {
+    const entry = this.require(request.conversationId);
+    void this.send(request)
+      .catch((error) => {
+        if (entry.reportedRequestErrors.has(request.requestId)) return;
+        this.publishEvent({
+          type: "conversation_error",
+          conversationId: request.conversationId,
+          requestId: request.requestId,
+          error: sanitizeBackendError(error),
+        });
+      })
+      .finally(() => entry.reportedRequestErrors.delete(request.requestId));
   }
 
   async abort(conversationId: string): Promise<void> {
@@ -143,5 +169,10 @@ export class AgentRegistry {
     const entry = this.entries.get(conversationId);
     if (!entry) throw new WispBackendError("not_found", "The conversation is not running.");
     return entry;
+  }
+
+  private publishEvent(event: ConversationAgentEvent): void {
+    this.eventSequence += 1;
+    this.publish({ ...event, sequence: this.eventSequence });
   }
 }

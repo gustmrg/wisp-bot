@@ -1,8 +1,9 @@
 import { useEffect, useRef } from "react";
 import type { FormEvent, KeyboardEvent, RefObject } from "react";
-import { ArrowUpIcon, MicIcon, SettingsIcon } from "lucide-react";
+import { ArrowUpIcon, MicIcon, SettingsIcon, SquareIcon } from "lucide-react";
 
 import type { Chat, ChatCollection } from "@/chat-data";
+import type { ManagedConversationStatus } from "../../shared/conversations";
 import { getCircleMembers } from "@/lib/circle-members";
 import { iconButton, mainPanel } from "@/lib/ui-classes";
 import { ChatAvatar } from "@/components/chat-avatar";
@@ -13,10 +14,15 @@ interface ChatPanelProps {
   chats: ChatCollection;
   draft: string;
   composerInputRef: RefObject<HTMLTextAreaElement | null>;
-  working: boolean;
+  status: ManagedConversationStatus;
+  activity?: string;
+  error?: string;
+  acknowledging: boolean;
   onAnswerPrompt: (messageId: string | undefined, answer: string) => void;
+  onAbort: () => void;
   onDraftChange: (draft: string) => void;
   onOpenDetails: () => void;
+  onRetry: (messageId: string | undefined) => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
 }
 
@@ -25,19 +31,27 @@ function ChatPanel({
   chats,
   draft,
   composerInputRef,
-  working,
+  status,
+  activity,
+  error,
+  acknowledging,
   onAnswerPrompt,
+  onAbort,
   onDraftChange,
   onOpenDetails,
+  onRetry,
   onSubmit,
 }: ChatPanelProps) {
   const transcriptRef = useRef<HTMLDivElement>(null);
   const members = getCircleMembers(chat, chats);
+  const working = status === "working";
+  const lastMessage = chat.messages.at(-1);
+  const transcriptVersion = lastMessage && "text" in lastMessage ? lastMessage.text.length : chat.messages.length;
 
   useEffect(() => {
     const transcript = transcriptRef.current;
     if (transcript) transcript.scrollTop = transcript.scrollHeight;
-  }, [chat.id, chat.messages.length, working]);
+  }, [chat.id, chat.messages.length, transcriptVersion, working]);
 
   function handleComposerKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
     if (event.key === "Enter" && !event.shiftKey) {
@@ -68,6 +82,7 @@ function ChatPanel({
               key={message.id ?? `${chat.id}-${message.type}-${index}`}
               message={message}
               onAnswer={(answer) => onAnswerPrompt(message.id, answer)}
+              onRetry={() => onRetry(message.id)}
             />
           ))}
           {working ? (
@@ -77,7 +92,15 @@ function ChatPanel({
       </div>
 
       <form className="flex-none px-3 pb-3" onSubmit={onSubmit}>
-        {working ? <div className="h-[22px] pl-2.5 text-faint text-[11px]">Working on your request</div> : null}
+        <div className="h-[22px] pl-2.5 text-[11px] text-faint" role="status">
+          {chat.isCircle
+            ? "Circle conversations are not enabled yet"
+            : error
+              ?? activity
+              ?? (status === "configuration_required" ? "Configure a provider and model in Settings" : null)
+              ?? (acknowledging ? "Queueing your message…" : null)
+              ?? (working ? "Working on your request" : null)}
+        </div>
         <div className="mx-auto flex min-h-[42px] w-full max-w-[1400px] items-end gap-2 rounded-[13px] border border-black/[0.07] bg-[#f0f0f0] px-2 py-[7px] transition-[border-color] duration-[120ms] focus-within:border-black/[0.16] dark:border-white/[0.07] dark:bg-[#282828] dark:focus-within:border-white/[0.16]">
           <textarea
             ref={composerInputRef}
@@ -86,13 +109,19 @@ function ChatPanel({
             aria-label={`Message ${chat.name}`}
             placeholder={`Message ${chat.name}`}
             value={draft}
+            disabled={chat.isCircle}
             onChange={(event) => onDraftChange(event.currentTarget.value)}
             onKeyDown={handleComposerKeyDown}
           />
           <button type="button" className="flex size-[27px] flex-none items-center justify-center rounded-full border-0 bg-[#dedede] text-[#686868] hover:bg-[#d5d5d5] hover:text-[#333333] dark:bg-[#343434] dark:text-[#999999] dark:hover:bg-[#3b3b3b] dark:hover:text-[#e4e4e4] [&_svg]:size-3.5" aria-label="Start voice input">
             <MicIcon aria-hidden="true" />
           </button>
-          <button type="submit" className="flex size-[27px] flex-none items-center justify-center rounded-full border-0 bg-[#202020] text-white enabled:hover:opacity-[0.85] disabled:opacity-[0.35] dark:bg-[#f0f0f0] dark:text-[#161616] [&_svg]:size-3.5" aria-label="Send message" disabled={!draft.trim()}>
+          {working ? (
+            <button type="button" className="flex size-[27px] flex-none items-center justify-center rounded-full border-0 bg-[#202020] text-white hover:opacity-[0.85] dark:bg-[#f0f0f0] dark:text-[#161616] [&_svg]:size-3" aria-label="Stop response" onClick={onAbort}>
+              <SquareIcon aria-hidden="true" fill="currentColor" />
+            </button>
+          ) : null}
+          <button type="submit" className="flex size-[27px] flex-none items-center justify-center rounded-full border-0 bg-[#202020] text-white enabled:hover:opacity-[0.85] disabled:opacity-[0.35] dark:bg-[#f0f0f0] dark:text-[#161616] [&_svg]:size-3.5" aria-label={working ? "Queue message" : "Send message"} disabled={!draft.trim() || acknowledging || chat.isCircle}>
             <ArrowUpIcon aria-hidden="true" />
           </button>
         </div>

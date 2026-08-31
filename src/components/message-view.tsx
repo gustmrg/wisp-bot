@@ -6,6 +6,7 @@ import { cn } from "@/lib/utils";
 interface MessageViewProps {
   message: Message;
   onAnswer?: (answer: string) => void;
+  onRetry?: () => void;
 }
 
 function MessageTools({ time, outgoing }: { time?: string; outgoing: boolean }) {
@@ -22,7 +23,7 @@ function MessageTools({ time, outgoing }: { time?: string; outgoing: boolean }) 
   );
 }
 
-function MessageView({ message, onAnswer }: MessageViewProps) {
+function MessageView({ message, onAnswer, onRetry }: MessageViewProps) {
   if (message.type === "time") {
     return <div className="mt-[13px] mb-[5px] flex items-center justify-center text-faint text-[10.5px]"><span>{message.text}</span></div>;
   }
@@ -99,6 +100,20 @@ function MessageView({ message, onAnswer }: MessageViewProps) {
               {reaction}
             </button>
           ))}
+        </div>
+      ) : null}
+      {message.status && message.status !== "complete" ? (
+        <div className={cn("mt-1 flex items-center gap-2 text-[10.5px] text-faint", outgoing && "mr-1")}>
+          <span>{message.status === "queued"
+            ? "Queued"
+            : message.status === "streaming"
+              ? "Streaming"
+              : message.status === "cancelled" ? "Stopped" : "Failed"}</span>
+          {!outgoing && message.status === "failed" && message.retryable ? (
+            <button type="button" className="rounded-md border border-black/[0.08] px-1.5 py-0.5 text-dim hover:bg-muted hover:text-foreground dark:border-white/[0.08]" onClick={onRetry}>
+              Retry
+            </button>
+          ) : null}
         </div>
       ) : null}
     </div>

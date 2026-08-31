@@ -10,6 +10,7 @@ const emptyState: ConversationStateView = {
   initialized: false,
   chats: {},
   statuses: {},
+  agentEventSequence: 0,
   recoveredCorruptState: false,
 };
 

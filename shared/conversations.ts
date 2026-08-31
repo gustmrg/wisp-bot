@@ -16,6 +16,7 @@ export type MessageStatus = "queued" | "streaming" | "complete" | "failed" | "ca
 interface MessageMetadata {
   id?: string;
   status?: MessageStatus;
+  retryable?: boolean;
 }
 
 export interface AgentSettings {
@@ -77,6 +78,7 @@ export interface ConversationStateView {
   initialized: boolean;
   chats: ChatCollection;
   statuses: Record<ChatId, ManagedConversationStatus>;
+  agentEventSequence: number;
   recoveredCorruptState: boolean;
 }
 

@@ -70,9 +70,7 @@ export default function App() {
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [workingChatId, setWorkingChatId] = useState<ChatId | null>(null);
   const composerInputRef = useRef<HTMLTextAreaElement>(null);
-  const replyTimersRef = useRef<Map<number, ChatId>>(new Map());
   const activeChat = chats[activeChatId];
 
   useLayoutEffect(() => {
@@ -97,8 +95,6 @@ export default function App() {
     return () => document.removeEventListener("keydown", handleKeyDown);
   }, []);
 
-  useEffect(() => () => replyTimersRef.current.forEach((_chatId, timer) => window.clearTimeout(timer)), []);
-
   function handleSelectChat(chatId: ChatId) {
     setActiveChatId(chatId);
     setDraft("");
@@ -111,30 +107,8 @@ export default function App() {
     const text = draft.trim();
     if (!text || !activeChat) return;
 
-    const chatId = activeChat.id;
-    const time = new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
-    void conversations.appendMessage(chatId, {
-      id: crypto.randomUUID(),
-      status: "complete",
-      type: "outgoing",
-      text,
-      time,
-    });
     setDraft("");
-    setWorkingChatId(chatId);
-
-    const timer = window.setTimeout(() => {
-      void conversations.appendMessage(chatId, {
-        id: crypto.randomUUID(),
-        status: "complete",
-        type: "incoming",
-        text: "On it. I’ll line up the pieces and pull you in if anything needs a decision.",
-        time: new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }),
-      });
-      setWorkingChatId((current) => current === chatId ? null : current);
-      replyTimersRef.current.delete(timer);
-    }, 1100);
-    replyTimersRef.current.set(timer, chatId);
+    void conversations.sendMessage(activeChat.id, text);
   }
 
   function handleCreateAgent(agent: NewAgent) {
@@ -152,21 +126,6 @@ export default function App() {
       });
       if (!created) return;
       setActiveChatId(id);
-      if (!agent.isCircle) {
-        setWorkingChatId(id);
-        const timer = window.setTimeout(() => {
-          void conversations.appendMessage(id, {
-            id: crypto.randomUUID(),
-            status: "complete",
-            type: "incoming",
-            text: `Hey John, I'm here. What do you want me on first?`,
-            time: new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }),
-          });
-          setWorkingChatId((current) => current === id ? null : current);
-          replyTimersRef.current.delete(timer);
-        }, 1400);
-        replyTimersRef.current.set(timer, id);
-      }
     })();
   }
 
@@ -176,13 +135,6 @@ export default function App() {
 
   function handleDeleteChat() {
     if (activeChatId) {
-      for (const [timer, chatId] of replyTimersRef.current) {
-        if (chatId === activeChatId) {
-          window.clearTimeout(timer);
-          replyTimersRef.current.delete(timer);
-        }
-      }
-      setWorkingChatId((current) => current === activeChatId ? null : current);
       void conversations.delete(activeChatId);
     }
     setDetailsOpen(false);
@@ -190,6 +142,11 @@ export default function App() {
 
   function handleAnswerPrompt(messageId: string | undefined, answer: string) {
     if (activeChatId && messageId) void conversations.answerPrompt(activeChatId, messageId, answer);
+  }
+
+  function handleRetry(messageId: string | undefined) {
+    if (!activeChatId || !messageId?.endsWith(":assistant")) return;
+    void conversations.retryMessage(activeChatId, messageId.slice(0, -":assistant".length));
   }
 
   return (
@@ -213,10 +170,15 @@ export default function App() {
             chats={chats}
             draft={draft}
             composerInputRef={composerInputRef}
-            working={workingChatId === activeChat.id}
+            status={conversations.statuses[activeChat.id] ?? "configuration_required"}
+            activity={conversations.activity[activeChat.id]}
+            error={conversations.conversationErrors[activeChat.id]?.message}
+            acknowledging={Boolean(conversations.acknowledging[activeChat.id])}
             onAnswerPrompt={handleAnswerPrompt}
+            onAbort={() => void conversations.abort(activeChat.id)}
             onDraftChange={setDraft}
             onOpenDetails={() => setDetailsOpen(true)}
+            onRetry={handleRetry}
             onSubmit={handleSubmit}
           />
         ) : <main className={cn(mainPanel, "items-center justify-center text-dim")}>

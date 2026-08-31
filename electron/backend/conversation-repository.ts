@@ -183,14 +183,21 @@ export class ConversationRepository {
   async appendMessage(conversationId: string, message: Message): Promise<void> {
     await this.enqueue(async () => {
       const record = this.require(conversationId);
+      const messageId = message.id ?? this.createId();
+      const existingIndex = record.chat.messages.findIndex(({ id }) => id === messageId);
+      const messages = existingIndex === -1
+        ? [...record.chat.messages, { ...message, id: messageId }]
+        : record.chat.messages.map((existing, index) => (
+          index === existingIndex ? { ...message, id: messageId } : existing
+        ));
       const normalized = normalizeChat({
         ...record.chat,
-        messages: [...record.chat.messages, { ...message, id: message.id ?? this.createId() }],
+        messages,
       });
-      const appended = normalized.messages.at(-1);
+      const current = normalized.messages.find(({ id }) => id === messageId);
       record.chat = {
         ...normalized,
-        preview: appended && "text" in appended ? appended.text : normalized.preview,
+        preview: current && "text" in current ? current.text : normalized.preview,
         timestamp: "Now",
       };
       record.updatedAt = this.now().toISOString();

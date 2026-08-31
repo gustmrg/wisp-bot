@@ -27,7 +27,7 @@ describe("FakeConversationAgent", () => {
       type: "assistant_text_delta",
       conversationId: "wisp-1",
       requestId: "request-1",
-      messageId: "fake-request-1",
+      messageId: "request-1:assistant",
       delta: "Reply: Hello",
     });
   });

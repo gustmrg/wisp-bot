@@ -2,7 +2,7 @@ import { app, BrowserWindow, ipcMain, nativeTheme, type IpcMainInvokeEvent } fro
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
-import { WISP_IPC_CHANNELS, type ConversationAgentEvent } from "../shared/contracts.js";
+import { WISP_IPC_CHANNELS, type SequencedConversationAgentEvent } from "../shared/contracts.js";
 import { AgentRegistry } from "./backend/agent-registry.js";
 import { ConversationRepository } from "./backend/conversation-repository.js";
 import { ConversationService } from "./backend/conversation-service.js";
@@ -74,7 +74,9 @@ void app.whenReady().then(async () => {
     dataDirectory: path.join(app.getPath("userData"), "backend"),
     encryption: new SafeStorageEncryption(),
   });
-  const publishAgentEvent = (event: ConversationAgentEvent): void => {
+  let conversationService: ConversationService | undefined;
+  const publishAgentEvent = (event: SequencedConversationAgentEvent): void => {
+    conversationService?.handleAgentEvent(event);
     for (const window of BrowserWindow.getAllWindows()) {
       if (!window.isDestroyed()) window.webContents.send(WISP_IPC_CHANNELS.agentEvent, event);
     }
@@ -83,7 +85,7 @@ void app.whenReady().then(async () => {
     new PiConversationAgentFactory(new SdkPiSessionFactory(modelService.getModelRuntime())),
     publishAgentEvent,
   );
-  const conversationService = new ConversationService(
+  conversationService = new ConversationService(
     new ConversationRepository({ dataDirectory: path.join(app.getPath("userData"), "backend") }),
     agentRegistry,
   );

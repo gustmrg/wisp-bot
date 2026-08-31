@@ -44,7 +44,7 @@ export class AgentIpcController {
   async send(payload: unknown): Promise<EmptyResult> {
     return toResult(async () => {
       const request = parseSendMessageRequest(payload);
-      await this.registry.send(request);
+      this.registry.dispatch(request);
       return emptyValue;
     });
   }

@@ -90,6 +90,28 @@ describe("ConversationRepository", () => {
     expect(persisted.schemaVersion).toBe(2);
   });
 
+  it("upserts stable message IDs without duplicating streamed lifecycle updates", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "wisp-message-upsert-"));
+    const repository = new ConversationRepository({ dataDirectory: directory });
+    await repository.initialize({ first: chat("first") });
+
+    await repository.appendMessage("first", {
+      id: "request-1:assistant",
+      type: "incoming",
+      text: "Partial",
+      status: "streaming",
+    });
+    await repository.appendMessage("first", {
+      id: "request-1:assistant",
+      type: "incoming",
+      text: "Complete response",
+      status: "complete",
+    });
+
+    const matching = repository.getChats().first?.messages.filter(({ id }) => id === "request-1:assistant");
+    expect(matching).toEqual([expect.objectContaining({ text: "Complete response", status: "complete" })]);
+  });
+
   it("preserves a corrupt state file before recovering", async () => {
     const directory = await mkdtemp(path.join(os.tmpdir(), "wisp-corrupt-"));
     const statePath = path.join(directory, "conversations.json");

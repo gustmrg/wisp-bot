@@ -49,7 +49,12 @@ export function normalizeMessage(value: unknown, fallbackId?: string): Message {
   if (typeof status !== "string" || !MESSAGE_STATUSES.has(status as MessageStatus)) {
     throw invalidRequest();
   }
-  const metadata = { ...(id ? { id } : {}), status: status as MessageStatus };
+  if (raw.retryable !== undefined && typeof raw.retryable !== "boolean") throw invalidRequest();
+  const metadata = {
+    ...(id ? { id } : {}),
+    status: status as MessageStatus,
+    ...(raw.retryable === undefined ? {} : { retryable: raw.retryable }),
+  };
 
   if (raw.type === "incoming" || raw.type === "outgoing") {
     const reactions = raw.reactions;
