@@ -153,6 +153,11 @@ export class ModelService {
     return this.runtime;
   }
 
+  async getSelection(): Promise<ModelSelection | null> {
+    const selection = await this.settings.getSelection();
+    return selection && this.isValidSelection(selection) ? selection : null;
+  }
+
   private isValidSelection(selection: ModelSelection): boolean {
     const provider = this.runtime.getProvider(selection.providerId);
     return Boolean(provider?.auth.apiKey && this.runtime.getModel(selection.providerId, selection.modelId));

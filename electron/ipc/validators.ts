@@ -6,7 +6,22 @@ import type {
   SaveAiSettingsRequest,
   SendMessageRequest,
 } from "../../shared/contracts.js";
+import type {
+  AnswerConversationPromptRequest,
+  AppendConversationMessageRequest,
+  CreateConversationRequest,
+  DeleteConversationRequest,
+  InitializeConversationsRequest,
+  MarkConversationReadRequest,
+  UpdateConversationRequest,
+} from "../../shared/conversations.js";
 import { WispBackendError } from "../backend/backend-error.js";
+import {
+  normalizeAgentSettingsChanges,
+  normalizeChat,
+  normalizeChatCollection,
+  normalizeMessage,
+} from "../backend/conversation-normalizer.js";
 
 const ID_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9._:-]*$/;
 const MAX_ID_LENGTH = 128;
@@ -91,4 +106,54 @@ export function parseApplyModelRequest(value: unknown): ApplyModelRequest {
     conversationId: parseId(request.conversationId),
     model: parseModelSelection(request.model),
   };
+}
+
+export function parseInitializeConversationsRequest(value: unknown): InitializeConversationsRequest {
+  const request = asRecord(value);
+  return { chats: normalizeChatCollection(request.chats) };
+}
+
+export function parseCreateConversationRequest(value: unknown): CreateConversationRequest {
+  const request = asRecord(value);
+  return { conversation: normalizeChat(request.conversation) };
+}
+
+export function parseUpdateConversationRequest(value: unknown): UpdateConversationRequest {
+  const request = asRecord(value);
+  return {
+    conversationId: parseId(request.conversationId),
+    changes: normalizeAgentSettingsChanges(request.changes),
+  };
+}
+
+export function parseDeleteConversationRequest(value: unknown): DeleteConversationRequest {
+  const request = asRecord(value);
+  return { conversationId: parseId(request.conversationId) };
+}
+
+export function parseAppendConversationMessageRequest(value: unknown): AppendConversationMessageRequest {
+  const request = asRecord(value);
+  return {
+    conversationId: parseId(request.conversationId),
+    message: normalizeMessage(request.message),
+  };
+}
+
+export function parseAnswerConversationPromptRequest(value: unknown): AnswerConversationPromptRequest {
+  const request = asRecord(value);
+  return {
+    conversationId: parseId(request.conversationId),
+    messageId: parseId(request.messageId),
+    answer: stringValue(request.answer, 128),
+  };
+}
+
+export function parseMarkConversationReadRequest(value: unknown): MarkConversationReadRequest {
+  const request = asRecord(value);
+  return { conversationId: parseId(request.conversationId) };
+}
+
+function stringValue(value: unknown, maxLength: number): string {
+  if (typeof value !== "string" || !value.trim() || value.length > maxLength) throw invalidRequest();
+  return value;
 }

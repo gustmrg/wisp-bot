@@ -1,3 +1,14 @@
+import type {
+  AnswerConversationPromptRequest,
+  AppendConversationMessageRequest,
+  ConversationStateView,
+  CreateConversationRequest,
+  DeleteConversationRequest,
+  InitializeConversationsRequest,
+  MarkConversationReadRequest,
+  UpdateConversationRequest,
+} from "./conversations.js";
+
 export const WISP_IPC_CHANNELS = {
   startConversation: "wisp:agent:start",
   sendMessage: "wisp:agent:send",
@@ -8,6 +19,14 @@ export const WISP_IPC_CHANNELS = {
   getAiSettings: "wisp:settings:ai:get",
   saveAiSettings: "wisp:settings:ai:save",
   removeProviderCredential: "wisp:settings:ai:remove-credential",
+  getConversationState: "wisp:conversations:get",
+  initializeConversations: "wisp:conversations:initialize",
+  createConversation: "wisp:conversations:create",
+  updateConversation: "wisp:conversations:update",
+  deleteConversation: "wisp:conversations:delete",
+  appendConversationMessage: "wisp:conversations:append-message",
+  answerConversationPrompt: "wisp:conversations:answer-prompt",
+  markConversationRead: "wisp:conversations:mark-read",
 } as const;
 
 export interface ConversationRequest {
@@ -132,4 +151,26 @@ export interface WispApi {
   removeProviderCredential(
     request: RemoveProviderCredentialRequest,
   ): Promise<BackendResult<AiSettingsView>>;
+  getConversationState(): Promise<BackendResult<ConversationStateView>>;
+  initializeConversations(
+    request: InitializeConversationsRequest,
+  ): Promise<BackendResult<ConversationStateView>>;
+  createConversation(
+    request: CreateConversationRequest,
+  ): Promise<BackendResult<ConversationStateView>>;
+  updateConversation(
+    request: UpdateConversationRequest,
+  ): Promise<BackendResult<ConversationStateView>>;
+  deleteConversation(
+    request: DeleteConversationRequest,
+  ): Promise<BackendResult<ConversationStateView>>;
+  appendConversationMessage(
+    request: AppendConversationMessageRequest,
+  ): Promise<BackendResult<ConversationStateView>>;
+  answerConversationPrompt(
+    request: AnswerConversationPromptRequest,
+  ): Promise<BackendResult<ConversationStateView>>;
+  markConversationRead(
+    request: MarkConversationReadRequest,
+  ): Promise<BackendResult<ConversationStateView>>;
 }

@@ -14,6 +14,14 @@ const WISP_IPC_CHANNELS = {
   getAiSettings: "wisp:settings:ai:get",
   saveAiSettings: "wisp:settings:ai:save",
   removeProviderCredential: "wisp:settings:ai:remove-credential",
+  getConversationState: "wisp:conversations:get",
+  initializeConversations: "wisp:conversations:initialize",
+  createConversation: "wisp:conversations:create",
+  updateConversation: "wisp:conversations:update",
+  deleteConversation: "wisp:conversations:delete",
+  appendConversationMessage: "wisp:conversations:append-message",
+  answerConversationPrompt: "wisp:conversations:answer-prompt",
+  markConversationRead: "wisp:conversations:mark-read",
 } as const;
 
 const wispApi: WispApi = {
@@ -33,6 +41,26 @@ const wispApi: WispApi = {
   saveAiSettings: (request) => ipcRenderer.invoke(WISP_IPC_CHANNELS.saveAiSettings, request),
   removeProviderCredential: (request) => ipcRenderer.invoke(
     WISP_IPC_CHANNELS.removeProviderCredential,
+    request,
+  ),
+  getConversationState: () => ipcRenderer.invoke(WISP_IPC_CHANNELS.getConversationState),
+  initializeConversations: (request) => ipcRenderer.invoke(
+    WISP_IPC_CHANNELS.initializeConversations,
+    request,
+  ),
+  createConversation: (request) => ipcRenderer.invoke(WISP_IPC_CHANNELS.createConversation, request),
+  updateConversation: (request) => ipcRenderer.invoke(WISP_IPC_CHANNELS.updateConversation, request),
+  deleteConversation: (request) => ipcRenderer.invoke(WISP_IPC_CHANNELS.deleteConversation, request),
+  appendConversationMessage: (request) => ipcRenderer.invoke(
+    WISP_IPC_CHANNELS.appendConversationMessage,
+    request,
+  ),
+  answerConversationPrompt: (request) => ipcRenderer.invoke(
+    WISP_IPC_CHANNELS.answerConversationPrompt,
+    request,
+  ),
+  markConversationRead: (request) => ipcRenderer.invoke(
+    WISP_IPC_CHANNELS.markConversationRead,
     request,
   ),
 };

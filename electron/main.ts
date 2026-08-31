@@ -3,10 +3,14 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 
 import { WISP_IPC_CHANNELS, type ConversationAgentEvent } from "../shared/contracts.js";
+import { AgentRegistry } from "./backend/agent-registry.js";
+import { ConversationRepository } from "./backend/conversation-repository.js";
+import { ConversationService } from "./backend/conversation-service.js";
 import { FakeConversationAgentFactory } from "./backend/fake-conversation-agent.js";
 import { ModelService } from "./backend/model-service.js";
 import { SafeStorageEncryption } from "./backend/safe-storage-encryption.js";
 import { registerAgentHandlers } from "./ipc/register-handlers.js";
+import { registerConversationHandlers } from "./ipc/register-conversation-handlers.js";
 import { registerModelSettingsHandlers } from "./ipc/register-model-settings-handlers.js";
 
 const devServerUrl = process.env.VITE_DEV_SERVER_URL;
@@ -67,24 +71,49 @@ void app.whenReady().then(async () => {
     dataDirectory: path.join(app.getPath("userData"), "backend"),
     encryption: new SafeStorageEncryption(),
   });
+  const publishAgentEvent = (event: ConversationAgentEvent): void => {
+    for (const window of BrowserWindow.getAllWindows()) {
+      if (!window.isDestroyed()) window.webContents.send(WISP_IPC_CHANNELS.agentEvent, event);
+    }
+  };
+  const agentRegistry = new AgentRegistry(
+    new FakeConversationAgentFactory({ latencyMs: 250 }),
+    publishAgentEvent,
+  );
+  const conversationService = new ConversationService(
+    new ConversationRepository({ dataDirectory: path.join(app.getPath("userData"), "backend") }),
+    agentRegistry,
+  );
+  await conversationService.start(await modelService.getSelection());
   const agentHandlers = registerAgentHandlers(
     ipcMain,
-    new FakeConversationAgentFactory({ latencyMs: 250 }),
-    (event: ConversationAgentEvent) => {
-      for (const window of BrowserWindow.getAllWindows()) {
-        if (!window.isDestroyed()) window.webContents.send(WISP_IPC_CHANNELS.agentEvent, event);
-      }
-    },
+    agentRegistry,
+    isTrustedIpcSender,
+  );
+  const conversationHandlers = registerConversationHandlers(
+    ipcMain,
+    conversationService,
     isTrustedIpcSender,
   );
   const modelSettingsHandlers = registerModelSettingsHandlers(
     ipcMain,
     modelService,
     isTrustedIpcSender,
+    (selection) => conversationService.applyModel(selection),
   );
-  app.once("before-quit", () => {
+  let backendDisposed = false;
+  let backendDisposing = false;
+  app.on("before-quit", (event) => {
+    if (backendDisposed) return;
+    event.preventDefault();
+    if (backendDisposing) return;
+    backendDisposing = true;
     modelSettingsHandlers.dispose();
-    void agentHandlers.dispose();
+    conversationHandlers.dispose();
+    void agentHandlers.dispose().finally(() => {
+      backendDisposed = true;
+      app.quit();
+    });
   });
   await createWindow();
 

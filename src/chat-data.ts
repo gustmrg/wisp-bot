@@ -1,64 +1,14 @@
-export type ChatId = string;
+import type { ChatCollection } from "../shared/conversations";
 
-export type WispShape =
-  | "circle"
-  | "pebble"
-  | "triangle"
-  | "cloud"
-  | "square"
-  | "pill"
-  | "diamond"
-  | "hexagon"
-  | "drop";
-
-export interface AgentSettings {
-  id: string;
-  name: string;
-  label: string;
-  description: string;
-  color?: string;
-  avatarImage?: string;
-  shape: WispShape;
-  isCircle: boolean;
-  memberIds?: ChatId[];
-  notifyOnUpdatesEnabled: boolean;
-  isActive?: boolean;
-  unread?: boolean;
-}
-
-interface TextMessage {
-  type: "incoming" | "outgoing";
-  text: string;
-  time?: string;
-  reactions?: ReadonlyArray<string>;
-}
-
-interface TimeMessage {
-  type: "time";
-  text: string;
-}
-
-interface CardMessage {
-  type: "card";
-  items: ReadonlyArray<{ label: string; text: string }>;
-}
-
-interface PromptMessage {
-  type: "prompt";
-  question: string;
-  options: ReadonlyArray<{ key: string; label: string }>;
-  answer?: string;
-}
-
-export type Message = TextMessage | TimeMessage | CardMessage | PromptMessage;
-
-export interface Chat extends AgentSettings {
-  preview: string;
-  timestamp: string;
-  messages: ReadonlyArray<Message>;
-}
-
-export type ChatCollection = Record<ChatId, Chat>;
+export type {
+  AgentSettings,
+  Chat,
+  ChatCollection,
+  ChatId,
+  Message,
+  MessageStatus,
+  WispShape,
+} from "../shared/conversations";
 
 export const initialChats: ChatCollection = {
   chief: {

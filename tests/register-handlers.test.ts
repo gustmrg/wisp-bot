@@ -1,13 +1,16 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { AgentIpcController, registerAgentHandlers } from "../electron/ipc/register-handlers.js";
+import { AgentRegistry } from "../electron/backend/agent-registry.js";
 import { FakeConversationAgentFactory } from "../electron/backend/fake-conversation-agent.js";
 import { WISP_IPC_CHANNELS, type ConversationAgentEvent } from "../shared/contracts.js";
 
 describe("AgentIpcController", () => {
   it("starts a conversation and publishes fake events", async () => {
     const publish = vi.fn<(event: ConversationAgentEvent) => void>();
-    const controller = new AgentIpcController(new FakeConversationAgentFactory(), publish);
+    const registry = new AgentRegistry(new FakeConversationAgentFactory(), publish);
+    await registry.create(context("wisp-1"));
+    const controller = new AgentIpcController(registry);
 
     expect(await controller.start({ conversationId: "wisp-1" })).toEqual({ ok: true, value: {} });
     expect(await controller.send({
@@ -25,7 +28,9 @@ describe("AgentIpcController", () => {
   });
 
   it("returns sanitized errors for invalid and missing conversations", async () => {
-    const controller = new AgentIpcController(new FakeConversationAgentFactory(), () => undefined);
+    const controller = new AgentIpcController(
+      new AgentRegistry(new FakeConversationAgentFactory(), () => undefined),
+    );
 
     expect(await controller.start({ conversationId: "../invalid" })).toEqual({
       ok: false,
@@ -59,8 +64,7 @@ describe("AgentIpcController", () => {
     };
     const registration = registerAgentHandlers(
       ipcMain as never,
-      new FakeConversationAgentFactory(),
-      () => undefined,
+      new AgentRegistry(new FakeConversationAgentFactory(), () => undefined),
       () => false,
     );
     const handler = handlers.get(WISP_IPC_CHANNELS.startConversation);
@@ -76,3 +80,13 @@ describe("AgentIpcController", () => {
     await registration.dispose();
   });
 });
+
+function context(conversationId: string) {
+  return {
+    conversationId,
+    sessionId: `${conversationId}-session`,
+    workspaceDirectory: `/tmp/${conversationId}/workspace`,
+    sessionDirectory: `/tmp/${conversationId}/session`,
+    configDirectory: `/tmp/${conversationId}/config`,
+  };
+}

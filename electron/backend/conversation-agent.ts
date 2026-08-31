@@ -15,6 +15,14 @@ export interface ConversationAgent {
   subscribe(listener: ConversationAgentListener): () => void;
 }
 
+export interface ConversationAgentContext {
+  conversationId: string;
+  sessionId: string;
+  workspaceDirectory: string;
+  sessionDirectory: string;
+  configDirectory: string;
+}
+
 export interface ConversationAgentFactory {
-  create(conversationId: string): ConversationAgent;
+  create(context: ConversationAgentContext): ConversationAgent;
 }

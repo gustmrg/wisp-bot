@@ -78,6 +78,10 @@ Thinking/reasoning content will not be sent to the renderer. Raw tool payloads m
 
 The first real conversation slice will expose only read-only workspace tools (`read`, `grep`, `find`, and `ls`). Shell, write, and edit tools must remain disabled until the existing auto-review settings have a backend enforcement layer and the renderer can answer approval requests. Tool authorization must occur in the main process; UI checks alone are not security controls.
 
+### Make Wisp deletion recoverable
+
+Phase 3 deletion removes the Wisp record and disposes its live registry entry, then moves its workspace, Pi configuration, and session directories into an application-owned `deleted-conversations` archive. Permanent deletion is intentionally deferred; this keeps explicit UI deletion recoverable while session semantics are still evolving.
+
 ## Target backend layout
 
 Names may be adjusted to match implementation details, but responsibilities should remain separated:

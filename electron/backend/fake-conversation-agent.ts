@@ -6,6 +6,7 @@ import type {
 import { WispBackendError } from "./backend-error.js";
 import type {
   ConversationAgent,
+  ConversationAgentContext,
   ConversationAgentFactory,
   ConversationAgentListener,
 } from "./conversation-agent.js";
@@ -187,7 +188,7 @@ export class FakeConversationAgentFactory implements ConversationAgentFactory {
     this.options = options;
   }
 
-  create(conversationId: string): ConversationAgent {
-    return new FakeConversationAgent(conversationId, this.options);
+  create(context: ConversationAgentContext): ConversationAgent {
+    return new FakeConversationAgent(context.conversationId, this.options);
   }
 }

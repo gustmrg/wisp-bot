@@ -4,6 +4,7 @@ import {
   WISP_IPC_CHANNELS,
   type AiSettingsView,
   type BackendResult,
+  type ModelSelection,
 } from "../../shared/contracts.js";
 import { sanitizeBackendError } from "../backend/backend-error.js";
 import type { ModelService } from "../backend/model-service.js";
@@ -27,13 +28,21 @@ export function registerModelSettingsHandlers(
   ipcMain: HandlerIpcMain,
   modelService: ModelService,
   authorizeSender: SenderAuthorizer,
+  onSelectionChange?: (selection: ModelSelection | null) => Promise<void>,
 ): { dispose: () => void } {
   const registrations: ReadonlyArray<readonly [string, (payload: unknown) => Promise<BackendResult<AiSettingsView>>]> = [
     [WISP_IPC_CHANNELS.getAiSettings, () => toResult(() => modelService.getView())],
-    [WISP_IPC_CHANNELS.saveAiSettings, (payload) => toResult(() => modelService.save(parseSaveAiSettingsRequest(payload)))],
+    [WISP_IPC_CHANNELS.saveAiSettings, (payload) => toResult(async () => {
+      const view = await modelService.save(parseSaveAiSettingsRequest(payload));
+      await onSelectionChange?.(view.selection);
+      return view;
+    })],
     [WISP_IPC_CHANNELS.removeProviderCredential, (payload) => toResult(() => {
       const { providerId } = parseRemoveProviderCredentialRequest(payload);
-      return modelService.removeCredential(providerId);
+      return modelService.removeCredential(providerId).then(async (view) => {
+        await onSelectionChange?.(view.selection);
+        return view;
+      });
     })],
   ];
 

@@ -14,7 +14,7 @@ interface ChatPanelProps {
   draft: string;
   composerInputRef: RefObject<HTMLTextAreaElement | null>;
   working: boolean;
-  onAnswerPrompt: (messageIndex: number, answer: string) => void;
+  onAnswerPrompt: (messageId: string | undefined, answer: string) => void;
   onDraftChange: (draft: string) => void;
   onOpenDetails: () => void;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
@@ -65,9 +65,9 @@ function ChatPanel({
         <div className="mx-auto flex w-full max-w-[1400px] flex-col px-3.5 pt-1.5 pb-[22px]" role="log" aria-live="polite">
           {chat.messages.map((message, index) => (
             <MessageView
-              key={`${chat.id}-${message.type}-${index}`}
+              key={message.id ?? `${chat.id}-${message.type}-${index}`}
               message={message}
-              onAnswer={(answer) => onAnswerPrompt(index, answer)}
+              onAnswer={(answer) => onAnswerPrompt(message.id, answer)}
             />
           ))}
           {working ? (
