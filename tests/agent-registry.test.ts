@@ -61,4 +61,32 @@ describe("AgentRegistry", () => {
       .toBeLessThan(lifecycle.indexOf("assistant_message_completed:one-a"));
     await registry.disposeAll();
   });
+
+  it("keeps the registry entry in configuration_required when Pi restoration fails", async () => {
+    const published: ConversationAgentEvent[] = [];
+    const factory: ConversationAgentFactory = {
+      create: (agentContext) => {
+        const agent = new FakeConversationAgent(agentContext.conversationId);
+        agent.applyModel = async () => {
+          throw new Error("raw Pi restore failure");
+        };
+        return agent;
+      },
+    };
+    const registry = new AgentRegistry(factory, (event) => published.push(event));
+
+    await expect(registry.restore([context("one")], {
+      providerId: "provider",
+      modelId: "model",
+    })).resolves.toBeUndefined();
+
+    expect(registry.list()).toEqual(["one"]);
+    expect(registry.statuses()).toEqual({ one: "configuration_required" });
+    expect(published).toContainEqual(expect.objectContaining({
+      type: "conversation_error",
+      error: expect.objectContaining({ message: "The backend could not complete the request." }),
+    }));
+    expect(JSON.stringify(published)).not.toContain("raw Pi restore failure");
+    await registry.disposeAll();
+  });
 });

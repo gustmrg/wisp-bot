@@ -80,11 +80,13 @@ export interface ApplyModelRequest extends ConversationRequest {
 export type BackendErrorCode =
   | "aborted"
   | "already_exists"
+  | "configuration_required"
   | "disposed"
   | "internal_error"
   | "invalid_configuration"
   | "invalid_request"
   | "not_found"
+  | "model_unavailable"
   | "secure_storage_unavailable";
 
 export interface BackendError {
@@ -99,7 +101,7 @@ export type BackendResult<T> =
 
 export type EmptyResult = BackendResult<Record<string, never>>;
 
-export type ConversationStatus = "idle" | "working" | "disposed";
+export type ConversationStatus = "configuration_required" | "idle" | "working" | "disposed";
 
 export type ConversationAgentEvent =
   | {
@@ -137,6 +139,21 @@ export type ConversationAgentEvent =
       conversationId: string;
       requestId?: string;
       error: BackendError;
+    }
+  | {
+      type: "tool_activity";
+      conversationId: string;
+      requestId: string;
+      toolCallId: string;
+      toolName: string;
+      phase: "started" | "updated" | "completed";
+      isError?: boolean;
+    }
+  | {
+      type: "conversation_notice";
+      conversationId: string;
+      requestId?: string;
+      kind: "retry_started" | "retry_finished" | "compaction_started" | "compaction_finished";
     };
 
 export interface WispApi {

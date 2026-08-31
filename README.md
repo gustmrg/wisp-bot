@@ -14,7 +14,7 @@ The renderer uses Tailwind CSS 4 and shadcn/ui with the Base Nova preset. shadcn
 
 ### Prerequisites
 
-- [Node.js](https://nodejs.org/) 22.12 or later
+- [Node.js](https://nodejs.org/) 22.19 or later
 
 ### Install
 
@@ -42,8 +42,8 @@ npm run typecheck
 npm test
 ```
 
-The backend boundary is covered by unit tests for request validation and the
-deterministic fake conversation agent.
+The backend boundary, persistent conversation repository, agent registry, and
+Pi adapter are covered by automated tests. Normal tests never contact a model provider.
 
 ## AI model settings
 
@@ -51,6 +51,25 @@ The Electron main process uses the pinned `@earendil-works/pi-coding-agent`
 SDK to provide the provider/model catalog. API keys are encrypted with
 Electron's operating-system-backed `safeStorage` API and are never exposed to
 the renderer. Wisp refuses to persist keys when secure storage is unavailable.
+
+Each non-circle Wisp owns a persistent Pi session in an application-managed
+workspace. Pi is configured with only the `read`, `grep`, `find`, and `ls`
+tools; project extensions, skills, prompt templates, context files, shell, and
+file mutation tools are disabled.
+
+### Optional live Pi smoke
+
+The live smoke makes one real provider request and is disabled unless explicitly
+enabled. It reads the key only from the process environment, does not print model
+output or key material, and removes its temporary session afterward.
+
+```bash
+WISP_PI_SMOKE=1 \
+WISP_PI_SMOKE_PROVIDER=anthropic \
+WISP_PI_SMOKE_MODEL=claude-sonnet-4-5 \
+WISP_PI_SMOKE_API_KEY='your-key' \
+npm run smoke:pi
+```
 
 ### Add shadcn components
 

@@ -95,6 +95,14 @@ describe("ModelService", () => {
     }));
   });
 
+  it("does not restore a saved selection when its encrypted credential is missing", async () => {
+    const { service, settings } = await createService();
+    await settings.setSelection({ providerId: "provider-b", modelId: "model-b" });
+
+    await expect(service.getSelection()).resolves.toBeNull();
+    await expect(service.getView()).resolves.toEqual(expect.objectContaining({ selection: null }));
+  });
+
   it("reports unavailable secure storage and refuses a new key", async () => {
     const encryption = new TestEncryption();
     encryption.available = false;

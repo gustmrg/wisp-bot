@@ -44,6 +44,50 @@ describe("ConversationRepository", () => {
     await expect(readdir(context.workspaceDirectory)).resolves.toEqual([]);
     await expect(readdir(context.sessionDirectory)).resolves.toEqual([]);
     await expect(readdir(context.configDirectory)).resolves.toEqual([]);
+
+    const piSessionFile = path.join(context.sessionDirectory, "history.jsonl");
+    await repository.savePiSessionIdentity("first", {
+      sessionId: "pi-history-id",
+      sessionFile: piSessionFile,
+    });
+    const restored = new ConversationRepository({ dataDirectory: directory });
+    await restored.load();
+    expect(restored.getAgentContext("first")).toEqual(expect.objectContaining({
+      piSessionId: "pi-history-id",
+      piSessionFile,
+    }));
+    await expect(restored.savePiSessionIdentity("first", {
+      sessionId: "unsafe-history",
+      sessionFile: path.join(directory, "outside.jsonl"),
+    })).rejects.toMatchObject({ code: "invalid_request" });
+    expect(restored.getAgentContext("first").piSessionId).toBe("pi-history-id");
+  });
+
+  it("upgrades Phase 3 records without losing their stable application session", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "wisp-schema-upgrade-"));
+    await writeFile(path.join(directory, "conversations.json"), JSON.stringify({
+      schemaVersion: 1,
+      initialized: true,
+      conversations: {
+        first: {
+          chat: chat("first"),
+          sessionId: "stable-app-session",
+          createdAt: "2026-08-30T12:00:00.000Z",
+          updatedAt: "2026-08-30T12:00:00.000Z",
+        },
+      },
+    }), "utf8");
+    const repository = new ConversationRepository({ dataDirectory: directory });
+
+    await repository.load();
+
+    expect(repository.getAgentContext("first")).toEqual(expect.objectContaining({
+      sessionId: "stable-app-session",
+      piSessionId: null,
+      piSessionFile: null,
+    }));
+    const persisted = JSON.parse(await readFile(path.join(directory, "conversations.json"), "utf8")) as { schemaVersion: number };
+    expect(persisted.schemaVersion).toBe(2);
   });
 
   it("preserves a corrupt state file before recovering", async () => {

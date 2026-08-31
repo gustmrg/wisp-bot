@@ -11,6 +11,7 @@ export interface ConversationAgent {
   send(request: SendMessageRequest): Promise<void>;
   abort(): Promise<void>;
   applyModel(model: ModelSelection): Promise<void>;
+  clearModel(): Promise<void>;
   dispose(): Promise<void>;
   subscribe(listener: ConversationAgentListener): () => void;
 }
@@ -18,9 +19,15 @@ export interface ConversationAgent {
 export interface ConversationAgentContext {
   conversationId: string;
   sessionId: string;
+  name: string;
+  label: string;
+  description: string;
   workspaceDirectory: string;
   sessionDirectory: string;
   configDirectory: string;
+  piSessionId: string | null;
+  piSessionFile: string | null;
+  savePiSessionIdentity?: (identity: { sessionId: string; sessionFile: string | null }) => Promise<void>;
 }
 
 export interface ConversationAgentFactory {

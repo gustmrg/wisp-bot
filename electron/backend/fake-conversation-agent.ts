@@ -72,6 +72,11 @@ export class FakeConversationAgent implements ConversationAgent {
     this.model = model;
   }
 
+  async clearModel(): Promise<void> {
+    this.assertNotDisposed();
+    this.model = undefined;
+  }
+
   async dispose(): Promise<void> {
     if (this.disposed) return;
     this.disposed = true;

@@ -6,8 +6,11 @@ import { WISP_IPC_CHANNELS, type ConversationAgentEvent } from "../shared/contra
 import { AgentRegistry } from "./backend/agent-registry.js";
 import { ConversationRepository } from "./backend/conversation-repository.js";
 import { ConversationService } from "./backend/conversation-service.js";
-import { FakeConversationAgentFactory } from "./backend/fake-conversation-agent.js";
 import { ModelService } from "./backend/model-service.js";
+import {
+  PiConversationAgentFactory,
+  SdkPiSessionFactory,
+} from "./backend/pi-conversation-agent.js";
 import { SafeStorageEncryption } from "./backend/safe-storage-encryption.js";
 import { registerAgentHandlers } from "./ipc/register-handlers.js";
 import { registerConversationHandlers } from "./ipc/register-conversation-handlers.js";
@@ -77,7 +80,7 @@ void app.whenReady().then(async () => {
     }
   };
   const agentRegistry = new AgentRegistry(
-    new FakeConversationAgentFactory({ latencyMs: 250 }),
+    new PiConversationAgentFactory(new SdkPiSessionFactory(modelService.getModelRuntime())),
     publishAgentEvent,
   );
   const conversationService = new ConversationService(

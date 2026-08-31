@@ -20,6 +20,7 @@ export interface ModelRuntimeLike {
   getProvider(providerId: string): ReturnType<ModelRuntime["getProvider"]>;
   getModels(providerId?: string): ReturnType<ModelRuntime["getModels"]>;
   getModel(providerId: string, modelId: string): ReturnType<ModelRuntime["getModel"]>;
+  hasConfiguredAuth(providerId: string): boolean;
   setRuntimeApiKey(providerId: string, apiKey: string): Promise<void>;
   removeRuntimeApiKey(providerId: string): Promise<void>;
 }
@@ -92,7 +93,11 @@ export class ModelService {
       .sort(compareByName);
 
     const savedSelection = await this.settings.getSelection();
-    const selection = savedSelection && this.isValidSelection(savedSelection) ? savedSelection : null;
+    const selection = savedSelection
+      && this.isValidSelection(savedSelection)
+      && credentialProviders.has(savedSelection.providerId)
+      ? savedSelection
+      : null;
     return {
       selection,
       secureStorageAvailable: this.credentials.isSecureStorageAvailable(),
@@ -155,7 +160,9 @@ export class ModelService {
 
   async getSelection(): Promise<ModelSelection | null> {
     const selection = await this.settings.getSelection();
-    return selection && this.isValidSelection(selection) ? selection : null;
+    if (!selection || !this.isValidSelection(selection)) return null;
+    const credential = await this.credentials.read(selection.providerId);
+    return credential?.type === "api_key" ? selection : null;
   }
 
   private isValidSelection(selection: ModelSelection): boolean {

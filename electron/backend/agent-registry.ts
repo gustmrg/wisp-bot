@@ -4,7 +4,7 @@ import type {
   SendMessageRequest,
 } from "../../shared/contracts.js";
 import type { ManagedConversationStatus } from "../../shared/conversations.js";
-import { WispBackendError } from "./backend-error.js";
+import { sanitizeBackendError, WispBackendError } from "./backend-error.js";
 import type {
   ConversationAgent,
   ConversationAgentContext,
@@ -61,12 +61,23 @@ export class AgentRegistry {
     this.entries.set(conversationId, entry);
     try {
       await agent.start();
-      if (this.model) await agent.applyModel(this.model);
     } catch (error) {
       this.entries.delete(conversationId);
       entry.unsubscribe();
       await agent.dispose().catch(() => undefined);
       throw error;
+    }
+    if (this.model) {
+      try {
+        await agent.applyModel(this.model);
+      } catch (error) {
+        entry.status = "configuration_required";
+        this.publish({
+          type: "conversation_error",
+          conversationId,
+          error: sanitizeBackendError(error),
+        });
+      }
     }
   }
 
@@ -101,11 +112,17 @@ export class AgentRegistry {
     this.model = model;
     await Promise.all([...this.entries.values()].map(async (entry) => {
       if (!model) {
+        await entry.agent.clearModel();
         entry.status = "configuration_required";
         return;
       }
-      await entry.agent.applyModel(model);
-      if (entry.status === "configuration_required") entry.status = "idle";
+      try {
+        await entry.agent.applyModel(model);
+        if (entry.status === "configuration_required") entry.status = "idle";
+      } catch (error) {
+        entry.status = "configuration_required";
+        throw error;
+      }
     }));
   }
 

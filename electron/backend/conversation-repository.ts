@@ -12,11 +12,13 @@ import {
   normalizeConversationId,
 } from "./conversation-normalizer.js";
 
-const SCHEMA_VERSION = 1;
+const SCHEMA_VERSION = 2;
 
 export interface ConversationRecord {
   chat: Chat;
   sessionId: string | null;
+  piSessionId: string | null;
+  piSessionFile: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -60,9 +62,11 @@ export class ConversationRepository {
   }
 
   async load(): Promise<void> {
+    let needsSchemaUpgrade = false;
     try {
       const parsed: unknown = JSON.parse(await readFile(this.statePath, "utf8"));
       this.state = this.parsePersistedState(parsed);
+      needsSchemaUpgrade = (parsed as { schemaVersion?: unknown }).schemaVersion === 1;
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === "ENOENT") return;
       await this.preserveCorruptState();
@@ -70,6 +74,7 @@ export class ConversationRepository {
       this.state = { schemaVersion: SCHEMA_VERSION, initialized: false, conversations: {} };
     }
     await this.ensureAllDirectories();
+    if (needsSchemaUpgrade) await this.persist();
   }
 
   isInitialized(): boolean {
@@ -92,9 +97,15 @@ export class ConversationRepository {
     return this.list().flatMap(({ chat, sessionId }) => sessionId ? [{
       conversationId: chat.id,
       sessionId,
+      name: chat.name,
+      label: chat.label,
+      description: chat.description,
       workspaceDirectory: path.join(this.workspaceRoot, sessionId),
       sessionDirectory: path.join(this.sessionRoot, sessionId),
       configDirectory: path.join(this.configRoot, sessionId),
+      piSessionId: this.state.conversations[chat.id]?.piSessionId ?? null,
+      piSessionFile: this.state.conversations[chat.id]?.piSessionFile ?? null,
+      savePiSessionIdentity: (identity) => this.savePiSessionIdentity(chat.id, identity),
     }] : []);
   }
 
@@ -104,9 +115,15 @@ export class ConversationRepository {
     return {
       conversationId,
       sessionId: record.sessionId,
+      name: record.chat.name,
+      label: record.chat.label,
+      description: record.chat.description,
       workspaceDirectory: path.join(this.workspaceRoot, record.sessionId),
       sessionDirectory: path.join(this.sessionRoot, record.sessionId),
       configDirectory: path.join(this.configRoot, record.sessionId),
+      piSessionId: record.piSessionId,
+      piSessionFile: record.piSessionFile,
+      savePiSessionIdentity: (identity) => this.savePiSessionIdentity(conversationId, identity),
     };
   }
 
@@ -121,6 +138,8 @@ export class ConversationRepository {
         conversations: Object.fromEntries(Object.values(normalized).map((chat) => [chat.id, {
           chat,
           sessionId: chat.isCircle ? null : normalizeConversationId(this.createId()),
+          piSessionId: null,
+          piSessionFile: null,
           createdAt: timestamp,
           updatedAt: timestamp,
         }])),
@@ -140,6 +159,8 @@ export class ConversationRepository {
       const record: ConversationRecord = {
         chat,
         sessionId: chat.isCircle ? null : normalizeConversationId(this.createId()),
+        piSessionId: null,
+        piSessionFile: null,
         createdAt: timestamp,
         updatedAt: timestamp,
       };
@@ -205,6 +226,25 @@ export class ConversationRepository {
     });
   }
 
+  async savePiSessionIdentity(
+    conversationId: string,
+    identity: { sessionId: string; sessionFile: string | null },
+  ): Promise<void> {
+    await this.enqueue(async () => {
+      const record = this.require(conversationId);
+      if (record.sessionId === null) throw new WispBackendError("invalid_request", "Circles do not own agent sessions.");
+      const piSessionId = normalizeConversationId(identity.sessionId);
+      const piSessionFile = identity.sessionFile === null
+        ? null
+        : this.normalizePiSessionFile(record.sessionId, identity.sessionFile);
+      if (record.piSessionId === piSessionId && record.piSessionFile === piSessionFile) return;
+      record.piSessionId = piSessionId;
+      record.piSessionFile = piSessionFile;
+      record.updatedAt = this.now().toISOString();
+      await this.persist();
+    });
+  }
+
   async delete(conversationId: string): Promise<ConversationRecord> {
     return this.enqueue(async () => {
       const record = this.require(conversationId);
@@ -249,7 +289,7 @@ export class ConversationRepository {
   private parsePersistedState(value: unknown): PersistedConversationState {
     if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Invalid state");
     const raw = value as Record<string, unknown>;
-    if (raw.schemaVersion !== SCHEMA_VERSION || typeof raw.initialized !== "boolean") throw new Error("Invalid state");
+    if ((raw.schemaVersion !== 1 && raw.schemaVersion !== SCHEMA_VERSION) || typeof raw.initialized !== "boolean") throw new Error("Invalid state");
     if (!raw.conversations || typeof raw.conversations !== "object" || Array.isArray(raw.conversations)) throw new Error("Invalid state");
     const conversations: Record<string, ConversationRecord> = {};
     for (const [id, value] of Object.entries(raw.conversations as Record<string, unknown>)) {
@@ -262,6 +302,12 @@ export class ConversationRepository {
       conversations[id] = {
         chat,
         sessionId,
+        piSessionId: typeof record.piSessionId === "string"
+          ? normalizeConversationId(record.piSessionId)
+          : null,
+        piSessionFile: typeof record.piSessionFile === "string" && sessionId
+          ? this.normalizePiSessionFile(sessionId, record.piSessionFile)
+          : null,
         createdAt: record.createdAt,
         updatedAt: record.updatedAt,
       };
@@ -272,6 +318,16 @@ export class ConversationRepository {
   private async preserveCorruptState(): Promise<void> {
     const suffix = this.now().toISOString().replaceAll(":", "-");
     await rename(this.statePath, `${this.statePath}.corrupt-${suffix}`).catch(() => undefined);
+  }
+
+  private normalizePiSessionFile(sessionId: string, filePath: string): string {
+    const sessionDirectory = path.resolve(this.sessionRoot, sessionId);
+    const resolved = path.resolve(filePath);
+    const relative = path.relative(sessionDirectory, resolved);
+    if (!relative || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
+      throw new WispBackendError("invalid_request", "The Pi session path is invalid.");
+    }
+    return resolved;
   }
 
   private async ensureAllDirectories(): Promise<void> {
