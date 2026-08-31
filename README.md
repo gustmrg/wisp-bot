@@ -29,6 +29,8 @@ npm run dev
 ```
 
 This starts Vite with fast refresh and opens the Electron app.
+The Vite URL by itself is only the renderer preview and cannot access the secure
+backend; use the Electron window opened by this command.
 
 ### Type-check
 
