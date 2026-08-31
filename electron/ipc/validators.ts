@@ -2,6 +2,8 @@ import type {
   ApplyModelRequest,
   ConversationRequest,
   ModelSelection,
+  RemoveProviderCredentialRequest,
+  SaveAiSettingsRequest,
   SendMessageRequest,
 } from "../../shared/contracts.js";
 import { WispBackendError } from "../backend/backend-error.js";
@@ -19,6 +21,17 @@ function asRecord(value: unknown): Record<string, unknown> {
 
 function parseId(value: unknown): string {
   if (typeof value !== "string" || value.length > MAX_ID_LENGTH || !ID_PATTERN.test(value)) {
+    throw invalidRequest();
+  }
+  return value;
+}
+
+function parseCatalogId(value: unknown): string {
+  if (
+    typeof value !== "string"
+    || value.length > 256
+    || !/^[a-zA-Z0-9~][a-zA-Z0-9._:/@~-]*$/.test(value)
+  ) {
     throw invalidRequest();
   }
   return value;
@@ -50,8 +63,26 @@ function parseModelSelection(value: unknown): ModelSelection {
   const model = asRecord(value);
   return {
     providerId: parseId(model.providerId),
-    modelId: parseId(model.modelId),
+    modelId: parseCatalogId(model.modelId),
   };
+}
+
+
+export function parseSaveAiSettingsRequest(value: unknown): SaveAiSettingsRequest {
+  const request = asRecord(value);
+  const apiKey = request.apiKey;
+  if (apiKey !== undefined && (typeof apiKey !== "string" || apiKey.length > 20_000)) {
+    throw invalidRequest();
+  }
+  return {
+    selection: parseModelSelection(request.selection),
+    ...(apiKey === undefined ? {} : { apiKey }),
+  };
+}
+
+export function parseRemoveProviderCredentialRequest(value: unknown): RemoveProviderCredentialRequest {
+  const request = asRecord(value);
+  return { providerId: parseId(request.providerId) };
 }
 
 export function parseApplyModelRequest(value: unknown): ApplyModelRequest {

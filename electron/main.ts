@@ -4,7 +4,10 @@ import { pathToFileURL } from "node:url";
 
 import { WISP_IPC_CHANNELS, type ConversationAgentEvent } from "../shared/contracts.js";
 import { FakeConversationAgentFactory } from "./backend/fake-conversation-agent.js";
+import { ModelService } from "./backend/model-service.js";
+import { SafeStorageEncryption } from "./backend/safe-storage-encryption.js";
 import { registerAgentHandlers } from "./ipc/register-handlers.js";
+import { registerModelSettingsHandlers } from "./ipc/register-model-settings-handlers.js";
 
 const devServerUrl = process.env.VITE_DEV_SERVER_URL;
 const productionRendererPath = path.join(__dirname, "../../dist/index.html");
@@ -60,6 +63,10 @@ async function createWindow(): Promise<void> {
 
 void app.whenReady().then(async () => {
   nativeTheme.themeSource = "system";
+  const modelService = await ModelService.create({
+    dataDirectory: path.join(app.getPath("userData"), "backend"),
+    encryption: new SafeStorageEncryption(),
+  });
   const agentHandlers = registerAgentHandlers(
     ipcMain,
     new FakeConversationAgentFactory({ latencyMs: 250 }),
@@ -70,7 +77,13 @@ void app.whenReady().then(async () => {
     },
     isTrustedIpcSender,
   );
+  const modelSettingsHandlers = registerModelSettingsHandlers(
+    ipcMain,
+    modelService,
+    isTrustedIpcSender,
+  );
   app.once("before-quit", () => {
+    modelSettingsHandlers.dispose();
     void agentHandlers.dispose();
   });
   await createWindow();

@@ -11,6 +11,9 @@ const WISP_IPC_CHANNELS = {
   applyModel: "wisp:agent:apply-model",
   disposeConversation: "wisp:agent:dispose",
   agentEvent: "wisp:agent:event",
+  getAiSettings: "wisp:settings:ai:get",
+  saveAiSettings: "wisp:settings:ai:save",
+  removeProviderCredential: "wisp:settings:ai:remove-credential",
 } as const;
 
 const wispApi: WispApi = {
@@ -26,6 +29,12 @@ const wispApi: WispApi = {
     ipcRenderer.on(WISP_IPC_CHANNELS.agentEvent, handleEvent);
     return () => ipcRenderer.removeListener(WISP_IPC_CHANNELS.agentEvent, handleEvent);
   },
+  getAiSettings: () => ipcRenderer.invoke(WISP_IPC_CHANNELS.getAiSettings),
+  saveAiSettings: (request) => ipcRenderer.invoke(WISP_IPC_CHANNELS.saveAiSettings, request),
+  removeProviderCredential: (request) => ipcRenderer.invoke(
+    WISP_IPC_CHANNELS.removeProviderCredential,
+    request,
+  ),
 };
 
 contextBridge.exposeInMainWorld("wisp", Object.freeze(wispApi));

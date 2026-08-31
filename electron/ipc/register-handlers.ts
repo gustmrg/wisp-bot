@@ -21,7 +21,7 @@ interface AgentEntry {
 
 type EventPublisher = (event: ConversationAgentEvent) => void;
 type HandlerIpcMain = Pick<IpcMain, "handle" | "removeHandler">;
-type SenderAuthorizer = (event: IpcMainInvokeEvent) => boolean;
+export type SenderAuthorizer = (event: IpcMainInvokeEvent) => boolean;
 
 const emptyValue: Record<string, never> = {};
 

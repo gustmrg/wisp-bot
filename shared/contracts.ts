@@ -5,6 +5,9 @@ export const WISP_IPC_CHANNELS = {
   applyModel: "wisp:agent:apply-model",
   disposeConversation: "wisp:agent:dispose",
   agentEvent: "wisp:agent:event",
+  getAiSettings: "wisp:settings:ai:get",
+  saveAiSettings: "wisp:settings:ai:save",
+  removeProviderCredential: "wisp:settings:ai:remove-credential",
 } as const;
 
 export interface ConversationRequest {
@@ -21,6 +24,36 @@ export interface ModelSelection {
   modelId: string;
 }
 
+export interface ModelSummary {
+  id: string;
+  name: string;
+  reasoning: boolean;
+  input: ReadonlyArray<"text" | "image">;
+  contextWindow: number;
+}
+
+export interface ProviderSummary {
+  id: string;
+  name: string;
+  credentialConfigured: boolean;
+  models: ReadonlyArray<ModelSummary>;
+}
+
+export interface AiSettingsView {
+  selection: ModelSelection | null;
+  secureStorageAvailable: boolean;
+  providers: ReadonlyArray<ProviderSummary>;
+}
+
+export interface SaveAiSettingsRequest {
+  selection: ModelSelection;
+  apiKey?: string;
+}
+
+export interface RemoveProviderCredentialRequest {
+  providerId: string;
+}
+
 export interface ApplyModelRequest extends ConversationRequest {
   model: ModelSelection;
 }
@@ -30,8 +63,10 @@ export type BackendErrorCode =
   | "already_exists"
   | "disposed"
   | "internal_error"
+  | "invalid_configuration"
   | "invalid_request"
-  | "not_found";
+  | "not_found"
+  | "secure_storage_unavailable";
 
 export interface BackendError {
   code: BackendErrorCode;
@@ -92,4 +127,9 @@ export interface WispApi {
   applyModel(request: ApplyModelRequest): Promise<EmptyResult>;
   disposeConversation(request: ConversationRequest): Promise<EmptyResult>;
   subscribeToAgentEvents(listener: (event: ConversationAgentEvent) => void): () => void;
+  getAiSettings(): Promise<BackendResult<AiSettingsView>>;
+  saveAiSettings(request: SaveAiSettingsRequest): Promise<BackendResult<AiSettingsView>>;
+  removeProviderCredential(
+    request: RemoveProviderCredentialRequest,
+  ): Promise<BackendResult<AiSettingsView>>;
 }

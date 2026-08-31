@@ -4,6 +4,10 @@ Wisp Bot gives you a squad of AI agents that work around the clock and actually 
 
 This repository contains an interactive mock UI of the Wisp Bot desktop app, built with [Electron](https://www.electronjs.org/), React 19, TypeScript 7, and Vite.
 
+<p align="center">
+  <img src="docs/screenshot.png" alt="Wisp Bot app screenshot" width="800" />
+</p>
+
 The renderer uses Tailwind CSS 4 and shadcn/ui with the Base Nova preset. shadcn components are copied into the project so they can be customized locally.
 
 ## Getting Started
@@ -40,6 +44,13 @@ npm test
 
 The backend boundary is covered by unit tests for request validation and the
 deterministic fake conversation agent.
+
+## AI model settings
+
+The Electron main process uses the pinned `@earendil-works/pi-coding-agent`
+SDK to provide the provider/model catalog. API keys are encrypted with
+Electron's operating-system-backed `safeStorage` API and are never exposed to
+the renderer. Wisp refuses to persist keys when secure storage is unavailable.
 
 ### Add shadcn components
 

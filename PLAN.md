@@ -18,7 +18,7 @@ This plan is intentionally split into reviewable phases. Only one phase should b
 
 ### Embed Pi in the Electron main process
 
-Use the `@mariozechner/pi-coding-agent` SDK directly instead of spawning the CLI in RPC mode. Pi documents the SDK as the preferred option for a type-safe integration in the same Node.js process, and its `AgentSession` exposes streaming, tool, message, and lifecycle events needed by the UI.
+Use the maintained `@earendil-works/pi-coding-agent` SDK directly instead of spawning the CLI in RPC mode. Pi documents the SDK as the preferred option for a type-safe integration in the same Node.js process, and its `AgentSession` exposes streaming, tool, message, and lifecycle events needed by the UI.
 
 The renderer must not import Pi or Node/Electron APIs. A context-isolated preload script will expose a narrow, typed `window.wisp` API backed by validated IPC handlers.
 
@@ -166,7 +166,7 @@ Let the user configure one global provider/model pair and securely add, replace,
 
 **Implementation steps**
 
-1. Pin a compatible `@mariozechner/pi-coding-agent` version and record the chosen SDK surface; avoid semver drift while the integration is developed.
+1. Pin a compatible `@earendil-works/pi-coding-agent` version and record the chosen SDK surface; avoid semver drift while the integration is developed.
 2. Build a `ModelService` around Pi's model runtime/registry that returns normalized provider and model summaries, not SDK types.
 3. Implement a schema-versioned settings store for the active `providerId` and `modelId`, using atomic replacement writes.
 4. Implement the `safeStorage` credential store and inject decrypted values through Pi's runtime-key API. Redact known keys from all backend errors and logs.

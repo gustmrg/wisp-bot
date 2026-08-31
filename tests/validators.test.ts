@@ -4,6 +4,8 @@ import { WispBackendError } from "../electron/backend/backend-error.js";
 import {
   parseApplyModelRequest,
   parseConversationRequest,
+  parseRemoveProviderCredentialRequest,
+  parseSaveAiSettingsRequest,
   parseSendMessageRequest,
 } from "../electron/ipc/validators.js";
 
@@ -55,5 +57,18 @@ describe("IPC request validators", () => {
       conversationId: "wisp-1",
       model: { providerId: "anthropic", modelId: "bad model" },
     })).toThrow(WispBackendError);
+  });
+
+  it("accepts catalog model IDs containing slashes", () => {
+    expect(parseSaveAiSettingsRequest({
+      selection: { providerId: "openrouter", modelId: "anthropic/claude-example" },
+      apiKey: "secret-key",
+    })).toEqual({
+      selection: { providerId: "openrouter", modelId: "anthropic/claude-example" },
+      apiKey: "secret-key",
+    });
+    expect(parseRemoveProviderCredentialRequest({ providerId: "openrouter" })).toEqual({
+      providerId: "openrouter",
+    });
   });
 });
