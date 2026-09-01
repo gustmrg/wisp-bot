@@ -19,9 +19,10 @@ import {
 import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { WispSettingsFields } from "@/components/wisp-settings-fields";
-import { AVATAR_COLORS, Wisp } from "@/components/wisp";
+import { Wisp } from "@/components/wisp";
 import { FEATURE_FLAGS } from "@/lib/feature-flags";
 import { cn } from "@/lib/utils";
+import { AVATAR_COLORS } from "@/lib/wisp-appearance";
 
 type NewAgent = Omit<AgentSettings, "id" | "isActive" | "unread">;
 

@@ -4,6 +4,7 @@ import { SearchIcon } from "lucide-react";
 import type { Chat, ChatCollection, ChatId } from "@/chat-data";
 import { ChatAvatar } from "@/components/chat-avatar";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { findMessageSearchMatch } from "@/lib/message-search";
 
 type SearchFilter = "all" | "wisps" | "messages";
 
@@ -17,13 +18,6 @@ function chatMetadata(chat: Chat): string {
   return `${chat.name} ${chat.label} ${chat.description}`.toLocaleLowerCase();
 }
 
-function chatMessageText(chat: Chat): string {
-  return chat.messages
-    .map((message) => ("text" in message ? message.text : ""))
-    .join(" ")
-    .toLocaleLowerCase();
-}
-
 interface SearchDialogProps {
   chats: ChatCollection;
   open: boolean;
@@ -31,15 +25,23 @@ interface SearchDialogProps {
   onSelectChat: (chatId: ChatId) => void;
 }
 
+interface SearchResult {
+  chat: Chat;
+  snippet?: string;
+}
+
 function SearchDialog({ chats, open, onOpenChange, onSelectChat }: SearchDialogProps) {
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<SearchFilter>("all");
   const deferredQuery = useDeferredValue(query.trim().toLocaleLowerCase());
-  const matches = Object.values(chats).filter((chat) => {
-    if (!deferredQuery) return true;
-    if (filter === "wisps") return chatMetadata(chat).includes(deferredQuery);
-    if (filter === "messages") return chatMessageText(chat).includes(deferredQuery);
-    return chatMetadata(chat).includes(deferredQuery) || chatMessageText(chat).includes(deferredQuery);
+  const matches = Object.values(chats).flatMap<SearchResult>((chat) => {
+    if (!deferredQuery) return [{ chat }];
+
+    const metadataMatches = filter !== "messages" && chatMetadata(chat).includes(deferredQuery);
+    const messageMatch = filter === "wisps" ? undefined : findMessageSearchMatch(chat.messages, deferredQuery);
+    if (!metadataMatches && !messageMatch) return [];
+
+    return [{ chat, snippet: metadataMatches ? undefined : messageMatch?.snippet }];
   });
 
   return (
@@ -88,13 +90,7 @@ function SearchDialog({ chats, open, onOpenChange, onSelectChat }: SearchDialogP
         </div>
         <div className="max-h-[360px] overflow-y-auto px-1.5 pt-1 pb-2">
           {matches.length ? (
-            matches.map((chat) => {
-              const matchedMessage =
-                filter !== "wisps" && deferredQuery
-                  ? chat.messages.find(
-                      (message) => "text" in message && message.text.toLocaleLowerCase().includes(deferredQuery),
-                    )
-                  : undefined;
+            matches.map(({ chat, snippet }) => {
               return (
                 <button
                   type="button"
@@ -108,9 +104,7 @@ function SearchDialog({ chats, open, onOpenChange, onSelectChat }: SearchDialogP
                   <ChatAvatar chat={chat} chats={chats} />
                   <span className="flex min-w-0 flex-1 flex-col gap-0.5">
                     <strong className="truncate">{chat.name}</strong>
-                    <small className="truncate text-dim">
-                      {matchedMessage && "text" in matchedMessage ? matchedMessage.text : chat.preview}
-                    </small>
+                    <small className="truncate text-dim">{snippet ?? chat.preview}</small>
                   </span>
                   <em className="text-[11px] not-italic text-[#646464] dark:text-[#747474]">
                     {chat.isCircle ? "Circle" : "Wisp"}

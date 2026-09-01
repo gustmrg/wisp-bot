@@ -4,9 +4,10 @@ import { ShuffleIcon, UploadIcon, XIcon } from "lucide-react";
 
 import type { AgentSettings } from "@/chat-data";
 import { ChatAvatar } from "@/components/chat-avatar";
-import { AVATAR_COLORS, WISP_SHAPES, Wisp } from "@/components/wisp";
+import { Wisp } from "@/components/wisp";
 import { iconButton } from "@/lib/ui-classes";
 import { cn } from "@/lib/utils";
+import { AVATAR_COLORS, WISP_SHAPES } from "@/lib/wisp-appearance";
 
 const avatarAction =
   "relative mt-1 inline-flex justify-center rounded-[9px] border border-black/[0.12] bg-[#e4e4e4] px-3.5 py-2 text-foreground hover:bg-[#d9d9d9] dark:border-white/[0.12] dark:bg-[#303030] dark:hover:bg-[#393939]";

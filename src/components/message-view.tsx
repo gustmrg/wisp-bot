@@ -12,7 +12,6 @@ interface MessageViewProps {
   onRetry?: () => void;
 }
 
-<<<<<<< HEAD
 function MessageTools({
   text,
   createdAt,
@@ -20,13 +19,6 @@ function MessageTools({
   outgoing,
 }: {
   text: string;
-=======
-function MessageTools({
-  createdAt,
-  legacyTime,
-  outgoing,
-}: {
->>>>>>> d72bb80 (style: format codebase with Biome)
   createdAt?: string;
   legacyTime?: string;
   outgoing: boolean;

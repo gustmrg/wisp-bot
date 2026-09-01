@@ -2,7 +2,19 @@ import type { ToolApprovalRequest } from "./tool-policy.js";
 
 export type ChatId = string;
 
-export type WispShape = "circle" | "pebble" | "triangle" | "cloud" | "square" | "pill" | "diamond" | "hexagon" | "drop";
+export const WISP_SHAPE_IDS = [
+  "circle",
+  "pebble",
+  "square",
+  "pill",
+  "triangle",
+  "diamond",
+  "hexagon",
+  "cloud",
+  "drop",
+] as const;
+
+export type WispShape = (typeof WISP_SHAPE_IDS)[number];
 
 export type MessageStatus = "queued" | "streaming" | "complete" | "failed" | "cancelled";
 

@@ -42,7 +42,7 @@ Make the existing mock UI safer to evolve into a real desktop agent product by:
 |---|---|---:|---:|---:|---|---|
 | 01A | Apply the Biome formatting baseline | P0 | M | LOW | — | DONE |
 | 01 | Establish tests, lint, formatting, and CI | P0 | M | LOW | 01A | DONE |
-| 02 | Fix search, Wisp registry, and clipboard feedback | P1 | M | LOW | 01 | TODO |
+| 02 | Fix search, Wisp registry, and clipboard feedback | P1 | M | LOW | 01 | DONE |
 | 03 | Centralize panel layout and resize lifecycle | P1 | S/M | LOW | 01 | TODO |
 | 04 | Centralize current-user and release metadata | P1 | S | LOW | 01 | TODO |
 | 05 | Model Wisps and circles as discriminated variants | P1 | L | HIGH | 01, 02, 04 | TODO |
@@ -311,12 +311,12 @@ Stop and report rather than improvising if:
 
 - Create `src/lib/wisp-appearance.ts` and `src/lib/message-search.ts` with tests.
 - Create `src/hooks/use-copy-feedback.ts` with tests.
-- Modify `src/chat-data.ts`, `src/components/wisp.tsx`, `src/components/avatar-editor.tsx`, `src/components/search-dialog.tsx`, and `src/components/details-panel.tsx`.
+- Modify `shared/conversations.ts`, `electron/backend/conversation-normalizer.ts`, `src/chat-data.ts`, `src/components/wisp.tsx`, `src/components/avatar-editor.tsx`, `src/components/create-agent-dialog.tsx`, `src/components/search-dialog.tsx`, and `src/components/details-panel.tsx`.
 - Do not change chat persistence or entity types beyond deriving `WispShape` from the registry.
 
 **Implementation steps**:
 
-1. Move `WISP_SHAPES`, `AVATAR_COLORS`, and the derived `WispShape` type to `src/lib/wisp-appearance.ts`. Include `diamond` in the selectable registry. Keep SVG rendering in `wisp.tsx`, use an exhaustive switch with an `assertNever`-style guard, and preserve the current avatar palette values.
+1. Move `WISP_SHAPES` and `AVATAR_COLORS` to `src/lib/wisp-appearance.ts`. Because the merged backend now consumes the shared conversation contract, derive `WispShape` from one shared `WISP_SHAPE_IDS` tuple and make both the renderer registry and backend validator consume it. Include `diamond` in the selectable registry. Keep SVG rendering in `wisp.tsx`, use an exhaustive switch with an `assertNever`-style guard, and preserve the current avatar palette values.
 2. Add a pure exhaustive `messageSearchText(message)` helper. Index incoming/outgoing text, card labels and values, prompt question/options/answer, and intentionally exclude time separators. Add a helper that returns both match status and the display snippet so search does not rescan a matching chat.
 3. Update `SearchDialog` to reuse those helpers for filtering and snippets. Preserve the existing All/Wisps/Messages behavior and empty-query behavior.
 4. Extract clipboard request state into `use-copy-feedback.ts`. Await `navigator.clipboard.writeText`, report success only on resolution, provide an error state, associate status with the current chat ID, clear/restart one reset timer on repeated use, and clean it up on chat change/unmount.
@@ -326,8 +326,8 @@ Stop and report rather than improvising if:
 
 - `npm test -- src/lib/wisp-appearance.test.ts src/lib/message-search.test.ts src/hooks/use-copy-feedback.test.ts` → all tests pass.
 - Add cases for every message discriminant, `diamond`, clipboard unavailable/rejected/resolved, repeated clicks, chat switch, and unmount.
-- `rg -n 'type WispShape' src` → exactly one declaration derived from the registry.
-- `rg -n '"diamond"' src/lib/wisp-appearance.ts src/components/wisp.tsx` → registry and renderer both contain the shape.
+- `rg -n 'type WispShape' shared/conversations.ts` → exactly one declaration derived from `WISP_SHAPE_IDS`; renderer and backend import it.
+- `rg -n '"diamond"' shared/conversations.ts src/components/wisp.tsx` → shared registry and renderer both contain the shape; the appearance test proves `WISP_SHAPES` exactly matches the shared tuple.
 - Run all global validation commands.
 
 **Exit criteria**:

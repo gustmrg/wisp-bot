@@ -1,4 +1,3 @@
-import { useState } from "react";
 import type { PointerEvent as ReactPointerEvent } from "react";
 import { CheckIcon, Share2Icon, XIcon } from "lucide-react";
 
@@ -7,7 +6,7 @@ import { WispSettingsFields } from "@/components/wisp-settings-fields";
 import { ChatAvatar } from "@/components/chat-avatar";
 import { ToggleSwitch } from "@/components/ui/toggle-switch";
 import { getCircleMembers } from "@/lib/circle-members";
-import { copyText } from "@/lib/clipboard";
+import { useCopyFeedback } from "@/hooks/use-copy-feedback";
 import {
   detailsField,
   detailsFieldControl,
@@ -29,13 +28,11 @@ interface DetailsPanelProps {
 }
 
 function DetailsPanel({ chat, chats, width, onChange, onClose, onDelete, onResizeStart }: DetailsPanelProps) {
-  const [copied, setCopied] = useState(false);
+  const copyFeedback = useCopyFeedback(chat.id);
   const members = getCircleMembers(chat, chats);
 
   function shareTemplate() {
-    void copyText(`wisp://template/${chat.id}`);
-    setCopied(true);
-    window.setTimeout(() => setCopied(false), 1400);
+    void copyFeedback.copy(`wisp://template/${chat.id}`);
   }
 
   return (
@@ -145,13 +142,26 @@ function DetailsPanel({ chat, chats, width, onChange, onClose, onDelete, onResiz
         </div>
 
         <footer className="flex-none px-3.5 pt-2.5 pb-3">
+          <span
+            className="sr-only"
+            role={copyFeedback.status === "error" ? "alert" : "status"}
+            aria-live={copyFeedback.status === "error" ? "assertive" : "polite"}
+          >
+            {copyFeedback.message}
+          </span>
           <button
             className="flex h-8 w-full items-center justify-center gap-[7px] rounded-lg border-0 bg-[#eeeeee] text-[#555555] hover:bg-[#e9e9e9] hover:text-[#222222] dark:bg-[#222222] dark:text-[#bcbcbc] dark:hover:bg-[#292929] dark:hover:text-[#eeeeee] [&_svg]:size-[13px]"
             type="button"
             onClick={shareTemplate}
           >
-            {copied ? <CheckIcon /> : <Share2Icon />}
-            {copied ? "Template link copied" : "Share as template"}
+            {copyFeedback.status === "success" ? <CheckIcon /> : <Share2Icon />}
+            {copyFeedback.status === "copying"
+              ? "Copying template link…"
+              : copyFeedback.status === "success"
+                ? "Template link copied"
+                : copyFeedback.status === "error"
+                  ? "Could not copy template link"
+                  : "Share as template"}
           </button>
         </footer>
       </div>

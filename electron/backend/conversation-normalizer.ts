@@ -1,25 +1,16 @@
-import type {
-  AgentSettings,
-  Chat,
-  ChatCollection,
-  Message,
-  MessageStatus,
-  WispShape,
+import {
+  WISP_SHAPE_IDS,
+  type AgentSettings,
+  type Chat,
+  type ChatCollection,
+  type Message,
+  type MessageStatus,
+  type WispShape,
 } from "../../shared/conversations.js";
 import { WispBackendError } from "./backend-error.js";
 
 const ID_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9._:-]*$/;
-const SHAPES = new Set<WispShape>([
-  "circle",
-  "pebble",
-  "triangle",
-  "cloud",
-  "square",
-  "pill",
-  "diamond",
-  "hexagon",
-  "drop",
-]);
+const SHAPES = new Set<WispShape>(WISP_SHAPE_IDS);
 const MESSAGE_STATUSES = new Set<MessageStatus>(["queued", "streaming", "complete", "failed", "cancelled"]);
 const MAX_MESSAGES = 10_000;
 const MAX_TEXT_LENGTH = 100_000;

@@ -1,7 +1,7 @@
 import { useId, type CSSProperties, type ComponentProps, type ReactNode } from "react";
 
-import type { WispShape } from "@/chat-data";
 import { cn } from "@/lib/utils";
+import { AVATAR_COLORS, type WispShape } from "@/lib/wisp-appearance";
 
 interface WispProps extends ComponentProps<"svg"> {
   color?: string;
@@ -10,30 +10,6 @@ interface WispProps extends ComponentProps<"svg"> {
   size?: "default" | "sm" | "lg" | "xl";
   outlined?: boolean;
 }
-
-export const AVATAR_COLORS = [
-  { id: "charcoal", label: "Charcoal", value: "#262626" },
-  { id: "red", label: "Red", value: "#ff3b30" },
-  { id: "orange", label: "Orange", value: "#ed712e" },
-  { id: "amber", label: "Amber", value: "#f19d38" },
-  { id: "teal", label: "Teal", value: "#54b9a6" },
-  { id: "blue", label: "Blue", value: "#3c82f6" },
-  { id: "indigo", label: "Indigo", value: "#6464ef" },
-  { id: "violet", label: "Violet", value: "#885cf5" },
-  { id: "magenta", label: "Magenta", value: "#e5498f" },
-  { id: "gray", label: "Gray", value: "#8e8e8e" },
-] as const;
-
-export const WISP_SHAPES: ReadonlyArray<{ id: WispShape; label: string }> = [
-  { id: "circle", label: "Circle" },
-  { id: "pebble", label: "Pebble" },
-  { id: "square", label: "Square" },
-  { id: "pill", label: "Pill" },
-  { id: "triangle", label: "Triangle" },
-  { id: "hexagon", label: "Hexagon" },
-  { id: "cloud", label: "Cloud" },
-  { id: "drop", label: "Drop" },
-];
 
 function hashSeed(seed: string) {
   let hash = 2166136261;
@@ -65,6 +41,8 @@ function WispEyes({ shape }: { shape: WispShape }): ReactNode {
 
 function WispBody({ shape }: { shape: WispShape }): ReactNode {
   switch (shape) {
+    case "circle":
+      return <circle cx="32" cy="32" r="27" />;
     case "pebble":
       return <path d="M31 6C46 4 56 17 59 33s-9 24-25 24S5 49 5 35 15 8 31 6Z" />;
     case "triangle":
@@ -87,8 +65,12 @@ function WispBody({ shape }: { shape: WispShape }): ReactNode {
     case "drop":
       return <path d="M32 4c8 11 20 23 20 36a20 20 0 1 1-40 0C12 27 24 15 32 4Z" />;
     default:
-      return <circle cx="32" cy="32" r="27" />;
+      return assertNever(shape);
   }
+}
+
+function assertNever(value: never): never {
+  throw new Error(`Unsupported Wisp shape: ${String(value)}`);
 }
 
 function Wisp({
