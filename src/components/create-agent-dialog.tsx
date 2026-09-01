@@ -20,6 +20,7 @@ import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { WispSettingsFields } from "@/components/wisp-settings-fields";
 import { AVATAR_COLORS, Wisp } from "@/components/wisp";
+import { FEATURE_FLAGS } from "@/lib/feature-flags";
 import { cn } from "@/lib/utils";
 
 type NewAgent = Omit<AgentSettings, "id" | "isActive" | "unread">;
@@ -46,6 +47,7 @@ function CreateAgentDialog({ chats, onCreate, trigger }: CreateAgentDialogProps)
   const [settings, setSettings] = useState<AgentSettings>(DEFAULT_WISP);
   const { name, description, color } = settings;
   const [isCircle, setIsCircle] = useState(false);
+  const creatingCircle = FEATURE_FLAGS.circles && isCircle;
   const [memberIds, setMemberIds] = useState<string[]>([]);
   const availableWisps = Object.values(chats).filter((chat) => !chat.isCircle);
   const selectedWisps = availableWisps.filter((chat) => memberIds.includes(chat.id));
@@ -63,14 +65,14 @@ function CreateAgentDialog({ chats, onCreate, trigger }: CreateAgentDialogProps)
 
     onCreate({
       name: trimmedName,
-      label: isCircle ? "Circle" : settings.label.trim(),
-      description: isCircle ? "" : description.trim(),
+      label: creatingCircle ? "Circle" : settings.label.trim(),
+      description: creatingCircle ? "" : description.trim(),
       color,
-      shape: isCircle ? "circle" : settings.shape,
-      avatarImage: isCircle ? undefined : settings.avatarImage,
-      isCircle,
-      ...(isCircle ? { memberIds: selectedWisps.map((chat) => chat.id) } : {}),
-      notifyOnUpdatesEnabled: isCircle || settings.notifyOnUpdatesEnabled,
+      shape: creatingCircle ? "circle" : settings.shape,
+      avatarImage: creatingCircle ? undefined : settings.avatarImage,
+      isCircle: creatingCircle,
+      ...(creatingCircle ? { memberIds: selectedWisps.map((chat) => chat.id) } : {}),
+      notifyOnUpdatesEnabled: creatingCircle || settings.notifyOnUpdatesEnabled,
     });
     setOpen(false);
     resetForm();
@@ -87,31 +89,43 @@ function CreateAgentDialog({ chats, onCreate, trigger }: CreateAgentDialogProps)
       <DialogTrigger
         render={
           trigger ?? (
-            <Button variant="ghost" size="icon-sm" type="button" aria-label="New Wisp or circle" />
+            <Button
+              className="w-full justify-center gap-2 px-2 group-data-[collapsed=true]/sidebar:w-9 group-data-[collapsed=true]/sidebar:px-0"
+              variant="ghost"
+              size="sm"
+              type="button"
+              aria-label="Create Wisp"
+            />
           )
         }
       >
-        {trigger ? null : <PlusIcon />}
+        {trigger ? null : <><PlusIcon /><span className="group-data-[collapsed=true]/sidebar:hidden">Create Wisp</span></>}
       </DialogTrigger>
 
       <DialogContent
         className={cn(
           "flex max-h-[calc(100dvh-32px)] flex-col",
-          isCircle
+          creatingCircle
             ? "max-w-[640px] gap-0 overflow-hidden rounded-[20px] p-0 [&>[aria-label=Close]]:top-[18px] [&>[aria-label=Close]]:right-5"
             : "max-w-[530px]",
         )}
       >
-        <DialogHeader className={cn("flex-none", isCircle && "border-b border-border py-[22px] pr-14 pl-6")}>
-          <DialogTitle className={isCircle ? "text-[20px] font-[550]" : undefined}>{isCircle ? "New circle" : "Create new"}</DialogTitle>
-          <DialogDescription className={isCircle ? "sr-only" : undefined}>{isCircle ? "Name your circle and choose the Wisps to add." : "Create a Wisp for focused work or a circle for a shared project."}</DialogDescription>
+        <DialogHeader className={cn("flex-none", creatingCircle && "border-b border-border py-[22px] pr-14 pl-6")}>
+          <DialogTitle className={creatingCircle ? "text-[20px] font-[550]" : undefined}>{creatingCircle ? "New circle" : "Create new"}</DialogTitle>
+          <DialogDescription className={creatingCircle ? "sr-only" : undefined}>
+            {creatingCircle
+              ? "Name your circle and choose the Wisps to add."
+              : FEATURE_FLAGS.circles
+                ? "Create a Wisp for focused work or a circle for a shared project."
+                : "Create a Wisp for focused work."}
+          </DialogDescription>
         </DialogHeader>
 
-        <div className={cn("grid flex-none grid-cols-2 gap-2", isCircle && "px-5 pt-4")} role="group" aria-label="Creation type">
+        <div className={cn("grid flex-none gap-2", FEATURE_FLAGS.circles ? "grid-cols-2" : "grid-cols-1", creatingCircle && "px-5 pt-4")} role="group" aria-label="Creation type">
           <button
             className={cn(
               "flex items-center gap-2.5 rounded-[10px] border border-black/[0.07] bg-white p-[11px] text-left dark:border-white/[0.07] dark:bg-[#1d1d1d]",
-              !isCircle && "border-black/30 bg-[#eeeeee] dark:border-white/30 dark:bg-[#303030]",
+              !creatingCircle && "border-black/30 bg-[#eeeeee] dark:border-white/30 dark:bg-[#303030]",
             )}
             type="button"
             onClick={() => setIsCircle(false)}
@@ -119,21 +133,23 @@ function CreateAgentDialog({ chats, onCreate, trigger }: CreateAgentDialogProps)
             <Wisp color={color} shape={settings.shape} name={name || "New Wisp"} size="sm" className="size-7! flex-none" />
             <span className="flex flex-col gap-0.5"><strong>Wisp</strong><small className="text-dim text-[11px]">An autonomous teammate</small></span>
           </button>
-          <button
-            className={cn(
-              "flex items-center gap-2.5 rounded-[10px] border border-black/[0.07] bg-white p-[11px] text-left dark:border-white/[0.07] dark:bg-[#1d1d1d]",
-              isCircle && "border-black/30 bg-[#eeeeee] dark:border-white/30 dark:bg-[#303030]",
-            )}
-            type="button"
-            onClick={() => setIsCircle(true)}
-          >
-            <CircleIcon aria-hidden="true" className="size-7 flex-none" />
-            <span className="flex flex-col gap-0.5"><strong>Circle</strong><small className="text-dim text-[11px]">A shared workspace</small></span>
-          </button>
+          {FEATURE_FLAGS.circles ? (
+            <button
+              className={cn(
+                "flex items-center gap-2.5 rounded-[10px] border border-black/[0.07] bg-white p-[11px] text-left dark:border-white/[0.07] dark:bg-[#1d1d1d]",
+                creatingCircle && "border-black/30 bg-[#eeeeee] dark:border-white/30 dark:bg-[#303030]",
+              )}
+              type="button"
+              onClick={() => setIsCircle(true)}
+            >
+              <CircleIcon aria-hidden="true" className="size-7 flex-none" />
+              <span className="flex flex-col gap-0.5"><strong>Circle</strong><small className="text-dim text-[11px]">A shared workspace</small></span>
+            </button>
+          ) : null}
         </div>
 
-        <form className={cn("flex min-h-0 flex-col gap-5", isCircle && "gap-0")} onSubmit={handleSubmit}>
-          {!isCircle ? (
+        <form className={cn("flex min-h-0 flex-col gap-5", creatingCircle && "gap-0")} onSubmit={handleSubmit}>
+          {!creatingCircle ? (
             <div
               className="min-h-0 overflow-y-auto px-1 pb-1 [&_[data-slot=color-grid]]:max-w-none [&_[data-slot=color-grid]]:gap-3 [&_[data-slot=color-grid]_button]:w-[26px] [&_[data-slot=shape-grid]]:mb-[18px] [&_[data-slot=shape-grid]]:grid-cols-8 [&_[data-slot=shape-grid]]:gap-1.5 [&_[data-slot=shape-grid]_button]:h-11 max-[540px]:[&_[data-slot=shape-grid]]:grid-cols-4"
             >
@@ -179,9 +195,9 @@ function CreateAgentDialog({ chats, onCreate, trigger }: CreateAgentDialogProps)
               </Field>
             </FieldGroup>
           )}
-          <DialogFooter className={cn("flex-none", isCircle && "flex-row justify-end border-t border-border px-5 py-4 [&_button]:h-10 [&_button]:min-w-[78px] [&_button]:rounded-[11px] [&_button]:text-base")}>
-            {!isCircle ? <DialogClose render={<Button variant="outline" type="button" />}>Cancel</DialogClose> : null}
-            <Button type="submit" disabled={!name.trim()}>{isCircle ? "Create" : "Create Wisp"}</Button>
+          <DialogFooter className={cn("flex-none", creatingCircle && "flex-row justify-end border-t border-border px-5 py-4 [&_button]:h-10 [&_button]:min-w-[78px] [&_button]:rounded-[11px] [&_button]:text-base")}>
+            {!creatingCircle ? <DialogClose render={<Button variant="outline" type="button" />}>Cancel</DialogClose> : null}
+            <Button type="submit" disabled={!name.trim()}>{creatingCircle ? "Create" : "Create Wisp"}</Button>
           </DialogFooter>
         </form>
       </DialogContent>

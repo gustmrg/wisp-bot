@@ -13,7 +13,7 @@
   "license": "MIT",
   "author": "",
   "type": "commonjs",
-  "main": "dist-electron/main.js",
+  "main": "dist-electron/electron/main.js",
   "scripts": {
     "dev": "concurrently --kill-others \"npm:dev:renderer\" \"npm:dev:electron\"",
     "dev:renderer": "vite",
@@ -21,13 +21,16 @@
     "build": "npm run typecheck && npm run build:renderer && npm run build:electron",
     "build:renderer": "vite build",
     "build:electron": "tsc -p tsconfig.electron.json",
+    "test": "vitest run",
     "typecheck": "tsc --noEmit && tsc -p tsconfig.electron.json --noEmit && tsc -p tsconfig.vite.json --noEmit",
     "start": "npm run build && electron .",
+    "smoke:pi": "npm run build:electron && node scripts/pi-live-smoke.mjs",
     "preview": "vite preview",
     "ui:add": "cross-env npm_config_allow_scripts= shadcn add"
   },
   "dependencies": {
     "@base-ui/react": "^1.7.0",
+    "@earendil-works/pi-coding-agent": "0.84.4",
     "@fontsource-variable/geist": "^5.3.0",
     "@shadcn/react": "^0.3.0",
     "@tailwindcss/vite": "^4.3.3",
@@ -51,9 +54,10 @@
     "electron": "^43.4.1",
     "typescript": "^7.0.2",
     "vite": "^8.2.2",
+    "vitest": "^4.1.11",
     "wait-on": "^9.1.0"
   },
   "engines": {
-    "node": ">=22.12.0"
+    "node": ">=22.19.0"
   }
 }

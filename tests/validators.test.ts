@@ -1,0 +1,95 @@
+import { describe, expect, it } from "vitest";
+
+import { WispBackendError } from "../electron/backend/backend-error.js";
+import {
+  parseApplyModelRequest,
+  parseConversationRequest,
+  parseRemoveProviderCredentialRequest,
+  parseResolveToolApprovalRequest,
+  parseSaveAiSettingsRequest,
+  parseSendMessageRequest,
+} from "../electron/ipc/validators.js";
+
+describe("IPC request validators", () => {
+  it("accepts valid conversation and message requests", () => {
+    expect(parseConversationRequest({ conversationId: "wisp:one" })).toEqual({
+      conversationId: "wisp:one",
+    });
+    expect(parseSendMessageRequest({
+      conversationId: "wisp:one",
+      requestId: "request-1",
+      text: "  keep intentional whitespace  ",
+    })).toEqual({
+      conversationId: "wisp:one",
+      requestId: "request-1",
+      text: "  keep intentional whitespace  ",
+    });
+  });
+
+  it.each([
+    null,
+    {},
+    { conversationId: "" },
+    { conversationId: "../escape" },
+    { conversationId: "a".repeat(129) },
+  ])("rejects invalid conversation payload %#", (payload) => {
+    expect(() => parseConversationRequest(payload)).toThrow(WispBackendError);
+  });
+
+  it.each([
+    { conversationId: "wisp-1", requestId: "request-1", text: "" },
+    { conversationId: "wisp-1", requestId: "request-1", text: "   " },
+    { conversationId: "wisp-1", requestId: "bad id", text: "Hello" },
+    { conversationId: "wisp-1", requestId: "request-1", text: "x".repeat(32_001) },
+  ])("rejects invalid message payload %#", (payload) => {
+    expect(() => parseSendMessageRequest(payload)).toThrow(WispBackendError);
+  });
+
+  it("validates both provider and model identifiers", () => {
+    expect(parseApplyModelRequest({
+      conversationId: "wisp-1",
+      model: { providerId: "anthropic", modelId: "claude.example-1" },
+    })).toEqual({
+      conversationId: "wisp-1",
+      model: { providerId: "anthropic", modelId: "claude.example-1" },
+    });
+
+    expect(() => parseApplyModelRequest({
+      conversationId: "wisp-1",
+      model: { providerId: "anthropic", modelId: "bad model" },
+    })).toThrow(WispBackendError);
+  });
+
+  it("accepts catalog model IDs containing slashes", () => {
+    expect(parseSaveAiSettingsRequest({
+      selection: { providerId: "openrouter", modelId: "anthropic/claude-example" },
+      apiKey: "secret-key",
+    })).toEqual({
+      selection: { providerId: "openrouter", modelId: "anthropic/claude-example" },
+      apiKey: "secret-key",
+    });
+    expect(parseRemoveProviderCredentialRequest({ providerId: "openrouter" })).toEqual({
+      providerId: "openrouter",
+    });
+  });
+
+  it("binds tool approval decisions to stable identifiers", () => {
+    expect(parseResolveToolApprovalRequest({
+      approvalId: "approval-1",
+      conversationId: "wisp-1",
+      toolCallId: "tool-1",
+      decision: "allow_once",
+    })).toEqual({
+      approvalId: "approval-1",
+      conversationId: "wisp-1",
+      toolCallId: "tool-1",
+      decision: "allow_once",
+    });
+    expect(() => parseResolveToolApprovalRequest({
+      approvalId: "approval-1",
+      conversationId: "wisp-1",
+      toolCallId: "tool-1",
+      decision: "allow_forever",
+    })).toThrow(WispBackendError);
+  });
+});

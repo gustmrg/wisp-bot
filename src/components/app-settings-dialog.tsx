@@ -1,7 +1,8 @@
 import { useState } from "react";
-import { BellIcon, InfoIcon, KeyboardIcon, RefreshCwIcon, SettingsIcon } from "lucide-react";
+import { BellIcon, BotIcon, InfoIcon, KeyboardIcon, RefreshCwIcon, SettingsIcon } from "lucide-react";
 
 import { GeneralSettingsSections, PreferenceSwitch } from "@/components/general-settings-sections";
+import { ModelSettingsSection } from "@/components/model-settings-section";
 import type { AppPreferences } from "@/lib/app-preferences";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -26,7 +27,7 @@ const navButton =
   "flex items-center gap-2 rounded-[7px] border-0 bg-transparent px-[9px] py-[7px] text-left text-[#606060] hover:bg-[#e6e6e6] hover:text-[#222222] dark:text-[#aaaaaa] dark:hover:bg-[#2b2b2b] dark:hover:text-[#eeeeee] max-[620px]:justify-center [&_svg]:size-3.5 [&_span]:max-[620px]:hidden";
 
 function AppSettingsDialog({ open, preferences, onOpenChange, onPreferencesChange }: AppSettingsDialogProps) {
-  const [section, setSection] = useState<"general" | "about">("general");
+  const [section, setSection] = useState<"general" | "model" | "about">("general");
   const selected = "bg-[#e6e6e6] text-[#222222] dark:bg-[#2b2b2b] dark:text-[#eeeeee]";
 
   return (
@@ -39,6 +40,7 @@ function AppSettingsDialog({ open, preferences, onOpenChange, onPreferencesChang
         <nav className="flex flex-col gap-[3px] border-r border-black/[0.06] bg-[#f5f5f5] px-2.5 py-[18px] dark:border-white/[0.06] dark:bg-[#141414]" aria-label="Settings sections">
           <strong className="mx-2 mb-[15px] mt-0 text-[17px] max-[620px]:hidden">Settings</strong>
           <button className={cn(navButton, section === "general" && selected)} type="button" aria-label="General" aria-current={section === "general" ? "page" : undefined} aria-controls="general-settings-panel" onClick={() => setSection("general")}><SettingsIcon aria-hidden="true" /><span>General</span></button>
+          <button className={cn(navButton, section === "model" && selected)} type="button" aria-label="AI Model" aria-current={section === "model" ? "page" : undefined} aria-controls="model-settings-panel" onClick={() => setSection("model")}><BotIcon aria-hidden="true" /><span>AI Model</span></button>
           <button className={navButton} type="button"><BellIcon /><span>Notifications</span></button>
           <button className={navButton} type="button"><KeyboardIcon /><span>Shortcuts</span></button>
           <button className={cn(navButton, section === "about" && selected)} type="button" aria-label="About" aria-current={section === "about" ? "page" : undefined} aria-controls="about-settings-panel" onClick={() => setSection("about")}><InfoIcon aria-hidden="true" /><span>About</span></button>
@@ -71,6 +73,7 @@ function AppSettingsDialog({ open, preferences, onOpenChange, onPreferencesChang
           </div>
           <GeneralSettingsSections preferences={preferences} onPreferencesChange={onPreferencesChange} />
         </section>
+        <ModelSettingsSection active={section === "model"} />
         <section className="overflow-y-auto px-[30px] py-6 max-[620px]:px-4 max-[620px]:py-5" id="about-settings-panel" aria-labelledby="about-settings-title" hidden={section !== "about"}>
           <h2 id="about-settings-title" className="mb-[22px] mt-0 text-[17px]">About</h2>
           <span className={settingsGroupLabel}>Version</span>

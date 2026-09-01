@@ -4,7 +4,6 @@ import { XIcon } from "lucide-react";
 
 import { TimezoneCombobox } from "@/components/timezone-combobox";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { ToggleSwitch } from "@/components/ui/toggle-switch";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { isRuleBehavior, type AppPreferences, type RuleBehavior } from "@/lib/app-preferences";
@@ -15,6 +14,11 @@ const RULE_BEHAVIORS = [
   { value: "allow", label: "Allow automatically" },
   { value: "ask", label: "Ask first" },
   { value: "block", label: "Block" },
+];
+const RULE_ACTIONS = [
+  { value: "create_file", label: "Create files" },
+  { value: "modify_file", label: "Modify files" },
+  { value: "all_file_changes", label: "All file changes" },
 ];
 const TIMEZONES = Array.from(new Set(["UTC", ...Intl.supportedValuesOf("timeZone")]));
 
@@ -52,8 +56,8 @@ interface GeneralSettingsSectionsProps {
 function GeneralSettingsSections({ preferences, onPreferencesChange }: GeneralSettingsSectionsProps) {
   const [microphones, setMicrophones] = useState<SettingsOption[]>([]);
   const [detectedTimezone] = useState(() => Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC");
-  const [ruleAction, setRuleAction] = useState("");
-  const [ruleBehavior, setRuleBehavior] = useState<RuleBehavior>("allow");
+  const [ruleAction, setRuleAction] = useState("create_file");
+  const [ruleBehavior, setRuleBehavior] = useState<RuleBehavior>("ask");
   const [ruleNotice, setRuleNotice] = useState("");
 
   useEffect(() => {
@@ -94,7 +98,6 @@ function GeneralSettingsSections({ preferences, onPreferencesChange }: GeneralSe
     const action = ruleAction.trim();
     if (!action || duplicateRule) return;
     onPreferencesChange({ ...preferences, autoReviewRules: [...preferences.autoReviewRules, { id: crypto.randomUUID(), action, behavior: ruleBehavior }] });
-    setRuleAction("");
     setRuleNotice("Rule added.");
   }
 
@@ -125,12 +128,12 @@ function GeneralSettingsSections({ preferences, onPreferencesChange }: GeneralSe
         </div>
         <div className={cn(settingsRow, "flex-col items-stretch gap-[5px]")}>
           <strong>Auto-review Rules</strong>
-          <p className="m-0 text-dim text-[11.5px] leading-[1.5]">Write one short, natural-language rule for each action. &quot;Ask first&quot; takes priority if rules conflict.</p>
+          <p className="m-0 text-dim text-[11.5px] leading-[1.5]">Choose a stable file-action category. Block takes priority over ask, and ask takes priority over allow.</p>
           {preferences.autoReviewRules.length ? (
             <ul className="m-0 mt-[7px] flex list-none flex-col p-0" aria-label="Auto-review rules">
               {preferences.autoReviewRules.map((rule) => (
                 <li key={rule.id} className="flex items-center gap-3 border-b border-border py-2">
-                  <span className="min-w-0 flex-1 text-xs [overflow-wrap:anywhere]">{rule.action}<small className="mt-0.5 block">{RULE_BEHAVIORS.find((behavior) => behavior.value === rule.behavior)?.label}</small></span>
+                  <span className="min-w-0 flex-1 text-xs [overflow-wrap:anywhere]">{RULE_ACTIONS.find(({ value }) => value === rule.action)?.label ?? rule.action}<small className="mt-0.5 block">{RULE_BEHAVIORS.find((behavior) => behavior.value === rule.behavior)?.label}</small></span>
                   <Button variant="ghost" size="icon-xs" aria-label={`Remove rule: ${rule.action}`} onClick={() => {
                     onPreferencesChange({ ...preferences, autoReviewRules: preferences.autoReviewRules.filter((item) => item.id !== rule.id) });
                     setRuleNotice("Rule removed.");
@@ -141,7 +144,7 @@ function GeneralSettingsSections({ preferences, onPreferencesChange }: GeneralSe
           ) : null}
           <form className="my-[7px] flex flex-col gap-[5px]" onSubmit={addRule}>
             <label className="m-0 text-dim text-[11.5px] leading-[1.5]" htmlFor="rule-action">When Wisp wants to:</label>
-            <Input id="rule-action" className="h-7 text-xs" maxLength={240} placeholder="e.g. reply to emails for me" value={ruleAction} onChange={(event) => { setRuleAction(event.currentTarget.value); setRuleNotice(""); }} />
+            <SettingsSelect id="rule-action" value={ruleAction} options={RULE_ACTIONS} contentClassName="min-w-56" onChange={(action) => { setRuleAction(action); setRuleNotice(""); }} />
             <label className="m-0 mt-[5px] text-dim text-[11.5px] leading-[1.5]" htmlFor="rule-behavior">It should:</label>
             <div className="flex items-center justify-between gap-2.5">
               <SettingsSelect id="rule-behavior" value={ruleBehavior} options={RULE_BEHAVIORS} contentClassName="min-w-56" onChange={(behavior) => { if (isRuleBehavior(behavior)) setRuleBehavior(behavior); }} />
@@ -150,7 +153,7 @@ function GeneralSettingsSections({ preferences, onPreferencesChange }: GeneralSe
             {duplicateRule ? <p className="m-0 text-dim text-[11.5px] leading-[1.5]">This rule already exists.</p> : null}
           </form>
           <span className="sr-only" role="status">{ruleNotice}</span>
-          <p className="m-0 text-dim text-[11.5px] leading-[1.5]">These rules apply only to you. Timezone and auto-review preferences are saved locally; Wisp execution is not connected yet.</p>
+          <p className="m-0 text-dim text-[11.5px] leading-[1.5]">These rules are enforced in the desktop backend before Pi can create or modify a file. Shell execution remains blocked.</p>
         </div>
       </section>
     </>

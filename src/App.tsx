@@ -1,8 +1,8 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { Dispatch, FormEvent, PointerEvent as ReactPointerEvent, SetStateAction } from "react";
 
-import type { AgentSettings, ChatCollection, ChatId, Message } from "@/chat-data";
-import { initialChats } from "@/chat-data";
+import type { AgentSettings, ChatCollection, ChatId } from "@/chat-data";
+import type { ToolApprovalDecision, ToolApprovalRequest } from "../shared/tool-policy";
 import { AppSettingsDialog } from "@/components/app-settings-dialog";
 import { ChatPanel } from "@/components/chat-panel";
 import type { NewAgent } from "@/components/create-agent-dialog";
@@ -12,44 +12,22 @@ import { Sidebar } from "@/components/sidebar";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { applyTheme } from "@/lib/theme";
 import { DEFAULT_PREFERENCES, normalizePreferences, type AppPreferences } from "@/lib/app-preferences";
-import { migrateLegacyChats } from "@/lib/circle-members";
+import { LEGACY_STORAGE_KEY, useConversations } from "@/hooks/use-conversations";
 import { mainPanel } from "@/lib/ui-classes";
 import { cn } from "@/lib/utils";
 
-const STORAGE_KEY = "wisp-bot-ui-v3";
+const PREFERENCES_STORAGE_KEY = "wisp-bot-preferences-v1";
 
-interface PersistedState {
-  chats: ChatCollection;
-  preferences: AppPreferences;
-}
-
-function loadState(): PersistedState {
+function loadPreferences(): AppPreferences {
   try {
-    const raw = window.localStorage.getItem(STORAGE_KEY);
-    if (raw) {
-      const saved = JSON.parse(raw) as Partial<PersistedState>;
-      if (saved.chats && Object.keys(saved.chats).length) {
-        return { chats: migrateLegacyChats(saved.chats), preferences: normalizePreferences(saved.preferences) };
-      }
-    }
+    const raw = window.localStorage.getItem(PREFERENCES_STORAGE_KEY);
+    if (raw) return normalizePreferences(JSON.parse(raw));
+    const legacy = window.localStorage.getItem(LEGACY_STORAGE_KEY);
+    if (legacy) return normalizePreferences((JSON.parse(legacy) as { preferences?: AppPreferences }).preferences);
   } catch {
-    // A corrupt mock state should never prevent the desktop UI from opening.
+    // Invalid renderer preferences should not prevent the desktop UI from opening.
   }
-  return { chats: initialChats, preferences: DEFAULT_PREFERENCES };
-}
-
-function appendMessage(chats: ChatCollection, chatId: ChatId, message: Message): ChatCollection {
-  const chat = chats[chatId];
-  if (!chat) return chats;
-  return {
-    ...chats,
-    [chatId]: {
-      ...chat,
-      messages: [...chat.messages, message],
-      preview: "text" in message ? message.text : chat.preview,
-      timestamp: "Now",
-    },
-  };
+  return DEFAULT_PREFERENCES;
 }
 
 function uniqueAgentId(name: string, chats: ChatCollection): ChatId {
@@ -82,10 +60,11 @@ function startResize(
 }
 
 export default function App() {
-  const [savedState] = useState(loadState);
-  const [chats, setChats] = useState<ChatCollection>(savedState.chats);
-  const [preferences, setPreferences] = useState<AppPreferences>(savedState.preferences);
-  const [activeChatId, setActiveChatId] = useState<ChatId>(() => savedState.chats.chief ? "chief" : Object.keys(savedState.chats)[0] ?? "");
+  const conversations = useConversations();
+  const chats = conversations.chats;
+  const [preferences, setPreferences] = useState<AppPreferences>(loadPreferences);
+  const [toolPolicyLoaded, setToolPolicyLoaded] = useState(false);
+  const [activeChatId, setActiveChatId] = useState<ChatId>("");
   const [draft, setDraft] = useState("");
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [sidebarWidth, setSidebarWidth] = useState(280);
@@ -93,19 +72,48 @@ export default function App() {
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [workingChatId, setWorkingChatId] = useState<ChatId | null>(null);
   const composerInputRef = useRef<HTMLTextAreaElement>(null);
-  const replyTimersRef = useRef<Set<number>>(new Set());
   const activeChat = chats[activeChatId];
 
-  useLayoutEffect(() => applyTheme(preferences.theme), [preferences.theme]);
+  useLayoutEffect(() => {
+    applyTheme(preferences.theme);
+    window.localStorage.setItem(PREFERENCES_STORAGE_KEY, JSON.stringify(preferences));
+  }, [preferences]);
 
   useEffect(() => {
-    const timer = window.setTimeout(() => {
-      window.localStorage.setItem(STORAGE_KEY, JSON.stringify({ chats, preferences } satisfies PersistedState));
-    }, 180);
-    return () => window.clearTimeout(timer);
-  }, [chats, preferences]);
+    let cancelled = false;
+    void window.wisp.getToolPolicy().then((result) => {
+      if (cancelled) return;
+      if (result.ok) {
+        setPreferences((current) => {
+          const backendIsDefault = result.value.autoReview && result.value.rules.length === 0;
+          const localHasPolicy = !current.autoReview || current.autoReviewRules.length > 0;
+          if (backendIsDefault && localHasPolicy) return current;
+          return {
+            ...current,
+            autoReview: result.value.autoReview,
+            autoReviewRules: [...result.value.rules],
+          };
+        });
+      }
+      setToolPolicyLoaded(true);
+    });
+    return () => { cancelled = true; };
+  }, []);
+
+  useEffect(() => {
+    if (!toolPolicyLoaded) return;
+    void window.wisp.saveToolPolicy({
+      autoReview: preferences.autoReview,
+      rules: preferences.autoReviewRules,
+    });
+  }, [preferences.autoReview, preferences.autoReviewRules, toolPolicyLoaded]);
+
+  useEffect(() => {
+    if (!chats[activeChatId]) {
+      setActiveChatId(chats.chief ? "chief" : Object.keys(chats)[0] ?? "");
+    }
+  }, [activeChatId, chats]);
 
   useEffect(() => {
     function handleKeyDown(event: KeyboardEvent) {
@@ -118,15 +126,10 @@ export default function App() {
     return () => document.removeEventListener("keydown", handleKeyDown);
   }, []);
 
-  useEffect(() => () => replyTimersRef.current.forEach(window.clearTimeout), []);
-
   function handleSelectChat(chatId: ChatId) {
     setActiveChatId(chatId);
     setDraft("");
-    setChats((current) => {
-      const chat = current[chatId];
-      return chat?.unread ? { ...current, [chatId]: { ...chat, unread: false } } : current;
-    });
+    if (chats[chatId]?.unread) void conversations.markRead(chatId);
     window.setTimeout(() => composerInputRef.current?.focus(), 0);
   }
 
@@ -135,80 +138,59 @@ export default function App() {
     const text = draft.trim();
     if (!text || !activeChat) return;
 
-    const chatId = activeChat.id;
-    const time = new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
-    setChats((current) => appendMessage(current, chatId, { type: "outgoing", text, time }));
     setDraft("");
-    setWorkingChatId(chatId);
-
-    const timer = window.setTimeout(() => {
-      setChats((current) => appendMessage(current, chatId, {
-        type: "incoming",
-        text: "On it. I’ll line up the pieces and pull you in if anything needs a decision.",
-        time: new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }),
-      }));
-      setWorkingChatId((current) => current === chatId ? null : current);
-      replyTimersRef.current.delete(timer);
-    }, 1100);
-    replyTimersRef.current.add(timer);
+    void conversations.sendMessage(activeChat.id, text);
   }
 
   function handleCreateAgent(agent: NewAgent) {
     const id = uniqueAgentId(agent.name, chats);
-    setChats((current) => ({
-      ...current,
-      [id]: {
+    void (async () => {
+      const created = await conversations.create({
         ...agent,
         id,
         isActive: !agent.isCircle,
         preview: agent.isCircle ? "This is the beginning of the circle." : "Ready for the first task.",
         timestamp: "Now",
         messages: agent.isCircle
-          ? [{ type: "time", text: "This is the beginning of the circle" }]
+          ? [{ id: crypto.randomUUID(), status: "complete", type: "time", text: "This is the beginning of the circle" }]
           : [],
-      },
-    }));
-    setActiveChatId(id);
-    if (!agent.isCircle) {
-      setWorkingChatId(id);
-      const timer = window.setTimeout(() => {
-        setChats((current) => appendMessage(current, id, {
-          type: "incoming",
-          text: `Hey John, I'm here. What do you want me on first?`,
-          time: new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }),
-        }));
-        setWorkingChatId((current) => current === id ? null : current);
-        replyTimersRef.current.delete(timer);
-      }, 1400);
-      replyTimersRef.current.add(timer);
-    }
+      });
+      if (!created) return;
+      setActiveChatId(id);
+    })();
   }
 
   function handleUpdateChat(changes: Partial<AgentSettings>) {
-    setChats((current) => {
-      const chat = current[activeChatId];
-      return chat ? { ...current, [activeChatId]: { ...chat, ...changes } } : current;
-    });
+    if (activeChatId) void conversations.update(activeChatId, changes);
   }
 
   function handleDeleteChat() {
-    setChats((current) => {
-      const next = { ...current };
-      delete next[activeChatId];
-      const nextId = Object.keys(next)[0] ?? "";
-      setActiveChatId(nextId);
-      return next;
-    });
+    if (activeChatId) {
+      void conversations.delete(activeChatId);
+    }
     setDetailsOpen(false);
   }
 
-  function handleAnswerPrompt(messageIndex: number, answer: string) {
-    setChats((current) => {
-      const chat = current[activeChatId];
-      if (!chat) return current;
-      const messages = chat.messages.map((message, index) => index === messageIndex && message.type === "prompt" ? { ...message, answer } : message);
-      return { ...current, [activeChatId]: { ...chat, messages } };
-    });
+  function handleAnswerPrompt(messageId: string | undefined, answer: string) {
+    if (activeChatId && messageId) void conversations.answerPrompt(activeChatId, messageId, answer);
+  }
+
+  function handleRetry(messageId: string | undefined) {
+    if (!activeChatId || !messageId?.endsWith(":assistant")) return;
+    void conversations.retryMessage(activeChatId, messageId.slice(0, -":assistant".length));
+  }
+
+  async function handleResolveApproval(request: ToolApprovalRequest, decision: ToolApprovalDecision) {
+    const resolved = await conversations.resolveApproval(request, decision);
+    if (!resolved || decision !== "block") return;
+    const policy = await window.wisp.getToolPolicy();
+    if (policy.ok) {
+      setPreferences((current) => ({
+        ...current,
+        autoReview: policy.value.autoReview,
+        autoReviewRules: [...policy.value.rules],
+      }));
+    }
   }
 
   return (
@@ -232,13 +214,23 @@ export default function App() {
             chats={chats}
             draft={draft}
             composerInputRef={composerInputRef}
-            working={workingChatId === activeChat.id}
+            status={conversations.statuses[activeChat.id] ?? "configuration_required"}
+            activity={conversations.activity[activeChat.id]}
+            error={conversations.conversationErrors[activeChat.id]?.message}
+            acknowledging={Boolean(conversations.acknowledging[activeChat.id])}
+            approvals={conversations.approvals[activeChat.id] ?? []}
+            toolActivities={conversations.toolActivities[activeChat.id] ?? []}
             onAnswerPrompt={handleAnswerPrompt}
+            onAbort={() => void conversations.abort(activeChat.id)}
             onDraftChange={setDraft}
             onOpenDetails={() => setDetailsOpen(true)}
+            onRetry={handleRetry}
+            onResolveApproval={(request, decision) => void handleResolveApproval(request, decision)}
             onSubmit={handleSubmit}
           />
-        ) : <main className={cn(mainPanel, "items-center justify-center text-dim")}>Create a Wisp to get started.</main>}
+        ) : <main className={cn(mainPanel, "items-center justify-center text-dim")}>
+          {conversations.loading ? "Loading conversations…" : conversations.error ?? "Create a Wisp to get started."}
+        </main>}
         {detailsOpen && activeChat ? (
           <DetailsPanel
             chat={activeChat}
