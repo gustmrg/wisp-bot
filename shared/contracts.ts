@@ -124,6 +124,7 @@ export type ConversationAgentEvent =
       conversationId: string;
       requestId: string;
       messageId: string;
+      createdAt: string;
     }
   | {
       type: "assistant_text_delta";
@@ -148,6 +149,7 @@ export type ConversationAgentEvent =
       type: "conversation_error";
       conversationId: string;
       requestId?: string;
+      createdAt: string;
       error: BackendError;
     }
   | {

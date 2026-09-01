@@ -312,6 +312,7 @@ export class PiConversationAgent implements ConversationAgent {
       this.emit({
         type: "conversation_error",
         conversationId: this.context.conversationId,
+        createdAt: new Date().toISOString(),
         error: { code: "internal_error", message: "The model change could not be applied.", retryable: true },
       });
       this.emit({

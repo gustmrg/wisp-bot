@@ -45,6 +45,7 @@ describe("conversation stream reducer", () => {
       conversationId: "one",
       requestId: "request-1",
       messageId: "request-1:assistant",
+      createdAt: "2026-08-31T23:10:00.000Z",
     }, chats);
     state = reduceConversationAgentEvent(state, {
       sequence: 3,
@@ -68,7 +69,12 @@ describe("conversation stream reducer", () => {
     const visible = overlayRuntimeMessages(chats, state.messages);
     expect(visible.one.messages).toEqual([
       expect.objectContaining({ id: "request-1", status: "complete" }),
-      expect.objectContaining({ id: "request-1:assistant", text: "First chunk", status: "streaming" }),
+      expect.objectContaining({
+        id: "request-1:assistant",
+        text: "First chunk",
+        status: "streaming",
+        createdAt: "2026-08-31T23:10:00.000Z",
+      }),
     ]);
     expect(visible.two.messages).toEqual([]);
   });
@@ -103,11 +109,16 @@ describe("conversation stream reducer", () => {
       type: "conversation_error",
       conversationId: "two",
       requestId: "request-2",
+      createdAt: "2026-08-31T23:11:00.000Z",
       error: { code: "internal_error", message: "Try again.", retryable: true },
     }, chats);
     const visible = overlayRuntimeMessages(chats, state.messages);
     expect(visible.one.messages).toContainEqual(expect.objectContaining({ status: "cancelled", text: "Stopped." }));
-    expect(visible.two.messages).toContainEqual(expect.objectContaining({ status: "failed", text: "Try again." }));
+    expect(visible.two.messages).toContainEqual(expect.objectContaining({
+      status: "failed",
+      text: "Try again.",
+      createdAt: "2026-08-31T23:11:00.000Z",
+    }));
     expect(state.errors.one).toBeUndefined();
     expect(state.errors.two?.retryable).toBe(true);
   });

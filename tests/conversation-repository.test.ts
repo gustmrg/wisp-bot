@@ -100,16 +100,22 @@ describe("ConversationRepository", () => {
       type: "incoming",
       text: "Partial",
       status: "streaming",
+      createdAt: "2026-08-31T23:10:00.000Z",
     });
     await repository.appendMessage("first", {
       id: "request-1:assistant",
       type: "incoming",
       text: "Complete response",
       status: "complete",
+      createdAt: "2026-08-31T23:10:00.000Z",
     });
 
     const matching = repository.getChats().first?.messages.filter(({ id }) => id === "request-1:assistant");
-    expect(matching).toEqual([expect.objectContaining({ text: "Complete response", status: "complete" })]);
+    expect(matching).toEqual([expect.objectContaining({
+      text: "Complete response",
+      status: "complete",
+      createdAt: "2026-08-31T23:10:00.000Z",
+    })]);
   });
 
   it("preserves a corrupt state file before recovering", async () => {

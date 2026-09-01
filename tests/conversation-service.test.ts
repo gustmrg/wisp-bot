@@ -99,8 +99,18 @@ describe("ConversationService", () => {
         status: "complete",
       }));
       expect(snapshot.chats.one.messages.filter(({ type }) => type === "incoming")).toEqual([
-        expect.objectContaining({ id: "one-a:assistant", text: "Reply:A", status: "complete" }),
-        expect.objectContaining({ id: "one-b:assistant", text: "Reply:B", status: "complete" }),
+        expect.objectContaining({
+          id: "one-a:assistant",
+          text: "Reply:A",
+          status: "complete",
+          createdAt: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/),
+        }),
+        expect.objectContaining({
+          id: "one-b:assistant",
+          text: "Reply:B",
+          status: "complete",
+          createdAt: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/),
+        }),
       ]);
       expect(snapshot.chats.two.messages).toContainEqual(expect.objectContaining({
         id: "two-a:assistant",

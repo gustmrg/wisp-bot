@@ -19,6 +19,7 @@ interface MessageMetadata {
   id?: string;
   status?: MessageStatus;
   retryable?: boolean;
+  createdAt?: string;
 }
 
 export interface AgentSettings {

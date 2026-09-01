@@ -62,7 +62,7 @@ export class ModelService {
       modelsPath: null,
       modelsStorePath: path.join(options.dataDirectory, "model-catalog.json"),
       allowModelNetwork: false,
-      refreshOnCreate: false,
+      refreshOnCreate: true,
     });
     return new ModelService({
       runtime,

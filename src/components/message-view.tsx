@@ -9,7 +9,14 @@ interface MessageViewProps {
   onRetry?: () => void;
 }
 
-function MessageTools({ time, outgoing }: { time?: string; outgoing: boolean }) {
+function MessageTools({ createdAt, legacyTime, outgoing }: {
+  createdAt?: string;
+  legacyTime?: string;
+  outgoing: boolean;
+}) {
+  const time = createdAt
+    ? new Date(createdAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })
+    : legacyTime;
   if (!time) return null;
   return (
     <span
@@ -18,7 +25,7 @@ function MessageTools({ time, outgoing }: { time?: string; outgoing: boolean }) 
         outgoing ? "mr-[7px]" : "ml-[7px]",
       )}
     >
-      <time className="mr-[3px] text-faint text-[10px]">{time}</time>
+      <time className="mr-[3px] text-faint text-[10px]" dateTime={createdAt}>{time}</time>
     </span>
   );
 }
@@ -87,7 +94,7 @@ function MessageView({ message, onAnswer, onRetry }: MessageViewProps) {
         >
           {message.text}
         </div>
-        <MessageTools time={message.time} outgoing={outgoing} />
+        <MessageTools createdAt={message.createdAt} legacyTime={message.time} outgoing={outgoing} />
       </div>
       {message.reactions?.length ? (
         <div className="mt-[3px] flex gap-1">

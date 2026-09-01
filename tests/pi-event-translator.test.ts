@@ -42,6 +42,10 @@ describe("PiEventTranslator", () => {
       delta: "Hello world",
     }));
     expect(events).toContainEqual(expect.objectContaining({
+      type: "assistant_message_started",
+      createdAt: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/),
+    }));
+    expect(events).toContainEqual(expect.objectContaining({
       type: "tool_activity",
       toolName: "read",
       phase: "completed",

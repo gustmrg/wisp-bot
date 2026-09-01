@@ -52,6 +52,7 @@ export class ConversationService {
         type: "incoming",
         text: "",
         status: "streaming",
+        createdAt: event.createdAt,
       });
       return;
     }
@@ -62,6 +63,7 @@ export class ConversationService {
         type: "incoming",
         text: `${current?.type === "incoming" ? current.text : ""}${event.delta}`,
         status: "streaming",
+        ...(current?.createdAt ? { createdAt: current.createdAt } : {}),
       });
       return;
     }
@@ -74,6 +76,7 @@ export class ConversationService {
           ? current.text
           : event.type === "assistant_message_cancelled" ? "Stopped." : "",
         status: event.type === "assistant_message_completed" ? "complete" : "cancelled",
+        ...(current?.createdAt ? { createdAt: current.createdAt } : {}),
       };
       this.persistLiveMessage(event.conversationId, message);
       return;
@@ -88,6 +91,7 @@ export class ConversationService {
         text: current?.type === "incoming" && current.text ? current.text : event.error.message,
         status: "failed",
         retryable: event.error.retryable,
+        createdAt: current?.createdAt ?? event.createdAt,
       });
     }
   }

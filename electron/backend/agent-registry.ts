@@ -97,6 +97,7 @@ export class AgentRegistry {
         this.publishEvent({
           type: "conversation_error",
           conversationId,
+          createdAt: new Date().toISOString(),
           error: sanitizeBackendError(error),
         });
       }
@@ -161,6 +162,7 @@ export class AgentRegistry {
           type: "conversation_error",
           conversationId: request.conversationId,
           requestId: request.requestId,
+          createdAt: new Date().toISOString(),
           error: sanitizeBackendError(error),
         });
       })

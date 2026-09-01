@@ -35,6 +35,12 @@ function string(value: unknown, maxLength = MAX_TEXT_LENGTH, allowEmpty = true):
   return value;
 }
 
+function timestamp(value: unknown): string {
+  const normalized = string(value, 100, false);
+  if (Number.isNaN(Date.parse(normalized))) throw invalidRequest();
+  return normalized;
+}
+
 export function normalizeConversationId(value: unknown): string {
   if (typeof value !== "string" || value.length > 128 || !ID_PATTERN.test(value)) {
     throw invalidRequest();
@@ -54,6 +60,7 @@ export function normalizeMessage(value: unknown, fallbackId?: string): Message {
     ...(id ? { id } : {}),
     status: status as MessageStatus,
     ...(raw.retryable === undefined ? {} : { retryable: raw.retryable }),
+    ...(raw.createdAt === undefined ? {} : { createdAt: timestamp(raw.createdAt) }),
   };
 
   if (raw.type === "incoming" || raw.type === "outgoing") {

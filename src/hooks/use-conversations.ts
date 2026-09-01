@@ -198,7 +198,7 @@ export function useConversations(): ConversationsController {
       id: requestId,
       type: "outgoing",
       text,
-      time: new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }),
+      createdAt: new Date().toISOString(),
       status: "queued",
     };
     replaceRuntime(stageOutgoingMessage(runtimeRef.current, conversationId, message));

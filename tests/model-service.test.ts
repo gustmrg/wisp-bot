@@ -86,6 +86,20 @@ async function createService(encryption = new TestEncryption()) {
 }
 
 describe("ModelService", () => {
+  it("rehydrates persisted provider authentication in a new runtime", async () => {
+    const directory = await mkdtemp(path.join(tmpdir(), "wisp-model-restart-"));
+    directories.push(directory);
+    const encryption = new TestEncryption();
+    const selection = { providerId: "openrouter", modelId: "openai/gpt-oss-120b" };
+    const first = await ModelService.create({ dataDirectory: directory, encryption });
+    await first.save({ selection, apiKey: "secret-provider-key" });
+
+    const restarted = await ModelService.create({ dataDirectory: directory, encryption });
+
+    await expect(restarted.getSelection()).resolves.toEqual(selection);
+    expect(restarted.getModelRuntime().hasConfiguredAuth(selection.providerId)).toBe(true);
+  });
+
   it("requires an encrypted provider key before saving a selection", async () => {
     const { service } = await createService();
     await expect(service.save({

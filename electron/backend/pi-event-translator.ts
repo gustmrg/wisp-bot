@@ -115,6 +115,7 @@ export class PiEventTranslator {
       type: "conversation_error",
       conversationId: this.conversationId,
       requestId: this.request.requestId,
+      createdAt: new Date().toISOString(),
       error,
     });
   }
@@ -158,6 +159,7 @@ export class PiEventTranslator {
       conversationId: this.conversationId,
       requestId: this.request.requestId,
       messageId: this.messageId,
+      createdAt: new Date().toISOString(),
     });
   }
 

@@ -128,6 +128,7 @@ export class FakeConversationAgent implements ConversationAgent {
       conversationId: this.conversationId,
       requestId: request.requestId,
       messageId,
+      createdAt: new Date().toISOString(),
     });
 
     await this.delay(abortController.signal);

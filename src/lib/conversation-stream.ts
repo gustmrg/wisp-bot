@@ -82,6 +82,7 @@ export function markOutgoingFailed(
     text: error.message,
     status: "failed",
     retryable: error.retryable,
+    createdAt: new Date().toISOString(),
   });
 }
 
@@ -119,6 +120,7 @@ export function reduceConversationAgentEvent(
         type: "incoming",
         text: "",
         status: "streaming",
+        createdAt: event.createdAt,
       });
     }
     case "assistant_text_delta": {
@@ -128,6 +130,7 @@ export function reduceConversationAgentEvent(
         type: "incoming",
         text: `${current?.type === "incoming" ? current.text : ""}${event.delta}`,
         status: "streaming",
+        ...(current?.createdAt ? { createdAt: current.createdAt } : {}),
       });
     }
     case "assistant_message_completed":
@@ -157,6 +160,7 @@ export function reduceConversationAgentEvent(
         text: assistant?.type === "incoming" && assistant.text ? assistant.text : event.error.message,
         status: "failed",
         retryable: event.error.retryable,
+        createdAt: assistant?.createdAt ?? event.createdAt,
       });
     }
     case "tool_activity":
@@ -265,6 +269,7 @@ function finalizeAssistant(
       ? current.text
       : status === "cancelled" ? "Stopped." : "",
     status,
+    ...(current?.createdAt ? { createdAt: current.createdAt } : {}),
   });
 }
 
