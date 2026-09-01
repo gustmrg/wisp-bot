@@ -43,7 +43,7 @@ Make the existing mock UI safer to evolve into a real desktop agent product by:
 | 01A | Apply the Biome formatting baseline | P0 | M | LOW | — | DONE |
 | 01 | Establish tests, lint, formatting, and CI | P0 | M | LOW | 01A | DONE |
 | 02 | Fix search, Wisp registry, and clipboard feedback | P1 | M | LOW | 01 | DONE |
-| 03 | Centralize panel layout and resize lifecycle | P1 | S/M | LOW | 01 | TODO |
+| 03 | Centralize panel layout and resize lifecycle | P1 | S/M | LOW | 01 | DONE |
 | 04 | Centralize current-user and release metadata | P1 | S | LOW | 01 | TODO |
 | 05 | Model Wisps and circles as discriminated variants | P1 | L | HIGH | 01, 02, 04 | TODO |
 | 06 | Make workspace mutations preserve entity integrity | P1 | M | MED | 05 | TODO |

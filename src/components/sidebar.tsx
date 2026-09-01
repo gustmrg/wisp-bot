@@ -4,6 +4,7 @@ import { PanelLeftCloseIcon, SearchIcon } from "lucide-react";
 import type { ChatCollection, ChatId } from "@/chat-data";
 import { ChatAvatar } from "@/components/chat-avatar";
 import { CreateAgentDialog, type NewAgent } from "@/components/create-agent-dialog";
+import { sidebarLayoutStyle } from "@/lib/layout";
 import { panelResizer, profileAvatar } from "@/lib/ui-classes";
 import { cn } from "@/lib/utils";
 
@@ -37,9 +38,9 @@ function Sidebar({
   return (
     <>
       <aside
-        className="group/sidebar relative z-[2] flex min-h-0 min-w-[68px] flex-none flex-col overflow-hidden bg-sidebar transition-[width] duration-[180ms] max-[620px]:data-[collapsed=false]:w-[220px]!"
+        className="group/sidebar relative z-[2] flex min-h-0 min-w-(--sidebar-min-width) w-(--sidebar-width) flex-none flex-col overflow-hidden bg-sidebar transition-[width] duration-[180ms] max-[620px]:data-[collapsed=false]:w-(--sidebar-mobile-expanded-width)!"
         data-collapsed={collapsed}
-        style={{ width: collapsed ? 68 : width }}
+        style={sidebarLayoutStyle(width, collapsed)}
       >
         <div className={cn("flex h-11 flex-none items-center px-2", collapsed ? "justify-center" : "justify-end")}>
           <button

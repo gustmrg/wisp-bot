@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import type { Dispatch, FormEvent, PointerEvent as ReactPointerEvent, SetStateAction } from "react";
+import type { FormEvent } from "react";
 
 import type { AgentSettings, ChatCollection, ChatId } from "@/chat-data";
 import type { ToolApprovalDecision, ToolApprovalRequest } from "../shared/tool-policy";
@@ -13,6 +13,8 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { applyTheme } from "@/lib/theme";
 import { DEFAULT_PREFERENCES, normalizePreferences, type AppPreferences } from "@/lib/app-preferences";
 import { LEGACY_STORAGE_KEY, useConversations } from "@/hooks/use-conversations";
+import { useResizablePanel } from "@/hooks/use-resizable-panel";
+import { DETAILS_LAYOUT, SIDEBAR_LAYOUT } from "@/lib/layout";
 import { mainPanel } from "@/lib/ui-classes";
 import { cn } from "@/lib/utils";
 
@@ -44,28 +46,6 @@ function uniqueAgentId(name: string, chats: ChatCollection): ChatId {
   return id;
 }
 
-function startResize(
-  event: ReactPointerEvent<HTMLDivElement>,
-  current: number,
-  setValue: Dispatch<SetStateAction<number>>,
-  direction: 1 | -1,
-  min: number,
-  max: number,
-) {
-  event.preventDefault();
-  const startX = event.clientX;
-  const move = (moveEvent: PointerEvent) =>
-    setValue(Math.min(max, Math.max(min, current + (moveEvent.clientX - startX) * direction)));
-  const stop = () => {
-    document.removeEventListener("pointermove", move);
-    document.removeEventListener("pointerup", stop);
-    document.body.classList.remove("resizing");
-  };
-  document.body.classList.add("resizing");
-  document.addEventListener("pointermove", move);
-  document.addEventListener("pointerup", stop);
-}
-
 export default function App() {
   const conversations = useConversations();
   const chats = conversations.chats;
@@ -74,13 +54,13 @@ export default function App() {
   const [activeChatId, setActiveChatId] = useState<ChatId>("");
   const [draft, setDraft] = useState("");
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
-  const [sidebarWidth, setSidebarWidth] = useState(280);
-  const [detailsWidth, setDetailsWidth] = useState(318);
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const composerInputRef = useRef<HTMLTextAreaElement>(null);
   const activeChat = chats[activeChatId];
+  const sidebarPanel = useResizablePanel({ ...SIDEBAR_LAYOUT.resize, enabled: !sidebarCollapsed });
+  const detailsPanel = useResizablePanel({ ...DETAILS_LAYOUT.resize, enabled: detailsOpen && Boolean(activeChat) });
 
   useLayoutEffect(() => {
     applyTheme(preferences.theme);
@@ -209,12 +189,12 @@ export default function App() {
           activeChatId={activeChatId}
           chats={chats}
           collapsed={sidebarCollapsed}
-          width={sidebarWidth}
+          width={sidebarPanel.width}
           onCollapsedChange={setSidebarCollapsed}
           onCreate={handleCreateAgent}
           onOpenSearch={() => setSearchOpen(true)}
           onOpenSettings={() => setSettingsOpen(true)}
-          onResizeStart={(event) => startResize(event, sidebarWidth, setSidebarWidth, 1, 220, 400)}
+          onResizeStart={sidebarPanel.onResizeStart}
           onSelectChat={handleSelectChat}
         />
         {activeChat ? (
@@ -248,11 +228,11 @@ export default function App() {
           <DetailsPanel
             chat={activeChat}
             chats={chats}
-            width={detailsWidth}
+            width={detailsPanel.width}
             onChange={handleUpdateChat}
             onClose={() => setDetailsOpen(false)}
             onDelete={handleDeleteChat}
-            onResizeStart={(event) => startResize(event, detailsWidth, setDetailsWidth, -1, 280, 480)}
+            onResizeStart={detailsPanel.onResizeStart}
           />
         ) : null}
       </div>

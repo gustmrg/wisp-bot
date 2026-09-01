@@ -7,6 +7,7 @@ import { ChatAvatar } from "@/components/chat-avatar";
 import { ToggleSwitch } from "@/components/ui/toggle-switch";
 import { getCircleMembers } from "@/lib/circle-members";
 import { useCopyFeedback } from "@/hooks/use-copy-feedback";
+import { detailsLayoutStyle } from "@/lib/layout";
 import {
   detailsField,
   detailsFieldControl,
@@ -37,8 +38,8 @@ function DetailsPanel({ chat, chats, width, onChange, onClose, onDelete, onResiz
 
   return (
     <aside
-      className="relative flex min-h-0 min-w-[280px] animate-panel-in flex-none flex-col border-l border-black/[0.055] bg-panel max-[900px]:absolute max-[900px]:inset-y-0 max-[900px]:right-0 max-[900px]:z-[8] max-[900px]:shadow-[-20px_0_50px_rgba(0,0,0,0.114)] dark:border-white/[0.055] dark:max-[900px]:shadow-[-20px_0_50px_rgba(0,0,0,0.38)]"
-      style={{ width }}
+      className="relative flex min-h-0 min-w-(--details-min-width) w-(--details-width) animate-panel-in flex-none flex-col border-l border-black/[0.055] bg-panel max-[900px]:absolute max-[900px]:inset-y-0 max-[900px]:right-0 max-[900px]:z-[8] max-[900px]:shadow-[-20px_0_50px_rgba(0,0,0,0.114)] dark:border-white/[0.055] dark:max-[900px]:shadow-[-20px_0_50px_rgba(0,0,0,0.38)]"
+      style={detailsLayoutStyle(width)}
     >
       <div
         className={cn(panelResizer, "-left-1")}
