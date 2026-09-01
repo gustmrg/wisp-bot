@@ -1,5 +1,6 @@
 import type { AgentSettings, Chat, ChatCollection } from "@/chat-data";
-import { initialChats } from "@/chat-data";
+
+const LEGACY_OFFSITE_MEMBER_IDS = ["chief", "inbox", "account"];
 
 type LegacyChat = AgentSettings & { isGroup?: boolean };
 
@@ -17,7 +18,7 @@ export function migrateLegacyChats(chats: ChatCollection): ChatCollection {
   if (!offsite?.isCircle || offsite.memberIds !== undefined) return migrated;
 
   // Only the bundled demo predates member selection; preserve explicit empty circles.
-  const memberIds = (initialChats.offsite?.memberIds ?? []).filter((id) => migrated[id] && !migrated[id].isCircle);
+  const memberIds = LEGACY_OFFSITE_MEMBER_IDS.filter((id) => migrated[id] && !migrated[id].isCircle);
   return { ...migrated, offsite: { ...offsite, memberIds } };
 }
 

@@ -5,7 +5,6 @@ import type {
   AgentSettings, Chat, ChatCollection, ConversationStateView, ManagedConversationStatus, Message, TextMessage,
 } from "../../shared/conversations";
 import type { ToolApprovalDecision, ToolApprovalRequest } from "../../shared/tool-policy";
-import { initialChats } from "@/chat-data";
 import { migrateLegacyChats } from "@/lib/circle-members";
 import {
   createConversationRuntime, getRuntimeMessage, markOutgoingFailed, overlayRuntimeMessages,
@@ -28,13 +27,13 @@ const EMPTY_STATE: ConversationStateView = {
 function legacyChats(storage: Pick<Storage, "getItem">): ChatCollection {
   try {
     const raw = storage.getItem(LEGACY_STORAGE_KEY);
-    if (!raw) return initialChats;
+    if (!raw) return {};
     const parsed = JSON.parse(raw) as { chats?: ChatCollection };
     return parsed.chats && Object.keys(parsed.chats).length > 0
       ? migrateLegacyChats(parsed.chats)
-      : initialChats;
+      : {};
   } catch {
-    return initialChats;
+    return {};
   }
 }
 

@@ -12,7 +12,16 @@ import {
   normalizeConversationId,
 } from "./conversation-normalizer.js";
 
-const SCHEMA_VERSION = 2;
+const SCHEMA_VERSION = 3;
+const REMOVED_DEMO_CONVERSATION_IDS = new Set([
+  "chief",
+  "sales",
+  "inbox",
+  "account",
+  "talent",
+  "expense",
+  "offsite",
+]);
 
 export interface ConversationRecord {
   chat: Chat;
@@ -66,7 +75,11 @@ export class ConversationRepository {
     try {
       const parsed: unknown = JSON.parse(await readFile(this.statePath, "utf8"));
       this.state = this.parsePersistedState(parsed);
-      needsSchemaUpgrade = (parsed as { schemaVersion?: unknown }).schemaVersion === 1;
+      const persistedSchemaVersion = (parsed as { schemaVersion?: unknown }).schemaVersion;
+      needsSchemaUpgrade = persistedSchemaVersion === 1 || persistedSchemaVersion === 2;
+      if (persistedSchemaVersion === 1 || persistedSchemaVersion === 2) {
+        await this.removeBundledDemoConversations();
+      }
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === "ENOENT") return;
       await this.preserveCorruptState();
@@ -296,7 +309,7 @@ export class ConversationRepository {
   private parsePersistedState(value: unknown): PersistedConversationState {
     if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Invalid state");
     const raw = value as Record<string, unknown>;
-    if ((raw.schemaVersion !== 1 && raw.schemaVersion !== SCHEMA_VERSION) || typeof raw.initialized !== "boolean") throw new Error("Invalid state");
+    if (![1, 2, SCHEMA_VERSION].includes(raw.schemaVersion as number) || typeof raw.initialized !== "boolean") throw new Error("Invalid state");
     if (!raw.conversations || typeof raw.conversations !== "object" || Array.isArray(raw.conversations)) throw new Error("Invalid state");
     const conversations: Record<string, ConversationRecord> = {};
     for (const [id, value] of Object.entries(raw.conversations as Record<string, unknown>)) {
@@ -339,6 +352,15 @@ export class ConversationRepository {
 
   private async ensureAllDirectories(): Promise<void> {
     await Promise.all(this.list().map((record) => this.ensureDirectories(record)));
+  }
+
+  private async removeBundledDemoConversations(): Promise<void> {
+    const removed = Object.entries(this.state.conversations)
+      .filter(([id]) => REMOVED_DEMO_CONVERSATION_IDS.has(id));
+    for (const [id] of removed) delete this.state.conversations[id];
+    await Promise.allSettled(removed.flatMap(([, record]) => (
+      record.sessionId ? [this.archiveDirectories(record.sessionId)] : []
+    )));
   }
 
   private async ensureDirectories(record: ConversationRecord): Promise<void> {

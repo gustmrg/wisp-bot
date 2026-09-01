@@ -87,7 +87,44 @@ describe("ConversationRepository", () => {
       piSessionFile: null,
     }));
     const persisted = JSON.parse(await readFile(path.join(directory, "conversations.json"), "utf8")) as { schemaVersion: number };
-    expect(persisted.schemaVersion).toBe(2);
+    expect(persisted.schemaVersion).toBe(3);
+  });
+
+  it("removes previously persisted bundled demo conversations", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "wisp-demo-removal-"));
+    await writeFile(path.join(directory, "conversations.json"), JSON.stringify({
+      schemaVersion: 2,
+      initialized: true,
+      conversations: {
+        chief: {
+          chat: chat("chief"),
+          sessionId: "demo-session",
+          piSessionId: null,
+          piSessionFile: null,
+          createdAt: "2026-08-30T12:00:00.000Z",
+          updatedAt: "2026-08-30T12:00:00.000Z",
+        },
+        custom: {
+          chat: chat("custom"),
+          sessionId: "custom-session",
+          piSessionId: null,
+          piSessionFile: null,
+          createdAt: "2026-08-30T12:00:00.000Z",
+          updatedAt: "2026-08-30T12:00:00.000Z",
+        },
+      },
+    }), "utf8");
+    const repository = new ConversationRepository({ dataDirectory: directory });
+
+    await repository.load();
+
+    expect(repository.getChats()).toEqual({ custom: expect.objectContaining({ id: "custom" }) });
+    const persisted = JSON.parse(await readFile(path.join(directory, "conversations.json"), "utf8")) as {
+      schemaVersion: number;
+      conversations: Record<string, unknown>;
+    };
+    expect(persisted.schemaVersion).toBe(3);
+    expect(persisted.conversations).not.toHaveProperty("chief");
   });
 
   it("upserts stable message IDs without duplicating streamed lifecycle updates", async () => {

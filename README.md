@@ -103,7 +103,7 @@ wisp-bot/
 │   └── main.ts          # Electron main process
 ├── src/
 │   ├── App.tsx          # React application and UI components
-│   ├── chat-data.ts     # Typed mock conversations
+│   ├── chat-data.ts     # Shared conversation type exports
 │   ├── components/wisp.tsx # Wisp agent avatar
 │   ├── components/ui/   # Locally owned shadcn components
 │   ├── lib/utils.ts     # Shared shadcn class-name utility

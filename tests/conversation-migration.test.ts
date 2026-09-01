@@ -16,6 +16,20 @@ const emptyState: ConversationStateView = {
 };
 
 describe("conversation migration", () => {
+  it("initializes a new installation without demo conversations", async () => {
+    const initializeConversations = vi.fn(async () => ({
+      ok: true as const,
+      value: { ...emptyState, initialized: true },
+    }));
+
+    await bootstrapConversationState({
+      getConversationState: async () => ({ ok: true, value: emptyState }),
+      initializeConversations,
+    }, { getItem: () => null, removeItem: vi.fn() });
+
+    expect(initializeConversations).toHaveBeenCalledWith({ chats: {} });
+  });
+
   it("removes the legacy renderer state only after backend acknowledgement", async () => {
     const removeItem = vi.fn();
     const initializeConversations = vi.fn(async () => ({
