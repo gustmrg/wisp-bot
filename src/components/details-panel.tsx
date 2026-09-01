@@ -7,6 +7,7 @@ import { WispSettingsFields } from "@/components/wisp-settings-fields";
 import { ChatAvatar } from "@/components/chat-avatar";
 import { ToggleSwitch } from "@/components/ui/toggle-switch";
 import { getCircleMembers } from "@/lib/circle-members";
+import { copyText } from "@/lib/clipboard";
 import { detailsField, detailsFieldControl, iconButton, notificationCard, notificationCardCopy, panelResizer } from "@/lib/ui-classes";
 import { cn } from "@/lib/utils";
 
@@ -25,7 +26,7 @@ function DetailsPanel({ chat, chats, width, onChange, onClose, onDelete, onResiz
   const members = getCircleMembers(chat, chats);
 
   function shareTemplate() {
-    void navigator.clipboard?.writeText(`wisp://template/${chat.id}`);
+    void copyText(`wisp://template/${chat.id}`);
     setCopied(true);
     window.setTimeout(() => setCopied(false), 1400);
   }

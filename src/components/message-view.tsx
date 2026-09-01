@@ -1,6 +1,8 @@
-import { CheckIcon } from "lucide-react";
+import { useState } from "react";
+import { CheckIcon, CopyIcon } from "lucide-react";
 
 import type { Message } from "@/chat-data";
+import { copyText } from "@/lib/clipboard";
 import { cn } from "@/lib/utils";
 
 interface MessageViewProps {
@@ -9,15 +11,24 @@ interface MessageViewProps {
   onRetry?: () => void;
 }
 
-function MessageTools({ createdAt, legacyTime, outgoing }: {
+function MessageTools({ text, createdAt, legacyTime, outgoing }: {
+  text: string;
   createdAt?: string;
   legacyTime?: string;
   outgoing: boolean;
 }) {
+  const [copied, setCopied] = useState(false);
   const time = createdAt
     ? new Date(createdAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })
     : legacyTime;
-  if (!time) return null;
+  if (!time && !text) return null;
+
+  function copyMessage() {
+    void copyText(text);
+    setCopied(true);
+    window.setTimeout(() => setCopied(false), 1400);
+  }
+
   return (
     <span
       className={cn(
@@ -25,7 +36,17 @@ function MessageTools({ createdAt, legacyTime, outgoing }: {
         outgoing ? "mr-[7px]" : "ml-[7px]",
       )}
     >
-      <time className="mr-[3px] text-faint text-[10px]" dateTime={createdAt}>{time}</time>
+      {time ? <time className="mr-[3px] text-faint text-[10px]" dateTime={createdAt}>{time}</time> : null}
+      {text ? (
+        <button
+          type="button"
+          aria-label={copied ? "Copied" : "Copy message"}
+          className="flex size-4 items-center justify-center rounded-[4px] text-faint outline-none hover:bg-black/[0.06] hover:text-dim focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue dark:hover:bg-white/[0.06] dark:hover:text-[#dddddd] [&_svg]:size-[11px]"
+          onClick={copyMessage}
+        >
+          {copied ? <CheckIcon aria-hidden="true" className="text-green" /> : <CopyIcon aria-hidden="true" />}
+        </button>
+      ) : null}
     </span>
   );
 }
@@ -94,7 +115,7 @@ function MessageView({ message, onAnswer, onRetry }: MessageViewProps) {
         >
           {message.text}
         </div>
-        <MessageTools createdAt={message.createdAt} legacyTime={message.time} outgoing={outgoing} />
+        <MessageTools text={message.text} createdAt={message.createdAt} legacyTime={message.time} outgoing={outgoing} />
       </div>
       {message.reactions?.length ? (
         <div className="mt-[3px] flex gap-1">
