@@ -40,7 +40,8 @@ Make the existing mock UI safer to evolve into a real desktop agent product by:
 
 | Phase | Title | Priority | Effort | Risk | Depends on | Status |
 |---|---|---:|---:|---:|---|---|
-| 01 | Establish tests, lint, formatting, and CI | P0 | M | LOW | — | BLOCKED: Biome formatting would rewrite 84 existing files; requires a dedicated mechanical formatting phase |
+| 01A | Apply the Biome formatting baseline | P0 | M | LOW | — | DONE |
+| 01 | Establish tests, lint, formatting, and CI | P0 | M | LOW | 01A | TODO |
 | 02 | Fix search, Wisp registry, and clipboard feedback | P1 | M | LOW | 01 | TODO |
 | 03 | Centralize panel layout and resize lifecycle | P1 | S/M | LOW | 01 | TODO |
 | 04 | Centralize current-user and release metadata | P1 | S | LOW | 01 | TODO |
@@ -59,6 +60,28 @@ Make the existing mock UI safer to evolve into a real desktop agent product by:
 | 17 | Produce signed installers and a staged update channel | P3 | L | HIGH | 16 | TODO |
 
 Status values: `TODO`, `IN PROGRESS`, `DONE`, `BLOCKED: <reason>`, or `REJECTED: <reason>`.
+
+### Phase 01A — Apply the Biome formatting baseline
+
+**Goal**: Establish one mechanical formatting baseline without mixing functional changes into Phase 01.
+
+**Scope**:
+
+- Apply `npm run format` to the files selected by `biome.json`.
+- Do not apply lint fixes or make intentional production behavior changes.
+- Keep generated output, `.migration/`, `template/`, and dependencies excluded.
+
+**Validation**:
+
+- `npm run format:check`, `npm test`, `npm run lint`, `npm run typecheck`, `npm run build`, and `git diff --check` all exit 0.
+- Review the diff as formatting-only and confirm no files outside the configured scope changed.
+
+**Exit criteria**:
+
+- Biome reports no formatting drift.
+- Existing tests, typechecking, and production build still pass.
+
+**Suggested commit message**: `style: apply Biome formatting baseline`
 
 ## Dependency notes
 

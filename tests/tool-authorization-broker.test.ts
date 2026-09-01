@@ -4,10 +4,7 @@ import path from "node:path";
 
 import { describe, expect, it, vi } from "vitest";
 
-import {
-  evaluateToolPolicy,
-  ToolAuthorizationBroker,
-} from "../electron/backend/tool-authorization-broker.js";
+import { evaluateToolPolicy, ToolAuthorizationBroker } from "../electron/backend/tool-authorization-broker.js";
 import { ToolPolicyStore } from "../electron/backend/tool-policy-store.js";
 import type { ConversationAgentEvent } from "../shared/contracts.js";
 
@@ -70,25 +67,38 @@ describe("tool policy", () => {
       },
     });
 
-    await expect(broker.resolve({
-      approvalId: "approval-1",
-      conversationId: "one",
-      toolCallId: "tool-1",
-      decision: "allow_once",
-    }, 8)).rejects.toMatchObject({ code: "invalid_request" });
-    await broker.resolve({
-      approvalId: "approval-1",
-      conversationId: "one",
-      toolCallId: "tool-1",
-      decision: "allow_once",
-    }, 7);
+    await expect(
+      broker.resolve(
+        {
+          approvalId: "approval-1",
+          conversationId: "one",
+          toolCallId: "tool-1",
+          decision: "allow_once",
+        },
+        8,
+      ),
+    ).rejects.toMatchObject({ code: "invalid_request" });
+    await broker.resolve(
+      {
+        approvalId: "approval-1",
+        conversationId: "one",
+        toolCallId: "tool-1",
+        decision: "allow_once",
+      },
+      7,
+    );
     await expect(authorization).resolves.toBeUndefined();
-    await expect(broker.resolve({
-      approvalId: "approval-1",
-      conversationId: "one",
-      toolCallId: "tool-1",
-      decision: "allow_once",
-    }, 7)).rejects.toMatchObject({ code: "not_found" });
+    await expect(
+      broker.resolve(
+        {
+          approvalId: "approval-1",
+          conversationId: "one",
+          toolCallId: "tool-1",
+          decision: "allow_once",
+        },
+        7,
+      ),
+    ).rejects.toMatchObject({ code: "not_found" });
   });
 
   it("expires stale approvals and persists an explicit block decision", async () => {
@@ -121,12 +131,15 @@ describe("tool policy", () => {
         summary: "Modify file.txt",
       });
       const blockedExpectation = expect(blocked).rejects.toMatchObject({ code: "tool_blocked" });
-      await broker.resolve({
-        approvalId: "id-2",
-        conversationId: "one",
-        toolCallId: "tool-block",
-        decision: "block",
-      }, 1);
+      await broker.resolve(
+        {
+          approvalId: "id-2",
+          conversationId: "one",
+          toolCallId: "tool-block",
+          decision: "block",
+        },
+        1,
+      );
       await blockedExpectation;
       expect(evaluateToolPolicy(store.get(), "modify_file")).toBe("block");
     } finally {
@@ -143,20 +156,25 @@ describe("tool policy", () => {
       { createId: () => "approval-abort", selectWindowId: () => 1 },
     );
     const controller = new AbortController();
-    const authorization = broker.authorize({
-      conversationId: "one",
-      toolCallId: "tool-abort",
-      toolName: "write",
-      category: "create_file",
-      summary: "Create notes.txt",
-    }, controller.signal);
+    const authorization = broker.authorize(
+      {
+        conversationId: "one",
+        toolCallId: "tool-abort",
+        toolName: "write",
+        category: "create_file",
+        summary: "Create notes.txt",
+      },
+      controller.signal,
+    );
     const expectation = expect(authorization).rejects.toMatchObject({ code: "aborted" });
     controller.abort();
     await expectation;
-    expect(events).toContainEqual(expect.objectContaining({
-      type: "tool_approval_resolved",
-      decision: "deny",
-    }));
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: "tool_approval_resolved",
+        decision: "deny",
+      }),
+    );
   });
 
   it("cancels pending approvals when their conversation is deleted", async () => {

@@ -111,9 +111,9 @@ export class ToolAuthorizationBroker {
     const pending = this.pending.get(request.approvalId);
     if (!pending) throw new WispBackendError("not_found", "This approval request is no longer available.");
     if (
-      pending.windowId !== senderWindowId
-      || pending.request.conversationId !== request.conversationId
-      || pending.request.toolCallId !== request.toolCallId
+      pending.windowId !== senderWindowId ||
+      pending.request.conversationId !== request.conversationId ||
+      pending.request.toolCallId !== request.toolCallId
     ) {
       throw new WispBackendError("invalid_request", "The approval response does not match the pending action.");
     }
@@ -220,7 +220,10 @@ function ruleMatchesCategory(action: string, category: ToolActionCategory): bool
 }
 
 function sanitizeSummary(value: string): string {
-  const summary = value.replaceAll(/[\r\n\t]+/g, " ").replaceAll(/\s+/g, " ").trim();
+  const summary = value
+    .replaceAll(/[\r\n\t]+/g, " ")
+    .replaceAll(/\s+/g, " ")
+    .trim();
   return summary.slice(0, MAX_SUMMARY_LENGTH) || "Perform a file action";
 }
 

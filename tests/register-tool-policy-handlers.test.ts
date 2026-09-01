@@ -24,14 +24,24 @@ describe("tool policy IPC", () => {
     };
     const registration = registerToolPolicyHandlers(ipcMain as never, broker, () => true);
     const save = handlers.get(WISP_IPC_CHANNELS.saveToolPolicy)!;
-    await expect(save({ sender: { id: 10 } }, {
-      autoReview: true,
-      rules: [{ id: "rule-1", action: "create_file", behavior: "allow" }],
-    })).resolves.toMatchObject({ ok: true });
-    await expect(save({ sender: { id: 10 } }, {
-      autoReview: true,
-      rules: [{ id: "bad id", action: "create_file", behavior: "allow" }],
-    })).resolves.toMatchObject({ ok: false, error: { code: "invalid_request" } });
+    await expect(
+      save(
+        { sender: { id: 10 } },
+        {
+          autoReview: true,
+          rules: [{ id: "rule-1", action: "create_file", behavior: "allow" }],
+        },
+      ),
+    ).resolves.toMatchObject({ ok: true });
+    await expect(
+      save(
+        { sender: { id: 10 } },
+        {
+          autoReview: true,
+          rules: [{ id: "bad id", action: "create_file", behavior: "allow" }],
+        },
+      ),
+    ).resolves.toMatchObject({ ok: false, error: { code: "invalid_request" } });
 
     await broker.savePolicy({ autoReview: true, rules: [] });
     const authorization = broker.authorize({
@@ -42,18 +52,28 @@ describe("tool policy IPC", () => {
       summary: "Create notes.txt",
     });
     const resolve = handlers.get(WISP_IPC_CHANNELS.resolveToolApproval)!;
-    await expect(resolve({ sender: { id: 11 } }, {
-      approvalId: "approval-1",
-      conversationId: "one",
-      toolCallId: "tool-1",
-      decision: "allow_once",
-    })).resolves.toMatchObject({ ok: false, error: { code: "invalid_request" } });
-    await expect(resolve({ sender: { id: 10 } }, {
-      approvalId: "approval-1",
-      conversationId: "one",
-      toolCallId: "tool-1",
-      decision: "allow_once",
-    })).resolves.toMatchObject({ ok: true });
+    await expect(
+      resolve(
+        { sender: { id: 11 } },
+        {
+          approvalId: "approval-1",
+          conversationId: "one",
+          toolCallId: "tool-1",
+          decision: "allow_once",
+        },
+      ),
+    ).resolves.toMatchObject({ ok: false, error: { code: "invalid_request" } });
+    await expect(
+      resolve(
+        { sender: { id: 10 } },
+        {
+          approvalId: "approval-1",
+          conversationId: "one",
+          toolCallId: "tool-1",
+          decision: "allow_once",
+        },
+      ),
+    ).resolves.toMatchObject({ ok: true });
     await expect(authorization).resolves.toBeUndefined();
     registration.dispose();
   });

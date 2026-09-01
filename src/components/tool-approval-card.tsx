@@ -10,7 +10,10 @@ interface ToolApprovalCardProps {
 
 function ToolApprovalCard({ request, onResolve }: ToolApprovalCardProps) {
   return (
-    <section className="mt-2 w-[min(680px,90%)] rounded-xl border border-amber-500/25 bg-amber-500/[0.06] p-3" aria-label="Tool approval required">
+    <section
+      className="mt-2 w-[min(680px,90%)] rounded-xl border border-amber-500/25 bg-amber-500/[0.06] p-3"
+      aria-label="Tool approval required"
+    >
       <div className="flex items-start gap-2.5">
         <ShieldAlertIcon aria-hidden="true" className="mt-0.5 size-4 flex-none text-amber-600 dark:text-amber-400" />
         <div className="min-w-0 flex-1">
@@ -20,9 +23,15 @@ function ToolApprovalCard({ request, onResolve }: ToolApprovalCardProps) {
         </div>
       </div>
       <div className="mt-3 flex flex-wrap justify-end gap-1.5">
-        <Button type="button" size="sm" variant="ghost" onClick={() => onResolve("block")}>Always block</Button>
-        <Button type="button" size="sm" variant="secondary" onClick={() => onResolve("deny")}>Deny</Button>
-        <Button type="button" size="sm" onClick={() => onResolve("allow_once")}>Allow once</Button>
+        <Button type="button" size="sm" variant="ghost" onClick={() => onResolve("block")}>
+          Always block
+        </Button>
+        <Button type="button" size="sm" variant="secondary" onClick={() => onResolve("deny")}>
+          Deny
+        </Button>
+        <Button type="button" size="sm" onClick={() => onResolve("allow_once")}>
+          Allow once
+        </Button>
       </div>
     </section>
   );

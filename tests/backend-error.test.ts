@@ -4,10 +4,7 @@ import { sanitizeBackendError, WispBackendError } from "../electron/backend/back
 
 describe("sanitizeBackendError", () => {
   it("preserves intentional public backend errors", () => {
-    expect(sanitizeBackendError(new WispBackendError(
-      "invalid_configuration",
-      "Choose a supported model.",
-    ))).toEqual({
+    expect(sanitizeBackendError(new WispBackendError("invalid_configuration", "Choose a supported model."))).toEqual({
       code: "invalid_configuration",
       message: "Choose a supported model.",
       retryable: false,

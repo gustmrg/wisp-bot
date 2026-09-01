@@ -31,7 +31,13 @@ function loadPreferences(): AppPreferences {
 }
 
 function uniqueAgentId(name: string, chats: ChatCollection): ChatId {
-  const baseId = name.toLocaleLowerCase().normalize("NFKD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "") || "wisp";
+  const baseId =
+    name
+      .toLocaleLowerCase()
+      .normalize("NFKD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/(^-|-$)/g, "") || "wisp";
   let id = baseId;
   let suffix = 2;
   while (chats[id]) id = `${baseId}-${suffix++}`;
@@ -48,7 +54,8 @@ function startResize(
 ) {
   event.preventDefault();
   const startX = event.clientX;
-  const move = (moveEvent: PointerEvent) => setValue(Math.min(max, Math.max(min, current + ((moveEvent.clientX - startX) * direction))));
+  const move = (moveEvent: PointerEvent) =>
+    setValue(Math.min(max, Math.max(min, current + (moveEvent.clientX - startX) * direction)));
   const stop = () => {
     document.removeEventListener("pointermove", move);
     document.removeEventListener("pointerup", stop);
@@ -98,7 +105,9 @@ export default function App() {
       }
       setToolPolicyLoaded(true);
     });
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   useEffect(() => {
@@ -111,7 +120,7 @@ export default function App() {
 
   useEffect(() => {
     if (!chats[activeChatId]) {
-      setActiveChatId(chats.chief ? "chief" : Object.keys(chats)[0] ?? "");
+      setActiveChatId(chats.chief ? "chief" : (Object.keys(chats)[0] ?? ""));
     }
   }, [activeChatId, chats]);
 
@@ -228,9 +237,13 @@ export default function App() {
             onResolveApproval={(request, decision) => void handleResolveApproval(request, decision)}
             onSubmit={handleSubmit}
           />
-        ) : <main className={cn(mainPanel, "items-center justify-center text-dim")}>
-          {conversations.loading ? "Loading conversations…" : conversations.error ?? "Create a Wisp to get started."}
-        </main>}
+        ) : (
+          <main className={cn(mainPanel, "items-center justify-center text-dim")}>
+            {conversations.loading
+              ? "Loading conversations…"
+              : (conversations.error ?? "Create a Wisp to get started.")}
+          </main>
+        )}
         {detailsOpen && activeChat ? (
           <DetailsPanel
             chat={activeChat}
@@ -244,7 +257,12 @@ export default function App() {
         ) : null}
       </div>
       <SearchDialog chats={chats} open={searchOpen} onOpenChange={setSearchOpen} onSelectChat={handleSelectChat} />
-      <AppSettingsDialog open={settingsOpen} preferences={preferences} onOpenChange={setSettingsOpen} onPreferencesChange={setPreferences} />
+      <AppSettingsDialog
+        open={settingsOpen}
+        preferences={preferences}
+        onOpenChange={setSettingsOpen}
+        onPreferencesChange={setPreferences}
+      />
     </TooltipProvider>
   );
 }

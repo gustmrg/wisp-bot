@@ -35,7 +35,9 @@ class MockPiSession implements PiSessionLike {
     this.isIdle = false;
     this.emit({ type: "agent_start" });
     this.emit({ type: "message_update", assistantMessageEvent: { type: "text_delta", delta: `reply:${text}` } });
-    await new Promise<void>((resolve) => { this.releasePrompt = resolve; });
+    await new Promise<void>((resolve) => {
+      this.releasePrompt = resolve;
+    });
     this.isIdle = true;
     this.emit({ type: "agent_settled" });
   }
@@ -105,13 +107,15 @@ describe("PiConversationAgent", () => {
     const agent = new PiConversationAgent(context("one"), factoryFor(new Map()));
     await agent.start();
 
-    await expect(agent.send({ conversationId: "one", requestId: "r1", text: "Hello" }))
-      .rejects.toMatchObject({ code: "configuration_required" });
+    await expect(agent.send({ conversationId: "one", requestId: "r1", text: "Hello" })).rejects.toMatchObject({
+      code: "configuration_required",
+    });
 
     await agent.applyModel(selection());
     await agent.clearModel();
-    await expect(agent.send({ conversationId: "one", requestId: "r2", text: "Hello" }))
-      .rejects.toMatchObject({ code: "configuration_required" });
+    await expect(agent.send({ conversationId: "one", requestId: "r2", text: "Hello" })).rejects.toMatchObject({
+      code: "configuration_required",
+    });
     await agent.dispose();
   });
 

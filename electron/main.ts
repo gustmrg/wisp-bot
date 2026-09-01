@@ -7,10 +7,7 @@ import { AgentRegistry } from "./backend/agent-registry.js";
 import { ConversationRepository } from "./backend/conversation-repository.js";
 import { ConversationService } from "./backend/conversation-service.js";
 import { ModelService } from "./backend/model-service.js";
-import {
-  PiConversationAgentFactory,
-  SdkPiSessionFactory,
-} from "./backend/pi-conversation-agent.js";
+import { PiConversationAgentFactory, SdkPiSessionFactory } from "./backend/pi-conversation-agent.js";
 import { SafeStorageEncryption } from "./backend/safe-storage-encryption.js";
 import { StructuredLogger } from "./backend/structured-logger.js";
 import { ToolAuthorizationBroker } from "./backend/tool-authorization-broker.js";
@@ -22,8 +19,7 @@ import { registerToolPolicyHandlers } from "./ipc/register-tool-policy-handlers.
 
 const devServerUrl = process.env.VITE_DEV_SERVER_URL;
 const productionRendererPath = path.join(__dirname, "../../dist/index.html");
-const windowBackground = (): string =>
-  nativeTheme.shouldUseDarkColors ? "#0a0a0a" : "#ffffff";
+const windowBackground = (): string => (nativeTheme.shouldUseDarkColors ? "#0a0a0a" : "#ffffff");
 
 function isTrustedIpcSender(event: IpcMainInvokeEvent): boolean {
   if (!event.senderFrame || event.senderFrame !== event.sender.mainFrame) return false;
@@ -113,17 +109,15 @@ void app.whenReady().then(async () => {
     (event) => agentRegistry?.publishExternalEvent(event),
     {
       selectWindowId: () => {
-        const window = BrowserWindow.getFocusedWindow()
-          ?? BrowserWindow.getAllWindows().find((candidate) => !candidate.isDestroyed());
+        const window =
+          BrowserWindow.getFocusedWindow() ??
+          BrowserWindow.getAllWindows().find((candidate) => !candidate.isDestroyed());
         return window?.webContents.id ?? null;
       },
     },
   );
   agentRegistry = new AgentRegistry(
-    new PiConversationAgentFactory(new SdkPiSessionFactory(
-      modelService.getModelRuntime(),
-      toolAuthorizationBroker,
-    )),
+    new PiConversationAgentFactory(new SdkPiSessionFactory(modelService.getModelRuntime(), toolAuthorizationBroker)),
     publishAgentEvent,
     (conversationId) => toolAuthorizationBroker.cancelConversation(conversationId),
   );
@@ -133,27 +127,12 @@ void app.whenReady().then(async () => {
     () => toolAuthorizationBroker.listPending(),
   );
   await conversationService.start(await modelService.getSelection());
-  const agentHandlers = registerAgentHandlers(
-    ipcMain,
-    agentRegistry,
-    isTrustedIpcSender,
+  const agentHandlers = registerAgentHandlers(ipcMain, agentRegistry, isTrustedIpcSender);
+  const conversationHandlers = registerConversationHandlers(ipcMain, conversationService, isTrustedIpcSender);
+  const modelSettingsHandlers = registerModelSettingsHandlers(ipcMain, modelService, isTrustedIpcSender, (selection) =>
+    conversationService.applyModel(selection),
   );
-  const conversationHandlers = registerConversationHandlers(
-    ipcMain,
-    conversationService,
-    isTrustedIpcSender,
-  );
-  const modelSettingsHandlers = registerModelSettingsHandlers(
-    ipcMain,
-    modelService,
-    isTrustedIpcSender,
-    (selection) => conversationService.applyModel(selection),
-  );
-  const toolPolicyHandlers = registerToolPolicyHandlers(
-    ipcMain,
-    toolAuthorizationBroker,
-    isTrustedIpcSender,
-  );
+  const toolPolicyHandlers = registerToolPolicyHandlers(ipcMain, toolAuthorizationBroker, isTrustedIpcSender);
   let backendDisposed = false;
   let backendDisposing = false;
   app.on("before-quit", (event) => {

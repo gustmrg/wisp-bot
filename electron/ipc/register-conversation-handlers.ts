@@ -1,9 +1,6 @@
 import type { IpcMain, IpcMainInvokeEvent } from "electron";
 
-import {
-  WISP_IPC_CHANNELS,
-  type BackendResult,
-} from "../../shared/contracts.js";
+import { WISP_IPC_CHANNELS, type BackendResult } from "../../shared/contracts.js";
 import type { ConversationStateView } from "../../shared/conversations.js";
 import { sanitizeBackendError } from "../backend/backend-error.js";
 import type { ConversationService } from "../backend/conversation-service.js";
@@ -36,34 +33,62 @@ export function registerConversationHandlers(
 ): { dispose: () => void } {
   const registrations: ReadonlyArray<readonly [string, (payload: unknown) => Promise<Result>]> = [
     [WISP_IPC_CHANNELS.getConversationState, () => toResult(() => service.getState())],
-    [WISP_IPC_CHANNELS.initializeConversations, (payload) => toResult(() => {
-      const request = parseInitializeConversationsRequest(payload);
-      return service.initialize(request.chats);
-    })],
-    [WISP_IPC_CHANNELS.createConversation, (payload) => toResult(() => {
-      const request = parseCreateConversationRequest(payload);
-      return service.create(request.conversation);
-    })],
-    [WISP_IPC_CHANNELS.updateConversation, (payload) => toResult(() => {
-      const request = parseUpdateConversationRequest(payload);
-      return service.update(request.conversationId, request.changes);
-    })],
-    [WISP_IPC_CHANNELS.deleteConversation, (payload) => toResult(() => {
-      const request = parseDeleteConversationRequest(payload);
-      return service.delete(request.conversationId);
-    })],
-    [WISP_IPC_CHANNELS.appendConversationMessage, (payload) => toResult(() => {
-      const request = parseAppendConversationMessageRequest(payload);
-      return service.appendMessage(request.conversationId, request.message);
-    })],
-    [WISP_IPC_CHANNELS.answerConversationPrompt, (payload) => toResult(() => {
-      const request = parseAnswerConversationPromptRequest(payload);
-      return service.answerPrompt(request.conversationId, request.messageId, request.answer);
-    })],
-    [WISP_IPC_CHANNELS.markConversationRead, (payload) => toResult(() => {
-      const request = parseMarkConversationReadRequest(payload);
-      return service.markRead(request.conversationId);
-    })],
+    [
+      WISP_IPC_CHANNELS.initializeConversations,
+      (payload) =>
+        toResult(() => {
+          const request = parseInitializeConversationsRequest(payload);
+          return service.initialize(request.chats);
+        }),
+    ],
+    [
+      WISP_IPC_CHANNELS.createConversation,
+      (payload) =>
+        toResult(() => {
+          const request = parseCreateConversationRequest(payload);
+          return service.create(request.conversation);
+        }),
+    ],
+    [
+      WISP_IPC_CHANNELS.updateConversation,
+      (payload) =>
+        toResult(() => {
+          const request = parseUpdateConversationRequest(payload);
+          return service.update(request.conversationId, request.changes);
+        }),
+    ],
+    [
+      WISP_IPC_CHANNELS.deleteConversation,
+      (payload) =>
+        toResult(() => {
+          const request = parseDeleteConversationRequest(payload);
+          return service.delete(request.conversationId);
+        }),
+    ],
+    [
+      WISP_IPC_CHANNELS.appendConversationMessage,
+      (payload) =>
+        toResult(() => {
+          const request = parseAppendConversationMessageRequest(payload);
+          return service.appendMessage(request.conversationId, request.message);
+        }),
+    ],
+    [
+      WISP_IPC_CHANNELS.answerConversationPrompt,
+      (payload) =>
+        toResult(() => {
+          const request = parseAnswerConversationPromptRequest(payload);
+          return service.answerPrompt(request.conversationId, request.messageId, request.answer);
+        }),
+    ],
+    [
+      WISP_IPC_CHANNELS.markConversationRead,
+      (payload) =>
+        toResult(() => {
+          const request = parseMarkConversationReadRequest(payload);
+          return service.markRead(request.conversationId);
+        }),
+    ],
   ];
 
   for (const [channel, handler] of registrations) {

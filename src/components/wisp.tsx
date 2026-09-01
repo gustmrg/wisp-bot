@@ -54,7 +54,9 @@ function generatedWisp(seed: string) {
 
 function WispEyes({ shape }: { shape: WispShape }): ReactNode {
   return (
-    <g transform={`${shape === "triangle" || shape === "drop" || shape === "diamond" ? "translate(-6 8) " : ""}rotate(-18 38 27)`}>
+    <g
+      transform={`${shape === "triangle" || shape === "drop" || shape === "diamond" ? "translate(-6 8) " : ""}rotate(-18 38 27)`}
+    >
       <rect x="31" y="23" width="4.5" height="10" rx="2.25" />
       <rect x="46" y="23" width="4.5" height="10" rx="2.25" />
     </g>
@@ -76,7 +78,12 @@ function WispBody({ shape }: { shape: WispShape }): ReactNode {
     case "diamond":
       return <rect x="11" y="11" width="42" height="42" rx="12" transform="rotate(45 32 32)" />;
     case "hexagon":
-      return <path d="M27 3q5-3 10 0l19 11q5 3 5 9v20q0 6-5 9L37 63q-5 3-10 0L8 52q-5-3-5-9V23q0-6 5-9Z" transform="translate(2 0) scale(.94)" />;
+      return (
+        <path
+          d="M27 3q5-3 10 0l19 11q5 3 5 9v20q0 6-5 9L37 63q-5 3-10 0L8 52q-5-3-5-9V23q0-6 5-9Z"
+          transform="translate(2 0) scale(.94)"
+        />
+      );
     case "drop":
       return <path d="M32 4c8 11 20 23 20 36a20 20 0 1 1-40 0C12 27 24 15 32 4Z" />;
     default:
@@ -106,14 +113,26 @@ function Wisp({
         "size-8 shrink-0 select-none data-[size=lg]:size-9 data-[size=sm]:size-6 data-[size=xl]:size-14",
         className,
       )}
-      style={{
-        "--wisp-color": color || avatar.color,
-        "--wisp-blink-delay": `${avatar.blinkDelay}s`,
-        ...style,
-      } as CSSProperties}
+      style={
+        {
+          "--wisp-color": color || avatar.color,
+          "--wisp-blink-delay": `${avatar.blinkDelay}s`,
+          ...style,
+        } as CSSProperties
+      }
       {...props}
     >
-      {outlined ? <g className="text-[#5c5c5c] dark:text-[#b8b8b8]" fill="none" stroke="currentColor" strokeWidth="2" transform="translate(-3.2 -3.2) scale(1.1)"><WispBody shape={shape} /></g> : null}
+      {outlined ? (
+        <g
+          className="text-[#5c5c5c] dark:text-[#b8b8b8]"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          transform="translate(-3.2 -3.2) scale(1.1)"
+        >
+          <WispBody shape={shape} />
+        </g>
+      ) : null}
       <mask id={eyeMaskId} maskUnits="userSpaceOnUse" x="0" y="0" width="64" height="64">
         <g fill="#ffffff">
           <WispBody shape={shape} />

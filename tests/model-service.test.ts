@@ -5,10 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { AiSettingsStore } from "../electron/backend/ai-settings-store.js";
 import { WispBackendError } from "../electron/backend/backend-error.js";
-import {
-  EncryptedCredentialStore,
-  type EncryptionService,
-} from "../electron/backend/encrypted-credential-store.js";
+import { EncryptedCredentialStore, type EncryptionService } from "../electron/backend/encrypted-credential-store.js";
 import { ModelService, type ModelRuntimeLike } from "../electron/backend/model-service.js";
 
 const directories: string[] = [];
@@ -59,10 +56,9 @@ function createRuntime() {
   return {
     getProviders: () => providers,
     getProvider: (providerId: string) => providers.find(({ id }) => id === providerId),
-    getModels: (providerId?: string) => providerId ? models.filter((model) => model.provider === providerId) : models,
-    getModel: (providerId: string, modelId: string) => models.find((model) => (
-      model.provider === providerId && model.id === modelId
-    )),
+    getModels: (providerId?: string) => (providerId ? models.filter((model) => model.provider === providerId) : models),
+    getModel: (providerId: string, modelId: string) =>
+      models.find((model) => model.provider === providerId && model.id === modelId),
     setRuntimeApiKey: vi.fn(async () => undefined),
     removeRuntimeApiKey: vi.fn(async () => undefined),
   };
@@ -72,10 +68,7 @@ async function createService(encryption = new TestEncryption()) {
   const directory = await mkdtemp(path.join(tmpdir(), "wisp-model-service-"));
   directories.push(directory);
   const runtime = createRuntime();
-  const credentials = new EncryptedCredentialStore(
-    path.join(directory, "credentials.enc.json"),
-    encryption,
-  );
+  const credentials = new EncryptedCredentialStore(path.join(directory, "credentials.enc.json"), encryption);
   const settings = new AiSettingsStore(path.join(directory, "settings.json"));
   const service = new ModelService({
     runtime: runtime as unknown as ModelRuntimeLike,
@@ -102,11 +95,15 @@ describe("ModelService", () => {
 
   it("requires an encrypted provider key before saving a selection", async () => {
     const { service } = await createService();
-    await expect(service.save({
-      selection: { providerId: "provider-b", modelId: "model-b" },
-    })).rejects.toEqual(expect.objectContaining<WispBackendError>({
-      code: "invalid_configuration",
-    }));
+    await expect(
+      service.save({
+        selection: { providerId: "provider-b", modelId: "model-b" },
+      }),
+    ).rejects.toEqual(
+      expect.objectContaining<WispBackendError>({
+        code: "invalid_configuration",
+      }),
+    );
   });
 
   it("does not restore a saved selection when its encrypted credential is missing", async () => {
@@ -122,15 +119,21 @@ describe("ModelService", () => {
     encryption.available = false;
     const { service, runtime } = await createService(encryption);
 
-    await expect(service.getView()).resolves.toEqual(expect.objectContaining({
-      secureStorageAvailable: false,
-    }));
-    await expect(service.save({
-      selection: { providerId: "provider-b", modelId: "model-b" },
-      apiKey: "secret-provider-key",
-    })).rejects.toEqual(expect.objectContaining<WispBackendError>({
-      code: "secure_storage_unavailable",
-    }));
+    await expect(service.getView()).resolves.toEqual(
+      expect.objectContaining({
+        secureStorageAvailable: false,
+      }),
+    );
+    await expect(
+      service.save({
+        selection: { providerId: "provider-b", modelId: "model-b" },
+        apiKey: "secret-provider-key",
+      }),
+    ).rejects.toEqual(
+      expect.objectContaining<WispBackendError>({
+        code: "secure_storage_unavailable",
+      }),
+    );
     expect(runtime.setRuntimeApiKey).not.toHaveBeenCalled();
   });
 
@@ -153,12 +156,16 @@ describe("ModelService", () => {
 
   it("rejects a model that is not in the provider catalog", async () => {
     const { service } = await createService();
-    await expect(service.save({
-      selection: { providerId: "provider-b", modelId: "missing" },
-      apiKey: "secret-provider-key",
-    })).rejects.toEqual(expect.objectContaining<WispBackendError>({
-      code: "invalid_configuration",
-    }));
+    await expect(
+      service.save({
+        selection: { providerId: "provider-b", modelId: "missing" },
+        apiKey: "secret-provider-key",
+      }),
+    ).rejects.toEqual(
+      expect.objectContaining<WispBackendError>({
+        code: "invalid_configuration",
+      }),
+    );
   });
 
   it("removes the key and clears the active selection", async () => {

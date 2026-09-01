@@ -43,11 +43,7 @@ function parseId(value: unknown): string {
 }
 
 function parseCatalogId(value: unknown): string {
-  if (
-    typeof value !== "string"
-    || value.length > 256
-    || !/^[a-zA-Z0-9~][a-zA-Z0-9._:/@~-]*$/.test(value)
-  ) {
+  if (typeof value !== "string" || value.length > 256 || !/^[a-zA-Z0-9~][a-zA-Z0-9._:/@~-]*$/.test(value)) {
     throw invalidRequest();
   }
   return value;
@@ -82,7 +78,6 @@ function parseModelSelection(value: unknown): ModelSelection {
     modelId: parseCatalogId(model.modelId),
   };
 }
-
 
 export function parseSaveAiSettingsRequest(value: unknown): SaveAiSettingsRequest {
   const request = asRecord(value);

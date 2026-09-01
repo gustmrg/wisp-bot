@@ -6,22 +6,10 @@ import type { AgentSettings, Chat, ChatCollection, Message } from "../../shared/
 import { writeFileAtomically } from "./atomic-file.js";
 import { WispBackendError } from "./backend-error.js";
 import type { ConversationAgentContext } from "./conversation-agent.js";
-import {
-  normalizeChat,
-  normalizeChatCollection,
-  normalizeConversationId,
-} from "./conversation-normalizer.js";
+import { normalizeChat, normalizeChatCollection, normalizeConversationId } from "./conversation-normalizer.js";
 
 const SCHEMA_VERSION = 3;
-const REMOVED_DEMO_CONVERSATION_IDS = new Set([
-  "chief",
-  "sales",
-  "inbox",
-  "account",
-  "talent",
-  "expense",
-  "offsite",
-]);
+const REMOVED_DEMO_CONVERSATION_IDS = new Set(["chief", "sales", "inbox", "account", "talent", "expense", "offsite"]);
 
 export interface ConversationRecord {
   chat: Chat;
@@ -107,19 +95,25 @@ export class ConversationRepository {
   }
 
   listAgentContexts(): ReadonlyArray<ConversationAgentContext> {
-    return this.list().flatMap(({ chat, sessionId }) => sessionId ? [{
-      conversationId: chat.id,
-      sessionId,
-      name: chat.name,
-      label: chat.label,
-      description: chat.description,
-      workspaceDirectory: path.join(this.workspaceRoot, sessionId),
-      sessionDirectory: path.join(this.sessionRoot, sessionId),
-      configDirectory: path.join(this.configRoot, sessionId),
-      piSessionId: this.state.conversations[chat.id]?.piSessionId ?? null,
-      piSessionFile: this.state.conversations[chat.id]?.piSessionFile ?? null,
-      savePiSessionIdentity: (identity) => this.savePiSessionIdentity(chat.id, identity),
-    }] : []);
+    return this.list().flatMap(({ chat, sessionId }) =>
+      sessionId
+        ? [
+            {
+              conversationId: chat.id,
+              sessionId,
+              name: chat.name,
+              label: chat.label,
+              description: chat.description,
+              workspaceDirectory: path.join(this.workspaceRoot, sessionId),
+              sessionDirectory: path.join(this.sessionRoot, sessionId),
+              configDirectory: path.join(this.configRoot, sessionId),
+              piSessionId: this.state.conversations[chat.id]?.piSessionId ?? null,
+              piSessionFile: this.state.conversations[chat.id]?.piSessionFile ?? null,
+              savePiSessionIdentity: (identity) => this.savePiSessionIdentity(chat.id, identity),
+            },
+          ]
+        : [],
+    );
   }
 
   getAgentContext(conversationId: string): ConversationAgentContext {
@@ -148,14 +142,19 @@ export class ConversationRepository {
       this.state = {
         schemaVersion: SCHEMA_VERSION,
         initialized: true,
-        conversations: Object.fromEntries(Object.values(normalized).map((chat) => [chat.id, {
-          chat,
-          sessionId: chat.isCircle ? null : normalizeConversationId(this.createId()),
-          piSessionId: null,
-          piSessionFile: null,
-          createdAt: timestamp,
-          updatedAt: timestamp,
-        }])),
+        conversations: Object.fromEntries(
+          Object.values(normalized).map((chat) => [
+            chat.id,
+            {
+              chat,
+              sessionId: chat.isCircle ? null : normalizeConversationId(this.createId()),
+              piSessionId: null,
+              piSessionFile: null,
+              createdAt: timestamp,
+              updatedAt: timestamp,
+            },
+          ]),
+        ),
       };
       await this.ensureAllDirectories();
       await this.persist();
@@ -198,11 +197,12 @@ export class ConversationRepository {
       const record = this.require(conversationId);
       const messageId = message.id ?? this.createId();
       const existingIndex = record.chat.messages.findIndex(({ id }) => id === messageId);
-      const messages = existingIndex === -1
-        ? [...record.chat.messages, { ...message, id: messageId }]
-        : record.chat.messages.map((existing, index) => (
-          index === existingIndex ? { ...message, id: messageId } : existing
-        ));
+      const messages =
+        existingIndex === -1
+          ? [...record.chat.messages, { ...message, id: messageId }]
+          : record.chat.messages.map((existing, index) =>
+              index === existingIndex ? { ...message, id: messageId } : existing,
+            );
       const normalized = normalizeChat({
         ...record.chat,
         messages,
@@ -252,11 +252,11 @@ export class ConversationRepository {
   ): Promise<void> {
     await this.enqueue(async () => {
       const record = this.require(conversationId);
-      if (record.sessionId === null) throw new WispBackendError("invalid_request", "Circles do not own agent sessions.");
+      if (record.sessionId === null)
+        throw new WispBackendError("invalid_request", "Circles do not own agent sessions.");
       const piSessionId = normalizeConversationId(identity.sessionId);
-      const piSessionFile = identity.sessionFile === null
-        ? null
-        : this.normalizePiSessionFile(record.sessionId, identity.sessionFile);
+      const piSessionFile =
+        identity.sessionFile === null ? null : this.normalizePiSessionFile(record.sessionId, identity.sessionFile);
       if (record.piSessionId === piSessionId && record.piSessionFile === piSessionFile) return;
       record.piSessionId = piSessionId;
       record.piSessionFile = piSessionFile;
@@ -298,7 +298,10 @@ export class ConversationRepository {
       }
     };
     const result = this.mutation.then(run, run);
-    this.mutation = result.then(() => undefined, () => undefined);
+    this.mutation = result.then(
+      () => undefined,
+      () => undefined,
+    );
     return result;
   }
 
@@ -309,25 +312,28 @@ export class ConversationRepository {
   private parsePersistedState(value: unknown): PersistedConversationState {
     if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Invalid state");
     const raw = value as Record<string, unknown>;
-    if (![1, 2, SCHEMA_VERSION].includes(raw.schemaVersion as number) || typeof raw.initialized !== "boolean") throw new Error("Invalid state");
-    if (!raw.conversations || typeof raw.conversations !== "object" || Array.isArray(raw.conversations)) throw new Error("Invalid state");
+    if (![1, 2, SCHEMA_VERSION].includes(raw.schemaVersion as number) || typeof raw.initialized !== "boolean")
+      throw new Error("Invalid state");
+    if (!raw.conversations || typeof raw.conversations !== "object" || Array.isArray(raw.conversations))
+      throw new Error("Invalid state");
     const conversations: Record<string, ConversationRecord> = {};
     for (const [id, value] of Object.entries(raw.conversations as Record<string, unknown>)) {
       if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Invalid state");
       const record = value as Record<string, unknown>;
       const chat = normalizeChat(record.chat);
-      if (chat.id !== id || typeof record.createdAt !== "string" || typeof record.updatedAt !== "string") throw new Error("Invalid state");
-      if (chat.isCircle ? record.sessionId !== null : typeof record.sessionId !== "string") throw new Error("Invalid state");
+      if (chat.id !== id || typeof record.createdAt !== "string" || typeof record.updatedAt !== "string")
+        throw new Error("Invalid state");
+      if (chat.isCircle ? record.sessionId !== null : typeof record.sessionId !== "string")
+        throw new Error("Invalid state");
       const sessionId = record.sessionId === null ? null : normalizeConversationId(record.sessionId);
       conversations[id] = {
         chat,
         sessionId,
-        piSessionId: typeof record.piSessionId === "string"
-          ? normalizeConversationId(record.piSessionId)
-          : null,
-        piSessionFile: typeof record.piSessionFile === "string" && sessionId
-          ? this.normalizePiSessionFile(sessionId, record.piSessionFile)
-          : null,
+        piSessionId: typeof record.piSessionId === "string" ? normalizeConversationId(record.piSessionId) : null,
+        piSessionFile:
+          typeof record.piSessionFile === "string" && sessionId
+            ? this.normalizePiSessionFile(sessionId, record.piSessionFile)
+            : null,
         createdAt: record.createdAt,
         updatedAt: record.updatedAt,
       };
@@ -355,12 +361,11 @@ export class ConversationRepository {
   }
 
   private async removeBundledDemoConversations(): Promise<void> {
-    const removed = Object.entries(this.state.conversations)
-      .filter(([id]) => REMOVED_DEMO_CONVERSATION_IDS.has(id));
+    const removed = Object.entries(this.state.conversations).filter(([id]) => REMOVED_DEMO_CONVERSATION_IDS.has(id));
     for (const [id] of removed) delete this.state.conversations[id];
-    await Promise.allSettled(removed.flatMap(([, record]) => (
-      record.sessionId ? [this.archiveDirectories(record.sessionId)] : []
-    )));
+    await Promise.allSettled(
+      removed.flatMap(([, record]) => (record.sessionId ? [this.archiveDirectories(record.sessionId)] : [])),
+    );
   }
 
   private async ensureDirectories(record: ConversationRecord): Promise<void> {
@@ -373,10 +378,7 @@ export class ConversationRepository {
   }
 
   private async archiveDirectories(sessionId: string): Promise<void> {
-    const archive = path.join(
-      this.deletedRoot,
-      `${sessionId}-${this.now().toISOString().replaceAll(":", "-")}`,
-    );
+    const archive = path.join(this.deletedRoot, `${sessionId}-${this.now().toISOString().replaceAll(":", "-")}`);
     await mkdir(archive, { recursive: true });
     await Promise.all([
       rename(path.join(this.workspaceRoot, sessionId), path.join(archive, "workspace")).catch(() => undefined),

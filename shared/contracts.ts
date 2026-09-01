@@ -8,11 +8,7 @@ import type {
   MarkConversationReadRequest,
   UpdateConversationRequest,
 } from "./conversations.js";
-import type {
-  ResolveToolApprovalRequest,
-  ToolApprovalRequest,
-  ToolPolicySettings,
-} from "./tool-policy.js";
+import type { ResolveToolApprovalRequest, ToolApprovalRequest, ToolPolicySettings } from "./tool-policy.js";
 
 export const WISP_IPC_CHANNELS = {
   startConversation: "wisp:agent:start",
@@ -105,9 +101,7 @@ export interface BackendError {
   retryable: boolean;
 }
 
-export type BackendResult<T> =
-  | { ok: true; value: T }
-  | { ok: false; error: BackendError };
+export type BackendResult<T> = { ok: true; value: T } | { ok: false; error: BackendError };
 
 export type EmptyResult = BackendResult<Record<string, never>>;
 
@@ -191,31 +185,15 @@ export interface WispApi {
   subscribeToAgentEvents(listener: (event: SequencedConversationAgentEvent) => void): () => void;
   getAiSettings(): Promise<BackendResult<AiSettingsView>>;
   saveAiSettings(request: SaveAiSettingsRequest): Promise<BackendResult<AiSettingsView>>;
-  removeProviderCredential(
-    request: RemoveProviderCredentialRequest,
-  ): Promise<BackendResult<AiSettingsView>>;
+  removeProviderCredential(request: RemoveProviderCredentialRequest): Promise<BackendResult<AiSettingsView>>;
   getConversationState(): Promise<BackendResult<ConversationStateView>>;
-  initializeConversations(
-    request: InitializeConversationsRequest,
-  ): Promise<BackendResult<ConversationStateView>>;
-  createConversation(
-    request: CreateConversationRequest,
-  ): Promise<BackendResult<ConversationStateView>>;
-  updateConversation(
-    request: UpdateConversationRequest,
-  ): Promise<BackendResult<ConversationStateView>>;
-  deleteConversation(
-    request: DeleteConversationRequest,
-  ): Promise<BackendResult<ConversationStateView>>;
-  appendConversationMessage(
-    request: AppendConversationMessageRequest,
-  ): Promise<BackendResult<ConversationStateView>>;
-  answerConversationPrompt(
-    request: AnswerConversationPromptRequest,
-  ): Promise<BackendResult<ConversationStateView>>;
-  markConversationRead(
-    request: MarkConversationReadRequest,
-  ): Promise<BackendResult<ConversationStateView>>;
+  initializeConversations(request: InitializeConversationsRequest): Promise<BackendResult<ConversationStateView>>;
+  createConversation(request: CreateConversationRequest): Promise<BackendResult<ConversationStateView>>;
+  updateConversation(request: UpdateConversationRequest): Promise<BackendResult<ConversationStateView>>;
+  deleteConversation(request: DeleteConversationRequest): Promise<BackendResult<ConversationStateView>>;
+  appendConversationMessage(request: AppendConversationMessageRequest): Promise<BackendResult<ConversationStateView>>;
+  answerConversationPrompt(request: AnswerConversationPromptRequest): Promise<BackendResult<ConversationStateView>>;
+  markConversationRead(request: MarkConversationReadRequest): Promise<BackendResult<ConversationStateView>>;
   getToolPolicy(): Promise<BackendResult<ToolPolicySettings>>;
   saveToolPolicy(settings: ToolPolicySettings): Promise<BackendResult<ToolPolicySettings>>;
   resolveToolApproval(request: ResolveToolApprovalRequest): Promise<EmptyResult>;

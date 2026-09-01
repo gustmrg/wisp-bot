@@ -10,11 +10,17 @@ import { WispBackendError } from "./backend-error.js";
 
 const ID_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9._:-]*$/;
 const SHAPES = new Set<WispShape>([
-  "circle", "pebble", "triangle", "cloud", "square", "pill", "diamond", "hexagon", "drop",
+  "circle",
+  "pebble",
+  "triangle",
+  "cloud",
+  "square",
+  "pill",
+  "diamond",
+  "hexagon",
+  "drop",
 ]);
-const MESSAGE_STATUSES = new Set<MessageStatus>([
-  "queued", "streaming", "complete", "failed", "cancelled",
-]);
+const MESSAGE_STATUSES = new Set<MessageStatus>(["queued", "streaming", "complete", "failed", "cancelled"]);
 const MAX_MESSAGES = 10_000;
 const MAX_TEXT_LENGTH = 100_000;
 const MAX_AVATAR_LENGTH = 6_000_000;
@@ -153,8 +159,16 @@ export function normalizeChatCollection(value: unknown): ChatCollection {
 export function normalizeAgentSettingsChanges(value: unknown): Partial<Omit<AgentSettings, "id" | "isCircle">> {
   const raw = asRecord(value);
   const allowed = new Set([
-    "name", "label", "description", "color", "avatarImage", "shape", "memberIds",
-    "notifyOnUpdatesEnabled", "isActive", "unread",
+    "name",
+    "label",
+    "description",
+    "color",
+    "avatarImage",
+    "shape",
+    "memberIds",
+    "notifyOnUpdatesEnabled",
+    "isActive",
+    "unread",
   ]);
   if (Object.keys(raw).some((key) => !allowed.has(key))) throw invalidRequest();
   const result: Partial<Omit<AgentSettings, "id" | "isCircle">> = {};

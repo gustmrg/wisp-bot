@@ -23,10 +23,7 @@ import type {
 } from "./conversation-agent.js";
 import type { ModelRuntimeLike } from "./model-service.js";
 import { PiEventTranslator, type PiAgentEvent } from "./pi-event-translator.js";
-import type {
-  ToolAuthorizationBroker,
-  ToolAuthorizationRequest,
-} from "./tool-authorization-broker.js";
+import type { ToolAuthorizationBroker, ToolAuthorizationRequest } from "./tool-authorization-broker.js";
 
 const ACTIVE_TOOLS = ["read", "grep", "find", "ls", "edit", "write"] as const;
 const MAX_MUTATION_INPUT_BYTES = 1_000_000;
@@ -105,32 +102,34 @@ export class SdkPiSessionFactory implements PiSessionFactory {
     await resourceLoader.reload();
 
     let sessionManager;
-    if (context.piSessionFile && await fileExists(context.piSessionFile)) {
-      sessionManager = SessionManager.open(
-        context.piSessionFile,
-        context.sessionDirectory,
-        context.workspaceDirectory,
-      );
+    if (context.piSessionFile && (await fileExists(context.piSessionFile))) {
+      sessionManager = SessionManager.open(context.piSessionFile, context.sessionDirectory, context.workspaceDirectory);
     } else {
-      const recent = SessionManager.continueRecent(
-        context.workspaceDirectory,
-        context.sessionDirectory,
-      );
-      sessionManager = recent.getSessionFile() && await fileExists(recent.getSessionFile()!)
-        ? recent
-        : SessionManager.create(
-          context.workspaceDirectory,
-          context.sessionDirectory,
-          { id: context.piSessionId ?? context.sessionId },
-        );
+      const recent = SessionManager.continueRecent(context.workspaceDirectory, context.sessionDirectory);
+      sessionManager =
+        recent.getSessionFile() && (await fileExists(recent.getSessionFile()!))
+          ? recent
+          : SessionManager.create(context.workspaceDirectory, context.sessionDirectory, {
+              id: context.piSessionId ?? context.sessionId,
+            });
     }
     const confinedTools = [
       secureTool(createReadToolDefinition(context.workspaceDirectory), context, this.authorizationBroker, "read"),
       secureTool(createGrepToolDefinition(context.workspaceDirectory), context, this.authorizationBroker, "search"),
       secureTool(createFindToolDefinition(context.workspaceDirectory), context, this.authorizationBroker, "search"),
       secureTool(createLsToolDefinition(context.workspaceDirectory), context, this.authorizationBroker, "read"),
-      secureTool(createEditToolDefinition(context.workspaceDirectory), context, this.authorizationBroker, "modify_file"),
-      secureTool(createWriteToolDefinition(context.workspaceDirectory), context, this.authorizationBroker, "create_file"),
+      secureTool(
+        createEditToolDefinition(context.workspaceDirectory),
+        context,
+        this.authorizationBroker,
+        "modify_file",
+      ),
+      secureTool(
+        createWriteToolDefinition(context.workspaceDirectory),
+        context,
+        this.authorizationBroker,
+        "create_file",
+      ),
     ];
     const { session } = await createAgentSession({
       cwd: context.workspaceDirectory,
@@ -186,11 +185,7 @@ export class PiConversationAgent implements ConversationAgent {
   ) {
     this.context = context;
     this.sessionFactory = sessionFactory;
-    this.translator = new PiEventTranslator(
-      context.conversationId,
-      (event) => this.emit(event),
-      options.flushDelayMs,
-    );
+    this.translator = new PiEventTranslator(context.conversationId, (event) => this.emit(event), options.flushDelayMs);
   }
 
   async start(): Promise<void> {
@@ -205,16 +200,18 @@ export class PiConversationAgent implements ConversationAgent {
     if (!this.session || !this.configured) {
       throw new WispBackendError("configuration_required", "Choose a provider and model before sending a message.");
     }
-    if (this.sending) throw new WispBackendError("invalid_request", "The conversation is already processing a request.");
+    if (this.sending)
+      throw new WispBackendError("invalid_request", "The conversation is already processing a request.");
     this.sending = true;
     this.translator.begin(request);
     try {
       await this.session.prompt(request.text, { expandPromptTemplates: false });
       this.translator.finish();
     } catch (error) {
-      const backendError: BackendError = error instanceof WispBackendError
-        ? { code: error.code, message: error.message, retryable: error.retryable }
-        : { code: "internal_error", message: "The model request failed.", retryable: true };
+      const backendError: BackendError =
+        error instanceof WispBackendError
+          ? { code: error.code, message: error.message, retryable: error.retryable }
+          : { code: "internal_error", message: "The model request failed.", retryable: true };
       this.translator.reportError(backendError);
       this.translator.finish();
       throw new WispBackendError(backendError.code, backendError.message, backendError.retryable);
@@ -374,9 +371,15 @@ function buildSystemPrompt(context: ConversationAgentContext): string {
 
 function adaptSession(session: AgentSession): PiSessionLike {
   return {
-    get isIdle() { return session.isIdle; },
-    get sessionFile() { return session.sessionFile; },
-    get sessionId() { return session.sessionId; },
+    get isIdle() {
+      return session.isIdle;
+    },
+    get sessionFile() {
+      return session.sessionFile;
+    },
+    get sessionId() {
+      return session.sessionId;
+    },
     subscribe: (listener) => session.subscribe((event: AgentSessionEvent) => listener(event as PiAgentEvent)),
     prompt: (text, options) => session.prompt(text, options),
     abort: () => session.abort(),
@@ -389,8 +392,8 @@ function adaptSession(session: AgentSession): PiSessionLike {
 
 function assertAllowedTools(session: Pick<AgentSession, "getActiveToolNames" | "setActiveToolsByName">): void {
   const active = session.getActiveToolNames();
-  const hasExactAllowedSet = active.length === ACTIVE_TOOLS.length
-    && ACTIVE_TOOLS.every((tool) => active.includes(tool));
+  const hasExactAllowedSet =
+    active.length === ACTIVE_TOOLS.length && ACTIVE_TOOLS.every((tool) => active.includes(tool));
   if (!hasExactAllowedSet) {
     session.setActiveToolsByName([...ACTIVE_TOOLS]);
   }
@@ -422,19 +425,20 @@ function secureTool<TDefinition extends ToolDefinition<any, any, any>>(
       const requestedPath = typeof input.path === "string" ? input.path : ".";
       const allowMissing = configuredCategory === "create_file";
       const resolved = await resolveWorkspacePath(context.workspaceDirectory, requestedPath, allowMissing);
-      const category = configuredCategory === "create_file" && resolved.exists
-        ? "modify_file"
-        : configuredCategory;
+      const category = configuredCategory === "create_file" && resolved.exists ? "modify_file" : configuredCategory;
       let executionPath = resolved.canonicalPath;
       if (category === "create_file" || category === "modify_file") {
         assertMutationInputSize(parameters);
-        await authorizationBroker.authorize({
-          conversationId: context.conversationId,
-          toolCallId: args[0],
-          toolName: definition.name,
-          category,
-          summary: `${category === "create_file" ? "Create" : "Modify"} ${resolved.relativePath}`,
-        }, args[2]);
+        await authorizationBroker.authorize(
+          {
+            conversationId: context.conversationId,
+            toolCallId: args[0],
+            toolName: definition.name,
+            category,
+            summary: `${category === "create_file" ? "Create" : "Modify"} ${resolved.relativePath}`,
+          },
+          args[2],
+        );
         const rechecked = await resolveWorkspacePath(context.workspaceDirectory, requestedPath, allowMissing);
         if (rechecked.canonicalPath !== resolved.canonicalPath || rechecked.exists !== resolved.exists) {
           throw new WispBackendError("tool_blocked", "The target path changed before the tool could run.");
@@ -442,7 +446,13 @@ function secureTool<TDefinition extends ToolDefinition<any, any, any>>(
         executionPath = rechecked.canonicalPath;
       }
       const securedParameters = { ...(parameters as object), path: executionPath };
-      const result = await definition.execute(args[0], securedParameters as Parameters<TDefinition["execute"]>[1], args[2], args[3], args[4]);
+      const result = await definition.execute(
+        args[0],
+        securedParameters as Parameters<TDefinition["execute"]>[1],
+        args[2],
+        args[3],
+        args[4],
+      );
       return limitToolResult(result) as Awaited<ReturnType<TDefinition["execute"]>>;
     },
   } as TDefinition;
@@ -545,7 +555,10 @@ function truncateUtf8(value: string, maxBytes: number): string {
   if (maxBytes <= 0) return "";
   const bytes = Buffer.from(value, "utf8");
   if (bytes.length <= maxBytes) return value;
-  return bytes.subarray(0, maxBytes).toString("utf8").replace(/\uFFFD$/u, "");
+  return bytes
+    .subarray(0, maxBytes)
+    .toString("utf8")
+    .replace(/\uFFFD$/u, "");
 }
 
 class BlockMutationAuthorizer implements Pick<ToolAuthorizationBroker, "authorize"> {

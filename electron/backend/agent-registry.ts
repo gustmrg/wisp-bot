@@ -6,11 +6,7 @@ import type {
 } from "../../shared/contracts.js";
 import type { ManagedConversationStatus } from "../../shared/conversations.js";
 import { sanitizeBackendError, WispBackendError } from "./backend-error.js";
-import type {
-  ConversationAgent,
-  ConversationAgentContext,
-  ConversationAgentFactory,
-} from "./conversation-agent.js";
+import type { ConversationAgent, ConversationAgentContext, ConversationAgentFactory } from "./conversation-agent.js";
 
 interface AgentEntry {
   agent: ConversationAgent;
@@ -50,9 +46,11 @@ export class AgentRegistry {
   async restore(contexts: ReadonlyArray<ConversationAgentContext>, model: ModelSelection | null): Promise<void> {
     this.model = model;
     const wanted = new Set(contexts.map(({ conversationId }) => conversationId));
-    await Promise.all([...this.entries.keys()]
-      .filter((conversationId) => !wanted.has(conversationId))
-      .map((conversationId) => this.delete(conversationId)));
+    await Promise.all(
+      [...this.entries.keys()]
+        .filter((conversationId) => !wanted.has(conversationId))
+        .map((conversationId) => this.delete(conversationId)),
+    );
     await Promise.all(contexts.map((context) => this.create(context)));
   }
 
@@ -71,9 +69,7 @@ export class AgentRegistry {
     };
     entry.unsubscribe = agent.subscribe((event) => {
       if (event.type === "conversation_status") {
-        entry.status = this.model || event.status === "disposed"
-          ? event.status
-          : "configuration_required";
+        entry.status = this.model || event.status === "disposed" ? event.status : "configuration_required";
       }
       if (event.type === "conversation_error" && event.requestId) {
         entry.reportedRequestErrors.add(event.requestId);
@@ -135,19 +131,21 @@ export class AgentRegistry {
       throw new WispBackendError("invalid_request", "This conversation already has too many queued requests.");
     }
     entry.pendingCommands += 1;
-    const operation = entry.commandQueue.then(async () => {
-      await this.acquireActiveSlot();
-      try {
-        if (entry.disposed) {
-          throw new WispBackendError("disposed", "The conversation was deleted before this request could run.");
+    const operation = entry.commandQueue
+      .then(async () => {
+        await this.acquireActiveSlot();
+        try {
+          if (entry.disposed) {
+            throw new WispBackendError("disposed", "The conversation was deleted before this request could run.");
+          }
+          await entry.agent.send(request);
+        } finally {
+          this.releaseActiveSlot();
         }
-        await entry.agent.send(request);
-      } finally {
-        this.releaseActiveSlot();
-      }
-    }).finally(() => {
-      entry.pendingCommands -= 1;
-    });
+      })
+      .finally(() => {
+        entry.pendingCommands -= 1;
+      });
     entry.commandQueue = operation.catch(() => undefined);
     return operation;
   }
@@ -175,20 +173,22 @@ export class AgentRegistry {
 
   async applyModel(model: ModelSelection | null): Promise<void> {
     this.model = model;
-    await Promise.all([...this.entries.values()].map(async (entry) => {
-      if (!model) {
-        await entry.agent.clearModel();
-        entry.status = "configuration_required";
-        return;
-      }
-      try {
-        await entry.agent.applyModel(model);
-        if (entry.status === "configuration_required") entry.status = "idle";
-      } catch (error) {
-        entry.status = "configuration_required";
-        throw error;
-      }
-    }));
+    await Promise.all(
+      [...this.entries.values()].map(async (entry) => {
+        if (!model) {
+          await entry.agent.clearModel();
+          entry.status = "configuration_required";
+          return;
+        }
+        try {
+          await entry.agent.applyModel(model);
+          if (entry.status === "configuration_required") entry.status = "idle";
+        } catch (error) {
+          entry.status = "configuration_required";
+          throw error;
+        }
+      }),
+    );
   }
 
   async delete(conversationId: string): Promise<void> {

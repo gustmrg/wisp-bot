@@ -2,16 +2,7 @@ import type { ToolApprovalRequest } from "./tool-policy.js";
 
 export type ChatId = string;
 
-export type WispShape =
-  | "circle"
-  | "pebble"
-  | "triangle"
-  | "cloud"
-  | "square"
-  | "pill"
-  | "diamond"
-  | "hexagon"
-  | "drop";
+export type WispShape = "circle" | "pebble" | "triangle" | "cloud" | "square" | "pill" | "diamond" | "hexagon" | "drop";
 
 export type MessageStatus = "queued" | "streaming" | "complete" | "failed" | "cancelled";
 
@@ -71,11 +62,7 @@ export interface Chat extends AgentSettings {
 
 export type ChatCollection = Record<ChatId, Chat>;
 
-export type ManagedConversationStatus =
-  | "configuration_required"
-  | "idle"
-  | "working"
-  | "disposed";
+export type ManagedConversationStatus = "configuration_required" | "idle" | "working" | "disposed";
 
 export interface ConversationStateView {
   initialized: boolean;

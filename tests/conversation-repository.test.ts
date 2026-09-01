@@ -52,68 +52,84 @@ describe("ConversationRepository", () => {
     });
     const restored = new ConversationRepository({ dataDirectory: directory });
     await restored.load();
-    expect(restored.getAgentContext("first")).toEqual(expect.objectContaining({
-      piSessionId: "pi-history-id",
-      piSessionFile,
-    }));
-    await expect(restored.savePiSessionIdentity("first", {
-      sessionId: "unsafe-history",
-      sessionFile: path.join(directory, "outside.jsonl"),
-    })).rejects.toMatchObject({ code: "invalid_request" });
+    expect(restored.getAgentContext("first")).toEqual(
+      expect.objectContaining({
+        piSessionId: "pi-history-id",
+        piSessionFile,
+      }),
+    );
+    await expect(
+      restored.savePiSessionIdentity("first", {
+        sessionId: "unsafe-history",
+        sessionFile: path.join(directory, "outside.jsonl"),
+      }),
+    ).rejects.toMatchObject({ code: "invalid_request" });
     expect(restored.getAgentContext("first").piSessionId).toBe("pi-history-id");
   });
 
   it("upgrades Phase 3 records without losing their stable application session", async () => {
     const directory = await mkdtemp(path.join(os.tmpdir(), "wisp-schema-upgrade-"));
-    await writeFile(path.join(directory, "conversations.json"), JSON.stringify({
-      schemaVersion: 1,
-      initialized: true,
-      conversations: {
-        first: {
-          chat: chat("first"),
-          sessionId: "stable-app-session",
-          createdAt: "2026-08-30T12:00:00.000Z",
-          updatedAt: "2026-08-30T12:00:00.000Z",
+    await writeFile(
+      path.join(directory, "conversations.json"),
+      JSON.stringify({
+        schemaVersion: 1,
+        initialized: true,
+        conversations: {
+          first: {
+            chat: chat("first"),
+            sessionId: "stable-app-session",
+            createdAt: "2026-08-30T12:00:00.000Z",
+            updatedAt: "2026-08-30T12:00:00.000Z",
+          },
         },
-      },
-    }), "utf8");
+      }),
+      "utf8",
+    );
     const repository = new ConversationRepository({ dataDirectory: directory });
 
     await repository.load();
 
-    expect(repository.getAgentContext("first")).toEqual(expect.objectContaining({
-      sessionId: "stable-app-session",
-      piSessionId: null,
-      piSessionFile: null,
-    }));
-    const persisted = JSON.parse(await readFile(path.join(directory, "conversations.json"), "utf8")) as { schemaVersion: number };
+    expect(repository.getAgentContext("first")).toEqual(
+      expect.objectContaining({
+        sessionId: "stable-app-session",
+        piSessionId: null,
+        piSessionFile: null,
+      }),
+    );
+    const persisted = JSON.parse(await readFile(path.join(directory, "conversations.json"), "utf8")) as {
+      schemaVersion: number;
+    };
     expect(persisted.schemaVersion).toBe(3);
   });
 
   it("removes previously persisted bundled demo conversations", async () => {
     const directory = await mkdtemp(path.join(os.tmpdir(), "wisp-demo-removal-"));
-    await writeFile(path.join(directory, "conversations.json"), JSON.stringify({
-      schemaVersion: 2,
-      initialized: true,
-      conversations: {
-        chief: {
-          chat: chat("chief"),
-          sessionId: "demo-session",
-          piSessionId: null,
-          piSessionFile: null,
-          createdAt: "2026-08-30T12:00:00.000Z",
-          updatedAt: "2026-08-30T12:00:00.000Z",
+    await writeFile(
+      path.join(directory, "conversations.json"),
+      JSON.stringify({
+        schemaVersion: 2,
+        initialized: true,
+        conversations: {
+          chief: {
+            chat: chat("chief"),
+            sessionId: "demo-session",
+            piSessionId: null,
+            piSessionFile: null,
+            createdAt: "2026-08-30T12:00:00.000Z",
+            updatedAt: "2026-08-30T12:00:00.000Z",
+          },
+          custom: {
+            chat: chat("custom"),
+            sessionId: "custom-session",
+            piSessionId: null,
+            piSessionFile: null,
+            createdAt: "2026-08-30T12:00:00.000Z",
+            updatedAt: "2026-08-30T12:00:00.000Z",
+          },
         },
-        custom: {
-          chat: chat("custom"),
-          sessionId: "custom-session",
-          piSessionId: null,
-          piSessionFile: null,
-          createdAt: "2026-08-30T12:00:00.000Z",
-          updatedAt: "2026-08-30T12:00:00.000Z",
-        },
-      },
-    }), "utf8");
+      }),
+      "utf8",
+    );
     const repository = new ConversationRepository({ dataDirectory: directory });
 
     await repository.load();
@@ -148,11 +164,13 @@ describe("ConversationRepository", () => {
     });
 
     const matching = repository.getChats().first?.messages.filter(({ id }) => id === "request-1:assistant");
-    expect(matching).toEqual([expect.objectContaining({
-      text: "Complete response",
-      status: "complete",
-      createdAt: "2026-08-31T23:10:00.000Z",
-    })]);
+    expect(matching).toEqual([
+      expect.objectContaining({
+        text: "Complete response",
+        status: "complete",
+        createdAt: "2026-08-31T23:10:00.000Z",
+      }),
+    ]);
   });
 
   it("preserves a corrupt state file before recovering", async () => {

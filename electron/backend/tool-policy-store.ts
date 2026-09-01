@@ -1,10 +1,6 @@
 import { readFile, rename } from "node:fs/promises";
 
-import type {
-  ToolPolicyBehavior,
-  ToolPolicyRule,
-  ToolPolicySettings,
-} from "../../shared/tool-policy.js";
+import type { ToolPolicyBehavior, ToolPolicyRule, ToolPolicySettings } from "../../shared/tool-policy.js";
 import { writeFileAtomically } from "./atomic-file.js";
 import { WispBackendError } from "./backend-error.js";
 
@@ -60,7 +56,10 @@ export class ToolPolicyStore {
 
   private enqueue<T>(operation: () => Promise<T>): Promise<T> {
     const result = this.mutation.then(operation, operation);
-    this.mutation = result.then(() => undefined, () => undefined);
+    this.mutation = result.then(
+      () => undefined,
+      () => undefined,
+    );
     return result;
   }
 }
@@ -78,20 +77,24 @@ export function normalizeToolPolicy(value: unknown): ToolPolicySettings {
 }
 
 export function normalizeRuleAction(value: string): string {
-  return value.trim().toLocaleLowerCase().replaceAll(/[^a-z0-9]+/g, "_").replaceAll(/^_+|_+$/g, "");
+  return value
+    .trim()
+    .toLocaleLowerCase()
+    .replaceAll(/[^a-z0-9]+/g, "_")
+    .replaceAll(/^_+|_+$/g, "");
 }
 
 function normalizeRule(value: unknown): ToolPolicyRule {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw invalidPolicy();
   const raw = value as Record<string, unknown>;
   if (
-    typeof raw.id !== "string"
-    || !ID_PATTERN.test(raw.id)
-    || typeof raw.action !== "string"
-    || !raw.action.trim()
-    || raw.action.length > 240
-    || typeof raw.behavior !== "string"
-    || !BEHAVIORS.has(raw.behavior as ToolPolicyBehavior)
+    typeof raw.id !== "string" ||
+    !ID_PATTERN.test(raw.id) ||
+    typeof raw.action !== "string" ||
+    !raw.action.trim() ||
+    raw.action.length > 240 ||
+    typeof raw.behavior !== "string" ||
+    !BEHAVIORS.has(raw.behavior as ToolPolicyBehavior)
   ) {
     throw invalidPolicy();
   }

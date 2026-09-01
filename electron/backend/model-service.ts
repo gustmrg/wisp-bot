@@ -73,13 +73,15 @@ export class ModelService {
 
   async getView(): Promise<AiSettingsView> {
     const credentialProviders = new Set((await this.credentials.list()).map(({ providerId }) => providerId));
-    const providers: ProviderSummary[] = this.runtime.getProviders()
+    const providers: ProviderSummary[] = this.runtime
+      .getProviders()
       .filter((provider) => Boolean(provider.auth.apiKey))
       .map((provider) => ({
         id: provider.id,
         name: provider.name,
         credentialConfigured: credentialProviders.has(provider.id),
-        models: this.runtime.getModels(provider.id)
+        models: this.runtime
+          .getModels(provider.id)
           .map<ModelSummary>((model) => ({
             id: model.id,
             name: model.name,
@@ -93,11 +95,10 @@ export class ModelService {
       .sort(compareByName);
 
     const savedSelection = await this.settings.getSelection();
-    const selection = savedSelection
-      && this.isValidSelection(savedSelection)
-      && credentialProviders.has(savedSelection.providerId)
-      ? savedSelection
-      : null;
+    const selection =
+      savedSelection && this.isValidSelection(savedSelection) && credentialProviders.has(savedSelection.providerId)
+        ? savedSelection
+        : null;
     return {
       selection,
       secureStorageAvailable: this.credentials.isSecureStorageAvailable(),
@@ -116,10 +117,7 @@ export class ModelService {
 
     const existingCredential = await this.credentials.read(selection.providerId);
     if (!apiKey && existingCredential?.type !== "api_key") {
-      throw new WispBackendError(
-        "invalid_configuration",
-        "Add an API key before selecting this provider.",
-      );
+      throw new WispBackendError("invalid_configuration", "Add an API key before selecting this provider.");
     }
 
     if (apiKey) {
@@ -172,10 +170,7 @@ export class ModelService {
 
   private assertValidSelection(selection: ModelSelection): void {
     if (!this.isValidSelection(selection)) {
-      throw new WispBackendError(
-        "invalid_configuration",
-        "The selected provider and model are not available.",
-      );
+      throw new WispBackendError("invalid_configuration", "The selected provider and model are not available.");
     }
   }
 }

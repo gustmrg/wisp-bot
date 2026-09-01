@@ -12,8 +12,21 @@ interface MessageViewProps {
   onRetry?: () => void;
 }
 
-function MessageTools({ text, createdAt, legacyTime, outgoing }: {
+<<<<<<< HEAD
+function MessageTools({
+  text,
+  createdAt,
+  legacyTime,
+  outgoing,
+}: {
   text: string;
+=======
+function MessageTools({
+  createdAt,
+  legacyTime,
+  outgoing,
+}: {
+>>>>>>> d72bb80 (style: format codebase with Biome)
   createdAt?: string;
   legacyTime?: string;
   outgoing: boolean;
@@ -37,7 +50,11 @@ function MessageTools({ text, createdAt, legacyTime, outgoing }: {
         outgoing ? "mr-[7px]" : "ml-[7px]",
       )}
     >
-      {time ? <time className="mr-[3px] text-faint text-[10px]" dateTime={createdAt}>{time}</time> : null}
+      {time ? (
+        <time className="mr-[3px] text-faint text-[10px]" dateTime={createdAt}>
+          {time}
+        </time>
+      ) : null}
       {text ? (
         <button
           type="button"
@@ -54,7 +71,11 @@ function MessageTools({ text, createdAt, legacyTime, outgoing }: {
 
 function MessageView({ message, onAnswer, onRetry }: MessageViewProps) {
   if (message.type === "time") {
-    return <div className="mt-[13px] mb-[5px] flex items-center justify-center text-faint text-[10.5px]"><span>{message.text}</span></div>;
+    return (
+      <div className="mt-[13px] mb-[5px] flex items-center justify-center text-faint text-[10.5px]">
+        <span>{message.text}</span>
+      </div>
+    );
   }
 
   if (message.type === "card") {
@@ -64,8 +85,13 @@ function MessageView({ message, onAnswer, onRetry }: MessageViewProps) {
           <ul className="m-0 flex list-none flex-col gap-1 p-0">
             {message.items.map((item) => (
               <li key={item.label} className="flex items-start gap-[7px]">
-                <CheckIcon aria-hidden="true" className="mt-0.5 size-[13px] flex-none text-[#666666] dark:text-[#a7a7a7]" />
-                <span><strong className="font-[650]">{item.label}</strong> — {item.text}</span>
+                <CheckIcon
+                  aria-hidden="true"
+                  className="mt-0.5 size-[13px] flex-none text-[#666666] dark:text-[#a7a7a7]"
+                />
+                <span>
+                  <strong className="font-[650]">{item.label}</strong> — {item.text}
+                </span>
               </li>
             ))}
           </ul>
@@ -77,7 +103,10 @@ function MessageView({ message, onAnswer, onRetry }: MessageViewProps) {
   if (message.type === "prompt") {
     return (
       <div className="relative mt-[5px] flex animate-message-in flex-col items-start">
-        <section className="w-[min(820px,78vw)] rounded-[11px] border border-black/[0.07] bg-[#f4f4f4] p-2.5 dark:border-white/[0.07] dark:bg-[#202020]" aria-label={message.question}>
+        <section
+          className="w-[min(820px,78vw)] rounded-[11px] border border-black/[0.07] bg-[#f4f4f4] p-2.5 dark:border-white/[0.07] dark:bg-[#202020]"
+          aria-label={message.question}
+        >
           <strong className="mb-[9px] block">{message.question}</strong>
           {message.answer ? (
             <div className="flex w-full items-center gap-2 rounded-lg border border-black/[0.07] bg-white px-2 py-[7px] text-left dark:border-white/[0.07] dark:bg-[#191919]">
@@ -93,7 +122,9 @@ function MessageView({ message, onAnswer, onRetry }: MessageViewProps) {
                   className="flex w-full items-center gap-2 rounded-lg border border-black/[0.07] bg-white px-2 py-[7px] text-left hover:border-black/[0.13] hover:bg-[#eeeeee] dark:border-white/[0.07] dark:bg-[#191919] dark:hover:border-white/[0.13] dark:hover:bg-[#252525]"
                   onClick={() => onAnswer?.(option.label)}
                 >
-                  <kbd className="inline-flex size-5 items-center justify-center rounded-[5px] bg-[#e9e9e9] text-[10px] text-[#606060] [font-family:inherit] dark:bg-[#292929] dark:text-[#aaaaaa]">{option.key}</kbd>
+                  <kbd className="inline-flex size-5 items-center justify-center rounded-[5px] bg-[#e9e9e9] text-[10px] text-[#606060] [font-family:inherit] dark:bg-[#292929] dark:text-[#aaaaaa]">
+                    {option.key}
+                  </kbd>
                   <span>{option.label}</span>
                 </button>
               ))}
@@ -134,9 +165,19 @@ function MessageView({ message, onAnswer, onRetry }: MessageViewProps) {
       ) : null}
       {(message.status === "queued" || message.status === "cancelled" || message.status === "failed") ? (
         <div className={cn("mt-1 flex items-center gap-2 text-[10.5px] text-faint", outgoing && "mr-1")}>
-          <span>{message.status === "queued" ? "Queued" : message.status === "cancelled" ? "Stopped" : "Failed"}</span>
+          <span>
+            {message.status === "queued"
+              ? "Queued"
+              : message.status === "cancelled"
+                ? "Stopped"
+                : "Failed"}
+          </span>
           {!outgoing && message.status === "failed" && message.retryable ? (
-            <button type="button" className="rounded-md border border-black/[0.08] px-1.5 py-0.5 text-dim hover:bg-muted hover:text-foreground dark:border-white/[0.08]" onClick={onRetry}>
+            <button
+              type="button"
+              className="rounded-md border border-black/[0.08] px-1.5 py-0.5 text-dim hover:bg-muted hover:text-foreground dark:border-white/[0.08]"
+              onClick={onRetry}
+            >
               Retry
             </button>
           ) : null}

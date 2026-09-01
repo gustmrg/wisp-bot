@@ -86,18 +86,22 @@ describe("ConversationService", () => {
 
     await vi.waitFor(() => {
       const snapshot = service.getState();
-      expect(snapshot.chats.one.messages).toContainEqual(expect.objectContaining({
-        id: "one-a:assistant",
-        status: "streaming",
-      }));
+      expect(snapshot.chats.one.messages).toContainEqual(
+        expect.objectContaining({
+          id: "one-a:assistant",
+          status: "streaming",
+        }),
+      );
       expect(snapshot.agentEventSequence).toBeGreaterThan(0);
     });
     await vi.waitFor(() => {
       const snapshot = service.getState();
-      expect(snapshot.chats.one.messages).toContainEqual(expect.objectContaining({
-        id: "one-a",
-        status: "complete",
-      }));
+      expect(snapshot.chats.one.messages).toContainEqual(
+        expect.objectContaining({
+          id: "one-a",
+          status: "complete",
+        }),
+      );
       expect(snapshot.chats.one.messages.filter(({ type }) => type === "incoming")).toEqual([
         expect.objectContaining({
           id: "one-a:assistant",
@@ -112,11 +116,13 @@ describe("ConversationService", () => {
           createdAt: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/),
         }),
       ]);
-      expect(snapshot.chats.two.messages).toContainEqual(expect.objectContaining({
-        id: "two-a:assistant",
-        text: "Reply:C",
-        status: "complete",
-      }));
+      expect(snapshot.chats.two.messages).toContainEqual(
+        expect.objectContaining({
+          id: "two-a:assistant",
+          text: "Reply:C",
+          status: "complete",
+        }),
+      );
     });
     await service.dispose();
   });
@@ -125,9 +131,8 @@ describe("ConversationService", () => {
     const directory = await mkdtemp(path.join(os.tmpdir(), "wisp-service-delete-active-"));
     const repository = new ConversationRepository({ dataDirectory: directory });
     let service: ConversationService;
-    const registry = new AgentRegistry(
-      new FakeConversationAgentFactory({ latencyMs: 100 }),
-      (event) => service.handleAgentEvent(event),
+    const registry = new AgentRegistry(new FakeConversationAgentFactory({ latencyMs: 100 }), (event) =>
+      service.handleAgentEvent(event),
     );
     service = new ConversationService(repository, registry);
     await service.start(null);

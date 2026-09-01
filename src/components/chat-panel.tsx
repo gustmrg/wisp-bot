@@ -77,15 +77,40 @@ function ChatPanel({
           <span className="truncate font-semibold">{chat.name}</span>
         </div>
         <div className="flex flex-none items-center gap-2">
-          {chat.isCircle ? <button className="rounded-md border-0 bg-transparent px-[7px] py-1 text-dim text-xs hover:bg-muted hover:text-foreground" type="button" aria-label={`View circle participants (${members.length})`} title={members.map((member) => member.name).join(", ") || "No Wisps in this circle"} onClick={onOpenDetails}>{members.length} {members.length === 1 ? "Wisp" : "Wisps"}</button> : null}
-        <button className={iconButton} type="button" aria-label={chat.isCircle ? "Open circle settings" : "Open Wisp settings"} title={chat.isCircle ? "Circle settings" : "Wisp settings"} onClick={onOpenDetails}>
-          <SettingsIcon aria-hidden="true" />
-        </button>
+          {chat.isCircle ? (
+            <button
+              className="rounded-md border-0 bg-transparent px-[7px] py-1 text-dim text-xs hover:bg-muted hover:text-foreground"
+              type="button"
+              aria-label={`View circle participants (${members.length})`}
+              title={members.map((member) => member.name).join(", ") || "No Wisps in this circle"}
+              onClick={onOpenDetails}
+            >
+              {members.length} {members.length === 1 ? "Wisp" : "Wisps"}
+            </button>
+          ) : null}
+          <button
+            className={iconButton}
+            type="button"
+            aria-label={chat.isCircle ? "Open circle settings" : "Open Wisp settings"}
+            title={chat.isCircle ? "Circle settings" : "Wisp settings"}
+            onClick={onOpenDetails}
+          >
+            <SettingsIcon aria-hidden="true" />
+          </button>
         </div>
       </header>
 
-      <div className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto outline-none" ref={transcriptRef} tabIndex={0} aria-label={`${chat.name} conversation`}>
-        <div className="mx-auto flex w-full max-w-[1400px] flex-col px-3.5 pt-1.5 pb-[22px]" role="log" aria-live="polite">
+      <div
+        className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto outline-none"
+        ref={transcriptRef}
+        tabIndex={0}
+        aria-label={`${chat.name} conversation`}
+      >
+        <div
+          className="mx-auto flex w-full max-w-[1400px] flex-col px-3.5 pt-1.5 pb-[22px]"
+          role="log"
+          aria-live="polite"
+        >
           {chat.messages.map((message, index) => (
             <MessageView
               key={message.id ?? `${chat.id}-${message.type}-${index}`}
@@ -99,9 +124,10 @@ function ChatPanel({
               {toolActivities.map((tool) => (
                 <li key={tool.toolCallId} className="flex items-center gap-2 text-[11px] text-faint">
                   <span className="size-1.5 rounded-full bg-current" aria-hidden="true" />
-                  <span>{toolLabel(tool.toolName)} — {tool.phase === "completed"
-                    ? tool.isError ? "failed" : "completed"
-                    : "running"}</span>
+                  <span>
+                    {toolLabel(tool.toolName)} —{" "}
+                    {tool.phase === "completed" ? (tool.isError ? "failed" : "completed") : "running"}
+                  </span>
                 </li>
               ))}
             </ol>
@@ -114,7 +140,10 @@ function ChatPanel({
             />
           ))}
           {working ? (
-            <div className="mt-3 flex items-center gap-2 text-dim text-xs [&_svg]:animate-working-pulse"><ChatAvatar chat={chat} chats={chats} size="sm" /><span>{chat.name} is working…</span></div>
+            <div className="mt-3 flex items-center gap-2 text-dim text-xs [&_svg]:animate-working-pulse">
+              <ChatAvatar chat={chat} chats={chats} size="sm" />
+              <span>{chat.name} is working…</span>
+            </div>
           ) : null}
         </div>
       </div>
@@ -123,11 +152,11 @@ function ChatPanel({
         <div className="h-[22px] pl-2.5 text-[11px] text-faint" role="status">
           {chat.isCircle
             ? "Circle conversations are not enabled yet"
-            : error
-              ?? activity
-              ?? (status === "configuration_required" ? "Configure a provider and model in Settings" : null)
-              ?? (acknowledging ? "Queueing your message…" : null)
-              ?? (working ? "Working on your request" : null)}
+            : (error ??
+              activity ??
+              (status === "configuration_required" ? "Configure a provider and model in Settings" : null) ??
+              (acknowledging ? "Queueing your message…" : null) ??
+              (working ? "Working on your request" : null))}
         </div>
         <div className="mx-auto flex min-h-[42px] w-full max-w-[1400px] items-end gap-2 rounded-[13px] border border-black/[0.07] bg-[#f0f0f0] px-2 py-[7px] transition-[border-color] duration-[120ms] focus-within:border-black/[0.16] dark:border-white/[0.07] dark:bg-[#282828] dark:focus-within:border-white/[0.16]">
           <textarea
@@ -141,15 +170,29 @@ function ChatPanel({
             onChange={(event) => onDraftChange(event.currentTarget.value)}
             onKeyDown={handleComposerKeyDown}
           />
-          <button type="button" className="flex size-[27px] flex-none items-center justify-center rounded-full border-0 bg-[#dedede] text-[#686868] hover:bg-[#d5d5d5] hover:text-[#333333] dark:bg-[#343434] dark:text-[#999999] dark:hover:bg-[#3b3b3b] dark:hover:text-[#e4e4e4] [&_svg]:size-3.5" aria-label="Start voice input">
+          <button
+            type="button"
+            className="flex size-[27px] flex-none items-center justify-center rounded-full border-0 bg-[#dedede] text-[#686868] hover:bg-[#d5d5d5] hover:text-[#333333] dark:bg-[#343434] dark:text-[#999999] dark:hover:bg-[#3b3b3b] dark:hover:text-[#e4e4e4] [&_svg]:size-3.5"
+            aria-label="Start voice input"
+          >
             <MicIcon aria-hidden="true" />
           </button>
           {working ? (
-            <button type="button" className="flex size-[27px] flex-none items-center justify-center rounded-full border-0 bg-[#202020] text-white hover:opacity-[0.85] dark:bg-[#f0f0f0] dark:text-[#161616] [&_svg]:size-3" aria-label="Stop response" onClick={onAbort}>
+            <button
+              type="button"
+              className="flex size-[27px] flex-none items-center justify-center rounded-full border-0 bg-[#202020] text-white hover:opacity-[0.85] dark:bg-[#f0f0f0] dark:text-[#161616] [&_svg]:size-3"
+              aria-label="Stop response"
+              onClick={onAbort}
+            >
               <SquareIcon aria-hidden="true" fill="currentColor" />
             </button>
           ) : null}
-          <button type="submit" className="flex size-[27px] flex-none items-center justify-center rounded-full border-0 bg-[#202020] text-white enabled:hover:opacity-[0.85] disabled:opacity-[0.35] dark:bg-[#f0f0f0] dark:text-[#161616] [&_svg]:size-3.5" aria-label={working ? "Queue message" : "Send message"} disabled={!draft.trim() || acknowledging || chat.isCircle}>
+          <button
+            type="submit"
+            className="flex size-[27px] flex-none items-center justify-center rounded-full border-0 bg-[#202020] text-white enabled:hover:opacity-[0.85] disabled:opacity-[0.35] dark:bg-[#f0f0f0] dark:text-[#161616] [&_svg]:size-3.5"
+            aria-label={working ? "Queue message" : "Send message"}
+            disabled={!draft.trim() || acknowledging || chat.isCircle}
+          >
             <ArrowUpIcon aria-hidden="true" />
           </button>
         </div>

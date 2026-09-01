@@ -37,8 +37,13 @@ export function isRuleBehavior(value: unknown): value is RuleBehavior {
 function isAutoReviewRule(value: unknown): value is AutoReviewRule {
   if (!value || typeof value !== "object") return false;
   const rule = value as Partial<AutoReviewRule>;
-  return typeof rule.id === "string" && typeof rule.action === "string"
-    && rule.action.trim().length > 0 && rule.action.length <= 240 && isRuleBehavior(rule.behavior);
+  return (
+    typeof rule.id === "string" &&
+    typeof rule.action === "string" &&
+    rule.action.trim().length > 0 &&
+    rule.action.length <= 240 &&
+    isRuleBehavior(rule.behavior)
+  );
 }
 
 export function normalizePreferences(value: Partial<AppPreferences> | undefined): AppPreferences {

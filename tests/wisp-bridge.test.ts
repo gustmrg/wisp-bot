@@ -11,19 +11,45 @@ function completeBridge(): WispApi {
     applyModel: async () => ({ ok: true, value: {} }),
     disposeConversation: async () => ({ ok: true, value: {} }),
     subscribeToAgentEvents: () => () => undefined,
-    getAiSettings: async () => { throw new Error("not called"); },
-    saveAiSettings: async () => { throw new Error("not called"); },
-    removeProviderCredential: async () => { throw new Error("not called"); },
-    getConversationState: async () => { throw new Error("not called"); },
-    initializeConversations: async () => { throw new Error("not called"); },
-    createConversation: async () => { throw new Error("not called"); },
-    updateConversation: async () => { throw new Error("not called"); },
-    deleteConversation: async () => { throw new Error("not called"); },
-    appendConversationMessage: async () => { throw new Error("not called"); },
-    answerConversationPrompt: async () => { throw new Error("not called"); },
-    markConversationRead: async () => { throw new Error("not called"); },
-    getToolPolicy: async () => { throw new Error("not called"); },
-    saveToolPolicy: async () => { throw new Error("not called"); },
+    getAiSettings: async () => {
+      throw new Error("not called");
+    },
+    saveAiSettings: async () => {
+      throw new Error("not called");
+    },
+    removeProviderCredential: async () => {
+      throw new Error("not called");
+    },
+    getConversationState: async () => {
+      throw new Error("not called");
+    },
+    initializeConversations: async () => {
+      throw new Error("not called");
+    },
+    createConversation: async () => {
+      throw new Error("not called");
+    },
+    updateConversation: async () => {
+      throw new Error("not called");
+    },
+    deleteConversation: async () => {
+      throw new Error("not called");
+    },
+    appendConversationMessage: async () => {
+      throw new Error("not called");
+    },
+    answerConversationPrompt: async () => {
+      throw new Error("not called");
+    },
+    markConversationRead: async () => {
+      throw new Error("not called");
+    },
+    getToolPolicy: async () => {
+      throw new Error("not called");
+    },
+    saveToolPolicy: async () => {
+      throw new Error("not called");
+    },
     resolveToolApproval: async () => ({ ok: true, value: {} }),
   };
 }

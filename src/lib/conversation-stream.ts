@@ -1,10 +1,5 @@
 import type { BackendError, ConversationAgentEvent, SequencedConversationAgentEvent } from "../../shared/contracts";
-import type {
-  ChatCollection,
-  ManagedConversationStatus,
-  Message,
-  TextMessage,
-} from "../../shared/conversations";
+import type { ChatCollection, ManagedConversationStatus, Message, TextMessage } from "../../shared/conversations";
 import type { ToolApprovalRequest } from "../../shared/tool-policy";
 
 export interface ToolActivityView {
@@ -55,10 +50,14 @@ export function stageOutgoingMessage(
   conversationId: string,
   message: TextMessage & { id: string },
 ): ConversationRuntimeState {
-  return setRuntimeMessage({
-    ...state,
-    errors: { ...state.errors, [conversationId]: undefined },
-  }, conversationId, { ...message, status: "queued" });
+  return setRuntimeMessage(
+    {
+      ...state,
+      errors: { ...state.errors, [conversationId]: undefined },
+    },
+    conversationId,
+    { ...message, status: "queued" },
+  );
 }
 
 export function markOutgoingFailed(
@@ -99,9 +98,7 @@ export function reduceConversationAgentEvent(
       return {
         ...next,
         statuses: { ...next.statuses, [event.conversationId]: event.status },
-        activity: event.status === "idle"
-          ? { ...next.activity, [event.conversationId]: undefined }
-          : next.activity,
+        activity: event.status === "idle" ? { ...next.activity, [event.conversationId]: undefined } : next.activity,
       };
     case "assistant_message_started": {
       const outgoing = findMessage(next, chats, event.conversationId, event.requestId);
@@ -112,16 +109,20 @@ export function reduceConversationAgentEvent(
           status: "complete",
         });
       }
-      return setRuntimeMessage({
-        ...next,
-        errors: { ...next.errors, [event.conversationId]: undefined },
-      }, event.conversationId, {
-        id: event.messageId,
-        type: "incoming",
-        text: "",
-        status: "streaming",
-        createdAt: event.createdAt,
-      });
+      return setRuntimeMessage(
+        {
+          ...next,
+          errors: { ...next.errors, [event.conversationId]: undefined },
+        },
+        event.conversationId,
+        {
+          id: event.messageId,
+          type: "incoming",
+          text: "",
+          status: "streaming",
+          createdAt: event.createdAt,
+        },
+      );
     }
     case "assistant_text_delta": {
       const current = findMessage(next, chats, event.conversationId, event.messageId);
@@ -168,16 +169,11 @@ export function reduceConversationAgentEvent(
         ...next,
         activity: {
           ...next.activity,
-          [event.conversationId]: event.phase === "completed"
-            ? undefined
-            : toolActivityLabel(event.toolName),
+          [event.conversationId]: event.phase === "completed" ? undefined : toolActivityLabel(event.toolName),
         },
         toolActivities: {
           ...next.toolActivities,
-          [event.conversationId]: upsertToolActivity(
-            next.toolActivities[event.conversationId] ?? [],
-            event,
-          ),
+          [event.conversationId]: upsertToolActivity(next.toolActivities[event.conversationId] ?? [], event),
         },
       };
     case "conversation_notice":
@@ -194,9 +190,9 @@ export function reduceConversationAgentEvent(
         approvals: {
           ...next.approvals,
           [event.conversationId]: [
-            ...(next.approvals[event.conversationId] ?? []).filter(({ approvalId }) => (
-              approvalId !== event.request.approvalId
-            )),
+            ...(next.approvals[event.conversationId] ?? []).filter(
+              ({ approvalId }) => approvalId !== event.request.approvalId,
+            ),
             event.request,
           ],
         },
@@ -206,9 +202,9 @@ export function reduceConversationAgentEvent(
         ...next,
         approvals: {
           ...next.approvals,
-          [event.conversationId]: (next.approvals[event.conversationId] ?? []).filter(({ approvalId }) => (
-            approvalId !== event.approvalId
-          )),
+          [event.conversationId]: (next.approvals[event.conversationId] ?? []).filter(
+            ({ approvalId }) => approvalId !== event.approvalId,
+          ),
         },
       };
   }
@@ -223,11 +219,11 @@ export function overlayRuntimeMessages(
   for (const [conversationId, transient] of Object.entries(runtimeMessages)) {
     const chat = chats[conversationId];
     if (!chat || transient.length === 0) continue;
-    const replacements = new Map(transient.flatMap((message) => message.id ? [[message.id, message]] : []));
-    const existingIds = new Set(chat.messages.flatMap((message) => message.id ? [message.id] : []));
-    const messages = chat.messages.map((message) => (
-      message.id && replacements.has(message.id) ? replacements.get(message.id)! : message
-    ));
+    const replacements = new Map(transient.flatMap((message) => (message.id ? [[message.id, message]] : [])));
+    const existingIds = new Set(chat.messages.flatMap((message) => (message.id ? [message.id] : [])));
+    const messages = chat.messages.map((message) =>
+      message.id && replacements.has(message.id) ? replacements.get(message.id)! : message,
+    );
     for (const message of transient) {
       if (!message.id || !existingIds.has(message.id)) messages.push(message);
     }
@@ -265,9 +261,7 @@ function finalizeAssistant(
   return setRuntimeMessage(state, conversationId, {
     id: messageId,
     type: "incoming",
-    text: current?.type === "incoming" && current.text
-      ? current.text
-      : status === "cancelled" ? "Stopped." : "",
+    text: current?.type === "incoming" && current.text ? current.text : status === "cancelled" ? "Stopped." : "",
     status,
     ...(current?.createdAt ? { createdAt: current.createdAt } : {}),
   });
@@ -285,7 +279,7 @@ function setRuntimeMessage(
     messages: {
       ...state.messages,
       [conversationId]: found
-        ? current.map((candidate) => candidate.id === message.id ? message : candidate)
+        ? current.map((candidate) => (candidate.id === message.id ? message : candidate))
         : [...current, message],
     },
   };
@@ -297,8 +291,10 @@ function findMessage(
   conversationId: string,
   messageId: string,
 ): Message | undefined {
-  return getRuntimeMessage(state, conversationId, messageId)
-    ?? chats[conversationId]?.messages.find(({ id }) => id === messageId);
+  return (
+    getRuntimeMessage(state, conversationId, messageId) ??
+    chats[conversationId]?.messages.find(({ id }) => id === messageId)
+  );
 }
 
 function toolActivityLabel(toolName: string): string {
@@ -314,20 +310,25 @@ function upsertToolActivity(
   event: Extract<ConversationAgentEvent, { type: "tool_activity" }>,
 ): ReadonlyArray<ToolActivityView> {
   const next = activities.some(({ toolCallId }) => toolCallId === event.toolCallId)
-    ? activities.map((activity) => activity.toolCallId === event.toolCallId
-      ? {
+    ? activities.map((activity) =>
+        activity.toolCallId === event.toolCallId
+          ? {
+              toolCallId: event.toolCallId,
+              toolName: event.toolName,
+              phase: event.phase,
+              ...(event.isError === undefined ? {} : { isError: event.isError }),
+            }
+          : activity,
+      )
+    : [
+        ...activities,
+        {
           toolCallId: event.toolCallId,
           toolName: event.toolName,
           phase: event.phase,
           ...(event.isError === undefined ? {} : { isError: event.isError }),
-        }
-      : activity)
-    : [...activities, {
-        toolCallId: event.toolCallId,
-        toolName: event.toolName,
-        phase: event.phase,
-        ...(event.isError === undefined ? {} : { isError: event.isError }),
-      }];
+        },
+      ];
   return next.slice(-20);
 }
 

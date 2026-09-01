@@ -3,10 +3,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
-import {
-  EncryptedCredentialStore,
-  type EncryptionService,
-} from "../electron/backend/encrypted-credential-store.js";
+import { EncryptedCredentialStore, type EncryptionService } from "../electron/backend/encrypted-credential-store.js";
 import { WispBackendError } from "../electron/backend/backend-error.js";
 
 const directories: string[] = [];
@@ -57,15 +54,14 @@ describe("EncryptedCredentialStore", () => {
 
   it("serializes concurrent provider updates", async () => {
     const { store } = await createStore();
-    await Promise.all([
-      store.setApiKey("anthropic", "anthropic-key"),
-      store.setApiKey("openai", "openai-key"),
-    ]);
+    await Promise.all([store.setApiKey("anthropic", "anthropic-key"), store.setApiKey("openai", "openai-key")]);
 
-    await expect(store.list()).resolves.toEqual(expect.arrayContaining([
-      { providerId: "anthropic", type: "api_key" },
-      { providerId: "openai", type: "api_key" },
-    ]));
+    await expect(store.list()).resolves.toEqual(
+      expect.arrayContaining([
+        { providerId: "anthropic", type: "api_key" },
+        { providerId: "openai", type: "api_key" },
+      ]),
+    );
   });
 
   it("refuses to persist plaintext when encryption is unavailable", async () => {

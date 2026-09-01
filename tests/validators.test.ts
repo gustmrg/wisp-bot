@@ -15,26 +15,25 @@ describe("IPC request validators", () => {
     expect(parseConversationRequest({ conversationId: "wisp:one" })).toEqual({
       conversationId: "wisp:one",
     });
-    expect(parseSendMessageRequest({
-      conversationId: "wisp:one",
-      requestId: "request-1",
-      text: "  keep intentional whitespace  ",
-    })).toEqual({
+    expect(
+      parseSendMessageRequest({
+        conversationId: "wisp:one",
+        requestId: "request-1",
+        text: "  keep intentional whitespace  ",
+      }),
+    ).toEqual({
       conversationId: "wisp:one",
       requestId: "request-1",
       text: "  keep intentional whitespace  ",
     });
   });
 
-  it.each([
-    null,
-    {},
-    { conversationId: "" },
-    { conversationId: "../escape" },
-    { conversationId: "a".repeat(129) },
-  ])("rejects invalid conversation payload %#", (payload) => {
-    expect(() => parseConversationRequest(payload)).toThrow(WispBackendError);
-  });
+  it.each([null, {}, { conversationId: "" }, { conversationId: "../escape" }, { conversationId: "a".repeat(129) }])(
+    "rejects invalid conversation payload %#",
+    (payload) => {
+      expect(() => parseConversationRequest(payload)).toThrow(WispBackendError);
+    },
+  );
 
   it.each([
     { conversationId: "wisp-1", requestId: "request-1", text: "" },
@@ -46,25 +45,31 @@ describe("IPC request validators", () => {
   });
 
   it("validates both provider and model identifiers", () => {
-    expect(parseApplyModelRequest({
-      conversationId: "wisp-1",
-      model: { providerId: "anthropic", modelId: "claude.example-1" },
-    })).toEqual({
+    expect(
+      parseApplyModelRequest({
+        conversationId: "wisp-1",
+        model: { providerId: "anthropic", modelId: "claude.example-1" },
+      }),
+    ).toEqual({
       conversationId: "wisp-1",
       model: { providerId: "anthropic", modelId: "claude.example-1" },
     });
 
-    expect(() => parseApplyModelRequest({
-      conversationId: "wisp-1",
-      model: { providerId: "anthropic", modelId: "bad model" },
-    })).toThrow(WispBackendError);
+    expect(() =>
+      parseApplyModelRequest({
+        conversationId: "wisp-1",
+        model: { providerId: "anthropic", modelId: "bad model" },
+      }),
+    ).toThrow(WispBackendError);
   });
 
   it("accepts catalog model IDs containing slashes", () => {
-    expect(parseSaveAiSettingsRequest({
-      selection: { providerId: "openrouter", modelId: "anthropic/claude-example" },
-      apiKey: "secret-key",
-    })).toEqual({
+    expect(
+      parseSaveAiSettingsRequest({
+        selection: { providerId: "openrouter", modelId: "anthropic/claude-example" },
+        apiKey: "secret-key",
+      }),
+    ).toEqual({
       selection: { providerId: "openrouter", modelId: "anthropic/claude-example" },
       apiKey: "secret-key",
     });
@@ -74,22 +79,26 @@ describe("IPC request validators", () => {
   });
 
   it("binds tool approval decisions to stable identifiers", () => {
-    expect(parseResolveToolApprovalRequest({
-      approvalId: "approval-1",
-      conversationId: "wisp-1",
-      toolCallId: "tool-1",
-      decision: "allow_once",
-    })).toEqual({
+    expect(
+      parseResolveToolApprovalRequest({
+        approvalId: "approval-1",
+        conversationId: "wisp-1",
+        toolCallId: "tool-1",
+        decision: "allow_once",
+      }),
+    ).toEqual({
       approvalId: "approval-1",
       conversationId: "wisp-1",
       toolCallId: "tool-1",
       decision: "allow_once",
     });
-    expect(() => parseResolveToolApprovalRequest({
-      approvalId: "approval-1",
-      conversationId: "wisp-1",
-      toolCallId: "tool-1",
-      decision: "allow_forever",
-    })).toThrow(WispBackendError);
+    expect(() =>
+      parseResolveToolApprovalRequest({
+        approvalId: "approval-1",
+        conversationId: "wisp-1",
+        toolCallId: "tool-1",
+        decision: "allow_forever",
+      }),
+    ).toThrow(WispBackendError);
   });
 });

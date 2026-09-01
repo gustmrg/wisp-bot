@@ -2,13 +2,24 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import type { BackendError, BackendResult, SequencedConversationAgentEvent, WispApi } from "../../shared/contracts";
 import type {
-  AgentSettings, Chat, ChatCollection, ConversationStateView, ManagedConversationStatus, Message, TextMessage,
+  AgentSettings,
+  Chat,
+  ChatCollection,
+  ConversationStateView,
+  ManagedConversationStatus,
+  Message,
+  TextMessage,
 } from "../../shared/conversations";
 import type { ToolApprovalDecision, ToolApprovalRequest } from "../../shared/tool-policy";
 import { migrateLegacyChats } from "@/lib/circle-members";
 import {
-  createConversationRuntime, getRuntimeMessage, markOutgoingFailed, overlayRuntimeMessages,
-  reduceConversationAgentEvent, removeRuntimeMessage, stageOutgoingMessage,
+  createConversationRuntime,
+  getRuntimeMessage,
+  markOutgoingFailed,
+  overlayRuntimeMessages,
+  reduceConversationAgentEvent,
+  removeRuntimeMessage,
+  stageOutgoingMessage,
   type ConversationRuntimeState,
   type ToolActivityView,
 } from "@/lib/conversation-stream";
@@ -29,9 +40,7 @@ function legacyChats(storage: Pick<Storage, "getItem">): ChatCollection {
     const raw = storage.getItem(LEGACY_STORAGE_KEY);
     if (!raw) return {};
     const parsed = JSON.parse(raw) as { chats?: ChatCollection };
-    return parsed.chats && Object.keys(parsed.chats).length > 0
-      ? migrateLegacyChats(parsed.chats)
-      : {};
+    return parsed.chats && Object.keys(parsed.chats).length > 0 ? migrateLegacyChats(parsed.chats) : {};
   } catch {
     return {};
   }
@@ -99,28 +108,34 @@ export function useConversations(): ConversationsController {
     setRuntime(next);
   }, []);
 
-  const enqueue = useCallback((operation: () => Promise<BackendResult<ConversationStateView>>) => {
-    const run = mutationQueue.current.then(async () => {
-      try {
-        const result = await operation();
-        if (!result.ok) throw resultError(result);
-        replaceState(result.value);
-        setError(null);
-        return true;
-      } catch (cause) {
-        setError(cause instanceof Error ? cause.message : "The conversation could not be updated.");
-        return false;
-      }
-    });
-    mutationQueue.current = run.then(() => undefined);
-    return run;
-  }, [replaceState]);
+  const enqueue = useCallback(
+    (operation: () => Promise<BackendResult<ConversationStateView>>) => {
+      const run = mutationQueue.current.then(async () => {
+        try {
+          const result = await operation();
+          if (!result.ok) throw resultError(result);
+          replaceState(result.value);
+          setError(null);
+          return true;
+        } catch (cause) {
+          setError(cause instanceof Error ? cause.message : "The conversation could not be updated.");
+          return false;
+        }
+      });
+      mutationQueue.current = run.then(() => undefined);
+      return run;
+    },
+    [replaceState],
+  );
 
-  const reconcileMessage = useCallback(async (conversationId: string, messageId: string): Promise<void> => {
-    const refreshed = await enqueue(() => window.wisp.getConversationState());
-    if (!refreshed || !stateRef.current.chats[conversationId]?.messages.some(({ id }) => id === messageId)) return;
-    replaceRuntime(removeRuntimeMessage(runtimeRef.current, conversationId, messageId));
-  }, [enqueue, replaceRuntime]);
+  const reconcileMessage = useCallback(
+    async (conversationId: string, messageId: string): Promise<void> => {
+      const refreshed = await enqueue(() => window.wisp.getConversationState());
+      if (!refreshed || !stateRef.current.chats[conversationId]?.messages.some(({ id }) => id === messageId)) return;
+      replaceRuntime(removeRuntimeMessage(runtimeRef.current, conversationId, messageId));
+    },
+    [enqueue, replaceRuntime],
+  );
 
   processEventRef.current = (event): void => {
     const next = reduceConversationAgentEvent(runtimeRef.current, event, stateRef.current.chats);
@@ -129,10 +144,12 @@ export function useConversations(): ConversationsController {
     if (event.type === "assistant_message_started") {
       const outgoing = getRuntimeMessage(next, event.conversationId, event.requestId);
       if (outgoing) {
-        void enqueue(() => window.wisp.appendConversationMessage({
-          conversationId: event.conversationId,
-          message: outgoing,
-        })).then((saved) => {
+        void enqueue(() =>
+          window.wisp.appendConversationMessage({
+            conversationId: event.conversationId,
+            message: outgoing,
+          }),
+        ).then((saved) => {
           if (saved) replaceRuntime(removeRuntimeMessage(runtimeRef.current, event.conversationId, event.requestId));
         });
       }
@@ -141,10 +158,12 @@ export function useConversations(): ConversationsController {
     } else if (event.type === "conversation_error" && event.requestId) {
       const outgoing = getRuntimeMessage(next, event.conversationId, event.requestId);
       if (outgoing) {
-        void enqueue(() => window.wisp.appendConversationMessage({
-          conversationId: event.conversationId,
-          message: outgoing,
-        })).then(() => reconcileMessage(event.conversationId, `${event.requestId}:assistant`));
+        void enqueue(() =>
+          window.wisp.appendConversationMessage({
+            conversationId: event.conversationId,
+            message: outgoing,
+          }),
+        ).then(() => reconcileMessage(event.conversationId, `${event.requestId}:assistant`));
       } else {
         void reconcileMessage(event.conversationId, `${event.requestId}:assistant`);
       }
@@ -162,20 +181,18 @@ export function useConversations(): ConversationsController {
         const next = await bootstrapConversationState(window.wisp, window.localStorage);
         if (cancelled) return;
         replaceState(next);
-        replaceRuntime(createConversationRuntime(
-          next.agentEventSequence,
-          next.statuses,
-          next.pendingToolApprovals,
-        ));
+        replaceRuntime(createConversationRuntime(next.agentEventSequence, next.statuses, next.pendingToolApprovals));
         readyRef.current = true;
         const pending = bufferedEvents.current
           .filter(({ sequence }) => sequence > next.agentEventSequence)
           .sort((left, right) => left.sequence - right.sequence);
         bufferedEvents.current = [];
         for (const event of pending) processEventRef.current(event);
-        setError(next.recoveredCorruptState
-          ? "Conversation storage was corrupt. The original file was preserved and a fresh store was created."
-          : null);
+        setError(
+          next.recoveredCorruptState
+            ? "Conversation storage was corrupt. The original file was preserved and a fresh store was created."
+            : null,
+        );
       } catch (cause) {
         if (!cancelled) setError(cause instanceof Error ? cause.message : "Could not load conversations.");
       } finally {
@@ -189,40 +206,52 @@ export function useConversations(): ConversationsController {
     };
   }, [replaceRuntime, replaceState]);
 
-  const sendMessage = useCallback(async (conversationId: string, textValue: string): Promise<boolean> => {
-    const text = textValue.trim();
-    if (!text || stateRef.current.chats[conversationId]?.isCircle) return false;
-    const requestId = crypto.randomUUID();
-    const message: TextMessage & { id: string } = {
-      id: requestId,
-      type: "outgoing",
-      text,
-      createdAt: new Date().toISOString(),
-      status: "queued",
-    };
-    replaceRuntime(stageOutgoingMessage(runtimeRef.current, conversationId, message));
-    setAcknowledging((current) => ({ ...current, [conversationId]: true }));
-    const persisted = await enqueue(() => window.wisp.appendConversationMessage({ conversationId, message }));
-    if (!persisted) {
+  const sendMessage = useCallback(
+    async (conversationId: string, textValue: string): Promise<boolean> => {
+      const text = textValue.trim();
+      if (!text || stateRef.current.chats[conversationId]?.isCircle) return false;
+      const requestId = crypto.randomUUID();
+      const message: TextMessage & { id: string } = {
+        id: requestId,
+        type: "outgoing",
+        text,
+        createdAt: new Date().toISOString(),
+        status: "queued",
+      };
+      replaceRuntime(stageOutgoingMessage(runtimeRef.current, conversationId, message));
+      setAcknowledging((current) => ({ ...current, [conversationId]: true }));
+      const persisted = await enqueue(() => window.wisp.appendConversationMessage({ conversationId, message }));
+      if (!persisted) {
+        setAcknowledging((current) => ({ ...current, [conversationId]: false }));
+        return false;
+      }
+      replaceRuntime(removeRuntimeMessage(runtimeRef.current, conversationId, requestId));
+      const result = await window.wisp.sendMessage({ conversationId, requestId, text });
       setAcknowledging((current) => ({ ...current, [conversationId]: false }));
+      if (result.ok) return true;
+      const failed = markOutgoingFailed(
+        runtimeRef.current,
+        stateRef.current.chats,
+        conversationId,
+        requestId,
+        result.error,
+      );
+      replaceRuntime(failed);
+      const outgoing = getRuntimeMessage(failed, conversationId, requestId);
+      if (outgoing) void enqueue(() => window.wisp.appendConversationMessage({ conversationId, message: outgoing }));
       return false;
-    }
-    replaceRuntime(removeRuntimeMessage(runtimeRef.current, conversationId, requestId));
-    const result = await window.wisp.sendMessage({ conversationId, requestId, text });
-    setAcknowledging((current) => ({ ...current, [conversationId]: false }));
-    if (result.ok) return true;
-    const failed = markOutgoingFailed(runtimeRef.current, stateRef.current.chats, conversationId, requestId, result.error);
-    replaceRuntime(failed);
-    const outgoing = getRuntimeMessage(failed, conversationId, requestId);
-    if (outgoing) void enqueue(() => window.wisp.appendConversationMessage({ conversationId, message: outgoing }));
-    return false;
-  }, [enqueue, replaceRuntime]);
+    },
+    [enqueue, replaceRuntime],
+  );
 
-  const retryMessage = useCallback((conversationId: string, requestId: string): Promise<boolean> => {
-    const chats = overlayRuntimeMessages(stateRef.current.chats, runtimeRef.current.messages);
-    const original = chats[conversationId]?.messages.find(({ id }) => id === requestId);
-    return original?.type === "outgoing" ? sendMessage(conversationId, original.text) : Promise.resolve(false);
-  }, [sendMessage]);
+  const retryMessage = useCallback(
+    (conversationId: string, requestId: string): Promise<boolean> => {
+      const chats = overlayRuntimeMessages(stateRef.current.chats, runtimeRef.current.messages);
+      const original = chats[conversationId]?.messages.find(({ id }) => id === requestId);
+      return original?.type === "outgoing" ? sendMessage(conversationId, original.text) : Promise.resolve(false);
+    },
+    [sendMessage],
+  );
 
   const abort = useCallback(async (conversationId: string): Promise<boolean> => {
     const result = await window.wisp.abortConversation({ conversationId });
@@ -231,20 +260,20 @@ export function useConversations(): ConversationsController {
     return false;
   }, []);
 
-  const resolveApproval = useCallback(async (
-    request: ToolApprovalRequest,
-    decision: ToolApprovalDecision,
-  ): Promise<boolean> => {
-    const result = await window.wisp.resolveToolApproval({
-      approvalId: request.approvalId,
-      conversationId: request.conversationId,
-      toolCallId: request.toolCallId,
-      decision,
-    });
-    if (result.ok) return true;
-    setError(result.error.message);
-    return false;
-  }, []);
+  const resolveApproval = useCallback(
+    async (request: ToolApprovalRequest, decision: ToolApprovalDecision): Promise<boolean> => {
+      const result = await window.wisp.resolveToolApproval({
+        approvalId: request.approvalId,
+        conversationId: request.conversationId,
+        toolCallId: request.toolCallId,
+        decision,
+      });
+      if (result.ok) return true;
+      setError(result.error.message);
+      return false;
+    },
+    [],
+  );
 
   const chats = useMemo(() => overlayRuntimeMessages(state.chats, runtime.messages), [runtime.messages, state.chats]);
 
@@ -259,11 +288,27 @@ export function useConversations(): ConversationsController {
     loading,
     error,
     create: useCallback((conversation) => enqueue(() => window.wisp.createConversation({ conversation })), [enqueue]),
-    update: useCallback((conversationId, changes) => enqueue(() => window.wisp.updateConversation({ conversationId, changes })), [enqueue]),
-    delete: useCallback((conversationId) => enqueue(() => window.wisp.deleteConversation({ conversationId })), [enqueue]),
-    appendMessage: useCallback((conversationId, message) => enqueue(() => window.wisp.appendConversationMessage({ conversationId, message })), [enqueue]),
-    answerPrompt: useCallback((conversationId, messageId, answer) => enqueue(() => window.wisp.answerConversationPrompt({ conversationId, messageId, answer })), [enqueue]),
-    markRead: useCallback((conversationId) => enqueue(() => window.wisp.markConversationRead({ conversationId })), [enqueue]),
+    update: useCallback(
+      (conversationId, changes) => enqueue(() => window.wisp.updateConversation({ conversationId, changes })),
+      [enqueue],
+    ),
+    delete: useCallback(
+      (conversationId) => enqueue(() => window.wisp.deleteConversation({ conversationId })),
+      [enqueue],
+    ),
+    appendMessage: useCallback(
+      (conversationId, message) => enqueue(() => window.wisp.appendConversationMessage({ conversationId, message })),
+      [enqueue],
+    ),
+    answerPrompt: useCallback(
+      (conversationId, messageId, answer) =>
+        enqueue(() => window.wisp.answerConversationPrompt({ conversationId, messageId, answer })),
+      [enqueue],
+    ),
+    markRead: useCallback(
+      (conversationId) => enqueue(() => window.wisp.markConversationRead({ conversationId })),
+      [enqueue],
+    ),
     sendMessage,
     retryMessage,
     abort,
