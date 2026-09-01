@@ -104,6 +104,7 @@ function MessageView({ message, onAnswer, onRetry }: MessageViewProps) {
   }
 
   const outgoing = message.type === "outgoing";
+  if (message.status === "streaming" && !message.text.trim()) return null;
   return (
     <div className={cn("relative mt-[5px] flex animate-message-in flex-col", outgoing ? "items-end" : "items-start")}>
       <div className={cn("group/message-row flex max-w-full items-center", outgoing && "flex-row-reverse")}>
@@ -130,13 +131,9 @@ function MessageView({ message, onAnswer, onRetry }: MessageViewProps) {
           ))}
         </div>
       ) : null}
-      {message.status && message.status !== "complete" ? (
+      {(message.status === "queued" || message.status === "cancelled" || message.status === "failed") ? (
         <div className={cn("mt-1 flex items-center gap-2 text-[10.5px] text-faint", outgoing && "mr-1")}>
-          <span>{message.status === "queued"
-            ? "Queued"
-            : message.status === "streaming"
-              ? "Streaming"
-              : message.status === "cancelled" ? "Stopped" : "Failed"}</span>
+          <span>{message.status === "queued" ? "Queued" : message.status === "cancelled" ? "Stopped" : "Failed"}</span>
           {!outgoing && message.status === "failed" && message.retryable ? (
             <button type="button" className="rounded-md border border-black/[0.08] px-1.5 py-0.5 text-dim hover:bg-muted hover:text-foreground dark:border-white/[0.08]" onClick={onRetry}>
               Retry
