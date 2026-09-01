@@ -41,7 +41,7 @@ Make the existing mock UI safer to evolve into a real desktop agent product by:
 | Phase | Title | Priority | Effort | Risk | Depends on | Status |
 |---|---|---:|---:|---:|---|---|
 | 01A | Apply the Biome formatting baseline | P0 | M | LOW | — | DONE |
-| 01 | Establish tests, lint, formatting, and CI | P0 | M | LOW | 01A | TODO |
+| 01 | Establish tests, lint, formatting, and CI | P0 | M | LOW | 01A | DONE |
 | 02 | Fix search, Wisp registry, and clipboard feedback | P1 | M | LOW | 01 | TODO |
 | 03 | Centralize panel layout and resize lifecycle | P1 | S/M | LOW | 01 | TODO |
 | 04 | Centralize current-user and release metadata | P1 | S | LOW | 01 | TODO |
@@ -266,9 +266,10 @@ Stop and report rather than improvising if:
 4. Add characterization tests for:
    - valid/default/invalid preference normalization;
    - legacy `isGroup` to circle migration and explicit empty-circle preservation;
-   - default application render from empty storage;
-   - invalid JSON falling back to bundled chats;
-   - one outgoing message followed by its delayed mock reply using fake timers;
+   - default application render from an empty initialized backend;
+   - invalid legacy JSON falling back to an empty backend import without crashing;
+   - one outgoing message being persisted and forwarded through the typed backend bridge;
+   - streamed reply state through the existing conversation-stream characterization suite;
    - the current search behavior for ordinary incoming/outgoing text.
 5. Add Biome lint and format-check scripts. Keep its recommended React Hooks rules enabled and exclude `dist/`, `dist-electron/`, `node_modules/`, `.migration/`, and the non-runtime `template/`. Biome replaces ESLint and Prettier because the current `typescript-eslint` peer range excludes TypeScript 7. Keep any initial mechanical formatting separate inside this phase; if it touches more than 20 source files, stop and request a dedicated formatting phase.
 6. Create GitHub Actions CI using the Node version declared by `engines`. Run `npm ci`, lint, format check, typecheck, tests, and build. Enable npm caching keyed by `package-lock.json`.
