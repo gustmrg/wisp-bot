@@ -4,6 +4,7 @@ import { CheckIcon, CopyIcon } from "lucide-react";
 import type { Message } from "@/chat-data";
 import { copyText } from "@/lib/clipboard";
 import { cn } from "@/lib/utils";
+import { MarkdownView } from "@/components/markdown-view";
 
 interface MessageViewProps {
   message: Message;
@@ -110,11 +111,11 @@ function MessageView({ message, onAnswer, onRetry }: MessageViewProps) {
       <div className={cn("group/message-row flex max-w-full items-center", outgoing && "flex-row-reverse")}>
         <div
           className={cn(
-            "max-w-[min(820px,78vw)] rounded-[11px] px-2.5 py-[7px] text-[#262626] leading-[1.42] select-text whitespace-pre-wrap dark:text-[#e8e8e8]",
-            outgoing ? "bg-bubble-out" : "bg-bubble-in",
+            "max-w-[min(820px,78vw)] rounded-[11px] px-2.5 py-[7px] text-[#262626] leading-[1.42] select-text dark:text-[#e8e8e8]",
+            outgoing ? "bg-bubble-out whitespace-pre-wrap" : "bg-bubble-in",
           )}
         >
-          {message.text}
+          {outgoing ? message.text : <MarkdownView text={message.text} />}
         </div>
         <MessageTools text={message.text} createdAt={message.createdAt} legacyTime={message.time} outgoing={outgoing} />
       </div>
