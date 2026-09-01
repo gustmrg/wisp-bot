@@ -3,6 +3,7 @@ import { BellIcon, BotIcon, InfoIcon, KeyboardIcon, RefreshCwIcon, SettingsIcon 
 
 import { GeneralSettingsSections, PreferenceSwitch } from "@/components/general-settings-sections";
 import { ModelSettingsSection } from "@/components/model-settings-section";
+import type { AppMetadata, CurrentUser } from "@/config/app-metadata";
 import type { AppPreferences } from "@/lib/app-preferences";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -25,6 +26,8 @@ const THEME_OPTIONS = [
 ];
 
 interface AppSettingsDialogProps {
+  appMetadata: AppMetadata;
+  currentUser: CurrentUser;
   open: boolean;
   preferences: AppPreferences;
   onOpenChange: (open: boolean) => void;
@@ -34,7 +37,14 @@ interface AppSettingsDialogProps {
 const navButton =
   "flex items-center gap-2 rounded-[7px] border-0 bg-transparent px-[9px] py-[7px] text-left text-[#606060] hover:bg-[#e6e6e6] hover:text-[#222222] dark:text-[#aaaaaa] dark:hover:bg-[#2b2b2b] dark:hover:text-[#eeeeee] max-[620px]:justify-center [&_svg]:size-3.5 [&_span]:max-[620px]:hidden";
 
-function AppSettingsDialog({ open, preferences, onOpenChange, onPreferencesChange }: AppSettingsDialogProps) {
+function AppSettingsDialog({
+  appMetadata,
+  currentUser,
+  open,
+  preferences,
+  onOpenChange,
+  onPreferencesChange,
+}: AppSettingsDialogProps) {
   const [section, setSection] = useState<"general" | "model" | "about">("general");
   const selected = "bg-[#e6e6e6] text-[#222222] dark:bg-[#2b2b2b] dark:text-[#eeeeee]";
 
@@ -109,10 +119,10 @@ function AppSettingsDialog({ open, preferences, onOpenChange, onPreferencesChang
           </h2>
           <span className={settingsGroupLabel}>Account</span>
           <div className={cn(settingsCard, settingsRow)}>
-            <span className={profileAvatar}>JD</span>
+            <span className={profileAvatar}>{currentUser.initials}</span>
             <span className={cn(settingsRowCopy, "gap-[3px]")}>
-              <strong className="text-[12.5px]">John Doe</strong>
-              <small className="text-dim text-[11.5px]">john.doe@example.com</small>
+              <strong className="text-[12.5px]">{currentUser.displayName}</strong>
+              <small className="text-dim text-[11.5px]">{currentUser.email}</small>
             </span>
             <button className="rounded-[7px] border-0 bg-[#e4e4e4] px-[9px] py-1.5 dark:bg-[#303030]" type="button">
               Sign out
@@ -189,8 +199,8 @@ function AppSettingsDialog({ open, preferences, onOpenChange, onPreferencesChang
           <div className={settingsCard}>
             <div className={settingsRow}>
               <span className={settingsRowCopy}>
-                <strong className="text-[12.5px]">Wisp Bot</strong>
-                <small className="text-dim text-[11.5px]">Version 0.1.0</small>
+                <strong className="text-[12.5px]">{appMetadata.displayName}</strong>
+                <small className="text-dim text-[11.5px]">Version {appMetadata.version}</small>
               </span>
               <button
                 className={cn(iconButton, "disabled:opacity-50")}

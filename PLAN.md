@@ -44,7 +44,7 @@ Make the existing mock UI safer to evolve into a real desktop agent product by:
 | 01 | Establish tests, lint, formatting, and CI | P0 | M | LOW | 01A | DONE |
 | 02 | Fix search, Wisp registry, and clipboard feedback | P1 | M | LOW | 01 | DONE |
 | 03 | Centralize panel layout and resize lifecycle | P1 | S/M | LOW | 01 | DONE |
-| 04 | Centralize current-user and release metadata | P1 | S | LOW | 01 | TODO |
+| 04 | Centralize current-user and release metadata | P1 | S | LOW | 01 | DONE |
 | 05 | Model Wisps and circles as discriminated variants | P1 | L | HIGH | 01, 02, 04 | TODO |
 | 06 | Make workspace mutations preserve entity integrity | P1 | M | MED | 05 | TODO |
 | 07 | Add validated, failure-aware persistence | P1 | L | MED | 05, 06 | TODO |
@@ -396,16 +396,16 @@ Stop and report rather than improvising if:
 **Scope**:
 
 - Create `src/config/app-metadata.ts` and `src/fixtures/demo-session.ts` with tests.
-- Modify `vite.config.mts`, `src/vite-env.d.ts`, `src/App.tsx`, `src/components/sidebar.tsx`, and `src/components/app-settings-dialog.tsx`.
+- Modify `vite.config.mts`, `vitest.config.mts`, `src/vite-env.d.ts`, `src/App.tsx`, `src/components/sidebar.tsx`, and `src/components/app-settings-dialog.tsx`.
 - Do not add authentication or a preload bridge in this phase.
 
 **Implementation steps**:
 
 1. Define a typed `CurrentUser` contract and a clearly named `DEMO_CURRENT_USER` fixture containing the existing demo identity. Components must receive or import the typed fixture boundary rather than embed identity strings.
-2. Make mock greeting generation accept a `CurrentUser` and derive its salutation from a named `displayName`/`givenName` field.
+2. Do not reintroduce the per-user mock greeting removed when the `main` integration moved conversations into the backend. Keep `givenName` available on `CurrentUser` for a future reviewed greeting/runtime boundary.
 3. Expose package name/version to renderer builds through typed Vite `define` constants sourced from `package.json`. Do not duplicate the version in source code.
 4. Render About metadata from that build-time source. Record in a maintenance comment that a later preload bridge may replace it with `app.getVersion()` in packaged builds.
-5. Add tests proving sidebar, settings, and greeting use injected metadata and the About view uses the build constant.
+5. Add tests proving sidebar and settings use injected user metadata, the About view uses injected application metadata, and the build constants match `package.json`.
 
 **Validation**:
 

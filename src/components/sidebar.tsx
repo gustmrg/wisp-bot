@@ -4,6 +4,7 @@ import { PanelLeftCloseIcon, SearchIcon } from "lucide-react";
 import type { ChatCollection, ChatId } from "@/chat-data";
 import { ChatAvatar } from "@/components/chat-avatar";
 import { CreateAgentDialog, type NewAgent } from "@/components/create-agent-dialog";
+import type { CurrentUser } from "@/config/app-metadata";
 import { sidebarLayoutStyle } from "@/lib/layout";
 import { panelResizer, profileAvatar } from "@/lib/ui-classes";
 import { cn } from "@/lib/utils";
@@ -12,6 +13,7 @@ interface SidebarProps {
   activeChatId: ChatId;
   chats: ChatCollection;
   collapsed: boolean;
+  currentUser: CurrentUser;
   width: number;
   onCollapsedChange: (collapsed: boolean) => void;
   onCreate: (agent: NewAgent) => void;
@@ -25,6 +27,7 @@ function Sidebar({
   activeChatId,
   chats,
   collapsed,
+  currentUser,
   width,
   onCollapsedChange,
   onCreate,
@@ -143,8 +146,8 @@ function Sidebar({
           title="User settings"
           onClick={onOpenSettings}
         >
-          <span className={profileAvatar}>JD</span>
-          {collapsed ? null : <span className="min-w-0 flex-1 truncate">John Doe</span>}
+          <span className={profileAvatar}>{currentUser.initials}</span>
+          {collapsed ? null : <span className="min-w-0 flex-1 truncate">{currentUser.displayName}</span>}
         </button>
 
         {collapsed ? null : (

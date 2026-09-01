@@ -10,6 +10,8 @@ import { DetailsPanel } from "@/components/details-panel";
 import { SearchDialog } from "@/components/search-dialog";
 import { Sidebar } from "@/components/sidebar";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { APP_METADATA } from "@/config/app-metadata";
+import { DEMO_CURRENT_USER } from "@/fixtures/demo-session";
 import { applyTheme } from "@/lib/theme";
 import { DEFAULT_PREFERENCES, normalizePreferences, type AppPreferences } from "@/lib/app-preferences";
 import { LEGACY_STORAGE_KEY, useConversations } from "@/hooks/use-conversations";
@@ -189,6 +191,7 @@ export default function App() {
           activeChatId={activeChatId}
           chats={chats}
           collapsed={sidebarCollapsed}
+          currentUser={DEMO_CURRENT_USER}
           width={sidebarPanel.width}
           onCollapsedChange={setSidebarCollapsed}
           onCreate={handleCreateAgent}
@@ -238,6 +241,8 @@ export default function App() {
       </div>
       <SearchDialog chats={chats} open={searchOpen} onOpenChange={setSearchOpen} onSelectChat={handleSelectChat} />
       <AppSettingsDialog
+        appMetadata={APP_METADATA}
+        currentUser={DEMO_CURRENT_USER}
         open={settingsOpen}
         preferences={preferences}
         onOpenChange={setSettingsOpen}
