@@ -1,6 +1,5 @@
-import { app, BrowserWindow, ipcMain, nativeTheme, type IpcMainInvokeEvent } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, nativeTheme, session, type IpcMainInvokeEvent } from "electron";
 import path from "node:path";
-import { pathToFileURL } from "node:url";
 
 import { WISP_IPC_CHANNELS, type SequencedConversationAgentEvent } from "../shared/contracts.js";
 import { AgentRegistry } from "./backend/agent-registry.js";
@@ -16,24 +15,29 @@ import { registerAgentHandlers } from "./ipc/register-handlers.js";
 import { registerConversationHandlers } from "./ipc/register-conversation-handlers.js";
 import { registerModelSettingsHandlers } from "./ipc/register-model-settings-handlers.js";
 import { registerToolPolicyHandlers } from "./ipc/register-tool-policy-handlers.js";
+import {
+  isAllowedPermission,
+  isAllowedRendererUrl,
+  resolveRendererTarget,
+  type RendererTarget,
+} from "./security-policy.js";
 
-const devServerUrl = process.env.VITE_DEV_SERVER_URL;
 const productionRendererPath = path.join(__dirname, "../../dist/index.html");
 const windowBackground = (): string => (nativeTheme.shouldUseDarkColors ? "#0a0a0a" : "#ffffff");
+let rendererTarget: RendererTarget | undefined;
+let fatalErrorHandled = false;
 
 function isTrustedIpcSender(event: IpcMainInvokeEvent): boolean {
   if (!event.senderFrame || event.senderFrame !== event.sender.mainFrame) return false;
 
   try {
-    const senderUrl = new URL(event.senderFrame.url);
-    if (devServerUrl) return senderUrl.origin === new URL(devServerUrl).origin;
-    return senderUrl.href === pathToFileURL(productionRendererPath).href;
+    return rendererTarget ? isAllowedRendererUrl(event.senderFrame.url, rendererTarget) : false;
   } catch {
     return false;
   }
 }
 
-async function createWindow(): Promise<void> {
+async function createWindow(target: RendererTarget): Promise<void> {
   const window = new BrowserWindow({
     width: 1040,
     height: 760,
@@ -57,8 +61,10 @@ async function createWindow(): Promise<void> {
 
   window.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
   window.webContents.on("will-navigate", (event, navigationUrl) => {
-    const allowedUrl = devServerUrl ?? pathToFileURL(productionRendererPath).href;
-    if (navigationUrl !== allowedUrl) event.preventDefault();
+    if (!isAllowedRendererUrl(navigationUrl, target)) event.preventDefault();
+  });
+  window.webContents.on("will-redirect", (event, navigationUrl) => {
+    if (!isAllowedRendererUrl(navigationUrl, target)) event.preventDefault();
   });
 
   nativeTheme.on("updated", syncWindowBackground);
@@ -66,15 +72,44 @@ async function createWindow(): Promise<void> {
     nativeTheme.off("updated", syncWindowBackground);
   });
 
-  if (devServerUrl) {
-    await window.loadURL(devServerUrl);
-    return;
+  try {
+    if (target.kind === "development") await window.loadURL(target.url);
+    else await window.loadFile(target.filePath);
+  } catch (error) {
+    if (!window.isDestroyed()) window.destroy();
+    throw error;
   }
-
-  await window.loadFile(productionRendererPath);
 }
 
-void app.whenReady().then(async () => {
+function handleFatalStartupError(error: unknown): void {
+  if (fatalErrorHandled) return;
+  fatalErrorHandled = true;
+  const code = error instanceof Error ? error.name : "UnknownError";
+  console.error("Wisp startup failed", { code });
+  dialog.showErrorBox(
+    "Wisp could not start",
+    "The application could not load its local interface. Please restart Wisp.",
+  );
+  app.quit();
+}
+
+async function bootstrap(): Promise<void> {
+  const target = resolveRendererTarget(app.isPackaged, process.env.VITE_DEV_SERVER_URL, productionRendererPath);
+  rendererTarget = target;
+  session.defaultSession.setPermissionCheckHandler((webContents, permission, requestingOrigin, details) => {
+    const requestingUrl = details.requestingUrl ?? requestingOrigin;
+    return (
+      webContents !== null &&
+      BrowserWindow.fromWebContents(webContents) !== null &&
+      isAllowedPermission(permission, requestingUrl, details.isMainFrame, target)
+    );
+  });
+  session.defaultSession.setPermissionRequestHandler((webContents, permission, callback, details) => {
+    callback(
+      BrowserWindow.fromWebContents(webContents) !== null &&
+        isAllowedPermission(permission, details.requestingUrl, details.isMainFrame, target),
+    );
+  });
   nativeTheme.themeSource = "system";
   const modelService = await ModelService.create({
     dataDirectory: path.join(app.getPath("userData"), "backend"),
@@ -149,14 +184,16 @@ void app.whenReady().then(async () => {
       app.quit();
     });
   });
-  await createWindow();
+  await createWindow(target);
 
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) {
-      void createWindow();
+      createWindow(target).catch(handleFatalStartupError);
     }
   });
-});
+}
+
+app.whenReady().then(bootstrap).catch(handleFatalStartupError);
 
 app.on("window-all-closed", () => {
   if (process.platform !== "darwin") {
