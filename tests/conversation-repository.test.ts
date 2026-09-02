@@ -244,6 +244,33 @@ describe("ConversationRepository", () => {
     expect(contents.sort()).toEqual(["pi-config", "pi-session", "workspace"]);
   });
 
+  it("enforces protected deletion and preserves the stored graph", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "wisp-protected-delete-"));
+    const repository = new ConversationRepository({ dataDirectory: directory });
+    await repository.initialize({ leader: { ...chat("leader"), systemRole: "chief" } });
+
+    await expect(repository.delete("leader")).rejects.toMatchObject({ code: "invalid_request" });
+
+    expect(repository.getChats().leader).toMatchObject({ id: "leader", systemRole: "chief" });
+  });
+
+  it("persists member pruning in the same deletion transaction", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "wisp-member-delete-"));
+    const repository = new ConversationRepository({ dataDirectory: directory });
+    await repository.initialize({
+      first: chat("first"),
+      second: chat("second"),
+      crew: { ...chat("crew", true), memberIds: ["second", "first", "first", "second"] },
+    });
+
+    await repository.delete("first");
+
+    expect(repository.getChats().crew).toMatchObject({ memberIds: ["second", "second"] });
+    const restored = new ConversationRepository({ dataDirectory: directory });
+    await restored.load();
+    expect(restored.getChats().crew).toMatchObject({ memberIds: ["second", "second"] });
+  });
+
   it("rolls back in-memory state when persistence cannot complete", async () => {
     const directory = await mkdtemp(path.join(os.tmpdir(), "wisp-write-failure-"));
     const blockedPath = path.join(directory, "not-a-directory");

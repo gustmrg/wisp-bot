@@ -46,7 +46,7 @@ Make the existing mock UI safer to evolve into a real desktop agent product by:
 | 03 | Centralize panel layout and resize lifecycle | P1 | S/M | LOW | 01 | DONE |
 | 04 | Centralize current-user and release metadata | P1 | S | LOW | 01 | DONE |
 | 05 | Model Wisps and circles as discriminated variants | P1 | L | HIGH | 01, 02, 04 | DONE |
-| 06 | Make workspace mutations preserve entity integrity | P1 | M | MED | 05 | TODO |
+| 06 | Make workspace mutations preserve entity integrity | P1 | M | MED | 05 | DONE |
 | 07 | Add validated, failure-aware persistence | P1 | L | MED | 05, 06 | TODO |
 | 08 | Extract the workspace controller and request runtime | P1 | M/L | MED | 03, 04, 06, 07 | TODO |
 | 09 | Build semantic settings and surface primitives | P2 | L | MED | 01, 03, 05 | TODO |
@@ -566,43 +566,83 @@ Equivalent names are acceptable, but `kind` must be the discriminant, circle mem
 
 **Audit coverage**: finding 02.
 
+**Scope revision (2026-09-01)**: The Electron conversation repository became the
+authoritative graph and mutation boundary after the planning baseline. The renderer now
+receives backend snapshots through `useConversations`; introducing the originally
+planned renderer-owned `WorkspaceState` reducer would create a conflicting second state
+model. This phase therefore extracts pure graph transitions behind the existing Electron
+repository and keeps only deterministic active-selection policy in the renderer. It does
+not change IPC channels, persistence format, agent runtime orchestration, or the
+renderer's request queue.
+
 **Scope**:
 
-- Create `src/features/workspace/workspace-reducer.ts`, `workspace-actions.ts`, and tests.
-- Modify `src/App.tsx`, `src/lib/circle-members.ts`, and creation/deletion consumers.
-- Do not move timers or persistence yet; Phase 08 owns runtime requests.
+- Create `electron/backend/workspace-actions.ts` and tests containing pure, exhaustive
+  transitions over the canonical conversation graph for create, update, delete,
+  mark-read, append-message, and answer-prompt behavior.
+- Modify `electron/backend/conversation-repository.ts` to apply those transitions inside
+  its existing serialized, rollback-capable persistence transaction. Preserve record
+  metadata, application-session identity, archive behavior, and message-ID injection at
+  the repository boundary.
+- Create renderer selection/identity helpers under `src/features/workspace/` with tests,
+  and modify `src/App.tsx` plus creation/deletion consumers to use opaque IDs and
+  deterministic active selection. Continue treating `useConversations` and backend
+  snapshots as the renderer source of truth.
+- Modify `src/lib/circle-members.ts` only if shared reference helpers are required.
+- Do not move request queues, streaming state, agent timers/lifecycle, IPC transport, or
+  persistence ownership; Phase 08 owns runtime request extraction.
 
 **Implementation steps**:
 
-1. Define `WorkspaceState` containing at least `chats` and `activeChatId`, plus exhaustive actions for select, mark-read, create, update, delete, append-message, and answer-prompt.
-2. Replace name-derived, reusable IDs for new entities with opaque immutable IDs from an injected ID factory. Preserve all existing persisted IDs.
-3. Make delete one reducer transition that:
+1. Define an exhaustive pure backend action layer over conversation records for create,
+   update, mark-read, delete, append-message, and answer-prompt. Keep filesystem/session
+   side effects in the repository and agent lifecycle side effects in the service.
+2. Replace name-derived, reusable IDs for new entities with opaque immutable IDs from an
+   injected renderer ID factory. Preserve all existing persisted IDs and keep message,
+   approval, and backend session ID factories unchanged.
+3. Make delete one pure graph transition, applied within one repository transaction, that:
    - rejects deletion when explicit policy says the entity is protected;
    - removes the entity;
    - removes its ID from every circle;
-   - chooses the next active chat deterministically;
    - leaves unrelated message and member order unchanged.
-4. Move `appendMessage` and prompt-answer mutation into pure reducer helpers. Ensure missing/deleted targets are no-ops.
-5. Update `App` to dispatch these actions without calling another state setter inside a state updater.
+4. Make renderer selection helpers choose the next active chat deterministically from
+   backend snapshots after selection, creation, or deletion, without mirroring the chat
+   graph in renderer reducer state.
+5. Move append-message, prompt-answer, update, and mark-read record mutation into the
+   pure backend action layer. Missing/deleted targets remain repository `not_found`
+   results at the IPC boundary, while the pure helpers themselves are no-ops.
+6. Update `App` to use the opaque ID factory and selection helpers without deriving
+   identity from names or nesting state updates.
 
 **Validation**:
 
-- Reducer tests cover delete member, delete circle, delete active/non-active chat, protected chat, empty result, duplicate/member pruning, append to missing chat, and prompt answer.
+- Pure backend action tests cover delete member, delete circle, protected chat, empty
+  result, duplicate/member pruning, update-kind mismatch, append to missing chat, and
+  prompt answer. Repository tests verify rejection/rollback and archive behavior remain
+  intact.
+- Renderer selection tests cover deleting the active and non-active chat, selecting from
+  an empty result, and preferring the metadata-defined chief.
 - Regression test: delete a circle member, create another Wisp with the same display name, and confirm it is not added to the old circle.
-- `rg -n 'uniqueAgentId|delete next\[|setActiveChatId\(' src/App.tsx` → no mutation-policy matches.
+- `rg -n 'uniqueAgentId|delete next\[' src/App.tsx electron/backend/conversation-repository.ts` → no matches.
+- `rg -n 'setChats|useReducer' src/App.tsx src/hooks/use-conversations.ts` → no renderer-owned graph state.
 - Run all global validation commands.
 
 **Exit criteria**:
 
 - Every entity mutation flows through one pure, tested action layer.
 - New IDs are not derived from display names and are not reused.
-- Deletion cannot leave live circle references or nested state-update side effects.
+- Deletion cannot leave live circle references or nested state-update side effects, and
+  protected-entity policy is enforced in the authoritative backend boundary.
+- The renderer does not duplicate the backend-owned conversation graph.
 
 **Suggested commit message**: `fix(domain): preserve chat lifecycle integrity`
 
 **Phase-specific STOP conditions**:
 
 - Template-link compatibility requires stable human-readable IDs; stop and define a separate public template identifier rather than keeping mutable entity IDs.
+- A pure graph transition cannot be applied inside the repository's current serialized
+  rollback transaction without changing the persistence format; defer that redesign to
+  Phase 07 rather than bypassing atomic persistence.
 
 ---
 

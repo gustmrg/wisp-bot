@@ -2,23 +2,17 @@ import { randomUUID } from "node:crypto";
 import { mkdir, readFile, rename } from "node:fs/promises";
 import path from "node:path";
 
-import type { Chat, ChatChanges, ChatCollection, Message } from "../../shared/conversations.js";
+import type { ChatChanges, ChatCollection, Message } from "../../shared/conversations.js";
 import { writeFileAtomically } from "./atomic-file.js";
 import { WispBackendError } from "./backend-error.js";
 import type { ConversationAgentContext } from "./conversation-agent.js";
 import { normalizeChat, normalizeChatCollection, normalizeConversationId } from "./conversation-normalizer.js";
+import { applyWorkspaceAction, type ConversationRecord, type WorkspaceActionStatus } from "./workspace-actions.js";
 
 const SCHEMA_VERSION = 4;
 const REMOVED_DEMO_CONVERSATION_IDS = new Set(["chief", "sales", "inbox", "account", "talent", "expense", "offsite"]);
 
-export interface ConversationRecord {
-  chat: Chat;
-  sessionId: string | null;
-  piSessionId: string | null;
-  piSessionFile: string | null;
-  createdAt: string;
-  updatedAt: string;
-}
+export type { ConversationRecord } from "./workspace-actions.js";
 
 interface PersistedConversationState {
   schemaVersion: typeof SCHEMA_VERSION;
@@ -164,9 +158,6 @@ export class ConversationRepository {
   async create(chatValue: unknown): Promise<void> {
     await this.enqueue(async () => {
       const chat = normalizeChat(chatValue);
-      if (this.state.conversations[chat.id]) {
-        throw new WispBackendError("already_exists", "A conversation with this ID already exists.");
-      }
       const timestamp = this.now().toISOString();
       const record: ConversationRecord = {
         chat,
@@ -176,7 +167,9 @@ export class ConversationRepository {
         createdAt: timestamp,
         updatedAt: timestamp,
       };
-      this.state.conversations[chat.id] = record;
+      const result = applyWorkspaceAction(this.state.conversations, { type: "create", record });
+      this.throwForActionStatus(result.status);
+      this.state.conversations = result.records;
       this.state.initialized = true;
       await this.ensureDirectories(record);
       await this.persist();
@@ -185,67 +178,58 @@ export class ConversationRepository {
 
   async update(conversationId: string, changes: ChatChanges): Promise<void> {
     await this.enqueue(async () => {
-      const record = this.require(conversationId);
-      const { kind, ...fields } = changes;
-      if (record.chat.kind !== kind) {
-        throw new WispBackendError("invalid_request", "The conversation kind cannot be changed.");
-      }
-      record.chat = normalizeChat({ ...record.chat, ...fields });
-      record.updatedAt = this.now().toISOString();
+      const result = applyWorkspaceAction(this.state.conversations, {
+        type: "update",
+        conversationId,
+        changes,
+        updatedAt: this.now().toISOString(),
+      });
+      this.throwForActionStatus(result.status);
+      this.state.conversations = result.records;
       await this.persist();
     });
   }
 
   async appendMessage(conversationId: string, message: Message): Promise<void> {
     await this.enqueue(async () => {
-      const record = this.require(conversationId);
       const messageId = message.id ?? this.createId();
-      const existingIndex = record.chat.messages.findIndex(({ id }) => id === messageId);
-      const messages =
-        existingIndex === -1
-          ? [...record.chat.messages, { ...message, id: messageId }]
-          : record.chat.messages.map((existing, index) =>
-              index === existingIndex ? { ...message, id: messageId } : existing,
-            );
-      const normalized = normalizeChat({
-        ...record.chat,
-        messages,
+      const result = applyWorkspaceAction(this.state.conversations, {
+        type: "append-message",
+        conversationId,
+        message: { ...message, id: messageId },
+        updatedAt: this.now().toISOString(),
       });
-      const current = normalized.messages.find(({ id }) => id === messageId);
-      record.chat = {
-        ...normalized,
-        preview: current && "text" in current ? current.text : normalized.preview,
-        timestamp: "Now",
-      };
-      record.updatedAt = this.now().toISOString();
+      this.throwForActionStatus(result.status);
+      this.state.conversations = result.records;
       await this.persist();
     });
   }
 
   async answerPrompt(conversationId: string, messageId: string, answer: string): Promise<void> {
     await this.enqueue(async () => {
-      const record = this.require(conversationId);
-      let found = false;
-      record.chat = {
-        ...record.chat,
-        messages: record.chat.messages.map((message) => {
-          if (message.id !== messageId || message.type !== "prompt") return message;
-          found = true;
-          return { ...message, answer };
-        }),
-      };
-      if (!found) throw new WispBackendError("not_found", "The prompt is no longer available.");
-      record.updatedAt = this.now().toISOString();
+      const result = applyWorkspaceAction(this.state.conversations, {
+        type: "answer-prompt",
+        conversationId,
+        messageId,
+        answer,
+        updatedAt: this.now().toISOString(),
+      });
+      this.throwForActionStatus(result.status);
+      this.state.conversations = result.records;
       await this.persist();
     });
   }
 
   async markRead(conversationId: string): Promise<void> {
     await this.enqueue(async () => {
-      const record = this.require(conversationId);
-      if (!record.chat.unread) return;
-      record.chat = { ...record.chat, unread: false };
-      record.updatedAt = this.now().toISOString();
+      const result = applyWorkspaceAction(this.state.conversations, {
+        type: "mark-read",
+        conversationId,
+        updatedAt: this.now().toISOString(),
+      });
+      this.throwForActionStatus(result.status);
+      if (result.status === "unchanged") return;
+      this.state.conversations = result.records;
       await this.persist();
     });
   }
@@ -271,14 +255,15 @@ export class ConversationRepository {
 
   async delete(conversationId: string): Promise<ConversationRecord> {
     return this.enqueue(async () => {
-      const record = this.require(conversationId);
-      delete this.state.conversations[conversationId];
-      for (const other of Object.values(this.state.conversations)) {
-        if (other.chat.kind === "circle" && other.chat.memberIds.includes(conversationId)) {
-          other.chat = { ...other.chat, memberIds: other.chat.memberIds.filter((id) => id !== conversationId) };
-          other.updatedAt = this.now().toISOString();
-        }
-      }
+      const result = applyWorkspaceAction(this.state.conversations, {
+        type: "delete",
+        conversationId,
+        updatedAt: this.now().toISOString(),
+      });
+      this.throwForActionStatus(result.status);
+      const record = result.deletedRecord;
+      if (!record) throw new WispBackendError("not_found", "The conversation was not found.");
+      this.state.conversations = result.records;
       await this.persist();
       if (record.sessionId) await this.archiveDirectories(record.sessionId).catch(() => undefined);
       return structuredClone(record);
@@ -289,6 +274,23 @@ export class ConversationRepository {
     const record = this.state.conversations[conversationId];
     if (!record) throw new WispBackendError("not_found", "The conversation was not found.");
     return record;
+  }
+
+  private throwForActionStatus(status: WorkspaceActionStatus): void {
+    if (status === "applied" || status === "unchanged") return;
+    if (status === "already_exists") {
+      throw new WispBackendError("already_exists", "A conversation with this ID already exists.");
+    }
+    if (status === "kind_mismatch") {
+      throw new WispBackendError("invalid_request", "The conversation kind cannot be changed.");
+    }
+    if (status === "protected") {
+      throw new WispBackendError("invalid_request", "This conversation is protected and cannot be deleted.");
+    }
+    if (status === "prompt_not_found") {
+      throw new WispBackendError("not_found", "The prompt is no longer available.");
+    }
+    throw new WispBackendError("not_found", "The conversation was not found.");
   }
 
   private async enqueue<T>(operation: () => Promise<T>): Promise<T> {

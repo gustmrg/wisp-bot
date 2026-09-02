@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { FormEvent } from "react";
 
-import type { ChatChanges, ChatCollection, ChatId } from "@/chat-data";
+import type { ChatChanges, ChatId } from "@/chat-data";
 import type { ToolApprovalDecision, ToolApprovalRequest } from "../shared/tool-policy";
 import { AppSettingsDialog } from "@/components/app-settings-dialog";
 import { ChatPanel } from "@/components/chat-panel";
@@ -16,7 +16,7 @@ import { applyTheme } from "@/lib/theme";
 import { DEFAULT_PREFERENCES, normalizePreferences, type AppPreferences } from "@/lib/app-preferences";
 import { LEGACY_STORAGE_KEY, useConversations } from "@/hooks/use-conversations";
 import { useResizablePanel } from "@/hooks/use-resizable-panel";
-import { getDefaultChatId } from "@/lib/chat-schema";
+import { createChatIdFactory, selectActiveChatId } from "@/features/workspace/workspace-actions";
 import { DETAILS_LAYOUT, SIDEBAR_LAYOUT } from "@/lib/layout";
 import { mainPanel } from "@/lib/ui-classes";
 import { cn } from "@/lib/utils";
@@ -35,20 +35,6 @@ function loadPreferences(): AppPreferences {
   return DEFAULT_PREFERENCES;
 }
 
-function uniqueAgentId(name: string, chats: ChatCollection): ChatId {
-  const baseId =
-    name
-      .toLocaleLowerCase()
-      .normalize("NFKD")
-      .replace(/[\u0300-\u036f]/g, "")
-      .replace(/[^a-z0-9]+/g, "-")
-      .replace(/(^-|-$)/g, "") || "wisp";
-  let id = baseId;
-  let suffix = 2;
-  while (chats[id]) id = `${baseId}-${suffix++}`;
-  return id;
-}
-
 export default function App() {
   const conversations = useConversations();
   const chats = conversations.chats;
@@ -60,6 +46,7 @@ export default function App() {
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [createChatId] = useState(createChatIdFactory);
   const composerInputRef = useRef<HTMLTextAreaElement>(null);
   const activeChat = chats[activeChatId];
   const sidebarPanel = useResizablePanel({ ...SIDEBAR_LAYOUT.resize, enabled: !sidebarCollapsed });
@@ -103,7 +90,7 @@ export default function App() {
 
   useEffect(() => {
     if (!chats[activeChatId]) {
-      setActiveChatId(getDefaultChatId(chats));
+      setActiveChatId(selectActiveChatId(chats, activeChatId));
     }
   }, [activeChatId, chats]);
 
@@ -135,7 +122,7 @@ export default function App() {
   }
 
   function handleCreateAgent(agent: NewAgent) {
-    const id = uniqueAgentId(agent.name, chats);
+    const id = createChatId(chats);
     void (async () => {
       const created = await conversations.create(
         agent.kind === "circle"
