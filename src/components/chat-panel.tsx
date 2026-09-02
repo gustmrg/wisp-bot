@@ -77,7 +77,7 @@ function ChatPanel({
           <span className="truncate font-semibold">{chat.name}</span>
         </div>
         <div className="flex flex-none items-center gap-2">
-          {chat.isCircle ? (
+          {chat.kind === "circle" ? (
             <button
               className="rounded-md border-0 bg-transparent px-[7px] py-1 text-dim text-xs hover:bg-muted hover:text-foreground"
               type="button"
@@ -91,8 +91,8 @@ function ChatPanel({
           <button
             className={iconButton}
             type="button"
-            aria-label={chat.isCircle ? "Open circle settings" : "Open Wisp settings"}
-            title={chat.isCircle ? "Circle settings" : "Wisp settings"}
+            aria-label={chat.kind === "circle" ? "Open circle settings" : "Open Wisp settings"}
+            title={chat.kind === "circle" ? "Circle settings" : "Wisp settings"}
             onClick={onOpenDetails}
           >
             <SettingsIcon aria-hidden="true" />
@@ -150,7 +150,7 @@ function ChatPanel({
 
       <form className="flex-none px-3 pb-3" onSubmit={onSubmit}>
         <div className="h-[22px] pl-2.5 text-[11px] text-faint" role="status">
-          {chat.isCircle
+          {chat.kind === "circle"
             ? "Circle conversations are not enabled yet"
             : (error ??
               activity ??
@@ -166,7 +166,7 @@ function ChatPanel({
             aria-label={`Message ${chat.name}`}
             placeholder={`Message ${chat.name}`}
             value={draft}
-            disabled={chat.isCircle}
+            disabled={chat.kind === "circle"}
             onChange={(event) => onDraftChange(event.currentTarget.value)}
             onKeyDown={handleComposerKeyDown}
           />
@@ -191,7 +191,7 @@ function ChatPanel({
             type="submit"
             className="flex size-[27px] flex-none items-center justify-center rounded-full border-0 bg-[#202020] text-white enabled:hover:opacity-[0.85] disabled:opacity-[0.35] dark:bg-[#f0f0f0] dark:text-[#161616] [&_svg]:size-3.5"
             aria-label={working ? "Queue message" : "Send message"}
-            disabled={!draft.trim() || acknowledging || chat.isCircle}
+            disabled={!draft.trim() || acknowledging || chat.kind === "circle"}
           >
             <ArrowUpIcon aria-hidden="true" />
           </button>

@@ -2,8 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import type { BackendError, BackendResult, SequencedConversationAgentEvent, WispApi } from "../../shared/contracts";
 import type {
-  AgentSettings,
   Chat,
+  ChatChanges,
   ChatCollection,
   ConversationStateView,
   ManagedConversationStatus,
@@ -74,7 +74,7 @@ export interface ConversationsController {
   loading: boolean;
   error: string | null;
   create: (conversation: Chat) => Promise<boolean>;
-  update: (conversationId: string, changes: Partial<Omit<AgentSettings, "id" | "isCircle">>) => Promise<boolean>;
+  update: (conversationId: string, changes: ChatChanges) => Promise<boolean>;
   delete: (conversationId: string) => Promise<boolean>;
   appendMessage: (conversationId: string, message: Message) => Promise<boolean>;
   answerPrompt: (conversationId: string, messageId: string, answer: string) => Promise<boolean>;
@@ -209,7 +209,7 @@ export function useConversations(): ConversationsController {
   const sendMessage = useCallback(
     async (conversationId: string, textValue: string): Promise<boolean> => {
       const text = textValue.trim();
-      if (!text || stateRef.current.chats[conversationId]?.isCircle) return false;
+      if (!text || stateRef.current.chats[conversationId]?.kind !== "wisp") return false;
       const requestId = crypto.randomUUID();
       const message: TextMessage & { id: string } = {
         id: requestId,

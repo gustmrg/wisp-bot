@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Popover } from "@base-ui/react/popover";
 import { ShuffleIcon, UploadIcon, XIcon } from "lucide-react";
 
-import type { AgentSettings } from "@/chat-data";
+import type { WispChat, WispChatChanges } from "@/chat-data";
 import { ChatAvatar } from "@/components/chat-avatar";
 import { Wisp } from "@/components/wisp";
 import { iconButton } from "@/lib/ui-classes";
@@ -49,8 +49,8 @@ async function readAvatar(file: File): Promise<string> {
 }
 
 interface AvatarEditorProps {
-  chat: AgentSettings;
-  onChange: (changes: Partial<AgentSettings>) => void;
+  chat: WispChat;
+  onChange: (changes: Omit<WispChatChanges, "kind">) => void;
 }
 
 function AvatarEditor({ chat, onChange }: AvatarEditorProps) {
@@ -66,7 +66,7 @@ function AvatarEditor({ chat, onChange }: AvatarEditorProps) {
     [],
   );
 
-  function selectWisp(changes: Partial<AgentSettings>) {
+  function selectWisp(changes: Omit<WispChatChanges, "kind">) {
     uploadVersion.current += 1;
     setUploading(false);
     setError("");

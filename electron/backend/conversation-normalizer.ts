@@ -1,7 +1,7 @@
 import {
   WISP_SHAPE_IDS,
-  type AgentSettings,
   type Chat,
+  type ChatChanges,
   type ChatCollection,
   type Message,
   type MessageStatus,
@@ -106,31 +106,51 @@ export function normalizeMessage(value: unknown, fallbackId?: string): Message {
 export function normalizeChat(value: unknown): Chat {
   const raw = asRecord(value);
   const id = normalizeConversationId(raw.id);
-  if (typeof raw.shape !== "string" || !SHAPES.has(raw.shape as WispShape)) throw invalidRequest();
-  if (typeof raw.isCircle !== "boolean" || typeof raw.notifyOnUpdatesEnabled !== "boolean") {
-    throw invalidRequest();
-  }
+  const legacyKind = raw.isCircle === true || raw.isGroup === true ? "circle" : "wisp";
+  const kind = raw.kind === undefined ? legacyKind : raw.kind;
+  if (kind !== "wisp" && kind !== "circle") throw invalidRequest();
+  if (raw.systemRole !== undefined && raw.systemRole !== "chief") throw invalidRequest();
+  if (typeof raw.notifyOnUpdatesEnabled !== "boolean") throw invalidRequest();
   if (!Array.isArray(raw.messages) || raw.messages.length > MAX_MESSAGES) throw invalidRequest();
-  if (raw.memberIds !== undefined && (!Array.isArray(raw.memberIds) || raw.memberIds.length > 1_000)) {
-    throw invalidRequest();
-  }
-
-  return {
+  const base = {
     id,
     name: string(raw.name, 500, false),
     label: string(raw.label, 500),
     description: string(raw.description, 10_000),
-    shape: raw.shape as WispShape,
-    isCircle: raw.isCircle,
     notifyOnUpdatesEnabled: raw.notifyOnUpdatesEnabled,
     preview: string(raw.preview),
     timestamp: string(raw.timestamp, 500),
     messages: raw.messages.map((message, index) => normalizeMessage(message, `${id}:message:${index}`)),
-    ...(raw.color === undefined ? {} : { color: string(raw.color, 100) }),
-    ...(raw.avatarImage === undefined ? {} : { avatarImage: string(raw.avatarImage, MAX_AVATAR_LENGTH) }),
-    ...(raw.memberIds === undefined ? {} : { memberIds: raw.memberIds.map(normalizeConversationId) }),
+    ...(raw.systemRole === "chief" || (raw.kind === undefined && id === "chief")
+      ? { systemRole: "chief" as const }
+      : {}),
     ...(typeof raw.isActive === "boolean" ? { isActive: raw.isActive } : {}),
     ...(typeof raw.unread === "boolean" ? { unread: raw.unread } : {}),
+  };
+  if (kind === "circle") {
+    if (
+      raw.kind !== undefined &&
+      (raw.shape !== undefined || raw.color !== undefined || raw.avatarImage !== undefined)
+    ) {
+      throw invalidRequest();
+    }
+    if (raw.memberIds !== undefined && (!Array.isArray(raw.memberIds) || raw.memberIds.length > 1_000)) {
+      throw invalidRequest();
+    }
+    return {
+      ...base,
+      kind,
+      memberIds: raw.memberIds === undefined ? [] : raw.memberIds.map(normalizeConversationId),
+    };
+  }
+  if (raw.kind !== undefined && raw.memberIds !== undefined) throw invalidRequest();
+  if (typeof raw.shape !== "string" || !SHAPES.has(raw.shape as WispShape)) throw invalidRequest();
+  return {
+    ...base,
+    kind,
+    shape: raw.shape as WispShape,
+    ...(raw.color === undefined ? {} : { color: string(raw.color, 100) }),
+    ...(raw.avatarImage === undefined ? {} : { avatarImage: string(raw.avatarImage, MAX_AVATAR_LENGTH) }),
   };
 }
 
@@ -147,22 +167,17 @@ export function normalizeChatCollection(value: unknown): ChatCollection {
   return chats;
 }
 
-export function normalizeAgentSettingsChanges(value: unknown): Partial<Omit<AgentSettings, "id" | "isCircle">> {
+export function normalizeChatChanges(value: unknown): ChatChanges {
   const raw = asRecord(value);
+  if (raw.kind !== "wisp" && raw.kind !== "circle") throw invalidRequest();
+  const shared = ["name", "label", "description", "notifyOnUpdatesEnabled", "isActive", "unread"];
   const allowed = new Set([
-    "name",
-    "label",
-    "description",
-    "color",
-    "avatarImage",
-    "shape",
-    "memberIds",
-    "notifyOnUpdatesEnabled",
-    "isActive",
-    "unread",
+    "kind",
+    ...shared,
+    ...(raw.kind === "wisp" ? ["color", "avatarImage", "shape"] : ["memberIds"]),
   ]);
   if (Object.keys(raw).some((key) => !allowed.has(key))) throw invalidRequest();
-  const result: Partial<Omit<AgentSettings, "id" | "isCircle">> = {};
+  const result: Record<string, unknown> = { kind: raw.kind };
   if (raw.name !== undefined) result.name = string(raw.name, 500, false);
   if (raw.label !== undefined) result.label = string(raw.label, 500);
   if (raw.description !== undefined) result.description = string(raw.description, 10_000);
@@ -184,5 +199,5 @@ export function normalizeAgentSettingsChanges(value: unknown): Partial<Omit<Agen
       result[key] = raw[key];
     }
   }
-  return result;
+  return result as ChatChanges;
 }

@@ -1,28 +1,20 @@
 import type { PointerEvent as ReactPointerEvent } from "react";
 import { CheckIcon, Share2Icon, XIcon } from "lucide-react";
 
-import type { AgentSettings, Chat, ChatCollection } from "@/chat-data";
-import { WispSettingsFields } from "@/components/wisp-settings-fields";
-import { ChatAvatar } from "@/components/chat-avatar";
-import { ToggleSwitch } from "@/components/ui/toggle-switch";
-import { getCircleMembers } from "@/lib/circle-members";
+import type { Chat, ChatChanges, ChatCollection } from "@/chat-data";
+import { CircleDetails } from "@/components/circle-details";
+import { WispDetails } from "@/components/wisp-details";
 import { useCopyFeedback } from "@/hooks/use-copy-feedback";
+import { canDeleteChat } from "@/lib/chat-schema";
 import { detailsLayoutStyle } from "@/lib/layout";
-import {
-  detailsField,
-  detailsFieldControl,
-  iconButton,
-  notificationCard,
-  notificationCardCopy,
-  panelResizer,
-} from "@/lib/ui-classes";
+import { iconButton, panelResizer } from "@/lib/ui-classes";
 import { cn } from "@/lib/utils";
 
 interface DetailsPanelProps {
   chat: Chat;
   chats: ChatCollection;
   width: number;
-  onChange: (changes: Partial<AgentSettings>) => void;
+  onChange: (changes: ChatChanges) => void;
   onClose: () => void;
   onDelete: () => void;
   onResizeStart: (event: ReactPointerEvent<HTMLDivElement>) => void;
@@ -30,7 +22,6 @@ interface DetailsPanelProps {
 
 function DetailsPanel({ chat, chats, width, onChange, onClose, onDelete, onResizeStart }: DetailsPanelProps) {
   const copyFeedback = useCopyFeedback(chat.id);
-  const members = getCircleMembers(chat, chats);
 
   function shareTemplate() {
     void copyFeedback.copy(`wisp://template/${chat.id}`);
@@ -56,90 +47,21 @@ function DetailsPanel({ chat, chats, width, onChange, onClose, onDelete, onResiz
 
       <div className="relative flex min-h-0 flex-1 flex-col">
         <div className="min-h-0 flex-1 overflow-y-auto p-3.5">
-          {!chat.isCircle ? (
-            <WispSettingsFields
-              settings={chat}
-              onChange={(changes) => onChange({ ...changes, ...(changes.name === "" ? { name: "Untitled" } : {}) })}
-            />
+          {chat.kind === "wisp" ? (
+            <WispDetails chat={chat} onChange={onChange} />
           ) : (
-            <>
-              <div className="flex justify-center pt-5 pb-[30px]">
-                <ChatAvatar chat={chat} chats={chats} size="xl" />
-              </div>
-
-              <label className={detailsField}>
-                <span>Name</span>
-                <input
-                  className={detailsFieldControl}
-                  value={chat.name}
-                  maxLength={64}
-                  onChange={(event) => onChange({ name: event.currentTarget.value || "Untitled" })}
-                />
-              </label>
-              <label className={detailsField}>
-                <span>Label (optional)</span>
-                <input
-                  className={detailsFieldControl}
-                  value={chat.label}
-                  maxLength={40}
-                  placeholder="Research, marketing, admin"
-                  onChange={(event) => onChange({ label: event.currentTarget.value })}
-                />
-              </label>
-              <label className={detailsField}>
-                <span>Description</span>
-                <textarea
-                  className={detailsFieldControl}
-                  rows={3}
-                  value={chat.description}
-                  maxLength={240}
-                  onChange={(event) => onChange({ description: event.currentTarget.value })}
-                />
-              </label>
-
-              <section className="my-4" aria-labelledby="circle-participants-title">
-                <h3 id="circle-participants-title" className="mb-2 mt-0 text-dim text-xs font-medium">
-                  Participants ({members.length})
-                </h3>
-                {members.length ? (
-                  <ul className="m-0 flex list-none flex-col gap-2 p-0">
-                    {members.map((member) => (
-                      <li key={member.id} className="flex items-center gap-2">
-                        <ChatAvatar chat={member} size="sm" />
-                        <span className="min-w-0 [overflow-wrap:anywhere]">{member.name}</span>
-                      </li>
-                    ))}
-                  </ul>
-                ) : (
-                  <p className="text-dim text-xs">No Wisps in this circle.</p>
-                )}
-              </section>
-
-              <div className={notificationCard}>
-                <span className={notificationCardCopy}>
-                  <strong className="text-[12.5px]">Notifications</strong>
-                  <small className="text-dim text-[11px] leading-[1.3]">
-                    Get notified about activity in this circle
-                  </small>
-                </span>
-                <ToggleSwitch
-                  checked={chat.notifyOnUpdatesEnabled}
-                  label="Notifications"
-                  onChange={() => onChange({ notifyOnUpdatesEnabled: !chat.notifyOnUpdatesEnabled })}
-                />
-              </div>
-            </>
+            <CircleDetails chat={chat} chats={chats} onChange={onChange} />
           )}
 
-          {chat.id === "chief" ? null : (
+          {canDeleteChat(chat) ? (
             <button
               className="mt-[18px] w-full rounded-lg border border-[rgba(229,72,77,0.2)] bg-[rgba(229,72,77,0.08)] p-2 text-[#bd2c35] hover:bg-[rgba(229,72,77,0.16)] dark:text-[#ef7478]"
               type="button"
               onClick={onDelete}
             >
-              Delete {chat.isCircle ? "circle" : "Wisp"}
+              Delete {chat.kind === "circle" ? "circle" : "Wisp"}
             </button>
-          )}
+          ) : null}
         </div>
 
         <footer className="flex-none px-3.5 pt-2.5 pb-3">

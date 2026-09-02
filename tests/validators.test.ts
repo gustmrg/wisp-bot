@@ -8,6 +8,7 @@ import {
   parseResolveToolApprovalRequest,
   parseSaveAiSettingsRequest,
   parseSendMessageRequest,
+  parseUpdateConversationRequest,
 } from "../electron/ipc/validators.js";
 
 describe("IPC request validators", () => {
@@ -98,6 +99,21 @@ describe("IPC request validators", () => {
         conversationId: "wisp-1",
         toolCallId: "tool-1",
         decision: "allow_forever",
+      }),
+    ).toThrow(WispBackendError);
+  });
+
+  it("rejects fields from the other conversation variant", () => {
+    expect(() =>
+      parseUpdateConversationRequest({
+        conversationId: "wisp-1",
+        changes: { kind: "wisp", memberIds: [] },
+      }),
+    ).toThrow(WispBackendError);
+    expect(() =>
+      parseUpdateConversationRequest({
+        conversationId: "circle-1",
+        changes: { kind: "circle", shape: "circle" },
       }),
     ).toThrow(WispBackendError);
   });

@@ -1,9 +1,17 @@
 export type {
-  AgentSettings,
   Chat,
+  ChatBase,
+  ChatChanges,
   ChatCollection,
   ChatId,
+  CircleChat,
+  CircleChatChanges,
   Message,
   MessageStatus,
+  NewChat,
+  NewCircle,
+  NewWisp,
+  WispChat,
+  WispChatChanges,
   WispShape,
 } from "../shared/conversations";

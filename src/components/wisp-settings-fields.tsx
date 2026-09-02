@@ -1,11 +1,11 @@
-import type { AgentSettings } from "@/chat-data";
+import type { WispChat, WispChatChanges } from "@/chat-data";
 import { AvatarEditor } from "@/components/avatar-editor";
 import { ToggleSwitch } from "@/components/ui/toggle-switch";
 import { detailsField, detailsFieldControl, notificationCard, notificationCardCopy } from "@/lib/ui-classes";
 
 interface WispSettingsFieldsProps {
-  settings: AgentSettings;
-  onChange: (changes: Partial<AgentSettings>) => void;
+  settings: WispChat;
+  onChange: (changes: Omit<WispChatChanges, "kind">) => void;
 }
 
 function WispSettingsFields({ settings, onChange }: WispSettingsFieldsProps) {

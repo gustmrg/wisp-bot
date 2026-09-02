@@ -7,19 +7,18 @@ import { describe, expect, it } from "vitest";
 import { ConversationRepository } from "../electron/backend/conversation-repository.js";
 import type { Chat } from "../shared/conversations.js";
 
-function chat(id: string, isCircle = false): Chat {
-  return {
+function chat(id: string, circle = false): Chat {
+  const base = {
     id,
     name: id,
     label: "Test",
     description: "A test conversation",
-    shape: "circle",
-    isCircle,
     notifyOnUpdatesEnabled: true,
     preview: "Ready",
     timestamp: "Now",
     messages: [{ type: "incoming", text: "Hello" }],
   };
+  return circle ? { ...base, kind: "circle", memberIds: [] } : { ...base, kind: "wisp", shape: "circle" };
 }
 
 describe("ConversationRepository", () => {
@@ -99,7 +98,7 @@ describe("ConversationRepository", () => {
     const persisted = JSON.parse(await readFile(path.join(directory, "conversations.json"), "utf8")) as {
       schemaVersion: number;
     };
-    expect(persisted.schemaVersion).toBe(3);
+    expect(persisted.schemaVersion).toBe(4);
   });
 
   it("removes previously persisted bundled demo conversations", async () => {
@@ -139,7 +138,7 @@ describe("ConversationRepository", () => {
       schemaVersion: number;
       conversations: Record<string, unknown>;
     };
-    expect(persisted.schemaVersion).toBe(3);
+    expect(persisted.schemaVersion).toBe(4);
     expect(persisted.conversations).not.toHaveProperty("chief");
   });
 
@@ -189,6 +188,42 @@ describe("ConversationRepository", () => {
     const preserved = (await readdir(directory)).find((name) => name.includes(".corrupt-"));
     expect(preserved).toBeDefined();
     await expect(readFile(path.join(directory, preserved!), "utf8")).resolves.toBe("{ definitely not json");
+  });
+
+  it("rewrites schema-3 boolean records as discriminated variants", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "wisp-kind-migration-"));
+    const statePath = path.join(directory, "conversations.json");
+    const { kind: _kind, ...currentWisp } = chat("chief");
+    await writeFile(
+      statePath,
+      JSON.stringify({
+        schemaVersion: 3,
+        initialized: true,
+        conversations: {
+          chief: {
+            chat: { ...currentWisp, isCircle: false },
+            sessionId: "stable-session",
+            piSessionId: null,
+            piSessionFile: null,
+            createdAt: "2026-08-30T12:00:00.000Z",
+            updatedAt: "2026-08-30T12:00:00.000Z",
+          },
+        },
+      }),
+      "utf8",
+    );
+    const repository = new ConversationRepository({ dataDirectory: directory });
+
+    await repository.load();
+
+    expect(repository.getChats().chief).toMatchObject({ kind: "wisp", systemRole: "chief" });
+    const persisted = JSON.parse(await readFile(statePath, "utf8")) as {
+      schemaVersion: number;
+      conversations: Record<string, { chat: Record<string, unknown> }>;
+    };
+    expect(persisted.schemaVersion).toBe(4);
+    expect(persisted.conversations.chief?.chat).not.toHaveProperty("isCircle");
+    expect(persisted.conversations.chief?.chat).toHaveProperty("kind", "wisp");
   });
 
   it("archives workspace and session data on explicit deletion", async () => {

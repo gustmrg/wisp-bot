@@ -11,19 +11,18 @@ import { ConversationService } from "../electron/backend/conversation-service.js
 import { FakeConversationAgent, FakeConversationAgentFactory } from "../electron/backend/fake-conversation-agent.js";
 import type { Chat } from "../shared/conversations.js";
 
-function chat(id: string, isCircle = false): Chat {
-  return {
+function chat(id: string, circle = false): Chat {
+  const base = {
     id,
     name: id,
     label: "Test",
     description: "Test",
-    shape: "circle",
-    isCircle,
     notifyOnUpdatesEnabled: true,
     preview: "Ready",
     timestamp: "Now",
     messages: [],
   };
+  return circle ? { ...base, kind: "circle", memberIds: [] } : { ...base, kind: "wisp", shape: "circle" };
 }
 
 describe("ConversationService", () => {

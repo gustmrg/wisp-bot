@@ -107,7 +107,7 @@ function SearchDialog({ chats, open, onOpenChange, onSelectChat }: SearchDialogP
                     <small className="truncate text-dim">{snippet ?? chat.preview}</small>
                   </span>
                   <em className="text-[11px] not-italic text-[#646464] dark:text-[#747474]">
-                    {chat.isCircle ? "Circle" : "Wisp"}
+                    {chat.kind === "circle" ? "Circle" : "Wisp"}
                   </em>
                 </button>
               );

@@ -39,7 +39,7 @@ describe("migrateLegacyChats", () => {
     const migrated = migrateLegacyChats(legacyChats());
 
     expect(migrated.offsite).toMatchObject({
-      isCircle: true,
+      kind: "circle",
       label: "Circle",
       memberIds: ["chief"],
     });
@@ -47,6 +47,7 @@ describe("migrateLegacyChats", () => {
   });
 
   it("preserves an explicitly empty circle", () => {
-    expect(migrateLegacyChats(legacyChats([])).offsite?.memberIds).toEqual([]);
+    const offsite = migrateLegacyChats(legacyChats([])).offsite;
+    expect(offsite?.kind === "circle" ? offsite.memberIds : undefined).toEqual([]);
   });
 });

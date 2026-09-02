@@ -2,13 +2,13 @@ import { randomUUID } from "node:crypto";
 import { mkdir, readFile, rename } from "node:fs/promises";
 import path from "node:path";
 
-import type { AgentSettings, Chat, ChatCollection, Message } from "../../shared/conversations.js";
+import type { Chat, ChatChanges, ChatCollection, Message } from "../../shared/conversations.js";
 import { writeFileAtomically } from "./atomic-file.js";
 import { WispBackendError } from "./backend-error.js";
 import type { ConversationAgentContext } from "./conversation-agent.js";
 import { normalizeChat, normalizeChatCollection, normalizeConversationId } from "./conversation-normalizer.js";
 
-const SCHEMA_VERSION = 3;
+const SCHEMA_VERSION = 4;
 const REMOVED_DEMO_CONVERSATION_IDS = new Set(["chief", "sales", "inbox", "account", "talent", "expense", "offsite"]);
 
 export interface ConversationRecord {
@@ -64,7 +64,7 @@ export class ConversationRepository {
       const parsed: unknown = JSON.parse(await readFile(this.statePath, "utf8"));
       this.state = this.parsePersistedState(parsed);
       const persistedSchemaVersion = (parsed as { schemaVersion?: unknown }).schemaVersion;
-      needsSchemaUpgrade = persistedSchemaVersion === 1 || persistedSchemaVersion === 2;
+      needsSchemaUpgrade = [1, 2, 3].includes(persistedSchemaVersion as number);
       if (persistedSchemaVersion === 1 || persistedSchemaVersion === 2) {
         await this.removeBundledDemoConversations();
       }
@@ -147,7 +147,7 @@ export class ConversationRepository {
             chat.id,
             {
               chat,
-              sessionId: chat.isCircle ? null : normalizeConversationId(this.createId()),
+              sessionId: chat.kind === "circle" ? null : normalizeConversationId(this.createId()),
               piSessionId: null,
               piSessionFile: null,
               createdAt: timestamp,
@@ -170,7 +170,7 @@ export class ConversationRepository {
       const timestamp = this.now().toISOString();
       const record: ConversationRecord = {
         chat,
-        sessionId: chat.isCircle ? null : normalizeConversationId(this.createId()),
+        sessionId: chat.kind === "circle" ? null : normalizeConversationId(this.createId()),
         piSessionId: null,
         piSessionFile: null,
         createdAt: timestamp,
@@ -183,10 +183,14 @@ export class ConversationRepository {
     });
   }
 
-  async update(conversationId: string, changes: Partial<Omit<AgentSettings, "id" | "isCircle">>): Promise<void> {
+  async update(conversationId: string, changes: ChatChanges): Promise<void> {
     await this.enqueue(async () => {
       const record = this.require(conversationId);
-      record.chat = normalizeChat({ ...record.chat, ...changes });
+      const { kind, ...fields } = changes;
+      if (record.chat.kind !== kind) {
+        throw new WispBackendError("invalid_request", "The conversation kind cannot be changed.");
+      }
+      record.chat = normalizeChat({ ...record.chat, ...fields });
       record.updatedAt = this.now().toISOString();
       await this.persist();
     });
@@ -270,7 +274,7 @@ export class ConversationRepository {
       const record = this.require(conversationId);
       delete this.state.conversations[conversationId];
       for (const other of Object.values(this.state.conversations)) {
-        if (other.chat.memberIds?.includes(conversationId)) {
+        if (other.chat.kind === "circle" && other.chat.memberIds.includes(conversationId)) {
           other.chat = { ...other.chat, memberIds: other.chat.memberIds.filter((id) => id !== conversationId) };
           other.updatedAt = this.now().toISOString();
         }
@@ -312,7 +316,7 @@ export class ConversationRepository {
   private parsePersistedState(value: unknown): PersistedConversationState {
     if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Invalid state");
     const raw = value as Record<string, unknown>;
-    if (![1, 2, SCHEMA_VERSION].includes(raw.schemaVersion as number) || typeof raw.initialized !== "boolean")
+    if (![1, 2, 3, SCHEMA_VERSION].includes(raw.schemaVersion as number) || typeof raw.initialized !== "boolean")
       throw new Error("Invalid state");
     if (!raw.conversations || typeof raw.conversations !== "object" || Array.isArray(raw.conversations))
       throw new Error("Invalid state");
@@ -323,7 +327,7 @@ export class ConversationRepository {
       const chat = normalizeChat(record.chat);
       if (chat.id !== id || typeof record.createdAt !== "string" || typeof record.updatedAt !== "string")
         throw new Error("Invalid state");
-      if (chat.isCircle ? record.sessionId !== null : typeof record.sessionId !== "string")
+      if (chat.kind === "circle" ? record.sessionId !== null : typeof record.sessionId !== "string")
         throw new Error("Invalid state");
       const sessionId = record.sessionId === null ? null : normalizeConversationId(record.sessionId);
       conversations[id] = {

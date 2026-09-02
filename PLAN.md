@@ -45,7 +45,7 @@ Make the existing mock UI safer to evolve into a real desktop agent product by:
 | 02 | Fix search, Wisp registry, and clipboard feedback | P1 | M | LOW | 01 | DONE |
 | 03 | Centralize panel layout and resize lifecycle | P1 | S/M | LOW | 01 | DONE |
 | 04 | Centralize current-user and release metadata | P1 | S | LOW | 01 | DONE |
-| 05 | Model Wisps and circles as discriminated variants | P1 | L | HIGH | 01, 02, 04 | TODO |
+| 05 | Model Wisps and circles as discriminated variants | P1 | L | HIGH | 01, 02, 04 | DONE |
 | 06 | Make workspace mutations preserve entity integrity | P1 | M | MED | 05 | TODO |
 | 07 | Add validated, failure-aware persistence | P1 | L | MED | 05, 06 | TODO |
 | 08 | Extract the workspace controller and request runtime | P1 | M/L | MED | 03, 04, 06, 07 | TODO |
@@ -433,11 +433,35 @@ Stop and report rather than improvising if:
 
 **Audit coverage**: finding 14 and the identifier-policy portion of the hardcoded-value audit.
 
+**Scope revision (2026-09-01)**: The shared Electron conversation boundary was added after
+the planning baseline. `src/chat-data.ts` now re-exports the canonical types from
+`shared/conversations.ts`, and Electron validates, normalizes, stores, and mutates those
+records. This phase therefore migrates the shared contract and all of its renderer and
+Electron consumers together. It does not redesign the transport, persistence adapter,
+agent runtime, or mutation semantics assigned to later phases.
+
 **Scope**:
 
-- Modify `src/chat-data.ts`, `src/lib/circle-members.ts`, and every feature component that reads `isCircle`, Wisp-only appearance, circle membership, or protected/default chat policy.
+- Modify the canonical domain and IPC request types in `shared/conversations.ts` and the
+  affected API surface in `shared/contracts.ts`; keep `src/chat-data.ts` as the renderer
+  re-export boundary.
+- Modify `electron/ipc/validators.ts`, `electron/backend/conversation-normalizer.ts`,
+  `electron/backend/conversation-repository.ts`, and
+  `electron/backend/conversation-service.ts` so creation, partial updates, validation,
+  normalization, and stored records preserve the discriminated variants. Update their
+  existing tests and fixtures. Do not otherwise change IPC channels, repository storage
+  location, agent execution, streaming, approval behavior, or deletion behavior.
+- Modify `src/hooks/use-conversations.ts`, `src/App.tsx`,
+  `src/lib/circle-members.ts`, and every feature component that reads `isCircle`,
+  Wisp-only appearance, circle membership, or protected/default chat policy. Preserve
+  the current backend-owned conversation state flow.
 - Create `src/lib/chat-schema.ts`, `src/components/create-wisp-form.tsx`, `src/components/create-circle-form.tsx`, `src/components/wisp-details.tsx`, and `src/components/circle-details.tsx` with tests.
-- Preserve valid `wisp-bot-ui-v3` state through an explicit legacy conversion; do not yet replace the storage adapter.
+- Preserve valid `wisp-bot-ui-v3` state and existing backend conversation files through
+  explicit legacy conversion at their current ingestion boundaries; do not replace or
+  redesign either storage adapter.
+- Update shared, Electron, renderer, and test fixtures that construct conversation
+  records. Changes to message streaming are limited to narrowing on `chat.kind` where
+  required by the new types.
 
 **Target type shape**:
 
@@ -475,27 +499,53 @@ Equivalent names are acceptable, but `kind` must be the discriminant, circle mem
 
 **Implementation steps**:
 
-1. Introduce the discriminated types plus `NewWisp` and `NewCircle` input types. Keep shared fields in a base interface; do not retain `isCircle` as a parallel runtime flag.
-2. Add exhaustive type guards/helpers for `kind`, default-chat selection, and deletion eligibility. Represent the bundled chief policy through explicit metadata rather than `id === "chief"` comparisons.
-3. Convert `initialChats` to the new shape.
-4. Extend the existing legacy conversion so both `isGroup` and `isCircle` records become `kind` records. Preserve existing IDs, member order, messages, and explicit empty circles.
-5. Split Wisp and circle creation bodies into explicit components under the existing dialog shell. Each form owns only fields valid for its type and submits a typed input.
-6. Split details sections similarly. Update `ChatAvatar`, `ChatPanel`, `Sidebar`, `SearchDialog`, and member helpers to narrow on `chat.kind`.
-7. Add compile-time exhaustiveness and runtime characterization tests for both variants and legacy records.
+1. Introduce the discriminated types plus `NewWisp`, `NewCircle`, and variant-safe
+   partial update types in `shared/conversations.ts`. Keep shared fields in a base
+   interface; do not retain `isCircle` as a parallel runtime flag. Ensure the shared
+   request contracts cannot create or patch fields belonging to the other variant.
+2. Add exhaustive type guards/helpers for `kind`, default-chat selection, and deletion
+   eligibility. Represent the bundled/legacy chief policy through explicit metadata
+   rather than `id === "chief"` comparisons; do not create a bundled chief when the
+   current state is empty.
+3. Convert the current empty-state producers, creation path, test fixtures, and any
+   remaining demo or fallback conversation producers to the new shape. There is no
+   longer an `initialChats` export to migrate.
+4. Extend legacy conversion at both ingestion boundaries so `isGroup` and `isCircle`
+   renderer state and backend conversation files become `kind` records. Preserve IDs,
+   member order, messages and message metadata, user-customized appearance, and explicit
+   empty circles. Keep decoding idempotent for records already using `kind`.
+5. Update IPC parsing, backend normalization, repository/service creation and partial
+   updates, and renderer API hooks to consume the shared variant-safe inputs without
+   weakening runtime validation.
+6. Split Wisp and circle creation bodies into explicit components under the existing
+   dialog shell. Each form owns only fields valid for its type and submits a typed input.
+7. Split details sections similarly. Update `ChatAvatar`, `ChatPanel`, `Sidebar`,
+   `SearchDialog`, conversation streaming guards, and member helpers to narrow on
+   `chat.kind`.
+8. Add compile-time exhaustiveness and runtime characterization tests for both variants,
+   both legacy record formats, IPC rejection of mixed variant fields, backend-file
+   migration, and renderer creation/editing paths.
 
 **Validation**:
 
-- `rg -n 'isCircle' src --glob '!lib/chat-schema.ts' --glob '!lib/chat-schema.test.ts'` → no matches.
-- `rg -n 'AgentSettings' src` → no matches unless retained solely as a deprecated migration input type inside `chat-schema.ts`.
-- Tests verify Wisp objects cannot carry `memberIds`, circle objects cannot carry `shape`/`avatarImage`/`color`, legacy records migrate, chief policy is metadata-driven, and both create/edit paths render.
+- `rg -n 'isCircle' shared electron src --glob '!src/lib/chat-schema.ts' --glob '!src/lib/chat-schema.test.ts'` → no matches except explicitly named legacy decoder keys/tests.
+- `rg -n 'AgentSettings' shared electron src` → no matches unless retained solely as a deprecated migration input type inside `chat-schema.ts`.
+- Tests verify Wisp objects cannot carry `memberIds`, circle objects cannot carry
+  `shape`/`avatarImage`/`color`, variant-specific patches cannot cross kinds, legacy
+  renderer and backend records migrate, invalid mixed IPC payloads are rejected, chief
+  policy is metadata-driven, and both create/edit paths render.
+- Run the existing conversation migration, repository, service, stream, and application
+  boundary suites in addition to the new schema/component tests.
 - Run all global validation commands.
 
 **Exit criteria**:
 
 - All current behavior uses the discriminated union.
-- Existing valid local data migrates without silent loss.
+- Existing valid renderer and backend data migrates without silent loss.
 - Creation and details UI are explicit variants, not a large boolean-mode component.
 - Chat IDs are opaque identity, not policy flags.
+- The shared IPC contract, Electron runtime, and renderer agree on the same canonical
+  variants; mixed-kind payloads fail at the boundary.
 
 **Suggested commit message**: `refactor(domain): separate Wisp and circle models`
 
@@ -503,6 +553,9 @@ Equivalent names are acceptable, but `kind` must be the discriminant, circle mem
 
 - A valid legacy record cannot be mapped deterministically.
 - A type change requires dropping messages, membership, or user-customized appearance.
+- The migration would require resetting or relocating the backend conversation store.
+- Variant safety would require weakening an IPC validator or accepting mixed-kind
+  partial updates.
 - A component begins duplicating shared form structure that belongs in an existing UI primitive; record it for Phase 09 rather than expanding this phase.
 
 ---

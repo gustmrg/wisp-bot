@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { FormEvent } from "react";
 
-import type { AgentSettings, ChatCollection, ChatId } from "@/chat-data";
+import type { ChatChanges, ChatCollection, ChatId } from "@/chat-data";
 import type { ToolApprovalDecision, ToolApprovalRequest } from "../shared/tool-policy";
 import { AppSettingsDialog } from "@/components/app-settings-dialog";
 import { ChatPanel } from "@/components/chat-panel";
@@ -16,6 +16,7 @@ import { applyTheme } from "@/lib/theme";
 import { DEFAULT_PREFERENCES, normalizePreferences, type AppPreferences } from "@/lib/app-preferences";
 import { LEGACY_STORAGE_KEY, useConversations } from "@/hooks/use-conversations";
 import { useResizablePanel } from "@/hooks/use-resizable-panel";
+import { getDefaultChatId } from "@/lib/chat-schema";
 import { DETAILS_LAYOUT, SIDEBAR_LAYOUT } from "@/lib/layout";
 import { mainPanel } from "@/lib/ui-classes";
 import { cn } from "@/lib/utils";
@@ -102,7 +103,7 @@ export default function App() {
 
   useEffect(() => {
     if (!chats[activeChatId]) {
-      setActiveChatId(chats.chief ? "chief" : (Object.keys(chats)[0] ?? ""));
+      setActiveChatId(getDefaultChatId(chats));
     }
   }, [activeChatId, chats]);
 
@@ -136,22 +137,38 @@ export default function App() {
   function handleCreateAgent(agent: NewAgent) {
     const id = uniqueAgentId(agent.name, chats);
     void (async () => {
-      const created = await conversations.create({
-        ...agent,
-        id,
-        isActive: !agent.isCircle,
-        preview: agent.isCircle ? "This is the beginning of the circle." : "Ready for the first task.",
-        timestamp: "Now",
-        messages: agent.isCircle
-          ? [{ id: crypto.randomUUID(), status: "complete", type: "time", text: "This is the beginning of the circle" }]
-          : [],
-      });
+      const created = await conversations.create(
+        agent.kind === "circle"
+          ? {
+              ...agent,
+              id,
+              isActive: false,
+              preview: "This is the beginning of the circle.",
+              timestamp: "Now",
+              messages: [
+                {
+                  id: crypto.randomUUID(),
+                  status: "complete",
+                  type: "time",
+                  text: "This is the beginning of the circle",
+                },
+              ],
+            }
+          : {
+              ...agent,
+              id,
+              isActive: true,
+              preview: "Ready for the first task.",
+              timestamp: "Now",
+              messages: [],
+            },
+      );
       if (!created) return;
       setActiveChatId(id);
     })();
   }
 
-  function handleUpdateChat(changes: Partial<AgentSettings>) {
+  function handleUpdateChat(changes: ChatChanges) {
     if (activeChatId) void conversations.update(activeChatId, changes);
   }
 

@@ -1,11 +1,11 @@
 import { HashIcon } from "lucide-react";
 import { Wisp } from "@/components/wisp";
-import type { AgentSettings, ChatCollection } from "@/chat-data";
+import type { Chat, ChatCollection } from "@/chat-data";
 import { getCircleMembers } from "@/lib/circle-members";
 import { cn } from "@/lib/utils";
 
 interface ChatAvatarProps {
-  chat: AgentSettings;
+  chat: Chat;
   chats?: ChatCollection;
   size?: "default" | "sm" | "lg" | "xl";
 }
@@ -13,7 +13,7 @@ interface ChatAvatarProps {
 const CLUSTER_SLOTS = ["left-[30%] top-[4%]", "left-[5%] top-[38%]", "left-[41%] top-[40%]"];
 
 function ChatAvatar({ chat, chats, size = "default" }: ChatAvatarProps) {
-  if (chat.isCircle) {
+  if (chat.kind === "circle") {
     const members = chats ? getCircleMembers(chat, chats) : [];
     const tileSize =
       size === "sm"

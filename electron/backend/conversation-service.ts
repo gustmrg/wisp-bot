@@ -1,11 +1,5 @@
 import type { ModelSelection, SequencedConversationAgentEvent } from "../../shared/contracts.js";
-import type {
-  AgentSettings,
-  Chat,
-  ChatCollection,
-  ConversationStateView,
-  Message,
-} from "../../shared/conversations.js";
+import type { Chat, ChatChanges, ChatCollection, ConversationStateView, Message } from "../../shared/conversations.js";
 import type { ToolApprovalRequest } from "../../shared/tool-policy.js";
 import type { AgentRegistry } from "./agent-registry.js";
 import type { ConversationRepository } from "./conversation-repository.js";
@@ -107,7 +101,7 @@ export class ConversationService {
 
   async create(conversation: Chat): Promise<ConversationStateView> {
     await this.repository.create(conversation);
-    if (!conversation.isCircle) {
+    if (conversation.kind === "wisp") {
       try {
         await this.registry.create(this.repository.getAgentContext(conversation.id));
       } catch (error) {
@@ -118,10 +112,7 @@ export class ConversationService {
     return this.getState();
   }
 
-  async update(
-    conversationId: string,
-    changes: Partial<Omit<AgentSettings, "id" | "isCircle">>,
-  ): Promise<ConversationStateView> {
+  async update(conversationId: string, changes: ChatChanges): Promise<ConversationStateView> {
     await this.repository.update(conversationId, changes);
     return this.getState();
   }
@@ -143,7 +134,7 @@ export class ConversationService {
 
   async delete(conversationId: string): Promise<ConversationStateView> {
     const conversation = this.repository.getChats()[conversationId];
-    const context = conversation && !conversation.isCircle ? this.repository.getAgentContext(conversationId) : null;
+    const context = conversation?.kind === "wisp" ? this.repository.getAgentContext(conversationId) : null;
     if (context) await this.registry.delete(conversationId);
     try {
       await this.repository.delete(conversationId);
