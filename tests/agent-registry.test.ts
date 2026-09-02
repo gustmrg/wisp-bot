@@ -178,4 +178,54 @@ describe("AgentRegistry", () => {
     await secondExpectation;
     expect(disposed).toHaveBeenCalledWith("one");
   });
+
+  it("rejects duplicate request IDs without invoking the agent twice", async () => {
+    const agent = new FakeConversationAgent("one");
+    const send = vi.spyOn(agent, "send");
+    const registry = new AgentRegistry({ create: () => agent }, () => undefined);
+    await registry.restore([context("one")], null);
+
+    await registry.send({ conversationId: "one", requestId: "same-request", text: "First" });
+    await expect(
+      Promise.resolve().then(() =>
+        registry.send({ conversationId: "one", requestId: "same-request", text: "Duplicate" }),
+      ),
+    ).rejects.toMatchObject({ code: "invalid_request" });
+
+    expect(send).toHaveBeenCalledTimes(1);
+    await registry.disposeAll();
+  });
+
+  it("aborts timed-out work and publishes one retryable error terminal", async () => {
+    vi.useFakeTimers();
+    const events: SequencedConversationAgentEvent[] = [];
+    const agent = new FakeConversationAgent("one", { latencyMs: 60_000 });
+    const abort = vi.spyOn(agent, "abort");
+    const registry = new AgentRegistry(
+      { create: () => agent },
+      (event) => events.push(event),
+      () => undefined,
+      {
+        executionTimeoutMs: 100,
+      },
+    );
+    await registry.restore([context("one")], null);
+
+    registry.dispatch({ conversationId: "one", requestId: "deadline", text: "Slow" });
+    await vi.advanceTimersByTimeAsync(101);
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(abort).toHaveBeenCalledTimes(1);
+    expect(events.filter((event) => event.type === "assistant_message_cancelled")).toEqual([]);
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: "conversation_error",
+        requestId: "deadline",
+        error: expect.objectContaining({ code: "aborted", retryable: true }),
+      }),
+    );
+    await registry.disposeAll();
+    vi.useRealTimers();
+  });
 });

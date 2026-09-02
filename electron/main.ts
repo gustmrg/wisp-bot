@@ -3,8 +3,11 @@ import path from "node:path";
 
 import { WISP_IPC_CHANNELS, type SequencedConversationAgentEvent } from "../shared/contracts.js";
 import { AgentRegistry } from "./backend/agent-registry.js";
+import { selectAgentMode } from "./backend/agent-mode.js";
 import { ConversationRepository } from "./backend/conversation-repository.js";
 import { ConversationService } from "./backend/conversation-service.js";
+import type { ConversationAgentFactory } from "./backend/conversation-agent.js";
+import { FakeConversationAgentFactory } from "./backend/fake-conversation-agent.js";
 import { ModelService } from "./backend/model-service.js";
 import { PiConversationAgentFactory, SdkPiSessionFactory } from "./backend/pi-conversation-agent.js";
 import { SafeStorageEncryption } from "./backend/safe-storage-encryption.js";
@@ -151,10 +154,14 @@ async function bootstrap(): Promise<void> {
       },
     },
   );
-  agentRegistry = new AgentRegistry(
-    new PiConversationAgentFactory(new SdkPiSessionFactory(modelService.getModelRuntime(), toolAuthorizationBroker)),
-    publishAgentEvent,
-    (conversationId) => toolAuthorizationBroker.cancelConversation(conversationId),
+  const agentFactory: ConversationAgentFactory =
+    selectAgentMode(app.isPackaged, process.env.WISP_AGENT_MODE) === "fake"
+      ? new FakeConversationAgentFactory({ latencyMs: 350 })
+      : new PiConversationAgentFactory(
+          new SdkPiSessionFactory(modelService.getModelRuntime(), toolAuthorizationBroker),
+        );
+  agentRegistry = new AgentRegistry(agentFactory, publishAgentEvent, (conversationId) =>
+    toolAuthorizationBroker.cancelConversation(conversationId),
   );
   conversationService = new ConversationService(
     new ConversationRepository({ dataDirectory: path.join(app.getPath("userData"), "backend") }),

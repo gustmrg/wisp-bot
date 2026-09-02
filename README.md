@@ -24,6 +24,8 @@ npm run dev
 
 `npm run dev` starts Vite with React Fast Refresh and opens Electron. The Vite URL alone is only a renderer preview; it deliberately cannot access the secure desktop bridge.
 
+For an explicit local fake-agent run that never contacts a provider, start development with `WISP_AGENT_MODE=fake npm run dev`. Packaged builds ignore this switch.
+
 ### Quality gates
 
 ```bash

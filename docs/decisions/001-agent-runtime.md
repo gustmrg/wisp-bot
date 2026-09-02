@@ -66,7 +66,7 @@ Provider authentication rejection and malformed provider responses are non-secre
 
 ## Retries and idempotency
 
-`requestId` is the idempotency key within a conversation. Main keeps a bounded set of accepted request IDs for the session lifetime. Repeating an accepted ID must not issue a second provider prompt; while active it is treated as already accepted, and after completion it is rejected as `invalid_request`. Renderer retry creates a new request ID while relating the new attempt to the persisted outgoing message.
+`requestId` is the idempotency key within a conversation. Main keeps the most recent 1,024 accepted request IDs for each live session. Repeating a remembered ID must not issue a second provider prompt; while active it is treated as already accepted, and after completion it is rejected as `invalid_request`. Renderer retry creates a new request ID while relating the new attempt to the persisted outgoing message.
 
 Only Pi's bounded two-attempt transport retry may automatically repeat provider work. IPC handlers acknowledge queue admission, not model completion. They do not impose an independent short IPC timeout; the ten-minute main-process execution deadline owns the long-running timeout.
 
