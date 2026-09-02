@@ -1,9 +1,12 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  addPendingRequest,
   createConversationRuntime,
   overlayRuntimeMessages,
+  reconcileConversationRuntime,
   reduceConversationAgentEvent,
+  removePendingRequest,
   stageOutgoingMessage,
 } from "../src/lib/conversation-stream.js";
 import type { Chat, ChatCollection } from "../shared/conversations.js";
@@ -190,5 +193,37 @@ describe("conversation stream reducer", () => {
       chats,
     );
     expect(state.approvals.one).toEqual([]);
+  });
+
+  it("tracks concurrent acknowledgements by immutable request ID", () => {
+    let pending = addPendingRequest({}, "one", "request-1");
+    pending = addPendingRequest(pending, "one", "request-2");
+    pending = addPendingRequest(pending, "two", "request-3");
+
+    pending = removePendingRequest(pending, "one", "request-1");
+    expect(pending).toEqual({ one: ["request-2"], two: ["request-3"] });
+    expect(removePendingRequest(pending, "one", "unrelated")).toBe(pending);
+  });
+
+  it("advances past late events without resurrecting a deleted conversation", () => {
+    const initial = createConversationRuntime(4, { deleted: "working", one: "idle" });
+    const reconciled = reconcileConversationRuntime(initial, { one: chat("one") }, { one: "idle" });
+    const afterLateEvent = reduceConversationAgentEvent(
+      reconciled,
+      {
+        sequence: 5,
+        type: "conversation_error",
+        conversationId: "deleted",
+        requestId: "request-1",
+        createdAt: "2026-09-02T12:00:00.000Z",
+        error: { code: "internal_error", message: "Late", retryable: false },
+      },
+      { one: chat("one") },
+    );
+
+    expect(afterLateEvent.sequence).toBe(5);
+    expect(afterLateEvent.statuses).not.toHaveProperty("deleted");
+    expect(afterLateEvent.messages).not.toHaveProperty("deleted");
+    expect(afterLateEvent.errors).not.toHaveProperty("deleted");
   });
 });

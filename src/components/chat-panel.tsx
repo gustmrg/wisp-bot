@@ -1,6 +1,5 @@
 import { useEffect, useRef } from "react";
-import type { FormEvent, KeyboardEvent, RefObject } from "react";
-import { ArrowUpIcon, MicIcon, SettingsIcon, SquareIcon } from "lucide-react";
+import { SettingsIcon } from "lucide-react";
 
 import type { Chat, ChatCollection } from "@/chat-data";
 import type { ManagedConversationStatus } from "../../shared/conversations";
@@ -9,14 +8,13 @@ import type { ToolActivityView } from "@/lib/conversation-stream";
 import { getCircleMembers } from "@/lib/circle-members";
 import { iconButton, mainPanel } from "@/lib/ui-classes";
 import { ChatAvatar } from "@/components/chat-avatar";
+import { ChatComposer } from "@/components/chat-composer";
 import { MessageView } from "@/components/message-view";
 import { ToolApprovalCard } from "@/components/tool-approval-card";
 
 interface ChatPanelProps {
   chat: Chat;
   chats: ChatCollection;
-  draft: string;
-  composerInputRef: RefObject<HTMLTextAreaElement | null>;
   status: ManagedConversationStatus;
   activity?: string;
   error?: string;
@@ -25,18 +23,15 @@ interface ChatPanelProps {
   toolActivities: ReadonlyArray<ToolActivityView>;
   onAnswerPrompt: (messageId: string | undefined, answer: string) => void;
   onAbort: () => void;
-  onDraftChange: (draft: string) => void;
   onOpenDetails: () => void;
   onRetry: (messageId: string | undefined) => void;
   onResolveApproval: (request: ToolApprovalRequest, decision: ToolApprovalDecision) => void;
-  onSubmit: (event: FormEvent<HTMLFormElement>) => void;
+  onSend: (text: string) => void;
 }
 
 function ChatPanel({
   chat,
   chats,
-  draft,
-  composerInputRef,
   status,
   activity,
   error,
@@ -45,11 +40,10 @@ function ChatPanel({
   toolActivities,
   onAnswerPrompt,
   onAbort,
-  onDraftChange,
   onOpenDetails,
   onRetry,
   onResolveApproval,
-  onSubmit,
+  onSend,
 }: ChatPanelProps) {
   const transcriptRef = useRef<HTMLDivElement>(null);
   const members = getCircleMembers(chat, chats);
@@ -61,13 +55,6 @@ function ChatPanel({
     const transcript = transcriptRef.current;
     if (transcript) transcript.scrollTop = transcript.scrollHeight;
   }, [chat.id, chat.messages.length, transcriptVersion, working]);
-
-  function handleComposerKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
-    if (event.key === "Enter" && !event.shiftKey) {
-      event.preventDefault();
-      event.currentTarget.form?.requestSubmit();
-    }
-  }
 
   return (
     <main className={mainPanel}>
@@ -148,55 +135,16 @@ function ChatPanel({
         </div>
       </div>
 
-      <form className="flex-none px-3 pb-3" onSubmit={onSubmit}>
-        <div className="h-[22px] pl-2.5 text-[11px] text-faint" role="status">
-          {chat.kind === "circle"
-            ? "Circle conversations are not enabled yet"
-            : (error ??
-              activity ??
-              (status === "configuration_required" ? "Configure a provider and model in Settings" : null) ??
-              (acknowledging ? "Queueing your message…" : null) ??
-              (working ? "Working on your request" : null))}
-        </div>
-        <div className="mx-auto flex min-h-[42px] w-full max-w-[1400px] items-end gap-2 rounded-[13px] border border-black/[0.07] bg-[#f0f0f0] px-2 py-[7px] transition-[border-color] duration-[120ms] focus-within:border-black/[0.16] dark:border-white/[0.07] dark:bg-[#282828] dark:focus-within:border-white/[0.16]">
-          <textarea
-            ref={composerInputRef}
-            rows={1}
-            className="max-h-[120px] min-h-[26px] flex-1 resize-none overflow-y-auto border-0 bg-transparent py-1 pl-0 pr-0 outline-none text-[#202020] leading-[18px] placeholder:text-[#707070] field-sizing-content dark:text-[#ededed] dark:placeholder:text-[#7c7c7c]"
-            aria-label={`Message ${chat.name}`}
-            placeholder={`Message ${chat.name}`}
-            value={draft}
-            disabled={chat.kind === "circle"}
-            onChange={(event) => onDraftChange(event.currentTarget.value)}
-            onKeyDown={handleComposerKeyDown}
-          />
-          <button
-            type="button"
-            className="flex size-[27px] flex-none items-center justify-center rounded-full border-0 bg-[#dedede] text-[#686868] hover:bg-[#d5d5d5] hover:text-[#333333] dark:bg-[#343434] dark:text-[#999999] dark:hover:bg-[#3b3b3b] dark:hover:text-[#e4e4e4] [&_svg]:size-3.5"
-            aria-label="Start voice input"
-          >
-            <MicIcon aria-hidden="true" />
-          </button>
-          {working ? (
-            <button
-              type="button"
-              className="flex size-[27px] flex-none items-center justify-center rounded-full border-0 bg-[#202020] text-white hover:opacity-[0.85] dark:bg-[#f0f0f0] dark:text-[#161616] [&_svg]:size-3"
-              aria-label="Stop response"
-              onClick={onAbort}
-            >
-              <SquareIcon aria-hidden="true" fill="currentColor" />
-            </button>
-          ) : null}
-          <button
-            type="submit"
-            className="flex size-[27px] flex-none items-center justify-center rounded-full border-0 bg-[#202020] text-white enabled:hover:opacity-[0.85] disabled:opacity-[0.35] dark:bg-[#f0f0f0] dark:text-[#161616] [&_svg]:size-3.5"
-            aria-label={working ? "Queue message" : "Send message"}
-            disabled={!draft.trim() || acknowledging || chat.kind === "circle"}
-          >
-            <ArrowUpIcon aria-hidden="true" />
-          </button>
-        </div>
-      </form>
+      <ChatComposer
+        key={chat.id}
+        chat={chat}
+        status={status}
+        activity={activity}
+        error={error}
+        acknowledging={acknowledging}
+        onAbort={onAbort}
+        onSend={onSend}
+      />
     </main>
   );
 }

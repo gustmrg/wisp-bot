@@ -48,7 +48,7 @@ Make the existing mock UI safer to evolve into a real desktop agent product by:
 | 05 | Model Wisps and circles as discriminated variants | P1 | L | HIGH | 01, 02, 04 | DONE |
 | 06 | Make workspace mutations preserve entity integrity | P1 | M | MED | 05 | DONE |
 | 07 | Add validated, failure-aware persistence | P1 | L | MED | 05, 06 | DONE |
-| 08 | Extract the workspace controller and request runtime | P1 | M/L | MED | 03, 04, 06, 07 | TODO |
+| 08 | Extract the workspace controller and request runtime | P1 | M/L | MED | 03, 04, 06, 07 | DONE |
 | 09 | Build semantic settings and surface primitives | P2 | L | MED | 01, 03, 05 | TODO |
 | 10 | Harden Electron navigation, permissions, CSP, and loading | P1 | M | MED | 01, 04 | TODO |
 | 11 | Refresh repository documentation and license | P2 | S | LOW | 01–10 | TODO |
@@ -743,47 +743,100 @@ repository and limits renderer persistence work to application preferences. The 
 
 ## Phase 08 — Extract the workspace controller and request runtime
 
-**Goal**: Keep `App` as a composition root, isolate mock-agent transport, localize composer state, and accurately track concurrent requests per chat.
+**Goal**: Keep `App` as a composition root, consolidate renderer workspace orchestration, localize composer state, and accurately represent concurrent requests across the existing Electron agent boundary.
 
 **Audit coverage**: findings 05 and 06.
 
+**Scope revision (2026-09-02)**: The repository now has a provider-neutral
+`ConversationAgent`/factory contract, a concurrency-limited `AgentRegistry`, a
+deterministic `FakeConversationAgent`, a real Pi-backed adapter, typed IPC request/event
+contracts, and a renderer stream reducer. `useConversations` already stages outgoing
+messages, buffers sequenced startup events, reconciles durable snapshots, ignores stale
+event sequences, and exposes cancellation. Adding the originally planned renderer
+`AgentGateway` and `MockAgentGateway` would duplicate the authoritative Electron
+runtime and regress the real-agent boundary. This phase therefore retains that backend
+runtime, extracts the remaining renderer orchestration from `App`, localizes composer
+state, and closes renderer concurrency/lifecycle gaps around the existing contracts.
+
 **Scope**:
 
-- Create `src/features/workspace/use-workspace-controller.ts`, `src/services/agent-gateway.ts`, `src/services/mock-agent-gateway.ts`, and `src/components/chat-composer.tsx` with tests.
-- Modify `src/App.tsx`, `src/components/chat-panel.tsx`, and prop contracts for `Sidebar`, `SearchDialog`, and `DetailsPanel` as needed.
-- Consume the Phase 06 reducer and Phase 07 persistence adapter; do not duplicate them.
+- Create `src/features/workspace/use-workspace-controller.ts` and
+  `src/components/chat-composer.tsx` with focused tests.
+- Modify `src/App.tsx`, `src/hooks/use-conversations.ts`,
+  `src/lib/conversation-stream.ts`, `src/components/chat-panel.tsx`, and typed prop
+  contracts for `Sidebar`, `SearchDialog`, `DetailsPanel`, and settings as needed.
+- Modify the existing shared event/request contracts, Electron `AgentRegistry`,
+  conversation service, or fake-agent tests only when required to make request identity,
+  cancellation, or late-event behavior deterministic. Do not replace the existing
+  `ConversationAgent` abstraction or Pi adapter.
+- Consume the Phase 06 backend action boundary and Phase 07 persistence adapter; do not
+  create a renderer conversation reducer/store or a second transport.
 
 **Implementation steps**:
 
-1. Define a provider-neutral `AgentGateway` interface with request IDs, chat IDs, progress/reply/failure events, and cancellation by request or chat. It must not expose timer handles to UI code.
-2. Move the fixed replies and delays into `MockAgentGateway`. Inject its scheduler/time source so fake-timer tests remain deterministic.
-3. Track pending requests by immutable request ID and derive a chat's `working` state from its pending count. Settling one request must not clear another.
-4. On chat deletion, cancel all gateway work for that entity before/with the reducer transition. Late events for missing request/chat IDs must be ignored.
-5. Implement `useWorkspaceController` to compose reducer state, persistence status, gateway events, and typed UI actions. Keep state implementation behind the controller interface; do not expose raw `setChats`/`setPreferences` setters.
-6. Extract `ChatComposer` and keep draft/input state within the active chat feature so typing does not rerender unrelated root siblings. Preserve reset-on-chat-switch and focus behavior.
-7. Reduce `App` to provider/controller creation, layout/dialog state, and component composition. Do not introduce global context unless at least two non-parent/child consumers require the same controller contract.
+1. Treat immutable `requestId` plus `conversationId` as the end-to-end request identity.
+   Make renderer acknowledgement/pending state request-aware so completion, failure, or
+   persistence of one request cannot clear another request in the same or a different
+   conversation. Derive per-chat queued/working presentation from those request-aware
+   structures and backend status rather than a single mutable request slot.
+2. Keep sequenced event reduction pure and exhaustive. Ignore stale events and events
+   for conversations deleted from the latest backend snapshot; ensure a late completion,
+   cancellation, or error cannot recreate transient state for a missing conversation or
+   settle an unrelated request.
+3. Preserve the backend lifecycle boundary: per-conversation FIFO work and cross-Wisp
+   concurrency remain in `AgentRegistry`; deletion disposes/cancels the agent before the
+   repository graph is removed; unmount only unsubscribes renderer listeners and does
+   not pretend to cancel backend-owned work.
+4. Implement `useWorkspaceController` to compose `useConversations`, persisted
+   preferences, tool-policy synchronization, active selection, opaque creation IDs, and
+   typed create/update/delete/message/prompt/approval actions. Do not expose raw graph or
+   preference setters to `App`.
+5. Keep deterministic active selection and close dependent UI after deletion. Await
+   create/delete results before applying selection changes, and ensure failed mutations
+   do not leave the UI pointing at a nonexistent optimistic entity.
+6. Extract `ChatComposer` with draft and textarea focus state owned below `App`. Key or
+   reset it by active conversation so chat switches clear the draft and focus the new
+   composer without a root-level timer. Preserve Enter-to-send, Shift+Enter, disabled
+   circle behavior, queue/stop controls, and accessible status text.
+7. Reduce `App` to controller creation, resizable layout, dialog visibility, keyboard
+   shortcuts, and component composition. Keep explicit props; do not add context merely
+   to avoid a short parent/child prop chain.
 
 **Validation**:
 
-- Tests cover two requests in one chat, requests in two chats, greeting plus request, out-of-order completion, failure, cancellation, delete-before-reply, unmount cleanup, and late-event no-op.
-- `rg -n 'localStorage|setTimeout|replyTimersRef|workingChatId|setChats' src/App.tsx` → no matches.
+- Pure renderer/runtime tests cover two requests in one chat, requests in two chats,
+  out-of-order and duplicate events, failure, cancellation, delete-before-reply, and
+  late-event no-op. Existing backend tests continue to cover per-Wisp FIFO,
+  cross-Wisp concurrency, queue limits, and deletion during active work.
+- Hook/controller tests cover startup event buffering, mutation failure, create/delete
+  selection, tool-policy synchronization, unmount listener cleanup, and independent
+  acknowledgement of concurrent requests.
+- Composer/component tests cover Enter, Shift+Enter, chat-switch reset/focus, circle
+  disablement, queue/stop controls, and verify typing does not rerender a mocked
+  unrelated sidebar.
+- `rg -n 'localStorage|setTimeout|replyTimersRef|workingChatId|setChats|setPreferences' src/App.tsx` → no matches.
 - `rg -n 'On it\.|Hey .*I.m here' src/App.tsx src/components` → no fixed runtime replies in UI/composition files.
-- Component test verifies typing in `ChatComposer` does not rerender a mocked unrelated sidebar.
 - Run all global validation commands.
 
 **Exit criteria**:
 
-- `App` contains no domain mutation, persistence, timer, or mock-reply logic.
-- Pending state is correct for concurrent same-chat and cross-chat work.
-- The mock gateway can later be replaced without changing presentation components.
+- `App` contains no domain mutation, persistence, policy synchronization, composer
+  state, timer, or agent-event reconciliation logic.
+- Request-aware pending state is correct for concurrent same-chat and cross-chat work,
+  and late events cannot resurrect deleted state.
+- The Electron `ConversationAgent` boundary remains replaceable without changing
+  presentation components or the workspace controller contract.
 
-**Suggested commit message**: `refactor(app): extract workspace controller and agent gateway`
+**Suggested commit message**: `refactor(app): extract workspace controller and composer`
 
 **Phase-specific STOP conditions**:
 
 - The controller begins becoming a second persistence store or reducer.
 - Context is introduced only to avoid a few explicit props; keep the smaller typed hook boundary.
-- Request cancellation cannot be deterministic with the proposed gateway contract; revise the contract before moving timers.
+- Deterministic request cancellation requires renderer timer ownership or a second
+  transport; stop and revise the existing Electron request contract instead.
+- Extracting the controller would move repository or agent ownership back into the
+  renderer; keep those responsibilities behind IPC.
 
 ---
 

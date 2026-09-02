@@ -92,6 +92,7 @@ export function reduceConversationAgentEvent(
 ): ConversationRuntimeState {
   if (event.sequence <= state.sequence) return state;
   let next: ConversationRuntimeState = { ...state, sequence: event.sequence };
+  if (!chats[event.conversationId]) return next;
 
   switch (event.type) {
     case "conversation_status":
@@ -208,6 +209,60 @@ export function reduceConversationAgentEvent(
         },
       };
   }
+}
+
+export function reconcileConversationRuntime(
+  state: ConversationRuntimeState,
+  chats: ChatCollection,
+  statuses: Record<string, ManagedConversationStatus>,
+): ConversationRuntimeState {
+  const conversationIds = new Set(Object.keys(chats));
+  const retain = <T>(values: Record<string, T>): Record<string, T> =>
+    Object.fromEntries(Object.entries(values).filter(([conversationId]) => conversationIds.has(conversationId)));
+  return {
+    ...state,
+    statuses: Object.fromEntries(
+      [...conversationIds].map((conversationId) => [
+        conversationId,
+        state.statuses[conversationId] ?? statuses[conversationId] ?? "configuration_required",
+      ]),
+    ),
+    messages: retain(state.messages),
+    errors: retain(state.errors),
+    activity: retain(state.activity),
+    toolActivities: retain(state.toolActivities),
+    approvals: retain(state.approvals),
+  };
+}
+
+export function addPendingRequest(
+  pending: Record<string, ReadonlyArray<string>>,
+  conversationId: string,
+  requestId: string,
+): Record<string, ReadonlyArray<string>> {
+  const current = pending[conversationId] ?? [];
+  if (current.includes(requestId)) return pending;
+  return { ...pending, [conversationId]: [...current, requestId] };
+}
+
+export function removePendingRequest(
+  pending: Record<string, ReadonlyArray<string>>,
+  conversationId: string,
+  requestId: string,
+): Record<string, ReadonlyArray<string>> {
+  const current = pending[conversationId];
+  if (!current?.includes(requestId)) return pending;
+  const remaining = current.filter((candidate) => candidate !== requestId);
+  if (remaining.length > 0) return { ...pending, [conversationId]: remaining };
+  const { [conversationId]: _removed, ...rest } = pending;
+  return rest;
+}
+
+export function retainPendingConversations(
+  pending: Record<string, ReadonlyArray<string>>,
+  chats: ChatCollection,
+): Record<string, ReadonlyArray<string>> {
+  return Object.fromEntries(Object.entries(pending).filter(([conversationId]) => Boolean(chats[conversationId])));
 }
 
 export function overlayRuntimeMessages(

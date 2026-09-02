@@ -14,11 +14,15 @@ import type { ToolApprovalDecision, ToolApprovalRequest } from "../../shared/too
 import { LEGACY_CONVERSATIONS_STORAGE_KEY, MAX_LEGACY_BLOB_BYTES } from "@/features/persistence/storage-policy";
 import {
   createConversationRuntime,
+  addPendingRequest,
   getRuntimeMessage,
   markOutgoingFailed,
   overlayRuntimeMessages,
   reduceConversationAgentEvent,
+  reconcileConversationRuntime,
   removeRuntimeMessage,
+  removePendingRequest,
+  retainPendingConversations,
   stageOutgoingMessage,
   type ConversationRuntimeState,
   type ToolActivityView,
@@ -91,7 +95,7 @@ export interface ConversationsController {
 export function useConversations(): ConversationsController {
   const [state, setState] = useState<ConversationStateView>(EMPTY_STATE);
   const [runtime, setRuntime] = useState<ConversationRuntimeState>(() => createConversationRuntime(0, {}));
-  const [acknowledging, setAcknowledging] = useState<Record<string, boolean | undefined>>({});
+  const [pendingAcknowledgements, setPendingAcknowledgements] = useState<Record<string, ReadonlyArray<string>>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const mutationQueue = useRef<Promise<void>>(Promise.resolve());
@@ -104,6 +108,10 @@ export function useConversations(): ConversationsController {
   const replaceState = useCallback((next: ConversationStateView): void => {
     stateRef.current = next;
     setState(next);
+    const reconciled = reconcileConversationRuntime(runtimeRef.current, next.chats, next.statuses);
+    runtimeRef.current = reconciled;
+    setRuntime(reconciled);
+    setPendingAcknowledgements((current) => retainPendingConversations(current, next.chats));
   }, []);
 
   const replaceRuntime = useCallback((next: ConversationRuntimeState): void => {
@@ -144,6 +152,7 @@ export function useConversations(): ConversationsController {
     const next = reduceConversationAgentEvent(runtimeRef.current, event, stateRef.current.chats);
     if (next === runtimeRef.current) return;
     replaceRuntime(next);
+    if (!stateRef.current.chats[event.conversationId]) return;
     if (event.type === "assistant_message_started") {
       const outgoing = getRuntimeMessage(next, event.conversationId, event.requestId);
       if (outgoing) {
@@ -222,15 +231,15 @@ export function useConversations(): ConversationsController {
         status: "queued",
       };
       replaceRuntime(stageOutgoingMessage(runtimeRef.current, conversationId, message));
-      setAcknowledging((current) => ({ ...current, [conversationId]: true }));
+      setPendingAcknowledgements((current) => addPendingRequest(current, conversationId, requestId));
       const persisted = await enqueue(() => window.wisp.appendConversationMessage({ conversationId, message }));
       if (!persisted) {
-        setAcknowledging((current) => ({ ...current, [conversationId]: false }));
+        setPendingAcknowledgements((current) => removePendingRequest(current, conversationId, requestId));
         return false;
       }
       replaceRuntime(removeRuntimeMessage(runtimeRef.current, conversationId, requestId));
       const result = await window.wisp.sendMessage({ conversationId, requestId, text });
-      setAcknowledging((current) => ({ ...current, [conversationId]: false }));
+      setPendingAcknowledgements((current) => removePendingRequest(current, conversationId, requestId));
       if (result.ok) return true;
       const failed = markOutgoingFailed(
         runtimeRef.current,
@@ -279,6 +288,11 @@ export function useConversations(): ConversationsController {
   );
 
   const chats = useMemo(() => overlayRuntimeMessages(state.chats, runtime.messages), [runtime.messages, state.chats]);
+  const acknowledging = useMemo(
+    () =>
+      Object.fromEntries(Object.entries(pendingAcknowledgements).map(([id, requests]) => [id, requests.length > 0])),
+    [pendingAcknowledgements],
+  );
 
   return {
     chats,
