@@ -28,6 +28,8 @@ describe("AppSettingsDialog metadata", () => {
         currentUser={currentUser}
         open
         preferences={DEFAULT_PREFERENCES}
+        persistenceStatus="saved"
+        persistenceError={null}
         onOpenChange={vi.fn()}
         onPreferencesChange={vi.fn()}
       />,

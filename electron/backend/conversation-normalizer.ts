@@ -8,13 +8,12 @@ import {
   type WispShape,
 } from "../../shared/conversations.js";
 import { WispBackendError } from "./backend-error.js";
+import { CONVERSATION_STORAGE_POLICY, WEBP_DATA_URL_PREFIX } from "./storage-policy.js";
 
 const ID_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9._:-]*$/;
 const SHAPES = new Set<WispShape>(WISP_SHAPE_IDS);
 const MESSAGE_STATUSES = new Set<MessageStatus>(["queued", "streaming", "complete", "failed", "cancelled"]);
-const MAX_MESSAGES = 10_000;
-const MAX_TEXT_LENGTH = 100_000;
-const MAX_AVATAR_LENGTH = 6_000_000;
+const BASE64_PATTERN = /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/;
 
 function invalidRequest(): WispBackendError {
   return new WispBackendError("invalid_request", "The conversation data is invalid.");
@@ -25,7 +24,11 @@ function asRecord(value: unknown): Record<string, unknown> {
   return value as Record<string, unknown>;
 }
 
-function string(value: unknown, maxLength = MAX_TEXT_LENGTH, allowEmpty = true): string {
+function string(
+  value: unknown,
+  maxLength: number = CONVERSATION_STORAGE_POLICY.maxTextLength,
+  allowEmpty = true,
+): string {
   if (typeof value !== "string" || value.length > maxLength || (!allowEmpty && !value.trim())) {
     throw invalidRequest();
   }
@@ -43,6 +46,14 @@ export function normalizeConversationId(value: unknown): string {
     throw invalidRequest();
   }
   return value;
+}
+
+function avatarDataUrl(value: unknown): string {
+  const normalized = string(value, CONVERSATION_STORAGE_POLICY.maxAvatarDataUrlLength, false);
+  if (!normalized.startsWith(WEBP_DATA_URL_PREFIX)) throw invalidRequest();
+  const payload = normalized.slice(WEBP_DATA_URL_PREFIX.length);
+  if (!payload || !BASE64_PATTERN.test(payload)) throw invalidRequest();
+  return normalized;
 }
 
 export function normalizeMessage(value: unknown, fallbackId?: string): Message {
@@ -111,7 +122,8 @@ export function normalizeChat(value: unknown): Chat {
   if (kind !== "wisp" && kind !== "circle") throw invalidRequest();
   if (raw.systemRole !== undefined && raw.systemRole !== "chief") throw invalidRequest();
   if (typeof raw.notifyOnUpdatesEnabled !== "boolean") throw invalidRequest();
-  if (!Array.isArray(raw.messages) || raw.messages.length > MAX_MESSAGES) throw invalidRequest();
+  if (!Array.isArray(raw.messages) || raw.messages.length > CONVERSATION_STORAGE_POLICY.maxMessagesPerConversation)
+    throw invalidRequest();
   const base = {
     id,
     name: string(raw.name, 500, false),
@@ -150,13 +162,13 @@ export function normalizeChat(value: unknown): Chat {
     kind,
     shape: raw.shape as WispShape,
     ...(raw.color === undefined ? {} : { color: string(raw.color, 100) }),
-    ...(raw.avatarImage === undefined ? {} : { avatarImage: string(raw.avatarImage, MAX_AVATAR_LENGTH) }),
+    ...(raw.avatarImage === undefined ? {} : { avatarImage: avatarDataUrl(raw.avatarImage) }),
   };
 }
 
 export function normalizeChatCollection(value: unknown): ChatCollection {
   const raw = asRecord(value);
-  if (Object.keys(raw).length > 1_000) throw invalidRequest();
+  if (Object.keys(raw).length > CONVERSATION_STORAGE_POLICY.maxConversations) throw invalidRequest();
   const chats: ChatCollection = {};
   for (const [key, value] of Object.entries(raw)) {
     const id = normalizeConversationId(key);
@@ -164,7 +176,19 @@ export function normalizeChatCollection(value: unknown): ChatCollection {
     if (chat.id !== id) throw invalidRequest();
     chats[id] = chat;
   }
+  validateConversationGraph(chats);
   return chats;
+}
+
+export function validateConversationGraph(chats: Readonly<ChatCollection>): void {
+  for (const chat of Object.values(chats)) {
+    if (chat.kind !== "circle") continue;
+    const members = new Set<string>();
+    for (const memberId of chat.memberIds) {
+      if (members.has(memberId) || chats[memberId]?.kind !== "wisp") throw invalidRequest();
+      members.add(memberId);
+    }
+  }
 }
 
 export function normalizeChatChanges(value: unknown): ChatChanges {
@@ -183,7 +207,7 @@ export function normalizeChatChanges(value: unknown): ChatChanges {
   if (raw.description !== undefined) result.description = string(raw.description, 10_000);
   if (Object.hasOwn(raw, "color")) result.color = raw.color === undefined ? undefined : string(raw.color, 100);
   if (Object.hasOwn(raw, "avatarImage")) {
-    result.avatarImage = raw.avatarImage === undefined ? undefined : string(raw.avatarImage, MAX_AVATAR_LENGTH);
+    result.avatarImage = raw.avatarImage === undefined ? undefined : avatarDataUrl(raw.avatarImage);
   }
   if (raw.shape !== undefined) {
     if (typeof raw.shape !== "string" || !SHAPES.has(raw.shape as WispShape)) throw invalidRequest();

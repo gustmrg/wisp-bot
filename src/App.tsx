@@ -13,32 +13,19 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { APP_METADATA } from "@/config/app-metadata";
 import { DEMO_CURRENT_USER } from "@/fixtures/demo-session";
 import { applyTheme } from "@/lib/theme";
-import { DEFAULT_PREFERENCES, normalizePreferences, type AppPreferences } from "@/lib/app-preferences";
-import { LEGACY_STORAGE_KEY, useConversations } from "@/hooks/use-conversations";
+import { useConversations } from "@/hooks/use-conversations";
 import { useResizablePanel } from "@/hooks/use-resizable-panel";
 import { createChatIdFactory, selectActiveChatId } from "@/features/workspace/workspace-actions";
+import { usePersistedPreferences } from "@/features/persistence/use-persisted-preferences";
 import { DETAILS_LAYOUT, SIDEBAR_LAYOUT } from "@/lib/layout";
 import { mainPanel } from "@/lib/ui-classes";
 import { cn } from "@/lib/utils";
 
-const PREFERENCES_STORAGE_KEY = "wisp-bot-preferences-v1";
-
-function loadPreferences(): AppPreferences {
-  try {
-    const raw = window.localStorage.getItem(PREFERENCES_STORAGE_KEY);
-    if (raw) return normalizePreferences(JSON.parse(raw));
-    const legacy = window.localStorage.getItem(LEGACY_STORAGE_KEY);
-    if (legacy) return normalizePreferences((JSON.parse(legacy) as { preferences?: AppPreferences }).preferences);
-  } catch {
-    // Invalid renderer preferences should not prevent the desktop UI from opening.
-  }
-  return DEFAULT_PREFERENCES;
-}
-
 export default function App() {
   const conversations = useConversations();
   const chats = conversations.chats;
-  const [preferences, setPreferences] = useState<AppPreferences>(loadPreferences);
+  const persistedPreferences = usePersistedPreferences();
+  const { preferences, setPreferences } = persistedPreferences;
   const [toolPolicyLoaded, setToolPolicyLoaded] = useState(false);
   const [activeChatId, setActiveChatId] = useState<ChatId>("");
   const [draft, setDraft] = useState("");
@@ -54,8 +41,7 @@ export default function App() {
 
   useLayoutEffect(() => {
     applyTheme(preferences.theme);
-    window.localStorage.setItem(PREFERENCES_STORAGE_KEY, JSON.stringify(preferences));
-  }, [preferences]);
+  }, [preferences.theme]);
 
   useEffect(() => {
     let cancelled = false;
@@ -78,7 +64,7 @@ export default function App() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [setPreferences]);
 
   useEffect(() => {
     if (!toolPolicyLoaded) return;
@@ -249,6 +235,8 @@ export default function App() {
         currentUser={DEMO_CURRENT_USER}
         open={settingsOpen}
         preferences={preferences}
+        persistenceStatus={persistedPreferences.status}
+        persistenceError={persistedPreferences.error ?? conversations.error}
         onOpenChange={setSettingsOpen}
         onPreferencesChange={setPreferences}
       />

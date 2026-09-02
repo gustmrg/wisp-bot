@@ -109,6 +109,22 @@ describe("App", () => {
     expect(api.initializeConversations).toHaveBeenCalledWith({ chats: {} });
   });
 
+  it("retains legacy conversations when backend initialization fails", async () => {
+    const legacy = JSON.stringify({ chats: { atlas } });
+    window.localStorage.setItem(LEGACY_STORAGE_KEY, legacy);
+    const api = createApi(conversationState(false));
+    vi.mocked(api.initializeConversations).mockResolvedValueOnce({
+      ok: false,
+      error: { code: "internal_error", message: "Could not save conversations.", retryable: true },
+    });
+    exposeApi(api);
+
+    render(<App />);
+
+    expect(await screen.findByText("Could not save conversations.")).toBeVisible();
+    expect(window.localStorage.getItem(LEGACY_STORAGE_KEY)).toBe(legacy);
+  });
+
   it("persists and forwards an outgoing message through the backend bridge", async () => {
     const user = userEvent.setup();
     const api = createApi(conversationState(true, { atlas }));

@@ -46,23 +46,28 @@ function isAutoReviewRule(value: unknown): value is AutoReviewRule {
   );
 }
 
-export function normalizePreferences(value: Partial<AppPreferences> | undefined): AppPreferences {
+function preferenceRecord(value: unknown): Record<string, unknown> | undefined {
+  return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : undefined;
+}
+
+export function normalizePreferences(value: unknown): AppPreferences {
+  const saved = preferenceRecord(value);
   let timezone = "auto";
-  if (value?.timezone && value.timezone !== "auto") {
+  if (typeof saved?.timezone === "string" && saved.timezone && saved.timezone !== "auto") {
     try {
-      timezone = new Intl.DateTimeFormat("en", { timeZone: value.timezone }).resolvedOptions().timeZone;
+      timezone = new Intl.DateTimeFormat("en", { timeZone: saved.timezone }).resolvedOptions().timeZone;
     } catch {
       // Invalid saved timezones fall back to the device's timezone.
     }
   }
   return {
-    theme: normalizeTheme(value?.theme),
-    launchAtLogin: typeof value?.launchAtLogin === "boolean" ? value.launchAtLogin : false,
-    notificationSounds: typeof value?.notificationSounds === "boolean" ? value.notificationSounds : true,
-    microphone: typeof value?.microphone === "string" && value.microphone ? value.microphone : "default",
-    hardwareAcceleration: typeof value?.hardwareAcceleration === "boolean" ? value.hardwareAcceleration : true,
+    theme: normalizeTheme(saved?.theme),
+    launchAtLogin: typeof saved?.launchAtLogin === "boolean" ? saved.launchAtLogin : false,
+    notificationSounds: typeof saved?.notificationSounds === "boolean" ? saved.notificationSounds : true,
+    microphone: typeof saved?.microphone === "string" && saved.microphone ? saved.microphone : "default",
+    hardwareAcceleration: typeof saved?.hardwareAcceleration === "boolean" ? saved.hardwareAcceleration : true,
     timezone,
-    autoReview: typeof value?.autoReview === "boolean" ? value.autoReview : true,
-    autoReviewRules: Array.isArray(value?.autoReviewRules) ? value.autoReviewRules.filter(isAutoReviewRule) : [],
+    autoReview: typeof saved?.autoReview === "boolean" ? saved.autoReview : true,
+    autoReviewRules: Array.isArray(saved?.autoReviewRules) ? saved.autoReviewRules.filter(isAutoReviewRule) : [],
   };
 }

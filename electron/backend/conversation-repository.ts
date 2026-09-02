@@ -1,12 +1,18 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, readFile, rename } from "node:fs/promises";
+import { copyFile, mkdir, readFile, rename } from "node:fs/promises";
 import path from "node:path";
 
 import type { ChatChanges, ChatCollection, Message } from "../../shared/conversations.js";
 import { writeFileAtomically } from "./atomic-file.js";
 import { WispBackendError } from "./backend-error.js";
 import type { ConversationAgentContext } from "./conversation-agent.js";
-import { normalizeChat, normalizeChatCollection, normalizeConversationId } from "./conversation-normalizer.js";
+import {
+  normalizeChat,
+  normalizeChatCollection,
+  normalizeConversationId,
+  validateConversationGraph,
+} from "./conversation-normalizer.js";
+import { CONVERSATION_STORAGE_POLICY } from "./storage-policy.js";
 import { applyWorkspaceAction, type ConversationRecord, type WorkspaceActionStatus } from "./workspace-actions.js";
 
 const SCHEMA_VERSION = 4;
@@ -53,23 +59,37 @@ export class ConversationRepository {
   }
 
   async load(): Promise<void> {
-    let needsSchemaUpgrade = false;
+    let contents: string;
     try {
-      const parsed: unknown = JSON.parse(await readFile(this.statePath, "utf8"));
-      this.state = this.parsePersistedState(parsed);
-      const persistedSchemaVersion = (parsed as { schemaVersion?: unknown }).schemaVersion;
-      needsSchemaUpgrade = [1, 2, 3].includes(persistedSchemaVersion as number);
-      if (persistedSchemaVersion === 1 || persistedSchemaVersion === 2) {
-        await this.removeBundledDemoConversations();
-      }
+      contents = await readFile(this.statePath, "utf8");
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === "ENOENT") return;
+      throw error;
+    }
+
+    let parsed: unknown;
+    try {
+      if (Buffer.byteLength(contents, "utf8") > CONVERSATION_STORAGE_POLICY.maxBlobBytes) {
+        throw new Error("Conversation state exceeds the local storage limit.");
+      }
+      parsed = JSON.parse(contents);
+      this.state = this.parsePersistedState(parsed);
+    } catch (error) {
       await this.preserveCorruptState();
       this.recoveredCorruptState = true;
       this.state = { schemaVersion: SCHEMA_VERSION, initialized: false, conversations: {} };
+      await this.ensureAllDirectories();
+      return;
     }
+
+    const persistedSchemaVersion = this.schemaVersionOf(parsed);
+    const needsSchemaUpgrade = persistedSchemaVersion !== SCHEMA_VERSION;
+    if (persistedSchemaVersion === 1 || persistedSchemaVersion === 2) await this.removeBundledDemoConversations();
     await this.ensureAllDirectories();
-    if (needsSchemaUpgrade) await this.persist();
+    if (needsSchemaUpgrade) {
+      await this.preserveMigrationSource(persistedSchemaVersion);
+      await this.persist();
+    }
   }
 
   isInitialized(): boolean {
@@ -150,6 +170,7 @@ export class ConversationRepository {
           ]),
         ),
       };
+      validateConversationGraph(this.getChats());
       await this.ensureAllDirectories();
       await this.persist();
     });
@@ -170,6 +191,7 @@ export class ConversationRepository {
       const result = applyWorkspaceAction(this.state.conversations, { type: "create", record });
       this.throwForActionStatus(result.status);
       this.state.conversations = result.records;
+      validateConversationGraph(this.getChats());
       this.state.initialized = true;
       await this.ensureDirectories(record);
       await this.persist();
@@ -186,6 +208,7 @@ export class ConversationRepository {
       });
       this.throwForActionStatus(result.status);
       this.state.conversations = result.records;
+      validateConversationGraph(this.getChats());
       await this.persist();
     });
   }
@@ -312,7 +335,11 @@ export class ConversationRepository {
   }
 
   private async persist(): Promise<void> {
-    await writeFileAtomically(this.statePath, `${JSON.stringify(this.state, null, 2)}\n`);
+    const serialized = `${JSON.stringify(this.state, null, 2)}\n`;
+    if (Buffer.byteLength(serialized, "utf8") > CONVERSATION_STORAGE_POLICY.maxBlobBytes) {
+      throw new WispBackendError("invalid_request", "Conversation storage exceeds the local limit.");
+    }
+    await writeFileAtomically(this.statePath, serialized);
   }
 
   private parsePersistedState(value: unknown): PersistedConversationState {
@@ -327,7 +354,7 @@ export class ConversationRepository {
       if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Invalid state");
       const record = value as Record<string, unknown>;
       const chat = normalizeChat(record.chat);
-      if (chat.id !== id || typeof record.createdAt !== "string" || typeof record.updatedAt !== "string")
+      if (chat.id !== id || !this.isTimestamp(record.createdAt) || !this.isTimestamp(record.updatedAt))
         throw new Error("Invalid state");
       if (chat.kind === "circle" ? record.sessionId !== null : typeof record.sessionId !== "string")
         throw new Error("Invalid state");
@@ -344,12 +371,32 @@ export class ConversationRepository {
         updatedAt: record.updatedAt,
       };
     }
-    return { schemaVersion: SCHEMA_VERSION, initialized: raw.initialized, conversations };
+    const state = { schemaVersion: SCHEMA_VERSION, initialized: raw.initialized, conversations } as const;
+    validateConversationGraph(
+      Object.fromEntries(Object.entries(conversations).map(([id, record]) => [id, record.chat])),
+    );
+    return state;
+  }
+
+  private schemaVersionOf(value: unknown): number {
+    if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Invalid state");
+    const version = (value as Record<string, unknown>).schemaVersion;
+    if (typeof version !== "number") throw new Error("Invalid state");
+    return version;
+  }
+
+  private isTimestamp(value: unknown): value is string {
+    return typeof value === "string" && value.length <= 100 && !Number.isNaN(Date.parse(value));
+  }
+
+  private async preserveMigrationSource(schemaVersion: number): Promise<void> {
+    const suffix = this.now().toISOString().replaceAll(":", "-");
+    await copyFile(this.statePath, `${this.statePath}.schema-v${schemaVersion}-backup-${suffix}`);
   }
 
   private async preserveCorruptState(): Promise<void> {
     const suffix = this.now().toISOString().replaceAll(":", "-");
-    await rename(this.statePath, `${this.statePath}.corrupt-${suffix}`).catch(() => undefined);
+    await rename(this.statePath, `${this.statePath}.corrupt-${suffix}`);
   }
 
   private normalizePiSessionFile(sessionId: string, filePath: string): string {

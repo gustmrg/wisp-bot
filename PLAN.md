@@ -47,7 +47,7 @@ Make the existing mock UI safer to evolve into a real desktop agent product by:
 | 04 | Centralize current-user and release metadata | P1 | S | LOW | 01 | DONE |
 | 05 | Model Wisps and circles as discriminated variants | P1 | L | HIGH | 01, 02, 04 | DONE |
 | 06 | Make workspace mutations preserve entity integrity | P1 | M | MED | 05 | DONE |
-| 07 | Add validated, failure-aware persistence | P1 | L | MED | 05, 06 | TODO |
+| 07 | Add validated, failure-aware persistence | P1 | L | MED | 05, 06 | DONE |
 | 08 | Extract the workspace controller and request runtime | P1 | M/L | MED | 03, 04, 06, 07 | TODO |
 | 09 | Build semantic settings and surface primitives | P2 | L | MED | 01, 03, 05 | TODO |
 | 10 | Harden Electron navigation, permissions, CSP, and loading | P1 | M | MED | 01, 04 | TODO |
@@ -648,47 +648,95 @@ renderer's request queue.
 
 ## Phase 07 — Add validated, failure-aware persistence
 
-**Goal**: Decode the entire saved graph at runtime, migrate v3 safely, expose save failures, and guarantee a final flush without blocking every UI update.
+**Goal**: Harden the authoritative Electron conversation store and make the remaining renderer-preference persistence validated and failure-aware.
 
 **Audit coverage**: finding 03.
 
+**Scope revision (2026-09-02)**: The Electron conversation repository became the
+authoritative graph and persistence boundary before this phase. It already serializes
+mutations, writes atomically, rolls in-memory state back on write failure, migrates
+schema versions 1–3 to version 4, preserves corrupt files, and exposes conversation
+load/mutation failures through IPC and `useConversations`. Reintroducing the originally
+planned full graph in renderer `localStorage` would create a second source of truth and
+weaken the current boundary. This phase therefore hardens the existing main-process
+repository and limits renderer persistence work to application preferences. The legacy
+`wisp-bot-ui-v3` blob remains an import-only migration source.
+
 **Scope**:
 
-- Create `src/features/persistence/app-state-schema.ts`, `app-storage.ts`, and `use-persisted-app-state.ts` with tests.
-- Modify `src/App.tsx`, `src/lib/app-preferences.ts`, `src/lib/chat-schema.ts`, `package.json`, and `package-lock.json` if a runtime schema dependency is used.
-- Add a small accessible persistence-status surface in an existing app/settings location.
-- Do not move storage to Electron main or IndexedDB yet.
+- Create typed storage-policy and preference-persistence helpers under
+  `electron/backend/` and `src/features/persistence/`, with tests.
+- Modify `electron/backend/conversation-normalizer.ts`,
+  `electron/backend/conversation-repository.ts`, `electron/backend/atomic-file.ts`,
+  `src/hooks/use-conversations.ts`, `src/App.tsx`, `src/lib/app-preferences.ts`, shared
+  state/contracts when needed, and existing settings/status UI.
+- Keep conversations in the Electron repository and preferences in renderer
+  `localStorage`; do not introduce a renderer-owned conversation graph, IndexedDB, or
+  another schema library unless the existing explicit decoders prove insufficient.
+- Preserve all valid schema-v1 through schema-v4 repository files and valid legacy-v3
+  renderer imports. Never delete the legacy blob until the main-process import and
+  durable write have both succeeded.
 
 **Implementation steps**:
 
-1. Add one project-compatible runtime schema library (recommended: Zod) rather than maintaining nested unchecked casts. Define versioned schemas for messages, Wisp/circle records, preferences, and the full persisted graph.
-2. Centralize named storage policy constants: v3/v4 keys, debounce delay, maximum serialized blob size, per-message text limit, maximum avatar data-URL length, and allowed `data:image/webp;base64,` avatar format. Values must be documented as temporary mock-storage limits, not scattered component literals.
-3. Decode untrusted JSON as `unknown`. Validate record-key equality with `chat.id`, discriminants, allowed shape IDs, string bounds, message variants, unique/valid circle member IDs, and safe avatar URLs. Reject or sanitize invalid entries according to one documented rule; never pass partially typed data into React.
-4. Read v4 first. If absent, decode/migrate v3, keep the v3 blob as rollback backup, write v4 only after complete validation, and never delete v3 until a later reviewed migration.
-5. Implement a persistence adapter returning explicit load/save results. Catch JSON/storage/quota errors and expose `idle | saving | saved | error` status without falsely claiming durability.
-6. Debounce ordinary writes, but provide an idempotent `flush()` used on `beforeunload`/application teardown. Cleanup must flush the latest snapshot instead of merely cancelling it.
-7. Wire the hook into `App`; remove direct localStorage access from the component.
+1. Centralize named limits and policy constants for repository blob size, entity/message
+   counts, per-field text, avatar data URLs, and legacy/preference storage keys. Document
+   them as temporary local-desktop limits rather than scattering literals.
+2. Continue decoding filesystem and legacy renderer JSON as `unknown`. Strengthen the
+   existing explicit normalizers to validate record-key equality, discriminants, shape
+   IDs, timestamps, message variants, unique and live circle-member references, and the
+   exact allowed `data:image/webp;base64,` avatar form. Reject an invalid graph as a
+   whole; never pass a partially typed graph to either process.
+3. Reject oversized repository and legacy blobs before parsing. Preserve an untouched,
+   recoverable source before any schema rewrite; write schema 4 only after complete
+   validation, and do not silently discard a source file when backup creation fails.
+4. Keep repository mutations serialized and durably awaited rather than debouncing
+   authoritative conversation writes. Preserve atomic replacement and rollback, remove
+   orphan temporary files when safe, and surface load/save failures through the existing
+   typed IPC/controller error path.
+5. Replace `App`'s direct preference `localStorage` reads/writes with a small adapter and
+   hook. Normalize decoded preferences, return explicit load/save results, debounce
+   ordinary writes, and provide an idempotent latest-snapshot `flush()` for
+   `beforeunload` and effect cleanup.
+6. Make preference `idle | saving | saved | error` state and repository recovery/save
+   errors observable in an existing accessible settings/status surface without claiming
+   success before durable completion.
+7. Make legacy renderer conversation import delete `wisp-bot-ui-v3` only after a
+   successful main-process initialization; retain it on validation or persistence
+   failure as the rollback copy.
 
 **Validation**:
 
-- Tests cover valid v4, valid legacy v3, malformed JSON, non-object input, missing fields, every malformed message variant, key/ID mismatch, invalid member references, unsafe avatar URL, oversized payload, quota error, debounce replacement, and close-before-delay flush.
+- Repository/normalizer tests cover valid v4, schema-v1 through schema-v3 upgrades,
+  malformed JSON, non-object input, missing fields, malformed message variants,
+  key/ID mismatch, duplicate or missing circle-member references, unsafe avatar URLs,
+  oversized payloads, failed backup, failed atomic save, and rollback.
+- Preference/legacy-import tests cover malformed and oversized JSON, normalized partial
+  preferences, quota errors, debounce replacement, close-before-delay flush, and legacy
+  retention on initialize failure.
 - `rg -n 'localStorage|STORAGE_KEY|JSON\.parse|JSON\.stringify' src/App.tsx` → no matches.
-- `rg -n 'as Partial<PersistedState>|as ChatCollection' src` → no unchecked persistence assertions.
+- `rg -n 'as \{ chats\?: ChatCollection \}|as ChatCollection' src/hooks src/features` →
+  no unchecked persistence assertions.
 - Run all global validation commands.
 
 **Exit criteria**:
 
-- No unvalidated stored value reaches components.
-- A corrupt blob cannot crash the renderer.
-- Save/flush failures are observable and tested.
-- Valid v3 data survives migration with a rollback copy.
+- No unvalidated persisted conversation or preference reaches components.
+- Corrupt or oversized storage cannot crash the renderer or overwrite its only
+  recoverable source.
+- Conversation write failures and preference save/flush failures are observable and
+  tested.
+- Valid repository versions 1–3 and renderer v3 imports survive migration with a
+  rollback copy.
 
 **Suggested commit message**: `feat(persistence): validate and monitor local state`
 
 **Phase-specific STOP conditions**:
 
-- The chosen schema library is incompatible with TypeScript 7 or materially increases renderer size without tree-shaking; stop and review an alternative.
-- The migration would overwrite or delete the only copy of user state.
+- The existing explicit decoders cannot express the required validation without unsafe
+  casts; stop and review a schema dependency rather than adding ad hoc assertions.
+- The migration would overwrite, delete, or rename away the only copy of user state
+  without first proving a recoverable backup exists.
 - Product requirements demand unbounded messages/media; stop because localStorage is then the wrong backend and advance the main-process repository design first.
 
 ---

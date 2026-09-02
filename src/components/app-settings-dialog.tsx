@@ -5,6 +5,7 @@ import { GeneralSettingsSections, PreferenceSwitch } from "@/components/general-
 import { ModelSettingsSection } from "@/components/model-settings-section";
 import type { AppMetadata, CurrentUser } from "@/config/app-metadata";
 import type { AppPreferences } from "@/lib/app-preferences";
+import type { PersistenceStatus } from "@/features/persistence/storage-policy";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { normalizeTheme } from "@/lib/theme";
@@ -30,6 +31,8 @@ interface AppSettingsDialogProps {
   currentUser: CurrentUser;
   open: boolean;
   preferences: AppPreferences;
+  persistenceStatus: PersistenceStatus;
+  persistenceError: string | null;
   onOpenChange: (open: boolean) => void;
   onPreferencesChange: (preferences: AppPreferences) => void;
 }
@@ -42,6 +45,8 @@ function AppSettingsDialog({
   currentUser,
   open,
   preferences,
+  persistenceStatus,
+  persistenceError,
   onOpenChange,
   onPreferencesChange,
 }: AppSettingsDialogProps) {
@@ -184,6 +189,14 @@ function AppSettingsDialog({
             </div>
           </div>
           <GeneralSettingsSections preferences={preferences} onPreferencesChange={onPreferencesChange} />
+          <p className="mt-4 text-[11.5px] text-dim" role={persistenceError ? "alert" : "status"} aria-live="polite">
+            {persistenceError ??
+              (persistenceStatus === "saving"
+                ? "Saving preferences…"
+                : persistenceStatus === "saved"
+                  ? "Preferences saved on this device."
+                  : "Preferences are stored on this device.")}
+          </p>
         </section>
         <ModelSettingsSection active={section === "model"} />
         <section

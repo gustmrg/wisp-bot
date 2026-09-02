@@ -108,7 +108,7 @@ export interface ConversationStateView {
 }
 
 export interface InitializeConversationsRequest {
-  chats: ChatCollection;
+  chats: unknown;
 }
 
 export interface CreateConversationRequest {

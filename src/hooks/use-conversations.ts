@@ -11,7 +11,7 @@ import type {
   TextMessage,
 } from "../../shared/conversations";
 import type { ToolApprovalDecision, ToolApprovalRequest } from "../../shared/tool-policy";
-import { migrateLegacyChats } from "@/lib/circle-members";
+import { LEGACY_CONVERSATIONS_STORAGE_KEY, MAX_LEGACY_BLOB_BYTES } from "@/features/persistence/storage-policy";
 import {
   createConversationRuntime,
   getRuntimeMessage,
@@ -24,7 +24,7 @@ import {
   type ToolActivityView,
 } from "@/lib/conversation-stream";
 
-export const LEGACY_STORAGE_KEY = "wisp-bot-ui-v3";
+export const LEGACY_STORAGE_KEY = LEGACY_CONVERSATIONS_STORAGE_KEY;
 
 const EMPTY_STATE: ConversationStateView = {
   initialized: false,
@@ -35,12 +35,15 @@ const EMPTY_STATE: ConversationStateView = {
   recoveredCorruptState: false,
 };
 
-function legacyChats(storage: Pick<Storage, "getItem">): ChatCollection {
+function legacyChats(storage: Pick<Storage, "getItem">): unknown {
   try {
     const raw = storage.getItem(LEGACY_STORAGE_KEY);
     if (!raw) return {};
-    const parsed = JSON.parse(raw) as { chats?: ChatCollection };
-    return parsed.chats && Object.keys(parsed.chats).length > 0 ? migrateLegacyChats(parsed.chats) : {};
+    if (new TextEncoder().encode(raw).byteLength > MAX_LEGACY_BLOB_BYTES) return {};
+    const parsed: unknown = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
+    const chats = Reflect.get(parsed, "chats");
+    return chats && typeof chats === "object" && !Array.isArray(chats) ? chats : {};
   } catch {
     return {};
   }

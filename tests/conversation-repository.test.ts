@@ -99,6 +99,9 @@ describe("ConversationRepository", () => {
       schemaVersion: number;
     };
     expect(persisted.schemaVersion).toBe(4);
+    const backup = (await readdir(directory)).find((name) => name.includes(".schema-v1-backup-"));
+    expect(backup).toBeDefined();
+    expect(JSON.parse(await readFile(path.join(directory, backup!), "utf8"))).toMatchObject({ schemaVersion: 1 });
   });
 
   it("removes previously persisted bundled demo conversations", async () => {
@@ -260,15 +263,34 @@ describe("ConversationRepository", () => {
     await repository.initialize({
       first: chat("first"),
       second: chat("second"),
-      crew: { ...chat("crew", true), memberIds: ["second", "first", "first", "second"] },
+      crew: { ...chat("crew", true), memberIds: ["second", "first"] },
     });
 
     await repository.delete("first");
 
-    expect(repository.getChats().crew).toMatchObject({ memberIds: ["second", "second"] });
+    expect(repository.getChats().crew).toMatchObject({ memberIds: ["second"] });
     const restored = new ConversationRepository({ dataDirectory: directory });
     await restored.load();
-    expect(restored.getChats().crew).toMatchObject({ memberIds: ["second", "second"] });
+    expect(restored.getChats().crew).toMatchObject({ memberIds: ["second"] });
+  });
+
+  it("rejects unsafe avatars and invalid circle membership as one graph", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "wisp-invalid-graph-"));
+    const repository = new ConversationRepository({ dataDirectory: directory });
+
+    await expect(
+      repository.initialize({ first: { ...chat("first"), avatarImage: "data:image/png;base64,AAAA" } }),
+    ).rejects.toMatchObject({ code: "invalid_request" });
+    await expect(
+      repository.initialize({
+        first: chat("first"),
+        crew: { ...chat("crew", true), memberIds: ["first", "first"] },
+      }),
+    ).rejects.toMatchObject({ code: "invalid_request" });
+    await expect(
+      repository.initialize({ crew: { ...chat("crew", true), memberIds: ["missing"] } }),
+    ).rejects.toMatchObject({ code: "invalid_request" });
+    expect(repository.getChats()).toEqual({});
   });
 
   it("rolls back in-memory state when persistence cannot complete", async () => {
