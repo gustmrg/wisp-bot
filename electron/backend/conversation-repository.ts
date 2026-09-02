@@ -200,13 +200,34 @@ export class ConversationRepository {
 
   async update(conversationId: string, changes: ChatChanges): Promise<void> {
     await this.enqueue(async () => {
-      const result = applyWorkspaceAction(this.state.conversations, {
-        type: "update",
-        conversationId,
-        changes,
-        updatedAt: this.now().toISOString(),
-      });
+      const updatedAt = this.now().toISOString();
+      let result =
+        changes.kind === "circle" && changes.memberIds !== undefined
+          ? applyWorkspaceAction(this.state.conversations, {
+              type: "replace-circle-members",
+              conversationId,
+              memberIds: changes.memberIds,
+              updatedAt,
+            })
+          : applyWorkspaceAction(this.state.conversations, {
+              type: "update",
+              conversationId,
+              changes,
+              updatedAt,
+            });
       this.throwForActionStatus(result.status);
+      if (changes.kind === "circle" && changes.memberIds !== undefined) {
+        const { memberIds: _memberIds, ...remainingChanges } = changes;
+        if (Object.keys(remainingChanges).length > 1) {
+          result = applyWorkspaceAction(result.records, {
+            type: "update",
+            conversationId,
+            changes: remainingChanges,
+            updatedAt,
+          });
+          this.throwForActionStatus(result.status);
+        }
+      }
       this.state.conversations = result.records;
       validateConversationGraph(this.getChats());
       await this.persist();
@@ -306,6 +327,9 @@ export class ConversationRepository {
     }
     if (status === "kind_mismatch") {
       throw new WispBackendError("invalid_request", "The conversation kind cannot be changed.");
+    }
+    if (status === "invalid_member") {
+      throw new WispBackendError("invalid_request", "Circle members must reference existing Wisps.");
     }
     if (status === "protected") {
       throw new WispBackendError("invalid_request", "This conversation is protected and cannot be deleted.");

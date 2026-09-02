@@ -1,5 +1,6 @@
 import type { ChatCollection, CircleChat, CircleChatChanges } from "@/chat-data";
 import { ChatAvatar } from "@/components/chat-avatar";
+import { CircleMemberPicker } from "@/components/circle-member-picker";
 import { SettingsCard, SettingsField, SettingsRow, SettingsRowCopy } from "@/components/settings/settings-primitives";
 import { ToggleSwitch } from "@/components/ui/toggle-switch";
 import { Input } from "@/components/ui/input";
@@ -14,6 +15,7 @@ interface CircleDetailsProps {
 
 export function CircleDetails({ chat, chats, onChange }: CircleDetailsProps) {
   const members = getCircleMembers(chat, chats);
+  const availableWisps = Object.values(chats).filter((candidate) => candidate.kind === "wisp");
   return (
     <>
       <div className="flex justify-center pt-5 pb-[30px]">
@@ -59,6 +61,12 @@ export function CircleDetails({ chat, chats, onChange }: CircleDetailsProps) {
           <p className="text-dim text-xs">No Wisps in this circle.</p>
         )}
       </section>
+      <CircleMemberPicker
+        label="Edit participants"
+        availableWisps={availableWisps}
+        selectedIds={chat.memberIds}
+        onChange={(memberIds) => onChange({ kind: "circle", memberIds })}
+      />
       <SettingsCard className="mt-[15px]">
         <SettingsRow className="min-h-0 p-[11px]">
           <SettingsRowCopy>

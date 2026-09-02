@@ -92,6 +92,45 @@ describe("workspace actions", () => {
     expect(records.crew?.chat).toMatchObject({ memberIds: ["second", "first", "first", "second"] });
   });
 
+  it("replaces circle membership atomically, deduplicates IDs, and preserves selected order", () => {
+    const records = {
+      first: record(wisp("first")),
+      second: record(wisp("second")),
+      crew: record(circle("crew", ["first"])),
+    };
+    const result = applyWorkspaceAction(records, {
+      type: "replace-circle-members",
+      conversationId: "crew",
+      memberIds: ["second", "first", "second"],
+      updatedAt: "after",
+    });
+
+    expect(result.status).toBe("applied");
+    expect(result.records.crew?.chat).toMatchObject({ memberIds: ["second", "first"] });
+    expect(records.crew?.chat).toMatchObject({ memberIds: ["first"] });
+  });
+
+  it("rejects missing, circle, and non-circle membership targets", () => {
+    const records = { first: record(wisp("first")), crew: record(circle("crew", [])) };
+    for (const memberIds of [["missing"], ["crew"]]) {
+      const result = applyWorkspaceAction(records, {
+        type: "replace-circle-members",
+        conversationId: "crew",
+        memberIds,
+        updatedAt: "after",
+      });
+      expect(result).toEqual({ records, status: "invalid_member" });
+    }
+    expect(
+      applyWorkspaceAction(records, {
+        type: "replace-circle-members",
+        conversationId: "first",
+        memberIds: [],
+        updatedAt: "after",
+      }).status,
+    ).toBe("kind_mismatch");
+  });
+
   it("deletes circles and supports an empty result", () => {
     const onlyCircle = { crew: record(circle("crew", [])) };
     const result = applyWorkspaceAction(onlyCircle, {

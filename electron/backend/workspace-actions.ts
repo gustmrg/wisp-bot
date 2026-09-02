@@ -15,6 +15,7 @@ export type WorkspaceRecords = Record<string, ConversationRecord>;
 export type WorkspaceAction =
   | { type: "create"; record: ConversationRecord }
   | { type: "update"; conversationId: string; changes: ChatChanges; updatedAt: string }
+  | { type: "replace-circle-members"; conversationId: string; memberIds: ReadonlyArray<string>; updatedAt: string }
   | { type: "delete"; conversationId: string; updatedAt: string }
   | { type: "mark-read"; conversationId: string; updatedAt: string }
   | { type: "append-message"; conversationId: string; message: Message & { id: string }; updatedAt: string }
@@ -26,6 +27,7 @@ export type WorkspaceActionStatus =
   | "not_found"
   | "already_exists"
   | "kind_mismatch"
+  | "invalid_member"
   | "protected"
   | "prompt_not_found";
 
@@ -49,6 +51,20 @@ export function applyWorkspaceAction(records: WorkspaceRecords, action: Workspac
       if (record.chat.kind !== kind) return { records, status: "kind_mismatch" };
       const chat = normalizeChat({ ...record.chat, ...fields });
       return replaceRecord(records, action.conversationId, { ...record, chat, updatedAt: action.updatedAt });
+    }
+    case "replace-circle-members": {
+      const record = records[action.conversationId];
+      if (!record) return { records, status: "not_found" };
+      if (record.chat.kind !== "circle") return { records, status: "kind_mismatch" };
+      const memberIds = [...new Set(action.memberIds)];
+      if (memberIds.some((memberId) => records[memberId]?.chat.kind !== "wisp")) {
+        return { records, status: "invalid_member" };
+      }
+      return replaceRecord(records, action.conversationId, {
+        ...record,
+        chat: { ...record.chat, memberIds },
+        updatedAt: action.updatedAt,
+      });
     }
     case "delete": {
       const deletedRecord = records[action.conversationId];

@@ -40,6 +40,7 @@ describe("variant details", () => {
   it("renders circle-only membership details", () => {
     render(<CircleDetails chat={circle} chats={{ atlas: wisp, crew: circle }} onChange={vi.fn()} />);
     expect(screen.getByText("Participants (1)")).toBeVisible();
-    expect(screen.getByText("Atlas")).toBeVisible();
+    expect(screen.getAllByText("Atlas")).not.toHaveLength(0);
+    expect(screen.getByRole("group", { name: "Edit participants" })).toBeVisible();
   });
 });

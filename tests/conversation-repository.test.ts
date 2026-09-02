@@ -274,6 +274,34 @@ describe("ConversationRepository", () => {
     expect(restored.getChats().crew).toMatchObject({ memberIds: ["second"] });
   });
 
+  it("normalizes and persists an ordered circle membership replacement", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "wisp-member-update-"));
+    const repository = new ConversationRepository({ dataDirectory: directory });
+    await repository.initialize({
+      first: chat("first"),
+      second: chat("second"),
+      crew: { ...chat("crew", true), memberIds: [] },
+    });
+
+    await repository.update("crew", { kind: "circle", memberIds: ["second", "first", "second"] });
+
+    expect(repository.getChats().crew).toMatchObject({ memberIds: ["second", "first"] });
+    const restored = new ConversationRepository({ dataDirectory: directory });
+    await restored.load();
+    expect(restored.getChats().crew).toMatchObject({ memberIds: ["second", "first"] });
+  });
+
+  it("rolls back an invalid circle membership replacement", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "wisp-member-invalid-"));
+    const repository = new ConversationRepository({ dataDirectory: directory });
+    await repository.initialize({ first: chat("first"), crew: { ...chat("crew", true), memberIds: ["first"] } });
+
+    await expect(repository.update("crew", { kind: "circle", memberIds: ["missing"] })).rejects.toMatchObject({
+      code: "invalid_request",
+    });
+    expect(repository.getChats().crew).toMatchObject({ memberIds: ["first"] });
+  });
+
   it("rejects unsafe avatars and invalid circle membership as one graph", async () => {
     const directory = await mkdtemp(path.join(os.tmpdir(), "wisp-invalid-graph-"));
     const repository = new ConversationRepository({ dataDirectory: directory });

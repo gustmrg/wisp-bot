@@ -52,7 +52,7 @@ Make the existing mock UI safer to evolve into a real desktop agent product by:
 | 09 | Build semantic settings and surface primitives | P2 | L | MED | 01, 03, 05 | DONE |
 | 10 | Harden Electron navigation, permissions, CSP, and loading | P1 | M | MED | 01, 04 | DONE |
 | 11 | Refresh repository documentation and license | P2 | S | LOW | 01–10 | DONE |
-| 12 | Make circle membership editable | P2 | M | LOW | 06, 08, 09 | TODO |
+| 12 | Make circle membership editable | P2 | M | LOW | 06, 08, 09 | DONE |
 | 13 | Decide the real-agent runtime and IPC contract | P3 | S/M | LOW | 07, 08, 10 | TODO |
 | 14 | Deliver one real-agent vertical slice | P3 | L | HIGH | 13 | TODO |
 | 15 | Enforce auto-review authorization and audit logging | P3 | L | HIGH | 10, 14 | TODO |
