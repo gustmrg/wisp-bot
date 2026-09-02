@@ -150,8 +150,8 @@ function CreateAgentDialog({ chats, onCreate, trigger }: CreateAgentDialogProps)
         >
           <button
             className={cn(
-              "flex items-center gap-2.5 rounded-[10px] border border-black/[0.07] bg-white p-[11px] text-left dark:border-white/[0.07] dark:bg-[#1d1d1d]",
-              !creatingCircle && "border-black/30 bg-[#eeeeee] dark:border-white/30 dark:bg-[#303030]",
+              "flex items-center gap-2.5 rounded-[10px] border border-border bg-card p-[11px] text-left",
+              !creatingCircle && "border-ring bg-accent",
             )}
             type="button"
             onClick={() => setCreationKind("wisp")}
@@ -171,8 +171,8 @@ function CreateAgentDialog({ chats, onCreate, trigger }: CreateAgentDialogProps)
           {FEATURE_FLAGS.circles ? (
             <button
               className={cn(
-                "flex items-center gap-2.5 rounded-[10px] border border-black/[0.07] bg-white p-[11px] text-left dark:border-white/[0.07] dark:bg-[#1d1d1d]",
-                creatingCircle && "border-black/30 bg-[#eeeeee] dark:border-white/30 dark:bg-[#303030]",
+                "flex items-center gap-2.5 rounded-[10px] border border-border bg-card p-[11px] text-left",
+                creatingCircle && "border-ring bg-accent",
               )}
               type="button"
               onClick={() => setCreationKind("circle")}

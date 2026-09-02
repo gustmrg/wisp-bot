@@ -23,6 +23,10 @@ interface SidebarProps {
   onSelectChat: (chatId: ChatId) => void;
 }
 
+// Product notification color intentionally remains explicit rather than a neutral surface token.
+const unreadIndicator =
+  "unread-dot absolute -top-1 -right-1 size-[10px] rounded-full border-2 border-sidebar bg-[#ff3b30]";
+
 function Sidebar({
   activeChatId,
   chats,
@@ -47,7 +51,7 @@ function Sidebar({
       >
         <div className={cn("flex h-11 flex-none items-center px-2", collapsed ? "justify-center" : "justify-end")}>
           <button
-            className="flex size-7 items-center justify-center border-0 bg-transparent text-[#777777] transition-colors duration-[120ms] hover:text-[#333333] dark:text-[#888888] dark:hover:text-[#dddddd] [&_svg]:size-[15px] [&_svg]:transition-transform [&_svg]:duration-[180ms] data-[collapsed=true]:[&_svg]:rotate-180"
+            className="flex size-7 items-center justify-center border-0 bg-transparent text-dim transition-colors duration-[120ms] hover:text-foreground [&_svg]:size-[15px] [&_svg]:transition-transform [&_svg]:duration-[180ms] data-[collapsed=true]:[&_svg]:rotate-180"
             type="button"
             data-collapsed={collapsed}
             aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
@@ -60,8 +64,8 @@ function Sidebar({
 
         <button
           className={cn(
-            "flex h-8 flex-none items-center gap-2 rounded-lg border text-left text-[#686868] hover:text-[#5c5c5c] dark:text-[#8a8a8a] dark:hover:text-[#b8b8b8]",
-            "border-black/[0.07] bg-white hover:border-black/[0.14] dark:border-white/[0.09] dark:bg-[#262626] dark:hover:border-white/[0.16]",
+            "flex h-8 flex-none items-center gap-2 rounded-lg border text-left text-dim hover:text-foreground",
+            "border-border bg-card hover:border-ring",
             "mb-2 [&_svg]:size-[13px] [&_svg]:flex-none [&_span]:flex-1",
             collapsed ? "mx-auto w-9 justify-center p-0" : "ml-[17px] mr-[10px] px-[9px]",
           )}
@@ -88,7 +92,7 @@ function Sidebar({
             return (
               <button
                 className={cn(
-                  "group/item relative mb-1 flex w-full min-w-0 items-center gap-[9px] rounded-[10px] border-0 bg-transparent p-2 text-left hover:bg-[#ebebeb] data-[selected=true]:bg-[#e6e6e6] dark:hover:bg-[#212120] dark:data-[selected=true]:bg-[#262626]",
+                  "group/item relative mb-1 flex w-full min-w-0 items-center gap-[9px] rounded-[10px] border-0 bg-transparent p-2 text-left hover:bg-muted data-[selected=true]:bg-accent",
                   collapsed && "h-[46px] justify-center py-[5px] px-0",
                 )}
                 data-selected={selected}
@@ -101,12 +105,7 @@ function Sidebar({
               >
                 <span className="relative inline-flex flex-none">
                   <ChatAvatar chat={chat} chats={chats} />
-                  {chat.unread ? (
-                    <span
-                      className="unread-dot absolute -top-1 -right-1 size-[10px] rounded-full border-2 border-sidebar bg-[#ff3b30]"
-                      aria-label="Unread activity"
-                    />
-                  ) : null}
+                  {chat.unread ? <span className={unreadIndicator} aria-label="Unread activity" /> : null}
                 </span>
                 {collapsed ? null : (
                   <span className="flex min-w-0 flex-1 flex-col">
@@ -137,7 +136,7 @@ function Sidebar({
 
         <button
           className={cn(
-            "flex min-w-0 flex-none items-center gap-[9px] rounded-[9px] border-0 bg-transparent p-1.5 text-left hover:bg-[#ebebeb] dark:hover:bg-[#212120]",
+            "flex min-w-0 flex-none items-center gap-[9px] rounded-[9px] border-0 bg-transparent p-1.5 text-left hover:bg-muted",
             "mt-[5px] mx-3 mb-[9px]",
             collapsed && "mx-2 justify-center px-0",
           )}

@@ -4,10 +4,11 @@ import { CheckIcon, Share2Icon, XIcon } from "lucide-react";
 import type { Chat, ChatChanges, ChatCollection } from "@/chat-data";
 import { CircleDetails } from "@/components/circle-details";
 import { WispDetails } from "@/components/wisp-details";
+import { Button } from "@/components/ui/button";
 import { useCopyFeedback } from "@/hooks/use-copy-feedback";
 import { canDeleteChat } from "@/lib/chat-schema";
 import { detailsLayoutStyle } from "@/lib/layout";
-import { iconButton, panelResizer } from "@/lib/ui-classes";
+import { panelResizer } from "@/lib/ui-classes";
 import { cn } from "@/lib/utils";
 
 interface DetailsPanelProps {
@@ -40,9 +41,9 @@ function DetailsPanel({ chat, chats, width, onChange, onClose, onDelete, onResiz
       />
       <header className="grid h-11 flex-none grid-cols-[28px_1fr_28px] items-center border-b border-black/[0.04] px-[9px] dark:border-white/[0.04]">
         <strong className="col-start-2 text-center text-[12.5px]">Settings</strong>
-        <button className={iconButton} type="button" aria-label="Close details" onClick={onClose}>
+        <Button variant="ghost" size="icon-sm" type="button" aria-label="Close details" onClick={onClose}>
           <XIcon />
-        </button>
+        </Button>
       </header>
 
       <div className="relative flex min-h-0 flex-1 flex-col">
@@ -54,13 +55,9 @@ function DetailsPanel({ chat, chats, width, onChange, onClose, onDelete, onResiz
           )}
 
           {canDeleteChat(chat) ? (
-            <button
-              className="mt-[18px] w-full rounded-lg border border-[rgba(229,72,77,0.2)] bg-[rgba(229,72,77,0.08)] p-2 text-[#bd2c35] hover:bg-[rgba(229,72,77,0.16)] dark:text-[#ef7478]"
-              type="button"
-              onClick={onDelete}
-            >
+            <Button className="mt-[18px] w-full" variant="destructive" type="button" onClick={onDelete}>
               Delete {chat.kind === "circle" ? "circle" : "Wisp"}
-            </button>
+            </Button>
           ) : null}
         </div>
 
@@ -72,11 +69,7 @@ function DetailsPanel({ chat, chats, width, onChange, onClose, onDelete, onResiz
           >
             {copyFeedback.message}
           </span>
-          <button
-            className="flex h-8 w-full items-center justify-center gap-[7px] rounded-lg border-0 bg-[#eeeeee] text-[#555555] hover:bg-[#e9e9e9] hover:text-[#222222] dark:bg-[#222222] dark:text-[#bcbcbc] dark:hover:bg-[#292929] dark:hover:text-[#eeeeee] [&_svg]:size-[13px]"
-            type="button"
-            onClick={shareTemplate}
-          >
+          <Button className="w-full" variant="secondary" type="button" onClick={shareTemplate}>
             {copyFeedback.status === "success" ? <CheckIcon /> : <Share2Icon />}
             {copyFeedback.status === "copying"
               ? "Copying template link…"
@@ -85,7 +78,7 @@ function DetailsPanel({ chat, chats, width, onChange, onClose, onDelete, onResiz
                 : copyFeedback.status === "error"
                   ? "Could not copy template link"
                   : "Share as template"}
-          </button>
+          </Button>
         </footer>
       </div>
     </aside>

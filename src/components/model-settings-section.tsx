@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
 
 import type { AiSettingsView, ProviderSummary } from "../../shared/contracts";
+import { SettingsCard, SettingsGroup, SettingsRow, SettingsRowCopy } from "@/components/settings/settings-primitives";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { settingsCard, settingsGroupLabel, settingsRow, settingsRowCopy } from "@/lib/ui-classes";
 
 interface ModelSettingsSectionProps {
   active: boolean;
@@ -143,38 +143,37 @@ function ModelSettingsSection({ active }: ModelSettingsSectionProps) {
       {loading ? <p className="text-dim text-[12px]">Loading providers and models…</p> : null}
       {!loading && view ? (
         <>
-          <span className={settingsGroupLabel}>Provider</span>
-          <div className={settingsCard}>
-            <div className={settingsRow}>
-              <span className={settingsRowCopy}>
-                <label htmlFor="ai-provider">
-                  <strong>Provider</strong>
-                </label>
-                <small>Select the service that will run your Wisps.</small>
-              </span>
-              <Select items={providerItems} value={providerId} onValueChange={handleProviderChange}>
-                <SelectTrigger id="ai-provider" className="w-[220px] max-w-[55%]">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent align="end" alignItemWithTrigger={false}>
-                  <SelectGroup>
-                    {view.providers.map((item) => (
-                      <SelectItem key={item.id} value={item.id}>
-                        {item.name}
-                      </SelectItem>
-                    ))}
-                  </SelectGroup>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="border-t border-black/[0.055] dark:border-white/[0.055]">
-              <div className={settingsRow}>
-                <span className={settingsRowCopy}>
+          <SettingsGroup label="Provider">
+            <SettingsCard variant="stacked">
+              <SettingsRow>
+                <SettingsRowCopy>
+                  <label htmlFor="ai-provider">
+                    <strong>Provider</strong>
+                  </label>
+                  <small>Select the service that will run your Wisps.</small>
+                </SettingsRowCopy>
+                <Select items={providerItems} value={providerId} onValueChange={handleProviderChange}>
+                  <SelectTrigger id="ai-provider" className="w-[220px] max-w-[55%]">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent align="end" alignItemWithTrigger={false}>
+                    <SelectGroup>
+                      {view.providers.map((item) => (
+                        <SelectItem key={item.id} value={item.id}>
+                          {item.name}
+                        </SelectItem>
+                      ))}
+                    </SelectGroup>
+                  </SelectContent>
+                </Select>
+              </SettingsRow>
+              <SettingsRow>
+                <SettingsRowCopy>
                   <label htmlFor="ai-model">
                     <strong>Model</strong>
                   </label>
                   <small>{provider?.models.length ?? 0} models available.</small>
-                </span>
+                </SettingsRowCopy>
                 <Select
                   items={modelItems}
                   value={modelId}
@@ -199,43 +198,44 @@ function ModelSettingsSection({ active }: ModelSettingsSectionProps) {
                     </SelectGroup>
                   </SelectContent>
                 </Select>
-              </div>
-            </div>
-          </div>
+              </SettingsRow>
+            </SettingsCard>
+          </SettingsGroup>
 
-          <span className={settingsGroupLabel}>Credential</span>
-          <div className={settingsCard}>
-            <div className="flex flex-col gap-3 px-3.5 py-3.5">
-              <span className={settingsRowCopy}>
-                <label htmlFor="ai-api-key">
-                  <strong>API key</strong>
-                </label>
-                <small>
-                  {provider?.credentialConfigured
-                    ? `An encrypted key is saved for ${provider.name}. Enter a new key to replace it.`
-                    : "The key is encrypted using your operating system's credential storage."}
-                </small>
-              </span>
-              <Input
-                id="ai-api-key"
-                type="password"
-                autoComplete="new-password"
-                value={apiKey}
-                disabled={!view.secureStorageAvailable}
-                placeholder={provider?.credentialConfigured ? "Saved — enter a replacement" : "Enter API key"}
-                onChange={(event) => {
-                  setApiKey(event.currentTarget.value);
-                  setError(null);
-                  setSaved(false);
-                }}
-              />
-              {!view.secureStorageAvailable ? (
-                <p className="m-0 text-[11.5px] leading-relaxed text-destructive">
-                  Secure credential storage is unavailable. Wisp will not save an API key as plaintext.
-                </p>
-              ) : null}
-            </div>
-          </div>
+          <SettingsGroup label="Credential">
+            <SettingsCard>
+              <div className="flex flex-col gap-3 px-3.5 py-3.5">
+                <SettingsRowCopy>
+                  <label htmlFor="ai-api-key">
+                    <strong>API key</strong>
+                  </label>
+                  <small>
+                    {provider?.credentialConfigured
+                      ? `An encrypted key is saved for ${provider.name}. Enter a new key to replace it.`
+                      : "The key is encrypted using your operating system's credential storage."}
+                  </small>
+                </SettingsRowCopy>
+                <Input
+                  id="ai-api-key"
+                  type="password"
+                  autoComplete="new-password"
+                  value={apiKey}
+                  disabled={!view.secureStorageAvailable}
+                  placeholder={provider?.credentialConfigured ? "Saved — enter a replacement" : "Enter API key"}
+                  onChange={(event) => {
+                    setApiKey(event.currentTarget.value);
+                    setError(null);
+                    setSaved(false);
+                  }}
+                />
+                {!view.secureStorageAvailable ? (
+                  <p className="m-0 text-[11.5px] leading-relaxed text-destructive">
+                    Secure credential storage is unavailable. Wisp will not save an API key as plaintext.
+                  </p>
+                ) : null}
+              </div>
+            </SettingsCard>
+          </SettingsGroup>
 
           <div className="mt-4 flex items-center justify-between gap-3">
             <div aria-live="polite">

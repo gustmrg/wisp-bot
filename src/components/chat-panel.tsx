@@ -6,9 +6,10 @@ import type { ManagedConversationStatus } from "../../shared/conversations";
 import type { ToolApprovalDecision, ToolApprovalRequest } from "../../shared/tool-policy";
 import type { ToolActivityView } from "@/lib/conversation-stream";
 import { getCircleMembers } from "@/lib/circle-members";
-import { iconButton, mainPanel } from "@/lib/ui-classes";
+import { mainPanel } from "@/lib/ui-classes";
 import { ChatAvatar } from "@/components/chat-avatar";
 import { ChatComposer } from "@/components/chat-composer";
+import { Button } from "@/components/ui/button";
 import { MessageView } from "@/components/message-view";
 import { ToolApprovalCard } from "@/components/tool-approval-card";
 
@@ -75,15 +76,16 @@ function ChatPanel({
               {members.length} {members.length === 1 ? "Wisp" : "Wisps"}
             </button>
           ) : null}
-          <button
-            className={iconButton}
+          <Button
+            variant="ghost"
+            size="icon-sm"
             type="button"
             aria-label={chat.kind === "circle" ? "Open circle settings" : "Open Wisp settings"}
             title={chat.kind === "circle" ? "Circle settings" : "Wisp settings"}
             onClick={onOpenDetails}
           >
             <SettingsIcon aria-hidden="true" />
-          </button>
+          </Button>
         </div>
       </header>
 

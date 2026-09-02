@@ -3,21 +3,15 @@ import { BellIcon, BotIcon, InfoIcon, KeyboardIcon, RefreshCwIcon, SettingsIcon 
 
 import { GeneralSettingsSections, PreferenceSwitch } from "@/components/general-settings-sections";
 import { ModelSettingsSection } from "@/components/model-settings-section";
+import { SettingsCard, SettingsGroup, SettingsRow, SettingsRowCopy } from "@/components/settings/settings-primitives";
+import { Button } from "@/components/ui/button";
 import type { AppMetadata, CurrentUser } from "@/config/app-metadata";
 import type { AppPreferences } from "@/lib/app-preferences";
 import type { PersistenceStatus } from "@/features/persistence/storage-policy";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { normalizeTheme } from "@/lib/theme";
-import {
-  iconButton,
-  profileAvatar,
-  settingsCard,
-  settingsCardStack,
-  settingsGroupLabel,
-  settingsRow,
-  settingsRowCopy,
-} from "@/lib/ui-classes";
+import { profileAvatar } from "@/lib/ui-classes";
 import { cn } from "@/lib/utils";
 
 const THEME_OPTIONS = [
@@ -38,7 +32,7 @@ interface AppSettingsDialogProps {
 }
 
 const navButton =
-  "flex items-center gap-2 rounded-[7px] border-0 bg-transparent px-[9px] py-[7px] text-left text-[#606060] hover:bg-[#e6e6e6] hover:text-[#222222] dark:text-[#aaaaaa] dark:hover:bg-[#2b2b2b] dark:hover:text-[#eeeeee] max-[620px]:justify-center [&_svg]:size-3.5 [&_span]:max-[620px]:hidden";
+  "flex items-center gap-2 rounded-[7px] border-0 bg-transparent px-[9px] py-[7px] text-left text-dim hover:bg-muted hover:text-foreground max-[620px]:justify-center [&_svg]:size-3.5 [&_span]:max-[620px]:hidden";
 
 function AppSettingsDialog({
   appMetadata,
@@ -51,7 +45,7 @@ function AppSettingsDialog({
   onPreferencesChange,
 }: AppSettingsDialogProps) {
   const [section, setSection] = useState<"general" | "model" | "about">("general");
-  const selected = "bg-[#e6e6e6] text-[#222222] dark:bg-[#2b2b2b] dark:text-[#eeeeee]";
+  const selected = "bg-accent text-accent-foreground";
 
   return (
     <Dialog
@@ -67,7 +61,7 @@ function AppSettingsDialog({
           <DialogDescription>Manage your account and application preferences.</DialogDescription>
         </DialogHeader>
         <nav
-          className="flex flex-col gap-[3px] border-r border-black/[0.06] bg-[#f5f5f5] px-2.5 py-[18px] dark:border-white/[0.06] dark:bg-[#141414]"
+          className="flex flex-col gap-[3px] border-r border-border bg-sidebar px-2.5 py-[18px]"
           aria-label="Settings sections"
         >
           <strong className="mx-2 mb-[15px] mt-0 text-[17px] max-[620px]:hidden">Settings</strong>
@@ -122,72 +116,76 @@ function AppSettingsDialog({
           <h2 id="general-settings-title" className="mb-[22px] mt-0 text-[17px]">
             General
           </h2>
-          <span className={settingsGroupLabel}>Account</span>
-          <div className={cn(settingsCard, settingsRow)}>
-            <span className={profileAvatar}>{currentUser.initials}</span>
-            <span className={cn(settingsRowCopy, "gap-[3px]")}>
-              <strong className="text-[12.5px]">{currentUser.displayName}</strong>
-              <small className="text-dim text-[11.5px]">{currentUser.email}</small>
-            </span>
-            <button className="rounded-[7px] border-0 bg-[#e4e4e4] px-[9px] py-1.5 dark:bg-[#303030]" type="button">
-              Sign out
-            </button>
-          </div>
-          <span className={settingsGroupLabel}>Application</span>
-          <div className={settingsCardStack}>
-            <div className={settingsRow}>
-              <span className={settingsRowCopy}>
-                <label htmlFor="app-theme">
-                  <strong>Theme</strong>
-                </label>
-                <small className="text-dim text-[11.5px]">Choose how Wisp looks on this device.</small>
-              </span>
-              <Select
-                items={THEME_OPTIONS}
-                value={preferences.theme}
-                onValueChange={(value) => {
-                  if (value !== null) onPreferencesChange({ ...preferences, theme: normalizeTheme(value) });
-                }}
-              >
-                <SelectTrigger id="app-theme" className="w-28 shrink-0">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent align="end" alignItemWithTrigger={false}>
-                  <SelectGroup>
-                    {THEME_OPTIONS.map((option) => (
-                      <SelectItem key={option.value} value={option.value}>
-                        {option.label}
-                      </SelectItem>
-                    ))}
-                  </SelectGroup>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className={settingsRow}>
-              <span className={settingsRowCopy}>
-                <strong>Launch at login</strong>
-                <small className="text-dim text-[11.5px]">Open Wisp automatically when you sign in.</small>
-              </span>
-              <PreferenceSwitch
-                label="Launch at login"
-                checked={preferences.launchAtLogin}
-                onChange={() => onPreferencesChange({ ...preferences, launchAtLogin: !preferences.launchAtLogin })}
-              />
-            </div>
-            <div className={settingsRow}>
-              <span className={settingsRowCopy}>
-                <strong>Notification sounds</strong>
-                <small className="text-dim text-[11.5px]">Play a sound when a Wisp finishes or needs input.</small>
-              </span>
-              <PreferenceSwitch
-                label="Notification sounds"
-                checked={preferences.notificationSounds}
-                onChange={() =>
-                  onPreferencesChange({ ...preferences, notificationSounds: !preferences.notificationSounds })
-                }
-              />
-            </div>
-          </div>
+          <SettingsGroup label="Account">
+            <SettingsCard>
+              <SettingsRow>
+                <span className={profileAvatar}>{currentUser.initials}</span>
+                <SettingsRowCopy>
+                  <strong className="text-[12.5px]">{currentUser.displayName}</strong>
+                  <small className="text-dim text-[11.5px]">{currentUser.email}</small>
+                </SettingsRowCopy>
+                <Button variant="secondary" size="sm" type="button">
+                  Sign out
+                </Button>
+              </SettingsRow>
+            </SettingsCard>
+          </SettingsGroup>
+          <SettingsGroup label="Application">
+            <SettingsCard variant="stacked">
+              <SettingsRow>
+                <SettingsRowCopy>
+                  <label htmlFor="app-theme">
+                    <strong>Theme</strong>
+                  </label>
+                  <small className="text-dim text-[11.5px]">Choose how Wisp looks on this device.</small>
+                </SettingsRowCopy>
+                <Select
+                  items={THEME_OPTIONS}
+                  value={preferences.theme}
+                  onValueChange={(value) => {
+                    if (value !== null) onPreferencesChange({ ...preferences, theme: normalizeTheme(value) });
+                  }}
+                >
+                  <SelectTrigger id="app-theme" className="w-28 shrink-0">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent align="end" alignItemWithTrigger={false}>
+                    <SelectGroup>
+                      {THEME_OPTIONS.map((option) => (
+                        <SelectItem key={option.value} value={option.value}>
+                          {option.label}
+                        </SelectItem>
+                      ))}
+                    </SelectGroup>
+                  </SelectContent>
+                </Select>
+              </SettingsRow>
+              <SettingsRow>
+                <SettingsRowCopy>
+                  <strong>Launch at login</strong>
+                  <small className="text-dim text-[11.5px]">Open Wisp automatically when you sign in.</small>
+                </SettingsRowCopy>
+                <PreferenceSwitch
+                  label="Launch at login"
+                  checked={preferences.launchAtLogin}
+                  onChange={() => onPreferencesChange({ ...preferences, launchAtLogin: !preferences.launchAtLogin })}
+                />
+              </SettingsRow>
+              <SettingsRow>
+                <SettingsRowCopy>
+                  <strong>Notification sounds</strong>
+                  <small className="text-dim text-[11.5px]">Play a sound when a Wisp finishes or needs input.</small>
+                </SettingsRowCopy>
+                <PreferenceSwitch
+                  label="Notification sounds"
+                  checked={preferences.notificationSounds}
+                  onChange={() =>
+                    onPreferencesChange({ ...preferences, notificationSounds: !preferences.notificationSounds })
+                  }
+                />
+              </SettingsRow>
+            </SettingsCard>
+          </SettingsGroup>
           <GeneralSettingsSections preferences={preferences} onPreferencesChange={onPreferencesChange} />
           <p className="mt-4 text-[11.5px] text-dim" role={persistenceError ? "alert" : "status"} aria-live="polite">
             {persistenceError ??
@@ -208,24 +206,26 @@ function AppSettingsDialog({
           <h2 id="about-settings-title" className="mb-[22px] mt-0 text-[17px]">
             About
           </h2>
-          <span className={settingsGroupLabel}>Version</span>
-          <div className={settingsCard}>
-            <div className={settingsRow}>
-              <span className={settingsRowCopy}>
-                <strong className="text-[12.5px]">{appMetadata.displayName}</strong>
-                <small className="text-dim text-[11.5px]">Version {appMetadata.version}</small>
-              </span>
-              <button
-                className={cn(iconButton, "disabled:opacity-50")}
-                type="button"
-                aria-label="Check for updates"
-                title="Update checks are not available yet"
-                disabled
-              >
-                <RefreshCwIcon aria-hidden="true" />
-              </button>
-            </div>
-          </div>
+          <SettingsGroup label="Version">
+            <SettingsCard>
+              <SettingsRow>
+                <SettingsRowCopy>
+                  <strong className="text-[12.5px]">{appMetadata.displayName}</strong>
+                  <small className="text-dim text-[11.5px]">Version {appMetadata.version}</small>
+                </SettingsRowCopy>
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  type="button"
+                  aria-label="Check for updates"
+                  title="Update checks are not available yet"
+                  disabled
+                >
+                  <RefreshCwIcon aria-hidden="true" />
+                </Button>
+              </SettingsRow>
+            </SettingsCard>
+          </SettingsGroup>
         </section>
       </DialogContent>
     </Dialog>

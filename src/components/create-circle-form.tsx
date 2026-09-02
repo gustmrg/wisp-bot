@@ -54,13 +54,13 @@ export function CreateCircleForm({
             {selectedWisps.length ? (
               selectedWisps.map((chat) => (
                 <span
-                  className="inline-flex max-w-full items-center gap-[7px] rounded-full bg-[#f0f0f0] px-[9px] py-[5px] dark:bg-[#292929]"
+                  className="inline-flex max-w-full items-center gap-[7px] rounded-full bg-muted px-[9px] py-[5px]"
                   key={chat.id}
                 >
                   <ChatAvatar chat={chat} size="sm" />
                   <span className="min-w-0 truncate">{chat.name}</span>
                   <button
-                    className="inline-flex size-[22px] flex-none items-center justify-center rounded-full border-0 bg-transparent text-dim hover:bg-[#dedede] dark:hover:bg-[#3b3b3b] [&_svg]:size-3.5"
+                    className="inline-flex size-[22px] flex-none items-center justify-center rounded-full border-0 bg-transparent text-dim hover:bg-accent [&_svg]:size-3.5"
                     type="button"
                     aria-label={`Remove ${chat.name}`}
                     onClick={() => toggleMember(chat.id, false)}
@@ -76,7 +76,7 @@ export function CreateCircleForm({
           <div className="min-h-[208px] max-h-[260px] overflow-y-auto py-[3px]">
             {availableWisps.map((chat) => (
               <label
-                className="flex min-h-[46px] cursor-pointer items-center gap-3 px-3.5 py-[7px] hover:bg-[#f0f0f0] focus-within:bg-[#f0f0f0] dark:hover:bg-[#292929] dark:focus-within:bg-[#292929]"
+                className="flex min-h-[46px] cursor-pointer items-center gap-3 px-3.5 py-[7px] hover:bg-muted focus-within:bg-muted"
                 key={chat.id}
               >
                 <Checkbox.Root

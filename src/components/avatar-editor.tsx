@@ -5,15 +5,14 @@ import { ShuffleIcon, UploadIcon, XIcon } from "lucide-react";
 import type { WispChat, WispChatChanges } from "@/chat-data";
 import { ChatAvatar } from "@/components/chat-avatar";
 import { Wisp } from "@/components/wisp";
-import { iconButton } from "@/lib/ui-classes";
 import { cn } from "@/lib/utils";
 import { AVATAR_COLORS, WISP_SHAPES } from "@/lib/wisp-appearance";
 
 const avatarAction =
-  "relative mt-1 inline-flex justify-center rounded-[9px] border border-black/[0.12] bg-[#e4e4e4] px-3.5 py-2 text-foreground hover:bg-[#d9d9d9] dark:border-white/[0.12] dark:bg-[#303030] dark:hover:bg-[#393939]";
+  "relative mt-1 inline-flex justify-center rounded-[9px] border border-border bg-secondary px-3.5 py-2 text-foreground hover:bg-accent";
 
 const hoverReveal =
-  "[&:not([aria-expanded=true]):hover_.editable-avatar]:[filter:brightness(.65)_drop-shadow(0_0_2px_light-dark(#606060,#aaa))] [&:not([aria-expanded=true]):focus-visible_.editable-avatar]:[filter:brightness(.65)_drop-shadow(0_0_2px_light-dark(#606060,#aaa))] [&:not([aria-expanded=true]):hover_.avatar-edit-overlay]:opacity-100 [&:not([aria-expanded=true]):focus-visible_.avatar-edit-overlay]:opacity-100 [&:not([aria-expanded=true]):hover_.avatar-edit-tip]:opacity-100 [&:not([aria-expanded=true]):focus-visible_.avatar-edit-tip]:opacity-100";
+  "[&:not([aria-expanded=true]):hover_.editable-avatar]:brightness-75 [&:not([aria-expanded=true]):focus-visible_.editable-avatar]:brightness-75 [&:not([aria-expanded=true]):hover_.avatar-edit-overlay]:opacity-100 [&:not([aria-expanded=true]):focus-visible_.avatar-edit-overlay]:opacity-100 [&:not([aria-expanded=true]):hover_.avatar-edit-tip]:opacity-100 [&:not([aria-expanded=true]):focus-visible_.avatar-edit-tip]:opacity-100";
 
 async function readAvatar(file: File): Promise<string> {
   if (!["image/png", "image/jpeg", "image/webp"].includes(file.type)) {
@@ -120,7 +119,7 @@ function AvatarEditor({ chat, onChange }: AvatarEditorProps) {
           >
             <UploadIcon />
           </span>
-          <span className="avatar-edit-tip pointer-events-none absolute top-[105px] left-1/2 z-[5] -translate-x-1/2 rounded-lg border border-border bg-[#e9e9e9] px-[9px] py-1 text-xs whitespace-nowrap text-[#202020] opacity-0 shadow-[0_4px_12px_rgba(0,0,0,0.09)] transition-opacity duration-[120ms] dark:bg-[#292929] dark:text-[#f0f0f0] dark:shadow-[0_4px_12px_rgba(0,0,0,0.3)]">
+          <span className="avatar-edit-tip pointer-events-none absolute top-[105px] left-1/2 z-[5] -translate-x-1/2 rounded-lg border border-border bg-secondary px-[9px] py-1 text-xs whitespace-nowrap text-secondary-foreground opacity-0 shadow-md transition-opacity duration-[120ms]">
             Upload image
           </span>
         </Popover.Trigger>
@@ -133,12 +132,15 @@ function AvatarEditor({ chat, onChange }: AvatarEditorProps) {
             collisionPadding={12}
           >
             <Popover.Popup
-              className="max-h-(--available-height) animate-avatar-sheet-in overflow-y-auto rounded-[18px] border border-black/[0.12] bg-white shadow-[0_14px_40px_rgba(0,0,0,0.135),0_2px_6px_rgba(0,0,0,0.075)] dark:border-white/[0.12] dark:bg-[#1d1d1d] dark:shadow-[0_14px_40px_rgba(0,0,0,0.45),0_2px_6px_rgba(0,0,0,0.25)]"
+              className="max-h-(--available-height) animate-avatar-sheet-in overflow-y-auto rounded-[18px] border border-border bg-card shadow-xl"
               aria-label="Upload avatar image"
             >
               <header className="flex items-center justify-between gap-0.5 border-b border-black/[0.08] p-2 dark:border-white/[0.08]">
                 <strong className="pl-1.5 text-[13px] font-medium">Upload an avatar</strong>
-                <Popover.Close className={cn(iconButton, "size-6")} aria-label="Close avatar upload">
+                <Popover.Close
+                  className="inline-flex size-6 shrink-0 items-center justify-center rounded-md bg-transparent text-dim hover:bg-muted hover:text-foreground [&_svg]:size-3.5"
+                  aria-label="Close avatar upload"
+                >
                   <XIcon aria-hidden="true" />
                 </Popover.Close>
               </header>
@@ -169,7 +171,7 @@ function AvatarEditor({ chat, onChange }: AvatarEditorProps) {
                   />
                 </label>
                 {error ? (
-                  <p className="m-0 text-[#bd2c35] dark:text-[#ef7478]" role="alert">
+                  <p className="m-0 text-destructive" role="alert">
                     {error}
                   </p>
                 ) : null}
@@ -218,7 +220,7 @@ function AvatarEditor({ chat, onChange }: AvatarEditorProps) {
               <button
                 type="button"
                 data-selected={selected}
-                className="aspect-square w-[calc((100%-70px)/6)] max-w-8 flex-none rounded-full border-0 p-0 transition-transform duration-100 hover:scale-[1.08] data-[selected=true]:shadow-[0_0_0_3px_light-dark(#ffffff,#1d1d1d),0_0_0_4.5px_light-dark(#5c5c5c,#b8b8b8)]"
+                className="aspect-square w-[calc((100%-70px)/6)] max-w-8 flex-none rounded-full border-0 p-0 transition-transform duration-100 hover:scale-[1.08] data-[selected=true]:ring-2 data-[selected=true]:ring-ring data-[selected=true]:ring-offset-2 data-[selected=true]:ring-offset-card"
                 aria-pressed={selected}
                 aria-label={color.label}
                 title={color.label}

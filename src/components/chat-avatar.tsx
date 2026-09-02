@@ -23,7 +23,7 @@ function ChatAvatar({ chat, chats, size = "default" }: ChatAvatarProps) {
           : size === "xl"
             ? "size-20 rounded-[18px]"
             : "size-8 rounded-lg";
-    const ring = "ring-[#eeeeee] dark:ring-[#212120]";
+    const ring = "ring-muted";
 
     // Circles render as a bunch of overlapping round Wisps; the 2x2 grid is
     // kept for exactly four members where a bunch would hide one of them.
@@ -31,7 +31,7 @@ function ChatAvatar({ chat, chats, size = "default" }: ChatAvatarProps) {
       return (
         <span
           className={cn(
-            "grid flex-none place-content-center items-center justify-items-center overflow-hidden bg-[#eeeeee] dark:bg-[#212120]",
+            "grid flex-none place-content-center items-center justify-items-center overflow-hidden bg-muted",
             tileSize,
             size === "sm"
               ? "gap-px p-0.5"
@@ -63,10 +63,7 @@ function ChatAvatar({ chat, chats, size = "default" }: ChatAvatarProps) {
 
     const visibleMembers = members.slice(0, members.length > 3 ? 2 : 3);
     return (
-      <span
-        className={cn("relative flex-none overflow-hidden bg-[#eeeeee] dark:bg-[#212120]", tileSize)}
-        aria-hidden="true"
-      >
+      <span className={cn("relative flex-none overflow-hidden bg-muted", tileSize)} aria-hidden="true">
         {visibleMembers.map((member, index) => (
           <span
             className={cn("absolute size-[54%] overflow-hidden rounded-full ring-2", ring, CLUSTER_SLOTS[index])}
@@ -82,7 +79,7 @@ function ChatAvatar({ chat, chats, size = "default" }: ChatAvatarProps) {
         {members.length > 3 ? (
           <span
             className={cn(
-              "absolute flex size-[54%] items-center justify-center rounded-full bg-[#dcdcdc] font-semibold text-[#555555] ring-2 dark:bg-[#3a3a3a] dark:text-[#c9c9c9]",
+              "absolute flex size-[54%] items-center justify-center rounded-full bg-secondary font-semibold text-secondary-foreground ring-2",
               ring,
               size === "sm" ? "text-[6px]" : size === "xl" ? "text-[16px]" : "text-[8px]",
               CLUSTER_SLOTS[2],
