@@ -75,11 +75,15 @@ describe("FakeConversationAgent", () => {
 
     await agent.dispose();
     await agent.dispose();
-    await expect(Promise.resolve().then(() => agent.send({
-      conversationId: "wisp-1",
-      requestId: "request-1",
-      text: "Hello",
-    }))).rejects.toBeInstanceOf(WispBackendError);
+    await expect(
+      Promise.resolve().then(() =>
+        agent.send({
+          conversationId: "wisp-1",
+          requestId: "request-1",
+          text: "Hello",
+        }),
+      ),
+    ).rejects.toBeInstanceOf(WispBackendError);
   });
 
   it("stores model changes without exposing implementation-specific types", async () => {

@@ -15,12 +15,12 @@ function ToggleSwitch({ checked, label, onChange }: ToggleSwitchProps) {
       aria-label={label}
       data-on={checked}
       onClick={onChange}
-      className="relative h-5 w-[34px] shrink-0 rounded-[10px] bg-[#c8c8c8] data-[on=true]:bg-[#262626] dark:bg-[#383838] dark:data-[on=true]:bg-[#e8e8e8]"
+      className="relative h-5 w-[34px] shrink-0 rounded-[10px] bg-input data-[on=true]:bg-primary"
     >
       <span
         className={cn(
-          "absolute top-[3px] left-[3px] size-3.5 rounded-full bg-[#606060] transition-[left,background-color] duration-[140ms] dark:bg-[#aaaaaa]",
-          checked && "left-[17px] bg-white dark:bg-[#111111]",
+          "absolute top-[3px] left-[3px] size-3.5 rounded-full bg-dim transition-[left,background-color] duration-[140ms]",
+          checked && "left-[17px] bg-primary-foreground",
         )}
       />
     </button>

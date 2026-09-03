@@ -7,19 +7,18 @@ import { describe, expect, it } from "vitest";
 import { ConversationRepository } from "../electron/backend/conversation-repository.js";
 import type { Chat } from "../shared/conversations.js";
 
-function chat(id: string, isCircle = false): Chat {
-  return {
+function chat(id: string, circle = false): Chat {
+  const base = {
     id,
     name: id,
     label: "Test",
     description: "A test conversation",
-    shape: "circle",
-    isCircle,
     notifyOnUpdatesEnabled: true,
     preview: "Ready",
     timestamp: "Now",
     messages: [{ type: "incoming", text: "Hello" }],
   };
+  return circle ? { ...base, kind: "circle", memberIds: [] } : { ...base, kind: "wisp", shape: "circle" };
 }
 
 describe("ConversationRepository", () => {
@@ -52,68 +51,87 @@ describe("ConversationRepository", () => {
     });
     const restored = new ConversationRepository({ dataDirectory: directory });
     await restored.load();
-    expect(restored.getAgentContext("first")).toEqual(expect.objectContaining({
-      piSessionId: "pi-history-id",
-      piSessionFile,
-    }));
-    await expect(restored.savePiSessionIdentity("first", {
-      sessionId: "unsafe-history",
-      sessionFile: path.join(directory, "outside.jsonl"),
-    })).rejects.toMatchObject({ code: "invalid_request" });
+    expect(restored.getAgentContext("first")).toEqual(
+      expect.objectContaining({
+        piSessionId: "pi-history-id",
+        piSessionFile,
+      }),
+    );
+    await expect(
+      restored.savePiSessionIdentity("first", {
+        sessionId: "unsafe-history",
+        sessionFile: path.join(directory, "outside.jsonl"),
+      }),
+    ).rejects.toMatchObject({ code: "invalid_request" });
     expect(restored.getAgentContext("first").piSessionId).toBe("pi-history-id");
   });
 
   it("upgrades Phase 3 records without losing their stable application session", async () => {
     const directory = await mkdtemp(path.join(os.tmpdir(), "wisp-schema-upgrade-"));
-    await writeFile(path.join(directory, "conversations.json"), JSON.stringify({
-      schemaVersion: 1,
-      initialized: true,
-      conversations: {
-        first: {
-          chat: chat("first"),
-          sessionId: "stable-app-session",
-          createdAt: "2026-08-30T12:00:00.000Z",
-          updatedAt: "2026-08-30T12:00:00.000Z",
+    await writeFile(
+      path.join(directory, "conversations.json"),
+      JSON.stringify({
+        schemaVersion: 1,
+        initialized: true,
+        conversations: {
+          first: {
+            chat: chat("first"),
+            sessionId: "stable-app-session",
+            createdAt: "2026-08-30T12:00:00.000Z",
+            updatedAt: "2026-08-30T12:00:00.000Z",
+          },
         },
-      },
-    }), "utf8");
+      }),
+      "utf8",
+    );
     const repository = new ConversationRepository({ dataDirectory: directory });
 
     await repository.load();
 
-    expect(repository.getAgentContext("first")).toEqual(expect.objectContaining({
-      sessionId: "stable-app-session",
-      piSessionId: null,
-      piSessionFile: null,
-    }));
-    const persisted = JSON.parse(await readFile(path.join(directory, "conversations.json"), "utf8")) as { schemaVersion: number };
-    expect(persisted.schemaVersion).toBe(3);
+    expect(repository.getAgentContext("first")).toEqual(
+      expect.objectContaining({
+        sessionId: "stable-app-session",
+        piSessionId: null,
+        piSessionFile: null,
+      }),
+    );
+    const persisted = JSON.parse(await readFile(path.join(directory, "conversations.json"), "utf8")) as {
+      schemaVersion: number;
+    };
+    expect(persisted.schemaVersion).toBe(4);
+    const backup = (await readdir(directory)).find((name) => name.includes(".schema-v1-backup-"));
+    expect(backup).toBeDefined();
+    expect(JSON.parse(await readFile(path.join(directory, backup!), "utf8"))).toMatchObject({ schemaVersion: 1 });
   });
 
   it("removes previously persisted bundled demo conversations", async () => {
     const directory = await mkdtemp(path.join(os.tmpdir(), "wisp-demo-removal-"));
-    await writeFile(path.join(directory, "conversations.json"), JSON.stringify({
-      schemaVersion: 2,
-      initialized: true,
-      conversations: {
-        chief: {
-          chat: chat("chief"),
-          sessionId: "demo-session",
-          piSessionId: null,
-          piSessionFile: null,
-          createdAt: "2026-08-30T12:00:00.000Z",
-          updatedAt: "2026-08-30T12:00:00.000Z",
+    await writeFile(
+      path.join(directory, "conversations.json"),
+      JSON.stringify({
+        schemaVersion: 2,
+        initialized: true,
+        conversations: {
+          chief: {
+            chat: chat("chief"),
+            sessionId: "demo-session",
+            piSessionId: null,
+            piSessionFile: null,
+            createdAt: "2026-08-30T12:00:00.000Z",
+            updatedAt: "2026-08-30T12:00:00.000Z",
+          },
+          custom: {
+            chat: chat("custom"),
+            sessionId: "custom-session",
+            piSessionId: null,
+            piSessionFile: null,
+            createdAt: "2026-08-30T12:00:00.000Z",
+            updatedAt: "2026-08-30T12:00:00.000Z",
+          },
         },
-        custom: {
-          chat: chat("custom"),
-          sessionId: "custom-session",
-          piSessionId: null,
-          piSessionFile: null,
-          createdAt: "2026-08-30T12:00:00.000Z",
-          updatedAt: "2026-08-30T12:00:00.000Z",
-        },
-      },
-    }), "utf8");
+      }),
+      "utf8",
+    );
     const repository = new ConversationRepository({ dataDirectory: directory });
 
     await repository.load();
@@ -123,7 +141,7 @@ describe("ConversationRepository", () => {
       schemaVersion: number;
       conversations: Record<string, unknown>;
     };
-    expect(persisted.schemaVersion).toBe(3);
+    expect(persisted.schemaVersion).toBe(4);
     expect(persisted.conversations).not.toHaveProperty("chief");
   });
 
@@ -148,11 +166,13 @@ describe("ConversationRepository", () => {
     });
 
     const matching = repository.getChats().first?.messages.filter(({ id }) => id === "request-1:assistant");
-    expect(matching).toEqual([expect.objectContaining({
-      text: "Complete response",
-      status: "complete",
-      createdAt: "2026-08-31T23:10:00.000Z",
-    })]);
+    expect(matching).toEqual([
+      expect.objectContaining({
+        text: "Complete response",
+        status: "complete",
+        createdAt: "2026-08-31T23:10:00.000Z",
+      }),
+    ]);
   });
 
   it("preserves a corrupt state file before recovering", async () => {
@@ -173,6 +193,42 @@ describe("ConversationRepository", () => {
     await expect(readFile(path.join(directory, preserved!), "utf8")).resolves.toBe("{ definitely not json");
   });
 
+  it("rewrites schema-3 boolean records as discriminated variants", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "wisp-kind-migration-"));
+    const statePath = path.join(directory, "conversations.json");
+    const { kind: _kind, ...currentWisp } = chat("chief");
+    await writeFile(
+      statePath,
+      JSON.stringify({
+        schemaVersion: 3,
+        initialized: true,
+        conversations: {
+          chief: {
+            chat: { ...currentWisp, isCircle: false },
+            sessionId: "stable-session",
+            piSessionId: null,
+            piSessionFile: null,
+            createdAt: "2026-08-30T12:00:00.000Z",
+            updatedAt: "2026-08-30T12:00:00.000Z",
+          },
+        },
+      }),
+      "utf8",
+    );
+    const repository = new ConversationRepository({ dataDirectory: directory });
+
+    await repository.load();
+
+    expect(repository.getChats().chief).toMatchObject({ kind: "wisp", systemRole: "chief" });
+    const persisted = JSON.parse(await readFile(statePath, "utf8")) as {
+      schemaVersion: number;
+      conversations: Record<string, { chat: Record<string, unknown> }>;
+    };
+    expect(persisted.schemaVersion).toBe(4);
+    expect(persisted.conversations.chief?.chat).not.toHaveProperty("isCircle");
+    expect(persisted.conversations.chief?.chat).toHaveProperty("kind", "wisp");
+  });
+
   it("archives workspace and session data on explicit deletion", async () => {
     const directory = await mkdtemp(path.join(os.tmpdir(), "wisp-delete-"));
     const repository = new ConversationRepository({
@@ -189,6 +245,80 @@ describe("ConversationRepository", () => {
     expect(archives).toHaveLength(1);
     const contents = await readdir(path.join(directory, "deleted-conversations", archives[0]!));
     expect(contents.sort()).toEqual(["pi-config", "pi-session", "workspace"]);
+  });
+
+  it("enforces protected deletion and preserves the stored graph", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "wisp-protected-delete-"));
+    const repository = new ConversationRepository({ dataDirectory: directory });
+    await repository.initialize({ leader: { ...chat("leader"), systemRole: "chief" } });
+
+    await expect(repository.delete("leader")).rejects.toMatchObject({ code: "invalid_request" });
+
+    expect(repository.getChats().leader).toMatchObject({ id: "leader", systemRole: "chief" });
+  });
+
+  it("persists member pruning in the same deletion transaction", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "wisp-member-delete-"));
+    const repository = new ConversationRepository({ dataDirectory: directory });
+    await repository.initialize({
+      first: chat("first"),
+      second: chat("second"),
+      crew: { ...chat("crew", true), memberIds: ["second", "first"] },
+    });
+
+    await repository.delete("first");
+
+    expect(repository.getChats().crew).toMatchObject({ memberIds: ["second"] });
+    const restored = new ConversationRepository({ dataDirectory: directory });
+    await restored.load();
+    expect(restored.getChats().crew).toMatchObject({ memberIds: ["second"] });
+  });
+
+  it("normalizes and persists an ordered circle membership replacement", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "wisp-member-update-"));
+    const repository = new ConversationRepository({ dataDirectory: directory });
+    await repository.initialize({
+      first: chat("first"),
+      second: chat("second"),
+      crew: { ...chat("crew", true), memberIds: [] },
+    });
+
+    await repository.update("crew", { kind: "circle", memberIds: ["second", "first", "second"] });
+
+    expect(repository.getChats().crew).toMatchObject({ memberIds: ["second", "first"] });
+    const restored = new ConversationRepository({ dataDirectory: directory });
+    await restored.load();
+    expect(restored.getChats().crew).toMatchObject({ memberIds: ["second", "first"] });
+  });
+
+  it("rolls back an invalid circle membership replacement", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "wisp-member-invalid-"));
+    const repository = new ConversationRepository({ dataDirectory: directory });
+    await repository.initialize({ first: chat("first"), crew: { ...chat("crew", true), memberIds: ["first"] } });
+
+    await expect(repository.update("crew", { kind: "circle", memberIds: ["missing"] })).rejects.toMatchObject({
+      code: "invalid_request",
+    });
+    expect(repository.getChats().crew).toMatchObject({ memberIds: ["first"] });
+  });
+
+  it("rejects unsafe avatars and invalid circle membership as one graph", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "wisp-invalid-graph-"));
+    const repository = new ConversationRepository({ dataDirectory: directory });
+
+    await expect(
+      repository.initialize({ first: { ...chat("first"), avatarImage: "data:image/png;base64,AAAA" } }),
+    ).rejects.toMatchObject({ code: "invalid_request" });
+    await expect(
+      repository.initialize({
+        first: chat("first"),
+        crew: { ...chat("crew", true), memberIds: ["first", "first"] },
+      }),
+    ).rejects.toMatchObject({ code: "invalid_request" });
+    await expect(
+      repository.initialize({ crew: { ...chat("crew", true), memberIds: ["missing"] } }),
+    ).rejects.toMatchObject({ code: "invalid_request" });
+    expect(repository.getChats()).toEqual({});
   });
 
   it("rolls back in-memory state when persistence cannot complete", async () => {

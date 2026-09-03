@@ -11,19 +11,18 @@ import { ConversationService } from "../electron/backend/conversation-service.js
 import { FakeConversationAgent, FakeConversationAgentFactory } from "../electron/backend/fake-conversation-agent.js";
 import type { Chat } from "../shared/conversations.js";
 
-function chat(id: string, isCircle = false): Chat {
-  return {
+function chat(id: string, circle = false): Chat {
+  const base = {
     id,
     name: id,
     label: "Test",
     description: "Test",
-    shape: "circle",
-    isCircle,
     notifyOnUpdatesEnabled: true,
     preview: "Ready",
     timestamp: "Now",
     messages: [],
   };
+  return circle ? { ...base, kind: "circle", memberIds: [] } : { ...base, kind: "wisp", shape: "circle" };
 }
 
 describe("ConversationService", () => {
@@ -86,18 +85,22 @@ describe("ConversationService", () => {
 
     await vi.waitFor(() => {
       const snapshot = service.getState();
-      expect(snapshot.chats.one.messages).toContainEqual(expect.objectContaining({
-        id: "one-a:assistant",
-        status: "streaming",
-      }));
+      expect(snapshot.chats.one.messages).toContainEqual(
+        expect.objectContaining({
+          id: "one-a:assistant",
+          status: "streaming",
+        }),
+      );
       expect(snapshot.agentEventSequence).toBeGreaterThan(0);
     });
     await vi.waitFor(() => {
       const snapshot = service.getState();
-      expect(snapshot.chats.one.messages).toContainEqual(expect.objectContaining({
-        id: "one-a",
-        status: "complete",
-      }));
+      expect(snapshot.chats.one.messages).toContainEqual(
+        expect.objectContaining({
+          id: "one-a",
+          status: "complete",
+        }),
+      );
       expect(snapshot.chats.one.messages.filter(({ type }) => type === "incoming")).toEqual([
         expect.objectContaining({
           id: "one-a:assistant",
@@ -112,11 +115,13 @@ describe("ConversationService", () => {
           createdAt: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/),
         }),
       ]);
-      expect(snapshot.chats.two.messages).toContainEqual(expect.objectContaining({
-        id: "two-a:assistant",
-        text: "Reply:C",
-        status: "complete",
-      }));
+      expect(snapshot.chats.two.messages).toContainEqual(
+        expect.objectContaining({
+          id: "two-a:assistant",
+          text: "Reply:C",
+          status: "complete",
+        }),
+      );
     });
     await service.dispose();
   });
@@ -125,9 +130,8 @@ describe("ConversationService", () => {
     const directory = await mkdtemp(path.join(os.tmpdir(), "wisp-service-delete-active-"));
     const repository = new ConversationRepository({ dataDirectory: directory });
     let service: ConversationService;
-    const registry = new AgentRegistry(
-      new FakeConversationAgentFactory({ latencyMs: 100 }),
-      (event) => service.handleAgentEvent(event),
+    const registry = new AgentRegistry(new FakeConversationAgentFactory({ latencyMs: 100 }), (event) =>
+      service.handleAgentEvent(event),
     );
     service = new ConversationService(repository, registry);
     await service.start(null);

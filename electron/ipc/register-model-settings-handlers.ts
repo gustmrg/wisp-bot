@@ -9,10 +9,7 @@ import {
 import { sanitizeBackendError } from "../backend/backend-error.js";
 import type { ModelService } from "../backend/model-service.js";
 import type { SenderAuthorizer } from "./register-handlers.js";
-import {
-  parseRemoveProviderCredentialRequest,
-  parseSaveAiSettingsRequest,
-} from "./validators.js";
+import { parseRemoveProviderCredentialRequest, parseSaveAiSettingsRequest } from "./validators.js";
 
 type HandlerIpcMain = Pick<IpcMain, "handle" | "removeHandler">;
 
@@ -30,21 +27,30 @@ export function registerModelSettingsHandlers(
   authorizeSender: SenderAuthorizer,
   onSelectionChange?: (selection: ModelSelection | null) => Promise<void>,
 ): { dispose: () => void } {
-  const registrations: ReadonlyArray<readonly [string, (payload: unknown) => Promise<BackendResult<AiSettingsView>>]> = [
-    [WISP_IPC_CHANNELS.getAiSettings, () => toResult(() => modelService.getView())],
-    [WISP_IPC_CHANNELS.saveAiSettings, (payload) => toResult(async () => {
-      const view = await modelService.save(parseSaveAiSettingsRequest(payload));
-      await onSelectionChange?.(view.selection);
-      return view;
-    })],
-    [WISP_IPC_CHANNELS.removeProviderCredential, (payload) => toResult(() => {
-      const { providerId } = parseRemoveProviderCredentialRequest(payload);
-      return modelService.removeCredential(providerId).then(async (view) => {
-        await onSelectionChange?.(view.selection);
-        return view;
-      });
-    })],
-  ];
+  const registrations: ReadonlyArray<readonly [string, (payload: unknown) => Promise<BackendResult<AiSettingsView>>]> =
+    [
+      [WISP_IPC_CHANNELS.getAiSettings, () => toResult(() => modelService.getView())],
+      [
+        WISP_IPC_CHANNELS.saveAiSettings,
+        (payload) =>
+          toResult(async () => {
+            const view = await modelService.save(parseSaveAiSettingsRequest(payload));
+            await onSelectionChange?.(view.selection);
+            return view;
+          }),
+      ],
+      [
+        WISP_IPC_CHANNELS.removeProviderCredential,
+        (payload) =>
+          toResult(() => {
+            const { providerId } = parseRemoveProviderCredentialRequest(payload);
+            return modelService.removeCredential(providerId).then(async (view) => {
+              await onSelectionChange?.(view.selection);
+              return view;
+            });
+          }),
+      ],
+    ];
 
   for (const [channel, handler] of registrations) {
     ipcMain.handle(channel, (event: IpcMainInvokeEvent, payload: unknown) => {

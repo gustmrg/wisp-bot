@@ -1,17 +1,9 @@
 import type { IpcMain, IpcMainInvokeEvent } from "electron";
 
-import {
-  WISP_IPC_CHANNELS,
-  type BackendResult,
-  type EmptyResult,
-} from "../../shared/contracts.js";
+import { WISP_IPC_CHANNELS, type BackendResult, type EmptyResult } from "../../shared/contracts.js";
 import { sanitizeBackendError } from "../backend/backend-error.js";
 import type { AgentRegistry } from "../backend/agent-registry.js";
-import {
-  parseApplyModelRequest,
-  parseConversationRequest,
-  parseSendMessageRequest,
-} from "./validators.js";
+import { parseApplyModelRequest, parseConversationRequest, parseSendMessageRequest } from "./validators.js";
 
 type HandlerIpcMain = Pick<IpcMain, "handle" | "removeHandler">;
 export type SenderAuthorizer = (event: IpcMainInvokeEvent) => boolean;

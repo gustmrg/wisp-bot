@@ -1,8 +1,8 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, readFile, rename } from "node:fs/promises";
+import { copyFile, mkdir, readFile, rename } from "node:fs/promises";
 import path from "node:path";
 
-import type { AgentSettings, Chat, ChatCollection, Message } from "../../shared/conversations.js";
+import type { ChatChanges, ChatCollection, Message } from "../../shared/conversations.js";
 import { writeFileAtomically } from "./atomic-file.js";
 import { WispBackendError } from "./backend-error.js";
 import type { ConversationAgentContext } from "./conversation-agent.js";
@@ -10,27 +10,15 @@ import {
   normalizeChat,
   normalizeChatCollection,
   normalizeConversationId,
+  validateConversationGraph,
 } from "./conversation-normalizer.js";
+import { CONVERSATION_STORAGE_POLICY } from "./storage-policy.js";
+import { applyWorkspaceAction, type ConversationRecord, type WorkspaceActionStatus } from "./workspace-actions.js";
 
-const SCHEMA_VERSION = 3;
-const REMOVED_DEMO_CONVERSATION_IDS = new Set([
-  "chief",
-  "sales",
-  "inbox",
-  "account",
-  "talent",
-  "expense",
-  "offsite",
-]);
+const SCHEMA_VERSION = 4;
+const REMOVED_DEMO_CONVERSATION_IDS = new Set(["chief", "sales", "inbox", "account", "talent", "expense", "offsite"]);
 
-export interface ConversationRecord {
-  chat: Chat;
-  sessionId: string | null;
-  piSessionId: string | null;
-  piSessionFile: string | null;
-  createdAt: string;
-  updatedAt: string;
-}
+export type { ConversationRecord } from "./workspace-actions.js";
 
 interface PersistedConversationState {
   schemaVersion: typeof SCHEMA_VERSION;
@@ -71,23 +59,37 @@ export class ConversationRepository {
   }
 
   async load(): Promise<void> {
-    let needsSchemaUpgrade = false;
+    let contents: string;
     try {
-      const parsed: unknown = JSON.parse(await readFile(this.statePath, "utf8"));
-      this.state = this.parsePersistedState(parsed);
-      const persistedSchemaVersion = (parsed as { schemaVersion?: unknown }).schemaVersion;
-      needsSchemaUpgrade = persistedSchemaVersion === 1 || persistedSchemaVersion === 2;
-      if (persistedSchemaVersion === 1 || persistedSchemaVersion === 2) {
-        await this.removeBundledDemoConversations();
-      }
+      contents = await readFile(this.statePath, "utf8");
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === "ENOENT") return;
+      throw error;
+    }
+
+    let parsed: unknown;
+    try {
+      if (Buffer.byteLength(contents, "utf8") > CONVERSATION_STORAGE_POLICY.maxBlobBytes) {
+        throw new Error("Conversation state exceeds the local storage limit.");
+      }
+      parsed = JSON.parse(contents);
+      this.state = this.parsePersistedState(parsed);
+    } catch (error) {
       await this.preserveCorruptState();
       this.recoveredCorruptState = true;
       this.state = { schemaVersion: SCHEMA_VERSION, initialized: false, conversations: {} };
+      await this.ensureAllDirectories();
+      return;
     }
+
+    const persistedSchemaVersion = this.schemaVersionOf(parsed);
+    const needsSchemaUpgrade = persistedSchemaVersion !== SCHEMA_VERSION;
+    if (persistedSchemaVersion === 1 || persistedSchemaVersion === 2) await this.removeBundledDemoConversations();
     await this.ensureAllDirectories();
-    if (needsSchemaUpgrade) await this.persist();
+    if (needsSchemaUpgrade) {
+      await this.preserveMigrationSource(persistedSchemaVersion);
+      await this.persist();
+    }
   }
 
   isInitialized(): boolean {
@@ -107,19 +109,25 @@ export class ConversationRepository {
   }
 
   listAgentContexts(): ReadonlyArray<ConversationAgentContext> {
-    return this.list().flatMap(({ chat, sessionId }) => sessionId ? [{
-      conversationId: chat.id,
-      sessionId,
-      name: chat.name,
-      label: chat.label,
-      description: chat.description,
-      workspaceDirectory: path.join(this.workspaceRoot, sessionId),
-      sessionDirectory: path.join(this.sessionRoot, sessionId),
-      configDirectory: path.join(this.configRoot, sessionId),
-      piSessionId: this.state.conversations[chat.id]?.piSessionId ?? null,
-      piSessionFile: this.state.conversations[chat.id]?.piSessionFile ?? null,
-      savePiSessionIdentity: (identity) => this.savePiSessionIdentity(chat.id, identity),
-    }] : []);
+    return this.list().flatMap(({ chat, sessionId }) =>
+      sessionId
+        ? [
+            {
+              conversationId: chat.id,
+              sessionId,
+              name: chat.name,
+              label: chat.label,
+              description: chat.description,
+              workspaceDirectory: path.join(this.workspaceRoot, sessionId),
+              sessionDirectory: path.join(this.sessionRoot, sessionId),
+              configDirectory: path.join(this.configRoot, sessionId),
+              piSessionId: this.state.conversations[chat.id]?.piSessionId ?? null,
+              piSessionFile: this.state.conversations[chat.id]?.piSessionFile ?? null,
+              savePiSessionIdentity: (identity) => this.savePiSessionIdentity(chat.id, identity),
+            },
+          ]
+        : [],
+    );
   }
 
   getAgentContext(conversationId: string): ConversationAgentContext {
@@ -148,15 +156,21 @@ export class ConversationRepository {
       this.state = {
         schemaVersion: SCHEMA_VERSION,
         initialized: true,
-        conversations: Object.fromEntries(Object.values(normalized).map((chat) => [chat.id, {
-          chat,
-          sessionId: chat.isCircle ? null : normalizeConversationId(this.createId()),
-          piSessionId: null,
-          piSessionFile: null,
-          createdAt: timestamp,
-          updatedAt: timestamp,
-        }])),
+        conversations: Object.fromEntries(
+          Object.values(normalized).map((chat) => [
+            chat.id,
+            {
+              chat,
+              sessionId: chat.kind === "circle" ? null : normalizeConversationId(this.createId()),
+              piSessionId: null,
+              piSessionFile: null,
+              createdAt: timestamp,
+              updatedAt: timestamp,
+            },
+          ]),
+        ),
       };
+      validateConversationGraph(this.getChats());
       await this.ensureAllDirectories();
       await this.persist();
     });
@@ -165,83 +179,101 @@ export class ConversationRepository {
   async create(chatValue: unknown): Promise<void> {
     await this.enqueue(async () => {
       const chat = normalizeChat(chatValue);
-      if (this.state.conversations[chat.id]) {
-        throw new WispBackendError("already_exists", "A conversation with this ID already exists.");
-      }
       const timestamp = this.now().toISOString();
       const record: ConversationRecord = {
         chat,
-        sessionId: chat.isCircle ? null : normalizeConversationId(this.createId()),
+        sessionId: chat.kind === "circle" ? null : normalizeConversationId(this.createId()),
         piSessionId: null,
         piSessionFile: null,
         createdAt: timestamp,
         updatedAt: timestamp,
       };
-      this.state.conversations[chat.id] = record;
+      const result = applyWorkspaceAction(this.state.conversations, { type: "create", record });
+      this.throwForActionStatus(result.status);
+      this.state.conversations = result.records;
+      validateConversationGraph(this.getChats());
       this.state.initialized = true;
       await this.ensureDirectories(record);
       await this.persist();
     });
   }
 
-  async update(conversationId: string, changes: Partial<Omit<AgentSettings, "id" | "isCircle">>): Promise<void> {
+  async update(conversationId: string, changes: ChatChanges): Promise<void> {
     await this.enqueue(async () => {
-      const record = this.require(conversationId);
-      record.chat = normalizeChat({ ...record.chat, ...changes });
-      record.updatedAt = this.now().toISOString();
+      const updatedAt = this.now().toISOString();
+      let result =
+        changes.kind === "circle" && changes.memberIds !== undefined
+          ? applyWorkspaceAction(this.state.conversations, {
+              type: "replace-circle-members",
+              conversationId,
+              memberIds: changes.memberIds,
+              updatedAt,
+            })
+          : applyWorkspaceAction(this.state.conversations, {
+              type: "update",
+              conversationId,
+              changes,
+              updatedAt,
+            });
+      this.throwForActionStatus(result.status);
+      if (changes.kind === "circle" && changes.memberIds !== undefined) {
+        const { memberIds: _memberIds, ...remainingChanges } = changes;
+        if (Object.keys(remainingChanges).length > 1) {
+          result = applyWorkspaceAction(result.records, {
+            type: "update",
+            conversationId,
+            changes: remainingChanges,
+            updatedAt,
+          });
+          this.throwForActionStatus(result.status);
+        }
+      }
+      this.state.conversations = result.records;
+      validateConversationGraph(this.getChats());
       await this.persist();
     });
   }
 
   async appendMessage(conversationId: string, message: Message): Promise<void> {
     await this.enqueue(async () => {
-      const record = this.require(conversationId);
       const messageId = message.id ?? this.createId();
-      const existingIndex = record.chat.messages.findIndex(({ id }) => id === messageId);
-      const messages = existingIndex === -1
-        ? [...record.chat.messages, { ...message, id: messageId }]
-        : record.chat.messages.map((existing, index) => (
-          index === existingIndex ? { ...message, id: messageId } : existing
-        ));
-      const normalized = normalizeChat({
-        ...record.chat,
-        messages,
+      const result = applyWorkspaceAction(this.state.conversations, {
+        type: "append-message",
+        conversationId,
+        message: { ...message, id: messageId },
+        updatedAt: this.now().toISOString(),
       });
-      const current = normalized.messages.find(({ id }) => id === messageId);
-      record.chat = {
-        ...normalized,
-        preview: current && "text" in current ? current.text : normalized.preview,
-        timestamp: "Now",
-      };
-      record.updatedAt = this.now().toISOString();
+      this.throwForActionStatus(result.status);
+      this.state.conversations = result.records;
       await this.persist();
     });
   }
 
   async answerPrompt(conversationId: string, messageId: string, answer: string): Promise<void> {
     await this.enqueue(async () => {
-      const record = this.require(conversationId);
-      let found = false;
-      record.chat = {
-        ...record.chat,
-        messages: record.chat.messages.map((message) => {
-          if (message.id !== messageId || message.type !== "prompt") return message;
-          found = true;
-          return { ...message, answer };
-        }),
-      };
-      if (!found) throw new WispBackendError("not_found", "The prompt is no longer available.");
-      record.updatedAt = this.now().toISOString();
+      const result = applyWorkspaceAction(this.state.conversations, {
+        type: "answer-prompt",
+        conversationId,
+        messageId,
+        answer,
+        updatedAt: this.now().toISOString(),
+      });
+      this.throwForActionStatus(result.status);
+      this.state.conversations = result.records;
       await this.persist();
     });
   }
 
   async markRead(conversationId: string): Promise<void> {
     await this.enqueue(async () => {
-      const record = this.require(conversationId);
-      if (!record.chat.unread) return;
-      record.chat = { ...record.chat, unread: false };
-      record.updatedAt = this.now().toISOString();
+      const result = applyWorkspaceAction(this.state.conversations, {
+        type: "mark-read",
+        conversationId,
+        updatedAt: this.now().toISOString(),
+      });
+      this.throwForActionStatus(result.status);
+      if (result.status === "unchanged") return;
+      this.state.conversations = result.records;
       await this.persist();
     });
   }
@@ -252,11 +284,11 @@ export class ConversationRepository {
   ): Promise<void> {
     await this.enqueue(async () => {
       const record = this.require(conversationId);
-      if (record.sessionId === null) throw new WispBackendError("invalid_request", "Circles do not own agent sessions.");
+      if (record.sessionId === null)
+        throw new WispBackendError("invalid_request", "Circles do not own agent sessions.");
       const piSessionId = normalizeConversationId(identity.sessionId);
-      const piSessionFile = identity.sessionFile === null
-        ? null
-        : this.normalizePiSessionFile(record.sessionId, identity.sessionFile);
+      const piSessionFile =
+        identity.sessionFile === null ? null : this.normalizePiSessionFile(record.sessionId, identity.sessionFile);
       if (record.piSessionId === piSessionId && record.piSessionFile === piSessionFile) return;
       record.piSessionId = piSessionId;
       record.piSessionFile = piSessionFile;
@@ -267,14 +299,15 @@ export class ConversationRepository {
 
   async delete(conversationId: string): Promise<ConversationRecord> {
     return this.enqueue(async () => {
-      const record = this.require(conversationId);
-      delete this.state.conversations[conversationId];
-      for (const other of Object.values(this.state.conversations)) {
-        if (other.chat.memberIds?.includes(conversationId)) {
-          other.chat = { ...other.chat, memberIds: other.chat.memberIds.filter((id) => id !== conversationId) };
-          other.updatedAt = this.now().toISOString();
-        }
-      }
+      const result = applyWorkspaceAction(this.state.conversations, {
+        type: "delete",
+        conversationId,
+        updatedAt: this.now().toISOString(),
+      });
+      this.throwForActionStatus(result.status);
+      const record = result.deletedRecord;
+      if (!record) throw new WispBackendError("not_found", "The conversation was not found.");
+      this.state.conversations = result.records;
       await this.persist();
       if (record.sessionId) await this.archiveDirectories(record.sessionId).catch(() => undefined);
       return structuredClone(record);
@@ -285,6 +318,26 @@ export class ConversationRepository {
     const record = this.state.conversations[conversationId];
     if (!record) throw new WispBackendError("not_found", "The conversation was not found.");
     return record;
+  }
+
+  private throwForActionStatus(status: WorkspaceActionStatus): void {
+    if (status === "applied" || status === "unchanged") return;
+    if (status === "already_exists") {
+      throw new WispBackendError("already_exists", "A conversation with this ID already exists.");
+    }
+    if (status === "kind_mismatch") {
+      throw new WispBackendError("invalid_request", "The conversation kind cannot be changed.");
+    }
+    if (status === "invalid_member") {
+      throw new WispBackendError("invalid_request", "Circle members must reference existing Wisps.");
+    }
+    if (status === "protected") {
+      throw new WispBackendError("invalid_request", "This conversation is protected and cannot be deleted.");
+    }
+    if (status === "prompt_not_found") {
+      throw new WispBackendError("not_found", "The prompt is no longer available.");
+    }
+    throw new WispBackendError("not_found", "The conversation was not found.");
   }
 
   private async enqueue<T>(operation: () => Promise<T>): Promise<T> {
@@ -298,46 +351,76 @@ export class ConversationRepository {
       }
     };
     const result = this.mutation.then(run, run);
-    this.mutation = result.then(() => undefined, () => undefined);
+    this.mutation = result.then(
+      () => undefined,
+      () => undefined,
+    );
     return result;
   }
 
   private async persist(): Promise<void> {
-    await writeFileAtomically(this.statePath, `${JSON.stringify(this.state, null, 2)}\n`);
+    const serialized = `${JSON.stringify(this.state, null, 2)}\n`;
+    if (Buffer.byteLength(serialized, "utf8") > CONVERSATION_STORAGE_POLICY.maxBlobBytes) {
+      throw new WispBackendError("invalid_request", "Conversation storage exceeds the local limit.");
+    }
+    await writeFileAtomically(this.statePath, serialized);
   }
 
   private parsePersistedState(value: unknown): PersistedConversationState {
     if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Invalid state");
     const raw = value as Record<string, unknown>;
-    if (![1, 2, SCHEMA_VERSION].includes(raw.schemaVersion as number) || typeof raw.initialized !== "boolean") throw new Error("Invalid state");
-    if (!raw.conversations || typeof raw.conversations !== "object" || Array.isArray(raw.conversations)) throw new Error("Invalid state");
+    if (![1, 2, 3, SCHEMA_VERSION].includes(raw.schemaVersion as number) || typeof raw.initialized !== "boolean")
+      throw new Error("Invalid state");
+    if (!raw.conversations || typeof raw.conversations !== "object" || Array.isArray(raw.conversations))
+      throw new Error("Invalid state");
     const conversations: Record<string, ConversationRecord> = {};
     for (const [id, value] of Object.entries(raw.conversations as Record<string, unknown>)) {
       if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Invalid state");
       const record = value as Record<string, unknown>;
       const chat = normalizeChat(record.chat);
-      if (chat.id !== id || typeof record.createdAt !== "string" || typeof record.updatedAt !== "string") throw new Error("Invalid state");
-      if (chat.isCircle ? record.sessionId !== null : typeof record.sessionId !== "string") throw new Error("Invalid state");
+      if (chat.id !== id || !this.isTimestamp(record.createdAt) || !this.isTimestamp(record.updatedAt))
+        throw new Error("Invalid state");
+      if (chat.kind === "circle" ? record.sessionId !== null : typeof record.sessionId !== "string")
+        throw new Error("Invalid state");
       const sessionId = record.sessionId === null ? null : normalizeConversationId(record.sessionId);
       conversations[id] = {
         chat,
         sessionId,
-        piSessionId: typeof record.piSessionId === "string"
-          ? normalizeConversationId(record.piSessionId)
-          : null,
-        piSessionFile: typeof record.piSessionFile === "string" && sessionId
-          ? this.normalizePiSessionFile(sessionId, record.piSessionFile)
-          : null,
+        piSessionId: typeof record.piSessionId === "string" ? normalizeConversationId(record.piSessionId) : null,
+        piSessionFile:
+          typeof record.piSessionFile === "string" && sessionId
+            ? this.normalizePiSessionFile(sessionId, record.piSessionFile)
+            : null,
         createdAt: record.createdAt,
         updatedAt: record.updatedAt,
       };
     }
-    return { schemaVersion: SCHEMA_VERSION, initialized: raw.initialized, conversations };
+    const state = { schemaVersion: SCHEMA_VERSION, initialized: raw.initialized, conversations } as const;
+    validateConversationGraph(
+      Object.fromEntries(Object.entries(conversations).map(([id, record]) => [id, record.chat])),
+    );
+    return state;
+  }
+
+  private schemaVersionOf(value: unknown): number {
+    if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Invalid state");
+    const version = (value as Record<string, unknown>).schemaVersion;
+    if (typeof version !== "number") throw new Error("Invalid state");
+    return version;
+  }
+
+  private isTimestamp(value: unknown): value is string {
+    return typeof value === "string" && value.length <= 100 && !Number.isNaN(Date.parse(value));
+  }
+
+  private async preserveMigrationSource(schemaVersion: number): Promise<void> {
+    const suffix = this.now().toISOString().replaceAll(":", "-");
+    await copyFile(this.statePath, `${this.statePath}.schema-v${schemaVersion}-backup-${suffix}`);
   }
 
   private async preserveCorruptState(): Promise<void> {
     const suffix = this.now().toISOString().replaceAll(":", "-");
-    await rename(this.statePath, `${this.statePath}.corrupt-${suffix}`).catch(() => undefined);
+    await rename(this.statePath, `${this.statePath}.corrupt-${suffix}`);
   }
 
   private normalizePiSessionFile(sessionId: string, filePath: string): string {
@@ -355,12 +438,11 @@ export class ConversationRepository {
   }
 
   private async removeBundledDemoConversations(): Promise<void> {
-    const removed = Object.entries(this.state.conversations)
-      .filter(([id]) => REMOVED_DEMO_CONVERSATION_IDS.has(id));
+    const removed = Object.entries(this.state.conversations).filter(([id]) => REMOVED_DEMO_CONVERSATION_IDS.has(id));
     for (const [id] of removed) delete this.state.conversations[id];
-    await Promise.allSettled(removed.flatMap(([, record]) => (
-      record.sessionId ? [this.archiveDirectories(record.sessionId)] : []
-    )));
+    await Promise.allSettled(
+      removed.flatMap(([, record]) => (record.sessionId ? [this.archiveDirectories(record.sessionId)] : [])),
+    );
   }
 
   private async ensureDirectories(record: ConversationRecord): Promise<void> {
@@ -373,10 +455,7 @@ export class ConversationRepository {
   }
 
   private async archiveDirectories(sessionId: string): Promise<void> {
-    const archive = path.join(
-      this.deletedRoot,
-      `${sessionId}-${this.now().toISOString().replaceAll(":", "-")}`,
-    );
+    const archive = path.join(this.deletedRoot, `${sessionId}-${this.now().toISOString().replaceAll(":", "-")}`);
     await mkdir(archive, { recursive: true });
     await Promise.all([
       rename(path.join(this.workspaceRoot, sessionId), path.join(archive, "workspace")).catch(() => undefined),

@@ -1,0 +1,170 @@
+name: Desktop release
+
+on:
+  workflow_dispatch:
+    inputs:
+      publish_draft:
+        description: Upload verified artifacts to a draft GitHub release
+        required: true
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.19.0
+          cache: npm
+      - run: node scripts/verify-release.mjs
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run format:check
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+      - run: npm run audit:prod
+      - run: npm sbom --omit=dev --sbom-format=cyclonedx > wisp-bot-sbom.cdx.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sbom
+          path: wisp-bot-sbom.cdx.json
+          retention-days: 30
+
+  package:
+    needs: verify
+    environment: release
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: windows
+            os: windows-2022
+          - target: macos
+            os: macos-14
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
+      id-token: ${{ matrix.target == 'windows' && 'write' || 'none' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.19.0
+          cache: npm
+      - run: npm ci
+      - if: matrix.target == 'windows'
+        uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      - if: matrix.target == 'macos'
+        uses: apple-actions/import-codesign-certs@v3
+        with:
+          p12-file-base64: ${{ secrets.MACOS_CERTIFICATE_P12 }}
+          p12-password: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+      - if: matrix.target == 'windows'
+        shell: pwsh
+        env:
+          WINDOWS_PUBLISHER_NAME: ${{ vars.WINDOWS_PUBLISHER_NAME }}
+          AZURE_TRUSTED_SIGNING_ENDPOINT: ${{ vars.AZURE_TRUSTED_SIGNING_ENDPOINT }}
+          AZURE_TRUSTED_SIGNING_PROFILE: ${{ vars.AZURE_TRUSTED_SIGNING_PROFILE }}
+          AZURE_TRUSTED_SIGNING_ACCOUNT: ${{ vars.AZURE_TRUSTED_SIGNING_ACCOUNT }}
+        run: npm run build && npx electron-builder --win nsis --x64 --publish never
+      - if: matrix.target == 'macos'
+        env:
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+        run: npm run build && npx electron-builder --mac dmg zip --x64 --arm64 --publish never
+      - run: node scripts/checksums.mjs release
+      - if: matrix.target == 'windows'
+        shell: pwsh
+        run: |
+          $files = @(Get-ChildItem release -Filter *.exe)
+          if (-not $files) { throw 'No Windows executable artifacts found.' }
+          foreach ($file in $files) {
+            if ((Get-AuthenticodeSignature $file.FullName).Status -ne 'Valid') { throw "Invalid signature: $file" }
+          }
+          $installer = $files | Select-Object -First 1
+          Start-Process $installer.FullName -ArgumentList '/S' -Wait
+          $uninstall = Get-ItemProperty HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\* |
+            Where-Object DisplayName -eq 'Wisp Bot' | Select-Object -First 1
+          if (-not $uninstall) { throw 'Installed Wisp Bot registration was not found.' }
+          $app = Join-Path $uninstall.InstallLocation 'Wisp Bot.exe'
+          $process = Start-Process $app -PassThru
+          Start-Sleep -Seconds 5
+          if ($process.HasExited) { throw 'Installed Wisp Bot did not remain running.' }
+          Stop-Process -Id $process.Id
+          Start-Process cmd.exe -ArgumentList '/c', "`"$($uninstall.UninstallString)`" /S" -Wait
+          if (Test-Path $app) { throw 'Wisp Bot remained installed after uninstall.' }
+      - if: matrix.target == 'macos'
+        run: |
+          test -n "$(find release -name '*.app' -print -quit)"
+          find release -name '*.app' -exec codesign --verify --deep --strict --verbose=2 {} \;
+          find release -name '*.app' -exec spctl --assess --type execute --verbose=2 {} \;
+          for dmg in release/*.dmg; do xcrun stapler validate "$dmg"; done
+          volume=$(hdiutil attach release/*.dmg -nobrowse | awk '/\/Volumes\// { sub(/^.*\/Volumes\//, "/Volumes/"); print; exit }')
+          test -n "$volume"
+          ditto "$volume/Wisp Bot.app" "$RUNNER_TEMP/Wisp Bot.app"
+          open -n "$RUNNER_TEMP/Wisp Bot.app"
+          sleep 5
+          pgrep -x 'Wisp Bot' >/dev/null
+          pkill -x 'Wisp Bot'
+          rm -rf "$RUNNER_TEMP/Wisp Bot.app"
+          hdiutil detach "$volume"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: desktop-${{ matrix.target }}
+          path: |
+            release/*.exe
+            release/*.dmg
+            release/*.zip
+            release/*.yml
+            release/*.blockmap
+            release/SHA256SUMS.txt
+          if-no-files-found: error
+          retention-days: 30
+
+  live-smoke:
+    needs: package
+    environment: release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.19.0
+          cache: npm
+      - run: npm ci
+      - env:
+          WISP_PI_SMOKE: 1
+          WISP_PI_SMOKE_PROVIDER: ${{ vars.WISP_PI_SMOKE_PROVIDER }}
+          WISP_PI_SMOKE_MODEL: ${{ vars.WISP_PI_SMOKE_MODEL }}
+          WISP_PI_SMOKE_API_KEY: ${{ secrets.WISP_PI_SMOKE_API_KEY }}
+        run: npm run smoke:pi
+
+  draft:
+    if: inputs.publish_draft
+    needs: [package, live-smoke]
+    environment: release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - run: node scripts/verify-release.mjs
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+      - env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" --draft --verify-tag --title "Wisp Bot $GITHUB_REF_NAME"
+          find artifacts -type f -exec gh release upload "$GITHUB_REF_NAME" {} +

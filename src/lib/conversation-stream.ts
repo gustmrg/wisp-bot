@@ -1,10 +1,5 @@
 import type { BackendError, ConversationAgentEvent, SequencedConversationAgentEvent } from "../../shared/contracts";
-import type {
-  ChatCollection,
-  ManagedConversationStatus,
-  Message,
-  TextMessage,
-} from "../../shared/conversations";
+import type { ChatCollection, ManagedConversationStatus, Message, TextMessage } from "../../shared/conversations";
 import type { ToolApprovalRequest } from "../../shared/tool-policy";
 
 export interface ToolActivityView {
@@ -55,10 +50,14 @@ export function stageOutgoingMessage(
   conversationId: string,
   message: TextMessage & { id: string },
 ): ConversationRuntimeState {
-  return setRuntimeMessage({
-    ...state,
-    errors: { ...state.errors, [conversationId]: undefined },
-  }, conversationId, { ...message, status: "queued" });
+  return setRuntimeMessage(
+    {
+      ...state,
+      errors: { ...state.errors, [conversationId]: undefined },
+    },
+    conversationId,
+    { ...message, status: "queued" },
+  );
 }
 
 export function markOutgoingFailed(
@@ -93,15 +92,14 @@ export function reduceConversationAgentEvent(
 ): ConversationRuntimeState {
   if (event.sequence <= state.sequence) return state;
   let next: ConversationRuntimeState = { ...state, sequence: event.sequence };
+  if (!chats[event.conversationId]) return next;
 
   switch (event.type) {
     case "conversation_status":
       return {
         ...next,
         statuses: { ...next.statuses, [event.conversationId]: event.status },
-        activity: event.status === "idle"
-          ? { ...next.activity, [event.conversationId]: undefined }
-          : next.activity,
+        activity: event.status === "idle" ? { ...next.activity, [event.conversationId]: undefined } : next.activity,
       };
     case "assistant_message_started": {
       const outgoing = findMessage(next, chats, event.conversationId, event.requestId);
@@ -112,16 +110,20 @@ export function reduceConversationAgentEvent(
           status: "complete",
         });
       }
-      return setRuntimeMessage({
-        ...next,
-        errors: { ...next.errors, [event.conversationId]: undefined },
-      }, event.conversationId, {
-        id: event.messageId,
-        type: "incoming",
-        text: "",
-        status: "streaming",
-        createdAt: event.createdAt,
-      });
+      return setRuntimeMessage(
+        {
+          ...next,
+          errors: { ...next.errors, [event.conversationId]: undefined },
+        },
+        event.conversationId,
+        {
+          id: event.messageId,
+          type: "incoming",
+          text: "",
+          status: "streaming",
+          createdAt: event.createdAt,
+        },
+      );
     }
     case "assistant_text_delta": {
       const current = findMessage(next, chats, event.conversationId, event.messageId);
@@ -168,16 +170,11 @@ export function reduceConversationAgentEvent(
         ...next,
         activity: {
           ...next.activity,
-          [event.conversationId]: event.phase === "completed"
-            ? undefined
-            : toolActivityLabel(event.toolName),
+          [event.conversationId]: event.phase === "completed" ? undefined : toolActivityLabel(event.toolName),
         },
         toolActivities: {
           ...next.toolActivities,
-          [event.conversationId]: upsertToolActivity(
-            next.toolActivities[event.conversationId] ?? [],
-            event,
-          ),
+          [event.conversationId]: upsertToolActivity(next.toolActivities[event.conversationId] ?? [], event),
         },
       };
     case "conversation_notice":
@@ -194,9 +191,9 @@ export function reduceConversationAgentEvent(
         approvals: {
           ...next.approvals,
           [event.conversationId]: [
-            ...(next.approvals[event.conversationId] ?? []).filter(({ approvalId }) => (
-              approvalId !== event.request.approvalId
-            )),
+            ...(next.approvals[event.conversationId] ?? []).filter(
+              ({ approvalId }) => approvalId !== event.request.approvalId,
+            ),
             event.request,
           ],
         },
@@ -206,12 +203,66 @@ export function reduceConversationAgentEvent(
         ...next,
         approvals: {
           ...next.approvals,
-          [event.conversationId]: (next.approvals[event.conversationId] ?? []).filter(({ approvalId }) => (
-            approvalId !== event.approvalId
-          )),
+          [event.conversationId]: (next.approvals[event.conversationId] ?? []).filter(
+            ({ approvalId }) => approvalId !== event.approvalId,
+          ),
         },
       };
   }
+}
+
+export function reconcileConversationRuntime(
+  state: ConversationRuntimeState,
+  chats: ChatCollection,
+  statuses: Record<string, ManagedConversationStatus>,
+): ConversationRuntimeState {
+  const conversationIds = new Set(Object.keys(chats));
+  const retain = <T>(values: Record<string, T>): Record<string, T> =>
+    Object.fromEntries(Object.entries(values).filter(([conversationId]) => conversationIds.has(conversationId)));
+  return {
+    ...state,
+    statuses: Object.fromEntries(
+      [...conversationIds].map((conversationId) => [
+        conversationId,
+        state.statuses[conversationId] ?? statuses[conversationId] ?? "configuration_required",
+      ]),
+    ),
+    messages: retain(state.messages),
+    errors: retain(state.errors),
+    activity: retain(state.activity),
+    toolActivities: retain(state.toolActivities),
+    approvals: retain(state.approvals),
+  };
+}
+
+export function addPendingRequest(
+  pending: Record<string, ReadonlyArray<string>>,
+  conversationId: string,
+  requestId: string,
+): Record<string, ReadonlyArray<string>> {
+  const current = pending[conversationId] ?? [];
+  if (current.includes(requestId)) return pending;
+  return { ...pending, [conversationId]: [...current, requestId] };
+}
+
+export function removePendingRequest(
+  pending: Record<string, ReadonlyArray<string>>,
+  conversationId: string,
+  requestId: string,
+): Record<string, ReadonlyArray<string>> {
+  const current = pending[conversationId];
+  if (!current?.includes(requestId)) return pending;
+  const remaining = current.filter((candidate) => candidate !== requestId);
+  if (remaining.length > 0) return { ...pending, [conversationId]: remaining };
+  const { [conversationId]: _removed, ...rest } = pending;
+  return rest;
+}
+
+export function retainPendingConversations(
+  pending: Record<string, ReadonlyArray<string>>,
+  chats: ChatCollection,
+): Record<string, ReadonlyArray<string>> {
+  return Object.fromEntries(Object.entries(pending).filter(([conversationId]) => Boolean(chats[conversationId])));
 }
 
 export function overlayRuntimeMessages(
@@ -223,11 +274,11 @@ export function overlayRuntimeMessages(
   for (const [conversationId, transient] of Object.entries(runtimeMessages)) {
     const chat = chats[conversationId];
     if (!chat || transient.length === 0) continue;
-    const replacements = new Map(transient.flatMap((message) => message.id ? [[message.id, message]] : []));
-    const existingIds = new Set(chat.messages.flatMap((message) => message.id ? [message.id] : []));
-    const messages = chat.messages.map((message) => (
-      message.id && replacements.has(message.id) ? replacements.get(message.id)! : message
-    ));
+    const replacements = new Map(transient.flatMap((message) => (message.id ? [[message.id, message]] : [])));
+    const existingIds = new Set(chat.messages.flatMap((message) => (message.id ? [message.id] : [])));
+    const messages = chat.messages.map((message) =>
+      message.id && replacements.has(message.id) ? replacements.get(message.id)! : message,
+    );
     for (const message of transient) {
       if (!message.id || !existingIds.has(message.id)) messages.push(message);
     }
@@ -265,9 +316,7 @@ function finalizeAssistant(
   return setRuntimeMessage(state, conversationId, {
     id: messageId,
     type: "incoming",
-    text: current?.type === "incoming" && current.text
-      ? current.text
-      : status === "cancelled" ? "Stopped." : "",
+    text: current?.type === "incoming" && current.text ? current.text : status === "cancelled" ? "Stopped." : "",
     status,
     ...(current?.createdAt ? { createdAt: current.createdAt } : {}),
   });
@@ -285,7 +334,7 @@ function setRuntimeMessage(
     messages: {
       ...state.messages,
       [conversationId]: found
-        ? current.map((candidate) => candidate.id === message.id ? message : candidate)
+        ? current.map((candidate) => (candidate.id === message.id ? message : candidate))
         : [...current, message],
     },
   };
@@ -297,8 +346,10 @@ function findMessage(
   conversationId: string,
   messageId: string,
 ): Message | undefined {
-  return getRuntimeMessage(state, conversationId, messageId)
-    ?? chats[conversationId]?.messages.find(({ id }) => id === messageId);
+  return (
+    getRuntimeMessage(state, conversationId, messageId) ??
+    chats[conversationId]?.messages.find(({ id }) => id === messageId)
+  );
 }
 
 function toolActivityLabel(toolName: string): string {
@@ -314,20 +365,25 @@ function upsertToolActivity(
   event: Extract<ConversationAgentEvent, { type: "tool_activity" }>,
 ): ReadonlyArray<ToolActivityView> {
   const next = activities.some(({ toolCallId }) => toolCallId === event.toolCallId)
-    ? activities.map((activity) => activity.toolCallId === event.toolCallId
-      ? {
+    ? activities.map((activity) =>
+        activity.toolCallId === event.toolCallId
+          ? {
+              toolCallId: event.toolCallId,
+              toolName: event.toolName,
+              phase: event.phase,
+              ...(event.isError === undefined ? {} : { isError: event.isError }),
+            }
+          : activity,
+      )
+    : [
+        ...activities,
+        {
           toolCallId: event.toolCallId,
           toolName: event.toolName,
           phase: event.phase,
           ...(event.isError === undefined ? {} : { isError: event.isError }),
-        }
-      : activity)
-    : [...activities, {
-        toolCallId: event.toolCallId,
-        toolName: event.toolName,
-        phase: event.phase,
-        ...(event.isError === undefined ? {} : { isError: event.isError }),
-      }];
+        },
+      ];
   return next.slice(-20);
 }
 

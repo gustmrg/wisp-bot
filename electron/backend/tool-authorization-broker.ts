@@ -10,6 +10,7 @@ import type {
 } from "../../shared/tool-policy.js";
 import { WispBackendError } from "./backend-error.js";
 import { normalizeRuleAction, ToolPolicyStore } from "./tool-policy-store.js";
+import { NullToolAuditSink, type ToolAuditSink } from "./tool-audit-store.js";
 
 const DEFAULT_APPROVAL_TTL_MS = 60_000;
 const MAX_SUMMARY_LENGTH = 240;
@@ -20,6 +21,7 @@ export interface ToolAuthorizationRequest {
   toolName: string;
   category: ToolActionCategory;
   summary: string;
+  scope: { kind: "workspace_path"; value: string };
 }
 
 interface PendingApproval {
@@ -37,6 +39,7 @@ export interface ToolAuthorizationBrokerOptions {
   createId?: () => string;
   now?: () => Date;
   selectWindowId?: () => number | null;
+  audit?: ToolAuditSink;
 }
 
 export class ToolAuthorizationBroker {
@@ -47,6 +50,7 @@ export class ToolAuthorizationBroker {
   private readonly now: () => Date;
   private readonly selectWindowId: () => number | null;
   private readonly pending = new Map<string, PendingApproval>();
+  private readonly audit: ToolAuditSink;
 
   constructor(
     store: ToolPolicyStore,
@@ -59,6 +63,7 @@ export class ToolAuthorizationBroker {
     this.createId = options.createId ?? randomUUID;
     this.now = options.now ?? (() => new Date());
     this.selectWindowId = options.selectWindowId ?? (() => null);
+    this.audit = options.audit ?? new NullToolAuditSink();
   }
 
   getPolicy(): ToolPolicySettings {
@@ -74,20 +79,27 @@ export class ToolAuthorizationBroker {
   }
 
   authorize(action: ToolAuthorizationRequest, signal?: AbortSignal): Promise<void> {
+    const actionId = this.createId();
     if (signal?.aborted) {
+      this.auditDecision(actionId, action, "ask", "cancelled", "system", "cancelled");
       return Promise.reject(new WispBackendError("aborted", "The tool action was cancelled."));
     }
-    const behavior = evaluateToolPolicy(this.store.get(), action.category);
-    if (behavior === "allow") return Promise.resolve();
+    const behavior = evaluateToolPolicy(this.store.get(), action.category, action.scope.kind);
+    if (behavior === "allow") {
+      this.auditDecision(actionId, action, behavior, "allow", "policy", "allowed");
+      return Promise.resolve();
+    }
     if (behavior === "block") {
+      this.auditDecision(actionId, action, behavior, "block", "policy", "blocked");
       return Promise.reject(new WispBackendError("tool_blocked", "This tool action is blocked by policy."));
     }
     const windowId = this.selectWindowId();
     if (windowId === null) {
+      this.auditDecision(actionId, action, behavior, "block", "system", "blocked");
       return Promise.reject(new WispBackendError("tool_blocked", "This tool action requires an open approval window."));
     }
 
-    const approvalId = this.createId();
+    const approvalId = actionId;
     const expiresAt = new Date(this.now().getTime() + this.approvalTtlMs).toISOString();
     const request: ToolApprovalRequest = {
       approvalId,
@@ -95,9 +107,11 @@ export class ToolAuthorizationBroker {
       toolCallId: safeId(action.toolCallId),
       toolName: safeToolName(action.toolName),
       category: action.category,
+      scope: { kind: action.scope.kind, display: sanitizeSummary(action.scope.value) },
       summary: sanitizeSummary(action.summary),
       expiresAt,
     };
+    this.auditDecision(actionId, action, behavior, "ask", "policy", "pending");
     return new Promise<void>((resolve, reject) => {
       const timer = setTimeout(() => this.expire(approvalId), this.approvalTtlMs);
       const abortListener = signal ? () => this.cancel(approvalId) : undefined;
@@ -111,22 +125,29 @@ export class ToolAuthorizationBroker {
     const pending = this.pending.get(request.approvalId);
     if (!pending) throw new WispBackendError("not_found", "This approval request is no longer available.");
     if (
-      pending.windowId !== senderWindowId
-      || pending.request.conversationId !== request.conversationId
-      || pending.request.toolCallId !== request.toolCallId
+      pending.windowId !== senderWindowId ||
+      pending.request.conversationId !== request.conversationId ||
+      pending.request.toolCallId !== request.toolCallId
     ) {
       throw new WispBackendError("invalid_request", "The approval response does not match the pending action.");
     }
+    if (request.decision === "block") {
+      await this.store.blockCategory(pending.request.category, this.createId);
+    }
+    this.audit.append({
+      actionId: request.approvalId,
+      conversationId: request.conversationId,
+      toolCallId: request.toolCallId,
+      category: pending.request.category,
+      scope: pending.request.scope.display,
+      matchedPolicy: "ask",
+      decision: request.decision,
+      actor: "user",
+      outcome: request.decision === "allow_once" ? "allowed" : "blocked",
+      timestamp: this.now().toISOString(),
+    });
     this.pending.delete(request.approvalId);
     this.cleanup(pending);
-    if (request.decision === "block") {
-      try {
-        await this.store.blockCategory(pending.request.category, this.createId);
-      } catch (error) {
-        pending.reject(error);
-        throw error;
-      }
-    }
     this.publish({
       type: "tool_approval_resolved",
       conversationId: request.conversationId,
@@ -141,6 +162,7 @@ export class ToolAuthorizationBroker {
   dispose(): void {
     for (const [approvalId, pending] of this.pending) {
       this.cleanup(pending);
+      this.auditPending(pending, "cancelled", "system", "cancelled");
       pending.reject(new WispBackendError("disposed", "The approval request was cancelled."));
       this.pending.delete(approvalId);
     }
@@ -164,6 +186,7 @@ export class ToolAuthorizationBroker {
       toolCallId: pending.request.toolCallId,
       decision: "expired",
     });
+    this.auditPending(pending, "expired", "system", "blocked");
     pending.reject(new WispBackendError("approval_expired", "The tool approval request expired."));
   }
 
@@ -179,6 +202,7 @@ export class ToolAuthorizationBroker {
       toolCallId: pending.request.toolCallId,
       decision: "deny",
     });
+    this.auditPending(pending, "cancelled", "system", "cancelled");
     pending.reject(new WispBackendError("aborted", "The tool action was cancelled."));
   }
 
@@ -188,18 +212,64 @@ export class ToolAuthorizationBroker {
       pending.signal.removeEventListener("abort", pending.abortListener);
     }
   }
+
+  private auditDecision(
+    actionId: string,
+    action: ToolAuthorizationRequest,
+    matchedPolicy: ToolPolicyBehavior,
+    decision: "allow" | "ask" | "block" | "cancelled",
+    actor: "policy" | "system",
+    outcome: "pending" | "allowed" | "blocked" | "cancelled",
+  ): void {
+    this.audit.append({
+      actionId,
+      conversationId: action.conversationId,
+      toolCallId: action.toolCallId,
+      category: action.category,
+      scope: action.scope.value,
+      matchedPolicy,
+      decision,
+      actor,
+      outcome,
+      timestamp: this.now().toISOString(),
+    });
+  }
+
+  private auditPending(
+    pending: PendingApproval,
+    decision: "expired" | "cancelled",
+    actor: "system",
+    outcome: "blocked" | "cancelled",
+  ): void {
+    this.audit.append({
+      actionId: pending.request.approvalId,
+      conversationId: pending.request.conversationId,
+      toolCallId: pending.request.toolCallId,
+      category: pending.request.category,
+      scope: pending.request.scope.display,
+      matchedPolicy: "ask",
+      decision,
+      actor,
+      outcome,
+      timestamp: this.now().toISOString(),
+    });
+  }
 }
 
 export function evaluateToolPolicy(
   settings: ToolPolicySettings,
   category: ToolActionCategory | string,
+  scopeKind: string = "workspace_path",
 ): ToolPolicyBehavior {
   if (category === "shell") return "block";
   if (category === "read" || category === "search") return "allow";
   if (category !== "create_file" && category !== "modify_file") return "block";
   if (!settings.autoReview) return "ask";
   const matches = settings.rules
-    .filter((rule) => ruleMatchesCategory(rule.action, category))
+    .filter(
+      (rule) =>
+        rule.scope === "workspace" && scopeKind === "workspace_path" && ruleMatchesCategory(rule.action, category),
+    )
     .map(({ behavior }) => behavior);
   if (matches.includes("block")) return "block";
   if (matches.includes("ask")) return "ask";
@@ -220,7 +290,10 @@ function ruleMatchesCategory(action: string, category: ToolActionCategory): bool
 }
 
 function sanitizeSummary(value: string): string {
-  const summary = value.replaceAll(/[\r\n\t]+/g, " ").replaceAll(/\s+/g, " ").trim();
+  const summary = value
+    .replaceAll(/[\r\n\t]+/g, " ")
+    .replaceAll(/\s+/g, " ")
+    .trim();
   return summary.slice(0, MAX_SUMMARY_LENGTH) || "Perform a file action";
 }
 

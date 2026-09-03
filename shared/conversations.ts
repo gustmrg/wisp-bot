@@ -2,16 +2,19 @@ import type { ToolApprovalRequest } from "./tool-policy.js";
 
 export type ChatId = string;
 
-export type WispShape =
-  | "circle"
-  | "pebble"
-  | "triangle"
-  | "cloud"
-  | "square"
-  | "pill"
-  | "diamond"
-  | "hexagon"
-  | "drop";
+export const WISP_SHAPE_IDS = [
+  "circle",
+  "pebble",
+  "square",
+  "pill",
+  "triangle",
+  "diamond",
+  "hexagon",
+  "cloud",
+  "drop",
+] as const;
+
+export type WispShape = (typeof WISP_SHAPE_IDS)[number];
 
 export type MessageStatus = "queued" | "streaming" | "complete" | "failed" | "cancelled";
 
@@ -22,19 +25,30 @@ interface MessageMetadata {
   createdAt?: string;
 }
 
-export interface AgentSettings {
-  id: string;
+export interface ChatBase {
+  id: ChatId;
   name: string;
   label: string;
   description: string;
+  notifyOnUpdatesEnabled: boolean;
+  preview: string;
+  timestamp: string;
+  messages: ReadonlyArray<Message>;
+  systemRole?: "chief";
+  isActive?: boolean;
+  unread?: boolean;
+}
+
+export interface WispChat extends ChatBase {
+  kind: "wisp";
   color?: string;
   avatarImage?: string;
   shape: WispShape;
-  isCircle: boolean;
-  memberIds?: ChatId[];
-  notifyOnUpdatesEnabled: boolean;
-  isActive?: boolean;
-  unread?: boolean;
+}
+
+export interface CircleChat extends ChatBase {
+  kind: "circle";
+  memberIds: ReadonlyArray<ChatId>;
 }
 
 export interface TextMessage extends MessageMetadata {
@@ -63,19 +77,26 @@ export interface PromptMessage extends MessageMetadata {
 
 export type Message = TextMessage | TimeMessage | CardMessage | PromptMessage;
 
-export interface Chat extends AgentSettings {
-  preview: string;
-  timestamp: string;
-  messages: ReadonlyArray<Message>;
-}
+export type Chat = WispChat | CircleChat;
+
+type NewChatBase = Pick<ChatBase, "name" | "label" | "description" | "notifyOnUpdatesEnabled">;
+
+export type NewWisp = NewChatBase & Pick<WispChat, "color" | "avatarImage" | "shape"> & { kind: "wisp" };
+export type NewCircle = NewChatBase & Pick<CircleChat, "memberIds"> & { kind: "circle" };
+export type NewChat = NewWisp | NewCircle;
+
+type SharedChatChanges = Partial<
+  Pick<ChatBase, "name" | "label" | "description" | "notifyOnUpdatesEnabled" | "isActive" | "unread">
+>;
+
+export type WispChatChanges = SharedChatChanges &
+  Partial<Pick<WispChat, "color" | "avatarImage" | "shape">> & { kind: "wisp" };
+export type CircleChatChanges = SharedChatChanges & Partial<Pick<CircleChat, "memberIds">> & { kind: "circle" };
+export type ChatChanges = WispChatChanges | CircleChatChanges;
 
 export type ChatCollection = Record<ChatId, Chat>;
 
-export type ManagedConversationStatus =
-  | "configuration_required"
-  | "idle"
-  | "working"
-  | "disposed";
+export type ManagedConversationStatus = "configuration_required" | "idle" | "working" | "disposed";
 
 export interface ConversationStateView {
   initialized: boolean;
@@ -87,7 +108,7 @@ export interface ConversationStateView {
 }
 
 export interface InitializeConversationsRequest {
-  chats: ChatCollection;
+  chats: unknown;
 }
 
 export interface CreateConversationRequest {
@@ -96,7 +117,7 @@ export interface CreateConversationRequest {
 
 export interface UpdateConversationRequest {
   conversationId: ChatId;
-  changes: Partial<Omit<AgentSettings, "id" | "isCircle">>;
+  changes: ChatChanges;
 }
 
 export interface DeleteConversationRequest {

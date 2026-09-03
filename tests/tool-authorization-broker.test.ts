@@ -4,10 +4,7 @@ import path from "node:path";
 
 import { describe, expect, it, vi } from "vitest";
 
-import {
-  evaluateToolPolicy,
-  ToolAuthorizationBroker,
-} from "../electron/backend/tool-authorization-broker.js";
+import { evaluateToolPolicy, ToolAuthorizationBroker } from "../electron/backend/tool-authorization-broker.js";
 import { ToolPolicyStore } from "../electron/backend/tool-policy-store.js";
 import type { ConversationAgentEvent } from "../shared/contracts.js";
 
@@ -25,13 +22,25 @@ describe("tool policy", () => {
     expect(evaluateToolPolicy(store.get(), "modify_file")).toBe("ask");
   });
 
+  it("migrates a legacy unscoped allow rule to ask", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "wisp-policy-legacy-"));
+    const store = new ToolPolicyStore(path.join(directory, "policy.json"));
+    const migrated = await store.save({
+      autoReview: true,
+      rules: [{ id: "legacy", action: "create_file", behavior: "allow" }],
+    });
+
+    expect(migrated.rules).toEqual([{ id: "legacy", action: "create_file", behavior: "ask", scope: "workspace" }]);
+    expect(evaluateToolPolicy(migrated, "create_file")).toBe("ask");
+  });
+
   it("uses conservative precedence and blocks shell and unknown categories", () => {
     const settings = {
       autoReview: true,
       rules: [
-        { id: "allow", action: "all_file_changes", behavior: "allow" as const },
-        { id: "ask", action: "modify_file", behavior: "ask" as const },
-        { id: "block", action: "modify files", behavior: "block" as const },
+        { id: "allow", action: "all_file_changes", behavior: "allow" as const, scope: "workspace" as const },
+        { id: "ask", action: "modify_file", behavior: "ask" as const, scope: "workspace" as const },
+        { id: "block", action: "modify files", behavior: "block" as const, scope: "workspace" as const },
       ],
     };
 
@@ -41,6 +50,7 @@ describe("tool policy", () => {
     expect(evaluateToolPolicy(settings, "shell")).toBe("block");
     expect(evaluateToolPolicy(settings, "unknown")).toBe("block");
     expect(evaluateToolPolicy({ ...settings, autoReview: false }, "create_file")).toBe("ask");
+    expect(evaluateToolPolicy(settings, "create_file", "external_path")).toBe("ask");
   });
 
   it("binds a single-use approval to its window, conversation, and tool call", async () => {
@@ -57,6 +67,7 @@ describe("tool policy", () => {
       toolCallId: "tool-1",
       toolName: "write",
       category: "create_file",
+      scope: { kind: "workspace_path", value: "notes.txt" },
       summary: "Create\nnotes.txt with hidden content that is never included",
     });
     const requested = events[0];
@@ -70,25 +81,38 @@ describe("tool policy", () => {
       },
     });
 
-    await expect(broker.resolve({
-      approvalId: "approval-1",
-      conversationId: "one",
-      toolCallId: "tool-1",
-      decision: "allow_once",
-    }, 8)).rejects.toMatchObject({ code: "invalid_request" });
-    await broker.resolve({
-      approvalId: "approval-1",
-      conversationId: "one",
-      toolCallId: "tool-1",
-      decision: "allow_once",
-    }, 7);
+    await expect(
+      broker.resolve(
+        {
+          approvalId: "approval-1",
+          conversationId: "one",
+          toolCallId: "tool-1",
+          decision: "allow_once",
+        },
+        8,
+      ),
+    ).rejects.toMatchObject({ code: "invalid_request" });
+    await broker.resolve(
+      {
+        approvalId: "approval-1",
+        conversationId: "one",
+        toolCallId: "tool-1",
+        decision: "allow_once",
+      },
+      7,
+    );
     await expect(authorization).resolves.toBeUndefined();
-    await expect(broker.resolve({
-      approvalId: "approval-1",
-      conversationId: "one",
-      toolCallId: "tool-1",
-      decision: "allow_once",
-    }, 7)).rejects.toMatchObject({ code: "not_found" });
+    await expect(
+      broker.resolve(
+        {
+          approvalId: "approval-1",
+          conversationId: "one",
+          toolCallId: "tool-1",
+          decision: "allow_once",
+        },
+        7,
+      ),
+    ).rejects.toMatchObject({ code: "not_found" });
   });
 
   it("expires stale approvals and persists an explicit block decision", async () => {
@@ -107,6 +131,7 @@ describe("tool policy", () => {
         toolCallId: "tool-expire",
         toolName: "edit",
         category: "modify_file",
+        scope: { kind: "workspace_path", value: "file.txt" },
         summary: "Modify file.txt",
       });
       const expiredExpectation = expect(expired).rejects.toMatchObject({ code: "approval_expired" });
@@ -118,15 +143,19 @@ describe("tool policy", () => {
         toolCallId: "tool-block",
         toolName: "edit",
         category: "modify_file",
+        scope: { kind: "workspace_path", value: "file.txt" },
         summary: "Modify file.txt",
       });
       const blockedExpectation = expect(blocked).rejects.toMatchObject({ code: "tool_blocked" });
-      await broker.resolve({
-        approvalId: "id-2",
-        conversationId: "one",
-        toolCallId: "tool-block",
-        decision: "block",
-      }, 1);
+      await broker.resolve(
+        {
+          approvalId: "id-2",
+          conversationId: "one",
+          toolCallId: "tool-block",
+          decision: "block",
+        },
+        1,
+      );
       await blockedExpectation;
       expect(evaluateToolPolicy(store.get(), "modify_file")).toBe("block");
     } finally {
@@ -143,20 +172,26 @@ describe("tool policy", () => {
       { createId: () => "approval-abort", selectWindowId: () => 1 },
     );
     const controller = new AbortController();
-    const authorization = broker.authorize({
-      conversationId: "one",
-      toolCallId: "tool-abort",
-      toolName: "write",
-      category: "create_file",
-      summary: "Create notes.txt",
-    }, controller.signal);
+    const authorization = broker.authorize(
+      {
+        conversationId: "one",
+        toolCallId: "tool-abort",
+        toolName: "write",
+        category: "create_file",
+        scope: { kind: "workspace_path", value: "notes.txt" },
+        summary: "Create notes.txt",
+      },
+      controller.signal,
+    );
     const expectation = expect(authorization).rejects.toMatchObject({ code: "aborted" });
     controller.abort();
     await expectation;
-    expect(events).toContainEqual(expect.objectContaining({
-      type: "tool_approval_resolved",
-      decision: "deny",
-    }));
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: "tool_approval_resolved",
+        decision: "deny",
+      }),
+    );
   });
 
   it("cancels pending approvals when their conversation is deleted", async () => {
@@ -171,6 +206,7 @@ describe("tool policy", () => {
       toolCallId: "tool-delete",
       toolName: "write",
       category: "create_file",
+      scope: { kind: "workspace_path", value: "notes.txt" },
       summary: "Create notes.txt",
     });
     const expectation = expect(authorization).rejects.toMatchObject({ code: "aborted" });

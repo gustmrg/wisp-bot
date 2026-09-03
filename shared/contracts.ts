@@ -8,11 +8,7 @@ import type {
   MarkConversationReadRequest,
   UpdateConversationRequest,
 } from "./conversations.js";
-import type {
-  ResolveToolApprovalRequest,
-  ToolApprovalRequest,
-  ToolPolicySettings,
-} from "./tool-policy.js";
+import type { ResolveToolApprovalRequest, ToolApprovalRequest, ToolPolicySettings } from "./tool-policy.js";
 
 export const WISP_IPC_CHANNELS = {
   startConversation: "wisp:agent:start",
@@ -35,6 +31,11 @@ export const WISP_IPC_CHANNELS = {
   getToolPolicy: "wisp:tool-policy:get",
   saveToolPolicy: "wisp:tool-policy:save",
   resolveToolApproval: "wisp:tool-policy:resolve-approval",
+  getUpdateState: "wisp:update:get-state",
+  checkForUpdates: "wisp:update:check",
+  downloadUpdate: "wisp:update:download",
+  installUpdate: "wisp:update:install",
+  updateState: "wisp:update:state",
 } as const;
 
 export interface ConversationRequest {
@@ -105,9 +106,7 @@ export interface BackendError {
   retryable: boolean;
 }
 
-export type BackendResult<T> =
-  | { ok: true; value: T }
-  | { ok: false; error: BackendError };
+export type BackendResult<T> = { ok: true; value: T } | { ok: false; error: BackendError };
 
 export type EmptyResult = BackendResult<Record<string, never>>;
 
@@ -182,6 +181,16 @@ export type ConversationAgentEvent =
 
 export type SequencedConversationAgentEvent = ConversationAgentEvent & { sequence: number };
 
+export type UpdatePhase = "idle" | "checking" | "available" | "downloading" | "downloaded" | "up-to-date" | "error";
+
+export interface UpdateState {
+  phase: UpdatePhase;
+  currentVersion: string;
+  availableVersion?: string;
+  progress?: number;
+  message?: string;
+}
+
 export interface WispApi {
   startConversation(request: ConversationRequest): Promise<EmptyResult>;
   sendMessage(request: SendMessageRequest): Promise<EmptyResult>;
@@ -191,32 +200,21 @@ export interface WispApi {
   subscribeToAgentEvents(listener: (event: SequencedConversationAgentEvent) => void): () => void;
   getAiSettings(): Promise<BackendResult<AiSettingsView>>;
   saveAiSettings(request: SaveAiSettingsRequest): Promise<BackendResult<AiSettingsView>>;
-  removeProviderCredential(
-    request: RemoveProviderCredentialRequest,
-  ): Promise<BackendResult<AiSettingsView>>;
+  removeProviderCredential(request: RemoveProviderCredentialRequest): Promise<BackendResult<AiSettingsView>>;
   getConversationState(): Promise<BackendResult<ConversationStateView>>;
-  initializeConversations(
-    request: InitializeConversationsRequest,
-  ): Promise<BackendResult<ConversationStateView>>;
-  createConversation(
-    request: CreateConversationRequest,
-  ): Promise<BackendResult<ConversationStateView>>;
-  updateConversation(
-    request: UpdateConversationRequest,
-  ): Promise<BackendResult<ConversationStateView>>;
-  deleteConversation(
-    request: DeleteConversationRequest,
-  ): Promise<BackendResult<ConversationStateView>>;
-  appendConversationMessage(
-    request: AppendConversationMessageRequest,
-  ): Promise<BackendResult<ConversationStateView>>;
-  answerConversationPrompt(
-    request: AnswerConversationPromptRequest,
-  ): Promise<BackendResult<ConversationStateView>>;
-  markConversationRead(
-    request: MarkConversationReadRequest,
-  ): Promise<BackendResult<ConversationStateView>>;
+  initializeConversations(request: InitializeConversationsRequest): Promise<BackendResult<ConversationStateView>>;
+  createConversation(request: CreateConversationRequest): Promise<BackendResult<ConversationStateView>>;
+  updateConversation(request: UpdateConversationRequest): Promise<BackendResult<ConversationStateView>>;
+  deleteConversation(request: DeleteConversationRequest): Promise<BackendResult<ConversationStateView>>;
+  appendConversationMessage(request: AppendConversationMessageRequest): Promise<BackendResult<ConversationStateView>>;
+  answerConversationPrompt(request: AnswerConversationPromptRequest): Promise<BackendResult<ConversationStateView>>;
+  markConversationRead(request: MarkConversationReadRequest): Promise<BackendResult<ConversationStateView>>;
   getToolPolicy(): Promise<BackendResult<ToolPolicySettings>>;
   saveToolPolicy(settings: ToolPolicySettings): Promise<BackendResult<ToolPolicySettings>>;
   resolveToolApproval(request: ResolveToolApprovalRequest): Promise<EmptyResult>;
+  getUpdateState(): Promise<BackendResult<UpdateState>>;
+  checkForUpdates(): Promise<BackendResult<UpdateState>>;
+  downloadUpdate(): Promise<BackendResult<UpdateState>>;
+  installUpdate(): Promise<EmptyResult>;
+  subscribeToUpdateState(listener: (state: UpdateState) => void): () => void;
 }

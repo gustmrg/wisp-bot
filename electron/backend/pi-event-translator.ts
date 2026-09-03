@@ -1,8 +1,4 @@
-import type {
-  BackendError,
-  ConversationAgentEvent,
-  SendMessageRequest,
-} from "../../shared/contracts.js";
+import type { BackendError, ConversationAgentEvent, SendMessageRequest } from "../../shared/contracts.js";
 
 const ALLOWED_TOOLS = new Set(["read", "grep", "find", "ls", "edit", "write"]);
 const MAX_DELTA_CHARACTERS = 8_000;
@@ -167,7 +163,11 @@ export class PiEventTranslator {
     if (!delta || this.failed) return;
     const remaining = MAX_RESPONSE_CHARACTERS - this.responseCharacters;
     if (remaining <= 0) {
-      this.reportError({ code: "internal_error", message: "The model response exceeded the supported size.", retryable: false });
+      this.reportError({
+        code: "internal_error",
+        message: "The model response exceeded the supported size.",
+        retryable: false,
+      });
       return;
     }
     const accepted = delta.slice(0, remaining);
@@ -177,7 +177,11 @@ export class PiEventTranslator {
       if (this.pendingDelta.length >= MAX_DELTA_CHARACTERS) this.flush();
     }
     if (accepted.length < delta.length) {
-      this.reportError({ code: "internal_error", message: "The model response exceeded the supported size.", retryable: false });
+      this.reportError({
+        code: "internal_error",
+        message: "The model response exceeded the supported size.",
+        retryable: false,
+      });
       return;
     }
     if (this.flushDelayMs <= 0) {

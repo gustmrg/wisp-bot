@@ -1,11 +1,5 @@
 import type { ModelSelection, SequencedConversationAgentEvent } from "../../shared/contracts.js";
-import type {
-  AgentSettings,
-  Chat,
-  ChatCollection,
-  ConversationStateView,
-  Message,
-} from "../../shared/conversations.js";
+import type { Chat, ChatChanges, ChatCollection, ConversationStateView, Message } from "../../shared/conversations.js";
 import type { ToolApprovalRequest } from "../../shared/tool-policy.js";
 import type { AgentRegistry } from "./agent-registry.js";
 import type { ConversationRepository } from "./conversation-repository.js";
@@ -72,9 +66,12 @@ export class ConversationService {
       const message: Message & { id: string } = {
         id: event.messageId,
         type: "incoming",
-        text: current?.type === "incoming" && current.text
-          ? current.text
-          : event.type === "assistant_message_cancelled" ? "Stopped." : "",
+        text:
+          current?.type === "incoming" && current.text
+            ? current.text
+            : event.type === "assistant_message_cancelled"
+              ? "Stopped."
+              : "",
         status: event.type === "assistant_message_completed" ? "complete" : "cancelled",
         ...(current?.createdAt ? { createdAt: current.createdAt } : {}),
       };
@@ -104,7 +101,7 @@ export class ConversationService {
 
   async create(conversation: Chat): Promise<ConversationStateView> {
     await this.repository.create(conversation);
-    if (!conversation.isCircle) {
+    if (conversation.kind === "wisp") {
       try {
         await this.registry.create(this.repository.getAgentContext(conversation.id));
       } catch (error) {
@@ -115,10 +112,7 @@ export class ConversationService {
     return this.getState();
   }
 
-  async update(
-    conversationId: string,
-    changes: Partial<Omit<AgentSettings, "id" | "isCircle">>,
-  ): Promise<ConversationStateView> {
+  async update(conversationId: string, changes: ChatChanges): Promise<ConversationStateView> {
     await this.repository.update(conversationId, changes);
     return this.getState();
   }
@@ -140,9 +134,7 @@ export class ConversationService {
 
   async delete(conversationId: string): Promise<ConversationStateView> {
     const conversation = this.repository.getChats()[conversationId];
-    const context = conversation && !conversation.isCircle
-      ? this.repository.getAgentContext(conversationId)
-      : null;
+    const context = conversation?.kind === "wisp" ? this.repository.getAgentContext(conversationId) : null;
     if (context) await this.registry.delete(conversationId);
     try {
       await this.repository.delete(conversationId);
@@ -175,19 +167,18 @@ export class ConversationService {
 
   private persistLiveMessage(conversationId: string, message: Message & { id: string }): void {
     this.setLiveMessage(conversationId, message);
-    void this.repository.appendMessage(conversationId, message).then(() => {
-      const messages = this.liveMessages.get(conversationId);
-      if (messages?.get(message.id) !== message) return;
-      messages.delete(message.id);
-      if (messages.size === 0) this.liveMessages.delete(conversationId);
-    }).catch(() => undefined);
+    void this.repository
+      .appendMessage(conversationId, message)
+      .then(() => {
+        const messages = this.liveMessages.get(conversationId);
+        if (messages?.get(message.id) !== message) return;
+        messages.delete(message.id);
+        if (messages.size === 0) this.liveMessages.delete(conversationId);
+      })
+      .catch(() => undefined);
   }
 
-  private persistOutgoingStatus(
-    conversationId: string,
-    requestId: string,
-    status: "complete" | "failed",
-  ): void {
+  private persistOutgoingStatus(conversationId: string, requestId: string, status: "complete" | "failed"): void {
     const message = this.repository.getChats()[conversationId]?.messages.find(({ id }) => id === requestId);
     if (message?.type !== "outgoing") return;
     void this.repository.appendMessage(conversationId, { ...message, id: requestId, status }).catch(() => undefined);
@@ -201,9 +192,7 @@ export class ConversationService {
       chats[conversationId] = {
         ...chat,
         messages: [
-          ...chat.messages.map((message) => message.id && liveIds.has(message.id)
-            ? live.get(message.id)!
-            : message),
+          ...chat.messages.map((message) => (message.id && liveIds.has(message.id) ? live.get(message.id)! : message)),
           ...[...live.values()].filter((message) => !chat.messages.some(({ id }) => id === message.id)),
         ],
       };

@@ -25,6 +25,11 @@ const WISP_IPC_CHANNELS = {
   getToolPolicy: "wisp:tool-policy:get",
   saveToolPolicy: "wisp:tool-policy:save",
   resolveToolApproval: "wisp:tool-policy:resolve-approval",
+  getUpdateState: "wisp:update:get-state",
+  checkForUpdates: "wisp:update:check",
+  downloadUpdate: "wisp:update:download",
+  installUpdate: "wisp:update:install",
+  updateState: "wisp:update:state",
 } as const;
 
 const wispApi: WispApi = {
@@ -42,33 +47,28 @@ const wispApi: WispApi = {
   },
   getAiSettings: () => ipcRenderer.invoke(WISP_IPC_CHANNELS.getAiSettings),
   saveAiSettings: (request) => ipcRenderer.invoke(WISP_IPC_CHANNELS.saveAiSettings, request),
-  removeProviderCredential: (request) => ipcRenderer.invoke(
-    WISP_IPC_CHANNELS.removeProviderCredential,
-    request,
-  ),
+  removeProviderCredential: (request) => ipcRenderer.invoke(WISP_IPC_CHANNELS.removeProviderCredential, request),
   getConversationState: () => ipcRenderer.invoke(WISP_IPC_CHANNELS.getConversationState),
-  initializeConversations: (request) => ipcRenderer.invoke(
-    WISP_IPC_CHANNELS.initializeConversations,
-    request,
-  ),
+  initializeConversations: (request) => ipcRenderer.invoke(WISP_IPC_CHANNELS.initializeConversations, request),
   createConversation: (request) => ipcRenderer.invoke(WISP_IPC_CHANNELS.createConversation, request),
   updateConversation: (request) => ipcRenderer.invoke(WISP_IPC_CHANNELS.updateConversation, request),
   deleteConversation: (request) => ipcRenderer.invoke(WISP_IPC_CHANNELS.deleteConversation, request),
-  appendConversationMessage: (request) => ipcRenderer.invoke(
-    WISP_IPC_CHANNELS.appendConversationMessage,
-    request,
-  ),
-  answerConversationPrompt: (request) => ipcRenderer.invoke(
-    WISP_IPC_CHANNELS.answerConversationPrompt,
-    request,
-  ),
-  markConversationRead: (request) => ipcRenderer.invoke(
-    WISP_IPC_CHANNELS.markConversationRead,
-    request,
-  ),
+  appendConversationMessage: (request) => ipcRenderer.invoke(WISP_IPC_CHANNELS.appendConversationMessage, request),
+  answerConversationPrompt: (request) => ipcRenderer.invoke(WISP_IPC_CHANNELS.answerConversationPrompt, request),
+  markConversationRead: (request) => ipcRenderer.invoke(WISP_IPC_CHANNELS.markConversationRead, request),
   getToolPolicy: () => ipcRenderer.invoke(WISP_IPC_CHANNELS.getToolPolicy),
   saveToolPolicy: (settings) => ipcRenderer.invoke(WISP_IPC_CHANNELS.saveToolPolicy, settings),
   resolveToolApproval: (request) => ipcRenderer.invoke(WISP_IPC_CHANNELS.resolveToolApproval, request),
+  getUpdateState: () => ipcRenderer.invoke(WISP_IPC_CHANNELS.getUpdateState),
+  checkForUpdates: () => ipcRenderer.invoke(WISP_IPC_CHANNELS.checkForUpdates),
+  downloadUpdate: () => ipcRenderer.invoke(WISP_IPC_CHANNELS.downloadUpdate),
+  installUpdate: () => ipcRenderer.invoke(WISP_IPC_CHANNELS.installUpdate),
+  subscribeToUpdateState: (listener) => {
+    const handleState = (_event: Electron.IpcRendererEvent, state: Parameters<typeof listener>[0]): void =>
+      listener(state);
+    ipcRenderer.on(WISP_IPC_CHANNELS.updateState, handleState);
+    return () => ipcRenderer.removeListener(WISP_IPC_CHANNELS.updateState, handleState);
+  },
 };
 
 contextBridge.exposeInMainWorld("wisp", Object.freeze(wispApi));

@@ -17,10 +17,9 @@ async function run() {
   let agent;
   try {
     const { ModelRuntime } = await import("@earendil-works/pi-coding-agent");
-    const {
-      PiConversationAgent,
-      SdkPiSessionFactory,
-    } = await import("../dist-electron/electron/backend/pi-conversation-agent.js");
+    const { PiConversationAgent, SdkPiSessionFactory } = await import(
+      "../dist-electron/electron/backend/pi-conversation-agent.js"
+    );
     const workspaceDirectory = path.join(smokeDirectory, "workspace");
     const sessionDirectory = path.join(smokeDirectory, "sessions");
     const configDirectory = path.join(smokeDirectory, "config");
@@ -37,19 +36,23 @@ async function run() {
       refreshOnCreate: false,
     });
     await runtime.setRuntimeApiKey(providerId, apiKey);
-    agent = new PiConversationAgent({
-      conversationId: "live-smoke",
-      sessionId: "live-smoke-session",
-      name: "Live Smoke Wisp",
-      label: "Verification",
-      description: "Verifies one environment-gated Pi request.",
-      workspaceDirectory,
-      sessionDirectory,
-      configDirectory,
-      piSessionId: null,
-      piSessionFile: null,
-      savePiSessionIdentity: async () => undefined,
-    }, new SdkPiSessionFactory(runtime), { flushDelayMs: 20 });
+    agent = new PiConversationAgent(
+      {
+        conversationId: "live-smoke",
+        sessionId: "live-smoke-session",
+        name: "Live Smoke Wisp",
+        label: "Verification",
+        description: "Verifies one environment-gated Pi request.",
+        workspaceDirectory,
+        sessionDirectory,
+        configDirectory,
+        piSessionId: null,
+        piSessionFile: null,
+        savePiSessionIdentity: async () => undefined,
+      },
+      new SdkPiSessionFactory(runtime),
+      { flushDelayMs: 20 },
+    );
     const eventTypes = [];
     agent.subscribe((event) => eventTypes.push(event.type));
     await agent.start();

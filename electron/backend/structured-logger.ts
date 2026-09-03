@@ -24,10 +24,9 @@ export class StructuredLogger {
 }
 
 export function redactLogFields(fields: Record<string, unknown>): Record<string, unknown> {
-  return Object.fromEntries(Object.entries(fields).map(([key, value]) => [
-    key,
-    SENSITIVE_KEY.test(key) ? "[REDACTED]" : redactValue(value),
-  ]));
+  return Object.fromEntries(
+    Object.entries(fields).map(([key, value]) => [key, SENSITIVE_KEY.test(key) ? "[REDACTED]" : redactValue(value)]),
+  );
 }
 
 function serialize(event: string, fields: Record<string, unknown>): string {

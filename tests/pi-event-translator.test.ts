@@ -37,20 +37,26 @@ describe("PiEventTranslator", () => {
       "assistant_message_completed",
       "conversation_status",
     ]);
-    expect(events).toContainEqual(expect.objectContaining({
-      type: "assistant_text_delta",
-      delta: "Hello world",
-    }));
-    expect(events).toContainEqual(expect.objectContaining({
-      type: "assistant_message_started",
-      createdAt: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/),
-    }));
-    expect(events).toContainEqual(expect.objectContaining({
-      type: "tool_activity",
-      toolName: "read",
-      phase: "completed",
-      isError: false,
-    }));
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: "assistant_text_delta",
+        delta: "Hello world",
+      }),
+    );
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: "assistant_message_started",
+        createdAt: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/),
+      }),
+    );
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: "tool_activity",
+        toolName: "read",
+        phase: "completed",
+        isError: false,
+      }),
+    );
     expect(JSON.stringify(events)).not.toContain("secret");
     expect(JSON.stringify(events)).not.toContain("bash-1");
   });
@@ -75,10 +81,12 @@ describe("PiEventTranslator", () => {
     });
     failedTranslator.handle({ type: "agent_settled" });
 
-    expect(failed).toContainEqual(expect.objectContaining({
-      type: "conversation_error",
-      error: expect.objectContaining({ message: "The model request failed." }),
-    }));
+    expect(failed).toContainEqual(
+      expect.objectContaining({
+        type: "conversation_error",
+        error: expect.objectContaining({ message: "The model request failed." }),
+      }),
+    );
     expect(JSON.stringify(failed)).not.toContain("provider secret");
     expect(failed.some(({ type }) => type === "assistant_message_completed")).toBe(false);
   });
@@ -94,15 +102,18 @@ describe("PiEventTranslator", () => {
     translator.handle({ type: "tool_execution_start", toolCallId: "edit-1", toolName: "edit" });
     translator.handle({ type: "agent_settled" });
 
-    const deltas = events.filter((event): event is Extract<ConversationAgentEvent, { type: "assistant_text_delta" }> => (
-      event.type === "assistant_text_delta"
-    ));
+    const deltas = events.filter(
+      (event): event is Extract<ConversationAgentEvent, { type: "assistant_text_delta" }> =>
+        event.type === "assistant_text_delta",
+    );
     expect(deltas.every(({ delta }) => delta.length <= 8_000)).toBe(true);
     expect(deltas.reduce((total, { delta }) => total + delta.length, 0)).toBe(500_000);
-    expect(events).toContainEqual(expect.objectContaining({
-      type: "conversation_error",
-      error: expect.objectContaining({ retryable: false }),
-    }));
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: "conversation_error",
+        error: expect.objectContaining({ retryable: false }),
+      }),
+    );
     expect(events).toContainEqual(expect.objectContaining({ type: "tool_activity", toolName: "edit" }));
   });
 });

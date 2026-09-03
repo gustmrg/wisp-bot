@@ -31,13 +31,17 @@ function isCredential(value: unknown): value is Credential {
   if (!value || typeof value !== "object") return false;
   const candidate = value as Record<string, unknown>;
   if (candidate.type === "api_key") {
-    return (candidate.key === undefined || typeof candidate.key === "string")
-      && (candidate.env === undefined || (candidate.env !== null && typeof candidate.env === "object"));
+    return (
+      (candidate.key === undefined || typeof candidate.key === "string") &&
+      (candidate.env === undefined || (candidate.env !== null && typeof candidate.env === "object"))
+    );
   }
-  return candidate.type === "oauth"
-    && typeof candidate.access === "string"
-    && typeof candidate.refresh === "string"
-    && typeof candidate.expires === "number";
+  return (
+    candidate.type === "oauth" &&
+    typeof candidate.access === "string" &&
+    typeof candidate.refresh === "string" &&
+    typeof candidate.expires === "number"
+  );
 }
 
 function normalizeCredentials(value: unknown): CredentialMap {
@@ -108,7 +112,10 @@ export class EncryptedCredentialStore implements CredentialStore {
 
   private enqueue<T>(operation: () => Promise<T>): Promise<T> {
     const result = this.operationChain.then(operation, operation);
-    this.operationChain = result.then(() => undefined, () => undefined);
+    this.operationChain = result.then(
+      () => undefined,
+      () => undefined,
+    );
     return result;
   }
 

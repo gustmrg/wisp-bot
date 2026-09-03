@@ -21,6 +21,11 @@ const REQUIRED_WISP_METHODS = [
   "getToolPolicy",
   "saveToolPolicy",
   "resolveToolApproval",
+  "getUpdateState",
+  "checkForUpdates",
+  "downloadUpdate",
+  "installUpdate",
+  "subscribeToUpdateState",
 ] as const satisfies ReadonlyArray<keyof WispApi>;
 
 export function isWispBridgeAvailable(value: unknown): value is WispApi {

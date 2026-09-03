@@ -14,7 +14,5 @@ if (!rootElement) {
 const exposedBridge = Reflect.get(window, "wisp") as unknown;
 
 createRoot(rootElement).render(
-  <StrictMode>
-    {isWispBridgeAvailable(exposedBridge) ? <App /> : <DesktopBridgeRequired />}
-  </StrictMode>,
+  <StrictMode>{isWispBridgeAvailable(exposedBridge) ? <App /> : <DesktopBridgeRequired />}</StrictMode>,
 );

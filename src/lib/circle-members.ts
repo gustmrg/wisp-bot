@@ -1,31 +1,60 @@
-import type { AgentSettings, Chat, ChatCollection } from "@/chat-data";
+import type { Chat, ChatCollection, WispChat } from "@/chat-data";
 
 const LEGACY_OFFSITE_MEMBER_IDS = ["chief", "inbox", "account"];
 
-type LegacyChat = AgentSettings & { isGroup?: boolean };
+type LegacyChat = Chat & { isCircle?: boolean; isGroup?: boolean };
 
 export function migrateLegacyChats(chats: ChatCollection): ChatCollection {
+  const legacyOffsite = chats.offsite as LegacyChat | undefined;
+  const missingOffsiteMembers =
+    legacyOffsite !== undefined && (!("memberIds" in legacyOffsite) || legacyOffsite.memberIds === undefined);
   const migrated = Object.fromEntries(
     Object.entries(chats).map(([id, chat]) => {
-      const { isGroup, ...rest } = chat as LegacyChat;
-      const isCircle = rest.isCircle ?? isGroup ?? false;
-      const label = isCircle && rest.label === "Channel" ? "Circle" : rest.label;
-      return [id, { ...rest, isCircle, label }];
+      const legacy = chat as LegacyChat;
+      const kind = chat.kind ?? (legacy.isCircle || legacy.isGroup ? "circle" : "wisp");
+      const systemRole = chat.systemRole ?? (chat.kind === undefined && id === "chief" ? "chief" : undefined);
+      const common = {
+        id: chat.id,
+        name: chat.name,
+        label: kind === "circle" && chat.label === "Channel" ? "Circle" : chat.label,
+        description: chat.description,
+        notifyOnUpdatesEnabled: chat.notifyOnUpdatesEnabled,
+        preview: chat.preview,
+        timestamp: chat.timestamp,
+        messages: chat.messages,
+        ...(systemRole ? { systemRole } : {}),
+        ...(typeof chat.isActive === "boolean" ? { isActive: chat.isActive } : {}),
+        ...(typeof chat.unread === "boolean" ? { unread: chat.unread } : {}),
+      };
+      if (kind === "circle") {
+        const memberIds = "memberIds" in legacy && Array.isArray(legacy.memberIds) ? legacy.memberIds : [];
+        return [id, { ...common, kind, memberIds }];
+      }
+      const wisp = legacy as unknown as WispChat;
+      return [
+        id,
+        {
+          ...common,
+          kind,
+          shape: wisp.shape,
+          ...(wisp.color === undefined ? {} : { color: wisp.color }),
+          ...(wisp.avatarImage === undefined ? {} : { avatarImage: wisp.avatarImage }),
+        },
+      ];
     }),
   ) as ChatCollection;
 
   const offsite = migrated.offsite;
-  if (!offsite?.isCircle || offsite.memberIds !== undefined) return migrated;
+  if (offsite?.kind !== "circle" || !missingOffsiteMembers) return migrated;
 
-  // Only the bundled demo predates member selection; preserve explicit empty circles.
-  const memberIds = LEGACY_OFFSITE_MEMBER_IDS.filter((id) => migrated[id] && !migrated[id].isCircle);
+  const memberIds = LEGACY_OFFSITE_MEMBER_IDS.filter((id) => migrated[id]?.kind === "wisp");
   return { ...migrated, offsite: { ...offsite, memberIds } };
 }
 
-export function getCircleMembers(chat: AgentSettings, chats: ChatCollection): Chat[] {
-  if (!chat.isCircle) return [];
-  return [...new Set(chat.memberIds ?? [])].flatMap((id) => {
+export function getCircleMembers(chat: Chat, chats: ChatCollection): WispChat[] {
+  if (chat.kind !== "circle") return [];
+  return [...new Set(chat.memberIds)].flatMap((id) => {
     const member = chats[id];
-    return member && !member.isCircle ? [member] : [];
+    return member?.kind === "wisp" ? [member] : [];
   });
 }

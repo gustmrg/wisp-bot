@@ -20,9 +20,9 @@ describe("Pi SDK integration", () => {
         allowModelNetwork: false,
         refreshOnCreate: false,
       });
-      const provider = runtime.getProviders().find((candidate) => (
-        Boolean(candidate.auth.apiKey) && runtime.getModels(candidate.id).length > 0
-      ));
+      const provider = runtime
+        .getProviders()
+        .find((candidate) => Boolean(candidate.auth.apiKey) && runtime.getModels(candidate.id).length > 0);
       expect(provider).toBeDefined();
       const model = runtime.getModels(provider!.id)[0]!;
       await runtime.setRuntimeApiKey(provider!.id, "test-only-key");

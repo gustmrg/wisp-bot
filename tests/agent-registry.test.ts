@@ -17,9 +17,9 @@ function context(conversationId: string): ConversationAgentContext {
 
 describe("AgentRegistry", () => {
   it("creates exactly one agent per Wisp and restores idempotently", async () => {
-    const create = vi.fn((agentContext: ConversationAgentContext) => (
-      new FakeConversationAgent(agentContext.conversationId)
-    ));
+    const create = vi.fn(
+      (agentContext: ConversationAgentContext) => new FakeConversationAgent(agentContext.conversationId),
+    );
     const factory: ConversationAgentFactory = { create };
     const registry = new AgentRegistry(factory, () => undefined);
 
@@ -52,16 +52,16 @@ describe("AgentRegistry", () => {
       registry.send({ conversationId: "two", requestId: "two-a", text: "C" }),
     ]);
 
-    const lifecycle = events.filter((event) => (
-      event.type === "assistant_message_started" || event.type === "assistant_message_completed"
-    )).map((event) => `${event.type}:${event.requestId}`);
-    expect(lifecycle.indexOf("assistant_message_completed:one-a"))
-      .toBeLessThan(lifecycle.indexOf("assistant_message_started:one-b"));
-    expect(lifecycle.indexOf("assistant_message_started:two-a"))
-      .toBeLessThan(lifecycle.indexOf("assistant_message_completed:one-a"));
-    expect(events.map(({ sequence }) => sequence)).toEqual(
-      events.map((_event, index) => index + 1),
+    const lifecycle = events
+      .filter((event) => event.type === "assistant_message_started" || event.type === "assistant_message_completed")
+      .map((event) => `${event.type}:${event.requestId}`);
+    expect(lifecycle.indexOf("assistant_message_completed:one-a")).toBeLessThan(
+      lifecycle.indexOf("assistant_message_started:one-b"),
     );
+    expect(lifecycle.indexOf("assistant_message_started:two-a")).toBeLessThan(
+      lifecycle.indexOf("assistant_message_completed:one-a"),
+    );
+    expect(events.map(({ sequence }) => sequence)).toEqual(events.map((_event, index) => index + 1));
     expect(registry.getEventSequence()).toBe(events.length);
     await registry.disposeAll();
   });
@@ -79,17 +79,21 @@ describe("AgentRegistry", () => {
     };
     const registry = new AgentRegistry(factory, (event) => published.push(event));
 
-    await expect(registry.restore([context("one")], {
-      providerId: "provider",
-      modelId: "model",
-    })).resolves.toBeUndefined();
+    await expect(
+      registry.restore([context("one")], {
+        providerId: "provider",
+        modelId: "model",
+      }),
+    ).resolves.toBeUndefined();
 
     expect(registry.list()).toEqual(["one"]);
     expect(registry.statuses()).toEqual({ one: "configuration_required" });
-    expect(published).toContainEqual(expect.objectContaining({
-      type: "conversation_error",
-      error: expect.objectContaining({ message: "The backend could not complete the request." }),
-    }));
+    expect(published).toContainEqual(
+      expect.objectContaining({
+        type: "conversation_error",
+        error: expect.objectContaining({ message: "The backend could not complete the request." }),
+      }),
+    );
     expect(JSON.stringify(published)).not.toContain("raw Pi restore failure");
     await registry.disposeAll();
   });
@@ -116,23 +120,33 @@ describe("AgentRegistry", () => {
     const registry = new AgentRegistry(factory, () => undefined);
     const contexts = Array.from({ length: 8 }, (_value, index) => context(`wisp-${index}`));
     await registry.restore(contexts, null);
-    await Promise.all(contexts.map(({ conversationId }, index) => registry.send({
-      conversationId,
-      requestId: `load-${index}`,
-      text: "Load test",
-    })));
+    await Promise.all(
+      contexts.map(({ conversationId }, index) =>
+        registry.send({
+          conversationId,
+          requestId: `load-${index}`,
+          text: "Load test",
+        }),
+      ),
+    );
     expect(maximumActive).toBeLessThanOrEqual(4);
 
-    const queued = Array.from({ length: 8 }, (_value, index) => registry.send({
-      conversationId: "wisp-0",
-      requestId: `queued-${index}`,
-      text: "Queued",
-    }));
-    await expect(Promise.resolve().then(() => registry.send({
-      conversationId: "wisp-0",
-      requestId: "queued-overflow",
-      text: "Overflow",
-    }))).rejects.toMatchObject({ code: "invalid_request" });
+    const queued = Array.from({ length: 8 }, (_value, index) =>
+      registry.send({
+        conversationId: "wisp-0",
+        requestId: `queued-${index}`,
+        text: "Queued",
+      }),
+    );
+    await expect(
+      Promise.resolve().then(() =>
+        registry.send({
+          conversationId: "wisp-0",
+          requestId: "queued-overflow",
+          text: "Overflow",
+        }),
+      ),
+    ).rejects.toMatchObject({ code: "invalid_request" });
     await Promise.all(queued);
     await registry.disposeAll();
   });
@@ -143,11 +157,15 @@ describe("AgentRegistry", () => {
     const started = new Promise<void>((resolve) => {
       markStarted = resolve;
     });
-    const registry = new AgentRegistry({
-      create: (agentContext) => new FakeConversationAgent(agentContext.conversationId, { latencyMs: 50 }),
-    }, (event) => {
-      if (event.type === "assistant_message_started" && event.requestId === "first") markStarted?.();
-    }, disposed);
+    const registry = new AgentRegistry(
+      {
+        create: (agentContext) => new FakeConversationAgent(agentContext.conversationId, { latencyMs: 50 }),
+      },
+      (event) => {
+        if (event.type === "assistant_message_started" && event.requestId === "first") markStarted?.();
+      },
+      disposed,
+    );
     await registry.restore([context("one")], null);
 
     const first = registry.send({ conversationId: "one", requestId: "first", text: "First" });
@@ -159,5 +177,55 @@ describe("AgentRegistry", () => {
     await first;
     await secondExpectation;
     expect(disposed).toHaveBeenCalledWith("one");
+  });
+
+  it("rejects duplicate request IDs without invoking the agent twice", async () => {
+    const agent = new FakeConversationAgent("one");
+    const send = vi.spyOn(agent, "send");
+    const registry = new AgentRegistry({ create: () => agent }, () => undefined);
+    await registry.restore([context("one")], null);
+
+    await registry.send({ conversationId: "one", requestId: "same-request", text: "First" });
+    await expect(
+      Promise.resolve().then(() =>
+        registry.send({ conversationId: "one", requestId: "same-request", text: "Duplicate" }),
+      ),
+    ).rejects.toMatchObject({ code: "invalid_request" });
+
+    expect(send).toHaveBeenCalledTimes(1);
+    await registry.disposeAll();
+  });
+
+  it("aborts timed-out work and publishes one retryable error terminal", async () => {
+    vi.useFakeTimers();
+    const events: SequencedConversationAgentEvent[] = [];
+    const agent = new FakeConversationAgent("one", { latencyMs: 60_000 });
+    const abort = vi.spyOn(agent, "abort");
+    const registry = new AgentRegistry(
+      { create: () => agent },
+      (event) => events.push(event),
+      () => undefined,
+      {
+        executionTimeoutMs: 100,
+      },
+    );
+    await registry.restore([context("one")], null);
+
+    registry.dispatch({ conversationId: "one", requestId: "deadline", text: "Slow" });
+    await vi.advanceTimersByTimeAsync(101);
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(abort).toHaveBeenCalledTimes(1);
+    expect(events.filter((event) => event.type === "assistant_message_cancelled")).toEqual([]);
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: "conversation_error",
+        requestId: "deadline",
+        error: expect.objectContaining({ code: "aborted", retryable: true }),
+      }),
+    );
+    await registry.disposeAll();
+    vi.useRealTimers();
   });
 });

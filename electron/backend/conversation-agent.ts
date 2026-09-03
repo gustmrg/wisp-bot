@@ -1,8 +1,4 @@
-import type {
-  ConversationAgentEvent,
-  ModelSelection,
-  SendMessageRequest,
-} from "../../shared/contracts.js";
+import type { ConversationAgentEvent, ModelSelection, SendMessageRequest } from "../../shared/contracts.js";
 
 export type ConversationAgentListener = (event: ConversationAgentEvent) => void;
 

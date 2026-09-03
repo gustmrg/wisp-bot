@@ -47,7 +47,9 @@ function toolDefinition(name: string) {
 vi.mock("@earendil-works/pi-coding-agent", () => ({
   createAgentSession: sdk.createAgentSession,
   DefaultResourceLoader: class {
-    constructor(options: unknown) { sdk.loaderOptions.push(options); }
+    constructor(options: unknown) {
+      sdk.loaderOptions.push(options);
+    }
     reload = sdk.loaderReload;
   },
   SessionManager: {
@@ -105,29 +107,33 @@ describe("SdkPiSessionFactory", () => {
     });
 
     expect(sdk.open).toHaveBeenCalledWith(sessionFile, directory, context.workspaceDirectory);
-    expect(sdk.createAgentSession).toHaveBeenCalledWith(expect.objectContaining({
-      cwd: context.workspaceDirectory,
-      agentDir: context.configDirectory,
-      model,
-      modelRuntime: runtime,
-      tools: ["read", "grep", "find", "ls", "edit", "write"],
-      excludeTools: ["bash", "powershell"],
-      customTools: expect.arrayContaining([
-        expect.objectContaining({ name: "read" }),
-        expect.objectContaining({ name: "grep" }),
-        expect.objectContaining({ name: "find" }),
-        expect.objectContaining({ name: "ls" }),
-        expect.objectContaining({ name: "edit" }),
-        expect.objectContaining({ name: "write" }),
-      ]),
-    }));
+    expect(sdk.createAgentSession).toHaveBeenCalledWith(
+      expect.objectContaining({
+        cwd: context.workspaceDirectory,
+        agentDir: context.configDirectory,
+        model,
+        modelRuntime: runtime,
+        tools: ["read", "grep", "find", "ls", "edit", "write"],
+        excludeTools: ["bash", "powershell"],
+        customTools: expect.arrayContaining([
+          expect.objectContaining({ name: "read" }),
+          expect.objectContaining({ name: "grep" }),
+          expect.objectContaining({ name: "find" }),
+          expect.objectContaining({ name: "ls" }),
+          expect.objectContaining({ name: "edit" }),
+          expect.objectContaining({ name: "write" }),
+        ]),
+      }),
+    );
     expect(sdk.session.setActiveToolsByName).toHaveBeenCalledWith(["read", "grep", "find", "ls", "edit", "write"]);
-    expect(sdk.loaderOptions[0]).toEqual(expect.objectContaining({
-      noExtensions: true,
-      noSkills: true,
-      noPromptTemplates: true,
-      noContextFiles: true,
-    }));
+    expect(sdk.loaderOptions[0]).toEqual(
+      expect.objectContaining({
+        noExtensions: true,
+        noSkills: true,
+        noPromptTemplates: true,
+        noContextFiles: true,
+      }),
+    );
     const prompt = (sdk.loaderOptions[0] as { systemPromptOverride: () => string }).systemPromptOverride();
     expect(prompt).toContain("Research Wisp");
     expect(prompt).toContain("subject to app policy and user approval");
@@ -141,52 +147,49 @@ describe("SdkPiSessionFactory", () => {
       customTools: Array<{ name: string; execute: (...args: unknown[]) => Promise<unknown> }>;
     };
     const read = options.customTools.find(({ name }) => name === "read")!;
-    await expect(read.execute("tool-1", { path: os.tmpdir() }, undefined, undefined, {}))
-      .rejects.toMatchObject({ code: "invalid_request" });
+    await expect(read.execute("tool-1", { path: os.tmpdir() }, undefined, undefined, {})).rejects.toMatchObject({
+      code: "invalid_request",
+    });
     const outsideFile = path.join(directory, "outside.txt");
     await writeFile(outsideFile, "outside", "utf8");
     await symlink(outsideFile, path.join(context.workspaceDirectory, "escape.txt"));
-    await expect(read.execute("tool-2", { path: "escape.txt" }, undefined, undefined, {}))
-      .rejects.toMatchObject({ code: "invalid_request" });
+    await expect(read.execute("tool-2", { path: "escape.txt" }, undefined, undefined, {})).rejects.toMatchObject({
+      code: "invalid_request",
+    });
     await writeFile(path.join(context.workspaceDirectory, "inside.txt"), "inside", "utf8");
     sdk.toolExecute.mockResolvedValueOnce({ content: [{ type: "text", text: "x".repeat(70_000) }], details: {} });
     const boundedResult = await read.execute("tool-3", { path: "inside.txt" }, undefined, undefined, {});
     expect((boundedResult as { content: Array<{ text: string }> }).content[0]?.text.length).toBeLessThanOrEqual(64_000);
     const write = options.customTools.find(({ name }) => name === "write")!;
-    await expect(write.execute("tool-4", { path: "new.txt", content: "safe" }, undefined, undefined, {}))
-      .resolves.toBeDefined();
-    expect(authorize).toHaveBeenCalledWith(expect.objectContaining({
-      conversationId: "one",
-      toolCallId: "tool-4",
-      category: "create_file",
-      summary: "Create new.txt",
-    }), undefined);
+    await expect(
+      write.execute("tool-4", { path: "new.txt", content: "safe" }, undefined, undefined, {}),
+    ).resolves.toBeDefined();
+    expect(authorize).toHaveBeenCalledWith(
+      expect.objectContaining({
+        conversationId: "one",
+        toolCallId: "tool-4",
+        category: "create_file",
+        summary: "Create new.txt",
+      }),
+      undefined,
+    );
     expect(JSON.stringify(authorize.mock.calls)).not.toContain("safe");
-    await expect(write.execute(
-      "tool-large",
-      { path: "large.txt", content: "x".repeat(1_000_001) },
-      undefined,
-      undefined,
-      {},
-    )).rejects.toMatchObject({ code: "invalid_request" });
+    await expect(
+      write.execute("tool-large", { path: "large.txt", content: "x".repeat(1_000_001) }, undefined, undefined, {}),
+    ).rejects.toMatchObject({ code: "invalid_request" });
     const outsideDirectory = path.join(directory, "outside-directory");
     await mkdir(outsideDirectory);
     await symlink(outsideDirectory, path.join(context.workspaceDirectory, "escape-directory"));
-    await expect(write.execute(
-      "tool-5",
-      { path: "escape-directory/new.txt", content: "blocked" },
-      undefined,
-      undefined,
-      {},
-    )).rejects.toMatchObject({ code: "invalid_request" });
-    await symlink(path.join(directory, "missing-outside-directory"), path.join(context.workspaceDirectory, "broken-escape"));
-    await expect(write.execute(
-      "tool-6",
-      { path: "broken-escape/new.txt", content: "blocked" },
-      undefined,
-      undefined,
-      {},
-    )).rejects.toMatchObject({ code: "invalid_request" });
+    await expect(
+      write.execute("tool-5", { path: "escape-directory/new.txt", content: "blocked" }, undefined, undefined, {}),
+    ).rejects.toMatchObject({ code: "invalid_request" });
+    await symlink(
+      path.join(directory, "missing-outside-directory"),
+      path.join(context.workspaceDirectory, "broken-escape"),
+    );
+    await expect(
+      write.execute("tool-6", { path: "broken-escape/new.txt", content: "blocked" }, undefined, undefined, {}),
+    ).rejects.toMatchObject({ code: "invalid_request" });
     expect(sdk.toolExecute).toHaveBeenCalledTimes(2);
   });
 
@@ -195,18 +198,22 @@ describe("SdkPiSessionFactory", () => {
       hasConfiguredAuth: () => false,
       getModel: () => ({ id: "fallback" }),
     } as unknown as ModelRuntimeLike;
-    expect(() => new SdkPiSessionFactory(missingAuth).resolveModel({
-      providerId: "provider",
-      modelId: "model",
-    })).toThrow(expect.objectContaining({ code: "configuration_required" }));
+    expect(() =>
+      new SdkPiSessionFactory(missingAuth).resolveModel({
+        providerId: "provider",
+        modelId: "model",
+      }),
+    ).toThrow(expect.objectContaining({ code: "configuration_required" }));
 
     const missingModel = {
       hasConfiguredAuth: () => true,
       getModel: () => undefined,
     } as unknown as ModelRuntimeLike;
-    expect(() => new SdkPiSessionFactory(missingModel).resolveModel({
-      providerId: "provider",
-      modelId: "missing",
-    })).toThrow(expect.objectContaining({ code: "model_unavailable" }));
+    expect(() =>
+      new SdkPiSessionFactory(missingModel).resolveModel({
+        providerId: "provider",
+        modelId: "missing",
+      }),
+    ).toThrow(expect.objectContaining({ code: "model_unavailable" }));
   });
 });

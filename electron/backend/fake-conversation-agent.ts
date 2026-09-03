@@ -1,8 +1,4 @@
-import type {
-  ConversationAgentEvent,
-  ModelSelection,
-  SendMessageRequest,
-} from "../../shared/contracts.js";
+import type { ConversationAgentEvent, ModelSelection, SendMessageRequest } from "../../shared/contracts.js";
 import { WispBackendError } from "./backend-error.js";
 import type {
   ConversationAgent,
@@ -169,10 +165,14 @@ export class FakeConversationAgent implements ConversationAgent {
 
     return new Promise((resolve) => {
       const timer = setTimeout(resolve, this.latencyMs);
-      signal.addEventListener("abort", () => {
-        clearTimeout(timer);
-        resolve();
-      }, { once: true });
+      signal.addEventListener(
+        "abort",
+        () => {
+          clearTimeout(timer);
+          resolve();
+        },
+        { once: true },
+      );
     });
   }
 
