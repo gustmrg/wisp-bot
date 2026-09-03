@@ -8,10 +8,16 @@ import { cn } from "@/lib/utils";
 const markdownComponents: Components = {
   a: ({ node: _node, ...props }) => <a className="text-blue underline underline-offset-2" {...props} />,
   blockquote: ({ node: _node, ...props }) => (
-    <blockquote className="my-1.5 border-l-2 border-black/15 pl-2.5 text-dim first:mt-0 last:mb-0 dark:border-white/15" {...props} />
+    <blockquote
+      className="my-1.5 border-l-2 border-black/15 pl-2.5 text-dim first:mt-0 last:mb-0 dark:border-white/15"
+      {...props}
+    />
   ),
   code: ({ node: _node, ...props }) => (
-    <code className="rounded-[4px] bg-black/[0.05] px-[5px] py-px font-mono text-[12px] dark:bg-white/[0.08]" {...props} />
+    <code
+      className="rounded-[4px] bg-black/[0.05] px-[5px] py-px font-mono text-[12px] dark:bg-white/[0.08]"
+      {...props}
+    />
   ),
   pre: ({ node: _node, ...props }) => (
     <pre
@@ -22,12 +28,24 @@ const markdownComponents: Components = {
       {...props}
     />
   ),
-  h1: ({ node: _node, ...props }) => <h1 className="mb-1 mt-2.5 text-[14.5px] font-semibold first:mt-0 last:mb-0" {...props} />,
-  h2: ({ node: _node, ...props }) => <h2 className="mb-1 mt-2.5 text-[13.5px] font-semibold first:mt-0 last:mb-0" {...props} />,
-  h3: ({ node: _node, ...props }) => <h3 className="mb-1 mt-2 text-[13px] font-semibold first:mt-0 last:mb-0" {...props} />,
-  h4: ({ node: _node, ...props }) => <h4 className="mb-1 mt-2 text-[13px] font-semibold first:mt-0 last:mb-0" {...props} />,
-  h5: ({ node: _node, ...props }) => <h5 className="mb-1 mt-2 text-[13px] font-semibold first:mt-0 last:mb-0" {...props} />,
-  h6: ({ node: _node, ...props }) => <h6 className="mb-1 mt-2 text-[13px] font-semibold first:mt-0 last:mb-0" {...props} />,
+  h1: ({ node: _node, ...props }) => (
+    <h1 className="mb-1 mt-2.5 text-[14.5px] font-semibold first:mt-0 last:mb-0" {...props} />
+  ),
+  h2: ({ node: _node, ...props }) => (
+    <h2 className="mb-1 mt-2.5 text-[13.5px] font-semibold first:mt-0 last:mb-0" {...props} />
+  ),
+  h3: ({ node: _node, ...props }) => (
+    <h3 className="mb-1 mt-2 text-[13px] font-semibold first:mt-0 last:mb-0" {...props} />
+  ),
+  h4: ({ node: _node, ...props }) => (
+    <h4 className="mb-1 mt-2 text-[13px] font-semibold first:mt-0 last:mb-0" {...props} />
+  ),
+  h5: ({ node: _node, ...props }) => (
+    <h5 className="mb-1 mt-2 text-[13px] font-semibold first:mt-0 last:mb-0" {...props} />
+  ),
+  h6: ({ node: _node, ...props }) => (
+    <h6 className="mb-1 mt-2 text-[13px] font-semibold first:mt-0 last:mb-0" {...props} />
+  ),
   img: ({ node: _node, ...props }) => <img className="max-w-full rounded-lg" {...props} />,
   ol: ({ node: _node, ...props }) => (
     <ol className="my-1.5 ml-5 list-decimal space-y-0.5 first:mt-0 last:mb-0" {...props} />
@@ -45,7 +63,10 @@ const markdownComponents: Components = {
     </div>
   ),
   th: ({ node: _node, ...props }) => (
-    <th className="border-b border-black/20 px-2 py-1 font-semibold whitespace-nowrap dark:border-white/20" {...props} />
+    <th
+      className="border-b border-black/20 px-2 py-1 font-semibold whitespace-nowrap dark:border-white/20"
+      {...props}
+    />
   ),
   td: ({ node: _node, ...props }) => (
     <td className="border-b border-black/[0.07] px-2 py-1 align-top dark:border-white/[0.07]" {...props} />

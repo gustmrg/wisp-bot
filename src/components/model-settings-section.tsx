@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import type { AiSettingsView, ProviderSummary } from "../../shared/contracts";
 import { SettingsCard, SettingsGroup, SettingsRow, SettingsRowCopy } from "@/components/settings/settings-primitives";
@@ -26,7 +26,7 @@ function ModelSettingsSection({ active }: ModelSettingsSectionProps) {
 
   const provider = useMemo(() => view?.providers.find(({ id }) => id === providerId), [providerId, view]);
 
-  function applyView(nextView: AiSettingsView): void {
+  const applyView = useCallback((nextView: AiSettingsView): void => {
     setView(nextView);
     const nextProvider = initialProvider(nextView);
     const nextSelection = nextView.selection;
@@ -37,7 +37,7 @@ function ModelSettingsSection({ active }: ModelSettingsSectionProps) {
         : (nextProvider?.models[0]?.id ?? "");
     setModelId(nextModelId);
     setApiKey("");
-  }
+  }, []);
 
   useEffect(() => {
     if (!active || view) return;
@@ -60,7 +60,7 @@ function ModelSettingsSection({ active }: ModelSettingsSectionProps) {
     return () => {
       cancelled = true;
     };
-  }, [active, view]);
+  }, [active, view, applyView]);
 
   function handleProviderChange(nextProviderId: string | null): void {
     if (!nextProviderId || !view) return;

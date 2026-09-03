@@ -152,15 +152,9 @@ function MessageView({ message, onAnswer, onRetry }: MessageViewProps) {
           ))}
         </div>
       ) : null}
-      {(message.status === "queued" || message.status === "cancelled" || message.status === "failed") ? (
+      {message.status === "queued" || message.status === "cancelled" || message.status === "failed" ? (
         <div className={cn("mt-1 flex items-center gap-2 text-[10.5px] text-faint", outgoing && "mr-1")}>
-          <span>
-            {message.status === "queued"
-              ? "Queued"
-              : message.status === "cancelled"
-                ? "Stopped"
-                : "Failed"}
-          </span>
+          <span>{message.status === "queued" ? "Queued" : message.status === "cancelled" ? "Stopped" : "Failed"}</span>
           {!outgoing && message.status === "failed" && message.retryable ? (
             <button
               type="button"

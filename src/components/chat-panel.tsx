@@ -51,11 +51,12 @@ function ChatPanel({
   const working = status === "working";
   const lastMessage = chat.messages.at(-1);
   const transcriptVersion = lastMessage && "text" in lastMessage ? lastMessage.text.length : chat.messages.length;
+  const transcriptScrollTrigger = `${chat.id}:${chat.messages.length}:${transcriptVersion}:${working}`;
 
   useEffect(() => {
     const transcript = transcriptRef.current;
-    if (transcript) transcript.scrollTop = transcript.scrollHeight;
-  }, [chat.id, chat.messages.length, transcriptVersion, working]);
+    if (transcript && transcriptScrollTrigger) transcript.scrollTop = transcript.scrollHeight;
+  }, [transcriptScrollTrigger]);
 
   return (
     <main className={mainPanel}>
