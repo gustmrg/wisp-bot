@@ -1,9 +1,4 @@
-interface CurrentUser {
-  readonly displayName: string;
-  readonly email: string;
-  readonly givenName: string;
-  readonly initials: string;
-}
+import type { CurrentUser } from "../../shared/current-user";
 
 interface AppMetadata {
   readonly displayName: string;

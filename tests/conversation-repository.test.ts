@@ -66,6 +66,18 @@ describe("ConversationRepository", () => {
     expect(restored.getAgentContext("first").piSessionId).toBe("pi-history-id");
   });
 
+  it("includes the configured user name in every agent context", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "wisp-user-context-"));
+    const repository = new ConversationRepository({ dataDirectory: directory, userName: "  John\nDoe  " });
+    await repository.initialize({ first: chat("first"), second: chat("second") });
+
+    expect(repository.getAgentContext("first")).toEqual(expect.objectContaining({ userName: "John Doe" }));
+    expect(repository.listAgentContexts()).toEqual([
+      expect.objectContaining({ conversationId: "first", userName: "John Doe" }),
+      expect.objectContaining({ conversationId: "second", userName: "John Doe" }),
+    ]);
+  });
+
   it("upgrades Phase 3 records without losing their stable application session", async () => {
     const directory = await mkdtemp(path.join(os.tmpdir(), "wisp-schema-upgrade-"));
     await writeFile(

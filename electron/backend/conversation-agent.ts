@@ -2,6 +2,14 @@ import type { ConversationAgentEvent, ModelSelection, SendMessageRequest } from 
 
 export type ConversationAgentListener = (event: ConversationAgentEvent) => void;
 
+export function normalizeUserName(value: string | undefined): string | undefined {
+  const normalized = value
+    ?.replace(/[\u0000-\u001f\u007f]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  return normalized ? Array.from(normalized).slice(0, 80).join("") : undefined;
+}
+
 export interface ConversationAgent {
   start(): Promise<void>;
   send(request: SendMessageRequest): Promise<void>;
@@ -19,6 +27,7 @@ export interface ConversationAgentContext {
   name: string;
   label: string;
   description: string;
+  userName?: string;
   workspaceDirectory: string;
   sessionDirectory: string;
   configDirectory: string;

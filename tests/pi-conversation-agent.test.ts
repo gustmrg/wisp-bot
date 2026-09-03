@@ -84,6 +84,7 @@ function context(conversationId: string): ConversationAgentContext {
     name: conversationId,
     label: "Test",
     description: "Test Wisp",
+    userName: "John",
     workspaceDirectory: `/workspaces/${conversationId}`,
     sessionDirectory: `/sessions/${conversationId}`,
     configDirectory: `/config/${conversationId}`,
@@ -173,9 +174,10 @@ describe("PiConversationAgent", () => {
     await agent.start();
     await agent.applyModel(selection());
 
-    await agent.updateContext({ ...initialContext, description: "Financial advisor" });
+    await agent.updateContext({ ...initialContext, description: "Financial advisor", userName: "Jane" });
 
     expect(initialContext.description).toBe("Financial advisor");
+    expect(initialContext.userName).toBe("Jane");
     expect(sessions.get("one")?.reloadCount).toBe(1);
     await agent.dispose();
   });

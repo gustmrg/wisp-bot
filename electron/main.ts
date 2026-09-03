@@ -3,6 +3,7 @@ import { autoUpdater } from "electron-updater";
 import path from "node:path";
 
 import { WISP_IPC_CHANNELS, type SequencedConversationAgentEvent } from "../shared/contracts.js";
+import { DEMO_CURRENT_USER } from "../shared/current-user.js";
 import { AgentRegistry } from "./backend/agent-registry.js";
 import { selectAgentMode } from "./backend/agent-mode.js";
 import { ConversationRepository } from "./backend/conversation-repository.js";
@@ -176,7 +177,10 @@ async function bootstrap(): Promise<void> {
     toolAuthorizationBroker.cancelConversation(conversationId),
   );
   conversationService = new ConversationService(
-    new ConversationRepository({ dataDirectory: path.join(app.getPath("userData"), "backend") }),
+    new ConversationRepository({
+      dataDirectory: path.join(app.getPath("userData"), "backend"),
+      userName: DEMO_CURRENT_USER.givenName,
+    }),
     agentRegistry,
     () => toolAuthorizationBroker.listPending(),
   );
