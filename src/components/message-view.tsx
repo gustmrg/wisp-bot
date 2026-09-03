@@ -1,7 +1,10 @@
-import { CheckIcon } from "lucide-react";
+import { useState } from "react";
+import { CheckIcon, CopyIcon } from "lucide-react";
 
 import type { Message } from "@/chat-data";
+import { copyText } from "@/lib/clipboard";
 import { cn } from "@/lib/utils";
+import { MarkdownView } from "@/components/markdown-view";
 
 interface MessageViewProps {
   message: Message;
@@ -9,15 +12,24 @@ interface MessageViewProps {
   onRetry?: () => void;
 }
 
-function MessageTools({ createdAt, legacyTime, outgoing }: {
+function MessageTools({ text, createdAt, legacyTime, outgoing }: {
+  text: string;
   createdAt?: string;
   legacyTime?: string;
   outgoing: boolean;
 }) {
+  const [copied, setCopied] = useState(false);
   const time = createdAt
     ? new Date(createdAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })
     : legacyTime;
-  if (!time) return null;
+  if (!time && !text) return null;
+
+  function copyMessage() {
+    void copyText(text);
+    setCopied(true);
+    window.setTimeout(() => setCopied(false), 1400);
+  }
+
   return (
     <span
       className={cn(
@@ -25,7 +37,17 @@ function MessageTools({ createdAt, legacyTime, outgoing }: {
         outgoing ? "mr-[7px]" : "ml-[7px]",
       )}
     >
-      <time className="mr-[3px] text-faint text-[10px]" dateTime={createdAt}>{time}</time>
+      {time ? <time className="mr-[3px] text-faint text-[10px]" dateTime={createdAt}>{time}</time> : null}
+      {text ? (
+        <button
+          type="button"
+          aria-label={copied ? "Copied" : "Copy message"}
+          className="flex size-4 items-center justify-center rounded-[4px] text-faint outline-none hover:bg-black/[0.06] hover:text-dim focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue dark:hover:bg-white/[0.06] dark:hover:text-[#dddddd] [&_svg]:size-[11px]"
+          onClick={copyMessage}
+        >
+          {copied ? <CheckIcon aria-hidden="true" className="text-green" /> : <CopyIcon aria-hidden="true" />}
+        </button>
+      ) : null}
     </span>
   );
 }
@@ -83,18 +105,19 @@ function MessageView({ message, onAnswer, onRetry }: MessageViewProps) {
   }
 
   const outgoing = message.type === "outgoing";
+  if (message.status === "streaming" && !message.text.trim()) return null;
   return (
     <div className={cn("relative mt-[5px] flex animate-message-in flex-col", outgoing ? "items-end" : "items-start")}>
       <div className={cn("group/message-row flex max-w-full items-center", outgoing && "flex-row-reverse")}>
         <div
           className={cn(
-            "max-w-[min(820px,78vw)] rounded-[11px] px-2.5 py-[7px] text-[#262626] leading-[1.42] select-text whitespace-pre-wrap dark:text-[#e8e8e8]",
-            outgoing ? "bg-bubble-out" : "bg-bubble-in",
+            "max-w-[min(820px,78vw)] rounded-[11px] px-2.5 py-[7px] text-[#262626] leading-[1.42] select-text dark:text-[#e8e8e8]",
+            outgoing ? "bg-bubble-out whitespace-pre-wrap" : "bg-bubble-in",
           )}
         >
-          {message.text}
+          {outgoing ? message.text : <MarkdownView text={message.text} />}
         </div>
-        <MessageTools createdAt={message.createdAt} legacyTime={message.time} outgoing={outgoing} />
+        <MessageTools text={message.text} createdAt={message.createdAt} legacyTime={message.time} outgoing={outgoing} />
       </div>
       {message.reactions?.length ? (
         <div className="mt-[3px] flex gap-1">
@@ -109,13 +132,9 @@ function MessageView({ message, onAnswer, onRetry }: MessageViewProps) {
           ))}
         </div>
       ) : null}
-      {message.status && message.status !== "complete" ? (
+      {(message.status === "queued" || message.status === "cancelled" || message.status === "failed") ? (
         <div className={cn("mt-1 flex items-center gap-2 text-[10.5px] text-faint", outgoing && "mr-1")}>
-          <span>{message.status === "queued"
-            ? "Queued"
-            : message.status === "streaming"
-              ? "Streaming"
-              : message.status === "cancelled" ? "Stopped" : "Failed"}</span>
+          <span>{message.status === "queued" ? "Queued" : message.status === "cancelled" ? "Stopped" : "Failed"}</span>
           {!outgoing && message.status === "failed" && message.retryable ? (
             <button type="button" className="rounded-md border border-black/[0.08] px-1.5 py-0.5 text-dim hover:bg-muted hover:text-foreground dark:border-white/[0.08]" onClick={onRetry}>
               Retry
