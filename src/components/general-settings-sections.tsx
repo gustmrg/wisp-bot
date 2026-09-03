@@ -129,7 +129,10 @@ function GeneralSettingsSections({ preferences, onPreferencesChange }: GeneralSe
     if (!action || duplicateRule) return;
     onPreferencesChange({
       ...preferences,
-      autoReviewRules: [...preferences.autoReviewRules, { id: crypto.randomUUID(), action, behavior: ruleBehavior }],
+      autoReviewRules: [
+        ...preferences.autoReviewRules,
+        { id: crypto.randomUUID(), action, behavior: ruleBehavior, scope: "workspace" },
+      ],
     });
     setRuleNotice("Rule added.");
   }
@@ -200,7 +203,7 @@ function GeneralSettingsSections({ preferences, onPreferencesChange }: GeneralSe
           <SettingsRow className="flex-col items-stretch gap-[5px]">
             <strong>Auto-review Rules</strong>
             <p className="m-0 text-dim text-[11.5px] leading-[1.5]">
-              Choose a stable file-action category. Block takes priority over ask, and ask takes priority over allow.
+              Rules apply within each Wisp's assigned workspace. Block takes priority over ask, then allow.
             </p>
             {preferences.autoReviewRules.length ? (
               <ul className="m-0 mt-[7px] flex list-none flex-col p-0" aria-label="Auto-review rules">

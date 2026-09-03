@@ -22,13 +22,25 @@ describe("tool policy", () => {
     expect(evaluateToolPolicy(store.get(), "modify_file")).toBe("ask");
   });
 
+  it("migrates a legacy unscoped allow rule to ask", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "wisp-policy-legacy-"));
+    const store = new ToolPolicyStore(path.join(directory, "policy.json"));
+    const migrated = await store.save({
+      autoReview: true,
+      rules: [{ id: "legacy", action: "create_file", behavior: "allow" }],
+    });
+
+    expect(migrated.rules).toEqual([{ id: "legacy", action: "create_file", behavior: "ask", scope: "workspace" }]);
+    expect(evaluateToolPolicy(migrated, "create_file")).toBe("ask");
+  });
+
   it("uses conservative precedence and blocks shell and unknown categories", () => {
     const settings = {
       autoReview: true,
       rules: [
-        { id: "allow", action: "all_file_changes", behavior: "allow" as const },
-        { id: "ask", action: "modify_file", behavior: "ask" as const },
-        { id: "block", action: "modify files", behavior: "block" as const },
+        { id: "allow", action: "all_file_changes", behavior: "allow" as const, scope: "workspace" as const },
+        { id: "ask", action: "modify_file", behavior: "ask" as const, scope: "workspace" as const },
+        { id: "block", action: "modify files", behavior: "block" as const, scope: "workspace" as const },
       ],
     };
 
@@ -38,6 +50,7 @@ describe("tool policy", () => {
     expect(evaluateToolPolicy(settings, "shell")).toBe("block");
     expect(evaluateToolPolicy(settings, "unknown")).toBe("block");
     expect(evaluateToolPolicy({ ...settings, autoReview: false }, "create_file")).toBe("ask");
+    expect(evaluateToolPolicy(settings, "create_file", "external_path")).toBe("ask");
   });
 
   it("binds a single-use approval to its window, conversation, and tool call", async () => {
@@ -54,6 +67,7 @@ describe("tool policy", () => {
       toolCallId: "tool-1",
       toolName: "write",
       category: "create_file",
+      scope: { kind: "workspace_path", value: "notes.txt" },
       summary: "Create\nnotes.txt with hidden content that is never included",
     });
     const requested = events[0];
@@ -117,6 +131,7 @@ describe("tool policy", () => {
         toolCallId: "tool-expire",
         toolName: "edit",
         category: "modify_file",
+        scope: { kind: "workspace_path", value: "file.txt" },
         summary: "Modify file.txt",
       });
       const expiredExpectation = expect(expired).rejects.toMatchObject({ code: "approval_expired" });
@@ -128,6 +143,7 @@ describe("tool policy", () => {
         toolCallId: "tool-block",
         toolName: "edit",
         category: "modify_file",
+        scope: { kind: "workspace_path", value: "file.txt" },
         summary: "Modify file.txt",
       });
       const blockedExpectation = expect(blocked).rejects.toMatchObject({ code: "tool_blocked" });
@@ -162,6 +178,7 @@ describe("tool policy", () => {
         toolCallId: "tool-abort",
         toolName: "write",
         category: "create_file",
+        scope: { kind: "workspace_path", value: "notes.txt" },
         summary: "Create notes.txt",
       },
       controller.signal,
@@ -189,6 +206,7 @@ describe("tool policy", () => {
       toolCallId: "tool-delete",
       toolName: "write",
       category: "create_file",
+      scope: { kind: "workspace_path", value: "notes.txt" },
       summary: "Create notes.txt",
     });
     const expectation = expect(authorization).rejects.toMatchObject({ code: "aborted" });

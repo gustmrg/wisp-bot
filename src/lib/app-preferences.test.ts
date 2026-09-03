@@ -27,7 +27,7 @@ describe("normalizePreferences", () => {
       hardwareAcceleration: false,
       timezone: "UTC",
       autoReview: false,
-      autoReviewRules: [{ id: "rule-1", action: "Read files", behavior: "ask" }],
+      autoReviewRules: [{ id: "rule-1", action: "Read files", behavior: "ask", scope: "workspace" }],
     });
   });
 
@@ -49,7 +49,16 @@ describe("normalizePreferences", () => {
       }),
     ).toEqual({
       ...DEFAULT_PREFERENCES,
-      autoReviewRules: [{ id: "valid", action: "Run tests", behavior: "allow" }],
+      autoReviewRules: [{ id: "valid", action: "Run tests", behavior: "ask", scope: "workspace" }],
     });
+  });
+
+  it("never migrates a legacy free-text allow rule into automatic authorization", () => {
+    const migrated = normalizePreferences({
+      autoReviewRules: [{ id: "legacy", action: "Whatever the model asks", behavior: "allow" }],
+    });
+    expect(migrated.autoReviewRules).toEqual([
+      { id: "legacy", action: "Whatever the model asks", behavior: "ask", scope: "workspace" },
+    ]);
   });
 });

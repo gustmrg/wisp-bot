@@ -98,7 +98,9 @@ function normalizeRule(value: unknown): ToolPolicyRule {
   ) {
     throw invalidPolicy();
   }
-  return { id: raw.id, action: raw.action.trim(), behavior: raw.behavior as ToolPolicyBehavior };
+  const behavior = raw.scope === undefined && raw.behavior === "allow" ? "ask" : (raw.behavior as ToolPolicyBehavior);
+  if (raw.scope !== undefined && raw.scope !== "workspace") throw invalidPolicy();
+  return { id: raw.id, action: raw.action.trim(), behavior, scope: "workspace" };
 }
 
 function invalidPolicy(): WispBackendError {

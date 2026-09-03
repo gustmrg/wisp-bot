@@ -19,7 +19,10 @@ function ToolApprovalCard({ request, onResolve }: ToolApprovalCardProps) {
         <div className="min-w-0 flex-1">
           <strong className="block text-xs">Approve file change?</strong>
           <p className="my-1 break-words text-xs text-dim">{request.summary}</p>
-          <small className="text-faint">Requested by {request.toolName}. No file content is shown here.</small>
+          <small className="text-faint">
+            Wisp {request.conversationId} requested {request.toolName} for {request.scope.display}. No file content is
+            shown here.
+          </small>
         </div>
       </div>
       <div className="mt-3 flex flex-wrap justify-end gap-1.5">

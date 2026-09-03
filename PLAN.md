@@ -55,7 +55,7 @@ Make the existing mock UI safer to evolve into a real desktop agent product by:
 | 12 | Make circle membership editable | P2 | M | LOW | 06, 08, 09 | DONE |
 | 13 | Decide the real-agent runtime and IPC contract | P3 | S/M | LOW | 07, 08, 10 | DONE |
 | 14 | Deliver one real-agent vertical slice | P3 | L | HIGH | 13 | DONE |
-| 15 | Enforce auto-review authorization and audit logging | P3 | L | HIGH | 10, 14 | TODO |
+| 15 | Enforce auto-review authorization and audit logging | P3 | L | HIGH | 10, 14 | DONE |
 | 16 | Decide packaging, signing, and update operations | P3 | S/M | LOW | 04, 07, 10, 11, 14, 15 | TODO |
 | 17 | Produce signed installers and a staged update channel | P3 | L | HIGH | 16 | TODO |
 

@@ -13,6 +13,7 @@ import { PiConversationAgentFactory, SdkPiSessionFactory } from "./backend/pi-co
 import { SafeStorageEncryption } from "./backend/safe-storage-encryption.js";
 import { StructuredLogger } from "./backend/structured-logger.js";
 import { ToolAuthorizationBroker } from "./backend/tool-authorization-broker.js";
+import { ToolAuditStore } from "./backend/tool-audit-store.js";
 import { ToolPolicyStore } from "./backend/tool-policy-store.js";
 import { registerAgentHandlers } from "./ipc/register-handlers.js";
 import { registerConversationHandlers } from "./ipc/register-conversation-handlers.js";
@@ -152,6 +153,7 @@ async function bootstrap(): Promise<void> {
           BrowserWindow.getAllWindows().find((candidate) => !candidate.isDestroyed());
         return window?.webContents.id ?? null;
       },
+      audit: new ToolAuditStore(path.join(app.getPath("userData"), "backend", "tool-audit.jsonl")),
     },
   );
   const agentFactory: ConversationAgentFactory =

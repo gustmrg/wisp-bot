@@ -49,6 +49,7 @@ describe("tool policy IPC", () => {
       toolCallId: "tool-1",
       toolName: "write",
       category: "create_file",
+      scope: { kind: "workspace_path", value: "notes.txt" },
       summary: "Create notes.txt",
     });
     const resolve = handlers.get(WISP_IPC_CHANNELS.resolveToolApproval)!;

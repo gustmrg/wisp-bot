@@ -435,6 +435,7 @@ function secureTool<TDefinition extends ToolDefinition<any, any, any>>(
             toolCallId: args[0],
             toolName: definition.name,
             category,
+            scope: { kind: "workspace_path", value: resolved.relativePath },
             summary: `${category === "create_file" ? "Create" : "Modify"} ${resolved.relativePath}`,
           },
           args[2],

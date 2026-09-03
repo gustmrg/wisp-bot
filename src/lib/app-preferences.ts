@@ -6,6 +6,7 @@ export interface AutoReviewRule {
   id: string;
   action: string;
   behavior: RuleBehavior;
+  scope?: "workspace";
 }
 
 export interface AppPreferences {
@@ -42,7 +43,8 @@ function isAutoReviewRule(value: unknown): value is AutoReviewRule {
     typeof rule.action === "string" &&
     rule.action.trim().length > 0 &&
     rule.action.length <= 240 &&
-    isRuleBehavior(rule.behavior)
+    isRuleBehavior(rule.behavior) &&
+    (rule.scope === undefined || rule.scope === "workspace")
   );
 }
 
@@ -68,6 +70,12 @@ export function normalizePreferences(value: unknown): AppPreferences {
     hardwareAcceleration: typeof saved?.hardwareAcceleration === "boolean" ? saved.hardwareAcceleration : true,
     timezone,
     autoReview: typeof saved?.autoReview === "boolean" ? saved.autoReview : true,
-    autoReviewRules: Array.isArray(saved?.autoReviewRules) ? saved.autoReviewRules.filter(isAutoReviewRule) : [],
+    autoReviewRules: Array.isArray(saved?.autoReviewRules)
+      ? saved.autoReviewRules.filter(isAutoReviewRule).map((rule) => ({
+          ...rule,
+          behavior: rule.scope === undefined && rule.behavior === "allow" ? "ask" : rule.behavior,
+          scope: "workspace",
+        }))
+      : [],
   };
 }

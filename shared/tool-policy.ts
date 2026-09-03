@@ -5,6 +5,7 @@ export interface ToolPolicyRule {
   id: string;
   action: string;
   behavior: ToolPolicyBehavior;
+  scope?: "workspace";
 }
 
 export interface ToolPolicySettings {
@@ -18,6 +19,7 @@ export interface ToolApprovalRequest {
   toolCallId: string;
   toolName: string;
   category: ToolActionCategory;
+  scope: { kind: "workspace_path"; display: string };
   summary: string;
   expiresAt: string;
 }
