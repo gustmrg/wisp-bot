@@ -53,7 +53,7 @@ const markdownComponents: Components = {
   ul: ({ node: _node, ...props }) => (
     <ul className="my-1.5 ml-5 list-disc space-y-0.5 first:mt-0 last:mb-0" {...props} />
   ),
-  li: ({ node: _node, ...props }) => <li className="pl-1" {...props} />,
+  li: ({ node: _node, ...props }) => <li className="pl-1 [&>p]:my-0 [&>p:first-child]:inline" {...props} />,
   p: ({ node: _node, ...props }) => <p className="my-1.5 first:mt-0 last:mb-0" {...props} />,
   hr: ({ node: _node, ...props }) => <hr className="my-2.5 border-black/[0.08] dark:border-white/[0.08]" {...props} />,
   strong: ({ node: _node, ...props }) => <strong className="font-[650]" {...props} />,

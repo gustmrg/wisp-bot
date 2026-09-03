@@ -131,8 +131,8 @@ function MessageView({ message, onAnswer, onRetry }: MessageViewProps) {
       <div className={cn("group/message-row flex max-w-full items-center", outgoing && "flex-row-reverse")}>
         <div
           className={cn(
-            "max-w-[min(820px,78vw)] rounded-[11px] px-2.5 py-[7px] text-foreground leading-[1.42] select-text whitespace-pre-wrap",
-            outgoing ? "bg-bubble-out" : "bg-bubble-in",
+            "max-w-[min(820px,78vw)] rounded-[11px] px-2.5 py-[7px] text-foreground leading-[1.42] select-text",
+            outgoing ? "bg-bubble-out whitespace-pre-wrap" : "bg-bubble-in",
           )}
         >
           {outgoing ? message.text : <MarkdownView text={message.text} />}
