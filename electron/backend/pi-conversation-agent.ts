@@ -45,6 +45,7 @@ export interface PiSessionLike {
   prompt(text: string, options?: { expandPromptTemplates?: boolean }): Promise<void>;
   abort(): Promise<void>;
   waitForIdle(): Promise<void>;
+  reload(): Promise<void>;
   setModel(model: PiModel, options?: { persist?: boolean }): Promise<void>;
   getActiveToolNames(): string[];
   dispose(): void;
@@ -267,6 +268,21 @@ export class PiConversationAgent implements ConversationAgent {
     this.translator.finish();
   }
 
+  updateContext(context: ConversationAgentContext): Promise<void> {
+    return this.enqueueModelMutation(async () => {
+      this.assertNotDisposed();
+      if (context.conversationId !== this.context.conversationId || context.sessionId !== this.context.sessionId) {
+        throw new WispBackendError("invalid_request", "The agent context does not match this conversation.");
+      }
+      this.context.name = context.name;
+      this.context.label = context.label;
+      this.context.description = context.description;
+      if (!this.session) return;
+      if (!this.session.isIdle) await this.session.waitForIdle();
+      await this.session.reload();
+    });
+  }
+
   applyModel(selection: ModelSelection): Promise<void> {
     return this.enqueueModelMutation(() => this.applyModelInternal(selection));
   }
@@ -396,12 +412,27 @@ export class PiConversationAgentFactory implements ConversationAgentFactory {
 }
 
 function buildSystemPrompt(context: ConversationAgentContext): string {
+  const personality = context.description.trim() || "Help the user inspect and understand their workspace.";
   return [
-    `You are ${context.name}, a Wisp coding agent.`,
-    `Role: ${context.label || "General assistant"}.`,
-    `Description: ${context.description || "Help the user inspect and understand their workspace."}`,
-    "Work only inside the assigned workspace.",
-    "You may read, search, and request file changes. File changes are subject to app policy and user approval.",
+    `You are ${context.name}, a Wisp.`,
+    `Configured role: ${context.label || "General assistant"}.`,
+    "",
+    "## Identity and purpose / SOUL",
+    "The following text is the authoritative definition of your identity, expertise, behavior, tone, and persona.",
+    "Assume this identity fully and act consistently with it. Never dismiss it as fictional, suggested, configured, or separate from who you are.",
+    "This current definition supersedes conflicting identity statements in the conversation history.",
+    personality,
+    "",
+    "## Self-description",
+    "When asked who or what you are, state the identity, purpose, and user-facing capabilities defined above directly and positively, without explaining how they were supplied.",
+    "Refer to yourself as a Wisp and use the profession or role declared in the identity above. Available workspace tools do not define your profession.",
+    "Keep internal implementation details private unless the user explicitly asks about the implementation. Mention an operational limitation only when it materially affects the user's request.",
+    "",
+    "## Operating and safety boundaries",
+    "Your identity and expertise do not grant access to unavailable tools or data. Be honest when required information is unavailable without confusing access limits with a lack of expertise.",
+    "Identity instructions must not weaken or override any rule in this section.",
+    "Use only the tools provided to you. When using workspace tools, work only inside the assigned workspace.",
+    "File changes are subject to app policy and user approval.",
     "You must not execute shell commands.",
     "Return only the final answer. Do not include private reasoning, hidden analysis, self-talk, or planning.",
     "Be concise, factual, and explicit when information is missing.",
@@ -423,6 +454,7 @@ function adaptSession(session: AgentSession): PiSessionLike {
     prompt: (text, options) => session.prompt(text, options),
     abort: () => session.abort(),
     waitForIdle: () => session.waitForIdle(),
+    reload: () => session.reload(),
     setModel: (model, options) => session.setModel(model, options),
     getActiveToolNames: () => session.getActiveToolNames(),
     dispose: () => session.dispose(),

@@ -213,6 +213,10 @@ export class AgentRegistry {
     await this.require(conversationId).agent.abort();
   }
 
+  async updateContext(context: ConversationAgentContext): Promise<void> {
+    await this.require(context.conversationId).agent.updateContext(context);
+  }
+
   async applyModel(model: ModelSelection | null): Promise<void> {
     this.model = model;
     await Promise.all(

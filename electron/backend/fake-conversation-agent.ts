@@ -63,6 +63,13 @@ export class FakeConversationAgent implements ConversationAgent {
     this.activeAbortController?.abort();
   }
 
+  async updateContext(context: ConversationAgentContext): Promise<void> {
+    this.assertNotDisposed();
+    if (context.conversationId !== this.conversationId) {
+      throw new WispBackendError("invalid_request", "The agent context does not match this conversation.");
+    }
+  }
+
   async applyModel(model: ModelSelection): Promise<void> {
     this.assertNotDisposed();
     this.model = model;

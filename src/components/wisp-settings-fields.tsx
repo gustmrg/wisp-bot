@@ -10,6 +10,8 @@ interface WispSettingsFieldsProps {
   onChange: (changes: Omit<WispChatChanges, "kind">) => void;
 }
 
+const WISP_PERSONALITY_MAX_LENGTH = 4_000;
+
 function WispSettingsFields({ settings, onChange }: WispSettingsFieldsProps) {
   return (
     <>
@@ -31,12 +33,12 @@ function WispSettingsFields({ settings, onChange }: WispSettingsFieldsProps) {
           onChange={(event) => onChange({ label: event.currentTarget.value })}
         />
       </SettingsField>
-      <SettingsField label="Description">
+      <SettingsField label="Identity & personality">
         <Textarea
-          rows={3}
+          rows={5}
           value={settings.description}
-          maxLength={240}
-          placeholder="What this Wisp is for"
+          maxLength={WISP_PERSONALITY_MAX_LENGTH}
+          placeholder="Define who this Wisp is, its expertise, tone, and behavior"
           onChange={(event) => onChange({ description: event.currentTarget.value })}
         />
       </SettingsField>

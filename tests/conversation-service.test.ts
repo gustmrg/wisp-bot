@@ -59,6 +59,28 @@ describe("ConversationService", () => {
     await service.dispose();
   });
 
+  it("applies updated Wisp identity to the running agent", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "wisp-service-context-"));
+    const updateContext = vi.fn(async () => undefined);
+    const factory: ConversationAgentFactory = {
+      create: (context) => {
+        const agent = new FakeConversationAgent(context.conversationId);
+        agent.updateContext = updateContext;
+        return agent;
+      },
+    };
+    const repository = new ConversationRepository({ dataDirectory: directory });
+    const registry = new AgentRegistry(factory, () => undefined);
+    const service = new ConversationService(repository, registry);
+    await service.start(null);
+    await service.initialize({ one: chat("one") });
+
+    await service.update("one", { kind: "wisp", description: "Financial advisor" });
+
+    expect(updateContext).toHaveBeenCalledWith(expect.objectContaining({ description: "Financial advisor" }));
+    await service.dispose();
+  });
+
   it("snapshots and persists isolated streams from the deterministic fake adapter", async () => {
     const directory = await mkdtemp(path.join(os.tmpdir(), "wisp-service-stream-"));
     const repository = new ConversationRepository({ dataDirectory: directory });

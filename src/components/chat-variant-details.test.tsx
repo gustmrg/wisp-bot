@@ -35,6 +35,9 @@ describe("variant details", () => {
   it("renders Wisp-only appearance editing", () => {
     render(<WispDetails chat={wisp} onChange={vi.fn()} />);
     expect(screen.getByRole("group", { name: "Wisp shape" })).toBeVisible();
+    expect(screen.getByText("Identity & personality")).toBeVisible();
+    expect(screen.getByDisplayValue("Researches")).toHaveAttribute("maxlength", "4000");
+    expect(screen.getByDisplayValue("Researches")).toHaveAttribute("rows", "5");
   });
 
   it("renders circle-only membership details", () => {

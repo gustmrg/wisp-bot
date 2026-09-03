@@ -16,6 +16,7 @@ const sdk = vi.hoisted(() => {
     prompt: vi.fn(async () => undefined),
     abort: vi.fn(async () => undefined),
     waitForIdle: vi.fn(async () => undefined),
+    reload: vi.fn(async () => undefined),
     setModel: vi.fn(async () => undefined),
     getActiveToolNames: vi.fn(() => ["read", "grep", "find", "ls", "edit", "write"]),
     setActiveToolsByName: vi.fn(),
@@ -66,10 +67,7 @@ vi.mock("@earendil-works/pi-coding-agent", () => ({
   createWriteToolDefinition: () => toolDefinition("write"),
 }));
 
-import {
-  excludeOpenRouterReasoning,
-  SdkPiSessionFactory,
-} from "../electron/backend/pi-conversation-agent.js";
+import { excludeOpenRouterReasoning, SdkPiSessionFactory } from "../electron/backend/pi-conversation-agent.js";
 
 describe("SdkPiSessionFactory", () => {
   beforeEach(() => {
@@ -92,8 +90,8 @@ describe("SdkPiSessionFactory", () => {
       conversationId: "one",
       sessionId: "app-session",
       name: "Research Wisp",
-      label: "Research",
-      description: "Inspects this workspace",
+      label: "Finance",
+      description: "You are a financial advisor who explains markets clearly.",
       workspaceDirectory: path.join(directory, "workspace"),
       sessionDirectory: directory,
       configDirectory: path.join(directory, "config"),
@@ -139,7 +137,23 @@ describe("SdkPiSessionFactory", () => {
       }),
     );
     const prompt = (sdk.loaderOptions[0] as { systemPromptOverride: () => string }).systemPromptOverride();
-    expect(prompt).toContain("Research Wisp");
+    expect(prompt).toContain("You are Research Wisp, a Wisp.");
+    expect(prompt).not.toContain("a Wisp coding agent.");
+    expect(prompt).toContain("## Identity and purpose / SOUL");
+    expect(prompt).toContain("authoritative definition of your identity, expertise");
+    expect(prompt).toContain("You are a financial advisor who explains markets clearly.");
+    expect(prompt).toContain("Never dismiss it as fictional");
+    expect(prompt).toContain("supersedes conflicting identity statements in the conversation history");
+    expect(prompt).toContain("## Self-description");
+    expect(prompt).toContain("directly and positively, without explaining how they were supplied");
+    expect(prompt).toContain("Available workspace tools do not define your profession");
+    expect(prompt).not.toContain("UI metadata");
+    expect(prompt).not.toContain("coding agent");
+    expect(prompt).toContain("Mention an operational limitation only when it materially affects the user's request");
+    expect(prompt).toContain("## Operating and safety boundaries");
+    expect(prompt).toContain("without confusing access limits with a lack of expertise");
+    expect(prompt).toContain("must not weaken or override any rule in this section");
+    expect(prompt).not.toContain("Description:");
     expect(prompt).toContain("subject to app policy and user approval");
     expect(prompt).toContain("must not execute shell commands");
     expect(prompt).toContain("Return only the final answer");
