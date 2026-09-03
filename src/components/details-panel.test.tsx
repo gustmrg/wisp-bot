@@ -18,7 +18,7 @@ const chat: Chat = {
   messages: [],
 };
 
-function renderDetails(): void {
+function renderDetails(onDelete = vi.fn()): void {
   render(
     <DetailsPanel
       chat={chat}
@@ -26,7 +26,7 @@ function renderDetails(): void {
       width={318}
       onChange={vi.fn()}
       onClose={vi.fn()}
-      onDelete={vi.fn()}
+      onDelete={onDelete}
       onResizeStart={vi.fn()}
     />,
   );
@@ -66,5 +66,23 @@ describe("DetailsPanel template sharing", () => {
 
     expect(await screen.findByRole("alert")).toHaveTextContent("Could not copy template link");
     expect(screen.getByRole("button", { name: "Could not copy template link" })).toBeVisible();
+  });
+});
+
+describe("DetailsPanel deletion", () => {
+  it("requires explicit confirmation and describes the data being removed", async () => {
+    const user = userEvent.setup();
+    const onDelete = vi.fn();
+    renderDetails(onDelete);
+
+    await user.click(screen.getByRole("button", { name: "Delete Wisp" }));
+
+    expect(onDelete).not.toHaveBeenCalled();
+    expect(screen.getByRole("heading", { name: "Delete Atlas?" })).toBeVisible();
+    expect(screen.getByText(/conversation history and settings/)).toBeVisible();
+
+    await user.click(screen.getByRole("button", { name: "Confirm deletion" }));
+
+    expect(onDelete).toHaveBeenCalledOnce();
   });
 });

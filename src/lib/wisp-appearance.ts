@@ -4,7 +4,6 @@ const WISP_SHAPE_LABELS: Record<WispShape, string> = {
   circle: "Circle",
   pebble: "Pebble",
   square: "Square",
-  pill: "Pill",
   triangle: "Triangle",
   diamond: "Diamond",
   hexagon: "Hexagon",

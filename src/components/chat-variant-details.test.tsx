@@ -1,4 +1,5 @@
 import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
 import type { CircleChat, WispChat } from "@/chat-data";
@@ -38,6 +39,27 @@ describe("variant details", () => {
     expect(screen.getByText("Identity & personality")).toBeVisible();
     expect(screen.getByDisplayValue("Researches")).toHaveAttribute("maxlength", "4000");
     expect(screen.getByDisplayValue("Researches")).toHaveAttribute("rows", "5");
+  });
+
+  it("keeps Wisp edits local until they are saved", async () => {
+    const user = userEvent.setup();
+    const onChange = vi.fn(async () => true);
+    render(<WispDetails chat={wisp} onChange={onChange} />);
+
+    const name = screen.getByRole("textbox", { name: "Name" });
+    const save = screen.getByRole("button", { name: "Save changes" });
+    expect(save).toBeDisabled();
+
+    await user.clear(name);
+    await user.type(name, "Nova");
+
+    expect(onChange).not.toHaveBeenCalled();
+    expect(save).toBeEnabled();
+
+    await user.click(save);
+
+    expect(onChange).toHaveBeenCalledOnce();
+    expect(onChange).toHaveBeenCalledWith(expect.objectContaining({ kind: "wisp", name: "Nova" }));
   });
 
   it("renders circle-only membership details", () => {

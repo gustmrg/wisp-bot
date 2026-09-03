@@ -6,7 +6,6 @@ export const WISP_SHAPE_IDS = [
   "circle",
   "pebble",
   "square",
-  "pill",
   "triangle",
   "diamond",
   "hexagon",

@@ -131,7 +131,7 @@ function Sidebar({
             collapsed && "flex-col",
           )}
         >
-          <CreateAgentDialog chats={chats} onCreate={onCreate} />
+          <CreateAgentDialog onCreate={onCreate} />
         </div>
 
         <button

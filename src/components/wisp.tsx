@@ -51,8 +51,6 @@ function WispBody({ shape }: { shape: WispShape }): ReactNode {
       return <path d="M14 25C9 7 34 2 40 13c13-5 22 6 19 18C72 48 49 61 37 53 20 64 0 52 5 38q1-9 9-13Z" />;
     case "square":
       return <rect x="6" y="6" width="52" height="52" rx="15" />;
-    case "pill":
-      return <rect x="3" y="14" width="58" height="36" rx="18" />;
     case "diamond":
       return <rect x="11" y="11" width="42" height="42" rx="12" transform="rotate(45 32 32)" />;
     case "hexagon":

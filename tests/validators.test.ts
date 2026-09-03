@@ -4,6 +4,7 @@ import { WispBackendError } from "../electron/backend/backend-error.js";
 import {
   parseApplyModelRequest,
   parseConversationRequest,
+  parseCreateConversationRequest,
   parseRemoveProviderCredentialRequest,
   parseResolveToolApprovalRequest,
   parseSaveAiSettingsRequest,
@@ -128,5 +129,24 @@ describe("IPC request validators", () => {
         changes: { kind: "circle", shape: "circle" },
       }),
     ).toThrow(WispBackendError);
+  });
+
+  it("migrates the removed legacy pill shape without dropping the Wisp", () => {
+    const request = parseCreateConversationRequest({
+      conversation: {
+        id: "legacy-pill",
+        kind: "wisp",
+        name: "Legacy",
+        label: "",
+        description: "",
+        shape: "pill",
+        notifyOnUpdatesEnabled: true,
+        preview: "Ready",
+        timestamp: "Now",
+        messages: [],
+      },
+    });
+
+    expect(request.conversation).toEqual(expect.objectContaining({ id: "legacy-pill", shape: "pebble" }));
   });
 });

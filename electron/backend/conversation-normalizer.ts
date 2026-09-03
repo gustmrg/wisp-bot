@@ -15,6 +15,13 @@ const SHAPES = new Set<WispShape>(WISP_SHAPE_IDS);
 const MESSAGE_STATUSES = new Set<MessageStatus>(["queued", "streaming", "complete", "failed", "cancelled"]);
 const BASE64_PATTERN = /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/;
 
+function wispShape(value: unknown): WispShape {
+  // Pill was removed from the product, but existing conversations should remain readable.
+  if (value === "pill") return "pebble";
+  if (typeof value !== "string" || !SHAPES.has(value as WispShape)) throw invalidRequest();
+  return value as WispShape;
+}
+
 function invalidRequest(): WispBackendError {
   return new WispBackendError("invalid_request", "The conversation data is invalid.");
 }
@@ -156,11 +163,11 @@ export function normalizeChat(value: unknown): Chat {
     };
   }
   if (raw.kind !== undefined && raw.memberIds !== undefined) throw invalidRequest();
-  if (typeof raw.shape !== "string" || !SHAPES.has(raw.shape as WispShape)) throw invalidRequest();
+  const shape = wispShape(raw.shape);
   return {
     ...base,
     kind,
-    shape: raw.shape as WispShape,
+    shape,
     ...(raw.color === undefined ? {} : { color: string(raw.color, 100) }),
     ...(raw.avatarImage === undefined ? {} : { avatarImage: avatarDataUrl(raw.avatarImage) }),
   };
@@ -210,8 +217,7 @@ export function normalizeChatChanges(value: unknown): ChatChanges {
     result.avatarImage = raw.avatarImage === undefined ? undefined : avatarDataUrl(raw.avatarImage);
   }
   if (raw.shape !== undefined) {
-    if (typeof raw.shape !== "string" || !SHAPES.has(raw.shape as WispShape)) throw invalidRequest();
-    result.shape = raw.shape as WispShape;
+    result.shape = wispShape(raw.shape);
   }
   if (raw.memberIds !== undefined) {
     if (!Array.isArray(raw.memberIds) || raw.memberIds.length > 1_000) throw invalidRequest();

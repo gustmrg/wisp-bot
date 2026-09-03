@@ -84,7 +84,7 @@ export default function App() {
             chat={workspace.activeChat}
             chats={workspace.chats}
             width={detailsPanel.width}
-            onChange={(changes) => void workspace.updateActiveChat(changes)}
+            onChange={workspace.updateActiveChat}
             onClose={() => setDetailsOpen(false)}
             onDelete={() => void workspace.deleteActiveChat()}
             onResizeStart={detailsPanel.onResizeStart}

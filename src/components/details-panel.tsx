@@ -5,6 +5,16 @@ import type { Chat, ChatChanges, ChatCollection } from "@/chat-data";
 import { CircleDetails } from "@/components/circle-details";
 import { WispDetails } from "@/components/wisp-details";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
 import { useCopyFeedback } from "@/hooks/use-copy-feedback";
 import { canDeleteChat } from "@/lib/chat-schema";
 import { detailsLayoutStyle } from "@/lib/layout";
@@ -15,7 +25,7 @@ interface DetailsPanelProps {
   chat: Chat;
   chats: ChatCollection;
   width: number;
-  onChange: (changes: ChatChanges) => void;
+  onChange: (changes: ChatChanges) => Promise<boolean> | void;
   onClose: () => void;
   onDelete: () => void;
   onResizeStart: (event: ReactPointerEvent<HTMLDivElement>) => void;
@@ -49,15 +59,32 @@ function DetailsPanel({ chat, chats, width, onChange, onClose, onDelete, onResiz
       <div className="relative flex min-h-0 flex-1 flex-col">
         <div className="min-h-0 flex-1 overflow-y-auto p-3.5">
           {chat.kind === "wisp" ? (
-            <WispDetails chat={chat} onChange={onChange} />
+            <WispDetails key={chat.id} chat={chat} onChange={onChange} />
           ) : (
             <CircleDetails chat={chat} chats={chats} onChange={onChange} />
           )}
 
           {canDeleteChat(chat) ? (
-            <Button className="mt-[18px] w-full" variant="destructive" type="button" onClick={onDelete}>
-              Delete {chat.kind === "circle" ? "circle" : "Wisp"}
-            </Button>
+            <Dialog>
+              <DialogTrigger render={<Button className="mt-[18px] w-full" variant="destructive" type="button" />}>
+                Delete {chat.kind === "circle" ? "circle" : "Wisp"}
+              </DialogTrigger>
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle>Delete {chat.name}?</DialogTitle>
+                  <DialogDescription>
+                    This permanently deletes this {chat.kind === "circle" ? "circle" : "Wisp"}, including its
+                    conversation history and settings. This action cannot be undone.
+                  </DialogDescription>
+                </DialogHeader>
+                <DialogFooter>
+                  <DialogClose render={<Button variant="outline" type="button" />}>Cancel</DialogClose>
+                  <DialogClose render={<Button variant="destructive" type="button" onClick={onDelete} />}>
+                    Confirm deletion
+                  </DialogClose>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
           ) : null}
         </div>
 
