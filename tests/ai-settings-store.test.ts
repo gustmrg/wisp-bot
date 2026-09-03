@@ -21,7 +21,7 @@ async function createStore(): Promise<{ directory: string; filePath: string; sto
 describe("AiSettingsStore", () => {
   it("persists and reloads the selected provider and model", async () => {
     const { filePath, store } = await createStore();
-    const selection = { providerId: "anthropic", modelId: "claude-example" };
+    const selection = { providerId: "anthropic", modelId: "claude-example", maxOutputTokens: 16_384 };
 
     await store.setSelection(selection);
 
@@ -38,6 +38,12 @@ describe("AiSettingsStore", () => {
     await expect(new AiSettingsStore(filePath).getSelection()).resolves.toBeNull();
 
     await writeFile(filePath, JSON.stringify({ schemaVersion: 1, selection: { providerId: "", modelId: "y" } }));
+    await expect(new AiSettingsStore(filePath).getSelection()).resolves.toBeNull();
+
+    await writeFile(
+      filePath,
+      JSON.stringify({ schemaVersion: 1, selection: { providerId: "x", modelId: "y", maxOutputTokens: 0 } }),
+    );
     await expect(new AiSettingsStore(filePath).getSelection()).resolves.toBeNull();
   });
 });

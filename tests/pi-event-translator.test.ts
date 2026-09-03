@@ -61,7 +61,7 @@ describe("PiEventTranslator", () => {
     expect(JSON.stringify(events)).not.toContain("bash-1");
   });
 
-  it("maps aborted and failed streams without exposing provider errors", () => {
+  it("maps aborted streams and surfaces the final provider error", () => {
     const aborted: ConversationAgentEvent[] = [];
     const translator = new PiEventTranslator("wisp-1", (event) => aborted.push(event), 0);
     translator.begin({ conversationId: "wisp-1", requestId: "abort-1", text: "Stop" });
@@ -77,18 +77,54 @@ describe("PiEventTranslator", () => {
     failedTranslator.begin({ conversationId: "wisp-1", requestId: "fail-1", text: "Fail" });
     failedTranslator.handle({
       type: "message_update",
-      assistantMessageEvent: { type: "error", reason: "error", delta: "provider secret" },
+      assistantMessageEvent: {
+        type: "error",
+        reason: "error",
+        error: { role: "assistant", stopReason: "error", errorMessage: "400 invalid max tokens" },
+      },
     });
     failedTranslator.handle({ type: "agent_settled" });
 
     expect(failed).toContainEqual(
       expect.objectContaining({
         type: "conversation_error",
+        error: expect.objectContaining({ message: "400 invalid max tokens", retryable: false }),
+      }),
+    );
+    expect(failed.some(({ type }) => type === "assistant_message_completed")).toBe(false);
+  });
+
+  it("turns an empty settled response into a failed assistant message", () => {
+    const events: ConversationAgentEvent[] = [];
+    const translator = new PiEventTranslator("wisp-1", (event) => events.push(event), 0);
+    translator.begin({ conversationId: "wisp-1", requestId: "empty-1", text: "Fail" });
+    translator.handle({ type: "agent_start" });
+    translator.handle({ type: "agent_settled" });
+
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: "conversation_error",
         error: expect.objectContaining({ message: "The model request failed." }),
       }),
     );
-    expect(JSON.stringify(failed)).not.toContain("provider secret");
-    expect(failed.some(({ type }) => type === "assistant_message_completed")).toBe(false);
+    expect(events.some(({ type }) => type === "assistant_message_completed")).toBe(false);
+  });
+
+  it("does not announce SDK retries for permanent HTTP failures", () => {
+    const events: ConversationAgentEvent[] = [];
+    const translator = new PiEventTranslator("wisp-1", (event) => events.push(event), 0);
+    translator.begin({ conversationId: "wisp-1", requestId: "retry-1", text: "Fail" });
+    translator.handle({ type: "auto_retry_start", errorMessage: "404 Provider returned error" });
+    translator.handle({ type: "auto_retry_end", success: false, finalError: "404 Provider returned error" });
+    translator.handle({ type: "agent_settled" });
+
+    expect(events.some((event) => event.type === "conversation_notice")).toBe(false);
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: "conversation_error",
+        error: expect.objectContaining({ retryable: false }),
+      }),
+    );
   });
 
   it("bounds individual event payloads and the total streamed response", () => {

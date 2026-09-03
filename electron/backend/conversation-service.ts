@@ -114,6 +114,12 @@ export class ConversationService {
 
   async update(conversationId: string, changes: ChatChanges): Promise<ConversationStateView> {
     await this.repository.update(conversationId, changes);
+    if (
+      changes.kind === "wisp" &&
+      (changes.name !== undefined || changes.label !== undefined || changes.description !== undefined)
+    ) {
+      await this.registry.updateContext(this.repository.getAgentContext(conversationId));
+    }
     return this.getState();
   }
 

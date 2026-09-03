@@ -3,6 +3,32 @@ import type { BackendError, ConversationAgentEvent, SendMessageRequest } from ".
 const ALLOWED_TOOLS = new Set(["read", "grep", "find", "ls", "edit", "write"]);
 const MAX_DELTA_CHARACTERS = 8_000;
 const MAX_RESPONSE_CHARACTERS = 500_000;
+const MAX_ERROR_CHARACTERS = 2_000;
+const GENERIC_ERROR_MESSAGE = "The model request failed.";
+
+export interface PiAssistantMessageSnapshot {
+  role?: string;
+  stopReason?: string;
+  errorMessage?: string;
+}
+
+export function sanitizeErrorMessage(value: string | undefined | null): string {
+  if (!value) return "";
+  const trimmed = value.trim();
+  if (trimmed.length <= MAX_ERROR_CHARACTERS) return trimmed;
+  return `${trimmed.slice(0, MAX_ERROR_CHARACTERS)}…`;
+}
+
+export function isRetryableProviderError(message: string): boolean {
+  const status = message.match(/(?:^|\D)(4\d\d|5\d\d)(?:\D|$)/)?.[1];
+  if (status) {
+    const code = Number(status);
+    return code === 408 || code === 409 || code === 425 || code === 429 || code >= 500;
+  }
+  return /rate.?limit|too many requests|overload|service.?unavailable|server.?error|internal.?error|network|connection|timed? out|timeout|fetch failed|try again|please retry/i.test(
+    message,
+  );
+}
 
 export type PiAgentEvent =
   | { type: "agent_start" }
@@ -10,13 +36,19 @@ export type PiAgentEvent =
   | { type: "agent_settled" }
   | {
       type: "message_update";
-      assistantMessageEvent: { type: string; delta?: string; reason?: string };
+      assistantMessageEvent: {
+        type: string;
+        delta?: string;
+        reason?: string;
+        error?: PiAssistantMessageSnapshot;
+      };
     }
+  | { type: "message_end"; message?: PiAssistantMessageSnapshot }
   | { type: "tool_execution_start"; toolCallId: string; toolName: string }
   | { type: "tool_execution_update"; toolCallId: string; toolName: string }
   | { type: "tool_execution_end"; toolCallId: string; toolName: string; isError: boolean }
-  | { type: "auto_retry_start" }
-  | { type: "auto_retry_end" }
+  | { type: "auto_retry_start"; errorMessage?: string }
+  | { type: "auto_retry_end"; success?: boolean; finalError?: string }
   | { type: "compaction_start" }
   | { type: "compaction_end" };
 
@@ -34,6 +66,8 @@ export class PiEventTranslator {
   private failed = false;
   private cancelled = false;
   private responseCharacters = 0;
+  private lastErrorMessage = "";
+  private retryNoticeVisible = false;
 
   constructor(conversationId: string, publish: EventPublisher, flushDelayMs = 24) {
     this.conversationId = conversationId;
@@ -50,6 +84,8 @@ export class PiEventTranslator {
     this.failed = false;
     this.cancelled = false;
     this.responseCharacters = 0;
+    this.lastErrorMessage = "";
+    this.retryNoticeVisible = false;
   }
 
   handle(event: PiAgentEvent): void {
@@ -64,14 +100,19 @@ export class PiEventTranslator {
       case "message_update": {
         const update = event.assistantMessageEvent;
         if (update.type === "text_delta" && typeof update.delta === "string") {
+          this.lastErrorMessage = "";
           this.startMessage();
           this.queueDelta(update.delta);
         } else if (update.type === "error") {
           if (update.reason === "aborted") this.cancelled = true;
-          else this.reportError({ code: "internal_error", message: "The model request failed.", retryable: true });
+          else
+            this.captureError(update.error ?? { role: "assistant", stopReason: "error", errorMessage: update.reason });
         }
         break;
       }
+      case "message_end":
+        this.captureError(event.message);
+        break;
       case "tool_execution_start":
         this.publishTool(event, "started");
         break;
@@ -82,10 +123,15 @@ export class PiEventTranslator {
         this.publishTool(event, "completed", event.isError);
         break;
       case "auto_retry_start":
-        this.publishNotice("retry_started");
+        this.retryNoticeVisible = !event.errorMessage || isRetryableProviderError(event.errorMessage);
+        if (this.retryNoticeVisible) this.publishNotice("retry_started");
         break;
       case "auto_retry_end":
-        this.publishNotice("retry_finished");
+        if (event.success === false && event.finalError) {
+          this.captureError({ role: "assistant", stopReason: "error", errorMessage: event.finalError });
+        }
+        if (this.retryNoticeVisible) this.publishNotice("retry_finished");
+        this.retryNoticeVisible = false;
         break;
       case "compaction_start":
         this.publishNotice("compaction_started");
@@ -128,7 +174,16 @@ export class PiEventTranslator {
         requestId: request.requestId,
         messageId: this.messageId,
       });
-    } else if (!this.failed) {
+    } else if (this.failed) {
+    } else if (this.lastErrorMessage) {
+      this.reportError({
+        code: "internal_error",
+        message: this.lastErrorMessage,
+        retryable: isRetryableProviderError(this.lastErrorMessage),
+      });
+    } else if (this.responseCharacters === 0) {
+      this.reportError({ code: "internal_error", message: GENERIC_ERROR_MESSAGE, retryable: true });
+    } else {
       this.startMessage();
       this.publish({
         type: "assistant_message_completed",
@@ -157,6 +212,16 @@ export class PiEventTranslator {
       messageId: this.messageId,
       createdAt: new Date().toISOString(),
     });
+  }
+
+  private captureError(message: PiAssistantMessageSnapshot | undefined): void {
+    if (!message || message.role !== "assistant") return;
+    if (message.stopReason === "error") {
+      const detail = sanitizeErrorMessage(message.errorMessage);
+      if (detail) this.lastErrorMessage = detail;
+      return;
+    }
+    if (message.stopReason && message.stopReason !== "error") this.lastErrorMessage = "";
   }
 
   private queueDelta(delta: string): void {

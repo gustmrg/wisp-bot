@@ -37,4 +37,13 @@ describe("MarkdownView static render", () => {
     expect(html).toContain('href="https://example.com"');
     expect(html).toContain("<br");
   });
+
+  it("keeps loose ordered-list markers with their first paragraph", () => {
+    const html = renderToStaticMarkup(<MarkdownView text={"1. First item\n\n2. Second item"} />);
+
+    expect(html).toContain("[&amp;&gt;p]:my-0");
+    expect(html).toContain("[&amp;&gt;p:first-child]:inline");
+    expect(html).toContain(">First item</p>");
+    expect(html).toContain(">Second item</p>");
+  });
 });

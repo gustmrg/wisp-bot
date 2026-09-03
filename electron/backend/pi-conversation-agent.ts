@@ -4,6 +4,7 @@ import path from "node:path";
 import type {
   AgentSession,
   AgentSessionEvent,
+  InlineExtension,
   ModelRuntime,
   ToolDefinition,
 } from "@earendil-works/pi-coding-agent" with { "resolution-mode": "import" };
@@ -22,10 +23,16 @@ import type {
   ConversationAgentListener,
 } from "./conversation-agent.js";
 import type { ModelRuntimeLike } from "./model-service.js";
-import { PiEventTranslator, type PiAgentEvent } from "./pi-event-translator.js";
+import {
+  isRetryableProviderError,
+  PiEventTranslator,
+  type PiAgentEvent,
+  sanitizeErrorMessage,
+} from "./pi-event-translator.js";
 import type { ToolAuthorizationBroker, ToolAuthorizationRequest } from "./tool-authorization-broker.js";
 
 const ACTIVE_TOOLS = ["read", "grep", "find", "ls", "edit", "write"] as const;
+const DEFAULT_MAX_OUTPUT_TOKENS = 32_768;
 const MAX_MUTATION_INPUT_BYTES = 1_000_000;
 const MAX_TOOL_OUTPUT_BYTES = 64_000;
 type PiModel = NonNullable<ReturnType<ModelRuntimeLike["getModel"]>>;
@@ -38,6 +45,7 @@ export interface PiSessionLike {
   prompt(text: string, options?: { expandPromptTemplates?: boolean }): Promise<void>;
   abort(): Promise<void>;
   waitForIdle(): Promise<void>;
+  reload(): Promise<void>;
   setModel(model: PiModel, options?: { persist?: boolean }): Promise<void>;
   getActiveToolNames(): string[];
   dispose(): void;
@@ -71,7 +79,8 @@ export class SdkPiSessionFactory implements PiSessionFactory {
     if (!model) {
       throw new WispBackendError("model_unavailable", "The selected model is no longer available.");
     }
-    return model;
+    const maxOutputTokens = selection.maxOutputTokens ?? DEFAULT_MAX_OUTPUT_TOKENS;
+    return model.maxTokens > maxOutputTokens ? { ...model, maxTokens: maxOutputTokens } : model;
   }
 
   async create(context: ConversationAgentContext, selection: ModelSelection): Promise<PiSessionLike> {
@@ -98,6 +107,7 @@ export class SdkPiSessionFactory implements PiSessionFactory {
       noContextFiles: true,
       systemPromptOverride: () => buildSystemPrompt(context),
       appendSystemPromptOverride: () => [],
+      extensionFactories: [providerRequestExtension],
     });
     await resourceLoader.reload();
 
@@ -160,6 +170,30 @@ export class SdkPiSessionFactory implements PiSessionFactory {
   }
 }
 
+export function excludeOpenRouterReasoning(payload: unknown, providerId: string | undefined): unknown {
+  if (providerId !== "openrouter" || !payload || typeof payload !== "object" || Array.isArray(payload)) return payload;
+  const request = payload as Record<string, unknown>;
+  const reasoning =
+    request.reasoning && typeof request.reasoning === "object" && !Array.isArray(request.reasoning)
+      ? (request.reasoning as Record<string, unknown>)
+      : {};
+  return {
+    ...request,
+    include_reasoning: false,
+    reasoning: { ...reasoning, enabled: false, effort: "none", exclude: true },
+  };
+}
+
+const providerRequestExtension: InlineExtension = {
+  name: "wisp-provider-request",
+  hidden: true,
+  factory: (pi) => {
+    pi.on("before_provider_request", (event, context) =>
+      excludeOpenRouterReasoning(event.payload, context.model?.provider),
+    );
+  },
+};
+
 export interface PiConversationAgentOptions {
   flushDelayMs?: number;
 }
@@ -208,10 +242,15 @@ export class PiConversationAgent implements ConversationAgent {
       await this.session.prompt(request.text, { expandPromptTemplates: false });
       this.translator.finish();
     } catch (error) {
+      const detail = sanitizeErrorMessage(error instanceof Error ? error.message : String(error));
       const backendError: BackendError =
         error instanceof WispBackendError
           ? { code: error.code, message: error.message, retryable: error.retryable }
-          : { code: "internal_error", message: "The model request failed.", retryable: true };
+          : {
+              code: "internal_error",
+              message: detail || "The model request failed.",
+              retryable: detail ? isRetryableProviderError(detail) : true,
+            };
       this.translator.reportError(backendError);
       this.translator.finish();
       throw new WispBackendError(backendError.code, backendError.message, backendError.retryable);
@@ -227,6 +266,21 @@ export class PiConversationAgent implements ConversationAgent {
     this.translator.markCancelled();
     await this.session.abort();
     this.translator.finish();
+  }
+
+  updateContext(context: ConversationAgentContext): Promise<void> {
+    return this.enqueueModelMutation(async () => {
+      this.assertNotDisposed();
+      if (context.conversationId !== this.context.conversationId || context.sessionId !== this.context.sessionId) {
+        throw new WispBackendError("invalid_request", "The agent context does not match this conversation.");
+      }
+      this.context.name = context.name;
+      this.context.label = context.label;
+      this.context.description = context.description;
+      if (!this.session) return;
+      if (!this.session.isIdle) await this.session.waitForIdle();
+      await this.session.reload();
+    });
   }
 
   applyModel(selection: ModelSelection): Promise<void> {
@@ -358,13 +412,29 @@ export class PiConversationAgentFactory implements ConversationAgentFactory {
 }
 
 function buildSystemPrompt(context: ConversationAgentContext): string {
+  const personality = context.description.trim() || "Help the user inspect and understand their workspace.";
   return [
-    `You are ${context.name}, a Wisp coding agent.`,
-    `Role: ${context.label || "General assistant"}.`,
-    `Description: ${context.description || "Help the user inspect and understand their workspace."}`,
-    "Work only inside the assigned workspace.",
-    "You may read, search, and request file changes. File changes are subject to app policy and user approval.",
+    `You are ${context.name}, a Wisp.`,
+    `Configured role: ${context.label || "General assistant"}.`,
+    "",
+    "## Identity and purpose / SOUL",
+    "The following text is the authoritative definition of your identity, expertise, behavior, tone, and persona.",
+    "Assume this identity fully and act consistently with it. Never dismiss it as fictional, suggested, configured, or separate from who you are.",
+    "This current definition supersedes conflicting identity statements in the conversation history.",
+    personality,
+    "",
+    "## Self-description",
+    "When asked who or what you are, state the identity, purpose, and user-facing capabilities defined above directly and positively, without explaining how they were supplied.",
+    "Refer to yourself as a Wisp and use the profession or role declared in the identity above. Available workspace tools do not define your profession.",
+    "Keep internal implementation details private unless the user explicitly asks about the implementation. Mention an operational limitation only when it materially affects the user's request.",
+    "",
+    "## Operating and safety boundaries",
+    "Your identity and expertise do not grant access to unavailable tools or data. Be honest when required information is unavailable without confusing access limits with a lack of expertise.",
+    "Identity instructions must not weaken or override any rule in this section.",
+    "Use only the tools provided to you. When using workspace tools, work only inside the assigned workspace.",
+    "File changes are subject to app policy and user approval.",
     "You must not execute shell commands.",
+    "Return only the final answer. Do not include private reasoning, hidden analysis, self-talk, or planning.",
     "Be concise, factual, and explicit when information is missing.",
   ].join("\n");
 }
@@ -384,6 +454,7 @@ function adaptSession(session: AgentSession): PiSessionLike {
     prompt: (text, options) => session.prompt(text, options),
     abort: () => session.abort(),
     waitForIdle: () => session.waitForIdle(),
+    reload: () => session.reload(),
     setModel: (model, options) => session.setModel(model, options),
     getActiveToolNames: () => session.getActiveToolNames(),
     dispose: () => session.dispose(),

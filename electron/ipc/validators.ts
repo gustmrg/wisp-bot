@@ -73,9 +73,19 @@ export function parseSendMessageRequest(value: unknown): SendMessageRequest {
 
 function parseModelSelection(value: unknown): ModelSelection {
   const model = asRecord(value);
+  const maxOutputTokens = model.maxOutputTokens;
+  if (
+    maxOutputTokens !== undefined &&
+    (!Number.isSafeInteger(maxOutputTokens) ||
+      (maxOutputTokens as number) < 1 ||
+      (maxOutputTokens as number) > 1_000_000)
+  ) {
+    throw invalidRequest();
+  }
   return {
     providerId: parseId(model.providerId),
     modelId: parseCatalogId(model.modelId),
+    ...(maxOutputTokens === undefined ? {} : { maxOutputTokens: maxOutputTokens as number }),
   };
 }
 

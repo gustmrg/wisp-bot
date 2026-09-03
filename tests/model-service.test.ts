@@ -33,6 +33,18 @@ class TestEncryption implements EncryptionService {
 function createRuntime() {
   const models = [
     {
+      id: "model-a",
+      name: "Model A",
+      api: "test",
+      provider: "openrouter",
+      baseUrl: "https://example.test",
+      reasoning: true,
+      input: ["text"],
+      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+      contextWindow: 100_000,
+      maxTokens: 10_000,
+    },
+    {
       id: "model-b",
       name: "Model B",
       api: "test",
@@ -46,6 +58,12 @@ function createRuntime() {
     },
   ];
   const providers = [
+    {
+      id: "openrouter",
+      name: "OpenRouter",
+      auth: { apiKey: {} },
+      getModels: () => models.filter(({ provider }) => provider === "openrouter"),
+    },
     {
       id: "provider-b",
       name: "Provider B",
@@ -79,6 +97,20 @@ async function createService(encryption = new TestEncryption()) {
 }
 
 describe("ModelService", () => {
+  it("only exposes OpenRouter as a supported provider", async () => {
+    const { service } = await createService();
+
+    const view = await service.getView();
+
+    expect(view.providers.map(({ id }) => id)).toEqual(["openrouter"]);
+    await expect(
+      service.save({
+        selection: { providerId: "provider-b", modelId: "model-b" },
+        apiKey: "secret-provider-key",
+      }),
+    ).rejects.toEqual(expect.objectContaining<WispBackendError>({ code: "invalid_configuration" }));
+  });
+
   it("rehydrates persisted provider authentication in a new runtime", async () => {
     const directory = await mkdtemp(path.join(tmpdir(), "wisp-model-restart-"));
     directories.push(directory);
@@ -97,7 +129,7 @@ describe("ModelService", () => {
     const { service } = await createService();
     await expect(
       service.save({
-        selection: { providerId: "provider-b", modelId: "model-b" },
+        selection: { providerId: "openrouter", modelId: "model-a" },
       }),
     ).rejects.toEqual(
       expect.objectContaining<WispBackendError>({
@@ -108,7 +140,7 @@ describe("ModelService", () => {
 
   it("does not restore a saved selection when its encrypted credential is missing", async () => {
     const { service, settings } = await createService();
-    await settings.setSelection({ providerId: "provider-b", modelId: "model-b" });
+    await settings.setSelection({ providerId: "openrouter", modelId: "model-a" });
 
     await expect(service.getSelection()).resolves.toBeNull();
     await expect(service.getView()).resolves.toEqual(expect.objectContaining({ selection: null }));
@@ -126,7 +158,7 @@ describe("ModelService", () => {
     );
     await expect(
       service.save({
-        selection: { providerId: "provider-b", modelId: "model-b" },
+        selection: { providerId: "openrouter", modelId: "model-a" },
         apiKey: "secret-provider-key",
       }),
     ).rejects.toEqual(
@@ -140,15 +172,15 @@ describe("ModelService", () => {
   it("saves a valid key and selection without returning the secret", async () => {
     const { service, runtime, credentials } = await createService();
     const view = await service.save({
-      selection: { providerId: "provider-b", modelId: "model-b" },
+      selection: { providerId: "openrouter", modelId: "model-a" },
       apiKey: "secret-provider-key",
     });
 
-    expect(view.selection).toEqual({ providerId: "provider-b", modelId: "model-b" });
+    expect(view.selection).toEqual({ providerId: "openrouter", modelId: "model-a" });
     expect(view.providers[0]?.credentialConfigured).toBe(true);
     expect(JSON.stringify(view)).not.toContain("secret-provider-key");
-    expect(runtime.setRuntimeApiKey).toHaveBeenCalledWith("provider-b", "secret-provider-key");
-    await expect(credentials.read("provider-b")).resolves.toEqual({
+    expect(runtime.setRuntimeApiKey).toHaveBeenCalledWith("openrouter", "secret-provider-key");
+    await expect(credentials.read("openrouter")).resolves.toEqual({
       type: "api_key",
       key: "secret-provider-key",
     });
@@ -158,7 +190,7 @@ describe("ModelService", () => {
     const { service } = await createService();
     await expect(
       service.save({
-        selection: { providerId: "provider-b", modelId: "missing" },
+        selection: { providerId: "openrouter", modelId: "missing" },
         apiKey: "secret-provider-key",
       }),
     ).rejects.toEqual(
@@ -171,14 +203,14 @@ describe("ModelService", () => {
   it("removes the key and clears the active selection", async () => {
     const { service, runtime } = await createService();
     await service.save({
-      selection: { providerId: "provider-b", modelId: "model-b" },
+      selection: { providerId: "openrouter", modelId: "model-a" },
       apiKey: "secret-provider-key",
     });
 
-    const view = await service.removeCredential("provider-b");
+    const view = await service.removeCredential("openrouter");
 
     expect(view.selection).toBeNull();
     expect(view.providers[0]?.credentialConfigured).toBe(false);
-    expect(runtime.removeRuntimeApiKey).toHaveBeenCalledWith("provider-b");
+    expect(runtime.removeRuntimeApiKey).toHaveBeenCalledWith("openrouter");
   });
 });

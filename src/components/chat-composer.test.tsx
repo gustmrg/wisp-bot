@@ -61,6 +61,7 @@ describe("ChatComposer", () => {
     expect(screen.getByRole("textbox", { name: "Message Crew" })).toBeDisabled();
 
     rerender(<ChatComposer {...defaultProps} chat={wisp("one", "One")} status="working" onAbort={onAbort} />);
+    expect(screen.getByRole("status")).toBeEmptyDOMElement();
     screen.getByRole("button", { name: "Stop response" }).click();
     expect(onAbort).toHaveBeenCalledOnce();
   });

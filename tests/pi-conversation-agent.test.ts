@@ -17,6 +17,7 @@ class MockPiSession implements PiSessionLike {
   readonly models: unknown[] = [];
   abortCount = 0;
   disposeCount = 0;
+  reloadCount = 0;
   private readonly listeners = new Set<(event: PiAgentEvent) => void>();
   private releasePrompt: (() => void) | null = null;
 
@@ -54,6 +55,10 @@ class MockPiSession implements PiSessionLike {
   }
 
   async waitForIdle(): Promise<void> {}
+
+  async reload(): Promise<void> {
+    this.reloadCount += 1;
+  }
 
   async setModel(model: never): Promise<void> {
     this.models.push(model);
@@ -159,5 +164,19 @@ describe("PiConversationAgent", () => {
     expect(sessions.get("one")?.abortCount).toBe(1);
     expect(sessions.get("one")?.disposeCount).toBe(1);
     expect(events).toHaveBeenCalledWith(expect.objectContaining({ type: "assistant_message_cancelled" }));
+  });
+
+  it("reloads the active session when its identity changes", async () => {
+    const sessions = new Map<string, MockPiSession>();
+    const initialContext = context("one");
+    const agent = new PiConversationAgent(initialContext, factoryFor(sessions));
+    await agent.start();
+    await agent.applyModel(selection());
+
+    await agent.updateContext({ ...initialContext, description: "Financial advisor" });
+
+    expect(initialContext.description).toBe("Financial advisor");
+    expect(sessions.get("one")?.reloadCount).toBe(1);
+    await agent.dispose();
   });
 });

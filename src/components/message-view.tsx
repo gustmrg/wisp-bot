@@ -131,8 +131,8 @@ function MessageView({ message, onAnswer, onRetry }: MessageViewProps) {
       <div className={cn("group/message-row flex max-w-full items-center", outgoing && "flex-row-reverse")}>
         <div
           className={cn(
-            "max-w-[min(820px,78vw)] rounded-[11px] px-2.5 py-[7px] text-foreground leading-[1.42] select-text whitespace-pre-wrap",
-            outgoing ? "bg-bubble-out" : "bg-bubble-in",
+            "max-w-[min(820px,78vw)] rounded-[11px] px-2.5 py-[7px] text-foreground leading-[1.42] select-text",
+            outgoing ? "bg-bubble-out whitespace-pre-wrap" : "bg-bubble-in",
           )}
         >
           {outgoing ? message.text : <MarkdownView text={message.text} />}
@@ -152,15 +152,9 @@ function MessageView({ message, onAnswer, onRetry }: MessageViewProps) {
           ))}
         </div>
       ) : null}
-      {(message.status === "queued" || message.status === "cancelled" || message.status === "failed") ? (
+      {message.status === "queued" || message.status === "cancelled" || message.status === "failed" ? (
         <div className={cn("mt-1 flex items-center gap-2 text-[10.5px] text-faint", outgoing && "mr-1")}>
-          <span>
-            {message.status === "queued"
-              ? "Queued"
-              : message.status === "cancelled"
-                ? "Stopped"
-                : "Failed"}
-          </span>
+          <span>{message.status === "queued" ? "Queued" : message.status === "cancelled" ? "Stopped" : "Failed"}</span>
           {!outgoing && message.status === "failed" && message.retryable ? (
             <button
               type="button"

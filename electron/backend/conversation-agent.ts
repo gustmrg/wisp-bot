@@ -6,6 +6,7 @@ export interface ConversationAgent {
   start(): Promise<void>;
   send(request: SendMessageRequest): Promise<void>;
   abort(): Promise<void>;
+  updateContext(context: ConversationAgentContext): Promise<void>;
   applyModel(model: ModelSelection): Promise<void>;
   clearModel(): Promise<void>;
   dispose(): Promise<void>;
