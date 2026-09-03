@@ -73,9 +73,11 @@ Generated components are written to `src/components/ui/` and are maintained loca
 
 Wisp conversations are connected to persistent application-managed Pi sessions when a model and encrypted API key are configured. Read-only workspace tools are available; file creation and modification pass through main-process policy and user approval. The fake agent implementation remains as a deterministic test adapter, not the production renderer transport.
 
-Conversations and backend policy are stored under Electron's user-data directory. Theme, timezone, microphone selection, launch-at-login, notification-sound, and related UI preferences are stored locally in the renderer. Theme and auto-review policy affect current behavior; microphone capture, launch-at-login, notification sounds, sign-out, shortcuts, update checks, and installer/update delivery are not connected yet. Circles are feature-flagged and do not run their own model sessions.
+Conversations and backend policy are stored under Electron's user-data directory. Theme, timezone, microphone selection, launch-at-login, notification-sound, and related UI preferences are stored locally in the renderer. Theme and auto-review policy affect current behavior; microphone capture, launch-at-login, notification sounds, sign-out, and shortcuts are not connected yet. Installed releases expose explicit check, download, and restart-to-install update states in About. Circles are feature-flagged and do not run their own model sessions.
 
 API keys are encrypted with Electron's operating-system-backed `safeStorage` API and are never exposed to the renderer. Wisp refuses to persist keys when secure storage is unavailable. Unknown file actions are blocked; conflicting auto-review rules use `block` → `ask` → `allow` precedence.
+
+Signed Windows and macOS packaging is configured for the protected release workflow. See [the release runbook](docs/release-runbook.md) for its credential boundary, draft-only staging flow, verification, and rollback procedure. No public release is created automatically.
 
 ## Project structure
 
@@ -110,6 +112,10 @@ Maintained runtime code lives in `src/`, `shared/`, and `electron/`. Nothing und
 ## Contributing
 
 Run all quality gates before opening a change. Found a bug or have an idea? [Open an issue](https://github.com/gustmrg/wisp-bot/issues).
+
+## Desktop releases
+
+Release targets, signing custody, staged channels, and rollback policy are defined in `docs/decisions/002-distribution.md`. `npm run dist:dir` creates an unpacked local application for inspection; native signed installers are produced only by the protected `Desktop release` workflow. The workflow defaults to artifact-only mode and cannot create even a draft GitHub release unless its explicit input and release-environment approval are both provided. Public promotion remains a manual operation.
 
 ## License
 

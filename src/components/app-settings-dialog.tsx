@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { BellIcon, BotIcon, InfoIcon, KeyboardIcon, RefreshCwIcon, SettingsIcon } from "lucide-react";
+import { useEffect, useState } from "react";
+import { BellIcon, BotIcon, DownloadIcon, InfoIcon, KeyboardIcon, RefreshCwIcon, SettingsIcon } from "lucide-react";
 
 import { GeneralSettingsSections, PreferenceSwitch } from "@/components/general-settings-sections";
 import { ModelSettingsSection } from "@/components/model-settings-section";
@@ -13,6 +13,7 @@ import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectVa
 import { normalizeTheme } from "@/lib/theme";
 import { profileAvatar } from "@/lib/ui-classes";
 import { cn } from "@/lib/utils";
+import type { UpdateState } from "../../shared/contracts";
 
 const THEME_OPTIONS = [
   { value: "system", label: "System" },
@@ -46,6 +47,35 @@ function AppSettingsDialog({
 }: AppSettingsDialogProps) {
   const [section, setSection] = useState<"general" | "model" | "about">("general");
   const selected = "bg-accent text-accent-foreground";
+  const [updateState, setUpdateState] = useState<UpdateState>({
+    phase: "idle",
+    currentVersion: appMetadata.version,
+  });
+
+  useEffect(() => {
+    if (!open) return;
+    let active = true;
+    const unsubscribe = window.wisp.subscribeToUpdateState((state) => {
+      if (active) setUpdateState(state);
+    });
+    void window.wisp.getUpdateState().then((result) => {
+      if (active && result.ok) setUpdateState(result.value);
+    });
+    return () => {
+      active = false;
+      unsubscribe();
+    };
+  }, [open]);
+
+  async function handleUpdateAction(): Promise<void> {
+    const result =
+      updateState.phase === "available"
+        ? await window.wisp.downloadUpdate()
+        : updateState.phase === "downloaded"
+          ? await window.wisp.installUpdate()
+          : await window.wisp.checkForUpdates();
+    if (!result.ok) setUpdateState((current) => ({ ...current, phase: "error", message: result.error.message }));
+  }
 
   return (
     <Dialog
@@ -217,15 +247,24 @@ function AppSettingsDialog({
                   variant="ghost"
                   size="icon-sm"
                   type="button"
-                  aria-label="Check for updates"
-                  title="Update checks are not available yet"
-                  disabled
+                  aria-label={updateActionLabel(updateState)}
+                  title={updateActionLabel(updateState)}
+                  disabled={updateState.phase === "checking" || updateState.phase === "downloading"}
+                  onClick={() => void handleUpdateAction()}
                 >
-                  <RefreshCwIcon aria-hidden="true" />
+                  {updateState.phase === "available" ? (
+                    <DownloadIcon aria-hidden="true" />
+                  ) : (
+                    <RefreshCwIcon aria-hidden="true" />
+                  )}
                 </Button>
               </SettingsRow>
             </SettingsCard>
           </SettingsGroup>
+          <p className="mt-3 text-[11.5px] text-dim" role={updateState.phase === "error" ? "alert" : "status"}>
+            {updateStatusText(updateState)}
+          </p>
+          <p className="mt-2 text-[11px] text-faint">Manual recovery: github.com/gustmrg/wisp-bot/releases/latest</p>
         </section>
       </DialogContent>
     </Dialog>
@@ -234,3 +273,19 @@ function AppSettingsDialog({
 
 export { AppSettingsDialog };
 export type { AppPreferences, AppSettingsDialogProps };
+
+function updateActionLabel(state: UpdateState): string {
+  if (state.phase === "available") return "Download update";
+  if (state.phase === "downloaded") return "Restart and install update";
+  return "Check for updates";
+}
+
+function updateStatusText(state: UpdateState): string {
+  if (state.phase === "checking") return "Checking for updates…";
+  if (state.phase === "available") return `Version ${state.availableVersion ?? "new"} is available.`;
+  if (state.phase === "downloading") return `Downloading update… ${state.progress ?? 0}%`;
+  if (state.phase === "downloaded") return `Version ${state.availableVersion ?? "new"} is ready to install.`;
+  if (state.phase === "up-to-date") return "Wisp Bot is up to date.";
+  if (state.phase === "error") return state.message ?? "Could not check for updates.";
+  return "Updates are checked only when you ask.";
+}

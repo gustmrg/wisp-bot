@@ -25,6 +25,11 @@ const WISP_IPC_CHANNELS = {
   getToolPolicy: "wisp:tool-policy:get",
   saveToolPolicy: "wisp:tool-policy:save",
   resolveToolApproval: "wisp:tool-policy:resolve-approval",
+  getUpdateState: "wisp:update:get-state",
+  checkForUpdates: "wisp:update:check",
+  downloadUpdate: "wisp:update:download",
+  installUpdate: "wisp:update:install",
+  updateState: "wisp:update:state",
 } as const;
 
 const wispApi: WispApi = {
@@ -54,6 +59,16 @@ const wispApi: WispApi = {
   getToolPolicy: () => ipcRenderer.invoke(WISP_IPC_CHANNELS.getToolPolicy),
   saveToolPolicy: (settings) => ipcRenderer.invoke(WISP_IPC_CHANNELS.saveToolPolicy, settings),
   resolveToolApproval: (request) => ipcRenderer.invoke(WISP_IPC_CHANNELS.resolveToolApproval, request),
+  getUpdateState: () => ipcRenderer.invoke(WISP_IPC_CHANNELS.getUpdateState),
+  checkForUpdates: () => ipcRenderer.invoke(WISP_IPC_CHANNELS.checkForUpdates),
+  downloadUpdate: () => ipcRenderer.invoke(WISP_IPC_CHANNELS.downloadUpdate),
+  installUpdate: () => ipcRenderer.invoke(WISP_IPC_CHANNELS.installUpdate),
+  subscribeToUpdateState: (listener) => {
+    const handleState = (_event: Electron.IpcRendererEvent, state: Parameters<typeof listener>[0]): void =>
+      listener(state);
+    ipcRenderer.on(WISP_IPC_CHANNELS.updateState, handleState);
+    return () => ipcRenderer.removeListener(WISP_IPC_CHANNELS.updateState, handleState);
+  },
 };
 
 contextBridge.exposeInMainWorld("wisp", Object.freeze(wispApi));

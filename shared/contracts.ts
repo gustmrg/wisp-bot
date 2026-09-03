@@ -31,6 +31,11 @@ export const WISP_IPC_CHANNELS = {
   getToolPolicy: "wisp:tool-policy:get",
   saveToolPolicy: "wisp:tool-policy:save",
   resolveToolApproval: "wisp:tool-policy:resolve-approval",
+  getUpdateState: "wisp:update:get-state",
+  checkForUpdates: "wisp:update:check",
+  downloadUpdate: "wisp:update:download",
+  installUpdate: "wisp:update:install",
+  updateState: "wisp:update:state",
 } as const;
 
 export interface ConversationRequest {
@@ -176,6 +181,16 @@ export type ConversationAgentEvent =
 
 export type SequencedConversationAgentEvent = ConversationAgentEvent & { sequence: number };
 
+export type UpdatePhase = "idle" | "checking" | "available" | "downloading" | "downloaded" | "up-to-date" | "error";
+
+export interface UpdateState {
+  phase: UpdatePhase;
+  currentVersion: string;
+  availableVersion?: string;
+  progress?: number;
+  message?: string;
+}
+
 export interface WispApi {
   startConversation(request: ConversationRequest): Promise<EmptyResult>;
   sendMessage(request: SendMessageRequest): Promise<EmptyResult>;
@@ -197,4 +212,9 @@ export interface WispApi {
   getToolPolicy(): Promise<BackendResult<ToolPolicySettings>>;
   saveToolPolicy(settings: ToolPolicySettings): Promise<BackendResult<ToolPolicySettings>>;
   resolveToolApproval(request: ResolveToolApprovalRequest): Promise<EmptyResult>;
+  getUpdateState(): Promise<BackendResult<UpdateState>>;
+  checkForUpdates(): Promise<BackendResult<UpdateState>>;
+  downloadUpdate(): Promise<BackendResult<UpdateState>>;
+  installUpdate(): Promise<EmptyResult>;
+  subscribeToUpdateState(listener: (state: UpdateState) => void): () => void;
 }

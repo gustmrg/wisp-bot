@@ -80,6 +80,20 @@ function createApi(initialState: ConversationStateView): WispApi {
     getToolPolicy: vi.fn(async () => ({ ok: true as const, value: { autoReview: true, rules: [] } })),
     saveToolPolicy: vi.fn(async (settings) => ({ ok: true as const, value: settings })),
     resolveToolApproval: vi.fn(async () => ({ ok: true as const, value: {} })),
+    getUpdateState: vi.fn(async () => ({
+      ok: true as const,
+      value: { phase: "idle" as const, currentVersion: "0.1.0" },
+    })),
+    checkForUpdates: vi.fn(async () => ({
+      ok: true as const,
+      value: { phase: "up-to-date" as const, currentVersion: "0.1.0" },
+    })),
+    downloadUpdate: vi.fn(async () => ({
+      ok: true as const,
+      value: { phase: "downloaded" as const, currentVersion: "0.1.0" },
+    })),
+    installUpdate: vi.fn(async () => ({ ok: true as const, value: {} })),
+    subscribeToUpdateState: vi.fn(() => () => undefined),
   };
 }
 

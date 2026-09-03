@@ -22,6 +22,16 @@ const appMetadata: AppMetadata = {
 describe("AppSettingsDialog metadata", () => {
   it("renders injected user and application metadata", async () => {
     const user = userEvent.setup();
+    Object.defineProperty(window, "wisp", {
+      configurable: true,
+      value: {
+        subscribeToUpdateState: vi.fn(() => () => undefined),
+        getUpdateState: vi.fn(async () => ({
+          ok: true,
+          value: { phase: "idle", currentVersion: appMetadata.version },
+        })),
+      },
+    });
     render(
       <AppSettingsDialog
         appMetadata={appMetadata}

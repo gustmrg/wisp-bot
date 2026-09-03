@@ -51,6 +51,11 @@ function completeBridge(): WispApi {
       throw new Error("not called");
     },
     resolveToolApproval: async () => ({ ok: true, value: {} }),
+    getUpdateState: async () => ({ ok: true, value: { phase: "idle", currentVersion: "0.1.0" } }),
+    checkForUpdates: async () => ({ ok: true, value: { phase: "up-to-date", currentVersion: "0.1.0" } }),
+    downloadUpdate: async () => ({ ok: true, value: { phase: "downloaded", currentVersion: "0.1.0" } }),
+    installUpdate: async () => ({ ok: true, value: {} }),
+    subscribeToUpdateState: () => () => undefined,
   };
 }
 

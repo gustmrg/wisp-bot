@@ -1,4 +1,5 @@
 import { app, BrowserWindow, dialog, ipcMain, nativeTheme, session, type IpcMainInvokeEvent } from "electron";
+import { autoUpdater } from "electron-updater";
 import path from "node:path";
 
 import { WISP_IPC_CHANNELS, type SequencedConversationAgentEvent } from "../shared/contracts.js";
@@ -15,10 +16,12 @@ import { StructuredLogger } from "./backend/structured-logger.js";
 import { ToolAuthorizationBroker } from "./backend/tool-authorization-broker.js";
 import { ToolAuditStore } from "./backend/tool-audit-store.js";
 import { ToolPolicyStore } from "./backend/tool-policy-store.js";
+import { UpdateService } from "./backend/update-service.js";
 import { registerAgentHandlers } from "./ipc/register-handlers.js";
 import { registerConversationHandlers } from "./ipc/register-conversation-handlers.js";
 import { registerModelSettingsHandlers } from "./ipc/register-model-settings-handlers.js";
 import { registerToolPolicyHandlers } from "./ipc/register-tool-policy-handlers.js";
+import { registerUpdateHandlers } from "./ipc/register-update-handlers.js";
 import {
   isAllowedPermission,
   isAllowedRendererUrl,
@@ -120,6 +123,13 @@ async function bootstrap(): Promise<void> {
     encryption: new SafeStorageEncryption(),
   });
   const logger = new StructuredLogger();
+  autoUpdater.channel = app.getVersion().includes("-beta.") ? "beta" : "latest";
+  const updateService = new UpdateService(autoUpdater, app.getVersion(), app.isPackaged);
+  const unsubscribeUpdateState = updateService.subscribe((state) => {
+    for (const window of BrowserWindow.getAllWindows()) {
+      if (!window.isDestroyed()) window.webContents.send(WISP_IPC_CHANNELS.updateState, state);
+    }
+  });
   const toolPolicyStore = new ToolPolicyStore(path.join(app.getPath("userData"), "backend", "tool-policy.json"));
   await toolPolicyStore.load();
   let conversationService: ConversationService | undefined;
@@ -177,6 +187,7 @@ async function bootstrap(): Promise<void> {
     conversationService.applyModel(selection),
   );
   const toolPolicyHandlers = registerToolPolicyHandlers(ipcMain, toolAuthorizationBroker, isTrustedIpcSender);
+  const updateHandlers = registerUpdateHandlers(ipcMain, updateService, isTrustedIpcSender);
   let backendDisposed = false;
   let backendDisposing = false;
   app.on("before-quit", (event) => {
@@ -185,6 +196,8 @@ async function bootstrap(): Promise<void> {
     if (backendDisposing) return;
     backendDisposing = true;
     toolPolicyHandlers.dispose();
+    updateHandlers.dispose();
+    unsubscribeUpdateState();
     toolAuthorizationBroker.dispose();
     modelSettingsHandlers.dispose();
     conversationHandlers.dispose();
