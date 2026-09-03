@@ -306,10 +306,11 @@ describe("SdkPiSessionFactory", () => {
     expect(JSON.stringify(sanitized)).not.toContain("/home/gustavo");
     expect(sanitized).toEqual({
       messages: [
-        { role: "system", content: "You are a Wisp.\nCurrent working directory: <workspace>" },
-        { role: "user", content: [{ type: "text", text: "Inspect <workspace>/notes.txt" }] },
+        { role: "system", content: "You are a Wisp.\nUse relative paths for workspace tools." },
+        { role: "user", content: [{ type: "text", text: "Inspect ./notes.txt" }] },
       ],
     });
+    expect(JSON.stringify(sanitized)).not.toContain("<workspace>");
     expect(JSON.stringify(payload)).toContain(workspaceDirectory);
   });
 });

@@ -192,7 +192,12 @@ export function sanitizeWorkspacePath(payload: unknown, workspaceDirectory: stri
     if (typeof value === "string") {
       let sanitized = value;
       for (const sensitivePath of sensitivePaths) {
-        if (sensitivePath) sanitized = sanitized.replaceAll(sensitivePath, "<workspace>");
+        if (!sensitivePath) continue;
+        sanitized = sanitized.replaceAll(
+          `Current working directory: ${sensitivePath}`,
+          "Use relative paths for workspace tools.",
+        );
+        sanitized = sanitized.replaceAll(sensitivePath, ".");
       }
       return sanitized;
     }
