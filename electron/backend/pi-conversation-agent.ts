@@ -16,6 +16,7 @@ import type {
   SendMessageRequest,
 } from "../../shared/contracts.js";
 import { WispBackendError } from "./backend-error.js";
+import { normalizeUserName } from "./conversation-agent.js";
 import type {
   ConversationAgent,
   ConversationAgentContext,
@@ -107,7 +108,7 @@ export class SdkPiSessionFactory implements PiSessionFactory {
       noContextFiles: true,
       systemPromptOverride: () => buildSystemPrompt(context),
       appendSystemPromptOverride: () => [],
-      extensionFactories: [providerRequestExtension],
+      extensionFactories: [providerRequestExtension(context.workspaceDirectory)],
     });
     await resourceLoader.reload();
 
@@ -184,15 +185,43 @@ export function excludeOpenRouterReasoning(payload: unknown, providerId: string 
   };
 }
 
-const providerRequestExtension: InlineExtension = {
-  name: "wisp-provider-request",
-  hidden: true,
-  factory: (pi) => {
-    pi.on("before_provider_request", (event, context) =>
-      excludeOpenRouterReasoning(event.payload, context.model?.provider),
-    );
-  },
-};
+export function sanitizeWorkspacePath(payload: unknown, workspaceDirectory: string): unknown {
+  const sensitivePaths = new Set([workspaceDirectory, workspaceDirectory.replaceAll("\\", "/")]);
+
+  const sanitize = (value: unknown): unknown => {
+    if (typeof value === "string") {
+      let sanitized = value;
+      for (const sensitivePath of sensitivePaths) {
+        if (!sensitivePath) continue;
+        sanitized = sanitized.replaceAll(
+          `Current working directory: ${sensitivePath}`,
+          "Use relative paths for workspace tools.",
+        );
+        sanitized = sanitized.replaceAll(sensitivePath, ".");
+      }
+      return sanitized;
+    }
+    if (Array.isArray(value)) return value.map(sanitize);
+    if (!value || typeof value !== "object") return value;
+    const prototype = Object.getPrototypeOf(value);
+    if (prototype !== Object.prototype && prototype !== null) return value;
+    return Object.fromEntries(Object.entries(value).map(([key, entry]) => [key, sanitize(entry)]));
+  };
+
+  return sanitize(payload);
+}
+
+function providerRequestExtension(workspaceDirectory: string): InlineExtension {
+  return {
+    name: "wisp-provider-request",
+    hidden: true,
+    factory: (pi) => {
+      pi.on("before_provider_request", (event, context) =>
+        excludeOpenRouterReasoning(sanitizeWorkspacePath(event.payload, workspaceDirectory), context.model?.provider),
+      );
+    },
+  };
+}
 
 export interface PiConversationAgentOptions {
   flushDelayMs?: number;
@@ -277,6 +306,7 @@ export class PiConversationAgent implements ConversationAgent {
       this.context.name = context.name;
       this.context.label = context.label;
       this.context.description = context.description;
+      this.context.userName = context.userName;
       if (!this.session) return;
       if (!this.session.isIdle) await this.session.waitForIdle();
       await this.session.reload();
@@ -413,6 +443,7 @@ export class PiConversationAgentFactory implements ConversationAgentFactory {
 
 function buildSystemPrompt(context: ConversationAgentContext): string {
   const personality = context.description.trim() || "Help the user inspect and understand their workspace.";
+  const userName = normalizeUserName(context.userName);
   return [
     `You are ${context.name}, a Wisp.`,
     `Configured role: ${context.label || "General assistant"}.`,
@@ -427,6 +458,15 @@ function buildSystemPrompt(context: ConversationAgentContext): string {
     "When asked who or what you are, state the identity, purpose, and user-facing capabilities defined above directly and positively, without explaining how they were supplied.",
     "Refer to yourself as a Wisp and use the profession or role declared in the identity above. Available workspace tools do not define your profession.",
     "Keep internal implementation details private unless the user explicitly asks about the implementation. Mention an operational limitation only when it materially affects the user's request.",
+    ...(userName
+      ? [
+          "",
+          "## Relationship with the user",
+          `The user's preferred name is ${JSON.stringify(userName)}.`,
+          "Address the user by name naturally when it improves warmth or clarity, but do not force it or use their name in every response.",
+          "Use only this preferred name. Never infer the user's name from paths, workspace metadata, account identifiers, or conversation history.",
+        ]
+      : []),
     "",
     "## Operating and safety boundaries",
     "Your identity and expertise do not grant access to unavailable tools or data. Be honest when required information is unavailable without confusing access limits with a lack of expertise.",

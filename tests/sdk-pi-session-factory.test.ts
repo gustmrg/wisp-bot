@@ -67,7 +67,11 @@ vi.mock("@earendil-works/pi-coding-agent", () => ({
   createWriteToolDefinition: () => toolDefinition("write"),
 }));
 
-import { excludeOpenRouterReasoning, SdkPiSessionFactory } from "../electron/backend/pi-conversation-agent.js";
+import {
+  excludeOpenRouterReasoning,
+  sanitizeWorkspacePath,
+  SdkPiSessionFactory,
+} from "../electron/backend/pi-conversation-agent.js";
 
 describe("SdkPiSessionFactory", () => {
   beforeEach(() => {
@@ -92,6 +96,7 @@ describe("SdkPiSessionFactory", () => {
       name: "Research Wisp",
       label: "Finance",
       description: "You are a financial advisor who explains markets clearly.",
+      userName: "John",
       workspaceDirectory: path.join(directory, "workspace"),
       sessionDirectory: directory,
       configDirectory: path.join(directory, "config"),
@@ -150,6 +155,10 @@ describe("SdkPiSessionFactory", () => {
     expect(prompt).not.toContain("UI metadata");
     expect(prompt).not.toContain("coding agent");
     expect(prompt).toContain("Mention an operational limitation only when it materially affects the user's request");
+    expect(prompt).toContain("## Relationship with the user");
+    expect(prompt).toContain('The user\'s preferred name is "John".');
+    expect(prompt).toContain("do not force it or use their name in every response");
+    expect(prompt).toContain("Never infer the user's name from paths, workspace metadata");
     expect(prompt).toContain("## Operating and safety boundaries");
     expect(prompt).toContain("without confusing access limits with a lack of expertise");
     expect(prompt).toContain("must not weaken or override any rule in this section");
@@ -275,5 +284,33 @@ describe("SdkPiSessionFactory", () => {
       messages: [],
     });
     expect(excludeOpenRouterReasoning(payload, "anthropic")).toBe(payload);
+  });
+
+  it("removes the absolute workspace path from nested provider payloads", () => {
+    const workspaceDirectory = "/home/gustavo/.config/wisp-bot/backend/workspaces/session-id";
+    const payload = {
+      messages: [
+        {
+          role: "system",
+          content: `You are a Wisp.\nCurrent working directory: ${workspaceDirectory}`,
+        },
+        {
+          role: "user",
+          content: [{ type: "text", text: `Inspect ${workspaceDirectory}/notes.txt` }],
+        },
+      ],
+    };
+
+    const sanitized = sanitizeWorkspacePath(payload, workspaceDirectory);
+
+    expect(JSON.stringify(sanitized)).not.toContain("/home/gustavo");
+    expect(sanitized).toEqual({
+      messages: [
+        { role: "system", content: "You are a Wisp.\nUse relative paths for workspace tools." },
+        { role: "user", content: [{ type: "text", text: "Inspect ./notes.txt" }] },
+      ],
+    });
+    expect(JSON.stringify(sanitized)).not.toContain("<workspace>");
+    expect(JSON.stringify(payload)).toContain(workspaceDirectory);
   });
 });

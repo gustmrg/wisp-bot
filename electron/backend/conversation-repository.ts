@@ -5,7 +5,7 @@ import path from "node:path";
 import type { ChatChanges, ChatCollection, Message } from "../../shared/conversations.js";
 import { writeFileAtomically } from "./atomic-file.js";
 import { WispBackendError } from "./backend-error.js";
-import type { ConversationAgentContext } from "./conversation-agent.js";
+import { normalizeUserName, type ConversationAgentContext } from "./conversation-agent.js";
 import {
   normalizeChat,
   normalizeChatCollection,
@@ -28,6 +28,7 @@ interface PersistedConversationState {
 
 export interface ConversationRepositoryOptions {
   dataDirectory: string;
+  userName?: string;
   now?: () => Date;
   createId?: () => string;
 }
@@ -38,6 +39,7 @@ export class ConversationRepository {
   private readonly sessionRoot: string;
   private readonly configRoot: string;
   private readonly deletedRoot: string;
+  private readonly userName: string | undefined;
   private readonly now: () => Date;
   private readonly createId: () => string;
   private state: PersistedConversationState = {
@@ -54,6 +56,7 @@ export class ConversationRepository {
     this.sessionRoot = path.join(options.dataDirectory, "pi-sessions");
     this.configRoot = path.join(options.dataDirectory, "pi-config");
     this.deletedRoot = path.join(options.dataDirectory, "deleted-conversations");
+    this.userName = normalizeUserName(options.userName);
     this.now = options.now ?? (() => new Date());
     this.createId = options.createId ?? randomUUID;
   }
@@ -118,6 +121,7 @@ export class ConversationRepository {
               name: chat.name,
               label: chat.label,
               description: chat.description,
+              ...(this.userName ? { userName: this.userName } : {}),
               workspaceDirectory: path.join(this.workspaceRoot, sessionId),
               sessionDirectory: path.join(this.sessionRoot, sessionId),
               configDirectory: path.join(this.configRoot, sessionId),
@@ -139,6 +143,7 @@ export class ConversationRepository {
       name: record.chat.name,
       label: record.chat.label,
       description: record.chat.description,
+      ...(this.userName ? { userName: this.userName } : {}),
       workspaceDirectory: path.join(this.workspaceRoot, record.sessionId),
       sessionDirectory: path.join(this.sessionRoot, record.sessionId),
       configDirectory: path.join(this.configRoot, record.sessionId),
