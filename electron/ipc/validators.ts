@@ -76,7 +76,9 @@ function parseModelSelection(value: unknown): ModelSelection {
   const maxOutputTokens = model.maxOutputTokens;
   if (
     maxOutputTokens !== undefined &&
-    (!Number.isSafeInteger(maxOutputTokens) || (maxOutputTokens as number) < 1 || (maxOutputTokens as number) > 1_000_000)
+    (!Number.isSafeInteger(maxOutputTokens) ||
+      (maxOutputTokens as number) < 1 ||
+      (maxOutputTokens as number) > 1_000_000)
   ) {
     throw invalidRequest();
   }

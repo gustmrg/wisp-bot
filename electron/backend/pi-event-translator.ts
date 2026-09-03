@@ -106,9 +106,7 @@ export class PiEventTranslator {
         } else if (update.type === "error") {
           if (update.reason === "aborted") this.cancelled = true;
           else
-            this.captureError(
-              update.error ?? { role: "assistant", stopReason: "error", errorMessage: update.reason },
-            );
+            this.captureError(update.error ?? { role: "assistant", stopReason: "error", errorMessage: update.reason });
         }
         break;
       }
@@ -125,8 +123,7 @@ export class PiEventTranslator {
         this.publishTool(event, "completed", event.isError);
         break;
       case "auto_retry_start":
-        this.retryNoticeVisible =
-          !event.errorMessage || isRetryableProviderError(event.errorMessage);
+        this.retryNoticeVisible = !event.errorMessage || isRetryableProviderError(event.errorMessage);
         if (this.retryNoticeVisible) this.publishNotice("retry_started");
         break;
       case "auto_retry_end":
