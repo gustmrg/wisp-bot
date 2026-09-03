@@ -4,6 +4,7 @@ import path from "node:path";
 import type {
   AgentSession,
   AgentSessionEvent,
+  InlineExtension,
   ModelRuntime,
   ToolDefinition,
 } from "@earendil-works/pi-coding-agent" with { "resolution-mode": "import" };
@@ -22,10 +23,16 @@ import type {
   ConversationAgentListener,
 } from "./conversation-agent.js";
 import type { ModelRuntimeLike } from "./model-service.js";
-import { PiEventTranslator, type PiAgentEvent } from "./pi-event-translator.js";
+import {
+  isRetryableProviderError,
+  PiEventTranslator,
+  type PiAgentEvent,
+  sanitizeErrorMessage,
+} from "./pi-event-translator.js";
 import type { ToolAuthorizationBroker, ToolAuthorizationRequest } from "./tool-authorization-broker.js";
 
 const ACTIVE_TOOLS = ["read", "grep", "find", "ls", "edit", "write"] as const;
+const DEFAULT_MAX_OUTPUT_TOKENS = 32_768;
 const MAX_MUTATION_INPUT_BYTES = 1_000_000;
 const MAX_TOOL_OUTPUT_BYTES = 64_000;
 type PiModel = NonNullable<ReturnType<ModelRuntimeLike["getModel"]>>;
@@ -71,7 +78,8 @@ export class SdkPiSessionFactory implements PiSessionFactory {
     if (!model) {
       throw new WispBackendError("model_unavailable", "The selected model is no longer available.");
     }
-    return model;
+    const maxOutputTokens = selection.maxOutputTokens ?? DEFAULT_MAX_OUTPUT_TOKENS;
+    return model.maxTokens > maxOutputTokens ? { ...model, maxTokens: maxOutputTokens } : model;
   }
 
   async create(context: ConversationAgentContext, selection: ModelSelection): Promise<PiSessionLike> {
@@ -98,6 +106,7 @@ export class SdkPiSessionFactory implements PiSessionFactory {
       noContextFiles: true,
       systemPromptOverride: () => buildSystemPrompt(context),
       appendSystemPromptOverride: () => [],
+      extensionFactories: [providerRequestExtension],
     });
     await resourceLoader.reload();
 
@@ -160,6 +169,30 @@ export class SdkPiSessionFactory implements PiSessionFactory {
   }
 }
 
+export function excludeOpenRouterReasoning(payload: unknown, providerId: string | undefined): unknown {
+  if (providerId !== "openrouter" || !payload || typeof payload !== "object" || Array.isArray(payload)) return payload;
+  const request = payload as Record<string, unknown>;
+  const reasoning =
+    request.reasoning && typeof request.reasoning === "object" && !Array.isArray(request.reasoning)
+      ? (request.reasoning as Record<string, unknown>)
+      : {};
+  return {
+    ...request,
+    include_reasoning: false,
+    reasoning: { ...reasoning, enabled: false, effort: "none", exclude: true },
+  };
+}
+
+const providerRequestExtension: InlineExtension = {
+  name: "wisp-provider-request",
+  hidden: true,
+  factory: (pi) => {
+    pi.on("before_provider_request", (event, context) =>
+      excludeOpenRouterReasoning(event.payload, context.model?.provider),
+    );
+  },
+};
+
 export interface PiConversationAgentOptions {
   flushDelayMs?: number;
 }
@@ -208,10 +241,15 @@ export class PiConversationAgent implements ConversationAgent {
       await this.session.prompt(request.text, { expandPromptTemplates: false });
       this.translator.finish();
     } catch (error) {
+      const detail = sanitizeErrorMessage(error instanceof Error ? error.message : String(error));
       const backendError: BackendError =
         error instanceof WispBackendError
           ? { code: error.code, message: error.message, retryable: error.retryable }
-          : { code: "internal_error", message: "The model request failed.", retryable: true };
+          : {
+              code: "internal_error",
+              message: detail || "The model request failed.",
+              retryable: detail ? isRetryableProviderError(detail) : true,
+            };
       this.translator.reportError(backendError);
       this.translator.finish();
       throw new WispBackendError(backendError.code, backendError.message, backendError.retryable);
@@ -365,6 +403,7 @@ function buildSystemPrompt(context: ConversationAgentContext): string {
     "Work only inside the assigned workspace.",
     "You may read, search, and request file changes. File changes are subject to app policy and user approval.",
     "You must not execute shell commands.",
+    "Return only the final answer. Do not include private reasoning, hidden analysis, self-talk, or planning.",
     "Be concise, factual, and explicit when information is missing.",
   ].join("\n");
 }

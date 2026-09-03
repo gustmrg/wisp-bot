@@ -66,7 +66,10 @@ vi.mock("@earendil-works/pi-coding-agent", () => ({
   createWriteToolDefinition: () => toolDefinition("write"),
 }));
 
-import { SdkPiSessionFactory } from "../electron/backend/pi-conversation-agent.js";
+import {
+  excludeOpenRouterReasoning,
+  SdkPiSessionFactory,
+} from "../electron/backend/pi-conversation-agent.js";
 
 describe("SdkPiSessionFactory", () => {
   beforeEach(() => {
@@ -132,12 +135,14 @@ describe("SdkPiSessionFactory", () => {
         noSkills: true,
         noPromptTemplates: true,
         noContextFiles: true,
+        extensionFactories: expect.arrayContaining([expect.objectContaining({ hidden: true })]),
       }),
     );
     const prompt = (sdk.loaderOptions[0] as { systemPromptOverride: () => string }).systemPromptOverride();
     expect(prompt).toContain("Research Wisp");
     expect(prompt).toContain("subject to app policy and user approval");
     expect(prompt).toContain("must not execute shell commands");
+    expect(prompt).toContain("Return only the final answer");
     expect(savePiSessionIdentity).toHaveBeenCalledWith({
       sessionId: "pi-session-id",
       sessionFile: "/sessions/concrete.jsonl",
@@ -215,5 +220,46 @@ describe("SdkPiSessionFactory", () => {
         modelId: "missing",
       }),
     ).toThrow(expect.objectContaining({ code: "model_unavailable" }));
+  });
+
+  it("applies the default output limit and allows a validated model override", () => {
+    const catalogModel = {
+      provider: "openrouter",
+      id: "minimax/minimax-m3:free",
+      maxTokens: 943_718,
+    };
+    const runtime = {
+      hasConfiguredAuth: () => true,
+      getModel: () => catalogModel,
+    } as unknown as ModelRuntimeLike;
+
+    const factory = new SdkPiSessionFactory(runtime);
+    const resolved = factory.resolveModel({
+      providerId: "openrouter",
+      modelId: "minimax/minimax-m3:free",
+    });
+
+    expect(resolved.maxTokens).toBe(32_768);
+    expect(resolved).not.toBe(catalogModel);
+    expect(catalogModel.maxTokens).toBe(943_718);
+    expect(
+      factory.resolveModel({
+        providerId: "openrouter",
+        modelId: "minimax/minimax-m3:free",
+        maxOutputTokens: 131_072,
+      }).maxTokens,
+    ).toBe(131_072);
+  });
+
+  it("excludes reasoning from OpenRouter responses without changing other provider payloads", () => {
+    const payload = { model: "model", reasoning: { effort: "none" }, messages: [] };
+
+    expect(excludeOpenRouterReasoning(payload, "openrouter")).toEqual({
+      model: "model",
+      include_reasoning: false,
+      reasoning: { effort: "none", enabled: false, exclude: true },
+      messages: [],
+    });
+    expect(excludeOpenRouterReasoning(payload, "anthropic")).toBe(payload);
   });
 });

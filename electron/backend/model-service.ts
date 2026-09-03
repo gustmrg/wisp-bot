@@ -14,6 +14,7 @@ import { AiSettingsStore } from "./ai-settings-store.js";
 import { EncryptedCredentialStore, type EncryptionService } from "./encrypted-credential-store.js";
 
 const MAX_API_KEY_LENGTH = 20_000;
+const SUPPORTED_PROVIDER_IDS = new Set(["openrouter"]);
 
 export interface ModelRuntimeLike {
   getProviders(): ReturnType<ModelRuntime["getProviders"]>;
@@ -75,7 +76,7 @@ export class ModelService {
     const credentialProviders = new Set((await this.credentials.list()).map(({ providerId }) => providerId));
     const providers: ProviderSummary[] = this.runtime
       .getProviders()
-      .filter((provider) => Boolean(provider.auth.apiKey))
+      .filter((provider) => SUPPORTED_PROVIDER_IDS.has(provider.id) && Boolean(provider.auth.apiKey))
       .map((provider) => ({
         id: provider.id,
         name: provider.name,
@@ -88,6 +89,7 @@ export class ModelService {
             reasoning: model.reasoning,
             input: [...model.input],
             contextWindow: model.contextWindow,
+            maxOutputTokens: model.maxTokens,
           }))
           .sort(compareByName),
       }))
@@ -164,8 +166,19 @@ export class ModelService {
   }
 
   private isValidSelection(selection: ModelSelection): boolean {
+    if (!SUPPORTED_PROVIDER_IDS.has(selection.providerId)) return false;
     const provider = this.runtime.getProvider(selection.providerId);
-    return Boolean(provider?.auth.apiKey && this.runtime.getModel(selection.providerId, selection.modelId));
+    const model = this.runtime.getModel(selection.providerId, selection.modelId);
+    const maxOutputTokens = selection.maxOutputTokens;
+    return Boolean(
+      provider?.auth.apiKey &&
+        model &&
+        (maxOutputTokens === undefined ||
+          (Number.isSafeInteger(maxOutputTokens) &&
+            maxOutputTokens >= 1 &&
+            maxOutputTokens <= 1_000_000 &&
+            maxOutputTokens <= model.maxTokens)),
+    );
   }
 
   private assertValidSelection(selection: ModelSelection): void {

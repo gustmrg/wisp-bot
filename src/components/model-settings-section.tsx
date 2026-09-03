@@ -18,6 +18,7 @@ function ModelSettingsSection({ active }: ModelSettingsSectionProps) {
   const [view, setView] = useState<AiSettingsView | null>(null);
   const [providerId, setProviderId] = useState("");
   const [modelId, setModelId] = useState("");
+  const [maxOutputTokens, setMaxOutputTokens] = useState("");
   const [apiKey, setApiKey] = useState("");
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -36,6 +37,11 @@ function ModelSettingsSection({ active }: ModelSettingsSectionProps) {
         ? nextSelection.modelId
         : (nextProvider?.models[0]?.id ?? "");
     setModelId(nextModelId);
+    setMaxOutputTokens(
+      nextSelection && nextSelection.providerId === nextProvider?.id && nextSelection.modelId === nextModelId
+        ? String(nextSelection.maxOutputTokens ?? "")
+        : "",
+    );
     setApiKey("");
   }, []);
 
@@ -69,6 +75,9 @@ function ModelSettingsSection({ active }: ModelSettingsSectionProps) {
     setModelId(
       view.selection?.providerId === nextProviderId ? view.selection.modelId : (nextProvider?.models[0]?.id ?? ""),
     );
+    setMaxOutputTokens(
+      view.selection?.providerId === nextProviderId ? String(view.selection.maxOutputTokens ?? "") : "",
+    );
     setApiKey("");
     setError(null);
     setSaved(false);
@@ -81,7 +90,11 @@ function ModelSettingsSection({ active }: ModelSettingsSectionProps) {
     setSaved(false);
     try {
       const result = await window.wisp.saveAiSettings({
-        selection: { providerId, modelId },
+        selection: {
+          providerId,
+          modelId,
+          ...(maxOutputTokens ? { maxOutputTokens: Number(maxOutputTokens) } : {}),
+        },
         ...(apiKey.trim() ? { apiKey } : {}),
       });
       if (!result.ok) {
@@ -118,12 +131,20 @@ function ModelSettingsSection({ active }: ModelSettingsSectionProps) {
 
   const providerItems = view?.providers.map(({ id, name }) => ({ value: id, label: name })) ?? [];
   const modelItems = provider?.models.map(({ id, name }) => ({ value: id, label: name })) ?? [];
+  const model = provider?.models.find(({ id }) => id === modelId);
+  const parsedMaxOutputTokens = maxOutputTokens ? Number(maxOutputTokens) : undefined;
+  const invalidMaxOutputTokens =
+    parsedMaxOutputTokens !== undefined &&
+    (!Number.isSafeInteger(parsedMaxOutputTokens) ||
+      parsedMaxOutputTokens < 1 ||
+      parsedMaxOutputTokens > (model?.maxOutputTokens ?? 1_000_000));
   const requiresKey = Boolean(provider && !provider.credentialConfigured && !apiKey.trim());
   const saveDisabled =
     saving ||
     !providerId ||
     !modelId ||
     requiresKey ||
+    invalidMaxOutputTokens ||
     (!view?.secureStorageAvailable && !provider?.credentialConfigured);
 
   return (
@@ -180,6 +201,7 @@ function ModelSettingsSection({ active }: ModelSettingsSectionProps) {
                   onValueChange={(value) => {
                     if (value !== null) {
                       setModelId(value);
+                      setMaxOutputTokens("");
                       setError(null);
                       setSaved(false);
                     }
@@ -198,6 +220,29 @@ function ModelSettingsSection({ active }: ModelSettingsSectionProps) {
                     </SelectGroup>
                   </SelectContent>
                 </Select>
+              </SettingsRow>
+              <SettingsRow>
+                <SettingsRowCopy>
+                  <label htmlFor="ai-max-output-tokens">
+                    <strong>Maximum output tokens</strong>
+                  </label>
+                  <small>Leave empty to use the safe automatic limit of up to 32,768 tokens.</small>
+                </SettingsRowCopy>
+                <Input
+                  id="ai-max-output-tokens"
+                  type="number"
+                  min={1}
+                  max={model?.maxOutputTokens ?? 1_000_000}
+                  step={1}
+                  value={maxOutputTokens}
+                  placeholder="Automatic"
+                  className="w-[160px] max-w-[45%]"
+                  onChange={(event) => {
+                    setMaxOutputTokens(event.currentTarget.value);
+                    setError(null);
+                    setSaved(false);
+                  }}
+                />
               </SettingsRow>
             </SettingsCard>
           </SettingsGroup>

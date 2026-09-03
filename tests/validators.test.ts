@@ -77,6 +77,18 @@ describe("IPC request validators", () => {
     expect(parseRemoveProviderCredentialRequest({ providerId: "openrouter" })).toEqual({
       providerId: "openrouter",
     });
+    expect(
+      parseSaveAiSettingsRequest({
+        selection: { providerId: "openrouter", modelId: "anthropic/claude-example", maxOutputTokens: 16_384 },
+      }),
+    ).toEqual({
+      selection: { providerId: "openrouter", modelId: "anthropic/claude-example", maxOutputTokens: 16_384 },
+    });
+    expect(() =>
+      parseSaveAiSettingsRequest({
+        selection: { providerId: "openrouter", modelId: "anthropic/claude-example", maxOutputTokens: 0 },
+      }),
+    ).toThrow(WispBackendError);
   });
 
   it("binds tool approval decisions to stable identifiers", () => {

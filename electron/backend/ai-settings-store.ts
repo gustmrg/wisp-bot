@@ -15,9 +15,19 @@ function isId(value: unknown): value is string {
 function normalizeSelection(value: unknown): ModelSelection | null {
   if (!value || typeof value !== "object") return null;
   const candidate = value as Partial<ModelSelection>;
-  return isId(candidate.providerId) && isId(candidate.modelId)
-    ? { providerId: candidate.providerId, modelId: candidate.modelId }
-    : null;
+  if (!isId(candidate.providerId) || !isId(candidate.modelId)) return null;
+  const maxOutputTokens = candidate.maxOutputTokens;
+  if (
+    maxOutputTokens !== undefined &&
+    (!Number.isSafeInteger(maxOutputTokens) || maxOutputTokens < 1 || maxOutputTokens > 1_000_000)
+  ) {
+    return null;
+  }
+  return {
+    providerId: candidate.providerId,
+    modelId: candidate.modelId,
+    ...(maxOutputTokens === undefined ? {} : { maxOutputTokens }),
+  };
 }
 
 export class AiSettingsStore {

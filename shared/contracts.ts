@@ -50,6 +50,7 @@ export interface SendMessageRequest extends ConversationRequest {
 export interface ModelSelection {
   providerId: string;
   modelId: string;
+  maxOutputTokens?: number;
 }
 
 export interface ModelSummary {
@@ -58,6 +59,7 @@ export interface ModelSummary {
   reasoning: boolean;
   input: ReadonlyArray<"text" | "image">;
   contextWindow: number;
+  maxOutputTokens: number;
 }
 
 export interface ProviderSummary {
