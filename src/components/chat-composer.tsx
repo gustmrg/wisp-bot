@@ -41,8 +41,7 @@ export function ChatComposer({ chat, status, activity, error, acknowledging, onA
           : (error ??
             activity ??
             (status === "configuration_required" ? "Configure a provider and model in Settings" : null) ??
-            (acknowledging ? "Queueing your message…" : null) ??
-            (working ? "Working on your request" : null))}
+            (acknowledging ? "Queueing your message…" : null))}
       </div>
       <div className="mx-auto flex min-h-[42px] w-full max-w-[1400px] items-end gap-2 rounded-[13px] border border-border bg-muted px-2 py-[7px] transition-[border-color] duration-[120ms] focus-within:border-ring">
         <textarea
