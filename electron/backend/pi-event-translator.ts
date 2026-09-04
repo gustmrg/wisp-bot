@@ -304,6 +304,6 @@ export class PiEventTranslator {
   }
 }
 
-function safeId(value: string): string {
+export function safeId(value: string): string {
   return /^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$/.test(value) ? value : "tool-call";
 }

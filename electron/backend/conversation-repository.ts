@@ -153,6 +153,22 @@ export class ConversationRepository {
     };
   }
 
+  getPiSessionContext(conversationId: string): {
+    sessionId: string;
+    piSessionId: string | null;
+    piSessionFile: string | null;
+    workspaceDirectory: string;
+  } | null {
+    const record = this.require(conversationId);
+    if (!record.sessionId) return null;
+    return {
+      sessionId: record.sessionId,
+      piSessionId: record.piSessionId,
+      piSessionFile: record.piSessionFile,
+      workspaceDirectory: path.join(this.workspaceRoot, record.sessionId),
+    };
+  }
+
   async initialize(chats: unknown): Promise<void> {
     await this.enqueue(async () => {
       if (this.state.initialized) return;

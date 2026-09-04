@@ -10,7 +10,9 @@ import { ConversationRepository } from "./backend/conversation-repository.js";
 import { ConversationService } from "./backend/conversation-service.js";
 import type { ConversationAgentFactory } from "./backend/conversation-agent.js";
 import { FakeConversationAgentFactory } from "./backend/fake-conversation-agent.js";
+import { ModelPricingService } from "./backend/model-pricing-service.js";
 import { ModelService } from "./backend/model-service.js";
+import { SessionReportService } from "./backend/session-report-service.js";
 import { PiConversationAgentFactory, SdkPiSessionFactory } from "./backend/pi-conversation-agent.js";
 import { SafeStorageEncryption } from "./backend/safe-storage-encryption.js";
 import { StructuredLogger } from "./backend/structured-logger.js";
@@ -21,6 +23,7 @@ import { UpdateService } from "./backend/update-service.js";
 import { registerAgentHandlers } from "./ipc/register-handlers.js";
 import { registerConversationHandlers } from "./ipc/register-conversation-handlers.js";
 import { registerModelSettingsHandlers } from "./ipc/register-model-settings-handlers.js";
+import { registerSessionReportHandlers } from "./ipc/register-session-report-handlers.js";
 import { registerToolPolicyHandlers } from "./ipc/register-tool-policy-handlers.js";
 import { registerUpdateHandlers } from "./ipc/register-update-handlers.js";
 import {
@@ -176,15 +179,24 @@ async function bootstrap(): Promise<void> {
   agentRegistry = new AgentRegistry(agentFactory, publishAgentEvent, (conversationId) =>
     toolAuthorizationBroker.cancelConversation(conversationId),
   );
-  conversationService = new ConversationService(
-    new ConversationRepository({
-      dataDirectory: path.join(app.getPath("userData"), "backend"),
-      userName: DEMO_CURRENT_USER.givenName,
-    }),
-    agentRegistry,
-    () => toolAuthorizationBroker.listPending(),
+  const conversationRepository = new ConversationRepository({
+    dataDirectory: path.join(app.getPath("userData"), "backend"),
+    userName: DEMO_CURRENT_USER.givenName,
+  });
+  conversationService = new ConversationService(conversationRepository, agentRegistry, () =>
+    toolAuthorizationBroker.listPending(),
   );
   await conversationService.start(await modelService.getSelection());
+  const sessionReportHandlers = registerSessionReportHandlers(
+    ipcMain,
+    new SessionReportService(
+      conversationRepository,
+      new ModelPricingService({
+        cacheFilePath: path.join(app.getPath("userData"), "backend", "model-pricing.json"),
+      }),
+    ),
+    isTrustedIpcSender,
+  );
   const agentHandlers = registerAgentHandlers(ipcMain, agentRegistry, isTrustedIpcSender);
   const conversationHandlers = registerConversationHandlers(ipcMain, conversationService, isTrustedIpcSender);
   const modelSettingsHandlers = registerModelSettingsHandlers(ipcMain, modelService, isTrustedIpcSender, (selection) =>
@@ -204,6 +216,7 @@ async function bootstrap(): Promise<void> {
     unsubscribeUpdateState();
     toolAuthorizationBroker.dispose();
     modelSettingsHandlers.dispose();
+    sessionReportHandlers.dispose();
     conversationHandlers.dispose();
     void agentHandlers.dispose().finally(() => {
       backendDisposed = true;

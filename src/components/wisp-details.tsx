@@ -2,6 +2,7 @@ import { useState } from "react";
 
 import type { WispChat, WispChatChanges } from "@/chat-data";
 import { WispSettingsFields } from "@/components/wisp-settings-fields";
+import { WispSessionReportSection } from "@/components/wisp-session-report";
 import { Button } from "@/components/ui/button";
 
 interface WispDetailsProps {
@@ -63,6 +64,7 @@ export function WispDetails({ chat, onChange }: WispDetailsProps) {
       <Button className="mt-[15px] w-full" type="button" disabled={!dirty || saving} onClick={() => void save()}>
         {saving ? "Saving…" : "Save changes"}
       </Button>
+      <WispSessionReportSection chatId={chat.id} />
     </>
   );
 }

@@ -28,6 +28,7 @@ export const WISP_IPC_CHANNELS = {
   appendConversationMessage: "wisp:conversations:append-message",
   answerConversationPrompt: "wisp:conversations:answer-prompt",
   markConversationRead: "wisp:conversations:mark-read",
+  getSessionReport: "wisp:conversations:get-session-report",
   getToolPolicy: "wisp:tool-policy:get",
   saveToolPolicy: "wisp:tool-policy:save",
   resolveToolApproval: "wisp:tool-policy:resolve-approval",
@@ -183,6 +184,46 @@ export type ConversationAgentEvent =
 
 export type SequencedConversationAgentEvent = ConversationAgentEvent & { sequence: number };
 
+export interface SessionReportUsage {
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens: number;
+  cacheWriteTokens: number;
+  totalTokens: number;
+}
+
+export interface SessionReportModelUsage {
+  providerId: string;
+  modelId: string;
+  turns: number;
+  usage: SessionReportUsage;
+  costUsd: number | null;
+}
+
+export interface SessionReportToolCall {
+  toolCallId: string;
+  toolName: string;
+  argumentSummary: string;
+  status: "completed" | "error" | "pending";
+  timestamp: string;
+}
+
+export interface SessionReportEvent {
+  kind: "compaction" | "error";
+  timestamp: string;
+  detail: string;
+}
+
+export interface WispSessionReport {
+  sessionId: string;
+  generatedAt: string;
+  turns: number;
+  totals: SessionReportUsage & { costUsd: number | null };
+  models: ReadonlyArray<SessionReportModelUsage>;
+  toolCalls: ReadonlyArray<SessionReportToolCall>;
+  events: ReadonlyArray<SessionReportEvent>;
+}
+
 export type UpdatePhase = "idle" | "checking" | "available" | "downloading" | "downloaded" | "up-to-date" | "error";
 
 export interface UpdateState {
@@ -211,6 +252,7 @@ export interface WispApi {
   appendConversationMessage(request: AppendConversationMessageRequest): Promise<BackendResult<ConversationStateView>>;
   answerConversationPrompt(request: AnswerConversationPromptRequest): Promise<BackendResult<ConversationStateView>>;
   markConversationRead(request: MarkConversationReadRequest): Promise<BackendResult<ConversationStateView>>;
+  getSessionReport(request: ConversationRequest): Promise<BackendResult<WispSessionReport | null>>;
   getToolPolicy(): Promise<BackendResult<ToolPolicySettings>>;
   saveToolPolicy(settings: ToolPolicySettings): Promise<BackendResult<ToolPolicySettings>>;
   resolveToolApproval(request: ResolveToolApprovalRequest): Promise<EmptyResult>;

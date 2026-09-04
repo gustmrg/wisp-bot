@@ -77,6 +77,7 @@ function createApi(initialState: ConversationStateView): WispApi {
     }),
     answerConversationPrompt: vi.fn(async () => current()),
     markConversationRead: vi.fn(async () => current()),
+    getSessionReport: vi.fn(async () => ({ ok: true as const, value: null })),
     getToolPolicy: vi.fn(async () => ({ ok: true as const, value: { autoReview: true, rules: [] } })),
     saveToolPolicy: vi.fn(async (settings) => ({ ok: true as const, value: settings })),
     resolveToolApproval: vi.fn(async () => ({ ok: true as const, value: {} })),

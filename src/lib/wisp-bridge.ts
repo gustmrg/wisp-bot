@@ -18,6 +18,7 @@ const REQUIRED_WISP_METHODS = [
   "appendConversationMessage",
   "answerConversationPrompt",
   "markConversationRead",
+  "getSessionReport",
   "getToolPolicy",
   "saveToolPolicy",
   "resolveToolApproval",

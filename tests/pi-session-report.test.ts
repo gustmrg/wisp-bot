@@ -1,0 +1,209 @@
+import { describe, expect, it } from "vitest";
+
+import type { SessionEntry } from "@earendil-works/pi-coding-agent";
+
+import { buildSessionReport, summarizeToolArguments } from "../electron/backend/pi-session-report.js";
+import type { ModelPricing } from "../electron/backend/model-pricing-service.js";
+
+const WORKSPACE = "/wisp/workspaces/session-1";
+const PRICING: ModelPricing = {
+  inputPerMillionTokens: 1.5,
+  outputPerMillionTokens: 3,
+  cacheReadPerMillionTokens: 0.15,
+};
+const getPricing = (providerId: string, modelId: string): ModelPricing | null =>
+  providerId === "openrouter" && modelId === "openai/gpt-oss-120b" ? PRICING : null;
+
+function assistantMessage(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    role: "assistant",
+    content: [{ type: "text", text: "Working on it." }],
+    api: "openai",
+    provider: "openrouter",
+    model: "openai/gpt-oss-120b",
+    usage: {
+      input: 1_000,
+      output: 200,
+      cacheRead: 100,
+      cacheWrite: 0,
+      totalTokens: 1_300,
+      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+    },
+    stopReason: "stop",
+    timestamp: 1_000,
+    ...overrides,
+  };
+}
+
+function messageEntry(message: Record<string, unknown>, timestamp = "2026-09-01T10:00:00.000Z"): SessionEntry {
+  return {
+    type: "message",
+    id: `entry-${Math.random()}`,
+    parentId: null,
+    timestamp,
+    message,
+  } as unknown as SessionEntry;
+}
+
+function toolResultEntry(toolCallId: string, isError: boolean, timestamp = "2026-09-01T10:00:01.000Z"): SessionEntry {
+  return messageEntry({ role: "toolResult", toolCallId, toolName: "read", content: [], isError, timestamp }, timestamp);
+}
+
+describe("buildSessionReport", () => {
+  it("aggregates token usage per model and for the whole session", () => {
+    const entries = [
+      messageEntry(assistantMessage()),
+      messageEntry(assistantMessage({ usage: { input: 500, output: 50, cacheRead: 0, totalTokens: 550 } })),
+    ];
+
+    const report = buildSessionReport("session-1", entries, { workspaceDirectory: WORKSPACE, getPricing });
+
+    expect(report.turns).toBe(2);
+    expect(report.totals).toEqual({
+      inputTokens: 1_500,
+      outputTokens: 250,
+      cacheReadTokens: 100,
+      cacheWriteTokens: 0,
+      totalTokens: 1_850,
+      costUsd: (1_500 / 1_000_000) * 1.5 + (250 / 1_000_000) * 3 + (100 / 1_000_000) * 0.15,
+    });
+    expect(report.models).toHaveLength(1);
+    expect(report.models[0]).toMatchObject({
+      providerId: "openrouter",
+      modelId: "openai/gpt-oss-120b",
+      turns: 2,
+      usage: { inputTokens: 1_500, outputTokens: 250, totalTokens: 1_850 },
+    });
+  });
+
+  it("omits cost when pricing is unavailable for a model used", () => {
+    const entries = [messageEntry(assistantMessage()), messageEntry(assistantMessage({ model: "unknown/model-x" }))];
+
+    const report = buildSessionReport("session-1", entries, { workspaceDirectory: WORKSPACE, getPricing });
+
+    expect(report.totals.costUsd).toBeNull();
+    expect(report.models.find((model) => model.modelId === "unknown/model-x")?.costUsd).toBeNull();
+    expect(report.models.find((model) => model.modelId === "openai/gpt-oss-120b")?.costUsd).not.toBeNull();
+  });
+
+  it("reports tool calls with sanitized arguments and resolved status", () => {
+    const entries = [
+      messageEntry(
+        assistantMessage({
+          content: [
+            {
+              type: "toolCall",
+              id: "call-1",
+              name: "read",
+              arguments: { path: `${WORKSPACE}/src/foo.ts` },
+            },
+            {
+              type: "toolCall",
+              id: "call-2",
+              name: "edit",
+              arguments: {
+                path: `${WORKSPACE}/src/foo.ts`,
+                oldString: "TOP SECRET CONTENT",
+                newString: "MORE SECRET CONTENT",
+              },
+            },
+            {
+              type: "toolCall",
+              id: "call-3",
+              name: "grep",
+              arguments: { pattern: "wisp", include: "*.ts" },
+            },
+            { type: "toolCall", id: "call-4", name: "bash", arguments: { command: "rm -rf /" } },
+          ],
+        }),
+      ),
+      toolResultEntry("call-1", false),
+      toolResultEntry("call-2", true),
+    ];
+
+    const report = buildSessionReport("session-1", entries, { workspaceDirectory: WORKSPACE, getPricing });
+
+    expect(report.toolCalls).toHaveLength(3);
+    expect(report.toolCalls[0]).toMatchObject({
+      toolCallId: "call-1",
+      toolName: "read",
+      argumentSummary: "path: ./src/foo.ts",
+      status: "completed",
+    });
+    expect(report.toolCalls[1]).toMatchObject({ toolName: "edit", status: "error" });
+    expect(report.toolCalls[1].argumentSummary).not.toContain("SECRET");
+    expect(report.toolCalls[2]).toMatchObject({
+      toolName: "grep",
+      argumentSummary: "pattern: wisp; include: *.ts",
+      status: "pending",
+    });
+  });
+
+  it("caps the reported tool calls and events", () => {
+    const entries = Array.from({ length: 80 }, (_, index) =>
+      messageEntry(
+        assistantMessage({
+          content: [{ type: "toolCall", id: `call-${index}`, name: "ls", arguments: { path: "." } }],
+        }),
+      ),
+    );
+
+    const report = buildSessionReport("session-1", entries, { workspaceDirectory: WORKSPACE, getPricing });
+
+    expect(report.toolCalls).toHaveLength(50);
+    expect(report.toolCalls[0].toolCallId).toBe("call-30");
+    expect(report.toolCalls[49].toolCallId).toBe("call-79");
+  });
+
+  it("reports compaction and sanitized error events", () => {
+    const entries = [
+      {
+        type: "compaction",
+        id: "c1",
+        parentId: null,
+        timestamp: "2026-09-01T11:00:00.000Z",
+        summary: "s",
+        firstKeptEntryId: "e1",
+        tokensBefore: 12_345,
+      } as unknown as SessionEntry,
+      messageEntry(
+        assistantMessage({ stopReason: "error", errorMessage: "Provider exploded with /home/gustavo/secret.txt" }),
+        "2026-09-01T12:00:00.000Z",
+      ),
+    ];
+
+    const report = buildSessionReport("session-1", entries, { workspaceDirectory: WORKSPACE, getPricing });
+
+    expect(report.events).toHaveLength(2);
+    expect(report.events[0]).toMatchObject({ kind: "compaction", detail: "Context compacted (12,345 tokens before)" });
+    expect(report.events[1].kind).toBe("error");
+    expect(report.events[1].detail).toContain("Provider exploded");
+    expect(report.events[1].detail).toContain("/home/gustavo/secret.txt");
+  });
+});
+
+describe("summarizeToolArguments", () => {
+  it("drops non-whitelisted values and truncates long values", () => {
+    const longPath = `${WORKSPACE}/${"a".repeat(300)}.ts`;
+
+    const summary = summarizeToolArguments({ path: longPath, content: "SECRET FILE CONTENT" }, WORKSPACE);
+
+    expect(summary).not.toContain("SECRET");
+    expect(summary.length).toBeLessThanOrEqual(201);
+    expect(summary.startsWith("path: .")).toBe(true);
+    expect(summary.endsWith("…")).toBe(true);
+  });
+
+  it("returns an empty summary for non-object arguments", () => {
+    expect(summarizeToolArguments("read", WORKSPACE)).toBe("");
+    expect(summarizeToolArguments(null, WORKSPACE)).toBe("");
+    expect(summarizeToolArguments([1, 2], WORKSPACE)).toBe("");
+  });
+
+  it("relativizes both forward- and backslash workspace paths", () => {
+    expect(summarizeToolArguments({ path: "/wisp/workspaces/session-1/a.ts" }, WORKSPACE)).toBe("path: ./a.ts");
+    expect(
+      summarizeToolArguments({ path: "\\wisp\\workspaces\\session-1\\a.ts" }, "\\wisp\\workspaces\\session-1"),
+    ).toBe("path: .\\a.ts");
+  });
+});
