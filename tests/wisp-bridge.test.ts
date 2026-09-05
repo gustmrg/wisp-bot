@@ -8,6 +8,16 @@ function completeBridge(): WispApi {
     startConversation: async () => ({ ok: true, value: {} }),
     sendMessage: async () => ({ ok: true, value: {} }),
     abortConversation: async () => ({ ok: true, value: {} }),
+    getConversationModel: async () => ({
+      ok: true as const,
+      value: {
+        override: null,
+        effective: null,
+        applied: null,
+        pending: null,
+        status: "configuration_required" as const,
+      },
+    }),
     applyModel: async () => ({ ok: true, value: {} }),
     disposeConversation: async () => ({ ok: true, value: {} }),
     subscribeToAgentEvents: () => () => undefined,

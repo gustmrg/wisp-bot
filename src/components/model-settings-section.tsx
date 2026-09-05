@@ -11,7 +11,11 @@ interface ModelSettingsSectionProps {
 }
 
 function initialProvider(view: AiSettingsView): ProviderSummary | undefined {
-  return view.providers.find(({ id }) => id === view.selection?.providerId) ?? view.providers[0];
+  return (
+    view.providers.find(({ id }) => id === view.selection?.providerId) ??
+    view.providers.find(({ id }) => id === "openrouter") ??
+    view.providers[0]
+  );
 }
 
 function ModelSettingsSection({ active }: ModelSettingsSectionProps) {
@@ -158,7 +162,7 @@ function ModelSettingsSection({ active }: ModelSettingsSectionProps) {
         AI Model
       </h2>
       <p className="mb-[22px] text-dim text-[11.5px] leading-relaxed">
-        This provider and model will be used by every Wisp conversation.
+        Default provider and model for Wisps without their own selection. Saved provider keys are shared with all Wisps.
       </p>
 
       {loading ? <p className="text-dim text-[12px]">Loading providers and models…</p> : null}

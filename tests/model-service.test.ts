@@ -97,18 +97,18 @@ async function createService(encryption = new TestEncryption()) {
 }
 
 describe("ModelService", () => {
-  it("only exposes OpenRouter as a supported provider", async () => {
+  it("exposes API-key providers and validates selections from their catalogs", async () => {
     const { service } = await createService();
 
     const view = await service.getView();
 
-    expect(view.providers.map(({ id }) => id)).toEqual(["openrouter"]);
+    expect(view.providers.map(({ id }) => id)).toEqual(["openrouter", "provider-b"]);
     await expect(
       service.save({
         selection: { providerId: "provider-b", modelId: "model-b" },
         apiKey: "secret-provider-key",
       }),
-    ).rejects.toEqual(expect.objectContaining<WispBackendError>({ code: "invalid_configuration" }));
+    ).resolves.toMatchObject({ selection: { providerId: "provider-b", modelId: "model-b" } });
   });
 
   it("rehydrates persisted provider authentication in a new runtime", async () => {
@@ -212,5 +212,24 @@ describe("ModelService", () => {
     expect(view.selection).toBeNull();
     expect(view.providers[0]?.credentialConfigured).toBe(false);
     expect(runtime.removeRuntimeApiKey).toHaveBeenCalledWith("openrouter");
+  });
+});
+
+it("validates per-Wisp selections against both the catalog and the shared encrypted key", async () => {
+  const { service, settings } = await createService();
+  const selection = { providerId: "provider-b", modelId: "model-b" };
+  await expect(service.validateConversationSelection(selection)).rejects.toMatchObject({
+    code: "configuration_required",
+  });
+  await service.save({ selection, apiKey: "secret-key" });
+  await service.save({ selection: { providerId: "openrouter", modelId: "model-a" }, apiKey: "another-key" });
+  await expect(service.validateConversationSelection(selection)).resolves.toBeUndefined();
+  expect(await settings.getSelection()).toEqual({ providerId: "openrouter", modelId: "model-a" });
+  await expect(service.validateConversationSelection({ ...selection, modelId: "missing" })).rejects.toMatchObject({
+    code: "invalid_configuration",
+  });
+  await service.removeCredential("provider-b");
+  await expect(service.validateConversationSelection(selection)).rejects.toMatchObject({
+    code: "configuration_required",
   });
 });

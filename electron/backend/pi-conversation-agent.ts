@@ -244,6 +244,8 @@ export class PiConversationAgent implements ConversationAgent {
   private session: PiSessionLike | null = null;
   private unsubscribeSession: (() => void) | null = null;
   private pendingModel: PiModel | null = null;
+  private appliedSelection: ModelSelection | null = null;
+  private pendingSelection: ModelSelection | null = null;
   private started = false;
   private disposed = false;
   private sending = false;
@@ -331,6 +333,9 @@ export class PiConversationAgent implements ConversationAgent {
       this.assertNotDisposed();
       this.configured = false;
       this.pendingModel = null;
+      this.pendingSelection = null;
+      this.appliedSelection = null;
+      this.publishModel();
     });
   }
 
@@ -349,16 +354,24 @@ export class PiConversationAgent implements ConversationAgent {
         if (event.type === "agent_settled") void this.applyPendingModel();
       });
       this.configured = true;
+      this.appliedSelection = { ...selection };
+      this.publishModel();
       return;
     }
     if (!this.session.isIdle) {
       this.pendingModel = model;
+      this.pendingSelection = { ...selection };
+      this.publishModel();
       this.configured = true;
       return;
     }
     try {
       await this.session.setModel(model, { persist: false });
+      this.appliedSelection = { ...selection };
+      this.pendingSelection = null;
+      this.pendingModel = null;
       this.configured = true;
+      this.publishModel();
     } catch (error) {
       this.configured = false;
       throw error;
@@ -390,14 +403,24 @@ export class PiConversationAgent implements ConversationAgent {
     return () => this.listeners.delete(listener);
   }
 
-  private async applyPendingModel(): Promise<void> {
+  private applyPendingModel(): Promise<void> {
+    return this.enqueueModelMutation(() => this.applyPendingModelInternal());
+  }
+
+  private async applyPendingModelInternal(): Promise<void> {
     const model = this.pendingModel;
     const session = this.session;
     if (!model || !session || !session.isIdle || this.disposed) return;
+    const selection = this.pendingSelection;
     this.pendingModel = null;
+    this.pendingSelection = null;
     try {
       await session.setModel(model, { persist: false });
+      this.appliedSelection = selection;
+      this.publishModel();
     } catch {
+      this.appliedSelection = null;
+      this.publishModel();
       this.configured = false;
       this.emit({
         type: "conversation_error",
@@ -411,6 +434,15 @@ export class PiConversationAgent implements ConversationAgent {
         status: "configuration_required",
       });
     }
+  }
+
+  private publishModel(): void {
+    this.emit({
+      type: "conversation_model_changed",
+      conversationId: this.context.conversationId,
+      applied: this.appliedSelection,
+      pending: this.pendingSelection,
+    });
   }
 
   private enqueueModelMutation(operation: () => Promise<void>): Promise<void> {

@@ -28,6 +28,7 @@ export interface ConversationAgentContext {
   label: string;
   description: string;
   userName?: string;
+  modelOverride?: ModelSelection | null;
   workspaceDirectory: string;
   sessionDirectory: string;
   configDirectory: string;

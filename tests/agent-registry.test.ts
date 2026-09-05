@@ -44,7 +44,7 @@ describe("AgentRegistry", () => {
       create: (agentContext) => new FakeConversationAgent(agentContext.conversationId, { latencyMs: 15 }),
     };
     const registry = new AgentRegistry(factory, (event) => events.push(event));
-    await registry.restore([context("one"), context("two")], null);
+    await registry.restore([context("one"), context("two")], { providerId: "test", modelId: "test" });
 
     await Promise.all([
       registry.send({ conversationId: "one", requestId: "one-a", text: "A" }),
@@ -119,7 +119,7 @@ describe("AgentRegistry", () => {
     };
     const registry = new AgentRegistry(factory, () => undefined);
     const contexts = Array.from({ length: 8 }, (_value, index) => context(`wisp-${index}`));
-    await registry.restore(contexts, null);
+    await registry.restore(contexts, { providerId: "test", modelId: "test" });
     await Promise.all(
       contexts.map(({ conversationId }, index) =>
         registry.send({
@@ -166,7 +166,7 @@ describe("AgentRegistry", () => {
       },
       disposed,
     );
-    await registry.restore([context("one")], null);
+    await registry.restore([context("one")], { providerId: "test", modelId: "test" });
 
     const first = registry.send({ conversationId: "one", requestId: "first", text: "First" });
     await started;
@@ -183,7 +183,7 @@ describe("AgentRegistry", () => {
     const agent = new FakeConversationAgent("one");
     const send = vi.spyOn(agent, "send");
     const registry = new AgentRegistry({ create: () => agent }, () => undefined);
-    await registry.restore([context("one")], null);
+    await registry.restore([context("one")], { providerId: "test", modelId: "test" });
 
     await registry.send({ conversationId: "one", requestId: "same-request", text: "First" });
     await expect(
@@ -209,7 +209,7 @@ describe("AgentRegistry", () => {
         executionTimeoutMs: 100,
       },
     );
-    await registry.restore([context("one")], null);
+    await registry.restore([context("one")], { providerId: "test", modelId: "test" });
 
     registry.dispatch({ conversationId: "one", requestId: "deadline", text: "Slow" });
     await vi.advanceTimersByTimeAsync(101);
@@ -228,4 +228,75 @@ describe("AgentRegistry", () => {
     await registry.disposeAll();
     vi.useRealTimers();
   });
+});
+
+it("never publishes idle or accepts a message before configuration, then enables the new Wisp", async () => {
+  const events: SequencedConversationAgentEvent[] = [];
+  const registry = new AgentRegistry({ create: (ctx) => new FakeConversationAgent(ctx.conversationId) }, (event) =>
+    events.push(event),
+  );
+  await registry.create(context("new"));
+  expect(events.filter((event) => event.type === "conversation_status").map((event) => event.status)).toEqual([
+    "configuration_required",
+    "configuration_required",
+  ]);
+  expect(() => registry.send({ conversationId: "new", requestId: "first", text: "Hello" })).toThrow(/Configure/);
+  expect(events.some((event) => event.type === "conversation_error")).toBe(false);
+  await registry.applyModel({ providerId: "provider", modelId: "model" });
+  expect(registry.statuses().new).toBe("idle");
+  await expect(registry.send({ conversationId: "new", requestId: "first", text: "Hello" })).resolves.toBeUndefined();
+  await registry.disposeAll();
+});
+
+it("isolates overrides, keeps them when the global model changes, and restores inheritance", async () => {
+  const registry = new AgentRegistry(
+    { create: (ctx) => new FakeConversationAgent(ctx.conversationId) },
+    () => undefined,
+  );
+  const global = { providerId: "provider-a", modelId: "global" };
+  const override = { providerId: "provider-b", modelId: "override", maxOutputTokens: 500 };
+  await registry.restore([context("one"), { ...context("two"), modelOverride: override }], global);
+  expect(registry.getModelView("two")).toMatchObject({
+    override,
+    effective: override,
+    applied: override,
+    status: "idle",
+  });
+  await registry.applyModel({ ...global, modelId: "new-global" });
+  expect(registry.getModelView("one").applied?.modelId).toBe("new-global");
+  expect(registry.getModelView("two").applied).toEqual(override);
+  await registry.applyModel(null);
+  expect(registry.statuses()).toEqual({ one: "configuration_required", two: "idle" });
+  await registry.applyConversationModel("two", null);
+  expect(registry.getModelView("two")).toMatchObject({
+    override: null,
+    effective: null,
+    status: "configuration_required",
+  });
+  await registry.disposeAll();
+});
+
+it("disables only overrides whose credentials were removed and recovers when the key returns", async () => {
+  let revoked = false;
+  const global = { providerId: "a", modelId: "global" };
+  const override = { providerId: "b", modelId: "override" };
+  const registry = new AgentRegistry(
+    { create: (ctx) => new FakeConversationAgent(ctx.conversationId) },
+    () => undefined,
+    () => undefined,
+    {
+      validateModel: async (model) => {
+        if (revoked && model.providerId === "b") throw new Error("Credential missing");
+      },
+    },
+  );
+  await registry.restore([context("one"), { ...context("two"), modelOverride: override }], global);
+  revoked = true;
+  await registry.applyModel(global);
+  expect(registry.statuses()).toEqual({ one: "idle", two: "configuration_required" });
+  expect(registry.getModelView("two")).toMatchObject({ override, applied: null });
+  revoked = false;
+  await registry.applyModel(global);
+  expect(registry.getModelView("two")).toMatchObject({ override, applied: override, status: "idle" });
+  await registry.disposeAll();
 });

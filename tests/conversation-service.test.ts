@@ -93,7 +93,7 @@ describe("ConversationService", () => {
       (event) => service.handleAgentEvent(event),
     );
     service = new ConversationService(repository, registry);
-    await service.start(null);
+    await service.start({ providerId: "test", modelId: "test" });
     await service.initialize({ one: chat("one"), two: chat("two") });
     await Promise.all([
       service.appendMessage("one", { id: "one-a", type: "outgoing", text: "A", status: "queued" }),
@@ -171,4 +171,33 @@ describe("ConversationService", () => {
     expect(service.getState().chats.one).toBeUndefined();
     await service.dispose();
   });
+});
+
+it("persists a Wisp override across restart without changing the global model or other Wisps", async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "wisp-model-override-"));
+  const global = { providerId: "provider-a", modelId: "default" };
+  const override = { providerId: "provider-b", modelId: "custom", maxOutputTokens: 512 };
+  const makeService = () => {
+    const repository = new ConversationRepository({ dataDirectory: directory });
+    const registry = new AgentRegistry(new FakeConversationAgentFactory(), () => undefined);
+    return new ConversationService(repository, registry);
+  };
+  const first = makeService();
+  await first.start(global);
+  await first.initialize({ one: chat("one"), two: chat("two"), circle: chat("circle", true) });
+  await first.applyConversationModel("one", override);
+  expect(first.getConversationModel("one")).toMatchObject({ override, applied: override });
+  expect(first.getConversationModel("two").effective).toEqual(global);
+  await expect(first.applyConversationModel("circle", override)).rejects.toMatchObject({ code: "invalid_request" });
+  await first.dispose();
+  const restarted = makeService();
+  await restarted.start(global);
+  expect(restarted.getConversationModel("one")).toMatchObject({ override, applied: override });
+  await restarted.applyConversationModel("one", null);
+  expect(restarted.getConversationModel("one")).toMatchObject({ override: null, applied: global });
+  await restarted.dispose();
+  const inherited = makeService();
+  await inherited.start(global);
+  expect(inherited.getConversationModel("one").override).toBeNull();
+  await inherited.dispose();
 });

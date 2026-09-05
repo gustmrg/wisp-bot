@@ -222,6 +222,8 @@ export function useConversations(): ConversationsController {
     async (conversationId: string, textValue: string): Promise<boolean> => {
       const text = textValue.trim();
       if (!text || stateRef.current.chats[conversationId]?.kind !== "wisp") return false;
+      const status = runtimeRef.current.statuses[conversationId];
+      if (status !== "idle" && status !== "working") return false;
       const requestId = crypto.randomUUID();
       const message: TextMessage & { id: string } = {
         id: requestId,

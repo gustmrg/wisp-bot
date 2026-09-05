@@ -1,6 +1,12 @@
 import type { IpcMain, IpcMainInvokeEvent } from "electron";
 
-import { WISP_IPC_CHANNELS, type BackendResult, type EmptyResult } from "../../shared/contracts.js";
+import {
+  WISP_IPC_CHANNELS,
+  type BackendResult,
+  type ConversationModelView,
+  type ModelSelection,
+  type EmptyResult,
+} from "../../shared/contracts.js";
 import { sanitizeBackendError } from "../backend/backend-error.js";
 import type { AgentRegistry } from "../backend/agent-registry.js";
 import { parseApplyModelRequest, parseConversationRequest, parseSendMessageRequest } from "./validators.js";
@@ -21,7 +27,11 @@ async function toResult<T>(operation: () => Promise<T>): Promise<BackendResult<T
 export class AgentIpcController {
   private readonly registry: AgentRegistry;
 
-  constructor(registry: AgentRegistry) {
+  constructor(
+    registry: AgentRegistry,
+    private readonly saveModel: (id: string, model: ModelSelection | null) => Promise<void> = (id, model) =>
+      registry.applyConversationModel(id, model),
+  ) {
     this.registry = registry;
   }
 
@@ -52,9 +62,13 @@ export class AgentIpcController {
   async applyModel(payload: unknown): Promise<EmptyResult> {
     return toResult(async () => {
       const request = parseApplyModelRequest(payload);
-      await this.registry.applyModel(request.model);
+      await this.saveModel(request.conversationId, request.model);
       return emptyValue;
     });
+  }
+
+  async getModel(payload: unknown): Promise<BackendResult<ConversationModelView>> {
+    return toResult(async () => this.registry.getModelView(parseConversationRequest(payload).conversationId));
   }
 
   async dispose(payload: unknown): Promise<EmptyResult> {
@@ -74,12 +88,16 @@ export function registerAgentHandlers(
   ipcMain: HandlerIpcMain,
   registry: AgentRegistry,
   authorizeSender: SenderAuthorizer,
+  saveModel?: (id: string, model: ModelSelection | null) => Promise<void>,
 ): { dispose: () => Promise<void> } {
-  const controller = new AgentIpcController(registry);
-  const registrations: ReadonlyArray<readonly [string, (payload: unknown) => Promise<EmptyResult>]> = [
+  const controller = new AgentIpcController(registry, saveModel);
+  const registrations: ReadonlyArray<
+    readonly [string, (payload: unknown) => Promise<EmptyResult | BackendResult<ConversationModelView>>]
+  > = [
     [WISP_IPC_CHANNELS.startConversation, (payload) => controller.start(payload)],
     [WISP_IPC_CHANNELS.sendMessage, (payload) => controller.send(payload)],
     [WISP_IPC_CHANNELS.abortConversation, (payload) => controller.abort(payload)],
+    [WISP_IPC_CHANNELS.getConversationModel, (payload) => controller.getModel(payload)],
     [WISP_IPC_CHANNELS.applyModel, (payload) => controller.applyModel(payload)],
     [WISP_IPC_CHANNELS.disposeConversation, (payload) => controller.dispose(payload)],
   ];

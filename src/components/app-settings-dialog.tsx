@@ -35,6 +35,7 @@ interface AppSettingsDialogProps {
   appMetadata: AppMetadata;
   currentUser: CurrentUser;
   open: boolean;
+  initialSection?: "general" | "model";
   preferences: AppPreferences;
   persistenceStatus: PersistenceStatus;
   persistenceError: string | null;
@@ -47,6 +48,7 @@ const navButton =
 
 function AppSettingsDialog({
   appMetadata,
+  initialSection = "general",
   currentUser,
   open,
   preferences,
@@ -55,7 +57,7 @@ function AppSettingsDialog({
   onOpenChange,
   onPreferencesChange,
 }: AppSettingsDialogProps) {
-  const [section, setSection] = useState<"general" | "model" | "about" | "usage">("general");
+  const [section, setSection] = useState<"general" | "model" | "about" | "usage">(initialSection);
   const selected = "bg-accent text-accent-foreground";
   const [updateState, setUpdateState] = useState<UpdateState>({
     phase: "idle",

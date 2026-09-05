@@ -142,3 +142,19 @@ separately. Missing model/cache-write pricing yields an unknown cost, rather tha
 zero. Prices follow the [OpenRouter model pricing fields](https://openrouter.ai/docs/guides/overview/models);
 routing, conditional prices and non-token fees can differ from the estimate.
 Unreadable or oversized session files produce an explicit partial-history warning.
+
+### Models per Wisp and first-time setup
+
+**Settings → AI Model** manages the default model and encrypted, shared provider
+keys. Providers with API-key authentication and models in Pi's installed catalog
+are available. A Wisp's **AI model for this Wisp** section can select another
+provider/model and output-token limit, or **Use global model** to inherit the
+default again. Overrides are saved locally with the Wisp and restored on restart.
+An invalid override requires configuration; it does not silently use a different
+provider. Removing a provider key disables affected Wisps until the key is restored.
+
+Idle Wisps switch immediately; active Wisps finish their current turn with the
+previous model. The conversation header shows the actual model and any pending
+change. Creating a Wisp without a provider is allowed, but sending is disabled
+until configuration is complete. **Configure AI model** opens setup directly,
+keeping the unsent draft intact.

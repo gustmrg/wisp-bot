@@ -1,5 +1,6 @@
 import type {
   ConversationAgentEvent,
+  ConversationModelView,
   ModelSelection,
   SequencedConversationAgentEvent,
   SendMessageRequest,
@@ -18,6 +19,12 @@ interface AgentEntry {
   acceptedRequestIds: Set<string>;
   suppressedCancellationIds: Set<string>;
   disposed: boolean;
+  override: ModelSelection | null;
+  effective: ModelSelection | null;
+  applied: ModelSelection | null;
+  pending: ModelSelection | null;
+  ready: boolean;
+  modelQueue: Promise<void>;
 }
 
 const MAX_PENDING_COMMANDS_PER_CONVERSATION = 8;
@@ -27,6 +34,7 @@ const DEFAULT_EXECUTION_TIMEOUT_MS = 10 * 60 * 1_000;
 
 export interface AgentRegistryOptions {
   executionTimeoutMs?: number;
+  validateModel?: (model: ModelSelection) => Promise<void>;
 }
 
 type EventPublisher = (event: SequencedConversationAgentEvent) => void;
@@ -37,6 +45,7 @@ export class AgentRegistry {
   private readonly publish: EventPublisher;
   private readonly onConversationDisposed: (conversationId: string) => void;
   private readonly executionTimeoutMs: number;
+  private readonly validateModel: (model: ModelSelection) => Promise<void>;
   private model: ModelSelection | null = null;
   private eventSequence = 0;
   private activeAgents = 0;
@@ -52,6 +61,7 @@ export class AgentRegistry {
     this.publish = publish;
     this.onConversationDisposed = onConversationDisposed;
     this.executionTimeoutMs = options.executionTimeoutMs ?? DEFAULT_EXECUTION_TIMEOUT_MS;
+    this.validateModel = options.validateModel ?? (async () => undefined);
   }
 
   async restore(contexts: ReadonlyArray<ConversationAgentContext>, model: ModelSelection | null): Promise<void> {
@@ -72,7 +82,13 @@ export class AgentRegistry {
     const entry: AgentEntry = {
       agent,
       unsubscribe: () => undefined,
-      status: this.model ? "idle" : "configuration_required",
+      status: "configuration_required",
+      override: context.modelOverride ?? null,
+      effective: context.modelOverride ?? this.model,
+      applied: null,
+      pending: null,
+      ready: false,
+      modelQueue: Promise.resolve(),
       commandQueue: Promise.resolve(),
       reportedRequestErrors: new Set(),
       pendingCommands: 0,
@@ -85,7 +101,14 @@ export class AgentRegistry {
         return;
       }
       if (event.type === "conversation_status") {
-        entry.status = this.model || event.status === "disposed" ? event.status : "configuration_required";
+        if (event.status === "configuration_required") entry.ready = false;
+        entry.status = entry.ready || event.status === "disposed" ? event.status : "configuration_required";
+        this.publishEvent({ ...event, status: entry.status });
+        return;
+      }
+      if (event.type === "conversation_model_changed") {
+        entry.applied = event.applied;
+        entry.pending = event.pending;
       }
       if (event.type === "conversation_error" && event.requestId) {
         entry.reportedRequestErrors.add(event.requestId);
@@ -101,19 +124,7 @@ export class AgentRegistry {
       await agent.dispose().catch(() => undefined);
       throw error;
     }
-    if (this.model) {
-      try {
-        await agent.applyModel(this.model);
-      } catch (error) {
-        entry.status = "configuration_required";
-        this.publishEvent({
-          type: "conversation_error",
-          conversationId,
-          createdAt: new Date().toISOString(),
-          error: sanitizeBackendError(error),
-        });
-      }
-    }
+    await this.updateEntryModel(conversationId, entry);
   }
 
   has(conversationId: string): boolean {
@@ -143,6 +154,8 @@ export class AgentRegistry {
 
   send(request: SendMessageRequest): Promise<void> {
     const entry = this.require(request.conversationId);
+    if (!entry.ready)
+      throw new WispBackendError("configuration_required", "Configure a provider and model before sending a message.");
     if (entry.acceptedRequestIds.has(request.requestId)) {
       throw new WispBackendError("invalid_request", "This request ID has already been accepted.");
     }
@@ -217,24 +230,59 @@ export class AgentRegistry {
     await this.require(context.conversationId).agent.updateContext(context);
   }
 
+  getModelView(conversationId: string): ConversationModelView {
+    const entry = this.require(conversationId);
+    return structuredClone({
+      override: entry.override,
+      effective: entry.effective,
+      applied: entry.applied,
+      pending: entry.pending,
+      status: entry.status,
+    });
+  }
+
+  async applyConversationModel(conversationId: string, model: ModelSelection | null): Promise<void> {
+    const entry = this.require(conversationId);
+    entry.override = model;
+    await this.updateEntryModel(conversationId, entry);
+  }
+
   async applyModel(model: ModelSelection | null): Promise<void> {
     this.model = model;
-    await Promise.all(
-      [...this.entries.values()].map(async (entry) => {
-        if (!model) {
-          await entry.agent.clearModel();
-          entry.status = "configuration_required";
-          return;
-        }
-        try {
+    await Promise.all([...this.entries].map(([id, entry]) => this.updateEntryModel(id, entry)));
+  }
+
+  private updateEntryModel(conversationId: string, entry: AgentEntry): Promise<void> {
+    const operation = entry.modelQueue.then(async () => {
+      if (entry.disposed) return;
+      const model = entry.override ?? this.model;
+      entry.effective = model;
+      try {
+        if (model) {
+          await this.validateModel(model);
           await entry.agent.applyModel(model);
+          entry.ready = true;
           if (entry.status === "configuration_required") entry.status = "idle";
-        } catch (error) {
+        } else {
+          await entry.agent.clearModel();
+          entry.ready = false;
           entry.status = "configuration_required";
-          throw error;
         }
-      }),
-    );
+      } catch (error) {
+        entry.ready = false;
+        entry.status = "configuration_required";
+        await entry.agent.clearModel().catch(() => undefined);
+        this.publishEvent({
+          type: "conversation_error",
+          conversationId,
+          createdAt: new Date().toISOString(),
+          error: sanitizeBackendError(error),
+        });
+      }
+      this.publishEvent({ type: "conversation_status", conversationId, status: entry.status });
+    });
+    entry.modelQueue = operation.catch(() => undefined);
+    return operation;
   }
 
   async delete(conversationId: string): Promise<void> {

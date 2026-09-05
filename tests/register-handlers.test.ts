@@ -10,6 +10,7 @@ describe("AgentIpcController", () => {
     const publish = vi.fn<(event: ConversationAgentEvent) => void>();
     const registry = new AgentRegistry(new FakeConversationAgentFactory(), publish);
     await registry.create(context("wisp-1"));
+    await registry.applyModel({ providerId: "test", modelId: "test" });
     const controller = new AgentIpcController(registry);
 
     expect(await controller.start({ conversationId: "wisp-1" })).toEqual({ ok: true, value: {} });
@@ -94,3 +95,22 @@ function context(conversationId: string) {
     configDirectory: `/tmp/${conversationId}/config`,
   };
 }
+
+it("scopes model changes to the requested conversation and supports clearing its override", async () => {
+  const registry = new AgentRegistry(new FakeConversationAgentFactory(), () => undefined);
+  await registry.restore([context("one"), context("two")], { providerId: "global", modelId: "global" });
+  const save = vi.fn(async (id, model) => registry.applyConversationModel(id, model));
+  const controller = new AgentIpcController(registry, save);
+  const model = { providerId: "custom", modelId: "custom" };
+  expect(await controller.applyModel({ conversationId: "one", model })).toMatchObject({ ok: true });
+  expect(save).toHaveBeenCalledWith("one", model);
+  expect(registry.getModelView("two").override).toBeNull();
+  expect(await controller.getModel({ conversationId: "one" })).toMatchObject({ ok: true, value: { override: model } });
+  expect(await controller.applyModel({ conversationId: "one", model: null })).toMatchObject({ ok: true });
+  expect(registry.getModelView("one").effective?.modelId).toBe("global");
+  expect(await controller.applyModel({ conversationId: "../invalid", model })).toMatchObject({ ok: false });
+  expect(await controller.applyModel({ conversationId: "one", model: { providerId: "custom" } })).toMatchObject({
+    ok: false,
+  });
+  await registry.disposeAll();
+});

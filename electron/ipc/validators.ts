@@ -111,7 +111,7 @@ export function parseApplyModelRequest(value: unknown): ApplyModelRequest {
   const request = asRecord(value);
   return {
     conversationId: parseId(request.conversationId),
-    model: parseModelSelection(request.model),
+    model: request.model === null ? null : parseModelSelection(request.model),
   };
 }
 

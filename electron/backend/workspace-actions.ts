@@ -1,3 +1,4 @@
+import type { ModelSelection } from "../../shared/contracts.js";
 import type { Chat, ChatChanges, Message } from "../../shared/conversations.js";
 import { normalizeChat } from "./conversation-normalizer.js";
 
@@ -5,6 +6,7 @@ export interface ConversationRecord {
   chat: Chat;
   sessionId: string | null;
   piSessionId: string | null;
+  modelOverride?: ModelSelection | null;
   piSessionFile: string | null;
   createdAt: string;
   updatedAt: string;

@@ -73,11 +73,23 @@ export class FakeConversationAgent implements ConversationAgent {
   async applyModel(model: ModelSelection): Promise<void> {
     this.assertNotDisposed();
     this.model = model;
+    this.emit({
+      type: "conversation_model_changed",
+      conversationId: this.conversationId,
+      applied: model,
+      pending: null,
+    });
   }
 
   async clearModel(): Promise<void> {
     this.assertNotDisposed();
     this.model = undefined;
+    this.emit({
+      type: "conversation_model_changed",
+      conversationId: this.conversationId,
+      applied: null,
+      pending: null,
+    });
   }
 
   async dispose(): Promise<void> {

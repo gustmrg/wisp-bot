@@ -10,18 +10,30 @@ export interface ChatComposerProps {
   activity?: string;
   error?: string;
   acknowledging: boolean;
+  onConfigure?: () => void;
   onAbort: () => void;
   onSend: (text: string) => void;
 }
 
-export function ChatComposer({ chat, status, activity, error, acknowledging, onAbort, onSend }: ChatComposerProps) {
+export function ChatComposer({
+  chat,
+  status,
+  activity,
+  error,
+  acknowledging,
+  onConfigure,
+  onAbort,
+  onSend,
+}: ChatComposerProps) {
   const [draft, setDraft] = useState("");
   const working = status === "working";
+  const needsConfiguration = status === "configuration_required";
+  const canSend = (status === "idle" || working) && !acknowledging && chat.kind === "wisp";
 
   function handleSubmit(event: FormEvent<HTMLFormElement>): void {
     event.preventDefault();
     const text = draft.trim();
-    if (!text || chat.kind === "circle") return;
+    if (!text || !canSend) return;
     setDraft("");
     onSend(text);
   }
@@ -35,13 +47,25 @@ export function ChatComposer({ chat, status, activity, error, acknowledging, onA
 
   return (
     <form className="flex-none px-3 pb-3" onSubmit={handleSubmit}>
-      <div className="h-[22px] pl-2.5 text-[11px] text-faint" role="status">
-        {chat.kind === "circle"
-          ? "Circle conversations are not enabled yet"
-          : (error ??
-            activity ??
-            (status === "configuration_required" ? "Configure a provider and model in Settings" : null) ??
-            (acknowledging ? "Queueing your message…" : null))}
+      <div className="min-h-[22px] pl-2.5 text-[11px] text-dim" role="status">
+        {chat.kind === "circle" ? (
+          "Circle conversations are not enabled yet"
+        ) : needsConfiguration ? (
+          <div className="mb-2 flex flex-wrap items-center gap-2">
+            <span>Choose a provider and model before sending a message.</span>
+            {onConfigure ? (
+              <button
+                type="button"
+                className="font-medium text-primary underline underline-offset-2"
+                onClick={onConfigure}
+              >
+                Configure AI model
+              </button>
+            ) : null}
+          </div>
+        ) : (
+          (error ?? activity ?? (acknowledging ? "Queueing your message…" : null))
+        )}
       </div>
       <div className="mx-auto flex min-h-[42px] w-full max-w-[1400px] items-end gap-2 rounded-[13px] border border-border bg-muted px-2 py-[7px] transition-[border-color] duration-[120ms] focus-within:border-ring">
         <textarea
@@ -76,7 +100,7 @@ export function ChatComposer({ chat, status, activity, error, acknowledging, onA
           type="submit"
           className="flex size-[27px] flex-none items-center justify-center rounded-full border-0 bg-primary text-primary-foreground enabled:hover:opacity-[0.85] disabled:opacity-[0.35] [&_svg]:size-3.5"
           aria-label={working ? "Queue message" : "Send message"}
-          disabled={!draft.trim() || acknowledging || chat.kind === "circle"}
+          disabled={!draft.trim() || !canSend}
         >
           <ArrowUpIcon aria-hidden="true" />
         </button>

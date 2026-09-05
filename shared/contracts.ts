@@ -15,6 +15,7 @@ export const WISP_IPC_CHANNELS = {
   sendMessage: "wisp:agent:send",
   abortConversation: "wisp:agent:abort",
   applyModel: "wisp:agent:apply-model",
+  getConversationModel: "wisp:agent:get-model",
   disposeConversation: "wisp:agent:dispose",
   agentEvent: "wisp:agent:event",
   getAiSettings: "wisp:settings:ai:get",
@@ -87,7 +88,15 @@ export interface RemoveProviderCredentialRequest {
 }
 
 export interface ApplyModelRequest extends ConversationRequest {
-  model: ModelSelection;
+  model: ModelSelection | null;
+}
+
+export interface ConversationModelView {
+  override: ModelSelection | null;
+  effective: ModelSelection | null;
+  applied: ModelSelection | null;
+  pending: ModelSelection | null;
+  status: ConversationStatus;
 }
 
 export type BackendErrorCode =
@@ -117,6 +126,12 @@ export type EmptyResult = BackendResult<Record<string, never>>;
 export type ConversationStatus = "configuration_required" | "idle" | "working" | "disposed";
 
 export type ConversationAgentEvent =
+  | {
+      type: "conversation_model_changed";
+      conversationId: string;
+      applied: ModelSelection | null;
+      pending: ModelSelection | null;
+    }
   | {
       type: "conversation_status";
       conversationId: string;
@@ -264,6 +279,7 @@ export interface WispApi {
   sendMessage(request: SendMessageRequest): Promise<EmptyResult>;
   abortConversation(request: ConversationRequest): Promise<EmptyResult>;
   applyModel(request: ApplyModelRequest): Promise<EmptyResult>;
+  getConversationModel(request: ConversationRequest): Promise<BackendResult<ConversationModelView>>;
   disposeConversation(request: ConversationRequest): Promise<EmptyResult>;
   subscribeToAgentEvents(listener: (event: SequencedConversationAgentEvent) => void): () => void;
   getAiSettings(): Promise<BackendResult<AiSettingsView>>;
