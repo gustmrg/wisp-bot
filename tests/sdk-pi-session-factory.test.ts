@@ -27,9 +27,9 @@ const sdk = vi.hoisted(() => {
     createAgentSession: vi.fn(async () => ({ session })),
     loaderOptions: [] as unknown[],
     loaderReload: vi.fn(async () => undefined),
-    open: vi.fn(() => ({ kind: "open" })),
+    open: vi.fn(() => ({ kind: "open", appendCustomEntry: vi.fn() })),
     continueRecent: vi.fn(() => ({ kind: "continue", getSessionFile: () => undefined })),
-    createSession: vi.fn(() => ({ kind: "create" })),
+    createSession: vi.fn(() => ({ kind: "create", appendCustomEntry: vi.fn() })),
     settings: vi.fn(() => ({ kind: "settings" })),
     toolExecute: vi.fn(async () => ({ content: [{ type: "text", text: "ok" }], details: {} })),
   };
@@ -46,6 +46,7 @@ function toolDefinition(name: string) {
 }
 
 vi.mock("@earendil-works/pi-coding-agent", () => ({
+  VERSION: "0.84.4",
   createAgentSession: sdk.createAgentSession,
   DefaultResourceLoader: class {
     constructor(options: unknown) {

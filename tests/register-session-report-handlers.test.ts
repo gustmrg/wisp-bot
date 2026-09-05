@@ -104,3 +104,25 @@ describe("registerSessionReportHandlers", () => {
     untrusted.dispose();
   });
 });
+
+it("authorizes and validates usage requests before reading history, and disposes the handler", async () => {
+  const { ipcMain, handlers } = createIpcMain();
+  const getUsageReport = vi.fn(async () => ({ period: "7d", wisps: [] }));
+  const service = { getUsageReport } as unknown as SessionReportService;
+  const untrusted = registerSessionReportHandlers(ipcMain as never, service, () => false);
+  await expect(handlers.get(WISP_IPC_CHANNELS.getUsageReport)?.({}, { period: "7d" })).resolves.toMatchObject({
+    ok: false,
+  });
+  expect(getUsageReport).not.toHaveBeenCalled();
+  untrusted.dispose();
+  const registration = registerSessionReportHandlers(ipcMain as never, service, () => true);
+  const handler = handlers.get(WISP_IPC_CHANNELS.getUsageReport);
+  for (const payload of [null, {}, { period: "../../private" }, { period: 7 }]) {
+    await expect(handler?.({}, payload)).resolves.toMatchObject({ ok: false, error: { code: "invalid_request" } });
+  }
+  expect(getUsageReport).not.toHaveBeenCalled();
+  await expect(handler?.({}, { period: "7d" })).resolves.toMatchObject({ ok: true, value: { period: "7d" } });
+  expect(getUsageReport).toHaveBeenCalledWith({ period: "7d" });
+  registration.dispose();
+  expect(ipcMain.removeHandler).toHaveBeenCalledWith(WISP_IPC_CHANNELS.getUsageReport);
+});

@@ -29,6 +29,7 @@ export const WISP_IPC_CHANNELS = {
   answerConversationPrompt: "wisp:conversations:answer-prompt",
   markConversationRead: "wisp:conversations:mark-read",
   getSessionReport: "wisp:conversations:get-session-report",
+  getUsageReport: "wisp:usage:get",
   getToolPolicy: "wisp:tool-policy:get",
   saveToolPolicy: "wisp:tool-policy:save",
   resolveToolApproval: "wisp:tool-policy:resolve-approval",
@@ -209,7 +210,7 @@ export interface SessionReportToolCall {
 }
 
 export interface SessionReportEvent {
-  kind: "compaction" | "error";
+  kind: "compaction" | "error" | "retry_started" | "retry_finished";
   timestamp: string;
   detail: string;
 }
@@ -217,11 +218,35 @@ export interface SessionReportEvent {
 export interface WispSessionReport {
   sessionId: string;
   generatedAt: string;
+  piVersion?: string;
   turns: number;
   totals: SessionReportUsage & { costUsd: number | null };
   models: ReadonlyArray<SessionReportModelUsage>;
   toolCalls: ReadonlyArray<SessionReportToolCall>;
   events: ReadonlyArray<SessionReportEvent>;
+}
+
+export type UsagePeriod = "7d" | "30d" | "all";
+
+export interface UsageReportRequest {
+  period: UsagePeriod;
+}
+
+export interface WispUsageRow {
+  conversationId: string;
+  name: string;
+  sessions: number;
+  totals: SessionReportUsage & { costUsd: number | null };
+}
+
+export interface UsageReport {
+  generatedAt: string;
+  from: string | null;
+  period: UsagePeriod;
+  pricingUpdatedAt: string | null;
+  incomplete: boolean;
+  wisps: ReadonlyArray<WispUsageRow>;
+  totals: SessionReportUsage & { costUsd: number | null };
 }
 
 export type UpdatePhase = "idle" | "checking" | "available" | "downloading" | "downloaded" | "up-to-date" | "error";
@@ -253,6 +278,7 @@ export interface WispApi {
   answerConversationPrompt(request: AnswerConversationPromptRequest): Promise<BackendResult<ConversationStateView>>;
   markConversationRead(request: MarkConversationReadRequest): Promise<BackendResult<ConversationStateView>>;
   getSessionReport(request: ConversationRequest): Promise<BackendResult<WispSessionReport | null>>;
+  getUsageReport(request: UsageReportRequest): Promise<BackendResult<UsageReport>>;
   getToolPolicy(): Promise<BackendResult<ToolPolicySettings>>;
   saveToolPolicy(settings: ToolPolicySettings): Promise<BackendResult<ToolPolicySettings>>;
   resolveToolApproval(request: ResolveToolApprovalRequest): Promise<EmptyResult>;

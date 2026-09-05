@@ -97,6 +97,7 @@ export class SdkPiSessionFactory implements PiSessionFactory {
       DefaultResourceLoader,
       SessionManager,
       SettingsManager,
+      VERSION,
     } = await import("@earendil-works/pi-coding-agent");
     const resourceLoader = new DefaultResourceLoader({
       cwd: context.workspaceDirectory,
@@ -167,7 +168,15 @@ export class SdkPiSessionFactory implements PiSessionFactory {
       session.dispose();
       throw error;
     }
-    return adaptSession(session);
+    sessionManager.appendCustomEntry("wisp:runtime", { version: VERSION });
+    const unsubscribeTelemetry = session.subscribe((event) => {
+      if (event.type === "auto_retry_start" || event.type === "auto_retry_end") {
+        sessionManager.appendCustomEntry("wisp:retry", {
+          phase: event.type === "auto_retry_start" ? "started" : "finished",
+        });
+      }
+    });
+    return adaptSession(session, unsubscribeTelemetry);
   }
 }
 
@@ -479,7 +488,7 @@ function buildSystemPrompt(context: ConversationAgentContext): string {
   ].join("\n");
 }
 
-function adaptSession(session: AgentSession): PiSessionLike {
+function adaptSession(session: AgentSession, unsubscribeTelemetry: () => void): PiSessionLike {
   return {
     get isIdle() {
       return session.isIdle;
@@ -497,7 +506,10 @@ function adaptSession(session: AgentSession): PiSessionLike {
     reload: () => session.reload(),
     setModel: (model, options) => session.setModel(model, options),
     getActiveToolNames: () => session.getActiveToolNames(),
-    dispose: () => session.dispose(),
+    dispose: () => {
+      unsubscribeTelemetry();
+      session.dispose();
+    },
   };
 }
 

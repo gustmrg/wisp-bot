@@ -90,6 +90,7 @@ function SessionReportContent({ state, onRefresh }: { state: ReportState; onRefr
     <div className="flex flex-col gap-3 px-3.5">
       <dl className="flex flex-col gap-1.5 text-[11.5px]">
         <SummaryTerm label="Session" value={report.sessionId} />
+        {report.piVersion ? <SummaryTerm label="Pi version" value={report.piVersion} /> : null}
         <SummaryTerm label="Turns" value={String(report.turns)} />
         <SummaryTerm
           label="Tokens"
@@ -104,6 +105,9 @@ function SessionReportContent({ state, onRefresh }: { state: ReportState; onRefr
           }
         />
       </dl>
+      <p className="text-[11px] text-dim">
+        Argument text and provider error details are hidden for privacy. Latest 50 tool calls and events.
+      </p>
       <ModelList report={report} />
       <ToolCallList report={report} />
       <EventList report={report} />
@@ -179,7 +183,7 @@ function EventList({ report }: { report: WispSessionReport }) {
           <li key={`${event.kind}:${event.timestamp}:${index}`} className="flex min-w-0 flex-col gap-0.5">
             <span className="flex items-baseline gap-1.5">
               <span className={event.kind === "error" ? "text-destructive" : "text-foreground"}>
-                {event.kind === "error" ? "Error" : "Compaction"}
+                {event.kind === "error" ? "Error" : event.kind === "compaction" ? "Compaction" : "Retry"}
               </span>
               <span className="ml-auto shrink-0 text-dim">{formatTimestamp(event.timestamp)}</span>
             </span>

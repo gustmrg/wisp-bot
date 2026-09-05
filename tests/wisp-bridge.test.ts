@@ -44,6 +44,9 @@ function completeBridge(): WispApi {
     markConversationRead: async () => {
       throw new Error("not called");
     },
+    getUsageReport: async () => {
+      throw new Error("Not implemented in test");
+    },
     getSessionReport: async () => {
       throw new Error("not called");
     },

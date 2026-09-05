@@ -1,7 +1,17 @@
 import { useEffect, useState } from "react";
-import { BellIcon, BotIcon, DownloadIcon, InfoIcon, KeyboardIcon, RefreshCwIcon, SettingsIcon } from "lucide-react";
+import {
+  BarChart3Icon,
+  BellIcon,
+  BotIcon,
+  DownloadIcon,
+  InfoIcon,
+  KeyboardIcon,
+  RefreshCwIcon,
+  SettingsIcon,
+} from "lucide-react";
 
 import { GeneralSettingsSections, PreferenceSwitch } from "@/components/general-settings-sections";
+import { UsageSettingsSection } from "@/components/usage-settings-section";
 import { ModelSettingsSection } from "@/components/model-settings-section";
 import { SettingsCard, SettingsGroup, SettingsRow, SettingsRowCopy } from "@/components/settings/settings-primitives";
 import { Button } from "@/components/ui/button";
@@ -45,7 +55,7 @@ function AppSettingsDialog({
   onOpenChange,
   onPreferencesChange,
 }: AppSettingsDialogProps) {
-  const [section, setSection] = useState<"general" | "model" | "about">("general");
+  const [section, setSection] = useState<"general" | "model" | "about" | "usage">("general");
   const selected = "bg-accent text-accent-foreground";
   const [updateState, setUpdateState] = useState<UpdateState>({
     phase: "idle",
@@ -117,6 +127,17 @@ function AppSettingsDialog({
             <BotIcon aria-hidden="true" />
             <span>AI Model</span>
           </button>
+          <button
+            className={cn(navButton, section === "usage" && selected)}
+            type="button"
+            aria-label="Token usage"
+            aria-current={section === "usage" ? "page" : undefined}
+            aria-controls="usage-settings-panel"
+            onClick={() => setSection("usage")}
+          >
+            <BarChart3Icon aria-hidden="true" />
+            <span>Token usage</span>
+          </button>
           <button className={navButton} type="button">
             <BellIcon />
             <span>Notifications</span>
@@ -137,6 +158,7 @@ function AppSettingsDialog({
             <span>About</span>
           </button>
         </nav>
+        {section === "usage" && open ? <UsageSettingsSection /> : null}
         <section
           className="overflow-y-auto px-[30px] py-6 max-[620px]:px-4 max-[620px]:py-5"
           id="general-settings-panel"

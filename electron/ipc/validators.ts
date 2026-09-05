@@ -1,4 +1,5 @@
 import type {
+  UsageReportRequest,
   ApplyModelRequest,
   ConversationRequest,
   ModelSelection,
@@ -174,4 +175,10 @@ export function parseResolveToolApprovalRequest(value: unknown): ResolveToolAppr
 function stringValue(value: unknown, maxLength: number): string {
   if (typeof value !== "string" || !value.trim() || value.length > maxLength) throw invalidRequest();
   return value;
+}
+
+export function parseUsageReportRequest(value: unknown): UsageReportRequest {
+  const { period } = asRecord(value);
+  if (period !== "7d" && period !== "30d" && period !== "all") throw invalidRequest();
+  return { period };
 }

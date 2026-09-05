@@ -64,7 +64,7 @@ export function WispDetails({ chat, onChange }: WispDetailsProps) {
       <Button className="mt-[15px] w-full" type="button" disabled={!dirty || saving} onClick={() => void save()}>
         {saving ? "Saving…" : "Save changes"}
       </Button>
-      <WispSessionReportSection chatId={chat.id} />
+      <WispSessionReportSection key={chat.id} chatId={chat.id} />
     </>
   );
 }
