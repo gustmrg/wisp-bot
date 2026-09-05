@@ -1,3 +1,4 @@
+import type { ContextRequest, ContextView } from "./context-policy.js";
 import type {
   AnswerConversationPromptRequest,
   AppendConversationMessageRequest,
@@ -16,6 +17,7 @@ export const WISP_IPC_CHANNELS = {
   abortConversation: "wisp:agent:abort",
   applyModel: "wisp:agent:apply-model",
   getConversationModel: "wisp:agent:get-model",
+  manageContext: "wisp:agent:context",
   disposeConversation: "wisp:agent:dispose",
   agentEvent: "wisp:agent:event",
   getAiSettings: "wisp:settings:ai:get",
@@ -126,6 +128,7 @@ export type EmptyResult = BackendResult<Record<string, never>>;
 export type ConversationStatus = "configuration_required" | "idle" | "working" | "disposed";
 
 export type ConversationAgentEvent =
+  | { type: "conversation_context_renewed"; conversationId: string; kind: "compacted" | "new_topic"; createdAt: string }
   | {
       type: "conversation_model_changed";
       conversationId: string;
@@ -231,6 +234,7 @@ export interface SessionReportEvent {
 }
 
 export interface WispSessionReport {
+  compactionUsage?: SessionReportUsage;
   sessionId: string;
   generatedAt: string;
   piVersion?: string;
@@ -275,6 +279,7 @@ export interface UpdateState {
 }
 
 export interface WispApi {
+  manageContext(request: ContextRequest): Promise<BackendResult<ContextView>>;
   startConversation(request: ConversationRequest): Promise<EmptyResult>;
   sendMessage(request: SendMessageRequest): Promise<EmptyResult>;
   abortConversation(request: ConversationRequest): Promise<EmptyResult>;

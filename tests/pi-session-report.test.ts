@@ -246,3 +246,32 @@ it("includes cache writes in estimates and treats a missing cache-write price as
   });
   expect(priced.totals.costUsd).toBeCloseTo(0.000283);
 });
+
+it("includes summarization usage and keeps unknown summary prices unknown", () => {
+  const entry = {
+    type: "compaction",
+    id: "compact",
+    parentId: null,
+    timestamp: "2026-09-05T00:00:00Z",
+    summary: "Summary",
+    firstKeptEntryId: "kept",
+    tokensBefore: 9000,
+    usage: {
+      input: 9000,
+      output: 500,
+      cacheRead: 0,
+      cacheWrite: 0,
+      totalTokens: 9500,
+      cost: { input: 0.009, output: 0.001, cacheRead: 0, cacheWrite: 0, total: 0.01 },
+    },
+  } as SessionEntry;
+  const report = buildSessionReport("session", [entry], { workspaceDirectory: WORKSPACE, getPricing });
+  expect(report.totals).toMatchObject({ totalTokens: 9500, costUsd: 0.01 });
+  expect(report.compactionUsage?.totalTokens).toBe(9500);
+  expect(report.turns).toBe(0);
+  const unknown = structuredClone(entry);
+  if (unknown.type === "compaction" && unknown.usage) unknown.usage.cost.total = 0;
+  expect(
+    buildSessionReport("session", [unknown], { workspaceDirectory: WORKSPACE, getPricing }).totals.costUsd,
+  ).toBeNull();
+});

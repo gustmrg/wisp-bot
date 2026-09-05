@@ -6,6 +6,7 @@ const REQUIRED_WISP_METHODS = [
   "abortConversation",
   "applyModel",
   "getConversationModel",
+  "manageContext",
   "disposeConversation",
   "subscribeToAgentEvents",
   "getAiSettings",

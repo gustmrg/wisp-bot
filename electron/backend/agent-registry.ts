@@ -1,3 +1,4 @@
+import type { ContextRequest, ContextView } from "../../shared/context-policy.js";
 import type {
   ConversationAgentEvent,
   ConversationModelView,
@@ -228,6 +229,51 @@ export class AgentRegistry {
 
   async updateContext(context: ConversationAgentContext): Promise<void> {
     await this.require(context.conversationId).agent.updateContext(context);
+  }
+
+  async manageContext(request: ContextRequest): Promise<ContextView> {
+    const entry = this.require(request.conversationId);
+    if (!entry.agent.manageContext)
+      throw new WispBackendError("configuration_required", "Context management requires a configured Pi session.");
+    if (request.command.action === "get") return entry.agent.manageContext(request.command);
+    if (entry.pendingCommands || entry.status === "working")
+      throw new WispBackendError("invalid_request", "Wait for the Wisp to finish before changing its context.");
+    entry.pendingCommands += 1;
+    const operation = entry.commandQueue
+      .then(async () => {
+        await this.acquireActiveSlot();
+        try {
+          if (entry.disposed) throw new WispBackendError("disposed", "The Wisp was deleted.");
+          this.publishEvent({ type: "conversation_status", conversationId: request.conversationId, status: "working" });
+          entry.status = "working";
+          const timeout = setTimeout(() => {
+            void entry.agent.abort().catch(() => undefined);
+          }, this.executionTimeoutMs);
+          try {
+            return await entry.agent.manageContext!(request.command);
+          } finally {
+            clearTimeout(timeout);
+          }
+        } finally {
+          this.releaseActiveSlot();
+          if (!entry.disposed) {
+            entry.status = entry.ready ? "idle" : "configuration_required";
+            this.publishEvent({
+              type: "conversation_status",
+              conversationId: request.conversationId,
+              status: entry.status,
+            });
+          }
+        }
+      })
+      .finally(() => {
+        entry.pendingCommands -= 1;
+      });
+    entry.commandQueue = operation.then(
+      () => undefined,
+      () => undefined,
+    );
+    return operation;
   }
 
   getModelView(conversationId: string): ConversationModelView {

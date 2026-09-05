@@ -39,6 +39,15 @@ export class ConversationService {
   }
 
   handleAgentEvent(event: SequencedConversationAgentEvent): void {
+    if (event.type === "conversation_context_renewed") {
+      this.persistLiveMessage(event.conversationId, {
+        id: `context:${event.createdAt}`,
+        type: "time",
+        text: event.kind === "compacted" ? "Context summarized · History preserved" : "New topic · History preserved",
+        createdAt: event.createdAt,
+      });
+      return;
+    }
     if (event.type === "assistant_message_started") {
       this.persistOutgoingStatus(event.conversationId, event.requestId, "complete");
       this.setLiveMessage(event.conversationId, {

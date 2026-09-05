@@ -300,3 +300,39 @@ it("disables only overrides whose credentials were removed and recovers when the
   expect(registry.getModelView("two")).toMatchObject({ override, applied: override, status: "idle" });
   await registry.disposeAll();
 });
+
+it("serializes context renewal before incoming messages and rejects renewal during queued work", async () => {
+  const { DEFAULT_CONTEXT_POLICY } = await import("../shared/context-policy.js");
+  let finish!: () => void;
+  const released = new Promise<void>((resolve) => {
+    finish = resolve;
+  });
+  const manageContext = vi.fn(async () => {
+    await released;
+    return {
+      policy: DEFAULT_CONTEXT_POLICY,
+      memory: "",
+      summary: "Summary",
+      lastRenewedAt: null,
+      lastActivityAt: null,
+      tokens: 1000,
+    };
+  });
+  const agent = Object.assign(new FakeConversationAgent("one", { latencyMs: 1 }), { manageContext });
+  const send = vi.spyOn(agent, "send");
+  const registry = new AgentRegistry({ create: () => agent }, () => undefined);
+  await registry.restore([context("one")], { providerId: "test", modelId: "test" });
+  const renewal = registry.manageContext({ conversationId: "one", command: { action: "compact" } });
+  await vi.waitFor(() => expect(manageContext).toHaveBeenCalledOnce());
+  const message = registry.send({ conversationId: "one", requestId: "after-renewal", text: "Continue" });
+  expect(send).not.toHaveBeenCalled();
+  await expect(registry.manageContext({ conversationId: "one", command: { action: "new_topic" } })).rejects.toThrow(
+    /finish/,
+  );
+  finish();
+  await renewal;
+  await message;
+  expect(send).toHaveBeenCalledOnce();
+  expect(registry.statuses().one).toBe("idle");
+  await registry.disposeAll();
+});

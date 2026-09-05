@@ -18,7 +18,7 @@ const sdk = vi.hoisted(() => {
     waitForIdle: vi.fn(async () => undefined),
     reload: vi.fn(async () => undefined),
     setModel: vi.fn(async () => undefined),
-    getActiveToolNames: vi.fn(() => ["read", "grep", "find", "ls", "edit", "write"]),
+    getActiveToolNames: vi.fn(() => ["read", "grep", "find", "ls", "edit", "write", "search_history"]),
     setActiveToolsByName: vi.fn(),
     dispose: vi.fn(),
   };
@@ -120,7 +120,7 @@ describe("SdkPiSessionFactory", () => {
         agentDir: context.configDirectory,
         model,
         modelRuntime: runtime,
-        tools: ["read", "grep", "find", "ls", "edit", "write"],
+        tools: ["read", "grep", "find", "ls", "edit", "write", "search_history"],
         excludeTools: ["bash", "powershell"],
         customTools: expect.arrayContaining([
           expect.objectContaining({ name: "read" }),
@@ -132,7 +132,15 @@ describe("SdkPiSessionFactory", () => {
         ]),
       }),
     );
-    expect(sdk.session.setActiveToolsByName).toHaveBeenCalledWith(["read", "grep", "find", "ls", "edit", "write"]);
+    expect(sdk.session.setActiveToolsByName).toHaveBeenCalledWith([
+      "read",
+      "grep",
+      "find",
+      "ls",
+      "edit",
+      "write",
+      "search_history",
+    ]);
     expect(sdk.loaderOptions[0]).toEqual(
       expect.objectContaining({
         noExtensions: true,

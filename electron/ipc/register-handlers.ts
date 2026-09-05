@@ -1,3 +1,4 @@
+import type { ContextView } from "../../shared/context-policy.js";
 import type { IpcMain, IpcMainInvokeEvent } from "electron";
 
 import {
@@ -9,7 +10,12 @@ import {
 } from "../../shared/contracts.js";
 import { sanitizeBackendError } from "../backend/backend-error.js";
 import type { AgentRegistry } from "../backend/agent-registry.js";
-import { parseApplyModelRequest, parseConversationRequest, parseSendMessageRequest } from "./validators.js";
+import {
+  parseContextRequest,
+  parseApplyModelRequest,
+  parseConversationRequest,
+  parseSendMessageRequest,
+} from "./validators.js";
 
 type HandlerIpcMain = Pick<IpcMain, "handle" | "removeHandler">;
 export type SenderAuthorizer = (event: IpcMainInvokeEvent) => boolean;
@@ -67,6 +73,10 @@ export class AgentIpcController {
     });
   }
 
+  async manageContext(payload: unknown): Promise<BackendResult<ContextView>> {
+    return toResult(() => this.registry.manageContext(parseContextRequest(payload)));
+  }
+
   async getModel(payload: unknown): Promise<BackendResult<ConversationModelView>> {
     return toResult(async () => this.registry.getModelView(parseConversationRequest(payload).conversationId));
   }
@@ -92,11 +102,15 @@ export function registerAgentHandlers(
 ): { dispose: () => Promise<void> } {
   const controller = new AgentIpcController(registry, saveModel);
   const registrations: ReadonlyArray<
-    readonly [string, (payload: unknown) => Promise<EmptyResult | BackendResult<ConversationModelView>>]
+    readonly [
+      string,
+      (payload: unknown) => Promise<EmptyResult | BackendResult<ConversationModelView> | BackendResult<ContextView>>,
+    ]
   > = [
     [WISP_IPC_CHANNELS.startConversation, (payload) => controller.start(payload)],
     [WISP_IPC_CHANNELS.sendMessage, (payload) => controller.send(payload)],
     [WISP_IPC_CHANNELS.abortConversation, (payload) => controller.abort(payload)],
+    [WISP_IPC_CHANNELS.manageContext, (payload) => controller.manageContext(payload)],
     [WISP_IPC_CHANNELS.getConversationModel, (payload) => controller.getModel(payload)],
     [WISP_IPC_CHANNELS.applyModel, (payload) => controller.applyModel(payload)],
     [WISP_IPC_CHANNELS.disposeConversation, (payload) => controller.dispose(payload)],

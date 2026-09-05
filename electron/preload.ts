@@ -10,6 +10,7 @@ const WISP_IPC_CHANNELS = {
   abortConversation: "wisp:agent:abort",
   applyModel: "wisp:agent:apply-model",
   getConversationModel: "wisp:agent:get-model",
+  manageContext: "wisp:agent:context",
   disposeConversation: "wisp:agent:dispose",
   agentEvent: "wisp:agent:event",
   getAiSettings: "wisp:settings:ai:get",
@@ -36,6 +37,7 @@ const WISP_IPC_CHANNELS = {
 } as const;
 
 const wispApi: WispApi = {
+  manageContext: (request) => ipcRenderer.invoke(WISP_IPC_CHANNELS.manageContext, request),
   startConversation: (request) => ipcRenderer.invoke(WISP_IPC_CHANNELS.startConversation, request),
   sendMessage: (request) => ipcRenderer.invoke(WISP_IPC_CHANNELS.sendMessage, request),
   abortConversation: (request) => ipcRenderer.invoke(WISP_IPC_CHANNELS.abortConversation, request),

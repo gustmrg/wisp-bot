@@ -12,7 +12,7 @@ import type {
 import type { ModelPricing } from "./model-pricing-service.js";
 import { safeId } from "./pi-event-translator.js";
 
-const ALLOWED_TOOLS = new Set(["read", "grep", "find", "ls", "edit", "write"]);
+const ALLOWED_TOOLS = new Set(["read", "grep", "find", "ls", "edit", "write", "search_history"]);
 const ALLOWED_ARGUMENT_KEYS = ["path", "pattern", "include", "glob", "query", "regex"] as const;
 const MAX_TOOL_CALLS = 50;
 const MAX_EVENTS = 50;
@@ -56,6 +56,8 @@ export function buildSessionReport(
   const events: SessionReportEvent[] = [];
   let totals = emptyUsage();
   let turns = 0;
+  let compactionUsage = emptyUsage();
+  let compactionCost: number | null = 0;
   let piVersion: string | undefined;
 
   for (const entry of entries) {
@@ -74,6 +76,15 @@ export function buildSessionReport(
           });
       }
       if (entry.type === "compaction") {
+        if (entry.usage) {
+          totals = addUsage(totals, entry.usage);
+          compactionUsage = addUsage(compactionUsage, entry.usage);
+          const cost = entry.usage.cost?.total;
+          compactionCost =
+            compactionCost !== null && typeof cost === "number" && Number.isFinite(cost) && cost > 0
+              ? compactionCost + cost
+              : null;
+        }
         events.push({
           kind: "compaction",
           timestamp: entry.timestamp,
@@ -125,12 +136,14 @@ export function buildSessionReport(
     }
   }
 
+  const normalCost = estimateCost(usageByModel, options.getPricing);
   return {
     sessionId,
     generatedAt: now().toISOString(),
     ...(piVersion ? { piVersion } : {}),
     turns,
-    totals: { ...totals, costUsd: estimateCost(usageByModel, options.getPricing) },
+    totals: { ...totals, costUsd: normalCost === null || compactionCost === null ? null : normalCost + compactionCost },
+    compactionUsage,
     models: summarizeModelUsage(usageByModel, options.getPricing),
     toolCalls: toolCalls.slice(-MAX_TOOL_CALLS),
     events: events.slice(-MAX_EVENTS),

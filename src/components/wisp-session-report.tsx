@@ -95,6 +95,12 @@ function SessionReportContent({ state, onRefresh }: { state: ReportState; onRefr
         Usage for this session. Costs are estimates based on available model prices.
         {report.totals.costUsd === null ? " Pricing is unavailable for one or more models." : ""}
       </p>
+      {report.compactionUsage?.totalTokens ? (
+        <p className="text-xs text-muted-foreground">
+          Includes {report.compactionUsage.totalTokens.toLocaleString()} tokens used to summarize context. Summary costs
+          use the runtime's recorded estimate.
+        </p>
+      ) : null}
       <Accordion>
         <AccordionItem>
           <AccordionTrigger>Session details</AccordionTrigger>

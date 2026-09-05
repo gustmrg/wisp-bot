@@ -39,6 +39,10 @@ function createApi(initialState: ConversationStateView): WispApi {
     startConversation: vi.fn(async () => ({ ok: true as const, value: {} })),
     sendMessage: vi.fn(async () => ({ ok: true as const, value: {} })),
     abortConversation: vi.fn(async () => ({ ok: true as const, value: {} })),
+    manageContext: async () => ({
+      ok: false as const,
+      error: { code: "configuration_required" as const, message: "Configure a model", retryable: false },
+    }),
     getConversationModel: async () => ({
       ok: true as const,
       value: {

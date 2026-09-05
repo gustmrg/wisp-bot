@@ -123,7 +123,7 @@ Release targets, signing custody, staged channels, and rollback policy are defin
 
 ### Session activity and token usage
 
-Open a Wisp's settings and expand **Session activity** to inspect its current Pi
+Open a Wisp's settings and select **Usage** to inspect its current Pi
 session, model/token totals, tool status, compactions, and retries. Runtime
 version and retry notices are recorded for sessions used by this version of Wisp;
 older sessions may not contain them. Tool argument values, file contents, prompts,
@@ -147,7 +147,7 @@ Unreadable or oversized session files produce an explicit partial-history warnin
 
 **Settings → AI Model** manages the default model and encrypted, shared provider
 keys. Providers with API-key authentication and models in Pi's installed catalog
-are available. A Wisp's **AI model for this Wisp** section can select another
+are available. A Wisp's **Model** tab can select another
 provider/model and output-token limit, or **Use global model** to inherit the
 default again. Overrides are saved locally with the Wisp and restored on restart.
 An invalid override requires configuration; it does not silently use a different
@@ -158,3 +158,33 @@ previous model. The conversation header shows the actual model and any pending
 change. Creating a Wisp without a provider is allowed, but sending is disabled
 until configuration is complete. **Configure AI model** opens setup directly,
 keeping the unsent draft intact.
+
+
+### Context continuity
+
+Open **Wisp settings → General → Context & memory** to configure context renewal.
+By default, the next message after 24 hours of inactivity triggers a continuity
+summary only when the active context is at least 12,000 tokens. Both values are
+configurable. Optional daily renewal uses the computer's local time, is evaluated
+on the next message, and also requires the minimum context size. Nothing runs
+just because the clock passes the configured hour. Native Pi compression near
+the model's context limit remains enabled even with manual renewal selected.
+
+**Summarize context** retains decisions, goals, pending work, references and about
+4,000 tokens of recent conversation using Pi's compaction boundaries. The exact
+retained size depends on message boundaries. The summary is available in settings.
+**Start new topic** explicitly clears the active conversation context while keeping
+all messages on screen, the local transcript, Wisp identity, model and saved memory.
+A timeline marker explains each boundary. The `search_history` tool can retrieve
+bounded excerpts from this Wisp's earlier user/assistant messages when needed.
+
+**Saved memory** is user-maintained text, stored locally and included in model
+requests. It survives new topics and restarts; facts are not silently promoted
+from summaries into permanent memory. Context controls require a configured Pi
+session and cannot interrupt a response, queued message, or tool approval.
+Summarization failure preserves the existing context and reports an error rather
+than dropping history or sending the new message without continuity.
+
+Usage totals include summarization input/output and cache tokens. Summary costs
+use the runtime's persisted estimate when positive and available; unavailable
+estimates remain unknown. The Usage tab identifies the summarization token subtotal.

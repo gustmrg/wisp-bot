@@ -8,6 +8,10 @@ function completeBridge(): WispApi {
     startConversation: async () => ({ ok: true, value: {} }),
     sendMessage: async () => ({ ok: true, value: {} }),
     abortConversation: async () => ({ ok: true, value: {} }),
+    manageContext: async () => ({
+      ok: false as const,
+      error: { code: "configuration_required" as const, message: "Configure a model", retryable: false },
+    }),
     getConversationModel: async () => ({
       ok: true as const,
       value: {

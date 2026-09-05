@@ -1,3 +1,4 @@
+import { WispContextSettings } from "@/components/wisp-context-settings";
 import { useState, type ReactNode } from "react";
 
 import type { WispChat, WispChatChanges } from "@/chat-data";
@@ -78,6 +79,7 @@ export function WispDetails({ chat, onChange, generalActions }: WispDetailsProps
             settings={draft}
             onChange={(changes) => setDraft((current) => ({ ...current, ...changes }))}
           />
+          <WispContextSettings conversationId={chat.id} />
           {generalActions ? (
             <div className="mt-5 flex flex-col gap-2 border-t border-border pt-4">{generalActions}</div>
           ) : null}
