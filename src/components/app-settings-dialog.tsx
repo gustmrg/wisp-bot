@@ -1,8 +1,9 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   BarChart3Icon,
   BellIcon,
   BotIcon,
+  ChevronLeftIcon,
   DownloadIcon,
   InfoIcon,
   KeyboardIcon,
@@ -15,6 +16,7 @@ import { GeneralSettingsSections, PreferenceSwitch } from "@/components/general-
 import { UsageSettingsSection } from "@/components/usage-settings-section";
 import { ModelSettingsSection } from "@/components/model-settings-section";
 import { PluginSettingsSection } from "@/components/plugin-settings-section";
+import { MobileNavigation } from "@/components/mobile-navigation";
 import { SettingsCard, SettingsGroup, SettingsRow, SettingsRowCopy } from "@/components/settings/settings-primitives";
 import { Button } from "@/components/ui/button";
 import type { AppMetadata, CurrentUser } from "@/config/app-metadata";
@@ -34,6 +36,8 @@ const THEME_OPTIONS = [
 ];
 
 interface AppSettingsDialogProps {
+  mobile?: boolean;
+  onOpenConversations?: () => void;
   appMetadata: AppMetadata;
   currentUser: CurrentUser;
   open: boolean;
@@ -46,11 +50,13 @@ interface AppSettingsDialogProps {
 }
 
 const navButton =
-  "flex items-center gap-2 rounded-[7px] border-0 bg-transparent px-[9px] py-[7px] text-left text-dim hover:bg-muted hover:text-foreground max-[620px]:justify-center [&_svg]:size-3.5 [&_span]:max-[620px]:hidden";
+  "settings-nav-button flex items-center gap-2 rounded-[7px] border-0 bg-transparent px-[9px] py-[7px] text-left text-dim hover:bg-muted hover:text-foreground [&_svg]:size-3.5";
 
 function AppSettingsDialog({
   appMetadata,
   initialSection = "general",
+  mobile = false,
+  onOpenConversations,
   currentUser,
   open,
   preferences,
@@ -60,6 +66,24 @@ function AppSettingsDialog({
   onPreferencesChange,
 }: AppSettingsDialogProps) {
   const [section, setSection] = useState<"general" | "model" | "plugins" | "about" | "usage">(initialSection);
+  const [mobileSectionOpen, setMobileSectionOpen] = useState(initialSection !== "general");
+  const showOverview = mobile && !mobileSectionOpen;
+  const mobileHeadingRef = useRef<HTMLHeadingElement>(null);
+  const sectionTitles = {
+    general: "General",
+    model: "AI Model",
+    plugins: "Plugins",
+    about: "About",
+    usage: "Token usage",
+  };
+  function openSection(nextSection: typeof section) {
+    setSection(nextSection);
+    setMobileSectionOpen(true);
+  }
+  const focusSection = mobile && open ? (showOverview ? "Settings" : sectionTitles[section]) : null;
+  useEffect(() => {
+    if (focusSection) mobileHeadingRef.current?.focus();
+  }, [focusSection]);
   const selected = "bg-accent text-accent-foreground";
   const [updateState, setUpdateState] = useState<UpdateState>({
     phase: "idle",
@@ -99,23 +123,57 @@ function AppSettingsDialog({
         if (!nextOpen) setSection("general");
       }}
     >
-      <DialogContent className="grid h-[min(580px,calc(100vh-32px))] w-[min(760px,calc(100vw-32px))] max-w-[760px] grid-cols-[190px_1fr] gap-0 overflow-hidden p-0 max-[620px]:grid-cols-[64px_1fr]">
+      <DialogContent
+        mobileFullscreen
+        showCloseButton={!mobile}
+        className="app-settings-dialog grid h-[min(580px,calc(100vh-32px))] w-[min(760px,calc(100vw-32px))] max-w-[760px] grid-cols-[190px_1fr] gap-0 overflow-hidden p-0"
+      >
         <DialogHeader className="sr-only">
           <DialogTitle>Wisp settings</DialogTitle>
           <DialogDescription>Manage your account and application preferences.</DialogDescription>
         </DialogHeader>
+        {mobile ? (
+          <header className="mobile-settings-header">
+            <Button
+              variant="ghost"
+              size="icon"
+              type="button"
+              aria-label={showOverview ? "Close settings" : "Back to settings"}
+              onClick={() => (showOverview ? onOpenChange(false) : setMobileSectionOpen(false))}
+            >
+              <ChevronLeftIcon aria-hidden="true" />
+            </Button>
+            <h2 ref={mobileHeadingRef} tabIndex={-1} className="outline-none">
+              {showOverview ? "Settings" : sectionTitles[section]}
+            </h2>
+          </header>
+        ) : null}
         <nav
-          className="flex flex-col gap-[3px] border-r border-border bg-sidebar px-2.5 py-[18px]"
+          hidden={mobile && !showOverview}
+          className={cn(
+            "settings-navigation flex flex-col gap-[3px] border-r border-border bg-sidebar px-2.5 py-[18px]",
+            mobile && !showOverview && "hidden",
+          )}
           aria-label="Settings sections"
         >
-          <strong className="mx-2 mb-[15px] mt-0 text-[17px] max-[620px]:hidden">Settings</strong>
+          {mobile ? (
+            <div className="mobile-settings-profile">
+              <span className={profileAvatar}>{currentUser.initials}</span>
+              <div>
+                <strong>{currentUser.displayName}</strong>
+                <small>Your workspace</small>
+              </div>
+            </div>
+          ) : (
+            <strong className="mx-2 mb-[15px] mt-0 text-[17px]">Settings</strong>
+          )}
           <button
             className={cn(navButton, section === "general" && selected)}
             type="button"
             aria-label="General"
             aria-current={section === "general" ? "page" : undefined}
             aria-controls="general-settings-panel"
-            onClick={() => setSection("general")}
+            onClick={() => openSection("general")}
           >
             <SettingsIcon aria-hidden="true" />
             <span>General</span>
@@ -126,7 +184,7 @@ function AppSettingsDialog({
             aria-label="AI Model"
             aria-current={section === "model" ? "page" : undefined}
             aria-controls="model-settings-panel"
-            onClick={() => setSection("model")}
+            onClick={() => openSection("model")}
           >
             <BotIcon aria-hidden="true" />
             <span>AI Model</span>
@@ -137,7 +195,7 @@ function AppSettingsDialog({
             aria-label="Plugins"
             aria-current={section === "plugins" ? "page" : undefined}
             aria-controls="plugin-settings-panel"
-            onClick={() => setSection("plugins")}
+            onClick={() => openSection("plugins")}
           >
             <PlugIcon aria-hidden="true" />
             <span>Plugins</span>
@@ -148,38 +206,42 @@ function AppSettingsDialog({
             aria-label="Token usage"
             aria-current={section === "usage" ? "page" : undefined}
             aria-controls="usage-settings-panel"
-            onClick={() => setSection("usage")}
+            onClick={() => openSection("usage")}
           >
             <BarChart3Icon aria-hidden="true" />
             <span>Token usage</span>
           </button>
-          <button className={navButton} type="button">
-            <BellIcon />
-            <span>Notifications</span>
-          </button>
-          <button className={navButton} type="button">
-            <KeyboardIcon />
-            <span>Shortcuts</span>
-          </button>
+          {!mobile ? (
+            <>
+              <button className={navButton} type="button">
+                <BellIcon />
+                <span>Notifications</span>
+              </button>
+              <button className={navButton} type="button">
+                <KeyboardIcon />
+                <span>Shortcuts</span>
+              </button>
+            </>
+          ) : null}
           <button
             className={cn(navButton, section === "about" && selected)}
             type="button"
             aria-label="About"
             aria-current={section === "about" ? "page" : undefined}
             aria-controls="about-settings-panel"
-            onClick={() => setSection("about")}
+            onClick={() => openSection("about")}
           >
             <InfoIcon aria-hidden="true" />
             <span>About</span>
           </button>
         </nav>
-        {section === "usage" && open ? <UsageSettingsSection /> : null}
-        {section === "plugins" && open ? <PluginSettingsSection /> : null}
+        {section === "usage" && open && !showOverview ? <UsageSettingsSection /> : null}
+        {section === "plugins" && open && !showOverview ? <PluginSettingsSection /> : null}
         <section
           className="overflow-y-auto px-[30px] py-6 max-[620px]:px-4 max-[620px]:py-5"
           id="general-settings-panel"
           aria-labelledby="general-settings-title"
-          hidden={section !== "general"}
+          hidden={section !== "general" || showOverview}
         >
           <h2 id="general-settings-title" className="mb-[22px] mt-0 text-[17px]">
             General
@@ -264,12 +326,12 @@ function AppSettingsDialog({
                   : "Preferences are stored on this device.")}
           </p>
         </section>
-        <ModelSettingsSection active={section === "model"} />
+        <ModelSettingsSection active={section === "model" && !showOverview} />
         <section
           className="overflow-y-auto px-[30px] py-6 max-[620px]:px-4 max-[620px]:py-5"
           id="about-settings-panel"
           aria-labelledby="about-settings-title"
-          hidden={section !== "about"}
+          hidden={section !== "about" || showOverview}
         >
           <h2 id="about-settings-title" className="mb-[22px] mt-0 text-[17px]">
             About
@@ -304,6 +366,13 @@ function AppSettingsDialog({
           </p>
           <p className="mt-2 text-[11px] text-faint">Manual recovery: github.com/gustmrg/wisp-bot/releases/latest</p>
         </section>
+        {mobile ? (
+          <MobileNavigation
+            current="settings"
+            onConversations={onOpenConversations ?? (() => onOpenChange(false))}
+            onSettings={() => setMobileSectionOpen(false)}
+          />
+        ) : null}
       </DialogContent>
     </Dialog>
   );

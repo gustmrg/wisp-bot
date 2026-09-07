@@ -39,14 +39,19 @@ function DialogContent({
   className,
   children,
   showCloseButton = true,
+  mobileFullscreen = false,
   ...props
-}: DialogPrimitive.Popup.Props & { showCloseButton?: boolean }) {
+}: DialogPrimitive.Popup.Props & { showCloseButton?: boolean; mobileFullscreen?: boolean }) {
   return (
     <DialogPortal>
       <DialogBackdrop />
-      <DialogPrimitive.Viewport className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <DialogPrimitive.Viewport
+        data-mobile-fullscreen={mobileFullscreen}
+        className="dialog-viewport fixed inset-0 z-50 flex items-center justify-center p-4"
+      >
         <DialogPrimitive.Popup
           data-slot="dialog-content"
+          data-mobile-fullscreen={mobileFullscreen}
           className={cn(
             "relative grid w-full max-w-md gap-5 rounded-xl border border-border bg-card p-5 text-foreground shadow-lg outline-none data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95",
             className,
@@ -57,7 +62,7 @@ function DialogContent({
           {showCloseButton ? (
             <DialogPrimitive.Close
               aria-label="Close"
-              className="absolute top-3 right-3 inline-flex size-7 items-center justify-center rounded-md text-muted-foreground outline-none transition-colors hover:bg-muted hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50 [&_svg]:size-4"
+              className="dialog-close-button absolute top-3 right-3 inline-flex size-7 items-center justify-center rounded-md text-muted-foreground outline-none transition-colors hover:bg-muted hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50 [&_svg]:size-4"
             >
               <XIcon />
             </DialogPrimitive.Close>

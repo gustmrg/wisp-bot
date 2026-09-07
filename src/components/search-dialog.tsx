@@ -1,9 +1,17 @@
 import { useDeferredValue, useState } from "react";
-import { SearchIcon } from "lucide-react";
+import { ChevronLeftIcon, SearchIcon } from "lucide-react";
 
 import type { Chat, ChatCollection, ChatId } from "@/chat-data";
 import { ChatAvatar } from "@/components/chat-avatar";
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
 import { findMessageSearchMatch } from "@/lib/message-search";
 
 type SearchFilter = "all" | "wisps" | "messages";
@@ -55,11 +63,21 @@ function SearchDialog({ chats, open, onOpenChange, onSelectChat }: SearchDialogP
         }
       }}
     >
-      <DialogContent className="mt-[9vh] max-w-[620px] gap-0 self-start overflow-hidden p-0" showCloseButton={false}>
+      <DialogContent
+        mobileFullscreen
+        className="search-dialog mt-[9vh] max-w-[620px] gap-0 self-start overflow-hidden p-0"
+        showCloseButton={false}
+      >
         <DialogHeader className="sr-only">
           <DialogTitle>Search</DialogTitle>
           <DialogDescription>Search Wisps, circles, and messages.</DialogDescription>
         </DialogHeader>
+        <div className="mobile-search-header">
+          <DialogClose render={<Button variant="ghost" size="icon" type="button" aria-label="Back to conversations" />}>
+            <ChevronLeftIcon aria-hidden="true" />
+          </DialogClose>
+          <h2>Search conversations</h2>
+        </div>
         <div className="flex h-[50px] items-center gap-[9px] border-b border-black/[0.07] px-3.5 dark:border-white/[0.07]">
           <SearchIcon aria-hidden="true" className="size-[15px] text-dim" />
           <input
@@ -88,7 +106,7 @@ function SearchDialog({ chats, open, onOpenChange, onSelectChat }: SearchDialogP
             </button>
           ))}
         </div>
-        <div className="max-h-[360px] overflow-y-auto px-1.5 pt-1 pb-2">
+        <div className="search-results max-h-[360px] overflow-y-auto px-1.5 pt-1 pb-2">
           {matches.length ? (
             matches.map(({ chat, snippet }) => {
               return (

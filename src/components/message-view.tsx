@@ -38,7 +38,7 @@ function MessageTools({
   return (
     <span
       className={cn(
-        "flex flex-none items-center gap-px opacity-0 transition-opacity duration-100 group-hover/message-row:opacity-100 focus-within:opacity-100",
+        "message-tools flex flex-none items-center gap-px opacity-0 transition-opacity duration-100 group-hover/message-row:opacity-100 focus-within:opacity-100",
         outgoing ? "mr-[7px]" : "ml-[7px]",
       )}
     >
@@ -73,7 +73,7 @@ function MessageView({ message, onAnswer, onRetry }: MessageViewProps) {
   if (message.type === "card") {
     return (
       <div className="relative mt-[5px] flex animate-message-in flex-col items-start">
-        <div className="max-w-[min(820px,78vw)] rounded-[11px] border border-border bg-card px-[11px] py-[9px] leading-[1.42] select-text">
+        <div className="message-card max-w-[min(820px,78vw)] rounded-[11px] border border-border bg-card px-[11px] py-[9px] leading-[1.42] select-text">
           <ul className="m-0 flex list-none flex-col gap-1 p-0">
             {message.items.map((item) => (
               <li key={item.label} className="flex items-start gap-[7px]">
@@ -93,7 +93,7 @@ function MessageView({ message, onAnswer, onRetry }: MessageViewProps) {
     return (
       <div className="relative mt-[5px] flex animate-message-in flex-col items-start">
         <section
-          className="w-[min(820px,78vw)] rounded-[11px] border border-border bg-popover p-2.5"
+          className="message-prompt w-[min(820px,78vw)] rounded-[11px] border border-border bg-popover p-2.5"
           aria-label={message.question}
         >
           <strong className="mb-[9px] block">{message.question}</strong>
@@ -128,10 +128,13 @@ function MessageView({ message, onAnswer, onRetry }: MessageViewProps) {
   if (message.status === "streaming" && !message.text.trim()) return null;
   return (
     <div className={cn("relative mt-[5px] flex animate-message-in flex-col", outgoing ? "items-end" : "items-start")}>
-      <div className={cn("group/message-row flex max-w-full items-center", outgoing && "flex-row-reverse")}>
+      <div
+        className={cn("message-row group/message-row flex max-w-full items-center", outgoing && "flex-row-reverse")}
+        data-outgoing={outgoing}
+      >
         <div
           className={cn(
-            "max-w-[min(820px,78vw)] rounded-[11px] px-2.5 py-[7px] text-foreground leading-[1.42] select-text",
+            "message-bubble max-w-[min(820px,78vw)] rounded-[11px] px-2.5 py-[7px] text-foreground leading-[1.42] select-text",
             outgoing ? "bg-bubble-out whitespace-pre-wrap" : "bg-bubble-in",
           )}
         >

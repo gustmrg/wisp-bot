@@ -12,7 +12,7 @@ function ToolApprovalCard({ request, onResolve }: ToolApprovalCardProps) {
   const integration = request.scope.kind === "integration";
   return (
     <section
-      className="mt-2 w-[min(680px,90%)] rounded-xl border border-amber-500/25 bg-amber-500/[0.06] p-3"
+      className="tool-approval-card mt-2 w-[min(680px,90%)] rounded-xl border border-amber-500/25 bg-amber-500/[0.06] p-3"
       aria-label="Tool approval required"
     >
       <div className="flex items-start gap-2.5">

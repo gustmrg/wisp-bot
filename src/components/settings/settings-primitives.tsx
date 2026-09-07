@@ -41,11 +41,13 @@ export function SettingsCard({
 }
 
 export function SettingsRow({ className, ...props }: ComponentPropsWithoutRef<"div">) {
-  return <div className={cn("flex min-h-[58px] items-center gap-3 px-3.5 py-[11px]", className)} {...props} />;
+  return (
+    <div className={cn("settings-row flex min-h-[58px] items-center gap-3 px-3.5 py-[11px]", className)} {...props} />
+  );
 }
 
 export function SettingsRowCopy({ className, ...props }: ComponentPropsWithoutRef<"div">) {
-  return <div className={cn("flex min-w-0 flex-1 flex-col gap-[3px]", className)} {...props} />;
+  return <div className={cn("settings-row-copy flex min-w-0 flex-1 flex-col gap-[3px]", className)} {...props} />;
 }
 
 export function SettingsField({

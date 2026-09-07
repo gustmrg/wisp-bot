@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { SettingsIcon } from "lucide-react";
+import { ChevronLeftIcon, SettingsIcon } from "lucide-react";
 
 import type { Chat, ChatCollection } from "@/chat-data";
 import type { ManagedConversationStatus } from "../../shared/conversations";
@@ -8,6 +8,7 @@ import { getToolMetadata } from "../../shared/tool-catalog";
 import type { ToolActivityView } from "@/lib/conversation-stream";
 import { getCircleMembers } from "@/lib/circle-members";
 import { mainPanel } from "@/lib/ui-classes";
+import { cn } from "@/lib/utils";
 import { ChatAvatar } from "@/components/chat-avatar";
 import { ChatComposer } from "@/components/chat-composer";
 import { Button } from "@/components/ui/button";
@@ -15,6 +16,8 @@ import { MessageView } from "@/components/message-view";
 import { ToolApprovalCard } from "@/components/tool-approval-card";
 
 interface ChatPanelProps {
+  hidden?: boolean;
+  onBack?: () => void;
   chat: Chat;
   chats: ChatCollection;
   status: ManagedConversationStatus;
@@ -34,6 +37,8 @@ interface ChatPanelProps {
 }
 
 function ChatPanel({
+  hidden = false,
+  onBack,
   chat,
   chats,
   status,
@@ -52,6 +57,9 @@ function ChatPanel({
   onSend,
 }: ChatPanelProps) {
   const transcriptRef = useRef<HTMLDivElement>(null);
+  const titleRef = useRef<HTMLHeadingElement>(null);
+  const mobile = Boolean(onBack);
+  const focusChatId = mobile && !hidden ? chat.id : null;
   const members = getCircleMembers(chat, chats);
   const working = status === "working";
   const lastMessage = chat.messages.at(-1);
@@ -60,22 +68,40 @@ function ChatPanel({
 
   useEffect(() => {
     const transcript = transcriptRef.current;
-    if (transcript && transcriptScrollTrigger) transcript.scrollTop = transcript.scrollHeight;
-  }, [transcriptScrollTrigger]);
+    if (!hidden && transcript && transcriptScrollTrigger) transcript.scrollTop = transcript.scrollHeight;
+  }, [transcriptScrollTrigger, hidden]);
+
+  useEffect(() => {
+    if (focusChatId) titleRef.current?.focus();
+  }, [focusChatId]);
 
   return (
-    <main className={mainPanel}>
-      <header className="flex h-11 flex-none items-center justify-between border-b border-black/[0.035] px-3.5 dark:border-white/[0.035]">
-        <div className="inline-flex min-w-0 items-center gap-2 rounded-lg p-1">
+    <main hidden={hidden} className={cn(mainPanel, "chat-panel", hidden && "hidden")}>
+      <header className="chat-header flex h-11 flex-none items-center justify-between border-b border-black/[0.035] px-3.5 dark:border-white/[0.035]">
+        {onBack ? (
+          <Button
+            className="chat-back"
+            variant="ghost"
+            size="icon"
+            type="button"
+            aria-label="Back to conversations"
+            onClick={onBack}
+          >
+            <ChevronLeftIcon aria-hidden="true" />
+          </Button>
+        ) : null}
+        <div className="chat-heading inline-flex min-w-0 items-center gap-2 rounded-lg p-1">
           <ChatAvatar chat={chat} chats={chats} size="sm" />
-          <span className="min-w-0">
-            <span className="block truncate font-semibold">{chat.name}</span>
+          <div className="min-w-0">
+            <h1 ref={titleRef} tabIndex={-1} className="block truncate font-semibold outline-none">
+              {chat.name}
+            </h1>
             {modelLabel ? (
               <span className="block truncate text-[10px] text-dim" title={modelLabel}>
                 {modelLabel}
               </span>
             ) : null}
-          </span>
+          </div>
         </div>
         <div className="flex flex-none items-center gap-2">
           {chat.kind === "circle" ? (
@@ -103,13 +129,13 @@ function ChatPanel({
       </header>
 
       <div
-        className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto outline-none"
+        className="chat-transcript min-h-0 flex-1 overflow-x-hidden overflow-y-auto outline-none"
         ref={transcriptRef}
         tabIndex={0}
         aria-label={`${chat.name} conversation`}
       >
         <div
-          className="mx-auto flex w-full max-w-[1400px] flex-col px-3.5 pt-1.5 pb-[22px]"
+          className="chat-messages mx-auto flex w-full max-w-[1400px] flex-col px-3.5 pt-1.5 pb-[22px]"
           role="log"
           aria-live="polite"
         >
@@ -160,6 +186,8 @@ function ChatPanel({
         onConfigure={onConfigure}
         onAbort={onAbort}
         onSend={onSend}
+        autoFocus={!onBack && !hidden}
+        enterToSend={!onBack}
       />
     </main>
   );
