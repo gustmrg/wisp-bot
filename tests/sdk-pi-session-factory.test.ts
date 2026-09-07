@@ -18,7 +18,7 @@ const sdk = vi.hoisted(() => {
     waitForIdle: vi.fn(async () => undefined),
     reload: vi.fn(async () => undefined),
     setModel: vi.fn(async () => undefined),
-    getActiveToolNames: vi.fn(() => ["read", "grep", "find", "ls", "edit", "write"]),
+    getActiveToolNames: vi.fn(() => ["read", "grep", "find", "ls", "edit", "write", "search_history"]),
     setActiveToolsByName: vi.fn(),
     dispose: vi.fn(),
   };
@@ -27,9 +27,9 @@ const sdk = vi.hoisted(() => {
     createAgentSession: vi.fn(async () => ({ session })),
     loaderOptions: [] as unknown[],
     loaderReload: vi.fn(async () => undefined),
-    open: vi.fn(() => ({ kind: "open" })),
+    open: vi.fn(() => ({ kind: "open", appendCustomEntry: vi.fn() })),
     continueRecent: vi.fn(() => ({ kind: "continue", getSessionFile: () => undefined })),
-    createSession: vi.fn(() => ({ kind: "create" })),
+    createSession: vi.fn(() => ({ kind: "create", appendCustomEntry: vi.fn() })),
     settings: vi.fn(() => ({ kind: "settings" })),
     toolExecute: vi.fn(async () => ({ content: [{ type: "text", text: "ok" }], details: {} })),
   };
@@ -46,6 +46,7 @@ function toolDefinition(name: string) {
 }
 
 vi.mock("@earendil-works/pi-coding-agent", () => ({
+  VERSION: "0.84.4",
   createAgentSession: sdk.createAgentSession,
   DefaultResourceLoader: class {
     constructor(options: unknown) {
@@ -119,7 +120,7 @@ describe("SdkPiSessionFactory", () => {
         agentDir: context.configDirectory,
         model,
         modelRuntime: runtime,
-        tools: ["read", "grep", "find", "ls", "edit", "write"],
+        tools: ["read", "grep", "find", "ls", "edit", "write", "search_history"],
         excludeTools: ["bash", "powershell"],
         customTools: expect.arrayContaining([
           expect.objectContaining({ name: "read" }),
@@ -131,7 +132,15 @@ describe("SdkPiSessionFactory", () => {
         ]),
       }),
     );
-    expect(sdk.session.setActiveToolsByName).toHaveBeenCalledWith(["read", "grep", "find", "ls", "edit", "write"]);
+    expect(sdk.session.setActiveToolsByName).toHaveBeenCalledWith([
+      "read",
+      "grep",
+      "find",
+      "ls",
+      "edit",
+      "write",
+      "search_history",
+    ]);
     expect(sdk.loaderOptions[0]).toEqual(
       expect.objectContaining({
         noExtensions: true,

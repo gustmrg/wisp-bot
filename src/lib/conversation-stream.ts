@@ -95,6 +95,15 @@ export function reduceConversationAgentEvent(
   if (!chats[event.conversationId]) return next;
 
   switch (event.type) {
+    case "conversation_context_renewed":
+      return setRuntimeMessage(next, event.conversationId, {
+        id: `context:${event.createdAt}`,
+        type: "time",
+        text: event.kind === "compacted" ? "Context summarized · History preserved" : "New topic · History preserved",
+        createdAt: event.createdAt,
+      });
+    case "conversation_model_changed":
+      return next;
     case "conversation_status":
       return {
         ...next,

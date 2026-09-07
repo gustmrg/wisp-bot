@@ -8,6 +8,20 @@ function completeBridge(): WispApi {
     startConversation: async () => ({ ok: true, value: {} }),
     sendMessage: async () => ({ ok: true, value: {} }),
     abortConversation: async () => ({ ok: true, value: {} }),
+    manageContext: async () => ({
+      ok: false as const,
+      error: { code: "configuration_required" as const, message: "Configure a model", retryable: false },
+    }),
+    getConversationModel: async () => ({
+      ok: true as const,
+      value: {
+        override: null,
+        effective: null,
+        applied: null,
+        pending: null,
+        status: "configuration_required" as const,
+      },
+    }),
     applyModel: async () => ({ ok: true, value: {} }),
     disposeConversation: async () => ({ ok: true, value: {} }),
     subscribeToAgentEvents: () => () => undefined,
@@ -43,6 +57,9 @@ function completeBridge(): WispApi {
     },
     markConversationRead: async () => {
       throw new Error("not called");
+    },
+    getUsageReport: async () => {
+      throw new Error("Not implemented in test");
     },
     getSessionReport: async () => {
       throw new Error("not called");

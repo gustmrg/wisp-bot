@@ -1,3 +1,4 @@
+import type { ContextCommand, ContextView } from "../../shared/context-policy.js";
 import type { ConversationAgentEvent, ModelSelection, SendMessageRequest } from "../../shared/contracts.js";
 
 export type ConversationAgentListener = (event: ConversationAgentEvent) => void;
@@ -11,6 +12,7 @@ export function normalizeUserName(value: string | undefined): string | undefined
 }
 
 export interface ConversationAgent {
+  manageContext?(command: ContextCommand): Promise<ContextView>;
   start(): Promise<void>;
   send(request: SendMessageRequest): Promise<void>;
   abort(): Promise<void>;
@@ -28,11 +30,13 @@ export interface ConversationAgentContext {
   label: string;
   description: string;
   userName?: string;
+  modelOverride?: ModelSelection | null;
   workspaceDirectory: string;
   sessionDirectory: string;
   configDirectory: string;
   piSessionId: string | null;
   piSessionFile: string | null;
+  onContextRenewed?: (kind: "compacted" | "new_topic", createdAt: string) => void;
   savePiSessionIdentity?: (identity: { sessionId: string; sessionFile: string | null }) => Promise<void>;
 }
 

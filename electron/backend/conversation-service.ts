@@ -1,4 +1,4 @@
-import type { ModelSelection, SequencedConversationAgentEvent } from "../../shared/contracts.js";
+import type { ConversationModelView, ModelSelection, SequencedConversationAgentEvent } from "../../shared/contracts.js";
 import type { Chat, ChatChanges, ChatCollection, ConversationStateView, Message } from "../../shared/conversations.js";
 import type { ToolApprovalRequest } from "../../shared/tool-policy.js";
 import type { AgentRegistry } from "./agent-registry.js";
@@ -39,6 +39,15 @@ export class ConversationService {
   }
 
   handleAgentEvent(event: SequencedConversationAgentEvent): void {
+    if (event.type === "conversation_context_renewed") {
+      this.persistLiveMessage(event.conversationId, {
+        id: `context:${event.createdAt}`,
+        type: "time",
+        text: event.kind === "compacted" ? "Context summarized · History preserved" : "New topic · History preserved",
+        createdAt: event.createdAt,
+      });
+      return;
+    }
     if (event.type === "assistant_message_started") {
       this.persistOutgoingStatus(event.conversationId, event.requestId, "complete");
       this.setLiveMessage(event.conversationId, {
@@ -150,6 +159,16 @@ export class ConversationService {
       throw error;
     }
     return this.getState();
+  }
+
+  getConversationModel(conversationId: string): ConversationModelView {
+    this.repository.getAgentContext(conversationId);
+    return this.registry.getModelView(conversationId);
+  }
+
+  async applyConversationModel(conversationId: string, model: ModelSelection | null): Promise<void> {
+    await this.repository.setModelOverride(conversationId, model);
+    await this.registry.applyConversationModel(conversationId, model);
   }
 
   async applyModel(model: ModelSelection | null): Promise<void> {

@@ -12,7 +12,7 @@ function isId(value: unknown): value is string {
   return typeof value === "string" && value.length > 0 && value.length <= 256 && !/[\u0000-\u001f\u007f]/.test(value);
 }
 
-function normalizeSelection(value: unknown): ModelSelection | null {
+export function normalizeSelection(value: unknown): ModelSelection | null {
   if (!value || typeof value !== "object") return null;
   const candidate = value as Partial<ModelSelection>;
   if (!isId(candidate.providerId) || !isId(candidate.modelId)) return null;

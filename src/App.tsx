@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 
+import { useConversationModel, modelName } from "@/hooks/use-conversation-model";
 import { AppSettingsDialog } from "@/components/app-settings-dialog";
 import { ChatPanel } from "@/components/chat-panel";
 import { DetailsPanel } from "@/components/details-panel";
@@ -19,7 +20,10 @@ export default function App() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
-  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsSection, setSettingsSection] = useState<"general" | "model" | null>(null);
+  const conversationModel = useConversationModel(
+    workspace.activeChat?.kind === "wisp" ? workspace.activeChat.id : null,
+  );
   const sidebarPanel = useResizablePanel({ ...SIDEBAR_LAYOUT.resize, enabled: !sidebarCollapsed });
   const detailsPanel = useResizablePanel({
     ...DETAILS_LAYOUT.resize,
@@ -53,7 +57,7 @@ export default function App() {
           onCollapsedChange={setSidebarCollapsed}
           onCreate={(chat) => void workspace.createChat(chat)}
           onOpenSearch={() => setSearchOpen(true)}
-          onOpenSettings={() => setSettingsOpen(true)}
+          onOpenSettings={() => setSettingsSection("general")}
           onResizeStart={sidebarPanel.onResizeStart}
           onSelectChat={workspace.selectChat}
         />
@@ -70,6 +74,12 @@ export default function App() {
             onAnswerPrompt={(messageId, answer) => void workspace.answerPrompt(messageId, answer)}
             onAbort={() => void workspace.abortActiveChat()}
             onOpenDetails={() => setDetailsOpen(true)}
+            onConfigure={() => setSettingsSection("model")}
+            modelLabel={
+              conversationModel
+                ? `${modelName(conversationModel.applied)}${conversationModel.pending ? ` → ${modelName(conversationModel.pending)} (after this turn)` : ""}`
+                : undefined
+            }
             onRetry={(messageId) => void workspace.retryMessage(messageId)}
             onResolveApproval={(request, decision) => void workspace.resolveApproval(request, decision)}
             onSend={(text) => void workspace.sendMessage(text)}
@@ -98,13 +108,15 @@ export default function App() {
         onSelectChat={workspace.selectChat}
       />
       <AppSettingsDialog
+        key={settingsSection ?? "closed"}
+        initialSection={settingsSection ?? "general"}
         appMetadata={APP_METADATA}
         currentUser={DEMO_CURRENT_USER}
-        open={settingsOpen}
+        open={settingsSection !== null}
         preferences={workspace.preferences}
         persistenceStatus={workspace.persistenceStatus}
         persistenceError={workspace.persistenceError}
-        onOpenChange={setSettingsOpen}
+        onOpenChange={(open) => setSettingsSection(open ? "general" : null)}
         onPreferencesChange={workspace.updatePreferences}
       />
     </TooltipProvider>

@@ -9,6 +9,8 @@ const WISP_IPC_CHANNELS = {
   sendMessage: "wisp:agent:send",
   abortConversation: "wisp:agent:abort",
   applyModel: "wisp:agent:apply-model",
+  getConversationModel: "wisp:agent:get-model",
+  manageContext: "wisp:agent:context",
   disposeConversation: "wisp:agent:dispose",
   agentEvent: "wisp:agent:event",
   getAiSettings: "wisp:settings:ai:get",
@@ -22,6 +24,7 @@ const WISP_IPC_CHANNELS = {
   appendConversationMessage: "wisp:conversations:append-message",
   answerConversationPrompt: "wisp:conversations:answer-prompt",
   markConversationRead: "wisp:conversations:mark-read",
+  getUsageReport: "wisp:usage:get",
   getToolPolicy: "wisp:tool-policy:get",
   saveToolPolicy: "wisp:tool-policy:save",
   resolveToolApproval: "wisp:tool-policy:resolve-approval",
@@ -34,9 +37,11 @@ const WISP_IPC_CHANNELS = {
 } as const;
 
 const wispApi: WispApi = {
+  manageContext: (request) => ipcRenderer.invoke(WISP_IPC_CHANNELS.manageContext, request),
   startConversation: (request) => ipcRenderer.invoke(WISP_IPC_CHANNELS.startConversation, request),
   sendMessage: (request) => ipcRenderer.invoke(WISP_IPC_CHANNELS.sendMessage, request),
   abortConversation: (request) => ipcRenderer.invoke(WISP_IPC_CHANNELS.abortConversation, request),
+  getConversationModel: (request) => ipcRenderer.invoke(WISP_IPC_CHANNELS.getConversationModel, request),
   applyModel: (request) => ipcRenderer.invoke(WISP_IPC_CHANNELS.applyModel, request),
   disposeConversation: (request) => ipcRenderer.invoke(WISP_IPC_CHANNELS.disposeConversation, request),
   subscribeToAgentEvents: (listener) => {
@@ -58,6 +63,7 @@ const wispApi: WispApi = {
   answerConversationPrompt: (request) => ipcRenderer.invoke(WISP_IPC_CHANNELS.answerConversationPrompt, request),
   markConversationRead: (request) => ipcRenderer.invoke(WISP_IPC_CHANNELS.markConversationRead, request),
   getSessionReport: (request) => ipcRenderer.invoke(WISP_IPC_CHANNELS.getSessionReport, request),
+  getUsageReport: (request) => ipcRenderer.invoke(WISP_IPC_CHANNELS.getUsageReport, request),
   getToolPolicy: () => ipcRenderer.invoke(WISP_IPC_CHANNELS.getToolPolicy),
   saveToolPolicy: (settings) => ipcRenderer.invoke(WISP_IPC_CHANNELS.saveToolPolicy, settings),
   resolveToolApproval: (request) => ipcRenderer.invoke(WISP_IPC_CHANNELS.resolveToolApproval, request),

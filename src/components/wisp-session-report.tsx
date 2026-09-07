@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useEffect, useState } from "react";
 import { RefreshCwIcon } from "lucide-react";
 
 import type { WispSessionReport } from "../../shared/contracts";
@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 
 interface WispSessionReportSectionProps {
   chatId: string;
+  active?: boolean;
 }
 
 type ReportState =
@@ -16,61 +17,43 @@ type ReportState =
   | { status: "ready"; report: WispSessionReport | null }
   | { status: "error"; message: string };
 
-export function WispSessionReportSection({ chatId }: WispSessionReportSectionProps) {
+export function WispSessionReportSection({ chatId, active = true }: WispSessionReportSectionProps) {
   const [state, setState] = useState<ReportState>({ status: "idle" });
-
-  const load = useCallback(async () => {
+  const [request, setRequest] = useState({});
+  useEffect(() => {
+    if (!active) return;
+    let cancelled = false;
     setState({ status: "loading" });
-    try {
-      const result = await window.wisp.getSessionReport({ conversationId: chatId });
-      if (!result.ok) {
-        setState({ status: "error", message: result.error.message });
-        return;
-      }
-      setState({ status: "ready", report: result.value });
-    } catch {
-      setState({ status: "error", message: "Could not load the session report." });
-    }
-  }, [chatId]);
-
-  return (
-    <SettingsCard className="mt-[15px]">
-      <Accordion>
-        <AccordionItem
-          className="border-b-0"
-          onOpenChange={(open) => {
-            if (open) void load();
-          }}
-        >
-          <AccordionTrigger className="gap-3 py-[11px] font-normal">
-            <span className="flex min-w-0 flex-1 flex-col gap-[3px]">
-              <strong className="text-left text-[12.5px]">Session activity</strong>
-              <small className="text-left text-[11px] leading-[1.3]">
-                Tool calls, token usage, and model data for this Wisp
-              </small>
-            </span>
-          </AccordionTrigger>
-          <AccordionContent className="px-0 pb-3.5 text-sm">
-            <SessionReportContent state={state} onRefresh={() => void load()} />
-          </AccordionContent>
-        </AccordionItem>
-      </Accordion>
-    </SettingsCard>
-  );
+    void window.wisp
+      .getSessionReport({ ...request, conversationId: chatId })
+      .then((result) => {
+        if (cancelled) return;
+        setState(
+          result.ok ? { status: "ready", report: result.value } : { status: "error", message: result.error.message },
+        );
+      })
+      .catch(() => {
+        if (!cancelled) setState({ status: "error", message: "Could not load the session report." });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [chatId, active, request]);
+  return <SessionReportContent state={state} onRefresh={() => setRequest({})} />;
 }
 
 function SessionReportContent({ state, onRefresh }: { state: ReportState; onRefresh: () => void }) {
   if (state.status === "idle") return null;
   if (state.status === "loading") {
     return (
-      <p className="px-3.5 text-dim" role="status">
+      <p className="text-dim" role="status">
         Loading session activity…
       </p>
     );
   }
   if (state.status === "error") {
     return (
-      <div className="px-3.5">
+      <div className="">
         <p className="text-sm text-destructive" role="alert">
           {state.message}
         </p>
@@ -80,33 +63,76 @@ function SessionReportContent({ state, onRefresh }: { state: ReportState; onRefr
   }
   if (!state.report) {
     return (
-      <p className="px-3.5 text-dim" role="status">
+      <p className="text-dim" role="status">
         No agent session yet. Configure a model and send a message to create one.
       </p>
     );
   }
   const { report } = state;
   return (
-    <div className="flex flex-col gap-3 px-3.5">
+    <div className="flex flex-col gap-4">
+      <div className="grid grid-cols-2 gap-2">
+        <SettingsCard className="p-3">
+          <p className="text-[11px] text-dim">Total tokens</p>
+          <p className="mt-1 text-xl font-medium tabular-nums">{formatTokenCount(report.totals.totalTokens)}</p>
+        </SettingsCard>
+        <SettingsCard className="p-3">
+          <p className="text-[11px] text-dim">Estimated USD</p>
+          <p className="mt-1 break-all text-xl font-medium tabular-nums">
+            {report.totals.costUsd === null ? "Unknown" : formatCost(report.totals.costUsd)}
+          </p>
+        </SettingsCard>
+      </div>
       <dl className="flex flex-col gap-1.5 text-[11.5px]">
-        <SummaryTerm label="Session" value={report.sessionId} />
-        <SummaryTerm label="Turns" value={String(report.turns)} />
+        <SummaryTerm label="Input" value={formatTokenCount(report.totals.inputTokens)} />
+        <SummaryTerm label="Output" value={formatTokenCount(report.totals.outputTokens)} />
         <SummaryTerm
-          label="Tokens"
-          value={`${formatTokenCount(report.totals.inputTokens)} in · ${formatTokenCount(
-            report.totals.outputTokens,
-          )} out · ${formatTokenCount(report.totals.totalTokens)} total`}
-        />
-        <SummaryTerm
-          label="Estimated cost"
-          value={
-            report.totals.costUsd === null ? "Unknown (no pricing for a model used)" : formatCost(report.totals.costUsd)
-          }
+          label="Cache read / write"
+          value={`${formatTokenCount(report.totals.cacheReadTokens)} / ${formatTokenCount(report.totals.cacheWriteTokens)}`}
         />
       </dl>
-      <ModelList report={report} />
-      <ToolCallList report={report} />
-      <EventList report={report} />
+      <p className="text-[11px] leading-relaxed text-dim">
+        Usage for this session. Costs are estimates based on available model prices.
+        {report.totals.costUsd === null ? " Pricing is unavailable for one or more models." : ""}
+      </p>
+      {report.compactionUsage?.totalTokens ? (
+        <p className="text-xs text-muted-foreground">
+          Includes {report.compactionUsage.totalTokens.toLocaleString()} tokens used to summarize context. Summary costs
+          use the runtime's recorded estimate.
+        </p>
+      ) : null}
+      <Accordion>
+        <AccordionItem>
+          <AccordionTrigger>Session details</AccordionTrigger>
+          <AccordionContent>
+            <dl className="mb-3 flex flex-col gap-1.5 text-[11.5px]">
+              <SummaryTerm label="Session" value={report.sessionId} />
+              {report.piVersion ? <SummaryTerm label="Pi version" value={report.piVersion} /> : null}
+              <SummaryTerm label="Turns" value={String(report.turns)} />
+            </dl>
+            <ModelList report={report} />
+          </AccordionContent>
+        </AccordionItem>
+        <AccordionItem>
+          <AccordionTrigger>Tool calls ({report.toolCalls.length})</AccordionTrigger>
+          <AccordionContent>
+            <ToolCallList report={report} />
+          </AccordionContent>
+        </AccordionItem>
+        <AccordionItem>
+          <AccordionTrigger>Events ({report.events.length})</AccordionTrigger>
+          <AccordionContent>
+            {report.events.length ? (
+              <EventList report={report} />
+            ) : (
+              <p className="text-xs text-dim">No events recorded.</p>
+            )}
+          </AccordionContent>
+        </AccordionItem>
+      </Accordion>
+      <p className="text-[11px] text-dim">
+        Argument text and provider error details are hidden for privacy. Latest 50 tool calls and events.
+      </p>
       <RefreshButton onRefresh={onRefresh} />
     </div>
   );
@@ -179,7 +205,7 @@ function EventList({ report }: { report: WispSessionReport }) {
           <li key={`${event.kind}:${event.timestamp}:${index}`} className="flex min-w-0 flex-col gap-0.5">
             <span className="flex items-baseline gap-1.5">
               <span className={event.kind === "error" ? "text-destructive" : "text-foreground"}>
-                {event.kind === "error" ? "Error" : "Compaction"}
+                {event.kind === "error" ? "Error" : event.kind === "compaction" ? "Compaction" : "Retry"}
               </span>
               <span className="ml-auto shrink-0 text-dim">{formatTimestamp(event.timestamp)}</span>
             </span>

@@ -85,3 +85,22 @@ describe("ChatComposer", () => {
     expect(renderSibling).toHaveBeenCalledOnce();
   });
 });
+
+it("blocks first-run sends without losing the draft and offers configuration", async () => {
+  const user = userEvent.setup();
+  const onSend = vi.fn();
+  const onConfigure = vi.fn();
+  const props = { ...defaultProps, chat: wisp("new", "New"), onSend, onConfigure };
+  const { rerender } = render(<ChatComposer {...props} status="configuration_required" />);
+  const input = screen.getByRole("textbox", { name: "Message New" });
+  await user.type(input, "First task{enter}");
+  expect(onSend).not.toHaveBeenCalled();
+  expect(input).toHaveValue("First task");
+  expect(screen.getByRole("button", { name: "Send message" })).toBeDisabled();
+  await user.click(screen.getByRole("button", { name: "Configure AI model" }));
+  expect(onConfigure).toHaveBeenCalledOnce();
+  rerender(<ChatComposer {...props} status="idle" />);
+  expect(input).toHaveValue("First task");
+  await user.click(screen.getByRole("button", { name: "Send message" }));
+  expect(onSend).toHaveBeenCalledWith("First task");
+});

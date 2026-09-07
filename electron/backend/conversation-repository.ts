@@ -2,6 +2,8 @@ import { randomUUID } from "node:crypto";
 import { copyFile, mkdir, readFile, rename } from "node:fs/promises";
 import path from "node:path";
 
+import type { ModelSelection } from "../../shared/contracts.js";
+import { normalizeSelection } from "./ai-settings-store.js";
 import type { ChatChanges, ChatCollection, Message } from "../../shared/conversations.js";
 import { writeFileAtomically } from "./atomic-file.js";
 import { WispBackendError } from "./backend-error.js";
@@ -118,6 +120,7 @@ export class ConversationRepository {
             {
               conversationId: chat.id,
               sessionId,
+              modelOverride: this.state.conversations[chat.id]?.modelOverride ?? null,
               name: chat.name,
               label: chat.label,
               description: chat.description,
@@ -140,6 +143,7 @@ export class ConversationRepository {
     return {
       conversationId,
       sessionId: record.sessionId,
+      modelOverride: record.modelOverride ?? null,
       name: record.chat.name,
       label: record.chat.label,
       description: record.chat.description,
@@ -299,6 +303,19 @@ export class ConversationRepository {
     });
   }
 
+  async setModelOverride(conversationId: string, model: ModelSelection | null): Promise<void> {
+    await this.enqueue(async () => {
+      const record = this.require(conversationId);
+      if (!record.sessionId) throw new WispBackendError("invalid_request", "Circles do not own agent sessions.");
+      const normalized = normalizeSelection(model);
+      if (model !== null && !normalized)
+        throw new WispBackendError("invalid_request", "The model selection is invalid.");
+      record.modelOverride = normalized;
+      record.updatedAt = this.now().toISOString();
+      await this.persist();
+    });
+  }
+
   async savePiSessionIdentity(
     conversationId: string,
     identity: { sessionId: string; sessionFile: string | null },
@@ -407,6 +424,7 @@ export class ConversationRepository {
       conversations[id] = {
         chat,
         sessionId,
+        modelOverride: normalizeSelection(record.modelOverride),
         piSessionId: typeof record.piSessionId === "string" ? normalizeConversationId(record.piSessionId) : null,
         piSessionFile:
           typeof record.piSessionFile === "string" && sessionId

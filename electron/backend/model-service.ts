@@ -14,7 +14,6 @@ import { AiSettingsStore } from "./ai-settings-store.js";
 import { EncryptedCredentialStore, type EncryptionService } from "./encrypted-credential-store.js";
 
 const MAX_API_KEY_LENGTH = 20_000;
-const SUPPORTED_PROVIDER_IDS = new Set(["openrouter"]);
 
 export interface ModelRuntimeLike {
   getProviders(): ReturnType<ModelRuntime["getProviders"]>;
@@ -76,7 +75,7 @@ export class ModelService {
     const credentialProviders = new Set((await this.credentials.list()).map(({ providerId }) => providerId));
     const providers: ProviderSummary[] = this.runtime
       .getProviders()
-      .filter((provider) => SUPPORTED_PROVIDER_IDS.has(provider.id) && Boolean(provider.auth.apiKey))
+      .filter((provider) => Boolean(provider.auth.apiKey) && this.runtime.getModels(provider.id).length > 0)
       .map((provider) => ({
         id: provider.id,
         name: provider.name,
@@ -165,8 +164,18 @@ export class ModelService {
     return credential?.type === "api_key" ? selection : null;
   }
 
+  async validateConversationSelection(selection: ModelSelection): Promise<void> {
+    this.assertValidSelection(selection);
+    const credential = await this.credentials.read(selection.providerId);
+    if (credential?.type !== "api_key") {
+      throw new WispBackendError(
+        "configuration_required",
+        "Configure an API key for this provider in AI Model settings.",
+      );
+    }
+  }
+
   private isValidSelection(selection: ModelSelection): boolean {
-    if (!SUPPORTED_PROVIDER_IDS.has(selection.providerId)) return false;
     const provider = this.runtime.getProvider(selection.providerId);
     const model = this.runtime.getModel(selection.providerId, selection.modelId);
     const maxOutputTokens = selection.maxOutputTokens;

@@ -176,8 +176,11 @@ async function bootstrap(): Promise<void> {
       : new PiConversationAgentFactory(
           new SdkPiSessionFactory(modelService.getModelRuntime(), toolAuthorizationBroker),
         );
-  agentRegistry = new AgentRegistry(agentFactory, publishAgentEvent, (conversationId) =>
-    toolAuthorizationBroker.cancelConversation(conversationId),
+  agentRegistry = new AgentRegistry(
+    agentFactory,
+    publishAgentEvent,
+    (conversationId) => toolAuthorizationBroker.cancelConversation(conversationId),
+    { validateModel: (selection) => modelService.validateConversationSelection(selection) },
   );
   const conversationRepository = new ConversationRepository({
     dataDirectory: path.join(app.getPath("userData"), "backend"),
@@ -197,7 +200,10 @@ async function bootstrap(): Promise<void> {
     ),
     isTrustedIpcSender,
   );
-  const agentHandlers = registerAgentHandlers(ipcMain, agentRegistry, isTrustedIpcSender);
+  const agentHandlers = registerAgentHandlers(ipcMain, agentRegistry, isTrustedIpcSender, async (id, model) => {
+    if (model) await modelService.validateConversationSelection(model);
+    await conversationService.applyConversationModel(id, model);
+  });
   const conversationHandlers = registerConversationHandlers(ipcMain, conversationService, isTrustedIpcSender);
   const modelSettingsHandlers = registerModelSettingsHandlers(ipcMain, modelService, isTrustedIpcSender, (selection) =>
     conversationService.applyModel(selection),

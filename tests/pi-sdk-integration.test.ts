@@ -52,7 +52,15 @@ describe("Pi SDK integration", () => {
       const selection = { providerId: provider!.id, modelId: model.id };
 
       const first = await factory.create(context, selection);
-      expect(first.getActiveToolNames().sort()).toEqual(["edit", "find", "grep", "ls", "read", "write"]);
+      expect(first.getActiveToolNames().sort()).toEqual([
+        "edit",
+        "find",
+        "grep",
+        "ls",
+        "read",
+        "search_history",
+        "write",
+      ]);
       expect(first.sessionFile).toContain(sessionDirectory);
       const persistedIdentity = {
         piSessionId: first.sessionId,

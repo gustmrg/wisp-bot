@@ -1,16 +1,22 @@
-import { useState } from "react";
+import { WispContextSettings } from "@/components/wisp-context-settings";
+import { useState, type ReactNode } from "react";
 
 import type { WispChat, WispChatChanges } from "@/chat-data";
+import { WispModelSettings } from "@/components/wisp-model-settings";
 import { WispSettingsFields } from "@/components/wisp-settings-fields";
 import { WispSessionReportSection } from "@/components/wisp-session-report";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 
 interface WispDetailsProps {
   chat: WispChat;
+  generalActions?: ReactNode;
   onChange: (changes: WispChatChanges) => Promise<boolean> | void;
 }
 
-export function WispDetails({ chat, onChange }: WispDetailsProps) {
+export function WispDetails({ chat, onChange, generalActions }: WispDetailsProps) {
+  const [tab, setTab] = useState("general");
+  const [visited, setVisited] = useState(() => new Set(["general"]));
   const [draft, setDraft] = useState(chat);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -51,20 +57,50 @@ export function WispDetails({ chat, onChange }: WispDetailsProps) {
   }
 
   return (
-    <>
-      <WispSettingsFields
-        settings={draft}
-        onChange={(changes) => setDraft((current) => ({ ...current, ...changes }))}
-      />
-      {error ? (
-        <p className="mt-3 text-sm text-destructive" role="alert">
-          {error}
-        </p>
-      ) : null}
-      <Button className="mt-[15px] w-full" type="button" disabled={!dirty || saving} onClick={() => void save()}>
-        {saving ? "Saving…" : "Save changes"}
-      </Button>
-      <WispSessionReportSection chatId={chat.id} />
-    </>
+    <Tabs
+      value={tab}
+      onValueChange={(value) => {
+        if (typeof value !== "string") return;
+        setTab(value);
+        setVisited((current) => (current.has(value) ? current : new Set([...current, value])));
+      }}
+      className="min-h-0 flex-1 gap-0 overflow-hidden"
+    >
+      <div className="flex-none border-b border-border px-3.5 py-3">
+        <TabsList className="w-full" aria-label="Wisp settings sections">
+          <TabsTrigger value="general">General</TabsTrigger>
+          <TabsTrigger value="model">Model</TabsTrigger>
+          <TabsTrigger value="usage">Usage</TabsTrigger>
+        </TabsList>
+      </div>
+      <TabsContent value="general" keepMounted className="flex min-h-0 flex-col overflow-hidden">
+        <div className="min-h-0 flex-1 overflow-y-auto p-3.5">
+          <WispSettingsFields
+            settings={draft}
+            onChange={(changes) => setDraft((current) => ({ ...current, ...changes }))}
+          />
+          <WispContextSettings conversationId={chat.id} />
+          {generalActions ? (
+            <div className="mt-5 flex flex-col gap-2 border-t border-border pt-4">{generalActions}</div>
+          ) : null}
+        </div>
+        <footer className="flex-none border-t border-border p-3.5">
+          {error ? (
+            <p className="mb-3 text-sm text-destructive" role="alert">
+              {error}
+            </p>
+          ) : null}
+          <Button className="w-full" type="button" disabled={!dirty || saving} onClick={() => void save()}>
+            {saving ? "Saving…" : "Save changes"}
+          </Button>
+        </footer>
+      </TabsContent>
+      <TabsContent value="model" keepMounted className="flex min-h-0 flex-col overflow-hidden">
+        {visited.has("model") ? <WispModelSettings conversationId={chat.id} /> : null}
+      </TabsContent>
+      <TabsContent value="usage" keepMounted className="min-h-0 overflow-y-auto p-3.5">
+        {visited.has("usage") ? <WispSessionReportSection chatId={chat.id} active={tab === "usage"} /> : null}
+      </TabsContent>
+    </Tabs>
   );
 }

@@ -14,6 +14,7 @@ export interface ModelPricing {
   inputPerMillionTokens: number;
   outputPerMillionTokens: number;
   cacheReadPerMillionTokens: number;
+  cacheWritePerMillionTokens?: number;
 }
 
 interface PersistedPricingCache {
@@ -64,6 +65,10 @@ export class ModelPricingService {
   getPricing(providerId: string, modelId: string): ModelPricing | null {
     if (!SUPPORTED_PROVIDER_IDS.has(providerId)) return null;
     return this.pricing[modelId] ?? null;
+  }
+
+  getUpdatedAt(): string | null {
+    return this.loaded ? new Date(this.cachedAt).toISOString() : null;
   }
 
   private async load(): Promise<void> {
@@ -144,6 +149,14 @@ function parsePersistedCache(value: unknown): PersistedPricingCache {
       continue;
     }
     if (!Number.isFinite(candidate.cacheReadPerMillionTokens)) candidate.cacheReadPerMillionTokens = 0;
+    if (
+      candidate.inputPerMillionTokens < 0 ||
+      candidate.outputPerMillionTokens < 0 ||
+      candidate.cacheReadPerMillionTokens < 0
+    )
+      continue;
+    const writePrice = parseUsdPerToken(pricing?.cacheWritePerMillionTokens);
+    if (writePrice !== null) candidate.cacheWritePerMillionTokens = writePrice;
     models[modelId] = candidate;
   }
   return { schemaVersion: CACHE_SCHEMA_VERSION, cachedAt, models };
@@ -172,15 +185,18 @@ function parseOpenRouterPricing(value: unknown): ModelPricing | null {
   const outputPerToken = parseUsdPerToken(record.completion);
   const cacheReadPerToken = parseUsdPerToken(record.input_cache_read);
   if (inputPerToken === null || outputPerToken === null) return null;
+  const cacheWritePerToken = parseUsdPerToken(record.input_cache_write);
   return {
+    ...(cacheWritePerToken === null ? {} : { cacheWritePerMillionTokens: cacheWritePerToken * 1_000_000 }),
     inputPerMillionTokens: inputPerToken * 1_000_000,
     outputPerMillionTokens: outputPerToken * 1_000_000,
-    cacheReadPerMillionTokens: (cacheReadPerToken ?? 0) * 1_000_000,
+    cacheReadPerMillionTokens: (cacheReadPerToken ?? inputPerToken) * 1_000_000,
   };
 }
 
 function parseUsdPerToken(value: unknown): number | null {
   if (typeof value !== "string" && typeof value !== "number") return null;
+  if (typeof value === "string" && !value.trim()) return null;
   const parsed = typeof value === "number" ? value : Number(value);
   if (!Number.isFinite(parsed) || parsed < 0) return null;
   return parsed;

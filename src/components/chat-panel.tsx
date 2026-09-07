@@ -25,6 +25,8 @@ interface ChatPanelProps {
   onAnswerPrompt: (messageId: string | undefined, answer: string) => void;
   onAbort: () => void;
   onOpenDetails: () => void;
+  onConfigure?: () => void;
+  modelLabel?: string;
   onRetry: (messageId: string | undefined) => void;
   onResolveApproval: (request: ToolApprovalRequest, decision: ToolApprovalDecision) => void;
   onSend: (text: string) => void;
@@ -42,6 +44,8 @@ function ChatPanel({
   onAnswerPrompt,
   onAbort,
   onOpenDetails,
+  onConfigure,
+  modelLabel,
   onRetry,
   onResolveApproval,
   onSend,
@@ -63,7 +67,14 @@ function ChatPanel({
       <header className="flex h-11 flex-none items-center justify-between border-b border-black/[0.035] px-3.5 dark:border-white/[0.035]">
         <div className="inline-flex min-w-0 items-center gap-2 rounded-lg p-1">
           <ChatAvatar chat={chat} chats={chats} size="sm" />
-          <span className="truncate font-semibold">{chat.name}</span>
+          <span className="min-w-0">
+            <span className="block truncate font-semibold">{chat.name}</span>
+            {modelLabel ? (
+              <span className="block truncate text-[10px] text-dim" title={modelLabel}>
+                {modelLabel}
+              </span>
+            ) : null}
+          </span>
         </div>
         <div className="flex flex-none items-center gap-2">
           {chat.kind === "circle" ? (
@@ -145,6 +156,7 @@ function ChatPanel({
         activity={activity}
         error={error}
         acknowledging={acknowledging}
+        onConfigure={onConfigure}
         onAbort={onAbort}
         onSend={onSend}
       />

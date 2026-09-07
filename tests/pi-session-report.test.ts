@@ -127,14 +127,14 @@ describe("buildSessionReport", () => {
     expect(report.toolCalls[0]).toMatchObject({
       toolCallId: "call-1",
       toolName: "read",
-      argumentSummary: "path: ./src/foo.ts",
+      argumentSummary: "path: [workspace path]",
       status: "completed",
     });
     expect(report.toolCalls[1]).toMatchObject({ toolName: "edit", status: "error" });
     expect(report.toolCalls[1].argumentSummary).not.toContain("SECRET");
     expect(report.toolCalls[2]).toMatchObject({
       toolName: "grep",
-      argumentSummary: "pattern: wisp; include: *.ts",
+      argumentSummary: "pattern: [value hidden]; include: [value hidden]",
       status: "pending",
     });
   });
@@ -177,21 +177,20 @@ describe("buildSessionReport", () => {
     expect(report.events).toHaveLength(2);
     expect(report.events[0]).toMatchObject({ kind: "compaction", detail: "Context compacted (12,345 tokens before)" });
     expect(report.events[1].kind).toBe("error");
-    expect(report.events[1].detail).toContain("Provider exploded");
-    expect(report.events[1].detail).toContain("/home/gustavo/secret.txt");
+    expect(report.events[1].detail).not.toContain("Provider exploded");
+    expect(report.events[1].detail).not.toContain("/home/gustavo/secret.txt");
   });
 });
 
 describe("summarizeToolArguments", () => {
-  it("drops non-whitelisted values and truncates long values", () => {
+  it("drops non-whitelisted values and hides path text", () => {
     const longPath = `${WORKSPACE}/${"a".repeat(300)}.ts`;
 
     const summary = summarizeToolArguments({ path: longPath, content: "SECRET FILE CONTENT" }, WORKSPACE);
 
     expect(summary).not.toContain("SECRET");
     expect(summary.length).toBeLessThanOrEqual(201);
-    expect(summary.startsWith("path: .")).toBe(true);
-    expect(summary.endsWith("…")).toBe(true);
+    expect(summary).toBe("path: [workspace path]");
   });
 
   it("returns an empty summary for non-object arguments", () => {
@@ -201,9 +200,78 @@ describe("summarizeToolArguments", () => {
   });
 
   it("relativizes both forward- and backslash workspace paths", () => {
-    expect(summarizeToolArguments({ path: "/wisp/workspaces/session-1/a.ts" }, WORKSPACE)).toBe("path: ./a.ts");
+    expect(summarizeToolArguments({ path: "/wisp/workspaces/session-1/a.ts" }, WORKSPACE)).toBe(
+      "path: [workspace path]",
+    );
     expect(
       summarizeToolArguments({ path: "\\wisp\\workspaces\\session-1\\a.ts" }, "\\wisp\\workspaces\\session-1"),
-    ).toBe("path: .\\a.ts");
+    ).toBe("path: [workspace path]");
   });
+});
+
+it("hides arbitrary secrets in search arguments and provider errors, and reads safe runtime notices", () => {
+  const entries = [
+    messageEntry(assistantMessage({ stopReason: "error", errorMessage: "Authorization: Bearer PRIVATE_CREDENTIAL" })),
+    { type: "custom", customType: "wisp:runtime", data: { version: "0.84.4" }, timestamp: "2026-09-01T12:00:00Z" },
+    {
+      type: "custom",
+      customType: "wisp:retry",
+      data: { phase: "started", error: "PRIVATE_CREDENTIAL" },
+      timestamp: "2026-09-01T12:00:01Z",
+    },
+    { type: "custom", customType: "wisp:retry", data: { phase: "finished" }, timestamp: "2026-09-01T12:00:02Z" },
+  ] as SessionEntry[];
+  const report = buildSessionReport("session-1", entries, { workspaceDirectory: WORKSPACE, getPricing });
+  expect(report.piVersion).toBe("0.84.4");
+  expect(report.events.map((event) => event.kind)).toEqual(["error", "retry_started", "retry_finished"]);
+  expect(JSON.stringify(report)).not.toContain("PRIVATE_CREDENTIAL");
+  expect(
+    summarizeToolArguments(
+      { pattern: "PRIVATE_CREDENTIAL", query: "PRIVATE PROMPT", path: "/outside/secret" },
+      WORKSPACE,
+    ),
+  ).not.toMatch(/PRIVATE|outside/);
+});
+
+it("includes cache writes in estimates and treats a missing cache-write price as unknown", () => {
+  const entries = [
+    messageEntry(assistantMessage({ usage: { input: 100, output: 10, cacheRead: 20, cacheWrite: 50 } })),
+  ];
+  const unknown = buildSessionReport("session-1", entries, { workspaceDirectory: WORKSPACE, getPricing });
+  expect(unknown.totals.costUsd).toBeNull();
+  expect(unknown.totals.totalTokens).toBe(180);
+  const priced = buildSessionReport("session-1", entries, {
+    workspaceDirectory: WORKSPACE,
+    getPricing: () => ({ ...PRICING, cacheWritePerMillionTokens: 2 }),
+  });
+  expect(priced.totals.costUsd).toBeCloseTo(0.000283);
+});
+
+it("includes summarization usage and keeps unknown summary prices unknown", () => {
+  const entry = {
+    type: "compaction",
+    id: "compact",
+    parentId: null,
+    timestamp: "2026-09-05T00:00:00Z",
+    summary: "Summary",
+    firstKeptEntryId: "kept",
+    tokensBefore: 9000,
+    usage: {
+      input: 9000,
+      output: 500,
+      cacheRead: 0,
+      cacheWrite: 0,
+      totalTokens: 9500,
+      cost: { input: 0.009, output: 0.001, cacheRead: 0, cacheWrite: 0, total: 0.01 },
+    },
+  } as SessionEntry;
+  const report = buildSessionReport("session", [entry], { workspaceDirectory: WORKSPACE, getPricing });
+  expect(report.totals).toMatchObject({ totalTokens: 9500, costUsd: 0.01 });
+  expect(report.compactionUsage?.totalTokens).toBe(9500);
+  expect(report.turns).toBe(0);
+  const unknown = structuredClone(entry);
+  if (unknown.type === "compaction" && unknown.usage) unknown.usage.cost.total = 0;
+  expect(
+    buildSessionReport("session", [unknown], { workspaceDirectory: WORKSPACE, getPricing }).totals.costUsd,
+  ).toBeNull();
 });

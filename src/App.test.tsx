@@ -39,6 +39,20 @@ function createApi(initialState: ConversationStateView): WispApi {
     startConversation: vi.fn(async () => ({ ok: true as const, value: {} })),
     sendMessage: vi.fn(async () => ({ ok: true as const, value: {} })),
     abortConversation: vi.fn(async () => ({ ok: true as const, value: {} })),
+    manageContext: async () => ({
+      ok: false as const,
+      error: { code: "configuration_required" as const, message: "Configure a model", retryable: false },
+    }),
+    getConversationModel: async () => ({
+      ok: true as const,
+      value: {
+        override: null,
+        effective: null,
+        applied: null,
+        pending: null,
+        status: "configuration_required" as const,
+      },
+    }),
     applyModel: vi.fn(async () => ({ ok: true as const, value: {} })),
     disposeConversation: vi.fn(async () => ({ ok: true as const, value: {} })),
     subscribeToAgentEvents: vi.fn(() => () => undefined),
@@ -77,6 +91,7 @@ function createApi(initialState: ConversationStateView): WispApi {
     }),
     answerConversationPrompt: vi.fn(async () => current()),
     markConversationRead: vi.fn(async () => current()),
+    getUsageReport: vi.fn(),
     getSessionReport: vi.fn(async () => ({ ok: true as const, value: null })),
     getToolPolicy: vi.fn(async () => ({ ok: true as const, value: { autoReview: true, rules: [] } })),
     saveToolPolicy: vi.fn(async (settings) => ({ ok: true as const, value: settings })),
@@ -168,4 +183,22 @@ describe("App", () => {
       }),
     });
   });
+});
+
+it("opens provider setup from an unconfigured Wisp and preserves its first draft", async () => {
+  const user = userEvent.setup();
+  const state = conversationState(true, { atlas });
+  state.statuses.atlas = "configuration_required";
+  const api = createApi(state);
+  exposeApi(api);
+  render(<App />);
+  const composer = await screen.findByRole("textbox", { name: "Message Atlas" });
+  await user.type(composer, "My first task{enter}");
+  expect(api.sendMessage).not.toHaveBeenCalled();
+  expect(api.appendConversationMessage).not.toHaveBeenCalled();
+  await user.click(screen.getByRole("button", { name: "Configure AI model" }));
+  expect(await screen.findByRole("heading", { name: "AI Model" })).toBeVisible();
+  await user.keyboard("{Escape}");
+  expect(composer).toHaveValue("My first task");
+  expect(screen.getByRole("button", { name: "Send message" })).toBeDisabled();
 });

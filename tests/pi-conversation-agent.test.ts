@@ -182,3 +182,31 @@ describe("PiConversationAgent", () => {
     await agent.dispose();
   });
 });
+
+it("reports the model actually used while an override waits for the active turn", async () => {
+  const sessions = new Map<string, MockPiSession>();
+  const agent = new PiConversationAgent(context("one"), factoryFor(sessions));
+  const events = vi.fn();
+  agent.subscribe(events);
+  await agent.start();
+  await agent.applyModel(selection());
+  const send = agent.send({ conversationId: "one", requestId: "r1", text: "Hello" });
+  await agent.applyModel(selection("override"));
+  expect(events).toHaveBeenCalledWith({
+    type: "conversation_model_changed",
+    conversationId: "one",
+    applied: selection(),
+    pending: selection("override"),
+  });
+  expect(sessions.get("one")?.models).toHaveLength(0);
+  sessions.get("one")?.finishPrompt();
+  await send;
+  expect(events).toHaveBeenCalledWith({
+    type: "conversation_model_changed",
+    conversationId: "one",
+    applied: selection("override"),
+    pending: null,
+  });
+  expect(sessions.get("one")?.models).toHaveLength(1);
+  await agent.dispose();
+});

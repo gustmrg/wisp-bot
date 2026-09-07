@@ -1,13 +1,18 @@
 import type { IpcMain, IpcMainInvokeEvent } from "electron";
 
-import { WISP_IPC_CHANNELS, type BackendResult, type WispSessionReport } from "../../shared/contracts.js";
+import {
+  WISP_IPC_CHANNELS,
+  type BackendResult,
+  type UsageReport,
+  type WispSessionReport,
+} from "../../shared/contracts.js";
 import { sanitizeBackendError } from "../backend/backend-error.js";
 import type { SessionReportService } from "../backend/session-report-service.js";
 import type { SenderAuthorizer } from "./register-handlers.js";
-import { parseConversationRequest } from "./validators.js";
+import { parseConversationRequest, parseUsageReportRequest } from "./validators.js";
 
 type HandlerIpcMain = Pick<IpcMain, "handle" | "removeHandler">;
-type Result = BackendResult<WispSessionReport | null>;
+type Result = BackendResult<WispSessionReport | UsageReport | null>;
 
 export function registerSessionReportHandlers(
   ipcMain: HandlerIpcMain,
@@ -21,6 +26,16 @@ export function registerSessionReportHandlers(
         try {
           const { conversationId } = parseConversationRequest(payload);
           return { ok: true, value: await service.getSessionReport(conversationId) };
+        } catch (error) {
+          return { ok: false, error: sanitizeBackendError(error) };
+        }
+      },
+    ],
+    [
+      WISP_IPC_CHANNELS.getUsageReport,
+      async (payload) => {
+        try {
+          return { ok: true, value: await service.getUsageReport(parseUsageReportRequest(payload)) };
         } catch (error) {
           return { ok: false, error: sanitizeBackendError(error) };
         }

@@ -55,81 +55,58 @@ afterEach(() => {
 });
 
 describe("WispSessionReportSection", () => {
-  it("loads the report lazily when expanded and renders its summary", async () => {
+  it("loads only in the active Usage tab and keeps technical details collapsed", async () => {
     const user = userEvent.setup();
     const getSessionReport = exposeApi(vi.fn(async () => ({ ok: true as const, value: report })));
-
-    render(<WispSessionReportSection chatId="wisp-1" />);
-
+    const { rerender } = render(<WispSessionReportSection chatId="wisp-1" active={false} />);
     expect(getSessionReport).not.toHaveBeenCalled();
-    await user.click(screen.getByRole("button", { name: /Session activity/i }));
-
-    await waitFor(() => {
-      expect(screen.getByText("openai/gpt-oss-120b · 3 turns")).toBeVisible();
-    });
-    expect(screen.getByText(/1,500 in · 250 out · 1,850 total/)).toBeVisible();
+    rerender(<WispSessionReportSection chatId="wisp-1" active />);
+    expect(await screen.findByText("1,850")).toBeVisible();
     expect(screen.getByText("$0.0023")).toBeVisible();
-    expect(screen.getByText("read")).toBeVisible();
+    expect(screen.queryByText("read")).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Session details" }));
+    expect(await screen.findByText("openai/gpt-oss-120b · 3 turns")).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "Tool calls (1)" }));
+    expect(await screen.findByText("read")).toBeVisible();
     expect(screen.getByText("path: ./src/foo.ts")).toBeVisible();
-    expect(screen.getByText(/Context compacted/)).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "Events (1)" }));
+    expect(await screen.findByText(/Context compacted/)).toBeVisible();
     expect(getSessionReport).toHaveBeenCalledWith({ conversationId: "wisp-1" });
   });
 
-  it("refreshes the report on demand", async () => {
+  it("refreshes on demand and when returning to Usage", async () => {
     const user = userEvent.setup();
     const getSessionReport = exposeApi(vi.fn(async () => ({ ok: true as const, value: report })));
-
-    render(<WispSessionReportSection chatId="wisp-1" />);
-    await user.click(screen.getByRole("button", { name: /Session activity/i }));
-    await waitFor(() => {
-      expect(screen.getByText("openai/gpt-oss-120b · 3 turns")).toBeVisible();
-    });
-
+    const { rerender } = render(<WispSessionReportSection chatId="wisp-1" />);
+    expect(await screen.findByText("1,850")).toBeVisible();
     await user.click(screen.getByRole("button", { name: "Refresh" }));
-
-    await waitFor(() => {
-      expect(getSessionReport).toHaveBeenCalledTimes(2);
-    });
+    await waitFor(() => expect(getSessionReport).toHaveBeenCalledTimes(2));
+    rerender(<WispSessionReportSection chatId="wisp-1" active={false} />);
+    rerender(<WispSessionReportSection chatId="wisp-1" active />);
+    await waitFor(() => expect(getSessionReport).toHaveBeenCalledTimes(3));
   });
 
   it("shows an empty state when the Wisp has no session", async () => {
-    const user = userEvent.setup();
     exposeApi(vi.fn(async () => ({ ok: true as const, value: null })));
-
     render(<WispSessionReportSection chatId="wisp-1" />);
-    await user.click(screen.getByRole("button", { name: /Session activity/i }));
-
     expect(await screen.findByText(/No agent session yet/i)).toBeVisible();
   });
 
   it("shows backend errors with a retry", async () => {
     const user = userEvent.setup();
-    let calls = 0;
     const getSessionReport = exposeApi(
-      vi.fn(async () => {
-        calls += 1;
-        return calls === 1
-          ? {
-              ok: false as const,
-              error: {
-                code: "internal_error" as const,
-                message: "The session is too large to summarize.",
-                retryable: false,
-              },
-            }
-          : { ok: true as const, value: report };
-      }),
+      vi
+        .fn()
+        .mockResolvedValueOnce({
+          ok: false,
+          error: { code: "internal_error", message: "Could not read session.", retryable: true },
+        })
+        .mockResolvedValue({ ok: true, value: report }),
     );
-
     render(<WispSessionReportSection chatId="wisp-1" />);
-    await user.click(screen.getByRole("button", { name: /Session activity/i }));
-
-    expect(await screen.findByRole("alert")).toHaveTextContent("The session is too large to summarize.");
+    expect(await screen.findByRole("alert")).toHaveTextContent("Could not read session.");
     await user.click(screen.getByRole("button", { name: "Refresh" }));
-
-    await waitFor(() => {
-      expect(screen.getByText("openai/gpt-oss-120b · 3 turns")).toBeVisible();
-    });
+    expect(await screen.findByText("1,850")).toBeVisible();
     expect(getSessionReport).toHaveBeenCalledTimes(2);
   });
 });

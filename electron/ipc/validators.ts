@@ -1,4 +1,6 @@
+import { isContextPolicy, type ContextRequest } from "../../shared/context-policy.js";
 import type {
+  UsageReportRequest,
   ApplyModelRequest,
   ConversationRequest,
   ModelSelection,
@@ -110,7 +112,7 @@ export function parseApplyModelRequest(value: unknown): ApplyModelRequest {
   const request = asRecord(value);
   return {
     conversationId: parseId(request.conversationId),
-    model: parseModelSelection(request.model),
+    model: request.model === null ? null : parseModelSelection(request.model),
   };
 }
 
@@ -174,4 +176,30 @@ export function parseResolveToolApprovalRequest(value: unknown): ResolveToolAppr
 function stringValue(value: unknown, maxLength: number): string {
   if (typeof value !== "string" || !value.trim() || value.length > maxLength) throw invalidRequest();
   return value;
+}
+
+export function parseUsageReportRequest(value: unknown): UsageReportRequest {
+  const { period } = asRecord(value);
+  if (period !== "7d" && period !== "30d" && period !== "all") throw invalidRequest();
+  return { period };
+}
+
+export function parseContextRequest(value: unknown): ContextRequest {
+  const request = asRecord(value);
+  const conversationId = parseId(request.conversationId);
+  const command = asRecord(request.command);
+  if (Object.keys(request).some((key) => !["conversationId", "command"].includes(key))) throw invalidRequest();
+  if (command.action === "save") {
+    if (
+      Object.keys(command).some((key) => !["action", "policy", "memory"].includes(key)) ||
+      !isContextPolicy(command.policy) ||
+      typeof command.memory !== "string" ||
+      command.memory.length > 8000
+    )
+      throw invalidRequest();
+    return { conversationId, command: { action: "save", policy: command.policy, memory: command.memory } };
+  }
+  if (Object.keys(command).length !== 1 || !["get", "compact", "new_topic"].includes(String(command.action)))
+    throw invalidRequest();
+  return { conversationId, command: { action: command.action as "get" | "compact" | "new_topic" } };
 }
