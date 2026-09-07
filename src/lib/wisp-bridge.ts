@@ -1,6 +1,12 @@
 import type { WispApi } from "../../shared/contracts";
 
 const REQUIRED_WISP_METHODS = [
+  "getPluginSettings",
+  "savePluginSettings",
+  "removePlugin",
+  "testPluginConnection",
+  "getWispPluginAccess",
+  "saveWispPluginAccess",
   "startConversation",
   "sendMessage",
   "abortConversation",

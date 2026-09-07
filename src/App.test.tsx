@@ -36,6 +36,15 @@ function createApi(initialState: ConversationStateView): WispApi {
   const current = () => ({ ok: true as const, value: state });
 
   return {
+    getPluginSettings: async () => ({ ok: true, value: { secureStorageAvailable: true, plugins: [] } }),
+    savePluginSettings: async () => ({ ok: true, value: { secureStorageAvailable: true, plugins: [] } }),
+    removePlugin: async () => ({ ok: true, value: { secureStorageAvailable: true, plugins: [] } }),
+    testPluginConnection: async () => ({ ok: true, value: { message: "Connected" } }),
+    getWispPluginAccess: async ({ conversationId }) => ({
+      ok: true,
+      value: { conversationId, grants: [], revision: "test-revision" },
+    }),
+    saveWispPluginAccess: async (request) => ({ ok: true, value: request }),
     startConversation: vi.fn(async () => ({ ok: true as const, value: {} })),
     sendMessage: vi.fn(async () => ({ ok: true as const, value: {} })),
     abortConversation: vi.fn(async () => ({ ok: true as const, value: {} })),

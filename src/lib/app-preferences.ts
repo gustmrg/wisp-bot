@@ -6,7 +6,7 @@ export interface AutoReviewRule {
   id: string;
   action: string;
   behavior: RuleBehavior;
-  scope?: "workspace";
+  scope?: "workspace" | "integration";
 }
 
 export interface AppPreferences {
@@ -44,7 +44,7 @@ function isAutoReviewRule(value: unknown): value is AutoReviewRule {
     rule.action.trim().length > 0 &&
     rule.action.length <= 240 &&
     isRuleBehavior(rule.behavior) &&
-    (rule.scope === undefined || rule.scope === "workspace")
+    (rule.scope === undefined || rule.scope === "workspace" || rule.scope === "integration")
   );
 }
 
@@ -73,8 +73,11 @@ export function normalizePreferences(value: unknown): AppPreferences {
     autoReviewRules: Array.isArray(saved?.autoReviewRules)
       ? saved.autoReviewRules.filter(isAutoReviewRule).map((rule) => ({
           ...rule,
-          behavior: rule.scope === undefined && rule.behavior === "allow" ? "ask" : rule.behavior,
-          scope: "workspace",
+          behavior:
+            (rule.scope === undefined || rule.scope === "integration") && rule.behavior === "allow"
+              ? "ask"
+              : rule.behavior,
+          scope: rule.scope ?? "workspace",
         }))
       : [],
   };

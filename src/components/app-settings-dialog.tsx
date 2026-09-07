@@ -6,6 +6,7 @@ import {
   DownloadIcon,
   InfoIcon,
   KeyboardIcon,
+  PlugIcon,
   RefreshCwIcon,
   SettingsIcon,
 } from "lucide-react";
@@ -13,6 +14,7 @@ import {
 import { GeneralSettingsSections, PreferenceSwitch } from "@/components/general-settings-sections";
 import { UsageSettingsSection } from "@/components/usage-settings-section";
 import { ModelSettingsSection } from "@/components/model-settings-section";
+import { PluginSettingsSection } from "@/components/plugin-settings-section";
 import { SettingsCard, SettingsGroup, SettingsRow, SettingsRowCopy } from "@/components/settings/settings-primitives";
 import { Button } from "@/components/ui/button";
 import type { AppMetadata, CurrentUser } from "@/config/app-metadata";
@@ -57,7 +59,7 @@ function AppSettingsDialog({
   onOpenChange,
   onPreferencesChange,
 }: AppSettingsDialogProps) {
-  const [section, setSection] = useState<"general" | "model" | "about" | "usage">(initialSection);
+  const [section, setSection] = useState<"general" | "model" | "plugins" | "about" | "usage">(initialSection);
   const selected = "bg-accent text-accent-foreground";
   const [updateState, setUpdateState] = useState<UpdateState>({
     phase: "idle",
@@ -130,6 +132,17 @@ function AppSettingsDialog({
             <span>AI Model</span>
           </button>
           <button
+            className={cn(navButton, section === "plugins" && selected)}
+            type="button"
+            aria-label="Plugins"
+            aria-current={section === "plugins" ? "page" : undefined}
+            aria-controls="plugin-settings-panel"
+            onClick={() => setSection("plugins")}
+          >
+            <PlugIcon aria-hidden="true" />
+            <span>Plugins</span>
+          </button>
+          <button
             className={cn(navButton, section === "usage" && selected)}
             type="button"
             aria-label="Token usage"
@@ -161,6 +174,7 @@ function AppSettingsDialog({
           </button>
         </nav>
         {section === "usage" && open ? <UsageSettingsSection /> : null}
+        {section === "plugins" && open ? <PluginSettingsSection /> : null}
         <section
           className="overflow-y-auto px-[30px] py-6 max-[620px]:px-4 max-[620px]:py-5"
           id="general-settings-panel"

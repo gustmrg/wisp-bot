@@ -1,11 +1,11 @@
-export type ToolActionCategory = "read" | "search" | "create_file" | "modify_file" | "shell";
+export type ToolActionCategory = "read" | "search" | "create_file" | "modify_file" | "external_write" | "shell";
 export type ToolPolicyBehavior = "allow" | "ask" | "block";
 
 export interface ToolPolicyRule {
   id: string;
   action: string;
   behavior: ToolPolicyBehavior;
-  scope?: "workspace";
+  scope?: "workspace" | "integration";
 }
 
 export interface ToolPolicySettings {
@@ -19,7 +19,7 @@ export interface ToolApprovalRequest {
   toolCallId: string;
   toolName: string;
   category: ToolActionCategory;
-  scope: { kind: "workspace_path"; display: string };
+  scope: { kind: "workspace_path" | "integration"; display: string };
   summary: string;
   expiresAt: string;
 }

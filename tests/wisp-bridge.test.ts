@@ -5,6 +5,15 @@ import { isWispBridgeAvailable } from "../src/lib/wisp-bridge.js";
 
 function completeBridge(): WispApi {
   return {
+    getPluginSettings: async () => ({ ok: true, value: { secureStorageAvailable: true, plugins: [] } }),
+    savePluginSettings: async () => ({ ok: true, value: { secureStorageAvailable: true, plugins: [] } }),
+    removePlugin: async () => ({ ok: true, value: { secureStorageAvailable: true, plugins: [] } }),
+    testPluginConnection: async () => ({ ok: true, value: { message: "Connected" } }),
+    getWispPluginAccess: async ({ conversationId }) => ({
+      ok: true,
+      value: { conversationId, grants: [], revision: "test-revision" },
+    }),
+    saveWispPluginAccess: async (request) => ({ ok: true, value: request }),
     startConversation: async () => ({ ok: true, value: {} }),
     sendMessage: async () => ({ ok: true, value: {} }),
     abortConversation: async () => ({ ok: true, value: {} }),

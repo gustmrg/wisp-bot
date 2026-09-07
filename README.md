@@ -1,6 +1,6 @@
 # Wisp Bot
 
-Wisp Bot is an Electron desktop application for running persistent AI-agent conversations. Its React renderer manages the workspace UI while a sandboxed Electron boundary owns conversations, model credentials, agent sessions, file-tool authorization, and durable backend state.
+Wisp Bot is an Electron desktop application for running persistent AI-agent conversations. Its React renderer manages the workspace UI while a sandboxed Electron boundary owns conversations, model and plugin credentials, agent sessions, tool authorization, and durable backend state.
 
 <p align="center">
   <img src="docs/screenshot.png" alt="Wisp Bot app screenshot" width="800" />
@@ -66,7 +66,7 @@ Generated components are written to `src/components/ui/` and are maintained loca
 - `src/features/workspace/` owns the renderer workspace controller and integrity-preserving actions. `src/hooks/use-conversations.ts` adapts the typed desktop bridge into React state and streamed events.
 - `src/features/persistence/` validates and persists local UI preferences with observable failure handling.
 - `shared/` defines process-safe conversation, tool-policy, and IPC contracts used on both sides of the Electron boundary.
-- `electron/backend/` owns durable conversations, model configuration, Pi sessions, the fake test gateway, encrypted credentials, and tool authorization. `electron/ipc/` validates and registers the narrow bridge handlers.
+- `electron/backend/` owns durable conversations, model configuration, Pi sessions, plugin connections and per-Wisp grants, the fake test gateway, encrypted credentials, and tool authorization. `electron/ipc/` validates and registers the narrow bridge handlers.
 - `electron/security-policy.ts`, `electron/main.ts`, and `electron/preload.ts` enforce the renderer trust boundary: sandboxing and context isolation stay enabled, navigation and permissions default to deny, and exposed APIs are typed and sender-checked.
 
 ## Current behavior
@@ -75,7 +75,7 @@ Wisp conversations are connected to persistent application-managed Pi sessions w
 
 Conversations and backend policy are stored under Electron's user-data directory. Theme, timezone, microphone selection, launch-at-login, notification-sound, and related UI preferences are stored locally in the renderer. Theme and auto-review policy affect current behavior; microphone capture, launch-at-login, notification sounds, sign-out, and shortcuts are not connected yet. Installed releases expose explicit check, download, and restart-to-install update states in About. Circles are feature-flagged and do not run their own model sessions.
 
-API keys are encrypted with Electron's operating-system-backed `safeStorage` API and are never exposed to the renderer. Wisp refuses to persist keys when secure storage is unavailable. Unknown file actions are blocked; conflicting auto-review rules use `block` → `ask` → `allow` precedence.
+API keys are encrypted with Electron's operating-system-backed `safeStorage` API; saved keys are never returned to the renderer. Wisp refuses to persist keys when secure storage is unavailable. Unknown file actions are blocked; conflicting auto-review rules use `block` → `ask` → `allow` precedence. Linear writes require separate, single-use approval regardless of file auto-review rules.
 
 Signed Windows and macOS packaging is configured for the protected release workflow. See [the release runbook](docs/release-runbook.md) for its credential boundary, draft-only staging flow, verification, and rollback procedure. No public release is created automatically.
 
@@ -158,6 +158,37 @@ previous model. The conversation header shows the actual model and any pending
 change. Creating a Wisp without a provider is allowed, but sending is disabled
 until configuration is complete. **Configure AI model** opens setup directly,
 keeping the unsent draft intact.
+
+### Plugins per Wisp
+
+Open **Settings → Plugins**, enter a **Brave Search API key** or **Linear personal
+API key**, optionally select **Test connection**, and select **Save plugin** with
+the plugin enabled. Testing checks the entered key, or the saved key when the
+field is blank; it does not save a new key. Each plugin supports one connection
+on this device. Connecting a plugin grants no Wisp access automatically.
+
+Open a Wisp's **Access** tab, choose **Read only** for web search or **Read only** /
+**Read and write** for Linear, and select **Save access**. Every Wisp starts with
+**No access**. New tools become available on its next message. Linear issue
+creation and updates still require an **Allow once** approval before execution.
+
+Web search returns titles, source URLs, and snippets through the
+[Brave Search API](https://api-dashboard.search.brave.com/documentation/services/web-search);
+it does not browse pages or fetch arbitrary URLs. Linear can search/read issues,
+list teams and statuses, and create/update issues through its
+[GraphQL API](https://linear.app/developers/graphql). The connected key's own
+permissions also apply.
+
+Disabling a plugin blocks all Wisps but retains their grants. Replacing a key
+with a different key or removing its connection clears every Wisp's grants for
+that plugin. Revocation blocks new calls and cancels pending approvals/requests;
+it cannot undo a change already accepted by Linear. Check Linear before retrying
+a write whose outcome is uncertain.
+
+This version includes only these two bundled plugins. Arbitrary plugin
+installation, custom endpoints, MCP servers, OAuth, and multiple accounts are
+not available yet. See [ADR 004](docs/decisions/004-wisp-plugins.md) for the
+extension boundary and validation scope.
 
 
 ### Context continuity

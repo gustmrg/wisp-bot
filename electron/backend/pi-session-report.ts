@@ -11,9 +11,23 @@ import type {
 } from "../../shared/contracts.js";
 import type { ModelPricing } from "./model-pricing-service.js";
 import { safeId } from "./pi-event-translator.js";
+import { getToolMetadata } from "../../shared/tool-catalog.js";
 
-const ALLOWED_TOOLS = new Set(["read", "grep", "find", "ls", "edit", "write", "search_history"]);
-const ALLOWED_ARGUMENT_KEYS = ["path", "pattern", "include", "glob", "query", "regex"] as const;
+const ALLOWED_ARGUMENT_KEYS = [
+  "path",
+  "pattern",
+  "include",
+  "glob",
+  "query",
+  "regex",
+  "id",
+  "issueId",
+  "teamId",
+  "stateId",
+  "title",
+  "description",
+  "assigneeId",
+] as const;
 const MAX_TOOL_CALLS = 50;
 const MAX_EVENTS = 50;
 const MAX_ARGUMENT_SUMMARY_CHARACTERS = 200;
@@ -113,7 +127,7 @@ export function buildSessionReport(
       }
       for (const block of assistantMessage.content) {
         if (!block || typeof block !== "object" || block.type !== "toolCall") continue;
-        if (!ALLOWED_TOOLS.has(block.name)) continue;
+        if (!getToolMetadata(block.name)) continue;
         const toolCall: SessionReportToolCall = {
           toolCallId: safeId(typeof block.id === "string" ? block.id : "tool-call"),
           toolName: block.name,

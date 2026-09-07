@@ -12,6 +12,7 @@ import type { ConversationAgentFactory } from "./backend/conversation-agent.js";
 import { FakeConversationAgentFactory } from "./backend/fake-conversation-agent.js";
 import { ModelPricingService } from "./backend/model-pricing-service.js";
 import { ModelService } from "./backend/model-service.js";
+import { PluginService } from "./backend/plugin-service.js";
 import { SessionReportService } from "./backend/session-report-service.js";
 import { PiConversationAgentFactory, SdkPiSessionFactory } from "./backend/pi-conversation-agent.js";
 import { SafeStorageEncryption } from "./backend/safe-storage-encryption.js";
@@ -23,6 +24,7 @@ import { UpdateService } from "./backend/update-service.js";
 import { registerAgentHandlers } from "./ipc/register-handlers.js";
 import { registerConversationHandlers } from "./ipc/register-conversation-handlers.js";
 import { registerModelSettingsHandlers } from "./ipc/register-model-settings-handlers.js";
+import { registerPluginHandlers } from "./ipc/register-plugin-handlers.js";
 import { registerSessionReportHandlers } from "./ipc/register-session-report-handlers.js";
 import { registerToolPolicyHandlers } from "./ipc/register-tool-policy-handlers.js";
 import { registerUpdateHandlers } from "./ipc/register-update-handlers.js";
@@ -170,11 +172,22 @@ async function bootstrap(): Promise<void> {
       audit: new ToolAuditStore(path.join(app.getPath("userData"), "backend", "tool-audit.jsonl")),
     },
   );
+  const conversationRepository = new ConversationRepository({
+    dataDirectory: path.join(app.getPath("userData"), "backend"),
+    userName: DEMO_CURRENT_USER.givenName,
+  });
+  const pluginService = new PluginService({
+    dataDirectory: path.join(app.getPath("userData"), "backend"),
+    encryption: new SafeStorageEncryption(),
+    authorizationBroker: toolAuthorizationBroker,
+    resolveWisp: (id) => conversationRepository.getAgentContext(id).sessionId,
+  });
+  await pluginService.load();
   const agentFactory: ConversationAgentFactory =
     selectAgentMode(app.isPackaged, process.env.WISP_AGENT_MODE) === "fake"
       ? new FakeConversationAgentFactory({ latencyMs: 350 })
       : new PiConversationAgentFactory(
-          new SdkPiSessionFactory(modelService.getModelRuntime(), toolAuthorizationBroker),
+          new SdkPiSessionFactory(modelService.getModelRuntime(), toolAuthorizationBroker, pluginService),
         );
   agentRegistry = new AgentRegistry(
     agentFactory,
@@ -182,10 +195,6 @@ async function bootstrap(): Promise<void> {
     (conversationId) => toolAuthorizationBroker.cancelConversation(conversationId),
     { validateModel: (selection) => modelService.validateConversationSelection(selection) },
   );
-  const conversationRepository = new ConversationRepository({
-    dataDirectory: path.join(app.getPath("userData"), "backend"),
-    userName: DEMO_CURRENT_USER.givenName,
-  });
   conversationService = new ConversationService(conversationRepository, agentRegistry, () =>
     toolAuthorizationBroker.listPending(),
   );
@@ -209,6 +218,7 @@ async function bootstrap(): Promise<void> {
     conversationService.applyModel(selection),
   );
   const toolPolicyHandlers = registerToolPolicyHandlers(ipcMain, toolAuthorizationBroker, isTrustedIpcSender);
+  const pluginHandlers = registerPluginHandlers(ipcMain, pluginService, isTrustedIpcSender);
   const updateHandlers = registerUpdateHandlers(ipcMain, updateService, isTrustedIpcSender);
   let backendDisposed = false;
   let backendDisposing = false;
@@ -218,6 +228,8 @@ async function bootstrap(): Promise<void> {
     if (backendDisposing) return;
     backendDisposing = true;
     toolPolicyHandlers.dispose();
+    pluginHandlers.dispose();
+    pluginService.dispose();
     updateHandlers.dispose();
     unsubscribeUpdateState();
     toolAuthorizationBroker.dispose();

@@ -4,6 +4,19 @@ import { PiEventTranslator } from "../electron/backend/pi-event-translator.js";
 import type { ConversationAgentEvent } from "../shared/contracts.js";
 
 describe("PiEventTranslator", () => {
+  it("reports registered integration tools while filtering unknown tool names", () => {
+    const events: ConversationAgentEvent[] = [];
+    const translator = new PiEventTranslator("wisp-1", (event) => events.push(event), 0);
+    translator.begin({ conversationId: "wisp-1", requestId: "plugins-1", text: "Search" });
+    for (const toolName of ["web_search", "linear_update_issue", "unknown_plugin", "constructor", "bash"])
+      translator.handle({ type: "tool_execution_start", toolCallId: `call-${toolName}`, toolName });
+    expect(events.filter((event) => event.type === "tool_activity").map((event) => event.toolName)).toEqual([
+      "web_search",
+      "linear_update_issue",
+    ]);
+    translator.dispose();
+  });
+
   it("coalesces text, filters thinking and unsafe tools, and preserves lifecycle order", () => {
     const events: ConversationAgentEvent[] = [];
     const translator = new PiEventTranslator("wisp-1", (event) => events.push(event), 100);

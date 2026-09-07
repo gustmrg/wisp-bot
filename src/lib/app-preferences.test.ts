@@ -61,4 +61,30 @@ describe("normalizePreferences", () => {
       { id: "legacy", action: "Whatever the model asks", behavior: "ask", scope: "workspace" },
     ]);
   });
+
+  it("preserves integration blocks and never converts them into workspace rules", () => {
+    const preferences = normalizePreferences({
+      autoReview: false,
+      autoReviewRules: [
+        { id: "external-block", action: "external_write", behavior: "block", scope: "integration" },
+        { id: "file-allow", action: "modify_file", behavior: "allow", scope: "workspace" },
+      ],
+    });
+    expect(normalizePreferences(preferences).autoReviewRules).toEqual([
+      { id: "external-block", action: "external_write", behavior: "block", scope: "integration" },
+      { id: "file-allow", action: "modify_file", behavior: "allow", scope: "workspace" },
+    ]);
+    expect(preferences.autoReview).toBe(false);
+  });
+
+  it("normalizes integration allow rules to ask and discards unknown scopes", () => {
+    expect(
+      normalizePreferences({
+        autoReviewRules: [
+          { id: "external-allow", action: "external_write", behavior: "allow", scope: "integration" },
+          { id: "invalid", action: "external_write", behavior: "allow", scope: "global" },
+        ],
+      }).autoReviewRules,
+    ).toEqual([{ id: "external-allow", action: "external_write", behavior: "ask", scope: "integration" }]);
+  });
 });

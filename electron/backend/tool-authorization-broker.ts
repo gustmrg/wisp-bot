@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import type { ConversationAgentEvent } from "../../shared/contracts.js";
+import { getToolMetadata } from "../../shared/tool-catalog.js";
 import type {
   ResolveToolApprovalRequest,
   ToolActionCategory,
@@ -21,7 +22,7 @@ export interface ToolAuthorizationRequest {
   toolName: string;
   category: ToolActionCategory;
   summary: string;
-  scope: { kind: "workspace_path"; value: string };
+  scope: { kind: "workspace_path" | "integration"; value: string };
 }
 
 interface PendingApproval {
@@ -263,6 +264,16 @@ export function evaluateToolPolicy(
 ): ToolPolicyBehavior {
   if (category === "shell") return "block";
   if (category === "read" || category === "search") return "allow";
+  if (category === "external_write") {
+    if (scopeKind !== "integration") return "block";
+    // External writes always require a one-time approval. Workspace allow rules
+    // and the file auto-review toggle cannot grant integration permissions.
+    return settings.rules.some(
+      (rule) => rule.scope === "integration" && ruleMatchesCategory(rule.action, category) && rule.behavior === "block",
+    )
+      ? "block"
+      : "ask";
+  }
   if (category !== "create_file" && category !== "modify_file") return "block";
   if (!settings.autoReview) return "ask";
   const matches = settings.rules
@@ -294,7 +305,7 @@ function sanitizeSummary(value: string): string {
     .replaceAll(/[\r\n\t]+/g, " ")
     .replaceAll(/\s+/g, " ")
     .trim();
-  return summary.slice(0, MAX_SUMMARY_LENGTH) || "Perform a file action";
+  return summary.slice(0, MAX_SUMMARY_LENGTH) || "Perform a tool action";
 }
 
 function safeId(value: string): string {
@@ -302,5 +313,5 @@ function safeId(value: string): string {
 }
 
 function safeToolName(value: string): string {
-  return /^(read|grep|find|ls|edit|write)$/.test(value) ? value : "unknown";
+  return getToolMetadata(value) ? value : "unknown";
 }

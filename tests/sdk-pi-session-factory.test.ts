@@ -6,12 +6,15 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { ConversationAgentContext } from "../electron/backend/conversation-agent.js";
 import type { ModelRuntimeLike } from "../electron/backend/model-service.js";
+import type { PluginToolSource } from "../electron/backend/plugin-types.js";
 
 const sdk = vi.hoisted(() => {
   const session = {
     isIdle: true,
     sessionFile: "/sessions/concrete.jsonl",
     sessionId: "pi-session-id",
+    messages: [],
+    sessionManager: { getEntries: () => [], getBranch: () => [] },
     subscribe: vi.fn(() => () => undefined),
     prompt: vi.fn(async () => undefined),
     abort: vi.fn(async () => undefined),
@@ -77,6 +80,16 @@ import {
 describe("SdkPiSessionFactory", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    sdk.session.getActiveToolNames.mockImplementation(() => [
+      "read",
+      "grep",
+      "find",
+      "ls",
+      "edit",
+      "write",
+      "search_history",
+    ]);
+    sdk.session.setActiveToolsByName.mockReset();
     sdk.loaderOptions.length = 0;
   });
 
@@ -228,6 +241,69 @@ describe("SdkPiSessionFactory", () => {
       write.execute("tool-6", { path: "broken-escape/new.txt", content: "blocked" }, undefined, undefined, {}),
     ).rejects.toMatchObject({ code: "invalid_request" });
     expect(sdk.toolExecute).toHaveBeenCalledTimes(2);
+  });
+
+  it("activates only registered tools granted to this Wisp and refreshes grants before prompts and after reload", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "wisp-pi-plugins-"));
+    const context: ConversationAgentContext = {
+      conversationId: "researcher",
+      sessionId: "plugin-session",
+      name: "Researcher",
+      label: "Research",
+      description: "Search sources.",
+      workspaceDirectory: directory,
+      sessionDirectory: directory,
+      configDirectory: path.join(directory, "config"),
+    };
+    const runtime = {
+      hasConfiguredAuth: () => true,
+      getModel: () => ({ provider: "provider", id: "model" }),
+    } as unknown as ModelRuntimeLike;
+    const grantNames: Record<string, string[]> = {
+      researcher: ["web_search", "web_search", "bash", "invented_tool", "linear_update_issue"],
+      coordinator: ["linear_get_issue"],
+    };
+    const pluginTools: PluginToolSource = {
+      getTools: vi.fn(() => [
+        toolDefinition("web_search"),
+        toolDefinition("linear_get_issue"),
+        toolDefinition("bash"),
+      ]) as PluginToolSource["getTools"],
+      getActiveToolNames: vi.fn(async (id: string) => grantNames[id] ?? []),
+    };
+    const factory = new SdkPiSessionFactory(runtime, undefined, pluginTools);
+    const session = await factory.create(context, { providerId: "provider", modelId: "model" });
+    const builtins = ["read", "grep", "find", "ls", "edit", "write", "search_history"];
+    expect(sdk.createAgentSession).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        tools: [...builtins, "web_search", "linear_get_issue"],
+        excludeTools: ["bash", "powershell"],
+      }),
+    );
+    expect(sdk.session.setActiveToolsByName).toHaveBeenLastCalledWith([...builtins, "web_search"]);
+    const customTools = (sdk.createAgentSession.mock.calls[0]?.[0] as { customTools: { name: string }[] }).customTools;
+    expect(customTools.map(({ name }) => name)).not.toContain("bash");
+    expect(customTools.map(({ name }) => name)).toContain("linear_get_issue");
+
+    grantNames.researcher = ["linear_get_issue"];
+    await session.prompt("Read the issue", { expandPromptTemplates: false });
+    expect(sdk.session.setActiveToolsByName).toHaveBeenLastCalledWith([...builtins, "linear_get_issue"]);
+    expect(sdk.session.setActiveToolsByName.mock.invocationCallOrder.at(-1)).toBeLessThan(
+      sdk.session.prompt.mock.invocationCallOrder.at(-1)!,
+    );
+
+    sdk.session.getActiveToolNames.mockReturnValue([...builtins, "linear_get_issue"]);
+    grantNames.researcher = [];
+    await session.reload();
+    expect(sdk.session.setActiveToolsByName).toHaveBeenLastCalledWith(builtins);
+    session.dispose();
+
+    await factory.create({ ...context, conversationId: "coordinator" }, { providerId: "provider", modelId: "model" });
+    expect(sdk.createAgentSession).toHaveBeenLastCalledWith(
+      expect.objectContaining({ tools: [...builtins, "web_search", "linear_get_issue"] }),
+    );
+    expect(pluginTools.getActiveToolNames).toHaveBeenCalledWith("researcher");
+    expect(pluginTools.getActiveToolNames).toHaveBeenCalledWith("coordinator");
   });
 
   it("rejects missing credentials and unavailable models without selecting a fallback", () => {

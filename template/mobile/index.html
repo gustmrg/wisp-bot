@@ -1,0 +1,217 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content" />
+    <meta name="theme-color" content="#151514" />
+    <meta name="description" content="Mock navegável da interface mobile do Wisp Bot. HTML e CSS, com dados de exemplo." />
+    <title>Wisp · Mock mobile</title>
+    <link rel="icon" href="./assets/favicon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <svg class="symbols" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+      <defs>
+        <symbol id="i-back" viewBox="0 0 24 24"><path d="m14 6-6 6 6 6" /></symbol>
+        <symbol id="i-next" viewBox="0 0 24 24"><path d="m9 6 6 6-6 6" /></symbol>
+        <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14" /></symbol>
+        <symbol id="i-search" viewBox="0 0 24 24"><circle cx="10.8" cy="10.8" r="6.8"/><path d="m16 16 4.2 4.2"/></symbol>
+        <symbol id="i-chat" viewBox="0 0 24 24"><path d="M20 11.5a8.5 8.5 0 0 1-8.5 8.5H4l1.2-4A8.5 8.5 0 1 1 20 11.5Z"/><path d="M8.5 10h7M8.5 13.5h4"/></symbol>
+        <symbol id="i-settings" viewBox="0 0 24 24"><path d="m9.3 3-.7 2.3-2 .9-2.2-.6-2 3.4L4 10.7v2.6L2.4 15l2 3.4 2.2-.6 2 .9.7 2.3h4.1l.8-2.3 2-.9 2.2.6 2-3.4-1.6-1.7v-2.6L20.4 9l-2-3.4-2.2.6-2-.9-.8-2.3Z"/><circle cx="11.4" cy="12" r="3"/></symbol>
+        <symbol id="i-up" viewBox="0 0 24 24"><path d="M12 19V5m-6 6 6-6 6 6"/></symbol>
+        <symbol id="i-mic" viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="12" rx="3"/><path d="M6 11v1a6 6 0 0 0 12 0v-1m-6 7v3m-3 0h6"/></symbol>
+        <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"/></symbol>
+        <symbol id="i-checks" viewBox="0 0 24 24"><path d="m2 12 4 4L16 6m-4 8 2 2L24 6"/></symbol>
+        <symbol id="i-lock" viewBox="0 0 24 24"><rect x="5" y="10" width="14" height="11" rx="3"/><path d="M8 10V7a4 4 0 0 1 8 0v3m-4 5v2"/></symbol>
+        <symbol id="i-file" viewBox="0 0 24 24"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9Zm0 0v6h6M8 13h8m-8 4h5"/></symbol>
+        <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M2 12h2m16 0h2M5 5l1 1m12 12 1 1M5 19l1-1M18 6l1-1"/></symbol>
+        <symbol id="i-moon" viewBox="0 0 24 24"><path d="M20 14.5A8.5 8.5 0 0 1 9.5 4 8.5 8.5 0 1 0 20 14.5Z"/></symbol>
+        <symbol id="i-model" viewBox="0 0 24 24"><rect x="5" y="5" width="14" height="14" rx="4"/><path d="M9 2v3m6-3v3M9 19v3m6-3v3M2 9h3m-3 6h3m14-6h3m-3 6h3"/><rect x="9" y="9" width="6" height="6" rx="1"/></symbol>
+        <symbol id="i-chart" viewBox="0 0 24 24"><path d="M4 3v17h17M8 16v-4m5 4V7m5 9v-6"/></symbol>
+        <symbol id="i-bell" viewBox="0 0 24 24"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4"/></symbol>
+        <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v6m0-10v.1"/></symbol>
+        <symbol id="i-wifi" viewBox="0 0 24 24"><path d="M2 8a16 16 0 0 1 20 0M5 12a11 11 0 0 1 14 0m-10 4a5 5 0 0 1 6 0m-3 4h.01"/></symbol>
+        <symbol id="i-signal" viewBox="0 0 24 24"><path d="M4 19v-3m5 3v-7m5 7V8m5 11V4" stroke-width="3"/></symbol>
+        <symbol id="i-battery" viewBox="0 0 24 24"><rect x="2" y="6" width="18" height="12" rx="3"/><path d="M23 10v4"/><rect x="5" y="9" width="12" height="6" rx="1" fill="currentColor" stroke="none"/></symbol>
+        <symbol id="w-circle" viewBox="0 0 64 64"><circle cx="32" cy="32" r="27" fill="currentColor"/><g fill="#142522" transform="rotate(-18 38 27)"><rect x="31" y="23" width="4.5" height="10" rx="2.25"/><rect x="46" y="23" width="4.5" height="10" rx="2.25"/></g></symbol>
+        <symbol id="w-pebble" viewBox="0 0 64 64"><path d="M31 6C46 4 56 17 59 33s-9 24-25 24S5 49 5 35 15 8 31 6Z" fill="currentColor"/><g fill="#201635" transform="rotate(-18 38 27)"><rect x="31" y="23" width="4.5" height="10" rx="2.25"/><rect x="46" y="23" width="4.5" height="10" rx="2.25"/></g></symbol>
+        <symbol id="w-triangle" viewBox="0 0 64 64"><path d="M26 8q6-10 12 0l23 40q6 11-7 11H10Q-3 59 3 48Z" fill="currentColor"/><g fill="#191938" transform="translate(-6 8) rotate(-18 38 27)"><rect x="31" y="23" width="4.5" height="10" rx="2.25"/><rect x="46" y="23" width="4.5" height="10" rx="2.25"/></g></symbol>
+      </defs>
+    </svg>
+
+    <div class="preview">
+      <header class="preview-header">
+        <a class="brand" href="#home" aria-label="Wisp, início do mock"><svg class="wisp" aria-hidden="true"><use href="#w-circle"/></svg>wisp</a>
+        <span class="edition">Estudo de interface / Mobile · 01</span>
+      </header>
+      <div class="review-layout">
+        <aside class="intro" aria-label="Apresentação do protótipo">
+          <span class="eyebrow">O mesmo Wisp. Mais perto.</span>
+          <h1>Seu time,<br/>no seu bolso.</h1>
+          <p>Uma tela por vez. Acompanhe seus agentes e continue a conversa de onde estiver.</p>
+          <nav class="review-nav" aria-label="Telas do mock">
+            <a href="#home"><span>01</span> Conversas <svg class="icon" aria-hidden="true"><use href="#i-next"/></svg></a>
+            <a href="#chat"><span>02</span> Dentro da conversa <svg class="icon" aria-hidden="true"><use href="#i-next"/></svg></a>
+            <a href="#details"><span>03</span> Seu Wisp <svg class="icon" aria-hidden="true"><use href="#i-next"/></svg></a>
+            <a href="#settings"><span>04</span> Ajustes <svg class="icon" aria-hidden="true"><use href="#i-next"/></svg></a>
+            <a href="#create"><span>05</span> Criar Wisp <svg class="icon" aria-hidden="true"><use href="#i-next"/></svg></a>
+          </nav>
+          <div class="prototype-note"><svg class="icon" aria-hidden="true"><use href="#i-info"/></svg>Mock navegável · dados de exemplo</div>
+        </aside>
+
+        <main class="device" aria-label="Protótipo da interface mobile do Wisp Bot">
+          <div class="status-bar" aria-hidden="true"><span>9:41</span><span class="island"></span><span class="status-icons"><svg class="icon"><use href="#i-signal"/></svg><svg class="icon"><use href="#i-wifi"/></svg><svg class="icon"><use href="#i-battery"/></svg></span></div>
+
+          <section class="screen screen-home" id="home" aria-labelledby="home-title">
+            <header class="home-header">
+              <div><h2 id="home-title">Conversas</h2><p><span class="dot online"></span> Seu time de 6 Wisps</p></div>
+              <a class="icon-button filled" href="#create" aria-label="Criar Wisp"><svg class="icon" aria-hidden="true"><use href="#i-plus"/></svg></a>
+            </header>
+            <a class="search-link" href="#search"><svg class="icon" aria-hidden="true"><use href="#i-search"/></svg><span>Buscar nas conversas</span></a>
+            <fieldset class="filter-bar"><legend class="sr-only">Filtrar conversas</legend>
+              <label class="filter-option"><input type="radio" name="filter" id="filter-all" checked/><span>Todos <small>&nbsp; 6</small></span></label>
+              <label class="filter-option"><input type="radio" name="filter" id="filter-unread"/><span>Não lidos <small>&nbsp; 2</small></span></label>
+              <label class="filter-option"><input type="radio" name="filter" id="filter-working"/><span>Em atividade</span></label>
+            </fieldset>
+            <nav class="scroll list-scroll" aria-label="Conversas com Wisps">
+              <a class="conversation-row featured" href="#chat" data-unread>
+                <span class="row-avatar"><svg class="wisp" aria-hidden="true"><use href="#w-circle"/></svg><span class="unread-dot" aria-label="Não lida"></span></span>
+                <div class="row-content"><div class="row-title"><strong>Chief of Staff</strong><time>09:41</time></div><p class="row-preview">Tudo certo. Reserva confirmada ✓</p></div>
+              </a>
+              <a class="conversation-row" href="#inbox" data-unread>
+                <span class="row-avatar"><svg class="wisp indigo" aria-hidden="true"><use href="#w-triangle"/></svg><span class="unread-dot" aria-label="Não lida"></span></span>
+                <div class="row-content"><div class="row-title"><strong>Inbox Manager</strong><time>09:38</time></div><p class="row-preview attention">Aguardando sua aprovação</p></div>
+              </a>
+              <a class="conversation-row" href="#sales" data-working>
+                <span class="row-avatar"><svg class="wisp amber" aria-hidden="true"><use href="#w-circle"/></svg></span>
+                <div class="row-content"><div class="row-title"><strong>Sales Outbound</strong><time>09:32</time></div><p class="row-preview working"><span class="dot"></span>&nbsp; Preparando os próximos contatos…</p></div>
+              </a>
+              <a class="conversation-row" href="#account">
+                <span class="row-avatar"><svg class="wisp violet" aria-hidden="true"><use href="#w-pebble"/></svg></span>
+                <div class="row-content"><div class="row-title"><strong>Account Manager</strong><time>08:56</time></div><p class="row-preview">O resumo da reunião está pronto.</p></div>
+              </a>
+              <a class="conversation-row" href="#talent">
+                <span class="row-avatar"><svg class="wisp blue" aria-hidden="true"><use href="#w-circle"/></svg></span>
+                <div class="row-content"><div class="row-title"><strong>Talent Scout</strong><time>Ontem</time></div><p class="row-preview">3 perfis que combinam com a vaga.</p></div>
+              </a>
+              <a class="conversation-row" href="#expense">
+                <span class="row-avatar"><svg class="wisp orange" aria-hidden="true"><use href="#w-circle"/></svg></span>
+                <div class="row-content"><div class="row-title"><strong>Expense Manager</strong><time>Ontem</time></div><p class="row-preview">Relatório pronto. Tudo em ordem.</p></div>
+              </a>
+              <p class="list-caption">Seis jeitos de deixar o dia mais leve.</p>
+            </nav>
+            <nav class="bottom-nav" aria-label="Navegação principal"><a href="#home" aria-current="page"><svg class="icon" aria-hidden="true"><use href="#i-chat"/></svg>Wisps</a><a href="#settings"><svg class="icon" aria-hidden="true"><use href="#i-settings"/></svg>Ajustes</a></nav>
+          </section>
+
+          <section class="screen conversation" id="chat" aria-labelledby="chat-title">
+            <header class="screen-header">
+              <a href="#home" class="icon-button" aria-label="Voltar às conversas"><svg class="icon" aria-hidden="true"><use href="#i-back"/></svg></a>
+              <svg class="wisp small" aria-hidden="true"><use href="#w-circle"/></svg>
+              <div class="header-title"><h2 id="chat-title">Chief of Staff</h2><p>Claude Sonnet · <span class="online">Pronto para ajudar</span></p></div>
+              <a href="#details" class="icon-button" aria-label="Configurações do Chief of Staff"><svg class="icon" aria-hidden="true"><use href="#i-settings"/></svg></a>
+            </header>
+            <div class="scroll transcript" tabindex="0" aria-label="Histórico de exemplo com Chief of Staff">
+              <p class="date-separator">Hoje, 09:30</p>
+              <div class="bubble">Bom dia! Duas coisas precisam de você hoje: a revisão do deck às 14h e a escolha do local do offsite.</div>
+              <div class="bubble out">Cuida do local, eu fico com o deck.</div>
+              <div class="message-meta right">09:32 <svg class="icon" aria-label="Entregue"><use href="#i-checks"/></svg></div>
+              <div class="bubble">O Marina House é a melhor opção: acomoda as 40 pessoas e ficou <strong>15% abaixo do orçamento.</strong> Seguram a data até amanhã.</div>
+              <div class="bubble out">Perfeito, pode reservar.</div>
+              <div class="message-meta right">09:35 <svg class="icon" aria-label="Entregue"><use href="#i-checks"/></svg></div>
+              <div class="task-card" aria-label="Resumo das tarefas concluídas">
+                <div class="task"><svg class="icon" aria-hidden="true"><use href="#i-check"/></svg><div><strong>Local reservado</strong><p>Marina House · sinal pago</p></div></div>
+                <div class="task"><svg class="icon" aria-hidden="true"><use href="#i-check"/></svg><div><strong>Agenda atualizada</strong><p>Convites enviados para as 40 pessoas</p></div></div>
+                <div class="task"><svg class="icon" aria-hidden="true"><use href="#i-check"/></svg><div><strong>Pendências resolvidas</strong><p>As outras duas opções foram liberadas</p></div></div>
+              </div>
+              <div class="bubble">Tudo certo. Reserva confirmada e time avisado. Você está livre até a revisão das 14h ✨</div>
+              <span class="reaction" aria-label="Uma reação de gostei">👍 <span>1</span></span>
+              <div class="message-meta">09:41</div>
+            </div>
+            <footer class="composer-area"><div class="composer"><textarea rows="1" aria-label="Mensagem para Chief of Staff, campo de demonstração" placeholder="Mensagem para Chief of Staff"></textarea><button type="button" class="icon-button" disabled aria-label="Áudio indisponível no mock"><svg class="icon" aria-hidden="true"><use href="#i-mic"/></svg></button><button type="button" class="icon-button send" disabled aria-label="Envio indisponível no mock"><svg class="icon" aria-hidden="true"><use href="#i-up"/></svg></button></div><p class="demo-caption">Prévia visual · mensagens de exemplo</p></footer>
+          </section>
+
+          <section class="screen conversation" id="inbox" aria-labelledby="inbox-title">
+            <header class="screen-header"><a href="#home" class="icon-button" aria-label="Voltar às conversas"><svg class="icon" aria-hidden="true"><use href="#i-back"/></svg></a><svg class="wisp small indigo" aria-hidden="true"><use href="#w-triangle"/></svg><div class="header-title"><h2 id="inbox-title">Inbox Manager</h2><p>Claude Sonnet · aguardando você</p></div></header>
+            <div class="scroll transcript" tabindex="0" aria-label="Histórico de exemplo com Inbox Manager">
+              <p class="date-separator">Hoje, 09:38</p><div class="bubble out">Organize os e-mails de hoje e prepare as respostas prioritárias.</div><div class="bubble">Separei os assuntos urgentes e preparei 5 rascunhos. Preciso da sua aprovação para salvar o resumo no workspace.</div>
+              <fieldset class="approval"><legend class="sr-only">Simular decisão de aprovação</legend><div class="approval-heading"><svg class="icon" aria-hidden="true"><use href="#i-lock"/></svg>Sua aprovação é necessária</div><h3>Salvar resumo da caixa de entrada</h3><p>Este Wisp quer criar um arquivo com as prioridades e os rascunhos de resposta.</p><div class="file-row"><svg class="icon" aria-hidden="true"><use href="#i-file"/></svg>resumos/inbox-hoje.md</div><div class="approval-options"><label><input type="radio" name="approval" id="approval-deny"/><span>Recusar</span></label><label class="allow"><input type="radio" name="approval" id="approval-allow"/><span>Permitir uma vez</span></label></div><div class="approval-result result-allow"><p>✓ Aprovação simulada. Nenhum arquivo foi criado.</p><a href="#home">Voltar às conversas</a></div><div class="approval-result result-deny"><p>Ação recusada nesta demonstração. Nenhum arquivo foi alterado.</p><a href="#home">Voltar às conversas</a></div></fieldset>
+              <p class="hint">A decisão acima é apenas uma simulação visual.</p>
+            </div>
+            <footer class="composer-area"><div class="composer"><textarea rows="1" aria-label="Mensagem para Inbox Manager, campo de demonstração" placeholder="Mensagem para Inbox Manager"></textarea><button type="button" class="icon-button send" disabled aria-label="Envio indisponível no mock"><svg class="icon" aria-hidden="true"><use href="#i-up"/></svg></button></div><p class="demo-caption">Prévia visual · mensagens de exemplo</p></footer>
+          </section>
+
+          <!-- Other list entries have their own small, correctly named sample conversations. -->
+          <section class="screen conversation" id="sales" aria-labelledby="sales-title">
+            <header class="screen-header"><a href="#home" class="icon-button" aria-label="Voltar às conversas"><svg class="icon" aria-hidden="true"><use href="#i-back"/></svg></a><svg class="wisp small amber" aria-hidden="true"><use href="#w-circle"/></svg><div class="header-title"><h2 id="sales-title">Sales Outbound</h2><p>Claude Sonnet · <span class="online">Em atividade</span></p></div></header>
+            <div class="scroll transcript" tabindex="0" aria-label="Histórico de exemplo com Sales Outbound"><p class="date-separator">Hoje, 09:32</p><div class="bubble out">Prepare os contatos prioritários desta semana.</div><div class="bubble">Já organizei as 120 contas por prioridade. Estou preparando uma abordagem para os 3 contatos mais promissores.</div><div class="model-tag"><span class="dot"></span>Preparando os próximos contatos…</div><p class="hint">Exemplo do estado de um Wisp em atividade.</p></div>
+            <footer class="composer-area"><div class="composer"><textarea rows="1" aria-label="Mensagem para Sales Outbound, campo de demonstração" placeholder="Mensagem para Sales Outbound"></textarea><button class="icon-button send" type="button" disabled aria-label="Envio indisponível no mock"><svg class="icon" aria-hidden="true"><use href="#i-up"/></svg></button></div><p class="demo-caption">Prévia visual · mensagens de exemplo</p></footer>
+          </section>
+          <section class="screen conversation" id="account" aria-labelledby="account-title">
+            <header class="screen-header"><a href="#home" class="icon-button" aria-label="Voltar às conversas"><svg class="icon" aria-hidden="true"><use href="#i-back"/></svg></a><svg class="wisp small violet" aria-hidden="true"><use href="#w-pebble"/></svg><div class="header-title"><h2 id="account-title">Account Manager</h2><p>Claude Sonnet · pronto para ajudar</p></div></header>
+            <div class="scroll transcript" tabindex="0" aria-label="Histórico de exemplo com Account Manager"><p class="date-separator">Hoje, 08:56</p><div class="bubble out">Pode resumir a reunião com a Globex?</div><div class="bubble">O resumo da reunião está pronto. Separei as decisões, os responsáveis e os próximos passos.</div><div class="task-card"><div class="task"><svg class="icon" aria-hidden="true"><use href="#i-check"/></svg><div><strong>Próximos passos definidos</strong><p>Proposta revisada até sexta-feira.</p></div></div><div class="task"><svg class="icon" aria-hidden="true"><use href="#i-check"/></svg><div><strong>Acompanhamento agendado</strong><p>Terça-feira, às 10h.</p></div></div></div></div>
+            <footer class="composer-area"><div class="composer"><textarea rows="1" aria-label="Mensagem para Account Manager, campo de demonstração" placeholder="Mensagem para Account Manager"></textarea><button class="icon-button send" type="button" disabled aria-label="Envio indisponível no mock"><svg class="icon" aria-hidden="true"><use href="#i-up"/></svg></button></div><p class="demo-caption">Prévia visual · mensagens de exemplo</p></footer>
+          </section>
+          <section class="screen conversation" id="talent" aria-labelledby="talent-title">
+            <header class="screen-header"><a href="#home" class="icon-button" aria-label="Voltar às conversas"><svg class="icon" aria-hidden="true"><use href="#i-back"/></svg></a><svg class="wisp small blue" aria-hidden="true"><use href="#w-circle"/></svg><div class="header-title"><h2 id="talent-title">Talent Scout</h2><p>Claude Sonnet · pronto para ajudar</p></div></header>
+            <div class="scroll transcript" tabindex="0" aria-label="Histórico de exemplo com Talent Scout"><p class="date-separator">Ontem, 16:20</p><div class="bubble out">Como está a busca pela pessoa de design?</div><div class="bubble">Encontrei 3 perfis que combinam com a vaga. Todos têm experiência com produtos digitais e design systems.</div><div class="bubble">As apresentações estão redigidas no seu tom e prontas para você revisar.</div></div>
+            <footer class="composer-area"><div class="composer"><textarea rows="1" aria-label="Mensagem para Talent Scout, campo de demonstração" placeholder="Mensagem para Talent Scout"></textarea><button class="icon-button send" type="button" disabled aria-label="Envio indisponível no mock"><svg class="icon" aria-hidden="true"><use href="#i-up"/></svg></button></div><p class="demo-caption">Prévia visual · mensagens de exemplo</p></footer>
+          </section>
+          <section class="screen conversation" id="expense" aria-labelledby="expense-title">
+            <header class="screen-header"><a href="#home" class="icon-button" aria-label="Voltar às conversas"><svg class="icon" aria-hidden="true"><use href="#i-back"/></svg></a><svg class="wisp small orange" aria-hidden="true"><use href="#w-circle"/></svg><div class="header-title"><h2 id="expense-title">Expense Manager</h2><p>Claude Sonnet · pronto para ajudar</p></div></header>
+            <div class="scroll transcript" tabindex="0" aria-label="Histórico de exemplo com Expense Manager"><p class="date-separator">Ontem, 15:10</p><div class="bubble out">Confira os recibos desta semana.</div><div class="task-card"><div class="task"><svg class="icon" aria-hidden="true"><use href="#i-check"/></svg><div><strong>9 recibos conferidos</strong><p>Nenhuma duplicidade encontrada.</p></div></div><div class="task"><svg class="icon" aria-hidden="true"><use href="#i-check"/></svg><div><strong>Relatório pronto</strong><p>Todas as despesas categorizadas.</p></div></div></div><div class="bubble">Tudo em ordem. O relatório está pronto para a sua revisão.</div></div>
+            <footer class="composer-area"><div class="composer"><textarea rows="1" aria-label="Mensagem para Expense Manager, campo de demonstração" placeholder="Mensagem para Expense Manager"></textarea><button class="icon-button send" type="button" disabled aria-label="Envio indisponível no mock"><svg class="icon" aria-hidden="true"><use href="#i-up"/></svg></button></div><p class="demo-caption">Prévia visual · mensagens de exemplo</p></footer>
+          </section>
+
+          <section class="screen" id="details" aria-labelledby="details-title">
+            <header class="screen-header"><a href="#chat" class="icon-button" aria-label="Voltar à conversa com Chief of Staff"><svg class="icon" aria-hidden="true"><use href="#i-back"/></svg></a><div class="header-title"><h2 id="details-title">Configurações do Wisp</h2></div></header>
+            <fieldset class="tabs"><legend class="sr-only">Seção de configurações do Chief of Staff</legend><label class="filter-option"><input type="radio" name="detail-tab" id="tab-general" checked/><span>Geral</span></label><label class="filter-option"><input type="radio" name="detail-tab" id="tab-model"/><span>Modelo</span></label><label class="filter-option"><input type="radio" name="detail-tab" id="tab-usage"/><span>Uso</span></label></fieldset>
+            <div class="scroll content">
+              <div class="tab-panel tab-general">
+                <div class="agent-profile"><svg class="wisp large" aria-hidden="true"><use href="#w-circle"/></svg><div><h3>Chief of Staff</h3><p>Um pouco de ordem no seu dia.</p></div></div>
+                <label class="field"><span>Nome</span><input type="text" value="Chief of Staff"/></label>
+                <label class="field"><span>Instruções</span><textarea rows="4">Organize minhas prioridades, acompanhe pendências e cuide dos detalhes para que eu possa focar no que importa.</textarea></label>
+                <div class="setting-group"><div class="setting-row"><div class="setting-copy"><strong>Notificar sobre atualizações</strong><small>Quando seu Wisp tiver novidades.</small></div><label class="switch"><input type="checkbox" checked aria-label="Notificar sobre atualizações, demonstração"/><span></span></label></div></div>
+                <h3 class="group-title">Contexto e memória</h3>
+                <div class="setting-group"><details class="setting-details"><summary class="setting-row"><svg class="icon" aria-hidden="true"><use href="#i-chat"/></svg><div class="setting-copy"><strong>Continuidade da conversa</strong><small>Renovar após 24h de inatividade</small></div><svg class="icon row-chevron" aria-hidden="true"><use href="#i-next"/></svg></summary><div class="details-body">Resume o contexto na próxima mensagem após 24 horas de inatividade, quando houver pelo menos 12.000 tokens.<p class="hint">Configuração ilustrativa do comportamento atual.</p></div></details><details class="setting-details"><summary class="setting-row"><svg class="icon" aria-hidden="true"><use href="#i-file"/></svg><div class="setting-copy"><strong>Memória salva</strong><small>Preferências que ficam com seu Wisp</small></div><svg class="icon row-chevron" aria-hidden="true"><use href="#i-next"/></svg></summary><div class="details-body"><label class="field"><span>Preferências</span><textarea rows="3">Prefiro respostas objetivas em português. Reserve as manhãs para trabalho focado.</textarea></label></div></details></div>
+              </div>
+              <div class="tab-panel tab-model"><h3 class="group-title">Modelo deste Wisp</h3><div class="model-tag"><svg class="icon" aria-hidden="true"><use href="#i-check"/></svg>Usando o modelo global</div><label class="field"><span>Provedor</span><select><option>Anthropic</option><option>OpenAI</option><option>OpenRouter</option></select><small>Opções ilustrativas para validar os campos.</small></label><label class="field"><span>Modelo</span><select><option>Claude Sonnet</option><option>Claude Opus</option></select></label><label class="field"><span>Limite de tokens de saída</span><select><option>8.192 tokens</option><option>16.384 tokens</option></select></label><div class="setting-group"><div class="setting-row"><div class="setting-copy"><strong>Usar modelo global</strong><small>Seguir a configuração geral do app.</small></div><label class="switch"><input type="checkbox" checked aria-label="Usar modelo global, demonstração"/><span></span></label></div></div><p class="hint" style="margin-top: 16px">A escolha de modelos é apenas visual neste mock.</p></div>
+              <div class="tab-panel tab-usage"><h3 class="group-title">Chief of Staff · últimos 7 dias</h3><p class="usage-total">128.450</p><p class="usage-subtitle">tokens utilizados · dados de exemplo</p><div class="usage-chart" role="img" aria-label="Distribuição ilustrativa de tokens por dia, de segunda a domingo"><span style="--height: 32%"></span><span style="--height: 60%"></span><span style="--height: 43%"></span><span style="--height: 85%"></span><span style="--height: 55%"></span><span style="--height: 72%"></span><span style="--height: 96%"></span></div><div class="chart-labels" aria-hidden="true"><span>S</span><span>T</span><span>Q</span><span>Q</span><span>S</span><span>S</span><span>D</span></div><div class="setting-group"><div class="setting-row"><div class="setting-copy"><strong>Entrada</strong></div><span class="usage-stat">84.200</span></div><div class="setting-row"><div class="setting-copy"><strong>Saída</strong></div><span class="usage-stat">24.750</span></div><div class="setting-row"><div class="setting-copy"><strong>Leitura de cache</strong></div><span class="usage-stat">19.500</span></div><div class="setting-row"><div class="setting-copy"><strong>Custo estimado</strong></div><span class="usage-stat">US$ 0,68</span></div></div><p class="hint" style="margin-top: 16px">Valores fictícios para validação da interface. Não representam consumo ou preços reais.</p></div>
+            </div>
+            <footer class="page-footer"><button type="button" class="primary-button" disabled>Salvar alterações</button><p class="demo-caption">Prévia visual · alterações não são salvas</p></footer>
+          </section>
+
+          <section class="screen" id="settings" aria-labelledby="settings-title">
+            <header class="settings-heading"><h2 class="page-title" id="settings-title">Ajustes</h2></header>
+            <div class="scroll content">
+              <div class="setting-group"><div class="setting-row"><span class="profile-letter" aria-hidden="true">GM</span><div class="setting-copy"><strong>Gustavo Miranda</strong><small>Seu espaço de trabalho</small></div></div></div>
+              <h3 class="group-title">Preferências</h3>
+              <div class="setting-group"><div class="setting-row"><svg class="icon" aria-hidden="true"><use href="#i-sun"/></svg><div class="setting-copy"><strong>Aparência</strong><small>Escolha como o Wisp aparece para você.</small></div></div><fieldset class="theme-options"><legend class="sr-only">Tema da interface</legend><label class="filter-option"><input type="radio" name="theme" id="theme-dark" checked/><span><svg class="icon" aria-hidden="true"><use href="#i-moon"/></svg>Escuro</span></label><label class="filter-option"><input type="radio" name="theme" id="theme-light"/><span><svg class="icon" aria-hidden="true"><use href="#i-sun"/></svg>Claro</span></label></fieldset><div class="setting-row"><svg class="icon" aria-hidden="true"><use href="#i-bell"/></svg><div class="setting-copy"><strong>Sons de notificação</strong><small>Controle visual de exemplo.</small></div><label class="switch"><input type="checkbox" checked aria-label="Sons de notificação, demonstração"/><span></span></label></div></div>
+              <h3 class="group-title">Inteligência artificial</h3>
+              <div class="setting-group"><details class="setting-details"><summary class="setting-row"><svg class="icon" aria-hidden="true"><use href="#i-model"/></svg><div class="setting-copy"><strong>Modelo padrão</strong><small>Anthropic · Claude Sonnet</small></div><svg class="icon row-chevron" aria-hidden="true"><use href="#i-next"/></svg></summary><div class="details-body"><label class="field"><span>Modelo global de exemplo</span><select><option>Claude Sonnet</option><option>Claude Opus</option></select><small>Os campos deste protótipo não alteram a aplicação.</small></label></div></details><details class="setting-details"><summary class="setting-row"><svg class="icon" aria-hidden="true"><use href="#i-chart"/></svg><div class="setting-copy"><strong>Uso de tokens</strong><small>Todos os Wisps · últimos 7 dias</small></div><svg class="icon row-chevron" aria-hidden="true"><use href="#i-next"/></svg></summary><div class="details-body">412.800 tokens utilizados.<br/>US$ 2,14 de custo estimado.<p class="hint">Valores fictícios da demonstração.</p></div></details></div>
+              <h3 class="group-title">Sobre esta prévia</h3><div class="setting-group"><details class="setting-details"><summary class="setting-row"><svg class="icon" aria-hidden="true"><use href="#i-info"/></svg><div class="setting-copy"><strong>Wisp para a web</strong><small>Proposta de interface mobile</small></div><svg class="icon row-chevron" aria-hidden="true"><use href="#i-next"/></svg></summary><div class="details-body">Este mock permite navegar pelas telas, trocar o tema e testar os controles visuais. Mensagens, busca e dados são exemplos. A conexão com seus Wisps e a instalação como web app ficam para a implementação.</div></details></div><p class="app-version">wisp · mobile preview 01</p>
+            </div>
+            <nav class="bottom-nav" aria-label="Navegação principal"><a href="#home"><svg class="icon" aria-hidden="true"><use href="#i-chat"/></svg>Wisps</a><a href="#settings" aria-current="page"><svg class="icon" aria-hidden="true"><use href="#i-settings"/></svg>Ajustes</a></nav>
+          </section>
+
+          <section class="screen" id="create" aria-labelledby="create-title">
+            <header class="screen-header"><a href="#home" class="icon-button" aria-label="Voltar às conversas"><svg class="icon" aria-hidden="true"><use href="#i-back"/></svg></a><div class="header-title"><h2 id="create-title">Criar Wisp</h2></div></header>
+            <div class="scroll content"><div class="create-avatar"><svg class="wisp large" aria-label="Avatar do novo Wisp"><use href="#w-circle"/></svg></div><fieldset class="color-picker"><legend class="sr-only">Cor do avatar</legend><label class="color-choice" style="--swatch: #54b9a6"><input type="radio" name="avatar-color" id="color-teal" checked aria-label="Verde"/><span></span></label><label class="color-choice" style="--swatch: #885cf5"><input type="radio" name="avatar-color" id="color-violet" aria-label="Violeta"/><span></span></label><label class="color-choice" style="--swatch: #f19d38"><input type="radio" name="avatar-color" id="color-amber" aria-label="Âmbar"/><span></span></label><label class="color-choice" style="--swatch: #3c82f6"><input type="radio" name="avatar-color" id="color-blue" aria-label="Azul"/><span></span></label><label class="color-choice" style="--swatch: #ed712e"><input type="radio" name="avatar-color" id="color-orange" aria-label="Laranja"/><span></span></label></fieldset><label class="field"><span>Nome do Wisp</span><input type="text" placeholder="Ex.: Assistente de pesquisa" autocomplete="off"/></label><label class="field"><span>O que ele deve fazer?</span><textarea rows="5" placeholder="Descreva como este Wisp pode ajudar você no dia a dia…"></textarea><small>Defina o papel, o estilo e as prioridades do seu agente.</small></label><div class="setting-group"><div class="setting-row"><svg class="icon" aria-hidden="true"><use href="#i-model"/></svg><div class="setting-copy"><strong>Modelo global</strong><small>Anthropic · Claude Sonnet</small></div><svg class="icon online" aria-hidden="true"><use href="#i-check"/></svg></div></div><p class="hint" style="margin-top: 13px">Você pode ajustar o modelo e a memória nas configurações do Wisp.</p></div>
+            <footer class="page-footer"><button type="button" class="primary-button" disabled><svg class="icon" aria-hidden="true"><use href="#i-plus"/></svg>Criar Wisp</button><p class="demo-caption">Prévia visual · nenhum agente será criado</p></footer>
+          </section>
+
+          <section class="screen" id="search" aria-labelledby="search-title">
+            <header class="screen-header"><a href="#home" class="icon-button" aria-label="Voltar às conversas"><svg class="icon" aria-hidden="true"><use href="#i-back"/></svg></a><div class="header-title"><h2 id="search-title">Buscar nas conversas</h2></div></header><label class="search-input"><svg class="icon" aria-hidden="true"><use href="#i-search"/></svg><input type="search" value="reunião" readonly aria-label="Busca de exemplo por reunião"/></label><p class="result-heading">1 resultado de exemplo para “reunião”</p><div class="scroll list-scroll"><a href="#account" class="search-result"><strong>Account Manager</strong><p>O resumo da <mark>reunião</mark> está pronto. Separei as decisões, os responsáveis e os próximos passos.</p></a><p class="list-caption">Busca ilustrativa para validar a tela de resultados.</p></div>
+          </section>
+          <div class="home-indicator" aria-hidden="true"></div>
+        </main>
+
+        <aside class="annotations" aria-label="Decisões de interface">
+          <div><span class="annotation-number">01</span><h2>Reconhecível de cara</h2><p>A mesma paleta, os mesmos avatares e a tipografia Geist da versão desktop.</p></div>
+          <div><span class="annotation-number">02</span><h2>Espaço para conversar</h2><p>A conversa ocupa a tela. Lista e configurações ficam a um toque de distância.</p></div>
+          <div><span class="annotation-number">03</span><h2>Feito para o toque</h2><p>Navegação na base, controles maiores e espaço para as áreas seguras do celular.</p></div>
+        </aside>
+      </div>
+      <footer class="canvas-footer"><span>HTML + CSS · Explore tocando nos elementos da interface</span><span>Abra no celular para ver em tela cheia ↗</span></footer>
+    </div>
+  </body>
+</html>
