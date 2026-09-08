@@ -555,7 +555,9 @@ Cada fase deve ser uma mudança revisável com critérios de aceite próprios. N
 - [x] Criar projeto Capacitor Android/iOS e armazenamento seguro de sessão.
 - [x] Configurar origem da WebView e cliente HTTPS para a URL da instância.
 - [ ] Validar background/foreground, expiração de sessão e transição de redes.
-- [ ] Criar builds instaláveis de teste e documentação de requisitos Tailscale.
+- [x] Compilar APK Android de teste e documentar requisitos Tailscale.
+- [x] Compilar aplicativo iOS para simulador na CI, incluindo o plugin Keychain.
+- [ ] Assinar e instalar o aplicativo iOS de teste em aparelho físico.
 
 **Aceite:** app instalado usa o mesmo backend, recupera resposta produzida durante suspensão e não inclui credenciais de provedor. Publicação em lojas será uma operação posterior explícita.
 
@@ -648,15 +650,18 @@ Evidências coletadas localmente em 2026-09-07:
 | Linux headless | Imagem Node 24.18.0 Debian Linux arm64 construída; smoke sem rede/sem Electron com catálogo Pi real, criação/reabertura de sessão Pi e serviço/CLI autenticados |
 | Web/PWA | Dois testes E2E aprovados, em Chromium e WebKit contra HTTPS local e servidor real: dois clientes, reconexão offline sem duplicata, histórico paginado, conflito de edição, layout de celular, cookies/CSRF, ausência de tokens no storage, cache somente de assets e logout |
 | Android | APK debug compilado com JDK 21, Android SDK 36 e plugin Keystore incluído |
+| iOS | Compilação CI para simulador aprovada em macOS, com `WispSecureSessionPlugin.swift` e `WispViewController.swift` em arm64/x86_64 |
 | CI adicionado | Testes/builds, SSH real, Chromium/WebKit, runtime Linux x64/arm64 e compilação Android/iOS |
 
 Uma revisão independente com `codex review --uncommitted` identificou dois problemas de prioridade alta: novo ID ao repetir uma admissão sem confirmação e falso bloqueio de instância após reutilização de PID. Ambos foram corrigidos e cobertos pelos testes de regressão descritos acima. A sincronização também passou a repetir snapshots quando chegam eventos durante uma leitura em andamento, preservando o cursor mais recente.
+
+A CI do PR confirmou também a instalação e o smoke do runtime independente em Linux x64/arm64. A validação com `actionlint` encontrou uma expressão de permissão inválida herdada no workflow de release; a permissão OIDC passou a ser estática no job de empacotamento, mantendo o login Azure condicionado ao Windows.
 
 Pendências de validação externa, sem simular sucesso:
 
 - O servidor de testes autorizado na tailnet foi alcançado, mas rejeitou a chave SSH disponível (`Permission denied`). A identificação de uma chave/alias autorizado foi solicitada. Não houve instalação nem alteração da tailnet. O fluxo real Tailscale SSH `check`, Serve, MagicDNS/IP e reinício do daemon permanece por executar nesse ambiente.
 - Não há host Windows nesta sessão para a matriz real OpenSSH/agent; contratos e compilação são cobertos, mas isso não substitui o teste de execução no Windows.
-- Xcode 26.3 está instalado, porém sem plataforma/simulador iOS utilizável. A tentativa `xcodebuild -downloadPlatform iOS` falhou por espaço insuficiente (8,39 GB necessários). O projeto e o build CI foram entregues; assinatura e instalação em iPhone não foram executadas.
+- A compilação iOS foi validada pela CI após o ambiente local não conseguir baixar a plataforma por espaço insuficiente. Assinatura e instalação em iPhone não foram executadas.
 - Background/foreground e transições Wi-Fi/celular/VPN em aparelhos físicos exigem dispositivos e tailnet autorizados; testes de browser/reconexão e código de lifecycle não substituem essa evidência.
 
 Essas pendências são testes de ambiente/distribuição, não atalhos na autenticação: não foi relaxada verificação de certificado/host, não foram adicionadas credenciais ao repositório, e nenhum acesso foi presumido a partir do tempo de espera.

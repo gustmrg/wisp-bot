@@ -50,7 +50,8 @@ jobs:
     runs-on: ${{ matrix.os }}
     permissions:
       contents: read
-      id-token: ${{ matrix.target == 'windows' && 'write' || 'none' }}
+      # Permissions must be static; only the Windows step requests an Azure token.
+      id-token: write
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
