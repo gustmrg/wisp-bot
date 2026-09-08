@@ -1,7 +1,7 @@
 import type { AppUpdater, UpdateInfo } from "electron-updater";
 
 import type { UpdateState } from "../../shared/contracts.js";
-import { WispBackendError } from "./backend-error.js";
+import { WispBackendError } from "../../backend/backend-error.js";
 
 type UpdateListener = (state: UpdateState) => void;
 

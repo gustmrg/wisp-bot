@@ -3,8 +3,8 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
-import { EncryptedCredentialStore, type EncryptionService } from "../electron/backend/encrypted-credential-store.js";
-import { WispBackendError } from "../electron/backend/backend-error.js";
+import { EncryptedCredentialStore, type EncryptionService } from "../backend/encrypted-credential-store.js";
+import { WispBackendError } from "../backend/backend-error.js";
 
 const directories: string[] = [];
 

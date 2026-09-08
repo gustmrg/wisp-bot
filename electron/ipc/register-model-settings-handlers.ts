@@ -6,10 +6,10 @@ import {
   type BackendResult,
   type ModelSelection,
 } from "../../shared/contracts.js";
-import { sanitizeBackendError } from "../backend/backend-error.js";
-import type { ModelService } from "../backend/model-service.js";
+import { sanitizeBackendError } from "../../backend/backend-error.js";
+import type { ModelService } from "../../backend/model-service.js";
 import type { SenderAuthorizer } from "./register-handlers.js";
-import { parseRemoveProviderCredentialRequest, parseSaveAiSettingsRequest } from "./validators.js";
+import { parseRemoveProviderCredentialRequest, parseSaveAiSettingsRequest } from "../../shared/validators.js";
 
 type HandlerIpcMain = Pick<IpcMain, "handle" | "removeHandler">;
 

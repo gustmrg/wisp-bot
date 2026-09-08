@@ -2,8 +2,8 @@ import type { IpcMain, IpcMainInvokeEvent } from "electron";
 
 import { WISP_IPC_CHANNELS, type BackendResult } from "../../shared/contracts.js";
 import type { ConversationStateView } from "../../shared/conversations.js";
-import { sanitizeBackendError } from "../backend/backend-error.js";
-import type { ConversationService } from "../backend/conversation-service.js";
+import { sanitizeBackendError } from "../../backend/backend-error.js";
+import type { ConversationService } from "../../backend/conversation-service.js";
 import type { SenderAuthorizer } from "./register-handlers.js";
 import {
   parseAnswerConversationPromptRequest,
@@ -13,7 +13,7 @@ import {
   parseInitializeConversationsRequest,
   parseMarkConversationReadRequest,
   parseUpdateConversationRequest,
-} from "./validators.js";
+} from "../../shared/validators.js";
 
 type HandlerIpcMain = Pick<IpcMain, "handle" | "removeHandler">;
 type Result = BackendResult<ConversationStateView>;

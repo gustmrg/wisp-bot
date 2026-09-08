@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { WispBackendError } from "../electron/backend/backend-error.js";
+import { WispBackendError } from "../backend/backend-error.js";
 import {
   parseApplyModelRequest,
   parseConversationRequest,
@@ -10,7 +10,7 @@ import {
   parseSaveAiSettingsRequest,
   parseSendMessageRequest,
   parseUpdateConversationRequest,
-} from "../electron/ipc/validators.js";
+} from "../shared/validators.js";
 
 describe("IPC request validators", () => {
   it("accepts valid conversation and message requests", () => {

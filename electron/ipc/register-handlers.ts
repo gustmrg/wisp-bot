@@ -8,14 +8,14 @@ import {
   type ModelSelection,
   type EmptyResult,
 } from "../../shared/contracts.js";
-import { sanitizeBackendError } from "../backend/backend-error.js";
-import type { AgentRegistry } from "../backend/agent-registry.js";
+import { sanitizeBackendError } from "../../backend/backend-error.js";
+import type { AgentRegistry } from "../../backend/agent-registry.js";
 import {
   parseContextRequest,
   parseApplyModelRequest,
   parseConversationRequest,
   parseSendMessageRequest,
-} from "./validators.js";
+} from "../../shared/validators.js";
 
 type HandlerIpcMain = Pick<IpcMain, "handle" | "removeHandler">;
 export type SenderAuthorizer = (event: IpcMainInvokeEvent) => boolean;

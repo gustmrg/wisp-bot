@@ -2,3 +2,16 @@ node_modules/
 dist/
 dist-electron/
 *.log
+dist-server/
+dist-web/
+dist-mobile/
+playwright-report/
+test-results/
+release/
+mobile/android/.gradle/
+mobile/android/local.properties
+mobile/android/**/build/
+mobile/ios/**/build/
+
+# Local deployment secrets are never source artifacts.
+deploy/docker/master.key

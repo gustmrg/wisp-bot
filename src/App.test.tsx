@@ -1,7 +1,10 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
+import { BackendProvider } from "@/features/backend/backend-provider";
+import type { BackendApi } from "../shared/backend-api";
+import { DEFAULT_PREFERENCES } from "@/lib/app-preferences";
 import type { WispApi } from "../shared/contracts";
 import type { Chat, ConversationStateView } from "../shared/conversations";
 import App from "@/App";
@@ -201,4 +204,121 @@ it("opens provider setup from an unconfigured Wisp and preserves its first draft
   await user.keyboard("{Escape}");
   expect(composer).toHaveValue("My first task");
   expect(screen.getByRole("button", { name: "Send message" })).toBeDisabled();
+});
+
+describe("remote workspace", () => {
+  function remoteApp(api: BackendApi, instanceId = "server-one", writable = true) {
+    return (
+      <BackendProvider
+        value={{
+          api,
+          instanceId,
+          remote: true,
+          writable,
+          owner: { displayName: "Remote Owner", givenName: "Remote", initials: "RO", email: "" },
+        }}
+      >
+        <App />
+      </BackendProvider>
+    );
+  }
+  it("uses the injected API without importing local history or overwriting remote policy", async () => {
+    Reflect.deleteProperty(window, "wisp");
+    window.localStorage.setItem(LEGACY_STORAGE_KEY, JSON.stringify({ chats: { atlas } }));
+    window.localStorage.setItem(
+      "wisp-bot-preferences-v1:server-one",
+      JSON.stringify({
+        ...DEFAULT_PREFERENCES,
+        autoReview: false,
+        autoReviewRules: [{ id: "old", action: "*", behavior: "block", scope: "workspace" }],
+      }),
+    );
+    const api = createApi(conversationState(false));
+    render(remoteApp(api));
+    expect(await screen.findByText("Create a Wisp to get started.")).toBeVisible();
+    expect(api.initializeConversations).not.toHaveBeenCalled();
+    expect(api.saveToolPolicy).not.toHaveBeenCalled();
+    expect(window.localStorage.getItem(LEGACY_STORAGE_KEY)).toContain("atlas");
+    expect(screen.getByText("Remote Owner")).toBeVisible();
+  });
+  it("admits a remote message with one command and no client-side history mutation", async () => {
+    const user = userEvent.setup();
+    const api = createApi(conversationState(true, { atlas }));
+    render(remoteApp(api));
+    await user.type(await screen.findByRole("textbox", { name: "Message Atlas" }), "Remote task");
+    await user.click(screen.getByRole("button", { name: "Send message" }));
+    await waitFor(() => expect(api.sendMessage).toHaveBeenCalledOnce());
+    expect(api.appendConversationMessage).not.toHaveBeenCalled();
+  });
+  it("applies snapshots from another device and releases the subscription", async () => {
+    let publish: ((state: ConversationStateView) => void) | undefined;
+    const unsubscribe = vi.fn();
+    const api: BackendApi = {
+      ...createApi(conversationState(true, { atlas })),
+      subscribeToConversationState: (listener) => {
+        publish = listener;
+        return unsubscribe;
+      },
+    };
+    // The workspace also observes snapshots for server policy; retain all listeners.
+    const listeners = new Set<(state: ConversationStateView) => void>();
+    api.subscribeToConversationState = (listener) => {
+      listeners.add(listener);
+      publish = (state) => {
+        for (const item of listeners) item(state);
+      };
+      return () => {
+        listeners.delete(listener);
+        unsubscribe();
+      };
+    };
+    const mounted = render(remoteApp(api));
+    await screen.findByRole("textbox", { name: "Message Atlas" });
+    await act(async () => publish?.(conversationState(true, { atlas: { ...atlas, name: "Updated elsewhere" } })));
+    expect(screen.getByRole("textbox", { name: "Message Updated elsewhere" })).toBeVisible();
+    mounted.unmount();
+    expect(listeners.size).toBe(0);
+    expect(unsubscribe).toHaveBeenCalled();
+  });
+  it("disables sends while disconnected and preserves the draft for the same server only", async () => {
+    const user = userEvent.setup();
+    const api = createApi(conversationState(true, { atlas }));
+    const mounted = render(remoteApp(api, "server-one", false));
+    await user.type(await screen.findByRole("textbox", { name: "Message Atlas" }), "A private draft{enter}");
+    expect(api.sendMessage).not.toHaveBeenCalled();
+    expect(screen.getByRole("button", { name: "Send message" })).toBeDisabled();
+    mounted.unmount();
+    const other = render(remoteApp(api, "server-two"));
+    expect(await screen.findByRole("textbox", { name: "Message Atlas" })).toHaveValue("");
+    other.unmount();
+    render(remoteApp(api, "server-one"));
+    expect(await screen.findByRole("textbox", { name: "Message Atlas" })).toHaveValue("A private draft");
+  });
+  it("hides desktop update controls on the web", async () => {
+    const user = userEvent.setup();
+    const api = createApi(conversationState(true));
+    render(remoteApp(api));
+    await user.click(screen.getByRole("button", { name: "Open user settings" }));
+    await user.click(screen.getByRole("button", { name: "About" }));
+    expect(screen.queryByRole("button", { name: "Check for updates" })).not.toBeInTheDocument();
+    expect(api.getUpdateState).not.toHaveBeenCalled();
+  });
+  it("navigates list, chat and details as separate screens on a phone", async () => {
+    const original = window.matchMedia;
+    vi.spyOn(window, "matchMedia").mockImplementation((query) => ({
+      ...original(query),
+      matches: query === "(max-width: 620px)",
+    }));
+    const user = userEvent.setup();
+    render(remoteApp(createApi(conversationState(true, { atlas }))));
+    await user.click(await screen.findByRole("button", { name: /Atlas/ }));
+    expect(screen.getByRole("textbox", { name: "Message Atlas" })).toBeVisible();
+    expect(screen.queryByRole("navigation", { name: "Wisps and circles" })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Open Wisp settings" }));
+    expect(screen.getByRole("button", { name: "Close details" })).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "Close details" }));
+    await user.click(screen.getByRole("button", { name: "Back to conversations" }));
+    expect(screen.getByRole("navigation", { name: "Wisps and circles" })).toBeVisible();
+    expect(screen.queryByRole("textbox", { name: "Message Atlas" })).not.toBeInTheDocument();
+  });
 });

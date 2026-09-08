@@ -13,6 +13,8 @@ export const DEFAULT_CONTEXT_POLICY: ContextPolicy = {
 };
 
 export interface ContextView {
+  /** Remote revision captured with this view; absent for local adapters. */
+  revision?: number;
   policy: ContextPolicy;
   memory: string;
   summary: string | null;
@@ -28,6 +30,7 @@ export type ContextCommand =
   | { action: "new_topic" };
 
 export interface ContextRequest {
+  expectedRevision?: number;
   conversationId: string;
   command: ContextCommand;
 }

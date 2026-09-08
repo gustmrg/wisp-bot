@@ -1,7 +1,12 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
-import type { AiSettingsView, ConversationModelView, ModelSelection } from "../../shared/contracts";
+import type {
+  AiSettingsView,
+  ConversationAgentEvent,
+  ConversationModelView,
+  ModelSelection,
+} from "../../shared/contracts";
 import { WispModelSettings } from "./wisp-model-settings";
 
 const globalModel = { providerId: "provider-a", modelId: "model-a" };
@@ -58,7 +63,7 @@ describe("WispModelSettings", () => {
     const inherit = await screen.findByRole("checkbox", { name: "Use global model" });
     await user.click(inherit);
     await user.click(screen.getByRole("combobox", { name: "Provider" }));
-    await user.click(screen.getByRole("option", { name: "Provider b" }));
+    await user.click(await screen.findByRole("option", { name: "Provider b" }));
     await user.type(screen.getByLabelText("Maximum output tokens"), "512");
     await user.click(screen.getByRole("button", { name: "Save model" }));
     await waitFor(() =>
@@ -80,5 +85,52 @@ describe("WispModelSettings", () => {
     expect(screen.getByRole("button", { name: "Save model" })).toBeDisabled();
     expect(screen.getByText(/Configure this provider's API key/)).toBeVisible();
     expect(applyModel).not.toHaveBeenCalled();
+  });
+});
+
+it("retains the edit revision when a newer model event refreshes the status view", async () => {
+  api();
+  let view: ConversationModelView = {
+    revision: 7,
+    override: globalModel,
+    effective: globalModel,
+    applied: globalModel,
+    pending: null,
+    status: "idle",
+  };
+  let onEvent: ((event: ConversationAgentEvent) => void) | undefined;
+  const getConversationModel = vi.fn(async () => ({ ok: true as const, value: view }));
+  const applyModel = vi.fn(async () => ({
+    ok: false as const,
+    error: { code: "conflict", message: "Changed on another device. Reload." },
+  }));
+  Object.assign(window.wisp, {
+    getConversationModel,
+    applyModel,
+    subscribeToAgentEvents: (listener: (event: ConversationAgentEvent) => void) => {
+      onEvent = listener;
+      return () => undefined;
+    },
+  });
+  const user = userEvent.setup();
+  render(<WispModelSettings conversationId="wisp-one" />);
+  await user.type(await screen.findByLabelText("Maximum output tokens"), "512");
+  view = { ...view, revision: 8, applied: { providerId: "provider-b", modelId: "model-b" } };
+  await act(async () => onEvent?.({ type: "conversation_status", conversationId: "wisp-one", status: "idle" }));
+  expect(await screen.findByText("Current model: provider-b / model-b")).toBeVisible();
+  await user.click(screen.getByRole("button", { name: "Save model" }));
+  expect(applyModel).toHaveBeenLastCalledWith({
+    conversationId: "wisp-one",
+    expectedRevision: 7,
+    model: { ...globalModel, maxOutputTokens: 512 },
+  });
+  await user.click(await screen.findByRole("button", { name: "Reload server settings" }));
+  await waitFor(() => expect(screen.getByLabelText("Maximum output tokens")).toHaveValue(null));
+  await user.type(screen.getByLabelText("Maximum output tokens"), "256");
+  await user.click(screen.getByRole("button", { name: "Save model" }));
+  expect(applyModel).toHaveBeenLastCalledWith({
+    conversationId: "wisp-one",
+    expectedRevision: 8,
+    model: { ...globalModel, maxOutputTokens: 256 },
   });
 });

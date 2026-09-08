@@ -1,5 +1,14 @@
-import { useCallback, useEffect, useLayoutEffect, useState } from "react";
-
+import { useCallback, useEffect, useLayoutEffect, useMemo, useState } from "react";
+import { useBackend } from "@/features/backend/backend-provider";
+import type { PersistenceStatus } from "@/features/persistence/storage-policy";
+import { usePersistedPreferences } from "@/features/persistence/use-persisted-preferences";
+import { createChatIdFactory, selectActiveChatId } from "@/features/workspace/workspace-actions";
+import { useConversationHistory } from "@/hooks/use-conversation-history";
+import { useConversations } from "@/hooks/use-conversations";
+import type { AppPreferences } from "@/lib/app-preferences";
+import type { ToolActivityView } from "@/lib/conversation-stream";
+import { applyTheme } from "@/lib/theme";
+import type { BackendError } from "../../../shared/contracts";
 import type {
   Chat,
   ChatChanges,
@@ -8,15 +17,7 @@ import type {
   ManagedConversationStatus,
   NewChat,
 } from "../../../shared/conversations";
-import type { ToolApprovalDecision, ToolApprovalRequest } from "../../../shared/tool-policy";
-import type { BackendError } from "../../../shared/contracts";
-import { usePersistedPreferences } from "@/features/persistence/use-persisted-preferences";
-import type { PersistenceStatus } from "@/features/persistence/storage-policy";
-import { createChatIdFactory, selectActiveChatId } from "@/features/workspace/workspace-actions";
-import { useConversations } from "@/hooks/use-conversations";
-import type { AppPreferences } from "@/lib/app-preferences";
-import type { ToolActivityView } from "@/lib/conversation-stream";
-import { applyTheme } from "@/lib/theme";
+import type { ToolApprovalDecision, ToolApprovalRequest, ToolPolicySettings } from "../../../shared/tool-policy";
 
 export interface WorkspaceController {
   chats: ChatCollection;
@@ -29,14 +30,18 @@ export interface WorkspaceController {
   approvals: Record<string, ReadonlyArray<ToolApprovalRequest>>;
   toolActivities: Record<string, ReadonlyArray<ToolActivityView>>;
   loading: boolean;
+  loadEarlier: () => Promise<void>;
+  hasEarlier: boolean;
+  loadingHistory: boolean;
+  historyError?: string;
   error: string | null;
   preferences: AppPreferences;
   persistenceStatus: PersistenceStatus;
   persistenceError: string | null;
   selectChat: (chatId: ChatId) => void;
   createChat: (chat: NewChat) => Promise<boolean>;
-  updateActiveChat: (changes: ChatChanges) => Promise<boolean>;
-  deleteActiveChat: () => Promise<boolean>;
+  updateActiveChat: (changes: ChatChanges, revision?: number) => Promise<boolean>;
+  deleteActiveChat: (revision?: number) => Promise<boolean>;
   sendMessage: (text: string) => Promise<boolean>;
   answerPrompt: (messageId: string | undefined, answer: string) => Promise<boolean>;
   retryMessage: (messageId: string | undefined) => Promise<boolean>;
@@ -46,39 +51,65 @@ export interface WorkspaceController {
 }
 
 export function useWorkspaceController(): WorkspaceController {
+  const { api, remote } = useBackend();
   const conversations = useConversations();
   const persistedPreferences = usePersistedPreferences();
-  const { preferences } = persistedPreferences;
+  const [toolPolicy, setToolPolicy] = useState<ToolPolicySettings>();
+  const preferences = useMemo(
+    () =>
+      toolPolicy
+        ? {
+            ...persistedPreferences.preferences,
+            autoReview: toolPolicy.autoReview,
+            autoReviewRules: [...toolPolicy.rules],
+          }
+        : persistedPreferences.preferences,
+    [persistedPreferences.preferences, toolPolicy],
+  );
+  const acceptPolicy = useCallback((next: ToolPolicySettings) => {
+    setToolPolicy((current) =>
+      current?.revision !== undefined && next.revision !== undefined && current.revision > next.revision
+        ? current
+        : next,
+    );
+  }, []);
   const [activeChatId, setActiveChatId] = useState<ChatId>("");
-  const [toolPolicyLoaded, setToolPolicyLoaded] = useState(false);
+  const [policyError, setPolicyError] = useState<string | null>(null);
   const [createChatId] = useState(createChatIdFactory);
-  const activeChat = conversations.chats[activeChatId];
+  const history = useConversationHistory(conversations.chats[activeChatId]);
+  const activeChat = history.chat;
 
   useLayoutEffect(() => applyTheme(preferences.theme), [preferences.theme]);
 
   useEffect(() => {
     let cancelled = false;
-    void window.wisp.getToolPolicy().then((result) => {
-      if (cancelled) return;
-      if (result.ok) {
-        persistedPreferences.setPreferences((current) => {
-          const backendIsDefault = result.value.autoReview && result.value.rules.length === 0;
-          const localHasPolicy = !current.autoReview || current.autoReviewRules.length > 0;
-          if (backendIsDefault && localHasPolicy) return current;
-          return { ...current, autoReview: result.value.autoReview, autoReviewRules: [...result.value.rules] };
-        });
+    async function loadPolicy() {
+      try {
+        const result = await api.getToolPolicy();
+        if (cancelled) return;
+        if (!result.ok) {
+          setPolicyError(result.error.message);
+          return;
+        }
+        acceptPolicy(result.value);
+        persistedPreferences.setPreferences((current) =>
+          current.autoReview === result.value.autoReview &&
+          JSON.stringify(current.autoReviewRules) === JSON.stringify(result.value.rules)
+            ? current
+            : { ...current, autoReview: result.value.autoReview, autoReviewRules: [...result.value.rules] },
+        );
+        setPolicyError(null);
+      } catch {
+        if (!cancelled) setPolicyError("Could not load the server tool policy.");
       }
-      setToolPolicyLoaded(true);
-    });
+    }
+    void loadPolicy();
+    const unsubscribe = remote ? api.subscribeToConversationState?.(() => void loadPolicy()) : undefined;
     return () => {
       cancelled = true;
+      unsubscribe?.();
     };
-  }, [persistedPreferences.setPreferences]);
-
-  useEffect(() => {
-    if (!toolPolicyLoaded) return;
-    void window.wisp.saveToolPolicy({ autoReview: preferences.autoReview, rules: preferences.autoReviewRules });
-  }, [preferences.autoReview, preferences.autoReviewRules, toolPolicyLoaded]);
+  }, [api, remote, acceptPolicy, persistedPreferences.setPreferences]);
 
   useEffect(() => {
     if (!conversations.chats[activeChatId]) {
@@ -131,13 +162,14 @@ export function useWorkspaceController(): WorkspaceController {
   );
 
   const updateActiveChat = useCallback(
-    (changes: ChatChanges): Promise<boolean> =>
-      activeChatId ? conversations.update(activeChatId, changes) : Promise.resolve(false),
+    (changes: ChatChanges, revision?: number): Promise<boolean> =>
+      activeChatId ? conversations.update(activeChatId, changes, revision) : Promise.resolve(false),
     [activeChatId, conversations.update],
   );
 
   const deleteActiveChat = useCallback(
-    (): Promise<boolean> => (activeChatId ? conversations.delete(activeChatId) : Promise.resolve(false)),
+    (revision?: number): Promise<boolean> =>
+      activeChatId ? conversations.delete(activeChatId, revision) : Promise.resolve(false),
     [activeChatId, conversations.delete],
   );
 
@@ -170,8 +202,9 @@ export function useWorkspaceController(): WorkspaceController {
     async (request: ToolApprovalRequest, decision: ToolApprovalDecision): Promise<boolean> => {
       const resolved = await conversations.resolveApproval(request, decision);
       if (!resolved || decision !== "block") return resolved;
-      const policy = await window.wisp.getToolPolicy();
+      const policy = await api.getToolPolicy();
       if (policy.ok) {
+        acceptPolicy(policy.value);
         persistedPreferences.setPreferences((current) => ({
           ...current,
           autoReview: policy.value.autoReview,
@@ -180,12 +213,60 @@ export function useWorkspaceController(): WorkspaceController {
       }
       return resolved;
     },
-    [conversations.resolveApproval, persistedPreferences.setPreferences],
+    [api, conversations.resolveApproval, acceptPolicy, persistedPreferences.setPreferences],
   );
 
   const updatePreferences = useCallback(
-    (next: AppPreferences): void => persistedPreferences.setPreferences(next),
-    [persistedPreferences.setPreferences],
+    (next: AppPreferences): void => {
+      const policyChanged =
+        next.autoReview !== preferences.autoReview ||
+        JSON.stringify(next.autoReviewRules) !== JSON.stringify(preferences.autoReviewRules);
+      // Device preferences never implicitly write the server's tool policy.
+      persistedPreferences.setPreferences({
+        ...next,
+        autoReview: preferences.autoReview,
+        autoReviewRules: preferences.autoReviewRules,
+      });
+      if (!policyChanged) return;
+      if (remote && !toolPolicy) {
+        setPolicyError("The server tool policy is still loading. Try again after it loads.");
+        return;
+      }
+      void api
+        .saveToolPolicy({ autoReview: next.autoReview, rules: next.autoReviewRules }, toolPolicy?.revision)
+        .then(async (result) => {
+          if (result.ok) {
+            acceptPolicy(result.value);
+            persistedPreferences.setPreferences((current) => ({
+              ...current,
+              autoReview: result.value.autoReview,
+              autoReviewRules: [...result.value.rules],
+            }));
+            setPolicyError(null);
+          } else {
+            setPolicyError(result.error.message);
+            const current = await api.getToolPolicy();
+            if (current.ok) {
+              acceptPolicy(current.value);
+              persistedPreferences.setPreferences((value) => ({
+                ...value,
+                autoReview: current.value.autoReview,
+                autoReviewRules: [...current.value.rules],
+              }));
+            }
+          }
+        })
+        .catch(() => setPolicyError("Could not save the server tool policy."));
+    },
+    [
+      api,
+      remote,
+      toolPolicy,
+      acceptPolicy,
+      preferences.autoReview,
+      preferences.autoReviewRules,
+      persistedPreferences.setPreferences,
+    ],
   );
 
   return {
@@ -199,10 +280,14 @@ export function useWorkspaceController(): WorkspaceController {
     approvals: conversations.approvals,
     toolActivities: conversations.toolActivities,
     loading: conversations.loading,
+    loadEarlier: history.loadEarlier,
+    hasEarlier: history.hasEarlier,
+    loadingHistory: history.loadingHistory,
+    historyError: history.historyError,
     error: conversations.error,
     preferences,
     persistenceStatus: persistedPreferences.status,
-    persistenceError: persistedPreferences.error ?? conversations.error,
+    persistenceError: policyError ?? persistedPreferences.error ?? conversations.error,
     selectChat,
     createChat,
     updateActiveChat,

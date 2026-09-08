@@ -18,7 +18,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 22.19.0
+          node-version: 24.18.0
           cache: npm
 
       - name: Install dependencies
@@ -38,3 +38,63 @@ jobs:
 
       - name: Build
         run: npm run build
+
+      - name: Install browser for integration tests
+        run: npx playwright install --with-deps chromium webkit
+
+      - name: Browser integration tests
+        run: npm run test:e2e
+
+      - name: Install isolated SSH test prerequisites
+        run: sudo apt-get update && sudo apt-get install -y openssh-server && sudo mkdir -p /run/sshd
+
+      - name: Real OpenSSH transport integration
+        run: sudo env PATH="$PATH" WISP_TEST_SSHD=1 "$(command -v node)" node_modules/vitest/vitest.mjs run --project node tests/ssh-tunnel-integration.test.ts
+
+      - name: Build server runtime package
+        run: npm run dist:server
+
+  native-mobile:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.18.0
+          cache: npm
+      - uses: actions/setup-java@v4
+        if: runner.os == 'Linux'
+        with:
+          distribution: temurin
+          java-version: '21'
+      - run: npm ci
+      - run: npm run mobile:sync
+      - name: Build Android debug application
+        if: runner.os == 'Linux'
+        working-directory: mobile/android
+        run: ./gradlew assembleDebug
+      - name: Compile iOS simulator application
+        if: runner.os == 'macOS'
+        run: xcodebuild -project mobile/ios/App/App.xcodeproj -scheme App -configuration Debug -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO build
+
+  linux-runtime:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, ubuntu-24.04-arm]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.18.0
+          cache: npm
+      - run: npm ci
+      - run: npm run dist:server
+      - run: npm ci --omit=dev --prefix release/server
+      - name: Start standalone runtime without Electron
+        run: node scripts/server-runtime-smoke.mjs release/server

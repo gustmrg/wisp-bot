@@ -2,8 +2,8 @@ import { describe, expect, it } from "vitest";
 
 import type { SessionEntry } from "@earendil-works/pi-coding-agent";
 
-import { buildSessionReport, summarizeToolArguments } from "../electron/backend/pi-session-report.js";
-import type { ModelPricing } from "../electron/backend/model-pricing-service.js";
+import { buildSessionReport, summarizeToolArguments } from "../backend/pi-session-report.js";
+import type { ModelPricing } from "../backend/model-pricing-service.js";
 
 const WORKSPACE = "/wisp/workspaces/session-1";
 const PRICING: ModelPricing = {

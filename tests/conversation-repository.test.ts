@@ -4,7 +4,7 @@ import path from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import { ConversationRepository } from "../electron/backend/conversation-repository.js";
+import { ConversationRepository } from "../backend/conversation-repository.js";
 import type { Chat } from "../shared/conversations.js";
 
 function chat(id: string, circle = false): Chat {

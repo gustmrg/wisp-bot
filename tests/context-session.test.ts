@@ -3,7 +3,7 @@ import path from "node:path";
 import os from "node:os";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AgentSession } from "@earendil-works/pi-coding-agent" with { "resolution-mode": "import" };
-import { ContextSession } from "../electron/backend/context-session.js";
+import { ContextSession } from "../backend/context-session.js";
 import { DEFAULT_CONTEXT_POLICY } from "../shared/context-policy.js";
 
 const directories: string[] = [];

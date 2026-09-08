@@ -1,8 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { AgentIpcController, registerAgentHandlers } from "../electron/ipc/register-handlers.js";
-import { AgentRegistry } from "../electron/backend/agent-registry.js";
-import { FakeConversationAgentFactory } from "../electron/backend/fake-conversation-agent.js";
+import { AgentRegistry } from "../backend/agent-registry.js";
+import { FakeConversationAgentFactory } from "../backend/fake-conversation-agent.js";
 import { WISP_IPC_CHANNELS, type ConversationAgentEvent } from "../shared/contracts.js";
 
 describe("AgentIpcController", () => {

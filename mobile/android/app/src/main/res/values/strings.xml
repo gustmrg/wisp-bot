@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Wisp Bot</string>
+    <string name="title_activity_main">Wisp Bot</string>
+    <string name="package_name">com.gustavomiranda.wispbot</string>
+    <string name="custom_url_scheme">com.gustavomiranda.wispbot</string>
+</resources>

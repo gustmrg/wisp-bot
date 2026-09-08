@@ -1,30 +1,21 @@
-import { app, BrowserWindow, dialog, ipcMain, nativeTheme, session, type IpcMainInvokeEvent } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, nativeTheme, session, shell, type IpcMainInvokeEvent } from "electron";
 import { autoUpdater } from "electron-updater";
 import path from "node:path";
+import { hostname, userInfo } from "node:os";
 
 import { WISP_IPC_CHANNELS, type SequencedConversationAgentEvent } from "../shared/contracts.js";
-import { DEMO_CURRENT_USER } from "../shared/current-user.js";
-import { AgentRegistry } from "./backend/agent-registry.js";
-import { selectAgentMode } from "./backend/agent-mode.js";
-import { ConversationRepository } from "./backend/conversation-repository.js";
-import { ConversationService } from "./backend/conversation-service.js";
-import type { ConversationAgentFactory } from "./backend/conversation-agent.js";
-import { FakeConversationAgentFactory } from "./backend/fake-conversation-agent.js";
-import { ModelPricingService } from "./backend/model-pricing-service.js";
-import { ModelService } from "./backend/model-service.js";
-import { SessionReportService } from "./backend/session-report-service.js";
-import { PiConversationAgentFactory, SdkPiSessionFactory } from "./backend/pi-conversation-agent.js";
+import { CONNECTION_IPC_CHANNELS } from "../shared/connections.js";
+import { REMOTE_STATE_CHANNEL } from "../shared/remote-protocol.js";
+import { createBackend } from "../backend/bootstrap.js";
+import { selectAgentMode } from "../backend/agent-mode.js";
 import { SafeStorageEncryption } from "./backend/safe-storage-encryption.js";
-import { StructuredLogger } from "./backend/structured-logger.js";
-import { ToolAuthorizationBroker } from "./backend/tool-authorization-broker.js";
-import { ToolAuditStore } from "./backend/tool-audit-store.js";
-import { ToolPolicyStore } from "./backend/tool-policy-store.js";
+import { StructuredLogger } from "../backend/structured-logger.js";
 import { UpdateService } from "./backend/update-service.js";
-import { registerAgentHandlers } from "./ipc/register-handlers.js";
-import { registerConversationHandlers } from "./ipc/register-conversation-handlers.js";
-import { registerModelSettingsHandlers } from "./ipc/register-model-settings-handlers.js";
-import { registerSessionReportHandlers } from "./ipc/register-session-report-handlers.js";
-import { registerToolPolicyHandlers } from "./ipc/register-tool-policy-handlers.js";
+import { ConnectionManager } from "./connections/connection-manager.js";
+import { ConnectionProfileStore } from "./connections/profile-store.js";
+import { OpenSshTransport } from "./connections/ssh-tunnel.js";
+import { registerBackendHandlers } from "./ipc/register-backend-handlers.js";
+import { registerConnectionHandlers } from "./ipc/register-connection-handlers.js";
 import { registerUpdateHandlers } from "./ipc/register-update-handlers.js";
 import {
   isAllowedPermission,
@@ -122,24 +113,13 @@ async function bootstrap(): Promise<void> {
     );
   });
   nativeTheme.themeSource = "system";
-  const modelService = await ModelService.create({
-    dataDirectory: path.join(app.getPath("userData"), "backend"),
-    encryption: new SafeStorageEncryption(),
-  });
   const logger = new StructuredLogger();
-  autoUpdater.channel = app.getVersion().includes("-beta.") ? "beta" : "latest";
-  const updateService = new UpdateService(autoUpdater, app.getVersion(), app.isPackaged);
-  const unsubscribeUpdateState = updateService.subscribe((state) => {
+  const broadcast = (channel: string, value: unknown): void => {
     for (const window of BrowserWindow.getAllWindows()) {
-      if (!window.isDestroyed()) window.webContents.send(WISP_IPC_CHANNELS.updateState, state);
+      if (!window.isDestroyed()) window.webContents.send(channel, value);
     }
-  });
-  const toolPolicyStore = new ToolPolicyStore(path.join(app.getPath("userData"), "backend", "tool-policy.json"));
-  await toolPolicyStore.load();
-  let conversationService: ConversationService | undefined;
-  let agentRegistry: AgentRegistry | undefined;
+  };
   const publishAgentEvent = (event: SequencedConversationAgentEvent): void => {
-    conversationService?.handleAgentEvent(event);
     if (event.type === "conversation_error") {
       logger.warn("conversation_error", {
         conversationId: event.conversationId,
@@ -147,68 +127,43 @@ async function bootstrap(): Promise<void> {
         code: event.error.code,
         retryable: event.error.retryable,
       });
-    } else if (event.type === "tool_approval_requested" || event.type === "tool_approval_resolved") {
-      logger.info(event.type, {
-        conversationId: event.conversationId,
-        approvalId: event.type === "tool_approval_requested" ? event.request.approvalId : event.approvalId,
-      });
     }
-    for (const window of BrowserWindow.getAllWindows()) {
-      if (!window.isDestroyed()) window.webContents.send(WISP_IPC_CHANNELS.agentEvent, event);
-    }
+    broadcast(WISP_IPC_CHANNELS.agentEvent, event);
   };
-  const toolAuthorizationBroker = new ToolAuthorizationBroker(
-    toolPolicyStore,
-    (event) => agentRegistry?.publishExternalEvent(event),
-    {
-      selectWindowId: () => {
-        const window =
-          BrowserWindow.getFocusedWindow() ??
-          BrowserWindow.getAllWindows().find((candidate) => !candidate.isDestroyed());
-        return window?.webContents.id ?? null;
-      },
-      audit: new ToolAuditStore(path.join(app.getPath("userData"), "backend", "tool-audit.jsonl")),
-    },
-  );
-  const agentFactory: ConversationAgentFactory =
-    selectAgentMode(app.isPackaged, process.env.WISP_AGENT_MODE) === "fake"
-      ? new FakeConversationAgentFactory({ latencyMs: 350 })
-      : new PiConversationAgentFactory(
-          new SdkPiSessionFactory(modelService.getModelRuntime(), toolAuthorizationBroker),
-        );
-  agentRegistry = new AgentRegistry(
-    agentFactory,
-    publishAgentEvent,
-    (conversationId) => toolAuthorizationBroker.cancelConversation(conversationId),
-    { validateModel: (selection) => modelService.validateConversationSelection(selection) },
-  );
-  const conversationRepository = new ConversationRepository({
+  const encryption = new SafeStorageEncryption();
+  const local = await createBackend({
     dataDirectory: path.join(app.getPath("userData"), "backend"),
-    userName: DEMO_CURRENT_USER.givenName,
+    encryption,
+    userName: userInfo().username,
+    agentMode: selectAgentMode(app.isPackaged, process.env.WISP_AGENT_MODE),
+    fakeLatencyMs: 350,
   });
-  conversationService = new ConversationService(conversationRepository, agentRegistry, () =>
-    toolAuthorizationBroker.listPending(),
+  const connectionsDirectory = path.join(app.getPath("userData"), "connections");
+  const profiles = new ConnectionProfileStore(connectionsDirectory, encryption);
+  await profiles.load();
+  const manager = new ConnectionManager(
+    local.api,
+    profiles,
+    new OpenSshTransport(connectionsDirectory),
+    (url) => shell.openExternal(url),
+    `Wisp desktop (${hostname()})`,
   );
-  await conversationService.start(await modelService.getSelection());
-  const sessionReportHandlers = registerSessionReportHandlers(
-    ipcMain,
-    new SessionReportService(
-      conversationRepository,
-      new ModelPricingService({
-        cacheFilePath: path.join(app.getPath("userData"), "backend", "model-pricing.json"),
-      }),
-    ),
-    isTrustedIpcSender,
-  );
-  const agentHandlers = registerAgentHandlers(ipcMain, agentRegistry, isTrustedIpcSender, async (id, model) => {
-    if (model) await modelService.validateConversationSelection(model);
-    await conversationService.applyConversationModel(id, model);
-  });
-  const conversationHandlers = registerConversationHandlers(ipcMain, conversationService, isTrustedIpcSender);
-  const modelSettingsHandlers = registerModelSettingsHandlers(ipcMain, modelService, isTrustedIpcSender, (selection) =>
-    conversationService.applyModel(selection),
-  );
-  const toolPolicyHandlers = registerToolPolicyHandlers(ipcMain, toolAuthorizationBroker, isTrustedIpcSender);
+  const subscriptions = [
+    local.api.subscribeToAgentEvents((event) => {
+      if (manager.getState().profileId === "local") publishAgentEvent(event);
+    }),
+    local.api.subscribeToConversationState!((state) => {
+      if (manager.getState().profileId === "local") broadcast(REMOTE_STATE_CHANNEL, state);
+    }),
+    manager.subscribe((state) => broadcast(CONNECTION_IPC_CHANNELS.state, state)),
+    manager.subscribeToAgentEvents(publishAgentEvent),
+    manager.subscribeToConversationState((state) => broadcast(REMOTE_STATE_CHANNEL, state)),
+  ];
+  autoUpdater.channel = app.getVersion().includes("-beta.") ? "beta" : "latest";
+  const updateService = new UpdateService(autoUpdater, app.getVersion(), app.isPackaged);
+  subscriptions.push(updateService.subscribe((state) => broadcast(WISP_IPC_CHANNELS.updateState, state)));
+  const backendHandlers = registerBackendHandlers(ipcMain, () => manager.getBackend(), isTrustedIpcSender);
+  const connectionHandlers = registerConnectionHandlers(ipcMain, manager, isTrustedIpcSender);
   const updateHandlers = registerUpdateHandlers(ipcMain, updateService, isTrustedIpcSender);
   let backendDisposed = false;
   let backendDisposing = false;
@@ -217,14 +172,13 @@ async function bootstrap(): Promise<void> {
     event.preventDefault();
     if (backendDisposing) return;
     backendDisposing = true;
-    toolPolicyHandlers.dispose();
+    backendHandlers.dispose();
+    connectionHandlers.dispose();
     updateHandlers.dispose();
-    unsubscribeUpdateState();
-    toolAuthorizationBroker.dispose();
-    modelSettingsHandlers.dispose();
-    sessionReportHandlers.dispose();
-    conversationHandlers.dispose();
-    void agentHandlers.dispose().finally(() => {
+    for (const unsubscribe of subscriptions) unsubscribe();
+    // Remote sessions belong to the server; disconnecting disposes only local transport resources.
+    manager.dispose();
+    void local.dispose().finally(() => {
       backendDisposed = true;
       app.quit();
     });

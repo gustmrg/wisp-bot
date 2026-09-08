@@ -1,17 +1,16 @@
-import { WispContextSettings } from "@/components/wisp-context-settings";
-import { useState, type ReactNode } from "react";
-
+import { type ReactNode, useEffect, useState } from "react";
 import type { WispChat, WispChatChanges } from "@/chat-data";
-import { WispModelSettings } from "@/components/wisp-model-settings";
-import { WispSettingsFields } from "@/components/wisp-settings-fields";
-import { WispSessionReportSection } from "@/components/wisp-session-report";
-import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { WispContextSettings } from "@/components/wisp-context-settings";
+import { WispModelSettings } from "@/components/wisp-model-settings";
+import { WispSessionReportSection } from "@/components/wisp-session-report";
+import { WispSettingsFields } from "@/components/wisp-settings-fields";
 
 interface WispDetailsProps {
   chat: WispChat;
   generalActions?: ReactNode;
-  onChange: (changes: WispChatChanges) => Promise<boolean> | void;
+  onChange: (changes: WispChatChanges, expectedRevision?: number) => Promise<boolean> | void;
 }
 
 export function WispDetails({ chat, onChange, generalActions }: WispDetailsProps) {
@@ -20,6 +19,14 @@ export function WispDetails({ chat, onChange, generalActions }: WispDetailsProps
   const [draft, setDraft] = useState(chat);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [refreshAfterSave, setRefreshAfterSave] = useState(false);
+  useEffect(() => {
+    if (!refreshAfterSave) return;
+    // The mutation response replaces the parent snapshot before onChange resolves.
+    // Refresh fields and revision together, including any subsequent server update.
+    setDraft(chat);
+    setRefreshAfterSave(false);
+  }, [chat, refreshAfterSave]);
   const dirty =
     draft.name !== chat.name ||
     draft.label !== chat.label ||
@@ -29,12 +36,18 @@ export function WispDetails({ chat, onChange, generalActions }: WispDetailsProps
     draft.shape !== chat.shape ||
     draft.notifyOnUpdatesEnabled !== chat.notifyOnUpdatesEnabled;
 
+  function reloadFromServer() {
+    // Chat is the most recent authoritative snapshot; the draft retains its previous revision until this action.
+    setDraft(chat);
+    setError("");
+  }
+
   async function save() {
     const name = draft.name.trim() || "Untitled";
     setSaving(true);
     setError("");
     try {
-      const saved = await onChange({
+      const changes: WispChatChanges = {
         kind: "wisp",
         name,
         label: draft.label,
@@ -43,12 +56,13 @@ export function WispDetails({ chat, onChange, generalActions }: WispDetailsProps
         avatarImage: draft.avatarImage,
         shape: draft.shape,
         notifyOnUpdatesEnabled: draft.notifyOnUpdatesEnabled,
-      });
+      };
+      const saved = await (draft.revision === undefined ? onChange(changes) : onChange(changes, draft.revision));
       if (saved === false) {
         setError("Could not save Wisp settings.");
         return;
       }
-      setDraft((current) => ({ ...current, name }));
+      setRefreshAfterSave(true);
     } catch {
       setError("Could not save Wisp settings.");
     } finally {
@@ -75,10 +89,12 @@ export function WispDetails({ chat, onChange, generalActions }: WispDetailsProps
       </div>
       <TabsContent value="general" keepMounted className="flex min-h-0 flex-col overflow-hidden">
         <div className="min-h-0 flex-1 overflow-y-auto p-3.5">
-          <WispSettingsFields
-            settings={draft}
-            onChange={(changes) => setDraft((current) => ({ ...current, ...changes }))}
-          />
+          <fieldset disabled={saving} className="min-w-0 border-0 p-0">
+            <WispSettingsFields
+              settings={draft}
+              onChange={(changes) => setDraft((current) => ({ ...current, ...changes }))}
+            />
+          </fieldset>
           <WispContextSettings conversationId={chat.id} />
           {generalActions ? (
             <div className="mt-5 flex flex-col gap-2 border-t border-border pt-4">{generalActions}</div>
@@ -89,6 +105,16 @@ export function WispDetails({ chat, onChange, generalActions }: WispDetailsProps
             <p className="mb-3 text-sm text-destructive" role="alert">
               {error}
             </p>
+          ) : null}
+          {chat.revision !== undefined && chat.revision !== draft.revision ? (
+            <p className="mb-3 text-sm text-dim" role="status">
+              This Wisp changed on the server. Reload before saving your changes.
+            </p>
+          ) : null}
+          {error || (chat.revision !== undefined && chat.revision !== draft.revision) ? (
+            <Button className="mb-2 w-full" variant="outline" disabled={saving} onClick={reloadFromServer}>
+              Reload server settings
+            </Button>
           ) : null}
           <Button className="w-full" type="button" disabled={!dirty || saving} onClick={() => void save()}>
             {saving ? "Saving…" : "Save changes"}

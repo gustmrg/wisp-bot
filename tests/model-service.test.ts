@@ -3,10 +3,10 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { AiSettingsStore } from "../electron/backend/ai-settings-store.js";
-import { WispBackendError } from "../electron/backend/backend-error.js";
-import { EncryptedCredentialStore, type EncryptionService } from "../electron/backend/encrypted-credential-store.js";
-import { ModelService, type ModelRuntimeLike } from "../electron/backend/model-service.js";
+import { AiSettingsStore } from "../backend/ai-settings-store.js";
+import { WispBackendError } from "../backend/backend-error.js";
+import { EncryptedCredentialStore, type EncryptionService } from "../backend/encrypted-credential-store.js";
+import { ModelService, type ModelRuntimeLike } from "../backend/model-service.js";
 
 const directories: string[] = [];
 

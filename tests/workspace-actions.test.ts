@@ -1,11 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { Chat } from "../shared/conversations.js";
-import {
-  applyWorkspaceAction,
-  type ConversationRecord,
-  type WorkspaceRecords,
-} from "../electron/backend/workspace-actions.js";
+import { applyWorkspaceAction, type ConversationRecord, type WorkspaceRecords } from "../backend/workspace-actions.js";
 
 function wisp(id: string, overrides: Partial<Chat> = {}): Chat {
   return {

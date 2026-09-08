@@ -45,7 +45,7 @@ function Sidebar({
   return (
     <>
       <aside
-        className="group/sidebar relative z-[2] flex min-h-0 min-w-(--sidebar-min-width) w-(--sidebar-width) flex-none flex-col overflow-hidden bg-sidebar transition-[width] duration-[180ms] max-[620px]:data-[collapsed=false]:w-(--sidebar-mobile-expanded-width)!"
+        className="group/sidebar relative z-[2] flex min-h-0 min-w-(--sidebar-min-width) w-(--sidebar-width) flex-none flex-col overflow-hidden bg-sidebar transition-[width] duration-[180ms] max-[620px]:w-full! max-[620px]:min-w-0!"
         data-collapsed={collapsed}
         style={sidebarLayoutStyle(width, collapsed)}
       >

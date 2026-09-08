@@ -4,8 +4,8 @@ import path from "node:path";
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { ConversationAgentContext } from "../electron/backend/conversation-agent.js";
-import type { ModelRuntimeLike } from "../electron/backend/model-service.js";
+import type { ConversationAgentContext } from "../backend/conversation-agent.js";
+import type { ModelRuntimeLike } from "../backend/model-service.js";
 
 const sdk = vi.hoisted(() => {
   const session = {
@@ -72,7 +72,7 @@ import {
   excludeOpenRouterReasoning,
   sanitizeWorkspacePath,
   SdkPiSessionFactory,
-} from "../electron/backend/pi-conversation-agent.js";
+} from "../backend/pi-conversation-agent.js";
 
 describe("SdkPiSessionFactory", () => {
   beforeEach(() => {

@@ -1,0 +1,28 @@
+services:
+  wisp:
+    build:
+      context: ../..
+      dockerfile: deploy/docker/Dockerfile
+    restart: unless-stopped
+    stop_grace_period: 45s
+    init: true
+    ports:
+      - "127.0.0.1:8787:8787"
+    environment:
+      WISP_MASTER_KEY_FILE: /run/secrets/master_key
+      WISP_OWNER_NAME: ${WISP_OWNER_NAME:-Owner}
+      WISP_TIMEZONE: ${WISP_TIMEZONE:-UTC}
+      WISP_PUBLIC_ORIGIN: ${WISP_PUBLIC_ORIGIN:-}
+      WISP_ALLOWED_ORIGINS: ${WISP_ALLOWED_ORIGINS:-}
+    volumes:
+      - wisp-data:/data
+    secrets:
+      - master_key
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+secrets:
+  master_key:
+    file: ./master.key
+volumes:
+  wisp-data:

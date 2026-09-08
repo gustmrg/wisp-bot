@@ -1,0 +1,17 @@
+// Merge with your existing tailnet policy; never replace it blindly.
+// Replace the example identity and tag with those owned by your tailnet.
+{
+  "tagOwners": { "tag:wisp": ["autogroup:admin"] },
+  "grants": [
+    { "src": ["you@example.com"], "dst": ["tag:wisp"], "ip": ["tcp:22", "tcp:443"] }
+  ],
+  "ssh": [
+    {
+      "action": "check",
+      "src": ["you@example.com"],
+      "dst": ["tag:wisp"],
+      "users": ["wisp"],
+      "checkPeriod": "12h"
+    }
+  ]
+}

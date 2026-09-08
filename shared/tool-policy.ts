@@ -9,6 +9,8 @@ export interface ToolPolicyRule {
 }
 
 export interface ToolPolicySettings {
+  /** Remote revision captured with this view; absent for local adapters. */
+  revision?: number;
   autoReview: boolean;
   rules: ReadonlyArray<ToolPolicyRule>;
 }

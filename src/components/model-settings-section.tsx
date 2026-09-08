@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-
-import type { AiSettingsView, ProviderSummary } from "../../shared/contracts";
 import { SettingsCard, SettingsGroup, SettingsRow, SettingsRowCopy } from "@/components/settings/settings-primitives";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { useBackendApi } from "@/features/backend/backend-provider";
+import { expectedRevision } from "@/features/backend/edit-revision";
+import type { AiSettingsView, ProviderSummary } from "../../shared/contracts";
 
 interface ModelSettingsSectionProps {
   active: boolean;
@@ -19,6 +20,7 @@ function initialProvider(view: AiSettingsView): ProviderSummary | undefined {
 }
 
 function ModelSettingsSection({ active }: ModelSettingsSectionProps) {
+  const api = useBackendApi();
   const [view, setView] = useState<AiSettingsView | null>(null);
   const [providerId, setProviderId] = useState("");
   const [modelId, setModelId] = useState("");
@@ -54,7 +56,7 @@ function ModelSettingsSection({ active }: ModelSettingsSectionProps) {
     let cancelled = false;
     setLoading(true);
     setError(null);
-    void window.wisp
+    void api
       .getAiSettings()
       .then((result) => {
         if (cancelled) return;
@@ -70,7 +72,7 @@ function ModelSettingsSection({ active }: ModelSettingsSectionProps) {
     return () => {
       cancelled = true;
     };
-  }, [active, view, applyView]);
+  }, [api, active, view, applyView]);
 
   function handleProviderChange(nextProviderId: string | null): void {
     if (!nextProviderId || !view) return;
@@ -93,7 +95,8 @@ function ModelSettingsSection({ active }: ModelSettingsSectionProps) {
     setError(null);
     setSaved(false);
     try {
-      const result = await window.wisp.saveAiSettings({
+      const result = await api.saveAiSettings({
+        ...expectedRevision(view?.revision),
         selection: {
           providerId,
           modelId,
@@ -120,7 +123,10 @@ function ModelSettingsSection({ active }: ModelSettingsSectionProps) {
     setError(null);
     setSaved(false);
     try {
-      const result = await window.wisp.removeProviderCredential({ providerId: provider.id });
+      const result = await api.removeProviderCredential({
+        providerId: provider.id,
+        ...expectedRevision(view?.revision),
+      });
       if (!result.ok) {
         setError(result.error.message);
         return;
@@ -292,6 +298,11 @@ function ModelSettingsSection({ active }: ModelSettingsSectionProps) {
               {saved ? <p className="m-0 text-[11.5px] text-dim">AI model settings saved.</p> : null}
             </div>
             <div className="flex flex-none gap-2">
+              {error ? (
+                <Button variant="outline" disabled={saving} onClick={() => setView(null)}>
+                  Reload server settings
+                </Button>
+              ) : null}
               {provider?.credentialConfigured ? (
                 <Button
                   variant="destructive"

@@ -1,3 +1,4 @@
+import { useBackend } from "@/features/backend/backend-provider";
 import { useEffect, useState } from "react";
 import {
   BarChart3Icon,
@@ -57,6 +58,7 @@ function AppSettingsDialog({
   onOpenChange,
   onPreferencesChange,
 }: AppSettingsDialogProps) {
+  const { desktop, openAccount } = useBackend();
   const [section, setSection] = useState<"general" | "model" | "about" | "usage">(initialSection);
   const selected = "bg-accent text-accent-foreground";
   const [updateState, setUpdateState] = useState<UpdateState>({
@@ -65,27 +67,28 @@ function AppSettingsDialog({
   });
 
   useEffect(() => {
-    if (!open) return;
+    if (!open || !desktop) return;
     let active = true;
-    const unsubscribe = window.wisp.subscribeToUpdateState((state) => {
+    const unsubscribe = desktop.subscribeToUpdateState((state) => {
       if (active) setUpdateState(state);
     });
-    void window.wisp.getUpdateState().then((result) => {
+    void desktop.getUpdateState().then((result) => {
       if (active && result.ok) setUpdateState(result.value);
     });
     return () => {
       active = false;
       unsubscribe();
     };
-  }, [open]);
+  }, [open, desktop]);
 
   async function handleUpdateAction(): Promise<void> {
+    if (!desktop) return;
     const result =
       updateState.phase === "available"
-        ? await window.wisp.downloadUpdate()
+        ? await desktop.downloadUpdate()
         : updateState.phase === "downloaded"
-          ? await window.wisp.installUpdate()
-          : await window.wisp.checkForUpdates();
+          ? await desktop.installUpdate()
+          : await desktop.checkForUpdates();
     if (!result.ok) setUpdateState((current) => ({ ...current, phase: "error", message: result.error.message }));
   }
 
@@ -178,9 +181,19 @@ function AppSettingsDialog({
                   <strong className="text-[12.5px]">{currentUser.displayName}</strong>
                   <small className="text-dim text-[11.5px]">{currentUser.email}</small>
                 </SettingsRowCopy>
-                <Button variant="secondary" size="sm" type="button">
-                  Sign out
-                </Button>
+                {openAccount ? (
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    type="button"
+                    onClick={() => {
+                      onOpenChange(false);
+                      openAccount();
+                    }}
+                  >
+                    Server connection
+                  </Button>
+                ) : null}
               </SettingsRow>
             </SettingsCard>
           </SettingsGroup>
@@ -267,28 +280,32 @@ function AppSettingsDialog({
                   <strong className="text-[12.5px]">{appMetadata.displayName}</strong>
                   <small className="text-dim text-[11.5px]">Version {appMetadata.version}</small>
                 </SettingsRowCopy>
-                <Button
-                  variant="ghost"
-                  size="icon-sm"
-                  type="button"
-                  aria-label={updateActionLabel(updateState)}
-                  title={updateActionLabel(updateState)}
-                  disabled={updateState.phase === "checking" || updateState.phase === "downloading"}
-                  onClick={() => void handleUpdateAction()}
-                >
-                  {updateState.phase === "available" ? (
-                    <DownloadIcon aria-hidden="true" />
-                  ) : (
-                    <RefreshCwIcon aria-hidden="true" />
-                  )}
-                </Button>
+                {desktop ? (
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    type="button"
+                    aria-label={updateActionLabel(updateState)}
+                    title={updateActionLabel(updateState)}
+                    disabled={updateState.phase === "checking" || updateState.phase === "downloading"}
+                    onClick={() => void handleUpdateAction()}
+                  >
+                    {updateState.phase === "available" ? (
+                      <DownloadIcon aria-hidden="true" />
+                    ) : (
+                      <RefreshCwIcon aria-hidden="true" />
+                    )}
+                  </Button>
+                ) : null}
               </SettingsRow>
             </SettingsCard>
           </SettingsGroup>
           <p className="mt-3 text-[11.5px] text-dim" role={updateState.phase === "error" ? "alert" : "status"}>
-            {updateStatusText(updateState)}
+            {desktop ? updateStatusText(updateState) : "Updates are managed by this application’s host."}
           </p>
-          <p className="mt-2 text-[11px] text-faint">Manual recovery: github.com/gustmrg/wisp-bot/releases/latest</p>
+          {desktop ? (
+            <p className="mt-2 text-[11px] text-faint">Manual recovery: github.com/gustmrg/wisp-bot/releases/latest</p>
+          ) : null}
         </section>
       </DialogContent>
     </Dialog>

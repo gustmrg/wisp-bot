@@ -1,0 +1,20 @@
+[Unit]
+Description=Wisp persistent agent backend
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/.local/lib/wisp
+EnvironmentFile=%h/.config/wisp/server.env
+LoadCredential=master-key:%h/.config/wisp/master.key
+ExecStart=/usr/bin/node %h/.local/lib/wisp/server/main.js
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=45
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=default.target

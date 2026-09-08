@@ -1,14 +1,16 @@
+import { useBackendApi } from "@/features/backend/backend-provider";
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import type { UsagePeriod, UsageReport } from "../../shared/contracts";
 
 export function UsageSettingsSection() {
+  const api = useBackendApi();
   const [request, setRequest] = useState<{ period: UsagePeriod }>({ period: "30d" });
   const [state, setState] = useState<{ report?: UsageReport; error?: string }>({});
   useEffect(() => {
     let active = true;
     setState({});
-    void window.wisp
+    void api
       .getUsageReport(request)
       .then((result) => {
         if (active) setState(result.ok ? { report: result.value } : { error: result.error.message });
@@ -19,7 +21,7 @@ export function UsageSettingsSection() {
     return () => {
       active = false;
     };
-  }, [request]);
+  }, [api, request]);
   const report = state.report;
   return (
     <section

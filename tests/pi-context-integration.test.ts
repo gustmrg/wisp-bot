@@ -2,7 +2,7 @@ import { mkdtemp, mkdir, rm } from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
 import { expect, it, vi } from "vitest";
-import { SdkPiSessionFactory, type PiSessionLike } from "../electron/backend/pi-conversation-agent.js";
+import { SdkPiSessionFactory, type PiSessionLike } from "../backend/pi-conversation-agent.js";
 import { DEFAULT_CONTEXT_POLICY } from "../shared/context-policy.js";
 
 it("preserves continuity through real SDK compaction and a fresh-topic restart, with simulated transport", async () => {

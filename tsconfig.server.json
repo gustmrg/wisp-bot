@@ -1,0 +1,9 @@
+{
+  "extends": "./tsconfig.electron.json",
+  "compilerOptions": {
+    "outDir": "dist-server",
+    "types": ["node"]
+  },
+  "include": ["server/**/*.ts", "backend/**/*.ts", "shared/**/*.ts"],
+  "exclude": ["**/*.test.ts", "electron", "src", "client"]
+}

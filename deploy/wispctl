@@ -1,0 +1,3 @@
+#!/bin/sh
+set -eu
+exec node "${WISP_INSTALL_DIR:-$HOME/.local/lib/wisp}/server/cli.js" "$@"

@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
-import { AiSettingsStore } from "../electron/backend/ai-settings-store.js";
+import { AiSettingsStore } from "../backend/ai-settings-store.js";
 
 const directories: string[] = [];
 

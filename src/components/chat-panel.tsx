@@ -1,5 +1,5 @@
-import { useEffect, useRef } from "react";
-import { SettingsIcon } from "lucide-react";
+import { useLayoutEffect, useRef } from "react";
+import { ArrowLeftIcon, SettingsIcon } from "lucide-react";
 
 import type { Chat, ChatCollection } from "@/chat-data";
 import type { ManagedConversationStatus } from "../../shared/conversations";
@@ -29,7 +29,13 @@ interface ChatPanelProps {
   modelLabel?: string;
   onRetry: (messageId: string | undefined) => void;
   onResolveApproval: (request: ToolApprovalRequest, decision: ToolApprovalDecision) => void;
-  onSend: (text: string) => void;
+  onSend: (text: string) => void | Promise<boolean>;
+  onBack?: () => void;
+  connected?: boolean;
+  onLoadEarlier?: () => Promise<void>;
+  hasEarlier?: boolean;
+  loadingHistory?: boolean;
+  historyError?: string;
 }
 
 function ChatPanel({
@@ -49,23 +55,51 @@ function ChatPanel({
   onRetry,
   onResolveApproval,
   onSend,
+  onBack,
+  connected = true,
+  onLoadEarlier,
+  hasEarlier = false,
+  loadingHistory = false,
+  historyError,
 }: ChatPanelProps) {
   const transcriptRef = useRef<HTMLDivElement>(null);
+  const following = useRef(true);
+  const lastChat = useRef(chat.id);
+  const olderGeometry = useRef<{ height: number; top: number } | null>(null);
   const members = getCircleMembers(chat, chats);
   const working = status === "working";
   const lastMessage = chat.messages.at(-1);
   const transcriptVersion = lastMessage && "text" in lastMessage ? lastMessage.text.length : chat.messages.length;
   const transcriptScrollTrigger = `${chat.id}:${chat.messages.length}:${transcriptVersion}:${working}`;
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const transcript = transcriptRef.current;
-    if (transcript && transcriptScrollTrigger) transcript.scrollTop = transcript.scrollHeight;
-  }, [transcriptScrollTrigger]);
+    if (!transcript || !transcriptScrollTrigger) return;
+    if (olderGeometry.current && !loadingHistory) {
+      transcript.scrollTop = olderGeometry.current.top + transcript.scrollHeight - olderGeometry.current.height;
+      olderGeometry.current = null;
+    } else if (!olderGeometry.current && (lastChat.current !== chat.id || following.current)) {
+      transcript.scrollTop = transcript.scrollHeight;
+    }
+    lastChat.current = chat.id;
+  }, [transcriptScrollTrigger, loadingHistory, chat.id]);
+
+  function loadEarlier() {
+    const transcript = transcriptRef.current;
+    if (!transcript || !onLoadEarlier) return;
+    olderGeometry.current = { height: transcript.scrollHeight, top: transcript.scrollTop };
+    void onLoadEarlier();
+  }
 
   return (
     <main className={mainPanel}>
       <header className="flex h-11 flex-none items-center justify-between border-b border-black/[0.035] px-3.5 dark:border-white/[0.035]">
         <div className="inline-flex min-w-0 items-center gap-2 rounded-lg p-1">
+          {onBack ? (
+            <Button variant="ghost" size="icon-sm" aria-label="Back to conversations" onClick={onBack}>
+              <ArrowLeftIcon aria-hidden="true" />
+            </Button>
+          ) : null}
           <ChatAvatar chat={chat} chats={chats} size="sm" />
           <span className="min-w-0">
             <span className="block truncate font-semibold">{chat.name}</span>
@@ -104,6 +138,10 @@ function ChatPanel({
       <div
         className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto outline-none"
         ref={transcriptRef}
+        onScroll={(event) => {
+          const node = event.currentTarget;
+          following.current = node.scrollHeight - node.scrollTop - node.clientHeight < 120;
+        }}
         tabIndex={0}
         aria-label={`${chat.name} conversation`}
       >
@@ -112,6 +150,26 @@ function ChatPanel({
           role="log"
           aria-live="polite"
         >
+          {hasEarlier ? (
+            <Button
+              variant="ghost"
+              className="mx-auto my-2"
+              disabled={loadingHistory || !connected}
+              onClick={loadEarlier}
+            >
+              Load earlier messages
+            </Button>
+          ) : null}
+          {loadingHistory ? (
+            <p className="text-center text-xs text-dim" role="status">
+              Loading history…
+            </p>
+          ) : null}
+          {historyError ? (
+            <p className="text-center text-xs text-destructive" role="alert">
+              {historyError}
+            </p>
+          ) : null}
           {chat.messages.map((message, index) => (
             <MessageView
               key={message.id ?? `${chat.id}-${message.type}-${index}`}
@@ -159,6 +217,7 @@ function ChatPanel({
         onConfigure={onConfigure}
         onAbort={onAbort}
         onSend={onSend}
+        connected={connected}
       />
     </main>
   );

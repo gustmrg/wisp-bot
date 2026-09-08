@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { sanitizeBackendError, WispBackendError } from "../electron/backend/backend-error.js";
+import { sanitizeBackendError, WispBackendError } from "../backend/backend-error.js";
 
 describe("sanitizeBackendError", () => {
   it("preserves intentional public backend errors", () => {

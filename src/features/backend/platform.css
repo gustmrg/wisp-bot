@@ -1,0 +1,26 @@
+.wisp-app {
+  padding-top: env(safe-area-inset-top);
+  padding-bottom: env(safe-area-inset-bottom);
+  padding-left: env(safe-area-inset-left);
+  padding-right: env(safe-area-inset-right);
+}
+@supports (height: 100dvh) {
+  html,
+  body,
+  #root {
+    height: 100dvh;
+  }
+}
+@media (max-width: 620px) {
+  input,
+  textarea,
+  select {
+    font-size: 16px;
+  }
+  button {
+    touch-action: manipulation;
+  }
+  [role="separator"] {
+    display: none;
+  }
+}

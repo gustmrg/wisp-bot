@@ -12,7 +12,7 @@ The renderer uses React 19, TypeScript 7, Vite 8, Tailwind CSS 4, and locally ow
 
 ### Prerequisites
 
-- [Node.js](https://nodejs.org/) 22.19 or later
+- [Node.js](https://nodejs.org/) 24.18 or later
 - npm
 
 Install dependencies and start the desktop development environment:
@@ -188,3 +188,9 @@ than dropping history or sending the new message without continuity.
 Usage totals include summarization input/output and cache tokens. Summary costs
 use the runtime's persisted estimate when positive and available; unavailable
 estimates remain unknown. The Usage tab identifies the summarization token subtotal.
+
+## Remote server, SSH and Tailscale
+
+Run Wisp continuously on a Linux server and connect the Electron app through SSH, or access the same conversations from web/PWA and Android/iOS through HTTPS with Tailscale Serve. The server owns history and agents; closing a client keeps remote work running. Local desktop mode remains available.
+
+Use Node 24.18+ and `npm run dist:server` to prepare the standalone runtime (no Electron runtime dependency). Follow the [server installation guide](docs/remote-server.md), [migration/backup guide](docs/remote-migration.md), [connection diagnostics](docs/remote-troubleshooting.md), and [native mobile build guide](mobile/README.md). The [implementation plan](plans/remote-backend-ssh-tailscale.md) records architecture, scope and validation evidence.

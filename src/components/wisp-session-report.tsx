@@ -1,3 +1,4 @@
+import { useBackendApi } from "@/features/backend/backend-provider";
 import { useEffect, useState } from "react";
 import { RefreshCwIcon } from "lucide-react";
 
@@ -18,13 +19,14 @@ type ReportState =
   | { status: "error"; message: string };
 
 export function WispSessionReportSection({ chatId, active = true }: WispSessionReportSectionProps) {
+  const api = useBackendApi();
   const [state, setState] = useState<ReportState>({ status: "idle" });
   const [request, setRequest] = useState({});
   useEffect(() => {
     if (!active) return;
     let cancelled = false;
     setState({ status: "loading" });
-    void window.wisp
+    void api
       .getSessionReport({ ...request, conversationId: chatId })
       .then((result) => {
         if (cancelled) return;
@@ -38,7 +40,7 @@ export function WispSessionReportSection({ chatId, active = true }: WispSessionR
     return () => {
       cancelled = true;
     };
-  }, [chatId, active, request]);
+  }, [api, chatId, active, request]);
   return <SessionReportContent state={state} onRefresh={() => setRequest({})} />;
 }
 

@@ -18,7 +18,7 @@
     "dev": "concurrently --kill-others \"npm:dev:renderer\" \"npm:dev:electron\"",
     "dev:renderer": "vite --configLoader bundle",
     "dev:electron": "wait-on tcp:127.0.0.1:5173 && npm run build:electron && cross-env ELECTRON_RUN_AS_NODE= VITE_DEV_SERVER_URL=http://127.0.0.1:5173 electron .",
-    "build": "npm run typecheck && npm run build:renderer && npm run build:electron",
+    "build": "npm run typecheck && npm run build:renderer && npm run build:electron && npm run build:server && npm run build:web",
     "build:renderer": "vite build --configLoader bundle",
     "build:electron": "tsc -p tsconfig.electron.json",
     "dist": "npm run build && electron-builder --publish never",
@@ -30,14 +30,28 @@
     "lint": "biome lint .",
     "test": "vitest run",
     "test:watch": "vitest",
-    "typecheck": "tsc --noEmit && tsc -p tsconfig.electron.json --noEmit && tsc -p tsconfig.vite.json --noEmit",
+    "typecheck": "tsc --noEmit && tsc -p tsconfig.electron.json --noEmit && tsc -p tsconfig.server.json --noEmit && tsc -p tsconfig.vite.json --noEmit",
     "start": "npm run build && electron .",
     "smoke:pi": "npm run build:electron && node scripts/pi-live-smoke.mjs",
     "preview": "vite preview",
-    "ui:add": "cross-env npm_config_allow_scripts= shadcn add"
+    "ui:add": "cross-env npm_config_allow_scripts= shadcn add",
+    "build:server": "tsc -p tsconfig.server.json",
+    "start:server": "node dist-server/server/main.js",
+    "build:web": "vite build --config vite.web.config.mts",
+    "dev:web": "vite --config vite.web.config.mts",
+    "build:mobile": "vite build --config vite.web.config.mts --mode mobile",
+    "mobile:sync": "npm run build:mobile && cd mobile && npx cap sync",
+    "test:e2e": "npm run build:web && npm run build:server && playwright test",
+    "test:server": "vitest run --project node tests/server-*.test.ts",
+    "server:ctl": "node dist-server/server/cli.js",
+    "dist:server": "npm run build:server && npm run build:web && node scripts/package-server.mjs"
   },
   "dependencies": {
     "@base-ui/react": "^1.7.0",
+    "@capacitor/android": "8.5.1",
+    "@capacitor/app": "8.1.1",
+    "@capacitor/core": "8.5.1",
+    "@capacitor/ios": "8.5.1",
     "@earendil-works/pi-coding-agent": "0.84.4",
     "@fontsource-variable/geist": "^5.3.0",
     "@shadcn/react": "^0.3.0",
@@ -54,6 +68,8 @@
   },
   "devDependencies": {
     "@biomejs/biome": "2.5.11",
+    "@capacitor/cli": "8.5.1",
+    "@playwright/test": "1.63.0",
     "@tailwindcss/vite": "^4.3.3",
     "@testing-library/jest-dom": "7.0.1",
     "@testing-library/react": "16.3.3",
@@ -76,7 +92,7 @@
     "wait-on": "^9.1.0"
   },
   "engines": {
-    "node": ">=22.19.0"
+    "node": ">=24.18.0"
   },
   "build": {
     "appId": "com.gustavomiranda.wispbot",

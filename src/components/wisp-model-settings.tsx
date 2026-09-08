@@ -1,11 +1,14 @@
 import { useEffect, useId, useState } from "react";
-import type { AiSettingsView, ConversationModelView } from "../../shared/contracts";
-import { modelName } from "@/hooks/use-conversation-model";
 import { Button } from "@/components/ui/button";
-import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { useBackendApi } from "@/features/backend/backend-provider";
+import { expectedRevision } from "@/features/backend/edit-revision";
+import { modelName } from "@/hooks/use-conversation-model";
+import type { AiSettingsView, ConversationModelView } from "../../shared/contracts";
 
 export function WispModelSettings({ conversationId }: { conversationId: string }) {
+  const api = useBackendApi();
   const formId = useId();
   const [catalog, setCatalog] = useState<AiSettingsView | null>(null);
   const [view, setView] = useState<ConversationModelView | null>(null);
@@ -14,19 +17,23 @@ export function WispModelSettings({ conversationId }: { conversationId: string }
   const [modelId, setModelId] = useState("");
   const [limit, setLimit] = useState("");
   const [saving, setSaving] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [editRevision, setEditRevision] = useState<number | undefined>();
   const [error, setError] = useState("");
   const [saved, setSaved] = useState(false);
   const [loadRequest, setLoadRequest] = useState({ conversationId });
   useEffect(() => {
     let active = true;
     setError("");
-    void Promise.all([window.wisp.getAiSettings(), window.wisp.getConversationModel(loadRequest)])
+    setLoading(true);
+    void Promise.all([api.getAiSettings(), api.getConversationModel(loadRequest)])
       .then(([settings, model]) => {
         if (!active) return;
         if (!settings.ok) throw new Error(settings.error.message);
         if (!model.ok) throw new Error(model.error.message);
         setCatalog(settings.value);
         setView(model.value);
+        setEditRevision(model.value.revision);
         setInherit(model.value.override === null);
         const selection = model.value.override ?? settings.value.selection;
         const provider =
@@ -37,23 +44,26 @@ export function WispModelSettings({ conversationId }: { conversationId: string }
       })
       .catch((cause) => {
         if (active) setError(cause instanceof Error ? cause.message : "Could not load model settings.");
+      })
+      .finally(() => {
+        if (active) setLoading(false);
       });
     return () => {
       active = false;
     };
-  }, [loadRequest]);
+  }, [api, loadRequest]);
 
   useEffect(() => {
     let active = true;
     let revision = 0;
-    const unsubscribe = window.wisp.subscribeToAgentEvents((event) => {
+    const unsubscribe = api.subscribeToAgentEvents((event) => {
       if (
         event.conversationId !== conversationId ||
         (event.type !== "conversation_model_changed" && event.type !== "conversation_status")
       )
         return;
       const current = ++revision;
-      void Promise.all([window.wisp.getConversationModel({ conversationId }), window.wisp.getAiSettings()])
+      void Promise.all([api.getConversationModel({ conversationId }), api.getAiSettings()])
         .then(([model, settings]) => {
           if (!active || current !== revision) return;
           if (model.ok) setView(model.value);
@@ -65,7 +75,7 @@ export function WispModelSettings({ conversationId }: { conversationId: string }
       active = false;
       unsubscribe();
     };
-  }, [conversationId]);
+  }, [api, conversationId]);
 
   const provider = catalog?.providers.find(({ id }) => id === providerId);
   const model = provider?.models.find(({ id }) => id === modelId);
@@ -79,14 +89,14 @@ export function WispModelSettings({ conversationId }: { conversationId: string }
     setError("");
     setSaved(false);
     try {
-      const result = await window.wisp.applyModel({
+      const result = await api.applyModel({
         conversationId,
+        ...expectedRevision(editRevision),
         model: inherit ? null : { providerId, modelId, ...(limit ? { maxOutputTokens: Number(limit) } : {}) },
       });
       if (!result.ok) throw new Error(result.error.message);
-      const refreshed = await window.wisp.getConversationModel({ conversationId });
-      if (!refreshed.ok) throw new Error(refreshed.error.message);
-      setView(refreshed.value);
+      // Reload both the fields and their revision together after an acknowledged write.
+      setLoadRequest({ conversationId });
       setSaved(true);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Could not save this Wisp's model.");
@@ -118,7 +128,7 @@ export function WispModelSettings({ conversationId }: { conversationId: string }
               <input
                 type="checkbox"
                 checked={inherit}
-                disabled={saving}
+                disabled={saving || loading}
                 onChange={(event) => {
                   setInherit(event.target.checked);
                   setSaved(false);
@@ -136,7 +146,7 @@ export function WispModelSettings({ conversationId }: { conversationId: string }
                   <label htmlFor={`${formId}-provider`}>Provider</label>
                   <Select
                     value={providerId}
-                    disabled={saving}
+                    disabled={saving || loading}
                     items={catalog.providers.map((item) => ({
                       value: item.id,
                       label: `${item.name}${item.credentialConfigured ? "" : " (API key required)"}`,
@@ -168,7 +178,7 @@ export function WispModelSettings({ conversationId }: { conversationId: string }
                   <label htmlFor={`${formId}-model`}>Model</label>
                   <Select
                     value={modelId}
-                    disabled={saving}
+                    disabled={saving || loading}
                     items={provider?.models.map((item) => ({ value: item.id, label: item.name })) ?? []}
                     onValueChange={(id) => {
                       if (!id) return;
@@ -199,7 +209,7 @@ export function WispModelSettings({ conversationId }: { conversationId: string }
                     max={model?.maxOutputTokens ?? 1_000_000}
                     placeholder="Automatic"
                     value={limit}
-                    disabled={saving}
+                    disabled={saving || loading}
                     onChange={(event) => {
                       setLimit(event.target.value);
                       setSaved(false);
@@ -236,11 +246,21 @@ export function WispModelSettings({ conversationId }: { conversationId: string }
           ) : null}
           <Button
             type="button"
-            disabled={saving || (!inherit && (!provider?.credentialConfigured || !model || invalidLimit))}
+            disabled={saving || loading || (!inherit && (!provider?.credentialConfigured || !model || invalidLimit))}
             onClick={() => void save()}
           >
             {saving ? "Saving…" : "Save model"}
           </Button>
+          {error && view ? (
+            <Button
+              className="mt-2 w-full"
+              variant="outline"
+              disabled={saving || loading}
+              onClick={() => setLoadRequest({ conversationId })}
+            >
+              Reload server settings
+            </Button>
+          ) : null}
         </footer>
       ) : null}
     </div>

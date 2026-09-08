@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 
-import { ToolAuditStore } from "../electron/backend/tool-audit-store.js";
+import { ToolAuditStore } from "../backend/tool-audit-store.js";
 
 describe("ToolAuditStore", () => {
   it("appends ordered redacted records without retaining resource paths", async () => {

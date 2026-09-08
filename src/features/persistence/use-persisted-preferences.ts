@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useBackendInstanceId } from "@/features/backend/backend-provider";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import type { AppPreferences } from "@/lib/app-preferences";
 import { loadPreferences, savePreferences } from "@/features/persistence/preference-storage";
@@ -13,8 +14,18 @@ export interface PersistedPreferencesController {
 }
 
 export function usePersistedPreferences(): PersistedPreferencesController {
+  const instanceId = useBackendInstanceId();
+  const storage = useMemo(
+    () => ({
+      getItem: (key: string) =>
+        window.localStorage.getItem(instanceId === "local" ? key : `${key}:${encodeURIComponent(instanceId)}`),
+      setItem: (key: string, value: string) =>
+        window.localStorage.setItem(instanceId === "local" ? key : `${key}:${encodeURIComponent(instanceId)}`, value),
+    }),
+    [instanceId],
+  );
   const initial = useRef<ReturnType<typeof loadPreferences> | null>(null);
-  if (initial.current === null) initial.current = loadPreferences(window.localStorage);
+  if (initial.current === null) initial.current = loadPreferences(storage);
   const [preferences, setPreferences] = useState<AppPreferences>(initial.current.value);
   const [status, setStatus] = useState<PersistenceStatus>(initial.current.ok ? "idle" : "error");
   const [error, setError] = useState<string | null>(initial.current.ok ? null : initial.current.error);
@@ -37,11 +48,11 @@ export function usePersistedPreferences(): PersistedPreferencesController {
     if (timer.current !== null) window.clearTimeout(timer.current);
     timer.current = null;
     if (!dirty.current) return statusRef.current !== "error";
-    const result = savePreferences(window.localStorage, latest.current);
+    const result = savePreferences(storage, latest.current);
     dirty.current = !result.ok;
     updateResult(result.ok ? "saved" : "error", result.ok ? null : result.error);
     return result.ok;
-  }, [updateResult]);
+  }, [storage, updateResult]);
 
   useEffect(() => {
     if (!initialized.current) {

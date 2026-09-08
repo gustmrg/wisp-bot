@@ -101,3 +101,9 @@ Unit and integration tests use the fake agent/runtime. A live provider smoke is 
 - A provider-specific renderer schema: rejected because it couples UI state to SDK event and error shapes.
 - One shared agent session for all Wisps: rejected because it mixes histories, cancellation, workspaces, and tool authority.
 - Automatic replay after reload: rejected because a renderer cannot prove that provider work was not already accepted.
+
+## Remote-instance extension (2026-09-07)
+
+[ADR 004](004-remote-instance.md) extends this boundary with a headless server and remote clients. The privileged runtime now lives in `backend/` and is composed either by Electron main (local JSON/safeStorage) or the server (SQLite/external key). In remote mode, the server owns tools, provider credentials, execution, authorization and audit. Electron main owns only the paired device credentials and SSH/HTTPS transport; browser/native clients have explicit device sessions. Window IDs remain a local IPC sender check and are not network authorization.
+
+The shutdown, process-local sequence and in-memory idempotency descriptions above continue to describe local mode. Remote client shutdown closes only its transport; durable request admission, event cursors and crash reconciliation are implemented server-side. Approvals use the instance owner plus the authenticated deciding device and persist atomically. A server restart interrupts uncertain running requests rather than resubmitting their effects. Neither `disposeConversation` nor renderer legacy initialization is exposed as a remote ownership operation.

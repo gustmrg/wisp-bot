@@ -75,25 +75,32 @@ export interface ProviderSummary {
 }
 
 export interface AiSettingsView {
+  /** Remote revision captured with this view; absent for local adapters. */
+  revision?: number;
   selection: ModelSelection | null;
   secureStorageAvailable: boolean;
   providers: ReadonlyArray<ProviderSummary>;
 }
 
 export interface SaveAiSettingsRequest {
+  expectedRevision?: number;
   selection: ModelSelection;
   apiKey?: string;
 }
 
 export interface RemoveProviderCredentialRequest {
+  expectedRevision?: number;
   providerId: string;
 }
 
 export interface ApplyModelRequest extends ConversationRequest {
+  expectedRevision?: number;
   model: ModelSelection | null;
 }
 
 export interface ConversationModelView {
+  /** Remote revision captured with this view; absent for local adapters. */
+  revision?: number;
   override: ModelSelection | null;
   effective: ModelSelection | null;
   applied: ModelSelection | null;
@@ -102,6 +109,15 @@ export interface ConversationModelView {
 }
 
 export type BackendErrorCode =
+  | "transport_unavailable"
+  | "protocol_incompatible"
+  | "server_identity_changed"
+  | "resync_required"
+  | "conflict"
+  | "unauthorized"
+  | "forbidden"
+  | "capacity_exceeded"
+  | "interrupted"
   | "aborted"
   | "already_exists"
   | "configuration_required"
@@ -301,7 +317,7 @@ export interface WispApi {
   getSessionReport(request: ConversationRequest): Promise<BackendResult<WispSessionReport | null>>;
   getUsageReport(request: UsageReportRequest): Promise<BackendResult<UsageReport>>;
   getToolPolicy(): Promise<BackendResult<ToolPolicySettings>>;
-  saveToolPolicy(settings: ToolPolicySettings): Promise<BackendResult<ToolPolicySettings>>;
+  saveToolPolicy(settings: ToolPolicySettings, expectedRevision?: number): Promise<BackendResult<ToolPolicySettings>>;
   resolveToolApproval(request: ResolveToolApprovalRequest): Promise<EmptyResult>;
   getUpdateState(): Promise<BackendResult<UpdateState>>;
   checkForUpdates(): Promise<BackendResult<UpdateState>>;

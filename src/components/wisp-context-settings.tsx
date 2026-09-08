@@ -1,16 +1,18 @@
 import { useEffect, useId, useState } from "react";
-import {
-  DEFAULT_CONTEXT_POLICY,
-  isContextPolicy,
-  type ContextCommand,
-  type ContextPolicy,
-  type ContextView,
-} from "../../shared/context-policy";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
+import { useBackendApi } from "@/features/backend/backend-provider";
+import { expectedRevision } from "@/features/backend/edit-revision";
+import {
+  type ContextCommand,
+  type ContextPolicy,
+  type ContextView,
+  DEFAULT_CONTEXT_POLICY,
+  isContextPolicy,
+} from "../../shared/context-policy";
 
 const modes = [
   { value: "idle", label: "After inactivity" },
@@ -39,10 +41,13 @@ export function WispContextSettings({ conversationId }: { conversationId: string
 }
 
 function ContextForm({ conversationId }: { conversationId: string }) {
+  const api = useBackendApi();
   const id = useId();
   const [view, setView] = useState<ContextView | null>(null);
   const [policy, setPolicy] = useState<ContextPolicy>({ ...DEFAULT_CONTEXT_POLICY });
   const [memory, setMemory] = useState("");
+  const [editRevision, setEditRevision] = useState<number | undefined>();
+  const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [working, setWorking] = useState(false);
   const [error, setError] = useState("");
@@ -51,9 +56,10 @@ function ContextForm({ conversationId }: { conversationId: string }) {
   const [loadRequest, setLoadRequest] = useState({ conversationId });
   useEffect(() => {
     let active = true;
+    setLoading(true);
     void Promise.all([
-      window.wisp.manageContext({ ...loadRequest, command: { action: "get" } }),
-      window.wisp.getConversationModel({ conversationId }),
+      api.manageContext({ ...loadRequest, command: { action: "get" } }),
+      api.getConversationModel({ conversationId }),
     ])
       .then(([result, model]) => {
         if (!active) return;
@@ -63,18 +69,22 @@ function ContextForm({ conversationId }: { conversationId: string }) {
           return;
         }
         setView(result.value);
+        setEditRevision(result.value.revision);
         setPolicy(result.value.policy);
         setMemory(result.value.memory);
         setError("");
       })
       .catch(() => {
         if (active) setError("Could not load context settings.");
+      })
+      .finally(() => {
+        if (active) setLoading(false);
       });
-    const unsubscribe = window.wisp.subscribeToAgentEvents((event) => {
+    const unsubscribe = api.subscribeToAgentEvents((event) => {
       if (event.conversationId !== conversationId) return;
       if (event.type === "conversation_status") setWorking(event.status === "working");
       if (event.type === "conversation_context_renewed") {
-        void window.wisp
+        void api
           .manageContext({ conversationId, command: { action: "get" } })
           .then((result) => {
             if (active && result.ok) setView(result.value);
@@ -86,19 +96,22 @@ function ContextForm({ conversationId }: { conversationId: string }) {
       active = false;
       unsubscribe();
     };
-  }, [conversationId, loadRequest]);
+  }, [api, conversationId, loadRequest]);
 
   async function run(command: ContextCommand) {
     setBusy(true);
     setError("");
     setNotice("");
     try {
-      const result = await window.wisp.manageContext({ conversationId, command });
+      const result = await api.manageContext({ conversationId, command, ...expectedRevision(editRevision) });
       if (!result.ok) {
         setError(result.error.message);
         return;
       }
       setView(result.value);
+      setEditRevision(result.value.revision);
+      setPolicy(result.value.policy);
+      setMemory(result.value.memory);
       setNotice(
         command.action === "save"
           ? "Context settings saved."
@@ -124,7 +137,7 @@ function ContextForm({ conversationId }: { conversationId: string }) {
         ) : null}
       </div>
     );
-  const disabled = busy || working;
+  const disabled = busy || working || loading;
   const dirty = JSON.stringify(policy) !== JSON.stringify(view.policy) || memory !== view.memory;
   return (
     <div className="space-y-3 text-xs">
@@ -210,7 +223,7 @@ function ContextForm({ conversationId }: { conversationId: string }) {
         />
       </label>
       <p className="text-muted-foreground">
-        Memory is stored locally and included in model requests. Starting a new topic keeps it.
+        Memory is stored with this conversation and included in model requests. Starting a new topic keeps it.
       </p>
       <Button
         className="w-full"
@@ -256,9 +269,14 @@ function ContextForm({ conversationId }: { conversationId: string }) {
       {working ? <p role="status">Available after the Wisp finishes its current work.</p> : null}
       {busy ? <p role="status">Updating context…</p> : null}
       {error ? (
-        <p role="alert" className="text-destructive">
-          {error}
-        </p>
+        <div className="space-y-2">
+          <p role="alert" className="text-destructive">
+            {error}
+          </p>
+          <Button variant="outline" disabled={busy || loading} onClick={() => setLoadRequest({ conversationId })}>
+            Reload server settings
+          </Button>
+        </div>
       ) : null}
       {notice ? <p role="status">{notice}</p> : null}
     </div>

@@ -25,6 +25,8 @@ interface MessageMetadata {
 }
 
 export interface ChatBase {
+  /** Remote revision captured with this view; absent for local adapters. */
+  revision?: number;
   id: ChatId;
   name: string;
   label: string;
@@ -115,11 +117,13 @@ export interface CreateConversationRequest {
 }
 
 export interface UpdateConversationRequest {
+  expectedRevision?: number;
   conversationId: ChatId;
   changes: ChatChanges;
 }
 
 export interface DeleteConversationRequest {
+  expectedRevision?: number;
   conversationId: ChatId;
 }
 

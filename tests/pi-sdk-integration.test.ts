@@ -4,9 +4,9 @@ import path from "node:path";
 
 import { describe, expect, it, vi } from "vitest";
 
-import type { ConversationAgentContext } from "../electron/backend/conversation-agent.js";
-import type { ModelRuntimeLike } from "../electron/backend/model-service.js";
-import { SdkPiSessionFactory } from "../electron/backend/pi-conversation-agent.js";
+import type { ConversationAgentContext } from "../backend/conversation-agent.js";
+import type { ModelRuntimeLike } from "../backend/model-service.js";
+import { SdkPiSessionFactory } from "../backend/pi-conversation-agent.js";
 
 describe("Pi SDK integration", () => {
   it("creates and reopens one isolated persistent session without a provider request", async () => {

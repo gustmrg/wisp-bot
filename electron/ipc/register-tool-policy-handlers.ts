@@ -2,10 +2,10 @@ import type { IpcMain, IpcMainInvokeEvent } from "electron";
 
 import { WISP_IPC_CHANNELS, type BackendResult, type EmptyResult } from "../../shared/contracts.js";
 import type { ToolPolicySettings } from "../../shared/tool-policy.js";
-import { sanitizeBackendError, WispBackendError } from "../backend/backend-error.js";
-import type { ToolAuthorizationBroker } from "../backend/tool-authorization-broker.js";
+import { sanitizeBackendError, WispBackendError } from "../../backend/backend-error.js";
+import type { ToolAuthorizationBroker } from "../../backend/tool-authorization-broker.js";
 import type { SenderAuthorizer } from "./register-handlers.js";
-import { parseResolveToolApprovalRequest } from "./validators.js";
+import { parseResolveToolApprovalRequest } from "../../shared/validators.js";
 
 type HandlerIpcMain = Pick<IpcMain, "handle" | "removeHandler">;
 const unauthorized = (): WispBackendError => new WispBackendError("invalid_request", "The backend request is invalid.");

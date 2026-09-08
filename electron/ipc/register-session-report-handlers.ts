@@ -6,10 +6,10 @@ import {
   type UsageReport,
   type WispSessionReport,
 } from "../../shared/contracts.js";
-import { sanitizeBackendError } from "../backend/backend-error.js";
-import type { SessionReportService } from "../backend/session-report-service.js";
+import { sanitizeBackendError } from "../../backend/backend-error.js";
+import type { SessionReportService } from "../../backend/session-report-service.js";
 import type { SenderAuthorizer } from "./register-handlers.js";
-import { parseConversationRequest, parseUsageReportRequest } from "./validators.js";
+import { parseConversationRequest, parseUsageReportRequest } from "../../shared/validators.js";
 
 type HandlerIpcMain = Pick<IpcMain, "handle" | "removeHandler">;
 type Result = BackendResult<WispSessionReport | UsageReport | null>;

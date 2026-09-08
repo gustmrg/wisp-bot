@@ -1,7 +1,7 @@
 import type { IpcMain, IpcMainInvokeEvent } from "electron";
 
 import { WISP_IPC_CHANNELS, type BackendResult, type UpdateState } from "../../shared/contracts.js";
-import { sanitizeBackendError } from "../backend/backend-error.js";
+import { sanitizeBackendError } from "../../backend/backend-error.js";
 import type { UpdateService } from "../backend/update-service.js";
 import type { SenderAuthorizer } from "./register-handlers.js";
 

@@ -1,9 +1,8 @@
-import type { PointerEvent as ReactPointerEvent } from "react";
 import { CheckIcon, Share2Icon, XIcon } from "lucide-react";
+import { type PointerEvent as ReactPointerEvent, useState } from "react";
 
 import type { Chat, ChatChanges, ChatCollection } from "@/chat-data";
 import { CircleDetails } from "@/components/circle-details";
-import { WispDetails } from "@/components/wisp-details";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -15,6 +14,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
+import { WispDetails } from "@/components/wisp-details";
 import { useCopyFeedback } from "@/hooks/use-copy-feedback";
 import { canDeleteChat } from "@/lib/chat-schema";
 import { detailsLayoutStyle } from "@/lib/layout";
@@ -25,14 +25,15 @@ interface DetailsPanelProps {
   chat: Chat;
   chats: ChatCollection;
   width: number;
-  onChange: (changes: ChatChanges) => Promise<boolean> | void;
+  onChange: (changes: ChatChanges, expectedRevision?: number) => Promise<boolean> | void;
   onClose: () => void;
-  onDelete: () => void;
+  onDelete: (expectedRevision?: number) => void;
   onResizeStart: (event: ReactPointerEvent<HTMLDivElement>) => void;
 }
 
 function DetailsPanel({ chat, chats, width, onChange, onClose, onDelete, onResizeStart }: DetailsPanelProps) {
   const copyFeedback = useCopyFeedback(chat.id);
+  const [deleteRevision, setDeleteRevision] = useState<number | undefined>();
 
   function shareTemplate() {
     void copyFeedback.copy(`wisp://template/${chat.id}`);
@@ -41,7 +42,11 @@ function DetailsPanel({ chat, chats, width, onChange, onClose, onDelete, onResiz
   const deleteControl = (
     <>
       {canDeleteChat(chat) ? (
-        <Dialog>
+        <Dialog
+          onOpenChange={(open) => {
+            if (open) setDeleteRevision(chat.revision);
+          }}
+        >
           <DialogTrigger render={<Button className="w-full" variant="destructive" type="button" />}>
             Delete {chat.kind === "circle" ? "circle" : "Wisp"}
           </DialogTrigger>
@@ -55,7 +60,9 @@ function DetailsPanel({ chat, chats, width, onChange, onClose, onDelete, onResiz
             </DialogHeader>
             <DialogFooter>
               <DialogClose render={<Button variant="outline" type="button" />}>Cancel</DialogClose>
-              <DialogClose render={<Button variant="destructive" type="button" onClick={onDelete} />}>
+              <DialogClose
+                render={<Button variant="destructive" type="button" onClick={() => onDelete(deleteRevision)} />}
+              >
                 Confirm deletion
               </DialogClose>
             </DialogFooter>
@@ -88,7 +95,7 @@ function DetailsPanel({ chat, chats, width, onChange, onClose, onDelete, onResiz
 
   return (
     <aside
-      className="relative flex min-h-0 min-w-(--details-min-width) w-(--details-width) animate-panel-in flex-none flex-col border-l border-black/[0.055] bg-panel max-[900px]:absolute max-[900px]:inset-y-0 max-[900px]:right-0 max-[900px]:z-[8] max-[900px]:shadow-[-20px_0_50px_rgba(0,0,0,0.114)] dark:border-white/[0.055] dark:max-[900px]:shadow-[-20px_0_50px_rgba(0,0,0,0.38)]"
+      className="max-[620px]:w-full! max-[620px]:min-w-0! relative flex min-h-0 min-w-(--details-min-width) w-(--details-width) animate-panel-in flex-none flex-col border-l border-black/[0.055] bg-panel max-[900px]:absolute max-[900px]:inset-y-0 max-[900px]:right-0 max-[900px]:z-[8] max-[900px]:shadow-[-20px_0_50px_rgba(0,0,0,0.114)] dark:border-white/[0.055] dark:max-[900px]:shadow-[-20px_0_50px_rgba(0,0,0,0.38)]"
       style={detailsLayoutStyle(width)}
     >
       <div
@@ -117,9 +124,9 @@ function DetailsPanel({ chat, chats, width, onChange, onClose, onDelete, onResiz
           }
         />
       ) : (
-        <div className="relative flex min-h-0 flex-1 flex-col">
+        <div className="max-[620px]:w-full! max-[620px]:min-w-0! relative flex min-h-0 flex-1 flex-col">
           <div className="min-h-0 flex-1 overflow-y-auto p-3.5">
-            <CircleDetails chat={chat} chats={chats} onChange={onChange} />
+            <CircleDetails chat={chat} chats={chats} onChange={(changes) => onChange(changes, chat.revision)} />
             <div className="mt-[18px]">{deleteControl}</div>
           </div>
           <footer className="flex-none px-3.5 pt-2.5 pb-3">{shareControl}</footer>
@@ -129,5 +136,5 @@ function DetailsPanel({ chat, chats, width, onChange, onClose, onDelete, onResiz
   );
 }
 
-export { DetailsPanel };
 export type { DetailsPanelProps };
+export { DetailsPanel };

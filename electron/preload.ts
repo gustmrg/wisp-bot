@@ -2,6 +2,10 @@ import { contextBridge, ipcRenderer } from "electron";
 
 import type { SequencedConversationAgentEvent, WispApi } from "../shared/contracts.js";
 
+import type { BackendApi } from "../shared/backend-api.js";
+import type { ConnectionApi } from "../shared/connections.js";
+import type { ConversationStateView } from "../shared/conversations.js";
+
 // Sandboxed preload scripts cannot require application modules at runtime.
 // Keep this allowlist local and let the shared WispApi type enforce its shape.
 const WISP_IPC_CHANNELS = {
@@ -36,7 +40,14 @@ const WISP_IPC_CHANNELS = {
   updateState: "wisp:update:state",
 } as const;
 
-const wispApi: WispApi = {
+const wispApi: WispApi & BackendApi = {
+  subscribeToConversationState: (listener) => {
+    const handler = (_event: Electron.IpcRendererEvent, state: ConversationStateView): void => listener(state);
+    ipcRenderer.on("wisp:conversations:state", handler);
+    return () => ipcRenderer.removeListener("wisp:conversations:state", handler);
+  },
+  getConversationMessages: (request) => ipcRenderer.invoke("wisp:conversations:messages", request),
+  refreshConnection: () => ipcRenderer.invoke("wisp:connections:refresh"),
   manageContext: (request) => ipcRenderer.invoke(WISP_IPC_CHANNELS.manageContext, request),
   startConversation: (request) => ipcRenderer.invoke(WISP_IPC_CHANNELS.startConversation, request),
   sendMessage: (request) => ipcRenderer.invoke(WISP_IPC_CHANNELS.sendMessage, request),
@@ -65,7 +76,8 @@ const wispApi: WispApi = {
   getSessionReport: (request) => ipcRenderer.invoke(WISP_IPC_CHANNELS.getSessionReport, request),
   getUsageReport: (request) => ipcRenderer.invoke(WISP_IPC_CHANNELS.getUsageReport, request),
   getToolPolicy: () => ipcRenderer.invoke(WISP_IPC_CHANNELS.getToolPolicy),
-  saveToolPolicy: (settings) => ipcRenderer.invoke(WISP_IPC_CHANNELS.saveToolPolicy, settings),
+  saveToolPolicy: (settings, expectedRevision) =>
+    ipcRenderer.invoke(WISP_IPC_CHANNELS.saveToolPolicy, { ...settings, expectedRevision }),
   resolveToolApproval: (request) => ipcRenderer.invoke(WISP_IPC_CHANNELS.resolveToolApproval, request),
   getUpdateState: () => ipcRenderer.invoke(WISP_IPC_CHANNELS.getUpdateState),
   checkForUpdates: () => ipcRenderer.invoke(WISP_IPC_CHANNELS.checkForUpdates),
@@ -80,3 +92,20 @@ const wispApi: WispApi = {
 };
 
 contextBridge.exposeInMainWorld("wisp", Object.freeze(wispApi));
+
+const connections: ConnectionApi = {
+  list: () => ipcRenderer.invoke("wisp:connections:list"),
+  save: (profile) => ipcRenderer.invoke("wisp:connections:save", profile),
+  delete: (request) => ipcRenderer.invoke("wisp:connections:delete", request),
+  connect: (request) => ipcRenderer.invoke("wisp:connections:connect", request),
+  disconnect: () => ipcRenderer.invoke("wisp:connections:disconnect"),
+  getState: () => ipcRenderer.invoke("wisp:connections:get-state"),
+  trustHost: (request) => ipcRenderer.invoke("wisp:connections:trust-host", request),
+  openAuthentication: () => ipcRenderer.invoke("wisp:connections:open-authentication"),
+  subscribeToState: (listener) => {
+    const handler = (_event: Electron.IpcRendererEvent, state: Parameters<typeof listener>[0]): void => listener(state);
+    ipcRenderer.on("wisp:connections:state", handler);
+    return () => ipcRenderer.removeListener("wisp:connections:state", handler);
+  },
+};
+contextBridge.exposeInMainWorld("wispConnections", Object.freeze(connections));
