@@ -7,6 +7,7 @@ import { describe, expect, it, vi } from "vitest";
 import { evaluateToolPolicy, ToolAuthorizationBroker } from "../electron/backend/tool-authorization-broker.js";
 import { ToolPolicyStore } from "../electron/backend/tool-policy-store.js";
 import type { ConversationAgentEvent } from "../shared/contracts.js";
+import type { ToolPolicySettings } from "../shared/tool-policy.js";
 
 describe("tool policy", () => {
   it("recovers a corrupt persisted policy to safe defaults", async () => {
@@ -51,6 +52,81 @@ describe("tool policy", () => {
     expect(evaluateToolPolicy(settings, "unknown")).toBe("block");
     expect(evaluateToolPolicy({ ...settings, autoReview: false }, "create_file")).toBe("ask");
     expect(evaluateToolPolicy(settings, "create_file", "external_path")).toBe("ask");
+  });
+
+  it("requires approval for external writes regardless of workspace allows and auto-review", () => {
+    const settings: ToolPolicySettings = {
+      autoReview: true,
+      rules: [
+        { id: "workspace", action: "external_write", behavior: "allow", scope: "workspace" },
+        { id: "integration", action: "external_write", behavior: "allow", scope: "integration" },
+      ],
+    };
+    expect(evaluateToolPolicy(settings, "external_write", "integration")).toBe("ask");
+    expect(evaluateToolPolicy({ ...settings, autoReview: false }, "external_write", "integration")).toBe("ask");
+    expect(evaluateToolPolicy(settings, "external_write", "workspace_path")).toBe("block");
+  });
+
+  it("persists external blocks separately and honors them when file auto-review is disabled", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "wisp-integration-approval-"));
+    const policyPath = path.join(directory, "policy.json");
+    const store = new ToolPolicyStore(policyPath);
+    await store.save({ autoReview: false, rules: [] });
+    const events: ConversationAgentEvent[] = [];
+    let nextId = 0;
+    const broker = new ToolAuthorizationBroker(store, (event) => events.push(event), {
+      createId: () => `external-${++nextId}`,
+      selectWindowId: () => 7,
+    });
+    const action = {
+      conversationId: "one",
+      toolCallId: "linear-1",
+      toolName: "linear_update_issue",
+      category: "external_write" as const,
+      scope: { kind: "integration" as const, value: "Linear" },
+      summary: "Update issue ENG-42",
+    };
+    const authorization = broker.authorize(action);
+    const rejected = expect(authorization).rejects.toMatchObject({ code: "tool_blocked" });
+    expect(events[0]).toMatchObject({
+      type: "tool_approval_requested",
+      request: {
+        toolName: "linear_update_issue",
+        category: "external_write",
+        scope: { kind: "integration", display: "Linear" },
+      },
+    });
+    await broker.resolve(
+      { approvalId: "external-1", conversationId: "one", toolCallId: "linear-1", decision: "block" },
+      7,
+    );
+    await rejected;
+    const reopened = new ToolPolicyStore(policyPath);
+    await reopened.load();
+    expect(reopened.get().rules).toEqual([
+      { id: "external-2", action: "external_write", behavior: "block", scope: "integration" },
+    ]);
+    expect(evaluateToolPolicy(reopened.get(), "external_write", "integration")).toBe("block");
+    expect(evaluateToolPolicy(reopened.get(), "modify_file")).toBe("ask");
+    await expect(broker.authorize({ ...action, toolCallId: "linear-2" })).rejects.toMatchObject({
+      code: "tool_blocked",
+    });
+    expect(broker.listPending()).toEqual([]);
+    broker.dispose();
+  });
+
+  it("normalizes an integration allow rule to ask without granting file access", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "wisp-integration-policy-"));
+    const store = new ToolPolicyStore(path.join(directory, "policy.json"));
+    const settings = await store.save({
+      autoReview: true,
+      rules: [
+        { id: "integration-allow", action: "external_write", behavior: "allow", scope: "integration" },
+        { id: "misplaced-file-allow", action: "all_file_changes", behavior: "allow", scope: "integration" },
+      ],
+    });
+    expect(settings.rules.every(({ behavior, scope }) => behavior === "ask" && scope === "integration")).toBe(true);
+    expect(evaluateToolPolicy(settings, "modify_file")).toBe("ask");
   });
 
   it("binds a single-use approval to its window, conversation, and tool call", async () => {

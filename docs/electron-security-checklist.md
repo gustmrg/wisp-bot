@@ -8,7 +8,11 @@ Verified for the Phase 6 backend boundary:
 - Production navigation is restricted to the built renderer; new windows are denied.
 - The renderer applies a restrictive content security policy.
 - Provider credentials remain encrypted in the main process and never enter renderer events.
-- Project Pi extensions, skills, prompts, and context files are disabled.
+- Plugin keys use a separate encrypted store; configuration responses never return saved secrets.
+- Automatic discovery of project Pi extensions, skills, prompts, and context files is disabled. Controlled bundled Brave Search and Linear tools are registered explicitly; arbitrary plugins, endpoints, and MCP servers are not accepted.
+- Plugin access defaults to deny for every Wisp and is bound to its immutable application session ID. Calls recheck live grants; revocation cancels pending approvals and requests.
+- Linear mutations require an expiring, single-use integration approval. Workspace auto-review rules cannot authorize external writes.
+- Bundled plugin requests use fixed HTTPS provider endpoints, reject redirects, and enforce request/response bounds. Remote mutation cancellation is not a rollback guarantee.
 - Shell and PowerShell tools are excluded and cannot be enabled by tool policy.
 - File paths are canonicalized against the Wisp workspace, including symlink parents.
 - Mutation paths are revalidated after approval and before execution.

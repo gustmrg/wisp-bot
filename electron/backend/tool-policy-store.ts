@@ -47,10 +47,11 @@ export class ToolPolicyStore {
 
   async blockCategory(category: string, createId: () => string): Promise<void> {
     const current = this.get();
-    const rules = current.rules.filter((rule) => normalizeRuleAction(rule.action) !== category);
+    const scope = category === "external_write" ? "integration" : "workspace";
+    const rules = current.rules.filter((rule) => normalizeRuleAction(rule.action) !== category || rule.scope !== scope);
     await this.save({
       ...current,
-      rules: [...rules, { id: createId(), action: category, behavior: "block" }],
+      rules: [...rules, { id: createId(), action: category, behavior: "block", scope }],
     });
   }
 
@@ -98,9 +99,12 @@ function normalizeRule(value: unknown): ToolPolicyRule {
   ) {
     throw invalidPolicy();
   }
-  const behavior = raw.scope === undefined && raw.behavior === "allow" ? "ask" : (raw.behavior as ToolPolicyBehavior);
-  if (raw.scope !== undefined && raw.scope !== "workspace") throw invalidPolicy();
-  return { id: raw.id, action: raw.action.trim(), behavior, scope: "workspace" };
+  const behavior =
+    (raw.scope === undefined || raw.scope === "integration") && raw.behavior === "allow"
+      ? "ask"
+      : (raw.behavior as ToolPolicyBehavior);
+  if (raw.scope !== undefined && raw.scope !== "workspace" && raw.scope !== "integration") throw invalidPolicy();
+  return { id: raw.id, action: raw.action.trim(), behavior, scope: raw.scope ?? "workspace" };
 }
 
 function invalidPolicy(): WispBackendError {

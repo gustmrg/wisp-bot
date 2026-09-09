@@ -3,6 +3,7 @@ import { useState, type ReactNode } from "react";
 
 import type { WispChat, WispChatChanges } from "@/chat-data";
 import { WispModelSettings } from "@/components/wisp-model-settings";
+import { WispPluginSettings } from "@/components/wisp-plugin-settings";
 import { WispSettingsFields } from "@/components/wisp-settings-fields";
 import { WispSessionReportSection } from "@/components/wisp-session-report";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
@@ -70,6 +71,7 @@ export function WispDetails({ chat, onChange, generalActions }: WispDetailsProps
         <TabsList className="w-full" aria-label="Wisp settings sections">
           <TabsTrigger value="general">General</TabsTrigger>
           <TabsTrigger value="model">Model</TabsTrigger>
+          <TabsTrigger value="access">Access</TabsTrigger>
           <TabsTrigger value="usage">Usage</TabsTrigger>
         </TabsList>
       </div>
@@ -100,6 +102,9 @@ export function WispDetails({ chat, onChange, generalActions }: WispDetailsProps
       </TabsContent>
       <TabsContent value="usage" keepMounted className="min-h-0 overflow-y-auto p-3.5">
         {visited.has("usage") ? <WispSessionReportSection chatId={chat.id} active={tab === "usage"} /> : null}
+      </TabsContent>
+      <TabsContent value="access" className="flex min-h-0 flex-col overflow-hidden">
+        {tab === "access" ? <WispPluginSettings conversationId={chat.id} /> : null}
       </TabsContent>
     </Tabs>
   );

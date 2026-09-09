@@ -1,6 +1,6 @@
 import type { BackendError, ConversationAgentEvent, SendMessageRequest } from "../../shared/contracts.js";
+import { getToolMetadata } from "../../shared/tool-catalog.js";
 
-const ALLOWED_TOOLS = new Set(["read", "grep", "find", "ls", "edit", "write", "search_history"]);
 const MAX_DELTA_CHARACTERS = 8_000;
 const MAX_RESPONSE_CHARACTERS = 500_000;
 const MAX_ERROR_CHARACTERS = 2_000;
@@ -275,7 +275,7 @@ export class PiEventTranslator {
     phase: "started" | "updated" | "completed",
     isError?: boolean,
   ): void {
-    if (!this.request || !ALLOWED_TOOLS.has(event.toolName)) return;
+    if (!this.request || !getToolMetadata(event.toolName)) return;
     this.flush();
     this.publish({
       type: "tool_activity",

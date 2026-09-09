@@ -14,6 +14,12 @@ const WISP_IPC_CHANNELS = {
   disposeConversation: "wisp:agent:dispose",
   agentEvent: "wisp:agent:event",
   getAiSettings: "wisp:settings:ai:get",
+  getPluginSettings: "wisp:plugins:get",
+  savePluginSettings: "wisp:plugins:save",
+  removePlugin: "wisp:plugins:remove",
+  testPluginConnection: "wisp:plugins:test",
+  getWispPluginAccess: "wisp:plugins:access:get",
+  saveWispPluginAccess: "wisp:plugins:access:save",
   saveAiSettings: "wisp:settings:ai:save",
   removeProviderCredential: "wisp:settings:ai:remove-credential",
   getConversationState: "wisp:conversations:get",
@@ -37,6 +43,12 @@ const WISP_IPC_CHANNELS = {
 } as const;
 
 const wispApi: WispApi = {
+  getPluginSettings: () => ipcRenderer.invoke(WISP_IPC_CHANNELS.getPluginSettings),
+  savePluginSettings: (request) => ipcRenderer.invoke(WISP_IPC_CHANNELS.savePluginSettings, request),
+  removePlugin: (request) => ipcRenderer.invoke(WISP_IPC_CHANNELS.removePlugin, request),
+  testPluginConnection: (request) => ipcRenderer.invoke(WISP_IPC_CHANNELS.testPluginConnection, request),
+  getWispPluginAccess: (request) => ipcRenderer.invoke(WISP_IPC_CHANNELS.getWispPluginAccess, request),
+  saveWispPluginAccess: (request) => ipcRenderer.invoke(WISP_IPC_CHANNELS.saveWispPluginAccess, request),
   manageContext: (request) => ipcRenderer.invoke(WISP_IPC_CHANNELS.manageContext, request),
   startConversation: (request) => ipcRenderer.invoke(WISP_IPC_CHANNELS.startConversation, request),
   sendMessage: (request) => ipcRenderer.invoke(WISP_IPC_CHANNELS.sendMessage, request),

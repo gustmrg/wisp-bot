@@ -1,5 +1,14 @@
 import type { ContextRequest, ContextView } from "./context-policy.js";
 import type {
+  PluginSettingsView,
+  PluginRequest,
+  SavePluginSettingsRequest,
+  TestPluginConnectionRequest,
+  PluginConnectionResult,
+  WispPluginAccessView,
+  SaveWispPluginAccessRequest,
+} from "./plugins.js";
+import type {
   AnswerConversationPromptRequest,
   AppendConversationMessageRequest,
   ConversationStateView,
@@ -21,6 +30,12 @@ export const WISP_IPC_CHANNELS = {
   disposeConversation: "wisp:agent:dispose",
   agentEvent: "wisp:agent:event",
   getAiSettings: "wisp:settings:ai:get",
+  getPluginSettings: "wisp:plugins:get",
+  savePluginSettings: "wisp:plugins:save",
+  removePlugin: "wisp:plugins:remove",
+  testPluginConnection: "wisp:plugins:test",
+  getWispPluginAccess: "wisp:plugins:access:get",
+  saveWispPluginAccess: "wisp:plugins:access:save",
   saveAiSettings: "wisp:settings:ai:save",
   removeProviderCredential: "wisp:settings:ai:remove-credential",
   getConversationState: "wisp:conversations:get",
@@ -279,6 +294,12 @@ export interface UpdateState {
 }
 
 export interface WispApi {
+  getPluginSettings(): Promise<BackendResult<PluginSettingsView>>;
+  savePluginSettings(request: SavePluginSettingsRequest): Promise<BackendResult<PluginSettingsView>>;
+  removePlugin(request: PluginRequest): Promise<BackendResult<PluginSettingsView>>;
+  testPluginConnection(request: TestPluginConnectionRequest): Promise<BackendResult<PluginConnectionResult>>;
+  getWispPluginAccess(request: ConversationRequest): Promise<BackendResult<WispPluginAccessView>>;
+  saveWispPluginAccess(request: SaveWispPluginAccessRequest): Promise<BackendResult<WispPluginAccessView>>;
   manageContext(request: ContextRequest): Promise<BackendResult<ContextView>>;
   startConversation(request: ConversationRequest): Promise<EmptyResult>;
   sendMessage(request: SendMessageRequest): Promise<EmptyResult>;

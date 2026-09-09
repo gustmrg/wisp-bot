@@ -4,6 +4,7 @@ import { SettingsIcon } from "lucide-react";
 import type { Chat, ChatCollection } from "@/chat-data";
 import type { ManagedConversationStatus } from "../../shared/conversations";
 import type { ToolApprovalDecision, ToolApprovalRequest } from "../../shared/tool-policy";
+import { getToolMetadata } from "../../shared/tool-catalog";
 import type { ToolActivityView } from "@/lib/conversation-stream";
 import { getCircleMembers } from "@/lib/circle-members";
 import { mainPanel } from "@/lib/ui-classes";
@@ -168,10 +169,5 @@ export { ChatPanel };
 export type { ChatPanelProps };
 
 function toolLabel(toolName: string): string {
-  if (toolName === "read") return "Read file";
-  if (toolName === "grep" || toolName === "find") return "Search workspace";
-  if (toolName === "ls") return "List files";
-  if (toolName === "edit") return "Edit file";
-  if (toolName === "write") return "Write file";
-  return "Tool action";
+  return getToolMetadata(toolName)?.label ?? "Tool action";
 }

@@ -191,7 +191,7 @@ function GeneralSettingsSections({ preferences, onPreferencesChange }: GeneralSe
             <SettingsRowCopy>
               <strong>Auto-review</strong>
               <small className="text-dim text-[11.5px]">
-                Choose when Wisp should ask before acting. Add rules to customize what it can do automatically.
+                Choose when Wisp should ask before changing workspace files.
               </small>
             </SettingsRowCopy>
             <PreferenceSwitch
@@ -203,15 +203,19 @@ function GeneralSettingsSections({ preferences, onPreferencesChange }: GeneralSe
           <SettingsRow className="flex-col items-stretch gap-[5px]">
             <strong>Auto-review Rules</strong>
             <p className="m-0 text-dim text-[11.5px] leading-[1.5]">
-              Rules apply within each Wisp's assigned workspace. Block takes priority over ask, then allow.
+              Workspace rules prioritize block over ask, then allow. Integration changes require approval; their blocks
+              are also listed here.
             </p>
             {preferences.autoReviewRules.length ? (
               <ul className="m-0 mt-[7px] flex list-none flex-col p-0" aria-label="Auto-review rules">
                 {preferences.autoReviewRules.map((rule) => (
                   <li key={rule.id} className="flex items-center gap-3 border-b border-border py-2">
                     <span className="min-w-0 flex-1 text-xs [overflow-wrap:anywhere]">
-                      {RULE_ACTIONS.find(({ value }) => value === rule.action)?.label ?? rule.action}
+                      {rule.scope === "integration" && rule.action === "external_write"
+                        ? "Changes to integrations"
+                        : (RULE_ACTIONS.find(({ value }) => value === rule.action)?.label ?? rule.action)}
                       <small className="mt-0.5 block">
+                        {rule.scope === "integration" ? "Integrations · " : "Workspace · "}
                         {RULE_BEHAVIORS.find((behavior) => behavior.value === rule.behavior)?.label}
                       </small>
                     </span>

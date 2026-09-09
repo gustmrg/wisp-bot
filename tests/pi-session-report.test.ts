@@ -50,6 +50,31 @@ function toolResultEntry(toolCallId: string, isError: boolean, timestamp = "2026
 }
 
 describe("buildSessionReport", () => {
+  it("includes bundled plugin tools with private arguments hidden and filters unknown tools", () => {
+    const entries = [
+      messageEntry(
+        assistantMessage({
+          content: [
+            { type: "toolCall", id: "web-1", name: "web_search", arguments: { query: "PRIVATE SEARCH" } },
+            {
+              type: "toolCall",
+              id: "linear-1",
+              name: "linear_update_issue",
+              arguments: { id: "PRIVATE ID", title: "PRIVATE TITLE", description: "PRIVATE BODY" },
+            },
+            { type: "toolCall", id: "unknown-1", name: "unknown_plugin", arguments: {} },
+          ],
+        }),
+      ),
+      toolResultEntry("linear-1", false),
+    ];
+    const report = buildSessionReport("session-1", entries, { workspaceDirectory: WORKSPACE, getPricing });
+    expect(report.toolCalls.map(({ toolName }) => toolName)).toEqual(["web_search", "linear_update_issue"]);
+    expect(report.toolCalls[0]?.argumentSummary).toBe("query: [value hidden]");
+    expect(report.toolCalls[1]).toMatchObject({ status: "completed" });
+    expect(JSON.stringify(report)).not.toContain("PRIVATE");
+  });
+
   it("aggregates token usage per model and for the whole session", () => {
     const entries = [
       messageEntry(assistantMessage()),
