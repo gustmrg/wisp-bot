@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { getToolMetadata } from "../shared/tool-catalog.js";
 import { PLUGIN_ADAPTERS } from "../electron/backend/plugin-adapters.js";
 import { sanitizeBackendError } from "../electron/backend/backend-error.js";
 
@@ -38,6 +39,14 @@ afterEach(() => {
 });
 
 describe("built-in plugin adapters", () => {
+  it("registers every plugin tool in the conversation agent discovery catalog", () => {
+    for (const adapter of PLUGIN_ADAPTERS) {
+      for (const spec of adapter.tools) {
+        expect(getToolMetadata(spec.name)?.pluginId).toBe(adapter.id);
+      }
+    }
+  });
+
   it("searches only the fixed Brave endpoint with its API key header and bounded result count", async () => {
     const fetchMock = mockJson({
       query: { more_results_available: true },
@@ -336,5 +345,54 @@ describe("built-in plugin adapters", () => {
     const linearBody = JSON.parse(String(fetchMock.mock.calls[1]?.[1]?.body));
     expect(linearBody.query).toBe("query WispConnection { viewer { id } }");
     expect(linearBody.query).not.toContain("mutation");
+  });
+});
+
+describe("Firecrawl", () => {
+  it("reads bounded Markdown through the fixed API endpoint", async () => {
+    const fetchMock = mockJson({
+      success: true,
+      data: { markdown: "x".repeat(30_000), metadata: { title: "Example" } },
+    });
+    const result = JSON.parse(await tool("firecrawl_scrape").execute(KEY, { url: "https://example.com" }));
+    expect(fetchMock.mock.calls[0]?.[0]).toBe("https://api.firecrawl.dev/v2/scrape");
+    expect(fetchMock.mock.calls[0]?.[1]).toMatchObject({
+      headers: { Authorization: `Bearer ${KEY}` },
+      redirect: "error",
+    });
+    expect(requestBody(fetchMock)).toEqual({
+      url: "https://example.com/",
+      formats: ["markdown"],
+      onlyMainContent: true,
+      timeout: 20_000,
+    });
+    expect(result).toMatchObject({ url: "https://example.com", title: "Example", truncated: true });
+    expect(result.markdown.length).toBeLessThan(21_000);
+    expect(tool("firecrawl_scrape").access).toBe("read");
+  });
+
+  it.each(["file:///etc/passwd", "https://user:secret@example.com", "not a URL"])(
+    "rejects invalid URL %s before fetching",
+    async (url) => {
+      const fetchMock = mockJson({});
+      await expect(tool("firecrawl_scrape").execute(KEY, { url })).rejects.toMatchObject({ code: "invalid_request" });
+      expect(fetchMock).not.toHaveBeenCalled();
+    },
+  );
+
+  it("checks credentials without scraping a page", async () => {
+    const fetchMock = mockJson({ success: true, data: { remainingCredits: 0 } });
+    await expect(PLUGIN_ADAPTERS.find(({ id }) => id === "firecrawl")!.testConnection(KEY)).resolves.toBe(
+      "Connected to Firecrawl.",
+    );
+    expect(fetchMock.mock.calls[0]?.[0]).toBe("https://api.firecrawl.dev/v2/team/credit-usage");
+    expect(fetchMock.mock.calls[0]?.[1]?.method).toBe("GET");
+  });
+
+  it("does not expose provider error payloads", async () => {
+    mockJson({ success: false, error: KEY });
+    await expect(tool("firecrawl_scrape").execute(KEY, { url: "https://example.com" })).rejects.toThrow(
+      "Firecrawl could not complete the request.",
+    );
   });
 });

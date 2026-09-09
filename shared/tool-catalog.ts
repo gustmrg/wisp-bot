@@ -25,6 +25,13 @@ export const TOOL_CATALOG: ReadonlyArray<ToolMetadata> = [
     category: "search",
   },
   {
+    name: "firecrawl_scrape",
+    label: "Read web page",
+    activityLabel: "Reading a web page…",
+    category: "read",
+    pluginId: "firecrawl",
+  },
+  {
     name: "web_search",
     label: "Search web",
     activityLabel: "Searching the web…",

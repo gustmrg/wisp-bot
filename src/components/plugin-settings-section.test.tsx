@@ -45,7 +45,33 @@ function setup(configured = false, secureStorageAvailable = true) {
   return { getPluginSettings, savePluginSettings, testPluginConnection, removePlugin };
 }
 
+async function openPlugin(name: string) {
+  const trigger = await screen.findByRole("button", { name: new RegExp(`^(Connect|Manage) ${name}$`) });
+  await userEvent.click(trigger);
+  return within(await screen.findByRole("dialog", { name }));
+}
+
 describe("PluginSettingsSection", () => {
+  it("groups connections by category and saves a Firecrawl key", async () => {
+    const api = setup();
+    const user = userEvent.setup();
+    render(<PluginSettingsSection />);
+    const web = within(await screen.findByRole("region", { name: "Web & research" }));
+    expect(web.getByRole("button", { name: "Connect Web search" })).toBeVisible();
+
+    expect(
+      within(screen.getByRole("region", { name: "Productivity" })).getByRole("button", { name: "Connect Linear" }),
+    ).toBeVisible();
+    const firecrawl = await openPlugin("Firecrawl");
+    await user.type(firecrawl.getByLabelText("Firecrawl API key"), "fc-test-key");
+    await user.click(firecrawl.getByRole("button", { name: "Save plugin" }));
+    expect(api.savePluginSettings).toHaveBeenCalledWith({
+      pluginId: "firecrawl",
+      enabled: true,
+      apiKey: "fc-test-key",
+    });
+  });
+
   it("reports unreadable credentials and still lets the user disable a plugin", async () => {
     const api = setup();
     const unreadable: PluginSettingsView = {
@@ -62,7 +88,7 @@ describe("PluginSettingsSection", () => {
     const user = userEvent.setup();
     const { unmount } = render(<PluginSettingsSection />);
     expect(await screen.findByRole("alert")).toHaveTextContent("Plugin credentials could not be read");
-    const linear = within(screen.getByRole("region", { name: "Linear" }));
+    const linear = await openPlugin("Linear");
     await user.click(linear.getByRole("checkbox", { name: "Enable Linear" }));
     await user.click(linear.getByRole("button", { name: "Save plugin" }));
     expect(api.savePluginSettings).toHaveBeenCalledWith({ pluginId: "linear", enabled: false });
@@ -71,13 +97,14 @@ describe("PluginSettingsSection", () => {
     unmount();
     api.getPluginSettings.mockResolvedValueOnce({ ok: true, value: disabled });
     render(<PluginSettingsSection />);
-    expect(await screen.findByRole("checkbox", { name: "Enable Linear" })).not.toBeChecked();
+    const reopened = await openPlugin("Linear");
+    expect(reopened.getByRole("checkbox", { name: "Enable Linear" })).not.toBeChecked();
   });
   it("tests an entered key, saves it, clears the password and uses the saved key for subsequent operations", async () => {
     const api = setup();
     const user = userEvent.setup();
     render(<PluginSettingsSection />);
-    const web = within(await screen.findByRole("region", { name: "Web search" }));
+    const web = await openPlugin("Web search");
     const key = web.getByLabelText("Brave Search API key");
     expect(key).toHaveAttribute("type", "password");
     expect(web.getByRole("button", { name: "Save plugin" })).toBeDisabled();
@@ -106,7 +133,7 @@ describe("PluginSettingsSection", () => {
     const api = setup(true);
     const user = userEvent.setup();
     render(<PluginSettingsSection />);
-    const linear = within(await screen.findByRole("region", { name: "Linear" }));
+    const linear = await openPlugin("Linear");
     expect(linear.getByLabelText("Linear personal API key")).toHaveValue("");
     await user.click(linear.getByRole("button", { name: "Remove connection" }));
     expect(api.removePlugin).toHaveBeenCalledWith({ pluginId: "linear" });
@@ -122,7 +149,7 @@ describe("PluginSettingsSection", () => {
     } as never);
     const user = userEvent.setup();
     render(<PluginSettingsSection />);
-    const linear = within(await screen.findByRole("region", { name: "Linear" }));
+    const linear = await openPlugin("Linear");
     await user.type(linear.getByLabelText("Linear personal API key"), "linear-secret");
     await user.click(linear.getByRole("button", { name: "Save plugin" }));
     expect(await linear.findByRole("alert")).toHaveTextContent("Secure storage is locked.");
@@ -134,9 +161,9 @@ describe("PluginSettingsSection", () => {
   it("prevents entering or saving a new key when secure storage is unavailable", async () => {
     setup(false, false);
     render(<PluginSettingsSection />);
-    const web = within(await screen.findByRole("region", { name: "Web search" }));
+    const web = await openPlugin("Web search");
     expect(web.getByLabelText("Brave Search API key")).toBeDisabled();
     expect(web.getByRole("button", { name: "Save plugin" })).toBeDisabled();
-    expect(screen.getByRole("alert")).toHaveTextContent("Secure credential storage is unavailable");
+    expect(screen.getByRole("alert", { hidden: true })).toHaveTextContent("Secure credential storage is unavailable");
   });
 });

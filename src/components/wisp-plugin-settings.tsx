@@ -1,6 +1,13 @@
 import { useEffect, useId, useState } from "react";
 
-import { PLUGIN_CATALOG, type PluginAccess, type PluginGrant, type PluginSettingsView } from "../../shared/plugins";
+import {
+  PLUGIN_CATEGORIES,
+  PLUGIN_CATALOG,
+  type PluginAccess,
+  type PluginGrant,
+  type PluginSettingsView,
+} from "../../shared/plugins";
+import { PluginLogo } from "@/components/plugin-logo";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
@@ -100,60 +107,68 @@ function WispPluginSettingsForm({ conversationId }: { conversationId: string }) 
         </p>
         {settings ? (
           <>
-            {PLUGIN_CATALOG.map((plugin) => {
-              const connection = settings.plugins.find(({ id }) => id === plugin.id);
-              const available = Boolean(connection?.configured && connection.enabled);
-              const access = grants.find(({ pluginId }) => pluginId === plugin.id)?.access ?? "none";
-              const options = ACCESS_OPTIONS.filter((option) => plugin.supportsWrite || option.value !== "write");
-              return (
-                <div key={plugin.id} className="flex flex-col gap-2 rounded-[10px] bg-popover p-3.5">
-                  <label htmlFor={`${formId}-${plugin.id}`} className="font-medium">
-                    {plugin.name} access
-                  </label>
-                  <p className="leading-relaxed text-dim">{plugin.description}</p>
-                  <Select
-                    value={access}
-                    items={options}
-                    disabled={saving}
-                    onValueChange={(value) => {
-                      if (!value || (!available && value !== "none")) return;
-                      setGrants((current) =>
-                        current.map((grant) =>
-                          grant.pluginId === plugin.id ? { ...grant, access: value as PluginAccess } : grant,
-                        ),
-                      );
-                      setError("");
-                      setSaved(false);
-                    }}
-                  >
-                    <SelectTrigger id={`${formId}-${plugin.id}`} className="w-full">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent align="start" alignItemWithTrigger={false}>
-                      <SelectGroup>
-                        {options.map((option) => (
-                          <SelectItem
-                            key={option.value}
-                            value={option.value}
-                            disabled={!available && option.value !== "none"}
-                          >
-                            {option.label}
-                          </SelectItem>
-                        ))}
-                      </SelectGroup>
-                    </SelectContent>
-                  </Select>
-                  {!available ? (
-                    <p className="leading-relaxed text-dim">
-                      {connection?.configured
-                        ? "This plugin is disabled globally."
-                        : "Connect this plugin in Settings → Plugins."}{" "}
-                      You can still remove existing access.
-                    </p>
-                  ) : null}
-                </div>
-              );
-            })}
+            {PLUGIN_CATEGORIES.map((category) => (
+              <section key={category.id} aria-label={category.name} className="flex flex-col gap-3">
+                <h3 className="font-semibold">{category.name}</h3>
+                {PLUGIN_CATALOG.filter((plugin) => plugin.category === category.id).map((plugin) => {
+                  const connection = settings.plugins.find(({ id }) => id === plugin.id);
+                  const available = Boolean(connection?.configured && connection.enabled);
+                  const access = grants.find(({ pluginId }) => pluginId === plugin.id)?.access ?? "none";
+                  const options = ACCESS_OPTIONS.filter((option) => plugin.supportsWrite || option.value !== "write");
+                  return (
+                    <div key={plugin.id} className="flex flex-col gap-2 rounded-[10px] bg-popover p-3.5">
+                      <div className="flex items-center gap-3">
+                        <PluginLogo pluginId={plugin.id} />
+                        <label htmlFor={`${formId}-${plugin.id}`} className="font-medium">
+                          {plugin.name} access
+                        </label>
+                      </div>
+                      <p className="leading-relaxed text-dim">{plugin.description}</p>
+                      <Select
+                        value={access}
+                        items={options}
+                        disabled={saving}
+                        onValueChange={(value) => {
+                          if (!value || (!available && value !== "none")) return;
+                          setGrants((current) =>
+                            current.map((grant) =>
+                              grant.pluginId === plugin.id ? { ...grant, access: value as PluginAccess } : grant,
+                            ),
+                          );
+                          setError("");
+                          setSaved(false);
+                        }}
+                      >
+                        <SelectTrigger id={`${formId}-${plugin.id}`} className="w-full">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent align="start" alignItemWithTrigger={false}>
+                          <SelectGroup>
+                            {options.map((option) => (
+                              <SelectItem
+                                key={option.value}
+                                value={option.value}
+                                disabled={!available && option.value !== "none"}
+                              >
+                                {option.label}
+                              </SelectItem>
+                            ))}
+                          </SelectGroup>
+                        </SelectContent>
+                      </Select>
+                      {!available ? (
+                        <p className="leading-relaxed text-dim">
+                          {connection?.configured
+                            ? "This plugin is disabled globally."
+                            : "Connect this plugin in Settings → Plugins."}{" "}
+                          You can still remove existing access.
+                        </p>
+                      ) : null}
+                    </div>
+                  );
+                })}
+              </section>
+            ))}
             <p className="leading-relaxed text-dim">
               Read and write allows Linear issue creation and updates, with your approval for each change. Revoking
               access blocks new calls immediately; calls already in progress may finish.

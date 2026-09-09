@@ -1,7 +1,16 @@
 import { useEffect, useId, useState } from "react";
 
-import type { PluginSettingsView, PluginSummary } from "../../shared/plugins";
-import { SettingsCard, SettingsGroup } from "@/components/settings/settings-primitives";
+import { PLUGIN_CATEGORIES, PLUGIN_CATALOG, type PluginSettingsView, type PluginSummary } from "../../shared/plugins";
+import { Check, Plus, Settings2 } from "lucide-react";
+import { PluginLogo } from "@/components/plugin-logo";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
@@ -31,7 +40,7 @@ export function PluginSettingsSection() {
 
   return (
     <section
-      className="overflow-y-auto px-[30px] py-6 max-[620px]:px-4 max-[620px]:py-5"
+      className="@container overflow-y-auto px-[30px] py-6 max-[620px]:px-4 max-[620px]:py-5"
       id="plugin-settings-panel"
       aria-labelledby="plugin-settings-title"
     >
@@ -54,14 +63,23 @@ export function PluginSettingsSection() {
               {view.credentialError}
             </p>
           ) : null}
-          {view.plugins.map((plugin) => (
-            <PluginConnectionCard
-              key={plugin.id}
-              plugin={plugin}
-              secureStorageAvailable={view.secureStorageAvailable}
-              credentialsUnavailable={Boolean(view.credentialError)}
-              onSaved={setView}
-            />
+          {PLUGIN_CATEGORIES.map((category) => (
+            <section key={category.id} aria-label={category.name} className="mb-6">
+              <h3 className="mb-3 mt-7 border-b border-border pb-3 text-[15px] font-medium">{category.name}</h3>
+              <div className="grid grid-cols-1 gap-x-7 gap-y-1 @min-[560px]:grid-cols-2">
+                {view.plugins
+                  .filter((plugin) => PLUGIN_CATALOG.find(({ id }) => id === plugin.id)?.category === category.id)
+                  .map((plugin) => (
+                    <PluginConnectionCard
+                      key={plugin.id}
+                      plugin={plugin}
+                      secureStorageAvailable={view.secureStorageAvailable}
+                      credentialsUnavailable={Boolean(view.credentialError)}
+                      onSaved={setView}
+                    />
+                  ))}
+              </div>
+            </section>
           ))}
         </>
       ) : error ? (
@@ -94,6 +112,7 @@ function PluginConnectionCard({
   onSaved: (view: PluginSettingsView) => void;
 }) {
   const formId = useId();
+  const [open, setOpen] = useState(false);
   const [apiKey, setApiKey] = useState("");
   const [enabled, setEnabled] = useState(plugin.configured || credentialsUnavailable ? plugin.enabled : true);
   const [operation, setOperation] = useState<"save" | "test" | "remove" | null>(null);
@@ -144,17 +163,56 @@ function PluginConnectionCard({
   }
 
   return (
-    <SettingsGroup label={plugin.name}>
-      <SettingsCard>
-        <div className="flex flex-col gap-3 p-3.5 text-[11.5px]">
+    <Dialog
+      open={open}
+      onOpenChange={(nextOpen) => {
+        if (busy) return;
+        setOpen(nextOpen);
+        if (!nextOpen) {
+          setApiKey("");
+          setError("");
+          setMessage("");
+          setEnabled(plugin.configured || credentialsUnavailable ? plugin.enabled : true);
+        }
+      }}
+    >
+      <DialogTrigger
+        aria-label={`${plugin.configured || credentialsUnavailable ? "Manage" : "Connect"} ${plugin.name}`}
+        className="group flex w-full min-w-0 items-center gap-3 rounded-xl px-2 py-4 text-left outline-none transition-colors hover:bg-popover focus-visible:ring-2 focus-visible:ring-ring"
+      >
+        <PluginLogo pluginId={plugin.id} />
+        <span className="min-w-0 flex-1">
+          <span className="block text-[14px] font-medium">{plugin.name}</span>
+          <span className="mt-1 block text-[12px] leading-relaxed text-dim">{plugin.description}</span>
+          {plugin.configured ? (
+            <span className="mt-1.5 flex items-center gap-1 text-[10.5px] text-dim">
+              <Check className="size-3" aria-hidden="true" />
+              {plugin.enabled ? "Connected" : "Disabled"}
+            </span>
+          ) : null}
+        </span>
+        {plugin.configured || credentialsUnavailable ? (
+          <Settings2 className="size-5 shrink-0 text-dim" aria-hidden="true" />
+        ) : (
+          <Plus className="size-5 shrink-0 text-dim group-hover:text-foreground" aria-hidden="true" />
+        )}
+      </DialogTrigger>
+      <DialogContent className="max-h-[85vh] overflow-y-auto" showCloseButton={!busy}>
+        <DialogHeader>
+          <div className="mb-2 flex items-center gap-3">
+            <PluginLogo pluginId={plugin.id} />
+            <DialogTitle>{plugin.name}</DialogTitle>
+          </div>
+          <DialogDescription>{plugin.description}</DialogDescription>
+        </DialogHeader>
+        <div className="flex flex-col gap-3 text-[11.5px]">
           <div>
-            <p className="text-dim">{plugin.description}</p>
             <p className="mt-1">
               {plugin.configured ? (plugin.enabled ? "Connected · enabled" : "Connected · disabled") : "Not connected"}
             </p>
           </div>
           <label htmlFor={`${formId}-key`} className="flex flex-col gap-1.5">
-            <strong>{plugin.id === "web-search" ? "Brave Search API key" : "Linear personal API key"}</strong>
+            <strong>{PLUGIN_CATALOG.find(({ id }) => id === plugin.id)?.credentialLabel}</strong>
             <Input
               id={`${formId}-key`}
               type="password"
@@ -215,7 +273,7 @@ function PluginConnectionCard({
             ) : null}
           </div>
         </div>
-      </SettingsCard>
-    </SettingsGroup>
+      </DialogContent>
+    </Dialog>
   );
 }

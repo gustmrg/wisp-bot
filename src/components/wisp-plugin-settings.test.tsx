@@ -66,6 +66,7 @@ describe("WispPluginSettings", () => {
       grants: [
         { pluginId: "web-search", access: "read" },
         { pluginId: "linear", access: "write" },
+        { pluginId: "firecrawl", access: "none" },
       ],
     });
     expect(await screen.findByRole("status")).toHaveTextContent("Plugin access saved for this Wisp.");
@@ -86,6 +87,7 @@ describe("WispPluginSettings", () => {
       grants: [
         { pluginId: "web-search", access: "none" },
         { pluginId: "linear", access: "none" },
+        { pluginId: "firecrawl", access: "none" },
       ],
     });
   });
@@ -177,6 +179,7 @@ describe("WispPluginSettings", () => {
       grants: [
         { pluginId: "web-search", access: "read" },
         { pluginId: "linear", access: "none" },
+        { pluginId: "firecrawl", access: "none" },
       ],
     });
   });

@@ -185,7 +185,14 @@ that plugin. Revocation blocks new calls and cancels pending approvals/requests;
 it cannot undo a change already accepted by Linear. Check Linear before retrying
 a write whose outcome is uncertain.
 
-This version includes only these two bundled plugins. Arbitrary plugin
+Firecrawl is available under **Web & research**, alongside Brave Search; Linear is
+under **Productivity**. Connect a Firecrawl API key in Settings → Plugins, then
+grant read access in a Wisp’s Access tab. The `firecrawl_scrape` tool reads one
+HTTP(S) page as Markdown (long content is truncated) using the
+[Firecrawl v2 scrape API](https://docs.firecrawl.dev/api-reference/endpoint/scrape).
+Scraping uses Firecrawl credits; Test connection checks credit usage without scraping.
+
+This version includes these three bundled plugins. Arbitrary plugin
 installation, custom endpoints, MCP servers, OAuth, and multiple accounts are
 not available yet. See [ADR 004](docs/decisions/004-wisp-plugins.md) for the
 extension boundary and validation scope.

@@ -55,10 +55,13 @@ describe("AppSettingsDialog metadata", () => {
     );
     expect(getPluginSettings).not.toHaveBeenCalled();
     await user.click(screen.getByRole("button", { name: "Plugins" }));
+    await user.click(await screen.findByRole("button", { name: "Connect Web search" }));
     const key = await screen.findByLabelText("Brave Search API key");
     await user.type(key, "unsaved-secret");
+    await user.click(screen.getByRole("button", { name: "Close" }));
     await user.click(screen.getByRole("button", { name: "General" }));
     await user.click(screen.getByRole("button", { name: "Plugins" }));
+    await user.click(await screen.findByRole("button", { name: "Connect Web search" }));
     expect(await screen.findByLabelText("Brave Search API key")).toHaveValue("");
     expect(getPluginSettings).toHaveBeenCalledTimes(2);
   });

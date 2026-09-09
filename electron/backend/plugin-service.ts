@@ -47,7 +47,12 @@ export interface PluginServiceOptions {
 }
 
 function defaultState(): PluginState {
-  return { schemaVersion: 1, revision: randomUUID(), enabled: { "web-search": false, linear: false }, grants: {} };
+  return {
+    schemaVersion: 1,
+    revision: randomUUID(),
+    enabled: { "web-search": false, linear: false, firecrawl: false },
+    grants: {},
+  };
 }
 
 export class PluginService implements PluginToolSource {
@@ -80,12 +85,19 @@ export class PluginService implements PluginToolSource {
       )
         throw invalidPluginRequest();
       const enabled = pluginRecord(raw.enabled, PLUGIN_IDS);
-      if (PLUGIN_IDS.some((id) => typeof enabled[id] !== "boolean")) throw invalidPluginRequest();
+      if (
+        PLUGIN_IDS.some((id) => typeof enabled[id] !== "boolean" && !(id === "firecrawl" && enabled[id] === undefined))
+      )
+        throw invalidPluginRequest();
       const grants = pluginRecord(raw.grants);
       const normalized = defaultState();
       // Older settings have no revision. A fresh token invalidates any old form.
       if (typeof raw.revision === "string") normalized.revision = raw.revision;
-      normalized.enabled = { "web-search": enabled["web-search"] as boolean, linear: enabled.linear as boolean };
+      normalized.enabled = {
+        "web-search": enabled["web-search"] as boolean,
+        linear: enabled.linear as boolean,
+        firecrawl: enabled.firecrawl === true,
+      };
       for (const [sessionId, value] of Object.entries(grants)) {
         if (!/^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$/.test(sessionId)) throw invalidPluginRequest();
         const entries = parseGrants(

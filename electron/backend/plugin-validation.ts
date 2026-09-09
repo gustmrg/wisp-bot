@@ -1,5 +1,6 @@
 import {
   PLUGIN_IDS,
+  PLUGIN_CATALOG,
   type PluginId,
   type PluginGrant,
   type SavePluginSettingsRequest,
@@ -61,7 +62,7 @@ export function parseGrants(value: unknown): PluginGrant[] {
       seen.has(pluginId) ||
       typeof raw.access !== "string" ||
       !["none", "read", "write"].includes(raw.access) ||
-      (pluginId === "web-search" && raw.access === "write")
+      (!PLUGIN_CATALOG.find(({ id }) => id === pluginId)!.supportsWrite && raw.access === "write")
     )
       throw invalidPluginRequest();
     seen.add(pluginId);

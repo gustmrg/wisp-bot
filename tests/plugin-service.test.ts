@@ -67,6 +67,29 @@ async function setup() {
 }
 
 describe("plugin service", () => {
+  it("preserves existing connections and grants when loading settings without Firecrawl", async () => {
+    const { service, connect, grant, options, dataDirectory } = await setup();
+    await connect();
+    await grant("read");
+    const file = path.join(dataDirectory, "plugins.json");
+    const state = JSON.parse(await readFile(file, "utf8"));
+    delete state.enabled.firecrawl;
+    await writeFile(file, JSON.stringify(state));
+    const reopened = new PluginService(options);
+    await reopened.load();
+    expect(await reopened.getActiveToolNames("one")).toEqual(["linear_get_issue"]);
+    expect((await reopened.getView()).plugins.find(({ id }) => id === "firecrawl")).toMatchObject({
+      enabled: false,
+      configured: false,
+    });
+    expect(() =>
+      service.saveAccess({
+        ...service.getAccess({ conversationId: "one" }),
+        grants: [{ pluginId: "firecrawl", access: "write" }],
+      }),
+    ).toThrow();
+  });
+
   it("starts denied and connecting does not grant tools; persists independent Wisp grants without plaintext secrets", async () => {
     const { service, options, connect, grant, call, execute, dataDirectory } = await setup();
     expect((await service.getView()).plugins.every((plugin) => !plugin.enabled && !plugin.configured)).toBe(true);

@@ -1,15 +1,37 @@
-export const PLUGIN_IDS = ["web-search", "linear"] as const;
+export const PLUGIN_IDS = ["web-search", "linear", "firecrawl"] as const;
 export type PluginId = (typeof PLUGIN_IDS)[number];
 export type PluginAccess = "none" | "read" | "write";
+
+export const PLUGIN_CATEGORIES = [
+  { id: "web", name: "Web & research" },
+  { id: "productivity", name: "Productivity" },
+] as const;
 
 export const PLUGIN_CATALOG = [
   {
     id: "web-search",
     name: "Web search",
+    category: "web",
+    credentialLabel: "Brave Search API key",
     description: "Search the web with Brave Search and return sources.",
     supportsWrite: false,
   },
-  { id: "linear", name: "Linear", description: "Find, read, create, and update Linear issues.", supportsWrite: true },
+  {
+    id: "linear",
+    category: "productivity",
+    credentialLabel: "Linear personal API key",
+    name: "Linear",
+    description: "Find, read, create, and update Linear issues.",
+    supportsWrite: true,
+  },
+  {
+    id: "firecrawl",
+    name: "Firecrawl",
+    category: "web",
+    credentialLabel: "Firecrawl API key",
+    description: "Read web pages as Markdown with Firecrawl.",
+    supportsWrite: false,
+  },
 ] as const;
 
 export interface PluginSummary {
