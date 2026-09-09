@@ -28,6 +28,26 @@ const defaultProps = {
 };
 
 describe("ChatComposer", () => {
+  it("uses Enter for newlines on mobile and sends only through the send control", async () => {
+    const user = userEvent.setup();
+    const onSend = vi.fn();
+    render(
+      <ChatComposer
+        {...defaultProps}
+        chat={wisp("one", "One")}
+        onSend={onSend}
+        autoFocus={false}
+        enterToSend={false}
+      />,
+    );
+    const input = screen.getByRole("textbox", { name: "Message One" });
+    expect(input).not.toHaveFocus();
+    await user.type(input, "First line{enter}Second line");
+    expect(onSend).not.toHaveBeenCalled();
+    expect(input).toHaveValue("First line\nSecond line");
+    await user.click(screen.getByRole("button", { name: "Send message" }));
+    expect(onSend).toHaveBeenCalledWith("First line\nSecond line");
+  });
   it("submits Enter, preserves Shift+Enter, and clears a submitted draft", async () => {
     const user = userEvent.setup();
     const onSend = vi.fn();

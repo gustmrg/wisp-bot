@@ -54,8 +54,8 @@ async function createWindow(target: RendererTarget): Promise<void> {
   const window = new BrowserWindow({
     width: 1040,
     height: 760,
-    minWidth: 820,
-    minHeight: 600,
+    minWidth: 360,
+    minHeight: 480,
     backgroundColor: windowBackground(),
     autoHideMenuBar: true,
     webPreferences: {

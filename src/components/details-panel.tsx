@@ -1,5 +1,5 @@
-import type { PointerEvent as ReactPointerEvent } from "react";
-import { CheckIcon, Share2Icon, XIcon } from "lucide-react";
+import { useEffect, useRef, type PointerEvent as ReactPointerEvent } from "react";
+import { CheckIcon, ChevronLeftIcon, Share2Icon, XIcon } from "lucide-react";
 
 import type { Chat, ChatChanges, ChatCollection } from "@/chat-data";
 import { CircleDetails } from "@/components/circle-details";
@@ -22,6 +22,7 @@ import { panelResizer } from "@/lib/ui-classes";
 import { cn } from "@/lib/utils";
 
 interface DetailsPanelProps {
+  mobile?: boolean;
   chat: Chat;
   chats: ChatCollection;
   width: number;
@@ -31,8 +32,22 @@ interface DetailsPanelProps {
   onResizeStart: (event: ReactPointerEvent<HTMLDivElement>) => void;
 }
 
-function DetailsPanel({ chat, chats, width, onChange, onClose, onDelete, onResizeStart }: DetailsPanelProps) {
+function DetailsPanel({
+  chat,
+  chats,
+  width,
+  onChange,
+  onClose,
+  onDelete,
+  onResizeStart,
+  mobile = false,
+}: DetailsPanelProps) {
   const copyFeedback = useCopyFeedback(chat.id);
+  const titleRef = useRef<HTMLHeadingElement>(null);
+  const focusChatId = mobile ? chat.id : null;
+  useEffect(() => {
+    if (focusChatId) titleRef.current?.focus();
+  }, [focusChatId]);
 
   function shareTemplate() {
     void copyFeedback.copy(`wisp://template/${chat.id}`);
@@ -88,19 +103,36 @@ function DetailsPanel({ chat, chats, width, onChange, onClose, onDelete, onResiz
 
   return (
     <aside
-      className="relative flex min-h-0 min-w-(--details-min-width) w-(--details-width) animate-panel-in flex-none flex-col border-l border-black/[0.055] bg-panel max-[900px]:absolute max-[900px]:inset-y-0 max-[900px]:right-0 max-[900px]:z-[8] max-[900px]:shadow-[-20px_0_50px_rgba(0,0,0,0.114)] dark:border-white/[0.055] dark:max-[900px]:shadow-[-20px_0_50px_rgba(0,0,0,0.38)]"
+      className={cn(
+        "wisp-details-panel relative flex min-h-0 animate-panel-in flex-none flex-col bg-panel",
+        mobile
+          ? "w-full min-w-0"
+          : "min-w-(--details-min-width) w-(--details-width) border-l border-black/[0.055] max-[900px]:absolute max-[900px]:inset-y-0 max-[900px]:right-0 max-[900px]:z-[8] max-[900px]:shadow-[-20px_0_50px_rgba(0,0,0,0.114)] dark:border-white/[0.055] dark:max-[900px]:shadow-[-20px_0_50px_rgba(0,0,0,0.38)]",
+      )}
       style={detailsLayoutStyle(width)}
+      aria-label={`${chat.name} settings`}
     >
-      <div
-        className={cn(panelResizer, "-left-1")}
-        role="separator"
-        aria-orientation="vertical"
-        onPointerDown={onResizeStart}
-      />
-      <header className="grid h-11 flex-none grid-cols-[28px_1fr_28px] items-center border-b border-black/[0.04] px-[9px] dark:border-white/[0.04]">
-        <strong className="col-start-2 text-center text-[12.5px]">Settings</strong>
-        <Button variant="ghost" size="icon-sm" type="button" aria-label="Close details" onClick={onClose}>
-          <XIcon />
+      {!mobile ? (
+        <div
+          className={cn(panelResizer, "-left-1")}
+          role="separator"
+          aria-orientation="vertical"
+          onPointerDown={onResizeStart}
+        />
+      ) : null}
+      <header className="details-header grid h-11 flex-none grid-cols-[28px_1fr_28px] items-center border-b border-black/[0.04] px-[9px] dark:border-white/[0.04]">
+        <h2 ref={titleRef} tabIndex={-1} className="col-start-2 text-center text-[12.5px] font-semibold outline-none">
+          {mobile ? "Wisp settings" : "Settings"}
+        </h2>
+        <Button
+          className={mobile ? "details-back" : undefined}
+          variant="ghost"
+          size="icon-sm"
+          type="button"
+          aria-label={mobile ? "Back to conversation" : "Close details"}
+          onClick={onClose}
+        >
+          {mobile ? <ChevronLeftIcon aria-hidden="true" /> : <XIcon />}
         </Button>
       </header>
 

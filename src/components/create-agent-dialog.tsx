@@ -20,7 +20,7 @@ import { AVATAR_COLORS } from "@/lib/wisp-appearance";
 type NewAgent = NewWisp;
 
 interface CreateAgentDialogProps {
-  onCreate: (agent: NewAgent) => void;
+  onCreate: (agent: NewAgent) => Promise<boolean> | void;
   trigger?: ReactElement;
 }
 
@@ -41,35 +41,51 @@ const DEFAULT_WISP: WispChat = {
 function CreateAgentDialog({ onCreate, trigger }: CreateAgentDialogProps) {
   const [open, setOpen] = useState(false);
   const [settings, setSettings] = useState<WispChat>(DEFAULT_WISP);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
   const { name, description, color } = settings;
 
   function resetForm() {
     setSettings(DEFAULT_WISP);
+    setError("");
   }
 
-  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const trimmedName = name.trim();
-    if (!trimmedName) return;
+    if (!trimmedName || saving) return;
 
-    onCreate({
-      kind: "wisp",
-      name: trimmedName,
-      label: settings.label.trim(),
-      description: description.trim(),
-      color,
-      shape: settings.shape,
-      avatarImage: settings.avatarImage,
-      notifyOnUpdatesEnabled: settings.notifyOnUpdatesEnabled,
-    });
-    setOpen(false);
-    resetForm();
+    setSaving(true);
+    setError("");
+    try {
+      const created = await onCreate({
+        kind: "wisp",
+        name: trimmedName,
+        label: settings.label.trim(),
+        description: description.trim(),
+        color,
+        shape: settings.shape,
+        avatarImage: settings.avatarImage,
+        notifyOnUpdatesEnabled: settings.notifyOnUpdatesEnabled,
+      });
+      if (created === false) {
+        setError("Could not create this Wisp. Your draft is still here; try again.");
+        return;
+      }
+      setOpen(false);
+      resetForm();
+    } catch {
+      setError("Could not create this Wisp. Your draft is still here; try again.");
+    } finally {
+      setSaving(false);
+    }
   }
 
   return (
     <Dialog
       open={open}
       onOpenChange={(nextOpen) => {
+        if (saving) return;
         setOpen(nextOpen);
         if (!nextOpen) resetForm();
       }}
@@ -94,21 +110,29 @@ function CreateAgentDialog({ onCreate, trigger }: CreateAgentDialogProps) {
         )}
       </DialogTrigger>
 
-      <DialogContent className="flex max-h-[calc(100dvh-32px)] max-w-[530px] flex-col">
+      <DialogContent
+        mobileFullscreen
+        className="create-wisp-dialog flex max-h-[calc(100dvh-32px)] max-w-[530px] flex-col"
+      >
         <DialogHeader className="flex-none">
           <DialogTitle>Create new Wisp</DialogTitle>
           <DialogDescription>Create a Wisp for focused work.</DialogDescription>
         </DialogHeader>
 
-        <form className="flex min-h-0 flex-col gap-5" onSubmit={handleSubmit}>
+        <form className="flex min-h-0 flex-col gap-5" onSubmit={(event) => void handleSubmit(event)}>
           <CreateWispForm
             settings={settings}
             onChange={(changes) => setSettings((current) => ({ ...current, ...changes }))}
           />
+          {error ? (
+            <p className="text-sm text-destructive" role="alert">
+              {error}
+            </p>
+          ) : null}
           <DialogFooter className="flex-none">
-            <DialogClose render={<Button variant="outline" type="button" />}>Cancel</DialogClose>
-            <Button type="submit" disabled={!name.trim()}>
-              Create Wisp
+            <DialogClose render={<Button variant="outline" type="button" disabled={saving} />}>Cancel</DialogClose>
+            <Button type="submit" disabled={!name.trim() || saving}>
+              {saving ? "Creating…" : "Create Wisp"}
             </Button>
           </DialogFooter>
         </form>
