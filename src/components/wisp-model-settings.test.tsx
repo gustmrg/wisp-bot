@@ -58,7 +58,7 @@ describe("WispModelSettings", () => {
     const inherit = await screen.findByRole("checkbox", { name: "Use global model" });
     await user.click(inherit);
     await user.click(screen.getByRole("combobox", { name: "Provider" }));
-    await user.click(screen.getByRole("option", { name: "Provider b" }));
+    await user.click(await screen.findByRole("option", { name: "Provider b" }));
     await user.type(screen.getByLabelText("Maximum output tokens"), "512");
     await user.click(screen.getByRole("button", { name: "Save model" }));
     await waitFor(() =>
