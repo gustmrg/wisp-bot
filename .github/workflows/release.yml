@@ -84,4 +84,4 @@ jobs:
           if ! gh release view "$TAG" >/dev/null 2>&1; then
             gh release create "$TAG" --verify-tag --title "Wisp Bot $TAG" --generate-notes
           fi
-          find artifacts -type f -exec gh release upload "$TAG" {} + --clobber
+          find artifacts -type f -exec gh release upload "$TAG" --clobber {} +
