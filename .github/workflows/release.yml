@@ -3,11 +3,11 @@ name: Desktop release
 on:
   workflow_dispatch:
     inputs:
-      publish_draft:
-        description: Upload verified artifacts to a draft GitHub release
+      publish_release:
+        description: Publish release to GitHub Releases
         required: true
         type: boolean
-        default: false
+        default: true
 
 permissions:
   contents: read
@@ -65,8 +65,8 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
-  draft:
-    if: inputs.publish_draft
+  release:
+    if: inputs.publish_release
     needs: package
     runs-on: ubuntu-latest
     permissions:
@@ -80,5 +80,8 @@ jobs:
       - env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "$GITHUB_REF_NAME" --draft --verify-tag --title "Wisp Bot $GITHUB_REF_NAME"
-          find artifacts -type f -exec gh release upload "$GITHUB_REF_NAME" {} +
+          TAG="v$(node -p "require('./package.json').version")"
+          if ! gh release view "$TAG" >/dev/null 2>&1; then
+            gh release create "$TAG" --verify-tag --title "Wisp Bot $TAG" --generate-notes
+          fi
+          find artifacts -type f -exec gh release upload "$TAG" {} + --clobber

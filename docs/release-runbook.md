@@ -6,13 +6,12 @@ Wisp Bot ships macOS 14 x64/arm64 DMG and ZIP artifacts. GitHub Releases hosts t
 
 Builds are packaged unsigned for macOS using ad-hoc identity (`CSC_IDENTITY_AUTO_DISCOVERY: false`). Because binaries are not notarized through an Apple Developer account, Gatekeeper will require users to right-click -> Open or run `xattr -cr "/Applications/Wisp Bot.app"`.
 
-## Stage a release
+## Stage and publish a release
 
 1. Set `package.json` to the intended version and merge all quality gates.
 2. Create and push the matching tag, such as `v0.1.0`.
-3. Run **Desktop release** on that tag with `publish_draft` disabled. The workflow performs clean builds, audit and SBOM generation, unsigned packaging, checksums, and artifact uploads.
-4. Download the retained artifacts and verify `SHA256SUMS.txt`.
-5. To stage on GitHub Releases, rerun with `publish_draft` enabled. Inspect the draft and its artifacts before publishing.
+3. Run **Desktop release** via GitHub Actions (from `main` or the tag). The workflow performs clean builds, audit and SBOM generation, unsigned packaging, checksums, and directly creates/updates the public GitHub release with all artifacts attached.
+4. Download the released artifacts and verify `SHA256SUMS.txt`.
 
 The updater never downloads automatically. It accepts only artifacts authenticated by the platform signing chain and `electron-updater`; a verification failure remains an error and cannot enter the install-ready state.
 
