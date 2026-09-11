@@ -1,4 +1,13 @@
-import { app, BrowserWindow, dialog, ipcMain, nativeTheme, session, type IpcMainInvokeEvent } from "electron";
+import {
+  app,
+  BrowserWindow,
+  dialog,
+  ipcMain,
+  nativeImage,
+  nativeTheme,
+  session,
+  type IpcMainInvokeEvent,
+} from "electron";
 import { autoUpdater } from "electron-updater";
 import path from "node:path";
 
@@ -107,6 +116,10 @@ function handleFatalStartupError(error: unknown): void {
 }
 
 async function bootstrap(): Promise<void> {
+  if (!app.isPackaged && process.platform === "darwin" && app.dock) {
+    const devIcon = nativeImage.createFromPath(path.join(__dirname, "../../build/icon-mac.png"));
+    if (!devIcon.isEmpty()) app.dock.setIcon(devIcon);
+  }
   const target = resolveRendererTarget(app.isPackaged, process.env.VITE_DEV_SERVER_URL, productionRendererPath);
   rendererTarget = target;
   session.defaultSession.setPermissionCheckHandler((webContents, permission, requestingOrigin, details) => {
