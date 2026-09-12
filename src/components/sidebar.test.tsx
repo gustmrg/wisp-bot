@@ -38,8 +38,8 @@ describe("Sidebar current user", () => {
     );
 
     const createButton = screen.getByRole("button", { name: "Create Wisp" });
-    expect(createButton).toHaveClass("w-fit", "text-sm");
-    expect(createButton).not.toHaveClass("w-full");
+    expect(createButton).toHaveClass("w-full", "text-sm");
+    expect(createButton).not.toHaveClass("w-fit");
 
     await user.click(createButton);
 

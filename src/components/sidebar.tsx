@@ -82,20 +82,48 @@ function Sidebar({
         aria-label="Conversations"
       >
         {mobile ? (
-          <header className="mobile-list-header">
-            <div>
-              <h1 ref={titleRef} tabIndex={-1}>
-                Conversations
-              </h1>
-              <p>
-                Your team · {allChatIds.length} {allChatIds.length === 1 ? "Wisp" : "Wisps"}
-              </p>
-            </div>
-          </header>
-        ) : (
-          <div className={cn("flex h-11 flex-none items-center px-2", collapsed ? "justify-center" : "justify-end")}>
+          <>
+            <header className="mobile-list-header">
+              <div>
+                <h1 ref={titleRef} tabIndex={-1}>
+                  Conversations
+                </h1>
+                <p>
+                  Your team · {allChatIds.length} {allChatIds.length === 1 ? "Wisp" : "Wisps"}
+                </p>
+              </div>
+            </header>
             <button
-              className="flex size-7 items-center justify-center border-0 bg-transparent text-dim transition-colors duration-[120ms] hover:text-foreground [&_svg]:size-[15px] [&_svg]:transition-transform [&_svg]:duration-[180ms] data-[collapsed=true]:[&_svg]:rotate-180"
+              className={cn(
+                "sidebar-search flex h-8 flex-none items-center gap-2 rounded-lg border text-left text-dim hover:text-foreground",
+                "border-border bg-card hover:border-ring",
+                "[&_svg]:size-[13px] [&_svg]:flex-none [&_span]:flex-1",
+              )}
+              type="button"
+              onClick={onOpenSearch}
+            >
+              <SearchIcon aria-hidden="true" />
+              <span>Search conversations</span>
+            </button>
+          </>
+        ) : (
+          <div className={cn("flex h-11 flex-none items-center gap-1 px-2 pb-1", collapsed && "justify-center")}>
+            {collapsed ? null : (
+              <button
+                className={cn(
+                  "sidebar-search flex h-8 min-w-0 flex-1 items-center gap-2 rounded-lg border text-left text-dim hover:text-foreground",
+                  "border-border bg-card hover:border-ring",
+                  "px-[9px] [&_svg]:size-[13px] [&_svg]:flex-none [&_span]:flex-1",
+                )}
+                type="button"
+                onClick={onOpenSearch}
+              >
+                <SearchIcon aria-hidden="true" />
+                <span>Search</span>
+              </button>
+            )}
+            <button
+              className="flex size-7 flex-none items-center justify-center border-0 bg-transparent text-dim transition-colors duration-[120ms] hover:text-foreground [&_svg]:size-[15px] [&_svg]:transition-transform [&_svg]:duration-[180ms] data-[collapsed=true]:[&_svg]:rotate-180"
               type="button"
               data-collapsed={collapsed}
               aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
@@ -106,21 +134,6 @@ function Sidebar({
             </button>
           </div>
         )}
-
-        <button
-          className={cn(
-            "sidebar-search flex h-8 flex-none items-center gap-2 rounded-lg border text-left text-dim hover:text-foreground",
-            "border-border bg-card hover:border-ring",
-            "mb-2 [&_svg]:size-[13px] [&_svg]:flex-none [&_span]:flex-1",
-            collapsed ? "mx-auto w-9 justify-center p-0" : "ml-[17px] mr-[10px] px-[9px]",
-          )}
-          type="button"
-          aria-label={collapsed ? "Search" : undefined}
-          onClick={onOpenSearch}
-        >
-          <SearchIcon aria-hidden="true" />
-          {collapsed ? null : <span>{mobile ? "Search conversations" : "Search"}</span>}
-        </button>
 
         {mobile ? (
           <div className="mobile-list-filters" role="group" aria-label="Filter conversations">
@@ -211,7 +224,7 @@ function Sidebar({
 
         <div
           className={cn(
-            "sidebar-create mt-4 mb-1 mx-2.5 flex flex-none items-center justify-between gap-2 pt-2 [&>button]:h-[46px] [&>button]:flex-none [&>button]:rounded-[10px] [&>button]:[&_svg]:size-[13px]!",
+            "sidebar-create mt-4 mb-1 mx-2.5 flex flex-none items-center justify-stretch gap-2 pt-2 [&>button]:h-[46px] [&>button]:flex-none [&>button]:rounded-[10px] [&>button]:[&_svg]:size-[13px]!",
             collapsed && "flex-col",
           )}
         >
