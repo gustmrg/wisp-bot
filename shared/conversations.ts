@@ -1,3 +1,4 @@
+import type { ModelSelection } from "./contracts.js";
 import type { ToolApprovalRequest } from "./tool-policy.js";
 
 export type ChatId = string;
@@ -112,6 +113,7 @@ export interface InitializeConversationsRequest {
 
 export interface CreateConversationRequest {
   conversation: Chat;
+  model?: ModelSelection | null;
 }
 
 export interface UpdateConversationRequest {

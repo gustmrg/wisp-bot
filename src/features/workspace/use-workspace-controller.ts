@@ -9,7 +9,7 @@ import type {
   NewChat,
 } from "../../../shared/conversations";
 import type { ToolApprovalDecision, ToolApprovalRequest } from "../../../shared/tool-policy";
-import type { BackendError } from "../../../shared/contracts";
+import type { BackendError, ModelSelection } from "../../../shared/contracts";
 import { usePersistedPreferences } from "@/features/persistence/use-persisted-preferences";
 import type { PersistenceStatus } from "@/features/persistence/storage-policy";
 import { createChatIdFactory, selectActiveChatId } from "@/features/workspace/workspace-actions";
@@ -34,7 +34,7 @@ export interface WorkspaceController {
   persistenceStatus: PersistenceStatus;
   persistenceError: string | null;
   selectChat: (chatId: ChatId) => void;
-  createChat: (chat: NewChat) => Promise<boolean>;
+  createChat: (chat: NewChat, model?: ModelSelection | null) => Promise<boolean>;
   updateActiveChat: (changes: ChatChanges) => Promise<boolean>;
   deleteActiveChat: () => Promise<boolean>;
   sendMessage: (text: string) => Promise<boolean>;
@@ -96,7 +96,7 @@ export function useWorkspaceController(): WorkspaceController {
   );
 
   const createChat = useCallback(
-    async (chat: NewChat): Promise<boolean> => {
+    async (chat: NewChat, model?: ModelSelection | null): Promise<boolean> => {
       const id = createChatId(conversations.chats);
       const created = await conversations.create(
         chat.kind === "circle"
@@ -123,6 +123,7 @@ export function useWorkspaceController(): WorkspaceController {
               timestamp: "Now",
               messages: [],
             },
+        chat.kind === "wisp" ? model : undefined,
       );
       if (created) setActiveChatId(id);
       return created;

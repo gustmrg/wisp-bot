@@ -7,6 +7,7 @@ import { CreateAgentDialog, type NewAgent } from "@/components/create-agent-dial
 import { MobileNavigation } from "@/components/mobile-navigation";
 import { Button } from "@/components/ui/button";
 import type { ManagedConversationStatus } from "../../shared/conversations";
+import type { ModelSelection } from "../../shared/contracts";
 import type { ToolApprovalRequest } from "../../shared/tool-policy";
 import type { CurrentUser } from "@/config/app-metadata";
 import { sidebarLayoutStyle } from "@/lib/layout";
@@ -26,7 +27,7 @@ interface SidebarProps {
   loading?: boolean;
   error?: string | null;
   onCollapsedChange: (collapsed: boolean) => void;
-  onCreate: (agent: NewAgent) => Promise<boolean> | void;
+  onCreate: (agent: NewAgent, model: ModelSelection | null) => Promise<boolean> | void;
   onOpenSearch: () => void;
   onOpenSettings: () => void;
   onResizeStart: (event: ReactPointerEvent<HTMLDivElement>) => void;

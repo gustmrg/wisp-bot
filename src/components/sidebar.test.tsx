@@ -1,6 +1,6 @@
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { CurrentUser } from "@/config/app-metadata";
 import { Sidebar } from "@/components/sidebar";
@@ -20,6 +20,18 @@ const callbacks = {
   onResizeStart: vi.fn(),
   onSelectChat: vi.fn(),
 };
+
+beforeEach(() => {
+  Object.defineProperty(window, "wisp", {
+    configurable: true,
+    value: {
+      getAiSettings: vi.fn(async () => ({
+        ok: true,
+        value: { selection: null, secureStorageAvailable: true, providers: [] },
+      })),
+    },
+  });
+});
 
 describe("Sidebar current user", () => {
   it("renders injected identity metadata", () => {

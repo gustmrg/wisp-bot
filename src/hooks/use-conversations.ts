@@ -1,6 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import type { BackendError, BackendResult, SequencedConversationAgentEvent, WispApi } from "../../shared/contracts";
+import type {
+  BackendError,
+  BackendResult,
+  ModelSelection,
+  SequencedConversationAgentEvent,
+  WispApi,
+} from "../../shared/contracts";
 import type {
   Chat,
   ChatChanges,
@@ -80,7 +86,7 @@ export interface ConversationsController {
   toolActivities: Record<string, ReadonlyArray<ToolActivityView>>;
   loading: boolean;
   error: string | null;
-  create: (conversation: Chat) => Promise<boolean>;
+  create: (conversation: Chat, model?: ModelSelection | null) => Promise<boolean>;
   update: (conversationId: string, changes: ChatChanges) => Promise<boolean>;
   delete: (conversationId: string) => Promise<boolean>;
   appendMessage: (conversationId: string, message: Message) => Promise<boolean>;
@@ -306,7 +312,11 @@ export function useConversations(): ConversationsController {
     toolActivities: runtime.toolActivities,
     loading,
     error,
-    create: useCallback((conversation) => enqueue(() => window.wisp.createConversation({ conversation })), [enqueue]),
+    create: useCallback(
+      (conversation: Chat, model?: ModelSelection | null) =>
+        enqueue(() => window.wisp.createConversation({ conversation, model: model ?? null })),
+      [enqueue],
+    ),
     update: useCallback(
       (conversationId, changes) => enqueue(() => window.wisp.updateConversation({ conversationId, changes })),
       [enqueue],

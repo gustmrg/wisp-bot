@@ -81,6 +81,32 @@ describe("ConversationService", () => {
     await service.dispose();
   });
 
+  it("applies a creation-time model override and restores it after a restart", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "wisp-service-create-model-"));
+    const repository = new ConversationRepository({ dataDirectory: directory });
+    const registry = new AgentRegistry(new FakeConversationAgentFactory(), () => undefined);
+    const service = new ConversationService(repository, registry);
+    const globalModel = { providerId: "global", modelId: "global-model" };
+    await service.start(globalModel);
+    await service.initialize({ follower: chat("follower") });
+
+    const override = { providerId: "other", modelId: "other-model", maxOutputTokens: 2048 };
+    await service.create(chat("custom"), override);
+
+    expect(service.getConversationModel("custom")).toEqual(
+      expect.objectContaining({ override, effective: override, applied: override, status: "idle" }),
+    );
+    expect(service.getConversationModel("follower").applied).toEqual(globalModel);
+    await service.dispose();
+
+    const restoredRegistry = new AgentRegistry(new FakeConversationAgentFactory(), () => undefined);
+    const restored = new ConversationService(repository, restoredRegistry);
+    await restored.start(globalModel);
+    expect(restored.getConversationModel("custom").applied).toEqual(override);
+    expect(restored.getConversationModel("follower").applied).toEqual(globalModel);
+    await restored.dispose();
+  });
+
   it("snapshots and persists isolated streams from the deterministic fake adapter", async () => {
     const directory = await mkdtemp(path.join(os.tmpdir(), "wisp-service-stream-"));
     const repository = new ConversationRepository({ dataDirectory: directory });

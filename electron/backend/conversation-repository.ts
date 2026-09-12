@@ -201,15 +201,23 @@ export class ConversationRepository {
     });
   }
 
-  async create(chatValue: unknown): Promise<void> {
+  async create(chatValue: unknown, modelOverride?: ModelSelection | null): Promise<void> {
     await this.enqueue(async () => {
       const chat = normalizeChat(chatValue);
+      const normalizedOverride = normalizeSelection(modelOverride);
+      if (chat.kind === "circle" && modelOverride) {
+        throw new WispBackendError("invalid_request", "Circles do not own agent sessions.");
+      }
+      if (modelOverride && !normalizedOverride) {
+        throw new WispBackendError("invalid_request", "The model selection is invalid.");
+      }
       const timestamp = this.now().toISOString();
       const record: ConversationRecord = {
         chat,
         sessionId: chat.kind === "circle" ? null : normalizeConversationId(this.createId()),
         piSessionId: null,
         piSessionFile: null,
+        ...(normalizedOverride ? { modelOverride: normalizedOverride } : {}),
         createdAt: timestamp,
         updatedAt: timestamp,
       };
