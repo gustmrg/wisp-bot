@@ -75,12 +75,7 @@ export class ConversationService {
       const message: Message & { id: string } = {
         id: event.messageId,
         type: "incoming",
-        text:
-          current?.type === "incoming" && current.text
-            ? current.text
-            : event.type === "assistant_message_cancelled"
-              ? "Stopped."
-              : "",
+        text: current?.type === "incoming" ? current.text : "",
         status: event.type === "assistant_message_completed" ? "complete" : "cancelled",
         ...(current?.createdAt ? { createdAt: current.createdAt } : {}),
       };
