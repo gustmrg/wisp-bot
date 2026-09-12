@@ -157,8 +157,8 @@ function WispAccessForm({ conversationId }: { conversationId: string }) {
     <div className="flex min-h-0 flex-1 flex-col text-xs">
       <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-3.5">
         <p className="leading-relaxed text-dim">
-          Choose the services this Wisp can use. Connections are managed in Settings → Integrations. Every Wisp starts
-          with no access.
+          Choose the services this Wisp can use. Connections are managed in Settings → Plugins and Settings → MCP
+          servers. Every Wisp starts with no access.
         </p>
         {loaded ? (
           <>
@@ -215,7 +215,7 @@ function WispAccessForm({ conversationId }: { conversationId: string }) {
                         <p className="leading-relaxed text-dim">
                           {connection?.configured
                             ? "This plugin is disabled globally."
-                            : "Connect this plugin in Settings → Integrations."}{" "}
+                            : "Connect this plugin in Settings → Plugins."}{" "}
                           You can still remove existing access.
                         </p>
                       ) : null}
@@ -228,7 +228,7 @@ function WispAccessForm({ conversationId }: { conversationId: string }) {
               <h3 className="font-semibold">MCP servers</h3>
               {mcpView.servers.length === 0 ? (
                 <p className="leading-relaxed text-dim">
-                  No MCP servers connected yet. Add one in Settings → Integrations.
+                  No MCP servers connected yet. Add one in Settings → MCP servers.
                 </p>
               ) : (
                 mcpView.servers.map((server) => {
@@ -296,7 +296,7 @@ function WispAccessForm({ conversationId }: { conversationId: string }) {
                       {!available ? (
                         <p className="leading-relaxed text-dim">
                           {server.state === "needs_sign_in"
-                            ? "Sign in to this connection in Settings → Integrations first."
+                            ? "Sign in to this connection in Settings → MCP servers first."
                             : "This server is disabled globally."}{" "}
                           You can still remove existing access.
                         </p>

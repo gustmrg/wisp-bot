@@ -10,9 +10,10 @@
 
 Support remote [MCP](https://modelcontextprotocol.io/specification/2026-07-28/server/tools)
 servers as dynamic integrations alongside the bundled plugins, managed globally in
-**Settings → Integrations** with a separate **MCP servers** group. Adding a server
-never grants any Wisp access; grants stay per-Wisp in each **Access** tab with a
-single first-release level, **Use with approval**.
+their own **Settings → MCP servers** panel (bundled plugins stay in
+**Settings → Plugins**). Adding a server never grants any Wisp access; grants stay
+per-Wisp in each **Access** tab with a single first-release level,
+**Use with approval**.
 
 The first release covers Streamable HTTP endpoints with three authentication
 modes: none, a configured authentication header, and OAuth browser sign-in.

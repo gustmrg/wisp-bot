@@ -91,8 +91,14 @@ export function McpSettingsSection() {
   }, [attempt, Boolean(view)]);
 
   return (
-    <section className="mb-2" id="mcp-settings-panel" aria-labelledby="mcp-settings-title">
-      <h3 className="mb-3 mt-7 border-b border-border pb-3 text-[15px] font-medium">MCP servers</h3>
+    <section
+      className="@container overflow-y-auto px-[30px] py-6 max-[620px]:px-4 max-[620px]:py-5"
+      id="mcp-settings-panel"
+      aria-labelledby="mcp-settings-title"
+    >
+      <h2 id="mcp-settings-title" className="mb-1 mt-0 text-[17px]">
+        MCP servers
+      </h2>
       <p className="mb-4 text-[11.5px] leading-relaxed text-dim">
         Connect remote MCP servers over HTTPS, then choose access in each Wisp's Access tab. Adding a server never gives
         any Wisp access automatically, and every tool call requires approval.

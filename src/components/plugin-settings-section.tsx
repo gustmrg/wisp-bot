@@ -39,10 +39,14 @@ export function PluginSettingsSection() {
   }, [attempt]);
 
   return (
-    <section className="@container mb-2" aria-labelledby="plugin-settings-title">
-      <h3 id="plugin-settings-title" className="mb-3 mt-7 border-b border-border pb-3 text-[15px] font-medium">
+    <section
+      className="@container overflow-y-auto px-[30px] py-6 max-[620px]:px-4 max-[620px]:py-5"
+      id="plugin-settings-panel"
+      aria-labelledby="plugin-settings-title"
+    >
+      <h2 id="plugin-settings-title" className="mb-1 mt-0 text-[17px]">
         Plugins
-      </h3>
+      </h2>
       <p className="mb-4 text-[11.5px] leading-relaxed text-dim">
         Connect services on this device, then choose access in each Wisp's Access tab. Connecting a plugin does not give
         any Wisp access automatically.
