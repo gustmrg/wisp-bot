@@ -10,6 +10,9 @@ interface ToolApprovalCardProps {
 
 function ToolApprovalCard({ request, onResolve }: ToolApprovalCardProps) {
   const integration = request.scope.kind === "integration";
+  // The block action persists a global integration-scope rule; label it so the
+  // scope is explicit instead of implying a per-tool block.
+  const blockLabel = integration ? "Block all integration calls" : "Always block";
   return (
     <section
       className="tool-approval-card mt-2 w-[min(680px,90%)] rounded-xl border border-amber-500/25 bg-amber-500/[0.06] p-3"
@@ -30,7 +33,7 @@ function ToolApprovalCard({ request, onResolve }: ToolApprovalCardProps) {
       </div>
       <div className="mt-3 flex flex-wrap justify-end gap-1.5">
         <Button type="button" size="sm" variant="ghost" onClick={() => onResolve("block")}>
-          Always block
+          {blockLabel}
         </Button>
         <Button type="button" size="sm" variant="secondary" onClick={() => onResolve("deny")}>
           Deny

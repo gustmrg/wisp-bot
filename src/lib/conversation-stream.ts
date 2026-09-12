@@ -1,7 +1,7 @@
 import type { BackendError, ConversationAgentEvent, SequencedConversationAgentEvent } from "../../shared/contracts";
 import type { ChatCollection, ManagedConversationStatus, Message, TextMessage } from "../../shared/conversations";
 import type { ToolApprovalRequest } from "../../shared/tool-policy";
-import { getToolMetadata } from "../../shared/tool-catalog";
+import { describeMcpAlias, getToolMetadata } from "../../shared/tool-catalog";
 
 export interface ToolActivityView {
   toolCallId: string;
@@ -363,7 +363,7 @@ function findMessage(
 }
 
 function toolActivityLabel(toolName: string): string {
-  return getToolMetadata(toolName)?.activityLabel ?? "Running a tool…";
+  return getToolMetadata(toolName)?.activityLabel ?? describeMcpAlias(toolName)?.activityLabel ?? "Running a tool…";
 }
 
 function upsertToolActivity(

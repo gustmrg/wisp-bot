@@ -1,4 +1,16 @@
-export type ToolActionCategory = "read" | "search" | "create_file" | "modify_file" | "external_write" | "shell";
+/**
+ * "integration_call" is the generic category for dynamically discovered MCP
+ * tools. Server-supplied annotations are untrusted, so these calls never map to
+ * "read" or "write"; the initial behavior is always to ask.
+ */
+export type ToolActionCategory =
+  | "read"
+  | "search"
+  | "create_file"
+  | "modify_file"
+  | "external_write"
+  | "integration_call"
+  | "shell";
 export type ToolPolicyBehavior = "allow" | "ask" | "block";
 
 export interface ToolPolicyRule {

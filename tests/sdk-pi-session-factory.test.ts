@@ -5,6 +5,8 @@ import path from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { ConversationAgentContext } from "../electron/backend/conversation-agent.js";
+import type { IntegrationToolSource } from "../electron/backend/integration-tool-source.js";
+import { snapshotRevision } from "../electron/backend/integration-tool-source.js";
 import type { ModelRuntimeLike } from "../electron/backend/model-service.js";
 import type { PluginToolSource } from "../electron/backend/plugin-types.js";
 
@@ -76,6 +78,17 @@ import {
   sanitizeWorkspacePath,
   SdkPiSessionFactory,
 } from "../electron/backend/pi-conversation-agent.js";
+
+/** Adapts the legacy sync plugin tool source into the async snapshot source. */
+function toToolSource(pluginTools: PluginToolSource): IntegrationToolSource {
+  return {
+    async getSnapshot(conversationId) {
+      const definitions = pluginTools.getTools(conversationId);
+      const activeNames = await pluginTools.getActiveToolNames(conversationId);
+      return { definitions, metadata: [], activeNames, revision: snapshotRevision(activeNames) };
+    },
+  };
+}
 
 describe("SdkPiSessionFactory", () => {
   beforeEach(() => {
@@ -271,7 +284,7 @@ describe("SdkPiSessionFactory", () => {
       ]) as PluginToolSource["getTools"],
       getActiveToolNames: vi.fn(async (id: string) => grantNames[id] ?? []),
     };
-    const factory = new SdkPiSessionFactory(runtime, undefined, pluginTools);
+    const factory = new SdkPiSessionFactory(runtime, undefined, toToolSource(pluginTools));
     const session = await factory.create(context, { providerId: "provider", modelId: "model" });
     const builtins = ["read", "grep", "find", "ls", "edit", "write", "search_history"];
     expect(sdk.createAgentSession).toHaveBeenLastCalledWith(

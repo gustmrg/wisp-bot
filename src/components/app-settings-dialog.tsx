@@ -17,6 +17,7 @@ import { GeneralSettingsSections, PreferenceSwitch } from "@/components/general-
 import { UsageSettingsSection } from "@/components/usage-settings-section";
 import { ModelSettingsSection } from "@/components/model-settings-section";
 import { PluginSettingsSection } from "@/components/plugin-settings-section";
+import { McpSettingsSection } from "@/components/mcp-settings-section";
 import { MobileNavigation } from "@/components/mobile-navigation";
 import { SettingsCard, SettingsGroup, SettingsRow, SettingsRowCopy } from "@/components/settings/settings-primitives";
 import { Button } from "@/components/ui/button";
@@ -79,7 +80,7 @@ function AppSettingsDialog({
   const sectionTitles = {
     general: "General",
     model: "AI Model",
-    plugins: "Plugins",
+    plugins: "Integrations",
     about: "About",
     usage: "Token usage",
   };
@@ -201,13 +202,13 @@ function AppSettingsDialog({
           <button
             className={cn(navButton, section === "plugins" && selected)}
             type="button"
-            aria-label="Plugins"
+            aria-label="Integrations"
             aria-current={section === "plugins" ? "page" : undefined}
             aria-controls="plugin-settings-panel"
             onClick={() => openSection("plugins")}
           >
             <PlugIcon aria-hidden="true" />
-            <span>Plugins</span>
+            <span>Integrations</span>
           </button>
           <button
             className={cn(navButton, section === "usage" && selected)}
@@ -245,7 +246,23 @@ function AppSettingsDialog({
           </button>
         </nav>
         {section === "usage" && open && !showOverview ? <UsageSettingsSection /> : null}
-        {section === "plugins" && open && !showOverview ? <PluginSettingsSection /> : null}
+        {section === "plugins" && open && !showOverview ? (
+          <section
+            className="overflow-y-auto px-[30px] py-6 max-[620px]:px-4 max-[620px]:py-5"
+            id="plugin-settings-panel"
+            aria-label="Integrations settings"
+          >
+            <h2 id="integrations-settings-title" className="mb-1 mt-0 text-[17px]">
+              Integrations
+            </h2>
+            <p className="mb-4 text-[11.5px] leading-relaxed text-dim">
+              Connect services on this device, then choose access in each Wisp's Access tab. Connecting an integration
+              does not give any Wisp access automatically.
+            </p>
+            <PluginSettingsSection />
+            <McpSettingsSection />
+          </section>
+        ) : null}
         <section
           className="overflow-y-auto px-[30px] py-6 max-[620px]:px-4 max-[620px]:py-5"
           id="general-settings-panel"

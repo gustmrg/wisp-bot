@@ -274,6 +274,17 @@ export function evaluateToolPolicy(
       ? "block"
       : "ask";
   }
+  if (category === "integration_call") {
+    // Dynamically discovered MCP tools are unclassified: server annotations are
+    // untrusted, so these calls ask by default and can only be blocked, never
+    // allowed, by policy rules.
+    if (scopeKind !== "integration") return "block";
+    return settings.rules.some(
+      (rule) => rule.scope === "integration" && ruleMatchesCategory(rule.action, category) && rule.behavior === "block",
+    )
+      ? "block"
+      : "ask";
+  }
   if (category !== "create_file" && category !== "modify_file") return "block";
   if (!settings.autoReview) return "ask";
   const matches = settings.rules

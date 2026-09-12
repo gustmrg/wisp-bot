@@ -1,49 +1,52 @@
 import {
-  app,
-  BrowserWindow,
-  dialog,
-  ipcMain,
-  nativeImage,
-  nativeTheme,
-  session,
-  shell,
-  type IpcMainInvokeEvent,
+    app,
+    BrowserWindow,
+    dialog,
+    ipcMain,
+    nativeImage,
+    nativeTheme,
+    session,
+    shell,
+    type IpcMainInvokeEvent,
 } from "electron";
 import { autoUpdater } from "electron-updater";
 import path from "node:path";
 
 import { WISP_IPC_CHANNELS, WISP_RELEASES_URL, type SequencedConversationAgentEvent } from "../shared/contracts.js";
 import { DEMO_CURRENT_USER } from "../shared/current-user.js";
-import { AgentRegistry } from "./backend/agent-registry.js";
 import { selectAgentMode } from "./backend/agent-mode.js";
+import { AgentRegistry } from "./backend/agent-registry.js";
+import type { ConversationAgentFactory } from "./backend/conversation-agent.js";
 import { ConversationRepository } from "./backend/conversation-repository.js";
 import { ConversationService } from "./backend/conversation-service.js";
-import type { ConversationAgentFactory } from "./backend/conversation-agent.js";
 import { FakeConversationAgentFactory } from "./backend/fake-conversation-agent.js";
+import { CompositeIntegrationToolSource } from "./backend/integration-tool-source.js";
+import { McpService } from "./backend/mcp-service.js";
 import { ModelPricingService } from "./backend/model-pricing-service.js";
 import { ModelService } from "./backend/model-service.js";
-import { PluginService } from "./backend/plugin-service.js";
-import { SessionReportService } from "./backend/session-report-service.js";
 import { PiConversationAgentFactory, SdkPiSessionFactory } from "./backend/pi-conversation-agent.js";
+import { PluginService } from "./backend/plugin-service.js";
 import { SafeStorageEncryption } from "./backend/safe-storage-encryption.js";
+import { SessionReportService } from "./backend/session-report-service.js";
 import { StructuredLogger } from "./backend/structured-logger.js";
-import { ToolAuthorizationBroker } from "./backend/tool-authorization-broker.js";
 import { ToolAuditStore } from "./backend/tool-audit-store.js";
+import { ToolAuthorizationBroker } from "./backend/tool-authorization-broker.js";
 import { ToolPolicyStore } from "./backend/tool-policy-store.js";
-import { UpdateService } from "./backend/update-service.js";
 import { resolveAutoInstallSupport } from "./backend/update-capability.js";
-import { registerAgentHandlers } from "./ipc/register-handlers.js";
+import { UpdateService } from "./backend/update-service.js";
 import { registerConversationHandlers } from "./ipc/register-conversation-handlers.js";
+import { registerAgentHandlers } from "./ipc/register-handlers.js";
+import { registerMcpHandlers } from "./ipc/register-mcp-handlers.js";
 import { registerModelSettingsHandlers } from "./ipc/register-model-settings-handlers.js";
 import { registerPluginHandlers } from "./ipc/register-plugin-handlers.js";
 import { registerSessionReportHandlers } from "./ipc/register-session-report-handlers.js";
 import { registerToolPolicyHandlers } from "./ipc/register-tool-policy-handlers.js";
 import { registerUpdateHandlers } from "./ipc/register-update-handlers.js";
 import {
-  isAllowedPermission,
-  isAllowedRendererUrl,
-  resolveRendererTarget,
-  type RendererTarget,
+    isAllowedPermission,
+    isAllowedRendererUrl,
+    resolveRendererTarget,
+    type RendererTarget,
 } from "./security-policy.js";
 
 const productionRendererPath = path.join(__dirname, "../../dist/index.html");
@@ -214,11 +217,26 @@ async function bootstrap(): Promise<void> {
     resolveWisp: (id) => conversationRepository.getAgentContext(id).sessionId,
   });
   await pluginService.load();
+  const mcpService = new McpService({
+    dataDirectory: path.join(app.getPath("userData"), "backend"),
+    encryption: new SafeStorageEncryption(),
+    authorizationBroker: toolAuthorizationBroker,
+    resolveWisp: (id) => conversationRepository.getAgentContext(id).sessionId,
+    openExternal: (url) => shell.openExternal(url),
+    // Health updates: push the sanitized view; secrets never leave the backend.
+    onSettingsChanged: (view) => {
+      for (const window of BrowserWindow.getAllWindows()) {
+        if (!window.isDestroyed()) window.webContents.send(WISP_IPC_CHANNELS.mcpSettingsChanged, view);
+      }
+    },
+  });
+  await mcpService.load();
+  const integrationTools = new CompositeIntegrationToolSource([pluginService, mcpService]);
   const agentFactory: ConversationAgentFactory =
     selectAgentMode(app.isPackaged, process.env.WISP_AGENT_MODE) === "fake"
       ? new FakeConversationAgentFactory({ latencyMs: 350 })
       : new PiConversationAgentFactory(
-          new SdkPiSessionFactory(modelService.getModelRuntime(), toolAuthorizationBroker, pluginService),
+          new SdkPiSessionFactory(modelService.getModelRuntime(), toolAuthorizationBroker, integrationTools),
         );
   agentRegistry = new AgentRegistry(
     agentFactory,
@@ -250,6 +268,7 @@ async function bootstrap(): Promise<void> {
   );
   const toolPolicyHandlers = registerToolPolicyHandlers(ipcMain, toolAuthorizationBroker, isTrustedIpcSender);
   const pluginHandlers = registerPluginHandlers(ipcMain, pluginService, isTrustedIpcSender);
+  const mcpHandlers = registerMcpHandlers(ipcMain, mcpService, isTrustedIpcSender);
   const updateHandlers = registerUpdateHandlers(ipcMain, updateService, isTrustedIpcSender, async () => {
     await shell.openExternal(WISP_RELEASES_URL);
   });
@@ -262,7 +281,9 @@ async function bootstrap(): Promise<void> {
     backendDisposing = true;
     toolPolicyHandlers.dispose();
     pluginHandlers.dispose();
+    mcpHandlers.dispose();
     pluginService.dispose();
+    mcpService.dispose();
     updateHandlers.dispose();
     unsubscribeUpdateState();
     toolAuthorizationBroker.dispose();

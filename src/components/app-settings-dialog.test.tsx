@@ -39,6 +39,16 @@ describe("AppSettingsDialog metadata", () => {
           value: { phase: "idle", currentVersion: appMetadata.version },
         })),
         getPluginSettings,
+        getMcpSettings: vi.fn(async () => ({ ok: true, value: { secureStorageAvailable: true, servers: [] } })),
+        subscribeToMcpSettings: vi.fn(() => () => undefined),
+        getWispPluginAccess: vi.fn(async ({ conversationId }: { conversationId: string }) => ({
+          ok: true,
+          value: { conversationId, grants: [], revision: "test-revision" },
+        })),
+        getWispMcpAccess: vi.fn(async ({ conversationId }: { conversationId: string }) => ({
+          ok: true,
+          value: { conversationId, grants: [], revision: "test-revision" },
+        })),
       },
     });
     render(
@@ -54,13 +64,13 @@ describe("AppSettingsDialog metadata", () => {
       />,
     );
     expect(getPluginSettings).not.toHaveBeenCalled();
-    await user.click(screen.getByRole("button", { name: "Plugins" }));
+    await user.click(screen.getByRole("button", { name: "Integrations" }));
     await user.click(await screen.findByRole("button", { name: "Connect Web search" }));
     const key = await screen.findByLabelText("Brave Search API key");
     await user.type(key, "unsaved-secret");
     await user.click(screen.getByRole("button", { name: "Close" }));
     await user.click(screen.getByRole("button", { name: "General" }));
-    await user.click(screen.getByRole("button", { name: "Plugins" }));
+    await user.click(screen.getByRole("button", { name: "Integrations" }));
     await user.click(await screen.findByRole("button", { name: "Connect Web search" }));
     expect(await screen.findByLabelText("Brave Search API key")).toHaveValue("");
     expect(getPluginSettings).toHaveBeenCalledTimes(2);

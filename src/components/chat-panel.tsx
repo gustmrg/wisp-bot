@@ -4,7 +4,7 @@ import { ChevronLeftIcon, SettingsIcon } from "lucide-react";
 import type { Chat, ChatCollection } from "@/chat-data";
 import type { ManagedConversationStatus } from "../../shared/conversations";
 import type { ToolApprovalDecision, ToolApprovalRequest } from "../../shared/tool-policy";
-import { getToolMetadata } from "../../shared/tool-catalog";
+import { describeMcpAlias, getToolMetadata } from "../../shared/tool-catalog";
 import type { ToolActivityView } from "@/lib/conversation-stream";
 import { getCircleMembers } from "@/lib/circle-members";
 import { withDateDividers } from "@/lib/date-dividers";
@@ -196,5 +196,5 @@ export { ChatPanel };
 export type { ChatPanelProps };
 
 function toolLabel(toolName: string): string {
-  return getToolMetadata(toolName)?.label ?? "Tool action";
+  return getToolMetadata(toolName)?.label ?? describeMcpAlias(toolName)?.label ?? "Tool action";
 }
