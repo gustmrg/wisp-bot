@@ -68,15 +68,15 @@ function createApi(initialState: ConversationStateView): WispApi {
     subscribeToAgentEvents: vi.fn(() => () => undefined),
     getAiSettings: vi.fn(async () => ({
       ok: true as const,
-      value: { selection: null, secureStorageAvailable: true, providers: [] },
+      value: { selection: null, secureStorageAvailable: true, providers: [], catalogError: null },
     })),
     saveAiSettings: vi.fn(async () => ({
       ok: true as const,
-      value: { selection: null, secureStorageAvailable: true, providers: [] },
+      value: { selection: null, secureStorageAvailable: true, providers: [], catalogError: null },
     })),
     removeProviderCredential: vi.fn(async () => ({
       ok: true as const,
-      value: { selection: null, secureStorageAvailable: true, providers: [] },
+      value: { selection: null, secureStorageAvailable: true, providers: [], catalogError: null },
     })),
     getConversationState: vi.fn(async () => current()),
     initializeConversations: vi.fn(async ({ chats }) => {

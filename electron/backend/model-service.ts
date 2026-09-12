@@ -14,12 +14,16 @@ import { AiSettingsStore } from "./ai-settings-store.js";
 import { EncryptedCredentialStore, type EncryptionService } from "./encrypted-credential-store.js";
 
 const MAX_API_KEY_LENGTH = 20_000;
+const MODEL_REFRESH_TIMEOUT_MS = 10_000;
+
+type ModelRefreshResult = Awaited<ReturnType<ModelRuntime["refresh"]>>;
 
 export interface ModelRuntimeLike {
   getProviders(): ReturnType<ModelRuntime["getProviders"]>;
   getProvider(providerId: string): ReturnType<ModelRuntime["getProvider"]>;
   getModels(providerId?: string): ReturnType<ModelRuntime["getModels"]>;
   getModel(providerId: string, modelId: string): ReturnType<ModelRuntime["getModel"]>;
+  getError(): string | undefined;
   hasConfiguredAuth(providerId: string): boolean;
   setRuntimeApiKey(providerId: string, apiKey: string): Promise<void>;
   removeRuntimeApiKey(providerId: string): Promise<void>;
@@ -34,6 +38,16 @@ interface ModelServiceOptions {
 export interface CreateModelServiceOptions {
   dataDirectory: string;
   encryption: EncryptionService;
+  /** Refresh model catalogs over the network on startup. Defaults to true. */
+  allowModelNetwork?: boolean;
+  /** Upper bound for the startup network refresh. Defaults to 10 seconds. */
+  modelRefreshTimeoutMs?: number;
+}
+
+function describeRefreshFailure(result: ModelRefreshResult): string | null {
+  const problems = [...result.errors].map(([providerId, error]) => `${providerId}: ${error.message}`);
+  if (result.aborted) problems.push("the catalog refresh timed out");
+  return problems.length > 0 ? problems.join("; ") : null;
 }
 
 function compareByName(left: { name: string }, right: { name: string }): number {
@@ -44,6 +58,7 @@ export class ModelService {
   private readonly runtime: ModelRuntimeLike;
   private readonly settings: AiSettingsStore;
   private readonly credentials: EncryptedCredentialStore;
+  private catalogRefreshError: string | null = null;
 
   constructor(options: ModelServiceOptions) {
     this.runtime = options.runtime;
@@ -59,16 +74,40 @@ export class ModelService {
     );
     const runtime = await ModelRuntime.create({
       credentials,
-      modelsPath: null,
+      // A modelsPath must be set for the runtime to persist refreshed catalog data
+      // at modelsStorePath; the file itself is optional and stays empty unless the
+      // user defines custom models.
+      modelsPath: path.join(options.dataDirectory, "models.json"),
       modelsStorePath: path.join(options.dataDirectory, "model-catalog.json"),
-      allowModelNetwork: false,
-      refreshOnCreate: true,
+      allowModelNetwork: options.allowModelNetwork ?? true,
+      refreshOnCreate: false,
     });
-    return new ModelService({
+    const service = new ModelService({
       runtime,
       credentials,
       settings: new AiSettingsStore(path.join(options.dataDirectory, "ai-settings.json")),
     });
+    // Restore saved credentials and cached catalog entries offline before any
+    // network work: the availability pass that populates hasConfiguredAuth() must
+    // not run on the refresh signal below, or a refresh timeout would make saved
+    // keys look unconfigured.
+    service.captureRefreshFailures(await runtime.refresh({ allowNetwork: false }));
+    if (options.allowModelNetwork ?? true) {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), options.modelRefreshTimeoutMs ?? MODEL_REFRESH_TIMEOUT_MS);
+      try {
+        service.captureRefreshFailures(await runtime.refresh({ allowNetwork: true, signal: controller.signal }));
+      } finally {
+        clearTimeout(timeout);
+      }
+    }
+    return service;
+  }
+
+  private captureRefreshFailures(result: ModelRefreshResult): void {
+    const failure = describeRefreshFailure(result);
+    if (!failure) return;
+    this.catalogRefreshError = this.catalogRefreshError ? `${this.catalogRefreshError}; ${failure}` : failure;
   }
 
   async getView(): Promise<AiSettingsView> {
@@ -100,10 +139,14 @@ export class ModelService {
       savedSelection && this.isValidSelection(savedSelection) && credentialProviders.has(savedSelection.providerId)
         ? savedSelection
         : null;
+    const errors = [this.catalogRefreshError, this.runtime.getError()].filter((error): error is string =>
+      Boolean(error),
+    );
     return {
       selection,
       secureStorageAvailable: this.credentials.isSecureStorageAvailable(),
       providers,
+      catalogError: errors.length > 0 ? errors.join("\n") : null,
     };
   }
 

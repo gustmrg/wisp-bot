@@ -77,6 +77,7 @@ function createRuntime() {
     getModels: (providerId?: string) => (providerId ? models.filter((model) => model.provider === providerId) : models),
     getModel: (providerId: string, modelId: string) =>
       models.find((model) => model.provider === providerId && model.id === modelId),
+    getError: vi.fn(() => undefined),
     setRuntimeApiKey: vi.fn(async () => undefined),
     removeRuntimeApiKey: vi.fn(async () => undefined),
   };
@@ -116,13 +117,61 @@ describe("ModelService", () => {
     directories.push(directory);
     const encryption = new TestEncryption();
     const selection = { providerId: "openrouter", modelId: "openai/gpt-oss-120b" };
-    const first = await ModelService.create({ dataDirectory: directory, encryption });
+    const first = await ModelService.create({ dataDirectory: directory, encryption, allowModelNetwork: false });
     await first.save({ selection, apiKey: "secret-provider-key" });
 
-    const restarted = await ModelService.create({ dataDirectory: directory, encryption });
+    const restarted = await ModelService.create({ dataDirectory: directory, encryption, allowModelNetwork: false });
 
     await expect(restarted.getSelection()).resolves.toEqual(selection);
     expect(restarted.getModelRuntime().hasConfiguredAuth(selection.providerId)).toBe(true);
+  });
+
+  it("surfaces catalog load errors without dropping the provider list", async () => {
+    const { service, runtime } = await createService();
+    vi.mocked(runtime.getError).mockReturnValue("Availability refresh: network unreachable");
+
+    const view = await service.getView();
+
+    expect(view.catalogError).toBe("Availability refresh: network unreachable");
+    expect(view.providers.map(({ id }) => id)).toEqual(["openrouter", "provider-b"]);
+    vi.mocked(runtime.getError).mockReturnValue(undefined);
+    await expect(service.getView()).resolves.toMatchObject({ catalogError: null });
+  });
+
+  it("keeps saved credentials configured and reports the failure when the startup refresh times out", async () => {
+    const directory = await mkdtemp(path.join(tmpdir(), "wisp-model-stall-"));
+    directories.push(directory);
+    const encryption = new TestEncryption();
+    const selection = { providerId: "openrouter", modelId: "openai/gpt-oss-120b" };
+    const seeded = await ModelService.create({ dataDirectory: directory, encryption, allowModelNetwork: false });
+    await seeded.save({ selection, apiKey: "secret-provider-key" });
+
+    vi.stubEnv("OPENROUTER_API_KEY", "env-key");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        (_input: unknown, init?: { signal?: AbortSignal }) =>
+          new Promise<never>((_resolve, reject) => {
+            init?.signal?.addEventListener("abort", () => reject(new Error("Request aborted")));
+          }),
+      ),
+    );
+    try {
+      const stalled = await ModelService.create({
+        dataDirectory: directory,
+        encryption,
+        modelRefreshTimeoutMs: 50,
+      });
+
+      expect(stalled.getModelRuntime().hasConfiguredAuth("openrouter")).toBe(true);
+      await expect(stalled.getSelection()).resolves.toEqual(selection);
+      await expect(stalled.getView()).resolves.toMatchObject({
+        catalogError: expect.stringContaining("timed out"),
+      });
+    } finally {
+      vi.unstubAllGlobals();
+      vi.unstubAllEnvs();
+    }
   });
 
   it("requires an encrypted provider key before saving a selection", async () => {

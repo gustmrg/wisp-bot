@@ -165,6 +165,12 @@ function ModelSettingsSection({ active }: ModelSettingsSectionProps) {
         Default provider and model for Wisps without their own selection. Saved provider keys are shared with all Wisps.
       </p>
 
+      {view?.catalogError ? (
+        <p role="alert" className="mb-[18px] text-[11.5px] leading-relaxed text-destructive">
+          Could not refresh the model catalog, so some providers or models may be missing. {view.catalogError}
+        </p>
+      ) : null}
+
       {loading ? <p className="text-dim text-[12px]">Loading providers and models…</p> : null}
       {!loading && view ? (
         <>
