@@ -103,8 +103,8 @@ export class ConversationService {
     return this.getState();
   }
 
-  async create(conversation: Chat): Promise<ConversationStateView> {
-    await this.repository.create(conversation);
+  async create(conversation: Chat, model?: ModelSelection | null): Promise<ConversationStateView> {
+    await this.repository.create(conversation, model ?? null);
     if (conversation.kind === "wisp") {
       try {
         await this.registry.create(this.repository.getAgentContext(conversation.id));

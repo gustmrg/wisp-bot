@@ -168,11 +168,12 @@ separate web transport implementation; no desktop security checks are bypassed.
 
 **Settings → AI Model** manages the default model and encrypted, shared provider
 keys. Providers with API-key authentication and models in Pi's installed catalog
-are available. A Wisp's **Model** tab can select another
-provider/model and output-token limit, or **Use global model** to inherit the
-default again. Overrides are saved locally with the Wisp and restored on restart.
-An invalid override requires configuration; it does not silently use a different
-provider. Removing a provider key disables affected Wisps until the key is restored.
+are available. When creating a Wisp, the **Model** section can select another
+provider/model and output-token limit for that Wisp, or keep **Use global model**
+to inherit the default. Overrides are saved locally with the Wisp and restored on
+restart; a Wisp's **Model** tab shows the selection read-only. An invalid override
+requires configuration; it does not silently use a different provider. Removing
+a provider key disables affected Wisps until the key is restored.
 
 Idle Wisps switch immediately; active Wisps finish their current turn with the
 previous model. The conversation header shows the actual model and any pending

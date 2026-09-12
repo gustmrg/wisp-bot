@@ -148,5 +148,41 @@ describe("IPC request validators", () => {
     });
 
     expect(request.conversation).toEqual(expect.objectContaining({ id: "legacy-pill", shape: "pebble" }));
+    expect(request.model).toBeNull();
+  });
+
+  it("parses a creation-time model selection and rejects invalid ones", () => {
+    const conversation = {
+      id: "wisp-1",
+      kind: "wisp",
+      name: "Atlas",
+      label: "",
+      description: "",
+      shape: "hexagon",
+      notifyOnUpdatesEnabled: true,
+      preview: "Ready",
+      timestamp: "Now",
+      messages: [],
+    };
+
+    expect(
+      parseCreateConversationRequest({
+        conversation,
+        model: { providerId: "anthropic", modelId: "claude-sonnet-4-5", maxOutputTokens: 2048 },
+      }).model,
+    ).toEqual({ providerId: "anthropic", modelId: "claude-sonnet-4-5", maxOutputTokens: 2048 });
+    expect(parseCreateConversationRequest({ conversation, model: null }).model).toBeNull();
+    expect(() =>
+      parseCreateConversationRequest({
+        conversation,
+        model: { providerId: "anthropic", modelId: "claude-sonnet-4-5", maxOutputTokens: 0 },
+      }),
+    ).toThrow(WispBackendError);
+    expect(() =>
+      parseCreateConversationRequest({
+        conversation,
+        model: { providerId: "anthropic" },
+      }),
+    ).toThrow(WispBackendError);
   });
 });

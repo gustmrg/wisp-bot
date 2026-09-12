@@ -1,8 +1,16 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { FormEvent, ReactElement } from "react";
 import { PlusIcon } from "lucide-react";
 
+import type { AiSettingsView, ModelSelection } from "../../shared/contracts";
 import type { NewWisp, WispChat } from "@/chat-data";
+import {
+  CreateWispModelSection,
+  createDefaultWispModelDraft,
+  isWispModelDraftInvalid,
+  resolveWispModelSelection,
+  type WispModelDraft,
+} from "@/components/create-wisp-model-section";
 import { CreateWispForm } from "@/components/create-wisp-form";
 import { Button } from "@/components/ui/button";
 import {
@@ -20,7 +28,7 @@ import { AVATAR_COLORS } from "@/lib/wisp-appearance";
 type NewAgent = NewWisp;
 
 interface CreateAgentDialogProps {
-  onCreate: (agent: NewAgent) => Promise<boolean> | void;
+  onCreate: (agent: NewAgent, model: ModelSelection | null) => Promise<boolean> | void;
   trigger?: ReactElement;
 }
 
@@ -41,12 +49,36 @@ const DEFAULT_WISP: WispChat = {
 function CreateAgentDialog({ onCreate, trigger }: CreateAgentDialogProps) {
   const [open, setOpen] = useState(false);
   const [settings, setSettings] = useState<WispChat>(DEFAULT_WISP);
+  const [modelDraft, setModelDraft] = useState<WispModelDraft>(createDefaultWispModelDraft);
+  const [modelView, setModelView] = useState<AiSettingsView | null>(null);
+  const [modelLoadError, setModelLoadError] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const { name, description, color } = settings;
 
+  useEffect(() => {
+    if (!open || modelView) return;
+    let active = true;
+    void window.wisp
+      .getAiSettings()
+      .then((result) => {
+        if (!active) return;
+        if (!result.ok) throw new Error(result.error.message);
+        setModelView(result.value);
+      })
+      .catch((cause) => {
+        if (active) setModelLoadError(cause instanceof Error ? cause.message : "Could not load model settings.");
+      });
+    return () => {
+      active = false;
+    };
+  }, [open, modelView]);
+
   function resetForm() {
     setSettings(DEFAULT_WISP);
+    setModelDraft(createDefaultWispModelDraft());
+    setModelView(null);
+    setModelLoadError("");
     setError("");
   }
 
@@ -58,16 +90,19 @@ function CreateAgentDialog({ onCreate, trigger }: CreateAgentDialogProps) {
     setSaving(true);
     setError("");
     try {
-      const created = await onCreate({
-        kind: "wisp",
-        name: trimmedName,
-        label: settings.label.trim(),
-        description: description.trim(),
-        color,
-        shape: settings.shape,
-        avatarImage: settings.avatarImage,
-        notifyOnUpdatesEnabled: settings.notifyOnUpdatesEnabled,
-      });
+      const created = await onCreate(
+        {
+          kind: "wisp",
+          name: trimmedName,
+          label: settings.label.trim(),
+          description: description.trim(),
+          color,
+          shape: settings.shape,
+          avatarImage: settings.avatarImage,
+          notifyOnUpdatesEnabled: settings.notifyOnUpdatesEnabled,
+        },
+        resolveWispModelSelection(modelDraft),
+      );
       if (created === false) {
         setError("Could not create this Wisp. Your draft is still here; try again.");
         return;
@@ -123,7 +158,14 @@ function CreateAgentDialog({ onCreate, trigger }: CreateAgentDialogProps) {
           <CreateWispForm
             settings={settings}
             onChange={(changes) => setSettings((current) => ({ ...current, ...changes }))}
-          />
+          >
+            <CreateWispModelSection
+              view={modelView}
+              loadError={modelLoadError}
+              draft={modelDraft}
+              onChange={setModelDraft}
+            />
+          </CreateWispForm>
           {error ? (
             <p className="text-sm text-destructive" role="alert">
               {error}
@@ -131,7 +173,7 @@ function CreateAgentDialog({ onCreate, trigger }: CreateAgentDialogProps) {
           ) : null}
           <DialogFooter className="flex-none">
             <DialogClose render={<Button variant="outline" type="button" disabled={saving} />}>Cancel</DialogClose>
-            <Button type="submit" disabled={!name.trim() || saving}>
+            <Button type="submit" disabled={!name.trim() || saving || isWispModelDraftInvalid(modelDraft, modelView)}>
               {saving ? "Creating…" : "Create Wisp"}
             </Button>
           </DialogFooter>

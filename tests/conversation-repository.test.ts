@@ -78,6 +78,39 @@ describe("ConversationRepository", () => {
     ]);
   });
 
+  it("persists a creation-time model override with the new Wisp and restores it", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "wisp-create-override-"));
+    const repository = new ConversationRepository({ dataDirectory: directory });
+    await repository.load();
+    await repository.create(chat("plain"), null);
+    const override = { providerId: "anthropic", modelId: "claude-sonnet-4-5", maxOutputTokens: 2048 };
+    await repository.create(chat("custom"), override);
+
+    expect(repository.getAgentContext("plain").modelOverride).toBeNull();
+    expect(repository.getAgentContext("custom").modelOverride).toEqual(override);
+
+    const restored = new ConversationRepository({ dataDirectory: directory });
+    await restored.load();
+    expect(restored.getAgentContext("custom").modelOverride).toEqual(override);
+    expect(restored.getAgentContext("plain").modelOverride).toBeNull();
+  });
+
+  it("rejects creation-time model overrides that are invalid or belong to circles", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "wisp-create-override-invalid-"));
+    const repository = new ConversationRepository({ dataDirectory: directory });
+    await repository.load();
+
+    await expect(
+      repository.create(chat("bad"), { providerId: "", modelId: "claude-sonnet-4-5" }),
+    ).rejects.toMatchObject({ code: "invalid_request" });
+    await expect(
+      repository.create(chat("circle", true), { providerId: "anthropic", modelId: "m" }),
+    ).rejects.toMatchObject({ code: "invalid_request" });
+
+    expect(repository.getChats()).not.toHaveProperty("bad");
+    expect(repository.getChats()).not.toHaveProperty("circle");
+  });
+
   it("upgrades Phase 3 records without losing their stable application session", async () => {
     const directory = await mkdtemp(path.join(os.tmpdir(), "wisp-schema-upgrade-"));
     await writeFile(

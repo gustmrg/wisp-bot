@@ -123,7 +123,11 @@ export function parseInitializeConversationsRequest(value: unknown): InitializeC
 
 export function parseCreateConversationRequest(value: unknown): CreateConversationRequest {
   const request = asRecord(value);
-  return { conversation: normalizeChat(request.conversation) };
+  const model = request.model;
+  return {
+    conversation: normalizeChat(request.conversation),
+    ...(model === undefined || model === null ? { model: null } : { model: parseModelSelection(model) }),
+  };
 }
 
 export function parseUpdateConversationRequest(value: unknown): UpdateConversationRequest {

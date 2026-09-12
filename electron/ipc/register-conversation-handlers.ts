@@ -46,7 +46,7 @@ export function registerConversationHandlers(
       (payload) =>
         toResult(() => {
           const request = parseCreateConversationRequest(payload);
-          return service.create(request.conversation);
+          return service.create(request.conversation, request.model);
         }),
     ],
     [

@@ -96,8 +96,8 @@ export default function App() {
           loading={workspace.loading}
           error={workspace.error}
           onCollapsedChange={setSidebarCollapsed}
-          onCreate={async (chat) => {
-            const created = await workspace.createChat(chat);
+          onCreate={async (chat, model) => {
+            const created = await workspace.createChat(chat, model);
             if (created) {
               navigationVersion.current += 1;
               if (mobile) setDetailsOpen(false);
