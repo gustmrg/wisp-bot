@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { CheckIcon, CopyIcon } from "lucide-react";
+import { CheckIcon, CircleAlertIcon, CircleStopIcon, CopyIcon } from "lucide-react";
 
 import type { Message } from "@/chat-data";
 import { copyText } from "@/lib/clipboard";
@@ -8,6 +8,7 @@ import { MarkdownView } from "@/components/markdown-view";
 
 interface MessageViewProps {
   message: Message;
+  dense?: boolean;
   onAnswer?: (answer: string) => void;
   onRetry?: () => void;
 }
@@ -61,7 +62,7 @@ function MessageTools({
   );
 }
 
-function MessageView({ message, onAnswer, onRetry }: MessageViewProps) {
+function MessageView({ message, dense = false, onAnswer, onRetry }: MessageViewProps) {
   if (message.type === "time") {
     return (
       <div className="mt-[13px] mb-[5px] flex items-center justify-center text-faint text-[10.5px]">
@@ -72,7 +73,7 @@ function MessageView({ message, onAnswer, onRetry }: MessageViewProps) {
 
   if (message.type === "card") {
     return (
-      <div className="relative mt-[5px] flex animate-message-in flex-col items-start">
+      <div className="relative mt-3 flex animate-message-in flex-col items-start">
         <div className="message-card max-w-[min(820px,78vw)] rounded-[11px] border border-border bg-card px-[11px] py-[9px] leading-[1.42] select-text">
           <ul className="m-0 flex list-none flex-col gap-1 p-0">
             {message.items.map((item) => (
@@ -91,7 +92,7 @@ function MessageView({ message, onAnswer, onRetry }: MessageViewProps) {
 
   if (message.type === "prompt") {
     return (
-      <div className="relative mt-[5px] flex animate-message-in flex-col items-start">
+      <div className="relative mt-3 flex animate-message-in flex-col items-start">
         <section
           className="message-prompt w-[min(820px,78vw)] rounded-[11px] border border-border bg-popover p-2.5"
           aria-label={message.question}
@@ -125,17 +126,48 @@ function MessageView({ message, onAnswer, onRetry }: MessageViewProps) {
   }
 
   const outgoing = message.type === "outgoing";
-  if (message.status === "streaming" && !message.text.trim()) return null;
+  const empty = !message.text.trim();
+  if (empty && (message.status === "cancelled" || message.status === "failed")) {
+    const failed = message.status === "failed";
+    return (
+      <div className="mt-[13px] mb-[5px] flex animate-message-in items-center justify-center gap-1.5 text-faint text-[10.5px]">
+        {failed ? (
+          <CircleAlertIcon aria-hidden="true" className="size-3 flex-none" />
+        ) : (
+          <CircleStopIcon aria-hidden="true" className="size-3 flex-none" />
+        )}
+        <span>{failed ? "Failed" : "Stopped"}</span>
+        {failed && message.retryable ? (
+          <button
+            type="button"
+            className="rounded-md border border-black/[0.08] px-1.5 py-0.5 text-dim hover:bg-muted hover:text-foreground dark:border-white/[0.08]"
+            onClick={onRetry}
+          >
+            Retry
+          </button>
+        ) : null}
+      </div>
+    );
+  }
+  if (empty) return null;
   return (
-    <div className={cn("relative mt-[5px] flex animate-message-in flex-col", outgoing ? "items-end" : "items-start")}>
+    <div
+      className={cn(
+        "relative flex animate-message-in flex-col",
+        outgoing ? "items-end" : "items-start",
+        dense ? "mt-2" : "mt-3",
+      )}
+    >
       <div
         className={cn("message-row group/message-row flex max-w-full items-center", outgoing && "flex-row-reverse")}
         data-outgoing={outgoing}
       >
         <div
           className={cn(
-            "message-bubble max-w-[min(820px,78vw)] rounded-[11px] px-2.5 py-[7px] text-foreground leading-[1.42] select-text",
-            outgoing ? "bg-bubble-out whitespace-pre-wrap" : "bg-bubble-in",
+            "message-bubble max-w-[min(820px,78vw)] rounded-[11px] px-2.5 py-[7px] leading-[1.42] select-text",
+            outgoing
+              ? "bg-bubble-out whitespace-pre-wrap text-white"
+              : "border border-border bg-bubble-in text-foreground",
           )}
         >
           {outgoing ? message.text : <MarkdownView text={message.text} />}

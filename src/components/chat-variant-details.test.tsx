@@ -70,7 +70,7 @@ describe("variant details", () => {
   });
 });
 
-it("preserves General and Model drafts across tabs, and loads model/usage data lazily", async () => {
+it("loads model and usage data lazily and keeps model details across tabs", async () => {
   const user = userEvent.setup();
   const getAiSettings = vi.fn(async () => ({
     ok: true,
@@ -88,16 +88,20 @@ it("preserves General and Model drafts across tabs, and loads model/usage data l
     },
   }));
   const getSessionReport = vi.fn(async () => ({ ok: true, value: null }));
-  const applyModel = vi.fn();
   Object.defineProperty(window, "wisp", {
     configurable: true,
     value: {
       getAiSettings,
       getSessionReport,
-      applyModel,
       getConversationModel: vi.fn(async () => ({
         ok: true,
-        value: { override: null, applied: { providerId: "test", modelId: "model" }, pending: null, status: "idle" },
+        value: {
+          override: null,
+          effective: { providerId: "test", modelId: "model" },
+          applied: { providerId: "test", modelId: "model" },
+          pending: null,
+          status: "idle",
+        },
       })),
       subscribeToAgentEvents: vi.fn(() => () => undefined),
     },
@@ -110,18 +114,17 @@ it("preserves General and Model drafts across tabs, and loads model/usage data l
   await user.clear(screen.getByRole("textbox", { name: "Name" }));
   await user.type(screen.getByRole("textbox", { name: "Name" }), "Unsent name");
   await user.click(screen.getByRole("tab", { name: "Model" }));
-  await user.click(await screen.findByRole("checkbox", { name: "Use global model" }));
-  await user.type(screen.getByLabelText("Maximum output tokens"), "512");
+  expect(await screen.findByText("Test")).toBeVisible();
+  expect(screen.getByText("model")).toBeVisible();
+  expect(screen.getByText(/set when the Wisp is created/)).toBeVisible();
   await user.click(screen.getByRole("tab", { name: "Usage" }));
   expect(await screen.findByText(/No agent session yet/)).toBeVisible();
-  expect(screen.queryByRole("button", { name: "Save model" })).not.toBeInTheDocument();
   await user.click(screen.getByRole("tab", { name: "Model" }));
-  expect(screen.getByLabelText("Maximum output tokens")).toHaveValue(512);
+  expect(screen.getByText("Test")).toBeVisible();
   expect(getAiSettings).toHaveBeenCalledTimes(1);
   await user.click(screen.getByRole("tab", { name: "General" }));
   expect(screen.getByRole("textbox", { name: "Name" })).toHaveValue("Unsent name");
   expect(onChange).not.toHaveBeenCalled();
-  expect(applyModel).not.toHaveBeenCalled();
 });
 
 it("supports keyboard navigation between settings tabs", async () => {

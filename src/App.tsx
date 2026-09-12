@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from "react";
 
-import { useConversationModel, modelName } from "@/hooks/use-conversation-model";
 import { AppSettingsDialog } from "@/components/app-settings-dialog";
 import { ChatPanel } from "@/components/chat-panel";
 import { DetailsPanel } from "@/components/details-panel";
@@ -25,9 +24,6 @@ export default function App() {
   const [searchOpen, setSearchOpen] = useState(false);
   const [settingsSection, setSettingsSection] = useState<"general" | "model" | null>(null);
   const navigationVersion = useRef(0);
-  const conversationModel = useConversationModel(
-    workspace.activeChat?.kind === "wisp" ? workspace.activeChat.id : null,
-  );
   const sidebarPanel = useResizablePanel({
     ...SIDEBAR_LAYOUT.resize,
     enabled: !mobile && !sidebarCollapsed,
@@ -130,11 +126,6 @@ export default function App() {
             onAbort={() => void workspace.abortActiveChat()}
             onOpenDetails={() => showDetails(true)}
             onConfigure={() => showSettings("model")}
-            modelLabel={
-              conversationModel
-                ? `${modelName(conversationModel.applied)}${conversationModel.pending ? ` → ${modelName(conversationModel.pending)} (after this turn)` : ""}`
-                : undefined
-            }
             onRetry={(messageId) => void workspace.retryMessage(messageId)}
             onResolveApproval={(request, decision) => void workspace.resolveApproval(request, decision)}
             onSend={(text) => void workspace.sendMessage(text)}
@@ -163,7 +154,6 @@ export default function App() {
       </div>
       <SearchDialog chats={workspace.chats} open={searchOpen} onOpenChange={showSearch} onSelectChat={selectChat} />
       <AppSettingsDialog
-        key={settingsSection ?? "closed"}
         initialSection={settingsSection ?? "general"}
         appMetadata={APP_METADATA}
         currentUser={DEMO_CURRENT_USER}

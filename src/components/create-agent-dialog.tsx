@@ -94,7 +94,7 @@ function CreateAgentDialog({ onCreate, trigger }: CreateAgentDialogProps) {
         render={
           trigger ?? (
             <Button
-              className="w-fit justify-center gap-2 px-3 text-sm group-data-[collapsed=true]/sidebar:w-9 group-data-[collapsed=true]/sidebar:px-0"
+              className="w-full justify-center gap-2 px-3 text-sm group-data-[collapsed=true]/sidebar:w-9 group-data-[collapsed=true]/sidebar:px-0"
               variant="ghost"
               type="button"
               aria-label="Create Wisp"

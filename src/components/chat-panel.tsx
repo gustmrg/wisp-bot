@@ -7,6 +7,7 @@ import type { ToolApprovalDecision, ToolApprovalRequest } from "../../shared/too
 import { getToolMetadata } from "../../shared/tool-catalog";
 import type { ToolActivityView } from "@/lib/conversation-stream";
 import { getCircleMembers } from "@/lib/circle-members";
+import { withDateDividers } from "@/lib/date-dividers";
 import { mainPanel } from "@/lib/ui-classes";
 import { cn } from "@/lib/utils";
 import { ChatAvatar } from "@/components/chat-avatar";
@@ -30,7 +31,6 @@ interface ChatPanelProps {
   onAbort: () => void;
   onOpenDetails: () => void;
   onConfigure?: () => void;
-  modelLabel?: string;
   onRetry: (messageId: string | undefined) => void;
   onResolveApproval: (request: ToolApprovalRequest, decision: ToolApprovalDecision) => void;
   onSend: (text: string) => void;
@@ -51,7 +51,6 @@ function ChatPanel({
   onAbort,
   onOpenDetails,
   onConfigure,
-  modelLabel,
   onRetry,
   onResolveApproval,
   onSend,
@@ -61,6 +60,7 @@ function ChatPanel({
   const mobile = Boolean(onBack);
   const focusChatId = mobile && !hidden ? chat.id : null;
   const members = getCircleMembers(chat, chats);
+  const transcriptMessages = withDateDividers(chat.messages);
   const working = status === "working";
   const lastMessage = chat.messages.at(-1);
   const transcriptVersion = lastMessage && "text" in lastMessage ? lastMessage.text.length : chat.messages.length;
@@ -96,11 +96,6 @@ function ChatPanel({
             <h1 ref={titleRef} tabIndex={-1} className="block truncate font-semibold outline-none">
               {chat.name}
             </h1>
-            {modelLabel ? (
-              <span className="block truncate text-[10px] text-dim" title={modelLabel}>
-                {modelLabel}
-              </span>
-            ) : null}
           </div>
         </div>
         <div className="flex flex-none items-center gap-2">
@@ -139,14 +134,18 @@ function ChatPanel({
           role="log"
           aria-live="polite"
         >
-          {chat.messages.map((message, index) => (
-            <MessageView
-              key={message.id ?? `${chat.id}-${message.type}-${index}`}
-              message={message}
-              onAnswer={(answer) => onAnswerPrompt(message.id, answer)}
-              onRetry={() => onRetry(message.id)}
-            />
-          ))}
+          {transcriptMessages.map((message, index) => {
+            const previous = transcriptMessages[index - 1];
+            return (
+              <MessageView
+                key={message.id ?? `${chat.id}-${message.type}-${index}`}
+                message={message}
+                dense={message.type === "outgoing" && previous?.type === "outgoing"}
+                onAnswer={(answer) => onAnswerPrompt(message.id, answer)}
+                onRetry={() => onRetry(message.id)}
+              />
+            );
+          })}
           {toolActivities.length ? (
             <ol className="my-2 flex list-none flex-col gap-1 p-0" aria-label="Recent tool activity">
               {toolActivities.map((tool) => (

@@ -146,7 +146,7 @@ describe("conversation stream reducer", () => {
       chats,
     );
     const visible = overlayRuntimeMessages(chats, state.messages);
-    expect(visible.one.messages).toContainEqual(expect.objectContaining({ status: "cancelled", text: "Stopped." }));
+    expect(visible.one.messages).toContainEqual(expect.objectContaining({ status: "cancelled", text: "" }));
     expect(visible.two.messages).toContainEqual(
       expect.objectContaining({
         status: "failed",

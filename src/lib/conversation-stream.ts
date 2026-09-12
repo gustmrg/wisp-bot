@@ -326,7 +326,7 @@ function finalizeAssistant(
   return setRuntimeMessage(state, conversationId, {
     id: messageId,
     type: "incoming",
-    text: current?.type === "incoming" && current.text ? current.text : status === "cancelled" ? "Stopped." : "",
+    text: current?.type === "incoming" ? current.text : "",
     status,
     ...(current?.createdAt ? { createdAt: current.createdAt } : {}),
   });

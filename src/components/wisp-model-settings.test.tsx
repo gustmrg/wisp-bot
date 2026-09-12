@@ -1,10 +1,9 @@
-import { render, screen, waitFor } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
+import { render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import type { AiSettingsView, ConversationModelView, ModelSelection } from "../../shared/contracts";
 import { WispModelSettings } from "./wisp-model-settings";
 
-const globalModel = { providerId: "provider-a", modelId: "model-a" };
+const globalModel: ModelSelection = { providerId: "provider-a", modelId: "model-a" };
 const providers: AiSettingsView["providers"] = ["a", "b"].map((id) => ({
   id: `provider-${id}`,
   name: `Provider ${id}`,
@@ -20,18 +19,16 @@ const providers: AiSettingsView["providers"] = ["a", "b"].map((id) => ({
     },
   ],
 }));
-function api(configured = true) {
-  let view: ConversationModelView = {
-    override: null,
-    effective: globalModel,
-    applied: globalModel,
-    pending: null,
-    status: "idle",
-  };
-  const applyModel = vi.fn(async ({ model }: { model: ModelSelection | null }) => {
-    view = { ...view, override: model, effective: model ?? globalModel, applied: model ?? globalModel };
-    return { ok: true, value: {} };
-  });
+
+const baseView: ConversationModelView = {
+  override: null,
+  effective: globalModel,
+  applied: globalModel,
+  pending: null,
+  status: "idle",
+};
+
+function api(view: ConversationModelView, configured = true) {
   Object.defineProperty(window, "wisp", {
     configurable: true,
     value: {
@@ -45,40 +42,38 @@ function api(configured = true) {
       })),
       getConversationModel: vi.fn(async () => ({ ok: true, value: view })),
       subscribeToAgentEvents: vi.fn(() => () => undefined),
-      applyModel,
     },
   });
-  return { applyModel };
 }
+
 describe("WispModelSettings", () => {
-  it("saves a separate provider and model only for the selected Wisp, then restores inheritance", async () => {
-    const { applyModel } = api();
-    const user = userEvent.setup();
+  it("shows the applied model read-only with a notice that it is fixed at creation", async () => {
+    api(baseView);
     render(<WispModelSettings conversationId="wisp-one" />);
-    const inherit = await screen.findByRole("checkbox", { name: "Use global model" });
-    await user.click(inherit);
-    await user.click(screen.getByRole("combobox", { name: "Provider" }));
-    await user.click(await screen.findByRole("option", { name: "Provider b" }));
-    await user.type(screen.getByLabelText("Maximum output tokens"), "512");
-    await user.click(screen.getByRole("button", { name: "Save model" }));
-    await waitFor(() =>
-      expect(applyModel).toHaveBeenCalledWith({
-        conversationId: "wisp-one",
-        model: { providerId: "provider-b", modelId: "model-b", maxOutputTokens: 512 },
-      }),
-    );
-    expect(await screen.findByText("Current model: provider-b / model-b")).toBeVisible();
-    await user.click(inherit);
-    await user.click(screen.getByRole("button", { name: "Save model" }));
-    await waitFor(() => expect(applyModel).toHaveBeenLastCalledWith({ conversationId: "wisp-one", model: null }));
+
+    expect(await screen.findByText("Provider a")).toBeVisible();
+    expect(screen.getByText("model-a")).toBeVisible();
+    expect(screen.getByText(/set when the Wisp is created/)).toBeVisible();
+    expect(screen.getByText(/follows the global model/)).toBeVisible();
+    expect(screen.queryByRole("combobox")).not.toBeInTheDocument();
+    expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Save model" })).not.toBeInTheDocument();
   });
-  it("prevents saving an override without its shared provider key", async () => {
-    const { applyModel } = api(false);
-    const user = userEvent.setup();
+
+  it("omits the global-model note when a per-Wisp override is applied", async () => {
+    const override: ModelSelection = { providerId: "provider-b", modelId: "model-b" };
+    api({ ...baseView, override, effective: override, applied: override });
     render(<WispModelSettings conversationId="wisp-one" />);
-    await user.click(await screen.findByRole("checkbox", { name: "Use global model" }));
-    expect(screen.getByRole("button", { name: "Save model" })).toBeDisabled();
-    expect(screen.getByText(/Configure this provider's API key/)).toBeVisible();
-    expect(applyModel).not.toHaveBeenCalled();
+
+    expect(await screen.findByText("Provider b")).toBeVisible();
+    expect(screen.getByText("model-b")).toBeVisible();
+    expect(screen.queryByText(/follows the global model/)).not.toBeInTheDocument();
+  });
+
+  it("warns when the applied provider has no shared API key", async () => {
+    api(baseView, false);
+    render(<WispModelSettings conversationId="wisp-one" />);
+
+    expect(await screen.findByText(/Configure this provider's API key/)).toBeVisible();
   });
 });
