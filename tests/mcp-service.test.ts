@@ -307,6 +307,63 @@ describe("McpService", () => {
     expect(both.revision).not.toBe(partial.revision);
   });
 
+  it("keeps distinct colliding tool names dispatchable within one server", async () => {
+    const connections = [
+      {
+        outcome: "connected" as const,
+        tools: [
+          { ...TOOL, name: "search.users" },
+          { ...TOOL, name: "search_users", description: "Users search" },
+        ],
+      },
+      { outcome: "connected" as const, tools: [] },
+    ];
+    const { service } = await createService({}, connections);
+    const { serverId } = await addServer(service);
+    await service.refreshTools({ serverId });
+    await grantAccess(service, "wisp-a", serverId);
+
+    const snapshot = await service.getSnapshot("wisp-a");
+    expect(snapshot.definitions).toHaveLength(2);
+    const aliases = snapshot.activeNames as string[];
+    expect(new Set(aliases).size).toBe(2);
+    // Both wrappers dispatch their own original name.
+    const first = await firstDefinition(service).then((definition) => definition.execute("c1", { query: "x" }));
+    expect(first.content[0]?.text).toMatch(/ran search/);
+  });
+
+  it("blocks dispatch when the reviewed tool changed while approval was pending", async () => {
+    const changedTool = { ...TOOL, description: "Search things, differently" };
+    let refreshDuringApproval: (() => Promise<void>) | undefined;
+    const { service, created } = await createService(
+      {
+        authorizationBroker: {
+          authorize: vi.fn(async () => {
+            await refreshDuringApproval?.();
+          }),
+        },
+      },
+      [
+        { outcome: "connected" as const, tools: [TOOL] },
+        { outcome: "connected" as const, tools: [changedTool] },
+      ],
+    );
+    const { serverId } = await addServer(service);
+    await service.refreshTools({ serverId });
+    await grantAccess(service, "wisp-a", serverId);
+    // The wrapper was created from the original snapshot; the refresh during
+    // approval replaces the fingerprint for the same tool name.
+    const staleDefinition = await firstDefinition(service);
+    refreshDuringApproval = () => service.refreshTools({ serverId });
+
+    await expect(staleDefinition.execute("call-1", { query: "x" })).rejects.toMatchObject({
+      code: "tool_blocked",
+      message: expect.stringContaining("changed"),
+    });
+    // No connection was ever pooled or dispatched for the stale call.
+    expect(created).toHaveLength(2);
+  });
+
   it("drops tools from the snapshot when the server is disabled and unregisters labels on removal", async () => {
     const connections = [{ outcome: "connected" as const, tools: [TOOL] }];
     const { service } = await createService({}, connections);

@@ -59,7 +59,8 @@ export class McpSecretStore {
   }
 
   async hasOAuthTokens(serverId: string): Promise<boolean> {
-    return (await this.read(serverId))?.type === "oauth";
+    const secret = await this.read(serverId);
+    return secret?.type === "oauth" && secret.accessToken !== "";
   }
 
   async setHeader(serverId: string, headerName: string, headerValue: string): Promise<void> {
@@ -67,12 +68,19 @@ export class McpSecretStore {
   }
 
   async setOAuthTokens(serverId: string, tokens: McpOAuthTokens): Promise<void> {
-    await this.modify(serverId, () => ({ type: "oauth", ...tokens }));
+    // Preserve any persisted client registration: the refresh token stays
+    // associated with that client identity.
+    await this.modify(serverId, (current) => {
+      const clientRegistration =
+        current?.type === "oauth" && current.clientRegistration ? current.clientRegistration : undefined;
+      return { type: "oauth", ...tokens, ...(clientRegistration ? { clientRegistration } : {}) };
+    });
   }
 
   async oauthTokens(serverId: string): Promise<McpOAuthTokens | undefined> {
     const secret = await this.read(serverId);
-    return secret?.type === "oauth" ? { ...secret } : undefined;
+    // Registration-only placeholders carry no usable tokens.
+    return secret?.type === "oauth" && secret.accessToken !== "" ? { ...secret } : undefined;
   }
 
   async oauthClientRegistration(
@@ -93,8 +101,15 @@ export class McpSecretStore {
     await this.enqueue(async () => {
       const secrets = await this.readAll();
       const secret = secrets[serverId];
-      if (secret?.type !== "oauth") return;
-      secrets[serverId] = { ...secret, clientRegistration: registration };
+      // Registration happens before the first token exchange, so persist it
+      // even when no oauth secret exists yet by keeping a placeholder.
+      if (secret?.type === "oauth") {
+        secrets[serverId] = { ...secret, clientRegistration: registration };
+      } else if (!secret) {
+        secrets[serverId] = { type: "oauth", accessToken: "", clientRegistration: registration };
+      } else {
+        return;
+      }
       await this.writeAll(secrets);
     });
   }
@@ -104,8 +119,12 @@ export class McpSecretStore {
       const secrets = await this.readAll();
       const secret = secrets[serverId];
       if (secret?.type !== "oauth") return;
-      // Keep the registration; only the stale tokens are invalidated.
-      delete secrets[serverId];
+      // Invalidate only the tokens; the client identity stays registered.
+      secrets[serverId] = {
+        type: "oauth",
+        accessToken: "",
+        ...(secret.clientRegistration ? { clientRegistration: secret.clientRegistration } : {}),
+      };
       await this.writeAll(secrets);
     });
   }
@@ -126,10 +145,10 @@ export class McpSecretStore {
     });
   }
 
-  private async modify(serverId: string, next: () => McpSecret): Promise<void> {
+  private async modify(serverId: string, next: (current: McpSecret | undefined) => McpSecret): Promise<void> {
     await this.enqueue(async () => {
       const secrets = await this.readAll();
-      secrets[serverId] = next();
+      secrets[serverId] = next(secrets[serverId]);
       await this.writeAll(secrets);
     });
   }

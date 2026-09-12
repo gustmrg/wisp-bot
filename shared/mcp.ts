@@ -90,12 +90,61 @@ export interface SaveWispMcpAccessRequest extends WispMcpAccessView {}
 const ALIAS_PATTERN = /^mcp_[a-z0-9]+(?:_[a-z0-9]+)*$/;
 
 /**
- * Deterministic dispatch alias for a server tool. The immutable server ID is
- * embedded so a rename cannot change identities and two servers cannot shadow
- * each other or the built-in tools.
+ * Model-facing tool names are capped at 64 characters by several providers
+ * (OpenAI among them). The alias budget below keeps the total at or under 64
+ * even after a disambiguation suffix: 4 ("mcp_") + 12 (server hash) + 1 + 42
+ * (tool slug) = 59, + 1 + 4 (hash suffix) = 64.
+ */
+const ALIAS_MAX_LENGTH = 64;
+const SERVER_HASH_CHARACTERS = 12;
+const TOOL_SLUG_MAX_CHARACTERS = 42;
+
+/**
+ * Stable, dependency-free 32-bit FNV-1a. Shared code runs in the renderer too,
+ * so node:crypto is not available here.
+ */
+function fnv1a(value: string): number {
+  let hash = 0x811c9dc5;
+  for (let index = 0; index < value.length; index += 1) {
+    hash ^= value.charCodeAt(index);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return hash >>> 0;
+}
+
+function hashHex(value: string, characters: number): string {
+  const mixed = `${value.length}:${value}`;
+  const first = fnv1a(mixed).toString(16).padStart(8, "0");
+  const second = fnv1a(`wisp-mcp#${mixed}`).toString(16).padStart(8, "0");
+  return `${first}${second}`.slice(0, characters);
+}
+
+/** Alias prefix owned by one server: derived from its immutable ID. */
+export function mcpServerAliasPrefix(serverId: string): string {
+  return `mcp_${hashHex(serverId, SERVER_HASH_CHARACTERS)}`;
+}
+
+/**
+ * Deterministic base dispatch alias for a server tool. The immutable server ID
+ * is embedded (hashed and bounded) so a rename cannot change identities and two
+ * servers cannot shadow each other or the built-in tools. Distinct original
+ * names can still normalize onto one base (e.g. "search.users" vs
+ * "search_users"); callers must disambiguate with disambiguateMcpAlias.
  */
 export function mcpToolAlias(serverId: string, toolName: string): string {
-  return `mcp_${slug(serverId)}_${slug(toolName)}`;
+  const toolSlug = slug(toolName).slice(0, TOOL_SLUG_MAX_CHARACTERS);
+  return `${mcpServerAliasPrefix(serverId)}_${toolSlug}`;
+}
+
+/**
+ * Stable disambiguation for a colliding base alias: a short hash of the
+ * original server-side name keeps distinct tools distinct regardless of
+ * discovery order while staying within the provider name limit.
+ */
+export function disambiguateMcpAlias(baseAlias: string, toolName: string): string {
+  const suffix = hashHex(toolName, 4);
+  const trimmed = baseAlias.slice(0, ALIAS_MAX_LENGTH - suffix.length - 1);
+  return `${trimmed}_${suffix}`;
 }
 
 function slug(value: string): string {
@@ -103,9 +152,9 @@ function slug(value: string): string {
     .toLowerCase()
     .replaceAll(/[^a-z0-9]+/g, "_")
     .replaceAll(/^_+|_+$/g, "");
-  return normalized || "server";
+  return normalized || "tool";
 }
 
 export function isMcpToolAlias(value: string): boolean {
-  return value.startsWith("mcp_") && value.length <= 128 && ALIAS_PATTERN.test(value);
+  return value.startsWith("mcp_") && value.length <= ALIAS_MAX_LENGTH && ALIAS_PATTERN.test(value);
 }

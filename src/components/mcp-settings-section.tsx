@@ -173,7 +173,7 @@ function McpServerCard({
     setMessage("");
   }
 
-  function draftRequest() {
+  function saveRequest() {
     const request: Omit<SaveMcpServerRequest, "enabled" | "serverId"> & { serverId?: string; enabled?: boolean } = {
       name: draft.name.trim(),
       endpoint: draft.endpoint.trim(),
@@ -185,6 +185,12 @@ function McpServerCard({
     return request;
   }
 
+  /** The test endpoint accepts a narrower payload than the save endpoint. */
+  function testRequest() {
+    const { name: _name, ...request } = saveRequest();
+    return request;
+  }
+
   async function run(action: "save" | "test" | "remove" | "refresh" | "signin") {
     if (!server && (action === "remove" || action === "refresh" || action === "signin")) return;
     setOperation(action);
@@ -192,7 +198,7 @@ function McpServerCard({
     setMessage("");
     try {
       if (action === "test") {
-        const result = await window.wisp.testMcpConnection(draftRequest());
+        const result = await window.wisp.testMcpConnection(testRequest());
         if (!result.ok) {
           setError(result.error.message);
           return;
@@ -201,17 +207,22 @@ function McpServerCard({
         return;
       }
       if (action === "save") {
-        const payload = draftRequest();
+        const payload = saveRequest();
         const result = await window.wisp.saveMcpServer({ ...payload, enabled: draft.enabled });
         if (!result.ok) {
           setError(result.error.message);
           return;
         }
+        onSaved(result.value);
+        if (isNew) {
+          // The card stays in add mode; close it so a second save cannot
+          // create a duplicate. The new server appears as its own card.
+          reset();
+          setOpen(false);
+          return;
+        }
         setDraft((current) => ({ ...current, headerValue: "" }));
         setMessage("Connection saved.");
-        onSaved(result.value);
-        const saved = result.value.servers.find((candidate) => candidate.name === draft.name.trim());
-        if (saved) setDraft(draftFrom(saved));
         return;
       }
       if (!server) return;
@@ -344,8 +355,8 @@ function McpServerCard({
                 setError("");
               }}
             />
-            <span className="text-dim">Only HTTPS endpoints are allowed.</span>
           </label>
+          <p className="text-dim">Only HTTPS endpoints are allowed.</p>
           <label htmlFor={`${formId}-auth`} className="flex flex-col gap-1.5">
             <strong>Authentication</strong>
             <select
@@ -398,11 +409,11 @@ function McpServerCard({
                     setError("");
                   }}
                 />
-                <span className="text-dim">
-                  {server?.headerConfigured ? "Leave blank to keep the saved value. " : ""}
-                  Values are encrypted on this device and never shown to Wisps.
-                </span>
               </label>
+              <p className="text-dim">
+                {server?.headerConfigured ? "Leave blank to keep the saved value. " : ""}
+                Values are encrypted on this device and never shown to Wisps.
+              </p>
             </>
           ) : null}
           {draft.authMode === "oauth" ? (

@@ -130,7 +130,9 @@ export function parseTestMcpConnection(value: unknown): {
   const authMode = parseMcpAuthMode(raw.authMode);
   const headerName = parseMcpHeaderName(raw.headerName);
   const headerValue = parseMcpSecretValue(raw.headerValue);
-  if (authMode === "header" && !headerName) throw invalidMcpRequest();
+  // The header name may fall back to the saved server's configuration when
+  // testing a stored connection.
+  if (authMode === "header" && !headerName && !serverId) throw invalidMcpRequest();
   return {
     ...(serverId ? { serverId } : {}),
     endpoint: parseMcpEndpoint(raw.endpoint),

@@ -96,6 +96,11 @@ export class McpConnection {
   ): Promise<"connected" | "needs_sign_in"> {
     await this.close();
     const sdk = this.options.sdk ?? (await loadMcpSdk());
+    const oauthProvider =
+      auth.mode === "oauth" ? (auth.provider as { setInteractiveSignIn?: (allowed: boolean) => void }) : undefined;
+    // Background flows must never open a browser; only explicit sign-in
+    // operations enable interactive redirects on the provider.
+    oauthProvider?.setInteractiveSignIn?.(options.allowInteractiveSignIn === true);
     for (let attempt = 0; attempt < 2; attempt += 1) {
       let client: McpSdkClient | null = null;
       try {
@@ -138,6 +143,10 @@ export class McpConnection {
       } catch (error) {
         // Never leak a half-open transport between attempts.
         await client?.close().catch(() => undefined);
+        if (isSignInRequired(error)) {
+          this.status = "needs_sign_in";
+          return "needs_sign_in";
+        }
         if (isUnauthorized(error) && auth.mode === "oauth" && attempt === 0) {
           const refreshed = await refreshOrSignIn(sdk, auth, endpoint, options.allowInteractiveSignIn === true);
           if (refreshed === "needs_sign_in") {
@@ -282,7 +291,11 @@ async function refreshOrSignIn(
   type AuthFn = (provider: unknown, options: Record<string, unknown>) => Promise<string>;
   const authFn = (sdk as unknown as { auth?: AuthFn }).auth;
   if (!authFn) return "needs_sign_in";
-  const result = await authFn(auth.provider, { serverUrl: endpoint }).catch(() => "error");
+  // A non-interactive provider throws McpSignInRequiredError instead of
+  // opening a browser; treat any refusal as "needs sign-in".
+  const result = await authFn(auth.provider, { serverUrl: endpoint }).catch((error) =>
+    isSignInRequired(error) || !allowInteractiveSignIn ? "needs_sign_in" : "error",
+  );
   if (result === "AUTHORIZED") return "refreshed";
   if (result !== "REDIRECT" || !allowInteractiveSignIn) return "needs_sign_in";
   const provider = auth.provider as { waitForCallback?: () => Promise<URLSearchParams> };
@@ -291,8 +304,21 @@ async function refreshOrSignIn(
   if (!callback) return "needs_sign_in";
   const code = callback.get("code");
   if (!code) return "needs_sign_in";
-  const exchange = await authFn(auth.provider, { serverUrl: endpoint, authorizationCode: code }).catch(() => "error");
+  // RFC 9207: servers advertising issuer responses require the iss parameter
+  // on the code exchange for mix-up defense.
+  const iss = callback.get("iss");
+  const exchange = await authFn(auth.provider, {
+    serverUrl: endpoint,
+    authorizationCode: code,
+    ...(iss ? { iss } : {}),
+  }).catch(() => "error");
   return exchange === "AUTHORIZED" ? "signed_in" : "needs_sign_in";
+}
+
+function isSignInRequired(error: unknown): boolean {
+  return (
+    error instanceof Error && (error.name === "McpSignInRequiredError" || /sign-in is required/i.test(error.message))
+  );
 }
 
 function isUnauthorized(error: unknown): boolean {

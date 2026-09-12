@@ -37,6 +37,7 @@ export class McpOAuthProvider implements OAuthClientProvider {
   private readonly openExternal: (url: string) => Promise<void>;
   private readonly callbackTimeoutMs: number;
   private readonly callbackHost: string;
+  private interactive = false;
   private server: Server | undefined;
   private port: number | undefined;
   private stateValue: string | undefined;
@@ -56,6 +57,14 @@ export class McpOAuthProvider implements OAuthClientProvider {
     this.openExternal = options.openExternal;
     this.callbackTimeoutMs = options.callbackTimeoutMs ?? 300_000;
     this.callbackHost = options.callbackHost ?? "127.0.0.1";
+  }
+
+  /**
+   * Controls whether this provider may start an interactive browser sign-in.
+   * The bridge enables it only for explicit sign-in operations.
+   */
+  setInteractiveSignIn(allowed: boolean): void {
+    this.interactive = allowed;
   }
 
   get redirectUrl(): string {
@@ -168,6 +177,10 @@ export class McpOAuthProvider implements OAuthClientProvider {
   }
 
   async redirectToAuthorization(authorizationUrl: URL): Promise<void> {
+    // Background flows (token refresh attempts, discovery, tool dispatch) must
+    // never open a browser. The SDK invokes this before reporting that a
+    // redirect is needed, so the gate has to live here.
+    if (!this.interactive) throw new McpSignInRequiredError();
     if (!this.server) await this.ensureCallbackServer();
     this.beginWaitingForCallback();
     await this.openExternal(authorizationUrl.toString());
@@ -252,4 +265,15 @@ export class McpOAuthProvider implements OAuthClientProvider {
 
 export function newOAuthState(): string {
   return randomUUID();
+}
+
+/**
+ * Thrown instead of opening a browser when a background flow needs interactive
+ * sign-in. Bridges translate it into a "needs sign-in" connection state.
+ */
+export class McpSignInRequiredError extends Error {
+  constructor() {
+    super("MCP sign-in is required.");
+    this.name = "McpSignInRequiredError";
+  }
 }

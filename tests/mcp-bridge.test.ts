@@ -7,6 +7,7 @@ import {
   type McpSdkModuleShape,
   type McpSdkTool,
 } from "../electron/backend/mcp-bridge.js";
+import { McpSignInRequiredError } from "../electron/backend/mcp-oauth.js";
 
 const TOOLS: McpSdkTool[] = [
   { name: "search", description: "Search things", inputSchema: { type: "object" } },
@@ -145,6 +146,81 @@ describe("McpConnection", () => {
     });
     await expect(connection.callTool("search", { q: 1 }, { signal: controller.signal })).rejects.toMatchObject({
       code: "aborted",
+    });
+  });
+});
+
+function fakeOAuthProvider() {
+  return {
+    interactive: false,
+    redirectedTo: undefined as string | undefined,
+    setInteractiveSignIn(allowed: boolean) {
+      this.interactive = allowed;
+    },
+    async redirectToAuthorization(url: URL) {
+      // Mirrors the real provider: refuses background redirects.
+      if (!this.interactive) throw new McpSignInRequiredError();
+      this.redirectedTo = url.toString();
+    },
+    async waitForCallback() {
+      return new URLSearchParams({ code: "the-code", iss: "https://auth.example.com" });
+    },
+  };
+}
+
+describe("McpConnection OAuth", () => {
+  function unauthorizedSdk(
+    authLog: Array<Record<string, unknown>>,
+    provider: ReturnType<typeof fakeOAuthProvider>,
+    succeedAfter = Number.POSITIVE_INFINITY,
+  ) {
+    let attempts = 0;
+    return fakeSdk({
+      connect: () => {
+        attempts += 1;
+        if (attempts > succeedAfter) return;
+        const error = new Error("token required");
+        error.name = "UnauthorizedError";
+        throw error;
+      },
+      auth: async (ignoredProvider: unknown, options: Record<string, unknown>) => {
+        authLog.push(options);
+        if (options.authorizationCode) return "AUTHORIZED";
+        // The real SDK invokes redirectToAuthorization before returning REDIRECT.
+        await provider.redirectToAuthorization(new URL("https://auth.example.com/authorize"));
+        return "REDIRECT";
+      },
+    }).sdk;
+  }
+
+  it("never opens a browser for background OAuth connections", async () => {
+    const provider = fakeOAuthProvider();
+    const authLog: Array<Record<string, unknown>> = [];
+    const connection = new McpConnection({ sdk: unauthorizedSdk(authLog, provider) });
+    const outcome = await connection.connect("https://example.com/mcp", { mode: "oauth", provider });
+    expect(outcome).toBe("needs_sign_in");
+    expect(provider.redirectedTo).toBeUndefined();
+    expect(provider.interactive).toBe(false);
+    expect(authLog).toHaveLength(1);
+  });
+
+  it("runs the interactive flow for explicit sign-ins and forwards the callback issuer", async () => {
+    const provider = fakeOAuthProvider();
+    const authLog: Array<Record<string, unknown>> = [];
+    const connection = new McpConnection({ sdk: unauthorizedSdk(authLog, provider, 1) });
+    const outcome = await connection.connect(
+      "https://example.com/mcp",
+      { mode: "oauth", provider },
+      {
+        allowInteractiveSignIn: true,
+      },
+    );
+    expect(outcome).toBe("connected");
+    expect(provider.redirectedTo).toBe("https://auth.example.com/authorize");
+    // The code exchange carries the authorization code and the RFC 9207 issuer.
+    expect(authLog[1]).toMatchObject({
+      authorizationCode: "the-code",
+      iss: "https://auth.example.com",
     });
   });
 });

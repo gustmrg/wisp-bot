@@ -1,4 +1,4 @@
-import { isMcpToolAlias, mcpToolAlias } from "./mcp.js";
+import { isMcpToolAlias, mcpServerAliasPrefix } from "./mcp.js";
 import type { PluginId } from "./plugins.js";
 import type { ToolActionCategory } from "./tool-policy.js";
 
@@ -106,15 +106,20 @@ const metadataByName = new Map(TOOL_CATALOG.map((metadata) => [metadata.name, me
 // Backend-validated metadata for dynamically discovered MCP tools. Entries are
 // keyed by the app-generated alias and re-registered (idempotently) whenever a
 // trusted tool snapshot changes. Names are never accepted from the renderer or
-// from arbitrary prefixes; each entry must be derivable from an immutable
-// server ID plus the original tool name.
+// from arbitrary prefixes: each alias must sit under the registering server's
+// own prefix, derived from its immutable ID. Disambiguation suffixes (added
+// when distinct tool names normalize onto one base) stay valid here.
 const MAX_DYNAMIC_LABEL_CHARACTERS = 80;
+const ALIAS_REMAINDER_PATTERN = /^[a-z0-9]+(?:_[a-z0-9]+)*$/;
 
 export function registerDynamicToolMetadata(entries: ReadonlyArray<DynamicToolMetadataInput>): void {
   for (const entry of entries) {
     if (!entry.mcpServerId) continue;
-    const alias = entry.sourceName ? mcpToolAlias(entry.mcpServerId, entry.sourceName) : entry.name;
-    if (entry.name !== alias || !isMcpToolAlias(alias)) continue;
+    const alias = entry.name;
+    if (!isMcpToolAlias(alias)) continue;
+    const prefix = mcpServerAliasPrefix(entry.mcpServerId);
+    const remainder = alias.slice(prefix.length + 1);
+    if (!alias.startsWith(`${prefix}_`) || !remainder || !ALIAS_REMAINDER_PATTERN.test(remainder)) continue;
     const label = boundedText(entry.label, MAX_DYNAMIC_LABEL_CHARACTERS);
     if (!label) continue;
     metadataByName.set(alias, {
@@ -159,8 +164,10 @@ export function getToolMetadata(name: string): ToolMetadata | undefined {
  */
 export function describeMcpAlias(name: string): ToolMetadata | undefined {
   if (!isMcpToolAlias(name)) return undefined;
-  const label = name
-    .replace(/^mcp_/, "")
+  let remainder = name.replace(/^mcp_/, "");
+  // Skip the bounded server-hash segment when present for a readable label.
+  remainder = remainder.replace(/^[0-9a-f]{12}_/, "");
+  const label = remainder
     .replaceAll("_", " ")
     .trim()
     .replace(/^./, (character) => character.toUpperCase());

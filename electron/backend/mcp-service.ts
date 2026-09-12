@@ -5,6 +5,7 @@ import path from "node:path";
 import type { ToolDefinition } from "@earendil-works/pi-coding-agent" with { "resolution-mode": "import" };
 
 import {
+  disambiguateMcpAlias,
   mcpToolAlias,
   type McpAccess,
   type McpAuthMode,
@@ -320,6 +321,7 @@ export class McpService {
       try {
         await provider.loadPersistedTokens();
         await provider.loadPersistedClientInformation();
+        await provider.ensureCallbackServer();
         const connection = this.createConnection();
         const outcome = await connection.connect(
           server.endpoint,
@@ -488,6 +490,9 @@ export class McpService {
     const combinedSignal = signal ? AbortSignal.any([signal, controller.signal]) : controller.signal;
     this.running.set(controller, { conversationId, sessionId, serverId });
     let dispatched = false;
+    // The reviewed definition, captured before the approval wait.
+    const reviewedGeneration = this.state.servers[serverId]?.configGeneration;
+    const reviewedFingerprint = tool.fingerprint;
     try {
       combinedSignal.throwIfAborted();
       this.assertToolAccess(conversationId, sessionId, serverId);
@@ -504,11 +509,14 @@ export class McpService {
         },
         combinedSignal,
       );
-      const connection = await this.pooledConnection(sessionId, serverId);
       combinedSignal.throwIfAborted();
-      // Recheck after the approval wait: grants, enablement, and configuration
-      // generation may have changed while the user was reviewing.
+      // Recheck after the approval wait: grants and enablement may have
+      // changed while the user was reviewing.
       this.assertToolAccess(conversationId, sessionId, serverId);
+      // A tool that was replaced, changed, or removed while the approval was
+      // pending must never receive the approved dispatch.
+      this.assertToolUnchanged(serverId, reviewedGeneration, reviewedFingerprint);
+      const connection = await this.pooledConnection(sessionId, serverId);
       dispatched = true;
       const result = await connection.callTool(tool.name, args, { signal: combinedSignal });
       const converted = convertResult(result);
@@ -572,6 +580,9 @@ export class McpService {
     const provider = this.createOAuthProvider(server.serverId);
     await provider.loadPersistedTokens();
     await provider.loadPersistedClientInformation();
+    // The SDK reads clientMetadata (which includes the callback redirect URI)
+    // during discovery/registration, before any redirect happens.
+    await provider.ensureCallbackServer();
     return { mode: "oauth", provider };
   }
 
@@ -598,6 +609,9 @@ export class McpService {
     const provider = this.createOAuthProvider(server.serverId);
     await provider.loadPersistedTokens();
     await provider.loadPersistedClientInformation();
+    // The SDK reads clientMetadata (which includes the callback redirect URI)
+    // during discovery/registration, before any redirect happens.
+    await provider.ensureCallbackServer();
     return { mode: "oauth", provider };
   }
 
@@ -626,14 +640,22 @@ export class McpService {
 
   private buildSnapshot(tools: ReadonlyArray<McpSdkTool>, serverId: string): McpToolRecord[] {
     const records: McpToolRecord[] = [];
-    const seen = new Set<string>();
+    const seenNames = new Set<string>();
+    const usedAliases = new Set<string>();
     for (const tool of tools) {
       if (!tool || typeof tool.name !== "string" || !/^[a-zA-Z0-9_.-]{1,128}$/.test(tool.name)) continue;
-      if (seen.has(tool.name)) continue;
+      if (seenNames.has(tool.name)) continue;
       const schema = boundedSchema(tool.inputSchema);
       if (schema === undefined) continue;
-      seen.add(tool.name);
-      const alias = mcpToolAlias(serverId, tool.name);
+      seenNames.add(tool.name);
+      // Distinct names like "search.users" and "search_users" normalize onto
+      // the same slug; keep both with a stable, name-derived suffix.
+      let alias = mcpToolAlias(serverId, tool.name);
+      if (usedAliases.has(alias)) {
+        alias = disambiguateMcpAlias(alias, tool.name);
+        if (usedAliases.has(alias)) continue;
+      }
+      usedAliases.add(alias);
       const description = boundedText(tool.description ?? "", MAX_TOOL_DESCRIPTION_CHARACTERS);
       records.push({
         name: tool.name,
@@ -673,6 +695,17 @@ export class McpService {
     const server = this.state.servers[serverId];
     if (!server || !server.enabled || this.access(sessionId, serverId) === "none") {
       throw new WispBackendError("tool_blocked", "This Wisp does not have access to this connection.");
+    }
+  }
+
+  private assertToolUnchanged(serverId: string, generation: number | undefined, fingerprint: string): void {
+    const server = this.state.servers[serverId];
+    if (
+      !server ||
+      server.configGeneration !== generation ||
+      !server.snapshot?.tools.some((tool) => tool.fingerprint === fingerprint)
+    ) {
+      throw new WispBackendError("tool_blocked", "This tool changed before it could run. Ask the Wisp to try again.");
     }
   }
 

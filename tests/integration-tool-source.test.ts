@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { ToolDefinition } from "@earendil-works/pi-coding-agent" with { "resolution-mode": "import" };
 
-import { isMcpToolAlias, mcpToolAlias } from "../shared/mcp.js";
+import { disambiguateMcpAlias, isMcpToolAlias, mcpServerAliasPrefix, mcpToolAlias } from "../shared/mcp.js";
 import {
   describeMcpAlias,
   getToolMetadata,
@@ -66,11 +66,50 @@ describe("dynamic tool catalog", () => {
     expect(getToolMetadata(aliasB)).toBeDefined();
   });
 
+  it("keeps aliases within provider name limits and distinct tools distinct", () => {
+    const uuid = "58ba17c5-4c75-4886-bf5a-d6efa5414b30";
+    // 36-character UUID plus this name exceeded 64 characters previously.
+    const longAlias = mcpToolAlias(uuid, "get_pull_request_comments");
+    expect(longAlias.length).toBeLessThanOrEqual(64);
+    expect(isMcpToolAlias(longAlias)).toBe(true);
+
+    // Distinct names normalize onto one base; stable disambiguation separates
+    // them without depending on discovery order.
+    const dot = mcpToolAlias(uuid, "search.users");
+    const underscore = mcpToolAlias(uuid, "search_users");
+    expect(dot).toBe(underscore);
+    const dotDisambiguated = disambiguateMcpAlias(dot, "search.users");
+    const underscoreDisambiguated = disambiguateMcpAlias(underscore, "search_users");
+    expect(dotDisambiguated).not.toBe(underscoreDisambiguated);
+    for (const alias of [dotDisambiguated, underscoreDisambiguated]) {
+      expect(alias.length).toBeLessThanOrEqual(64);
+      expect(isMcpToolAlias(alias)).toBe(true);
+    }
+  });
+
+  it("registers disambiguated aliases under the owning server's prefix only", () => {
+    const serverA = "58ba17c5-4c75-4886-bf5a-d6efa5414b30";
+    const serverB = "0f0e0d0c-0b0a-0908-0706-050403020100";
+    const base = mcpToolAlias(serverA, "search");
+    const disambiguated = disambiguateMcpAlias(base, "search.users");
+    registerDynamicToolMetadata([{ name: disambiguated, label: "Search users", mcpServerId: serverA }]);
+    expect(getToolMetadata(disambiguated)?.label).toBe("Search users");
+    expect(getToolMetadata(disambiguated)?.mcpServerId).toBe(serverA);
+
+    // Another server cannot register names under server A's prefix, and a
+    // derivation mismatch is still rejected.
+    const foreign = `${mcpServerAliasPrefix(serverA)}_spoofed`;
+    registerDynamicToolMetadata([{ name: foreign, label: "Spoofed", mcpServerId: serverB }]);
+    expect(getToolMetadata(foreign)).toBeUndefined();
+    registerDynamicToolMetadata([{ name: "mcp_wrong_tool", label: "Wrong", mcpServerId: serverA }]);
+    expect(getToolMetadata("mcp_wrong_tool")).toBeUndefined();
+  });
+
   it("describes aliases after removal as a display-only fallback", () => {
     const alias = mcpToolAlias("server-a", "create_issue");
     expect(getToolMetadata(alias)).toBeUndefined();
     const described = describeMcpAlias(alias);
-    expect(described?.label).toContain("create issue");
+    expect(described?.label).toBe("Create issue");
     // The fallback must never validate arbitrary names.
     expect(describeMcpAlias("read")).toBeUndefined();
     expect(describeMcpAlias("mcp_with spaces!")).toBeUndefined();
