@@ -67,6 +67,12 @@ function AppSettingsDialog({
 }: AppSettingsDialogProps) {
   const [section, setSection] = useState<"general" | "model" | "plugins" | "about" | "usage">(initialSection);
   const [mobileSectionOpen, setMobileSectionOpen] = useState(initialSection !== "general");
+
+  useEffect(() => {
+    if (!open) return;
+    setSection(initialSection);
+    setMobileSectionOpen(initialSection !== "general");
+  }, [open, initialSection]);
   const showOverview = mobile && !mobileSectionOpen;
   const mobileHeadingRef = useRef<HTMLHeadingElement>(null);
   const sectionTitles = {
