@@ -8,6 +8,9 @@ import { WispSettingsFields } from "@/components/wisp-settings-fields";
 import { WispSessionReportSection } from "@/components/wisp-session-report";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
+
+const TAB_ORDER = ["general", "model", "access", "usage"] as const;
 
 interface WispDetailsProps {
   chat: WispChat;
@@ -17,10 +20,12 @@ interface WispDetailsProps {
 
 export function WispDetails({ chat, onChange, generalActions }: WispDetailsProps) {
   const [tab, setTab] = useState("general");
+  const [slideDirection, setSlideDirection] = useState<"forward" | "back">("forward");
   const [visited, setVisited] = useState(() => new Set(["general"]));
   const [draft, setDraft] = useState(chat);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const slideClass = slideDirection === "forward" ? "animate-tab-forward" : "animate-tab-back";
   const dirty =
     draft.name !== chat.name ||
     draft.label !== chat.label ||
@@ -62,6 +67,11 @@ export function WispDetails({ chat, onChange, generalActions }: WispDetailsProps
       value={tab}
       onValueChange={(value) => {
         if (typeof value !== "string") return;
+        const nextIndex = TAB_ORDER.indexOf(value as (typeof TAB_ORDER)[number]);
+        const currentIndex = TAB_ORDER.indexOf(tab as (typeof TAB_ORDER)[number]);
+        if (nextIndex >= 0 && currentIndex >= 0 && nextIndex !== currentIndex) {
+          setSlideDirection(nextIndex > currentIndex ? "forward" : "back");
+        }
         setTab(value);
         setVisited((current) => (current.has(value) ? current : new Set([...current, value])));
       }}
@@ -75,7 +85,11 @@ export function WispDetails({ chat, onChange, generalActions }: WispDetailsProps
           <TabsTrigger value="usage">Usage</TabsTrigger>
         </TabsList>
       </div>
-      <TabsContent value="general" keepMounted className="flex min-h-0 flex-col overflow-hidden">
+      <TabsContent
+        value="general"
+        keepMounted
+        className={cn("flex min-h-0 flex-col overflow-hidden", tab === "general" && slideClass)}
+      >
         <div className="min-h-0 flex-1 overflow-y-auto p-3.5">
           <WispSettingsFields
             settings={draft}
@@ -97,13 +111,24 @@ export function WispDetails({ chat, onChange, generalActions }: WispDetailsProps
           </Button>
         </footer>
       </TabsContent>
-      <TabsContent value="model" keepMounted className="flex min-h-0 flex-col overflow-hidden">
+      <TabsContent
+        value="model"
+        keepMounted
+        className={cn("flex min-h-0 flex-col overflow-hidden", tab === "model" && slideClass)}
+      >
         {visited.has("model") ? <WispModelSettings conversationId={chat.id} /> : null}
       </TabsContent>
-      <TabsContent value="usage" keepMounted className="min-h-0 overflow-y-auto p-3.5">
+      <TabsContent
+        value="usage"
+        keepMounted
+        className={cn("min-h-0 overflow-y-auto p-3.5", tab === "usage" && slideClass)}
+      >
         {visited.has("usage") ? <WispSessionReportSection chatId={chat.id} active={tab === "usage"} /> : null}
       </TabsContent>
-      <TabsContent value="access" className="flex min-h-0 flex-col overflow-hidden">
+      <TabsContent
+        value="access"
+        className={cn("flex min-h-0 flex-col overflow-hidden", tab === "access" && slideClass)}
+      >
         {tab === "access" ? <WispPluginSettings conversationId={chat.id} /> : null}
       </TabsContent>
     </Tabs>

@@ -46,6 +46,8 @@
   --animate-panel-in: panel-in 170ms ease-out;
   --animate-avatar-sheet-in: avatar-sheet-in 160ms ease-out;
   --animate-working-pulse: working-pulse 1.5s ease-in-out infinite;
+  --animate-tab-forward: tab-forward 170ms ease-out;
+  --animate-tab-back: tab-back 170ms ease-out;
 
   @keyframes message-in {
     from {
@@ -69,6 +71,18 @@
     50% {
       opacity: 0.48;
       transform: scale(0.96);
+    }
+  }
+  @keyframes tab-forward {
+    from {
+      opacity: 0;
+      transform: translateX(10px);
+    }
+  }
+  @keyframes tab-back {
+    from {
+      opacity: 0;
+      transform: translateX(-10px);
     }
   }
 }
