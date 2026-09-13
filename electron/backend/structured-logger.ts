@@ -23,6 +23,22 @@ export class StructuredLogger {
   }
 }
 
+export class CompositeLogSink implements LogSink {
+  private readonly sinks: readonly LogSink[];
+
+  constructor(sinks: readonly LogSink[]) {
+    this.sinks = sinks;
+  }
+
+  info(value: string): void {
+    for (const sink of this.sinks) sink.info(value);
+  }
+
+  warn(value: string): void {
+    for (const sink of this.sinks) sink.warn(value);
+  }
+}
+
 export function redactLogFields(fields: Record<string, unknown>): Record<string, unknown> {
   return Object.fromEntries(
     Object.entries(fields).map(([key, value]) => [key, SENSITIVE_KEY.test(key) ? "[REDACTED]" : redactValue(value)]),

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 
-import { AppSettingsDialog } from "@/components/app-settings-dialog";
+import { AppSettingsDialogHost } from "@/components/app-settings-dialog-host";
+import type { AppSettingsDialogHandle } from "@/components/app-settings-dialog-host";
 import { ChatPanel } from "@/components/chat-panel";
 import { DetailsPanel } from "@/components/details-panel";
 import { SearchDialog } from "@/components/search-dialog";
@@ -22,7 +23,7 @@ export default function App() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
-  const [settingsSection, setSettingsSection] = useState<"general" | "model" | null>(null);
+  const settingsDialog = useRef<AppSettingsDialogHandle>(null);
   const navigationVersion = useRef(0);
   const sidebarPanel = useResizablePanel({
     ...SIDEBAR_LAYOUT.resize,
@@ -58,9 +59,9 @@ export default function App() {
     setDetailsOpen(open);
   }
 
-  function showSettings(section: "general" | "model" | null) {
+  function showSettings(section: "general" | "model") {
     navigationVersion.current += 1;
-    setSettingsSection(section);
+    settingsDialog.current?.open(section);
   }
 
   function showSearch(open: boolean) {
@@ -153,20 +154,15 @@ export default function App() {
         ) : null}
       </div>
       <SearchDialog chats={workspace.chats} open={searchOpen} onOpenChange={showSearch} onSelectChat={selectChat} />
-      <AppSettingsDialog
-        initialSection={settingsSection ?? "general"}
+      <AppSettingsDialogHost
+        ref={settingsDialog}
         appMetadata={APP_METADATA}
         currentUser={DEMO_CURRENT_USER}
         mobile={mobile}
-        onOpenConversations={() => {
-          showSettings(null);
-          showConversations();
-        }}
-        open={settingsSection !== null}
+        onOpenConversations={showConversations}
         preferences={workspace.preferences}
         persistenceStatus={workspace.persistenceStatus}
         persistenceError={workspace.persistenceError}
-        onOpenChange={(open) => showSettings(open ? "general" : null)}
         onPreferencesChange={workspace.updatePreferences}
       />
     </TooltipProvider>
