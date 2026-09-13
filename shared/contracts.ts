@@ -93,6 +93,8 @@ export interface AiSettingsView {
   selection: ModelSelection | null;
   secureStorageAvailable: boolean;
   providers: ReadonlyArray<ProviderSummary>;
+  /** Set when the model catalog could not be fully loaded or refreshed and the built-in list is shown. */
+  catalogError: string | null;
 }
 
 export interface SaveAiSettingsRequest {
