@@ -2,6 +2,7 @@ import type { AppUpdater, UpdateInfo } from "electron-updater";
 
 import type { UpdateState } from "../../shared/contracts.js";
 import { WispBackendError } from "./backend-error.js";
+import type { StructuredLogger } from "./structured-logger.js";
 
 type UpdateListener = (state: UpdateState) => void;
 
@@ -16,6 +17,7 @@ export class UpdateService {
     currentVersion: string,
     private readonly enabled: boolean,
     private readonly autoInstallSupported = true,
+    private readonly logger?: StructuredLogger,
   ) {
     this.state = enabled
       ? { phase: "idle", currentVersion }
@@ -43,9 +45,12 @@ export class UpdateService {
     updater.on("update-downloaded", (info: UpdateInfo) =>
       this.setState({ phase: "downloaded", currentVersion, availableVersion: info.version, progress: 100 }),
     );
-    updater.on("error", () =>
-      this.setState({ phase: "error", currentVersion, message: "The update service could not complete the request." }),
-    );
+    updater.on("error", (error: Error) => {
+      // The updater's own messages can be long and multi-line; the redacted,
+      // single-line record goes to the log sink while the UI keeps a stable text.
+      this.logger?.warn("update_error", { message: error.message });
+      this.setState({ phase: "error", currentVersion, message: "The update service could not complete the request." });
+    });
   }
 
   getState(): UpdateState {

@@ -21,6 +21,7 @@ import { ConversationRepository } from "./backend/conversation-repository.js";
 import { ConversationService } from "./backend/conversation-service.js";
 import { FakeConversationAgentFactory } from "./backend/fake-conversation-agent.js";
 import { CompositeIntegrationToolSource } from "./backend/integration-tool-source.js";
+import { FileLogSink } from "./backend/file-log-sink.js";
 import { McpService } from "./backend/mcp-service.js";
 import { ModelPricingService } from "./backend/model-pricing-service.js";
 import { ModelService } from "./backend/model-service.js";
@@ -28,7 +29,7 @@ import { PiConversationAgentFactory, SdkPiSessionFactory } from "./backend/pi-co
 import { PluginService } from "./backend/plugin-service.js";
 import { SafeStorageEncryption } from "./backend/safe-storage-encryption.js";
 import { SessionReportService } from "./backend/session-report-service.js";
-import { StructuredLogger } from "./backend/structured-logger.js";
+import { CompositeLogSink, StructuredLogger } from "./backend/structured-logger.js";
 import { ToolAuditStore } from "./backend/tool-audit-store.js";
 import { ToolAuthorizationBroker } from "./backend/tool-authorization-broker.js";
 import { ToolPolicyStore } from "./backend/tool-policy-store.js";
@@ -66,6 +67,21 @@ function isolateDevData(): void {
 }
 
 isolateDevData();
+
+// Both instances would share the same userData stores and safeStorage key, so a
+// second launch (e.g. from a terminal, which bypasses LaunchServices activation)
+// must quit and let the running instance surface instead.
+if (!app.requestSingleInstanceLock()) {
+  app.quit();
+} else {
+  app.on("second-instance", () => {
+    const window = BrowserWindow.getAllWindows().find((candidate) => !candidate.isDestroyed());
+    if (!window) return;
+    if (window.isMinimized()) window.restore();
+    window.focus();
+  });
+  app.whenReady().then(bootstrap).catch(handleFatalStartupError);
+}
 
 function isTrustedIpcSender(event: IpcMainInvokeEvent): boolean {
   if (!event.senderFrame || event.senderFrame !== event.sender.mainFrame) return false;
@@ -159,12 +175,14 @@ async function bootstrap(): Promise<void> {
     dataDirectory: path.join(app.getPath("userData"), "backend"),
     encryption: new SafeStorageEncryption(),
   });
-  const logger = new StructuredLogger();
+  const logger = new StructuredLogger(
+    new CompositeLogSink([console, new FileLogSink(path.join(app.getPath("userData"), "backend", "logs"))]),
+  );
   autoUpdater.channel = app.getVersion().includes("-beta.") ? "beta" : "latest";
   const autoInstallSupported = app.isPackaged
     ? await resolveAutoInstallSupport(process.platform, process.execPath)
     : false;
-  const updateService = new UpdateService(autoUpdater, app.getVersion(), app.isPackaged, autoInstallSupported);
+  const updateService = new UpdateService(autoUpdater, app.getVersion(), app.isPackaged, autoInstallSupported, logger);
   const unsubscribeUpdateState = updateService.subscribe((state) => {
     for (const window of BrowserWindow.getAllWindows()) {
       if (!window.isDestroyed()) window.webContents.send(WISP_IPC_CHANNELS.updateState, state);
@@ -303,8 +321,6 @@ async function bootstrap(): Promise<void> {
     }
   });
 }
-
-app.whenReady().then(bootstrap).catch(handleFatalStartupError);
 
 app.on("window-all-closed", () => {
   if (process.platform !== "darwin") {

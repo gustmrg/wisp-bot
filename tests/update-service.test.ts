@@ -1,6 +1,7 @@
 import { EventEmitter } from "node:events";
 import { describe, expect, it, vi } from "vitest";
 
+import { StructuredLogger, type LogSink } from "../electron/backend/structured-logger.js";
 import { UpdateService } from "../electron/backend/update-service.js";
 
 function updater() {
@@ -13,6 +14,15 @@ function updater() {
     quitAndInstall: vi.fn(),
   });
   return value;
+}
+
+function loggingSink(): LogSink & { lines: string[] } {
+  const lines: string[] = [];
+  return {
+    lines,
+    info: (value: string) => lines.push(value),
+    warn: (value: string) => lines.push(value),
+  };
 }
 
 describe("UpdateService", () => {
@@ -75,5 +85,30 @@ describe("UpdateService", () => {
     const service = new UpdateService(adapter as never, "1.0.0", true, true);
     adapter.emit("update-available", { version: "1.1.0" });
     expect(service.getState()).toMatchObject({ phase: "available", availableVersion: "1.1.0" });
+  });
+
+  it("logs redacted updater errors while keeping the user-facing message stable", () => {
+    const adapter = updater();
+    const sink = loggingSink();
+    const service = new UpdateService(
+      adapter as never,
+      "1.0.0",
+      true,
+      true,
+      new StructuredLogger(sink),
+    );
+
+    adapter.emit("error", new Error("HttpError: 404 for GET https://github.com example token sk-abcdefghijklmnop1234"));
+
+    expect(service.getState()).toMatchObject({
+      phase: "error",
+      message: "The update service could not complete the request.",
+    });
+    expect(sink.lines).toHaveLength(1);
+    const record = JSON.parse(sink.lines[0]) as { event: string; message: string };
+    expect(record.event).toBe("update_error");
+    expect(record.message).toContain("HttpError: 404");
+    expect(record.message).toContain("[REDACTED]");
+    expect(record.message).not.toContain("sk-abcdefghijklmnop1234");
   });
 });
