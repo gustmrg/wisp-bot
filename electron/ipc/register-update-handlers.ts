@@ -12,6 +12,7 @@ export function registerUpdateHandlers(
   ipcMain: HandlerIpcMain,
   service: UpdateService,
   authorizeSender: SenderAuthorizer,
+  openReleasesPage: () => Promise<void>,
 ): { dispose: () => void } {
   const result = async <T>(operation: () => Promise<T> | T): Promise<BackendResult<T>> => {
     try {
@@ -39,6 +40,14 @@ export function registerUpdateHandlers(
       (event: IpcMainInvokeEvent) =>
         authorized<Record<string, never>>(event, () => {
           service.install();
+          return emptyValue;
+        }),
+    ],
+    [
+      WISP_IPC_CHANNELS.openReleasesPage,
+      (event: IpcMainInvokeEvent) =>
+        authorized<Record<string, never>>(event, async () => {
+          await openReleasesPage();
           return emptyValue;
         }),
     ],

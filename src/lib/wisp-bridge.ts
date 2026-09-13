@@ -35,6 +35,7 @@ const REQUIRED_WISP_METHODS = [
   "checkForUpdates",
   "downloadUpdate",
   "installUpdate",
+  "openReleasesPage",
   "subscribeToUpdateState",
 ] as const satisfies ReadonlyArray<keyof WispApi>;
 

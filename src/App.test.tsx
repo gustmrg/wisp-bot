@@ -126,6 +126,7 @@ function createApi(initialState: ConversationStateView): WispApi {
       value: { phase: "downloaded" as const, currentVersion: "0.1.0" },
     })),
     installUpdate: vi.fn(async () => ({ ok: true as const, value: {} })),
+    openReleasesPage: vi.fn(async () => ({ ok: true as const, value: {} })),
     subscribeToUpdateState: vi.fn(() => () => undefined),
   };
 }
@@ -218,6 +219,30 @@ describe("App", () => {
     await user.click(within(list).getByRole("button", { name: /Beta/ }));
     expect(screen.getByRole("complementary", { name: "Beta settings" })).toBeVisible();
     expect(screen.getByRole("textbox", { name: "Name" })).toHaveValue("Beta");
+  });
+
+  it("points to the releases page when an update cannot auto-install", async () => {
+    const user = userEvent.setup();
+    const api = createApi(conversationState(true, { atlas }));
+    vi.mocked(api.getUpdateState).mockResolvedValue({
+      ok: true as const,
+      value: {
+        phase: "manual-download" as const,
+        currentVersion: "0.1.0",
+        availableVersion: "1.1.0",
+        message: "This build cannot install updates automatically. Please update it manually.",
+      },
+    });
+    exposeApi(api);
+    render(<App />);
+    await screen.findByRole("textbox", { name: "Message Atlas" });
+    await user.click(screen.getByRole("button", { name: "Open user settings" }));
+    await user.click(
+      within(screen.getByRole("navigation", { name: "Settings sections" })).getByRole("button", { name: "About" }),
+    );
+    expect(screen.getByText(/can't install updates automatically/)).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "Open the releases page to download the update" }));
+    expect(api.openReleasesPage).toHaveBeenCalledOnce();
   });
 });
 

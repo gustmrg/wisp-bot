@@ -55,8 +55,11 @@ export const WISP_IPC_CHANNELS = {
   checkForUpdates: "wisp:update:check",
   downloadUpdate: "wisp:update:download",
   installUpdate: "wisp:update:install",
+  openReleasesPage: "wisp:update:open-releases",
   updateState: "wisp:update:state",
 } as const;
+
+export const WISP_RELEASES_URL = "https://github.com/gustmrg/wisp-bot/releases/latest";
 
 export interface ConversationRequest {
   conversationId: string;
@@ -285,7 +288,15 @@ export interface UsageReport {
   totals: SessionReportUsage & { costUsd: number | null };
 }
 
-export type UpdatePhase = "idle" | "checking" | "available" | "downloading" | "downloaded" | "up-to-date" | "error";
+export type UpdatePhase =
+  | "idle"
+  | "checking"
+  | "available"
+  | "manual-download"
+  | "downloading"
+  | "downloaded"
+  | "up-to-date"
+  | "error";
 
 export interface UpdateState {
   phase: UpdatePhase;
@@ -330,5 +341,6 @@ export interface WispApi {
   checkForUpdates(): Promise<BackendResult<UpdateState>>;
   downloadUpdate(): Promise<BackendResult<UpdateState>>;
   installUpdate(): Promise<EmptyResult>;
+  openReleasesPage(): Promise<EmptyResult>;
   subscribeToUpdateState(listener: (state: UpdateState) => void): () => void;
 }

@@ -84,6 +84,7 @@ function completeBridge(): WispApi {
     checkForUpdates: async () => ({ ok: true, value: { phase: "up-to-date", currentVersion: "0.1.0" } }),
     downloadUpdate: async () => ({ ok: true, value: { phase: "downloaded", currentVersion: "0.1.0" } }),
     installUpdate: async () => ({ ok: true, value: {} }),
+    openReleasesPage: async () => ({ ok: true, value: {} }),
     subscribeToUpdateState: () => () => undefined,
   };
 }

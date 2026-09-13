@@ -51,4 +51,29 @@ describe("UpdateService", () => {
     const unpackaged = new UpdateService(updater() as never, "1.0.0", false);
     await expect(unpackaged.check()).rejects.toMatchObject({ code: "invalid_request" });
   });
+
+  it("routes found updates to manual download when auto-install is unsupported", async () => {
+    const adapter = updater();
+    const service = new UpdateService(adapter as never, "1.0.0", true, false);
+
+    adapter.emit("update-available", { version: "1.1.0" });
+    expect(service.getState()).toEqual({
+      phase: "manual-download",
+      currentVersion: "1.0.0",
+      availableVersion: "1.1.0",
+      message: "This build cannot install updates automatically. Please update it manually.",
+    });
+
+    await expect(service.download()).rejects.toMatchObject({ code: "invalid_request" });
+    expect(adapter.downloadUpdate).not.toHaveBeenCalled();
+    expect(() => service.install()).toThrow(/No update is ready to install/);
+    expect(adapter.quitAndInstall).not.toHaveBeenCalled();
+  });
+
+  it("keeps in-app download states when auto-install is supported", async () => {
+    const adapter = updater();
+    const service = new UpdateService(adapter as never, "1.0.0", true, true);
+    adapter.emit("update-available", { version: "1.1.0" });
+    expect(service.getState()).toMatchObject({ phase: "available", availableVersion: "1.1.0" });
+  });
 });

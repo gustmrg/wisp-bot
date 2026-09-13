@@ -6,12 +6,13 @@ import {
   nativeImage,
   nativeTheme,
   session,
+  shell,
   type IpcMainInvokeEvent,
 } from "electron";
 import { autoUpdater } from "electron-updater";
 import path from "node:path";
 
-import { WISP_IPC_CHANNELS, type SequencedConversationAgentEvent } from "../shared/contracts.js";
+import { WISP_IPC_CHANNELS, WISP_RELEASES_URL, type SequencedConversationAgentEvent } from "../shared/contracts.js";
 import { DEMO_CURRENT_USER } from "../shared/current-user.js";
 import { AgentRegistry } from "./backend/agent-registry.js";
 import { selectAgentMode } from "./backend/agent-mode.js";
@@ -30,6 +31,7 @@ import { ToolAuthorizationBroker } from "./backend/tool-authorization-broker.js"
 import { ToolAuditStore } from "./backend/tool-audit-store.js";
 import { ToolPolicyStore } from "./backend/tool-policy-store.js";
 import { UpdateService } from "./backend/update-service.js";
+import { resolveAutoInstallSupport } from "./backend/update-capability.js";
 import { registerAgentHandlers } from "./ipc/register-handlers.js";
 import { registerConversationHandlers } from "./ipc/register-conversation-handlers.js";
 import { registerModelSettingsHandlers } from "./ipc/register-model-settings-handlers.js";
@@ -156,7 +158,10 @@ async function bootstrap(): Promise<void> {
   });
   const logger = new StructuredLogger();
   autoUpdater.channel = app.getVersion().includes("-beta.") ? "beta" : "latest";
-  const updateService = new UpdateService(autoUpdater, app.getVersion(), app.isPackaged);
+  const autoInstallSupported = app.isPackaged
+    ? await resolveAutoInstallSupport(process.platform, process.execPath)
+    : false;
+  const updateService = new UpdateService(autoUpdater, app.getVersion(), app.isPackaged, autoInstallSupported);
   const unsubscribeUpdateState = updateService.subscribe((state) => {
     for (const window of BrowserWindow.getAllWindows()) {
       if (!window.isDestroyed()) window.webContents.send(WISP_IPC_CHANNELS.updateState, state);
@@ -245,7 +250,9 @@ async function bootstrap(): Promise<void> {
   );
   const toolPolicyHandlers = registerToolPolicyHandlers(ipcMain, toolAuthorizationBroker, isTrustedIpcSender);
   const pluginHandlers = registerPluginHandlers(ipcMain, pluginService, isTrustedIpcSender);
-  const updateHandlers = registerUpdateHandlers(ipcMain, updateService, isTrustedIpcSender);
+  const updateHandlers = registerUpdateHandlers(ipcMain, updateService, isTrustedIpcSender, async () => {
+    await shell.openExternal(WISP_RELEASES_URL);
+  });
   let backendDisposed = false;
   let backendDisposing = false;
   app.on("before-quit", (event) => {

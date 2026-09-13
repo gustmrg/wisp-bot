@@ -5,6 +5,7 @@ import {
   BotIcon,
   ChevronLeftIcon,
   DownloadIcon,
+  ExternalLinkIcon,
   InfoIcon,
   KeyboardIcon,
   PlugIcon,
@@ -113,11 +114,13 @@ function AppSettingsDialog({
 
   async function handleUpdateAction(): Promise<void> {
     const result =
-      updateState.phase === "available"
-        ? await window.wisp.downloadUpdate()
-        : updateState.phase === "downloaded"
-          ? await window.wisp.installUpdate()
-          : await window.wisp.checkForUpdates();
+      updateState.phase === "manual-download"
+        ? await window.wisp.openReleasesPage()
+        : updateState.phase === "available"
+          ? await window.wisp.downloadUpdate()
+          : updateState.phase === "downloaded"
+            ? await window.wisp.installUpdate()
+            : await window.wisp.checkForUpdates();
     if (!result.ok) setUpdateState((current) => ({ ...current, phase: "error", message: result.error.message }));
   }
 
@@ -360,6 +363,8 @@ function AppSettingsDialog({
                 >
                   {updateState.phase === "available" ? (
                     <DownloadIcon aria-hidden="true" />
+                  ) : updateState.phase === "manual-download" ? (
+                    <ExternalLinkIcon aria-hidden="true" />
                   ) : (
                     <RefreshCwIcon aria-hidden="true" />
                   )}
@@ -389,6 +394,7 @@ export type { AppPreferences, AppSettingsDialogProps };
 
 function updateActionLabel(state: UpdateState): string {
   if (state.phase === "available") return "Download update";
+  if (state.phase === "manual-download") return "Open the releases page to download the update";
   if (state.phase === "downloaded") return "Restart and install update";
   return "Check for updates";
 }
@@ -396,6 +402,8 @@ function updateActionLabel(state: UpdateState): string {
 function updateStatusText(state: UpdateState): string {
   if (state.phase === "checking") return "Checking for updates…";
   if (state.phase === "available") return `Version ${state.availableVersion ?? "new"} is available.`;
+  if (state.phase === "manual-download")
+    return `Version ${state.availableVersion ?? "new"} is available. This build can't install updates automatically — open the releases page and replace the app with the latest download.`;
   if (state.phase === "downloading") return `Downloading update… ${state.progress ?? 0}%`;
   if (state.phase === "downloaded") return `Version ${state.availableVersion ?? "new"} is ready to install.`;
   if (state.phase === "up-to-date") return "Wisp Bot is up to date.";

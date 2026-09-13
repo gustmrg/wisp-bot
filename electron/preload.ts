@@ -39,6 +39,7 @@ const WISP_IPC_CHANNELS = {
   checkForUpdates: "wisp:update:check",
   downloadUpdate: "wisp:update:download",
   installUpdate: "wisp:update:install",
+  openReleasesPage: "wisp:update:open-releases",
   updateState: "wisp:update:state",
 } as const;
 
@@ -83,6 +84,7 @@ const wispApi: WispApi = {
   checkForUpdates: () => ipcRenderer.invoke(WISP_IPC_CHANNELS.checkForUpdates),
   downloadUpdate: () => ipcRenderer.invoke(WISP_IPC_CHANNELS.downloadUpdate),
   installUpdate: () => ipcRenderer.invoke(WISP_IPC_CHANNELS.installUpdate),
+  openReleasesPage: () => ipcRenderer.invoke(WISP_IPC_CHANNELS.openReleasesPage),
   subscribeToUpdateState: (listener) => {
     const handleState = (_event: Electron.IpcRendererEvent, state: Parameters<typeof listener>[0]): void =>
       listener(state);

@@ -5,6 +5,8 @@ import { WispBackendError } from "./backend-error.js";
 
 type UpdateListener = (state: UpdateState) => void;
 
+const MANUAL_UPDATE_MESSAGE = "This build cannot install updates automatically. Please update it manually.";
+
 export class UpdateService {
   private state: UpdateState;
   private readonly listeners = new Set<UpdateListener>();
@@ -12,7 +14,8 @@ export class UpdateService {
   constructor(
     private readonly updater: AppUpdater,
     currentVersion: string,
-    enabled: boolean,
+    private readonly enabled: boolean,
+    private readonly autoInstallSupported = true,
   ) {
     this.state = enabled
       ? { phase: "idle", currentVersion }
@@ -21,9 +24,18 @@ export class UpdateService {
     updater.autoInstallOnAppQuit = true;
     updater.allowDowngrade = false;
     updater.on("checking-for-update", () => this.setState({ phase: "checking", currentVersion }));
-    updater.on("update-available", (info: UpdateInfo) =>
-      this.setState({ phase: "available", currentVersion, availableVersion: info.version }),
-    );
+    updater.on("update-available", (info: UpdateInfo) => {
+      if (!this.autoInstallSupported) {
+        this.setState({
+          phase: "manual-download",
+          currentVersion,
+          availableVersion: info.version,
+          message: MANUAL_UPDATE_MESSAGE,
+        });
+        return;
+      }
+      this.setState({ phase: "available", currentVersion, availableVersion: info.version });
+    });
     updater.on("update-not-available", () => this.setState({ phase: "up-to-date", currentVersion }));
     updater.on("download-progress", (progress) =>
       this.setState({ ...this.state, phase: "downloading", currentVersion, progress: Math.round(progress.percent) }),
@@ -69,8 +81,8 @@ export class UpdateService {
   }
 
   private assertEnabled(): void {
-    if (this.state.message === "Updates are available only in an installed release.") {
-      throw new WispBackendError("invalid_request", this.state.message);
+    if (!this.enabled) {
+      throw new WispBackendError("invalid_request", "Updates are available only in an installed release.");
     }
   }
 
