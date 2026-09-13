@@ -49,6 +49,19 @@ const windowBackground = (): string => (nativeTheme.shouldUseDarkColors ? "#0a0a
 let rendererTarget: RendererTarget | undefined;
 let fatalErrorHandled = false;
 
+// Packaged and unpackaged builds share the package name, so Electron hands both
+// the same userData directory and dev work would mutate the installed app's
+// data. safeStorage also names its Keychain entry after the app, so renaming
+// dev keeps its stored credentials on a separate encryption key.
+function isolateDevData(): void {
+  if (app.isPackaged) return;
+  const override = process.env.WISP_DATA_DIR?.trim();
+  app.setPath("userData", override ? path.resolve(override) : path.join(app.getPath("appData"), "wisp-bot-dev"));
+  app.setName("wisp-bot-dev");
+}
+
+isolateDevData();
+
 function isTrustedIpcSender(event: IpcMainInvokeEvent): boolean {
   if (!event.senderFrame || event.senderFrame !== event.sender.mainFrame) return false;
 
