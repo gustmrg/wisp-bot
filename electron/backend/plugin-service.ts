@@ -14,8 +14,11 @@ import {
 import { writeFileAtomically } from "./atomic-file.js";
 import { WispBackendError } from "./backend-error.js";
 import { EncryptedCredentialStore, type EncryptionService } from "./encrypted-credential-store.js";
+import type { IntegrationToolSource, IntegrationToolSnapshot } from "./integration-tool-source.js";
+import { snapshotRevision } from "./integration-tool-source.js";
 import { PLUGIN_ADAPTERS } from "./plugin-adapters.js";
 import type { PluginAdapter, PluginToolSource, PluginToolSpec } from "./plugin-types.js";
+import { getToolMetadata } from "../../shared/tool-catalog.js";
 import {
   invalidPluginRequest,
   parseGrants,
@@ -55,7 +58,7 @@ function defaultState(): PluginState {
   };
 }
 
-export class PluginService implements PluginToolSource {
+export class PluginService implements PluginToolSource, IntegrationToolSource {
   private state = defaultState();
   private readonly filePath: string;
   private readonly credentials: EncryptedCredentialStore;
@@ -259,6 +262,31 @@ export class PluginService implements PluginToolSource {
         }),
       ),
     );
+  }
+
+  /** Snapshot adapter: bundled definitions are static; only the active set varies. */
+  async getSnapshot(conversationId: string): Promise<IntegrationToolSnapshot> {
+    this.assertLive();
+    const definitions = this.getTools(conversationId);
+    const activeNames = await this.getActiveToolNames(conversationId);
+    return {
+      definitions,
+      metadata: definitions.flatMap(({ name }) => {
+        const catalogMetadata = getToolMetadata(name);
+        return catalogMetadata?.pluginId
+          ? [
+              {
+                name,
+                label: catalogMetadata.label,
+                activityLabel: catalogMetadata.activityLabel,
+                category: catalogMetadata.category,
+              },
+            ]
+          : [];
+      }),
+      activeNames,
+      revision: snapshotRevision(activeNames),
+    };
   }
 
   async getActiveToolNames(conversationId: string): Promise<string[]> {

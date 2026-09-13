@@ -32,9 +32,27 @@ function setup({ available = true, grants = [] }: { available?: boolean; grants?
       value: request,
     }),
   );
+  const getMcpSettings = vi.fn(async () => ({ ok: true, value: { secureStorageAvailable: true, servers: [] } }));
+  const getWispMcpAccess = vi.fn(async ({ conversationId }: { conversationId: string }) => ({
+    ok: true,
+    value: { conversationId, grants: [], revision: "mcp-original-revision" },
+  }));
+  const saveWispMcpAccess = vi.fn(
+    async (request: { conversationId: string; grants: ReadonlyArray<unknown>; revision: string }) => ({
+      ok: true,
+      value: request,
+    }),
+  );
   Object.defineProperty(window, "wisp", {
     configurable: true,
-    value: { getPluginSettings, getWispPluginAccess, saveWispPluginAccess },
+    value: {
+      getPluginSettings,
+      getWispPluginAccess,
+      saveWispPluginAccess,
+      getMcpSettings,
+      getWispMcpAccess,
+      saveWispMcpAccess,
+    },
   });
   return { getPluginSettings, getWispPluginAccess, saveWispPluginAccess };
 }
@@ -69,7 +87,7 @@ describe("WispPluginSettings", () => {
         { pluginId: "firecrawl", access: "none" },
       ],
     });
-    expect(await screen.findByRole("status")).toHaveTextContent("Plugin access saved for this Wisp.");
+    expect(await screen.findByRole("status")).toHaveTextContent("Access settings saved for this Wisp.");
   });
 
   it("disables new grants for unavailable plugins but permits revocation", async () => {

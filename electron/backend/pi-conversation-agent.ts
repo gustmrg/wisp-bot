@@ -19,6 +19,7 @@ import type {
 } from "../../shared/contracts.js";
 import { WispBackendError } from "./backend-error.js";
 import { normalizeUserName } from "./conversation-agent.js";
+import type { IntegrationToolSource } from "./integration-tool-source.js";
 import type {
   ConversationAgent,
   ConversationAgentContext,
@@ -33,8 +34,7 @@ import {
   sanitizeErrorMessage,
 } from "./pi-event-translator.js";
 import type { ToolAuthorizationBroker, ToolAuthorizationRequest } from "./tool-authorization-broker.js";
-import { BUILTIN_TOOL_NAMES, getToolMetadata } from "../../shared/tool-catalog.js";
-import type { PluginToolSource } from "./plugin-types.js";
+import { BUILTIN_TOOL_NAMES, getToolMetadata, registerDynamicToolMetadata } from "../../shared/tool-catalog.js";
 
 const DEFAULT_MAX_OUTPUT_TOKENS = 32_768;
 const MAX_MUTATION_INPUT_BYTES = 1_000_000;
@@ -45,6 +45,8 @@ export interface PiSessionLike {
   readonly isIdle: boolean;
   readonly sessionFile: string | undefined;
   readonly sessionId: string;
+  /** Snapshot revision the session's tool registry was built from. */
+  readonly toolRevision: string;
   subscribe(listener: (event: PiAgentEvent) => void): () => void;
   manageContext?(command: ContextCommand): Promise<ContextView>;
   prompt(text: string, options?: { expandPromptTemplates?: boolean }): Promise<void>;
@@ -59,21 +61,32 @@ export interface PiSessionLike {
 export interface PiSessionFactory {
   resolveModel(selection: ModelSelection): PiModel;
   create(context: ConversationAgentContext, selection: ModelSelection): Promise<PiSessionLike>;
+  /** Current integration tool snapshot revision for this Wisp, or null. */
+  getToolRevision(conversationId: string): Promise<string | null>;
 }
 
 export class SdkPiSessionFactory implements PiSessionFactory {
   private readonly modelRuntime: ModelRuntimeLike;
   private readonly authorizationBroker: Pick<ToolAuthorizationBroker, "authorize">;
-  private readonly pluginTools?: PluginToolSource;
+  private readonly toolSource?: IntegrationToolSource;
 
   constructor(
     modelRuntime: ModelRuntimeLike,
     authorizationBroker: Pick<ToolAuthorizationBroker, "authorize"> = new BlockMutationAuthorizer(),
-    pluginTools?: PluginToolSource,
+    toolSource?: IntegrationToolSource,
   ) {
     this.modelRuntime = modelRuntime;
     this.authorizationBroker = authorizationBroker;
-    this.pluginTools = pluginTools;
+    this.toolSource = toolSource;
+  }
+
+  async getToolRevision(conversationId: string): Promise<string | null> {
+    if (!this.toolSource) return null;
+    try {
+      return (await this.toolSource.getSnapshot(conversationId)).revision;
+    } catch {
+      return null;
+    }
   }
 
   resolveModel(selection: ModelSelection): PiModel {
@@ -167,18 +180,23 @@ export class SdkPiSessionFactory implements PiSessionFactory {
         "create_file",
       ),
     ];
-    const pluginDefinitions = (this.pluginTools?.getTools(context.conversationId) ?? []).filter(({ name }) =>
-      Boolean(getToolMetadata(name)?.pluginId),
-    );
-    const registeredPluginNames = new Set(pluginDefinitions.map(({ name }) => name));
-    const getAllowedTools = async (): Promise<string[]> => [
-      ...BUILTIN_TOOL_NAMES,
-      ...new Set(
-        ((await this.pluginTools?.getActiveToolNames(context.conversationId)) ?? []).filter((name) =>
-          registeredPluginNames.has(name),
-        ),
-      ),
-    ];
+    // Trusted snapshot: definitions, safe metadata, active names, and revision.
+    // Pi's registry is a permanent allowlist, so a snapshot change requires a
+    // session rebuild rather than an in-place definition swap.
+    const snapshot = this.toolSource ? await this.toolSource.getSnapshot(context.conversationId) : undefined;
+    registerDynamicToolMetadata(snapshot?.metadata ?? []);
+    const integrationDefinitions = (snapshot?.definitions ?? []).filter(({ name }) => Boolean(getToolMetadata(name)));
+    const registeredIntegrationNames = new Set(integrationDefinitions.map(({ name }) => name));
+    // Fetched fresh at every refresh so grant reductions apply before the next
+    // prompt even when definitions themselves did not change.
+    const getAllowedTools = async (): Promise<string[]> => {
+      const current = this.toolSource ? await this.toolSource.getSnapshot(context.conversationId) : undefined;
+      registerDynamicToolMetadata(current?.metadata ?? []);
+      return [
+        ...BUILTIN_TOOL_NAMES,
+        ...new Set((current?.activeNames ?? []).filter((name) => registeredIntegrationNames.has(name))),
+      ];
+    };
     const { session } = await createAgentSession({
       cwd: context.workspaceDirectory,
       agentDir: context.configDirectory,
@@ -192,10 +210,10 @@ export class SdkPiSessionFactory implements PiSessionFactory {
       }),
       // Pi treats this as a permanent registry allowlist, including after reload.
       // Current Wisp grants are applied below before the session can be used.
-      tools: [...BUILTIN_TOOL_NAMES, ...registeredPluginNames],
+      tools: [...BUILTIN_TOOL_NAMES, ...registeredIntegrationNames],
       customTools: [
         ...confinedTools,
-        ...pluginDefinitions,
+        ...integrationDefinitions,
         {
           name: "search_history",
           label: "Search conversation history",
@@ -238,6 +256,14 @@ export class SdkPiSessionFactory implements PiSessionFactory {
       throw error;
     }
     sessionManager.appendCustomEntry("wisp:runtime", { version: VERSION });
+    // Persist safe tool identity with session history so old calls remain
+    // identifiable in reports even after the server is removed.
+    if (snapshot?.metadata.length) {
+      sessionManager.appendCustomEntry("wisp:mcp-tools", {
+        version: 1,
+        tools: snapshot.metadata.map(({ name, label }) => ({ name, label })),
+      });
+    }
     const unsubscribeTelemetry = session.subscribe((event) => {
       if (event.type === "compaction_end" && event.result && !event.aborted) continuity?.renewed("compacted");
       if (event.type === "auto_retry_start" || event.type === "auto_retry_end") {
@@ -246,9 +272,15 @@ export class SdkPiSessionFactory implements PiSessionFactory {
         });
       }
     });
-    return adaptSession(session, unsubscribeTelemetry, continuity, async () => {
-      assertAllowedTools(session, await getAllowedTools());
-    });
+    return adaptSession(
+      session,
+      unsubscribeTelemetry,
+      continuity,
+      async () => {
+        assertAllowedTools(session, await getAllowedTools());
+      },
+      snapshot?.revision ?? defaultToolRevision,
+    );
   }
 }
 
@@ -348,6 +380,10 @@ export class PiConversationAgent implements ConversationAgent {
     }
     if (this.sending)
       throw new WispBackendError("invalid_request", "The conversation is already processing a request.");
+    await this.ensureToolsCurrent();
+    if (!this.session || !this.configured) {
+      throw new WispBackendError("configuration_required", "Choose a provider and model before sending a message.");
+    }
     this.sending = true;
     this.translator.begin(request);
     try {
@@ -436,11 +472,7 @@ export class PiConversationAgent implements ConversationAgent {
         session.dispose();
         return;
       }
-      this.session = session;
-      this.unsubscribeSession = session.subscribe((event) => {
-        this.translator.handle(event);
-        if (event.type === "agent_settled") void this.applyPendingModel();
-      });
+      this.attachSession(session);
       this.configured = true;
       this.appliedSelection = { ...selection };
       this.publishModel();
@@ -493,6 +525,48 @@ export class PiConversationAgent implements ConversationAgent {
 
   private applyPendingModel(): Promise<void> {
     return this.enqueueModelMutation(() => this.applyPendingModelInternal());
+  }
+
+  private attachSession(session: PiSessionLike): void {
+    this.unsubscribeSession?.();
+    this.session = session;
+    this.unsubscribeSession = session.subscribe((event) => {
+      this.translator.handle(event);
+      if (event.type === "agent_settled") void this.applyPendingModel();
+    });
+    // Track the live Pi identity so a later rebuild reopens the exact same
+    // session file instead of starting a new conversation or topic.
+    this.context.piSessionId = session.sessionId;
+    if (session.sessionFile) this.context.piSessionFile = session.sessionFile;
+  }
+
+  /**
+   * Rebuilds the Pi session when the integration tool snapshot changed.
+   * Pi's tool registry is a fixed allowlist, so new or changed definitions can
+   * only appear by recreating the session, which reopens the exact current Pi
+   * session file and preserves application identity, model, context settings,
+   * and event subscriptions. Runs at an idle message boundary: the next message
+   * sees the new definitions, while grant reductions stay effective immediately
+   * in the backend regardless.
+   */
+  private async ensureToolsCurrent(): Promise<void> {
+    const session = this.session;
+    if (!session || !this.appliedSelection) return;
+    const revision = await this.sessionFactory.getToolRevision(this.context.conversationId).catch(() => null);
+    if (!revision || revision === session.toolRevision) return;
+    if (!session.isIdle) return;
+    await this.enqueueModelMutation(async () => {
+      const current = this.session;
+      if (this.disposed || !current || current !== session) return;
+      if (current.toolRevision === revision || !this.appliedSelection) return;
+      const created = await this.sessionFactory.create(this.context, this.appliedSelection);
+      if (this.disposed) {
+        created.dispose();
+        return;
+      }
+      this.attachSession(created);
+      session.dispose();
+    });
   }
 
   private async applyPendingModelInternal(): Promise<void> {
@@ -618,6 +692,7 @@ function adaptSession(
   unsubscribeTelemetry: () => void,
   continuity: ContextSession,
   refreshTools: () => Promise<void>,
+  toolRevision: string,
 ): PiSessionLike {
   return {
     get isIdle() {
@@ -629,6 +704,7 @@ function adaptSession(
     get sessionId() {
       return session.sessionId;
     },
+    toolRevision,
     subscribe: (listener) => session.subscribe((event: AgentSessionEvent) => listener(event as PiAgentEvent)),
     manageContext: (command) => continuity.command(command),
     prompt: async (text, options) => {
@@ -653,6 +729,8 @@ function adaptSession(
     },
   };
 }
+
+const defaultToolRevision = "no-integrations";
 
 function assertAllowedTools(
   session: Pick<AgentSession, "getActiveToolNames" | "setActiveToolsByName">,

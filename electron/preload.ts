@@ -20,6 +20,15 @@ const WISP_IPC_CHANNELS = {
   testPluginConnection: "wisp:plugins:test",
   getWispPluginAccess: "wisp:plugins:access:get",
   saveWispPluginAccess: "wisp:plugins:access:save",
+  getMcpSettings: "wisp:mcp:get",
+  saveMcpServer: "wisp:mcp:save",
+  removeMcpServer: "wisp:mcp:remove",
+  testMcpConnection: "wisp:mcp:test",
+  refreshMcpTools: "wisp:mcp:refresh",
+  startMcpSignIn: "wisp:mcp:sign-in",
+  mcpSettingsChanged: "wisp:mcp:changed",
+  getWispMcpAccess: "wisp:mcp:access:get",
+  saveWispMcpAccess: "wisp:mcp:access:save",
   saveAiSettings: "wisp:settings:ai:save",
   removeProviderCredential: "wisp:settings:ai:remove-credential",
   getConversationState: "wisp:conversations:get",
@@ -50,6 +59,20 @@ const wispApi: WispApi = {
   testPluginConnection: (request) => ipcRenderer.invoke(WISP_IPC_CHANNELS.testPluginConnection, request),
   getWispPluginAccess: (request) => ipcRenderer.invoke(WISP_IPC_CHANNELS.getWispPluginAccess, request),
   saveWispPluginAccess: (request) => ipcRenderer.invoke(WISP_IPC_CHANNELS.saveWispPluginAccess, request),
+  getMcpSettings: () => ipcRenderer.invoke(WISP_IPC_CHANNELS.getMcpSettings),
+  saveMcpServer: (request) => ipcRenderer.invoke(WISP_IPC_CHANNELS.saveMcpServer, request),
+  removeMcpServer: (request) => ipcRenderer.invoke(WISP_IPC_CHANNELS.removeMcpServer, request),
+  testMcpConnection: (request) => ipcRenderer.invoke(WISP_IPC_CHANNELS.testMcpConnection, request),
+  refreshMcpTools: (request) => ipcRenderer.invoke(WISP_IPC_CHANNELS.refreshMcpTools, request),
+  startMcpSignIn: (request) => ipcRenderer.invoke(WISP_IPC_CHANNELS.startMcpSignIn, request),
+  getWispMcpAccess: (request) => ipcRenderer.invoke(WISP_IPC_CHANNELS.getWispMcpAccess, request),
+  saveWispMcpAccess: (request) => ipcRenderer.invoke(WISP_IPC_CHANNELS.saveWispMcpAccess, request),
+  subscribeToMcpSettings: (listener) => {
+    const handleSettings = (_event: Electron.IpcRendererEvent, view: Parameters<typeof listener>[0]): void =>
+      listener(view);
+    ipcRenderer.on(WISP_IPC_CHANNELS.mcpSettingsChanged, handleSettings);
+    return () => ipcRenderer.removeListener(WISP_IPC_CHANNELS.mcpSettingsChanged, handleSettings);
+  },
   manageContext: (request) => ipcRenderer.invoke(WISP_IPC_CHANNELS.manageContext, request),
   startConversation: (request) => ipcRenderer.invoke(WISP_IPC_CHANNELS.startConversation, request),
   sendMessage: (request) => ipcRenderer.invoke(WISP_IPC_CHANNELS.sendMessage, request),

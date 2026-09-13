@@ -68,6 +68,9 @@ export function buildSessionReport(
   const toolCalls: SessionReportToolCall[] = [];
   const toolCallIndexById = new Map<string, number>();
   const events: SessionReportEvent[] = [];
+  // Safe tool identities persisted with the session keep old calls visible in
+  // reports even after the MCP connection that provided them was removed.
+  const historicalToolNames = new Set<string>();
   let totals = emptyUsage();
   let turns = 0;
   let compactionUsage = emptyUsage();
@@ -79,6 +82,15 @@ export function buildSessionReport(
       if (entry.type === "custom" && entry.customType === "wisp:runtime") {
         const version = (entry.data as { version?: unknown } | undefined)?.version;
         if (typeof version === "string" && /^\d+\.\d+\.\d+$/.test(version)) piVersion = version;
+      }
+      if (entry.type === "custom" && entry.customType === "wisp:mcp-tools") {
+        const tools = (entry.data as { tools?: unknown } | undefined)?.tools;
+        if (Array.isArray(tools)) {
+          for (const tool of tools) {
+            const name = (tool as { name?: unknown } | undefined)?.name;
+            if (typeof name === "string" && /^mcp_[a-z0-9_]+$/.test(name)) historicalToolNames.add(name);
+          }
+        }
       }
       if (entry.type === "custom" && entry.customType === "wisp:retry") {
         const phase = (entry.data as { phase?: unknown } | undefined)?.phase;
@@ -127,7 +139,7 @@ export function buildSessionReport(
       }
       for (const block of assistantMessage.content) {
         if (!block || typeof block !== "object" || block.type !== "toolCall") continue;
-        if (!getToolMetadata(block.name)) continue;
+        if (!getToolMetadata(block.name) && !historicalToolNames.has(block.name)) continue;
         const toolCall: SessionReportToolCall = {
           toolCallId: safeId(typeof block.id === "string" ? block.id : "tool-call"),
           toolName: block.name,

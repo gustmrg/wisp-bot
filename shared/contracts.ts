@@ -9,6 +9,15 @@ import type {
   SaveWispPluginAccessRequest,
 } from "./plugins.js";
 import type {
+  McpSettingsView,
+  McpConnectionResult,
+  SaveMcpServerRequest,
+  McpServerRequest,
+  TestMcpConnectionRequest,
+  WispMcpAccessView,
+  SaveWispMcpAccessRequest,
+} from "./mcp.js";
+import type {
   AnswerConversationPromptRequest,
   AppendConversationMessageRequest,
   ConversationStateView,
@@ -36,6 +45,15 @@ export const WISP_IPC_CHANNELS = {
   testPluginConnection: "wisp:plugins:test",
   getWispPluginAccess: "wisp:plugins:access:get",
   saveWispPluginAccess: "wisp:plugins:access:save",
+  getMcpSettings: "wisp:mcp:get",
+  saveMcpServer: "wisp:mcp:save",
+  removeMcpServer: "wisp:mcp:remove",
+  testMcpConnection: "wisp:mcp:test",
+  refreshMcpTools: "wisp:mcp:refresh",
+  startMcpSignIn: "wisp:mcp:sign-in",
+  mcpSettingsChanged: "wisp:mcp:changed",
+  getWispMcpAccess: "wisp:mcp:access:get",
+  saveWispMcpAccess: "wisp:mcp:access:save",
   saveAiSettings: "wisp:settings:ai:save",
   removeProviderCredential: "wisp:settings:ai:remove-credential",
   getConversationState: "wisp:conversations:get",
@@ -313,6 +331,15 @@ export interface WispApi {
   testPluginConnection(request: TestPluginConnectionRequest): Promise<BackendResult<PluginConnectionResult>>;
   getWispPluginAccess(request: ConversationRequest): Promise<BackendResult<WispPluginAccessView>>;
   saveWispPluginAccess(request: SaveWispPluginAccessRequest): Promise<BackendResult<WispPluginAccessView>>;
+  getMcpSettings(): Promise<BackendResult<McpSettingsView>>;
+  saveMcpServer(request: SaveMcpServerRequest): Promise<BackendResult<McpSettingsView>>;
+  removeMcpServer(request: McpServerRequest): Promise<BackendResult<McpSettingsView>>;
+  testMcpConnection(request: TestMcpConnectionRequest): Promise<BackendResult<McpConnectionResult>>;
+  refreshMcpTools(request: McpServerRequest): Promise<BackendResult<McpSettingsView>>;
+  startMcpSignIn(request: McpServerRequest): Promise<BackendResult<McpSettingsView>>;
+  getWispMcpAccess(request: ConversationRequest): Promise<BackendResult<WispMcpAccessView>>;
+  saveWispMcpAccess(request: SaveWispMcpAccessRequest): Promise<BackendResult<WispMcpAccessView>>;
+  subscribeToMcpSettings(listener: (view: McpSettingsView) => void): () => void;
   manageContext(request: ContextRequest): Promise<BackendResult<ContextView>>;
   startConversation(request: ConversationRequest): Promise<EmptyResult>;
   sendMessage(request: SendMessageRequest): Promise<EmptyResult>;

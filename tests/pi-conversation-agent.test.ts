@@ -13,6 +13,7 @@ class MockPiSession implements PiSessionLike {
   isIdle = true;
   readonly sessionFile: string;
   readonly sessionId: string;
+  readonly toolRevision: string;
   readonly prompts: string[] = [];
   readonly models: unknown[] = [];
   abortCount = 0;
@@ -21,9 +22,10 @@ class MockPiSession implements PiSessionLike {
   private readonly listeners = new Set<(event: PiAgentEvent) => void>();
   private releasePrompt: (() => void) | null = null;
 
-  constructor(id: string) {
+  constructor(id: string, toolRevision = "no-integrations") {
     this.sessionId = `${id}-pi`;
     this.sessionFile = `/sessions/${id}.jsonl`;
+    this.toolRevision = toolRevision;
   }
 
   subscribe(listener: (event: PiAgentEvent) => void): () => void {
@@ -105,6 +107,20 @@ function factoryFor(sessions: Map<string, MockPiSession>): PiSessionFactory {
       sessions.set(agentContext.conversationId, session);
       return session;
     },
+    getToolRevision: async () => null,
+  };
+}
+
+function rebuildingFactory(sessions: MockPiSession[], revisions: Array<string | null>): PiSessionFactory {
+  return {
+    resolveModel: (model) => ({ provider: model.providerId, id: model.modelId }) as never,
+    create: async (agentContext) => {
+      const revision = revisions[sessions.length] ?? "no-integrations";
+      const session = new MockPiSession(`wisp-${sessions.length}`, revision);
+      sessions.push(session);
+      return session;
+    },
+    getToolRevision: async () => revisions[sessions.length] ?? null,
   };
 }
 
@@ -134,7 +150,10 @@ describe("PiConversationAgent", () => {
 
     const firstPrompt = one.send({ conversationId: "one", requestId: "one-1", text: "First" });
     const secondPrompt = two.send({ conversationId: "two", requestId: "two-1", text: "Second" });
-    await Promise.resolve();
+    await vi.waitFor(() => {
+      expect(sessions.get("one")?.isIdle).toBe(false);
+      expect(sessions.get("two")?.isIdle).toBe(false);
+    });
     await one.applyModel(selection("model-2"));
     expect(sessions.get("one")?.models).toEqual([]);
     sessions.get("one")?.finishPrompt();
@@ -155,7 +174,7 @@ describe("PiConversationAgent", () => {
     await agent.start();
     await agent.applyModel(selection());
     const prompt = agent.send({ conversationId: "one", requestId: "one-1", text: "Wait" });
-    await Promise.resolve();
+    await vi.waitFor(() => expect(sessions.get("one")?.isIdle).toBe(false));
 
     await agent.abort();
     await prompt;
@@ -191,6 +210,7 @@ it("reports the model actually used while an override waits for the active turn"
   await agent.start();
   await agent.applyModel(selection());
   const send = agent.send({ conversationId: "one", requestId: "r1", text: "Hello" });
+  await vi.waitFor(() => expect(sessions.get("one")?.isIdle).toBe(false));
   await agent.applyModel(selection("override"));
   expect(events).toHaveBeenCalledWith({
     type: "conversation_model_changed",
@@ -208,5 +228,56 @@ it("reports the model actually used while an override waits for the active turn"
     pending: null,
   });
   expect(sessions.get("one")?.models).toHaveLength(1);
+  await agent.dispose();
+});
+
+it("rebuilds the session at the next message when the tool snapshot changes, preserving identity", async () => {
+  const created: MockPiSession[] = [];
+  // First fetch (at send) returns a changed revision, forcing one rebuild.
+  const factory = rebuildingFactory(created, ["rev-1", "rev-2", "rev-2"]);
+  const agentContext = context("one");
+  const agent = new PiConversationAgent(agentContext, factory, { flushDelayMs: 0 });
+  const events = vi.fn();
+  agent.subscribe(events);
+  await agent.start();
+  await agent.applyModel(selection());
+
+  expect(created).toHaveLength(1);
+  expect(created[0]?.toolRevision).toBe("rev-1");
+  expect(agentContext.piSessionId).toBe(created[0]?.sessionId);
+  expect(agentContext.piSessionFile).toBe(created[0]?.sessionFile);
+
+  const send = agent.send({ conversationId: "one", requestId: "r1", text: "Hello" });
+  await vi.waitFor(() => expect(created).toHaveLength(2));
+  expect(created[1]?.toolRevision).toBe("rev-2");
+  expect(created[0]?.disposeCount).toBe(1);
+  expect(created[1]?.disposeCount).toBe(0);
+  created[1]?.finishPrompt();
+  await send;
+
+  expect(created[1]?.prompts).toEqual(["Hello"]);
+  // The rebuilt session reopens the exact same Pi session file: no new
+  // conversation, no new topic.
+  expect(agentContext.piSessionId).toBe(created[1]?.sessionId);
+  expect(agentContext.piSessionFile).toBe(created[1]?.sessionFile);
+  expect(events).toHaveBeenCalledWith(expect.objectContaining({ type: "assistant_message_completed" }));
+  await agent.dispose();
+  expect(created[1]?.disposeCount).toBe(1);
+});
+
+it("does not rebuild while the previous tool revision is still current", async () => {
+  const created: MockPiSession[] = [];
+  const factory = rebuildingFactory(created, ["rev-1", "rev-1"]);
+  const agentContext = context("one");
+  const agent = new PiConversationAgent(agentContext, factory, { flushDelayMs: 0 });
+  await agent.start();
+  await agent.applyModel(selection());
+
+  const send = agent.send({ conversationId: "one", requestId: "r1", text: "Hello" });
+  await vi.waitFor(() => expect(created[0]?.prompts).toEqual(["Hello"]));
+  created[0]?.finishPrompt();
+  await send;
+
+  expect(created).toHaveLength(1);
   await agent.dispose();
 });

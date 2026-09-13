@@ -1,16 +1,16 @@
 # ADR 004: Plugin connections and per-Wisp access
 
 - Status: Accepted
-- Date: 2026-09-07
+- Date: 2026-09-07 (updated 2026-09-12 to include Firecrawl)
 - Decision owners: Wisp product and security boundary
-- Scope: Bundled Brave Search and Linear integrations
+- Scope: Bundled Brave Search, Linear, and Firecrawl integrations
 
 ## Decision
 
 Configure plugin connections globally in **Settings → Plugins**, then grant each
 Wisp access independently through its **Access** tab. A saved connection does not
-grant access automatically. The initial catalog contains Brave Search and Linear,
-with one API-key connection per plugin on the device.
+grant access automatically. The catalog contains Brave Search, Linear, and
+Firecrawl, with one API-key connection per plugin on the device.
 
 The connection form accepts a new key without reading the saved secret back.
 **Test connection** checks an entered key or the existing saved key, without
@@ -25,12 +25,15 @@ or permission to write.
 | --- | --- | --- |
 | Web search | `none`, `read` | `web_search`: titles, URLs, and snippets; no page browser or arbitrary URL fetch |
 | Linear | `none`, `read`, `write` | `linear_search_issues`, `linear_get_issue`, `linear_list_teams`, `linear_list_statuses`; write also enables `linear_create_issue` and `linear_update_issue` |
+| Firecrawl | `none`, `read` | `firecrawl_scrape`: read a web page as Markdown with a bounded response; no crawling or arbitrary POST |
 
 Brave calls `GET https://api.search.brave.com/res/v1/web/search` with the API key
 in `X-Subscription-Token`, following the [Web Search documentation](https://api-dashboard.search.brave.com/documentation/services/web-search).
 Linear uses fixed GraphQL operations at `POST https://api.linear.app/graphql`
 with the personal API key in `Authorization`, following the [GraphQL documentation](https://linear.app/developers/graphql).
 The adapters do not accept caller-supplied endpoints or GraphQL documents.
+Firecrawl calls `POST https://api.firecrawl.dev/v1/scrape` with the API key in
+`Authorization`, returning the page as Markdown with response size limits.
 
 Linear updates support title, description, status, and priority. Read operations
 are bounded and paginated where applicable. Requests reject redirects, enforce

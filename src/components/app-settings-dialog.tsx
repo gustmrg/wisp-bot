@@ -10,6 +10,7 @@ import {
   KeyboardIcon,
   PlugIcon,
   RefreshCwIcon,
+  ServerIcon,
   SettingsIcon,
 } from "lucide-react";
 
@@ -17,6 +18,7 @@ import { GeneralSettingsSections, PreferenceSwitch } from "@/components/general-
 import { UsageSettingsSection } from "@/components/usage-settings-section";
 import { ModelSettingsSection } from "@/components/model-settings-section";
 import { PluginSettingsSection } from "@/components/plugin-settings-section";
+import { McpSettingsSection } from "@/components/mcp-settings-section";
 import { MobileNavigation } from "@/components/mobile-navigation";
 import { SettingsCard, SettingsGroup, SettingsRow, SettingsRowCopy } from "@/components/settings/settings-primitives";
 import { Button } from "@/components/ui/button";
@@ -66,7 +68,7 @@ function AppSettingsDialog({
   onOpenChange,
   onPreferencesChange,
 }: AppSettingsDialogProps) {
-  const [section, setSection] = useState<"general" | "model" | "plugins" | "about" | "usage">(initialSection);
+  const [section, setSection] = useState<"general" | "model" | "plugins" | "mcp" | "about" | "usage">(initialSection);
   const [mobileSectionOpen, setMobileSectionOpen] = useState(initialSection !== "general");
 
   useEffect(() => {
@@ -80,6 +82,7 @@ function AppSettingsDialog({
     general: "General",
     model: "AI Model",
     plugins: "Plugins",
+    mcp: "MCP servers",
     about: "About",
     usage: "Token usage",
   };
@@ -210,6 +213,17 @@ function AppSettingsDialog({
             <span>Plugins</span>
           </button>
           <button
+            className={cn(navButton, section === "mcp" && selected)}
+            type="button"
+            aria-label="MCP servers"
+            aria-current={section === "mcp" ? "page" : undefined}
+            aria-controls="mcp-settings-panel"
+            onClick={() => openSection("mcp")}
+          >
+            <ServerIcon aria-hidden="true" />
+            <span>MCP servers</span>
+          </button>
+          <button
             className={cn(navButton, section === "usage" && selected)}
             type="button"
             aria-label="Token usage"
@@ -246,6 +260,7 @@ function AppSettingsDialog({
         </nav>
         {section === "usage" && open && !showOverview ? <UsageSettingsSection /> : null}
         {section === "plugins" && open && !showOverview ? <PluginSettingsSection /> : null}
+        {section === "mcp" && open && !showOverview ? <McpSettingsSection /> : null}
         <section
           className="overflow-y-auto px-[30px] py-6 max-[620px]:px-4 max-[620px]:py-5"
           id="general-settings-panel"
