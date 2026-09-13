@@ -14,6 +14,7 @@ import { usePersistedPreferences } from "@/features/persistence/use-persisted-pr
 import type { PersistenceStatus } from "@/features/persistence/storage-policy";
 import { createChatIdFactory, selectActiveChatId } from "@/features/workspace/workspace-actions";
 import { useConversations } from "@/hooks/use-conversations";
+import { useNotificationSounds } from "@/hooks/use-notification-sounds";
 import type { AppPreferences } from "@/lib/app-preferences";
 import type { ToolActivityView } from "@/lib/conversation-stream";
 import { applyTheme } from "@/lib/theme";
@@ -49,6 +50,7 @@ export function useWorkspaceController(): WorkspaceController {
   const conversations = useConversations();
   const persistedPreferences = usePersistedPreferences();
   const { preferences } = persistedPreferences;
+  useNotificationSounds({ enabled: preferences.notificationSounds, chats: conversations.chats });
   const [activeChatId, setActiveChatId] = useState<ChatId>("");
   const [toolPolicyLoaded, setToolPolicyLoaded] = useState(false);
   const [createChatId] = useState(createChatIdFactory);
