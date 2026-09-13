@@ -151,7 +151,9 @@ function handleFatalStartupError(error: unknown): void {
 
 async function bootstrap(): Promise<void> {
   if (!app.isPackaged && process.platform === "darwin" && app.dock) {
-    const devIcon = nativeImage.createFromPath(path.join(__dirname, "../../build/icon-mac.png"));
+    // Amber recolor of build/icon-mac.png so a dev run is distinguishable from
+    // the installed (blue) app when both are in the Dock.
+    const devIcon = nativeImage.createFromPath(path.join(__dirname, "../../build/icon-mac-dev.png"));
     if (!devIcon.isEmpty()) app.dock.setIcon(devIcon);
   }
   const target = resolveRendererTarget(app.isPackaged, process.env.VITE_DEV_SERVER_URL, productionRendererPath);
