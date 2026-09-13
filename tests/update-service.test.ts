@@ -90,13 +90,7 @@ describe("UpdateService", () => {
   it("logs redacted updater errors while keeping the user-facing message stable", () => {
     const adapter = updater();
     const sink = loggingSink();
-    const service = new UpdateService(
-      adapter as never,
-      "1.0.0",
-      true,
-      true,
-      new StructuredLogger(sink),
-    );
+    const service = new UpdateService(adapter as never, "1.0.0", true, true, new StructuredLogger(sink));
 
     adapter.emit("error", new Error("HttpError: 404 for GET https://github.com example token sk-abcdefghijklmnop1234"));
 

@@ -46,9 +46,7 @@ export class FileLogSink implements LogSink {
 
   private async write(value: string): Promise<void> {
     try {
-      this.directoryReady ??= this.fs
-        .mkdir(this.directory, { recursive: true })
-        .then(() => undefined);
+      this.directoryReady ??= this.fs.mkdir(this.directory, { recursive: true }).then(() => undefined);
       await this.directoryReady;
       const line = `${value}\n`;
       const size = this.currentSize ?? (await this.measureCurrentSize());
