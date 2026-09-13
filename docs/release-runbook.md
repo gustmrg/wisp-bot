@@ -4,7 +4,7 @@ Wisp Bot ships macOS 14 x64/arm64 DMG and ZIP artifacts. GitHub Releases hosts t
 
 ## Environment & Signing
 
-Builds are packaged unsigned for macOS using ad-hoc identity (`CSC_IDENTITY_AUTO_DISCOVERY: false`). Because binaries are not notarized through an Apple Developer account, Gatekeeper will require users to right-click -> Open or run `xattr -cr "/Applications/Wisp Bot.app"`.
+Builds are packaged unsigned for macOS using ad-hoc identity (`CSC_IDENTITY_AUTO_DISCOVERY: false`). Because binaries are not notarized through an Apple Developer account, Gatekeeper blocks first launch of downloaded builds and may report the app as damaged. Direct users to [installing on macOS](installing-on-macos.md) for the quarantine workaround; right-click -> Open is not sufficient for the "damaged" error.
 
 ## Stage and publish a release
 
