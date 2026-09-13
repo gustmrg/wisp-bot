@@ -105,7 +105,7 @@ export class McpConnection {
       let client: McpSdkClient | null = null;
       try {
         client = new sdk.Client(
-          { name: CLIENT_NAME, version: "0.1.0" },
+          { name: CLIENT_NAME, version: "0.2.0" },
           {
             // Advertise no sampling, elicitation, or roots capabilities; the
             // SDK fails unsupported interaction requests clearly.

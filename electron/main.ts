@@ -1,13 +1,13 @@
 import {
-    app,
-    BrowserWindow,
-    dialog,
-    ipcMain,
-    nativeImage,
-    nativeTheme,
-    session,
-    shell,
-    type IpcMainInvokeEvent,
+  app,
+  BrowserWindow,
+  dialog,
+  ipcMain,
+  nativeImage,
+  nativeTheme,
+  session,
+  shell,
+  type IpcMainInvokeEvent,
 } from "electron";
 import { autoUpdater } from "electron-updater";
 import path from "node:path";
@@ -43,10 +43,10 @@ import { registerSessionReportHandlers } from "./ipc/register-session-report-han
 import { registerToolPolicyHandlers } from "./ipc/register-tool-policy-handlers.js";
 import { registerUpdateHandlers } from "./ipc/register-update-handlers.js";
 import {
-    isAllowedPermission,
-    isAllowedRendererUrl,
-    resolveRendererTarget,
-    type RendererTarget,
+  isAllowedPermission,
+  isAllowedRendererUrl,
+  resolveRendererTarget,
+  type RendererTarget,
 } from "./security-policy.js";
 
 const productionRendererPath = path.join(__dirname, "../../dist/index.html");
