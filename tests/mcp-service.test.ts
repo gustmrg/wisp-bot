@@ -7,6 +7,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { getToolMetadata, resetDynamicToolMetadata } from "../shared/tool-catalog.js";
 import { McpService } from "../electron/backend/mcp-service.js";
 import type { McpConnection, McpConnectionAuth, McpConnectionOptions } from "../electron/backend/mcp-bridge.js";
+import type { McpOAuthProvider } from "../electron/backend/mcp-oauth.js";
 import type { EncryptionService } from "../electron/backend/encrypted-credential-store.js";
 import type { ToolAuthorizationBroker } from "../electron/backend/tool-authorization-broker.js";
 
@@ -21,6 +22,8 @@ interface ConnectionFixture {
   outcome: "connected" | "needs_sign_in" | Error;
   tools: Array<{ name: string; description?: string; inputSchema?: unknown }>;
   result?: unknown;
+  /** Holds connect() until settled, simulating the interactive browser wait. */
+  gate?: Promise<"connected" | "needs_sign_in">;
 }
 
 class FakeConnection implements McpConnection {
@@ -36,7 +39,7 @@ class FakeConnection implements McpConnection {
 
   async connect(_endpoint: string, _auth: McpConnectionAuth): Promise<"connected" | "needs_sign_in"> {
     this.connects += 1;
-    const outcome = this.fixture.outcome;
+    const outcome = this.fixture.gate ? await this.fixture.gate : this.fixture.outcome;
     if (outcome instanceof Error) throw outcome;
     return outcome;
   }
@@ -58,6 +61,35 @@ class FakeConnection implements McpConnection {
 
 interface ServiceOverrides {
   authorizationBroker?: Pick<ToolAuthorizationBroker, "authorize">;
+  /** Fixtures handed to createOAuthProvider in creation order. */
+  oauthProviders?: ReadonlyArray<Record<string, unknown>>;
+}
+
+/** Minimal provider surface used by sign-in flows; tests assert on counters. */
+function fakeOAuthProvider(): Record<string, unknown> {
+  return {
+    cancelled: 0,
+    disposed: 0,
+    loadPersistedTokens: async () => undefined,
+    loadPersistedClientInformation: async () => undefined,
+    ensureCallbackServer: async () => "http://127.0.0.1:9/callback",
+    cancelSignIn(this: { cancelled: number }) {
+      this.cancelled += 1;
+    },
+    dispose(this: { disposed: number }) {
+      this.disposed += 1;
+    },
+  };
+}
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (error: unknown) => void;
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  return { promise, resolve, reject };
 }
 
 const TOOL = {
@@ -69,11 +101,12 @@ const TOOL = {
 let serverCounter = 0;
 
 async function createService(
-  { authorizationBroker }: ServiceOverrides = {},
+  { authorizationBroker, oauthProviders }: ServiceOverrides = {},
   connections: ReadonlyArray<ConnectionFixture> = [],
 ) {
   const dataDirectory = await mkdtemp(path.join(os.tmpdir(), "wisp-mcp-"));
   const created: FakeConnection[] = [];
+  const createdProviders: McpOAuthProvider[] = [];
   const broker = authorizationBroker ?? { authorize: vi.fn(async () => undefined) };
   const service = new McpService({
     dataDirectory,
@@ -87,9 +120,17 @@ async function createService(
       created.push(connection);
       return connection;
     },
+    createOAuthProvider: (serverId: string): McpOAuthProvider => {
+      const provider =
+        (oauthProviders?.[createdProviders.length] as McpOAuthProvider | undefined) ??
+        (fakeOAuthProvider() as McpOAuthProvider);
+      createdProviders.push(provider);
+      void serverId;
+      return provider;
+    },
   });
   await service.load();
-  return { service, dataDirectory, created, broker };
+  return { service, dataDirectory, created, broker, createdProviders };
 }
 
 async function addServer(
@@ -559,5 +600,83 @@ describe("McpService", () => {
     expect(secretsFile.schemaVersion).toBe(1);
     const plaintext = Buffer.from(secretsFile.payload, "base64").toString("utf8");
     expect(plaintext).toContain("sekrit-value");
+  });
+});
+
+describe("McpService interactive sign-in", () => {
+  it("rejects a second concurrent sign-in for the same connection", async () => {
+    const gate = deferred<"connected" | "needs_sign_in">();
+    const { service } = await createService({}, [{ gate: gate.promise, outcome: "connected", tools: [TOOL] }]);
+    const { serverId } = await addServer(service, { authMode: "oauth" });
+
+    const pending = service.startSignIn({ serverId });
+    await expect(service.startSignIn({ serverId })).rejects.toMatchObject({ code: "invalid_request" });
+
+    gate.resolve("connected");
+    await pending;
+    // The first flow still completes and commits its tools.
+    const view = await service.getView();
+    expect(view.servers[0]?.tools).toHaveLength(1);
+  });
+
+  it("cancels an in-progress sign-in instead of waiting for the timeout", async () => {
+    const gate = deferred<"connected" | "needs_sign_in">();
+    const provider = fakeOAuthProvider();
+    const { service } = await createService({ oauthProviders: [provider] }, [
+      { gate: gate.promise, outcome: "needs_sign_in", tools: [] },
+    ]);
+    const { serverId } = await addServer(service, { authMode: "oauth" });
+
+    const pending = service.startSignIn({ serverId });
+    await service.cancelSignIn({ serverId });
+    expect(provider.cancelled).toBe(1);
+
+    gate.resolve("needs_sign_in");
+    await expect(pending).rejects.toMatchObject({ code: "aborted", message: "The sign-in was cancelled." });
+    const view = await service.getView();
+    expect(view.servers[0]?.tools).toHaveLength(0);
+  });
+
+  it("rejects cancellation when no sign-in is in progress", async () => {
+    const { service } = await createService();
+    const { serverId } = await addServer(service, { authMode: "oauth" });
+    await expect(service.cancelSignIn({ serverId })).rejects.toMatchObject({ code: "not_found" });
+  });
+
+  it("keeps saves responsive while a sign-in waits for the browser", async () => {
+    const gate = deferred<"connected" | "needs_sign_in">();
+    const { service } = await createService({}, [{ gate: gate.promise, outcome: "connected", tools: [TOOL] }]);
+    const { serverId, server } = await addServer(service, { authMode: "oauth" });
+
+    const pending = service.startSignIn({ serverId });
+    // This save must not queue behind the browser wait.
+    const saved = await setEnabled(service, { ...server, authMode: "oauth" }, false);
+    expect(saved.servers[0]?.enabled).toBe(false);
+
+    gate.resolve("connected");
+    await pending;
+    const view = await service.getView();
+    expect(view.servers[0]?.tools).toHaveLength(1);
+    expect(view.servers[0]?.enabled).toBe(false);
+  });
+
+  it("discards sign-in results when the connection changed during the flow", async () => {
+    const gate = deferred<"connected" | "needs_sign_in">();
+    const { service } = await createService({}, [{ gate: gate.promise, outcome: "connected", tools: [TOOL] }]);
+    const { serverId, server } = await addServer(service, { authMode: "oauth" });
+
+    const pending = service.startSignIn({ serverId });
+    await service.save({
+      serverId,
+      name: server.name,
+      endpoint: "https://changed.example.com/mcp",
+      authMode: "oauth",
+      enabled: true,
+    });
+
+    gate.resolve("connected");
+    await expect(pending).rejects.toMatchObject({ code: "invalid_request" });
+    const view = await service.getView();
+    expect(view.servers[0]?.tools).toHaveLength(0);
   });
 });

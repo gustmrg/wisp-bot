@@ -52,6 +52,7 @@ function createApi(initialState: ConversationStateView): WispApi {
     testMcpConnection: async () => ({ ok: true, value: { message: "Connected" } }),
     refreshMcpTools: async () => ({ ok: true, value: { secureStorageAvailable: true, servers: [] } }),
     startMcpSignIn: async () => ({ ok: true, value: { secureStorageAvailable: true, servers: [] } }),
+    cancelMcpSignIn: async () => ({ ok: true, value: { secureStorageAvailable: true, servers: [] } }),
     getWispMcpAccess: async ({ conversationId }) => ({
       ok: true,
       value: { conversationId, grants: [], revision: "test-revision" },

@@ -195,6 +195,15 @@ export class McpOAuthProvider implements OAuthClientProvider {
     return this.callback.promise;
   }
 
+  /**
+   * Rejects a pending browser callback wait so the in-flight sign-in flow ends
+   * immediately instead of running to its timeout. The loopback server stays
+   * up until dispose; the flow's owner tears that down.
+   */
+  cancelSignIn(): void {
+    this.cancelCallback(new WispBackendError("aborted", "The sign-in was cancelled."));
+  }
+
   invalidateCredentials(scope: "all" | "client" | "tokens" | "verifier" | "discovery"): void {
     if (scope === "all" || scope === "tokens") {
       this.tokensSnapshot = undefined;

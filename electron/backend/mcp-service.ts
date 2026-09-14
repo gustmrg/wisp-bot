@@ -104,6 +104,9 @@ export class McpService {
     { conversationId: string; sessionId: string; serverId: string }
   >();
   private readonly pool = new Map<string, PoolEntry>();
+  /** Providers of in-flight interactive sign-ins, keyed by server. */
+  private readonly activeSignIns = new Map<string, McpOAuthProvider>();
+  private readonly cancelledSignIns = new Set<string>();
 
   constructor(private readonly options: McpServiceOptions) {
     this.filePath = path.join(options.dataDirectory, "mcp-servers.json");
@@ -308,44 +311,87 @@ export class McpService {
     });
   }
 
-  /** Runs the interactive OAuth sign-in flow, then discovers tools. */
+  /**
+   * Runs the interactive OAuth sign-in flow, then discovers tools. The browser
+   * wait happens outside the mutation queue — it can take minutes of human
+   * time, and holding the queue would block saves, removals, and grants. Only
+   * the state commit re-enters the queue, re-checking that the connection was
+   * not removed or reconfigured while sign-in was in flight.
+   */
   async startSignIn(value: unknown): Promise<McpSettingsView> {
     const { serverId } = parseMcpServerRequest(value);
-    return this.enqueue(async () => {
-      const server = this.state.servers[serverId];
-      if (!server) throw new WispBackendError("not_found", "This MCP connection no longer exists.");
-      if (server.authMode !== "oauth") {
-        throw new WispBackendError("invalid_request", "This connection does not use sign-in.");
-      }
-      const provider = this.createOAuthProvider(serverId);
-      try {
-        await provider.loadPersistedTokens();
-        await provider.loadPersistedClientInformation();
-        await provider.ensureCallbackServer();
-        const connection = this.createConnection();
-        const outcome = await connection.connect(
-          server.endpoint,
-          { mode: "oauth", provider },
-          {
-            allowInteractiveSignIn: true,
-          },
-        );
-        if (outcome === "needs_sign_in") {
-          throw new WispBackendError("configuration_required", "Sign-in did not complete. Try again.");
+    this.assertLive();
+    const server = this.state.servers[serverId];
+    if (!server) throw new WispBackendError("not_found", "This MCP connection no longer exists.");
+    if (server.authMode !== "oauth") {
+      throw new WispBackendError("invalid_request", "This connection does not use sign-in.");
+    }
+    if (this.activeSignIns.has(serverId)) {
+      throw new WispBackendError("invalid_request", "A sign-in for this connection is already in progress.");
+    }
+    const endpoint = server.endpoint;
+    const provider = this.createOAuthProvider(serverId);
+    this.activeSignIns.set(serverId, provider);
+    let connection: McpConnection | null = null;
+    try {
+      await provider.loadPersistedTokens();
+      await provider.loadPersistedClientInformation();
+      await provider.ensureCallbackServer();
+      connection = this.createConnection();
+      const outcome = await connection.connect(
+        endpoint,
+        { mode: "oauth", provider },
+        {
+          allowInteractiveSignIn: true,
+        },
+      );
+      if (outcome === "needs_sign_in") {
+        if (this.cancelledSignIns.delete(serverId)) {
+          throw new WispBackendError("aborted", "The sign-in was cancelled.");
         }
-        const tools = await connection.listTools();
-        server.snapshot = { discoveredAt: new Date().toISOString(), tools: this.buildSnapshot(tools, serverId) };
-        server.lastConnection = { state: "connected", at: new Date().toISOString() };
+        throw new WispBackendError("configuration_required", "Sign-in did not complete. Try again.");
+      }
+      const tools = await connection.listTools();
+      await connection.close();
+      connection = null;
+      await this.enqueue(async () => {
+        const current = this.state.servers[serverId];
+        if (!current) throw new WispBackendError("not_found", "This MCP connection no longer exists.");
+        if (current.endpoint !== endpoint || current.authMode !== "oauth") {
+          throw new WispBackendError(
+            "invalid_request",
+            "This connection changed during sign-in. Review it and sign in again.",
+          );
+        }
+        current.snapshot = { discoveredAt: new Date().toISOString(), tools: this.buildSnapshot(tools, serverId) };
+        current.lastConnection = { state: "connected", at: new Date().toISOString() };
         await this.commit(this.state);
         this.registerSnapshotMetadata();
-        await connection.close();
-      } catch (error) {
-        throw safeMcpError(error);
-      } finally {
-        provider.dispose();
-      }
-      return this.publishAndView();
-    });
+      });
+    } catch (error) {
+      throw safeMcpError(error);
+    } finally {
+      this.activeSignIns.delete(serverId);
+      this.cancelledSignIns.delete(serverId);
+      provider.dispose();
+      await connection?.close();
+    }
+    return this.publishAndView();
+  }
+
+  /**
+   * Cancels an in-progress interactive sign-in. Never touches the mutation
+   * queue: it must stay responsive while a sign-in occupies the browser wait.
+   */
+  async cancelSignIn(value: unknown): Promise<McpSettingsView> {
+    const { serverId } = parseMcpServerRequest(value);
+    const provider = this.activeSignIns.get(serverId);
+    if (!provider) {
+      throw new WispBackendError("not_found", "No sign-in is in progress for this connection.");
+    }
+    this.cancelledSignIns.add(serverId);
+    provider.cancelSignIn();
+    return this.getView();
   }
 
   getAccess(value: unknown): WispMcpAccessView {
@@ -434,6 +480,7 @@ export class McpService {
   dispose(): void {
     this.disposed = true;
     for (const controller of this.running.keys()) controller.abort();
+    for (const provider of this.activeSignIns.values()) provider.dispose();
     for (const [key, entry] of this.pool) {
       entry.provider?.dispose();
       void entry.connection.close();
