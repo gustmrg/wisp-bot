@@ -158,6 +158,8 @@ export interface BackendError {
   code: BackendErrorCode;
   message: string;
   retryable: boolean;
+  /** Raw provider error text for logs only; never rendered or persisted. */
+  detail?: string;
 }
 
 export type BackendResult<T> = { ok: true; value: T } | { ok: false; error: BackendError };

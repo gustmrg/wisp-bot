@@ -101,10 +101,48 @@ describe("PiEventTranslator", () => {
     expect(failed).toContainEqual(
       expect.objectContaining({
         type: "conversation_error",
-        error: expect.objectContaining({ message: "400 invalid max tokens", retryable: false }),
+        error: expect.objectContaining({
+          message: "The provider rejected the request. Check the model settings and try again.",
+          retryable: false,
+          detail: "400 invalid max tokens",
+        }),
       }),
     );
     expect(failed.some(({ type }) => type === "assistant_message_completed")).toBe(false);
+  });
+
+  it("hides the raw provider body behind a friendly message and keeps it as detail", () => {
+    const events: ConversationAgentEvent[] = [];
+    const rawBody = '{"message":"This model is unavailable for free. The paid version is available now","code":404}';
+    const translator = new PiEventTranslator("wisp-1", (event) => events.push(event), 0);
+    translator.begin({ conversationId: "wisp-1", requestId: "unavailable-1", text: "Hi" });
+    translator.handle({
+      type: "message_update",
+      assistantMessageEvent: {
+        type: "error",
+        reason: "error",
+        error: { role: "assistant", stopReason: "error", errorMessage: `OpenRouter API error (404): ${rawBody}` },
+      },
+    });
+    translator.handle({ type: "agent_settled" });
+
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: "conversation_error",
+        error: expect.objectContaining({
+          message: "This model is unavailable. Choose a different model in the model settings.",
+          retryable: false,
+          detail: `OpenRouter API error (404): ${rawBody}`,
+        }),
+      }),
+    );
+    const serialized = JSON.stringify(events);
+    const escapedBody = JSON.stringify(rawBody).slice(1, -1);
+    expect(serialized.indexOf(escapedBody)).toBe(
+      serialized.lastIndexOf(escapedBody),
+      "raw body must appear only once, inside the detail field",
+    );
+    expect(serialized.indexOf(escapedBody)).toBeGreaterThan(serialized.indexOf('"detail"'));
   });
 
   it("turns an empty settled response into a failed assistant message", () => {
