@@ -7,17 +7,9 @@ import type {
   McpSettingsView,
   SaveMcpServerRequest,
 } from "../../shared/mcp";
-import { Plus, RefreshCw, ServerIcon, Settings2 } from "lucide-react";
+import { ChevronLeftIcon, Plus, RefreshCw, ServerIcon, Settings2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog";
 
 const AUTH_MODE_OPTIONS: ReadonlyArray<{ value: McpAuthMode; label: string }> = [
   { value: "none", label: "No authentication" },
@@ -60,6 +52,8 @@ export function McpSettingsSection() {
   const [view, setView] = useState<McpSettingsView | null>(null);
   const [error, setError] = useState("");
   const [attempt, setAttempt] = useState(0);
+  /** Drill-in editor: "new", a server ID, or null for the server list. */
+  const [editing, setEditing] = useState<"new" | string | null>(null);
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: attempt explicitly retries a failed load.
   useEffect(() => {
@@ -115,21 +109,28 @@ export function McpSettingsSection() {
               {view.credentialError}
             </p>
           ) : null}
-          {view.servers.length === 0 ? (
-            <p className="text-[11.5px] text-dim">No MCP servers connected yet.</p>
+          {editing && (editing === "new" || view.servers.some((candidate) => candidate.serverId === editing)) ? (
+            <McpServerForm
+              key={editing === "new" ? "new" : editing}
+              server={editing === "new" ? undefined : view.servers.find((candidate) => candidate.serverId === editing)}
+              secureStorageAvailable={view.secureStorageAvailable}
+              onSaved={setView}
+              onBack={() => setEditing(null)}
+            />
           ) : (
-            <div className="grid grid-cols-1 gap-x-7 gap-y-1 @min-[560px]:grid-cols-2">
-              {view.servers.map((server) => (
-                <McpServerCard
-                  key={server.serverId}
-                  server={server}
-                  secureStorageAvailable={view.secureStorageAvailable}
-                  onSaved={setView}
-                />
-              ))}
-            </div>
+            <>
+              {view.servers.length === 0 ? (
+                <p className="text-[11.5px] text-dim">No MCP servers connected yet.</p>
+              ) : (
+                <div className="grid grid-cols-1 gap-x-7 gap-y-1 @min-[560px]:grid-cols-2">
+                  {view.servers.map((server) => (
+                    <McpServerCard key={server.serverId} server={server} onSelect={() => setEditing(server.serverId)} />
+                  ))}
+                </div>
+              )}
+              <McpServerCard onSelect={() => setEditing("new")} />
+            </>
           )}
-          <McpServerCard secureStorageAvailable={view.secureStorageAvailable} onSaved={setView} />
         </>
       ) : error ? (
         <div className="flex flex-col items-start gap-3">
@@ -149,21 +150,62 @@ export function McpSettingsSection() {
   );
 }
 
-function McpServerCard({
+function McpServerCard({ server, onSelect }: { server?: McpServerSummary; onSelect: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onSelect}
+      aria-label={server ? `Manage ${server.name}` : "Add MCP server"}
+      className="group flex w-full min-w-0 items-center gap-3 rounded-xl px-2 py-4 text-left outline-none transition-colors hover:bg-popover focus-visible:ring-2 focus-visible:ring-ring"
+    >
+      <span className="flex size-9 flex-none items-center justify-center rounded-lg bg-muted">
+        <ServerIcon className="size-4 text-dim" aria-hidden="true" />
+      </span>
+      {server ? (
+        <span className="min-w-0 flex-1">
+          <span className="block text-[14px] font-medium">{server.name}</span>
+          <span className="mt-1 block truncate text-[12px] text-dim">{safeHost(server.endpoint)}</span>
+          <span className="mt-1.5 block text-[10.5px] text-dim">
+            {STATE_LABELS[server.state]} · {server.tools.length} tool{server.tools.length === 1 ? "" : "s"}
+            {server.enabled ? "" : " · disabled"}
+          </span>
+        </span>
+      ) : (
+        <span className="min-w-0 flex-1">
+          <span className="block text-[14px] font-medium">Add MCP server</span>
+          <span className="mt-1 block text-[12px] text-dim">Connect a remote MCP server over HTTPS.</span>
+        </span>
+      )}
+      {server ? (
+        <Settings2 className="size-5 shrink-0 text-dim" aria-hidden="true" />
+      ) : (
+        <Plus className="size-5 shrink-0 text-dim group-hover:text-foreground" aria-hidden="true" />
+      )}
+    </button>
+  );
+}
+
+/**
+ * Add/manage form for one MCP server, rendered in place of the server list.
+ * Lives inside the settings dialog instead of stacking a second modal on top.
+ */
+function McpServerForm({
   server,
   secureStorageAvailable,
   onSaved,
+  onBack,
 }: {
   server?: McpServerSummary;
   secureStorageAvailable: boolean;
   onSaved: (view: McpSettingsView) => void;
+  onBack: () => void;
 }) {
   const formId = useId();
-  const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState<McpDraft>(server ? draftFrom(server) : emptyDraft());
   const [operation, setOperation] = useState<"save" | "test" | "remove" | "refresh" | "signin" | null>(null);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
+  const [cancellingSignIn, setCancellingSignIn] = useState(false);
   const busy = operation !== null;
   const isNew = !server;
 
@@ -171,6 +213,25 @@ function McpServerCard({
     setDraft(server ? draftFrom(server) : emptyDraft());
     setError("");
     setMessage("");
+  }
+
+  /** Leaves the form; the pending sign-in, if any, stays cancellable on return. */
+  function close() {
+    reset();
+    onBack();
+  }
+
+  async function cancelSignIn() {
+    if (!server || cancellingSignIn) return;
+    setCancellingSignIn(true);
+    try {
+      const result = await window.wisp.cancelMcpSignIn({ serverId: server.serverId });
+      if (result.ok) onSaved(result.value);
+    } catch {
+      // The pending sign-in call reports the outcome either way.
+    } finally {
+      setCancellingSignIn(false);
+    }
   }
 
   function saveRequest() {
@@ -215,10 +276,9 @@ function McpServerCard({
         }
         onSaved(result.value);
         if (isNew) {
-          // The card stays in add mode; close it so a second save cannot
+          // The card stays in add mode; go back so a second save cannot
           // create a duplicate. The new server appears as its own card.
-          reset();
-          setOpen(false);
+          close();
           return;
         }
         setDraft((current) => ({ ...current, headerValue: "" }));
@@ -238,8 +298,7 @@ function McpServerCard({
       }
       onSaved(result.value);
       if (action === "remove") {
-        setOpen(false);
-        setMessage("");
+        close();
         return;
       }
       setMessage(action === "refresh" ? "Tools refreshed." : "Signed in.");
@@ -269,228 +328,204 @@ function McpServerCard({
       (draft.headerName.trim() !== "" && (draft.headerValue !== "" || Boolean(server?.headerConfigured))));
 
   return (
-    <Dialog
-      open={open}
-      onOpenChange={(nextOpen) => {
-        if (busy) return;
-        setOpen(nextOpen);
-        if (!nextOpen) reset();
-      }}
-    >
-      <DialogTrigger
-        aria-label={server ? `Manage ${server.name}` : "Add MCP server"}
-        className="group flex w-full min-w-0 items-center gap-3 rounded-xl px-2 py-4 text-left outline-none transition-colors hover:bg-popover focus-visible:ring-2 focus-visible:ring-ring"
-      >
+    <div className="flex flex-col gap-2">
+      <div className="flex items-center gap-2">
+        <Button variant="ghost" size="icon" type="button" aria-label="Back to MCP servers" onClick={close}>
+          <ChevronLeftIcon aria-hidden="true" />
+        </Button>
         <span className="flex size-9 flex-none items-center justify-center rounded-lg bg-muted">
           <ServerIcon className="size-4 text-dim" aria-hidden="true" />
         </span>
+        <h3 className="m-0 text-[15px] font-medium">{server ? server.name : "Add MCP server"}</h3>
+      </div>
+      <p className="mb-1 mt-0 text-[11.5px] text-dim">
+        Remote servers only. Local stdio servers and command-based configuration are not supported.
+      </p>
+      <div className="flex flex-col gap-3 text-[11.5px]">
         {server ? (
-          <span className="min-w-0 flex-1">
-            <span className="block text-[14px] font-medium">{server.name}</span>
-            <span className="mt-1 block truncate text-[12px] text-dim">{safeHost(server.endpoint)}</span>
-            <span className="mt-1.5 block text-[10.5px] text-dim">
-              {STATE_LABELS[server.state]} · {server.tools.length} tool{server.tools.length === 1 ? "" : "s"}
-              {server.enabled ? "" : " · disabled"}
-            </span>
-          </span>
-        ) : (
-          <span className="min-w-0 flex-1">
-            <span className="block text-[14px] font-medium">Add MCP server</span>
-            <span className="mt-1 block text-[12px] text-dim">Connect a remote MCP server over HTTPS.</span>
-          </span>
-        )}
-        {server ? (
-          <Settings2 className="size-5 shrink-0 text-dim" aria-hidden="true" />
-        ) : (
-          <Plus className="size-5 shrink-0 text-dim group-hover:text-foreground" aria-hidden="true" />
-        )}
-      </DialogTrigger>
-      <DialogContent className="max-h-[85vh] overflow-y-auto" showCloseButton={!busy}>
-        <DialogHeader>
-          <div className="mb-2 flex items-center gap-3">
-            <span className="flex size-9 flex-none items-center justify-center rounded-lg bg-muted">
-              <ServerIcon className="size-4 text-dim" aria-hidden="true" />
-            </span>
-            <DialogTitle>{server ? server.name : "Add MCP server"}</DialogTitle>
-          </div>
-          <DialogDescription>
-            Remote servers only. Local stdio servers and command-based configuration are not supported.
-          </DialogDescription>
-        </DialogHeader>
-        <div className="flex flex-col gap-3 text-[11.5px]">
-          {server ? (
-            <p>
-              {STATE_LABELS[server.state]}
-              {server.lastDiscoveredAt ? ` · tools discovered ${formatDate(server.lastDiscoveredAt)}` : ""}
-              {server.tools.length ? ` · ${server.tools.length} tool${server.tools.length === 1 ? "" : "s"}` : ""}
-            </p>
-          ) : null}
-          <label htmlFor={`${formId}-name`} className="flex flex-col gap-1.5">
-            <strong>Name</strong>
-            <Input
-              id={`${formId}-name`}
-              value={draft.name}
-              disabled={busy}
-              placeholder="Linear MCP"
-              autoComplete="off"
-              spellCheck={false}
-              onChange={(event) => {
-                setDraft({ ...draft, name: event.target.value });
-                setError("");
-              }}
-            />
-          </label>
-          <label htmlFor={`${formId}-endpoint`} className="flex flex-col gap-1.5">
-            <strong>Endpoint URL</strong>
-            <Input
-              id={`${formId}-endpoint`}
-              type="url"
-              value={draft.endpoint}
-              disabled={busy}
-              placeholder="https://example.com/mcp"
-              autoComplete="off"
-              spellCheck={false}
-              onChange={(event) => {
-                setDraft({ ...draft, endpoint: event.target.value });
-                setError("");
-              }}
-            />
-          </label>
-          <p className="text-dim">Only HTTPS endpoints are allowed.</p>
-          <label htmlFor={`${formId}-auth`} className="flex flex-col gap-1.5">
-            <strong>Authentication</strong>
-            <select
-              id={`${formId}-auth`}
-              className="rounded-md border border-border bg-transparent px-2 py-1.5"
-              value={draft.authMode}
-              disabled={busy}
-              onChange={(event) => {
-                setDraft({ ...draft, authMode: event.target.value as McpAuthMode });
-                setError("");
-                setMessage("");
-              }}
-            >
-              {AUTH_MODE_OPTIONS.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
-          </label>
-          {draft.authMode === "header" ? (
-            <>
-              <label htmlFor={`${formId}-header-name`} className="flex flex-col gap-1.5">
-                <strong>Header name</strong>
-                <Input
-                  id={`${formId}-header-name`}
-                  value={draft.headerName}
-                  disabled={busy}
-                  placeholder="Authorization"
-                  autoComplete="off"
-                  spellCheck={false}
-                  onChange={(event) => {
-                    setDraft({ ...draft, headerName: event.target.value });
-                    setError("");
-                  }}
-                />
-              </label>
-              <label htmlFor={`${formId}-header-value`} className="flex flex-col gap-1.5">
-                <strong>Header value</strong>
-                <Input
-                  id={`${formId}-header-value`}
-                  type="password"
-                  value={draft.headerValue}
-                  disabled={busy || !secureStorageAvailable}
-                  placeholder={server?.headerConfigured ? "Saved — enter a replacement" : "Enter secret value"}
-                  autoComplete="new-password"
-                  spellCheck={false}
-                  onChange={(event) => {
-                    setDraft({ ...draft, headerValue: event.target.value });
-                    setError("");
-                  }}
-                />
-              </label>
-              <p className="text-dim">
-                {server?.headerConfigured ? "Leave blank to keep the saved value. " : ""}
-                Values are encrypted on this device and never shown to Wisps.
-              </p>
-            </>
-          ) : null}
-          {draft.authMode === "oauth" ? (
-            <p className="text-dim">
-              {server
-                ? "Use Sign in to connect through your browser. Token renewal never removes Wisp access; replacing the account does."
-                : "Save the connection first, then use Sign in to connect through your browser."}
-            </p>
-          ) : null}
-          <label className="flex items-center gap-2">
-            <input
-              type="checkbox"
-              checked={draft.enabled}
-              disabled={busy}
-              onChange={(event) => {
-                setDraft({ ...draft, enabled: event.target.checked });
-                setError("");
-              }}
-            />
-            Enable {server?.name ?? "this server"}
-          </label>
-          <p className="text-dim">
-            Disabling blocks this server for every Wisp while keeping grants. Changing the endpoint or credentials
-            revokes Wisp access; removing the connection deletes its grants and saved secrets.
+          <p>
+            {STATE_LABELS[server.state]}
+            {server.lastDiscoveredAt ? ` · tools discovered ${formatDate(server.lastDiscoveredAt)}` : ""}
+            {server.tools.length ? ` · ${server.tools.length} tool${server.tools.length === 1 ? "" : "s"}` : ""}
           </p>
-          {server && server.tools.length ? (
-            <details className="rounded-[10px] bg-popover p-3">
-              <summary className="cursor-pointer">Reviewed tools ({server.tools.length})</summary>
-              <ul className="mt-2 flex list-none flex-col gap-1 p-0">
-                {server.tools.slice(0, 12).map((tool) => (
-                  <li key={tool.alias} className="min-w-0 truncate">
-                    <span className="font-medium">{tool.label}</span>
-                    {tool.description ? <span className="text-dim"> — {tool.description}</span> : null}
-                  </li>
-                ))}
-                {server.tools.length > 12 ? <li className="text-dim">+ {server.tools.length - 12} more</li> : null}
-              </ul>
-            </details>
-          ) : null}
-          {error ? (
-            <p role="alert" className="text-destructive">
-              {error}
+        ) : null}
+        <label htmlFor={`${formId}-name`} className="flex flex-col gap-1.5">
+          <strong>Name</strong>
+          <Input
+            id={`${formId}-name`}
+            value={draft.name}
+            disabled={busy}
+            placeholder="Linear MCP"
+            autoComplete="off"
+            spellCheck={false}
+            onChange={(event) => {
+              setDraft({ ...draft, name: event.target.value });
+              setError("");
+            }}
+          />
+        </label>
+        <label htmlFor={`${formId}-endpoint`} className="flex flex-col gap-1.5">
+          <strong>Endpoint URL</strong>
+          <Input
+            id={`${formId}-endpoint`}
+            type="url"
+            value={draft.endpoint}
+            disabled={busy}
+            placeholder="https://example.com/mcp"
+            autoComplete="off"
+            spellCheck={false}
+            onChange={(event) => {
+              setDraft({ ...draft, endpoint: event.target.value });
+              setError("");
+            }}
+          />
+        </label>
+        <p className="text-dim">Only HTTPS endpoints are allowed.</p>
+        <label htmlFor={`${formId}-auth`} className="flex flex-col gap-1.5">
+          <strong>Authentication</strong>
+          <select
+            id={`${formId}-auth`}
+            className="rounded-md border border-border bg-transparent px-2 py-1.5"
+            value={draft.authMode}
+            disabled={busy}
+            onChange={(event) => {
+              setDraft({ ...draft, authMode: event.target.value as McpAuthMode });
+              setError("");
+              setMessage("");
+            }}
+          >
+            {AUTH_MODE_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        {draft.authMode === "header" ? (
+          <>
+            <label htmlFor={`${formId}-header-name`} className="flex flex-col gap-1.5">
+              <strong>Header name</strong>
+              <Input
+                id={`${formId}-header-name`}
+                value={draft.headerName}
+                disabled={busy}
+                placeholder="Authorization"
+                autoComplete="off"
+                spellCheck={false}
+                onChange={(event) => {
+                  setDraft({ ...draft, headerName: event.target.value });
+                  setError("");
+                }}
+              />
+            </label>
+            <label htmlFor={`${formId}-header-value`} className="flex flex-col gap-1.5">
+              <strong>Header value</strong>
+              <Input
+                id={`${formId}-header-value`}
+                type="password"
+                value={draft.headerValue}
+                disabled={busy || !secureStorageAvailable}
+                placeholder={server?.headerConfigured ? "Saved — enter a replacement" : "Enter secret value"}
+                autoComplete="new-password"
+                spellCheck={false}
+                onChange={(event) => {
+                  setDraft({ ...draft, headerValue: event.target.value });
+                  setError("");
+                }}
+              />
+            </label>
+            <p className="text-dim">
+              {server?.headerConfigured ? "Leave blank to keep the saved value. " : ""}
+              Values are encrypted on this device and never shown to Wisps.
             </p>
-          ) : null}
-          {message ? <p role="status">{message}</p> : null}
-          <div className="flex flex-wrap gap-2">
-            <Button variant="secondary" type="button" disabled={busy || !canTest} onClick={() => void run("test")}>
-              {operation === "test" ? "Testing…" : "Test connection"}
-            </Button>
-            <Button type="button" disabled={busy || !canSave} onClick={() => void run("save")}>
-              {operation === "save" ? "Saving…" : "Save connection"}
-            </Button>
-            {server && server.authMode === "oauth" ? (
+          </>
+        ) : null}
+        {draft.authMode === "oauth" ? (
+          <p className="text-dim">
+            {server
+              ? "Use Sign in to connect through your browser. Token renewal never removes Wisp access; replacing the account does."
+              : "Save the connection first, then use Sign in to connect through your browser."}
+          </p>
+        ) : null}
+        <label className="flex items-center gap-2">
+          <input
+            type="checkbox"
+            checked={draft.enabled}
+            disabled={busy}
+            onChange={(event) => {
+              setDraft({ ...draft, enabled: event.target.checked });
+              setError("");
+            }}
+          />
+          Enable {server?.name ?? "this server"}
+        </label>
+        <p className="text-dim">
+          Disabling blocks this server for every Wisp while keeping grants. Changing the endpoint or credentials revokes
+          Wisp access; removing the connection deletes its grants and saved secrets.
+        </p>
+        {server && server.tools.length ? (
+          <details className="rounded-[10px] bg-popover p-3">
+            <summary className="cursor-pointer">Reviewed tools ({server.tools.length})</summary>
+            <ul className="mt-2 flex list-none flex-col gap-1 p-0">
+              {server.tools.slice(0, 12).map((tool) => (
+                <li key={tool.alias} className="min-w-0 truncate">
+                  <span className="font-medium">{tool.label}</span>
+                  {tool.description ? <span className="text-dim"> — {tool.description}</span> : null}
+                </li>
+              ))}
+              {server.tools.length > 12 ? <li className="text-dim">+ {server.tools.length - 12} more</li> : null}
+            </ul>
+          </details>
+        ) : null}
+        {error ? (
+          <p role="alert" className="text-destructive">
+            {error}
+          </p>
+        ) : null}
+        {message ? <p role="status">{message}</p> : null}
+        <div className="flex flex-wrap gap-2">
+          <Button variant="secondary" type="button" disabled={busy || !canTest} onClick={() => void run("test")}>
+            {operation === "test" ? "Testing…" : "Test connection"}
+          </Button>
+          <Button type="button" disabled={busy || !canSave} onClick={() => void run("save")}>
+            {operation === "save" ? "Saving…" : "Save connection"}
+          </Button>
+          {server && server.authMode === "oauth" ? (
+            <>
               <Button variant="secondary" type="button" disabled={busy} onClick={() => void run("signin")}>
                 {operation === "signin" ? "Waiting for browser…" : "Sign in"}
               </Button>
-            ) : null}
-            {server ? (
-              <Button
-                variant="secondary"
-                type="button"
-                disabled={busy || !server.enabled}
-                onClick={() => void run("refresh")}
-              >
-                <RefreshCw aria-hidden="true" className="mr-1 size-3" />
-                {operation === "refresh" ? "Refreshing…" : "Refresh tools"}
-              </Button>
-            ) : null}
-            {server ? (
-              <Button variant="ghost" type="button" disabled={busy} onClick={() => void run("remove")}>
-                {operation === "remove" ? "Removing…" : "Remove connection"}
-              </Button>
-            ) : null}
-          </div>
+              {operation === "signin" ? (
+                <Button
+                  variant="secondary"
+                  type="button"
+                  disabled={cancellingSignIn}
+                  onClick={() => void cancelSignIn()}
+                >
+                  {cancellingSignIn ? "Cancelling…" : "Cancel sign-in"}
+                </Button>
+              ) : null}
+            </>
+          ) : null}
+          {server ? (
+            <Button
+              variant="secondary"
+              type="button"
+              disabled={busy || !server.enabled}
+              onClick={() => void run("refresh")}
+            >
+              <RefreshCw aria-hidden="true" className="mr-1 size-3" />
+              {operation === "refresh" ? "Refreshing…" : "Refresh tools"}
+            </Button>
+          ) : null}
+          {server ? (
+            <Button variant="ghost" type="button" disabled={busy} onClick={() => void run("remove")}>
+              {operation === "remove" ? "Removing…" : "Remove connection"}
+            </Button>
+          ) : null}
         </div>
-      </DialogContent>
-    </Dialog>
+      </div>
+    </div>
   );
 }
 
