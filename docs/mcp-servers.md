@@ -14,11 +14,14 @@ embedded credentials) with three authentication modes:
 - **None** — no authentication.
 - **Authentication header** — a configured header value stored encrypted.
 - **OAuth** — browser sign-in with PKCE over a loopback callback and a public
-  client; no client secret is embedded.
+  client; no client secret is embedded. A sign-in opens exactly one browser
+  window and can be cancelled from the same panel while it waits; cancelling
+  never changes grants or stored credentials.
 
 Local stdio servers are rejected at every boundary, along with resources,
 prompts, embedded MCP UI, server-requested sampling, and long-running tasks;
 unsupported interaction requests fail clearly instead of lying dormant.
+Discovery accepts at most 128 tools per server and fails clearly beyond that.
 
 ## Per-Wisp access
 
