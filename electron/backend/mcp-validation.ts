@@ -1,7 +1,12 @@
 import { MCP_AUTH_MODES, type McpAccess, type McpAuthMode, type McpGrant } from "../../shared/mcp.js";
 import { WispBackendError } from "./backend-error.js";
 
-export const MAX_TOOL_SNAPSHOT_TOOLS = 64;
+/**
+ * Maximum tools accepted from one server, shared by bridge discovery and
+ * snapshot persistence. 128 keeps headroom for large real servers (Linear
+ * exposes 66) while bounding per-session context growth.
+ */
+export const MAX_TOOL_SNAPSHOT_TOOLS = 128;
 export const MAX_TOOL_DESCRIPTION_CHARACTERS = 700;
 export const MAX_TOOL_SCHEMA_JSON_BYTES = 8_000;
 export const MAX_TOOL_RESULT_TEXT_CHARACTERS = 64_000;
