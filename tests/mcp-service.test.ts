@@ -332,6 +332,28 @@ describe("McpService", () => {
     expect(first.content[0]?.text).toMatch(/ran search/);
   });
 
+  it("shares one pooled connection between concurrent calls to the same server", async () => {
+    const connections = [
+      { outcome: "connected" as const, tools: [TOOL] },
+      { outcome: "connected" as const, tools: [TOOL] },
+      { outcome: "connected" as const, tools: [TOOL] },
+    ];
+    const { service, created } = await createService({}, connections);
+    const { serverId } = await addServer(service);
+    await service.refreshTools({ serverId });
+    await grantAccess(service, "wisp-a", serverId);
+    const definition = await firstDefinition(service);
+    const connectionsBefore = created.length;
+
+    // Pi executes tool calls from one turn in parallel by default.
+    await Promise.all([definition.execute("c1", { query: "a" }), definition.execute("c2", { query: "b" })]);
+
+    expect(created.length - connectionsBefore).toBe(1);
+    expect(created.at(-1)?.calls.map(({ args }) => args.query)).toEqual(["a", "b"]);
+    service.dispose();
+    expect(created.at(-1)?.closed).toBe(1);
+  });
+
   it("blocks dispatch when the reviewed tool changed while approval was pending", async () => {
     const changedTool = { ...TOOL, description: "Search things, differently" };
     let refreshDuringApproval: (() => Promise<void>) | undefined;
