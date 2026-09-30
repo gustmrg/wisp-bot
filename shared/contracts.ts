@@ -358,9 +358,10 @@ export interface WispApi {
   createConversation(request: CreateConversationRequest): Promise<BackendResult<ConversationStateView>>;
   updateConversation(request: UpdateConversationRequest): Promise<BackendResult<ConversationStateView>>;
   deleteConversation(request: DeleteConversationRequest): Promise<BackendResult<ConversationStateView>>;
-  appendConversationMessage(request: AppendConversationMessageRequest): Promise<BackendResult<ConversationStateView>>;
-  answerConversationPrompt(request: AnswerConversationPromptRequest): Promise<BackendResult<ConversationStateView>>;
-  markConversationRead(request: MarkConversationReadRequest): Promise<BackendResult<ConversationStateView>>;
+  // Single-chat changes return only that chat; structural changes above return the full state.
+  appendConversationMessage(request: AppendConversationMessageRequest): Promise<BackendResult<Chat>>;
+  answerConversationPrompt(request: AnswerConversationPromptRequest): Promise<BackendResult<Chat>>;
+  markConversationRead(request: MarkConversationReadRequest): Promise<BackendResult<Chat>>;
   /** Pushes a chat after the backend persists agent-driven changes to it (replies, statuses, context notices). */
   subscribeToConversationChanges(listener: (chat: Chat) => void): () => void;
   getSessionReport(request: ConversationRequest): Promise<BackendResult<WispSessionReport | null>>;

@@ -1,11 +1,30 @@
-import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, readdir, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { DatabaseSync } from "node:sqlite";
 
 import { describe, expect, it } from "vitest";
 
 import { ConversationRepository } from "../electron/backend/conversation-repository.js";
-import type { Chat } from "../shared/conversations.js";
+import { CONVERSATION_STORAGE_POLICY } from "../electron/backend/storage-policy.js";
+import type { Chat, Message } from "../shared/conversations.js";
+
+async function reload(directory: string): Promise<ConversationRepository> {
+  const repository = new ConversationRepository({ dataDirectory: directory });
+  await repository.load();
+  return repository;
+}
+
+/** Raw rows as stored, bypassing the repository. */
+function storedRecord(directory: string, id: string): Record<string, unknown> {
+  const db = new DatabaseSync(path.join(directory, "conversations.sqlite"));
+  try {
+    const row = db.prepare("SELECT record FROM conversations WHERE id = ?").get(id);
+    return JSON.parse(String(row?.record)) as Record<string, unknown>;
+  } finally {
+    db.close();
+  }
+}
 
 function chat(id: string, circle = false): Chat {
   const base = {
@@ -133,20 +152,49 @@ describe("ConversationRepository", () => {
 
     await repository.load();
 
-    expect(repository.getAgentContext("first")).toEqual(
-      expect.objectContaining({
-        sessionId: "stable-app-session",
-        piSessionId: null,
-        piSessionFile: null,
-      }),
-    );
-    const persisted = JSON.parse(await readFile(path.join(directory, "conversations.json"), "utf8")) as {
-      schemaVersion: number;
-    };
-    expect(persisted.schemaVersion).toBe(4);
-    const backup = (await readdir(directory)).find((name) => name.includes(".schema-v1-backup-"));
+    const upgraded = expect.objectContaining({
+      sessionId: "stable-app-session",
+      piSessionId: null,
+      piSessionFile: null,
+    });
+    expect(repository.getAgentContext("first")).toEqual(upgraded);
+    expect((await reload(directory)).getAgentContext("first")).toEqual(upgraded);
+    // The JSON store is kept, untouched, as the migration backup.
+    const files = await readdir(directory);
+    expect(files).not.toContain("conversations.json");
+    const backup = files.find((name) => name.startsWith("conversations.json.migrated-"));
     expect(backup).toBeDefined();
     expect(JSON.parse(await readFile(path.join(directory, backup!), "utf8"))).toMatchObject({ schemaVersion: 1 });
+  });
+
+  it("imports the legacy JSON store only once", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "wisp-migrate-once-"));
+    const legacy = (ids: string[]) =>
+      JSON.stringify({
+        schemaVersion: 4,
+        initialized: true,
+        conversations: Object.fromEntries(
+          ids.map((id) => [
+            id,
+            {
+              chat: chat(id),
+              sessionId: `${id}-session`,
+              piSessionId: null,
+              piSessionFile: null,
+              createdAt: "2026-08-30T12:00:00.000Z",
+              updatedAt: "2026-08-30T12:00:00.000Z",
+            },
+          ]),
+        ),
+      });
+    await writeFile(path.join(directory, "conversations.json"), legacy(["first"]), "utf8");
+    await reload(directory);
+    // An older build started afterwards could write a new JSON store; SQLite stays authoritative.
+    await writeFile(path.join(directory, "conversations.json"), legacy(["stale"]), "utf8");
+
+    const restarted = await reload(directory);
+
+    expect(Object.keys(restarted.getChats())).toEqual(["first"]);
   });
 
   it("removes previously persisted bundled demo conversations", async () => {
@@ -182,12 +230,7 @@ describe("ConversationRepository", () => {
     await repository.load();
 
     expect(repository.getChats()).toEqual({ custom: expect.objectContaining({ id: "custom" }) });
-    const persisted = JSON.parse(await readFile(path.join(directory, "conversations.json"), "utf8")) as {
-      schemaVersion: number;
-      conversations: Record<string, unknown>;
-    };
-    expect(persisted.schemaVersion).toBe(4);
-    expect(persisted.conversations).not.toHaveProperty("chief");
+    expect((await reload(directory)).getChats()).toEqual({ custom: expect.objectContaining({ id: "custom" }) });
   });
 
   it("upserts stable message IDs without duplicating streamed lifecycle updates", async () => {
@@ -265,13 +308,11 @@ describe("ConversationRepository", () => {
     await repository.load();
 
     expect(repository.getChats().chief).toMatchObject({ kind: "wisp", systemRole: "chief" });
-    const persisted = JSON.parse(await readFile(statePath, "utf8")) as {
-      schemaVersion: number;
-      conversations: Record<string, { chat: Record<string, unknown> }>;
-    };
-    expect(persisted.schemaVersion).toBe(4);
-    expect(persisted.conversations.chief?.chat).not.toHaveProperty("isCircle");
-    expect(persisted.conversations.chief?.chat).toHaveProperty("kind", "wisp");
+    const stored = storedRecord(directory, "chief") as { chat: Record<string, unknown> };
+    expect(stored.chat).not.toHaveProperty("isCircle");
+    expect(stored.chat).toHaveProperty("kind", "wisp");
+    // Messages live in their own rows, not inside the conversation record.
+    expect(stored.chat).not.toHaveProperty("messages");
   });
 
   it("archives workspace and session data on explicit deletion", async () => {
@@ -385,10 +426,14 @@ describe("ConversationRepository", () => {
     await repository.initialize({ first: chat("first") });
     const before = repository.list();
     const { sessionDirectory } = repository.getAgentContext("first");
-    // Renaming the temporary file over a directory fails, so every persist rejects.
-    const statePath = path.join(directory, "conversations.json");
-    await rm(statePath);
-    await mkdir(path.join(statePath, "blocker"), { recursive: true });
+    // Every write to either table now aborts, as a full disk or I/O error would.
+    const saboteur = new DatabaseSync(path.join(directory, "conversations.sqlite"));
+    saboteur.exec(`
+      CREATE TRIGGER fail_message_insert BEFORE INSERT ON messages BEGIN SELECT RAISE(ABORT, 'disk full'); END;
+      CREATE TRIGGER fail_message_update BEFORE UPDATE ON messages BEGIN SELECT RAISE(ABORT, 'disk full'); END;
+      CREATE TRIGGER fail_conversation_update BEFORE UPDATE ON conversations BEGIN SELECT RAISE(ABORT, 'disk full'); END;
+    `);
+    saboteur.close();
 
     await expect(
       repository.appendMessage("first", { id: "reply", type: "incoming", text: "Not saved" }),
@@ -405,5 +450,101 @@ describe("ConversationRepository", () => {
     await expect(repository.update("first", { kind: "wisp", name: "Renamed" })).rejects.toBeDefined();
 
     expect(repository.list()).toEqual(before);
+    // Nothing partial reached the disk either.
+    expect((await reload(directory)).list()).toEqual(before);
+  });
+
+  it("restores every kind of change after a restart", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "wisp-round-trip-"));
+    const repository = new ConversationRepository({ dataDirectory: directory });
+    await repository.load();
+    await repository.initialize({ first: chat("first"), second: chat("second") });
+    await repository.create({ ...chat("circle", true), memberIds: ["first", "second"] });
+    await repository.appendMessage("first", { id: "reply", type: "incoming", text: "Streaming", status: "streaming" });
+    await repository.appendMessage("first", { id: "reply", type: "incoming", text: "Done", status: "complete" });
+    await repository.appendMessage("first", {
+      id: "question",
+      type: "prompt",
+      question: "Proceed?",
+      options: [{ key: "yes", label: "Yes" }],
+    });
+    await repository.answerPrompt("first", "question", "yes");
+    await repository.update("first", { kind: "wisp", name: "Renamed", unread: true });
+    await repository.markRead("first");
+    await repository.setModelOverride("first", { providerId: "openrouter", modelId: "openai/gpt-oss-120b" });
+    const { sessionDirectory } = repository.getAgentContext("first");
+    await repository.savePiSessionIdentity("first", {
+      sessionId: "pi-first",
+      sessionFile: path.join(sessionDirectory, "history.jsonl"),
+    });
+    await repository.delete("second");
+    await repository.close();
+
+    const restarted = await reload(directory);
+
+    expect(restarted.list()).toEqual(repository.list());
+    expect(restarted.getChats().circle).toMatchObject({ memberIds: ["first"] });
+    expect(restarted.getChats().first?.messages.map(({ id }) => id)).toEqual(["first:message:0", "reply", "question"]);
+  });
+
+  it("keeps the newest messages when a conversation reaches its limit", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "wisp-message-limit-"));
+    const limit = CONVERSATION_STORAGE_POLICY.maxMessagesPerConversation;
+    const full: Message[] = Array.from({ length: limit }, (_, index) => ({
+      id: `m${index}`,
+      type: "incoming",
+      text: `Message ${index}`,
+    }));
+    const repository = new ConversationRepository({ dataDirectory: directory });
+    await repository.initialize({ first: { ...chat("first"), messages: full } });
+
+    await repository.appendMessage("first", { id: "newest", type: "outgoing", text: "Still sends" });
+
+    for (const current of [repository, await reload(directory)]) {
+      const ids = current.getChats().first!.messages.map(({ id }) => id);
+      expect(ids).toHaveLength(limit);
+      expect(ids[0]).toBe("m1");
+      expect(ids.at(-1)).toBe("newest");
+    }
+  });
+
+  it("gives duplicate legacy message IDs unique replacements instead of dropping messages", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "wisp-duplicate-ids-"));
+    const repository = new ConversationRepository({ dataDirectory: directory });
+    const messages: Message[] = [
+      { id: "same", type: "incoming", text: "First" },
+      { id: "same", type: "incoming", text: "Second" },
+    ];
+    await repository.initialize({ first: { ...chat("first"), messages } });
+
+    const restored = (await reload(directory)).getChats().first!.messages;
+
+    expect(restored.map((message) => ("text" in message ? message.text : ""))).toEqual(["First", "Second"]);
+    expect(new Set(restored.map(({ id }) => id)).size).toBe(2);
+  });
+
+  it.each([
+    ["not a database", async (file: string) => writeFile(file, "definitely not sqlite", "utf8")],
+    [
+      "from a newer app version",
+      async (file: string) => {
+        const db = new DatabaseSync(file);
+        db.exec("CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL) STRICT;");
+        db.exec("INSERT INTO meta VALUES ('store_version', '99')");
+        db.close();
+      },
+    ],
+  ])("preserves a database that is %s and starts fresh", async (_label, prepare) => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "wisp-corrupt-db-"));
+    await prepare(path.join(directory, "conversations.sqlite"));
+    const repository = new ConversationRepository({ dataDirectory: directory });
+
+    await repository.load();
+
+    expect(repository.didRecoverCorruptState()).toBe(true);
+    expect(repository.isInitialized()).toBe(false);
+    expect((await readdir(directory)).some((name) => name.startsWith("conversations.sqlite.corrupt-"))).toBe(true);
+    await repository.initialize({ first: chat("first") });
+    expect(Object.keys((await reload(directory)).getChats())).toEqual(["first"]);
   });
 });

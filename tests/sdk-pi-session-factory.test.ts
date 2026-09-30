@@ -32,9 +32,9 @@ const sdk = vi.hoisted(() => {
     createAgentSession: vi.fn(async () => ({ session })),
     loaderOptions: [] as unknown[],
     loaderReload: vi.fn(async () => undefined),
-    open: vi.fn(() => ({ kind: "open", appendCustomEntry: vi.fn() })),
+    open: vi.fn(() => ({ kind: "open", getEntries: () => [], appendCustomEntry: vi.fn() })),
     continueRecent: vi.fn(() => ({ kind: "continue", getSessionFile: () => undefined })),
-    createSession: vi.fn(() => ({ kind: "create", appendCustomEntry: vi.fn() })),
+    createSession: vi.fn(() => ({ kind: "create", getEntries: () => [], appendCustomEntry: vi.fn() })),
     settings: vi.fn(() => ({ kind: "settings" })),
     toolExecute: vi.fn(async () => ({ content: [{ type: "text", text: "ok" }], details: {} })),
   };
@@ -254,6 +254,41 @@ describe("SdkPiSessionFactory", () => {
       write.execute("tool-6", { path: "broken-escape/new.txt", content: "blocked" }, undefined, undefined, {}),
     ).rejects.toMatchObject({ code: "invalid_request" });
     expect(sdk.toolExecute).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not start the model run once the send was stopped during preparation", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "wisp-pi-stopped-"));
+    const context: ConversationAgentContext = {
+      conversationId: "researcher",
+      sessionId: "stopped-session",
+      name: "Researcher",
+      label: "Research",
+      description: "Search sources.",
+      workspaceDirectory: directory,
+      sessionDirectory: directory,
+      configDirectory: path.join(directory, "config"),
+      piSessionId: null,
+      piSessionFile: null,
+    };
+    const runtime = {
+      hasConfiguredAuth: () => true,
+      getModel: () => ({ provider: "provider", id: "model" }),
+    } as unknown as ModelRuntimeLike;
+    const session = await new SdkPiSessionFactory(runtime).create(context, {
+      providerId: "provider",
+      modelId: "model",
+    });
+    const stopped = new AbortController();
+    stopped.abort();
+
+    await expect(
+      session.prompt("Too late", { expandPromptTemplates: false, signal: stopped.signal }),
+    ).rejects.toMatchObject({ name: "AbortError" });
+    expect(sdk.session.prompt).not.toHaveBeenCalled();
+
+    await session.prompt("Go ahead", { expandPromptTemplates: false, signal: new AbortController().signal });
+    // Pi receives its own options only; the cancellation signal stays in the adapter.
+    expect(sdk.session.prompt).toHaveBeenCalledWith("Go ahead", { expandPromptTemplates: false });
   });
 
   it("activates only registered tools granted to this Wisp and refreshes grants before prompts and after reload", async () => {

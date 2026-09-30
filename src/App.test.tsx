@@ -106,20 +106,19 @@ function createApi(initialState: ConversationStateView): WispApi {
     updateConversation: vi.fn(async () => current()),
     deleteConversation: vi.fn(async () => current()),
     appendConversationMessage: vi.fn(async ({ conversationId, message }) => {
-      const chat = state.chats[conversationId];
-      if (chat) {
-        state = {
-          ...state,
-          chats: {
-            ...state.chats,
-            [conversationId]: { ...chat, messages: [...chat.messages, message] },
-          },
-        };
-      }
-      return current();
+      const chat = state.chats[conversationId]!;
+      const updated = { ...chat, messages: [...chat.messages, message] };
+      state = { ...state, chats: { ...state.chats, [conversationId]: updated } };
+      return { ok: true as const, value: updated };
     }),
-    answerConversationPrompt: vi.fn(async () => current()),
-    markConversationRead: vi.fn(async () => current()),
+    answerConversationPrompt: vi.fn(async ({ conversationId }) => ({
+      ok: true as const,
+      value: state.chats[conversationId]!,
+    })),
+    markConversationRead: vi.fn(async ({ conversationId }) => ({
+      ok: true as const,
+      value: state.chats[conversationId]!,
+    })),
     subscribeToConversationChanges: vi.fn(() => () => undefined),
     getUsageReport: vi.fn(),
     getSessionReport: vi.fn(async () => ({ ok: true as const, value: null })),

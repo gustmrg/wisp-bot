@@ -9,7 +9,10 @@ offered; keys are encrypted at rest and never returned to the renderer (see
 
 **Settings → AI Model** manages the default model and encrypted, shared
 provider keys. Providers with API-key authentication and models in Pi's
-installed catalog are available.
+installed catalog are available. The app starts from the catalog cached on disk
+and refreshes it over the network in the background (for at most ten seconds),
+so an offline or slow connection never delays the window; a refresh failure is
+shown in these settings.
 
 ## Models per Wisp
 

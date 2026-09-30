@@ -33,15 +33,15 @@ interface ModelServiceOptions {
   runtime: ModelRuntimeLike;
   settings: AiSettingsStore;
   credentials: EncryptedCredentialStore;
+  /** The runtime's catalog refresh; absent for runtimes that cannot refresh. */
+  refresh?: (options: { allowNetwork: boolean; signal: AbortSignal }) => Promise<ModelRefreshResult>;
 }
 
 export interface CreateModelServiceOptions {
   dataDirectory: string;
   encryption: EncryptionService;
-  /** Refresh model catalogs over the network on startup. Defaults to true. */
+  /** Allow the runtime to use the network for model catalogs. Defaults to true. */
   allowModelNetwork?: boolean;
-  /** Upper bound for the startup network refresh. Defaults to 10 seconds. */
-  modelRefreshTimeoutMs?: number;
 }
 
 function describeRefreshFailure(result: ModelRefreshResult): string | null {
@@ -58,12 +58,16 @@ export class ModelService {
   private readonly runtime: ModelRuntimeLike;
   private readonly settings: AiSettingsStore;
   private readonly credentials: EncryptedCredentialStore;
+  private readonly refreshRuntime: ModelServiceOptions["refresh"];
   private catalogRefreshError: string | null = null;
+  private networkRefreshError: string | null = null;
+  private networkRefresh: AbortController | undefined;
 
   constructor(options: ModelServiceOptions) {
     this.runtime = options.runtime;
     this.settings = options.settings;
     this.credentials = options.credentials;
+    this.refreshRuntime = options.refresh;
   }
 
   static async create(options: CreateModelServiceOptions): Promise<ModelService> {
@@ -86,28 +90,39 @@ export class ModelService {
       runtime,
       credentials,
       settings: new AiSettingsStore(path.join(options.dataDirectory, "ai-settings.json")),
+      refresh: (refreshOptions) => runtime.refresh(refreshOptions),
     });
-    // Restore saved credentials and cached catalog entries offline before any
-    // network work: the availability pass that populates hasConfiguredAuth() must
-    // not run on the refresh signal below, or a refresh timeout would make saved
-    // keys look unconfigured.
-    service.captureRefreshFailures(await runtime.refresh({ allowNetwork: false }));
-    if (options.allowModelNetwork ?? true) {
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), options.modelRefreshTimeoutMs ?? MODEL_REFRESH_TIMEOUT_MS);
-      try {
-        service.captureRefreshFailures(await runtime.refresh({ allowNetwork: true, signal: controller.signal }));
-      } finally {
-        clearTimeout(timeout);
-      }
-    }
+    // Restore saved credentials and cached catalog entries offline, so the app
+    // is usable without waiting on the network. The availability pass that
+    // populates hasConfiguredAuth() must complete here, not on a network signal
+    // that may time out, or saved keys would look unconfigured.
+    service.catalogRefreshError = describeRefreshFailure(await runtime.refresh({ allowNetwork: false }));
     return service;
   }
 
-  private captureRefreshFailures(result: ModelRefreshResult): void {
-    const failure = describeRefreshFailure(result);
-    if (!failure) return;
-    this.catalogRefreshError = this.catalogRefreshError ? `${this.catalogRefreshError}; ${failure}` : failure;
+  /**
+   * Updates model catalogs over the network, bounded by `timeoutMs`, and
+   * reports failures in the settings view. Startup runs this in the background
+   * after the window opens, on top of the offline catalog `create` loaded.
+   */
+  async refreshCatalog(timeoutMs = MODEL_REFRESH_TIMEOUT_MS): Promise<void> {
+    if (!this.refreshRuntime) return;
+    this.networkRefresh?.abort();
+    const controller = new AbortController();
+    this.networkRefresh = controller;
+    const timeout = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      const result = await this.refreshRuntime({ allowNetwork: true, signal: controller.signal });
+      this.networkRefreshError = describeRefreshFailure(result);
+    } finally {
+      clearTimeout(timeout);
+      if (this.networkRefresh === controller) this.networkRefresh = undefined;
+    }
+  }
+
+  /** Stops an in-flight network refresh; used on shutdown. */
+  dispose(): void {
+    this.networkRefresh?.abort();
   }
 
   async getView(): Promise<AiSettingsView> {
@@ -139,8 +154,8 @@ export class ModelService {
       savedSelection && this.isValidSelection(savedSelection) && credentialProviders.has(savedSelection.providerId)
         ? savedSelection
         : null;
-    const errors = [this.catalogRefreshError, this.runtime.getError()].filter((error): error is string =>
-      Boolean(error),
+    const errors = [this.catalogRefreshError, this.networkRefreshError, this.runtime.getError()].filter(
+      (error): error is string => Boolean(error),
     );
     return {
       selection,

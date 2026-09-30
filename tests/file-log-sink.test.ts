@@ -80,3 +80,43 @@ describe("FileLogSink", () => {
     });
   });
 });
+
+describe("FileLogSink under concurrent writes", () => {
+  // A slower first append lets later lines overtake it unless writes are serialized.
+  function unevenFs() {
+    const stub = fsStub();
+    let appends = 0;
+    const append = stub.fs.appendFile;
+    stub.fs.appendFile = async (filePath, data) => {
+      const delay = appends++ === 0 ? 20 : 0;
+      await new Promise((resolve) => setTimeout(resolve, delay));
+      await append(filePath, data);
+    };
+    return stub;
+  }
+
+  it("keeps lines in the order they were logged", async () => {
+    const { files, fs } = unevenFs();
+    const sink = new FileLogSink("/data/logs", { fs });
+
+    sink.info("first");
+    sink.info("second");
+    sink.warn("third");
+
+    await vi.waitFor(() => expect(files.get("/data/logs/backend.log")).toBe("first\nsecond\nthird\n"));
+  });
+
+  it("rotates once and keeps every line when a burst crosses the size cap", async () => {
+    const { files, fs } = unevenFs();
+    const sink = new FileLogSink("/data/logs", { fs, maxFileBytes: 10 });
+
+    sink.info("aaaa");
+    sink.info("bbbb");
+    sink.info("cccc");
+
+    await vi.waitFor(() => {
+      expect(files.get("/data/logs/backend.log.1")).toBe("aaaa\nbbbb\n");
+      expect(files.get("/data/logs/backend.log")).toBe("cccc\n");
+    });
+  });
+});

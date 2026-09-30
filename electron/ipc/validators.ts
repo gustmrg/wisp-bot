@@ -145,10 +145,10 @@ export function parseDeleteConversationRequest(value: unknown): DeleteConversati
 
 export function parseAppendConversationMessageRequest(value: unknown): AppendConversationMessageRequest {
   const request = asRecord(value);
-  return {
-    conversationId: parseId(request.conversationId),
-    message: normalizeMessage(request.message),
-  };
+  const message = normalizeMessage(request.message);
+  // The renderer saves only what the user wrote; replies and notices come from the backend.
+  if (message.type !== "outgoing") throw invalidRequest();
+  return { conversationId: parseId(request.conversationId), message: { ...message, type: "outgoing" } };
 }
 
 export function parseAnswerConversationPromptRequest(value: unknown): AnswerConversationPromptRequest {

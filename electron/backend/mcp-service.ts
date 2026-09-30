@@ -584,6 +584,8 @@ export class McpService {
       this.assertLive();
       throw new WispBackendError("configuration_required", "Sign in to this connection before use.");
     }
+    // The listener was only needed so the redirect URL existed during connect.
+    provider?.releaseCallbackServer();
     this.pool.set(key, { connection, generation: server.configGeneration, ...(provider ? { provider } : {}) });
     return connection;
   }

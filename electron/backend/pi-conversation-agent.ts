@@ -8,6 +8,7 @@ import type {
   AgentSessionEvent,
   InlineExtension,
   ModelRuntime,
+  SessionManager,
   ToolDefinition,
 } from "@earendil-works/pi-coding-agent" with { "resolution-mode": "import" };
 
@@ -49,7 +50,8 @@ export interface PiSessionLike {
   readonly toolRevision: string;
   subscribe(listener: (event: PiAgentEvent) => void): () => void;
   manageContext?(command: ContextCommand): Promise<ContextView>;
-  prompt(text: string, options?: { expandPromptTemplates?: boolean }): Promise<void>;
+  /** Must not start the model run once `signal` is aborted. */
+  prompt(text: string, options?: { expandPromptTemplates?: boolean; signal?: AbortSignal }): Promise<void>;
   abort(): Promise<void>;
   waitForIdle(): Promise<void>;
   reload(): Promise<void>;
@@ -255,15 +257,7 @@ export class SdkPiSessionFactory implements PiSessionFactory {
       session.dispose();
       throw error;
     }
-    sessionManager.appendCustomEntry("wisp:runtime", { version: VERSION });
-    // Persist safe tool identity with session history so old calls remain
-    // identifiable in reports even after the server is removed.
-    if (snapshot?.metadata.length) {
-      sessionManager.appendCustomEntry("wisp:mcp-tools", {
-        version: 1,
-        tools: snapshot.metadata.map(({ name, label }) => ({ name, label })),
-      });
-    }
+    recordSessionIdentity(sessionManager, VERSION, snapshot?.metadata ?? []);
     const unsubscribeTelemetry = session.subscribe((event) => {
       if (event.type === "compaction_end" && event.result && !event.aborted) continuity?.renewed("compacted");
       if (event.type === "auto_retry_start" || event.type === "auto_retry_end") {
@@ -353,6 +347,8 @@ export class PiConversationAgent implements ConversationAgent {
   private started = false;
   private disposed = false;
   private sending = false;
+  // Aborted by a Stop that arrives while a send is still preparing.
+  private sendCancellation: AbortController | null = null;
   private configured = false;
   private modelMutation: Promise<void> = Promise.resolve();
 
@@ -380,17 +376,36 @@ export class PiConversationAgent implements ConversationAgent {
     }
     if (this.sending)
       throw new WispBackendError("invalid_request", "The conversation is already processing a request.");
-    await this.ensureToolsCurrent();
-    await this.enqueueModelMutation(() => this.openSession());
-    if (!this.session || !this.configured) {
-      throw new WispBackendError("configuration_required", "Choose a provider and model before sending a message.");
-    }
     this.sending = true;
-    this.translator.begin(request);
+    const cancellation = new AbortController();
+    this.sendCancellation = cancellation;
     try {
-      await this.session.prompt(request.text, { expandPromptTemplates: false });
+      await this.ensureToolsCurrent();
+      await this.enqueueModelMutation(() => this.openSession());
+      if (!this.session || !this.configured) {
+        throw new WispBackendError("configuration_required", "Choose a provider and model before sending a message.");
+      }
+      this.translator.begin(request);
+      await this.promptSession(this.session, request, cancellation.signal);
+    } finally {
+      this.sending = false;
+      this.sendCancellation = null;
+      await this.applyPendingModel();
+    }
+  }
+
+  private async promptSession(session: PiSessionLike, request: SendMessageRequest, signal: AbortSignal): Promise<void> {
+    try {
+      signal.throwIfAborted();
+      await session.prompt(request.text, { expandPromptTemplates: false, signal });
       this.translator.finish();
     } catch (error) {
+      if (signal.aborted) {
+        // Stopped before the model ran, or while it ran: a cancellation, not a failure.
+        this.translator.markCancelled();
+        this.translator.finish();
+        return;
+      }
       const detail = sanitizeErrorMessage(error instanceof Error ? error.message : String(error));
       const backendError: BackendError =
         error instanceof WispBackendError
@@ -403,9 +418,6 @@ export class PiConversationAgent implements ConversationAgent {
       this.translator.reportError(backendError);
       this.translator.finish();
       throw new WispBackendError(backendError.code, backendError.message, backendError.retryable);
-    } finally {
-      this.sending = false;
-      await this.applyPendingModel();
     }
   }
 
@@ -425,10 +437,19 @@ export class PiConversationAgent implements ConversationAgent {
 
   async abort(): Promise<void> {
     this.assertNotDisposed();
-    if (!this.session || this.session.isIdle) return;
-    this.translator.markCancelled();
-    await this.session.abort();
-    this.translator.finish();
+    const session = this.session;
+    if (session && !session.isIdle) {
+      this.sendCancellation?.abort();
+      this.translator.markCancelled();
+      await session.abort();
+      this.translator.finish();
+      return;
+    }
+    if (!this.sending) return;
+    // Still preparing: opening the session, reloading tools, or renewing
+    // context before the prompt. Cancel it; send() reports the cancellation.
+    this.sendCancellation?.abort();
+    await session?.abort();
   }
 
   updateContext(context: ConversationAgentContext): Promise<void> {
@@ -731,9 +752,11 @@ function adaptSession(
     toolRevision,
     subscribe: (listener) => session.subscribe((event: AgentSessionEvent) => listener(event as PiAgentEvent)),
     manageContext: (command) => continuity.command(command),
-    prompt: async (text, options) => {
+    prompt: async (text, { signal, ...options } = {}) => {
       await continuity.beforePrompt();
       await refreshTools();
+      // A Stop during the preparation above must not start the model run.
+      signal?.throwIfAborted();
       await session.prompt(text, options);
     },
     abort: () => {
@@ -755,6 +778,42 @@ function adaptSession(
 }
 
 const defaultToolRevision = "no-integrations";
+
+type SessionIdentityLog = Pick<SessionManager, "getEntries" | "appendCustomEntry">;
+
+/**
+ * Records the Pi runtime version and safe MCP tool identities in the session
+ * history, so reports can name old tool calls even after their server is
+ * removed. Sessions open on every launch and tool change, so an entry is
+ * appended only when it adds something: reports read the latest runtime
+ * version and the union of recorded tool names.
+ */
+function recordSessionIdentity(
+  sessionManager: SessionIdentityLog,
+  version: string,
+  tools: ReadonlyArray<{ name: string; label: string }>,
+): void {
+  let recordedVersion: unknown;
+  const recordedTools = new Set<string>();
+  for (const entry of sessionManager.getEntries()) {
+    if (entry.type !== "custom") continue;
+    const data = entry.data as { version?: unknown; tools?: unknown } | undefined;
+    if (entry.customType === "wisp:runtime") recordedVersion = data?.version;
+    if (entry.customType === "wisp:mcp-tools" && Array.isArray(data?.tools)) {
+      for (const tool of data.tools as Array<{ name?: unknown }>) {
+        if (typeof tool?.name === "string") recordedTools.add(tool.name);
+      }
+    }
+  }
+  if (recordedVersion !== version) sessionManager.appendCustomEntry("wisp:runtime", { version });
+  const newTools = tools.filter(({ name }) => !recordedTools.has(name));
+  if (newTools.length > 0) {
+    sessionManager.appendCustomEntry("wisp:mcp-tools", {
+      version: 1,
+      tools: newTools.map(({ name, label }) => ({ name, label })),
+    });
+  }
+}
 
 function assertAllowedTools(
   session: Pick<AgentSession, "getActiveToolNames" | "setActiveToolsByName">,

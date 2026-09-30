@@ -103,6 +103,17 @@ stores for model keys, plugin keys, and MCP secrets. Unpackaged dev runs
 redirect that directory to `wisp-bot-dev` (override with the `WISP_DATA_DIR`
 environment variable) so testing never touches the installed app's data.
 
+Conversations live in `backend/conversations.sqlite` (Node's built-in
+`node:sqlite`, write-ahead logging), with one row per conversation and one per
+message, so a change writes only its own rows. The main process keeps the
+stores in memory as its read model and adopts a change only after its
+transaction commits. Each conversation keeps its newest 10,000 messages; older
+ones leave the displayed transcript, while the Wisp's Pi session keeps its own
+full history. On first run the legacy `conversations.json` store is imported
+once and kept beside the database as `conversations.json.migrated-<time>`. A
+database that cannot be read, or that a newer app version wrote, is set aside
+as `conversations.sqlite.corrupt-<time>` and a fresh store starts.
+
 Theme, timezone, microphone selection, launch-at-login, notification-sound,
 and related UI preferences are stored locally in the renderer through the
 validated persistence layer. See

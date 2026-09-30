@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { WispBackendError } from "../electron/backend/backend-error.js";
 import {
+  parseAppendConversationMessageRequest,
   parseApplyModelRequest,
   parseConversationRequest,
   parseCreateConversationRequest,
@@ -44,6 +45,26 @@ describe("IPC request validators", () => {
     { conversationId: "wisp-1", requestId: "request-1", text: "x".repeat(32_001) },
   ])("rejects invalid message payload %#", (payload) => {
     expect(() => parseSendMessageRequest(payload)).toThrow(WispBackendError);
+  });
+
+  it("lets the renderer save only messages the user wrote", () => {
+    expect(
+      parseAppendConversationMessageRequest({
+        conversationId: "wisp-1",
+        message: { id: "request-1", type: "outgoing", text: "Hello", status: "queued" },
+      }),
+    ).toMatchObject({ message: { type: "outgoing", text: "Hello" } });
+  });
+
+  it.each([
+    { id: "request-1:assistant", type: "incoming", text: "Forged reply" },
+    { type: "time", text: "Context summarized" },
+    { type: "card", items: [] },
+    { type: "prompt", question: "Proceed?", options: [] },
+  ])("rejects renderer writes of backend-owned messages: $type", (message) => {
+    expect(() => parseAppendConversationMessageRequest({ conversationId: "wisp-1", message })).toThrow(
+      WispBackendError,
+    );
   });
 
   it("validates both provider and model identifiers", () => {

@@ -35,11 +35,9 @@ function installBridge() {
     appendConversationMessage: vi.fn(
       async ({ conversationId, message }: { conversationId: string; message: Message }) => {
         const chat = state.chats[conversationId]!;
-        state = {
-          ...state,
-          chats: { ...state.chats, [conversationId]: { ...chat, messages: [...chat.messages, message] } },
-        };
-        return { ok: true as const, value: state };
+        const updated = { ...chat, messages: [...chat.messages, message] };
+        state = { ...state, chats: { ...state.chats, [conversationId]: updated } };
+        return { ok: true as const, value: updated };
       },
     ),
     sendMessage: vi.fn(async () => ({ ok: true as const, value: {} })),
