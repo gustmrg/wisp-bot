@@ -37,6 +37,8 @@ export interface ChatBase {
   systemRole?: "chief";
   isActive?: boolean;
   unread?: boolean;
+  /** Time of the newest message (ISO 8601), maintained by the backend. */
+  lastActivityAt?: string;
 }
 
 export interface WispChat extends ChatBase {

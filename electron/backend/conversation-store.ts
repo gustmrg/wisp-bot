@@ -3,9 +3,71 @@ import { DatabaseSync, type StatementSync } from "node:sqlite";
 import type { Message } from "../../shared/conversations.js";
 import type { ConversationRecord } from "./workspace-actions.js";
 
-// Bumped only when the table layout changes; record contents are versioned and
-// validated separately by the repository.
-const STORE_VERSION = "1";
+// The layout this build writes, and the oldest layout reader that can still
+// read and write a database it produced. Additive changes (new tables, indexes,
+// or triggers that older writers keep consistent) raise only STORE_VERSION, so
+// a downgrade keeps working. Record contents are validated by the repository.
+const STORE_VERSION = 2;
+const MIN_READER_VERSION = 1;
+
+export const MESSAGE_PAGE_SIZE = 50;
+/** Messages on each side of the target in an "around" page. */
+export const MESSAGE_PAGE_RADIUS = 25;
+
+/**
+ * The searchable text of a message body, derived in SQL so the index stays
+ * consistent whichever build writes the row. Must match `messageSearchFragments`
+ * in `shared/message-search.ts`; a test checks every message type.
+ */
+function searchTextOf(body: string): string {
+  return `COALESCE(CASE json_extract(${body}, '$.type')
+    WHEN 'incoming' THEN json_extract(${body}, '$.text')
+    WHEN 'outgoing' THEN json_extract(${body}, '$.text')
+    WHEN 'card' THEN (
+      SELECT group_concat(json_extract(value, '$.label') || ' — ' || json_extract(value, '$.text'), ' ')
+      FROM json_each(${body}, '$.items'))
+    WHEN 'prompt' THEN concat_ws(' ',
+      json_extract(${body}, '$.question'),
+      (SELECT group_concat(json_extract(value, '$.key') || ' ' || json_extract(value, '$.label'), ' ')
+        FROM json_each(${body}, '$.options')),
+      json_extract(${body}, '$.answer'))
+  END, '')`;
+}
+
+// Trigram tokens give substring matching, case- and accent-insensitively, for
+// queries of 3 or more characters. The table is contentless (the text already
+// lives in the message rows) and keyed by the message row's seq.
+const SEARCH_SCHEMA = `
+  CREATE VIRTUAL TABLE IF NOT EXISTS message_search USING fts5(
+    text, content = '', contentless_delete = 1, tokenize = 'trigram remove_diacritics 1'
+  );
+  CREATE TRIGGER IF NOT EXISTS message_search_insert AFTER INSERT ON messages BEGIN
+    INSERT INTO message_search (rowid, text) VALUES (new.seq, ${searchTextOf("new.body")});
+  END;
+  CREATE TRIGGER IF NOT EXISTS message_search_update AFTER UPDATE OF body ON messages BEGIN
+    DELETE FROM message_search WHERE rowid = old.seq;
+    INSERT INTO message_search (rowid, text) VALUES (new.seq, ${searchTextOf("new.body")});
+  END;
+  CREATE TRIGGER IF NOT EXISTS message_search_delete AFTER DELETE ON messages BEGIN
+    DELETE FROM message_search WHERE rowid = old.seq;
+  END;
+`;
+
+// Version 1 had no search index and no stored last activity.
+const UPGRADE_FROM_VERSION_1 = `
+  INSERT INTO message_search (message_search) VALUES ('delete-all');
+  INSERT INTO message_search (rowid, text) SELECT seq, ${searchTextOf("body")} FROM messages;
+  UPDATE conversations SET record = json_set(record, '$.chat.lastActivityAt', (
+    SELECT json_extract(body, '$.createdAt') FROM messages
+    WHERE conversation_id = conversations.id AND json_extract(body, '$.createdAt') IS NOT NULL
+    ORDER BY seq DESC LIMIT 1))
+  WHERE EXISTS (
+    SELECT 1 FROM messages
+    WHERE conversation_id = conversations.id AND json_extract(body, '$.createdAt') IS NOT NULL);
+  UPDATE conversations SET record = json_set(record, '$.chat.lastActivityAt', json_extract(record, '$.chat.timestamp'))
+  WHERE json_extract(record, '$.chat.lastActivityAt') IS NULL
+    AND json_extract(record, '$.chat.timestamp') GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]T*';
+`;
 
 /** Raw persisted state, validated by the repository before use. */
 export interface StoredConversationState {
@@ -13,11 +75,30 @@ export interface StoredConversationState {
   conversations: Record<string, unknown>;
 }
 
+export type StoredPageRequest =
+  | { page: "latest" }
+  | { page: "older"; before: number }
+  | { page: "newer"; after: number }
+  | { page: "around"; messageId: string };
+
+/** Raw message bodies (oldest first) with row-position cursors. */
+export interface StoredMessagePage {
+  messages: ReadonlyArray<unknown>;
+  olderCursor: number | null;
+  newerCursor: number | null;
+}
+
+interface MessageRow {
+  seq: number;
+  body: unknown;
+}
+
 /**
  * SQLite persistence for conversations: one row per conversation and one row
  * per message, so a change writes only the rows it touches instead of the whole
  * store. Rowids preserve insertion order for both conversations and messages,
- * and upserts keep a row's position. All writes run inside `transaction`.
+ * and upserts keep a row's position. A full-text index over messages is kept
+ * in sync by triggers. All writes run inside `transaction`.
  */
 export class ConversationStore {
   private readonly putConversationStatement: StatementSync;
@@ -25,7 +106,15 @@ export class ConversationStore {
   private readonly deleteOldestMessagesStatement: StatementSync;
   private readonly deleteConversationStatement: StatementSync;
   private readonly setMetaStatement: StatementSync;
+  private readonly raiseVersionStatement: StatementSync;
   private readonly getMetaStatement: StatementSync;
+  private readonly newestStatement: StatementSync;
+  private readonly olderStatement: StatementSync;
+  private readonly newerStatement: StatementSync;
+  private readonly fromStatement: StatementSync;
+  private readonly hasOlderStatement: StatementSync;
+  private readonly hasNewerStatement: StatementSync;
+  private readonly messageStatement: StatementSync;
 
   private constructor(private readonly db: DatabaseSync) {
     this.putConversationStatement = db.prepare(
@@ -41,10 +130,29 @@ export class ConversationStore {
     this.setMetaStatement = db.prepare(
       "INSERT INTO meta (key, value) VALUES (?, ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value",
     );
+    // Version markers only rise: an older build writing here must not lower them.
+    this.raiseVersionStatement = db.prepare(
+      "INSERT INTO meta (key, value) VALUES (?, ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value WHERE CAST(value AS INTEGER) < CAST(excluded.value AS INTEGER)",
+    );
     this.getMetaStatement = db.prepare("SELECT value FROM meta WHERE key = ?");
+    const select = "SELECT seq, body FROM messages WHERE conversation_id = ?";
+    this.newestStatement = db.prepare(`${select} ORDER BY seq DESC LIMIT ?`);
+    this.olderStatement = db.prepare(`${select} AND seq < ? ORDER BY seq DESC LIMIT ?`);
+    this.newerStatement = db.prepare(`${select} AND seq > ? ORDER BY seq ASC LIMIT ?`);
+    this.fromStatement = db.prepare(`${select} AND seq >= ? ORDER BY seq ASC LIMIT ?`);
+    this.hasOlderStatement = db.prepare(
+      "SELECT EXISTS (SELECT 1 FROM messages WHERE conversation_id = ? AND seq < ?) AS found",
+    );
+    this.hasNewerStatement = db.prepare(
+      "SELECT EXISTS (SELECT 1 FROM messages WHERE conversation_id = ? AND seq > ?) AS found",
+    );
+    this.messageStatement = db.prepare(`${select} AND id = ?`);
   }
 
-  /** Opens or creates the database. Throws if the file is not a usable SQLite database. */
+  /**
+   * Opens or creates the database and upgrades an older layout in place.
+   * Throws if the file is not a usable SQLite database.
+   */
   static open(filePath: string): ConversationStore {
     const db = new DatabaseSync(filePath);
     try {
@@ -69,8 +177,11 @@ export class ConversationStore {
           UNIQUE (conversation_id, id)
         ) STRICT;
         CREATE INDEX IF NOT EXISTS messages_by_conversation ON messages (conversation_id, seq);
+        ${SEARCH_SCHEMA}
       `);
-      return new ConversationStore(db);
+      const store = new ConversationStore(db);
+      store.upgrade();
+      return store;
     } catch (error) {
       db.close();
       throw error;
@@ -87,8 +198,12 @@ export class ConversationStore {
   }
 
   read(): StoredConversationState {
-    // A newer app version may have changed the layout; never guess at it.
-    if (this.getMeta("store_version") !== STORE_VERSION) throw new Error("Unsupported conversation store version.");
+    // A newer app version may have changed the layout in a way this build
+    // cannot read or write safely; never guess at it.
+    const minReader = Number(this.getMeta("min_reader_version") ?? this.getMeta("store_version"));
+    if (!Number.isInteger(minReader) || minReader > STORE_VERSION) {
+      throw new Error("Unsupported conversation store version.");
+    }
     const conversations: Record<string, { chat: { messages: unknown[] } }> = {};
     for (const row of this.db.prepare("SELECT id, record FROM conversations ORDER BY seq").iterate()) {
       const record = JSON.parse(String(row.record)) as { chat: Record<string, unknown> };
@@ -100,11 +215,63 @@ export class ConversationStore {
     return { initialized: this.getMeta("initialized") === "1", conversations };
   }
 
+  /** One page of a conversation's messages; see `MessagePageRequest`. */
+  readPage(conversationId: string, request: StoredPageRequest): StoredMessagePage {
+    switch (request.page) {
+      case "latest": {
+        const rows = this.rows(this.newestStatement, conversationId, MESSAGE_PAGE_SIZE + 1);
+        const page = rows.slice(0, MESSAGE_PAGE_SIZE).reverse();
+        return this.page(page, rows.length > MESSAGE_PAGE_SIZE, false);
+      }
+      case "older": {
+        const rows = this.rows(this.olderStatement, conversationId, request.before, MESSAGE_PAGE_SIZE + 1);
+        const page = rows.slice(0, MESSAGE_PAGE_SIZE).reverse();
+        const newestSeq = page.at(-1)?.seq ?? request.before - 1;
+        return this.page(page, rows.length > MESSAGE_PAGE_SIZE, this.hasNewer(conversationId, newestSeq), {
+          emptyOlder: request.before,
+          emptyNewer: newestSeq,
+        });
+      }
+      case "newer": {
+        const rows = this.rows(this.newerStatement, conversationId, request.after, MESSAGE_PAGE_SIZE + 1);
+        const page = rows.slice(0, MESSAGE_PAGE_SIZE);
+        const oldestSeq = page[0]?.seq ?? request.after + 1;
+        return this.page(page, this.hasOlder(conversationId, oldestSeq), rows.length > MESSAGE_PAGE_SIZE, {
+          emptyOlder: oldestSeq,
+          emptyNewer: request.after,
+        });
+      }
+      case "around": {
+        const target = this.rows(this.messageStatement, conversationId, request.messageId)[0];
+        if (!target) return { messages: [], olderCursor: null, newerCursor: null };
+        const before = this.rows(this.olderStatement, conversationId, target.seq, MESSAGE_PAGE_RADIUS + 1);
+        const after = this.rows(this.fromStatement, conversationId, target.seq, MESSAGE_PAGE_RADIUS + 2);
+        const page = [...before.slice(0, MESSAGE_PAGE_RADIUS).reverse(), ...after.slice(0, MESSAGE_PAGE_RADIUS + 1)];
+        return this.page(page, before.length > MESSAGE_PAGE_RADIUS, after.length > MESSAGE_PAGE_RADIUS + 1);
+      }
+    }
+  }
+
+  /** A stored message body by ID, through the (conversation, message ID) index. */
+  getMessage(conversationId: string, messageId: string): unknown {
+    return this.rows(this.messageStatement, conversationId, messageId)[0]?.body;
+  }
+
+  /** The text the search index holds for a message; used to keep SQL and TypeScript in agreement. */
+  searchTextFor(message: Message): string {
+    // Bound once and referenced by name: Node 22 cannot bind one numbered parameter used many times.
+    const row = this.db
+      .prepare(`SELECT ${searchTextOf("source.body")} AS text FROM (SELECT ? AS body) AS source`)
+      .get(JSON.stringify(message));
+    return String(row?.text ?? "");
+  }
+
   /** Runs `write` atomically; any exception rolls back every statement in it. */
   transaction(write: () => void): void {
     this.db.exec("BEGIN IMMEDIATE");
     try {
-      this.setMetaStatement.run("store_version", STORE_VERSION);
+      this.raiseVersionStatement.run("store_version", String(STORE_VERSION));
+      this.raiseVersionStatement.run("min_reader_version", String(MIN_READER_VERSION));
       write();
       this.db.exec("COMMIT");
     } catch (error) {
@@ -150,6 +317,42 @@ export class ConversationStore {
 
   close(): void {
     if (this.db.isOpen) this.db.close();
+  }
+
+  private upgrade(): void {
+    if (!this.isEstablished() || Number(this.getMeta("store_version")) >= STORE_VERSION) return;
+    this.transaction(() => this.db.exec(UPGRADE_FROM_VERSION_1));
+  }
+
+  private rows(statement: StatementSync, ...parameters: Array<string | number>): MessageRow[] {
+    return statement.all(...parameters).map((row) => ({ seq: Number(row.seq), body: JSON.parse(String(row.body)) }));
+  }
+
+  /**
+   * Builds a page with cursors. An empty page still needs cursors that point
+   * past where it would have been, so `positions` supplies them.
+   */
+  private page(
+    rows: ReadonlyArray<MessageRow>,
+    hasOlder: boolean,
+    hasNewer: boolean,
+    positions?: { emptyOlder: number; emptyNewer: number },
+  ): StoredMessagePage {
+    const oldest = rows[0]?.seq ?? positions?.emptyOlder;
+    const newest = rows.at(-1)?.seq ?? positions?.emptyNewer;
+    return {
+      messages: rows.map(({ body }) => body),
+      olderCursor: hasOlder && oldest !== undefined ? oldest : null,
+      newerCursor: hasNewer && newest !== undefined ? newest : null,
+    };
+  }
+
+  private hasOlder(conversationId: string, seq: number): boolean {
+    return Number(this.hasOlderStatement.get(conversationId, seq)?.found) === 1;
+  }
+
+  private hasNewer(conversationId: string, seq: number): boolean {
+    return Number(this.hasNewerStatement.get(conversationId, seq)?.found) === 1;
   }
 
   private getMeta(key: string): string | undefined {

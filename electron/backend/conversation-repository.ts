@@ -15,7 +15,12 @@ import {
 } from "./conversation-normalizer.js";
 import { ConversationStore } from "./conversation-store.js";
 import { CONVERSATION_STORAGE_POLICY } from "./storage-policy.js";
-import { applyWorkspaceAction, type ConversationRecord, type WorkspaceActionStatus } from "./workspace-actions.js";
+import {
+  applyWorkspaceAction,
+  withLastActivity,
+  type ConversationRecord,
+  type WorkspaceActionStatus,
+} from "./workspace-actions.js";
 
 // Version of the conversation record format. The legacy JSON store also wrote
 // versions 1–3, which are upgraded when that store is migrated to SQLite.
@@ -215,7 +220,7 @@ export class ConversationRepository {
           Object.values(normalized).map((chat) => [
             chat.id,
             {
-              chat,
+              chat: withLastActivity(chat),
               sessionId: chat.kind === "circle" ? null : normalizeConversationId(this.createId()),
               modelOverride: null,
               piSessionId: null,
@@ -234,7 +239,7 @@ export class ConversationRepository {
 
   async create(chatValue: unknown, modelOverride?: ModelSelection | null): Promise<void> {
     await this.enqueue(async () => {
-      const chat = normalizeChat(chatValue);
+      const chat = withLastActivity(normalizeChat(chatValue));
       const normalizedOverride = normalizeSelection(modelOverride);
       if (chat.kind === "circle" && modelOverride) {
         throw new WispBackendError("invalid_request", "Circles do not own agent sessions.");
@@ -304,23 +309,7 @@ export class ConversationRepository {
   }
 
   async appendMessage(conversationId: string, message: Message): Promise<void> {
-    await this.enqueue(async () => {
-      const messageId = message.id ?? this.createId();
-      const result = applyWorkspaceAction(this.state.conversations, {
-        type: "append-message",
-        conversationId,
-        message: { ...message, id: messageId },
-        updatedAt: this.now().toISOString(),
-      });
-      this.throwForActionStatus(result.status);
-      const record = result.records[conversationId]!;
-      const stored = record.chat.messages.find(({ id }) => id === messageId)!;
-      await this.commit({ ...this.state, conversations: result.records }, (store) => {
-        store.putConversation(record);
-        store.deleteOldestMessages(conversationId, result.droppedOldestMessages ?? 0);
-        store.putMessages(conversationId, [stored]);
-      });
-    });
+    await this.enqueue(() => this.applyAppend(conversationId, message));
   }
 
   async answerPrompt(conversationId: string, messageId: string, answer: string): Promise<void> {
@@ -411,6 +400,24 @@ export class ConversationRepository {
     this.store = undefined;
   }
 
+  private async applyAppend(conversationId: string, message: Message): Promise<void> {
+    const messageId = message.id ?? this.createId();
+    const result = applyWorkspaceAction(this.state.conversations, {
+      type: "append-message",
+      conversationId,
+      message: { ...message, id: messageId },
+      updatedAt: this.now().toISOString(),
+    });
+    this.throwForActionStatus(result.status);
+    const record = result.records[conversationId]!;
+    const stored = record.chat.messages.find(({ id }) => id === messageId)!;
+    await this.commit({ ...this.state, conversations: result.records }, (store) => {
+      store.putConversation(record);
+      store.deleteOldestMessages(conversationId, result.droppedOldestMessages ?? 0);
+      store.putMessages(conversationId, [stored]);
+    });
+  }
+
   private commitRecord(record: ConversationRecord): Promise<void> {
     return this.commit(
       { ...this.state, conversations: { ...this.state.conversations, [record.chat.id]: record } },
@@ -496,6 +503,15 @@ export class ConversationRepository {
     }
     const persistedSchemaVersion = this.schemaVersionOf(parsed);
     if (persistedSchemaVersion === 1 || persistedSchemaVersion === 2) await this.removeBundledDemoConversations();
+    this.state = {
+      ...this.state,
+      conversations: Object.fromEntries(
+        Object.entries(this.state.conversations).map(([id, record]) => [
+          id,
+          { ...record, chat: withLastActivity(record.chat) },
+        ]),
+      ),
+    };
     await this.ensureAllDirectories();
     const state = this.state;
     store.transaction(() => store.replaceAll(state));

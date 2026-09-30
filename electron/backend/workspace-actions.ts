@@ -41,6 +41,34 @@ export interface WorkspaceActionResult {
   droppedOldestMessages?: number;
 }
 
+const ISO_TIMESTAMP_PATTERN = /^\d{4}-\d{2}-\d{2}T/;
+
+/**
+ * The chat's last activity: its newest timestamped message, else its own ISO
+ * timestamp, else unknown. Mirrors the migration backfill in
+ * `conversation-store.ts`.
+ */
+export function lastActivityOf(chat: Pick<Chat, "messages" | "timestamp">): string | undefined {
+  for (let index = chat.messages.length - 1; index >= 0; index -= 1) {
+    const createdAt = chat.messages[index]?.createdAt;
+    if (createdAt) return createdAt;
+  }
+  return ISO_TIMESTAMP_PATTERN.test(chat.timestamp) ? chat.timestamp : undefined;
+}
+
+/** A chat with its derived last activity, replacing any value it arrived with. */
+export function withLastActivity<T extends Chat>(chat: T): T {
+  const { lastActivityAt: _ignored, ...rest } = chat;
+  const lastActivityAt = lastActivityOf(chat);
+  return (lastActivityAt ? { ...rest, lastActivityAt } : rest) as T;
+}
+
+// Later of two ISO times. Writes can arrive out of order (a delivery status
+// update after a newer message), so activity never moves backwards.
+function laterOf(current: string | undefined, candidate: string): string {
+  return current && Date.parse(current) >= Date.parse(candidate) ? current : candidate;
+}
+
 export function applyWorkspaceAction(records: WorkspaceRecords, action: WorkspaceAction): WorkspaceActionResult {
   switch (action.type) {
     case "create": {
@@ -114,7 +142,12 @@ export function applyWorkspaceAction(records: WorkspaceRecords, action: Workspac
       return {
         ...replaceRecord(records, action.conversationId, {
           ...record,
-          chat: { ...chat, preview: "text" in message ? message.text : chat.preview, timestamp: action.updatedAt },
+          chat: {
+            ...chat,
+            preview: "text" in message ? message.text : chat.preview,
+            timestamp: action.updatedAt,
+            lastActivityAt: laterOf(chat.lastActivityAt, message.createdAt ?? action.updatedAt),
+          },
           updatedAt: action.updatedAt,
         }),
         droppedOldestMessages: droppedOldest,

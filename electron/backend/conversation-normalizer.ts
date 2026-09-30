@@ -187,6 +187,7 @@ export function normalizeChat(value: unknown): Chat {
       : {}),
     ...(typeof raw.isActive === "boolean" ? { isActive: raw.isActive } : {}),
     ...(typeof raw.unread === "boolean" ? { unread: raw.unread } : {}),
+    ...(raw.lastActivityAt === undefined ? {} : { lastActivityAt: timestamp(raw.lastActivityAt) }),
   };
   if (kind === "circle") {
     if (
