@@ -375,12 +375,13 @@ export class PiConversationAgent implements ConversationAgent {
 
   async send(request: SendMessageRequest): Promise<void> {
     this.assertReady(request.conversationId);
-    if (!this.session || !this.configured) {
+    if (!this.configured) {
       throw new WispBackendError("configuration_required", "Choose a provider and model before sending a message.");
     }
     if (this.sending)
       throw new WispBackendError("invalid_request", "The conversation is already processing a request.");
     await this.ensureToolsCurrent();
+    await this.enqueueModelMutation(() => this.openSession());
     if (!this.session || !this.configured) {
       throw new WispBackendError("configuration_required", "Choose a provider and model before sending a message.");
     }
@@ -410,11 +411,16 @@ export class PiConversationAgent implements ConversationAgent {
 
   async manageContext(command: ContextCommand): Promise<ContextView> {
     this.assertNotDisposed();
-    if (!this.session?.manageContext || !this.configured)
+    if (!this.configured)
       throw new WispBackendError("configuration_required", "Configure a model before managing context.");
-    if (command.action !== "get" && (this.sending || !this.session.isIdle))
+    if (command.action !== "get" && (this.sending || (this.session && !this.session.isIdle)))
       throw new WispBackendError("invalid_request", "Wait for the Wisp to finish before changing its context.");
-    return this.enqueueModelMutation(() => this.session!.manageContext!(command));
+    return this.enqueueModelMutation(async () => {
+      const session = await this.openSession();
+      if (!session.manageContext)
+        throw new WispBackendError("configuration_required", "Configure a model before managing context.");
+      return session.manageContext(command);
+    });
   }
 
   async abort(): Promise<void> {
@@ -458,23 +464,14 @@ export class PiConversationAgent implements ConversationAgent {
 
   private async applyModelInternal(selection: ModelSelection): Promise<void> {
     this.assertNotDisposed();
+    // Resolving checks credentials and availability now, so the Wisp reports
+    // ready immediately; the Pi session itself is opened on first use.
     const model = this.sessionFactory.resolveModel(selection);
     if (!this.session) {
-      this.context.onContextRenewed = (kind, createdAt) =>
-        this.emit({
-          type: "conversation_context_renewed",
-          conversationId: this.context.conversationId,
-          kind,
-          createdAt,
-        });
-      const session = await this.sessionFactory.create(this.context, selection);
-      if (this.disposed) {
-        session.dispose();
-        return;
-      }
-      this.attachSession(session);
       this.configured = true;
       this.appliedSelection = { ...selection };
+      this.pendingModel = null;
+      this.pendingSelection = null;
       this.publishModel();
       return;
     }
@@ -525,6 +522,33 @@ export class PiConversationAgent implements ConversationAgent {
 
   private applyPendingModel(): Promise<void> {
     return this.enqueueModelMutation(() => this.applyPendingModelInternal());
+  }
+
+  /**
+   * Opens the Pi session for the applied model if it is not open yet. Opening
+   * loads the full session history, so it is deferred from startup to the first
+   * message or context request. Must run inside the model mutation queue.
+   */
+  private async openSession(): Promise<PiSessionLike> {
+    this.assertNotDisposed();
+    if (this.session) return this.session;
+    if (!this.configured || !this.appliedSelection) {
+      throw new WispBackendError("configuration_required", "Choose a provider and model before sending a message.");
+    }
+    this.context.onContextRenewed = (kind, createdAt) =>
+      this.emit({
+        type: "conversation_context_renewed",
+        conversationId: this.context.conversationId,
+        kind,
+        createdAt,
+      });
+    const session = await this.sessionFactory.create(this.context, this.appliedSelection);
+    if (this.disposed) {
+      session.dispose();
+      this.assertNotDisposed();
+    }
+    this.attachSession(session);
+    return session;
   }
 
   private attachSession(session: PiSessionLike): void {
