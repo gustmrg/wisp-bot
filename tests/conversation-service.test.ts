@@ -206,6 +206,39 @@ describe("ConversationService", () => {
     await service.dispose();
   });
 
+  it("shows a reply that is still streaming on the newest page only", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "wisp-service-pages-"));
+    const repository = new ConversationRepository({ dataDirectory: directory });
+    let service: ConversationService;
+    const registry = new AgentRegistry(
+      new FakeConversationAgentFactory({ latencyMs: 300, responseFor: () => "A long streamed reply" }),
+      (event) => service.handleAgentEvent(event),
+    );
+    service = new ConversationService(repository, registry);
+    await service.start({ providerId: "test", modelId: "test" });
+    const history = Array.from({ length: 60 }, (_, index) => ({
+      id: `h${index}`,
+      type: "incoming" as const,
+      text: `${index}`,
+    }));
+    await service.initialize({ one: { ...chat("one"), messages: history } });
+    await service.appendMessage("one", { id: "request-1", type: "outgoing", text: "Go", status: "queued" });
+
+    registry.dispatch({ conversationId: "one", requestId: "request-1", text: "Go" });
+    await vi.waitFor(() =>
+      expect(service.getState().chats.one?.messages.at(-1)).toMatchObject({
+        id: "request-1:assistant",
+        status: "streaming",
+      }),
+    );
+
+    const latest = await service.getMessagePage({ conversationId: "one", page: "latest" });
+    expect(latest.messages.at(-1)).toMatchObject({ id: "request-1:assistant", status: "streaming" });
+    const older = await service.getMessagePage({ conversationId: "one", page: "older", cursor: latest.olderCursor! });
+    expect(older.messages.map(({ id }) => id)).not.toContain("request-1:assistant");
+    await service.dispose();
+  });
+
   it("refuses to let a renderer write overwrite a reply", async () => {
     const directory = await mkdtemp(path.join(os.tmpdir(), "wisp-service-owned-"));
     const repository = new ConversationRepository({ dataDirectory: directory });

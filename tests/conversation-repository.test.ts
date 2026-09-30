@@ -547,4 +547,62 @@ describe("ConversationRepository", () => {
     await repository.initialize({ first: chat("first") });
     expect(Object.keys((await reload(directory)).getChats())).toEqual(["first"]);
   });
+
+  it("keeps each chat's last activity, never moving it backwards", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "wisp-last-activity-"));
+    const repository = new ConversationRepository({ dataDirectory: directory });
+    const earlier = { id: "earlier", type: "incoming" as const, text: "A", createdAt: "2026-09-10T10:00:00.000Z" };
+    await repository.initialize({
+      first: { ...chat("first"), messages: [earlier] },
+      silent: { ...chat("silent"), messages: [], timestamp: "2026-09-05T00:00:00.000Z" },
+      legacy: { ...chat("legacy"), messages: [{ type: "incoming", text: "Untimed" }], timestamp: "Yesterday" },
+    });
+    expect(repository.getChats().first?.lastActivityAt).toBe(earlier.createdAt);
+    expect(repository.getChats().silent?.lastActivityAt).toBe("2026-09-05T00:00:00.000Z");
+    expect(repository.getChats().legacy).not.toHaveProperty("lastActivityAt");
+
+    await repository.appendMessage("first", {
+      id: "newer",
+      type: "outgoing",
+      text: "B",
+      createdAt: "2026-09-12T08:00:00.000Z",
+    });
+    // A late status update for an older message must not move activity back.
+    await repository.appendMessage("first", { ...earlier, status: "complete" });
+
+    expect(repository.getChats().first?.lastActivityAt).toBe("2026-09-12T08:00:00.000Z");
+    expect((await reload(directory)).getChats().first?.lastActivityAt).toBe("2026-09-12T08:00:00.000Z");
+  });
+
+  it("reads pages through the repository and reports missing conversations and messages", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "wisp-repository-pages-"));
+    const repository = new ConversationRepository({ dataDirectory: directory });
+    await repository.initialize({ first: chat("first") });
+
+    await expect(repository.getMessagePage({ conversationId: "first", page: "latest" })).resolves.toEqual({
+      messages: [expect.objectContaining({ id: "first:message:0", text: "Hello", status: "complete" })],
+      olderCursor: null,
+      newerCursor: null,
+    });
+    await expect(repository.getMessagePage({ conversationId: "missing", page: "latest" })).rejects.toMatchObject({
+      code: "not_found",
+    });
+    await expect(
+      repository.getMessagePage({ conversationId: "first", page: "around", messageId: "gone" }),
+    ).rejects.toMatchObject({ code: "not_found" });
+  });
+
+  it("updates delivery status only for stored outgoing messages", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "wisp-outgoing-status-"));
+    const repository = new ConversationRepository({ dataDirectory: directory });
+    await repository.initialize({ first: chat("first") });
+    await repository.appendMessage("first", { id: "request-1", type: "outgoing", text: "Hi", status: "queued" });
+
+    await expect(repository.setOutgoingStatus("first", "request-1", "complete")).resolves.toBe(true);
+    await expect(repository.setOutgoingStatus("first", "first:message:0", "failed")).resolves.toBe(false);
+    await expect(repository.setOutgoingStatus("first", "missing", "failed")).resolves.toBe(false);
+
+    await expect(repository.getMessage("first", "request-1")).resolves.toMatchObject({ status: "complete" });
+    await expect(repository.getMessage("first", "first:message:0")).resolves.toMatchObject({ status: "complete" });
+  });
 });

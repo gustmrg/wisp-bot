@@ -120,6 +120,11 @@ function createApi(initialState: ConversationStateView): WispApi {
       value: state.chats[conversationId]!,
     })),
     subscribeToConversationChanges: vi.fn(() => () => undefined),
+    getConversationMessages: vi.fn(async () => ({
+      ok: true as const,
+      value: { messages: [], olderCursor: null, newerCursor: null },
+    })),
+    searchMessages: vi.fn(async () => ({ ok: true as const, value: [] })),
     getUsageReport: vi.fn(),
     getSessionReport: vi.fn(async () => ({ ok: true as const, value: null })),
     getToolPolicy: vi.fn(async () => ({ ok: true as const, value: { autoReview: true, rules: [] } })),
