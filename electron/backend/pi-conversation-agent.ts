@@ -8,6 +8,7 @@ import type {
   AgentSessionEvent,
   InlineExtension,
   ModelRuntime,
+  SessionManager,
   ToolDefinition,
 } from "@earendil-works/pi-coding-agent" with { "resolution-mode": "import" };
 
@@ -256,15 +257,7 @@ export class SdkPiSessionFactory implements PiSessionFactory {
       session.dispose();
       throw error;
     }
-    sessionManager.appendCustomEntry("wisp:runtime", { version: VERSION });
-    // Persist safe tool identity with session history so old calls remain
-    // identifiable in reports even after the server is removed.
-    if (snapshot?.metadata.length) {
-      sessionManager.appendCustomEntry("wisp:mcp-tools", {
-        version: 1,
-        tools: snapshot.metadata.map(({ name, label }) => ({ name, label })),
-      });
-    }
+    recordSessionIdentity(sessionManager, VERSION, snapshot?.metadata ?? []);
     const unsubscribeTelemetry = session.subscribe((event) => {
       if (event.type === "compaction_end" && event.result && !event.aborted) continuity?.renewed("compacted");
       if (event.type === "auto_retry_start" || event.type === "auto_retry_end") {
@@ -785,6 +778,42 @@ function adaptSession(
 }
 
 const defaultToolRevision = "no-integrations";
+
+type SessionIdentityLog = Pick<SessionManager, "getEntries" | "appendCustomEntry">;
+
+/**
+ * Records the Pi runtime version and safe MCP tool identities in the session
+ * history, so reports can name old tool calls even after their server is
+ * removed. Sessions open on every launch and tool change, so an entry is
+ * appended only when it adds something: reports read the latest runtime
+ * version and the union of recorded tool names.
+ */
+function recordSessionIdentity(
+  sessionManager: SessionIdentityLog,
+  version: string,
+  tools: ReadonlyArray<{ name: string; label: string }>,
+): void {
+  let recordedVersion: unknown;
+  const recordedTools = new Set<string>();
+  for (const entry of sessionManager.getEntries()) {
+    if (entry.type !== "custom") continue;
+    const data = entry.data as { version?: unknown; tools?: unknown } | undefined;
+    if (entry.customType === "wisp:runtime") recordedVersion = data?.version;
+    if (entry.customType === "wisp:mcp-tools" && Array.isArray(data?.tools)) {
+      for (const tool of data.tools as Array<{ name?: unknown }>) {
+        if (typeof tool?.name === "string") recordedTools.add(tool.name);
+      }
+    }
+  }
+  if (recordedVersion !== version) sessionManager.appendCustomEntry("wisp:runtime", { version });
+  const newTools = tools.filter(({ name }) => !recordedTools.has(name));
+  if (newTools.length > 0) {
+    sessionManager.appendCustomEntry("wisp:mcp-tools", {
+      version: 1,
+      tools: newTools.map(({ name, label }) => ({ name, label })),
+    });
+  }
+}
 
 function assertAllowedTools(
   session: Pick<AgentSession, "getActiveToolNames" | "setActiveToolsByName">,
