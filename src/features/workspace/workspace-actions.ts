@@ -1,7 +1,7 @@
-import type { ChatCollection, ChatId } from "@/chat-data";
+import type { ChatId, ChatSummaryCollection } from "@/chat-data";
 import { getDefaultChatId } from "@/lib/chat-schema";
 
-export type ChatIdFactory = (chats: ChatCollection) => ChatId;
+export type ChatIdFactory = (chats: ChatSummaryCollection) => ChatId;
 
 export function createChatIdFactory(createId: () => string = () => crypto.randomUUID()): ChatIdFactory {
   const issuedIds = new Set<ChatId>();
@@ -17,6 +17,6 @@ export function createChatIdFactory(createId: () => string = () => crypto.random
   };
 }
 
-export function selectActiveChatId(chats: ChatCollection, currentId: ChatId): ChatId {
+export function selectActiveChatId(chats: ChatSummaryCollection, currentId: ChatId): ChatId {
   return chats[currentId] ? currentId : getDefaultChatId(chats);
 }

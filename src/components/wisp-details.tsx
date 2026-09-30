@@ -1,7 +1,7 @@
 import { WispContextSettings } from "@/components/wisp-context-settings";
 import { useState, type ReactNode } from "react";
 
-import type { WispChat, WispChatChanges } from "@/chat-data";
+import type { WispChatChanges, WispSummary } from "@/chat-data";
 import { WispModelSettings } from "@/components/wisp-model-settings";
 import { WispPluginSettings } from "@/components/wisp-plugin-settings";
 import { WispSettingsFields } from "@/components/wisp-settings-fields";
@@ -13,7 +13,7 @@ import { cn } from "@/lib/utils";
 const TAB_ORDER = ["general", "model", "access", "usage"] as const;
 
 interface WispDetailsProps {
-  chat: WispChat;
+  chat: WispSummary;
   generalActions?: ReactNode;
   onChange: (changes: WispChatChanges) => Promise<boolean> | void;
 }

@@ -1,4 +1,4 @@
-import type { WispChat, WispChatChanges } from "@/chat-data";
+import type { WispChatChanges, WispSummary } from "@/chat-data";
 import { AvatarEditor } from "@/components/avatar-editor";
 import { SettingsCard, SettingsField, SettingsRow, SettingsRowCopy } from "@/components/settings/settings-primitives";
 import { ToggleSwitch } from "@/components/ui/toggle-switch";
@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 
 interface WispSettingsFieldsProps {
-  settings: WispChat;
+  settings: WispSummary;
   onChange: (changes: Omit<WispChatChanges, "kind">) => void;
 }
 

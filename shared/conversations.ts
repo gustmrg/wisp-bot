@@ -81,6 +81,11 @@ export type Message = TextMessage | TimeMessage | CardMessage | PromptMessage;
 
 export type Chat = WispChat | CircleChat;
 
+/** A conversation without its transcript: what lists, headers, and settings show. */
+export type WispSummary = Omit<WispChat, "messages">;
+export type CircleSummary = Omit<CircleChat, "messages">;
+export type ChatSummary = WispSummary | CircleSummary;
+
 type NewChatBase = Pick<ChatBase, "name" | "label" | "description" | "notifyOnUpdatesEnabled">;
 
 export type NewWisp = NewChatBase & Pick<WispChat, "color" | "avatarImage" | "shape"> & { kind: "wisp" };
@@ -97,6 +102,7 @@ export type CircleChatChanges = SharedChatChanges & Partial<Pick<CircleChat, "me
 export type ChatChanges = WispChatChanges | CircleChatChanges;
 
 export type ChatCollection = Record<ChatId, Chat>;
+export type ChatSummaryCollection = Record<ChatId, ChatSummary>;
 
 export type ManagedConversationStatus = "configuration_required" | "idle" | "working" | "disposed";
 

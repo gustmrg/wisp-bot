@@ -1,4 +1,4 @@
-import type { Chat, Message } from "../../shared/conversations";
+import type { ChatSummary, Message } from "../../shared/conversations";
 
 const DAY_MS = 86_400_000;
 const MINUTE_MS = 60_000;
@@ -42,15 +42,13 @@ export function withDateDividers(messages: ReadonlyArray<Message>, now: Date = n
   return result;
 }
 
-// The most recent timestamped message, falling back to the chat's own ISO timestamp. Older
-// stores saved display strings such as "Now" there; those carry no date and are ignored.
-export function chatActivityDate(chat: Pick<Chat, "messages" | "timestamp">): Date | null {
-  for (let index = chat.messages.length - 1; index >= 0; index -= 1) {
-    const date = messageDate(chat.messages[index]!);
-    if (date) return date;
-  }
-  if (!ISO_TIMESTAMP_PATTERN.test(chat.timestamp)) return null;
-  const date = new Date(chat.timestamp);
+// The chat's last activity as the backend records it, falling back to the chat's own ISO
+// timestamp. Older stores saved display strings such as "Now" there; those carry no date and
+// are ignored.
+export function chatActivityDate(chat: Pick<ChatSummary, "lastActivityAt" | "timestamp">): Date | null {
+  const value = chat.lastActivityAt ?? (ISO_TIMESTAMP_PATTERN.test(chat.timestamp) ? chat.timestamp : undefined);
+  if (!value) return null;
+  const date = new Date(value);
   return Number.isNaN(date.getTime()) ? null : date;
 }
 

@@ -4,8 +4,11 @@ export type {
   ChatChanges,
   ChatCollection,
   ChatId,
+  ChatSummary,
+  ChatSummaryCollection,
   CircleChat,
   CircleChatChanges,
+  CircleSummary,
   Message,
   MessageStatus,
   NewChat,
@@ -14,4 +17,5 @@ export type {
   WispChat,
   WispChatChanges,
   WispShape,
+  WispSummary,
 } from "../shared/conversations";

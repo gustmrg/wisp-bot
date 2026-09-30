@@ -1,11 +1,11 @@
-import type { WispChat } from "@/chat-data";
+import type { WispSummary } from "@/chat-data";
 import { CircleMemberPicker } from "@/components/circle-member-picker";
 import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 
 interface CreateCircleFormProps {
   name: string;
-  availableWisps: ReadonlyArray<WispChat>;
+  availableWisps: ReadonlyArray<WispSummary>;
   memberIds: ReadonlyArray<string>;
   onNameChange: (name: string) => void;
   onMemberIdsChange: (memberIds: string[]) => void;

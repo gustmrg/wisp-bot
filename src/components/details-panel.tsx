@@ -1,7 +1,7 @@
 import { useEffect, useRef, type PointerEvent as ReactPointerEvent } from "react";
 import { CheckIcon, ChevronLeftIcon, Share2Icon, XIcon } from "lucide-react";
 
-import type { Chat, ChatChanges, ChatCollection } from "@/chat-data";
+import type { ChatChanges, ChatSummary, ChatSummaryCollection } from "@/chat-data";
 import { CircleDetails } from "@/components/circle-details";
 import { WispDetails } from "@/components/wisp-details";
 import { Button } from "@/components/ui/button";
@@ -23,8 +23,8 @@ import { cn } from "@/lib/utils";
 
 interface DetailsPanelProps {
   mobile?: boolean;
-  chat: Chat;
-  chats: ChatCollection;
+  chat: ChatSummary;
+  chats: ChatSummaryCollection;
   width: number;
   onChange: (changes: ChatChanges) => Promise<boolean> | void;
   onClose: () => void;

@@ -2,12 +2,12 @@ import { useState } from "react";
 import type { FormEvent, KeyboardEvent } from "react";
 import { ArrowUpIcon, MicIcon, SquareIcon } from "lucide-react";
 
-import type { Chat, ManagedConversationStatus } from "../../shared/conversations";
+import type { ChatSummary, ManagedConversationStatus } from "../../shared/conversations";
 
 export interface ChatComposerProps {
   autoFocus?: boolean;
   enterToSend?: boolean;
-  chat: Chat;
+  chat: ChatSummary;
   status: ManagedConversationStatus;
   activity?: string;
   error?: string;
