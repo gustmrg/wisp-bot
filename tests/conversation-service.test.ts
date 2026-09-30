@@ -9,6 +9,7 @@ import type { ConversationAgentContext, ConversationAgentFactory } from "../elec
 import { ConversationRepository } from "../electron/backend/conversation-repository.js";
 import { ConversationService } from "../electron/backend/conversation-service.js";
 import { FakeConversationAgent, FakeConversationAgentFactory } from "../electron/backend/fake-conversation-agent.js";
+import type { SequencedConversationAgentEvent } from "../shared/contracts.js";
 import type { Chat } from "../shared/conversations.js";
 
 function chat(id: string, circle = false): Chat {
@@ -201,6 +202,52 @@ describe("ConversationService", () => {
           ],
         }),
       ),
+    );
+    await service.dispose();
+  });
+
+  it("logs and surfaces a reply that could not be saved", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "wisp-service-persist-failure-"));
+    const repository = new ConversationRepository({ dataDirectory: directory });
+    const published: SequencedConversationAgentEvent[] = [];
+    const logger = { warn: vi.fn() };
+    let service: ConversationService;
+    const registry = new AgentRegistry(
+      new FakeConversationAgentFactory({ latencyMs: 10, responseFor: () => "Lost reply" }),
+      (event) => {
+        published.push(event);
+        service.handleAgentEvent(event);
+      },
+    );
+    service = new ConversationService(repository, registry, () => [], { logger });
+    await service.start({ providerId: "test", modelId: "test" });
+    await service.initialize({ one: chat("one") });
+    await service.appendMessage("one", { id: "request-1", type: "outgoing", text: "A", status: "queued" });
+    const append = repository.appendMessage.bind(repository);
+    vi.spyOn(repository, "appendMessage").mockImplementation((conversationId, message) =>
+      message.type === "incoming" ? Promise.reject(new Error("disk full")) : append(conversationId, message),
+    );
+
+    registry.dispatch({ conversationId: "one", requestId: "request-1", text: "A" });
+
+    await vi.waitFor(() =>
+      expect(logger.warn).toHaveBeenCalledWith("conversation_persist_failed", {
+        conversationId: "one",
+        messageId: "request-1:assistant",
+        code: "internal_error",
+      }),
+    );
+    expect(published).toContainEqual(
+      expect.objectContaining({
+        type: "conversation_error",
+        conversationId: "one",
+        error: expect.objectContaining({ message: expect.stringMatching(/could not be saved/) }),
+      }),
+    );
+    expect(published.find((event) => event.type === "conversation_error")).not.toHaveProperty("requestId");
+    // Still visible until restart.
+    expect(service.getState().chats.one?.messages).toContainEqual(
+      expect.objectContaining({ id: "request-1:assistant", text: "Lost reply" }),
     );
     await service.dispose();
   });

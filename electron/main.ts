@@ -280,6 +280,7 @@ async function bootstrap(): Promise<void> {
     agentRegistry,
     () => toolAuthorizationBroker.listPending(),
     {
+      logger,
       onChatChanged: (chat) => {
         for (const window of BrowserWindow.getAllWindows()) {
           if (!window.isDestroyed()) window.webContents.send(WISP_IPC_CHANNELS.conversationChanged, chat);

@@ -2,11 +2,14 @@ import type { ConversationModelView, ModelSelection, SequencedConversationAgentE
 import type { Chat, ChatChanges, ChatCollection, ConversationStateView, Message } from "../../shared/conversations.js";
 import type { ToolApprovalRequest } from "../../shared/tool-policy.js";
 import type { AgentRegistry } from "./agent-registry.js";
+import { sanitizeBackendError } from "./backend-error.js";
 import type { ConversationRepository } from "./conversation-repository.js";
+import type { StructuredLogger } from "./structured-logger.js";
 
 export interface ConversationServiceOptions {
   /** Receives a chat after agent-driven changes to it are persisted, so the renderer never re-fetches everything. */
   onChatChanged?: (chat: Chat) => void;
+  logger?: Pick<StructuredLogger, "warn">;
 }
 
 /**
@@ -21,6 +24,7 @@ export class ConversationService {
   private readonly liveMessages = new Map<string, Map<string, Message>>();
   private readonly pendingApprovals: () => ReadonlyArray<ToolApprovalRequest>;
   private readonly onChatChanged: (chat: Chat) => void;
+  private readonly logger: Pick<StructuredLogger, "warn"> | undefined;
 
   constructor(
     repository: ConversationRepository,
@@ -32,6 +36,7 @@ export class ConversationService {
     this.registry = registry;
     this.pendingApprovals = pendingApprovals;
     this.onChatChanged = options.onChatChanged ?? (() => undefined);
+    this.logger = options.logger;
   }
 
   async start(model: ModelSelection | null): Promise<void> {
@@ -209,7 +214,8 @@ export class ConversationService {
         }
         this.publishChat(conversationId);
       },
-      () => undefined,
+      // The message stays live (visible) until restart, so say it will not survive one.
+      (error) => this.reportPersistenceFailure(conversationId, message.id, error),
     );
   }
 
@@ -218,13 +224,31 @@ export class ConversationService {
     if (message?.type !== "outgoing") return;
     void this.repository.appendMessage(conversationId, { ...message, id: requestId, status }).then(
       () => this.publishChat(conversationId),
-      () => undefined,
+      (error) => this.reportPersistenceFailure(conversationId, requestId, error),
     );
   }
 
   private publishChat(conversationId: string): void {
     const chat = this.repository.getChat(conversationId);
     if (chat) this.onChatChanged(this.withLiveMessages({ [conversationId]: chat })[conversationId]!);
+  }
+
+  private reportPersistenceFailure(conversationId: string, messageId: string, error: unknown): void {
+    const { code } = sanitizeBackendError(error);
+    this.logger?.warn("conversation_persist_failed", { conversationId, messageId, code });
+    // Deleted conversations are expected to drop their pending writes.
+    if (!this.repository.readChats()[conversationId]) return;
+    // No requestId: this reports the storage failure without re-entering the per-request persistence path.
+    this.registry.publishExternalEvent({
+      type: "conversation_error",
+      conversationId,
+      createdAt: new Date().toISOString(),
+      error: {
+        code: "internal_error",
+        message: "A message could not be saved and will be missing after Wisp restarts.",
+        retryable: false,
+      },
+    });
   }
 
   private withLiveMessages(chats: Readonly<ChatCollection>): ChatCollection {
