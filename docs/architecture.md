@@ -27,7 +27,15 @@ URL.
 - `electron/backend/` owns durable conversations, model configuration, Pi
   sessions, plugin and MCP connections with per-Wisp grants, the fake test
   gateway, encrypted credentials, and tool authorization. `electron/ipc/`
-  validates and registers the narrow bridge handlers.
+  validates and registers the narrow bridge handlers; every handler goes
+  through `guarded-handlers.ts`, which checks the sender and returns sanitized
+  `BackendResult`s. `electron/create-backend.ts` composes the services and
+  handlers from injected Electron capabilities, so the whole backend can be
+  built and tested without Electron.
+- The main process is the only writer of agent-driven conversation state (reply
+  text, outgoing delivery status, context notices). After persisting a change it
+  pushes the stored chat on `wisp:conversations:changed`; the renderer writes
+  only what the user authored and never re-fetches the full state to reconcile.
 - `electron/security-policy.ts`, `electron/main.ts`, and `electron/preload.ts`
   enforce the renderer trust boundary: sandboxing and context isolation stay
   enabled, navigation and permissions default to deny, and the sandboxed
@@ -41,9 +49,13 @@ boundary in depth.
 ## Runtime
 
 Each Wisp (never a circle) owns one persistent, application-managed Pi session.
-Requests stream lifecycle, text, retry, compaction, and tool events; Pi
-automatic retry is capped at two retries, and a request may run for at most ten
-minutes before it is aborted with a retryable sanitized error.
+Applying a model validates it immediately, but the session itself (which loads
+the Wisp's full history) opens on first use — a message or a context request —
+so startup time does not grow with every Wisp's transcript. Requests stream
+lifecycle, text, retry, compaction, and tool events; Pi automatic retry is
+capped at two retries, and a request may run for at most ten minutes before it
+is aborted with a retryable sanitized error. On quit, agents get five seconds to
+settle before the app exits anyway.
 
 The bundled fake agent is a deterministic test adapter used by tests and
 opt-in development runs (`WISP_AGENT_MODE=fake`, unpackaged builds only); it is
@@ -57,6 +69,7 @@ wisp-bot/
 ├── electron/
 │   ├── backend/                   # Persistence, services, agents, and authorization
 │   ├── ipc/                       # Validated main-process IPC handlers
+│   ├── create-backend.ts          # Backend composition and shutdown
 │   ├── main.ts                    # Window lifecycle and trust-boundary wiring
 │   ├── preload.ts                 # Sandboxed typed renderer bridge
 │   └── security-policy.ts         # Pure URL, permission, and CSP policy
