@@ -27,6 +27,9 @@ export class FileLogSink implements LogSink {
   private readonly maxFileBytes: number;
   private directoryReady: Promise<void> | undefined;
   private currentSize: number | null = null;
+  // One write at a time: concurrent writes reordered lines and could both
+  // rotate, overwriting the previous backup with a nearly empty file.
+  private queue: Promise<void> = Promise.resolve();
 
   constructor(directory: string, options: FileLogSinkOptions = {}) {
     this.fs = options.fs ?? nodeFs;
@@ -37,11 +40,15 @@ export class FileLogSink implements LogSink {
   }
 
   info(value: string): void {
-    void this.write(value);
+    this.enqueue(value);
   }
 
   warn(value: string): void {
-    void this.write(value);
+    this.enqueue(value);
+  }
+
+  private enqueue(value: string): void {
+    this.queue = this.queue.then(() => this.write(value));
   }
 
   private async write(value: string): Promise<void> {
