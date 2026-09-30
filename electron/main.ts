@@ -36,6 +36,8 @@ const windowBackground = (): string => (nativeTheme.shouldUseDarkColors ? "#0a0a
 const SHUTDOWN_TIMEOUT_MS = 5_000;
 let rendererTarget: RendererTarget | undefined;
 let fatalErrorHandled = false;
+// Set once the backend is ready; opens a window if none is open.
+let showWindow: (() => void) | undefined;
 
 // Packaged and unpackaged builds share the package name, so Electron hands both
 // the same userData directory and dev work would mutate the installed app's
@@ -58,7 +60,11 @@ if (!app.requestSingleInstanceLock()) {
 } else {
   app.on("second-instance", () => {
     const window = BrowserWindow.getAllWindows().find((candidate) => !candidate.isDestroyed());
-    if (!window) return;
+    if (!window) {
+      // macOS keeps running with every window closed; relaunching should reopen one, like a Dock click.
+      showWindow?.();
+      return;
+    }
     if (window.isMinimized()) window.restore();
     window.focus();
   });
@@ -211,11 +217,10 @@ async function bootstrap(): Promise<void> {
   });
   await createWindow(target);
 
-  app.on("activate", () => {
-    if (BrowserWindow.getAllWindows().length === 0) {
-      createWindow(target).catch(handleFatalStartupError);
-    }
-  });
+  showWindow = () => {
+    if (BrowserWindow.getAllWindows().length === 0) createWindow(target).catch(handleFatalStartupError);
+  };
+  app.on("activate", () => showWindow?.());
 }
 
 app.on("window-all-closed", () => {
