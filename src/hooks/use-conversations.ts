@@ -13,8 +13,7 @@ import type {
   ChatCollection,
   ConversationStateView,
   ManagedConversationStatus,
-  Message,
-  TextMessage,
+  OutgoingMessage,
 } from "../../shared/conversations";
 import type { ToolApprovalDecision, ToolApprovalRequest } from "../../shared/tool-policy";
 import { LEGACY_CONVERSATIONS_STORAGE_KEY, MAX_LEGACY_BLOB_BYTES } from "@/features/persistence/storage-policy";
@@ -90,7 +89,7 @@ export interface ConversationsController {
   create: (conversation: Chat, model?: ModelSelection | null) => Promise<boolean>;
   update: (conversationId: string, changes: ChatChanges) => Promise<boolean>;
   delete: (conversationId: string) => Promise<boolean>;
-  appendMessage: (conversationId: string, message: Message) => Promise<boolean>;
+  appendMessage: (conversationId: string, message: OutgoingMessage) => Promise<boolean>;
   answerPrompt: (conversationId: string, messageId: string, answer: string) => Promise<boolean>;
   markRead: (conversationId: string) => Promise<boolean>;
   sendMessage: (conversationId: string, text: string) => Promise<boolean>;
@@ -225,7 +224,7 @@ export function useConversations(): ConversationsController {
       const status = runtimeRef.current.statuses[conversationId];
       if (status !== "idle" && status !== "working") return false;
       const requestId = crypto.randomUUID();
-      const message: TextMessage & { id: string } = {
+      const message: OutgoingMessage & { id: string } = {
         id: requestId,
         type: "outgoing",
         text,
@@ -252,8 +251,10 @@ export function useConversations(): ConversationsController {
       );
       replaceRuntime(failed);
       const outgoing = getRuntimeMessage(failed, conversationId, requestId);
-      if (outgoing)
-        void enqueueChat(() => window.wisp.appendConversationMessage({ conversationId, message: outgoing }));
+      if (outgoing?.type === "outgoing") {
+        const message: OutgoingMessage = { ...outgoing, type: "outgoing" };
+        void enqueueChat(() => window.wisp.appendConversationMessage({ conversationId, message }));
+      }
       return false;
     },
     [enqueueChat, replaceRuntime],

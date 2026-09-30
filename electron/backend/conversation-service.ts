@@ -1,5 +1,12 @@
 import type { ConversationModelView, ModelSelection, SequencedConversationAgentEvent } from "../../shared/contracts.js";
-import type { Chat, ChatChanges, ChatCollection, ConversationStateView, Message } from "../../shared/conversations.js";
+import type {
+  Chat,
+  ChatChanges,
+  ChatCollection,
+  ConversationStateView,
+  Message,
+  OutgoingMessage,
+} from "../../shared/conversations.js";
 import type { ToolApprovalRequest } from "../../shared/tool-policy.js";
 import type { AgentRegistry } from "./agent-registry.js";
 import { sanitizeBackendError, WispBackendError } from "./backend-error.js";
@@ -145,7 +152,14 @@ export class ConversationService {
     return this.getState();
   }
 
-  async appendMessage(conversationId: string, message: Message): Promise<Chat> {
+  /** Saves a message the user wrote. It may update the user's own message, never a reply or notice. */
+  async appendMessage(conversationId: string, message: OutgoingMessage): Promise<Chat> {
+    const existing = message.id
+      ? this.repository.readChat(conversationId)?.messages.find(({ id }) => id === message.id)
+      : undefined;
+    if (message.type !== "outgoing" || (existing && existing.type !== "outgoing")) {
+      throw new WispBackendError("invalid_request", "Only messages you wrote can be saved from the app.");
+    }
     await this.repository.appendMessage(conversationId, message);
     return this.requireChatView(conversationId);
   }
