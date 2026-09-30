@@ -4,21 +4,34 @@ import type { ToolApprovalRequest } from "../../shared/tool-policy.js";
 import type { AgentRegistry } from "./agent-registry.js";
 import type { ConversationRepository } from "./conversation-repository.js";
 
+export interface ConversationServiceOptions {
+  /** Receives a chat after agent-driven changes to it are persisted, so the renderer never re-fetches everything. */
+  onChatChanged?: (chat: Chat) => void;
+}
+
+/**
+ * The main process is the only writer of agent-driven conversation state
+ * (reply text, outgoing delivery status, context notices). The renderer writes
+ * only what the user authored and applies these changes as they are pushed.
+ */
 export class ConversationService {
   private readonly repository: ConversationRepository;
   private readonly registry: AgentRegistry;
   private model: ModelSelection | null = null;
   private readonly liveMessages = new Map<string, Map<string, Message>>();
   private readonly pendingApprovals: () => ReadonlyArray<ToolApprovalRequest>;
+  private readonly onChatChanged: (chat: Chat) => void;
 
   constructor(
     repository: ConversationRepository,
     registry: AgentRegistry,
     pendingApprovals: () => ReadonlyArray<ToolApprovalRequest> = () => [],
+    options: ConversationServiceOptions = {},
   ) {
     this.repository = repository;
     this.registry = registry;
     this.pendingApprovals = pendingApprovals;
+    this.onChatChanged = options.onChatChanged ?? (() => undefined);
   }
 
   async start(model: ModelSelection | null): Promise<void> {
@@ -30,7 +43,7 @@ export class ConversationService {
   getState(): ConversationStateView {
     return {
       initialized: this.repository.isInitialized(),
-      chats: this.withLiveMessages(this.repository.getChats()),
+      chats: this.withLiveMessages(this.repository.readChats()),
       statuses: this.registry.statuses(),
       agentEventSequence: this.registry.getEventSequence(),
       pendingToolApprovals: this.pendingApprovals(),
@@ -143,7 +156,7 @@ export class ConversationService {
   }
 
   async delete(conversationId: string): Promise<ConversationStateView> {
-    const conversation = this.repository.getChats()[conversationId];
+    const conversation = this.repository.readChats()[conversationId];
     const context = conversation?.kind === "wisp" ? this.repository.getAgentContext(conversationId) : null;
     if (context) await this.registry.delete(conversationId);
     try {
@@ -187,36 +200,47 @@ export class ConversationService {
 
   private persistLiveMessage(conversationId: string, message: Message & { id: string }): void {
     this.setLiveMessage(conversationId, message);
-    void this.repository
-      .appendMessage(conversationId, message)
-      .then(() => {
+    void this.repository.appendMessage(conversationId, message).then(
+      () => {
         const messages = this.liveMessages.get(conversationId);
-        if (messages?.get(message.id) !== message) return;
-        messages.delete(message.id);
-        if (messages.size === 0) this.liveMessages.delete(conversationId);
-      })
-      .catch(() => undefined);
+        if (messages?.get(message.id) === message) {
+          messages.delete(message.id);
+          if (messages.size === 0) this.liveMessages.delete(conversationId);
+        }
+        this.publishChat(conversationId);
+      },
+      () => undefined,
+    );
   }
 
   private persistOutgoingStatus(conversationId: string, requestId: string, status: "complete" | "failed"): void {
-    const message = this.repository.getChats()[conversationId]?.messages.find(({ id }) => id === requestId);
+    const message = this.repository.readChats()[conversationId]?.messages.find(({ id }) => id === requestId);
     if (message?.type !== "outgoing") return;
-    void this.repository.appendMessage(conversationId, { ...message, id: requestId, status }).catch(() => undefined);
+    void this.repository.appendMessage(conversationId, { ...message, id: requestId, status }).then(
+      () => this.publishChat(conversationId),
+      () => undefined,
+    );
   }
 
-  private withLiveMessages(chats: ChatCollection): ChatCollection {
+  private publishChat(conversationId: string): void {
+    const chat = this.repository.getChat(conversationId);
+    if (chat) this.onChatChanged(this.withLiveMessages({ [conversationId]: chat })[conversationId]!);
+  }
+
+  private withLiveMessages(chats: Readonly<ChatCollection>): ChatCollection {
+    const result: ChatCollection = { ...chats };
     for (const [conversationId, live] of this.liveMessages) {
       const chat = chats[conversationId];
       if (!chat) continue;
-      const liveIds = new Set(live.keys());
-      chats[conversationId] = {
+      const storedIds = new Set(chat.messages.flatMap(({ id }) => (id ? [id] : [])));
+      result[conversationId] = {
         ...chat,
         messages: [
-          ...chat.messages.map((message) => (message.id && liveIds.has(message.id) ? live.get(message.id)! : message)),
-          ...[...live.values()].filter((message) => !chat.messages.some(({ id }) => id === message.id)),
+          ...chat.messages.map((message) => (message.id && live.has(message.id) ? live.get(message.id)! : message)),
+          ...[...live.values()].filter((message) => !message.id || !storedIds.has(message.id)),
         ],
       };
     }
-    return chats;
+    return result;
   }
 }

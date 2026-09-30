@@ -79,6 +79,7 @@ function completeBridge(): WispApi {
     markConversationRead: async () => {
       throw new Error("not called");
     },
+    subscribeToConversationChanges: () => () => undefined,
     getUsageReport: async () => {
       throw new Error("Not implemented in test");
     },

@@ -174,6 +174,37 @@ describe("ConversationService", () => {
     await service.dispose();
   });
 
+  it("pushes the stored chat after persisting agent-driven changes", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "wisp-service-push-"));
+    const repository = new ConversationRepository({ dataDirectory: directory });
+    const onChatChanged = vi.fn();
+    let service: ConversationService;
+    const registry = new AgentRegistry(
+      new FakeConversationAgentFactory({ latencyMs: 10, responseFor: ({ text }) => `Reply:${text}` }),
+      (event) => service.handleAgentEvent(event),
+    );
+    service = new ConversationService(repository, registry, () => [], { onChatChanged });
+    await service.start({ providerId: "test", modelId: "test" });
+    await service.initialize({ one: chat("one") });
+    await service.appendMessage("one", { id: "request-1", type: "outgoing", text: "A", status: "queued" });
+
+    registry.dispatch({ conversationId: "one", requestId: "request-1", text: "A" });
+
+    await vi.waitFor(() =>
+      expect(onChatChanged).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          id: "one",
+          preview: "Reply:A",
+          messages: [
+            expect.objectContaining({ id: "request-1", status: "complete" }),
+            expect.objectContaining({ id: "request-1:assistant", text: "Reply:A", status: "complete" }),
+          ],
+        }),
+      ),
+    );
+    await service.dispose();
+  });
+
   it("deletes a Wisp during active work without resurrecting its stream", async () => {
     const directory = await mkdtemp(path.join(os.tmpdir(), "wisp-service-delete-active-"));
     const repository = new ConversationRepository({ dataDirectory: directory });

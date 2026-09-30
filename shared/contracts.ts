@@ -20,6 +20,7 @@ import type {
 import type {
   AnswerConversationPromptRequest,
   AppendConversationMessageRequest,
+  Chat,
   ConversationStateView,
   CreateConversationRequest,
   DeleteConversationRequest,
@@ -64,6 +65,7 @@ export const WISP_IPC_CHANNELS = {
   appendConversationMessage: "wisp:conversations:append-message",
   answerConversationPrompt: "wisp:conversations:answer-prompt",
   markConversationRead: "wisp:conversations:mark-read",
+  conversationChanged: "wisp:conversations:changed",
   getSessionReport: "wisp:conversations:get-session-report",
   getUsageReport: "wisp:usage:get",
   getToolPolicy: "wisp:tool-policy:get",
@@ -359,6 +361,8 @@ export interface WispApi {
   appendConversationMessage(request: AppendConversationMessageRequest): Promise<BackendResult<ConversationStateView>>;
   answerConversationPrompt(request: AnswerConversationPromptRequest): Promise<BackendResult<ConversationStateView>>;
   markConversationRead(request: MarkConversationReadRequest): Promise<BackendResult<ConversationStateView>>;
+  /** Pushes a chat after the backend persists agent-driven changes to it (replies, statuses, context notices). */
+  subscribeToConversationChanges(listener: (chat: Chat) => void): () => void;
   getSessionReport(request: ConversationRequest): Promise<BackendResult<WispSessionReport | null>>;
   getUsageReport(request: UsageReportRequest): Promise<BackendResult<UsageReport>>;
   getToolPolicy(): Promise<BackendResult<ToolPolicySettings>>;

@@ -39,6 +39,7 @@ const WISP_IPC_CHANNELS = {
   appendConversationMessage: "wisp:conversations:append-message",
   answerConversationPrompt: "wisp:conversations:answer-prompt",
   markConversationRead: "wisp:conversations:mark-read",
+  conversationChanged: "wisp:conversations:changed",
   getUsageReport: "wisp:usage:get",
   getToolPolicy: "wisp:tool-policy:get",
   saveToolPolicy: "wisp:tool-policy:save",
@@ -98,6 +99,12 @@ const wispApi: WispApi = {
   appendConversationMessage: (request) => ipcRenderer.invoke(WISP_IPC_CHANNELS.appendConversationMessage, request),
   answerConversationPrompt: (request) => ipcRenderer.invoke(WISP_IPC_CHANNELS.answerConversationPrompt, request),
   markConversationRead: (request) => ipcRenderer.invoke(WISP_IPC_CHANNELS.markConversationRead, request),
+  subscribeToConversationChanges: (listener) => {
+    const handleChat = (_event: Electron.IpcRendererEvent, chat: Parameters<typeof listener>[0]): void =>
+      listener(chat);
+    ipcRenderer.on(WISP_IPC_CHANNELS.conversationChanged, handleChat);
+    return () => ipcRenderer.removeListener(WISP_IPC_CHANNELS.conversationChanged, handleChat);
+  },
   getSessionReport: (request) => ipcRenderer.invoke(WISP_IPC_CHANNELS.getSessionReport, request),
   getUsageReport: (request) => ipcRenderer.invoke(WISP_IPC_CHANNELS.getUsageReport, request),
   getToolPolicy: () => ipcRenderer.invoke(WISP_IPC_CHANNELS.getToolPolicy),

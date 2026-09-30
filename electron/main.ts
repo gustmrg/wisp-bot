@@ -275,8 +275,17 @@ async function bootstrap(): Promise<void> {
     (conversationId) => toolAuthorizationBroker.cancelConversation(conversationId),
     { validateModel: (selection) => modelService.validateConversationSelection(selection) },
   );
-  conversationService = new ConversationService(conversationRepository, agentRegistry, () =>
-    toolAuthorizationBroker.listPending(),
+  conversationService = new ConversationService(
+    conversationRepository,
+    agentRegistry,
+    () => toolAuthorizationBroker.listPending(),
+    {
+      onChatChanged: (chat) => {
+        for (const window of BrowserWindow.getAllWindows()) {
+          if (!window.isDestroyed()) window.webContents.send(WISP_IPC_CHANNELS.conversationChanged, chat);
+        }
+      },
+    },
   );
   await conversationService.start(await modelService.getSelection());
   const sessionReportHandlers = registerSessionReportHandlers(
