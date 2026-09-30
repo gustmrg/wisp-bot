@@ -256,6 +256,41 @@ describe("SdkPiSessionFactory", () => {
     expect(sdk.toolExecute).toHaveBeenCalledTimes(2);
   });
 
+  it("does not start the model run once the send was stopped during preparation", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "wisp-pi-stopped-"));
+    const context: ConversationAgentContext = {
+      conversationId: "researcher",
+      sessionId: "stopped-session",
+      name: "Researcher",
+      label: "Research",
+      description: "Search sources.",
+      workspaceDirectory: directory,
+      sessionDirectory: directory,
+      configDirectory: path.join(directory, "config"),
+      piSessionId: null,
+      piSessionFile: null,
+    };
+    const runtime = {
+      hasConfiguredAuth: () => true,
+      getModel: () => ({ provider: "provider", id: "model" }),
+    } as unknown as ModelRuntimeLike;
+    const session = await new SdkPiSessionFactory(runtime).create(context, {
+      providerId: "provider",
+      modelId: "model",
+    });
+    const stopped = new AbortController();
+    stopped.abort();
+
+    await expect(
+      session.prompt("Too late", { expandPromptTemplates: false, signal: stopped.signal }),
+    ).rejects.toMatchObject({ name: "AbortError" });
+    expect(sdk.session.prompt).not.toHaveBeenCalled();
+
+    await session.prompt("Go ahead", { expandPromptTemplates: false, signal: new AbortController().signal });
+    // Pi receives its own options only; the cancellation signal stays in the adapter.
+    expect(sdk.session.prompt).toHaveBeenCalledWith("Go ahead", { expandPromptTemplates: false });
+  });
+
   it("activates only registered tools granted to this Wisp and refreshes grants before prompts and after reload", async () => {
     const directory = await mkdtemp(path.join(os.tmpdir(), "wisp-pi-plugins-"));
     const context: ConversationAgentContext = {
