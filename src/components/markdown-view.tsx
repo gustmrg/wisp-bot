@@ -6,7 +6,10 @@ import remarkGfm from "remark-gfm";
 import { cn } from "@/lib/utils";
 
 const markdownComponents: Components = {
-  a: ({ node: _node, ...props }) => <a className="text-blue underline underline-offset-2" {...props} />,
+  // The main process opens new-window links in the system browser (web and mail links only).
+  a: ({ node: _node, ...props }) => (
+    <a className="text-blue underline underline-offset-2" {...props} target="_blank" rel="noreferrer noopener" />
+  ),
   blockquote: ({ node: _node, ...props }) => (
     <blockquote
       className="my-1.5 border-l-2 border-black/15 pl-2.5 text-dim first:mt-0 last:mb-0 dark:border-white/15"

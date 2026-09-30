@@ -186,18 +186,68 @@ describe("PiConversationAgent", () => {
     expect(events).toHaveBeenCalledWith(expect.objectContaining({ type: "assistant_message_cancelled" }));
   });
 
-  it("reloads the active session when its identity changes", async () => {
+  it("reloads an open session when its identity changes", async () => {
     const sessions = new Map<string, MockPiSession>();
     const initialContext = context("one");
-    const agent = new PiConversationAgent(initialContext, factoryFor(sessions));
+    const agent = new PiConversationAgent(initialContext, factoryFor(sessions), { flushDelayMs: 0 });
     await agent.start();
     await agent.applyModel(selection());
+    const send = agent.send({ conversationId: "one", requestId: "r1", text: "Hello" });
+    await vi.waitFor(() => expect(sessions.get("one")?.isIdle).toBe(false));
+    sessions.get("one")?.finishPrompt();
+    await send;
 
     await agent.updateContext({ ...initialContext, description: "Financial advisor", userName: "Jane" });
 
     expect(initialContext.description).toBe("Financial advisor");
     expect(initialContext.userName).toBe("Jane");
     expect(sessions.get("one")?.reloadCount).toBe(1);
+    await agent.dispose();
+  });
+
+  it("defers opening the Pi session until the Wisp is first used", async () => {
+    const sessions = new Map<string, MockPiSession>();
+    const initialContext = context("one");
+    const agent = new PiConversationAgent(initialContext, factoryFor(sessions), { flushDelayMs: 0 });
+    const events = vi.fn();
+    agent.subscribe(events);
+    await agent.start();
+
+    await agent.applyModel(selection());
+    await agent.updateContext({ ...initialContext, description: "Financial advisor" });
+
+    // Ready without loading history: startup cost no longer scales with every Wisp's transcript.
+    expect(sessions.size).toBe(0);
+    expect(events).toHaveBeenCalledWith(
+      expect.objectContaining({ type: "conversation_model_changed", applied: selection() }),
+    );
+    const send = agent.send({ conversationId: "one", requestId: "r1", text: "Hello" });
+    await vi.waitFor(() => expect(sessions.get("one")?.prompts).toEqual(["Hello"]));
+    sessions.get("one")?.finishPrompt();
+    await send;
+    const again = agent.send({ conversationId: "one", requestId: "r2", text: "Again" });
+    await vi.waitFor(() => expect(sessions.get("one")?.prompts).toEqual(["Hello", "Again"]));
+    sessions.get("one")?.finishPrompt();
+    await again;
+    expect(sessions.size).toBe(1);
+    await agent.dispose();
+    expect(sessions.get("one")?.disposeCount).toBe(1);
+  });
+
+  it("still rejects an unusable model when it is applied, before any session opens", async () => {
+    const sessions = new Map<string, MockPiSession>();
+    const factory = factoryFor(sessions);
+    factory.resolveModel = () => {
+      throw Object.assign(new Error("no key"), { code: "configuration_required" });
+    };
+    const agent = new PiConversationAgent(context("one"), factory);
+    await agent.start();
+
+    await expect(agent.applyModel(selection())).rejects.toMatchObject({ code: "configuration_required" });
+    await expect(agent.send({ conversationId: "one", requestId: "r1", text: "Hello" })).rejects.toMatchObject({
+      code: "configuration_required",
+    });
+    expect(sessions.size).toBe(0);
     await agent.dispose();
   });
 });
@@ -233,7 +283,7 @@ it("reports the model actually used while an override waits for the active turn"
 
 it("rebuilds the session at the next message when the tool snapshot changes, preserving identity", async () => {
   const created: MockPiSession[] = [];
-  // First fetch (at send) returns a changed revision, forcing one rebuild.
+  // The fetch after the first session opens returns a changed revision, forcing one rebuild.
   const factory = rebuildingFactory(created, ["rev-1", "rev-2", "rev-2"]);
   const agentContext = context("one");
   const agent = new PiConversationAgent(agentContext, factory, { flushDelayMs: 0 });
@@ -241,6 +291,10 @@ it("rebuilds the session at the next message when the tool snapshot changes, pre
   agent.subscribe(events);
   await agent.start();
   await agent.applyModel(selection());
+  const first = agent.send({ conversationId: "one", requestId: "r0", text: "First" });
+  await vi.waitFor(() => expect(created[0]?.prompts).toEqual(["First"]));
+  created[0]?.finishPrompt();
+  await first;
 
   expect(created).toHaveLength(1);
   expect(created[0]?.toolRevision).toBe("rev-1");
@@ -279,5 +333,90 @@ it("does not rebuild while the previous tool revision is still current", async (
   await send;
 
   expect(created).toHaveLength(1);
+  await agent.dispose();
+});
+
+function deferred<T = void>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((settle) => {
+    resolve = settle;
+  });
+  return { promise, resolve };
+}
+
+it("cancels a message whose session is still opening instead of sending it", async () => {
+  const sessions = new Map<string, MockPiSession>();
+  const opening = deferred();
+  const factory = factoryFor(sessions);
+  const create = factory.create;
+  factory.create = async (...args) => {
+    await opening.promise;
+    return create(...args);
+  };
+  const agent = new PiConversationAgent(context("one"), factory, { flushDelayMs: 0 });
+  const events = vi.fn();
+  agent.subscribe(events);
+  await agent.start();
+  await agent.applyModel(selection());
+
+  const send = agent.send({ conversationId: "one", requestId: "r1", text: "Never mind" });
+  await agent.abort();
+  opening.resolve();
+  await send;
+
+  expect(sessions.get("one")?.prompts).toEqual([]);
+  expect(events).toHaveBeenCalledWith(
+    expect.objectContaining({ type: "assistant_message_cancelled", requestId: "r1" }),
+  );
+  expect(events).not.toHaveBeenCalledWith(expect.objectContaining({ type: "conversation_error" }));
+  await agent.dispose();
+});
+
+/** A session whose prompt first renews context (idle, like Pi's compaction) before the model run. */
+class RenewingPiSession extends MockPiSession {
+  readonly renewal = deferred();
+  renewalAborted = false;
+
+  override async prompt(text: string, options?: { signal?: AbortSignal }): Promise<void> {
+    await this.renewal.promise;
+    options?.signal?.throwIfAborted();
+    return super.prompt(text);
+  }
+
+  override async abort(): Promise<void> {
+    if (this.isIdle) {
+      this.renewalAborted = true;
+      this.renewal.resolve();
+      return;
+    }
+    return super.abort();
+  }
+}
+
+it("stops a context renewal that runs before the prompt and reports a cancellation", async () => {
+  const session = new RenewingPiSession("one");
+  const factory: PiSessionFactory = { ...factoryFor(new Map()), create: async () => session };
+  const agent = new PiConversationAgent(context("one"), factory, { flushDelayMs: 0 });
+  const events = vi.fn();
+  agent.subscribe(events);
+  await agent.start();
+  await agent.applyModel(selection());
+  const first = agent.send({ conversationId: "one", requestId: "r0", text: "Open the session" });
+  session.renewal.resolve();
+  await vi.waitFor(() => expect(session.prompts).toEqual(["Open the session"]));
+  session.finishPrompt();
+  await first;
+  Object.assign(session, { renewal: deferred() });
+
+  const send = agent.send({ conversationId: "one", requestId: "r1", text: "Stop me" });
+  await agent.abort();
+  await send;
+
+  expect(session.renewalAborted).toBe(true);
+  expect(session.prompts).toEqual(["Open the session"]);
+  expect(events).toHaveBeenCalledWith(
+    expect.objectContaining({ type: "assistant_message_cancelled", requestId: "r1" }),
+  );
+  expect(events).not.toHaveBeenCalledWith(expect.objectContaining({ type: "conversation_error", requestId: "r1" }));
   await agent.dispose();
 });

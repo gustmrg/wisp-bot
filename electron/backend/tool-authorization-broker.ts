@@ -132,8 +132,15 @@ export class ToolAuthorizationBroker {
     ) {
       throw new WispBackendError("invalid_request", "The approval response does not match the pending action.");
     }
+    // Claim the approval before awaiting anything, so a repeated decision, an
+    // expiry, or a cancellation during the policy write cannot settle it twice.
+    this.pending.delete(request.approvalId);
+    this.cleanup(pending);
+    let policyError: unknown;
     if (request.decision === "block") {
-      await this.store.blockCategory(pending.request.category, this.createId);
+      await this.store.blockCategory(pending.request.category, this.createId).catch((error: unknown) => {
+        policyError = error;
+      });
     }
     this.audit.append({
       actionId: request.approvalId,
@@ -147,8 +154,6 @@ export class ToolAuthorizationBroker {
       outcome: request.decision === "allow_once" ? "allowed" : "blocked",
       timestamp: this.now().toISOString(),
     });
-    this.pending.delete(request.approvalId);
-    this.cleanup(pending);
     this.publish({
       type: "tool_approval_resolved",
       conversationId: request.conversationId,
@@ -158,6 +163,8 @@ export class ToolAuthorizationBroker {
     });
     if (request.decision === "allow_once") pending.resolve();
     else pending.reject(new WispBackendError("tool_blocked", "The tool action was denied."));
+    // The action is blocked either way; still report that the lasting rule was not saved.
+    if (policyError !== undefined) throw policyError;
   }
 
   dispose(): void {

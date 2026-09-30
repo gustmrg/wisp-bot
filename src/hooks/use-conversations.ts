@@ -13,8 +13,7 @@ import type {
   ChatCollection,
   ConversationStateView,
   ManagedConversationStatus,
-  Message,
-  TextMessage,
+  OutgoingMessage,
 } from "../../shared/conversations";
 import type { ToolApprovalDecision, ToolApprovalRequest } from "../../shared/tool-policy";
 import { LEGACY_CONVERSATIONS_STORAGE_KEY, MAX_LEGACY_BLOB_BYTES } from "@/features/persistence/storage-policy";
@@ -24,6 +23,7 @@ import {
   getRuntimeMessage,
   markOutgoingFailed,
   overlayRuntimeMessages,
+  pruneSettledRuntimeMessages,
   reduceConversationAgentEvent,
   reconcileConversationRuntime,
   removeRuntimeMessage,
@@ -89,7 +89,7 @@ export interface ConversationsController {
   create: (conversation: Chat, model?: ModelSelection | null) => Promise<boolean>;
   update: (conversationId: string, changes: ChatChanges) => Promise<boolean>;
   delete: (conversationId: string) => Promise<boolean>;
-  appendMessage: (conversationId: string, message: Message) => Promise<boolean>;
+  appendMessage: (conversationId: string, message: OutgoingMessage) => Promise<boolean>;
   answerPrompt: (conversationId: string, messageId: string, answer: string) => Promise<boolean>;
   markRead: (conversationId: string) => Promise<boolean>;
   sendMessage: (conversationId: string, text: string) => Promise<boolean>;
@@ -114,7 +114,10 @@ export function useConversations(): ConversationsController {
   const replaceState = useCallback((next: ConversationStateView): void => {
     stateRef.current = next;
     setState(next);
-    const reconciled = reconcileConversationRuntime(runtimeRef.current, next.chats, next.statuses);
+    const reconciled = pruneSettledRuntimeMessages(
+      reconcileConversationRuntime(runtimeRef.current, next.chats, next.statuses),
+      next.chats,
+    );
     runtimeRef.current = reconciled;
     setRuntime(reconciled);
     setPendingAcknowledgements((current) => retainPendingConversations(current, next.chats));
@@ -125,13 +128,23 @@ export function useConversations(): ConversationsController {
     setRuntime(next);
   }, []);
 
-  const enqueue = useCallback(
-    (operation: () => Promise<BackendResult<ConversationStateView>>) => {
+  // Merges one stored chat, from a single-chat response or a backend push. A
+  // chat deleted in the meantime stays deleted.
+  const applyChat = useCallback(
+    (chat: Chat): void => {
+      if (!stateRef.current.chats[chat.id]) return;
+      replaceState({ ...stateRef.current, chats: { ...stateRef.current.chats, [chat.id]: chat } });
+    },
+    [replaceState],
+  );
+
+  const enqueueMutation = useCallback(
+    <T>(operation: () => Promise<BackendResult<T>>, apply: (value: T) => void): Promise<boolean> => {
       const run = mutationQueue.current.then(async () => {
         try {
           const result = await operation();
           if (!result.ok) throw resultError(result);
-          replaceState(result.value);
+          apply(result.value);
           setError(null);
           return true;
         } catch (cause) {
@@ -142,50 +155,24 @@ export function useConversations(): ConversationsController {
       mutationQueue.current = run.then(() => undefined);
       return run;
     },
-    [replaceState],
+    [],
   );
 
-  const reconcileMessage = useCallback(
-    async (conversationId: string, messageId: string): Promise<void> => {
-      const refreshed = await enqueue(() => window.wisp.getConversationState());
-      if (!refreshed || !stateRef.current.chats[conversationId]?.messages.some(({ id }) => id === messageId)) return;
-      replaceRuntime(removeRuntimeMessage(runtimeRef.current, conversationId, messageId));
-    },
-    [enqueue, replaceRuntime],
+  const enqueue = useCallback(
+    (operation: () => Promise<BackendResult<ConversationStateView>>) => enqueueMutation(operation, replaceState),
+    [enqueueMutation, replaceState],
   );
 
+  const enqueueChat = useCallback(
+    (operation: () => Promise<BackendResult<Chat>>) => enqueueMutation(operation, applyChat),
+    [applyChat, enqueueMutation],
+  );
+
+  // Events only drive the transient runtime view. The backend persists what they
+  // imply (reply text, delivery status) and pushes the stored chat afterwards.
   processEventRef.current = (event): void => {
     const next = reduceConversationAgentEvent(runtimeRef.current, event, stateRef.current.chats);
-    if (next === runtimeRef.current) return;
-    replaceRuntime(next);
-    if (!stateRef.current.chats[event.conversationId]) return;
-    if (event.type === "assistant_message_started") {
-      const outgoing = getRuntimeMessage(next, event.conversationId, event.requestId);
-      if (outgoing) {
-        void enqueue(() =>
-          window.wisp.appendConversationMessage({
-            conversationId: event.conversationId,
-            message: outgoing,
-          }),
-        ).then((saved) => {
-          if (saved) replaceRuntime(removeRuntimeMessage(runtimeRef.current, event.conversationId, event.requestId));
-        });
-      }
-    } else if (event.type === "assistant_message_completed" || event.type === "assistant_message_cancelled") {
-      void reconcileMessage(event.conversationId, event.messageId);
-    } else if (event.type === "conversation_error" && event.requestId) {
-      const outgoing = getRuntimeMessage(next, event.conversationId, event.requestId);
-      if (outgoing) {
-        void enqueue(() =>
-          window.wisp.appendConversationMessage({
-            conversationId: event.conversationId,
-            message: outgoing,
-          }),
-        ).then(() => reconcileMessage(event.conversationId, `${event.requestId}:assistant`));
-      } else {
-        void reconcileMessage(event.conversationId, `${event.requestId}:assistant`);
-      }
-    }
+    if (next !== runtimeRef.current) replaceRuntime(next);
   };
 
   useEffect(() => {
@@ -193,6 +180,11 @@ export function useConversations(): ConversationsController {
     const unsubscribe = window.wisp.subscribeToAgentEvents((event) => {
       if (!readyRef.current) bufferedEvents.current.push(event);
       else processEventRef.current(event);
+    });
+    const unsubscribeChanges = window.wisp.subscribeToConversationChanges((chat) => {
+      // Backend messages arrive in send order, so a push received before the
+      // bootstrap snapshot is already reflected in that snapshot.
+      if (readyRef.current) applyChat(chat);
     });
     void (async () => {
       try {
@@ -221,8 +213,9 @@ export function useConversations(): ConversationsController {
       cancelled = true;
       readyRef.current = false;
       unsubscribe();
+      unsubscribeChanges();
     };
-  }, [replaceRuntime, replaceState]);
+  }, [applyChat, replaceRuntime, replaceState]);
 
   const sendMessage = useCallback(
     async (conversationId: string, textValue: string): Promise<boolean> => {
@@ -231,7 +224,7 @@ export function useConversations(): ConversationsController {
       const status = runtimeRef.current.statuses[conversationId];
       if (status !== "idle" && status !== "working") return false;
       const requestId = crypto.randomUUID();
-      const message: TextMessage & { id: string } = {
+      const message: OutgoingMessage & { id: string } = {
         id: requestId,
         type: "outgoing",
         text,
@@ -240,7 +233,7 @@ export function useConversations(): ConversationsController {
       };
       replaceRuntime(stageOutgoingMessage(runtimeRef.current, conversationId, message));
       setPendingAcknowledgements((current) => addPendingRequest(current, conversationId, requestId));
-      const persisted = await enqueue(() => window.wisp.appendConversationMessage({ conversationId, message }));
+      const persisted = await enqueueChat(() => window.wisp.appendConversationMessage({ conversationId, message }));
       if (!persisted) {
         setPendingAcknowledgements((current) => removePendingRequest(current, conversationId, requestId));
         return false;
@@ -258,10 +251,13 @@ export function useConversations(): ConversationsController {
       );
       replaceRuntime(failed);
       const outgoing = getRuntimeMessage(failed, conversationId, requestId);
-      if (outgoing) void enqueue(() => window.wisp.appendConversationMessage({ conversationId, message: outgoing }));
+      if (outgoing?.type === "outgoing") {
+        const message: OutgoingMessage = { ...outgoing, type: "outgoing" };
+        void enqueueChat(() => window.wisp.appendConversationMessage({ conversationId, message }));
+      }
       return false;
     },
-    [enqueue, replaceRuntime],
+    [enqueueChat, replaceRuntime],
   );
 
   const retryMessage = useCallback(
@@ -326,17 +322,18 @@ export function useConversations(): ConversationsController {
       [enqueue],
     ),
     appendMessage: useCallback(
-      (conversationId, message) => enqueue(() => window.wisp.appendConversationMessage({ conversationId, message })),
-      [enqueue],
+      (conversationId, message) =>
+        enqueueChat(() => window.wisp.appendConversationMessage({ conversationId, message })),
+      [enqueueChat],
     ),
     answerPrompt: useCallback(
       (conversationId, messageId, answer) =>
-        enqueue(() => window.wisp.answerConversationPrompt({ conversationId, messageId, answer })),
-      [enqueue],
+        enqueueChat(() => window.wisp.answerConversationPrompt({ conversationId, messageId, answer })),
+      [enqueueChat],
     ),
     markRead: useCallback(
-      (conversationId) => enqueue(() => window.wisp.markConversationRead({ conversationId })),
-      [enqueue],
+      (conversationId) => enqueueChat(() => window.wisp.markConversationRead({ conversationId })),
+      [enqueueChat],
     ),
     sendMessage,
     retryMessage,

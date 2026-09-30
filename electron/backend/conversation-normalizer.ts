@@ -121,6 +121,46 @@ export function normalizeMessage(value: unknown, fallbackId?: string): Message {
   throw invalidRequest();
 }
 
+/**
+ * Adds or replaces one message by ID. Stored messages were normalized when they
+ * were written, so only the incoming message is validated rather than the whole
+ * transcript on every append. At the per-conversation limit the oldest messages
+ * are dropped: the transcript is display history, and the agent session keeps
+ * its own full history.
+ */
+export function upsertNormalizedMessage(
+  chat: Chat,
+  value: unknown,
+): { chat: Chat; message: Message; droppedOldest: number } {
+  const message = normalizeMessage(value);
+  if (!message.id) throw invalidRequest();
+  const index = chat.messages.findIndex(({ id }) => id === message.id);
+  if (index !== -1) {
+    const messages = chat.messages.map((candidate, candidateIndex) => (candidateIndex === index ? message : candidate));
+    return { chat: { ...chat, messages }, message, droppedOldest: 0 };
+  }
+  const droppedOldest = Math.max(0, chat.messages.length + 1 - CONVERSATION_STORAGE_POLICY.maxMessagesPerConversation);
+  return { chat: { ...chat, messages: [...chat.messages.slice(droppedOldest), message] }, message, droppedOldest };
+}
+
+// Stored messages are keyed by (conversation, message ID), so IDs must be
+// unique within a chat. Later duplicates from legacy data get fresh short IDs.
+function withUniqueMessageIds(messages: ReadonlyArray<Message>): ReadonlyArray<Message> {
+  const taken = new Set(messages.flatMap(({ id }) => (id ? [id] : [])));
+  const seen = new Set<string>();
+  return messages.map((message, index) => {
+    if (!message.id || !seen.has(message.id)) {
+      if (message.id) seen.add(message.id);
+      return message;
+    }
+    let id = `message-${index}`;
+    for (let attempt = 1; taken.has(id); attempt += 1) id = `message-${index}-${attempt}`;
+    taken.add(id);
+    seen.add(id);
+    return { ...message, id };
+  });
+}
+
 export function normalizeChat(value: unknown): Chat {
   const raw = asRecord(value);
   const id = normalizeConversationId(raw.id);
@@ -139,12 +179,15 @@ export function normalizeChat(value: unknown): Chat {
     notifyOnUpdatesEnabled: raw.notifyOnUpdatesEnabled,
     preview: string(raw.preview),
     timestamp: string(raw.timestamp, 500),
-    messages: raw.messages.map((message, index) => normalizeMessage(message, `${id}:message:${index}`)),
+    messages: withUniqueMessageIds(
+      raw.messages.map((message, index) => normalizeMessage(message, `${id}:message:${index}`)),
+    ),
     ...(raw.systemRole === "chief" || (raw.kind === undefined && id === "chief")
       ? { systemRole: "chief" as const }
       : {}),
     ...(typeof raw.isActive === "boolean" ? { isActive: raw.isActive } : {}),
     ...(typeof raw.unread === "boolean" ? { unread: raw.unread } : {}),
+    ...(raw.lastActivityAt === undefined ? {} : { lastActivityAt: timestamp(raw.lastActivityAt) }),
   };
   if (kind === "circle") {
     if (

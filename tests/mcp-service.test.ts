@@ -5,9 +5,10 @@ import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { getToolMetadata, resetDynamicToolMetadata } from "../shared/tool-catalog.js";
+import { McpOAuthProvider } from "../electron/backend/mcp-oauth.js";
+import { McpSecretStore } from "../electron/backend/mcp-secret-store.js";
 import { McpService } from "../electron/backend/mcp-service.js";
 import type { McpConnection, McpConnectionAuth, McpConnectionOptions } from "../electron/backend/mcp-bridge.js";
-import type { McpOAuthProvider } from "../electron/backend/mcp-oauth.js";
 import type { EncryptionService } from "../electron/backend/encrypted-credential-store.js";
 import type { ToolAuthorizationBroker } from "../electron/backend/tool-authorization-broker.js";
 
@@ -120,14 +121,18 @@ async function createService(
       created.push(connection);
       return connection;
     },
-    createOAuthProvider: (serverId: string): McpOAuthProvider => {
-      const provider =
-        (oauthProviders?.[createdProviders.length] as McpOAuthProvider | undefined) ??
-        (fakeOAuthProvider() as McpOAuthProvider);
-      createdProviders.push(provider);
-      void serverId;
-      return provider;
-    },
+    // Real providers unless a test hands in fixtures to assert on.
+    ...(oauthProviders
+      ? {
+          createOAuthProvider: (): McpOAuthProvider => {
+            const provider =
+              (oauthProviders[createdProviders.length] as McpOAuthProvider | undefined) ??
+              (fakeOAuthProvider() as McpOAuthProvider);
+            createdProviders.push(provider);
+            return provider;
+          },
+        }
+      : {}),
   });
   await service.load();
   return { service, dataDirectory, created, broker, createdProviders };
@@ -373,6 +378,28 @@ describe("McpService", () => {
     expect(first.content[0]?.text).toMatch(/ran search/);
   });
 
+  it("shares one pooled connection between concurrent calls to the same server", async () => {
+    const connections = [
+      { outcome: "connected" as const, tools: [TOOL] },
+      { outcome: "connected" as const, tools: [TOOL] },
+      { outcome: "connected" as const, tools: [TOOL] },
+    ];
+    const { service, created } = await createService({}, connections);
+    const { serverId } = await addServer(service);
+    await service.refreshTools({ serverId });
+    await grantAccess(service, "wisp-a", serverId);
+    const definition = await firstDefinition(service);
+    const connectionsBefore = created.length;
+
+    // Pi executes tool calls from one turn in parallel by default.
+    await Promise.all([definition.execute("c1", { query: "a" }), definition.execute("c2", { query: "b" })]);
+
+    expect(created.length - connectionsBefore).toBe(1);
+    expect(created.at(-1)?.calls.map(({ args }) => args.query)).toEqual(["a", "b"]);
+    service.dispose();
+    expect(created.at(-1)?.closed).toBe(1);
+  });
+
   it("blocks dispatch when the reviewed tool changed while approval was pending", async () => {
     const changedTool = { ...TOOL, description: "Search things, differently" };
     let refreshDuringApproval: (() => Promise<void>) | undefined;
@@ -530,6 +557,28 @@ describe("McpService", () => {
     });
     expect(broker.authorize).toHaveBeenCalled();
     expect(created.at(-1)!.calls).toHaveLength(0);
+  });
+
+  it("does not keep a sign-in listener open for pooled OAuth connections", async () => {
+    const release = vi.spyOn(McpOAuthProvider.prototype, "releaseCallbackServer");
+    const connections = [
+      { outcome: "connected" as const, tools: [TOOL] },
+      { outcome: "connected" as const, tools: [TOOL] },
+    ];
+    const { service, dataDirectory, created } = await createService({}, connections);
+    const { serverId } = await addServer(service, { authMode: "oauth" });
+    await new McpSecretStore(path.join(dataDirectory, "mcp-credentials.enc.json"), encryption).setOAuthTokens(
+      serverId,
+      { accessToken: "token" },
+    );
+    await service.refreshTools({ serverId });
+    await grantAccess(service, "wisp-a", serverId);
+
+    await (await firstDefinition(service)).execute("c1", { query: "a" });
+
+    expect(created).toHaveLength(2);
+    expect(release).toHaveBeenCalledTimes(1);
+    service.dispose();
   });
 
   it("requires sign-in before refreshing or granting an oauth server without tokens", async () => {

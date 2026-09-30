@@ -27,7 +27,15 @@ URL.
 - `electron/backend/` owns durable conversations, model configuration, Pi
   sessions, plugin and MCP connections with per-Wisp grants, the fake test
   gateway, encrypted credentials, and tool authorization. `electron/ipc/`
-  validates and registers the narrow bridge handlers.
+  validates and registers the narrow bridge handlers; every handler goes
+  through `guarded-handlers.ts`, which checks the sender and returns sanitized
+  `BackendResult`s. `electron/create-backend.ts` composes the services and
+  handlers from injected Electron capabilities, so the whole backend can be
+  built and tested without Electron.
+- The main process is the only writer of agent-driven conversation state (reply
+  text, outgoing delivery status, context notices). After persisting a change it
+  pushes the stored chat on `wisp:conversations:changed`; the renderer writes
+  only what the user authored and never re-fetches the full state to reconcile.
 - `electron/security-policy.ts`, `electron/main.ts`, and `electron/preload.ts`
   enforce the renderer trust boundary: sandboxing and context isolation stay
   enabled, navigation and permissions default to deny, and the sandboxed
@@ -41,9 +49,13 @@ boundary in depth.
 ## Runtime
 
 Each Wisp (never a circle) owns one persistent, application-managed Pi session.
-Requests stream lifecycle, text, retry, compaction, and tool events; Pi
-automatic retry is capped at two retries, and a request may run for at most ten
-minutes before it is aborted with a retryable sanitized error.
+Applying a model validates it immediately, but the session itself (which loads
+the Wisp's full history) opens on first use — a message or a context request —
+so startup time does not grow with every Wisp's transcript. Requests stream
+lifecycle, text, retry, compaction, and tool events; Pi automatic retry is
+capped at two retries, and a request may run for at most ten minutes before it
+is aborted with a retryable sanitized error. On quit, agents get five seconds to
+settle before the app exits anyway.
 
 The bundled fake agent is a deterministic test adapter used by tests and
 opt-in development runs (`WISP_AGENT_MODE=fake`, unpackaged builds only); it is
@@ -57,6 +69,7 @@ wisp-bot/
 ├── electron/
 │   ├── backend/                   # Persistence, services, agents, and authorization
 │   ├── ipc/                       # Validated main-process IPC handlers
+│   ├── create-backend.ts          # Backend composition and shutdown
 │   ├── main.ts                    # Window lifecycle and trust-boundary wiring
 │   ├── preload.ts                 # Sandboxed typed renderer bridge
 │   └── security-policy.ts         # Pure URL, permission, and CSP policy
@@ -89,6 +102,25 @@ under Electron's user-data directory, including versioned integration state
 stores for model keys, plugin keys, and MCP secrets. Unpackaged dev runs
 redirect that directory to `wisp-bot-dev` (override with the `WISP_DATA_DIR`
 environment variable) so testing never touches the installed app's data.
+
+Conversations live in `backend/conversations.sqlite` (Node's built-in
+`node:sqlite`, write-ahead logging), with one row per conversation and one per
+message, so a change writes only its own rows. The main process keeps the
+stores in memory as its read model and adopts a change only after its
+transaction commits. Each conversation keeps its newest 10,000 messages; older
+ones leave the displayed transcript, while the Wisp's Pi session keeps its own
+full history. On first run the legacy `conversations.json` store is imported
+once and kept beside the database as `conversations.json.migrated-<time>`. A
+database that cannot be read, or that a newer app version wrote, is set aside
+as `conversations.sqlite.corrupt-<time>` and a fresh store starts.
+A trigram full-text index over message text (kept in sync by triggers) serves
+message search from a worker thread with its own read-only connection, and
+transcripts can be read a page at a time; each conversation also records its
+`lastActivityAt`. The store records the layout that wrote it and the oldest
+layout that can still read it, so additive changes stay readable by older
+builds. [ADR 006](decisions/006-paged-conversation-transcripts.md) describes the
+move to loading transcripts on demand; the renderer does not use pages or
+backend search yet.
 
 Theme, timezone, microphone selection, launch-at-login, notification-sound,
 and related UI preferences are stored locally in the renderer through the

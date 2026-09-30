@@ -9,6 +9,7 @@ import type { ConversationAgentContext, ConversationAgentFactory } from "../elec
 import { ConversationRepository } from "../electron/backend/conversation-repository.js";
 import { ConversationService } from "../electron/backend/conversation-service.js";
 import { FakeConversationAgent, FakeConversationAgentFactory } from "../electron/backend/fake-conversation-agent.js";
+import type { SequencedConversationAgentEvent } from "../shared/contracts.js";
 import type { Chat } from "../shared/conversations.js";
 
 function chat(id: string, circle = false): Chat {
@@ -171,6 +172,139 @@ describe("ConversationService", () => {
         }),
       );
     });
+    await service.dispose();
+  });
+
+  it("pushes the stored chat after persisting agent-driven changes", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "wisp-service-push-"));
+    const repository = new ConversationRepository({ dataDirectory: directory });
+    const onChatChanged = vi.fn();
+    let service: ConversationService;
+    const registry = new AgentRegistry(
+      new FakeConversationAgentFactory({ latencyMs: 10, responseFor: ({ text }) => `Reply:${text}` }),
+      (event) => service.handleAgentEvent(event),
+    );
+    service = new ConversationService(repository, registry, () => [], { onChatChanged });
+    await service.start({ providerId: "test", modelId: "test" });
+    await service.initialize({ one: chat("one") });
+    await service.appendMessage("one", { id: "request-1", type: "outgoing", text: "A", status: "queued" });
+
+    registry.dispatch({ conversationId: "one", requestId: "request-1", text: "A" });
+
+    await vi.waitFor(() =>
+      expect(onChatChanged).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          id: "one",
+          preview: "Reply:A",
+          messages: [
+            expect.objectContaining({ id: "request-1", status: "complete" }),
+            expect.objectContaining({ id: "request-1:assistant", text: "Reply:A", status: "complete" }),
+          ],
+        }),
+      ),
+    );
+    await service.dispose();
+  });
+
+  it("shows a reply that is still streaming on the newest page only", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "wisp-service-pages-"));
+    const repository = new ConversationRepository({ dataDirectory: directory });
+    let service: ConversationService;
+    const registry = new AgentRegistry(
+      new FakeConversationAgentFactory({ latencyMs: 300, responseFor: () => "A long streamed reply" }),
+      (event) => service.handleAgentEvent(event),
+    );
+    service = new ConversationService(repository, registry);
+    await service.start({ providerId: "test", modelId: "test" });
+    const history = Array.from({ length: 60 }, (_, index) => ({
+      id: `h${index}`,
+      type: "incoming" as const,
+      text: `${index}`,
+    }));
+    await service.initialize({ one: { ...chat("one"), messages: history } });
+    await service.appendMessage("one", { id: "request-1", type: "outgoing", text: "Go", status: "queued" });
+
+    registry.dispatch({ conversationId: "one", requestId: "request-1", text: "Go" });
+    await vi.waitFor(() =>
+      expect(service.getState().chats.one?.messages.at(-1)).toMatchObject({
+        id: "request-1:assistant",
+        status: "streaming",
+      }),
+    );
+
+    const latest = await service.getMessagePage({ conversationId: "one", page: "latest" });
+    expect(latest.messages.at(-1)).toMatchObject({ id: "request-1:assistant", status: "streaming" });
+    const older = await service.getMessagePage({ conversationId: "one", page: "older", cursor: latest.olderCursor! });
+    expect(older.messages.map(({ id }) => id)).not.toContain("request-1:assistant");
+    await service.dispose();
+  });
+
+  it("refuses to let a renderer write overwrite a reply", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "wisp-service-owned-"));
+    const repository = new ConversationRepository({ dataDirectory: directory });
+    const service = new ConversationService(
+      repository,
+      new AgentRegistry(new FakeConversationAgentFactory(), () => undefined),
+    );
+    await service.start(null);
+    await service.initialize({ one: chat("one") });
+    await repository.appendMessage("one", { id: "request-1:assistant", type: "incoming", text: "Real reply" });
+
+    await expect(
+      service.appendMessage("one", { id: "request-1:assistant", type: "outgoing", text: "Forged" }),
+    ).rejects.toMatchObject({ code: "invalid_request" });
+    await expect(
+      service.appendMessage("one", { id: "request-2", type: "outgoing", text: "Mine", status: "queued" }),
+    ).resolves.toMatchObject({ preview: "Mine" });
+    expect(repository.getChats().one?.messages).toContainEqual(
+      expect.objectContaining({ id: "request-1:assistant", text: "Real reply" }),
+    );
+    await service.dispose();
+  });
+
+  it("logs and surfaces a reply that could not be saved", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "wisp-service-persist-failure-"));
+    const repository = new ConversationRepository({ dataDirectory: directory });
+    const published: SequencedConversationAgentEvent[] = [];
+    const logger = { warn: vi.fn() };
+    let service: ConversationService;
+    const registry = new AgentRegistry(
+      new FakeConversationAgentFactory({ latencyMs: 10, responseFor: () => "Lost reply" }),
+      (event) => {
+        published.push(event);
+        service.handleAgentEvent(event);
+      },
+    );
+    service = new ConversationService(repository, registry, () => [], { logger });
+    await service.start({ providerId: "test", modelId: "test" });
+    await service.initialize({ one: chat("one") });
+    await service.appendMessage("one", { id: "request-1", type: "outgoing", text: "A", status: "queued" });
+    const append = repository.appendMessage.bind(repository);
+    vi.spyOn(repository, "appendMessage").mockImplementation((conversationId, message) =>
+      message.type === "incoming" ? Promise.reject(new Error("disk full")) : append(conversationId, message),
+    );
+
+    registry.dispatch({ conversationId: "one", requestId: "request-1", text: "A" });
+
+    await vi.waitFor(() =>
+      expect(logger.warn).toHaveBeenCalledWith("conversation_persist_failed", {
+        conversationId: "one",
+        messageId: "request-1:assistant",
+        code: "internal_error",
+      }),
+    );
+    expect(published).toContainEqual(
+      expect.objectContaining({
+        type: "conversation_error",
+        conversationId: "one",
+        error: expect.objectContaining({ message: expect.stringMatching(/could not be saved/) }),
+      }),
+    );
+    expect(published.find((event) => event.type === "conversation_error")).not.toHaveProperty("requestId");
+    // Still visible until restart.
+    expect(service.getState().chats.one?.messages).toContainEqual(
+      expect.objectContaining({ id: "request-1:assistant", text: "Lost reply" }),
+    );
     await service.dispose();
   });
 

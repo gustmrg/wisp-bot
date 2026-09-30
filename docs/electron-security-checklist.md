@@ -6,6 +6,7 @@ Verified for the Phase 6 backend boundary:
 - Preload exposes a fixed, typed IPC allowlist through `contextBridge`.
 - Every IPC handler validates the sender frame and runtime payload.
 - Production navigation is restricted to the built renderer; new windows are denied.
+- `shell.openExternal` only receives `https:`, `http:`, or `mailto:` URLs without embedded credentials. Rendered links open through the denied new-window path; MCP OAuth authorization URLs must be HTTPS.
 - The renderer applies a restrictive content security policy.
 - Provider credentials remain encrypted in the main process and never enter renderer events.
 - Plugin keys use a separate encrypted store; configuration responses never return saved secrets.

@@ -111,6 +111,9 @@ export class McpService {
     { conversationId: string; sessionId: string; serverId: string }
   >();
   private readonly pool = new Map<string, PoolEntry>();
+  // Pi runs a turn's tool calls in parallel; concurrent first calls to a server
+  // must share one connect instead of each opening (and leaking) a connection.
+  private readonly connecting = new Map<string, Promise<McpConnection>>();
   /** In-flight interactive sign-ins, keyed by server. */
   private readonly activeSignIns = new Map<string, ActiveSignIn>();
 
@@ -611,10 +614,18 @@ export class McpService {
     }
   }
 
-  private async pooledConnection(sessionId: string, serverId: string): Promise<McpConnection> {
+  private pooledConnection(sessionId: string, serverId: string): Promise<McpConnection> {
+    const key = `${sessionId}:${serverId}`;
+    const inFlight = this.connecting.get(key);
+    if (inFlight) return inFlight;
+    const connecting = this.openPooledConnection(key, serverId).finally(() => this.connecting.delete(key));
+    this.connecting.set(key, connecting);
+    return connecting;
+  }
+
+  private async openPooledConnection(key: string, serverId: string): Promise<McpConnection> {
     const server = this.state.servers[serverId];
     if (!server) throw new WispBackendError("tool_blocked", "This MCP connection was removed.");
-    const key = `${sessionId}:${serverId}`;
     const existing = this.pool.get(key);
     if (existing) {
       if (existing.generation !== server.configGeneration) {
@@ -626,17 +637,28 @@ export class McpService {
       }
     }
     const auth = await this.serverAuth(server);
+    // The OAuth provider owns a loopback callback server; release it on every path that does not pool it.
+    const provider = auth.mode === "oauth" && auth.provider instanceof McpOAuthProvider ? auth.provider : undefined;
     const connection = this.createConnection();
-    const outcome = await connection.connect(server.endpoint, auth);
-    if (outcome === "needs_sign_in") {
+    const discard = async (): Promise<void> => {
+      provider?.dispose();
       await connection.close();
+    };
+    let outcome: Awaited<ReturnType<McpConnection["connect"]>>;
+    try {
+      outcome = await connection.connect(server.endpoint, auth);
+    } catch (error) {
+      await discard();
+      throw error;
+    }
+    if (outcome === "needs_sign_in" || this.disposed) {
+      await discard();
+      this.assertLive();
       throw new WispBackendError("configuration_required", "Sign in to this connection before use.");
     }
-    this.pool.set(key, {
-      connection,
-      generation: server.configGeneration,
-      ...(auth.mode === "oauth" && auth.provider instanceof McpOAuthProvider ? { provider: auth.provider } : {}),
-    });
+    // The listener was only needed so the redirect URL existed during connect.
+    provider?.releaseCallbackServer();
+    this.pool.set(key, { connection, generation: server.configGeneration, ...(provider ? { provider } : {}) });
     return connection;
   }
 

@@ -239,6 +239,67 @@ describe("tool policy", () => {
     }
   });
 
+  it("settles a blocked approval once even when the decision arrives twice", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "wisp-approval-double-"));
+    const store = new ToolPolicyStore(path.join(directory, "policy.json"));
+    const published: ConversationAgentEvent[] = [];
+    const audit = { append: vi.fn() };
+    const broker = new ToolAuthorizationBroker(store, (event) => published.push(event), {
+      createId: () => "approval-1",
+      selectWindowId: () => 1,
+      audit,
+    });
+    const action = broker.authorize({
+      conversationId: "one",
+      toolCallId: "tool-1",
+      toolName: "edit",
+      category: "modify_file",
+      scope: { kind: "workspace_path", value: "file.txt" },
+      summary: "Modify file.txt",
+    });
+    const actionExpectation = expect(action).rejects.toMatchObject({ code: "tool_blocked" });
+    const decision = {
+      approvalId: "approval-1",
+      conversationId: "one",
+      toolCallId: "tool-1",
+      decision: "block",
+    } as const;
+
+    // A double click sends the second decision while the first is still saving the block rule.
+    const results = await Promise.allSettled([broker.resolve(decision, 1), broker.resolve(decision, 1)]);
+
+    await actionExpectation;
+    expect(results.map(({ status }) => status)).toEqual(["fulfilled", "rejected"]);
+    expect(published.filter(({ type }) => type === "tool_approval_resolved")).toHaveLength(1);
+    expect(audit.append.mock.calls.filter(([entry]) => entry.actor === "user")).toHaveLength(1);
+  });
+
+  it("blocks the action even when the block rule cannot be saved", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "wisp-approval-save-failure-"));
+    const store = new ToolPolicyStore(path.join(directory, "policy.json"));
+    vi.spyOn(store, "blockCategory").mockRejectedValue(new Error("disk full"));
+    const broker = new ToolAuthorizationBroker(store, () => undefined, {
+      createId: () => "approval-1",
+      selectWindowId: () => 1,
+    });
+    const action = broker.authorize({
+      conversationId: "one",
+      toolCallId: "tool-1",
+      toolName: "edit",
+      category: "modify_file",
+      scope: { kind: "workspace_path", value: "file.txt" },
+      summary: "Modify file.txt",
+    });
+    const actionExpectation = expect(action).rejects.toMatchObject({ code: "tool_blocked" });
+
+    await expect(
+      broker.resolve({ approvalId: "approval-1", conversationId: "one", toolCallId: "tool-1", decision: "block" }, 1),
+    ).rejects.toThrow("disk full");
+
+    await actionExpectation;
+    expect(broker.listPending()).toEqual([]);
+  });
+
   it("cancels a pending approval when the tool execution is aborted", async () => {
     const directory = await mkdtemp(path.join(os.tmpdir(), "wisp-approval-abort-"));
     const events: ConversationAgentEvent[] = [];

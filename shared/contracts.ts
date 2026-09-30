@@ -20,7 +20,12 @@ import type {
 import type {
   AnswerConversationPromptRequest,
   AppendConversationMessageRequest,
+  Chat,
   ConversationStateView,
+  MessagePage,
+  MessagePageRequest,
+  MessageSearchHit,
+  SearchMessagesRequest,
   CreateConversationRequest,
   DeleteConversationRequest,
   InitializeConversationsRequest,
@@ -65,6 +70,9 @@ export const WISP_IPC_CHANNELS = {
   appendConversationMessage: "wisp:conversations:append-message",
   answerConversationPrompt: "wisp:conversations:answer-prompt",
   markConversationRead: "wisp:conversations:mark-read",
+  conversationChanged: "wisp:conversations:changed",
+  getConversationMessages: "wisp:conversations:get-messages",
+  searchMessages: "wisp:conversations:search",
   getSessionReport: "wisp:conversations:get-session-report",
   getUsageReport: "wisp:usage:get",
   getToolPolicy: "wisp:tool-policy:get",
@@ -360,9 +368,16 @@ export interface WispApi {
   createConversation(request: CreateConversationRequest): Promise<BackendResult<ConversationStateView>>;
   updateConversation(request: UpdateConversationRequest): Promise<BackendResult<ConversationStateView>>;
   deleteConversation(request: DeleteConversationRequest): Promise<BackendResult<ConversationStateView>>;
-  appendConversationMessage(request: AppendConversationMessageRequest): Promise<BackendResult<ConversationStateView>>;
-  answerConversationPrompt(request: AnswerConversationPromptRequest): Promise<BackendResult<ConversationStateView>>;
-  markConversationRead(request: MarkConversationReadRequest): Promise<BackendResult<ConversationStateView>>;
+  // Single-chat changes return only that chat; structural changes above return the full state.
+  appendConversationMessage(request: AppendConversationMessageRequest): Promise<BackendResult<Chat>>;
+  answerConversationPrompt(request: AnswerConversationPromptRequest): Promise<BackendResult<Chat>>;
+  markConversationRead(request: MarkConversationReadRequest): Promise<BackendResult<Chat>>;
+  /** One page of a transcript, read from the backend store. */
+  getConversationMessages(request: MessagePageRequest): Promise<BackendResult<MessagePage>>;
+  /** Newest matching messages first. The query must have at least 3 characters. */
+  searchMessages(request: SearchMessagesRequest): Promise<BackendResult<ReadonlyArray<MessageSearchHit>>>;
+  /** Pushes a chat after the backend persists agent-driven changes to it (replies, statuses, context notices). */
+  subscribeToConversationChanges(listener: (chat: Chat) => void): () => void;
   getSessionReport(request: ConversationRequest): Promise<BackendResult<WispSessionReport | null>>;
   getUsageReport(request: UsageReportRequest): Promise<BackendResult<UsageReport>>;
   getToolPolicy(): Promise<BackendResult<ToolPolicySettings>>;

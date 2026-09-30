@@ -15,8 +15,11 @@ import type {
   DeleteConversationRequest,
   InitializeConversationsRequest,
   MarkConversationReadRequest,
+  MessagePageRequest,
+  SearchMessagesRequest,
   UpdateConversationRequest,
 } from "../../shared/conversations.js";
+import { MAX_MESSAGE_SEARCH_LENGTH, MIN_MESSAGE_SEARCH_LENGTH } from "../../shared/message-search.js";
 import type { ResolveToolApprovalRequest } from "../../shared/tool-policy.js";
 import { WispBackendError } from "../backend/backend-error.js";
 import {
@@ -145,10 +148,51 @@ export function parseDeleteConversationRequest(value: unknown): DeleteConversati
 
 export function parseAppendConversationMessageRequest(value: unknown): AppendConversationMessageRequest {
   const request = asRecord(value);
-  return {
-    conversationId: parseId(request.conversationId),
-    message: normalizeMessage(request.message),
+  const message = normalizeMessage(request.message);
+  // The renderer saves only what the user wrote; replies and notices come from the backend.
+  if (message.type !== "outgoing") throw invalidRequest();
+  return { conversationId: parseId(request.conversationId), message: { ...message, type: "outgoing" } };
+}
+
+const CURSOR_PATTERN = /^\d{1,15}$/;
+
+export function parseMessagePageRequest(value: unknown): MessagePageRequest {
+  const request = asRecord(value);
+  const conversationId = parseId(request.conversationId);
+  const keys = Object.keys(request);
+  const only = (...allowed: string[]): void => {
+    if (keys.some((key) => !["conversationId", "page", ...allowed].includes(key))) throw invalidRequest();
   };
+  switch (request.page) {
+    case "latest":
+      only();
+      return { conversationId, page: "latest" };
+    case "older":
+    case "newer": {
+      only("cursor");
+      if (typeof request.cursor !== "string" || !CURSOR_PATTERN.test(request.cursor)) throw invalidRequest();
+      return { conversationId, page: request.page, cursor: request.cursor };
+    }
+    case "around":
+      only("messageId");
+      return { conversationId, page: "around", messageId: parseId(request.messageId) };
+    default:
+      throw invalidRequest();
+  }
+}
+
+export function parseSearchMessagesRequest(value: unknown): SearchMessagesRequest {
+  const { query } = asRecord(value);
+  if (typeof query !== "string") throw invalidRequest();
+  const trimmed = query.trim();
+  if (Array.from(trimmed).length < MIN_MESSAGE_SEARCH_LENGTH) {
+    throw new WispBackendError(
+      "invalid_request",
+      `Message search needs at least ${MIN_MESSAGE_SEARCH_LENGTH} characters.`,
+    );
+  }
+  if (trimmed.length > MAX_MESSAGE_SEARCH_LENGTH) throw invalidRequest();
+  return { query: trimmed };
 }
 
 export function parseAnswerConversationPromptRequest(value: unknown): AnswerConversationPromptRequest {
