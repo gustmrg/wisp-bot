@@ -1,6 +1,8 @@
-import type { Message } from "../../shared/conversations";
+import type { Chat, Message } from "../../shared/conversations";
 
 const DAY_MS = 86_400_000;
+const MINUTE_MS = 60_000;
+const ISO_TIMESTAMP_PATTERN = /^\d{4}-\d{2}-\d{2}T/;
 
 function startOfDay(date: Date): number {
   return new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
@@ -38,4 +40,30 @@ export function withDateDividers(messages: ReadonlyArray<Message>, now: Date = n
     result.push(message);
   }
   return result;
+}
+
+// The most recent timestamped message, falling back to the chat's own ISO timestamp. Older
+// stores saved display strings such as "Now" there; those carry no date and are ignored.
+export function chatActivityDate(chat: Pick<Chat, "messages" | "timestamp">): Date | null {
+  for (let index = chat.messages.length - 1; index >= 0; index -= 1) {
+    const date = messageDate(chat.messages[index]!);
+    if (date) return date;
+  }
+  if (!ISO_TIMESTAMP_PATTERN.test(chat.timestamp)) return null;
+  const date = new Date(chat.timestamp);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+// Compact recency label for conversation lists, computed at render time so it never goes stale.
+export function chatActivityLabel(date: Date, now: Date = new Date()): string {
+  const elapsed = now.getTime() - date.getTime();
+  if (elapsed < MINUTE_MS) return "Now";
+  if (elapsed < 60 * MINUTE_MS) return `${Math.floor(elapsed / MINUTE_MS)}m`;
+  const dayDiff = Math.round((startOfDay(now) - startOfDay(date)) / DAY_MS);
+  if (dayDiff === 0) return date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+  if (dayDiff === 1) return "Yesterday";
+  if (dayDiff < 7) return date.toLocaleDateString([], { weekday: "short" });
+  const day = String(date.getDate()).padStart(2, "0");
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  return date.getFullYear() === now.getFullYear() ? `${day}/${month}` : `${day}/${month}/${date.getFullYear()}`;
 }

@@ -120,7 +120,7 @@ export function applyWorkspaceAction(records: WorkspaceRecords, action: Workspac
         chat: {
           ...normalized,
           preview: current && "text" in current ? current.text : normalized.preview,
-          timestamp: "Now",
+          timestamp: action.updatedAt,
         },
         updatedAt: action.updatedAt,
       });

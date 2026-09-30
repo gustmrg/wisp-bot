@@ -10,6 +10,8 @@ import type { ManagedConversationStatus } from "../../shared/conversations";
 import type { ModelSelection } from "../../shared/contracts";
 import type { ToolApprovalRequest } from "../../shared/tool-policy";
 import type { CurrentUser } from "@/config/app-metadata";
+import { useClock } from "@/hooks/use-clock";
+import { chatActivityDate, chatActivityLabel } from "@/lib/date-dividers";
 import { sidebarLayoutStyle } from "@/lib/layout";
 import { panelResizer, profileAvatar } from "@/lib/ui-classes";
 import { cn } from "@/lib/utils";
@@ -60,6 +62,7 @@ function Sidebar({
   const collapsed = !mobile && collapsedPreference;
   const [filter, setFilter] = useState<"all" | "unread" | "active">("all");
   const titleRef = useRef<HTMLHeadingElement>(null);
+  const now = useClock(30_000);
   const allChatIds = Object.keys(chats);
   const unreadCount = allChatIds.filter((id) => chats[id]?.unread).length;
   const chatIds = allChatIds.filter(
@@ -165,6 +168,7 @@ function Sidebar({
             const selected = chatId === activeChatId;
             const pendingApproval = Boolean(approvals[chatId]?.length);
             const working = statuses[chatId] === "working";
+            const activityDate = chatActivityDate(chat);
 
             return (
               <button
@@ -190,7 +194,14 @@ function Sidebar({
                       <strong className="min-w-0 flex-1 overflow-hidden text-[13px] leading-[17px] font-semibold text-ellipsis whitespace-nowrap">
                         {chat.name}
                       </strong>
-                      <time className="flex-none text-faint text-[10.5px] leading-[17px]">{chat.timestamp}</time>
+                      {activityDate ? (
+                        <time
+                          className="flex-none text-faint text-[10.5px] leading-[17px]"
+                          dateTime={activityDate.toISOString()}
+                        >
+                          {chatActivityLabel(activityDate, now)}
+                        </time>
+                      ) : null}
                     </span>
                     <span
                       className="conversation-preview mt-px overflow-hidden text-faint text-[12.5px] leading-[17px] text-ellipsis whitespace-nowrap"

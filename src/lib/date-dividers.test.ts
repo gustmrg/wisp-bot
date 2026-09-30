@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { Message } from "@/chat-data";
-import { dateDividerLabel, withDateDividers } from "@/lib/date-dividers";
+import { chatActivityDate, chatActivityLabel, dateDividerLabel, withDateDividers } from "@/lib/date-dividers";
 
 const now = new Date("2026-09-11T15:00:00");
 
@@ -68,5 +68,39 @@ describe("withDateDividers", () => {
 
     expect(ids).toEqual([expect.stringMatching(/^date:\d+$/), expect.stringMatching(/^date:\d+$/)]);
     expect(ids[0]).not.toBe(ids[1]);
+  });
+});
+
+describe("chatActivityDate", () => {
+  it("uses the most recent timestamped message", () => {
+    const chat = { timestamp: "Now", messages: [messages.yesterday, messages.today, messages.untimed] as Message[] };
+    expect(chatActivityDate(chat)).toEqual(new Date(messages.today.createdAt));
+  });
+
+  it("falls back to an ISO chat timestamp and ignores legacy display strings", () => {
+    expect(chatActivityDate({ timestamp: "2026-09-11T09:00:00.000Z", messages: [] })).toEqual(
+      new Date("2026-09-11T09:00:00.000Z"),
+    );
+    expect(chatActivityDate({ timestamp: "Now", messages: [messages.untimed] as Message[] })).toBeNull();
+    expect(chatActivityDate({ timestamp: "Yesterday", messages: [] })).toBeNull();
+  });
+});
+
+describe("chatActivityLabel", () => {
+  it("counts recent activity in minutes instead of showing a frozen 'Now'", () => {
+    expect(chatActivityLabel(new Date("2026-09-11T14:59:40"), now)).toBe("Now");
+    expect(chatActivityLabel(new Date("2026-09-11T14:55:00"), now)).toBe("5m");
+  });
+
+  it("shows the time today, then day names, then dates", () => {
+    const earlierToday = new Date("2026-09-11T09:30:00");
+    expect(chatActivityLabel(earlierToday, now)).toBe(
+      earlierToday.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }),
+    );
+    expect(chatActivityLabel(new Date("2026-09-10T22:10:00"), now)).toBe("Yesterday");
+    const threeDaysAgo = new Date("2026-09-08T08:00:00");
+    expect(chatActivityLabel(threeDaysAgo, now)).toBe(threeDaysAgo.toLocaleDateString([], { weekday: "short" }));
+    expect(chatActivityLabel(new Date("2026-08-20T08:00:00"), now)).toBe("20/08");
+    expect(chatActivityLabel(new Date("2025-06-01T10:00:00"), now)).toBe("01/06/2025");
   });
 });
