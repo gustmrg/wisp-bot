@@ -1,3 +1,5 @@
+import { connect } from "node:net";
+
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { McpOAuthProvider } from "../electron/backend/mcp-oauth.js";
@@ -44,6 +46,54 @@ describe("McpOAuthProvider authorization redirect", () => {
 
     expect(openExternal).toHaveBeenCalledWith("https://auth.example.com/authorize?state=abc");
     const pending = provider.waitForCallback();
+    provider.dispose();
+    await expect(pending).rejects.toMatchObject({ code: "aborted" });
+  });
+});
+
+function isListening(url: string): Promise<boolean> {
+  const { hostname, port } = new URL(url);
+  return new Promise((resolve) => {
+    const socket = connect({ host: hostname, port: Number(port) });
+    socket.once("connect", () => {
+      socket.destroy();
+      resolve(true);
+    });
+    socket.once("error", () => resolve(false));
+  });
+}
+
+describe("McpOAuthProvider callback listener", () => {
+  it("closes an idle listener but keeps the redirect URL the SDK already read", async () => {
+    const provider = new McpOAuthProvider({
+      serverId: "server-1",
+      secrets: {} as McpSecretStore,
+      openExternal: vi.fn(),
+    });
+    const redirectUrl = await provider.ensureCallbackServer();
+    expect(await isListening(redirectUrl)).toBe(true);
+
+    provider.releaseCallbackServer();
+
+    expect(provider.redirectUrl).toBe(redirectUrl);
+    expect(provider.clientMetadata.redirect_uris).toEqual([redirectUrl]);
+    expect(await isListening(redirectUrl)).toBe(false);
+    provider.dispose();
+  });
+
+  it("keeps the listener while a browser sign-in is waiting on it", async () => {
+    const provider = new McpOAuthProvider({
+      serverId: "server-1",
+      secrets: {} as McpSecretStore,
+      openExternal: vi.fn(async () => undefined),
+    });
+    provider.setInteractiveSignIn(true);
+    await provider.redirectToAuthorization(new URL("https://auth.example.com/authorize"));
+    const pending = provider.waitForCallback();
+
+    provider.releaseCallbackServer();
+
+    expect(await isListening(provider.redirectUrl)).toBe(true);
     provider.dispose();
     await expect(pending).rejects.toMatchObject({ code: "aborted" });
   });

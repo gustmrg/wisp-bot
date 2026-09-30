@@ -206,6 +206,29 @@ describe("ConversationService", () => {
     await service.dispose();
   });
 
+  it("refuses to let a renderer write overwrite a reply", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "wisp-service-owned-"));
+    const repository = new ConversationRepository({ dataDirectory: directory });
+    const service = new ConversationService(
+      repository,
+      new AgentRegistry(new FakeConversationAgentFactory(), () => undefined),
+    );
+    await service.start(null);
+    await service.initialize({ one: chat("one") });
+    await repository.appendMessage("one", { id: "request-1:assistant", type: "incoming", text: "Real reply" });
+
+    await expect(
+      service.appendMessage("one", { id: "request-1:assistant", type: "outgoing", text: "Forged" }),
+    ).rejects.toMatchObject({ code: "invalid_request" });
+    await expect(
+      service.appendMessage("one", { id: "request-2", type: "outgoing", text: "Mine", status: "queued" }),
+    ).resolves.toMatchObject({ preview: "Mine" });
+    expect(repository.getChats().one?.messages).toContainEqual(
+      expect.objectContaining({ id: "request-1:assistant", text: "Real reply" }),
+    );
+    await service.dispose();
+  });
+
   it("logs and surfaces a reply that could not be saved", async () => {
     const directory = await mkdtemp(path.join(os.tmpdir(), "wisp-service-persist-failure-"));
     const repository = new ConversationRepository({ dataDirectory: directory });

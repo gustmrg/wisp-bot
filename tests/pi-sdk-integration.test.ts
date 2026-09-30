@@ -337,6 +337,12 @@ ${JSON.stringify(userMessage)}
     const sessionFileContent = await readFile(first.sessionFile!, "utf8");
     expect(sessionFileContent).toContain("wisp:mcp-tools");
     expect(sessionFileContent).toContain(alias);
+
+    // Reopening with nothing new does not grow the session history.
+    sessions.push(await factory.create(context, selection));
+    const reopenedContent = await readFile(first.sessionFile!, "utf8");
+    expect(reopenedContent.match(/"customType":"wisp:runtime"/g)).toHaveLength(1);
+    expect(reopenedContent.match(/"customType":"wisp:mcp-tools"/g)).toHaveLength(1);
   } finally {
     sessions.forEach((session) => session.dispose());
     resetDynamicToolMetadata();

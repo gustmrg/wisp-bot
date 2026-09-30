@@ -88,6 +88,18 @@ export class McpOAuthProvider implements OAuthClientProvider {
     return this.redirectUrl;
   }
 
+  /**
+   * Closes the loopback listener unless a sign-in is waiting on it. The port is
+   * remembered, so the redirect URL the SDK reads stays the same. Background
+   * connections call this once connected: they can never finish a browser
+   * sign-in, so keeping a listener open for them only holds a local port.
+   */
+  releaseCallbackServer(): void {
+    if (this.callback) return;
+    this.server?.close();
+    this.server = undefined;
+  }
+
   get clientMetadata(): OAuthClientMetadata {
     // token_endpoint_auth_method "none": a public client; no secret is embedded.
     return {

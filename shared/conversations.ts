@@ -125,9 +125,12 @@ export interface DeleteConversationRequest {
   conversationId: ChatId;
 }
 
+/** A message the user wrote; replies and notices are written only by the backend. */
+export type OutgoingMessage = TextMessage & { type: "outgoing" };
+
 export interface AppendConversationMessageRequest {
   conversationId: ChatId;
-  message: Message;
+  message: OutgoingMessage;
 }
 
 export interface AnswerConversationPromptRequest {

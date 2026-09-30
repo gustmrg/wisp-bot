@@ -1,8 +1,9 @@
 import path from "node:path";
 
-import { WISP_IPC_CHANNELS, type SequencedConversationAgentEvent } from "../shared/contracts.js";
+import { WISP_IPC_CHANNELS, type ModelSelection, type SequencedConversationAgentEvent } from "../shared/contracts.js";
 import type { AgentMode } from "./backend/agent-mode.js";
 import { AgentRegistry } from "./backend/agent-registry.js";
+import { sanitizeBackendError } from "./backend/backend-error.js";
 import type { ConversationAgentFactory } from "./backend/conversation-agent.js";
 import { ConversationRepository } from "./backend/conversation-repository.js";
 import { ConversationService } from "./backend/conversation-service.js";
@@ -47,7 +48,7 @@ export interface BackendHost {
   agentMode: AgentMode;
   updateService: UpdateService;
   userName?: string;
-  /** Refresh model catalogs over the network during startup. Defaults to true. */
+  /** Refresh model catalogs over the network in the background after startup. Defaults to true. */
   allowModelNetwork?: boolean;
 }
 
@@ -162,17 +163,52 @@ export async function createBackend(host: BackendHost): Promise<Backend> {
     if (model) await modelService.validateConversationSelection(model);
     await service.applyConversationModel(id, model);
   });
+  // Startup used the cached catalog; network updates land after the window opens.
+  if (host.allowModelNetwork ?? true) {
+    void refreshModelCatalog(modelService, (selection) => service.applyModel(selection), logger);
+  }
 
   return {
     dispose: async () => {
       for (const registration of handlers) registration.dispose();
+      modelService.dispose();
       pluginService.dispose();
       mcpService.dispose();
       unsubscribeUpdateState();
       toolAuthorizationBroker.dispose();
       await agentHandlers.dispose();
+      // Last: agents may persist their final messages while they settle.
+      await conversationRepository.close();
     },
   };
+}
+
+/**
+ * Refreshes model catalogs over the network. If the saved model's usability
+ * changed (for example, a model only the fresh catalog knows), Wisps are
+ * re-applied so they pick it up without a restart. Never throws.
+ */
+export async function refreshModelCatalog(
+  models: Pick<ModelService, "getSelection" | "refreshCatalog">,
+  applyModel: (selection: ModelSelection | null) => Promise<void>,
+  logger: Pick<StructuredLogger, "warn">,
+): Promise<void> {
+  try {
+    const before = await models.getSelection();
+    await models.refreshCatalog();
+    const after = await models.getSelection();
+    if (!sameSelection(before, after)) await applyModel(after);
+  } catch (error) {
+    logger.warn("model_catalog_refresh_failed", { code: sanitizeBackendError(error).code });
+  }
+}
+
+function sameSelection(left: ModelSelection | null, right: ModelSelection | null): boolean {
+  return (
+    left?.providerId === right?.providerId &&
+    left?.modelId === right?.modelId &&
+    left?.maxOutputTokens === right?.maxOutputTokens
+  );
 }
 
 /**

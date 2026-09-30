@@ -9,7 +9,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { EncryptionService } from "../../electron/backend/encrypted-credential-store.js";
 import { StructuredLogger } from "../../electron/backend/structured-logger.js";
 import { UpdateService } from "../../electron/backend/update-service.js";
-import { createBackend, disposeWithin, type Backend } from "../../electron/create-backend.js";
+import { createBackend, disposeWithin, refreshModelCatalog, type Backend } from "../../electron/create-backend.js";
 import { WISP_IPC_CHANNELS, type BackendResult } from "../../shared/contracts.js";
 import type { Chat, ConversationStateView } from "../../shared/conversations.js";
 
@@ -105,9 +105,16 @@ describe("createBackend", () => {
       apiKey: "test-key",
     });
     await invoke(WISP_IPC_CHANNELS.initializeConversations, { chats: { atlas } });
-    await invoke(WISP_IPC_CHANNELS.appendConversationMessage, {
-      conversationId: "atlas",
-      message: { id: "request-1", type: "outgoing", text: "Hello", status: "queued" },
+    // Single-chat changes answer with that chat, not every conversation.
+    await expect(
+      invoke(WISP_IPC_CHANNELS.appendConversationMessage, {
+        conversationId: "atlas",
+        message: { id: "request-1", type: "outgoing", text: "Hello", status: "queued" },
+      }),
+    ).resolves.toMatchObject({
+      id: "atlas",
+      preview: "Hello",
+      messages: [expect.objectContaining({ id: "request-1" })],
     });
 
     await invoke(WISP_IPC_CHANNELS.sendMessage, { conversationId: "atlas", requestId: "request-1", text: "Hello" });
@@ -146,5 +153,42 @@ describe("disposeWithin", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+describe("refreshModelCatalog", () => {
+  const selection = { providerId: "openrouter", modelId: "openai/gpt-oss-120b" };
+
+  it("re-applies the model when the fresh catalog makes the saved one usable", async () => {
+    const getSelection = vi.fn().mockResolvedValueOnce(null).mockResolvedValueOnce(selection);
+    const applyModel = vi.fn(async () => undefined);
+
+    await refreshModelCatalog({ getSelection, refreshCatalog: async () => undefined }, applyModel, { warn: vi.fn() });
+
+    expect(applyModel).toHaveBeenCalledWith(selection);
+  });
+
+  it("leaves Wisps alone when the saved model did not change", async () => {
+    const applyModel = vi.fn(async () => undefined);
+
+    await refreshModelCatalog(
+      { getSelection: async () => ({ ...selection }), refreshCatalog: async () => undefined },
+      applyModel,
+      { warn: vi.fn() },
+    );
+
+    expect(applyModel).not.toHaveBeenCalled();
+  });
+
+  it("logs a failed refresh instead of throwing", async () => {
+    const warn = vi.fn();
+
+    await refreshModelCatalog(
+      { getSelection: async () => null, refreshCatalog: () => Promise.reject(new Error("offline")) },
+      vi.fn(),
+      { warn },
+    );
+
+    expect(warn).toHaveBeenCalledWith("model_catalog_refresh_failed", { code: "internal_error" });
   });
 });
