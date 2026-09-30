@@ -43,7 +43,9 @@ import { registerPluginHandlers } from "./ipc/register-plugin-handlers.js";
 import { registerSessionReportHandlers } from "./ipc/register-session-report-handlers.js";
 import { registerToolPolicyHandlers } from "./ipc/register-tool-policy-handlers.js";
 import { registerUpdateHandlers } from "./ipc/register-update-handlers.js";
+import { WispBackendError } from "./backend/backend-error.js";
 import {
+  isAllowedExternalUrl,
   isAllowedPermission,
   isAllowedRendererUrl,
   resolveRendererTarget,
@@ -83,6 +85,11 @@ if (!app.requestSingleInstanceLock()) {
   app.whenReady().then(bootstrap).catch(handleFatalStartupError);
 }
 
+async function openExternalUrl(url: string): Promise<void> {
+  if (!isAllowedExternalUrl(url)) throw new WispBackendError("invalid_request", "This link cannot be opened.");
+  await shell.openExternal(url);
+}
+
 function isTrustedIpcSender(event: IpcMainInvokeEvent): boolean {
   if (!event.senderFrame || event.senderFrame !== event.sender.mainFrame) return false;
 
@@ -115,7 +122,11 @@ async function createWindow(target: RendererTarget): Promise<void> {
     }
   };
 
-  window.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
+  // The app never spawns windows; rendered links (target="_blank") open in the system browser instead.
+  window.webContents.setWindowOpenHandler(({ url }) => {
+    if (isAllowedExternalUrl(url)) void openExternalUrl(url).catch(() => undefined);
+    return { action: "deny" };
+  });
   window.webContents.on("will-navigate", (event, navigationUrl) => {
     if (!isAllowedRendererUrl(navigationUrl, target)) event.preventDefault();
   });
@@ -242,7 +253,7 @@ async function bootstrap(): Promise<void> {
     encryption: new SafeStorageEncryption(),
     authorizationBroker: toolAuthorizationBroker,
     resolveWisp: (id) => conversationRepository.getAgentContext(id).sessionId,
-    openExternal: (url) => shell.openExternal(url),
+    openExternal: openExternalUrl,
     // Health updates: push the sanitized view; secrets never leave the backend.
     onSettingsChanged: (view) => {
       for (const window of BrowserWindow.getAllWindows()) {
@@ -290,7 +301,7 @@ async function bootstrap(): Promise<void> {
   const pluginHandlers = registerPluginHandlers(ipcMain, pluginService, isTrustedIpcSender);
   const mcpHandlers = registerMcpHandlers(ipcMain, mcpService, isTrustedIpcSender);
   const updateHandlers = registerUpdateHandlers(ipcMain, updateService, isTrustedIpcSender, async () => {
-    await shell.openExternal(WISP_RELEASES_URL);
+    await openExternalUrl(WISP_RELEASES_URL);
   });
   let backendDisposed = false;
   let backendDisposing = false;

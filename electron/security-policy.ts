@@ -3,6 +3,9 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 export const TRUSTED_DEVELOPMENT_ORIGIN = "http://127.0.0.1:5173";
 const ALLOWED_PERMISSIONS = new Set(["clipboard-sanitized-write"]);
+// shell.openExternal hands URLs to the OS, where file:, smb:, and custom app
+// protocols can launch local handlers. Only web and mail links may leave the app.
+const EXTERNAL_URL_PROTOCOLS = new Set(["https:", "http:", "mailto:"]);
 
 export type RendererTarget =
   | { kind: "development"; url: string; origin: string }
@@ -41,6 +44,16 @@ export function isAllowedRendererUrl(value: string, target: RendererTarget): boo
     if (target.kind === "development") return parsed.origin === target.origin;
     if (parsed.protocol !== "file:" || parsed.host) return false;
     return path.resolve(fileURLToPath(parsed)) === target.filePath;
+  } catch {
+    return false;
+  }
+}
+
+export function isAllowedExternalUrl(value: string): boolean {
+  try {
+    const parsed = new URL(value);
+    // Embedded credentials enable look-alike links such as https://bank.example@evil.example/.
+    return EXTERNAL_URL_PROTOCOLS.has(parsed.protocol) && !parsed.username && !parsed.password;
   } catch {
     return false;
   }
