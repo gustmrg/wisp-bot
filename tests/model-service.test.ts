@@ -138,7 +138,24 @@ describe("ModelService", () => {
     await expect(service.getView()).resolves.toMatchObject({ catalogError: null });
   });
 
-  it("keeps saved credentials configured and reports the failure when the startup refresh times out", async () => {
+  it("starts from the cached catalog without waiting on the network", async () => {
+    const directory = await mkdtemp(path.join(tmpdir(), "wisp-model-offline-start-"));
+    directories.push(directory);
+    // With a provider key present, a network refresh would call fetch and hang here.
+    vi.stubEnv("OPENROUTER_API_KEY", "env-key");
+    const fetch = vi.fn(() => new Promise<never>(() => undefined));
+    vi.stubGlobal("fetch", fetch);
+    try {
+      await ModelService.create({ dataDirectory: directory, encryption: new TestEncryption() });
+
+      expect(fetch).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllGlobals();
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it("keeps saved credentials configured and reports the failure when a catalog refresh times out", async () => {
     const directory = await mkdtemp(path.join(tmpdir(), "wisp-model-stall-"));
     directories.push(directory);
     const encryption = new TestEncryption();
@@ -157,11 +174,8 @@ describe("ModelService", () => {
       ),
     );
     try {
-      const stalled = await ModelService.create({
-        dataDirectory: directory,
-        encryption,
-        modelRefreshTimeoutMs: 50,
-      });
+      const stalled = await ModelService.create({ dataDirectory: directory, encryption });
+      await stalled.refreshCatalog(50);
 
       expect(stalled.getModelRuntime().hasConfiguredAuth("openrouter")).toBe(true);
       await expect(stalled.getSelection()).resolves.toEqual(selection);
