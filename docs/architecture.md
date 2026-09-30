@@ -113,6 +113,8 @@ full history. On first run the legacy `conversations.json` store is imported
 once and kept beside the database as `conversations.json.migrated-<time>`. A
 database that cannot be read, or that a newer app version wrote, is set aside
 as `conversations.sqlite.corrupt-<time>` and a fresh store starts.
+[ADR 006](decisions/006-paged-conversation-transcripts.md) plans loading
+transcripts on demand, indexed message search, and removing the message cap.
 
 Theme, timezone, microphone selection, launch-at-login, notification-sound,
 and related UI preferences are stored locally in the renderer through the
