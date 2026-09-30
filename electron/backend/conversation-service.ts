@@ -2,7 +2,7 @@ import type { ConversationModelView, ModelSelection, SequencedConversationAgentE
 import type { Chat, ChatChanges, ChatCollection, ConversationStateView, Message } from "../../shared/conversations.js";
 import type { ToolApprovalRequest } from "../../shared/tool-policy.js";
 import type { AgentRegistry } from "./agent-registry.js";
-import { sanitizeBackendError } from "./backend-error.js";
+import { sanitizeBackendError, WispBackendError } from "./backend-error.js";
 import type { ConversationRepository } from "./conversation-repository.js";
 import type { StructuredLogger } from "./structured-logger.js";
 
@@ -145,19 +145,19 @@ export class ConversationService {
     return this.getState();
   }
 
-  async appendMessage(conversationId: string, message: Message): Promise<ConversationStateView> {
+  async appendMessage(conversationId: string, message: Message): Promise<Chat> {
     await this.repository.appendMessage(conversationId, message);
-    return this.getState();
+    return this.requireChatView(conversationId);
   }
 
-  async answerPrompt(conversationId: string, messageId: string, answer: string): Promise<ConversationStateView> {
+  async answerPrompt(conversationId: string, messageId: string, answer: string): Promise<Chat> {
     await this.repository.answerPrompt(conversationId, messageId, answer);
-    return this.getState();
+    return this.requireChatView(conversationId);
   }
 
-  async markRead(conversationId: string): Promise<ConversationStateView> {
+  async markRead(conversationId: string): Promise<Chat> {
     await this.repository.markRead(conversationId);
-    return this.getState();
+    return this.requireChatView(conversationId);
   }
 
   async delete(conversationId: string): Promise<ConversationStateView> {
@@ -229,8 +229,20 @@ export class ConversationService {
   }
 
   private publishChat(conversationId: string): void {
-    const chat = this.repository.getChat(conversationId);
-    if (chat) this.onChatChanged(this.withLiveMessages({ [conversationId]: chat })[conversationId]!);
+    const chat = this.chatView(conversationId);
+    if (chat) this.onChatChanged(chat);
+  }
+
+  /** One stored chat with live messages overlaid, as the renderer should see it. */
+  private chatView(conversationId: string): Chat | undefined {
+    const chat = this.repository.readChat(conversationId);
+    return chat ? this.withLiveMessages({ [conversationId]: chat })[conversationId] : undefined;
+  }
+
+  private requireChatView(conversationId: string): Chat {
+    const chat = this.chatView(conversationId);
+    if (!chat) throw new WispBackendError("not_found", "The conversation was not found.");
+    return chat;
   }
 
   private reportPersistenceFailure(conversationId: string, messageId: string, error: unknown): void {

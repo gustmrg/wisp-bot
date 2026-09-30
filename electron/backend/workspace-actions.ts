@@ -37,6 +37,8 @@ export interface WorkspaceActionResult {
   records: WorkspaceRecords;
   status: WorkspaceActionStatus;
   deletedRecord?: ConversationRecord;
+  /** Oldest messages an append dropped to stay within the per-conversation limit. */
+  droppedOldestMessages?: number;
 }
 
 export function applyWorkspaceAction(records: WorkspaceRecords, action: WorkspaceAction): WorkspaceActionResult {
@@ -108,12 +110,15 @@ export function applyWorkspaceAction(records: WorkspaceRecords, action: Workspac
     case "append-message": {
       const record = records[action.conversationId];
       if (!record) return { records, status: "not_found" };
-      const { chat, message } = upsertNormalizedMessage(record.chat, action.message);
-      return replaceRecord(records, action.conversationId, {
-        ...record,
-        chat: { ...chat, preview: "text" in message ? message.text : chat.preview, timestamp: action.updatedAt },
-        updatedAt: action.updatedAt,
-      });
+      const { chat, message, droppedOldest } = upsertNormalizedMessage(record.chat, action.message);
+      return {
+        ...replaceRecord(records, action.conversationId, {
+          ...record,
+          chat: { ...chat, preview: "text" in message ? message.text : chat.preview, timestamp: action.updatedAt },
+          updatedAt: action.updatedAt,
+        }),
+        droppedOldestMessages: droppedOldest,
+      };
     }
     case "answer-prompt": {
       const record = records[action.conversationId];

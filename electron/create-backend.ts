@@ -171,6 +171,8 @@ export async function createBackend(host: BackendHost): Promise<Backend> {
       unsubscribeUpdateState();
       toolAuthorizationBroker.dispose();
       await agentHandlers.dispose();
+      // Last: agents may persist their final messages while they settle.
+      await conversationRepository.close();
     },
   };
 }

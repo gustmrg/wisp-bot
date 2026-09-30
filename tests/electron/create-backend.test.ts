@@ -105,9 +105,16 @@ describe("createBackend", () => {
       apiKey: "test-key",
     });
     await invoke(WISP_IPC_CHANNELS.initializeConversations, { chats: { atlas } });
-    await invoke(WISP_IPC_CHANNELS.appendConversationMessage, {
-      conversationId: "atlas",
-      message: { id: "request-1", type: "outgoing", text: "Hello", status: "queued" },
+    // Single-chat changes answer with that chat, not every conversation.
+    await expect(
+      invoke(WISP_IPC_CHANNELS.appendConversationMessage, {
+        conversationId: "atlas",
+        message: { id: "request-1", type: "outgoing", text: "Hello", status: "queued" },
+      }),
+    ).resolves.toMatchObject({
+      id: "atlas",
+      preview: "Hello",
+      messages: [expect.objectContaining({ id: "request-1" })],
     });
 
     await invoke(WISP_IPC_CHANNELS.sendMessage, { conversationId: "atlas", requestId: "request-1", text: "Hello" });

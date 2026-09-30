@@ -1,11 +1,10 @@
 import { randomUUID } from "node:crypto";
-import { copyFile, mkdir, readFile, rename } from "node:fs/promises";
+import { mkdir, readFile, rename } from "node:fs/promises";
 import path from "node:path";
 
 import type { ModelSelection } from "../../shared/contracts.js";
 import { normalizeSelection } from "./ai-settings-store.js";
 import type { Chat, ChatChanges, ChatCollection, Message } from "../../shared/conversations.js";
-import { writeFileAtomically } from "./atomic-file.js";
 import { WispBackendError } from "./backend-error.js";
 import { normalizeUserName, type ConversationAgentContext } from "./conversation-agent.js";
 import {
@@ -14,9 +13,12 @@ import {
   normalizeConversationId,
   validateConversationGraph,
 } from "./conversation-normalizer.js";
+import { ConversationStore } from "./conversation-store.js";
 import { CONVERSATION_STORAGE_POLICY } from "./storage-policy.js";
 import { applyWorkspaceAction, type ConversationRecord, type WorkspaceActionStatus } from "./workspace-actions.js";
 
+// Version of the conversation record format. The legacy JSON store also wrote
+// versions 1–3, which are upgraded when that store is migrated to SQLite.
 const SCHEMA_VERSION = 4;
 const REMOVED_DEMO_CONVERSATION_IDS = new Set(["chief", "sales", "inbox", "account", "talent", "expense", "offsite"]);
 
@@ -28,6 +30,25 @@ interface PersistedConversationState {
   conversations: Record<string, ConversationRecord>;
 }
 
+function emptyState(): PersistedConversationState {
+  return { schemaVersion: SCHEMA_VERSION, initialized: false, conversations: {} };
+}
+
+function chatsOf(records: Readonly<Record<string, ConversationRecord>>): ChatCollection {
+  return Object.fromEntries(Object.values(records).map(({ chat }) => [chat.id, chat]));
+}
+
+/** Rewrites the metadata row of every record that an action replaced. */
+function putChangedConversations(
+  store: ConversationStore,
+  previous: Readonly<Record<string, ConversationRecord>>,
+  next: Readonly<Record<string, ConversationRecord>>,
+): void {
+  for (const [id, record] of Object.entries(next)) {
+    if (previous[id] !== record) store.putConversation(record);
+  }
+}
+
 export interface ConversationRepositoryOptions {
   dataDirectory: string;
   userName?: string;
@@ -35,8 +56,16 @@ export interface ConversationRepositoryOptions {
   createId?: () => string;
 }
 
+/**
+ * Conversations and their transcripts. The in-memory state is the read model;
+ * SQLite is the durable store. Each mutation builds its next state, writes only
+ * the rows it changed in one transaction, and adopts the next state only after
+ * the commit succeeds, so a failed write never leaves memory and disk apart.
+ */
 export class ConversationRepository {
-  private readonly statePath: string;
+  private readonly dataDirectory: string;
+  private readonly databasePath: string;
+  private readonly legacyStatePath: string;
   private readonly workspaceRoot: string;
   private readonly sessionRoot: string;
   private readonly configRoot: string;
@@ -44,16 +73,15 @@ export class ConversationRepository {
   private readonly userName: string | undefined;
   private readonly now: () => Date;
   private readonly createId: () => string;
-  private state: PersistedConversationState = {
-    schemaVersion: SCHEMA_VERSION,
-    initialized: false,
-    conversations: {},
-  };
+  private state: PersistedConversationState = emptyState();
+  private store: ConversationStore | undefined;
   private recoveredCorruptState = false;
   private mutation = Promise.resolve();
 
   constructor(options: ConversationRepositoryOptions) {
-    this.statePath = path.join(options.dataDirectory, "conversations.json");
+    this.dataDirectory = options.dataDirectory;
+    this.databasePath = path.join(options.dataDirectory, "conversations.sqlite");
+    this.legacyStatePath = path.join(options.dataDirectory, "conversations.json");
     this.workspaceRoot = path.join(options.dataDirectory, "workspaces");
     this.sessionRoot = path.join(options.dataDirectory, "pi-sessions");
     this.configRoot = path.join(options.dataDirectory, "pi-config");
@@ -64,37 +92,25 @@ export class ConversationRepository {
   }
 
   async load(): Promise<void> {
-    let contents: string;
+    await mkdir(this.dataDirectory, { recursive: true });
+    let store: ConversationStore;
+    let stored: PersistedConversationState | undefined;
     try {
-      contents = await readFile(this.statePath, "utf8");
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === "ENOENT") return;
-      throw error;
-    }
-
-    let parsed: unknown;
-    try {
-      if (Buffer.byteLength(contents, "utf8") > CONVERSATION_STORAGE_POLICY.maxBlobBytes) {
-        throw new Error("Conversation state exceeds the local storage limit.");
-      }
-      parsed = JSON.parse(contents);
-      this.state = this.parsePersistedState(parsed);
-    } catch (error) {
-      await this.preserveCorruptState();
+      store = await this.openStore();
+      if (store.isEstablished()) stored = this.parsePersistedState({ schemaVersion: SCHEMA_VERSION, ...store.read() });
+    } catch {
+      // Unreadable, invalid, or written by a newer app version: keep the file
+      // for inspection and start with an empty store.
+      await this.preserveCorruptDatabase();
       this.recoveredCorruptState = true;
-      this.state = { schemaVersion: SCHEMA_VERSION, initialized: false, conversations: {} };
+      return;
+    }
+    if (stored) {
+      this.state = stored;
       await this.ensureAllDirectories();
       return;
     }
-
-    const persistedSchemaVersion = this.schemaVersionOf(parsed);
-    const needsSchemaUpgrade = persistedSchemaVersion !== SCHEMA_VERSION;
-    if (persistedSchemaVersion === 1 || persistedSchemaVersion === 2) await this.removeBundledDemoConversations();
-    await this.ensureAllDirectories();
-    if (needsSchemaUpgrade) {
-      await this.preserveMigrationSource(persistedSchemaVersion);
-      await this.persist();
-    }
+    await this.migrateLegacyState(store);
   }
 
   isInitialized(): boolean {
@@ -113,9 +129,9 @@ export class ConversationRepository {
     return Object.fromEntries(this.list().map(({ chat }) => [chat.id, chat]));
   }
 
-  getChat(conversationId: string): Chat | undefined {
-    const record = this.state.conversations[conversationId];
-    return record ? structuredClone(record.chat) : undefined;
+  /** Uncloned stored chat; see `readChats`. */
+  readChat(conversationId: string): Readonly<Chat> | undefined {
+    return this.state.conversations[conversationId]?.chat;
   }
 
   /**
@@ -192,7 +208,7 @@ export class ConversationRepository {
       if (this.state.initialized) return;
       const normalized = normalizeChatCollection(chats);
       const timestamp = this.now().toISOString();
-      this.state = {
+      const next: PersistedConversationState = {
         schemaVersion: SCHEMA_VERSION,
         initialized: true,
         conversations: Object.fromEntries(
@@ -201,6 +217,7 @@ export class ConversationRepository {
             {
               chat,
               sessionId: chat.kind === "circle" ? null : normalizeConversationId(this.createId()),
+              modelOverride: null,
               piSessionId: null,
               piSessionFile: null,
               createdAt: timestamp,
@@ -209,9 +226,9 @@ export class ConversationRepository {
           ]),
         ),
       };
-      validateConversationGraph(this.readChats());
-      await this.ensureAllDirectories();
-      await this.persist();
+      validateConversationGraph(chatsOf(next.conversations));
+      await this.ensureAllDirectories(next.conversations);
+      await this.commit(next, (store) => store.replaceAll(next));
     });
   }
 
@@ -231,16 +248,20 @@ export class ConversationRepository {
         sessionId: chat.kind === "circle" ? null : normalizeConversationId(this.createId()),
         piSessionId: null,
         piSessionFile: null,
-        ...(normalizedOverride ? { modelOverride: normalizedOverride } : {}),
+        // Always present so a new record has the same shape as one read back from disk.
+        modelOverride: normalizedOverride,
         createdAt: timestamp,
         updatedAt: timestamp,
       };
       const result = applyWorkspaceAction(this.state.conversations, { type: "create", record });
       this.throwForActionStatus(result.status);
-      this.state = { ...this.state, conversations: result.records, initialized: true };
-      validateConversationGraph(this.readChats());
+      validateConversationGraph(chatsOf(result.records));
       await this.ensureDirectories(record);
-      await this.persist();
+      await this.commit({ ...this.state, conversations: result.records, initialized: true }, (store) => {
+        store.putConversation(record);
+        store.putMessages(chat.id, record.chat.messages);
+        store.setInitialized(true);
+      });
     });
   }
 
@@ -274,9 +295,11 @@ export class ConversationRepository {
           this.throwForActionStatus(result.status);
         }
       }
-      this.state = { ...this.state, conversations: result.records };
-      validateConversationGraph(this.readChats());
-      await this.persist();
+      validateConversationGraph(chatsOf(result.records));
+      const previous = this.state.conversations;
+      await this.commit({ ...this.state, conversations: result.records }, (store) =>
+        putChangedConversations(store, previous, result.records),
+      );
     });
   }
 
@@ -290,8 +313,13 @@ export class ConversationRepository {
         updatedAt: this.now().toISOString(),
       });
       this.throwForActionStatus(result.status);
-      this.state = { ...this.state, conversations: result.records };
-      await this.persist();
+      const record = result.records[conversationId]!;
+      const stored = record.chat.messages.find(({ id }) => id === messageId)!;
+      await this.commit({ ...this.state, conversations: result.records }, (store) => {
+        store.putConversation(record);
+        store.deleteOldestMessages(conversationId, result.droppedOldestMessages ?? 0);
+        store.putMessages(conversationId, [stored]);
+      });
     });
   }
 
@@ -305,8 +333,12 @@ export class ConversationRepository {
         updatedAt: this.now().toISOString(),
       });
       this.throwForActionStatus(result.status);
-      this.state = { ...this.state, conversations: result.records };
-      await this.persist();
+      const record = result.records[conversationId]!;
+      const prompt = record.chat.messages.find(({ id }) => id === messageId)!;
+      await this.commit({ ...this.state, conversations: result.records }, (store) => {
+        store.putConversation(record);
+        store.putMessages(conversationId, [prompt]);
+      });
     });
   }
 
@@ -319,8 +351,8 @@ export class ConversationRepository {
       });
       this.throwForActionStatus(result.status);
       if (result.status === "unchanged") return;
-      this.state = { ...this.state, conversations: result.records };
-      await this.persist();
+      const record = result.records[conversationId]!;
+      await this.commit({ ...this.state, conversations: result.records }, (store) => store.putConversation(record));
     });
   }
 
@@ -331,8 +363,7 @@ export class ConversationRepository {
       const normalized = normalizeSelection(model);
       if (model !== null && !normalized)
         throw new WispBackendError("invalid_request", "The model selection is invalid.");
-      this.replaceRecord({ ...record, modelOverride: normalized, updatedAt: this.now().toISOString() });
-      await this.persist();
+      await this.commitRecord({ ...record, modelOverride: normalized, updatedAt: this.now().toISOString() });
     });
   }
 
@@ -348,8 +379,7 @@ export class ConversationRepository {
       const piSessionFile =
         identity.sessionFile === null ? null : this.normalizePiSessionFile(record.sessionId, identity.sessionFile);
       if (record.piSessionId === piSessionId && record.piSessionFile === piSessionFile) return;
-      this.replaceRecord({ ...record, piSessionId, piSessionFile, updatedAt: this.now().toISOString() });
-      await this.persist();
+      await this.commitRecord({ ...record, piSessionId, piSessionFile, updatedAt: this.now().toISOString() });
     });
   }
 
@@ -363,15 +393,43 @@ export class ConversationRepository {
       this.throwForActionStatus(result.status);
       const record = result.deletedRecord;
       if (!record) throw new WispBackendError("not_found", "The conversation was not found.");
-      this.state = { ...this.state, conversations: result.records };
-      await this.persist();
+      const previous = this.state.conversations;
+      await this.commit({ ...this.state, conversations: result.records }, (store) => {
+        store.deleteConversation(conversationId);
+        // Circles that listed the deleted Wisp lose it as a member.
+        putChangedConversations(store, previous, result.records);
+      });
       if (record.sessionId) await this.archiveDirectories(record.sessionId).catch(() => undefined);
       return structuredClone(record);
     });
   }
 
-  private replaceRecord(record: ConversationRecord): void {
-    this.state = { ...this.state, conversations: { ...this.state.conversations, [record.chat.id]: record } };
+  /** Waits for pending writes, then closes the database. A later write reopens it. */
+  async close(): Promise<void> {
+    await this.mutation;
+    this.store?.close();
+    this.store = undefined;
+  }
+
+  private commitRecord(record: ConversationRecord): Promise<void> {
+    return this.commit(
+      { ...this.state, conversations: { ...this.state.conversations, [record.chat.id]: record } },
+      (store) => store.putConversation(record),
+    );
+  }
+
+  private async commit(next: PersistedConversationState, write: (store: ConversationStore) => void): Promise<void> {
+    const store = await this.openStore();
+    store.transaction(() => write(store));
+    this.state = next;
+  }
+
+  private async openStore(): Promise<ConversationStore> {
+    if (!this.store) {
+      await mkdir(this.dataDirectory, { recursive: true });
+      this.store = ConversationStore.open(this.databasePath);
+    }
+    return this.store;
   }
 
   private require(conversationId: string): ConversationRecord {
@@ -400,20 +458,9 @@ export class ConversationRepository {
     throw new WispBackendError("not_found", "The conversation was not found.");
   }
 
+  /** Serializes mutations; each adopts its next state only in `commit`, after the write succeeds. */
   private async enqueue<T>(operation: () => Promise<T>): Promise<T> {
-    const run = async (): Promise<T> => {
-      // Mutations replace state and records instead of editing them in place,
-      // so keeping the previous reference is enough to roll back a failed write
-      // without deep-copying every conversation on each change.
-      const previousState = this.state;
-      try {
-        return await operation();
-      } catch (error) {
-        this.state = previousState;
-        throw error;
-      }
-    };
-    const result = this.mutation.then(run, run);
+    const result = this.mutation.then(operation, operation);
     this.mutation = result.then(
       () => undefined,
       () => undefined,
@@ -421,12 +468,54 @@ export class ConversationRepository {
     return result;
   }
 
-  private async persist(): Promise<void> {
-    const serialized = `${JSON.stringify(this.state)}\n`;
-    if (Buffer.byteLength(serialized, "utf8") > CONVERSATION_STORAGE_POLICY.maxBlobBytes) {
-      throw new WispBackendError("invalid_request", "Conversation storage exceeds the local limit.");
+  /**
+   * First run on SQLite: imports the legacy single-file JSON store, upgrading
+   * older record versions. The JSON file is kept as the migration backup; once
+   * the import commits, SQLite is authoritative.
+   */
+  private async migrateLegacyState(store: ConversationStore): Promise<void> {
+    let contents: string;
+    try {
+      contents = await readFile(this.legacyStatePath, "utf8");
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return;
+      throw error;
     }
-    await writeFileAtomically(this.statePath, serialized);
+    let parsed: unknown;
+    try {
+      if (Buffer.byteLength(contents, "utf8") > CONVERSATION_STORAGE_POLICY.maxLegacyStateBytes) {
+        throw new Error("Conversation state exceeds the local storage limit.");
+      }
+      parsed = JSON.parse(contents);
+      this.state = this.parsePersistedState(parsed);
+    } catch {
+      await rename(this.legacyStatePath, `${this.legacyStatePath}.corrupt-${this.fileSuffix()}`);
+      this.recoveredCorruptState = true;
+      this.state = emptyState();
+      return;
+    }
+    const persistedSchemaVersion = this.schemaVersionOf(parsed);
+    if (persistedSchemaVersion === 1 || persistedSchemaVersion === 2) await this.removeBundledDemoConversations();
+    await this.ensureAllDirectories();
+    const state = this.state;
+    store.transaction(() => store.replaceAll(state));
+    await rename(this.legacyStatePath, `${this.legacyStatePath}.migrated-${this.fileSuffix()}`);
+  }
+
+  private async preserveCorruptDatabase(): Promise<void> {
+    this.store?.close();
+    this.store = undefined;
+    this.state = emptyState();
+    const preserved = `${this.databasePath}.corrupt-${this.fileSuffix()}`;
+    // SQLite finds a database's write-ahead log by name, so the companions move with it.
+    await rename(this.databasePath, preserved);
+    for (const suffix of ["-wal", "-shm"]) {
+      await rename(`${this.databasePath}${suffix}`, `${preserved}${suffix}`).catch(() => undefined);
+    }
+  }
+
+  private fileSuffix(): string {
+    return this.now().toISOString().replaceAll(":", "-");
   }
 
   private parsePersistedState(value: unknown): PersistedConversationState {
@@ -477,16 +566,6 @@ export class ConversationRepository {
     return typeof value === "string" && value.length <= 100 && !Number.isNaN(Date.parse(value));
   }
 
-  private async preserveMigrationSource(schemaVersion: number): Promise<void> {
-    const suffix = this.now().toISOString().replaceAll(":", "-");
-    await copyFile(this.statePath, `${this.statePath}.schema-v${schemaVersion}-backup-${suffix}`);
-  }
-
-  private async preserveCorruptState(): Promise<void> {
-    const suffix = this.now().toISOString().replaceAll(":", "-");
-    await rename(this.statePath, `${this.statePath}.corrupt-${suffix}`);
-  }
-
   private normalizePiSessionFile(sessionId: string, filePath: string): string {
     const sessionDirectory = path.resolve(this.sessionRoot, sessionId);
     const resolved = path.resolve(filePath);
@@ -497,8 +576,10 @@ export class ConversationRepository {
     return resolved;
   }
 
-  private async ensureAllDirectories(): Promise<void> {
-    await Promise.all(Object.values(this.state.conversations).map((record) => this.ensureDirectories(record)));
+  private async ensureAllDirectories(
+    records: Readonly<Record<string, ConversationRecord>> = this.state.conversations,
+  ): Promise<void> {
+    await Promise.all(Object.values(records).map((record) => this.ensureDirectories(record)));
   }
 
   private async removeBundledDemoConversations(): Promise<void> {
@@ -524,7 +605,7 @@ export class ConversationRepository {
   }
 
   private async archiveDirectories(sessionId: string): Promise<void> {
-    const archive = path.join(this.deletedRoot, `${sessionId}-${this.now().toISOString().replaceAll(":", "-")}`);
+    const archive = path.join(this.deletedRoot, `${sessionId}-${this.fileSuffix()}`);
     await mkdir(archive, { recursive: true });
     await Promise.all([
       rename(path.join(this.workspaceRoot, sessionId), path.join(archive, "workspace")).catch(() => undefined),
