@@ -4,7 +4,7 @@ import path from "node:path";
 
 import type { ModelSelection } from "../../shared/contracts.js";
 import { normalizeSelection } from "./ai-settings-store.js";
-import type { ChatChanges, ChatCollection, Message } from "../../shared/conversations.js";
+import type { Chat, ChatChanges, ChatCollection, Message } from "../../shared/conversations.js";
 import { writeFileAtomically } from "./atomic-file.js";
 import { WispBackendError } from "./backend-error.js";
 import { normalizeUserName, type ConversationAgentContext } from "./conversation-agent.js";
@@ -113,6 +113,20 @@ export class ConversationRepository {
     return Object.fromEntries(this.list().map(({ chat }) => [chat.id, chat]));
   }
 
+  getChat(conversationId: string): Chat | undefined {
+    const record = this.state.conversations[conversationId];
+    return record ? structuredClone(record.chat) : undefined;
+  }
+
+  /**
+   * Uncloned view of the stored chats. Records are replaced, never mutated, so
+   * the objects stay valid snapshots; callers must treat them as read-only.
+   * Use this on hot paths that copy anyway (IPC serialization, validation).
+   */
+  readChats(): Readonly<ChatCollection> {
+    return Object.fromEntries(Object.values(this.state.conversations).map(({ chat }) => [chat.id, chat]));
+  }
+
   listAgentContexts(): ReadonlyArray<ConversationAgentContext> {
     return this.list().flatMap(({ chat, sessionId }) =>
       sessionId
@@ -195,7 +209,7 @@ export class ConversationRepository {
           ]),
         ),
       };
-      validateConversationGraph(this.getChats());
+      validateConversationGraph(this.readChats());
       await this.ensureAllDirectories();
       await this.persist();
     });
@@ -223,9 +237,8 @@ export class ConversationRepository {
       };
       const result = applyWorkspaceAction(this.state.conversations, { type: "create", record });
       this.throwForActionStatus(result.status);
-      this.state.conversations = result.records;
-      validateConversationGraph(this.getChats());
-      this.state.initialized = true;
+      this.state = { ...this.state, conversations: result.records, initialized: true };
+      validateConversationGraph(this.readChats());
       await this.ensureDirectories(record);
       await this.persist();
     });
@@ -261,8 +274,8 @@ export class ConversationRepository {
           this.throwForActionStatus(result.status);
         }
       }
-      this.state.conversations = result.records;
-      validateConversationGraph(this.getChats());
+      this.state = { ...this.state, conversations: result.records };
+      validateConversationGraph(this.readChats());
       await this.persist();
     });
   }
@@ -277,7 +290,7 @@ export class ConversationRepository {
         updatedAt: this.now().toISOString(),
       });
       this.throwForActionStatus(result.status);
-      this.state.conversations = result.records;
+      this.state = { ...this.state, conversations: result.records };
       await this.persist();
     });
   }
@@ -292,7 +305,7 @@ export class ConversationRepository {
         updatedAt: this.now().toISOString(),
       });
       this.throwForActionStatus(result.status);
-      this.state.conversations = result.records;
+      this.state = { ...this.state, conversations: result.records };
       await this.persist();
     });
   }
@@ -306,7 +319,7 @@ export class ConversationRepository {
       });
       this.throwForActionStatus(result.status);
       if (result.status === "unchanged") return;
-      this.state.conversations = result.records;
+      this.state = { ...this.state, conversations: result.records };
       await this.persist();
     });
   }
@@ -318,8 +331,7 @@ export class ConversationRepository {
       const normalized = normalizeSelection(model);
       if (model !== null && !normalized)
         throw new WispBackendError("invalid_request", "The model selection is invalid.");
-      record.modelOverride = normalized;
-      record.updatedAt = this.now().toISOString();
+      this.replaceRecord({ ...record, modelOverride: normalized, updatedAt: this.now().toISOString() });
       await this.persist();
     });
   }
@@ -336,9 +348,7 @@ export class ConversationRepository {
       const piSessionFile =
         identity.sessionFile === null ? null : this.normalizePiSessionFile(record.sessionId, identity.sessionFile);
       if (record.piSessionId === piSessionId && record.piSessionFile === piSessionFile) return;
-      record.piSessionId = piSessionId;
-      record.piSessionFile = piSessionFile;
-      record.updatedAt = this.now().toISOString();
+      this.replaceRecord({ ...record, piSessionId, piSessionFile, updatedAt: this.now().toISOString() });
       await this.persist();
     });
   }
@@ -353,11 +363,15 @@ export class ConversationRepository {
       this.throwForActionStatus(result.status);
       const record = result.deletedRecord;
       if (!record) throw new WispBackendError("not_found", "The conversation was not found.");
-      this.state.conversations = result.records;
+      this.state = { ...this.state, conversations: result.records };
       await this.persist();
       if (record.sessionId) await this.archiveDirectories(record.sessionId).catch(() => undefined);
       return structuredClone(record);
     });
+  }
+
+  private replaceRecord(record: ConversationRecord): void {
+    this.state = { ...this.state, conversations: { ...this.state.conversations, [record.chat.id]: record } };
   }
 
   private require(conversationId: string): ConversationRecord {
@@ -388,7 +402,10 @@ export class ConversationRepository {
 
   private async enqueue<T>(operation: () => Promise<T>): Promise<T> {
     const run = async (): Promise<T> => {
-      const previousState = structuredClone(this.state);
+      // Mutations replace state and records instead of editing them in place,
+      // so keeping the previous reference is enough to roll back a failed write
+      // without deep-copying every conversation on each change.
+      const previousState = this.state;
       try {
         return await operation();
       } catch (error) {
@@ -405,7 +422,7 @@ export class ConversationRepository {
   }
 
   private async persist(): Promise<void> {
-    const serialized = `${JSON.stringify(this.state, null, 2)}\n`;
+    const serialized = `${JSON.stringify(this.state)}\n`;
     if (Buffer.byteLength(serialized, "utf8") > CONVERSATION_STORAGE_POLICY.maxBlobBytes) {
       throw new WispBackendError("invalid_request", "Conversation storage exceeds the local limit.");
     }
@@ -481,12 +498,17 @@ export class ConversationRepository {
   }
 
   private async ensureAllDirectories(): Promise<void> {
-    await Promise.all(this.list().map((record) => this.ensureDirectories(record)));
+    await Promise.all(Object.values(this.state.conversations).map((record) => this.ensureDirectories(record)));
   }
 
   private async removeBundledDemoConversations(): Promise<void> {
     const removed = Object.entries(this.state.conversations).filter(([id]) => REMOVED_DEMO_CONVERSATION_IDS.has(id));
-    for (const [id] of removed) delete this.state.conversations[id];
+    this.state = {
+      ...this.state,
+      conversations: Object.fromEntries(
+        Object.entries(this.state.conversations).filter(([id]) => !REMOVED_DEMO_CONVERSATION_IDS.has(id)),
+      ),
+    };
     await Promise.allSettled(
       removed.flatMap(([, record]) => (record.sessionId ? [this.archiveDirectories(record.sessionId)] : [])),
     );

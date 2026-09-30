@@ -245,6 +245,44 @@ export function reconcileConversationRuntime(
   };
 }
 
+/**
+ * Drops transient copies once the backend has stored the same message in the
+ * same settled state; from then on the stored copy is authoritative. Queued and
+ * streaming copies stay because they are newer than any stored snapshot.
+ */
+export function pruneSettledRuntimeMessages(
+  state: ConversationRuntimeState,
+  chats: ChatCollection,
+): ConversationRuntimeState {
+  let changed = false;
+  const messages: Record<string, ReadonlyArray<Message>> = {};
+  for (const [conversationId, transient] of Object.entries(state.messages)) {
+    const settled = transient.filter(isSettled);
+    if (settled.length === 0) {
+      messages[conversationId] = transient;
+      continue;
+    }
+    const stored = new Map(
+      (chats[conversationId]?.messages ?? []).flatMap((message) => (message.id ? [[message.id, message]] : [])),
+    );
+    const kept = transient.filter((message) => {
+      const persisted = message.id ? stored.get(message.id) : undefined;
+      return !(persisted && isSettled(message) && isSettled(persisted) && statusOf(persisted) === statusOf(message));
+    });
+    if (kept.length !== transient.length) changed = true;
+    messages[conversationId] = kept;
+  }
+  return changed ? { ...state, messages } : state;
+}
+
+function statusOf(message: Message): string {
+  return message.status ?? "complete";
+}
+
+function isSettled(message: Message): boolean {
+  return message.status !== "queued" && message.status !== "streaming";
+}
+
 export function addPendingRequest(
   pending: Record<string, ReadonlyArray<string>>,
   conversationId: string,

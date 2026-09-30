@@ -100,6 +100,7 @@ export function useWorkspaceController(): WorkspaceController {
   const createChat = useCallback(
     async (chat: NewChat, model?: ModelSelection | null): Promise<boolean> => {
       const id = createChatId(conversations.chats);
+      const timestamp = new Date().toISOString();
       const created = await conversations.create(
         chat.kind === "circle"
           ? {
@@ -107,7 +108,7 @@ export function useWorkspaceController(): WorkspaceController {
               id,
               isActive: false,
               preview: "This is the beginning of the circle.",
-              timestamp: "Now",
+              timestamp,
               messages: [
                 {
                   id: crypto.randomUUID(),
@@ -122,7 +123,7 @@ export function useWorkspaceController(): WorkspaceController {
               id,
               isActive: true,
               preview: "Ready for the first task.",
-              timestamp: "Now",
+              timestamp,
               messages: [],
             },
         chat.kind === "wisp" ? model : undefined,

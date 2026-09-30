@@ -181,6 +181,11 @@ export class McpOAuthProvider implements OAuthClientProvider {
     // never open a browser. The SDK invokes this before reporting that a
     // redirect is needed, so the gate has to live here.
     if (!this.interactive) throw new McpSignInRequiredError();
+    // The URL comes from server-supplied metadata and is handed to the OS, so
+    // hold it to the same HTTPS-only rule as MCP endpoints.
+    if (authorizationUrl.protocol !== "https:" || authorizationUrl.username || authorizationUrl.password) {
+      throw new WispBackendError("invalid_configuration", "The sign-in server returned an unsafe authorization URL.");
+    }
     if (!this.server) await this.ensureCallbackServer();
     this.beginWaitingForCallback();
     await this.openExternal(authorizationUrl.toString());

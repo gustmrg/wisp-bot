@@ -34,7 +34,7 @@ describe("MarkdownView static render", () => {
     expect(html).toContain("<pre");
     expect(html).toContain("<h3");
     expect(html).toContain("<blockquote");
-    expect(html).toContain('href="https://example.com"');
+    expect(html).toContain('href="https://example.com" target="_blank" rel="noreferrer noopener"');
     expect(html).toContain("<br");
   });
 

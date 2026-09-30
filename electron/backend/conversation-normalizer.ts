@@ -121,6 +121,25 @@ export function normalizeMessage(value: unknown, fallbackId?: string): Message {
   throw invalidRequest();
 }
 
+/**
+ * Adds or replaces one message by ID. Stored messages were normalized when they
+ * were written, so only the incoming message is validated rather than the whole
+ * transcript on every append.
+ */
+export function upsertNormalizedMessage(chat: Chat, value: unknown): { chat: Chat; message: Message } {
+  const message = normalizeMessage(value);
+  if (!message.id) throw invalidRequest();
+  const index = chat.messages.findIndex(({ id }) => id === message.id);
+  if (index === -1 && chat.messages.length >= CONVERSATION_STORAGE_POLICY.maxMessagesPerConversation) {
+    throw invalidRequest();
+  }
+  const messages =
+    index === -1
+      ? [...chat.messages, message]
+      : chat.messages.map((candidate, candidateIndex) => (candidateIndex === index ? message : candidate));
+  return { chat: { ...chat, messages }, message };
+}
+
 export function normalizeChat(value: unknown): Chat {
   const raw = asRecord(value);
   const id = normalizeConversationId(raw.id);

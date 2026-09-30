@@ -24,6 +24,7 @@ import {
   getRuntimeMessage,
   markOutgoingFailed,
   overlayRuntimeMessages,
+  pruneSettledRuntimeMessages,
   reduceConversationAgentEvent,
   reconcileConversationRuntime,
   removeRuntimeMessage,
@@ -114,7 +115,10 @@ export function useConversations(): ConversationsController {
   const replaceState = useCallback((next: ConversationStateView): void => {
     stateRef.current = next;
     setState(next);
-    const reconciled = reconcileConversationRuntime(runtimeRef.current, next.chats, next.statuses);
+    const reconciled = pruneSettledRuntimeMessages(
+      reconcileConversationRuntime(runtimeRef.current, next.chats, next.statuses),
+      next.chats,
+    );
     runtimeRef.current = reconciled;
     setRuntime(reconciled);
     setPendingAcknowledgements((current) => retainPendingConversations(current, next.chats));
@@ -145,47 +149,11 @@ export function useConversations(): ConversationsController {
     [replaceState],
   );
 
-  const reconcileMessage = useCallback(
-    async (conversationId: string, messageId: string): Promise<void> => {
-      const refreshed = await enqueue(() => window.wisp.getConversationState());
-      if (!refreshed || !stateRef.current.chats[conversationId]?.messages.some(({ id }) => id === messageId)) return;
-      replaceRuntime(removeRuntimeMessage(runtimeRef.current, conversationId, messageId));
-    },
-    [enqueue, replaceRuntime],
-  );
-
+  // Events only drive the transient runtime view. The backend persists what they
+  // imply (reply text, delivery status) and pushes the stored chat afterwards.
   processEventRef.current = (event): void => {
     const next = reduceConversationAgentEvent(runtimeRef.current, event, stateRef.current.chats);
-    if (next === runtimeRef.current) return;
-    replaceRuntime(next);
-    if (!stateRef.current.chats[event.conversationId]) return;
-    if (event.type === "assistant_message_started") {
-      const outgoing = getRuntimeMessage(next, event.conversationId, event.requestId);
-      if (outgoing) {
-        void enqueue(() =>
-          window.wisp.appendConversationMessage({
-            conversationId: event.conversationId,
-            message: outgoing,
-          }),
-        ).then((saved) => {
-          if (saved) replaceRuntime(removeRuntimeMessage(runtimeRef.current, event.conversationId, event.requestId));
-        });
-      }
-    } else if (event.type === "assistant_message_completed" || event.type === "assistant_message_cancelled") {
-      void reconcileMessage(event.conversationId, event.messageId);
-    } else if (event.type === "conversation_error" && event.requestId) {
-      const outgoing = getRuntimeMessage(next, event.conversationId, event.requestId);
-      if (outgoing) {
-        void enqueue(() =>
-          window.wisp.appendConversationMessage({
-            conversationId: event.conversationId,
-            message: outgoing,
-          }),
-        ).then(() => reconcileMessage(event.conversationId, `${event.requestId}:assistant`));
-      } else {
-        void reconcileMessage(event.conversationId, `${event.requestId}:assistant`);
-      }
-    }
+    if (next !== runtimeRef.current) replaceRuntime(next);
   };
 
   useEffect(() => {
@@ -193,6 +161,12 @@ export function useConversations(): ConversationsController {
     const unsubscribe = window.wisp.subscribeToAgentEvents((event) => {
       if (!readyRef.current) bufferedEvents.current.push(event);
       else processEventRef.current(event);
+    });
+    const unsubscribeChanges = window.wisp.subscribeToConversationChanges((chat) => {
+      // Backend messages arrive in send order, so a push received before the
+      // bootstrap snapshot is already reflected in that snapshot.
+      if (!readyRef.current || !stateRef.current.chats[chat.id]) return;
+      replaceState({ ...stateRef.current, chats: { ...stateRef.current.chats, [chat.id]: chat } });
     });
     void (async () => {
       try {
@@ -221,6 +195,7 @@ export function useConversations(): ConversationsController {
       cancelled = true;
       readyRef.current = false;
       unsubscribe();
+      unsubscribeChanges();
     };
   }, [replaceRuntime, replaceState]);
 

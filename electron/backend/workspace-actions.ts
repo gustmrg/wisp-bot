@@ -1,6 +1,6 @@
 import type { ModelSelection } from "../../shared/contracts.js";
 import type { Chat, ChatChanges, Message } from "../../shared/conversations.js";
-import { normalizeChat } from "./conversation-normalizer.js";
+import { normalizeChat, upsertNormalizedMessage } from "./conversation-normalizer.js";
 
 export interface ConversationRecord {
   chat: Chat;
@@ -108,20 +108,10 @@ export function applyWorkspaceAction(records: WorkspaceRecords, action: Workspac
     case "append-message": {
       const record = records[action.conversationId];
       if (!record) return { records, status: "not_found" };
-      const existingIndex = record.chat.messages.findIndex(({ id }) => id === action.message.id);
-      const messages =
-        existingIndex === -1
-          ? [...record.chat.messages, action.message]
-          : record.chat.messages.map((message, index) => (index === existingIndex ? action.message : message));
-      const normalized = normalizeChat({ ...record.chat, messages });
-      const current = normalized.messages.find(({ id }) => id === action.message.id);
+      const { chat, message } = upsertNormalizedMessage(record.chat, action.message);
       return replaceRecord(records, action.conversationId, {
         ...record,
-        chat: {
-          ...normalized,
-          preview: current && "text" in current ? current.text : normalized.preview,
-          timestamp: "Now",
-        },
+        chat: { ...chat, preview: "text" in message ? message.text : chat.preview, timestamp: action.updatedAt },
         updatedAt: action.updatedAt,
       });
     }

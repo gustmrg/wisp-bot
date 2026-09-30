@@ -1,25 +1,7 @@
-import type { IpcMain, IpcMainInvokeEvent } from "electron";
-
-import {
-  WISP_IPC_CHANNELS,
-  type AiSettingsView,
-  type BackendResult,
-  type ModelSelection,
-} from "../../shared/contracts.js";
-import { sanitizeBackendError } from "../backend/backend-error.js";
+import { WISP_IPC_CHANNELS, type ModelSelection } from "../../shared/contracts.js";
 import type { ModelService } from "../backend/model-service.js";
-import type { SenderAuthorizer } from "./register-handlers.js";
+import { registerGuardedHandlers, type HandlerIpcMain, type SenderAuthorizer } from "./guarded-handlers.js";
 import { parseRemoveProviderCredentialRequest, parseSaveAiSettingsRequest } from "./validators.js";
-
-type HandlerIpcMain = Pick<IpcMain, "handle" | "removeHandler">;
-
-async function toResult(operation: () => Promise<AiSettingsView>): Promise<BackendResult<AiSettingsView>> {
-  try {
-    return { ok: true, value: await operation() };
-  } catch (error) {
-    return { ok: false, error: sanitizeBackendError(error) };
-  }
-}
 
 export function registerModelSettingsHandlers(
   ipcMain: HandlerIpcMain,
@@ -27,50 +9,23 @@ export function registerModelSettingsHandlers(
   authorizeSender: SenderAuthorizer,
   onSelectionChange?: (selection: ModelSelection | null) => Promise<void>,
 ): { dispose: () => void } {
-  const registrations: ReadonlyArray<readonly [string, (payload: unknown) => Promise<BackendResult<AiSettingsView>>]> =
+  return registerGuardedHandlers(ipcMain, authorizeSender, [
+    [WISP_IPC_CHANNELS.getAiSettings, () => modelService.getView()],
     [
-      [WISP_IPC_CHANNELS.getAiSettings, () => toResult(() => modelService.getView())],
-      [
-        WISP_IPC_CHANNELS.saveAiSettings,
-        (payload) =>
-          toResult(async () => {
-            const view = await modelService.save(parseSaveAiSettingsRequest(payload));
-            await onSelectionChange?.(view.selection);
-            return view;
-          }),
-      ],
-      [
-        WISP_IPC_CHANNELS.removeProviderCredential,
-        (payload) =>
-          toResult(() => {
-            const { providerId } = parseRemoveProviderCredentialRequest(payload);
-            return modelService.removeCredential(providerId).then(async (view) => {
-              await onSelectionChange?.(view.selection);
-              return view;
-            });
-          }),
-      ],
-    ];
-
-  for (const [channel, handler] of registrations) {
-    ipcMain.handle(channel, (event: IpcMainInvokeEvent, payload: unknown) => {
-      if (!authorizeSender(event)) {
-        return Promise.resolve<BackendResult<AiSettingsView>>({
-          ok: false,
-          error: {
-            code: "invalid_request",
-            message: "The backend request is invalid.",
-            retryable: false,
-          },
-        });
-      }
-      return handler(payload);
-    });
-  }
-
-  return {
-    dispose: () => {
-      for (const [channel] of registrations) ipcMain.removeHandler(channel);
-    },
-  };
+      WISP_IPC_CHANNELS.saveAiSettings,
+      async (payload) => {
+        const view = await modelService.save(parseSaveAiSettingsRequest(payload));
+        await onSelectionChange?.(view.selection);
+        return view;
+      },
+    ],
+    [
+      WISP_IPC_CHANNELS.removeProviderCredential,
+      async (payload) => {
+        const view = await modelService.removeCredential(parseRemoveProviderCredentialRequest(payload).providerId);
+        await onSelectionChange?.(view.selection);
+        return view;
+      },
+    ],
+  ]);
 }

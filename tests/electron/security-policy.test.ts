@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   contentSecurityPolicy,
+  isAllowedExternalUrl,
   isAllowedPermission,
   isAllowedRendererUrl,
   resolveRendererTarget,
@@ -46,6 +47,26 @@ describe("Electron renderer security policy", () => {
     expect(isAllowedRendererUrl(pathToFileURL(renderer).href, production)).toBe(true);
     expect(isAllowedRendererUrl(pathToFileURL(path.resolve("dist/other.html")).href, production)).toBe(false);
     expect(isAllowedRendererUrl("https://example.com/", production)).toBe(false);
+  });
+
+  it.each(["https://example.com/path?q=1", "http://example.com/", "mailto:someone@example.com"])(
+    "allows web and mail links to open externally: %s",
+    (url) => {
+      expect(isAllowedExternalUrl(url)).toBe(true);
+    },
+  );
+
+  it.each([
+    "file:///etc/passwd",
+    "smb://attacker.example/share",
+    "javascript:alert(1)",
+    "vscode://extension/install",
+    "ms-msdt:/id",
+    "https://bank.example@evil.example/",
+    "not a url",
+    "",
+  ])("refuses to hand other URLs to the OS: %s", (url) => {
+    expect(isAllowedExternalUrl(url)).toBe(false);
   });
 
   it("defaults permissions to deny with a narrow clipboard exception", () => {

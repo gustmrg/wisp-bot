@@ -120,6 +120,7 @@ function createApi(initialState: ConversationStateView): WispApi {
     }),
     answerConversationPrompt: vi.fn(async () => current()),
     markConversationRead: vi.fn(async () => current()),
+    subscribeToConversationChanges: vi.fn(() => () => undefined),
     getUsageReport: vi.fn(),
     getSessionReport: vi.fn(async () => ({ ok: true as const, value: null })),
     getToolPolicy: vi.fn(async () => ({ ok: true as const, value: { autoReview: true, rules: [] } })),

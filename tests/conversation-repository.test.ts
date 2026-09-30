@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, readdir, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
@@ -376,5 +376,34 @@ describe("ConversationRepository", () => {
 
     expect(repository.isInitialized()).toBe(false);
     expect(repository.getChats()).toEqual({});
+  });
+
+  it("rolls back every kind of mutation when a later write fails", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "wisp-rollback-"));
+    const repository = new ConversationRepository({ dataDirectory: directory });
+    await repository.load();
+    await repository.initialize({ first: chat("first") });
+    const before = repository.list();
+    const { sessionDirectory } = repository.getAgentContext("first");
+    // Renaming the temporary file over a directory fails, so every persist rejects.
+    const statePath = path.join(directory, "conversations.json");
+    await rm(statePath);
+    await mkdir(path.join(statePath, "blocker"), { recursive: true });
+
+    await expect(
+      repository.appendMessage("first", { id: "reply", type: "incoming", text: "Not saved" }),
+    ).rejects.toBeDefined();
+    await expect(
+      repository.setModelOverride("first", { providerId: "anthropic", modelId: "claude-sonnet-5" }),
+    ).rejects.toBeDefined();
+    await expect(
+      repository.savePiSessionIdentity("first", {
+        sessionId: "pi-new",
+        sessionFile: path.join(sessionDirectory, "history.jsonl"),
+      }),
+    ).rejects.toBeDefined();
+    await expect(repository.update("first", { kind: "wisp", name: "Renamed" })).rejects.toBeDefined();
+
+    expect(repository.list()).toEqual(before);
   });
 });
