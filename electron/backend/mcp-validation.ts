@@ -4,7 +4,9 @@ import { WispBackendError } from "./backend-error.js";
 /**
  * Maximum tools accepted from one server, shared by bridge discovery and
  * snapshot persistence. 128 keeps headroom for large real servers (Linear
- * exposes 66) while bounding per-session context growth.
+ * exposes 66) while bounding per-session context growth. It is not a
+ * per-Wisp bound: some models accept fewer tools in total, and a request that
+ * exceeds a model's limit is reported by describeProviderError.
  */
 export const MAX_TOOL_SNAPSHOT_TOOLS = 128;
 export const MAX_TOOL_DESCRIPTION_CHARACTERS = 700;
