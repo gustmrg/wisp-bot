@@ -1,5 +1,4 @@
 import type { ContextView } from "../../shared/context-policy.js";
-import type { IpcMain, IpcMainInvokeEvent } from "electron";
 
 import {
   WISP_IPC_CHANNELS,
@@ -8,8 +7,13 @@ import {
   type ModelSelection,
   type EmptyResult,
 } from "../../shared/contracts.js";
-import { sanitizeBackendError } from "../backend/backend-error.js";
 import type { AgentRegistry } from "../backend/agent-registry.js";
+import {
+  registerAuthorizedHandlers,
+  toBackendResult as toResult,
+  type HandlerIpcMain,
+  type SenderAuthorizer,
+} from "./guarded-handlers.js";
 import {
   parseContextRequest,
   parseApplyModelRequest,
@@ -17,18 +21,7 @@ import {
   parseSendMessageRequest,
 } from "./validators.js";
 
-type HandlerIpcMain = Pick<IpcMain, "handle" | "removeHandler">;
-export type SenderAuthorizer = (event: IpcMainInvokeEvent) => boolean;
-
 const emptyValue: Record<string, never> = {};
-
-async function toResult<T>(operation: () => Promise<T>): Promise<BackendResult<T>> {
-  try {
-    return { ok: true, value: await operation() };
-  } catch (error) {
-    return { ok: false, error: sanitizeBackendError(error) };
-  }
-}
 
 export class AgentIpcController {
   private readonly registry: AgentRegistry;
@@ -101,12 +94,8 @@ export function registerAgentHandlers(
   saveModel?: (id: string, model: ModelSelection | null) => Promise<void>,
 ): { dispose: () => Promise<void> } {
   const controller = new AgentIpcController(registry, saveModel);
-  const registrations: ReadonlyArray<
-    readonly [
-      string,
-      (payload: unknown) => Promise<EmptyResult | BackendResult<ConversationModelView> | BackendResult<ContextView>>,
-    ]
-  > = [
+  // The controller already returns BackendResults, so only the sender check is added here.
+  const registration = registerAuthorizedHandlers(ipcMain, authorizeSender, [
     [WISP_IPC_CHANNELS.startConversation, (payload) => controller.start(payload)],
     [WISP_IPC_CHANNELS.sendMessage, (payload) => controller.send(payload)],
     [WISP_IPC_CHANNELS.abortConversation, (payload) => controller.abort(payload)],
@@ -114,27 +103,11 @@ export function registerAgentHandlers(
     [WISP_IPC_CHANNELS.getConversationModel, (payload) => controller.getModel(payload)],
     [WISP_IPC_CHANNELS.applyModel, (payload) => controller.applyModel(payload)],
     [WISP_IPC_CHANNELS.disposeConversation, (payload) => controller.dispose(payload)],
-  ];
-
-  for (const [channel, handler] of registrations) {
-    ipcMain.handle(channel, (event: IpcMainInvokeEvent, payload: unknown) => {
-      if (!authorizeSender(event)) {
-        return Promise.resolve<EmptyResult>({
-          ok: false,
-          error: {
-            code: "invalid_request",
-            message: "The backend request is invalid.",
-            retryable: false,
-          },
-        });
-      }
-      return handler(payload);
-    });
-  }
+  ]);
 
   return {
     dispose: async () => {
-      for (const [channel] of registrations) ipcMain.removeHandler(channel);
+      registration.dispose();
       await controller.disposeAll();
     },
   };
