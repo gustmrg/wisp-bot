@@ -174,3 +174,24 @@ export async function createBackend(host: BackendHost): Promise<Backend> {
     },
   };
 }
+
+/**
+ * Waits for a disposal to finish, but never longer than `timeoutMs`: a provider
+ * call that ignores its abort signal must not leave the app unable to quit.
+ * Resolves true when the disposal completed in time.
+ */
+export async function disposeWithin(dispose: () => Promise<void>, timeoutMs: number): Promise<boolean> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timedOut = new Promise<false>((resolve) => {
+    timer = setTimeout(() => resolve(false), timeoutMs);
+  });
+  const completed = dispose().then(
+    () => true,
+    () => true,
+  );
+  try {
+    return await Promise.race([completed, timedOut]);
+  } finally {
+    clearTimeout(timer);
+  }
+}

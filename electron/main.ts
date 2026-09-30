@@ -21,7 +21,7 @@ import { SafeStorageEncryption } from "./backend/safe-storage-encryption.js";
 import { CompositeLogSink, StructuredLogger } from "./backend/structured-logger.js";
 import { resolveAutoInstallSupport } from "./backend/update-capability.js";
 import { UpdateService } from "./backend/update-service.js";
-import { createBackend } from "./create-backend.js";
+import { createBackend, disposeWithin } from "./create-backend.js";
 import {
   isAllowedExternalUrl,
   isAllowedPermission,
@@ -32,6 +32,8 @@ import {
 
 const productionRendererPath = path.join(__dirname, "../../dist/index.html");
 const windowBackground = (): string => (nativeTheme.shouldUseDarkColors ? "#0a0a0a" : "#ffffff");
+// Agents get this long to settle their last turn on quit before the app exits anyway.
+const SHUTDOWN_TIMEOUT_MS = 5_000;
 let rendererTarget: RendererTarget | undefined;
 let fatalErrorHandled = false;
 
@@ -201,7 +203,8 @@ async function bootstrap(): Promise<void> {
     event.preventDefault();
     if (backendDisposing) return;
     backendDisposing = true;
-    void backend.dispose().finally(() => {
+    void disposeWithin(() => backend.dispose(), SHUTDOWN_TIMEOUT_MS).then((completed) => {
+      if (!completed) logger.warn("shutdown_timeout", { timeoutMs: SHUTDOWN_TIMEOUT_MS });
       backendDisposed = true;
       app.quit();
     });

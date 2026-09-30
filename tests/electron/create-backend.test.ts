@@ -9,7 +9,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { EncryptionService } from "../../electron/backend/encrypted-credential-store.js";
 import { StructuredLogger } from "../../electron/backend/structured-logger.js";
 import { UpdateService } from "../../electron/backend/update-service.js";
-import { createBackend, type Backend } from "../../electron/create-backend.js";
+import { createBackend, disposeWithin, type Backend } from "../../electron/create-backend.js";
 import { WISP_IPC_CHANNELS, type BackendResult } from "../../shared/contracts.js";
 import type { Chat, ConversationStateView } from "../../shared/conversations.js";
 
@@ -128,5 +128,23 @@ describe("createBackend", () => {
     expect(broadcasts.some(([channel]) => channel === WISP_IPC_CHANNELS.agentEvent)).toBe(true);
     const state = await invoke<ConversationStateView>(WISP_IPC_CHANNELS.getConversationState);
     expect(state.chats.atlas?.messages).toHaveLength(2);
+  });
+});
+
+describe("disposeWithin", () => {
+  it("reports a disposal that finishes in time", async () => {
+    await expect(disposeWithin(async () => undefined, 1_000)).resolves.toBe(true);
+    await expect(disposeWithin(() => Promise.reject(new Error("failed")), 1_000)).resolves.toBe(true);
+  });
+
+  it("gives up on a disposal that never settles so the app can still quit", async () => {
+    vi.useFakeTimers();
+    try {
+      const outcome = disposeWithin(() => new Promise<void>(() => undefined), 5_000);
+      await vi.advanceTimersByTimeAsync(5_000);
+      await expect(outcome).resolves.toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
