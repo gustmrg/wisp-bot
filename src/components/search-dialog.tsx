@@ -1,7 +1,7 @@
 import { useDeferredValue, useState } from "react";
 import { ChevronLeftIcon, SearchIcon } from "lucide-react";
 
-import type { Chat, ChatCollection, ChatId } from "@/chat-data";
+import type { ChatId, ChatSummary, ChatSummaryCollection } from "@/chat-data";
 import { ChatAvatar } from "@/components/chat-avatar";
 import {
   Dialog,
@@ -12,7 +12,9 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { findMessageSearchMatch } from "@/lib/message-search";
+import { canSearchMessages, useMessageSearch } from "@/hooks/use-message-search";
+import { chatActivityLabel } from "@/lib/date-dividers";
+import { MIN_MESSAGE_SEARCH_LENGTH } from "../../shared/message-search";
 
 type SearchFilter = "all" | "wisps" | "messages";
 
@@ -22,35 +24,47 @@ const SEARCH_FILTERS: ReadonlyArray<{ id: SearchFilter; label: string }> = [
   { id: "messages", label: "Messages" },
 ];
 
-function chatMetadata(chat: Chat): string {
+const resultRow =
+  "flex w-full items-center gap-2.5 rounded-lg border-0 bg-transparent p-2 text-left hover:bg-secondary";
+
+function chatMetadata(chat: ChatSummary): string {
   return `${chat.name} ${chat.label} ${chat.description}`.toLocaleLowerCase();
 }
 
+function hitTime(createdAt: string | undefined): string | null {
+  if (!createdAt) return null;
+  const date = new Date(createdAt);
+  return Number.isNaN(date.getTime()) ? null : chatActivityLabel(date);
+}
+
 interface SearchDialogProps {
-  chats: ChatCollection;
+  chats: ChatSummaryCollection;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onSelectChat: (chatId: ChatId) => void;
+  onSelectMessage: (chatId: ChatId, messageId: string) => void;
 }
 
-interface SearchResult {
-  chat: Chat;
-  snippet?: string;
-}
-
-function SearchDialog({ chats, open, onOpenChange, onSelectChat }: SearchDialogProps) {
+function SearchDialog({ chats, open, onOpenChange, onSelectChat, onSelectMessage }: SearchDialogProps) {
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<SearchFilter>("all");
-  const deferredQuery = useDeferredValue(query.trim().toLocaleLowerCase());
-  const matches = Object.values(chats).flatMap<SearchResult>((chat) => {
-    if (!deferredQuery) return [{ chat }];
-
-    const metadataMatches = filter !== "messages" && chatMetadata(chat).includes(deferredQuery);
-    const messageMatch = filter === "wisps" ? undefined : findMessageSearchMatch(chat.messages, deferredQuery);
-    if (!metadataMatches && !messageMatch) return [];
-
-    return [{ chat, snippet: metadataMatches ? undefined : messageMatch?.snippet }];
+  const trimmedQuery = query.trim();
+  const deferredQuery = useDeferredValue(trimmedQuery.toLocaleLowerCase());
+  // Names, labels, and descriptions are matched here; message text is matched by the backend index.
+  const chatMatches =
+    deferredQuery && filter === "messages"
+      ? []
+      : Object.values(chats).filter((chat) => !deferredQuery || chatMetadata(chat).includes(deferredQuery));
+  const searchesMessages = Boolean(trimmedQuery) && filter !== "wisps";
+  const messageSearch = useMessageSearch(
+    open && searchesMessages && canSearchMessages(trimmedQuery) ? trimmedQuery : null,
+  );
+  const messageMatches = messageSearch.hits.flatMap((hit) => {
+    const chat = chats[hit.conversationId];
+    return chat ? [{ hit, chat }] : [];
   });
+  const needsMoreCharacters = searchesMessages && !canSearchMessages(trimmedQuery);
+  const empty = chatMatches.length === 0 && messageMatches.length === 0;
 
   return (
     <Dialog
@@ -107,30 +121,58 @@ function SearchDialog({ chats, open, onOpenChange, onSelectChat }: SearchDialogP
           ))}
         </div>
         <div className="search-results max-h-[360px] overflow-y-auto px-1.5 pt-1 pb-2">
-          {matches.length ? (
-            matches.map(({ chat, snippet }) => {
-              return (
-                <button
-                  type="button"
-                  key={chat.id}
-                  className="flex w-full items-center gap-2.5 rounded-lg border-0 bg-transparent p-2 text-left hover:bg-secondary"
-                  onClick={() => {
-                    onSelectChat(chat.id);
-                    onOpenChange(false);
-                  }}
-                >
-                  <ChatAvatar chat={chat} chats={chats} />
-                  <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-                    <strong className="truncate">{chat.name}</strong>
-                    <small className="truncate text-dim">{snippet ?? chat.preview}</small>
-                  </span>
-                  <em className="text-[11px] not-italic text-dim">{chat.kind === "circle" ? "Circle" : "Wisp"}</em>
-                </button>
-              );
-            })
-          ) : (
-            <p className="p-[35px] text-center text-dim">No results found</p>
-          )}
+          {chatMatches.map((chat) => (
+            <button
+              type="button"
+              key={chat.id}
+              className={resultRow}
+              onClick={() => {
+                onSelectChat(chat.id);
+                onOpenChange(false);
+              }}
+            >
+              <ChatAvatar chat={chat} chats={chats} />
+              <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+                <strong className="truncate">{chat.name}</strong>
+                <small className="truncate text-dim">{chat.preview}</small>
+              </span>
+              <em className="text-[11px] not-italic text-dim">{chat.kind === "circle" ? "Circle" : "Wisp"}</em>
+            </button>
+          ))}
+          {messageMatches.map(({ hit, chat }) => {
+            const time = hitTime(hit.createdAt);
+            return (
+              <button
+                type="button"
+                key={`${hit.conversationId}:${hit.messageId}`}
+                className={resultRow}
+                onClick={() => {
+                  onSelectMessage(hit.conversationId, hit.messageId);
+                  onOpenChange(false);
+                }}
+              >
+                <ChatAvatar chat={chat} chats={chats} />
+                <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+                  <strong className="truncate">{chat.name}</strong>
+                  <small className="truncate text-dim">{hit.snippet}</small>
+                </span>
+                {time ? (
+                  <time className="text-[11px] text-dim" dateTime={hit.createdAt}>
+                    {time}
+                  </time>
+                ) : null}
+              </button>
+            );
+          })}
+          {needsMoreCharacters ? (
+            <p className={empty ? "p-[35px] text-center text-dim" : "px-2 pt-2 pb-1 text-[11.5px] text-dim"}>
+              Type at least {MIN_MESSAGE_SEARCH_LENGTH} characters to search messages.
+            </p>
+          ) : empty ? (
+            <p className="p-[35px] text-center text-dim" role="status">
+              {messageSearch.searching ? "Searching…" : "No results found"}
+            </p>
+          ) : null}
         </div>
       </DialogContent>
     </Dialog>

@@ -104,15 +104,37 @@ export type ChatChanges = WispChatChanges | CircleChatChanges;
 export type ChatCollection = Record<ChatId, Chat>;
 export type ChatSummaryCollection = Record<ChatId, ChatSummary>;
 
+export function chatSummary(chat: Chat): ChatSummary {
+  const { messages: _messages, ...summary } = chat;
+  return summary;
+}
+
 export type ManagedConversationStatus = "configuration_required" | "idle" | "working" | "disposed";
 
 export interface ConversationStateView {
   initialized: boolean;
   chats: ChatCollection;
   statuses: Record<ChatId, ManagedConversationStatus>;
+  /**
+   * Messages that are not stored yet: replies still streaming or being saved.
+   * They are as of `agentEventSequence`, so later events apply on top of them.
+   */
+  liveMessages: Record<ChatId, ReadonlyArray<Message>>;
   agentEventSequence: number;
   pendingToolApprovals: ReadonlyArray<ToolApprovalRequest>;
   recoveredCorruptState: boolean;
+}
+
+/**
+ * One conversation's change: its summary and the messages the change touched,
+ * as stored. A renderer applies it to the message window it holds, if any.
+ */
+export interface ConversationDelta {
+  chat: ChatSummary;
+  /** New messages at the end of the transcript, oldest first. */
+  added: ReadonlyArray<Message>;
+  /** Earlier messages whose content changed; each keeps its position. */
+  updated: ReadonlyArray<Message>;
 }
 
 export interface InitializeConversationsRequest {

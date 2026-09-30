@@ -1,13 +1,14 @@
-import { useEffect, useRef } from "react";
-import { ChevronLeftIcon, SettingsIcon } from "lucide-react";
+import { useEffect, useLayoutEffect, useRef } from "react";
+import { ArrowDownIcon, ChevronLeftIcon, SettingsIcon } from "lucide-react";
 
-import type { Chat, ChatCollection } from "@/chat-data";
+import type { ChatSummary, ChatSummaryCollection, Message } from "@/chat-data";
 import type { ManagedConversationStatus } from "../../shared/conversations";
 import type { ToolApprovalDecision, ToolApprovalRequest } from "../../shared/tool-policy";
 import { describeMcpAlias, getToolMetadata } from "../../shared/tool-catalog";
 import type { ToolActivityView } from "@/lib/conversation-stream";
 import { getCircleMembers } from "@/lib/circle-members";
 import { withDateDividers } from "@/lib/date-dividers";
+import { isAttached, type MessageWindow } from "@/lib/message-windows";
 import { mainPanel } from "@/lib/ui-classes";
 import { cn } from "@/lib/utils";
 import { ChatAvatar } from "@/components/chat-avatar";
@@ -16,11 +17,38 @@ import { Button } from "@/components/ui/button";
 import { MessageView } from "@/components/message-view";
 import { ToolApprovalCard } from "@/components/tool-approval-card";
 
+const NO_MESSAGES: ReadonlyArray<Message> = [];
+/** How close to an end of the transcript, in pixels, the view gets before the next page loads. */
+const PAGE_EDGE_DISTANCE = 120;
+
+// The flash is drawn over the row, centered on the message rather than on the margin above it.
+const messageRow =
+  "relative data-[highlighted=true]:after:pointer-events-none data-[highlighted=true]:after:absolute data-[highlighted=true]:after:-inset-x-2 data-[highlighted=true]:after:top-1.5 data-[highlighted=true]:after:-bottom-1.5 data-[highlighted=true]:after:animate-message-highlight data-[highlighted=true]:after:rounded-lg";
+
+/** What the last layout showed, to tell a new message from an older page or a newly opened window. */
+interface TranscriptView {
+  openKey: string;
+  endKey: string;
+  attached: boolean;
+  firstMessageId: string | undefined;
+  firstMessageTop: number;
+}
+
+function messageElement(transcript: HTMLElement, messageId: string | undefined): HTMLElement | null {
+  if (!messageId) return null;
+  for (const element of transcript.querySelectorAll<HTMLElement>("[data-message-id]")) {
+    if (element.dataset.messageId === messageId) return element;
+  }
+  return null;
+}
+
 interface ChatPanelProps {
   hidden?: boolean;
   onBack?: () => void;
-  chat: Chat;
-  chats: ChatCollection;
+  chat: ChatSummary;
+  chats: ChatSummaryCollection;
+  /** The loaded part of the transcript; undefined until its first page arrives. */
+  transcript: MessageWindow | undefined;
   status: ManagedConversationStatus;
   activity?: string;
   error?: string;
@@ -29,6 +57,9 @@ interface ChatPanelProps {
   toolActivities: ReadonlyArray<ToolActivityView>;
   onAnswerPrompt: (messageId: string | undefined, answer: string) => void;
   onAbort: () => void;
+  onLoadOlder: () => void;
+  onLoadNewer: () => void;
+  onShowLatest: () => void;
   onOpenDetails: () => void;
   onConfigure?: () => void;
   onRetry: (messageId: string | undefined) => void;
@@ -41,6 +72,7 @@ function ChatPanel({
   onBack,
   chat,
   chats,
+  transcript,
   status,
   activity,
   error,
@@ -49,6 +81,9 @@ function ChatPanel({
   toolActivities,
   onAnswerPrompt,
   onAbort,
+  onLoadOlder,
+  onLoadNewer,
+  onShowLatest,
   onOpenDetails,
   onConfigure,
   onRetry,
@@ -57,19 +92,64 @@ function ChatPanel({
 }: ChatPanelProps) {
   const transcriptRef = useRef<HTMLDivElement>(null);
   const titleRef = useRef<HTMLHeadingElement>(null);
+  const shown = useRef<TranscriptView | null>(null);
   const mobile = Boolean(onBack);
   const focusChatId = mobile && !hidden ? chat.id : null;
   const members = getCircleMembers(chat, chats);
-  const transcriptMessages = withDateDividers(chat.messages);
+  const messages = transcript?.messages ?? NO_MESSAGES;
+  const transcriptMessages = withDateDividers(messages);
   const working = status === "working";
-  const lastMessage = chat.messages.at(-1);
-  const transcriptVersion = lastMessage && "text" in lastMessage ? lastMessage.text.length : chat.messages.length;
-  const transcriptScrollTrigger = `${chat.id}:${chat.messages.length}:${transcriptVersion}:${working}`;
+  const attached = !transcript || isAttached(transcript);
+  const targetMessageId = transcript?.targetMessageId;
+  const firstMessageId = messages[0]?.id;
+  const lastMessage = messages.at(-1);
+  const openKey = transcript && !hidden ? `${chat.id}:${transcript.epoch}` : null;
+  const endKey = `${lastMessage?.id}:${lastMessage && "text" in lastMessage ? lastMessage.text.length : 0}:${working}`;
+  const canLoadOlder = Boolean(transcript?.olderCursor) && !transcript?.loading;
+  const canLoadNewer = Boolean(transcript?.newerCursor) && !transcript?.loading;
 
-  useEffect(() => {
-    const transcript = transcriptRef.current;
-    if (!hidden && transcript && transcriptScrollTrigger) transcript.scrollTop = transcript.scrollHeight;
-  }, [transcriptScrollTrigger, hidden]);
+  function loadPageAtEdge(): void {
+    const element = transcriptRef.current;
+    if (!element || !openKey) return;
+    if (canLoadOlder && element.scrollTop <= PAGE_EDGE_DISTANCE) onLoadOlder();
+    else if (canLoadNewer && element.scrollHeight - element.scrollTop - element.clientHeight <= PAGE_EDGE_DISTANCE) {
+      onLoadNewer();
+    }
+  }
+
+  // Runs when the transcript's content changes, not on every render: a page
+  // that failed to load must not be requested again until the user scrolls.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: see above; the rest is read fresh on those changes.
+  useLayoutEffect(() => {
+    const element = transcriptRef.current;
+    if (!element || !openKey) {
+      shown.current = null;
+      return;
+    }
+    const previous = shown.current;
+    if (previous?.openKey !== openKey) {
+      // A window opened, or shown again: go to the message it was opened on, else to the newest.
+      const target = messageElement(element, targetMessageId);
+      element.scrollTop = target
+        ? target.offsetTop - (element.clientHeight - target.offsetHeight) / 2
+        : element.scrollHeight;
+    } else {
+      // An older page arrived above: keep the message that was first where it is.
+      const anchor =
+        previous.firstMessageId !== firstMessageId ? messageElement(element, previous.firstMessageId) : null;
+      if (anchor) element.scrollTop += anchor.offsetTop - previous.firstMessageTop;
+      // Only a change at the end of an attached window is a new message; a newer page is not.
+      if (attached && previous.attached && previous.endKey !== endKey) element.scrollTop = element.scrollHeight;
+    }
+    shown.current = {
+      openKey,
+      endKey,
+      attached,
+      firstMessageId,
+      firstMessageTop: messageElement(element, firstMessageId)?.offsetTop ?? 0,
+    };
+    loadPageAtEdge();
+  }, [openKey, endKey, attached, firstMessageId]);
 
   useEffect(() => {
     if (focusChatId) titleRef.current?.focus();
@@ -123,56 +203,82 @@ function ChatPanel({
         </div>
       </header>
 
-      <div
-        className="chat-transcript min-h-0 flex-1 overflow-x-hidden overflow-y-auto outline-none"
-        ref={transcriptRef}
-        tabIndex={0}
-        aria-label={`${chat.name} conversation`}
-      >
+      <div className="relative flex min-h-0 flex-1 flex-col">
+        {/* Scroll anchoring is done here, so the browser's own must not also move the view. */}
         <div
-          className="chat-messages mx-auto flex w-full max-w-[1400px] flex-col px-3.5 pt-1.5 pb-[22px]"
-          role="log"
-          aria-live="polite"
+          className="chat-transcript relative min-h-0 flex-1 overflow-x-hidden overflow-y-auto outline-none [overflow-anchor:none]"
+          ref={transcriptRef}
+          tabIndex={0}
+          aria-label={`${chat.name} conversation`}
+          onScroll={loadPageAtEdge}
         >
-          {transcriptMessages.map((message, index) => {
-            const previous = transcriptMessages[index - 1];
-            return (
-              <MessageView
-                key={message.id ?? `${chat.id}-${message.type}-${index}`}
-                message={message}
-                dense={message.type === "outgoing" && previous?.type === "outgoing"}
-                onAnswer={(answer) => onAnswerPrompt(message.id, answer)}
-                onRetry={() => onRetry(message.id)}
-              />
-            );
-          })}
-          {toolActivities.length ? (
-            <ol className="my-2 flex list-none flex-col gap-1 p-0" aria-label="Recent tool activity">
-              {toolActivities.map((tool) => (
-                <li key={tool.toolCallId} className="flex items-center gap-2 text-[11px] text-faint">
-                  <span className="size-1.5 rounded-full bg-current" aria-hidden="true" />
-                  <span>
-                    {toolLabel(tool.toolName)} —{" "}
-                    {tool.phase === "completed" ? (tool.isError ? "failed" : "completed") : "running"}
-                  </span>
-                </li>
-              ))}
-            </ol>
-          ) : null}
-          {approvals.map((request) => (
-            <ToolApprovalCard
-              key={request.approvalId}
-              request={request}
-              onResolve={(decision) => onResolveApproval(request, decision)}
-            />
-          ))}
-          {working ? (
-            <div className="mt-3 flex items-center gap-2 text-dim text-xs [&_svg]:animate-working-pulse">
-              <ChatAvatar chat={chat} chats={chats} size="sm" />
-              <span>{chat.name} is working…</span>
-            </div>
-          ) : null}
+          <div
+            className="chat-messages mx-auto flex w-full max-w-[1400px] flex-col px-3.5 pt-1.5 pb-[22px]"
+            role="log"
+            aria-live="polite"
+            aria-busy={transcript?.loading ?? true}
+          >
+            {transcriptMessages.map((message, index) => {
+              const previous = transcriptMessages[index - 1];
+              return (
+                <div
+                  key={message.id ?? `${chat.id}-${message.type}-${index}`}
+                  className={messageRow}
+                  data-message-id={message.id}
+                  data-highlighted={(message.id !== undefined && message.id === targetMessageId) || undefined}
+                >
+                  <MessageView
+                    message={message}
+                    dense={message.type === "outgoing" && previous?.type === "outgoing"}
+                    onAnswer={(answer) => onAnswerPrompt(message.id, answer)}
+                    onRetry={() => onRetry(message.id)}
+                  />
+                </div>
+              );
+            })}
+            {/* These belong to the newest messages, so a window opened elsewhere in the transcript omits them. */}
+            {attached && toolActivities.length ? (
+              <ol className="my-2 flex list-none flex-col gap-1 p-0" aria-label="Recent tool activity">
+                {toolActivities.map((tool) => (
+                  <li key={tool.toolCallId} className="flex items-center gap-2 text-[11px] text-faint">
+                    <span className="size-1.5 rounded-full bg-current" aria-hidden="true" />
+                    <span>
+                      {toolLabel(tool.toolName)} —{" "}
+                      {tool.phase === "completed" ? (tool.isError ? "failed" : "completed") : "running"}
+                    </span>
+                  </li>
+                ))}
+              </ol>
+            ) : null}
+            {attached
+              ? approvals.map((request) => (
+                  <ToolApprovalCard
+                    key={request.approvalId}
+                    request={request}
+                    onResolve={(decision) => onResolveApproval(request, decision)}
+                  />
+                ))
+              : null}
+            {attached && working ? (
+              <div className="mt-3 flex items-center gap-2 text-dim text-xs [&_svg]:animate-working-pulse">
+                <ChatAvatar chat={chat} chats={chats} size="sm" />
+                <span>{chat.name} is working…</span>
+              </div>
+            ) : null}
+          </div>
         </div>
+        {attached ? null : (
+          <Button
+            className="absolute bottom-3 left-1/2 -translate-x-1/2 shadow-sm"
+            variant="outline"
+            size="sm"
+            type="button"
+            onClick={onShowLatest}
+          >
+            <ArrowDownIcon aria-hidden="true" />
+            Jump to latest
+          </Button>
+        )}
       </div>
 
       <ChatComposer

@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useLayoutEffect, useState } from "react";
 
 import type {
-  Chat,
   ChatChanges,
-  ChatCollection,
   ChatId,
+  ChatSummary,
+  ChatSummaryCollection,
   ManagedConversationStatus,
   NewChat,
 } from "../../../shared/conversations";
@@ -17,12 +17,15 @@ import { useConversations } from "@/hooks/use-conversations";
 import { useNotificationSounds } from "@/hooks/use-notification-sounds";
 import type { AppPreferences } from "@/lib/app-preferences";
 import type { ToolActivityView } from "@/lib/conversation-stream";
+import type { MessageWindow } from "@/lib/message-windows";
 import { applyTheme } from "@/lib/theme";
 
 export interface WorkspaceController {
-  chats: ChatCollection;
+  chats: ChatSummaryCollection;
   activeChatId: ChatId;
-  activeChat: Chat | undefined;
+  activeChat: ChatSummary | undefined;
+  /** The loaded part of the active chat's transcript; undefined until its first page arrives. */
+  activeTranscript: MessageWindow | undefined;
   statuses: Record<string, ManagedConversationStatus>;
   activity: Record<string, string | undefined>;
   conversationErrors: Record<string, BackendError | undefined>;
@@ -35,6 +38,11 @@ export interface WorkspaceController {
   persistenceStatus: PersistenceStatus;
   persistenceError: string | null;
   selectChat: (chatId: ChatId) => void;
+  /** Opens a chat at one message, such as a search result. */
+  selectMessage: (chatId: ChatId, messageId: string) => void;
+  loadOlderMessages: () => void;
+  loadNewerMessages: () => void;
+  showLatestMessages: () => void;
   createChat: (chat: NewChat, model?: ModelSelection | null) => Promise<boolean>;
   updateActiveChat: (changes: ChatChanges) => Promise<boolean>;
   deleteActiveChat: () => Promise<boolean>;
@@ -55,6 +63,7 @@ export function useWorkspaceController(): WorkspaceController {
   const [toolPolicyLoaded, setToolPolicyLoaded] = useState(false);
   const [createChatId] = useState(createChatIdFactory);
   const activeChat = conversations.chats[activeChatId];
+  const activeTranscript = conversations.windows[activeChatId];
 
   useLayoutEffect(() => applyTheme(preferences.theme), [preferences.theme]);
 
@@ -88,13 +97,47 @@ export function useWorkspaceController(): WorkspaceController {
     }
   }, [activeChatId, conversations.chats]);
 
+  // Selecting a chat opens it below. This covers the chats chosen for the
+  // user: at startup, after a deletion, and one that was just created.
+  const activeChatExists = Boolean(activeChat);
+  const activeChatLoaded = Boolean(activeTranscript);
+  useEffect(() => {
+    if (activeChatExists && !activeChatLoaded) conversations.openConversation(activeChatId);
+  }, [activeChatExists, activeChatId, activeChatLoaded, conversations.openConversation]);
+
   const selectChat = useCallback(
     (chatId: ChatId): void => {
       if (!conversations.chats[chatId]) return;
       setActiveChatId(chatId);
+      conversations.openConversation(chatId);
       if (conversations.chats[chatId].unread) void conversations.markRead(chatId);
     },
-    [conversations.chats, conversations.markRead],
+    [conversations.chats, conversations.markRead, conversations.openConversation],
+  );
+
+  const selectMessage = useCallback(
+    (chatId: ChatId, messageId: string): void => {
+      if (!conversations.chats[chatId]) return;
+      setActiveChatId(chatId);
+      void conversations.openMessage(chatId, messageId);
+      if (conversations.chats[chatId].unread) void conversations.markRead(chatId);
+    },
+    [conversations.chats, conversations.markRead, conversations.openMessage],
+  );
+
+  const loadOlderMessages = useCallback(
+    (): void => conversations.loadOlderMessages(activeChatId),
+    [activeChatId, conversations.loadOlderMessages],
+  );
+
+  const loadNewerMessages = useCallback(
+    (): void => conversations.loadNewerMessages(activeChatId),
+    [activeChatId, conversations.loadNewerMessages],
+  );
+
+  const showLatestMessages = useCallback(
+    (): void => conversations.openConversation(activeChatId),
+    [activeChatId, conversations.openConversation],
   );
 
   const createChat = useCallback(
@@ -196,6 +239,7 @@ export function useWorkspaceController(): WorkspaceController {
     chats: conversations.chats,
     activeChatId,
     activeChat,
+    activeTranscript,
     statuses: conversations.statuses,
     activity: conversations.activity,
     conversationErrors: conversations.conversationErrors,
@@ -208,6 +252,10 @@ export function useWorkspaceController(): WorkspaceController {
     persistenceStatus: persistedPreferences.status,
     persistenceError: persistedPreferences.error ?? conversations.error,
     selectChat,
+    selectMessage,
+    loadOlderMessages,
+    loadNewerMessages,
+    showLatestMessages,
     createChat,
     updateActiveChat,
     deleteActiveChat,

@@ -43,6 +43,7 @@
 
 @theme {
   --animate-message-in: message-in 160ms ease-out;
+  --animate-message-highlight: message-highlight 1.8s ease-out;
   --animate-panel-in: panel-in 170ms ease-out;
   --animate-avatar-sheet-in: avatar-sheet-in 160ms ease-out;
   --animate-working-pulse: working-pulse 1.5s ease-in-out infinite;
@@ -53,6 +54,11 @@
     from {
       opacity: 0;
       transform: translateY(3px);
+    }
+  }
+  @keyframes message-highlight {
+    from {
+      background-color: color-mix(in oklch, var(--blue) 22%, transparent);
     }
   }
   @keyframes panel-in {

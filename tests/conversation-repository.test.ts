@@ -592,15 +592,44 @@ describe("ConversationRepository", () => {
     ).rejects.toMatchObject({ code: "not_found" });
   });
 
+  it("reports whether a write added a message or updated one, with the stored message", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "wisp-message-changes-"));
+    const repository = new ConversationRepository({ dataDirectory: directory });
+    await repository.initialize({ first: chat("first") });
+
+    await expect(
+      repository.appendMessage("first", { id: "reply", type: "incoming", text: "Streaming", status: "streaming" }),
+    ).resolves.toMatchObject({ added: true, message: { id: "reply", text: "Streaming" } });
+    await expect(
+      repository.appendMessage("first", { id: "reply", type: "incoming", text: "Done", status: "complete" }),
+    ).resolves.toMatchObject({ added: false, message: { id: "reply", text: "Done" } });
+    await expect(
+      repository.appendOutgoingMessage("first", { id: "request-1", type: "outgoing", text: "Hi" }),
+    ).resolves.toMatchObject({ added: true, message: { id: "request-1" } });
+    await repository.appendMessage("first", {
+      id: "question",
+      type: "prompt",
+      question: "Proceed?",
+      options: [{ key: "yes", label: "Yes" }],
+    });
+    await expect(repository.answerPrompt("first", "question", "yes")).resolves.toMatchObject({
+      id: "question",
+      answer: "yes",
+    });
+  });
+
   it("updates delivery status only for stored outgoing messages", async () => {
     const directory = await mkdtemp(path.join(os.tmpdir(), "wisp-outgoing-status-"));
     const repository = new ConversationRepository({ dataDirectory: directory });
     await repository.initialize({ first: chat("first") });
     await repository.appendMessage("first", { id: "request-1", type: "outgoing", text: "Hi", status: "queued" });
 
-    await expect(repository.setOutgoingStatus("first", "request-1", "complete")).resolves.toBe(true);
-    await expect(repository.setOutgoingStatus("first", "first:message:0", "failed")).resolves.toBe(false);
-    await expect(repository.setOutgoingStatus("first", "missing", "failed")).resolves.toBe(false);
+    await expect(repository.setOutgoingStatus("first", "request-1", "complete")).resolves.toMatchObject({
+      id: "request-1",
+      status: "complete",
+    });
+    await expect(repository.setOutgoingStatus("first", "first:message:0", "failed")).resolves.toBeUndefined();
+    await expect(repository.setOutgoingStatus("first", "missing", "failed")).resolves.toBeUndefined();
 
     await expect(repository.getMessage("first", "request-1")).resolves.toMatchObject({ status: "complete" });
     await expect(repository.getMessage("first", "first:message:0")).resolves.toMatchObject({ status: "complete" });

@@ -4,14 +4,16 @@ import {
   addPendingRequest,
   createConversationRuntime,
   overlayRuntimeMessages,
+  pruneSettledRuntimeMessages,
   reconcileConversationRuntime,
   reduceConversationAgentEvent,
   removePendingRequest,
   stageOutgoingMessage,
+  type StoredConversations,
 } from "../src/lib/conversation-stream.js";
-import type { Chat, ChatCollection } from "../shared/conversations.js";
+import type { ChatSummary, Message } from "../shared/conversations.js";
 
-function chat(id: string): Chat {
+function chat(id: string): ChatSummary {
   return {
     id,
     name: id,
@@ -22,13 +24,17 @@ function chat(id: string): Chat {
     notifyOnUpdatesEnabled: true,
     preview: "Ready",
     timestamp: "Now",
-    messages: [],
   };
+}
+
+/** Conversations that exist, with the messages loaded for them (none unless given). */
+function stored(ids: string[], windows: StoredConversations["windows"] = {}): StoredConversations {
+  return { chats: Object.fromEntries(ids.map((id) => [id, chat(id)])), windows };
 }
 
 describe("conversation stream reducer", () => {
   it("reconciles queued and streaming messages by stable IDs and ignores event replay", () => {
-    const chats: ChatCollection = { one: chat("one"), two: chat("two") };
+    const chats = stored(["one", "two"]);
     let state = createConversationRuntime(0, { one: "idle", two: "idle" });
     state = stageOutgoingMessage(state, "one", {
       id: "request-1",
@@ -85,8 +91,7 @@ describe("conversation stream reducer", () => {
     );
 
     expect(state).toBe(afterDelta);
-    const visible = overlayRuntimeMessages(chats, state.messages);
-    expect(visible.one.messages).toEqual([
+    expect(overlayRuntimeMessages([], state.messages.one ?? [], true)).toEqual([
       expect.objectContaining({ id: "request-1", status: "complete" }),
       expect.objectContaining({
         id: "request-1:assistant",
@@ -95,11 +100,11 @@ describe("conversation stream reducer", () => {
         createdAt: "2026-08-31T23:10:00.000Z",
       }),
     ]);
-    expect(visible.two.messages).toEqual([]);
+    expect(state.messages.two).toBeUndefined();
   });
 
   it("tracks sanitized activity, cancellation, and retryable errors without cross-chat leakage", () => {
-    const chats: ChatCollection = { one: chat("one"), two: chat("two") };
+    const chats = stored(["one", "two"]);
     let state = createConversationRuntime(0, {});
     state = reduceConversationAgentEvent(
       state,
@@ -145,9 +150,8 @@ describe("conversation stream reducer", () => {
       },
       chats,
     );
-    const visible = overlayRuntimeMessages(chats, state.messages);
-    expect(visible.one.messages).toContainEqual(expect.objectContaining({ status: "cancelled", text: "" }));
-    expect(visible.two.messages).toContainEqual(
+    expect(state.messages.one).toContainEqual(expect.objectContaining({ status: "cancelled", text: "" }));
+    expect(state.messages.two).toContainEqual(
       expect.objectContaining({
         status: "failed",
         text: "Try again.",
@@ -159,7 +163,7 @@ describe("conversation stream reducer", () => {
   });
 
   it("tracks approval requests until the matching resolution arrives", () => {
-    const chats: ChatCollection = { one: chat("one") };
+    const chats = stored(["one"]);
     let state = createConversationRuntime(0, {});
     state = reduceConversationAgentEvent(
       state,
@@ -218,12 +222,92 @@ describe("conversation stream reducer", () => {
         createdAt: "2026-09-02T12:00:00.000Z",
         error: { code: "internal_error", message: "Late", retryable: false },
       },
-      { one: chat("one") },
+      stored(["one"]),
     );
 
     expect(afterLateEvent.sequence).toBe(5);
     expect(afterLateEvent.statuses).not.toHaveProperty("deleted");
     expect(afterLateEvent.messages).not.toHaveProperty("deleted");
     expect(afterLateEvent.errors).not.toHaveProperty("deleted");
+  });
+
+  it("continues a reply from the messages the backend had live when the renderer started", () => {
+    const live: Message = { id: "reply", type: "incoming", text: "So far", status: "streaming" };
+    let state = createConversationRuntime(7, { one: "working" }, [], { one: [live] });
+
+    state = reduceConversationAgentEvent(
+      state,
+      {
+        sequence: 8,
+        type: "assistant_text_delta",
+        conversationId: "one",
+        requestId: "r",
+        messageId: "reply",
+        delta: "!",
+      },
+      stored(["one"]),
+    );
+
+    expect(state.messages.one).toEqual([
+      expect.objectContaining({ id: "reply", text: "So far!", status: "streaming" }),
+    ]);
+  });
+
+  it("reads a message it does not hold from the loaded window", () => {
+    const outgoing: Message = { id: "request-1", type: "outgoing", text: "Inspect", status: "queued" };
+    const state = reduceConversationAgentEvent(
+      createConversationRuntime(0, { one: "idle" }),
+      {
+        sequence: 1,
+        type: "assistant_message_started",
+        conversationId: "one",
+        requestId: "request-1",
+        messageId: "reply",
+        createdAt: "2026-08-31T23:10:00.000Z",
+      },
+      stored(["one"], { one: { messages: [outgoing] } }),
+    );
+
+    expect(state.messages.one).toEqual([
+      expect.objectContaining({ id: "request-1", text: "Inspect", status: "complete" }),
+      expect.objectContaining({ id: "reply", status: "streaming" }),
+    ]);
+  });
+});
+
+describe("overlayRuntimeMessages", () => {
+  const first: Message = { id: "a", type: "incoming", text: "Stored" };
+  const newer: Message = { id: "a", type: "incoming", text: "Newer", status: "streaming" };
+  const unstored: Message = { id: "b", type: "incoming", text: "Live", status: "streaming" };
+
+  it("replaces stored copies everywhere but adds unstored messages only to an attached window", () => {
+    expect(overlayRuntimeMessages([first], [newer, unstored], true)).toEqual([newer, unstored]);
+    expect(overlayRuntimeMessages([first], [newer, unstored], false)).toEqual([newer]);
+  });
+
+  it("returns the same messages when nothing is in flight", () => {
+    const messages = [first];
+    expect(overlayRuntimeMessages(messages, [], true)).toBe(messages);
+    expect(overlayRuntimeMessages(messages, [unstored], false)).toBe(messages);
+  });
+});
+
+describe("pruneSettledRuntimeMessages", () => {
+  const settled: Message = { id: "reply", type: "incoming", text: "Done", status: "complete" };
+  const streaming: Message = { id: "next", type: "incoming", text: "Wor", status: "streaming" };
+
+  it("drops a settled copy once the same settled message is stored, and keeps what is still in flight", () => {
+    const state = createConversationRuntime(0, {}, [], { one: [settled, streaming], two: [settled] });
+
+    const pruned = pruneSettledRuntimeMessages(state, "one", [settled, { ...streaming, text: "" }]);
+
+    expect(pruned.messages).toEqual({ one: [streaming], two: [settled] });
+  });
+
+  it("keeps a copy whose stored version is in a different state", () => {
+    const state = createConversationRuntime(0, {}, [], { one: [{ ...settled, status: "failed" }] });
+
+    expect(pruneSettledRuntimeMessages(state, "one", [settled])).toBe(state);
+    expect(pruneSettledRuntimeMessages(state, "one", [])).toBe(state);
   });
 });

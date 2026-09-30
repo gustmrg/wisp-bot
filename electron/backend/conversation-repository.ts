@@ -65,6 +65,12 @@ function putChangedConversations(
   }
 }
 
+/** A message as stored by a write, and whether the write added it or updated an existing one. */
+export interface MessageChange {
+  message: Message;
+  added: boolean;
+}
+
 export interface ConversationRepositoryOptions {
   dataDirectory: string;
   userName?: string;
@@ -320,8 +326,8 @@ export class ConversationRepository {
     });
   }
 
-  async appendMessage(conversationId: string, message: Message): Promise<void> {
-    await this.enqueue(() => this.applyAppend(conversationId, message));
+  async appendMessage(conversationId: string, message: Message): Promise<MessageChange> {
+    return this.enqueue(() => this.applyAppend(conversationId, message));
   }
 
   /**
@@ -329,23 +335,26 @@ export class ConversationRepository {
    * version of it, never a reply or notice; the check runs in the write queue
    * so nothing can change the stored message in between.
    */
-  async appendOutgoingMessage(conversationId: string, message: Message): Promise<void> {
-    await this.enqueue(async () => {
+  async appendOutgoingMessage(conversationId: string, message: Message): Promise<MessageChange> {
+    return this.enqueue(async () => {
       const existing = message.id ? await this.lookupMessage(conversationId, message.id) : undefined;
       if (message.type !== "outgoing" || (existing && existing.type !== "outgoing")) {
         throw new WispBackendError("invalid_request", "Only messages you wrote can be saved from the app.");
       }
-      await this.applyAppend(conversationId, message);
+      return this.applyAppend(conversationId, message);
     });
   }
 
-  /** Updates an outgoing message's delivery status. Resolves false when there is no such message. */
-  async setOutgoingStatus(conversationId: string, messageId: string, status: MessageStatus): Promise<boolean> {
+  /** Updates an outgoing message's delivery status and resolves the stored message, or undefined when there is none. */
+  async setOutgoingStatus(
+    conversationId: string,
+    messageId: string,
+    status: MessageStatus,
+  ): Promise<Message | undefined> {
     return this.enqueue(async () => {
       const stored = await this.lookupMessage(conversationId, messageId);
-      if (stored?.type !== "outgoing") return false;
-      await this.applyAppend(conversationId, { ...stored, id: messageId, status });
-      return true;
+      if (stored?.type !== "outgoing") return undefined;
+      return (await this.applyAppend(conversationId, { ...stored, id: messageId, status })).message;
     });
   }
 
@@ -394,8 +403,9 @@ export class ConversationRepository {
     });
   }
 
-  async answerPrompt(conversationId: string, messageId: string, answer: string): Promise<void> {
-    await this.enqueue(async () => {
+  /** Records the answer and resolves the stored prompt. */
+  async answerPrompt(conversationId: string, messageId: string, answer: string): Promise<Message> {
+    return this.enqueue(async () => {
       const result = applyWorkspaceAction(this.state.conversations, {
         type: "answer-prompt",
         conversationId,
@@ -410,6 +420,7 @@ export class ConversationRepository {
         store.putConversation(record);
         store.putMessages(conversationId, [prompt]);
       });
+      return prompt;
     });
   }
 
@@ -484,8 +495,9 @@ export class ConversationRepository {
     this.store = undefined;
   }
 
-  private async applyAppend(conversationId: string, message: Message): Promise<void> {
+  private async applyAppend(conversationId: string, message: Message): Promise<MessageChange> {
     const messageId = message.id ?? this.createId();
+    const added = (await this.openStore()).getMessage(conversationId, messageId) === undefined;
     const result = applyWorkspaceAction(this.state.conversations, {
       type: "append-message",
       conversationId,
@@ -500,6 +512,7 @@ export class ConversationRepository {
       store.deleteOldestMessages(conversationId, result.droppedOldestMessages ?? 0);
       store.putMessages(conversationId, [stored]);
     });
+    return { message: stored, added };
   }
 
   private async lookupMessage(conversationId: string, messageId: string): Promise<Message | undefined> {
