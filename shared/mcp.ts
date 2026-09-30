@@ -34,6 +34,8 @@ export interface McpServerSummary {
   headerConfigured: boolean;
   /** Header name is configuration, not a secret, and is safe to display. */
   headerName?: string;
+  /** A browser sign-in is waiting; it can be cancelled from any window. */
+  signInPending?: boolean;
   lastDiscoveredAt: string | null;
   tools: ReadonlyArray<McpToolSummary>;
 }

@@ -680,3 +680,176 @@ describe("McpService interactive sign-in", () => {
     expect(view.servers[0]?.tools).toHaveLength(0);
   });
 });
+
+/**
+ * Drives the real McpOAuthProvider the way McpConnection and the SDK do:
+ * discovery, the browser redirect, the callback wait, then the code exchange,
+ * which persists tokens through the provider.
+ */
+class BrowserSignInConnection implements McpConnection {
+  private status: "connected" | "idle" = "idle";
+
+  constructor(private readonly gates: { discovery?: Promise<void>; listTools?: Promise<void> }) {}
+
+  get connectionStatus(): "connected" | "idle" {
+    return this.status;
+  }
+
+  async connect(
+    _endpoint: string,
+    auth: McpConnectionAuth,
+    options: { allowInteractiveSignIn?: boolean } = {},
+  ): Promise<"connected" | "needs_sign_in"> {
+    const provider = (auth as { provider: McpOAuthProvider }).provider;
+    await this.gates.discovery;
+    provider.setInteractiveSignIn(options.allowInteractiveSignIn === true);
+    const state = provider.state();
+    provider.saveCodeVerifier("verifier");
+    try {
+      await provider.redirectToAuthorization(new URL(`https://auth.example.com/authorize?state=${state}`));
+    } catch {
+      return "needs_sign_in";
+    } finally {
+      provider.setInteractiveSignIn(false);
+    }
+    const callback = await provider.waitForCallback().catch(() => undefined);
+    if (!callback?.get("code")) return "needs_sign_in";
+    provider.saveTokens({ access_token: "exchanged-token", token_type: "Bearer", refresh_token: "refresh-token" });
+    this.status = "connected";
+    return "connected";
+  }
+
+  async listTools() {
+    await this.gates.listTools;
+    return [TOOL];
+  }
+
+  async callTool() {
+    return { content: [] };
+  }
+
+  async close() {
+    this.status = "idle";
+  }
+}
+
+async function createBrowserSignInService(gates: { discovery?: Promise<void>; listTools?: Promise<void> } = {}) {
+  const dataDirectory = await mkdtemp(path.join(os.tmpdir(), "wisp-mcp-"));
+  const opened: string[] = [];
+  const published: Array<boolean | undefined> = [];
+  const service = new McpService({
+    dataDirectory,
+    encryption,
+    authorizationBroker: { authorize: vi.fn(async () => undefined) },
+    resolveWisp: (conversationId) => `session-${conversationId}`,
+    openExternal: async (url) => {
+      opened.push(url);
+    },
+    createConnection: () => new BrowserSignInConnection(gates) as unknown as McpConnection,
+    onSettingsChanged: (view) => published.push(view.servers[0]?.signInPending),
+  });
+  await service.load();
+  const { serverId, server } = await addServer(service, { authMode: "oauth" });
+  const secrets = (
+    service as unknown as { secrets: { read(id: string): Promise<unknown>; oauthTokens(id: string): Promise<unknown> } }
+  ).secrets;
+  // The loopback callback URL is fixed for the sign-in; capture it while the flow is live.
+  const callbackUrl = (): string => {
+    const active = (service as unknown as { activeSignIns: Map<string, { provider: McpOAuthProvider }> }).activeSignIns;
+    const state = new URL(opened[0]!).searchParams.get("state");
+    return `${active.get(serverId)!.provider.redirectUrl}?code=abc&state=${state}`;
+  };
+  return { service, serverId, server, opened, published, secrets, callbackUrl };
+}
+
+describe("McpService interactive sign-in lifecycle", () => {
+  it("reports a waiting sign-in in the view and clears it once the sign-in ends", async () => {
+    const { service, serverId, opened, published, secrets, callbackUrl } = await createBrowserSignInService();
+    const pending = service.startSignIn({ serverId });
+    await vi.waitFor(() => expect(opened).toHaveLength(1));
+    expect((await service.getView()).servers[0]?.signInPending).toBe(true);
+
+    expect((await fetch(callbackUrl())).status).toBe(200);
+    const view = await pending;
+    expect(view.servers[0]?.signInPending).toBeUndefined();
+    expect(view.servers[0]?.tools).toHaveLength(1);
+    expect(await secrets.oauthTokens(serverId)).toMatchObject({ accessToken: "exchanged-token" });
+    // Pushed to every window: waiting when it starts, not waiting when it ends.
+    expect(published).toContain(true);
+    expect(published.at(-1)).toBeUndefined();
+  });
+
+  it("never opens the browser when the sign-in is cancelled before the redirect", async () => {
+    const discovery = deferred<void>();
+    const { service, serverId, opened } = await createBrowserSignInService({ discovery: discovery.promise });
+    const pending = service.startSignIn({ serverId });
+    pending.catch(() => undefined);
+    expect((await service.getView()).servers[0]?.signInPending).toBe(true);
+
+    // Cancelled while discovery and registration are still running.
+    const view = await service.cancelSignIn({ serverId });
+    expect(view.servers[0]?.signInPending).toBeUndefined();
+    discovery.resolve();
+
+    await expect(pending).rejects.toMatchObject({ code: "aborted", message: "The sign-in was cancelled." });
+    expect(opened).toHaveLength(0);
+  });
+
+  it("ends a waiting sign-in when its connection is removed and stores nothing for it", async () => {
+    const { service, serverId, opened, secrets, callbackUrl } = await createBrowserSignInService();
+    const pending = service.startSignIn({ serverId });
+    pending.catch(() => undefined);
+    await vi.waitFor(() => expect(opened).toHaveLength(1));
+    const browserPage = callbackUrl();
+
+    await service.remove({ serverId });
+    await expect(pending).rejects.toMatchObject({ code: "not_found" });
+    // The browser page left open can no longer complete the sign-in.
+    await expect(fetch(browserPage)).rejects.toThrow();
+    expect(await secrets.read(serverId)).toBeUndefined();
+  });
+
+  it("discards credentials exchanged for a connection that was removed before they were committed", async () => {
+    const listTools = deferred<void>();
+    const { service, serverId, opened, secrets, callbackUrl } = await createBrowserSignInService({
+      listTools: listTools.promise,
+    });
+    const pending = service.startSignIn({ serverId });
+    pending.catch(() => undefined);
+    await vi.waitFor(() => expect(opened).toHaveLength(1));
+    await fetch(callbackUrl());
+    await vi.waitFor(async () => expect(await secrets.oauthTokens(serverId)).toBeDefined());
+
+    await service.remove({ serverId });
+    listTools.resolve();
+
+    await expect(pending).rejects.toMatchObject({ code: "not_found" });
+    expect(await secrets.read(serverId)).toBeUndefined();
+  });
+
+  it("discards credentials exchanged for a connection whose identity changed before they were committed", async () => {
+    const listTools = deferred<void>();
+    const { service, serverId, server, opened, secrets, callbackUrl } = await createBrowserSignInService({
+      listTools: listTools.promise,
+    });
+    const pending = service.startSignIn({ serverId });
+    pending.catch(() => undefined);
+    await vi.waitFor(() => expect(opened).toHaveLength(1));
+    await fetch(callbackUrl());
+    await vi.waitFor(async () => expect(await secrets.oauthTokens(serverId)).toBeDefined());
+
+    await service.save({
+      serverId,
+      name: server.name,
+      endpoint: "https://changed.example.com/mcp",
+      authMode: "oauth",
+      enabled: true,
+    });
+    listTools.resolve();
+
+    await expect(pending).rejects.toMatchObject({ code: "invalid_request" });
+    // Tokens issued for the old endpoint must never be sent to the new one.
+    expect(await secrets.oauthTokens(serverId)).toBeUndefined();
+    expect((await service.getView()).servers[0]?.tools).toHaveLength(0);
+  });
+});

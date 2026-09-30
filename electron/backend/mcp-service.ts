@@ -93,6 +93,13 @@ interface PoolEntry {
   generation: number;
 }
 
+interface ActiveSignIn {
+  controller: AbortController;
+  provider: McpOAuthProvider;
+  /** Set only by an explicit cancel, so its outcome reads as a cancellation. */
+  cancelledByUser: boolean;
+}
+
 export class McpService {
   private state: McpState = defaultState();
   private readonly filePath: string;
@@ -104,9 +111,8 @@ export class McpService {
     { conversationId: string; sessionId: string; serverId: string }
   >();
   private readonly pool = new Map<string, PoolEntry>();
-  /** Providers of in-flight interactive sign-ins, keyed by server. */
-  private readonly activeSignIns = new Map<string, McpOAuthProvider>();
-  private readonly cancelledSignIns = new Set<string>();
+  /** In-flight interactive sign-ins, keyed by server. */
+  private readonly activeSignIns = new Map<string, ActiveSignIn>();
 
   constructor(private readonly options: McpServiceOptions) {
     this.filePath = path.join(options.dataDirectory, "mcp-servers.json");
@@ -154,6 +160,7 @@ export class McpService {
           enabled: server.enabled,
           headerConfigured: headerConfigured.has(server.serverId),
           ...(server.headerName ? { headerName: server.headerName } : {}),
+          ...(this.isSignInPending(server.serverId) ? { signInPending: true } : {}),
           state: this.connectionState(server, signedIn.has(server.serverId)),
           lastDiscoveredAt: server.snapshot?.discoveredAt ?? null,
           tools: (server.snapshot?.tools ?? []).map((tool) => ({
@@ -330,14 +337,29 @@ export class McpService {
       throw new WispBackendError("invalid_request", "A sign-in for this connection is already in progress.");
     }
     const endpoint = server.endpoint;
+    const generation = server.configGeneration;
     const provider = this.createOAuthProvider(serverId);
-    this.activeSignIns.set(serverId, provider);
+    const controller = new AbortController();
+    const signIn: ActiveSignIn = { controller, provider, cancelledByUser: false };
+    // Registered like any other server operation, so removing the connection,
+    // changing its identity, or shutting down aborts the sign-in too. An abort
+    // stops the provider: a pending browser wait ends, a browser that has not
+    // opened yet never does, and nothing more is written to the secret store.
+    controller.signal.addEventListener("abort", () => provider.cancelSignIn(), { once: true });
+    this.running.set(controller, { conversationId: "", sessionId: "", serverId });
+    this.activeSignIns.set(serverId, signIn);
     let connection: McpConnection | null = null;
     try {
+      // Every window learns a sign-in is waiting and can offer to cancel it.
+      await this.publishAndView();
       await provider.loadPersistedTokens();
       await provider.loadPersistedClientInformation();
       await provider.ensureCallbackServer();
+      controller.signal.throwIfAborted();
       connection = this.createConnection();
+      // The signal is not passed on: the provider already refuses the redirect
+      // and ends the browser wait on abort, and the reconnect that follows a
+      // completed exchange must not be cut short after credentials were stored.
       const outcome = await connection.connect(
         endpoint,
         { mode: "oauth", provider },
@@ -346,22 +368,23 @@ export class McpService {
         },
       );
       if (outcome === "needs_sign_in") {
-        if (this.cancelledSignIns.delete(serverId)) {
-          throw new WispBackendError("aborted", "The sign-in was cancelled.");
-        }
+        this.signInTarget(serverId, generation);
         throw new WispBackendError("configuration_required", "Sign-in did not complete. Try again.");
       }
+      // The exchange has completed, so a cancel arriving from here on is too
+      // late to undo; removal and identity changes are re-checked at commit.
       const tools = await connection.listTools();
       await connection.close();
       connection = null;
       await this.enqueue(async () => {
-        const current = this.state.servers[serverId];
-        if (!current) throw new WispBackendError("not_found", "This MCP connection no longer exists.");
-        if (current.endpoint !== endpoint || current.authMode !== "oauth") {
-          throw new WispBackendError(
-            "invalid_request",
-            "This connection changed during sign-in. Review it and sign in again.",
-          );
+        let current: McpServerRecord;
+        try {
+          current = this.signInTarget(serverId, generation);
+        } catch (error) {
+          // The exchange already stored credentials for a connection that is
+          // now gone or has a different identity; they must not outlive it.
+          await this.discardSignInCredentials(serverId);
+          throw error;
         }
         current.snapshot = { discoveredAt: new Date().toISOString(), tools: this.buildSnapshot(tools, serverId) };
         current.lastConnection = { state: "connected", at: new Date().toISOString() };
@@ -369,14 +392,16 @@ export class McpService {
         this.registerSnapshotMetadata();
       });
     } catch (error) {
-      throw safeMcpError(error);
+      throw await this.signInFailure(error, signIn, serverId, generation);
     } finally {
+      this.running.delete(controller);
       this.activeSignIns.delete(serverId);
-      this.cancelledSignIns.delete(serverId);
       provider.dispose();
       await connection?.close();
+      // However the sign-in ended, no window should keep showing it as waiting.
+      await this.publishAndView().catch(() => undefined);
     }
-    return this.publishAndView();
+    return this.getView();
   }
 
   /**
@@ -385,12 +410,12 @@ export class McpService {
    */
   async cancelSignIn(value: unknown): Promise<McpSettingsView> {
     const { serverId } = parseMcpServerRequest(value);
-    const provider = this.activeSignIns.get(serverId);
-    if (!provider) {
+    const signIn = this.activeSignIns.get(serverId);
+    if (!signIn) {
       throw new WispBackendError("not_found", "No sign-in is in progress for this connection.");
     }
-    this.cancelledSignIns.add(serverId);
-    provider.cancelSignIn();
+    signIn.cancelledByUser = true;
+    signIn.controller.abort();
     return this.getView();
   }
 
@@ -480,7 +505,7 @@ export class McpService {
   dispose(): void {
     this.disposed = true;
     for (const controller of this.running.keys()) controller.abort();
-    for (const provider of this.activeSignIns.values()) provider.dispose();
+    for (const { provider } of this.activeSignIns.values()) provider.dispose();
     for (const [key, entry] of this.pool) {
       entry.provider?.dispose();
       void entry.connection.close();
@@ -790,6 +815,51 @@ export class McpService {
     if (this.options.resolveWisp(conversationId) !== sessionId || revision !== this.accessRevision(sessionId)) {
       throw new WispBackendError("invalid_request", "MCP access has changed. Reload access settings before saving.");
     }
+  }
+
+  /** A cancelled sign-in is no longer waiting, even while its flow unwinds. */
+  private isSignInPending(serverId: string): boolean {
+    const signIn = this.activeSignIns.get(serverId);
+    return signIn !== undefined && !signIn.controller.signal.aborted;
+  }
+
+  /** The connection a sign-in started for, unless it was removed or re-identified since. */
+  private signInTarget(serverId: string, generation: number): McpServerRecord {
+    const current = this.state.servers[serverId];
+    if (!current) throw new WispBackendError("not_found", "This MCP connection no longer exists.");
+    if (current.configGeneration !== generation) {
+      throw new WispBackendError(
+        "invalid_request",
+        "This connection changed during sign-in. Review it and sign in again.",
+      );
+    }
+    return current;
+  }
+
+  private async signInFailure(
+    error: unknown,
+    signIn: ActiveSignIn,
+    serverId: string,
+    generation: number,
+  ): Promise<WispBackendError> {
+    if (signIn.cancelledByUser) return new WispBackendError("aborted", "The sign-in was cancelled.");
+    if (signIn.controller.signal.aborted) {
+      // Aborted by a removal, an identity change, or shutdown. Let that
+      // mutation land first so the failure names it, not a bare cancellation.
+      const reason = await this.enqueue(async () => this.signInTarget(serverId, generation)).then(
+        () => undefined,
+        (rejection: unknown) => rejection,
+      );
+      if (reason instanceof WispBackendError) return reason;
+    }
+    return safeMcpError(error, signIn.controller.signal);
+  }
+
+  private async discardSignInCredentials(serverId: string): Promise<void> {
+    const discard = this.state.servers[serverId]
+      ? this.secrets.clearOAuthTokens(serverId)
+      : this.secrets.delete(serverId);
+    await discard.catch(() => undefined);
   }
 
   private cancelServer(serverId: string): void {

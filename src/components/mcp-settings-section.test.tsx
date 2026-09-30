@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
@@ -154,7 +154,37 @@ describe("McpSettingsSection drill-in", () => {
     await waitFor(() => expect(cancelMcpSignIn).toHaveBeenCalledWith({ serverId: "server-1" }));
 
     settle({ ok: false, error: { code: "aborted", message: "The sign-in was cancelled.", retryable: false } });
-    expect(await screen.findByText("The sign-in was cancelled.")).toBeInTheDocument();
+    // A cancel the user asked for reads as a status, not an error.
+    expect(await screen.findByRole("status")).toHaveTextContent("The sign-in was cancelled.");
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: "Sign in" })).toBeEnabled();
+  });
+
+  it("keeps a waiting sign-in cancellable after leaving the form and returning", async () => {
+    const user = userEvent.setup();
+    const { cancelMcpSignIn, startMcpSignIn } = setupWithServer();
+    let pushView: ((view: McpSettingsView) => void) | undefined;
+    window.wisp.subscribeToMcpSettings = vi.fn((listener: (view: McpSettingsView) => void) => {
+      pushView = listener;
+      return () => undefined;
+    });
+    render(<McpSettingsSection />);
+
+    await user.click(await screen.findByRole("button", { name: "Manage Linear MCP" }));
+    await user.click(await screen.findByRole("button", { name: "Sign in" }));
+    // The backend announces the waiting sign-in to every window.
+    act(() => pushView?.({ ...oauthServer, servers: [{ ...oauthServer.servers[0]!, signInPending: true }] }));
+
+    await user.click(screen.getByRole("button", { name: "Back to MCP servers" }));
+    await user.click(await screen.findByRole("button", { name: "Manage Linear MCP" }));
+
+    expect(screen.getByRole("button", { name: "Waiting for browser…" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Remove connection" })).toBeDisabled();
+    expect(startMcpSignIn).toHaveBeenCalledTimes(1);
+
+    await user.click(screen.getByRole("button", { name: "Cancel sign-in" }));
+    await waitFor(() => expect(cancelMcpSignIn).toHaveBeenCalledWith({ serverId: "server-1" }));
+    // The cancel result no longer reports a waiting sign-in.
     expect(await screen.findByRole("button", { name: "Sign in" })).toBeEnabled();
   });
 });

@@ -38,6 +38,7 @@ export class McpOAuthProvider implements OAuthClientProvider {
   private readonly callbackTimeoutMs: number;
   private readonly callbackHost: string;
   private interactive = false;
+  private cancelled = false;
   private server: Server | undefined;
   private port: number | undefined;
   private stateValue: string | undefined;
@@ -108,6 +109,7 @@ export class McpOAuthProvider implements OAuthClientProvider {
 
   saveClientInformation(clientInformation: StoredOAuthClientInformation): void {
     this.clientInformationSnapshot = clientInformation;
+    if (this.cancelled) return;
     void this.secrets
       .setOAuthClientRegistration(this.serverId, {
         clientId: clientInformation.client_id,
@@ -135,6 +137,7 @@ export class McpOAuthProvider implements OAuthClientProvider {
 
   saveTokens(tokens: StoredOAuthTokens): void {
     this.tokensSnapshot = tokens;
+    if (this.cancelled) return;
     void this.secrets
       .setOAuthTokens(this.serverId, {
         accessToken: tokens.access_token,
@@ -180,7 +183,7 @@ export class McpOAuthProvider implements OAuthClientProvider {
     // Background flows (token refresh attempts, discovery, tool dispatch) must
     // never open a browser. The SDK invokes this before reporting that a
     // redirect is needed, so the gate has to live here.
-    if (!this.interactive) throw new McpSignInRequiredError();
+    if (!this.interactive || this.cancelled) throw new McpSignInRequiredError();
     if (!this.server) await this.ensureCallbackServer();
     this.beginWaitingForCallback();
     await this.openExternal(authorizationUrl.toString());
@@ -196,11 +199,13 @@ export class McpOAuthProvider implements OAuthClientProvider {
   }
 
   /**
-   * Rejects a pending browser callback wait so the in-flight sign-in flow ends
-   * immediately instead of running to its timeout. The loopback server stays
-   * up until dispose; the flow's owner tears that down.
+   * Cancels this provider's sign-in for good: a pending callback wait rejects
+   * now, a redirect that has not happened yet never opens the browser, and
+   * tokens or registrations that arrive afterwards are not persisted. The
+   * loopback server stays up until dispose; the flow's owner tears that down.
    */
   cancelSignIn(): void {
+    this.cancelled = true;
     this.cancelCallback(new WispBackendError("aborted", "The sign-in was cancelled."));
   }
 

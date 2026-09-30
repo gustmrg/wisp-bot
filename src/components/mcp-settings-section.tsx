@@ -206,7 +206,10 @@ function McpServerForm({
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
   const [cancellingSignIn, setCancellingSignIn] = useState(false);
-  const busy = operation !== null;
+  // The backend reports a waiting sign-in with the server, so it stays visible
+  // and cancellable after this form was left and reopened, or from another window.
+  const signingIn = operation === "signin" || Boolean(server?.signInPending);
+  const busy = operation !== null || signingIn;
   const isNew = !server;
 
   function reset() {
@@ -215,7 +218,7 @@ function McpServerForm({
     setMessage("");
   }
 
-  /** Leaves the form; the pending sign-in, if any, stays cancellable on return. */
+  /** Leaves the form; a waiting sign-in keeps running and is still cancellable on return. */
   function close() {
     reset();
     onBack();
@@ -293,7 +296,9 @@ function McpServerForm({
             ? await window.wisp.refreshMcpTools({ serverId: server.serverId })
             : await window.wisp.startMcpSignIn({ serverId: server.serverId });
       if (!result.ok) {
-        setError(result.error.message);
+        // A cancel the user asked for is an outcome, not a failure.
+        if (action === "signin" && result.error.code === "aborted") setMessage(result.error.message);
+        else setError(result.error.message);
         return;
       }
       onSaved(result.value);
@@ -493,9 +498,9 @@ function McpServerForm({
           {server && server.authMode === "oauth" ? (
             <>
               <Button variant="secondary" type="button" disabled={busy} onClick={() => void run("signin")}>
-                {operation === "signin" ? "Waiting for browser…" : "Sign in"}
+                {signingIn ? "Waiting for browser…" : "Sign in"}
               </Button>
-              {operation === "signin" ? (
+              {signingIn ? (
                 <Button
                   variant="secondary"
                   type="button"
