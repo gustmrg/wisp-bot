@@ -22,6 +22,10 @@ import type {
   AppendConversationMessageRequest,
   Chat,
   ConversationStateView,
+  MessagePage,
+  MessagePageRequest,
+  MessageSearchHit,
+  SearchMessagesRequest,
   CreateConversationRequest,
   DeleteConversationRequest,
   InitializeConversationsRequest,
@@ -66,6 +70,8 @@ export const WISP_IPC_CHANNELS = {
   answerConversationPrompt: "wisp:conversations:answer-prompt",
   markConversationRead: "wisp:conversations:mark-read",
   conversationChanged: "wisp:conversations:changed",
+  getConversationMessages: "wisp:conversations:get-messages",
+  searchMessages: "wisp:conversations:search",
   getSessionReport: "wisp:conversations:get-session-report",
   getUsageReport: "wisp:usage:get",
   getToolPolicy: "wisp:tool-policy:get",
@@ -362,6 +368,10 @@ export interface WispApi {
   appendConversationMessage(request: AppendConversationMessageRequest): Promise<BackendResult<Chat>>;
   answerConversationPrompt(request: AnswerConversationPromptRequest): Promise<BackendResult<Chat>>;
   markConversationRead(request: MarkConversationReadRequest): Promise<BackendResult<Chat>>;
+  /** One page of a transcript, read from the backend store. */
+  getConversationMessages(request: MessagePageRequest): Promise<BackendResult<MessagePage>>;
+  /** Newest matching messages first. The query must have at least 3 characters. */
+  searchMessages(request: SearchMessagesRequest): Promise<BackendResult<ReadonlyArray<MessageSearchHit>>>;
   /** Pushes a chat after the backend persists agent-driven changes to it (replies, statuses, context notices). */
   subscribeToConversationChanges(listener: (chat: Chat) => void): () => void;
   getSessionReport(request: ConversationRequest): Promise<BackendResult<WispSessionReport | null>>;

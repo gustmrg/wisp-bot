@@ -135,6 +135,21 @@ describe("createBackend", () => {
     expect(broadcasts.some(([channel]) => channel === WISP_IPC_CHANNELS.agentEvent)).toBe(true);
     const state = await invoke<ConversationStateView>(WISP_IPC_CHANNELS.getConversationState);
     expect(state.chats.atlas?.messages).toHaveLength(2);
+
+    // Transcript pages and search answer through the same guarded handlers.
+    await expect(
+      invoke(WISP_IPC_CHANNELS.getConversationMessages, { conversationId: "atlas", page: "latest" }),
+    ).resolves.toMatchObject({
+      messages: [expect.objectContaining({ id: "request-1" }), expect.objectContaining({ id: "request-1:assistant" })],
+      olderCursor: null,
+      newerCursor: null,
+    });
+    // Newest first: the fake reply echoes the prompt, so it matches too.
+    await expect(invoke(WISP_IPC_CHANNELS.searchMessages, { query: "hel" })).resolves.toEqual([
+      expect.objectContaining({ messageId: "request-1:assistant", snippet: "Fake response to: Hello" }),
+      expect.objectContaining({ conversationId: "atlas", messageId: "request-1", snippet: "Hello" }),
+    ]);
+    await expect(invoke(WISP_IPC_CHANNELS.searchMessages, { query: "he" })).rejects.toThrow("at least 3 characters");
   });
 });
 

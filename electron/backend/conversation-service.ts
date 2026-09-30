@@ -5,6 +5,9 @@ import type {
   ChatCollection,
   ConversationStateView,
   Message,
+  MessagePage,
+  MessagePageRequest,
+  MessageSearchHit,
   OutgoingMessage,
 } from "../../shared/conversations.js";
 import type { ToolApprovalRequest } from "../../shared/tool-policy.js";
@@ -154,14 +157,31 @@ export class ConversationService {
 
   /** Saves a message the user wrote. It may update the user's own message, never a reply or notice. */
   async appendMessage(conversationId: string, message: OutgoingMessage): Promise<Chat> {
-    const existing = message.id
-      ? this.repository.readChat(conversationId)?.messages.find(({ id }) => id === message.id)
-      : undefined;
-    if (message.type !== "outgoing" || (existing && existing.type !== "outgoing")) {
-      throw new WispBackendError("invalid_request", "Only messages you wrote can be saved from the app.");
-    }
-    await this.repository.appendMessage(conversationId, message);
+    await this.repository.appendOutgoingMessage(conversationId, message);
     return this.requireChatView(conversationId);
+  }
+
+  /**
+   * One page of a transcript. Replies still streaming are overlaid by ID, and
+   * those not yet stored are added to a page that reaches the newest message.
+   */
+  async getMessagePage(request: MessagePageRequest): Promise<MessagePage> {
+    const page = await this.repository.getMessagePage(request);
+    const live = this.liveMessages.get(request.conversationId);
+    if (!live) return page;
+    const pageIds = new Set(page.messages.flatMap(({ id }) => (id ? [id] : [])));
+    const messages = page.messages.map((message) => (message.id && live.get(message.id)) || message);
+    if (page.newerCursor === null) {
+      for (const message of live.values()) {
+        if (!message.id || pageIds.has(message.id)) continue;
+        if (!(await this.repository.getMessage(request.conversationId, message.id))) messages.push(message);
+      }
+    }
+    return { ...page, messages };
+  }
+
+  searchMessages(query: string): Promise<ReadonlyArray<MessageSearchHit>> {
+    return this.repository.searchMessages(query);
   }
 
   async answerPrompt(conversationId: string, messageId: string, answer: string): Promise<Chat> {
@@ -234,10 +254,10 @@ export class ConversationService {
   }
 
   private persistOutgoingStatus(conversationId: string, requestId: string, status: "complete" | "failed"): void {
-    const message = this.repository.readChats()[conversationId]?.messages.find(({ id }) => id === requestId);
-    if (message?.type !== "outgoing") return;
-    void this.repository.appendMessage(conversationId, { ...message, id: requestId, status }).then(
-      () => this.publishChat(conversationId),
+    void this.repository.setOutgoingStatus(conversationId, requestId, status).then(
+      (changed) => {
+        if (changed) this.publishChat(conversationId);
+      },
       (error) => this.reportPersistenceFailure(conversationId, requestId, error),
     );
   }

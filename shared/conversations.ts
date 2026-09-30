@@ -144,3 +144,32 @@ export interface AnswerConversationPromptRequest {
 export interface MarkConversationReadRequest {
   conversationId: ChatId;
 }
+
+/**
+ * Which slice of a transcript to read. Cursors are opaque; they come from a
+ * previous `MessagePage`.
+ */
+export type MessagePageRequest =
+  | { conversationId: ChatId; page: "latest" }
+  | { conversationId: ChatId; page: "older" | "newer"; cursor: string }
+  | { conversationId: ChatId; page: "around"; messageId: string };
+
+export interface MessagePage {
+  /** Oldest first. */
+  messages: ReadonlyArray<Message>;
+  /** Reads the messages before this page; null when the page starts at the first message. */
+  olderCursor: string | null;
+  /** Reads the messages after this page; null when the page reaches the newest message. */
+  newerCursor: string | null;
+}
+
+export interface SearchMessagesRequest {
+  query: string;
+}
+
+export interface MessageSearchHit {
+  conversationId: ChatId;
+  messageId: string;
+  snippet: string;
+  createdAt?: string;
+}

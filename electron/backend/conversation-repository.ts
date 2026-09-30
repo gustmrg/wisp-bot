@@ -4,16 +4,27 @@ import path from "node:path";
 
 import type { ModelSelection } from "../../shared/contracts.js";
 import { normalizeSelection } from "./ai-settings-store.js";
-import type { Chat, ChatChanges, ChatCollection, Message } from "../../shared/conversations.js";
+import type {
+  Chat,
+  ChatChanges,
+  ChatCollection,
+  Message,
+  MessagePage,
+  MessagePageRequest,
+  MessageSearchHit,
+  MessageStatus,
+} from "../../shared/conversations.js";
 import { WispBackendError } from "./backend-error.js";
 import { normalizeUserName, type ConversationAgentContext } from "./conversation-agent.js";
 import {
   normalizeChat,
   normalizeChatCollection,
   normalizeConversationId,
+  normalizeMessage,
   validateConversationGraph,
 } from "./conversation-normalizer.js";
-import { ConversationStore } from "./conversation-store.js";
+import { ConversationStore, type StoredPageRequest } from "./conversation-store.js";
+import { buildSnippet, MessageSearchWorker } from "./message-search.js";
 import { CONVERSATION_STORAGE_POLICY } from "./storage-policy.js";
 import {
   applyWorkspaceAction,
@@ -80,6 +91,7 @@ export class ConversationRepository {
   private readonly createId: () => string;
   private state: PersistedConversationState = emptyState();
   private store: ConversationStore | undefined;
+  private searchWorker: MessageSearchWorker | undefined;
   private recoveredCorruptState = false;
   private mutation = Promise.resolve();
 
@@ -312,6 +324,76 @@ export class ConversationRepository {
     await this.enqueue(() => this.applyAppend(conversationId, message));
   }
 
+  /**
+   * Saves a message the user wrote. It may replace the user's own earlier
+   * version of it, never a reply or notice; the check runs in the write queue
+   * so nothing can change the stored message in between.
+   */
+  async appendOutgoingMessage(conversationId: string, message: Message): Promise<void> {
+    await this.enqueue(async () => {
+      const existing = message.id ? await this.lookupMessage(conversationId, message.id) : undefined;
+      if (message.type !== "outgoing" || (existing && existing.type !== "outgoing")) {
+        throw new WispBackendError("invalid_request", "Only messages you wrote can be saved from the app.");
+      }
+      await this.applyAppend(conversationId, message);
+    });
+  }
+
+  /** Updates an outgoing message's delivery status. Resolves false when there is no such message. */
+  async setOutgoingStatus(conversationId: string, messageId: string, status: MessageStatus): Promise<boolean> {
+    return this.enqueue(async () => {
+      const stored = await this.lookupMessage(conversationId, messageId);
+      if (stored?.type !== "outgoing") return false;
+      await this.applyAppend(conversationId, { ...stored, id: messageId, status });
+      return true;
+    });
+  }
+
+  /** A stored message by ID, read from the database. */
+  getMessage(conversationId: string, messageId: string): Promise<Message | undefined> {
+    this.require(conversationId);
+    return this.lookupMessage(conversationId, messageId);
+  }
+
+  /** One page of a conversation's transcript, read from the database. */
+  async getMessagePage(request: MessagePageRequest): Promise<MessagePage> {
+    this.require(request.conversationId);
+    const store = await this.openStore();
+    const page = store.readPage(request.conversationId, storedPageRequest(request));
+    if (request.page === "around" && page.messages.length === 0) {
+      throw new WispBackendError("not_found", "The message was not found.");
+    }
+    return {
+      messages: page.messages.map((message) => normalizeMessage(message)),
+      olderCursor: page.olderCursor === null ? null : String(page.olderCursor),
+      newerCursor: page.newerCursor === null ? null : String(page.newerCursor),
+    };
+  }
+
+  /** Newest matching messages first; `query` is matched as literal text. */
+  async searchMessages(query: string): Promise<ReadonlyArray<MessageSearchHit>> {
+    await this.openStore();
+    this.searchWorker ??= new MessageSearchWorker(this.databasePath);
+    const hits = await this.searchWorker.search(query);
+    return hits.flatMap(({ conversationId, messageId, body }) => {
+      if (!this.state.conversations[conversationId]) return [];
+      let message: Message;
+      try {
+        message = normalizeMessage(JSON.parse(body));
+      } catch {
+        return [];
+      }
+      return [
+        {
+          conversationId,
+          messageId,
+          snippet: buildSnippet(message, query),
+          ...(message.createdAt ? { createdAt: message.createdAt } : {}),
+        },
+      ];
+    });
+  }
+
   async answerPrompt(conversationId: string, messageId: string, answer: string): Promise<void> {
     await this.enqueue(async () => {
       const result = applyWorkspaceAction(this.state.conversations, {
@@ -396,6 +478,8 @@ export class ConversationRepository {
   /** Waits for pending writes, then closes the database. A later write reopens it. */
   async close(): Promise<void> {
     await this.mutation;
+    await this.searchWorker?.dispose();
+    this.searchWorker = undefined;
     this.store?.close();
     this.store = undefined;
   }
@@ -416,6 +500,11 @@ export class ConversationRepository {
       store.deleteOldestMessages(conversationId, result.droppedOldestMessages ?? 0);
       store.putMessages(conversationId, [stored]);
     });
+  }
+
+  private async lookupMessage(conversationId: string, messageId: string): Promise<Message | undefined> {
+    const body = (await this.openStore()).getMessage(conversationId, messageId);
+    return body === undefined ? undefined : normalizeMessage(body);
   }
 
   private commitRecord(record: ConversationRecord): Promise<void> {
@@ -628,5 +717,18 @@ export class ConversationRepository {
       rename(path.join(this.sessionRoot, sessionId), path.join(archive, "pi-session")).catch(() => undefined),
       rename(path.join(this.configRoot, sessionId), path.join(archive, "pi-config")).catch(() => undefined),
     ]);
+  }
+}
+
+function storedPageRequest(request: MessagePageRequest): StoredPageRequest {
+  switch (request.page) {
+    case "latest":
+      return { page: "latest" };
+    case "older":
+      return { page: "older", before: Number(request.cursor) };
+    case "newer":
+      return { page: "newer", after: Number(request.cursor) };
+    case "around":
+      return { page: "around", messageId: request.messageId };
   }
 }

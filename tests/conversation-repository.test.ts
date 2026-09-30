@@ -573,4 +573,36 @@ describe("ConversationRepository", () => {
     expect(repository.getChats().first?.lastActivityAt).toBe("2026-09-12T08:00:00.000Z");
     expect((await reload(directory)).getChats().first?.lastActivityAt).toBe("2026-09-12T08:00:00.000Z");
   });
+
+  it("reads pages through the repository and reports missing conversations and messages", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "wisp-repository-pages-"));
+    const repository = new ConversationRepository({ dataDirectory: directory });
+    await repository.initialize({ first: chat("first") });
+
+    await expect(repository.getMessagePage({ conversationId: "first", page: "latest" })).resolves.toEqual({
+      messages: [expect.objectContaining({ id: "first:message:0", text: "Hello", status: "complete" })],
+      olderCursor: null,
+      newerCursor: null,
+    });
+    await expect(repository.getMessagePage({ conversationId: "missing", page: "latest" })).rejects.toMatchObject({
+      code: "not_found",
+    });
+    await expect(
+      repository.getMessagePage({ conversationId: "first", page: "around", messageId: "gone" }),
+    ).rejects.toMatchObject({ code: "not_found" });
+  });
+
+  it("updates delivery status only for stored outgoing messages", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "wisp-outgoing-status-"));
+    const repository = new ConversationRepository({ dataDirectory: directory });
+    await repository.initialize({ first: chat("first") });
+    await repository.appendMessage("first", { id: "request-1", type: "outgoing", text: "Hi", status: "queued" });
+
+    await expect(repository.setOutgoingStatus("first", "request-1", "complete")).resolves.toBe(true);
+    await expect(repository.setOutgoingStatus("first", "first:message:0", "failed")).resolves.toBe(false);
+    await expect(repository.setOutgoingStatus("first", "missing", "failed")).resolves.toBe(false);
+
+    await expect(repository.getMessage("first", "request-1")).resolves.toMatchObject({ status: "complete" });
+    await expect(repository.getMessage("first", "first:message:0")).resolves.toMatchObject({ status: "complete" });
+  });
 });

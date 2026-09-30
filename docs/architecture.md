@@ -113,8 +113,14 @@ full history. On first run the legacy `conversations.json` store is imported
 once and kept beside the database as `conversations.json.migrated-<time>`. A
 database that cannot be read, or that a newer app version wrote, is set aside
 as `conversations.sqlite.corrupt-<time>` and a fresh store starts.
-[ADR 006](decisions/006-paged-conversation-transcripts.md) plans loading
-transcripts on demand, indexed message search, and removing the message cap.
+A trigram full-text index over message text (kept in sync by triggers) serves
+message search from a worker thread with its own read-only connection, and
+transcripts can be read a page at a time; each conversation also records its
+`lastActivityAt`. The store records the layout that wrote it and the oldest
+layout that can still read it, so additive changes stay readable by older
+builds. [ADR 006](decisions/006-paged-conversation-transcripts.md) describes the
+move to loading transcripts on demand; the renderer does not use pages or
+backend search yet.
 
 Theme, timezone, microphone selection, launch-at-login, notification-sound,
 and related UI preferences are stored locally in the renderer through the

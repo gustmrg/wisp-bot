@@ -8,6 +8,8 @@ import {
   parseDeleteConversationRequest,
   parseInitializeConversationsRequest,
   parseMarkConversationReadRequest,
+  parseMessagePageRequest,
+  parseSearchMessagesRequest,
   parseUpdateConversationRequest,
 } from "./validators.js";
 
@@ -58,5 +60,7 @@ export function registerConversationHandlers(
       WISP_IPC_CHANNELS.markConversationRead,
       (payload) => service.markRead(parseMarkConversationReadRequest(payload).conversationId),
     ],
+    [WISP_IPC_CHANNELS.getConversationMessages, (payload) => service.getMessagePage(parseMessagePageRequest(payload))],
+    [WISP_IPC_CHANNELS.searchMessages, (payload) => service.searchMessages(parseSearchMessagesRequest(payload).query)],
   ]);
 }

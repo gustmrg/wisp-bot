@@ -3,6 +3,8 @@ import { describe, expect, it } from "vitest";
 import { WispBackendError } from "../electron/backend/backend-error.js";
 import {
   parseAppendConversationMessageRequest,
+  parseMessagePageRequest,
+  parseSearchMessagesRequest,
   parseApplyModelRequest,
   parseConversationRequest,
   parseCreateConversationRequest,
@@ -65,6 +67,40 @@ describe("IPC request validators", () => {
     expect(() => parseAppendConversationMessageRequest({ conversationId: "wisp-1", message })).toThrow(
       WispBackendError,
     );
+  });
+
+  it("accepts each transcript page shape", () => {
+    expect(parseMessagePageRequest({ conversationId: "wisp-1", page: "latest" })).toEqual({
+      conversationId: "wisp-1",
+      page: "latest",
+    });
+    expect(parseMessagePageRequest({ conversationId: "wisp-1", page: "older", cursor: "42" })).toEqual({
+      conversationId: "wisp-1",
+      page: "older",
+      cursor: "42",
+    });
+    expect(
+      parseMessagePageRequest({ conversationId: "wisp-1", page: "around", messageId: "request-1:assistant" }),
+    ).toMatchObject({ page: "around", messageId: "request-1:assistant" });
+  });
+
+  it.each([
+    { conversationId: "wisp-1", page: "sideways" },
+    { conversationId: "wisp-1", page: "older" },
+    { conversationId: "wisp-1", page: "newer", cursor: "-1" },
+    { conversationId: "wisp-1", page: "newer", cursor: "1e3" },
+    { conversationId: "wisp-1", page: "older", cursor: "1".repeat(16) },
+    { conversationId: "wisp-1", page: "latest", cursor: "1" },
+    { conversationId: "wisp-1", page: "around", messageId: "../x" },
+  ])("rejects malformed page request %#", (payload) => {
+    expect(() => parseMessagePageRequest(payload)).toThrow(WispBackendError);
+  });
+
+  it("requires 3 characters for message search and trims the query", () => {
+    expect(parseSearchMessagesRequest({ query: "  orç  " })).toEqual({ query: "orç" });
+    expect(() => parseSearchMessagesRequest({ query: " ab " })).toThrow("Message search needs at least 3 characters.");
+    expect(() => parseSearchMessagesRequest({ query: "x".repeat(201) })).toThrow(WispBackendError);
+    expect(() => parseSearchMessagesRequest({ query: 42 })).toThrow(WispBackendError);
   });
 
   it("validates both provider and model identifiers", () => {

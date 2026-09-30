@@ -80,6 +80,8 @@ function completeBridge(): WispApi {
       throw new Error("not called");
     },
     subscribeToConversationChanges: () => () => undefined,
+    getConversationMessages: async () => ({ ok: true, value: { messages: [], olderCursor: null, newerCursor: null } }),
+    searchMessages: async () => ({ ok: true, value: [] }),
     getUsageReport: async () => {
       throw new Error("Not implemented in test");
     },
