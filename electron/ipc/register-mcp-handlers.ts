@@ -14,6 +14,7 @@ export function registerMcpHandlers(
     [WISP_IPC_CHANNELS.testMcpConnection, (payload) => service.testConnection(payload)],
     [WISP_IPC_CHANNELS.refreshMcpTools, (payload) => service.refreshTools(payload)],
     [WISP_IPC_CHANNELS.startMcpSignIn, (payload) => service.startSignIn(payload)],
+    [WISP_IPC_CHANNELS.cancelMcpSignIn, (payload) => service.cancelSignIn(payload)],
     [WISP_IPC_CHANNELS.getWispMcpAccess, (payload) => service.getAccess(payload)],
     [WISP_IPC_CHANNELS.saveWispMcpAccess, (payload) => service.saveAccess(payload)],
   ]);

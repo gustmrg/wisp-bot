@@ -1,4 +1,5 @@
 import type { BackendError, ConversationAgentEvent, SendMessageRequest } from "../../shared/contracts.js";
+import { describeProviderError, isRetryableProviderError } from "./provider-error.js";
 import { getToolMetadata } from "../../shared/tool-catalog.js";
 
 const MAX_DELTA_CHARACTERS = 8_000;
@@ -17,17 +18,6 @@ export function sanitizeErrorMessage(value: string | undefined | null): string {
   const trimmed = value.trim();
   if (trimmed.length <= MAX_ERROR_CHARACTERS) return trimmed;
   return `${trimmed.slice(0, MAX_ERROR_CHARACTERS)}…`;
-}
-
-export function isRetryableProviderError(message: string): boolean {
-  const status = message.match(/(?:^|\D)(4\d\d|5\d\d)(?:\D|$)/)?.[1];
-  if (status) {
-    const code = Number(status);
-    return code === 408 || code === 409 || code === 425 || code === 429 || code >= 500;
-  }
-  return /rate.?limit|too many requests|overload|service.?unavailable|server.?error|internal.?error|network|connection|timed? out|timeout|fetch failed|try again|please retry/i.test(
-    message,
-  );
 }
 
 export type PiAgentEvent =
@@ -176,10 +166,12 @@ export class PiEventTranslator {
       });
     } else if (this.failed) {
     } else if (this.lastErrorMessage) {
+      const described = describeProviderError(this.lastErrorMessage);
       this.reportError({
         code: "internal_error",
-        message: this.lastErrorMessage,
-        retryable: isRetryableProviderError(this.lastErrorMessage),
+        message: described.message,
+        retryable: described.retryable,
+        detail: this.lastErrorMessage,
       });
     } else if (this.responseCharacters === 0) {
       this.reportError({ code: "internal_error", message: GENERIC_ERROR_MESSAGE, retryable: true });

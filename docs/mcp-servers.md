@@ -14,11 +14,21 @@ embedded credentials) with three authentication modes:
 - **None** — no authentication.
 - **Authentication header** — a configured header value stored encrypted.
 - **OAuth** — browser sign-in with PKCE over a loopback callback and a public
-  client; no client secret is embedded.
+  client; no client secret is embedded. A sign-in opens exactly one browser
+  window and can be cancelled while it waits — also after leaving the panel
+  and coming back, and before the browser has opened; cancelling never changes
+  grants or stored credentials. Removing the connection or changing its
+  endpoint or authentication ends a waiting sign-in, and credentials from a
+  sign-in that finished for the old configuration are discarded.
 
 Local stdio servers are rejected at every boundary, along with resources,
 prompts, embedded MCP UI, server-requested sampling, and long-running tasks;
 unsupported interaction requests fail clearly instead of lying dormant.
+Discovery accepts at most 128 tools per server and fails clearly beyond that.
+That is a per-server bound, not a per-Wisp one: a Wisp's built-in, plugin, and
+granted MCP tools are all sent to the model together, and some models accept
+fewer (OpenAI models reject more than 128). When a model refuses the request
+for that reason, the chat says so and points to the Access tab.
 
 ## Per-Wisp access
 

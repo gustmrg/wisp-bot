@@ -82,6 +82,8 @@ export async function createBackend(host: BackendHost): Promise<Backend> {
         requestId: event.requestId,
         code: event.error.code,
         retryable: event.error.retryable,
+        message: event.error.message,
+        ...(event.error.detail ? { detail: event.error.detail } : {}),
       });
     } else if (event.type === "tool_approval_requested" || event.type === "tool_approval_resolved") {
       logger.info(event.type, {

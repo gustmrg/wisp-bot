@@ -154,6 +154,7 @@ function fakeOAuthProvider() {
   return {
     interactive: false,
     redirectedTo: undefined as string | undefined,
+    redirectCount: 0,
     setInteractiveSignIn(allowed: boolean) {
       this.interactive = allowed;
     },
@@ -161,6 +162,7 @@ function fakeOAuthProvider() {
       // Mirrors the real provider: refuses background redirects.
       if (!this.interactive) throw new McpSignInRequiredError();
       this.redirectedTo = url.toString();
+      this.redirectCount += 1;
     },
     async waitForCallback() {
       return new URLSearchParams({ code: "the-code", iss: "https://auth.example.com" });
@@ -217,11 +219,50 @@ describe("McpConnection OAuth", () => {
     );
     expect(outcome).toBe("connected");
     expect(provider.redirectedTo).toBe("https://auth.example.com/authorize");
+    expect(provider.redirectCount).toBe(1);
     // The code exchange carries the authorization code and the RFC 9207 issuer.
     expect(authLog[1]).toMatchObject({
       authorizationCode: "the-code",
       iss: "https://auth.example.com",
     });
+  });
+
+  it("opens the browser exactly once even when the transport runs its own 401 auth", async () => {
+    const provider = fakeOAuthProvider();
+    const authLog: Array<Record<string, unknown>> = [];
+    let connects = 0;
+    const { sdk } = fakeSdk({
+      connect: async () => {
+        // Mirrors the SDK transport: on 401 it invokes auth() itself, whose
+        // redirectToAuthorization would open a window, then throws.
+        connects += 1;
+        if (connects > 1) return;
+        await provider.redirectToAuthorization(new URL("https://auth.example.com/authorize"));
+        const error = new Error("token required");
+        error.name = "UnauthorizedError";
+        throw error;
+      },
+      auth: async (ignoredProvider: unknown, options: Record<string, unknown>) => {
+        authLog.push(options);
+        if (options.authorizationCode) return "AUTHORIZED";
+        await provider.redirectToAuthorization(new URL("https://auth.example.com/authorize"));
+        return "REDIRECT";
+      },
+    });
+    const connection = new McpConnection({ sdk });
+    const outcome = await connection.connect(
+      "https://example.com/mcp",
+      { mode: "oauth", provider },
+      {
+        allowInteractiveSignIn: true,
+      },
+    );
+    expect(outcome).toBe("connected");
+    // The transport's own attempt runs non-interactively and is refused; only
+    // the explicit sign-in redirect opens a browser window.
+    expect(provider.redirectCount).toBe(1);
+    expect(provider.interactive).toBe(false);
+    expect(authLog).toHaveLength(2);
   });
 });
 

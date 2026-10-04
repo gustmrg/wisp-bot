@@ -28,12 +28,8 @@ import type {
   ConversationAgentListener,
 } from "./conversation-agent.js";
 import type { ModelRuntimeLike } from "./model-service.js";
-import {
-  isRetryableProviderError,
-  PiEventTranslator,
-  type PiAgentEvent,
-  sanitizeErrorMessage,
-} from "./pi-event-translator.js";
+import { PiEventTranslator, type PiAgentEvent, sanitizeErrorMessage } from "./pi-event-translator.js";
+import { describeProviderError } from "./provider-error.js";
 import type { ToolAuthorizationBroker, ToolAuthorizationRequest } from "./tool-authorization-broker.js";
 import { BUILTIN_TOOL_NAMES, getToolMetadata, registerDynamicToolMetadata } from "../../shared/tool-catalog.js";
 
@@ -407,14 +403,18 @@ export class PiConversationAgent implements ConversationAgent {
         return;
       }
       const detail = sanitizeErrorMessage(error instanceof Error ? error.message : String(error));
-      const backendError: BackendError =
-        error instanceof WispBackendError
-          ? { code: error.code, message: error.message, retryable: error.retryable }
-          : {
-              code: "internal_error",
-              message: detail || "The model request failed.",
-              retryable: detail ? isRetryableProviderError(detail) : true,
-            };
+      let backendError: BackendError;
+      if (error instanceof WispBackendError) {
+        backendError = { code: error.code, message: error.message, retryable: error.retryable };
+      } else {
+        const described = describeProviderError(detail);
+        backendError = {
+          code: "internal_error",
+          message: described.message,
+          retryable: described.retryable,
+          ...(detail ? { detail } : {}),
+        };
+      }
       this.translator.reportError(backendError);
       this.translator.finish();
       throw new WispBackendError(backendError.code, backendError.message, backendError.retryable);
