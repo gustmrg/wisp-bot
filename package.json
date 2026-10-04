@@ -104,7 +104,7 @@
       ]
     },
     "linux": {
-      "icon": "build/icon.png",
+      "icon": "build/icons",
       "category": "Utility",
       "executableName": "wisp-bot",
       "maintainer": "Gustavo Miranda",
