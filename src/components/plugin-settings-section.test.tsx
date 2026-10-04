@@ -48,7 +48,7 @@ function setup(configured = false, secureStorageAvailable = true) {
 async function openPlugin(name: string) {
   const trigger = await screen.findByRole("button", { name: new RegExp(`^(Connect|Manage) ${name}$`) });
   await userEvent.click(trigger);
-  return within(await screen.findByRole("dialog", { name }));
+  return within(await screen.findByRole("region", { name }));
 }
 
 describe("PluginSettingsSection", () => {
@@ -89,16 +89,16 @@ describe("PluginSettingsSection", () => {
     const { unmount } = render(<PluginSettingsSection />);
     expect(await screen.findByRole("alert")).toHaveTextContent("Plugin credentials could not be read");
     const linear = await openPlugin("Linear");
-    await user.click(linear.getByRole("checkbox", { name: "Enable Linear" }));
+    await user.click(linear.getByRole("switch", { name: "Enable Linear" }));
     await user.click(linear.getByRole("button", { name: "Save plugin" }));
     expect(api.savePluginSettings).toHaveBeenCalledWith({ pluginId: "linear", enabled: false });
     expect(await linear.findByText("Plugin settings saved.")).toBeVisible();
-    expect(linear.getByRole("checkbox", { name: "Enable Linear" })).not.toBeChecked();
+    expect(linear.getByRole("switch", { name: "Enable Linear" })).not.toBeChecked();
     unmount();
     api.getPluginSettings.mockResolvedValueOnce({ ok: true, value: disabled });
     render(<PluginSettingsSection />);
     const reopened = await openPlugin("Linear");
-    expect(reopened.getByRole("checkbox", { name: "Enable Linear" })).not.toBeChecked();
+    expect(reopened.getByRole("switch", { name: "Enable Linear" })).not.toBeChecked();
   });
   it("tests an entered key, saves it, clears the password and uses the saved key for subsequent operations", async () => {
     const api = setup();
@@ -122,7 +122,7 @@ describe("PluginSettingsSection", () => {
     await waitFor(() => expect(key).toHaveValue(""));
     await user.click(web.getByRole("button", { name: "Test connection" }));
     expect(api.testPluginConnection).toHaveBeenLastCalledWith({ pluginId: "web-search" });
-    await user.click(web.getByRole("checkbox", { name: "Enable Web search" }));
+    await user.click(web.getByRole("switch", { name: "Enable Web search" }));
     await user.click(web.getByRole("button", { name: "Save plugin" }));
     expect(api.savePluginSettings).toHaveBeenLastCalledWith({ pluginId: "web-search", enabled: false });
     expect(web.getByText("Connected · disabled")).toBeVisible();
@@ -136,6 +136,9 @@ describe("PluginSettingsSection", () => {
     const linear = await openPlugin("Linear");
     expect(linear.getByLabelText("Linear personal API key")).toHaveValue("");
     await user.click(linear.getByRole("button", { name: "Remove connection" }));
+    expect(api.removePlugin).not.toHaveBeenCalled();
+    const confirm = within(linear.getByRole("group", { name: "Remove connection" }));
+    await user.click(confirm.getByRole("button", { name: "Remove connection" }));
     expect(api.removePlugin).toHaveBeenCalledWith({ pluginId: "linear" });
     expect(await linear.findByText("Not connected")).toBeVisible();
     expect(linear.getByRole("button", { name: "Save plugin" })).toBeDisabled();
@@ -156,6 +159,17 @@ describe("PluginSettingsSection", () => {
     expect(linear.getByLabelText("Linear personal API key")).toHaveValue("linear-secret");
     expect(linear.getByText("Not connected")).toBeVisible();
     expect(linear.queryByText("Plugin settings saved.")).not.toBeInTheDocument();
+  });
+
+  it("opens a plugin in place and returns to the list without stacking a dialog", async () => {
+    setup();
+    const user = userEvent.setup();
+    render(<PluginSettingsSection />);
+    await openPlugin("Linear");
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Back to plugins" }));
+    expect(screen.queryByLabelText("Linear personal API key")).not.toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: "Connect Linear" })).toBeVisible();
   });
 
   it("prevents entering or saving a new key when secure storage is unavailable", async () => {

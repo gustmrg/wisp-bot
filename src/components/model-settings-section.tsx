@@ -1,7 +1,14 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import type { AiSettingsView, ProviderSummary } from "../../shared/contracts";
-import { SettingsCard, SettingsGroup, SettingsRow, SettingsRowCopy } from "@/components/settings/settings-primitives";
+import { SearchableCombobox } from "@/components/searchable-combobox";
+import {
+  ConfirmAction,
+  SettingsCard,
+  SettingsGroup,
+  SettingsRow,
+  SettingsRowCopy,
+} from "@/components/settings/settings-primitives";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -134,7 +141,7 @@ function ModelSettingsSection({ active }: ModelSettingsSectionProps) {
   }
 
   const providerItems = view?.providers.map(({ id, name }) => ({ value: id, label: name })) ?? [];
-  const modelItems = provider?.models.map(({ id, name }) => ({ value: id, label: name })) ?? [];
+  const modelItems = provider?.models.map(({ id, name }) => ({ value: id, label: name, description: id })) ?? [];
   const model = provider?.models.find(({ id }) => id === modelId);
   const parsedMaxOutputTokens = maxOutputTokens ? Number(maxOutputTokens) : undefined;
   const invalidMaxOutputTokens =
@@ -203,33 +210,23 @@ function ModelSettingsSection({ active }: ModelSettingsSectionProps) {
                   <label htmlFor="ai-model">
                     <strong>Model</strong>
                   </label>
-                  <small>{provider?.models.length ?? 0} models available.</small>
+                  <small>{provider?.models.length ?? 0} models available. Search by name or ID.</small>
                 </SettingsRowCopy>
-                <Select
-                  items={modelItems}
+                <SearchableCombobox
+                  id="ai-model"
                   value={modelId}
-                  onValueChange={(value) => {
-                    if (value !== null) {
-                      setModelId(value);
-                      setMaxOutputTokens("");
-                      setError(null);
-                      setSaved(false);
-                    }
+                  options={modelItems}
+                  className="h-8 w-[260px] max-w-[62%] text-sm"
+                  searchLabel="Search models"
+                  searchPlaceholder="Search model name or ID…"
+                  emptyText="No models found."
+                  onChange={(value) => {
+                    setModelId(value);
+                    setMaxOutputTokens("");
+                    setError(null);
+                    setSaved(false);
                   }}
-                >
-                  <SelectTrigger id="ai-model" className="w-[260px] max-w-[62%]">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent align="end" alignItemWithTrigger={false}>
-                    <SelectGroup>
-                      {provider?.models.map((model) => (
-                        <SelectItem key={model.id} value={model.id}>
-                          {model.name}
-                        </SelectItem>
-                      ))}
-                    </SelectGroup>
-                  </SelectContent>
-                </Select>
+                />
               </SettingsRow>
               <SettingsRow>
                 <SettingsRowCopy>
@@ -292,21 +289,20 @@ function ModelSettingsSection({ active }: ModelSettingsSectionProps) {
             </SettingsCard>
           </SettingsGroup>
 
-          <div className="mt-4 flex items-center justify-between gap-3">
+          <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
             <div aria-live="polite">
               {error ? <p className="m-0 text-[11.5px] text-destructive">{error}</p> : null}
               {saved ? <p className="m-0 text-[11.5px] text-dim">AI model settings saved.</p> : null}
             </div>
-            <div className="flex flex-none gap-2">
+            <div className="flex flex-wrap justify-end gap-2">
               {provider?.credentialConfigured ? (
-                <Button
-                  variant="destructive"
-                  type="button"
+                <ConfirmAction
+                  label="Remove key"
+                  confirmLabel="Remove key"
                   disabled={saving}
-                  onClick={() => void handleRemoveCredential()}
-                >
-                  Remove key
-                </Button>
+                  description={`Wisps using ${provider.name} stop working until you enter a new key.`}
+                  onConfirm={() => void handleRemoveCredential()}
+                />
               ) : null}
               <Button type="button" disabled={saveDisabled} onClick={() => void handleSave()}>
                 {saving ? "Saving…" : "Save"}

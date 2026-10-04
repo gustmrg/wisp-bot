@@ -1,25 +1,36 @@
 import { useEffect, useState } from "react";
-import type { FormEvent } from "react";
+import type { ReactNode } from "react";
 import { XIcon } from "lucide-react";
 
-import { TimezoneCombobox } from "@/components/timezone-combobox";
-import { SettingsCard, SettingsGroup, SettingsRow, SettingsRowCopy } from "@/components/settings/settings-primitives";
+import { SearchableCombobox } from "@/components/searchable-combobox";
+import {
+  SettingsCard,
+  SettingsGroup,
+  SettingsRow,
+  SettingsRowCopy,
+  SoonBadge,
+} from "@/components/settings/settings-primitives";
 import { Button } from "@/components/ui/button";
+import { SegmentedControl } from "@/components/ui/segmented-control";
 import { ToggleSwitch } from "@/components/ui/toggle-switch";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { isRuleBehavior, type AppPreferences, type RuleBehavior } from "@/lib/app-preferences";
+import type { AppPreferences, AutoReviewRule, RuleBehavior } from "@/lib/app-preferences";
 import { settingsSelect } from "@/lib/ui-classes";
+import { ruleMatchesCategory, workspaceFileBehavior, type WorkspaceFileCategory } from "../../shared/tool-policy";
 
-const RULE_BEHAVIORS = [
-  { value: "allow", label: "Allow automatically" },
-  { value: "ask", label: "Ask first" },
+const RULE_BEHAVIORS: ReadonlyArray<{ value: RuleBehavior; label: string }> = [
+  { value: "allow", label: "Allow" },
+  { value: "ask", label: "Ask" },
   { value: "block", label: "Block" },
 ];
-const RULE_ACTIONS = [
-  { value: "create_file", label: "Create files" },
-  { value: "modify_file", label: "Modify files" },
-  { value: "all_file_changes", label: "All file changes" },
+const FILE_CATEGORIES: ReadonlyArray<{ value: WorkspaceFileCategory; label: string; description: string }> = [
+  { value: "create_file", label: "Create files", description: "New files in the workspace." },
+  { value: "modify_file", label: "Modify files", description: "Edits to existing workspace files." },
 ];
+const INTEGRATION_ACTION_LABELS: Record<string, string> = {
+  external_write: "Changes to integrations",
+  integration_call: "MCP tool calls",
+};
 const TIMEZONES = Array.from(new Set(["UTC", ...Intl.supportedValuesOf("timeZone")]));
 
 interface SettingsOption {
@@ -33,17 +44,20 @@ function SettingsSelect({
   options,
   onChange,
   contentClassName,
+  disabled = false,
 }: {
   id: string;
   value: string;
   options: SettingsOption[];
   onChange: (value: string) => void;
   contentClassName?: string;
+  disabled?: boolean;
 }) {
   return (
     <Select
       items={options}
       value={value}
+      disabled={disabled}
       onValueChange={(next) => {
         if (next !== null) onChange(next);
       }}
@@ -64,8 +78,64 @@ function SettingsSelect({
   );
 }
 
-function PreferenceSwitch({ label, checked, onChange }: { label: string; checked: boolean; onChange: () => void }) {
-  return <ToggleSwitch checked={checked} label={label} onChange={onChange} />;
+function PreferenceSwitch({
+  label,
+  checked,
+  onChange,
+  disabled = false,
+}: {
+  label: string;
+  checked: boolean;
+  onChange: () => void;
+  disabled?: boolean;
+}) {
+  return <ToggleSwitch checked={checked} label={label} onChange={onChange} disabled={disabled} />;
+}
+
+/** Title of a setting whose preference is saved but not wired to the desktop yet. */
+function SoonTitle({ children, htmlFor }: { children: ReactNode; htmlFor?: string }) {
+  return (
+    <span className="flex items-center gap-1.5">
+      {htmlFor ? (
+        <label htmlFor={htmlFor}>
+          <strong>{children}</strong>
+        </label>
+      ) : (
+        <strong>{children}</strong>
+      )}
+      <SoonBadge />
+    </span>
+  );
+}
+
+/**
+ * Rewrites the workspace rules for one file category as a single explicit rule.
+ * "Ask" is the default when no rule matches, so it needs no rule of its own.
+ * Rules for the other category keep their effective behavior, including ones
+ * that came from a shared rule such as "all file changes".
+ */
+function withFileBehavior(
+  rules: ReadonlyArray<AutoReviewRule>,
+  category: WorkspaceFileCategory,
+  behavior: RuleBehavior,
+): AutoReviewRule[] {
+  const behaviors = Object.fromEntries(
+    FILE_CATEGORIES.map(({ value }) => [value, value === category ? behavior : workspaceFileBehavior(rules, value)]),
+  ) as Record<WorkspaceFileCategory, RuleBehavior>;
+  const untouched = rules.filter(
+    (rule) =>
+      (rule.scope ?? "workspace") !== "workspace" ||
+      !FILE_CATEGORIES.some(({ value }) => ruleMatchesCategory(rule.action, value)),
+  );
+  return [
+    ...untouched,
+    ...FILE_CATEGORIES.filter(({ value }) => behaviors[value] !== "ask").map(({ value }) => ({
+      id: crypto.randomUUID(),
+      action: value,
+      behavior: behaviors[value],
+      scope: "workspace" as const,
+    })),
+  ];
 }
 
 interface GeneralSettingsSectionsProps {
@@ -76,8 +146,6 @@ interface GeneralSettingsSectionsProps {
 function GeneralSettingsSections({ preferences, onPreferencesChange }: GeneralSettingsSectionsProps) {
   const [microphones, setMicrophones] = useState<SettingsOption[]>([]);
   const [detectedTimezone] = useState(() => Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC");
-  const [ruleAction, setRuleAction] = useState("create_file");
-  const [ruleBehavior, setRuleBehavior] = useState<RuleBehavior>("ask");
   const [ruleNotice, setRuleNotice] = useState("");
 
   useEffect(() => {
@@ -118,23 +186,16 @@ function GeneralSettingsSections({ preferences, onPreferencesChange }: GeneralSe
       (zone) => ({ value: zone, label: zone }),
     ),
   ];
-  const duplicateRule = preferences.autoReviewRules.some(
-    (rule) =>
-      rule.action.toLocaleLowerCase() === ruleAction.trim().toLocaleLowerCase() && rule.behavior === ruleBehavior,
-  );
+  const integrationRules = preferences.autoReviewRules.filter((rule) => rule.scope === "integration");
 
-  function addRule(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const action = ruleAction.trim();
-    if (!action || duplicateRule) return;
+  function setFileBehavior(category: WorkspaceFileCategory, behavior: RuleBehavior) {
     onPreferencesChange({
       ...preferences,
-      autoReviewRules: [
-        ...preferences.autoReviewRules,
-        { id: crypto.randomUUID(), action, behavior: ruleBehavior, scope: "workspace" },
-      ],
+      autoReviewRules: withFileBehavior(preferences.autoReviewRules, category, behavior),
     });
-    setRuleNotice("Rule added.");
+    const label = FILE_CATEGORIES.find(({ value }) => value === category)?.label ?? category;
+    const behaviorLabel = RULE_BEHAVIORS.find(({ value }) => value === behavior)?.label ?? behavior;
+    setRuleNotice(`${label}: ${behaviorLabel}.`);
   }
 
   return (
@@ -143,24 +204,26 @@ function GeneralSettingsSections({ preferences, onPreferencesChange }: GeneralSe
         <SettingsCard variant="stacked">
           <SettingsRow>
             <SettingsRowCopy>
-              <label htmlFor="app-microphone">
-                <strong>Microphone</strong>
-              </label>
+              <SoonTitle htmlFor="app-microphone">Microphone</SoonTitle>
+              <small>Voice input is not available yet.</small>
             </SettingsRowCopy>
             <SettingsSelect
               id="app-microphone"
               value={preferences.microphone}
               options={microphoneOptions}
+              disabled
               onChange={(microphone) => onPreferencesChange({ ...preferences, microphone })}
             />
           </SettingsRow>
           <SettingsRow>
             <SettingsRowCopy>
-              <strong>Use hardware acceleration</strong>
+              <SoonTitle>Use hardware acceleration</SoonTitle>
+              <small>Wisp always uses the system default for now.</small>
             </SettingsRowCopy>
             <PreferenceSwitch
               label="Use hardware acceleration"
               checked={preferences.hardwareAcceleration}
+              disabled
               onChange={() =>
                 onPreferencesChange({ ...preferences, hardwareAcceleration: !preferences.hardwareAcceleration })
               }
@@ -168,61 +231,74 @@ function GeneralSettingsSections({ preferences, onPreferencesChange }: GeneralSe
           </SettingsRow>
         </SettingsCard>
       </SettingsGroup>
-      <p className="mx-0.5 mt-[7px] text-dim text-[11px] leading-[1.45]">
-        Microphone and hardware preferences are saved locally; desktop integration is not connected yet.
-      </p>
 
       <SettingsGroup label="Wisp">
         <SettingsCard variant="stacked">
           <SettingsRow>
             <SettingsRowCopy>
-              <label htmlFor="app-timezone">
-                <strong>Timezone</strong>
-              </label>
+              <SoonTitle htmlFor="app-timezone">Timezone</SoonTitle>
+              <small>Wisps don't use this timezone yet.</small>
             </SettingsRowCopy>
-            <TimezoneCombobox
+            <SearchableCombobox
               id="app-timezone"
               value={preferences.timezone}
               options={timezoneOptions}
+              disabled
+              searchLabel="Search timezones"
+              searchPlaceholder="Search city or timezone…"
+              emptyText="No timezones found."
               onChange={(timezone) => onPreferencesChange({ ...preferences, timezone })}
             />
           </SettingsRow>
           <SettingsRow>
             <SettingsRowCopy>
-              <strong>Auto-review</strong>
-              <small className="text-dim text-[11.5px]">
-                Choose when Wisp should ask before changing workspace files.
+              <strong>Auto-review file changes</strong>
+              <small>
+                {preferences.autoReview
+                  ? "Wisp follows the rules below before changing workspace files."
+                  : "Wisp asks before every file change. Turn on to use the rules below."}
               </small>
             </SettingsRowCopy>
             <PreferenceSwitch
-              label="Auto-review"
+              label="Auto-review file changes"
               checked={preferences.autoReview}
               onChange={() => onPreferencesChange({ ...preferences, autoReview: !preferences.autoReview })}
             />
           </SettingsRow>
-          <SettingsRow className="flex-col items-stretch gap-[5px]">
-            <strong>Auto-review Rules</strong>
-            <p className="m-0 text-dim text-[11.5px] leading-[1.5]">
-              Workspace rules prioritize block over ask, then allow. Integration changes require approval; their blocks
-              are also listed here.
-            </p>
-            {preferences.autoReviewRules.length ? (
-              <ul className="m-0 mt-[7px] flex list-none flex-col p-0" aria-label="Auto-review rules">
-                {preferences.autoReviewRules.map((rule) => (
-                  <li key={rule.id} className="flex items-center gap-3 border-b border-border py-2">
+          {FILE_CATEGORIES.map((category) => (
+            <SettingsRow key={category.value} aria-disabled={!preferences.autoReview || undefined}>
+              <SettingsRowCopy className={preferences.autoReview ? undefined : "opacity-50"}>
+                <strong>{category.label}</strong>
+                <small>{category.description}</small>
+              </SettingsRowCopy>
+              <SegmentedControl
+                label={`When Wisp wants to ${category.label.toLocaleLowerCase()}`}
+                value={workspaceFileBehavior(preferences.autoReviewRules, category.value)}
+                options={RULE_BEHAVIORS}
+                disabled={!preferences.autoReview}
+                onChange={(behavior) => setFileBehavior(category.value, behavior)}
+              />
+            </SettingsRow>
+          ))}
+          {integrationRules.length ? (
+            <SettingsRow className="flex-col items-stretch gap-[5px]">
+              <strong>Integration blocks</strong>
+              <small>
+                Changes to integrations always ask first. Actions you block from an approval prompt are listed here.
+              </small>
+              <ul className="m-0 mt-[3px] flex list-none flex-col p-0" aria-label="Integration blocks">
+                {integrationRules.map((rule) => (
+                  <li key={rule.id} className="flex items-center gap-3 border-t border-border py-2">
                     <span className="min-w-0 flex-1 text-xs [overflow-wrap:anywhere]">
-                      {rule.scope === "integration" && rule.action === "external_write"
-                        ? "Changes to integrations"
-                        : (RULE_ACTIONS.find(({ value }) => value === rule.action)?.label ?? rule.action)}
+                      {INTEGRATION_ACTION_LABELS[rule.action] ?? rule.action}
                       <small className="mt-0.5 block">
-                        {rule.scope === "integration" ? "Integrations · " : "Workspace · "}
                         {RULE_BEHAVIORS.find((behavior) => behavior.value === rule.behavior)?.label}
                       </small>
                     </span>
                     <Button
                       variant="ghost"
                       size="icon-xs"
-                      aria-label={`Remove rule: ${rule.action}`}
+                      aria-label={`Remove rule: ${INTEGRATION_ACTION_LABELS[rule.action] ?? rule.action}`}
                       onClick={() => {
                         onPreferencesChange({
                           ...preferences,
@@ -236,54 +312,19 @@ function GeneralSettingsSections({ preferences, onPreferencesChange }: GeneralSe
                   </li>
                 ))}
               </ul>
-            ) : null}
-            <form className="my-[7px] flex flex-col gap-[5px]" onSubmit={addRule}>
-              <label className="m-0 text-dim text-[11.5px] leading-[1.5]" htmlFor="rule-action">
-                When Wisp wants to:
-              </label>
-              <SettingsSelect
-                id="rule-action"
-                value={ruleAction}
-                options={RULE_ACTIONS}
-                contentClassName="min-w-56"
-                onChange={(action) => {
-                  setRuleAction(action);
-                  setRuleNotice("");
-                }}
-              />
-              <label className="m-0 mt-[5px] text-dim text-[11.5px] leading-[1.5]" htmlFor="rule-behavior">
-                It should:
-              </label>
-              <div className="flex items-center justify-between gap-2.5">
-                <SettingsSelect
-                  id="rule-behavior"
-                  value={ruleBehavior}
-                  options={RULE_BEHAVIORS}
-                  contentClassName="min-w-56"
-                  onChange={(behavior) => {
-                    if (isRuleBehavior(behavior)) setRuleBehavior(behavior);
-                  }}
-                />
-                <Button type="submit" variant="secondary" size="sm" disabled={!ruleAction.trim() || duplicateRule}>
-                  Add Rule
-                </Button>
-              </div>
-              {duplicateRule ? (
-                <p className="m-0 text-dim text-[11.5px] leading-[1.5]">This rule already exists.</p>
-              ) : null}
-            </form>
-            <span className="sr-only" role="status">
-              {ruleNotice}
-            </span>
-            <p className="m-0 text-dim text-[11.5px] leading-[1.5]">
-              These rules are enforced in the desktop backend before Pi can create or modify a file. Shell execution
-              remains blocked.
-            </p>
-          </SettingsRow>
+            </SettingsRow>
+          ) : null}
         </SettingsCard>
+        <p className="mx-0.5 mt-[7px] text-dim text-[11px] leading-[1.45]">
+          Rules are enforced in the desktop backend before Pi can create or modify a file. Shell execution remains
+          blocked.
+        </p>
+        <span className="sr-only" role="status">
+          {ruleNotice}
+        </span>
       </SettingsGroup>
     </>
   );
 }
 
-export { GeneralSettingsSections, PreferenceSwitch };
+export { GeneralSettingsSections, PreferenceSwitch, SoonTitle };

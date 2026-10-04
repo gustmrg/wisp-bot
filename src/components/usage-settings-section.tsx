@@ -1,6 +1,16 @@
 import { useEffect, useState } from "react";
+import { RefreshCwIcon } from "lucide-react";
+
+import { SettingsCard, SettingsGroup, SettingsRow, SettingsRowCopy } from "@/components/settings/settings-primitives";
 import { Button } from "@/components/ui/button";
+import { SegmentedControl } from "@/components/ui/segmented-control";
 import type { UsagePeriod, UsageReport } from "../../shared/contracts";
+
+const PERIOD_OPTIONS: ReadonlyArray<{ value: UsagePeriod; label: string }> = [
+  { value: "7d", label: "Last 7 days" },
+  { value: "30d", label: "Last 30 days" },
+  { value: "all", label: "All history" },
+];
 
 export function UsageSettingsSection() {
   const [request, setRequest] = useState<{ period: UsagePeriod }>({ period: "30d" });
@@ -25,103 +35,119 @@ export function UsageSettingsSection() {
     <section
       id="usage-settings-panel"
       aria-labelledby="usage-settings-title"
-      className="min-w-0 overflow-y-auto px-[30px] py-6 max-[620px]:px-4"
+      className="min-w-0 overflow-y-auto px-[30px] py-6 max-[620px]:px-4 max-[620px]:py-5"
     >
-      <h2 id="usage-settings-title" className="mb-4 text-[17px]">
+      <h2 id="usage-settings-title" className="mb-1 mt-0 text-[17px]">
         Token usage
       </h2>
-      <div className="mb-4 flex flex-wrap items-center gap-2">
-        <label htmlFor="usage-period" className="text-xs">
-          Period
-        </label>
-        <select
-          id="usage-period"
+      <p className="mb-4 text-[11.5px] leading-relaxed text-dim">
+        Tokens and estimated cost per Wisp, from saved session history on this device.
+      </p>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <SegmentedControl
+          label="Period"
           value={request.period}
-          onChange={(event) => setRequest({ period: event.target.value as UsagePeriod })}
-          className="rounded border border-border bg-background p-2 text-xs"
-        >
-          <option value="7d">Last 7 days</option>
-          <option value="30d">Last 30 days</option>
-          <option value="all">All history</option>
-        </select>
+          options={PERIOD_OPTIONS}
+          onChange={(period) => setRequest({ period })}
+        />
         <Button
           size="sm"
           variant="ghost"
           disabled={!report && !state.error}
           onClick={() => setRequest((value) => ({ ...value }))}
         >
+          <RefreshCwIcon aria-hidden="true" />
           Refresh
         </Button>
       </div>
       {state.error ? (
-        <p role="alert" className="text-sm text-destructive">
+        <p role="alert" className="mt-4 text-[11.5px] text-destructive">
           {state.error}
         </p>
       ) : !report ? (
-        <p role="status" className="text-sm text-dim">
+        <p role="status" className="mt-4 text-[11.5px] text-dim">
           Loading token usage…
         </p>
       ) : (
         <>
-          <div className="mb-4 rounded-lg border border-border p-4">
-            <p className="text-xs text-dim">Total tokens</p>
-            <p className="text-2xl tabular-nums">{report.totals.totalTokens.toLocaleString("en-US")}</p>
-            <p className="mt-2 text-sm">{cost(report.totals.costUsd)} estimated USD</p>
-          </div>
+          <SettingsGroup label="Summary">
+            <SettingsCard variant="stacked">
+              <SettingsRow>
+                <SettingsRowCopy>
+                  <strong>Total tokens</strong>
+                  <small>Input, output and cache tokens.</small>
+                </SettingsRowCopy>
+                <span className="text-[15px] font-medium tabular-nums">
+                  {report.totals.totalTokens.toLocaleString("en-US")}
+                </span>
+              </SettingsRow>
+              <SettingsRow>
+                <SettingsRowCopy>
+                  <strong>Estimated cost</strong>
+                  <small>In USD, from the latest available model prices.</small>
+                </SettingsRowCopy>
+                <span className="text-[15px] font-medium tabular-nums">{cost(report.totals.costUsd)}</span>
+              </SettingsRow>
+            </SettingsCard>
+          </SettingsGroup>
           {report.incomplete ? (
-            <p role="alert" className="mb-3 text-xs text-destructive">
+            <p role="alert" className="mx-0.5 mt-[7px] text-[11.5px] text-destructive">
               Some session history could not be read. Token totals are partial; cost is unknown.
             </p>
           ) : null}
-          {report.wisps.length === 0 ? (
-            <p className="text-sm text-dim">No Wisps yet. Usage will appear after you send messages.</p>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs tabular-nums">
-                <caption className="sr-only">Token usage and estimated USD by Wisp</caption>
-                <thead>
-                  <tr>
-                    {["Wisp", "Input", "Output", "Cache read / write", "Total", "Est. USD"].map((heading) => (
-                      <th scope="col" key={heading} className="border-b border-border px-2 py-2 font-medium">
-                        {heading}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {report.wisps.map((wisp) => (
-                    <tr key={wisp.conversationId}>
-                      <th scope="row" className="max-w-36 break-words border-b border-border px-2 py-3 font-medium">
-                        {wisp.name}
-                        <span className="block font-normal text-dim">{wisp.sessions} sessions</span>
-                      </th>
-                      <td className="px-2">{wisp.totals.inputTokens.toLocaleString("en-US")}</td>
-                      <td className="px-2">{wisp.totals.outputTokens.toLocaleString("en-US")}</td>
-                      <td className="px-2">
-                        {wisp.totals.cacheReadTokens.toLocaleString("en-US")} /{" "}
-                        {wisp.totals.cacheWriteTokens.toLocaleString("en-US")}
-                      </td>
-                      <td className="px-2">{wisp.totals.totalTokens.toLocaleString("en-US")}</td>
-                      <td className="whitespace-nowrap px-2">{cost(wisp.totals.costUsd)}</td>
+          <SettingsGroup label="By Wisp">
+            {report.wisps.length === 0 ? (
+              <p className="mx-0.5 text-[11.5px] text-dim">No Wisps yet. Usage will appear after you send messages.</p>
+            ) : (
+              <SettingsCard className="overflow-x-auto">
+                <table className="w-full text-left text-[11.5px] tabular-nums">
+                  <caption className="sr-only">Token usage and estimated USD by Wisp</caption>
+                  <thead>
+                    <tr className="text-dim">
+                      {["Wisp", "Input", "Output", "Cache read / write", "Total", "Est. USD"].map((heading) => (
+                        <th scope="col" key={heading} className="border-b border-border px-3 py-2 font-normal">
+                          {heading}
+                        </th>
+                      ))}
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-          <p className="mt-4 text-xs leading-relaxed text-dim">
-            Estimates use the latest available OpenRouter model prices, including cache tokens. Provider routing and
-            other charges may differ from your bill. Unknown means pricing or history is unavailable.
-          </p>
-          <p className="mt-2 text-xs text-dim">
-            Prices updated:{" "}
-            {report.pricingUpdatedAt ? new Date(report.pricingUpdatedAt).toLocaleString() : "Unavailable"}. History
-            includes saved sessions for existing Wisps, across app restarts.
-          </p>
-          <p className="mt-2 text-xs text-dim">
-            {report.from ? `${new Date(report.from).toLocaleString()} – ` : "All history through "}
-            {new Date(report.generatedAt).toLocaleString()}
-          </p>
+                  </thead>
+                  <tbody className="[&>tr:not(:last-child)>*]:border-b [&>tr>*]:border-border">
+                    {report.wisps.map((wisp) => (
+                      <tr key={wisp.conversationId}>
+                        <th scope="row" className="max-w-36 break-words px-3 py-2.5 text-[12.5px] font-medium">
+                          {wisp.name}
+                          <span className="block text-[11px] font-normal text-dim">{wisp.sessions} sessions</span>
+                        </th>
+                        <td className="px-3">{wisp.totals.inputTokens.toLocaleString("en-US")}</td>
+                        <td className="px-3">{wisp.totals.outputTokens.toLocaleString("en-US")}</td>
+                        <td className="px-3">
+                          {wisp.totals.cacheReadTokens.toLocaleString("en-US")} /{" "}
+                          {wisp.totals.cacheWriteTokens.toLocaleString("en-US")}
+                        </td>
+                        <td className="px-3">{wisp.totals.totalTokens.toLocaleString("en-US")}</td>
+                        <td className="whitespace-nowrap px-3">{cost(wisp.totals.costUsd)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </SettingsCard>
+            )}
+          </SettingsGroup>
+          <div className="mx-0.5 mt-4 flex flex-col gap-2 text-[11px] leading-[1.45] text-dim">
+            <p className="m-0">
+              Estimates use the latest available OpenRouter model prices, including cache tokens. Provider routing and
+              other charges may differ from your bill. Unknown means pricing or history is unavailable.
+            </p>
+            <p className="m-0">
+              Prices updated:{" "}
+              {report.pricingUpdatedAt ? new Date(report.pricingUpdatedAt).toLocaleString() : "Unavailable"}. History
+              includes saved sessions for existing Wisps, across app restarts.
+            </p>
+            <p className="m-0">
+              {report.from ? `${new Date(report.from).toLocaleString()} – ` : "All history through "}
+              {new Date(report.generatedAt).toLocaleString()}
+            </p>
+          </div>
         </>
       )}
     </section>

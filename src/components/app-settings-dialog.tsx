@@ -14,15 +14,22 @@ import {
   RefreshCwIcon,
   ServerIcon,
   SettingsIcon,
+  type LucideIcon,
 } from "lucide-react";
 
-import { GeneralSettingsSections, PreferenceSwitch } from "@/components/general-settings-sections";
+import { GeneralSettingsSections, PreferenceSwitch, SoonTitle } from "@/components/general-settings-sections";
 import { UsageSettingsSection } from "@/components/usage-settings-section";
 import { ModelSettingsSection } from "@/components/model-settings-section";
 import { PluginSettingsSection } from "@/components/plugin-settings-section";
 import { McpSettingsSection } from "@/components/mcp-settings-section";
 import { MobileNavigation } from "@/components/mobile-navigation";
-import { SettingsCard, SettingsGroup, SettingsRow, SettingsRowCopy } from "@/components/settings/settings-primitives";
+import {
+  SettingsCard,
+  SettingsGroup,
+  SettingsRow,
+  SettingsRowCopy,
+  SoonBadge,
+} from "@/components/settings/settings-primitives";
 import { Button } from "@/components/ui/button";
 import type { AppMetadata, CurrentUser } from "@/config/app-metadata";
 import type { AppPreferences } from "@/lib/app-preferences";
@@ -33,6 +40,22 @@ import { normalizeTheme } from "@/lib/theme";
 import { profileAvatar } from "@/lib/ui-classes";
 import { cn } from "@/lib/utils";
 import type { UpdateState } from "../../shared/contracts";
+
+type SettingsSection = "general" | "model" | "plugins" | "mcp" | "about" | "usage";
+
+/** Navigation order; entries without a section are announced but not available yet. */
+const NAV_ITEMS: ReadonlyArray<
+  { label: string; icon: LucideIcon } & ({ section: SettingsSection; panelId: string } | { soon: true })
+> = [
+  { section: "general", panelId: "general-settings-panel", label: "General", icon: SettingsIcon },
+  { section: "model", panelId: "model-settings-panel", label: "AI Model", icon: BotIcon },
+  { section: "plugins", panelId: "plugin-settings-panel", label: "Plugins", icon: PlugIcon },
+  { section: "mcp", panelId: "mcp-settings-panel", label: "MCP servers", icon: ServerIcon },
+  { section: "usage", panelId: "usage-settings-panel", label: "Token usage", icon: BarChart3Icon },
+  { soon: true, label: "Notifications", icon: BellIcon },
+  { soon: true, label: "Shortcuts", icon: KeyboardIcon },
+  { section: "about", panelId: "about-settings-panel", label: "About", icon: InfoIcon },
+];
 
 const THEME_OPTIONS = [
   { value: "system", label: "System" },
@@ -72,7 +95,7 @@ function AppSettingsDialog({
   onOpenChange,
   onPreferencesChange,
 }: AppSettingsDialogProps) {
-  const [section, setSection] = useState<"general" | "model" | "plugins" | "mcp" | "about" | "usage">(initialSection);
+  const [section, setSection] = useState<SettingsSection>(initialSection);
   const [mobileSectionOpen, setMobileSectionOpen] = useState(initialSection !== "general");
 
   useEffect(() => {
@@ -183,84 +206,34 @@ function AppSettingsDialog({
           ) : (
             <strong className="mx-2 mb-[15px] mt-0 text-[17px]">Settings</strong>
           )}
-          <button
-            className={cn(navButton, section === "general" && selected)}
-            type="button"
-            aria-label="General"
-            aria-current={section === "general" ? "page" : undefined}
-            aria-controls="general-settings-panel"
-            onClick={() => openSection("general")}
-          >
-            <SettingsIcon aria-hidden="true" />
-            <span>General</span>
-          </button>
-          <button
-            className={cn(navButton, section === "model" && selected)}
-            type="button"
-            aria-label="AI Model"
-            aria-current={section === "model" ? "page" : undefined}
-            aria-controls="model-settings-panel"
-            onClick={() => openSection("model")}
-          >
-            <BotIcon aria-hidden="true" />
-            <span>AI Model</span>
-          </button>
-          <button
-            className={cn(navButton, section === "plugins" && selected)}
-            type="button"
-            aria-label="Plugins"
-            aria-current={section === "plugins" ? "page" : undefined}
-            aria-controls="plugin-settings-panel"
-            onClick={() => openSection("plugins")}
-          >
-            <PlugIcon aria-hidden="true" />
-            <span>Plugins</span>
-          </button>
-          <button
-            className={cn(navButton, section === "mcp" && selected)}
-            type="button"
-            aria-label="MCP servers"
-            aria-current={section === "mcp" ? "page" : undefined}
-            aria-controls="mcp-settings-panel"
-            onClick={() => openSection("mcp")}
-          >
-            <ServerIcon aria-hidden="true" />
-            <span>MCP servers</span>
-          </button>
-          <button
-            className={cn(navButton, section === "usage" && selected)}
-            type="button"
-            aria-label="Token usage"
-            aria-current={section === "usage" ? "page" : undefined}
-            aria-controls="usage-settings-panel"
-            onClick={() => openSection("usage")}
-          >
-            <BarChart3Icon aria-hidden="true" />
-            <span>Token usage</span>
-          </button>
-          {!mobile ? (
-            <>
-              <button className={navButton} type="button">
-                <BellIcon />
-                <span>Notifications</span>
+          {NAV_ITEMS.map((item) =>
+            "section" in item ? (
+              <button
+                key={item.section}
+                className={cn(navButton, section === item.section && selected)}
+                type="button"
+                aria-label={item.label}
+                aria-current={section === item.section ? "page" : undefined}
+                aria-controls={item.panelId}
+                onClick={() => openSection(item.section)}
+              >
+                <item.icon aria-hidden="true" />
+                <span>{item.label}</span>
               </button>
-              <button className={navButton} type="button">
-                <KeyboardIcon />
-                <span>Shortcuts</span>
+            ) : (
+              <button
+                key={item.label}
+                className={cn(navButton, "cursor-not-allowed hover:bg-transparent hover:text-dim")}
+                type="button"
+                aria-label={`${item.label} (coming soon)`}
+                disabled
+              >
+                <item.icon aria-hidden="true" className="opacity-60" />
+                <span className="opacity-60">{item.label}</span>
+                <SoonBadge className="ml-auto" />
               </button>
-            </>
-          ) : null}
-          <button
-            className={cn(navButton, section === "about" && selected)}
-            type="button"
-            aria-label="About"
-            aria-current={section === "about" ? "page" : undefined}
-            aria-controls="about-settings-panel"
-            onClick={() => openSection("about")}
-          >
-            <InfoIcon aria-hidden="true" />
-            <span>About</span>
-          </button>
+            ),
+          )}
         </nav>
         {section === "usage" && open && !showOverview ? <UsageSettingsSection /> : null}
         {section === "plugins" && open && !showOverview ? <PluginSettingsSection /> : null}
@@ -311,12 +284,13 @@ function AppSettingsDialog({
               </SettingsRow>
               <SettingsRow>
                 <SettingsRowCopy>
-                  <strong>Launch at login</strong>
+                  <SoonTitle>Launch at login</SoonTitle>
                   <small className="text-dim text-[11.5px]">Open Wisp automatically when you sign in.</small>
                 </SettingsRowCopy>
                 <PreferenceSwitch
                   label="Launch at login"
                   checked={preferences.launchAtLogin}
+                  disabled
                   onChange={() => onPreferencesChange({ ...preferences, launchAtLogin: !preferences.launchAtLogin })}
                 />
               </SettingsRow>
