@@ -2,7 +2,7 @@ import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
-import type { WispApi } from "../shared/contracts";
+import type { AiSettingsView, WispApi } from "../shared/contracts";
 import { chatSummary, type Chat, type ConversationStateView } from "../shared/conversations";
 import App from "@/App";
 import { LEGACY_STORAGE_KEY } from "@/hooks/use-conversations";
@@ -19,6 +19,35 @@ const atlas: Chat = {
   preview: "Ready",
   timestamp: "Now",
   messages: [],
+};
+
+const UNCONFIGURED_AI: AiSettingsView = {
+  selection: null,
+  secureStorageAvailable: true,
+  providers: [
+    {
+      id: "openrouter",
+      name: "OpenRouter",
+      credentialConfigured: false,
+      models: [
+        {
+          id: "test-model",
+          name: "Test Model",
+          reasoning: false,
+          input: ["text"],
+          contextWindow: 10_000,
+          maxOutputTokens: 1_000,
+        },
+      ],
+    },
+  ],
+  catalogError: null,
+};
+
+const CONFIGURED_AI: AiSettingsView = {
+  ...UNCONFIGURED_AI,
+  selection: { providerId: "openrouter", modelId: "test-model" },
+  providers: UNCONFIGURED_AI.providers.map((provider) => ({ ...provider, credentialConfigured: true })),
 };
 
 function conversationState(initialized: boolean, chats: Record<string, Chat> = {}): ConversationStateView {
@@ -80,14 +109,8 @@ function createApi(initialState: ConversationStateView): WispApi {
     applyModel: vi.fn(async () => ({ ok: true as const, value: {} })),
     disposeConversation: vi.fn(async () => ({ ok: true as const, value: {} })),
     subscribeToAgentEvents: vi.fn(() => () => undefined),
-    getAiSettings: vi.fn(async () => ({
-      ok: true as const,
-      value: { selection: null, secureStorageAvailable: true, providers: [], catalogError: null },
-    })),
-    saveAiSettings: vi.fn(async () => ({
-      ok: true as const,
-      value: { selection: null, secureStorageAvailable: true, providers: [], catalogError: null },
-    })),
+    getAiSettings: vi.fn(async () => ({ ok: true as const, value: CONFIGURED_AI })),
+    saveAiSettings: vi.fn(async () => ({ ok: true as const, value: CONFIGURED_AI })),
     removeProviderCredential: vi.fn(async () => ({
       ok: true as const,
       value: { selection: null, secureStorageAvailable: true, providers: [], catalogError: null },
@@ -132,9 +155,9 @@ function createApi(initialState: ConversationStateView): WispApi {
     getToolPolicy: vi.fn(async () => ({ ok: true as const, value: { autoReview: true, rules: [] } })),
     getUserProfile: async () => ({
       ok: true as const,
-      value: { preferredName: "", aboutYou: "", responsePreferences: "" },
+      value: { preferredName: "Ada Lovelace", aboutYou: "", responsePreferences: "" },
     }),
-    saveUserProfile: async (profile) => ({ ok: true as const, value: profile }),
+    saveUserProfile: vi.fn(async (profile) => ({ ok: true as const, value: profile })),
     saveToolPolicy: vi.fn(async (settings) => ({ ok: true as const, value: settings })),
     resolveToolApproval: vi.fn(async () => ({ ok: true as const, value: {} })),
     getUpdateState: vi.fn(async () => ({
@@ -477,4 +500,87 @@ it("opens provider setup from an unconfigured Wisp and preserves its first draft
   await user.keyboard("{Escape}");
   expect(composer).toHaveValue("My first task");
   expect(screen.getByRole("button", { name: "Send message" })).toBeDisabled();
+});
+
+describe("Onboarding", () => {
+  it("asks for a name and a working model before opening the workspace", async () => {
+    const user = userEvent.setup();
+    const api = createApi(conversationState(false));
+    api.getUserProfile = async () => ({
+      ok: true,
+      value: { preferredName: "", aboutYou: "", responsePreferences: "" },
+    });
+    vi.mocked(api.getAiSettings).mockResolvedValue({ ok: true, value: UNCONFIGURED_AI });
+    exposeApi(api);
+    render(<App />);
+
+    expect(await screen.findByRole("heading", { name: "Welcome to Wisp" })).toBeVisible();
+    expect(screen.getByText("Step 1 of 3")).toBeVisible();
+    expect(screen.queryByRole("button", { name: "Create Wisp" })).not.toBeInTheDocument();
+    const continueButton = screen.getByRole("button", { name: "Continue" });
+    expect(continueButton).toBeDisabled();
+    await user.type(screen.getByRole("textbox", { name: "What should Wisps call you?" }), "Ada");
+    await user.click(continueButton);
+    expect(api.saveUserProfile).toHaveBeenCalledWith({ preferredName: "Ada", aboutYou: "", responsePreferences: "" });
+
+    expect(await screen.findByRole("heading", { name: "Choose an AI model" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "Continue" })).toBeDisabled();
+    await user.type(await screen.findByLabelText("API key"), "test-key");
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    expect(api.saveAiSettings).toHaveBeenCalledWith({
+      selection: { providerId: "openrouter", modelId: "test-model" },
+      apiKey: "test-key",
+    });
+    await waitFor(() => expect(screen.getByRole("button", { name: "Continue" })).toBeEnabled());
+    await user.click(screen.getByRole("button", { name: "Continue" }));
+
+    expect(await screen.findByRole("heading", { name: "You’re all set, Ada" })).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "Get started" }));
+    expect(await screen.findByText("Create a Wisp to get started.")).toBeVisible();
+    expect(screen.getByRole("button", { name: "Open user settings" })).toHaveTextContent("Ada");
+  });
+
+  it("only asks for what is missing", async () => {
+    const user = userEvent.setup();
+    const api = createApi(conversationState(false));
+    api.getUserProfile = async () => ({
+      ok: true,
+      value: { preferredName: "", aboutYou: "", responsePreferences: "" },
+    });
+    exposeApi(api);
+    render(<App />);
+
+    expect(await screen.findByText("Step 1 of 2")).toBeVisible();
+    await user.type(screen.getByRole("textbox", { name: "What should Wisps call you?" }), "Ada");
+    await user.click(screen.getByRole("button", { name: "Continue" }));
+    expect(await screen.findByRole("heading", { name: "You’re all set, Ada" })).toBeVisible();
+    expect(screen.queryByRole("heading", { name: "Choose an AI model" })).not.toBeInTheDocument();
+  });
+
+  it("asks for the model again when the default provider has no API key", async () => {
+    const api = createApi(conversationState(false));
+    vi.mocked(api.getAiSettings).mockResolvedValue({
+      ok: true,
+      value: { ...CONFIGURED_AI, providers: UNCONFIGURED_AI.providers },
+    });
+    exposeApi(api);
+    render(<App />);
+
+    expect(await screen.findByRole("heading", { name: "Choose an AI model" })).toBeVisible();
+  });
+
+  it("offers a retry when the model settings cannot be loaded", async () => {
+    const user = userEvent.setup();
+    const api = createApi(conversationState(false));
+    vi.mocked(api.getAiSettings).mockResolvedValueOnce({
+      ok: false,
+      error: { code: "internal_error", message: "Settings are unreadable.", retryable: true },
+    });
+    exposeApi(api);
+    render(<App />);
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("Settings are unreadable.");
+    await user.click(screen.getByRole("button", { name: "Try again" }));
+    expect(await screen.findByText("Create a Wisp to get started.")).toBeVisible();
+  });
 });

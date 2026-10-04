@@ -14,6 +14,7 @@ import {
   RefreshCwIcon,
   ServerIcon,
   SettingsIcon,
+  UserIcon,
   type LucideIcon,
 } from "lucide-react";
 
@@ -197,7 +198,9 @@ function AppSettingsDialog({
         >
           {mobile ? (
             <div className="mobile-settings-profile">
-              <span className={profileAvatar}>{currentUser.initials}</span>
+              <span className={profileAvatar}>
+                {currentUser.initials || <UserIcon aria-hidden="true" className="size-3.5" />}
+              </span>
               <div>
                 <strong>{currentUser.displayName}</strong>
                 <small>Your workspace</small>

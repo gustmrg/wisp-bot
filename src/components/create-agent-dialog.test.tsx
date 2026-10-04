@@ -20,7 +20,7 @@ const providers: AiSettingsView["providers"] = ["a", "b"].map((id) => ({
   ],
 }));
 
-function mockAiSettings(selection = { providerId: "provider-a", modelId: "model-a" }) {
+function mockAiSettings(selection: AiSettingsView["selection"] = { providerId: "provider-a", modelId: "model-a" }) {
   Object.defineProperty(window, "wisp", {
     configurable: true,
     value: {
@@ -93,5 +93,19 @@ describe("CreateAgentDialog persistence", () => {
     await user.type(screen.getByRole("textbox", { name: "Name" }), "Atlas");
     await user.click(screen.getByRole("switch", { name: "Choose model for this Wisp" }));
     expect(await screen.findByText(/No API key saved for Provider b/)).toBeVisible();
+    expect(screen.getByRole("button", { name: "Create Wisp" })).toBeDisabled();
+  });
+
+  it("blocks creation until a usable global default or Wisp model exists", async () => {
+    mockAiSettings(null);
+    const user = userEvent.setup();
+    render(<CreateAgentDialog onCreate={vi.fn()} />);
+    await user.click(screen.getByRole("button", { name: "Create Wisp" }));
+    await user.type(screen.getByRole("textbox", { name: "Name" }), "Atlas");
+    expect(await screen.findByText(/No global default model is set/)).toBeVisible();
+    const submit = screen.getByRole("button", { name: "Create Wisp" });
+    expect(submit).toBeDisabled();
+    await user.click(screen.getByRole("switch", { name: "Choose model for this Wisp" }));
+    expect(submit).toBeEnabled();
   });
 });

@@ -8,7 +8,9 @@ import { SearchDialog } from "@/components/search-dialog";
 import { Sidebar } from "@/components/sidebar";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { APP_METADATA } from "@/config/app-metadata";
-import { useUserProfile } from "@/hooks/use-user-profile";
+import { Onboarding, SetupStatus } from "@/components/onboarding";
+import { useSetupGate } from "@/hooks/use-setup-gate";
+import { useUserProfile, type UserProfileController } from "@/hooks/use-user-profile";
 import { useResizablePanel } from "@/hooks/use-resizable-panel";
 import { useMobileLayout } from "@/hooks/use-mobile-layout";
 import { useWorkspaceController } from "@/features/workspace/use-workspace-controller";
@@ -17,20 +19,29 @@ import { mainPanel } from "@/lib/ui-classes";
 import { cn } from "@/lib/utils";
 
 export default function App() {
-  const workspace = useWorkspaceController();
   const userProfile = useUserProfile();
+  const setup = useSetupGate(userProfile);
+  if (setup.phase === "checking") return <SetupStatus />;
+  if (setup.phase === "error") return <SetupStatus message={setup.message} onRetry={setup.retry} />;
+  if (setup.phase === "onboarding") {
+    return <Onboarding required={setup.required} userProfile={userProfile} onComplete={setup.complete} />;
+  }
+  return <Workspace userProfile={userProfile} />;
+}
+
+function Workspace({ userProfile }: { userProfile: UserProfileController }) {
+  const workspace = useWorkspaceController();
   const name = userProfile.profile.preferredName;
   const currentUser = {
     displayName: name || "Your profile",
     givenName: name,
-    initials:
-      name
-        .split(/\s+/)
-        .filter(Boolean)
-        .slice(0, 2)
-        .map((part) => Array.from(part)[0])
-        .join("")
-        .toUpperCase() || "?",
+    initials: name
+      .split(/\s+/)
+      .filter(Boolean)
+      .slice(0, 2)
+      .map((part) => Array.from(part)[0])
+      .join("")
+      .toUpperCase(),
   };
   const mobile = useMobileLayout();
   const [mobilePage, setMobilePage] = useState<"list" | "chat">("list");

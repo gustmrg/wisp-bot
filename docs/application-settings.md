@@ -5,9 +5,22 @@
 **Notifications** and **Shortcuts** navigation entries are disabled and
 marked **Soon** until their panels exist.
 
+## First-run setup
+
+Before the workspace opens, Wisp checks the minimum setup: a preferred name,
+a global default model, and a saved API key for that model's provider. When
+any of them is missing, a full-screen onboarding asks only for what is missing
+and ends with a "You're all set" step. The check runs once per launch, so
+changing settings later in a session does not interrupt it; the next launch
+checks again.
+
+Creating a Wisp also requires a usable model: either the global default with
+a saved provider key, or a model chosen for that Wisp whose provider has a
+saved key.
+
 ## General
 
-- **Your profile** — preferred name, optional background, and response preferences. Saved locally in `user-profile.json` and shared with every Wisp (and its AI provider when chatting). Changes refresh existing Wisp context; busy Wisps apply the refresh after their current turn. Blank fields remove that profile context. The preferred name also supplies the sidebar name and initials.
+- **Your profile** — preferred name, optional background, and response preferences. Saved locally in `user-profile.json` and shared with every Wisp (and its AI provider when chatting). Changes refresh existing Wisp context; busy Wisps apply the refresh after their current turn. Blank fields remove that profile context. The preferred name is required and also supplies the sidebar name and initials.
 - **Application** — theme, launch at login, and notification sounds.
 - **System** — microphone selection and hardware acceleration preferences.
 - **Wisp** — timezone and auto-review. Auto-review shows one Allow / Ask /

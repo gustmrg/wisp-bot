@@ -26,3 +26,20 @@ it("edits all profile fields and explicitly saves them, including clearing value
   expect(save).toHaveBeenCalledWith({ preferredName: "Grace", aboutYou: "", responsePreferences: "Explain tradeoffs" });
   expect(await screen.findByRole("status")).toHaveTextContent("Profile saved.");
 });
+
+it("keeps the preferred name required", async () => {
+  const user = userEvent.setup();
+  render(
+    <UserProfileSettings
+      controller={{
+        profile: { preferredName: "Ada", aboutYou: "", responsePreferences: "" },
+        loading: false,
+        error: null,
+        save: vi.fn(async () => true),
+      }}
+    />,
+  );
+  await user.clear(screen.getByLabelText("Preferred name"));
+  expect(screen.getByRole("alert")).toHaveTextContent("Your preferred name is required.");
+  expect(screen.getByRole("button", { name: "Save profile" })).toBeDisabled();
+});
