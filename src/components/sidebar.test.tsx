@@ -2,6 +2,7 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import type { ChatSummaryCollection } from "@/chat-data";
 import type { CurrentUser } from "@/config/app-metadata";
 import { Sidebar } from "@/components/sidebar";
 
@@ -56,5 +57,66 @@ describe("Sidebar current user", () => {
 
     expect(screen.getByRole("heading", { name: "Create new Wisp" })).toBeVisible();
     expect(screen.queryByRole("group", { name: "Creation type" })).not.toBeInTheDocument();
+  });
+});
+
+describe("Sidebar approvals", () => {
+  const chats: ChatSummaryCollection = {
+    atlas: {
+      id: "atlas",
+      name: "Atlas",
+      label: "Research",
+      description: "Finds relevant information",
+      kind: "wisp",
+      shape: "circle",
+      notifyOnUpdatesEnabled: true,
+      preview: "Latest research",
+      timestamp: "Now",
+    },
+  };
+  const approvals = {
+    atlas: [
+      {
+        approvalId: "approval-1",
+        conversationId: "atlas",
+        toolCallId: "tool-1",
+        toolName: "write",
+        category: "create_file" as const,
+        scope: { kind: "workspace_path" as const, display: "notes.txt" },
+        summary: "Create notes.txt",
+        expiresAt: "2026-09-02T12:01:00.000Z",
+      },
+    ],
+  };
+
+  it("marks a conversation waiting for approval on desktop", () => {
+    render(
+      <Sidebar
+        activeChatId=""
+        chats={chats}
+        approvals={approvals}
+        collapsed={false}
+        currentUser={currentUser}
+        width={280}
+        {...callbacks}
+      />,
+    );
+    expect(screen.getByText("Waiting for your approval")).toBeVisible();
+    expect(screen.queryByText("Latest research")).not.toBeInTheDocument();
+  });
+
+  it("names the pending approval in the collapsed sidebar", () => {
+    render(
+      <Sidebar
+        activeChatId=""
+        chats={chats}
+        approvals={approvals}
+        collapsed
+        currentUser={currentUser}
+        width={280}
+        {...callbacks}
+      />,
+    );
+    expect(screen.getByRole("button", { name: "Atlas, waiting for your approval" })).toBeVisible();
   });
 });

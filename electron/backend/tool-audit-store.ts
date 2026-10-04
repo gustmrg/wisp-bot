@@ -11,7 +11,7 @@ export interface ToolAuditEvent {
   category: ToolActionCategory;
   scope: string;
   matchedPolicy: ToolPolicyBehavior;
-  decision: "allow" | "ask" | "block" | "allow_once" | "deny" | "expired" | "cancelled";
+  decision: "allow" | "ask" | "block" | "allow_once" | "allow_always" | "deny" | "expired" | "cancelled";
   actor: "policy" | "user" | "system";
   outcome: "pending" | "allowed" | "blocked" | "cancelled";
   timestamp: string;

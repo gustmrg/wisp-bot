@@ -27,6 +27,12 @@ export interface ToolPolicySettings {
 
 export type WorkspaceFileCategory = "create_file" | "modify_file";
 
+const WORKSPACE_FILE_CATEGORIES: ReadonlyArray<WorkspaceFileCategory> = ["create_file", "modify_file"];
+
+export function isWorkspaceFileCategory(value: string): value is WorkspaceFileCategory {
+  return (WORKSPACE_FILE_CATEGORIES as ReadonlyArray<string>).includes(value);
+}
+
 export function normalizeRuleAction(value: string): string {
   return value
     .trim()
@@ -61,6 +67,31 @@ export function workspaceFileBehavior(
   return "ask";
 }
 
+/**
+ * Rewrites the workspace rules for one file category as a single explicit rule.
+ * "Ask" is the default when no rule matches, so it needs no rule of its own.
+ * The other category keeps its effective behavior, including one that came
+ * from a shared rule such as "all file changes".
+ */
+export function withWorkspaceFileBehavior<Rule extends ToolPolicyRule>(
+  rules: ReadonlyArray<Rule>,
+  category: WorkspaceFileCategory,
+  behavior: ToolPolicyBehavior,
+  createId: () => string,
+): Array<Rule | ToolPolicyRule> {
+  const untouched = rules.filter(
+    (rule) =>
+      (rule.scope ?? "workspace") !== "workspace" ||
+      !WORKSPACE_FILE_CATEGORIES.some((value) => ruleMatchesCategory(rule.action, value)),
+  );
+  const rewritten: ToolPolicyRule[] = [];
+  for (const value of WORKSPACE_FILE_CATEGORIES) {
+    const next = value === category ? behavior : workspaceFileBehavior(rules, value);
+    if (next !== "ask") rewritten.push({ id: createId(), action: value, behavior: next, scope: "workspace" });
+  }
+  return [...untouched, ...rewritten];
+}
+
 export interface ToolApprovalRequest {
   approvalId: string;
   conversationId: string;
@@ -72,7 +103,8 @@ export interface ToolApprovalRequest {
   expiresAt: string;
 }
 
-export type ToolApprovalDecision = "allow_once" | "deny" | "block";
+/** "allow_always" saves an Allow rule and is offered only for workspace file changes while auto-review is on. */
+export type ToolApprovalDecision = "allow_once" | "allow_always" | "deny" | "block";
 
 export interface ResolveToolApprovalRequest {
   approvalId: string;

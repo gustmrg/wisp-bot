@@ -13,7 +13,8 @@ marked **Soon** until their panels exist.
 - **Wisp** — timezone and auto-review. Auto-review shows one Allow / Ask /
   Block choice for **Create files** and one for **Modify files**; turning
   auto-review off makes Wisp ask before every file change and disables the
-  choices. Integration blocks added from approval prompts are listed below them
+  choices. **Always allow** and **Always block** on an approval card change
+  the same choices. Integration blocks added from approval prompts are listed below them
   (see [security](security.md) for how rules are applied).
 
 Settings that are saved but not wired to the desktop yet (launch at login,

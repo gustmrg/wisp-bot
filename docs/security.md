@@ -35,6 +35,14 @@ blocked, and conflicting auto-review rules resolve with `block` → `ask` →
 `allow` precedence. File mutations are limited to 1 MB of input and tool
 output to 64 KB.
 
+An approval request expires after 60 seconds and is then denied; the card
+shows the remaining time. For a workspace file change, while auto-review is on,
+the card also offers **Always allow creating files** or **Always allow editing
+files**. It saves an Allow rule for that category only, visible and reversible
+in Settings → General → Auto-review. The broker refuses this decision for
+integration calls and while auto-review is off. **Always block** saves a Block
+rule the same way; blocking an MCP call stores an integration-scope rule.
+
 Integration access is granted per Wisp (see [plugins](plugins.md) and
 [remote MCP servers](mcp-servers.md)) and rechecked in the backend on every
 call. Linear writes require `write` access plus an expiring, single-use

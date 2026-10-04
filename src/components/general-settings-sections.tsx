@@ -16,7 +16,7 @@ import { ToggleSwitch } from "@/components/ui/toggle-switch";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import type { AppPreferences, AutoReviewRule, RuleBehavior } from "@/lib/app-preferences";
 import { settingsSelect } from "@/lib/ui-classes";
-import { ruleMatchesCategory, workspaceFileBehavior, type WorkspaceFileCategory } from "../../shared/tool-policy";
+import { withWorkspaceFileBehavior, workspaceFileBehavior, type WorkspaceFileCategory } from "../../shared/tool-policy";
 
 const RULE_BEHAVIORS: ReadonlyArray<{ value: RuleBehavior; label: string }> = [
   { value: "allow", label: "Allow" },
@@ -108,36 +108,6 @@ function SoonTitle({ children, htmlFor }: { children: ReactNode; htmlFor?: strin
   );
 }
 
-/**
- * Rewrites the workspace rules for one file category as a single explicit rule.
- * "Ask" is the default when no rule matches, so it needs no rule of its own.
- * Rules for the other category keep their effective behavior, including ones
- * that came from a shared rule such as "all file changes".
- */
-function withFileBehavior(
-  rules: ReadonlyArray<AutoReviewRule>,
-  category: WorkspaceFileCategory,
-  behavior: RuleBehavior,
-): AutoReviewRule[] {
-  const behaviors = Object.fromEntries(
-    FILE_CATEGORIES.map(({ value }) => [value, value === category ? behavior : workspaceFileBehavior(rules, value)]),
-  ) as Record<WorkspaceFileCategory, RuleBehavior>;
-  const untouched = rules.filter(
-    (rule) =>
-      (rule.scope ?? "workspace") !== "workspace" ||
-      !FILE_CATEGORIES.some(({ value }) => ruleMatchesCategory(rule.action, value)),
-  );
-  return [
-    ...untouched,
-    ...FILE_CATEGORIES.filter(({ value }) => behaviors[value] !== "ask").map(({ value }) => ({
-      id: crypto.randomUUID(),
-      action: value,
-      behavior: behaviors[value],
-      scope: "workspace" as const,
-    })),
-  ];
-}
-
 interface GeneralSettingsSectionsProps {
   preferences: AppPreferences;
   onPreferencesChange: (preferences: AppPreferences) => void;
@@ -191,7 +161,9 @@ function GeneralSettingsSections({ preferences, onPreferencesChange }: GeneralSe
   function setFileBehavior(category: WorkspaceFileCategory, behavior: RuleBehavior) {
     onPreferencesChange({
       ...preferences,
-      autoReviewRules: withFileBehavior(preferences.autoReviewRules, category, behavior),
+      autoReviewRules: withWorkspaceFileBehavior(preferences.autoReviewRules, category, behavior, () =>
+        crypto.randomUUID(),
+      ) as AutoReviewRule[],
     });
     const label = FILE_CATEGORIES.find(({ value }) => value === category)?.label ?? category;
     const behaviorLabel = RULE_BEHAVIORS.find(({ value }) => value === behavior)?.label ?? behavior;

@@ -216,7 +216,8 @@ export function useWorkspaceController(): WorkspaceController {
   const resolveApproval = useCallback(
     async (request: ToolApprovalRequest, decision: ToolApprovalDecision): Promise<boolean> => {
       const resolved = await conversations.resolveApproval(request, decision);
-      if (!resolved || decision !== "block") return resolved;
+      // Lasting decisions change the saved policy; show it in Settings right away.
+      if (!resolved || (decision !== "block" && decision !== "allow_always")) return resolved;
       const policy = await window.wisp.getToolPolicy();
       if (policy.ok) {
         persistedPreferences.setPreferences((current) => ({

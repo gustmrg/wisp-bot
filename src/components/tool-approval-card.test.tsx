@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { act, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
@@ -20,6 +20,8 @@ describe("ToolApprovalCard", () => {
           summary: "Update ENG-42: Fix sign-in",
           expiresAt: "2026-09-07T12:01:00.000Z",
         }}
+        wispName="Atlas"
+        allowAlwaysAvailable
         onResolve={onResolve}
       />,
     );
@@ -27,6 +29,7 @@ describe("ToolApprovalCard", () => {
     expect(screen.getByText("Approve integration change?")).toBeVisible();
     expect(screen.getByText(/This action can change data in the connected service/)).toBeVisible();
     expect(screen.queryByText(/No file content/)).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Always allow/ })).not.toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Deny" }));
     expect(onResolve).toHaveBeenCalledWith("deny");
   });
@@ -46,12 +49,49 @@ describe("ToolApprovalCard", () => {
           summary: "Create notes.txt",
           expiresAt: "2026-09-02T12:01:00.000Z",
         }}
+        wispName="Atlas"
+        allowAlwaysAvailable
         onResolve={onResolve}
       />,
     );
 
-    expect(screen.getByText(/Wisp atlas requested write for notes\.txt/)).toBeVisible();
+    expect(screen.getByText(/Atlas requested write for notes\.txt/)).toBeVisible();
     await user.click(screen.getByRole("button", { name: "Allow once" }));
     expect(onResolve).toHaveBeenCalledWith("allow_once");
+  });
+
+  it("counts down to expiry and offers a lasting Allow for workspace files only while auto-review is on", async () => {
+    vi.useFakeTimers({ toFake: ["Date", "setInterval", "clearInterval"] });
+    vi.setSystemTime(new Date("2026-09-02T12:00:00.000Z"));
+    try {
+      const onResolve = vi.fn();
+      const request = {
+        approvalId: "approval-3",
+        conversationId: "atlas",
+        toolCallId: "tool-3",
+        toolName: "edit",
+        category: "modify_file" as const,
+        scope: { kind: "workspace_path" as const, display: "notes.txt" },
+        summary: "Edit notes.txt",
+        expiresAt: "2026-09-02T12:01:00.000Z",
+      };
+      const { rerender } = render(
+        <ToolApprovalCard request={request} wispName="Atlas" allowAlwaysAvailable onResolve={onResolve} />,
+      );
+      expect(screen.getByText("Expires in 1:00")).toBeVisible();
+      act(() => vi.advanceTimersByTime(52_000));
+      expect(screen.getByText("Expires in 0:08")).toHaveClass("text-destructive");
+
+      screen.getByRole("button", { name: "Always allow editing files" }).click();
+      expect(onResolve).toHaveBeenCalledWith("allow_always");
+      expect(screen.getByText(/Settings → General → Auto-review/)).toBeVisible();
+
+      rerender(
+        <ToolApprovalCard request={request} wispName="Atlas" allowAlwaysAvailable={false} onResolve={onResolve} />,
+      );
+      expect(screen.queryByRole("button", { name: /Always allow/ })).not.toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
