@@ -4,6 +4,7 @@ import { RefreshCwIcon } from "lucide-react";
 import { SettingsCard, SettingsGroup, SettingsRow, SettingsRowCopy } from "@/components/settings/settings-primitives";
 import { Button } from "@/components/ui/button";
 import { SegmentedControl } from "@/components/ui/segmented-control";
+import { cn } from "@/lib/utils";
 import type { UsagePeriod, UsageReport } from "../../shared/contracts";
 
 const PERIOD_OPTIONS: ReadonlyArray<{ value: UsagePeriod; label: string }> = [
@@ -14,17 +15,23 @@ const PERIOD_OPTIONS: ReadonlyArray<{ value: UsagePeriod; label: string }> = [
 
 export function UsageSettingsSection() {
   const [request, setRequest] = useState<{ period: UsagePeriod }>({ period: "30d" });
-  const [state, setState] = useState<{ report?: UsageReport; error?: string }>({});
+  // The previous report stays visible (dimmed) while the next one loads, so
+  // switching periods or refreshing does not collapse the page.
+  const [state, setState] = useState<{ report?: UsageReport; error?: string; loading: boolean }>({ loading: true });
+  const [slide, setSlide] = useState<"animate-tab-forward" | "animate-tab-back">("animate-tab-forward");
   useEffect(() => {
     let active = true;
-    setState({});
+    setState((current) => ({ report: current.report, loading: true }));
     void window.wisp
       .getUsageReport(request)
       .then((result) => {
-        if (active) setState(result.ok ? { report: result.value } : { error: result.error.message });
+        if (active)
+          setState(
+            result.ok ? { report: result.value, loading: false } : { error: result.error.message, loading: false },
+          );
       })
       .catch(() => {
-        if (active) setState({ error: "Could not load token usage." });
+        if (active) setState({ error: "Could not load token usage.", loading: false });
       });
     return () => {
       active = false;
@@ -48,12 +55,18 @@ export function UsageSettingsSection() {
           label="Period"
           value={request.period}
           options={PERIOD_OPTIONS}
-          onChange={(period) => setRequest({ period })}
+          onChange={(period) => {
+            const order = PERIOD_OPTIONS.map((option) => option.value);
+            setSlide(
+              order.indexOf(period) > order.indexOf(request.period) ? "animate-tab-forward" : "animate-tab-back",
+            );
+            setRequest({ period });
+          }}
         />
         <Button
           size="sm"
           variant="ghost"
-          disabled={!report && !state.error}
+          disabled={state.loading}
           onClick={() => setRequest((value) => ({ ...value }))}
         >
           <RefreshCwIcon aria-hidden="true" />
@@ -69,7 +82,11 @@ export function UsageSettingsSection() {
           Loading token usage…
         </p>
       ) : (
-        <>
+        <div
+          key={report.period}
+          aria-busy={state.loading || undefined}
+          className={cn("transition-opacity duration-200", slide, state.loading && "opacity-60")}
+        >
           <SettingsGroup label="Summary">
             <SettingsCard variant="stacked">
               <SettingsRow>
@@ -135,8 +152,9 @@ export function UsageSettingsSection() {
           </SettingsGroup>
           <div className="mx-0.5 mt-4 flex flex-col gap-2 text-[11px] leading-[1.45] text-dim">
             <p className="m-0">
-              Estimates use the latest available OpenRouter model prices, including cache tokens. Provider routing and
-              other charges may differ from your bill. Unknown means pricing or history is unavailable.
+              Estimates use the latest available OpenRouter model prices, including cache tokens, or the cost recorded
+              with each turn for other providers. Provider routing and other charges may differ from your bill. Unknown
+              means pricing or history is unavailable.
             </p>
             <p className="m-0">
               Prices updated:{" "}
@@ -148,7 +166,7 @@ export function UsageSettingsSection() {
               {new Date(report.generatedAt).toLocaleString()}
             </p>
           </div>
-        </>
+        </div>
       )}
     </section>
   );
