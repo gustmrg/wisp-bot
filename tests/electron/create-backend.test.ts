@@ -1,3 +1,4 @@
+import { LaunchAtLoginService } from "../../electron/backend/launch-at-login-service.js";
 import { EventEmitter } from "node:events";
 import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
@@ -62,6 +63,13 @@ async function compose() {
   });
   const backend = await createBackend({
     dataDirectory,
+    launchAtLoginService: new LaunchAtLoginService({
+      platform: "linux",
+      packaged: false,
+      home: dataDirectory,
+      execPath: process.execPath,
+      env: {},
+    }),
     ipcMain: {
       handle: (channel, handler) => void handlers.set(channel, handler as Handler),
       removeHandler: (channel) => void handlers.delete(channel),
@@ -71,6 +79,8 @@ async function compose() {
     selectApprovalWindowId: () => 1,
     openExternal: vi.fn(async () => undefined),
     openReleasesPage: vi.fn(async () => undefined),
+    openPath: vi.fn(async () => undefined),
+    selectFiles: vi.fn(async () => []),
     encryption,
     logger: new StructuredLogger({ info: () => undefined, warn: () => undefined }),
     agentMode: "fake",

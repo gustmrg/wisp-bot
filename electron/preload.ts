@@ -50,15 +50,25 @@ const WISP_IPC_CHANNELS = {
   saveToolPolicy: "wisp:tool-policy:save",
   resolveToolApproval: "wisp:tool-policy:resolve-approval",
   getSessionReport: "wisp:conversations:get-session-report",
+  getLaunchAtLoginState: "wisp:login:get",
+  setLaunchAtLogin: "wisp:login:set",
   getUpdateState: "wisp:update:get-state",
   checkForUpdates: "wisp:update:check",
   downloadUpdate: "wisp:update:download",
   installUpdate: "wisp:update:install",
   openReleasesPage: "wisp:update:open-releases",
   updateState: "wisp:update:state",
+  getWorkspace: "wisp:workspace:get",
+  openWorkspaceFolder: "wisp:workspace:open",
+  openSkillsFolder: "wisp:workspace:open-skills",
+  attachWorkspaceFiles: "wisp:workspace:attach",
+  listSkills: "wisp:skills:list",
+  deleteSkill: "wisp:skills:delete",
 } as const;
 
 const wispApi: WispApi = {
+  getLaunchAtLoginState: () => ipcRenderer.invoke(WISP_IPC_CHANNELS.getLaunchAtLoginState),
+  setLaunchAtLogin: (enabled) => ipcRenderer.invoke(WISP_IPC_CHANNELS.setLaunchAtLogin, enabled),
   getPluginSettings: () => ipcRenderer.invoke(WISP_IPC_CHANNELS.getPluginSettings),
   savePluginSettings: (request) => ipcRenderer.invoke(WISP_IPC_CHANNELS.savePluginSettings, request),
   removePlugin: (request) => ipcRenderer.invoke(WISP_IPC_CHANNELS.removePlugin, request),
@@ -131,6 +141,12 @@ const wispApi: WispApi = {
     ipcRenderer.on(WISP_IPC_CHANNELS.updateState, handleState);
     return () => ipcRenderer.removeListener(WISP_IPC_CHANNELS.updateState, handleState);
   },
+  getWorkspace: (request) => ipcRenderer.invoke(WISP_IPC_CHANNELS.getWorkspace, request),
+  openWorkspaceFolder: (request) => ipcRenderer.invoke(WISP_IPC_CHANNELS.openWorkspaceFolder, request),
+  openSkillsFolder: (request) => ipcRenderer.invoke(WISP_IPC_CHANNELS.openSkillsFolder, request),
+  attachWorkspaceFiles: (request) => ipcRenderer.invoke(WISP_IPC_CHANNELS.attachWorkspaceFiles, request),
+  listSkills: (request) => ipcRenderer.invoke(WISP_IPC_CHANNELS.listSkills, request),
+  deleteSkill: (request) => ipcRenderer.invoke(WISP_IPC_CHANNELS.deleteSkill, request),
 };
 
 contextBridge.exposeInMainWorld("wisp", Object.freeze(wispApi));

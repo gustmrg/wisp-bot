@@ -87,7 +87,7 @@ describe("Pi SDK integration", () => {
 
       grants.researcher = [];
       await researcher.reload();
-      expect(researcher.getActiveToolNames()).toHaveLength(7);
+      expect(researcher.getActiveToolNames()).toHaveLength(9);
       expect(researcher.getActiveToolNames()).not.toContain("web_search");
       grants.researcher = ["linear_get_issue", "bash"];
       await researcher.reload();
@@ -149,7 +149,9 @@ describe("Pi SDK integration", () => {
         "grep",
         "ls",
         "read",
+        "save_skill",
         "search_history",
+        "use_skill",
         "write",
       ]);
       expect(first.sessionFile).toContain(sessionDirectory);
@@ -206,11 +208,13 @@ describe("Pi SDK integration", () => {
           "grep",
           "ls",
           "read",
+          "save_skill",
           "search_history",
+          "use_skill",
           "write",
         ]);
         await fallback.reload();
-        expect(fallback.getActiveToolNames()).toHaveLength(7);
+        expect(fallback.getActiveToolNames()).toHaveLength(9);
       } finally {
         fallback.dispose();
         pluginService.dispose();

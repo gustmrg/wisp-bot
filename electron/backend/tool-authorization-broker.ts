@@ -18,6 +18,7 @@ import { NullToolAuditSink, type ToolAuditSink } from "./tool-audit-store.js";
 
 const DEFAULT_APPROVAL_TTL_MS = 60_000;
 const MAX_SUMMARY_LENGTH = 240;
+const MAX_PREVIEW_LENGTH = 20_000;
 
 export interface ToolAuthorizationRequest {
   conversationId: string;
@@ -25,7 +26,9 @@ export interface ToolAuthorizationRequest {
   toolName: string;
   category: ToolActionCategory;
   summary: string;
-  scope: { kind: "workspace_path" | "integration"; value: string };
+  scope: { kind: "workspace_path" | "integration" | "skill"; value: string };
+  /** Content the user must see to decide; only sent for skill changes. */
+  preview?: string;
 }
 
 interface PendingApproval {
@@ -113,6 +116,7 @@ export class ToolAuthorizationBroker {
       category: action.category,
       scope: { kind: action.scope.kind, display: sanitizeSummary(action.scope.value) },
       summary: sanitizeSummary(action.summary),
+      ...(action.preview ? { preview: sanitizePreview(action.preview) } : {}),
       expiresAt,
     };
     this.auditDecision(actionId, action, behavior, "ask", "policy", "pending");
@@ -148,6 +152,9 @@ export class ToolAuthorizationBroker {
         "invalid_request",
         "Always allow is available only for workspace file changes while auto-review is on.",
       );
+    }
+    if (request.decision === "block" && category === "save_skill") {
+      throw new WispBackendError("invalid_request", "Skill changes can only be allowed once or denied.");
     }
     // Claim the approval before awaiting anything, so a repeated decision, an
     // expiry, or a cancellation during the policy write cannot settle it twice.
@@ -315,9 +322,19 @@ export function evaluateToolPolicy(
       ? "block"
       : "ask";
   }
+  if (category === "save_skill") {
+    // Skills become standing instructions, so each change is reviewed by the
+    // user; no rule or auto-review setting can approve or suppress the prompt.
+    return scopeKind === "skill" ? "ask" : "block";
+  }
   if (category !== "create_file" && category !== "modify_file") return "block";
   if (!settings.autoReview || scopeKind !== "workspace_path") return "ask";
   return workspaceFileBehavior(settings.rules, category);
+}
+
+function sanitizePreview(value: string): string {
+  const preview = value.replaceAll(/[\u0000-\u0008\u000b-\u001f\u007f]/g, "");
+  return preview.length > MAX_PREVIEW_LENGTH ? `${preview.slice(0, MAX_PREVIEW_LENGTH)}\n…` : preview;
 }
 
 function sanitizeSummary(value: string): string {

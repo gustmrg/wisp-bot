@@ -20,6 +20,7 @@ import type {
   UpdateConversationRequest,
 } from "../../shared/conversations.js";
 import { MAX_MESSAGE_SEARCH_LENGTH, MIN_MESSAGE_SEARCH_LENGTH } from "../../shared/message-search.js";
+import { isValidSkillName, type SkillRequest } from "../../shared/skills.js";
 import type { ResolveToolApprovalRequest } from "../../shared/tool-policy.js";
 import { WispBackendError } from "../backend/backend-error.js";
 import {
@@ -56,6 +57,12 @@ function parseCatalogId(value: unknown): string {
 
 function invalidRequest(): WispBackendError {
   return new WispBackendError("invalid_request", "The backend request is invalid.");
+}
+
+export function parseSkillRequest(value: unknown): SkillRequest {
+  const request = asRecord(value);
+  if (!isValidSkillName(request.name)) throw invalidRequest();
+  return { conversationId: parseId(request.conversationId), name: request.name };
 }
 
 export function parseConversationRequest(value: unknown): ConversationRequest {

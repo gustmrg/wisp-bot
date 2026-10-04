@@ -5,6 +5,8 @@ import { isWispBridgeAvailable } from "../src/lib/wisp-bridge.js";
 
 function completeBridge(): WispApi {
   return {
+    getLaunchAtLoginState: async () => ({ ok: true, value: { supported: false, enabled: false } }),
+    setLaunchAtLogin: async () => ({ ok: true, value: { supported: false, enabled: false } }),
     getPluginSettings: async () => ({ ok: true, value: { secureStorageAvailable: true, plugins: [] } }),
     savePluginSettings: async () => ({ ok: true, value: { secureStorageAvailable: true, plugins: [] } }),
     removePlugin: async () => ({ ok: true, value: { secureStorageAvailable: true, plugins: [] } }),
@@ -107,6 +109,15 @@ function completeBridge(): WispApi {
     installUpdate: async () => ({ ok: true, value: {} }),
     openReleasesPage: async () => ({ ok: true, value: {} }),
     subscribeToUpdateState: () => () => undefined,
+    getWorkspace: async () => ({ ok: true, value: { usedBytes: 0, quotaBytes: 1024 } }),
+    openWorkspaceFolder: async () => ({ ok: true, value: {} }),
+    openSkillsFolder: async () => ({ ok: true, value: {} }),
+    attachWorkspaceFiles: async () => ({
+      ok: true,
+      value: { files: [], workspace: { usedBytes: 0, quotaBytes: 1024 } },
+    }),
+    listSkills: async () => ({ ok: true, value: [] }),
+    deleteSkill: async () => ({ ok: true, value: [] }),
   };
 }
 

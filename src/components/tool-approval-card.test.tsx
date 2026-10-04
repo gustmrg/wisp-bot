@@ -34,6 +34,37 @@ describe("ToolApprovalCard", () => {
     expect(onResolve).toHaveBeenCalledWith("deny");
   });
 
+  it("shows the exact skill instructions and offers only allow once or deny", async () => {
+    const user = userEvent.setup();
+    const onResolve = vi.fn();
+    render(
+      <ToolApprovalCard
+        request={{
+          approvalId: "approval-3",
+          conversationId: "atlas",
+          toolCallId: "tool-3",
+          toolName: "save_skill",
+          category: "save_skill",
+          scope: { kind: "skill", display: "weekly-report" },
+          summary: "Create skill weekly-report: Builds the weekly report",
+          preview: "1. Collect issues\n2. Summarize",
+          expiresAt: "2026-09-07T12:01:00.000Z",
+        }}
+        wispName="Atlas"
+        allowAlwaysAvailable
+        onResolve={onResolve}
+      />,
+    );
+
+    expect(screen.getByText("Approve skill?")).toBeVisible();
+    expect(screen.getByLabelText("Skill instructions")).toHaveTextContent("1. Collect issues 2. Summarize");
+    expect(screen.getByText(/Atlas wants to save the skill weekly-report/)).toBeVisible();
+    expect(screen.queryByRole("button", { name: /block/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Always allow/ })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Allow once" }));
+    expect(onResolve).toHaveBeenCalledWith("allow_once");
+  });
+
   it("shows the bounded scope and returns only an explicit decision", async () => {
     const user = userEvent.setup();
     const onResolve = vi.fn();

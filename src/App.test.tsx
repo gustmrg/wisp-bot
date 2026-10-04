@@ -160,6 +160,8 @@ function createApi(initialState: ConversationStateView): WispApi {
     saveUserProfile: vi.fn(async (profile) => ({ ok: true as const, value: profile })),
     saveToolPolicy: vi.fn(async (settings) => ({ ok: true as const, value: settings })),
     resolveToolApproval: vi.fn(async () => ({ ok: true as const, value: {} })),
+    getLaunchAtLoginState: async () => ({ ok: true, value: { supported: false, enabled: false } }),
+    setLaunchAtLogin: async () => ({ ok: true, value: { supported: false, enabled: false } }),
     getUpdateState: vi.fn(async () => ({
       ok: true as const,
       value: { phase: "idle" as const, currentVersion: "0.1.0" },
@@ -175,6 +177,15 @@ function createApi(initialState: ConversationStateView): WispApi {
     installUpdate: vi.fn(async () => ({ ok: true as const, value: {} })),
     openReleasesPage: vi.fn(async () => ({ ok: true as const, value: {} })),
     subscribeToUpdateState: vi.fn(() => () => undefined),
+    getWorkspace: vi.fn(async () => ({ ok: true as const, value: { usedBytes: 0, quotaBytes: 1024 } })),
+    openWorkspaceFolder: vi.fn(async () => ({ ok: true as const, value: {} })),
+    openSkillsFolder: vi.fn(async () => ({ ok: true as const, value: {} })),
+    attachWorkspaceFiles: vi.fn(async () => ({
+      ok: true as const,
+      value: { files: [], workspace: { usedBytes: 0, quotaBytes: 1024 } },
+    })),
+    listSkills: vi.fn(async () => ({ ok: true as const, value: [] })),
+    deleteSkill: vi.fn(async () => ({ ok: true as const, value: [] })),
   };
 }
 

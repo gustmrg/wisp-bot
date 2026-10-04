@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, symlink, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, symlink, truncate, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
@@ -9,6 +9,7 @@ import type { IntegrationToolSource } from "../electron/backend/integration-tool
 import { snapshotRevision } from "../electron/backend/integration-tool-source.js";
 import type { ModelRuntimeLike } from "../electron/backend/model-service.js";
 import type { PluginToolSource } from "../electron/backend/plugin-types.js";
+import { WORKSPACE_QUOTA_BYTES } from "../shared/workspace.js";
 
 const sdk = vi.hoisted(() => {
   const session = {
@@ -23,7 +24,17 @@ const sdk = vi.hoisted(() => {
     waitForIdle: vi.fn(async () => undefined),
     reload: vi.fn(async () => undefined),
     setModel: vi.fn(async () => undefined),
-    getActiveToolNames: vi.fn(() => ["read", "grep", "find", "ls", "edit", "write", "search_history"]),
+    getActiveToolNames: vi.fn(() => [
+      "read",
+      "grep",
+      "find",
+      "ls",
+      "edit",
+      "write",
+      "search_history",
+      "use_skill",
+      "save_skill",
+    ]),
     setActiveToolsByName: vi.fn(),
     dispose: vi.fn(),
   };
@@ -101,6 +112,8 @@ describe("SdkPiSessionFactory", () => {
       "edit",
       "write",
       "search_history",
+      "use_skill",
+      "save_skill",
     ]);
     sdk.session.setActiveToolsByName.mockReset();
     sdk.loaderOptions.length = 0;
@@ -147,7 +160,7 @@ describe("SdkPiSessionFactory", () => {
         agentDir: context.configDirectory,
         model,
         modelRuntime: runtime,
-        tools: ["read", "grep", "find", "ls", "edit", "write", "search_history"],
+        tools: ["read", "grep", "find", "ls", "edit", "write", "search_history", "use_skill", "save_skill"],
         excludeTools: ["bash", "powershell"],
         customTools: expect.arrayContaining([
           expect.objectContaining({ name: "read" }),
@@ -167,6 +180,8 @@ describe("SdkPiSessionFactory", () => {
       "edit",
       "write",
       "search_history",
+      "use_skill",
+      "save_skill",
     ]);
     expect(sdk.loaderOptions[0]).toEqual(
       expect.objectContaining({
@@ -257,6 +272,96 @@ describe("SdkPiSessionFactory", () => {
       write.execute("tool-6", { path: "broken-escape/new.txt", content: "blocked" }, undefined, undefined, {}),
     ).rejects.toMatchObject({ code: "invalid_request" });
     expect(sdk.toolExecute).toHaveBeenCalledTimes(2);
+    // A sparse file reports its full size without using the disk space.
+    const fullFile = path.join(context.workspaceDirectory, "full.bin");
+    await writeFile(fullFile, "");
+    await truncate(fullFile, WORKSPACE_QUOTA_BYTES);
+    authorize.mockClear();
+    await expect(
+      write.execute("tool-full", { path: "more.txt", content: "no room" }, undefined, undefined, {}),
+    ).rejects.toMatchObject({ code: "invalid_request", message: expect.stringContaining("workspace is full") });
+    expect(authorize).not.toHaveBeenCalled();
+    expect(sdk.toolExecute).toHaveBeenCalledTimes(2);
+  });
+
+  it("saves skills only after approval and lists them in the next run's prompt", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "wisp-pi-skills-"));
+    const runtime = {
+      hasConfiguredAuth: vi.fn(() => true),
+      getModel: vi.fn(() => ({ provider: "provider", id: "model" })),
+    } as unknown as ModelRuntimeLike;
+    const context: ConversationAgentContext = {
+      conversationId: "one",
+      sessionId: "app-session",
+      name: "Atlas",
+      label: "Research",
+      description: "",
+      workspaceDirectory: path.join(directory, "workspace"),
+      sessionDirectory: directory,
+      configDirectory: path.join(directory, "config"),
+      piSessionId: null,
+      piSessionFile: null,
+    };
+    await mkdir(context.workspaceDirectory, { recursive: true });
+    const authorize = vi.fn(async () => undefined);
+    await new SdkPiSessionFactory(runtime, { authorize }).create(context, { providerId: "provider", modelId: "model" });
+
+    const options = sdk.createAgentSession.mock.calls[0]?.[0] as {
+      customTools: Array<{ name: string; execute: (...args: unknown[]) => Promise<unknown> }>;
+    };
+    const tool = (name: string) => options.customTools.find((candidate) => candidate.name === name)!;
+    const loader = sdk.loaderOptions[0] as {
+      systemPromptOverride: () => string;
+      extensionFactories: Array<{ name: string; factory: (pi: unknown) => void }>;
+    };
+    expect(loader.systemPromptOverride()).toContain("Never save a skill unless the user asked for it.");
+    let beforeStart: ((event: { systemPrompt: string }) => Promise<{ systemPrompt: string } | undefined>) | undefined;
+    loader.extensionFactories
+      .find(({ name }) => name === "wisp-continuity")!
+      .factory({ on: (_event: string, handler: typeof beforeStart) => (beforeStart = handler) });
+    await expect(beforeStart!({ systemPrompt: "base" })).resolves.toBeUndefined();
+
+    const draft = {
+      name: "weekly-report",
+      description: "Builds the weekly status report. Use when asked for the weekly report.",
+      instructions: "1. Search Linear for issues closed this week.\n2. Group them by team.",
+    };
+    authorize.mockRejectedValueOnce(Object.assign(new Error("denied"), { code: "tool_blocked" }));
+    await expect(tool("save_skill").execute("tool-1", draft, undefined)).rejects.toThrow("denied");
+    await expect(tool("use_skill").execute("tool-2", { name: "weekly-report" })).rejects.toMatchObject({
+      code: "not_found",
+    });
+
+    await expect(tool("save_skill").execute("tool-3", draft, undefined)).resolves.toMatchObject({
+      content: [{ text: expect.stringContaining("Saved skill weekly-report") }],
+    });
+    expect(authorize).toHaveBeenLastCalledWith(
+      {
+        conversationId: "one",
+        toolCallId: "tool-3",
+        toolName: "save_skill",
+        category: "save_skill",
+        scope: { kind: "skill", value: "weekly-report" },
+        summary: `Create skill weekly-report: ${draft.description}`,
+        preview: draft.instructions,
+      },
+      undefined,
+    );
+    const prompt = await beforeStart!({ systemPrompt: "base" });
+    expect(prompt?.systemPrompt).toBe(
+      `base\n\n## Available skills\nLoad one with use_skill before following it.\n- weekly-report: ${draft.description}`,
+    );
+    await expect(tool("use_skill").execute("tool-4", { name: "weekly-report" })).resolves.toMatchObject({
+      content: [{ text: expect.stringContaining("2. Group them by team.") }],
+    });
+    await expect(tool("save_skill").execute("tool-5", { ...draft, name: "Bad Name" }, undefined)).rejects.toMatchObject(
+      { code: "invalid_request" },
+    );
+    await tool("save_skill").execute("tool-6", { ...draft, instructions: "Updated" }, undefined);
+    expect(authorize).toHaveBeenLastCalledWith(
+      expect.objectContaining({ summary: `Replace skill weekly-report: ${draft.description}` }),
+      undefined,
+    );
   });
 
   it("does not start the model run once the send was stopped during preparation", async () => {
@@ -324,7 +429,7 @@ describe("SdkPiSessionFactory", () => {
     };
     const factory = new SdkPiSessionFactory(runtime, undefined, toToolSource(pluginTools));
     const session = await factory.create(context, { providerId: "provider", modelId: "model" });
-    const builtins = ["read", "grep", "find", "ls", "edit", "write", "search_history"];
+    const builtins = ["read", "grep", "find", "ls", "edit", "write", "search_history", "use_skill", "save_skill"];
     expect(sdk.createAgentSession).toHaveBeenLastCalledWith(
       expect.objectContaining({
         tools: [...builtins, "web_search", "linear_get_issue"],

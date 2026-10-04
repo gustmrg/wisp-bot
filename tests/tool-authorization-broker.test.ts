@@ -191,6 +191,55 @@ describe("tool policy", () => {
     ).rejects.toMatchObject({ code: "not_found" });
   });
 
+  it("always asks for skill changes, shows their content, and refuses lasting decisions", async () => {
+    const settings: ToolPolicySettings = {
+      autoReview: true,
+      rules: [
+        { id: "a", action: "save_skill", behavior: "allow", scope: "workspace" },
+        { id: "b", action: "all file changes", behavior: "allow", scope: "workspace" },
+      ],
+    };
+    expect(evaluateToolPolicy(settings, "save_skill", "skill")).toBe("ask");
+    expect(evaluateToolPolicy(settings, "save_skill", "workspace_path")).toBe("block");
+    expect(evaluateToolPolicy({ autoReview: false, rules: [] }, "save_skill", "skill")).toBe("ask");
+
+    const directory = await mkdtemp(path.join(os.tmpdir(), "wisp-approval-"));
+    const store = new ToolPolicyStore(path.join(directory, "policy.json"));
+    await store.save(settings);
+    const events: ConversationAgentEvent[] = [];
+    const broker = new ToolAuthorizationBroker(store, (event) => events.push(event), {
+      createId: () => "approval-skill",
+      selectWindowId: () => 7,
+    });
+    const authorization = broker.authorize({
+      conversationId: "one",
+      toolCallId: "tool-1",
+      toolName: "save_skill",
+      category: "save_skill",
+      scope: { kind: "skill", value: "weekly-report" },
+      summary: "Create skill weekly-report: Builds the weekly report",
+      preview: "1. Collect issues\n2. Summarize\u0007",
+    });
+    expect(events[0]).toMatchObject({
+      type: "tool_approval_requested",
+      request: {
+        category: "save_skill",
+        scope: { kind: "skill", display: "weekly-report" },
+        preview: "1. Collect issues\n2. Summarize",
+      },
+    });
+    const resolution = { approvalId: "approval-skill", conversationId: "one", toolCallId: "tool-1" };
+    await expect(broker.resolve({ ...resolution, decision: "allow_always" }, 7)).rejects.toMatchObject({
+      code: "invalid_request",
+    });
+    await expect(broker.resolve({ ...resolution, decision: "block" }, 7)).rejects.toMatchObject({
+      code: "invalid_request",
+    });
+    expect(store.get().rules).toHaveLength(2);
+    await broker.resolve({ ...resolution, decision: "deny" }, 7);
+    await expect(authorization).rejects.toMatchObject({ code: "tool_blocked" });
+  });
+
   it("expires stale approvals and persists an explicit block decision", async () => {
     vi.useFakeTimers();
     try {

@@ -48,6 +48,46 @@ describe("ChatComposer", () => {
     await user.click(screen.getByRole("button", { name: "Send message" }));
     expect(onSend).toHaveBeenCalledWith("First line\nSecond line");
   });
+  it("attaches workspace files, lets one be removed, and lists the rest in the sent message", async () => {
+    const user = userEvent.setup();
+    const onSend = vi.fn();
+    const attachWorkspaceFiles = vi.fn(async () => ({
+      ok: true as const,
+      value: {
+        files: [
+          { name: "a.txt", path: "inbox/a.txt", size: 1 },
+          { name: "b.csv", path: "inbox/b.csv", size: 2 },
+        ],
+        workspace: { usedBytes: 3, quotaBytes: 1024 },
+      },
+    }));
+    Object.defineProperty(window, "wisp", { configurable: true, value: { attachWorkspaceFiles } });
+    render(<ChatComposer {...defaultProps} chat={wisp("one", "One")} onSend={onSend} />);
+
+    expect(screen.getByRole("button", { name: "Send message" })).toBeDisabled();
+    await user.click(screen.getByRole("button", { name: "Attach files" }));
+    expect(attachWorkspaceFiles).toHaveBeenCalledWith({ conversationId: "one" });
+    await user.click(await screen.findByRole("button", { name: "Remove b.csv from this message" }));
+    await user.click(screen.getByRole("button", { name: "Send message" }));
+
+    expect(onSend).toHaveBeenCalledWith("Attached to the workspace:\n- `inbox/a.txt`");
+    expect(screen.queryByRole("list", { name: "Attached files" })).not.toBeInTheDocument();
+  });
+
+  it("shows why files could not be attached", async () => {
+    const user = userEvent.setup();
+    const attachWorkspaceFiles = vi.fn(async () => ({
+      ok: false as const,
+      error: { code: "invalid_request" as const, message: "This Wisp's workspace is full.", retryable: false },
+    }));
+    Object.defineProperty(window, "wisp", { configurable: true, value: { attachWorkspaceFiles } });
+    render(<ChatComposer {...defaultProps} chat={wisp("one", "One")} />);
+
+    await user.click(screen.getByRole("button", { name: "Attach files" }));
+
+    expect(await screen.findByText("This Wisp's workspace is full.")).toBeInTheDocument();
+  });
+
   it("submits Enter, preserves Shift+Enter, and clears a submitted draft", async () => {
     const user = userEvent.setup();
     const onSend = vi.fn();

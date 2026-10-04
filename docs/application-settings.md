@@ -30,8 +30,8 @@ saved key.
   the same choices. Integration blocks added from approval prompts are listed below them
   (see [security](security.md) for how rules are applied).
 
-Settings that are saved but not wired to the desktop yet (launch at login,
-microphone, hardware acceleration, timezone) are shown disabled with a
+Settings that are saved but not wired to the desktop yet (microphone,
+hardware acceleration, timezone) are shown disabled with a
 **Soon** badge.
 
 **Plugins** and **MCP servers** open each connection in place, inside the
@@ -40,6 +40,24 @@ inline confirmation first.
 
 Preferences are stored locally in the renderer. Desktop integration for some
 of them is not wired up yet — see "Not connected yet" below.
+
+## Launch at login
+
+Available only in packaged Linux releases (`.deb` and AppImage). The desktop
+process creates or removes `$XDG_CONFIG_HOME/autostart/wisp-bot.desktop`,
+falling back to `~/.config/autostart` when the variable is unset or relative.
+It opens the normal application window when an XDG-compatible desktop session
+starts. No administrator permissions are needed.
+
+The toggle reads the registration when Settings opens and when the window
+regains focus. The legacy renderer preference is ignored; it never recreates
+a registration removed or disabled outside Wisp. macOS and development builds
+show a disabled toggle with an explanation.
+
+AppImage registration uses the original `APPIMAGE` path, not the temporary
+mounted executable. Keep the AppImage in a stable location. After moving or
+renaming it, open the new file and enable Launch at login again to update the
+registration. Disable this option before removing the application.
 
 ## Notification sounds
 
@@ -65,7 +83,7 @@ in an installed release").
 ## Not connected yet
 
 - Microphone capture and voice input.
-- Launch at login (the preference is saved, nothing is registered).
+- Launch at login on macOS.
 - Hardware acceleration and timezone (saved, but not read by the desktop or by
   Wisps).
 - The Shortcuts settings panel (the `Cmd/Ctrl+K` search dialog itself works).

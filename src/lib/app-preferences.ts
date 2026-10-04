@@ -11,6 +11,7 @@ export interface AutoReviewRule {
 
 export interface AppPreferences {
   theme: ThemePreference;
+  /** Legacy storage only; desktop autostart registration is the source of truth. */
   launchAtLogin: boolean;
   notificationSounds: boolean;
   microphone: string;

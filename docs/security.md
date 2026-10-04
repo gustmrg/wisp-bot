@@ -35,6 +35,14 @@ blocked, and conflicting auto-review rules resolve with `block` → `ask` →
 `allow` precedence. File mutations are limited to 1 MB of input and tool
 output to 64 KB.
 
+Each Wisp's workspace is a private folder under the backend data directory,
+capped at 512 MB. A file change that would exceed the cap is refused before
+the approval prompt. **Wisp settings → General → Workspace** shows usage and
+opens the workspace folder; the path is computed by the main process. Attached
+files are picked in a native dialog owned by the main process and copied into the
+workspace `inbox/` folder (at most 20 per request, never overwriting); the
+renderer never supplies a file path.
+
 An approval request expires after 60 seconds and is then denied; the card
 shows the remaining time. For a workspace file change, while auto-review is on,
 the card also offers **Always allow creating files** or **Always allow editing
@@ -55,6 +63,12 @@ and again immediately before dispatch.
 
 Cancellation cannot roll back a mutation already accepted remotely; uncertain
 write outcomes instruct the agent to check the external system before retrying.
+
+Skills (see [ADR 008](decisions/008-wisp-skills.md)) live in each Wisp's
+config directory, outside the workspace, so file tools cannot read or change
+them. `save_skill` always asks and shows the exact instructions; rules and
+auto-review cannot allow it, and its card offers no lasting decision. Skill
+instructions are treated as user-provided context and never grant tools.
 
 ## Prohibited patterns
 

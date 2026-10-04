@@ -11,6 +11,7 @@ import {
 } from "electron";
 import { autoUpdater } from "electron-updater";
 import path from "node:path";
+import { LaunchAtLoginService } from "./backend/launch-at-login-service.js";
 
 import { WISP_RELEASES_URL } from "../shared/contracts.js";
 import { selectAgentMode } from "./backend/agent-mode.js";
@@ -185,6 +186,13 @@ async function bootstrap(): Promise<void> {
     : false;
   const backend = await createBackend({
     dataDirectory,
+    launchAtLoginService: new LaunchAtLoginService({
+      platform: process.platform,
+      packaged: app.isPackaged,
+      home: app.getPath("home"),
+      execPath: process.execPath,
+      env: process.env,
+    }),
     ipcMain,
     authorizeSender: isTrustedIpcSender,
     broadcast,
@@ -195,6 +203,19 @@ async function bootstrap(): Promise<void> {
     },
     openExternal: openExternalUrl,
     openReleasesPage: () => openExternalUrl(WISP_RELEASES_URL),
+    openPath: async (directory) => {
+      const failure = await shell.openPath(directory);
+      if (failure) throw new WispBackendError("internal_error", "The folder could not be opened.");
+    },
+    selectFiles: async () => {
+      const options: Electron.OpenDialogOptions = {
+        title: "Attach files",
+        properties: ["openFile", "multiSelections"],
+      };
+      const window = BrowserWindow.getFocusedWindow();
+      const result = window ? await dialog.showOpenDialog(window, options) : await dialog.showOpenDialog(options);
+      return result.canceled ? [] : result.filePaths;
+    },
     encryption: new SafeStorageEncryption(),
     logger,
     agentMode: selectAgentMode(app.isPackaged, process.env.WISP_AGENT_MODE),

@@ -45,6 +45,8 @@ export const TOOL_CATALOG: ReadonlyArray<ToolMetadata> = [
     activityLabel: "Searching conversation history…",
     category: "search",
   },
+  { name: "use_skill", label: "Use skill", activityLabel: "Reading a skill…", category: "read" },
+  { name: "save_skill", label: "Save skill", activityLabel: "Saving a skill…", category: "save_skill" },
   {
     name: "web_read",
     label: "Read web page",

@@ -32,6 +32,8 @@ import type {
   MarkConversationReadRequest,
   UpdateConversationRequest,
 } from "./conversations.js";
+import type { AttachWorkspaceFilesResult, WorkspaceView } from "./workspace.js";
+import type { SkillRequest, SkillView } from "./skills.js";
 import type { ResolveToolApprovalRequest, ToolApprovalRequest, ToolPolicySettings } from "./tool-policy.js";
 
 export const WISP_IPC_CHANNELS = {
@@ -80,12 +82,20 @@ export const WISP_IPC_CHANNELS = {
   saveUserProfile: "wisp:profile:save",
   saveToolPolicy: "wisp:tool-policy:save",
   resolveToolApproval: "wisp:tool-policy:resolve-approval",
+  getLaunchAtLoginState: "wisp:login:get",
+  setLaunchAtLogin: "wisp:login:set",
   getUpdateState: "wisp:update:get-state",
   checkForUpdates: "wisp:update:check",
   downloadUpdate: "wisp:update:download",
   installUpdate: "wisp:update:install",
   openReleasesPage: "wisp:update:open-releases",
   updateState: "wisp:update:state",
+  getWorkspace: "wisp:workspace:get",
+  openWorkspaceFolder: "wisp:workspace:open",
+  openSkillsFolder: "wisp:workspace:open-skills",
+  attachWorkspaceFiles: "wisp:workspace:attach",
+  listSkills: "wisp:skills:list",
+  deleteSkill: "wisp:skills:delete",
 } as const;
 
 export const WISP_RELEASES_URL = "https://github.com/gustmrg/wisp-bot/releases/latest";
@@ -337,7 +347,15 @@ export interface UpdateState {
   message?: string;
 }
 
+export interface LaunchAtLoginState {
+  supported: boolean;
+  enabled: boolean;
+  reason?: string;
+}
+
 export interface WispApi {
+  getLaunchAtLoginState(): Promise<BackendResult<LaunchAtLoginState>>;
+  setLaunchAtLogin(enabled: boolean): Promise<BackendResult<LaunchAtLoginState>>;
   getPluginSettings(): Promise<BackendResult<PluginSettingsView>>;
   savePluginSettings(request: SavePluginSettingsRequest): Promise<BackendResult<PluginSettingsView>>;
   removePlugin(request: PluginRequest): Promise<BackendResult<PluginSettingsView>>;
@@ -395,4 +413,13 @@ export interface WispApi {
   installUpdate(): Promise<EmptyResult>;
   openReleasesPage(): Promise<EmptyResult>;
   subscribeToUpdateState(listener: (state: UpdateState) => void): () => void;
+  getWorkspace(request: ConversationRequest): Promise<BackendResult<WorkspaceView>>;
+  openWorkspaceFolder(request: ConversationRequest): Promise<EmptyResult>;
+  /** Opens the Wisp's skills folder, creating it on first use. */
+  openSkillsFolder(request: ConversationRequest): Promise<EmptyResult>;
+  /** Shows a native file picker and copies the chosen files into the Wisp's workspace inbox. */
+  attachWorkspaceFiles(request: ConversationRequest): Promise<BackendResult<AttachWorkspaceFilesResult>>;
+  /** The Wisp's saved skills, alphabetically; malformed skill files are left out. */
+  listSkills(request: ConversationRequest): Promise<BackendResult<ReadonlyArray<SkillView>>>;
+  deleteSkill(request: SkillRequest): Promise<BackendResult<ReadonlyArray<SkillView>>>;
 }

@@ -1,3 +1,5 @@
+import type { LaunchAtLoginService } from "./backend/launch-at-login-service.js";
+import { registerLaunchAtLoginHandlers } from "./ipc/register-launch-at-login-handlers.js";
 import path from "node:path";
 
 import { WISP_IPC_CHANNELS, type ModelSelection, type SequencedConversationAgentEvent } from "../shared/contracts.js";
@@ -30,6 +32,8 @@ import { registerPluginHandlers } from "./ipc/register-plugin-handlers.js";
 import { registerSessionReportHandlers } from "./ipc/register-session-report-handlers.js";
 import { registerToolPolicyHandlers } from "./ipc/register-tool-policy-handlers.js";
 import { registerUpdateHandlers } from "./ipc/register-update-handlers.js";
+import { registerWorkspaceHandlers } from "./ipc/register-workspace-handlers.js";
+import { WorkspaceService } from "./backend/workspace-service.js";
 
 /** Electron-specific capabilities the backend needs, injected so it can be composed and tested without Electron. */
 export interface BackendHost {
@@ -43,12 +47,17 @@ export interface BackendHost {
   selectApprovalWindowId: () => number | null;
   openExternal: (url: string) => Promise<void>;
   openReleasesPage: () => Promise<void>;
+  /** Opens a backend-owned local folder in the system file manager. */
+  openPath: (directory: string) => Promise<void>;
+  /** Shows a native multi-file picker; resolves with absolute paths, empty when dismissed. */
+  selectFiles: () => Promise<ReadonlyArray<string>>;
   encryption: EncryptionService;
   logger: StructuredLogger;
   agentMode: AgentMode;
   /** The running application version, reported to remote MCP servers. */
   appVersion: string;
   updateService: UpdateService;
+  launchAtLoginService: LaunchAtLoginService;
   userName?: string;
   /** Refresh model catalogs over the network in the background after startup. Defaults to true. */
   allowModelNetwork?: boolean;
@@ -153,15 +162,22 @@ export async function createBackend(host: BackendHost): Promise<Backend> {
     conversationRepository,
     new ModelPricingService({ cacheFilePath: path.join(dataDirectory, "model-pricing.json") }),
   );
+  const workspaceService = new WorkspaceService({
+    resolveDirectories: (id) => conversationRepository.getAgentContext(id),
+    openPath: host.openPath,
+    selectFiles: host.selectFiles,
+  });
   // Disposed in this order on shutdown: stop new work and integrations first,
   // then the agents, which may still be settling their last turn.
   const handlers = [
+    registerLaunchAtLoginHandlers(ipcMain, host.launchAtLoginService, authorizeSender),
     registerToolPolicyHandlers(ipcMain, toolAuthorizationBroker, authorizeSender),
     registerPluginHandlers(ipcMain, pluginService, authorizeSender),
     registerMcpHandlers(ipcMain, mcpService, authorizeSender),
     registerUpdateHandlers(ipcMain, host.updateService, authorizeSender, host.openReleasesPage),
     registerModelSettingsHandlers(ipcMain, modelService, authorizeSender, (selection) => service.applyModel(selection)),
     registerSessionReportHandlers(ipcMain, sessionReportService, authorizeSender),
+    registerWorkspaceHandlers(ipcMain, workspaceService, authorizeSender),
     registerConversationHandlers(ipcMain, service, authorizeSender),
   ];
   const agentHandlers = registerAgentHandlers(ipcMain, registry, authorizeSender, async (id, model) => {

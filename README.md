@@ -22,6 +22,8 @@ owned shadcn/ui components with the Base Nova preset.
   authentication, granted per Wisp. See [MCP servers](docs/mcp-servers.md).
 - **Context and memory** — continuity summaries, explicit new topics, and
   user-maintained saved memory. See [context and memory](docs/context-and-memory.md).
+- **Skills** — per-Wisp reusable procedures, saved on request after you
+  approve them. See [context and memory](docs/context-and-memory.md#skills).
 - **Usage reports** — per-Wisp session reports and a local token/cost
   dashboard. See [token usage](docs/token-usage.md).
 - **Approval-gated tools** — encrypted credential storage and per-Wisp tool
