@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { FolderOpenIcon, SparklesIcon } from "lucide-react";
+import { FolderOpenIcon } from "lucide-react";
 
 import { formatBytes, type WorkspaceView } from "../../shared/workspace";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
@@ -45,10 +45,10 @@ function WorkspacePanel({ conversationId }: { conversationId: string }) {
     };
   }, [conversationId]);
 
-  async function open(action: "openWorkspaceFolder" | "openSkillsFolder") {
+  async function openFolder() {
     setError("");
     try {
-      const result = await window.wisp[action]({ conversationId });
+      const result = await window.wisp.openWorkspaceFolder({ conversationId });
       if (!result.ok) setError(result.error.message);
     } catch {
       setError("Could not open the folder.");
@@ -81,17 +81,10 @@ function WorkspacePanel({ conversationId }: { conversationId: string }) {
           </div>
         </div>
       ) : null}
-      <Button className="w-full" variant="outline" onClick={() => void open("openWorkspaceFolder")}>
+      <Button className="w-full" variant="outline" onClick={() => void openFolder()}>
         <FolderOpenIcon aria-hidden="true" />
         Open workspace folder
       </Button>
-      <Button className="w-full" variant="outline" onClick={() => void open("openSkillsFolder")}>
-        <SparklesIcon aria-hidden="true" />
-        Open skills folder
-      </Button>
-      <p className="text-muted-foreground">
-        Skills are kept apart from the workspace, so this Wisp's file tools cannot change them.
-      </p>
       {error ? (
         <p role="alert" className="text-destructive">
           {error}

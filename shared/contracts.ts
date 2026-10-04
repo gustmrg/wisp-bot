@@ -33,6 +33,7 @@ import type {
   UpdateConversationRequest,
 } from "./conversations.js";
 import type { AttachWorkspaceFilesResult, WorkspaceView } from "./workspace.js";
+import type { SkillRequest, SkillView } from "./skills.js";
 import type { ResolveToolApprovalRequest, ToolApprovalRequest, ToolPolicySettings } from "./tool-policy.js";
 
 export const WISP_IPC_CHANNELS = {
@@ -93,6 +94,8 @@ export const WISP_IPC_CHANNELS = {
   openWorkspaceFolder: "wisp:workspace:open",
   openSkillsFolder: "wisp:workspace:open-skills",
   attachWorkspaceFiles: "wisp:workspace:attach",
+  listSkills: "wisp:skills:list",
+  deleteSkill: "wisp:skills:delete",
 } as const;
 
 export const WISP_RELEASES_URL = "https://github.com/gustmrg/wisp-bot/releases/latest";
@@ -416,4 +419,7 @@ export interface WispApi {
   openSkillsFolder(request: ConversationRequest): Promise<EmptyResult>;
   /** Shows a native file picker and copies the chosen files into the Wisp's workspace inbox. */
   attachWorkspaceFiles(request: ConversationRequest): Promise<BackendResult<AttachWorkspaceFilesResult>>;
+  /** The Wisp's saved skills, alphabetically; malformed skill files are left out. */
+  listSkills(request: ConversationRequest): Promise<BackendResult<ReadonlyArray<SkillView>>>;
+  deleteSkill(request: SkillRequest): Promise<BackendResult<ReadonlyArray<SkillView>>>;
 }

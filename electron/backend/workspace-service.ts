@@ -11,7 +11,9 @@ import {
   type WorkspaceAttachment,
   type WorkspaceView,
 } from "../../shared/workspace.js";
+import type { SkillView } from "../../shared/skills.js";
 import { WispBackendError } from "./backend-error.js";
+import { SkillStore } from "./skill-store.js";
 
 /** Folder inside a Wisp's config directory that holds its skills. */
 export const SKILLS_DIRECTORY = "skills";
@@ -110,6 +112,21 @@ export class WorkspaceService {
     const skillsDirectory = path.join(configDirectory, SKILLS_DIRECTORY);
     await mkdir(skillsDirectory, { recursive: true });
     await this.options.openPath(skillsDirectory);
+  }
+
+  listSkills(conversationId: string): Promise<ReadonlyArray<SkillView>> {
+    return this.skills(conversationId).list();
+  }
+
+  async deleteSkill(conversationId: string, name: string): Promise<ReadonlyArray<SkillView>> {
+    const skills = this.skills(conversationId);
+    await skills.delete(name);
+    return skills.list();
+  }
+
+  private skills(conversationId: string): SkillStore {
+    const { configDirectory } = this.options.resolveDirectories(conversationId);
+    return new SkillStore(path.join(configDirectory, SKILLS_DIRECTORY));
   }
 
   async attach(conversationId: string): Promise<AttachWorkspaceFilesResult> {

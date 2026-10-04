@@ -32,6 +32,14 @@ saved memory. A timeline marker explains each boundary.
 requests. It survives new topics and restarts; facts are not silently promoted
 from summaries into permanent memory.
 
+## Skills
+
+Ask a Wisp to save a workflow as a skill and it drafts reusable instructions
+for you to approve; the approval card shows exactly what will be saved. Each
+Wisp sees the names and descriptions of its own skills and loads one when a
+request matches. **Wisp settings → General → Skills** lists, deletes, and opens
+the folder holding them. See [ADR 008](decisions/008-wisp-skills.md).
+
 ## History search
 
 The `search_history` tool can retrieve bounded excerpts from this Wisp's

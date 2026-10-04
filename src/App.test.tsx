@@ -184,6 +184,8 @@ function createApi(initialState: ConversationStateView): WispApi {
       ok: true as const,
       value: { files: [], workspace: { usedBytes: 0, quotaBytes: 1024 } },
     })),
+    listSkills: vi.fn(async () => ({ ok: true as const, value: [] })),
+    deleteSkill: vi.fn(async () => ({ ok: true as const, value: [] })),
   };
 }
 

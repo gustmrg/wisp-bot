@@ -27,6 +27,7 @@ function remainingLabel(seconds: number): string {
 function ToolApprovalCard({ request, wispName, allowAlwaysAvailable, onResolve }: ToolApprovalCardProps) {
   const now = useClock(1_000);
   const integration = request.scope.kind === "integration";
+  const skill = request.category === "save_skill" && request.scope.kind === "skill";
   const fileCategory = !integration && isWorkspaceFileCategory(request.category) ? request.category : null;
   const remaining = Math.max(0, Math.ceil((new Date(request.expiresAt).getTime() - now.getTime()) / 1_000));
   const expiresSoon = remaining <= 10;
@@ -43,7 +44,7 @@ function ToolApprovalCard({ request, wispName, allowAlwaysAvailable, onResolve }
         <div className="min-w-0 flex-1">
           <div className="flex items-baseline gap-2">
             <strong className="min-w-0 flex-1 text-xs">
-              {integration ? "Approve integration change?" : "Approve file change?"}
+              {skill ? "Approve skill?" : integration ? "Approve integration change?" : "Approve file change?"}
             </strong>
             {Number.isNaN(remaining) ? null : (
               <time
@@ -59,16 +60,37 @@ function ToolApprovalCard({ request, wispName, allowAlwaysAvailable, onResolve }
             )}
           </div>
           <p className="my-1 break-words text-xs text-dim">{request.summary}</p>
+          {skill && request.preview ? (
+            <pre
+              className="my-2 max-h-64 overflow-y-auto whitespace-pre-wrap break-words rounded-md border border-border bg-background/60 p-2 font-mono text-[11px] text-foreground"
+              aria-label="Skill instructions"
+            >
+              {request.preview}
+            </pre>
+          ) : null}
           <small className="text-faint">
-            {wispName} requested {request.toolName} for {request.scope.display}.{" "}
-            {integration ? "This action can change data in the connected service." : "No file content is shown here."}
+            {skill ? (
+              <>
+                {wispName} wants to save the skill {request.scope.display}. Once saved, it guides this Wisp's future
+                replies; you can delete it in Wisp settings.
+              </>
+            ) : (
+              <>
+                {wispName} requested {request.toolName} for {request.scope.display}.{" "}
+                {integration
+                  ? "This action can change data in the connected service."
+                  : "No file content is shown here."}
+              </>
+            )}
           </small>
         </div>
       </div>
       <div className="mt-3 flex flex-wrap justify-end gap-1.5">
-        <Button type="button" size="sm" variant="ghost" onClick={() => onResolve("block")}>
-          {blockLabel}
-        </Button>
+        {skill ? null : (
+          <Button type="button" size="sm" variant="ghost" onClick={() => onResolve("block")}>
+            {blockLabel}
+          </Button>
+        )}
         <Button type="button" size="sm" variant="secondary" onClick={() => onResolve("deny")}>
           Deny
         </Button>

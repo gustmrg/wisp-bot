@@ -62,6 +62,8 @@ const WISP_IPC_CHANNELS = {
   openWorkspaceFolder: "wisp:workspace:open",
   openSkillsFolder: "wisp:workspace:open-skills",
   attachWorkspaceFiles: "wisp:workspace:attach",
+  listSkills: "wisp:skills:list",
+  deleteSkill: "wisp:skills:delete",
 } as const;
 
 const wispApi: WispApi = {
@@ -143,6 +145,8 @@ const wispApi: WispApi = {
   openWorkspaceFolder: (request) => ipcRenderer.invoke(WISP_IPC_CHANNELS.openWorkspaceFolder, request),
   openSkillsFolder: (request) => ipcRenderer.invoke(WISP_IPC_CHANNELS.openSkillsFolder, request),
   attachWorkspaceFiles: (request) => ipcRenderer.invoke(WISP_IPC_CHANNELS.attachWorkspaceFiles, request),
+  listSkills: (request) => ipcRenderer.invoke(WISP_IPC_CHANNELS.listSkills, request),
+  deleteSkill: (request) => ipcRenderer.invoke(WISP_IPC_CHANNELS.deleteSkill, request),
 };
 
 contextBridge.exposeInMainWorld("wisp", Object.freeze(wispApi));

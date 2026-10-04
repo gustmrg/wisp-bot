@@ -116,6 +116,8 @@ function completeBridge(): WispApi {
       ok: true,
       value: { files: [], workspace: { usedBytes: 0, quotaBytes: 1024 } },
     }),
+    listSkills: async () => ({ ok: true, value: [] }),
+    deleteSkill: async () => ({ ok: true, value: [] }),
   };
 }
 

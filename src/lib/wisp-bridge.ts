@@ -58,6 +58,8 @@ const REQUIRED_WISP_METHODS = [
   "openWorkspaceFolder",
   "openSkillsFolder",
   "attachWorkspaceFiles",
+  "listSkills",
+  "deleteSkill",
 ] as const satisfies ReadonlyArray<keyof WispApi>;
 
 export function isWispBridgeAvailable(value: unknown): value is WispApi {

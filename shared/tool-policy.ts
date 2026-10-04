@@ -2,6 +2,9 @@
  * "integration_call" is the generic category for dynamically discovered MCP
  * tools. Server-supplied annotations are untrusted, so these calls never map to
  * "read" or "write"; the initial behavior is always to ask.
+ *
+ * "save_skill" creates or updates one of the Wisp's own skills. It always asks:
+ * policy rules can neither allow nor block it.
  */
 export type ToolActionCategory =
   | "read"
@@ -10,6 +13,7 @@ export type ToolActionCategory =
   | "modify_file"
   | "external_write"
   | "integration_call"
+  | "save_skill"
   | "shell";
 export type ToolPolicyBehavior = "allow" | "ask" | "block";
 
@@ -98,8 +102,10 @@ export interface ToolApprovalRequest {
   toolCallId: string;
   toolName: string;
   category: ToolActionCategory;
-  scope: { kind: "workspace_path" | "integration"; display: string };
+  scope: { kind: "workspace_path" | "integration" | "skill"; display: string };
   summary: string;
+  /** Exact content to review, shown for skill changes; bounded and stripped of control characters. */
+  preview?: string;
   expiresAt: string;
 }
 
