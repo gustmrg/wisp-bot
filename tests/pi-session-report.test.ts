@@ -300,3 +300,31 @@ it("includes summarization usage and keeps unknown summary prices unknown", () =
     buildSessionReport("session", [unknown], { workspaceDirectory: WORKSPACE, getPricing }).totals.costUsd,
   ).toBeNull();
 });
+
+it("falls back to the cost Pi recorded when no current price is available", () => {
+  const entries = [
+    messageEntry(
+      assistantMessage({
+        provider: "zai",
+        model: "glm-5.3-flash",
+        usage: { input: 124, output: 262, cacheRead: 1728, cacheWrite: 0, cost: { total: 0.0001 } },
+      }),
+    ),
+    messageEntry(
+      assistantMessage({
+        provider: "zai",
+        model: "glm-5.3-flash",
+        usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: { total: 0 } },
+        stopReason: "error",
+      }),
+    ),
+    messageEntry(
+      assistantMessage({ usage: { input: 1_000, output: 0, cacheRead: 0, cacheWrite: 0, cost: { total: 99 } } }),
+    ),
+  ];
+  const report = buildSessionReport("session", entries, { workspaceDirectory: WORKSPACE, getPricing });
+  expect(report.models.find((model) => model.modelId === "glm-5.3-flash")?.costUsd).toBeCloseTo(0.0001);
+  // Current OpenRouter prices still take precedence over the recorded cost.
+  expect(report.models.find((model) => model.modelId === "openai/gpt-oss-120b")?.costUsd).toBeCloseTo(0.0015);
+  expect(report.totals.costUsd).toBeCloseTo(0.0016);
+});

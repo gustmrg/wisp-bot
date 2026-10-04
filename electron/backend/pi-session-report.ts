@@ -48,6 +48,8 @@ interface ModelUsageBucket {
   modelId: string;
   turns: number;
   usage: SessionReportUsage;
+  /** Cost Pi recorded with each turn, used when no current price is available. */
+  recordedCostUsd: number | null;
 }
 
 interface SessionUsage {
@@ -56,6 +58,7 @@ interface SessionUsage {
   cacheRead?: number;
   cacheWrite?: number;
   totalTokens?: number;
+  cost?: { total?: number };
 }
 
 export function buildSessionReport(
@@ -223,9 +226,13 @@ function accumulateModelUsage(message: AssistantSessionMessage, usageByModel: Ma
     modelId: message.model,
     turns: 0,
     usage: emptyUsage(),
+    recordedCostUsd: 0,
   };
   bucket.turns += 1;
   bucket.usage = addUsage(bucket.usage, usage);
+  const recorded = recordedCost(usage);
+  bucket.recordedCostUsd =
+    bucket.recordedCostUsd === null || recorded === null ? null : bucket.recordedCostUsd + recorded;
   usageByModel.set(key, bucket);
 }
 
@@ -238,20 +245,33 @@ function summarizeModelUsage(
     modelId: bucket.modelId,
     turns: bucket.turns,
     usage: bucket.usage,
-    costUsd: costForUsage(bucket.usage, getPricing(bucket.providerId, bucket.modelId)),
+    costUsd: costForBucket(bucket, getPricing),
   }));
 }
 
 function estimateCost(usageByModel: Map<string, ModelUsageBucket>, getPricing: SessionPricingLookup): number | null {
   let total = 0;
   for (const bucket of usageByModel.values()) {
-    const pricing = getPricing(bucket.providerId, bucket.modelId);
-    if (!pricing) return null;
-    const cost = costForUsage(bucket.usage, pricing);
+    const cost = costForBucket(bucket, getPricing);
     if (cost === null) return null;
     total += cost;
   }
   return total;
+}
+
+// Current OpenRouter prices win; otherwise fall back to the cost Pi recorded
+// from its own model catalog (e.g. direct providers such as Z.AI or Anthropic).
+function costForBucket(bucket: ModelUsageBucket, getPricing: SessionPricingLookup): number | null {
+  return costForUsage(bucket.usage, getPricing(bucket.providerId, bucket.modelId)) ?? bucket.recordedCostUsd;
+}
+
+// A zero recorded cost for a turn that used tokens means Pi had no price for
+// the model, so it stays unknown rather than free.
+function recordedCost(usage: SessionUsage): number | null {
+  const tokens = addUsage(emptyUsage(), usage).totalTokens;
+  if (tokens === 0) return 0;
+  const total = usage.cost?.total;
+  return typeof total === "number" && Number.isFinite(total) && total > 0 ? total : null;
 }
 
 function costForUsage(usage: SessionReportUsage, pricing: ModelPricing | null): number | null {

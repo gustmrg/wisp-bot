@@ -50,6 +50,30 @@ describe("UsageSettingsSection", () => {
     await waitFor(() => expect(getUsageReport).toHaveBeenCalledTimes(3));
   });
 
+  it("keeps the previous report visible while the next period loads", async () => {
+    let resolveNext!: (value: unknown) => void;
+    const getUsageReport = vi
+      .fn()
+      .mockResolvedValueOnce({ ok: true, value: report })
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            resolveNext = resolve;
+          }),
+      );
+    Object.defineProperty(window, "wisp", { configurable: true, value: { getUsageReport } });
+    const user = userEvent.setup();
+    render(<UsageSettingsSection />);
+    expect(await screen.findByText("Research Wisp")).toBeVisible();
+    await user.click(screen.getByRole("radio", { name: "Last 7 days" }));
+    expect(screen.getByText("Research Wisp").closest("[aria-busy]")).toHaveAttribute("aria-busy", "true");
+    expect(screen.queryByText("Loading token usage…")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Refresh" })).toBeDisabled();
+    resolveNext({ ok: true, value: { ...report, period: "7d", wisps: [] } });
+    expect(await screen.findByText(/No Wisps yet/)).toBeVisible();
+    expect(screen.getByText(/No Wisps yet/).closest("[aria-busy]")).toBeNull();
+  });
+
   it("ignores a stale response when the period changes", async () => {
     let resolveFirst!: (value: unknown) => void;
     const getUsageReport = vi

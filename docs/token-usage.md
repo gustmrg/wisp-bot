@@ -24,8 +24,11 @@ warning.
 USD values are estimates using the latest cached OpenRouter model pricing, not
 historical invoices. The pricing cache is schema-versioned, refreshed daily,
 and its update time is shown. Input, output, cache reads, and cache writes are
-counted separately. Missing model/cache-write pricing yields an unknown cost,
-rather than zero. Prices follow the
+counted separately. Models that OpenRouter does not price (for example direct
+providers such as Z.AI) fall back to the cost Pi recorded with each turn from
+its own model catalog. A cost stays unknown, rather than zero, when neither
+source has a price. Providers with automatic prompt caching (Z.AI, OpenAI and
+others) report only cache reads, so cache writes show as 0 for them. Prices follow the
 [OpenRouter model pricing fields](https://openrouter.ai/docs/guides/overview/models);
 routing, conditional prices and non-token fees can differ from the estimate.
 
