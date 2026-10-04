@@ -19,6 +19,8 @@ export function registerConversationHandlers(
   authorizeSender: SenderAuthorizer,
 ): { dispose: () => void } {
   return registerGuardedHandlers(ipcMain, authorizeSender, [
+    [WISP_IPC_CHANNELS.getUserProfile, () => service.getUserProfile()],
+    [WISP_IPC_CHANNELS.saveUserProfile, (payload) => service.saveUserProfile(payload)],
     [WISP_IPC_CHANNELS.getConversationState, () => service.getState()],
     [
       WISP_IPC_CHANNELS.initializeConversations,

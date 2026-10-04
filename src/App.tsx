@@ -8,7 +8,7 @@ import { SearchDialog } from "@/components/search-dialog";
 import { Sidebar } from "@/components/sidebar";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { APP_METADATA } from "@/config/app-metadata";
-import { DEMO_CURRENT_USER } from "@/fixtures/demo-session";
+import { useUserProfile } from "@/hooks/use-user-profile";
 import { useResizablePanel } from "@/hooks/use-resizable-panel";
 import { useMobileLayout } from "@/hooks/use-mobile-layout";
 import { useWorkspaceController } from "@/features/workspace/use-workspace-controller";
@@ -18,6 +18,20 @@ import { cn } from "@/lib/utils";
 
 export default function App() {
   const workspace = useWorkspaceController();
+  const userProfile = useUserProfile();
+  const name = userProfile.profile.preferredName;
+  const currentUser = {
+    displayName: name || "Your profile",
+    givenName: name,
+    initials:
+      name
+        .split(/\s+/)
+        .filter(Boolean)
+        .slice(0, 2)
+        .map((part) => Array.from(part)[0])
+        .join("")
+        .toUpperCase() || "?",
+  };
   const mobile = useMobileLayout();
   const [mobilePage, setMobilePage] = useState<"list" | "chat">("list");
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
@@ -88,7 +102,7 @@ export default function App() {
           activeChatId={workspace.activeChatId}
           chats={workspace.chats}
           collapsed={sidebarCollapsed}
-          currentUser={DEMO_CURRENT_USER}
+          currentUser={currentUser}
           width={sidebarPanel.width}
           mobile={mobile}
           hidden={mobile && (mobilePage === "chat" || detailsOpen)}
@@ -157,9 +171,10 @@ export default function App() {
       <AppSettingsDialogHost
         ref={settingsDialog}
         appMetadata={APP_METADATA}
-        currentUser={DEMO_CURRENT_USER}
+        currentUser={currentUser}
         mobile={mobile}
         onOpenConversations={showConversations}
+        userProfile={userProfile}
         preferences={workspace.preferences}
         persistenceStatus={workspace.persistenceStatus}
         persistenceError={workspace.persistenceError}

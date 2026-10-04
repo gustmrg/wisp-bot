@@ -1,3 +1,5 @@
+import { EMPTY_USER_PROFILE, normalizeUserProfile, type UserProfile } from "../../shared/user-profile.js";
+import { writeFileAtomically } from "./atomic-file.js";
 import { randomUUID } from "node:crypto";
 import { mkdir, readFile, rename } from "node:fs/promises";
 import path from "node:path";
@@ -86,7 +88,7 @@ export class ConversationRepository {
   private readonly sessionRoot: string;
   private readonly configRoot: string;
   private readonly deletedRoot: string;
-  private readonly userName: string | undefined;
+  private profile: UserProfile = { ...EMPTY_USER_PROFILE };
   private readonly now: () => Date;
   private readonly createId: () => string;
   private state: PersistedConversationState = emptyState();
@@ -103,13 +105,27 @@ export class ConversationRepository {
     this.sessionRoot = path.join(options.dataDirectory, "pi-sessions");
     this.configRoot = path.join(options.dataDirectory, "pi-config");
     this.deletedRoot = path.join(options.dataDirectory, "deleted-conversations");
-    this.userName = normalizeUserName(options.userName);
+    this.profile.preferredName = normalizeUserName(options.userName) ?? "";
     this.now = options.now ?? (() => new Date());
     this.createId = options.createId ?? randomUUID;
   }
 
   async load(): Promise<void> {
     await mkdir(this.dataDirectory, { recursive: true });
+    try {
+      this.profile = normalizeUserProfile(
+        JSON.parse(await readFile(path.join(this.dataDirectory, "user-profile.json"), "utf8")),
+      );
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+        if (!(error instanceof SyntaxError) && (error as NodeJS.ErrnoException).code) throw error;
+        await rename(
+          path.join(this.dataDirectory, "user-profile.json"),
+          path.join(this.dataDirectory, `user-profile.json.corrupt-${Date.now()}`),
+        );
+        this.profile = { ...EMPTY_USER_PROFILE };
+      }
+    }
     let store: ConversationStore;
     let stored: PersistedConversationState | undefined;
     try {
@@ -128,6 +144,24 @@ export class ConversationRepository {
       return;
     }
     await this.migrateLegacyState(store);
+  }
+
+  getUserProfile(): UserProfile {
+    return { ...this.profile };
+  }
+
+  async saveUserProfile(value: unknown): Promise<UserProfile> {
+    let profile: UserProfile;
+    try {
+      profile = normalizeUserProfile(value);
+    } catch {
+      throw new WispBackendError("invalid_request", "The user profile is invalid.");
+    }
+    return this.enqueue(async () => {
+      await writeFileAtomically(path.join(this.dataDirectory, "user-profile.json"), JSON.stringify(profile));
+      this.profile = profile;
+      return this.getUserProfile();
+    });
   }
 
   isInitialized(): boolean {
@@ -171,7 +205,8 @@ export class ConversationRepository {
               name: chat.name,
               label: chat.label,
               description: chat.description,
-              ...(this.userName ? { userName: this.userName } : {}),
+              userName: this.profile.preferredName || undefined,
+              userProfile: this.getUserProfile(),
               workspaceDirectory: path.join(this.workspaceRoot, sessionId),
               sessionDirectory: path.join(this.sessionRoot, sessionId),
               configDirectory: path.join(this.configRoot, sessionId),
@@ -194,7 +229,8 @@ export class ConversationRepository {
       name: record.chat.name,
       label: record.chat.label,
       description: record.chat.description,
-      ...(this.userName ? { userName: this.userName } : {}),
+      userName: this.profile.preferredName || undefined,
+      userProfile: this.getUserProfile(),
       workspaceDirectory: path.join(this.workspaceRoot, record.sessionId),
       sessionDirectory: path.join(this.sessionRoot, record.sessionId),
       configDirectory: path.join(this.configRoot, record.sessionId),

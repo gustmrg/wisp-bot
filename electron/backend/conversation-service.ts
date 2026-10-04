@@ -55,6 +55,16 @@ export class ConversationService {
     await this.registry.restore(this.repository.listAgentContexts(), model);
   }
 
+  getUserProfile() {
+    return this.repository.getUserProfile();
+  }
+
+  async saveUserProfile(value: unknown) {
+    const profile = await this.repository.saveUserProfile(value);
+    await Promise.all(this.repository.listAgentContexts().map((context) => this.registry.updateContext(context)));
+    return profile;
+  }
+
   getState(): ConversationStateView {
     return {
       initialized: this.repository.isInitialized(),

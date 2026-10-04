@@ -7,7 +7,6 @@ import { Sidebar } from "@/components/sidebar";
 
 const currentUser: CurrentUser = {
   displayName: "Ada Lovelace",
-  email: "ada@example.test",
   givenName: "Ada",
   initials: "AL",
 };

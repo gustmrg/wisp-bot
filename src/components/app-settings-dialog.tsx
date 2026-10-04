@@ -1,3 +1,5 @@
+import { UserProfileSettings } from "@/components/user-profile-settings";
+import type { UserProfileController } from "@/hooks/use-user-profile";
 import { useEffect, useRef, useState } from "react";
 import {
   BarChart3Icon,
@@ -43,6 +45,7 @@ interface AppSettingsDialogProps {
   onOpenConversations?: () => void;
   appMetadata: AppMetadata;
   currentUser: CurrentUser;
+  userProfile: UserProfileController;
   open: boolean;
   initialSection?: "general" | "model";
   preferences: AppPreferences;
@@ -61,6 +64,7 @@ function AppSettingsDialog({
   mobile = false,
   onOpenConversations,
   currentUser,
+  userProfile,
   open,
   preferences,
   persistenceStatus,
@@ -142,7 +146,7 @@ function AppSettingsDialog({
       >
         <DialogHeader className="sr-only">
           <DialogTitle>Wisp settings</DialogTitle>
-          <DialogDescription>Manage your account and application preferences.</DialogDescription>
+          <DialogDescription>Manage your profile and application preferences.</DialogDescription>
         </DialogHeader>
         {mobile ? (
           <header className="mobile-settings-header">
@@ -270,20 +274,11 @@ function AppSettingsDialog({
           <h2 id="general-settings-title" className="mb-[22px] mt-0 text-[17px]">
             General
           </h2>
-          <SettingsGroup label="Account">
-            <SettingsCard>
-              <SettingsRow>
-                <span className={profileAvatar}>{currentUser.initials}</span>
-                <SettingsRowCopy>
-                  <strong className="text-[12.5px]">{currentUser.displayName}</strong>
-                  <small className="text-dim text-[11.5px]">{currentUser.email}</small>
-                </SettingsRowCopy>
-                <Button variant="secondary" size="sm" type="button">
-                  Sign out
-                </Button>
-              </SettingsRow>
-            </SettingsCard>
-          </SettingsGroup>
+          {userProfile.loading ? (
+            <p role="status">Loading profile…</p>
+          ) : (
+            <UserProfileSettings controller={userProfile} />
+          )}
           <SettingsGroup label="Application">
             <SettingsCard variant="stacked">
               <SettingsRow>
