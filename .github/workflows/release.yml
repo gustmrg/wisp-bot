@@ -3,26 +3,49 @@ name: Desktop release
 on:
   workflow_dispatch:
     inputs:
-      publish_release:
-        description: Publish release to GitHub Releases
+      version:
+        description: Version to release (patch, minor, major, or an exact version such as 1.2.3)
         required: true
-        type: boolean
-        default: true
+        type: string
+        default: patch
 
 permissions:
   contents: read
 
+concurrency:
+  group: desktop-release
+  cancel-in-progress: false
+
 jobs:
-  verify:
+  # Resolves the next version on top of main and runs every quality gate
+  # against the bumped tree. Nothing is committed or tagged until packaging
+  # succeeds, so a failed run leaves the repository untouched.
+  prepare:
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.bump.outputs.version }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22.19.0
           cache: npm
-      - run: node scripts/verify-release.mjs
       - run: npm ci
+      - id: bump
+        name: Resolve release version
+        env:
+          REQUESTED_VERSION: ${{ inputs.version }}
+        run: |
+          npm version "$REQUESTED_VERSION" --no-git-tag-version --allow-same-version
+          VERSION="$(node -p "require('./package.json').version")"
+          if git ls-remote --exit-code --tags origin "refs/tags/v$VERSION" >/dev/null; then
+            echo "::error::Tag v$VERSION already exists."
+            exit 1
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Releasing v$VERSION from $GITHUB_SHA."
+      - run: node scripts/verify-release.mjs "v${{ steps.bump.outputs.version }}"
       - run: npm run lint
       - run: npm run format:check
       - run: npm run typecheck
@@ -37,8 +60,18 @@ jobs:
           retention-days: 30
 
   package:
-    needs: verify
-    runs-on: macos-14
+    needs: prepare
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - os: macos-14
+            name: macos
+            builder-args: --mac dmg zip --x64 --arm64
+          - os: ubuntu-latest
+            name: linux
+            builder-args: --linux AppImage deb --x64
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -46,42 +79,65 @@ jobs:
           node-version: 22.19.0
           cache: npm
       - run: npm ci
-      - name: Build and package macOS
+      - run: npm version "${{ needs.prepare.outputs.version }}" --no-git-tag-version --allow-same-version
+      - name: Build and package
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
-        run: npm run build && npx electron-builder --mac dmg zip --x64 --arm64 --publish never
-      - name: Generate checksums
-        run: node scripts/checksums.mjs release
-      - name: Upload macOS artifacts
-        uses: actions/upload-artifact@v4
+        run: npm run build && npx electron-builder ${{ matrix.builder-args }} --publish never
+      - uses: actions/upload-artifact@v4
         with:
-          name: desktop-macos
+          name: desktop-${{ matrix.name }}
           path: |
             release/*.dmg
             release/*.zip
-            release/*.yml
+            release/*.AppImage
+            release/*.deb
+            release/latest*.yml
             release/*.blockmap
-            release/SHA256SUMS.txt
           if-no-files-found: error
           retention-days: 30
 
+  # Commits the version bump, tags it, and publishes the release only after
+  # every gate and both packaging jobs have passed.
   release:
-    if: inputs.publish_release
-    needs: package
+    needs: [prepare, package]
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
       - uses: actions/checkout@v4
-      - run: node scripts/verify-release.mjs
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.19.0
+      - name: Commit and tag the version
+        env:
+          VERSION: ${{ needs.prepare.outputs.version }}
+        run: |
+          npm version "$VERSION" --no-git-tag-version --allow-same-version
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if ! git diff --quiet -- package.json package-lock.json; then
+            git add package.json package-lock.json
+            git commit -m "chore(release): prepare v$VERSION"
+          fi
+          git tag "v$VERSION"
+          # Atomic, so main and the tag move together or not at all. A push to
+          # main during the run makes this fail rather than overwrite it.
+          git push --atomic origin "HEAD:refs/heads/main" "refs/tags/v$VERSION"
       - uses: actions/download-artifact@v4
         with:
           path: artifacts
-      - env:
+          merge-multiple: true
+      - name: Generate checksums
+        run: node scripts/checksums.mjs artifacts
+      - name: Publish GitHub release
+        env:
           GH_TOKEN: ${{ github.token }}
+          TAG: v${{ needs.prepare.outputs.version }}
         run: |
-          TAG="v$(node -p "require('./package.json').version")"
-          if ! gh release view "$TAG" >/dev/null 2>&1; then
-            gh release create "$TAG" --verify-tag --title "Wisp Bot $TAG" --generate-notes
-          fi
-          find artifacts -type f -exec gh release upload "$TAG" --clobber {} +
+          # Prerelease versions (1.2.0-beta.1) feed only the beta update channel
+          # and must not become the latest release.
+          FLAGS=()
+          if [[ "$TAG" == *-* ]]; then FLAGS+=(--prerelease); fi
+          gh release create "$TAG" --verify-tag --title "Wisp Bot $TAG" --generate-notes "${FLAGS[@]}"
+          gh release upload "$TAG" --clobber artifacts/*

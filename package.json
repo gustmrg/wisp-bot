@@ -14,6 +14,7 @@
   "author": "Gustavo Miranda",
   "type": "commonjs",
   "main": "dist-electron/electron/main.js",
+  "desktopName": "wisp-bot.desktop",
   "scripts": {
     "dev": "concurrently --kill-others \"npm:dev:renderer\" \"npm:dev:electron\"",
     "dev:renderer": "vite --configLoader bundle",
@@ -101,6 +102,28 @@
         "dmg",
         "zip"
       ]
+    },
+    "linux": {
+      "icon": "build/icon.png",
+      "category": "Utility",
+      "executableName": "wisp-bot",
+      "maintainer": "Gustavo Miranda",
+      "synopsis": "A squad of AI agents that get things done.",
+      "target": [
+        {
+          "target": "AppImage",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "deb",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "syncDesktopName": true
     },
     "win": {
       "icon": "build/icon.ico",
