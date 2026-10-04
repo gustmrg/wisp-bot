@@ -8,10 +8,20 @@ describe("PiEventTranslator", () => {
     const events: ConversationAgentEvent[] = [];
     const translator = new PiEventTranslator("wisp-1", (event) => events.push(event), 0);
     translator.begin({ conversationId: "wisp-1", requestId: "plugins-1", text: "Search" });
-    for (const toolName of ["web_search", "linear_update_issue", "unknown_plugin", "constructor", "bash"])
+    for (const toolName of [
+      "web_search",
+      "web_read",
+      "firecrawl_scrape",
+      "linear_update_issue",
+      "unknown_plugin",
+      "constructor",
+      "bash",
+    ])
       translator.handle({ type: "tool_execution_start", toolCallId: `call-${toolName}`, toolName });
     expect(events.filter((event) => event.type === "tool_activity").map((event) => event.toolName)).toEqual([
       "web_search",
+      "web_read",
+      "firecrawl_scrape",
       "linear_update_issue",
     ]);
     translator.dispose();

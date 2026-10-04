@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { getToolMetadata } from "../shared/tool-catalog.js";
+import { BUILTIN_TOOL_NAMES, getToolMetadata } from "../shared/tool-catalog.js";
 import { PLUGIN_ADAPTERS } from "../electron/backend/plugin-adapters.js";
 import { sanitizeBackendError } from "../electron/backend/backend-error.js";
 
@@ -42,7 +42,9 @@ describe("built-in plugin adapters", () => {
   it("registers every plugin tool in the conversation agent discovery catalog", () => {
     for (const adapter of PLUGIN_ADAPTERS) {
       for (const spec of adapter.tools) {
-        expect(getToolMetadata(spec.name)?.pluginId).toBe(adapter.id);
+        const metadata = getToolMetadata(spec.name);
+        expect(metadata?.pluginIds ?? [metadata?.pluginId]).toContain(adapter.id);
+        expect(BUILTIN_TOOL_NAMES).not.toContain(spec.name);
       }
     }
   });
@@ -64,6 +66,7 @@ describe("built-in plugin adapters", () => {
       redirect: "error",
     });
     expect(result).toEqual({
+      provider: "brave",
       query: "a query & more",
       results: [{ title: "Example", url: "https://example.com", snippet: "Snippet" }],
       moreResultsAvailable: true,
@@ -73,7 +76,7 @@ describe("built-in plugin adapters", () => {
 
   it.each([
     ["web_search", { query: "" }],
-    ["web_search", { query: "x".repeat(601) }],
+    ["web_search", { query: "x".repeat(501) }],
     ["web_search", { query: "a ".repeat(76) }],
     ["web_search", { query: "x", count: 11 }],
     ["web_search", { query: "x", count: 1.2 }],
@@ -349,12 +352,56 @@ describe("built-in plugin adapters", () => {
 });
 
 describe("Firecrawl", () => {
+  const search = PLUGIN_ADAPTERS.find(({ id }) => id === "firecrawl")!.tools.find(({ name }) => name === "web_search")!;
+
+  it("searches with the shared contract and returns sources without scraping results", async () => {
+    const fetchMock = mockJson({
+      success: true,
+      data: { web: [{ title: "Example", url: "https://example.com", description: "Snippet" }, { title: "Ignored" }] },
+    });
+    const result = JSON.parse(await search.execute(KEY, { query: "a query", count: 1 }));
+    expect(fetchMock.mock.calls[0]?.[0]).toBe("https://api.firecrawl.dev/v2/search");
+    expect(fetchMock.mock.calls[0]?.[1]).toMatchObject({
+      method: "POST",
+      headers: { Authorization: `Bearer ${KEY}` },
+      redirect: "error",
+    });
+    expect(requestBody(fetchMock)).toEqual({ query: "a query", limit: 1, sources: ["web"], timeout: 20_000 });
+    expect(result).toEqual({
+      provider: "firecrawl",
+      query: "a query",
+      results: [{ title: "Example", url: "https://example.com", snippet: "Snippet" }],
+      moreResultsAvailable: null,
+    });
+    expect(JSON.stringify(result)).not.toContain(KEY);
+  });
+
+  it.each([
+    { query: "" },
+    { query: "x".repeat(501) },
+    { query: "a ".repeat(76) },
+    { query: "example", count: 11 },
+    { query: "example", count: 1.5 },
+    { query: "example", scrapeOptions: {} },
+  ])("rejects invalid search arguments %j before fetching", async (input) => {
+    const fetchMock = mockJson({});
+    await expect(search.execute(KEY, input)).rejects.toMatchObject({ code: "invalid_request" });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("handles empty searches and rejects malformed search responses", async () => {
+    mockJson({ success: true, data: { web: [] } });
+    expect(JSON.parse(await search.execute(KEY, { query: "example" })).results).toEqual([]);
+    mockJson({ success: true, data: {} });
+    await expect(search.execute(KEY, { query: "example" })).rejects.toThrow("invalid search result");
+  });
+
   it("reads bounded Markdown through the fixed API endpoint", async () => {
     const fetchMock = mockJson({
       success: true,
       data: { markdown: "x".repeat(30_000), metadata: { title: "Example" } },
     });
-    const result = JSON.parse(await tool("firecrawl_scrape").execute(KEY, { url: "https://example.com" }));
+    const result = JSON.parse(await tool("web_read").execute(KEY, { url: "https://example.com" }));
     expect(fetchMock.mock.calls[0]?.[0]).toBe("https://api.firecrawl.dev/v2/scrape");
     expect(fetchMock.mock.calls[0]?.[1]).toMatchObject({
       headers: { Authorization: `Bearer ${KEY}` },
@@ -368,14 +415,14 @@ describe("Firecrawl", () => {
     });
     expect(result).toMatchObject({ url: "https://example.com", title: "Example", truncated: true });
     expect(result.markdown.length).toBeLessThan(21_000);
-    expect(tool("firecrawl_scrape").access).toBe("read");
+    expect(tool("web_read").access).toBe("read");
   });
 
   it.each(["file:///etc/passwd", "https://user:secret@example.com", "not a URL"])(
     "rejects invalid URL %s before fetching",
     async (url) => {
       const fetchMock = mockJson({});
-      await expect(tool("firecrawl_scrape").execute(KEY, { url })).rejects.toMatchObject({ code: "invalid_request" });
+      await expect(tool("web_read").execute(KEY, { url })).rejects.toMatchObject({ code: "invalid_request" });
       expect(fetchMock).not.toHaveBeenCalled();
     },
   );
@@ -391,7 +438,7 @@ describe("Firecrawl", () => {
 
   it("does not expose provider error payloads", async () => {
     mockJson({ success: false, error: KEY });
-    await expect(tool("firecrawl_scrape").execute(KEY, { url: "https://example.com" })).rejects.toThrow(
+    await expect(tool("web_read").execute(KEY, { url: "https://example.com" })).rejects.toThrow(
       "Firecrawl could not complete the request.",
     );
   });

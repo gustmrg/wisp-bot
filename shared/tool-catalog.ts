@@ -8,6 +8,8 @@ export interface ToolMetadata {
   activityLabel: string;
   category: ToolActionCategory;
   pluginId?: PluginId;
+  /** Providers of a shared capability; this does not grant plugin access. */
+  pluginIds?: ReadonlyArray<PluginId>;
   /** Set for dynamically discovered MCP tools; references the owning server. */
   mcpServerId?: string;
 }
@@ -44,6 +46,14 @@ export const TOOL_CATALOG: ReadonlyArray<ToolMetadata> = [
     category: "search",
   },
   {
+    name: "web_read",
+    label: "Read web page",
+    activityLabel: "Reading a web page…",
+    category: "read",
+    pluginId: "firecrawl",
+  },
+  // Preserve display metadata for saved conversations using the old name.
+  {
     name: "firecrawl_scrape",
     label: "Read web page",
     activityLabel: "Reading a web page…",
@@ -55,7 +65,7 @@ export const TOOL_CATALOG: ReadonlyArray<ToolMetadata> = [
     label: "Search web",
     activityLabel: "Searching the web…",
     category: "search",
-    pluginId: "web-search",
+    pluginIds: ["web-search", "firecrawl"],
   },
   {
     name: "linear_search_issues",
@@ -151,7 +161,9 @@ function boundedText(value: string, maxLength: number): string {
   return normalized.slice(0, maxLength);
 }
 
-export const BUILTIN_TOOL_NAMES = TOOL_CATALOG.filter(({ pluginId }) => !pluginId).map(({ name }) => name);
+export const BUILTIN_TOOL_NAMES = TOOL_CATALOG.filter(({ pluginId, pluginIds }) => !pluginId && !pluginIds).map(
+  ({ name }) => name,
+);
 
 export function getToolMetadata(name: string): ToolMetadata | undefined {
   return metadataByName.get(name);

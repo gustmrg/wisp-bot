@@ -23,9 +23,9 @@ or permission to write.
 
 | Plugin | Access | Tools |
 | --- | --- | --- |
-| Web search | `none`, `read` | `web_search`: titles, URLs, and snippets; no page browser or arbitrary URL fetch |
+| Web search | `none`, `read` | `web_search`: shared search capability supplied by Brave (preferred) or Firecrawl; titles, URLs, and snippets |
 | Linear | `none`, `read`, `write` | `linear_search_issues`, `linear_get_issue`, `linear_list_teams`, `linear_list_statuses`; write also enables `linear_create_issue` and `linear_update_issue` |
-| Firecrawl | `none`, `read` | `firecrawl_scrape`: read a web page as Markdown with a bounded response; no crawling or arbitrary POST |
+| Firecrawl | `none`, `read` | `web_search` and `web_read`: search for sources and read a web page as bounded Markdown; no browser interaction or arbitrary POST |
 
 Brave calls `GET https://api.search.brave.com/res/v1/web/search` with the API key
 in `X-Subscription-Token`, following the [Web Search documentation](https://api-dashboard.search.brave.com/documentation/services/web-search).

@@ -31,6 +31,12 @@ import {
   pluginRecord,
 } from "./plugin-validation.js";
 import type { ToolAuthorizationBroker } from "./tool-authorization-broker.js";
+import { isSharedWebTool } from "./web-tools.js";
+
+interface PluginToolBinding {
+  pluginId: PluginId;
+  tool: PluginToolSpec;
+}
 
 type AccessMap = Partial<Record<PluginId, PluginAccess>>;
 interface PluginState {
@@ -243,24 +249,55 @@ export class PluginService implements PluginToolSource, IntegrationToolSource {
 
   getTools(conversationId: string): ToolDefinition[] {
     const sessionId = this.options.resolveWisp(conversationId);
-    return this.adapters.flatMap((adapter) =>
-      adapter.tools.map(
-        (tool): ToolDefinition => ({
-          name: tool.name,
-          label: tool.label,
-          description: tool.description,
-          parameters: tool.parameters,
-          execute: async (toolCallId, params, signal) => ({
+    const bindings = new Map<string, PluginToolBinding>();
+    for (const adapter of this.adapters) {
+      for (const tool of adapter.tools) {
+        if (bindings.has(tool.name)) {
+          if (!isSharedWebTool(tool.name)) throw new Error(`Plugin tool name collision: ${tool.name}`);
+          continue;
+        }
+        bindings.set(tool.name, { pluginId: adapter.id, tool });
+      }
+    }
+    return [...bindings.values()].map(
+      ({ pluginId, tool }): ToolDefinition => ({
+        name: tool.name,
+        label: tool.label,
+        description: tool.description,
+        parameters: tool.parameters,
+        execute: async (toolCallId, params, signal) => {
+          let binding = { pluginId, tool };
+          if (isSharedWebTool(tool.name)) {
+            signal?.throwIfAborted();
+            this.assertLive();
+            if (this.options.resolveWisp(conversationId) !== sessionId)
+              throw new WispBackendError("tool_blocked", "This Wisp no longer has access to the plugin.");
+            const active = (await this.getActiveBindings(conversationId)).find(
+              ({ tool: candidate }) => candidate.name === tool.name,
+            );
+            signal?.throwIfAborted();
+            if (!active) throw new WispBackendError("tool_blocked", "No connected web plugin is granted to this Wisp.");
+            binding = active;
+          }
+          return {
             content: [
               {
                 type: "text",
-                text: await this.execute(conversationId, sessionId, adapter.id, tool, toolCallId, params, signal),
+                text: await this.execute(
+                  conversationId,
+                  sessionId,
+                  binding.pluginId,
+                  binding.tool,
+                  toolCallId,
+                  params,
+                  signal,
+                ),
               },
             ],
             details: {},
-          }),
-        }),
-      ),
+          };
+        },
+      }),
     );
   }
 
@@ -268,12 +305,13 @@ export class PluginService implements PluginToolSource, IntegrationToolSource {
   async getSnapshot(conversationId: string): Promise<IntegrationToolSnapshot> {
     this.assertLive();
     const definitions = this.getTools(conversationId);
-    const activeNames = await this.getActiveToolNames(conversationId);
+    const bindings = await this.getActiveBindings(conversationId);
+    const activeNames = [...new Set(bindings.map(({ tool }) => tool.name))];
     return {
       definitions,
       metadata: definitions.flatMap(({ name }) => {
         const catalogMetadata = getToolMetadata(name);
-        return catalogMetadata?.pluginId
+        return catalogMetadata?.pluginId || catalogMetadata?.pluginIds
           ? [
               {
                 name,
@@ -285,11 +323,15 @@ export class PluginService implements PluginToolSource, IntegrationToolSource {
           : [];
       }),
       activeNames,
-      revision: snapshotRevision(activeNames),
+      revision: snapshotRevision(bindings.map(({ pluginId, tool }) => `${pluginId}:${tool.name}`)),
     };
   }
 
   async getActiveToolNames(conversationId: string): Promise<string[]> {
+    return [...new Set((await this.getActiveBindings(conversationId)).map(({ tool }) => tool.name))];
+  }
+
+  private async getActiveBindings(conversationId: string): Promise<PluginToolBinding[]> {
     this.assertLive();
     const sessionId = this.options.resolveWisp(conversationId);
     if (
@@ -310,7 +352,7 @@ export class PluginService implements PluginToolSource, IntegrationToolSource {
       const access = this.access(sessionId, adapter.id);
       return adapter.tools
         .filter((tool) => access === "write" || (access === "read" && tool.access === "read"))
-        .map(({ name }) => name);
+        .map((tool) => ({ pluginId: adapter.id, tool }));
     });
   }
 
