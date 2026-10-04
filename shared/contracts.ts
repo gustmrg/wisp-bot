@@ -20,7 +20,7 @@ import type {
 import type {
   AnswerConversationPromptRequest,
   AppendConversationMessageRequest,
-  Chat,
+  ConversationDelta,
   ConversationStateView,
   MessagePage,
   MessagePageRequest,
@@ -366,16 +366,16 @@ export interface WispApi {
   createConversation(request: CreateConversationRequest): Promise<BackendResult<ConversationStateView>>;
   updateConversation(request: UpdateConversationRequest): Promise<BackendResult<ConversationStateView>>;
   deleteConversation(request: DeleteConversationRequest): Promise<BackendResult<ConversationStateView>>;
-  // Single-chat changes return only that chat; structural changes above return the full state.
-  appendConversationMessage(request: AppendConversationMessageRequest): Promise<BackendResult<Chat>>;
-  answerConversationPrompt(request: AnswerConversationPromptRequest): Promise<BackendResult<Chat>>;
-  markConversationRead(request: MarkConversationReadRequest): Promise<BackendResult<Chat>>;
+  // Single-chat changes return only what changed; structural changes above return the full state.
+  appendConversationMessage(request: AppendConversationMessageRequest): Promise<BackendResult<ConversationDelta>>;
+  answerConversationPrompt(request: AnswerConversationPromptRequest): Promise<BackendResult<ConversationDelta>>;
+  markConversationRead(request: MarkConversationReadRequest): Promise<BackendResult<ConversationDelta>>;
   /** One page of a transcript, read from the backend store. */
   getConversationMessages(request: MessagePageRequest): Promise<BackendResult<MessagePage>>;
   /** Newest matching messages first. The query must have at least 3 characters. */
   searchMessages(request: SearchMessagesRequest): Promise<BackendResult<ReadonlyArray<MessageSearchHit>>>;
-  /** Pushes a chat after the backend persists agent-driven changes to it (replies, statuses, context notices). */
-  subscribeToConversationChanges(listener: (chat: Chat) => void): () => void;
+  /** Pushes what changed after the backend persists agent-driven changes (replies, statuses, context notices). */
+  subscribeToConversationChanges(listener: (delta: ConversationDelta) => void): () => void;
   getSessionReport(request: ConversationRequest): Promise<BackendResult<WispSessionReport | null>>;
   getUsageReport(request: UsageReportRequest): Promise<BackendResult<UsageReport>>;
   getToolPolicy(): Promise<BackendResult<ToolPolicySettings>>;

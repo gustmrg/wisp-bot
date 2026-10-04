@@ -217,7 +217,6 @@ describe("WispPluginSettings", () => {
           notifyOnUpdatesEnabled: true,
           preview: "Ready",
           timestamp: "Now",
-          messages: [],
         }}
         onChange={vi.fn()}
       />,

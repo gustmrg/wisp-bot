@@ -139,7 +139,7 @@ export async function createBackend(host: BackendHost): Promise<Backend> {
     conversationRepository,
     registry,
     () => toolAuthorizationBroker.listPending(),
-    { logger, onChatChanged: (chat) => broadcast(WISP_IPC_CHANNELS.conversationChanged, chat) },
+    { logger, onConversationChanged: (delta) => broadcast(WISP_IPC_CHANNELS.conversationChanged, delta) },
   );
   conversationService = service;
   await service.start(await modelService.getSelection());

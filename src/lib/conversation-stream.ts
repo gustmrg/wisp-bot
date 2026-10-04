@@ -1,5 +1,5 @@
 import type { BackendError, ConversationAgentEvent, SequencedConversationAgentEvent } from "../../shared/contracts";
-import type { ChatCollection, ManagedConversationStatus, Message, TextMessage } from "../../shared/conversations";
+import type { ManagedConversationStatus, Message, TextMessage } from "../../shared/conversations";
 import type { ToolApprovalRequest } from "../../shared/tool-policy";
 import { describeMcpAlias, getToolMetadata } from "../../shared/tool-catalog";
 
@@ -20,15 +20,26 @@ export interface ConversationRuntimeState {
   approvals: Record<string, ReadonlyArray<ToolApprovalRequest>>;
 }
 
+/** Stored state the stream reads: which conversations exist, and the messages loaded for them. */
+export interface StoredConversations {
+  chats: Readonly<Record<string, unknown>>;
+  windows: Readonly<Record<string, { messages: ReadonlyArray<Message> } | undefined>>;
+}
+
+/**
+ * `liveMessages` are the messages the backend had not stored yet at `sequence`
+ * (replies still streaming or being saved), so later events apply on top of them.
+ */
 export function createConversationRuntime(
   sequence: number,
   statuses: Record<string, ManagedConversationStatus>,
   pendingApprovals: ReadonlyArray<ToolApprovalRequest> = [],
+  liveMessages: Record<string, ReadonlyArray<Message>> = {},
 ): ConversationRuntimeState {
   return {
     sequence,
     statuses,
-    messages: {},
+    messages: liveMessages,
     errors: {},
     activity: {},
     toolActivities: {},
@@ -63,7 +74,7 @@ export function stageOutgoingMessage(
 
 export function markOutgoingFailed(
   state: ConversationRuntimeState,
-  chats: ChatCollection,
+  stored: StoredConversations,
   conversationId: string,
   requestId: string,
   error: BackendError,
@@ -72,7 +83,7 @@ export function markOutgoingFailed(
     ...state,
     errors: { ...state.errors, [conversationId]: error },
   };
-  const outgoing = findMessage(next, chats, conversationId, requestId);
+  const outgoing = findMessage(next, stored, conversationId, requestId);
   if (outgoing?.type === "outgoing") {
     next = setRuntimeMessage(next, conversationId, { ...outgoing, id: requestId, status: "failed" });
   }
@@ -89,11 +100,11 @@ export function markOutgoingFailed(
 export function reduceConversationAgentEvent(
   state: ConversationRuntimeState,
   event: SequencedConversationAgentEvent,
-  chats: ChatCollection,
+  stored: StoredConversations,
 ): ConversationRuntimeState {
   if (event.sequence <= state.sequence) return state;
   let next: ConversationRuntimeState = { ...state, sequence: event.sequence };
-  if (!chats[event.conversationId]) return next;
+  if (!stored.chats[event.conversationId]) return next;
 
   switch (event.type) {
     case "conversation_context_renewed":
@@ -112,7 +123,7 @@ export function reduceConversationAgentEvent(
         activity: event.status === "idle" ? { ...next.activity, [event.conversationId]: undefined } : next.activity,
       };
     case "assistant_message_started": {
-      const outgoing = findMessage(next, chats, event.conversationId, event.requestId);
+      const outgoing = findMessage(next, stored, event.conversationId, event.requestId);
       if (outgoing?.type === "outgoing") {
         next = setRuntimeMessage(next, event.conversationId, {
           ...outgoing,
@@ -136,7 +147,7 @@ export function reduceConversationAgentEvent(
       );
     }
     case "assistant_text_delta": {
-      const current = findMessage(next, chats, event.conversationId, event.messageId);
+      const current = findMessage(next, stored, event.conversationId, event.messageId);
       return setRuntimeMessage(next, event.conversationId, {
         id: event.messageId,
         type: "incoming",
@@ -146,9 +157,9 @@ export function reduceConversationAgentEvent(
       });
     }
     case "assistant_message_completed":
-      return finalizeAssistant(next, chats, event.conversationId, event.messageId, "complete");
+      return finalizeAssistant(next, stored, event.conversationId, event.messageId, "complete");
     case "assistant_message_cancelled":
-      return finalizeAssistant(next, chats, event.conversationId, event.messageId, "cancelled");
+      return finalizeAssistant(next, stored, event.conversationId, event.messageId, "cancelled");
     case "conversation_error": {
       next = {
         ...next,
@@ -156,7 +167,7 @@ export function reduceConversationAgentEvent(
         activity: { ...next.activity, [event.conversationId]: undefined },
       };
       if (!event.requestId) return next;
-      const outgoing = findMessage(next, chats, event.conversationId, event.requestId);
+      const outgoing = findMessage(next, stored, event.conversationId, event.requestId);
       if (outgoing?.type === "outgoing") {
         next = setRuntimeMessage(next, event.conversationId, {
           ...outgoing,
@@ -165,7 +176,7 @@ export function reduceConversationAgentEvent(
         });
       }
       const assistantId = `${event.requestId}:assistant`;
-      const assistant = findMessage(next, chats, event.conversationId, assistantId);
+      const assistant = findMessage(next, stored, event.conversationId, assistantId);
       return setRuntimeMessage(next, event.conversationId, {
         id: assistantId,
         type: "incoming",
@@ -223,7 +234,7 @@ export function reduceConversationAgentEvent(
 
 export function reconcileConversationRuntime(
   state: ConversationRuntimeState,
-  chats: ChatCollection,
+  chats: Readonly<Record<string, unknown>>,
   statuses: Record<string, ManagedConversationStatus>,
 ): ConversationRuntimeState {
   const conversationIds = new Set(Object.keys(chats));
@@ -246,33 +257,24 @@ export function reconcileConversationRuntime(
 }
 
 /**
- * Drops transient copies once the backend has stored the same message in the
- * same settled state; from then on the stored copy is authoritative. Queued and
- * streaming copies stay because they are newer than any stored snapshot.
+ * Drops a conversation's transient copies once `stored` holds the same message
+ * in the same settled state; from then on the stored copy is authoritative.
+ * Queued and streaming copies stay because they are newer than anything stored.
  */
 export function pruneSettledRuntimeMessages(
   state: ConversationRuntimeState,
-  chats: ChatCollection,
+  conversationId: string,
+  stored: ReadonlyArray<Message>,
 ): ConversationRuntimeState {
-  let changed = false;
-  const messages: Record<string, ReadonlyArray<Message>> = {};
-  for (const [conversationId, transient] of Object.entries(state.messages)) {
-    const settled = transient.filter(isSettled);
-    if (settled.length === 0) {
-      messages[conversationId] = transient;
-      continue;
-    }
-    const stored = new Map(
-      (chats[conversationId]?.messages ?? []).flatMap((message) => (message.id ? [[message.id, message]] : [])),
-    );
-    const kept = transient.filter((message) => {
-      const persisted = message.id ? stored.get(message.id) : undefined;
-      return !(persisted && isSettled(message) && isSettled(persisted) && statusOf(persisted) === statusOf(message));
-    });
-    if (kept.length !== transient.length) changed = true;
-    messages[conversationId] = kept;
-  }
-  return changed ? { ...state, messages } : state;
+  const transient = state.messages[conversationId];
+  if (!transient?.some(isSettled)) return state;
+  const storedById = new Map(stored.flatMap((message) => (message.id ? [[message.id, message]] : [])));
+  const kept = transient.filter((message) => {
+    const persisted = message.id ? storedById.get(message.id) : undefined;
+    return !(persisted && isSettled(message) && isSettled(persisted) && statusOf(persisted) === statusOf(message));
+  });
+  if (kept.length === transient.length) return state;
+  return { ...state, messages: { ...state.messages, [conversationId]: kept } };
 }
 
 function statusOf(message: Message): string {
@@ -308,32 +310,40 @@ export function removePendingRequest(
 
 export function retainPendingConversations(
   pending: Record<string, ReadonlyArray<string>>,
-  chats: ChatCollection,
+  chats: Readonly<Record<string, unknown>>,
 ): Record<string, ReadonlyArray<string>> {
   return Object.fromEntries(Object.entries(pending).filter(([conversationId]) => Boolean(chats[conversationId])));
 }
 
+/**
+ * A window's messages as they should be shown: transient copies replace the
+ * stored ones, and transient messages the window does not hold follow it when
+ * it is attached, since they belong at the end of the transcript.
+ */
 export function overlayRuntimeMessages(
-  chats: ChatCollection,
-  runtimeMessages: ConversationRuntimeState["messages"],
-): ChatCollection {
+  messages: ReadonlyArray<Message>,
+  transient: ReadonlyArray<Message>,
+  attached: boolean,
+): ReadonlyArray<Message> {
+  if (transient.length === 0) return messages;
+  const replacements = new Map(transient.flatMap((message) => (message.id ? [[message.id, message]] : [])));
+  const held = new Set<string>();
   let changed = false;
-  const result: ChatCollection = { ...chats };
-  for (const [conversationId, transient] of Object.entries(runtimeMessages)) {
-    const chat = chats[conversationId];
-    if (!chat || transient.length === 0) continue;
-    const replacements = new Map(transient.flatMap((message) => (message.id ? [[message.id, message]] : [])));
-    const existingIds = new Set(chat.messages.flatMap((message) => (message.id ? [message.id] : [])));
-    const messages = chat.messages.map((message) =>
-      message.id && replacements.has(message.id) ? replacements.get(message.id)! : message,
-    );
-    for (const message of transient) {
-      if (!message.id || !existingIds.has(message.id)) messages.push(message);
-    }
-    result[conversationId] = { ...chat, messages };
+  const result = messages.map((message) => {
+    const replacement = message.id ? replacements.get(message.id) : undefined;
+    if (!replacement?.id) return message;
+    held.add(replacement.id);
     changed = true;
+    return replacement;
+  });
+  if (attached) {
+    for (const message of transient) {
+      if (message.id && held.has(message.id)) continue;
+      result.push(message);
+      changed = true;
+    }
   }
-  return changed ? result : chats;
+  return changed ? result : messages;
 }
 
 export function getRuntimeMessage(
@@ -355,12 +365,12 @@ export function removeRuntimeMessage(
 
 function finalizeAssistant(
   state: ConversationRuntimeState,
-  chats: ChatCollection,
+  stored: StoredConversations,
   conversationId: string,
   messageId: string,
   status: "complete" | "cancelled",
 ): ConversationRuntimeState {
-  const current = findMessage(state, chats, conversationId, messageId);
+  const current = findMessage(state, stored, conversationId, messageId);
   return setRuntimeMessage(state, conversationId, {
     id: messageId,
     type: "incoming",
@@ -390,13 +400,13 @@ function setRuntimeMessage(
 
 function findMessage(
   state: ConversationRuntimeState,
-  chats: ChatCollection,
+  stored: StoredConversations,
   conversationId: string,
   messageId: string,
 ): Message | undefined {
   return (
     getRuntimeMessage(state, conversationId, messageId) ??
-    chats[conversationId]?.messages.find(({ id }) => id === messageId)
+    stored.windows[conversationId]?.messages.find(({ id }) => id === messageId)
   );
 }
 

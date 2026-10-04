@@ -7,13 +7,18 @@ import type {
   SequencedConversationAgentEvent,
   WispApi,
 } from "../../shared/contracts";
-import type {
-  Chat,
-  ChatChanges,
-  ChatCollection,
-  ConversationStateView,
-  ManagedConversationStatus,
-  OutgoingMessage,
+import {
+  chatSummary,
+  type Chat,
+  type ChatChanges,
+  type ChatSummaryCollection,
+  type ConversationDelta,
+  type ConversationStateView,
+  type ManagedConversationStatus,
+  type Message,
+  type MessagePage,
+  type MessagePageRequest,
+  type OutgoingMessage,
 } from "../../shared/conversations";
 import type { ToolApprovalDecision, ToolApprovalRequest } from "../../shared/tool-policy";
 import { LEGACY_CONVERSATIONS_STORAGE_KEY, MAX_LEGACY_BLOB_BYTES } from "@/features/persistence/storage-policy";
@@ -31,19 +36,31 @@ import {
   retainPendingConversations,
   stageOutgoingMessage,
   type ConversationRuntimeState,
+  type StoredConversations,
   type ToolActivityView,
 } from "@/lib/conversation-stream";
+import {
+  applyDeltaToWindow,
+  extendWindow,
+  isAttached,
+  touchOpened,
+  windowFromPage,
+  type MessageWindow,
+} from "@/lib/message-windows";
 
 export const LEGACY_STORAGE_KEY = LEGACY_CONVERSATIONS_STORAGE_KEY;
 
-const EMPTY_STATE: ConversationStateView = {
-  initialized: false,
-  chats: {},
-  statuses: {},
-  agentEventSequence: 0,
-  pendingToolApprovals: [],
-  recoveredCorruptState: false,
-};
+const NO_MESSAGES: ReadonlyArray<Message> = [];
+
+/**
+ * A page request in flight. Changes that arrive meanwhile are applied again
+ * once the page lands, because the page may have been read before them.
+ */
+interface PageLoad {
+  /** Replaces the window (latest or around a message) rather than extending it. */
+  replaces: boolean;
+  deltas: ConversationDelta[];
+}
 
 function legacyChats(storage: Pick<Storage, "getItem">): unknown {
   try {
@@ -77,7 +94,9 @@ export async function bootstrapConversationState(
 }
 
 export interface ConversationsController {
-  chats: ChatCollection;
+  chats: ChatSummaryCollection;
+  /** Transcript windows of the conversations opened most recently, with messages still in flight overlaid. */
+  windows: Record<string, MessageWindow>;
   statuses: Record<string, ManagedConversationStatus>;
   activity: Record<string, string | undefined>;
   conversationErrors: Record<string, BackendError | undefined>;
@@ -92,6 +111,12 @@ export interface ConversationsController {
   appendMessage: (conversationId: string, message: OutgoingMessage) => Promise<boolean>;
   answerPrompt: (conversationId: string, messageId: string, answer: string) => Promise<boolean>;
   markRead: (conversationId: string) => Promise<boolean>;
+  /** Shows a conversation at its newest messages, loading them unless its window already reaches them. */
+  openConversation: (conversationId: string) => void;
+  /** Shows a conversation around one message, such as a search result. */
+  openMessage: (conversationId: string, messageId: string) => Promise<void>;
+  loadOlderMessages: (conversationId: string) => void;
+  loadNewerMessages: (conversationId: string) => void;
   sendMessage: (conversationId: string, text: string) => Promise<boolean>;
   retryMessage: (conversationId: string, requestId: string) => Promise<boolean>;
   abort: (conversationId: string) => Promise<boolean>;
@@ -99,28 +124,31 @@ export interface ConversationsController {
 }
 
 export function useConversations(): ConversationsController {
-  const [state, setState] = useState<ConversationStateView>(EMPTY_STATE);
+  const [chats, setChats] = useState<ChatSummaryCollection>({});
+  const [windows, setWindows] = useState<Record<string, MessageWindow>>({});
   const [runtime, setRuntime] = useState<ConversationRuntimeState>(() => createConversationRuntime(0, {}));
   const [pendingAcknowledgements, setPendingAcknowledgements] = useState<Record<string, ReadonlyArray<string>>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const mutationQueue = useRef<Promise<void>>(Promise.resolve());
-  const stateRef = useRef(state);
+  const chatsRef = useRef(chats);
+  const windowsRef = useRef(windows);
   const runtimeRef = useRef(runtime);
+  const openedRef = useRef<ReadonlyArray<string>>([]);
+  const loadsRef = useRef(new Map<string, PageLoad>());
+  const epochRef = useRef(0);
   const readyRef = useRef(false);
   const bufferedEvents = useRef<SequencedConversationAgentEvent[]>([]);
   const processEventRef = useRef<(event: SequencedConversationAgentEvent) => void>(() => undefined);
 
-  const replaceState = useCallback((next: ConversationStateView): void => {
-    stateRef.current = next;
-    setState(next);
-    const reconciled = pruneSettledRuntimeMessages(
-      reconcileConversationRuntime(runtimeRef.current, next.chats, next.statuses),
-      next.chats,
-    );
-    runtimeRef.current = reconciled;
-    setRuntime(reconciled);
-    setPendingAcknowledgements((current) => retainPendingConversations(current, next.chats));
+  const replaceChats = useCallback((next: ChatSummaryCollection): void => {
+    chatsRef.current = next;
+    setChats(next);
+  }, []);
+
+  const replaceWindows = useCallback((next: Record<string, MessageWindow>): void => {
+    windowsRef.current = next;
+    setWindows(next);
   }, []);
 
   const replaceRuntime = useCallback((next: ConversationRuntimeState): void => {
@@ -128,15 +156,165 @@ export function useConversations(): ConversationsController {
     setRuntime(next);
   }, []);
 
-  // Merges one stored chat, from a single-chat response or a backend push. A
-  // chat deleted in the meantime stays deleted.
-  const applyChat = useCallback(
-    (chat: Chat): void => {
-      if (!stateRef.current.chats[chat.id]) return;
-      replaceState({ ...stateRef.current, chats: { ...stateRef.current.chats, [chat.id]: chat } });
-    },
-    [replaceState],
+  const setWindow = useCallback(
+    (conversationId: string, next: MessageWindow): void =>
+      replaceWindows({ ...windowsRef.current, [conversationId]: next }),
+    [replaceWindows],
   );
+
+  // Forgets windows, and page requests still in flight for them, so a late page is ignored.
+  const dropWindows = useCallback(
+    (conversationIds: ReadonlyArray<string>): void => {
+      if (conversationIds.length === 0) return;
+      const dropped = new Set(conversationIds);
+      for (const conversationId of dropped) loadsRef.current.delete(conversationId);
+      openedRef.current = openedRef.current.filter((conversationId) => !dropped.has(conversationId));
+      if (!conversationIds.some((conversationId) => windowsRef.current[conversationId])) return;
+      replaceWindows(
+        Object.fromEntries(
+          Object.entries(windowsRef.current).filter(([conversationId]) => !dropped.has(conversationId)),
+        ),
+      );
+    },
+    [replaceWindows],
+  );
+
+  const replaceState = useCallback(
+    (next: ConversationStateView): void => {
+      // The full state still carries transcripts; the renderer keeps only summaries and loads pages on demand.
+      const summaries = Object.fromEntries(Object.entries(next.chats).map(([id, chat]) => [id, chatSummary(chat)]));
+      replaceChats(summaries);
+      dropWindows(
+        [...Object.keys(windowsRef.current), ...loadsRef.current.keys()].filter(
+          (conversationId) => !summaries[conversationId],
+        ),
+      );
+      replaceRuntime(reconcileConversationRuntime(runtimeRef.current, summaries, next.statuses));
+      setPendingAcknowledgements((current) => retainPendingConversations(current, summaries));
+    },
+    [dropWindows, replaceChats, replaceRuntime],
+  );
+
+  // Merges one conversation's change, from a single-chat response or a backend
+  // push. A chat deleted in the meantime stays deleted.
+  const applyDelta = useCallback(
+    (delta: ConversationDelta): void => {
+      const conversationId = delta.chat.id;
+      if (!chatsRef.current[conversationId]) return;
+      replaceChats({ ...chatsRef.current, [conversationId]: delta.chat });
+      loadsRef.current.get(conversationId)?.deltas.push(delta);
+      const held = windowsRef.current[conversationId];
+      const next = held ? applyDeltaToWindow(held, delta) : undefined;
+      if (next && next !== held) setWindow(conversationId, next);
+      const pruned = pruneSettledRuntimeMessages(runtimeRef.current, conversationId, [
+        ...delta.added,
+        ...delta.updated,
+      ]);
+      if (pruned !== runtimeRef.current) replaceRuntime(pruned);
+    },
+    [replaceChats, replaceRuntime, setWindow],
+  );
+
+  /**
+   * Reads one page and merges it into the conversation's window. A newer
+   * request for the same conversation, or dropping its window, supersedes it.
+   */
+  const loadPage = useCallback(
+    async (request: MessagePageRequest, reportFailure = true): Promise<boolean> => {
+      const { conversationId } = request;
+      const replaces = request.page === "latest" || request.page === "around";
+      const current = windowsRef.current[conversationId];
+      if (!replaces && (!current || loadsRef.current.has(conversationId))) return false;
+      const load: PageLoad = { replaces, deltas: [] };
+      loadsRef.current.set(conversationId, load);
+      if (current && !current.loading) setWindow(conversationId, { ...current, loading: true });
+      let result: BackendResult<MessagePage>;
+      try {
+        result = await window.wisp.getConversationMessages(request);
+      } catch {
+        result = {
+          ok: false,
+          error: { code: "internal_error", message: "The messages could not be loaded.", retryable: true },
+        };
+      }
+      if (loadsRef.current.get(conversationId) !== load) return false;
+      loadsRef.current.delete(conversationId);
+      const held = windowsRef.current[conversationId];
+      if (!result.ok) {
+        if (held) setWindow(conversationId, { ...held, loading: false });
+        if (reportFailure) setError(result.error.message);
+        return false;
+      }
+      let next: MessageWindow;
+      if (request.page === "latest") {
+        epochRef.current += 1;
+        next = windowFromPage(epochRef.current, result.value);
+      } else if (request.page === "around") {
+        epochRef.current += 1;
+        next = windowFromPage(epochRef.current, result.value, request.messageId);
+      } else if (held) {
+        next = extendWindow(held, request.page, result.value);
+      } else {
+        return false;
+      }
+      for (const delta of load.deltas) next = applyDeltaToWindow(next, delta);
+      setWindow(conversationId, next);
+      const pruned = pruneSettledRuntimeMessages(runtimeRef.current, conversationId, result.value.messages);
+      if (pruned !== runtimeRef.current) replaceRuntime(pruned);
+      return true;
+    },
+    [replaceRuntime, setWindow],
+  );
+
+  const touch = useCallback(
+    (conversationId: string): void => {
+      const { opened, evicted } = touchOpened(openedRef.current, conversationId);
+      openedRef.current = opened;
+      dropWindows(evicted);
+    },
+    [dropWindows],
+  );
+
+  const openConversation = useCallback(
+    (conversationId: string): void => {
+      if (!chatsRef.current[conversationId]) return;
+      touch(conversationId);
+      if (loadsRef.current.get(conversationId)?.replaces) return;
+      const held = windowsRef.current[conversationId];
+      if (held && isAttached(held)) return;
+      void loadPage({ conversationId, page: "latest" });
+    },
+    [loadPage, touch],
+  );
+
+  const openMessage = useCallback(
+    async (conversationId: string, messageId: string): Promise<void> => {
+      if (!chatsRef.current[conversationId]) return;
+      touch(conversationId);
+      const load = loadPage({ conversationId, page: "around", messageId }, false);
+      // The message may be gone by now; the conversation still opens, at its newest messages.
+      if (!(await load) && !loadsRef.current.has(conversationId)) openConversation(conversationId);
+    },
+    [loadPage, openConversation, touch],
+  );
+
+  const loadOlderMessages = useCallback(
+    (conversationId: string): void => {
+      const cursor = windowsRef.current[conversationId]?.olderCursor;
+      if (cursor) void loadPage({ conversationId, page: "older", cursor });
+    },
+    [loadPage],
+  );
+
+  const loadNewerMessages = useCallback(
+    (conversationId: string): void => {
+      const cursor = windowsRef.current[conversationId]?.newerCursor;
+      if (cursor) void loadPage({ conversationId, page: "newer", cursor });
+    },
+    [loadPage],
+  );
+
+  const stored = useCallback((): StoredConversations => ({ chats: chatsRef.current, windows: windowsRef.current }), []);
 
   const enqueueMutation = useCallback(
     <T>(operation: () => Promise<BackendResult<T>>, apply: (value: T) => void): Promise<boolean> => {
@@ -163,15 +341,15 @@ export function useConversations(): ConversationsController {
     [enqueueMutation, replaceState],
   );
 
-  const enqueueChat = useCallback(
-    (operation: () => Promise<BackendResult<Chat>>) => enqueueMutation(operation, applyChat),
-    [applyChat, enqueueMutation],
+  const enqueueDelta = useCallback(
+    (operation: () => Promise<BackendResult<ConversationDelta>>) => enqueueMutation(operation, applyDelta),
+    [applyDelta, enqueueMutation],
   );
 
   // Events only drive the transient runtime view. The backend persists what they
-  // imply (reply text, delivery status) and pushes the stored chat afterwards.
+  // imply (reply text, delivery status) and pushes the stored change afterwards.
   processEventRef.current = (event): void => {
-    const next = reduceConversationAgentEvent(runtimeRef.current, event, stateRef.current.chats);
+    const next = reduceConversationAgentEvent(runtimeRef.current, event, stored());
     if (next !== runtimeRef.current) replaceRuntime(next);
   };
 
@@ -181,17 +359,24 @@ export function useConversations(): ConversationsController {
       if (!readyRef.current) bufferedEvents.current.push(event);
       else processEventRef.current(event);
     });
-    const unsubscribeChanges = window.wisp.subscribeToConversationChanges((chat) => {
+    const unsubscribeChanges = window.wisp.subscribeToConversationChanges((delta) => {
       // Backend messages arrive in send order, so a push received before the
       // bootstrap snapshot is already reflected in that snapshot.
-      if (readyRef.current) applyChat(chat);
+      if (readyRef.current) applyDelta(delta);
     });
     void (async () => {
       try {
         const next = await bootstrapConversationState(window.wisp, window.localStorage);
         if (cancelled) return;
         replaceState(next);
-        replaceRuntime(createConversationRuntime(next.agentEventSequence, next.statuses, next.pendingToolApprovals));
+        replaceRuntime(
+          createConversationRuntime(
+            next.agentEventSequence,
+            next.statuses,
+            next.pendingToolApprovals,
+            next.liveMessages,
+          ),
+        );
         readyRef.current = true;
         const pending = bufferedEvents.current
           .filter(({ sequence }) => sequence > next.agentEventSequence)
@@ -215,12 +400,12 @@ export function useConversations(): ConversationsController {
       unsubscribe();
       unsubscribeChanges();
     };
-  }, [applyChat, replaceRuntime, replaceState]);
+  }, [applyDelta, replaceRuntime, replaceState]);
 
   const sendMessage = useCallback(
     async (conversationId: string, textValue: string): Promise<boolean> => {
       const text = textValue.trim();
-      if (!text || stateRef.current.chats[conversationId]?.kind !== "wisp") return false;
+      if (!text || chatsRef.current[conversationId]?.kind !== "wisp") return false;
       const status = runtimeRef.current.statuses[conversationId];
       if (status !== "idle" && status !== "working") return false;
       const requestId = crypto.randomUUID();
@@ -231,9 +416,11 @@ export function useConversations(): ConversationsController {
         createdAt: new Date().toISOString(),
         status: "queued",
       };
+      // The message belongs at the end, so a window opened elsewhere in the transcript returns there.
+      openConversation(conversationId);
       replaceRuntime(stageOutgoingMessage(runtimeRef.current, conversationId, message));
       setPendingAcknowledgements((current) => addPendingRequest(current, conversationId, requestId));
-      const persisted = await enqueueChat(() => window.wisp.appendConversationMessage({ conversationId, message }));
+      const persisted = await enqueueDelta(() => window.wisp.appendConversationMessage({ conversationId, message }));
       if (!persisted) {
         setPendingAcknowledgements((current) => removePendingRequest(current, conversationId, requestId));
         return false;
@@ -242,29 +429,33 @@ export function useConversations(): ConversationsController {
       const result = await window.wisp.sendMessage({ conversationId, requestId, text });
       setPendingAcknowledgements((current) => removePendingRequest(current, conversationId, requestId));
       if (result.ok) return true;
-      const failed = markOutgoingFailed(
-        runtimeRef.current,
-        stateRef.current.chats,
-        conversationId,
-        requestId,
-        result.error,
-      );
+      const failed = markOutgoingFailed(runtimeRef.current, stored(), conversationId, requestId, result.error);
       replaceRuntime(failed);
       const outgoing = getRuntimeMessage(failed, conversationId, requestId);
       if (outgoing?.type === "outgoing") {
         const message: OutgoingMessage = { ...outgoing, type: "outgoing" };
-        void enqueueChat(() => window.wisp.appendConversationMessage({ conversationId, message }));
+        void enqueueDelta(() => window.wisp.appendConversationMessage({ conversationId, message }));
       }
       return false;
     },
-    [enqueueChat, replaceRuntime],
+    [enqueueDelta, openConversation, replaceRuntime, stored],
   );
 
   const retryMessage = useCallback(
-    (conversationId: string, requestId: string): Promise<boolean> => {
-      const chats = overlayRuntimeMessages(stateRef.current.chats, runtimeRef.current.messages);
-      const original = chats[conversationId]?.messages.find(({ id }) => id === requestId);
-      return original?.type === "outgoing" ? sendMessage(conversationId, original.text) : Promise.resolve(false);
+    async (conversationId: string, requestId: string): Promise<boolean> => {
+      // The failed message was just sent, so the window normally holds it; otherwise the backend does.
+      let original =
+        getRuntimeMessage(runtimeRef.current, conversationId, requestId) ??
+        windowsRef.current[conversationId]?.messages.find(({ id }) => id === requestId);
+      if (!original) {
+        const page = await window.wisp.getConversationMessages({
+          conversationId,
+          page: "around",
+          messageId: requestId,
+        });
+        original = page.ok ? page.value.messages.find(({ id }) => id === requestId) : undefined;
+      }
+      return original?.type === "outgoing" ? sendMessage(conversationId, original.text) : false;
     },
     [sendMessage],
   );
@@ -291,7 +482,18 @@ export function useConversations(): ConversationsController {
     [],
   );
 
-  const chats = useMemo(() => overlayRuntimeMessages(state.chats, runtime.messages), [runtime.messages, state.chats]);
+  const visibleWindows = useMemo(() => {
+    const result: Record<string, MessageWindow> = {};
+    for (const [conversationId, held] of Object.entries(windows)) {
+      const messages = overlayRuntimeMessages(
+        held.messages,
+        runtime.messages[conversationId] ?? NO_MESSAGES,
+        isAttached(held),
+      );
+      result[conversationId] = messages === held.messages ? held : { ...held, messages };
+    }
+    return result;
+  }, [runtime.messages, windows]);
   const acknowledging = useMemo(
     () =>
       Object.fromEntries(Object.entries(pendingAcknowledgements).map(([id, requests]) => [id, requests.length > 0])),
@@ -300,6 +502,7 @@ export function useConversations(): ConversationsController {
 
   return {
     chats,
+    windows: visibleWindows,
     statuses: runtime.statuses,
     activity: runtime.activity,
     conversationErrors: runtime.errors,
@@ -323,18 +526,22 @@ export function useConversations(): ConversationsController {
     ),
     appendMessage: useCallback(
       (conversationId, message) =>
-        enqueueChat(() => window.wisp.appendConversationMessage({ conversationId, message })),
-      [enqueueChat],
+        enqueueDelta(() => window.wisp.appendConversationMessage({ conversationId, message })),
+      [enqueueDelta],
     ),
     answerPrompt: useCallback(
       (conversationId, messageId, answer) =>
-        enqueueChat(() => window.wisp.answerConversationPrompt({ conversationId, messageId, answer })),
-      [enqueueChat],
+        enqueueDelta(() => window.wisp.answerConversationPrompt({ conversationId, messageId, answer })),
+      [enqueueDelta],
     ),
     markRead: useCallback(
-      (conversationId) => enqueueChat(() => window.wisp.markConversationRead({ conversationId })),
-      [enqueueChat],
+      (conversationId) => enqueueDelta(() => window.wisp.markConversationRead({ conversationId })),
+      [enqueueDelta],
     ),
+    openConversation,
+    openMessage,
+    loadOlderMessages,
+    loadNewerMessages,
     sendMessage,
     retryMessage,
     abort,

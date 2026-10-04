@@ -72,17 +72,16 @@ describe("withDateDividers", () => {
 });
 
 describe("chatActivityDate", () => {
-  it("uses the most recent timestamped message", () => {
-    const chat = { timestamp: "Now", messages: [messages.yesterday, messages.today, messages.untimed] as Message[] };
-    expect(chatActivityDate(chat)).toEqual(new Date(messages.today.createdAt));
+  it("uses the last activity the backend recorded", () => {
+    expect(chatActivityDate({ timestamp: "Now", lastActivityAt: messages.today.createdAt })).toEqual(
+      new Date(messages.today.createdAt),
+    );
   });
 
   it("falls back to an ISO chat timestamp and ignores legacy display strings", () => {
-    expect(chatActivityDate({ timestamp: "2026-09-11T09:00:00.000Z", messages: [] })).toEqual(
-      new Date("2026-09-11T09:00:00.000Z"),
-    );
-    expect(chatActivityDate({ timestamp: "Now", messages: [messages.untimed] as Message[] })).toBeNull();
-    expect(chatActivityDate({ timestamp: "Yesterday", messages: [] })).toBeNull();
+    expect(chatActivityDate({ timestamp: "2026-09-11T09:00:00.000Z" })).toEqual(new Date("2026-09-11T09:00:00.000Z"));
+    expect(chatActivityDate({ timestamp: "Now" })).toBeNull();
+    expect(chatActivityDate({ timestamp: "Yesterday", lastActivityAt: "not a date" })).toBeNull();
   });
 });
 

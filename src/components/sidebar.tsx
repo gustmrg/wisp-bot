@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { PanelLeftCloseIcon, PlusIcon, SearchIcon } from "lucide-react";
 
-import type { ChatCollection, ChatId } from "@/chat-data";
+import type { ChatId, ChatSummaryCollection } from "@/chat-data";
 import { ChatAvatar } from "@/components/chat-avatar";
 import { CreateAgentDialog, type NewAgent } from "@/components/create-agent-dialog";
 import { MobileNavigation } from "@/components/mobile-navigation";
@@ -18,7 +18,7 @@ import { cn } from "@/lib/utils";
 
 interface SidebarProps {
   activeChatId: ChatId;
-  chats: ChatCollection;
+  chats: ChatSummaryCollection;
   collapsed: boolean;
   currentUser: CurrentUser;
   width: number;

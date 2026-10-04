@@ -3,7 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
 import type { WispApi } from "../shared/contracts";
-import type { Chat, ConversationStateView } from "../shared/conversations";
+import { chatSummary, type Chat, type ConversationStateView } from "../shared/conversations";
 import App from "@/App";
 import { LEGACY_STORAGE_KEY } from "@/hooks/use-conversations";
 import { MOBILE_LAYOUT_QUERY } from "@/hooks/use-mobile-layout";
@@ -26,6 +26,7 @@ function conversationState(initialized: boolean, chats: Record<string, Chat> = {
     initialized,
     chats,
     statuses: Object.fromEntries(Object.keys(chats).map((id) => [id, "idle"])),
+    liveMessages: {},
     agentEventSequence: 0,
     pendingToolApprovals: [],
     recoveredCorruptState: false,
@@ -109,20 +110,20 @@ function createApi(initialState: ConversationStateView): WispApi {
       const chat = state.chats[conversationId]!;
       const updated = { ...chat, messages: [...chat.messages, message] };
       state = { ...state, chats: { ...state.chats, [conversationId]: updated } };
-      return { ok: true as const, value: updated };
+      return { ok: true as const, value: { chat: chatSummary(updated), added: [message], updated: [] } };
     }),
     answerConversationPrompt: vi.fn(async ({ conversationId }) => ({
       ok: true as const,
-      value: state.chats[conversationId]!,
+      value: { chat: chatSummary(state.chats[conversationId]!), added: [], updated: [] },
     })),
     markConversationRead: vi.fn(async ({ conversationId }) => ({
       ok: true as const,
-      value: state.chats[conversationId]!,
+      value: { chat: chatSummary(state.chats[conversationId]!), added: [], updated: [] },
     })),
     subscribeToConversationChanges: vi.fn(() => () => undefined),
-    getConversationMessages: vi.fn(async () => ({
+    getConversationMessages: vi.fn(async ({ conversationId }) => ({
       ok: true as const,
-      value: { messages: [], olderCursor: null, newerCursor: null },
+      value: { messages: state.chats[conversationId]?.messages ?? [], olderCursor: null, newerCursor: null },
     })),
     searchMessages: vi.fn(async () => ({ ok: true as const, value: [] })),
     getUsageReport: vi.fn(),
@@ -222,6 +223,42 @@ describe("App", () => {
         text: "Prepare the launch brief",
       }),
     });
+  });
+
+  it("opens a message search result at that message", async () => {
+    const user = userEvent.setup();
+    const api = createApi(
+      conversationState(true, {
+        atlas: { ...atlas, messages: [{ id: "m1", type: "incoming", text: "The launch checklist is ready." }] },
+      }),
+    );
+    vi.mocked(api.searchMessages).mockResolvedValue({
+      ok: true,
+      value: [{ conversationId: "atlas", messageId: "m1", snippet: "The launch checklist is ready." }],
+    });
+    exposeApi(api);
+    render(<App />);
+    // The transcript comes from a page, not from the conversation state.
+    expect(await screen.findByText("The launch checklist is ready.")).toBeVisible();
+    expect(api.getConversationMessages).toHaveBeenCalledWith({ conversationId: "atlas", page: "latest" });
+
+    await user.keyboard("{Control>}k{/Control}");
+    await user.type(screen.getByRole("textbox", { name: "Search" }), "launch");
+    await user.click(await within(screen.getByRole("dialog")).findByRole("button", { name: /launch checklist/ }));
+
+    await waitFor(() =>
+      expect(api.getConversationMessages).toHaveBeenLastCalledWith({
+        conversationId: "atlas",
+        page: "around",
+        messageId: "m1",
+      }),
+    );
+    await waitFor(() =>
+      expect(screen.getByText("The launch checklist is ready.").closest("[data-message-id]")).toHaveAttribute(
+        "data-highlighted",
+        "true",
+      ),
+    );
   });
 
   it("keeps desktop settings drafts when reselecting a conversation", async () => {

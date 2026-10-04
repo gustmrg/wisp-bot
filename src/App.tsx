@@ -62,6 +62,13 @@ export default function App() {
     setMobilePage("chat");
   }
 
+  function selectMessage(chatId: string, messageId: string) {
+    navigationVersion.current += 1;
+    workspace.selectMessage(chatId, messageId);
+    if (mobile) setDetailsOpen(false);
+    setMobilePage("chat");
+  }
+
   function showConversations() {
     navigationVersion.current += 1;
     setDetailsOpen(false);
@@ -131,6 +138,7 @@ export default function App() {
             onBack={mobile ? showConversations : undefined}
             chat={workspace.activeChat}
             chats={workspace.chats}
+            transcript={workspace.activeTranscript}
             status={workspace.statuses[workspace.activeChat.id] ?? "configuration_required"}
             activity={workspace.activity[workspace.activeChat.id]}
             error={workspace.conversationErrors[workspace.activeChat.id]?.message}
@@ -139,6 +147,9 @@ export default function App() {
             toolActivities={workspace.toolActivities[workspace.activeChat.id] ?? []}
             onAnswerPrompt={(messageId, answer) => void workspace.answerPrompt(messageId, answer)}
             onAbort={() => void workspace.abortActiveChat()}
+            onLoadOlder={workspace.loadOlderMessages}
+            onLoadNewer={workspace.loadNewerMessages}
+            onShowLatest={workspace.showLatestMessages}
             onOpenDetails={() => showDetails(true)}
             onConfigure={() => showSettings("model")}
             onRetry={(messageId) => void workspace.retryMessage(messageId)}
@@ -167,7 +178,13 @@ export default function App() {
           />
         ) : null}
       </div>
-      <SearchDialog chats={workspace.chats} open={searchOpen} onOpenChange={showSearch} onSelectChat={selectChat} />
+      <SearchDialog
+        chats={workspace.chats}
+        open={searchOpen}
+        onOpenChange={showSearch}
+        onSelectChat={selectChat}
+        onSelectMessage={selectMessage}
+      />
       <AppSettingsDialogHost
         ref={settingsDialog}
         appMetadata={APP_METADATA}

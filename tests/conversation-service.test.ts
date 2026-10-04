@@ -10,7 +10,7 @@ import { ConversationRepository } from "../electron/backend/conversation-reposit
 import { ConversationService } from "../electron/backend/conversation-service.js";
 import { FakeConversationAgent, FakeConversationAgentFactory } from "../electron/backend/fake-conversation-agent.js";
 import type { SequencedConversationAgentEvent } from "../shared/contracts.js";
-import type { Chat } from "../shared/conversations.js";
+import type { Chat, ConversationDelta } from "../shared/conversations.js";
 
 function chat(id: string, circle = false): Chat {
   const base = {
@@ -203,34 +203,43 @@ describe("ConversationService", () => {
     await service.dispose();
   });
 
-  it("pushes the stored chat after persisting agent-driven changes", async () => {
+  it("pushes what changed after persisting agent-driven changes", async () => {
     const directory = await mkdtemp(path.join(os.tmpdir(), "wisp-service-push-"));
     const repository = new ConversationRepository({ dataDirectory: directory });
-    const onChatChanged = vi.fn();
+    const onConversationChanged = vi.fn<(delta: ConversationDelta) => void>();
     let service: ConversationService;
     const registry = new AgentRegistry(
       new FakeConversationAgentFactory({ latencyMs: 10, responseFor: ({ text }) => `Reply:${text}` }),
       (event) => service.handleAgentEvent(event),
     );
-    service = new ConversationService(repository, registry, () => [], { onChatChanged });
+    service = new ConversationService(repository, registry, () => [], { onConversationChanged });
     await service.start({ providerId: "test", modelId: "test" });
     await service.initialize({ one: chat("one") });
-    await service.appendMessage("one", { id: "request-1", type: "outgoing", text: "A", status: "queued" });
+    // A message the user writes is new the first time and an update after that.
+    await expect(
+      service.appendMessage("one", { id: "request-1", type: "outgoing", text: "A", status: "queued" }),
+    ).resolves.toMatchObject({ chat: { id: "one", preview: "A" }, added: [{ id: "request-1" }], updated: [] });
+    await expect(
+      service.appendMessage("one", { id: "request-1", type: "outgoing", text: "A", status: "queued" }),
+    ).resolves.toMatchObject({ added: [], updated: [{ id: "request-1" }] });
 
     registry.dispatch({ conversationId: "one", requestId: "request-1", text: "A" });
 
     await vi.waitFor(() =>
-      expect(onChatChanged).toHaveBeenLastCalledWith(
-        expect.objectContaining({
-          id: "one",
-          preview: "Reply:A",
-          messages: [
-            expect.objectContaining({ id: "request-1", status: "complete" }),
-            expect.objectContaining({ id: "request-1:assistant", text: "Reply:A", status: "complete" }),
-          ],
-        }),
-      ),
+      expect(onConversationChanged).toHaveBeenLastCalledWith({
+        chat: expect.objectContaining({ id: "one", preview: "Reply:A" }),
+        added: [expect.objectContaining({ id: "request-1:assistant", text: "Reply:A", status: "complete" })],
+        updated: [],
+      }),
     );
+    // The delivery status is an update to the user's message, and summaries never carry transcripts.
+    expect(onConversationChanged).toHaveBeenCalledWith({
+      chat: expect.objectContaining({ id: "one" }),
+      added: [],
+      updated: [expect.objectContaining({ id: "request-1", status: "complete" })],
+    });
+    for (const [delta] of onConversationChanged.mock.calls) expect(delta.chat).not.toHaveProperty("messages");
+    expect(service.getState().liveMessages).toEqual({});
     await service.dispose();
   });
 
@@ -260,6 +269,9 @@ describe("ConversationService", () => {
       }),
     );
 
+    expect(service.getState().liveMessages.one).toEqual([
+      expect.objectContaining({ id: "request-1:assistant", status: "streaming" }),
+    ]);
     const latest = await service.getMessagePage({ conversationId: "one", page: "latest" });
     expect(latest.messages.at(-1)).toMatchObject({ id: "request-1:assistant", status: "streaming" });
     const older = await service.getMessagePage({ conversationId: "one", page: "older", cursor: latest.olderCursor! });
@@ -283,7 +295,7 @@ describe("ConversationService", () => {
     ).rejects.toMatchObject({ code: "invalid_request" });
     await expect(
       service.appendMessage("one", { id: "request-2", type: "outgoing", text: "Mine", status: "queued" }),
-    ).resolves.toMatchObject({ preview: "Mine" });
+    ).resolves.toMatchObject({ chat: { preview: "Mine" } });
     expect(repository.getChats().one?.messages).toContainEqual(
       expect.objectContaining({ id: "request-1:assistant", text: "Real reply" }),
     );

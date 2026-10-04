@@ -2,11 +2,11 @@ import { Checkbox } from "@base-ui/react/checkbox";
 import { CheckIcon, XIcon } from "lucide-react";
 import { useId, useState } from "react";
 
-import type { ChatId, WispChat } from "@/chat-data";
+import type { ChatId, WispSummary } from "@/chat-data";
 import { ChatAvatar } from "@/components/chat-avatar";
 
 interface CircleMemberPickerProps {
-  availableWisps: ReadonlyArray<WispChat>;
+  availableWisps: ReadonlyArray<WispSummary>;
   selectedIds: ReadonlyArray<ChatId>;
   onChange: (memberIds: ChatId[]) => void;
   label?: string;
@@ -27,7 +27,7 @@ export function CircleMemberPicker({
     return wisp ? [wisp] : [];
   });
 
-  function toggleMember(wisp: WispChat, selected: boolean): void {
+  function toggleMember(wisp: WispSummary, selected: boolean): void {
     const next = selected ? [...normalizedIds, wisp.id] : normalizedIds.filter((id) => id !== wisp.id);
     onChange(next);
     setAnnouncement(`${wisp.name} ${selected ? "added to" : "removed from"} circle.`);

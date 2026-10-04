@@ -1,11 +1,13 @@
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { ChatCollection } from "@/chat-data";
+import type { ChatSummaryCollection } from "@/chat-data";
 import { SearchDialog } from "@/components/search-dialog";
+import type { WispApi } from "../../shared/contracts";
+import type { MessageSearchHit } from "../../shared/conversations";
 
-const chats: ChatCollection = {
+const chats: ChatSummaryCollection = {
   atlas: {
     id: "atlas",
     name: "Atlas",
@@ -16,10 +18,6 @@ const chats: ChatCollection = {
     notifyOnUpdatesEnabled: true,
     preview: "Latest research",
     timestamp: "Now",
-    messages: [
-      { id: "incoming", type: "incoming", text: "The launch checklist is ready." },
-      { id: "outgoing", type: "outgoing", text: "Review the quarterly roadmap." },
-    ],
   },
   pixel: {
     id: "pixel",
@@ -31,22 +29,92 @@ const chats: ChatCollection = {
     notifyOnUpdatesEnabled: true,
     preview: "Designing",
     timestamp: "Now",
-    messages: [],
   },
 };
 
+const hits: MessageSearchHit[] = [
+  { conversationId: "pixel", messageId: "newer", snippet: "The launch banner is ready." },
+  { conversationId: "atlas", messageId: "older", snippet: "Review the launch checklist." },
+  { conversationId: "deleted", messageId: "orphan", snippet: "A launch nobody can open." },
+];
+
+const searchMessages = vi.fn<WispApi["searchMessages"]>();
+
+function renderDialog() {
+  const handlers = { onOpenChange: vi.fn(), onSelectChat: vi.fn(), onSelectMessage: vi.fn() };
+  render(<SearchDialog chats={chats} open {...handlers} />);
+  return handlers;
+}
+
 describe("SearchDialog", () => {
-  it.each([
-    ["launch checklist", "The launch checklist is ready."],
-    ["quarterly roadmap", "Review the quarterly roadmap."],
-  ])("finds ordinary message text for %s", async (query, snippet) => {
+  beforeEach(() => {
+    searchMessages.mockResolvedValue({ ok: true, value: hits });
+    (window as unknown as { wisp: Pick<WispApi, "searchMessages"> }).wisp = { searchMessages };
+  });
+
+  it("lists every conversation until something is typed", () => {
+    renderDialog();
+
+    expect(screen.getByRole("button", { name: /Atlas/ })).toBeVisible();
+    expect(screen.getByRole("button", { name: /Pixel/ })).toBeVisible();
+    expect(searchMessages).not.toHaveBeenCalled();
+  });
+
+  it("finds messages through the backend, newest first, and opens one at its message", async () => {
     const user = userEvent.setup();
-    render(<SearchDialog chats={chats} open onOpenChange={vi.fn()} onSelectChat={vi.fn()} />);
+    const handlers = renderDialog();
 
     await user.click(screen.getByRole("button", { name: "Messages" }));
-    await user.type(screen.getByRole("textbox", { name: "Search" }), query);
+    await user.type(screen.getByRole("textbox", { name: "Search" }), " launch ");
 
-    expect(await screen.findByText(snippet)).toBeVisible();
-    expect(screen.queryByText("Pixel")).not.toBeInTheDocument();
+    const results = await screen.findAllByRole("button", { name: /launch/ });
+    expect(results.map((result) => result.textContent)).toEqual([
+      "PixelThe launch banner is ready.",
+      "AtlasReview the launch checklist.",
+    ]);
+    // Typing pauses before the search runs, so the whole query is searched once.
+    expect(searchMessages).toHaveBeenCalledTimes(1);
+    expect(searchMessages).toHaveBeenCalledWith({ query: "launch" });
+
+    await user.click(results[1]!);
+    expect(handlers.onSelectMessage).toHaveBeenCalledWith("atlas", "older");
+    expect(handlers.onOpenChange).toHaveBeenCalledWith(false);
+    expect(handlers.onSelectChat).not.toHaveBeenCalled();
+  });
+
+  it("matches names, labels, and descriptions without the backend", async () => {
+    const user = userEvent.setup();
+    searchMessages.mockResolvedValue({ ok: true, value: [] });
+    const handlers = renderDialog();
+
+    await user.click(screen.getByRole("button", { name: "Wisps" }));
+    await user.type(screen.getByRole("textbox", { name: "Search" }), "interfaces");
+
+    expect(screen.queryByRole("button", { name: /Atlas/ })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: /Pixel/ }));
+    expect(handlers.onSelectChat).toHaveBeenCalledWith("pixel");
+    expect(searchMessages).not.toHaveBeenCalled();
+  });
+
+  it("asks for three characters before it searches messages", async () => {
+    const user = userEvent.setup();
+    renderDialog();
+
+    await user.type(screen.getByRole("textbox", { name: "Search" }), "at");
+
+    // Two characters still match a name; message text needs one more.
+    expect(screen.getByRole("button", { name: /Atlas/ })).toBeVisible();
+    expect(screen.getByText("Type at least 3 characters to search messages.")).toBeVisible();
+    expect(searchMessages).not.toHaveBeenCalled();
+  });
+
+  it("says when nothing matches", async () => {
+    const user = userEvent.setup();
+    searchMessages.mockResolvedValue({ ok: true, value: [] });
+    renderDialog();
+
+    await user.type(screen.getByRole("textbox", { name: "Search" }), "zebra");
+
+    expect(await screen.findByText("No results found")).toBeVisible();
   });
 });

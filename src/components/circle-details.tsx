@@ -1,4 +1,4 @@
-import type { ChatCollection, CircleChat, CircleChatChanges } from "@/chat-data";
+import type { ChatSummaryCollection, CircleChatChanges, CircleSummary } from "@/chat-data";
 import { ChatAvatar } from "@/components/chat-avatar";
 import { CircleMemberPicker } from "@/components/circle-member-picker";
 import { SettingsCard, SettingsField, SettingsRow, SettingsRowCopy } from "@/components/settings/settings-primitives";
@@ -8,8 +8,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { getCircleMembers } from "@/lib/circle-members";
 
 interface CircleDetailsProps {
-  chat: CircleChat;
-  chats: ChatCollection;
+  chat: CircleSummary;
+  chats: ChatSummaryCollection;
   onChange: (changes: CircleChatChanges) => void;
 }
 

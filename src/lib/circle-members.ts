@@ -1,4 +1,4 @@
-import type { Chat, ChatCollection, WispChat } from "@/chat-data";
+import type { Chat, ChatCollection, ChatSummary, ChatSummaryCollection, WispChat, WispSummary } from "@/chat-data";
 
 const LEGACY_OFFSITE_MEMBER_IDS = ["chief", "inbox", "account"];
 
@@ -51,7 +51,7 @@ export function migrateLegacyChats(chats: ChatCollection): ChatCollection {
   return { ...migrated, offsite: { ...offsite, memberIds } };
 }
 
-export function getCircleMembers(chat: Chat, chats: ChatCollection): WispChat[] {
+export function getCircleMembers(chat: ChatSummary, chats: ChatSummaryCollection): WispSummary[] {
   if (chat.kind !== "circle") return [];
   return [...new Set(chat.memberIds)].flatMap((id) => {
     const member = chats[id];

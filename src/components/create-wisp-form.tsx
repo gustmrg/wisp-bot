@@ -1,9 +1,9 @@
 import type { ReactNode } from "react";
-import type { WispChat, WispChatChanges } from "@/chat-data";
+import type { WispChatChanges, WispSummary } from "@/chat-data";
 import { WispSettingsFields } from "@/components/wisp-settings-fields";
 
 interface CreateWispFormProps {
-  settings: WispChat;
+  settings: WispSummary;
   onChange: (changes: Omit<WispChatChanges, "kind">) => void;
   children?: ReactNode;
 }

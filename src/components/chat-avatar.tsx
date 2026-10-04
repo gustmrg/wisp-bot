@@ -1,12 +1,12 @@
 import { HashIcon } from "lucide-react";
 import { Wisp } from "@/components/wisp";
-import type { Chat, ChatCollection } from "@/chat-data";
+import type { ChatSummary, ChatSummaryCollection } from "@/chat-data";
 import { getCircleMembers } from "@/lib/circle-members";
 import { cn } from "@/lib/utils";
 
 interface ChatAvatarProps {
-  chat: Chat;
-  chats?: ChatCollection;
+  chat: ChatSummary;
+  chats?: ChatSummaryCollection;
   size?: "default" | "sm" | "lg" | "xl";
 }
 

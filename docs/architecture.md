@@ -34,8 +34,13 @@ URL.
   built and tested without Electron.
 - The main process is the only writer of agent-driven conversation state (reply
   text, outgoing delivery status, context notices). After persisting a change it
-  pushes the stored chat on `wisp:conversations:changed`; the renderer writes
-  only what the user authored and never re-fetches the full state to reconcile.
+  pushes what changed on `wisp:conversations:changed`: the conversation's
+  summary and the messages it added or updated. The renderer writes only what
+  the user authored and never re-fetches the full state to reconcile.
+- The renderer holds a summary of every conversation and the messages of only
+  the five it opened most recently. It reads a transcript a page at a time,
+  newest first, and loads older pages as the user scrolls up. Message search
+  runs in the backend; opening a result loads the page around that message.
 - `electron/security-policy.ts`, `electron/main.ts`, and `electron/preload.ts`
   enforce the renderer trust boundary: sandboxing and context isolation stay
   enabled, navigation and permissions default to deny, and the sandboxed
@@ -119,8 +124,9 @@ transcripts can be read a page at a time; each conversation also records its
 `lastActivityAt`. The store records the layout that wrote it and the oldest
 layout that can still read it, so additive changes stay readable by older
 builds. [ADR 006](decisions/006-paged-conversation-transcripts.md) describes the
-move to loading transcripts on demand; the renderer does not use pages or
-backend search yet.
+move to loading transcripts on demand. The renderer already reads pages and
+searches through the backend; the main process still loads every transcript at
+startup and sends them with the full conversation state until the last step.
 
 Theme, timezone, microphone selection, launch-at-login, notification-sound,
 and related UI preferences are stored locally in the renderer through the

@@ -151,7 +151,7 @@ searchable when it completes.
 
 | Channel | Today | After |
 |---|---|---|
-| `getConversationState` and structural changes (create, update, delete, initialize) | Full chats with every message | `ChatSummary` per conversation, no messages |
+| `getConversationState` and structural changes (create, update, delete, initialize) | Full chats with every message | `ChatSummary` per conversation, no messages, plus the messages not stored yet |
 | `appendConversationMessage`, `answerConversationPrompt`, `markConversationRead` | One full `Chat` | `ConversationDelta`: the summary plus the changed messages |
 | `conversationChanged` push | One full `Chat` | `ConversationDelta` |
 | `getConversationMessages` (new) | — | One `MessagePage` |
@@ -175,7 +175,24 @@ interface MessageSearchHit {
   snippet: string;
   createdAt?: string;
 }
+
+interface ConversationDelta {
+  chat: ChatSummary;
+  added: ReadonlyArray<Message>; // new messages at the end, oldest first
+  updated: ReadonlyArray<Message>; // earlier messages whose content changed
+}
 ```
+
+A delta separates new messages from updated ones because a window holds only
+part of a transcript. A new message joins an attached window. An update to a
+message the window does not hold is ignored; without the distinction it would
+be added at the end, out of place.
+
+The conversation state also carries `liveMessages`: the messages the backend
+has not stored yet (replies still streaming or being saved), as of the state's
+`agentEventSequence`. A renderer that starts while a reply is streaming (a
+reload, or a window reopened on macOS) continues the reply from them, since no
+page would give it a base that is consistent with the event sequence.
 
 Cursors are opaque strings (the row position) and are validated as such at the
 IPC boundary. Pages hold 50 messages; an `around` page holds the target plus up
@@ -196,9 +213,11 @@ to 25 messages on each side.
   Auto-scroll to the bottom fires only when a new message arrives at the end,
   not when the message count changes; today's count-based trigger would jump to
   the bottom on every older page.
-- **Deltas** upsert their messages into an attached window. The streaming
-  overlay is unchanged: it is keyed by message ID and renders on the attached
-  window.
+- **Deltas** update the messages a window holds and add new messages to an
+  attached window. A delta that arrives while a page is being read is applied
+  again when the page lands, because the page may have been read before the
+  change. The streaming overlay is unchanged: it is keyed by message ID and
+  renders on the attached window.
 - **Search.** The dialog still matches conversation names, labels, and
   descriptions locally. For queries of 3 or more characters it also calls
   `searchMessages`, debounced, and lists message results newest first, each
@@ -208,7 +227,8 @@ to 25 messages on each side.
   into view, and highlights it briefly. That window is **detached**: new
   messages are not appended to it. A "Jump to latest" control reloads the
   latest page, and scrolling to the bottom of a detached window loads newer
-  pages until it reattaches.
+  pages until it reattaches. Sending a message, or selecting the conversation
+  in the list, also returns a detached window to the latest page.
 - **Retry** finds the failed outgoing message in the window, where it always is
   because it was just sent. Otherwise it asks the backend for the message by
   ID.
@@ -227,7 +247,9 @@ Each step ships on its own and keeps every quality gate green.
    The full-state view still carries transcripts, so the renderer is unchanged.
 2. **Renderer switch.** Summaries, message windows with older pages and scroll
    anchoring, deltas, backend search, jump to result with detached windows, and
-   the sidebar time from `lastActivityAt`.
+   the sidebar time from `lastActivityAt`. The single-conversation channels and
+   the push carry deltas, and the state gains `liveMessages`; the full-state
+   view still carries transcripts, which the renderer no longer reads.
 3. **Remove full transcripts.** Messages leave `ConversationStateView`, pushes,
    and startup, and the message cap is removed. Startup then reads only the
    conversation list.

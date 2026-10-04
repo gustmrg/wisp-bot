@@ -1,11 +1,11 @@
 import { useEffect, useRef } from "react";
 
-import type { ChatCollection, ManagedConversationStatus } from "../../shared/conversations";
+import type { ChatSummaryCollection, ManagedConversationStatus } from "../../shared/conversations";
 import { playNotificationSound, type NotificationSoundKind } from "@/lib/notification-sounds";
 
 interface NotificationSoundsOptions {
   enabled: boolean;
-  chats: ChatCollection;
+  chats: ChatSummaryCollection;
 }
 
 /**
@@ -41,7 +41,7 @@ export function useNotificationSounds({ enabled, chats }: NotificationSoundsOpti
   }, []);
 }
 
-function notifyWisp(chats: ChatCollection, conversationId: string, kind: NotificationSoundKind): void {
+function notifyWisp(chats: ChatSummaryCollection, conversationId: string, kind: NotificationSoundKind): void {
   const chat = chats[conversationId];
   if (!chat || chat.kind !== "wisp" || !chat.notifyOnUpdatesEnabled) return;
   playNotificationSound(kind);

@@ -7,6 +7,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { ConversationRepository } from "../electron/backend/conversation-repository.js";
 import { buildSnippet, MESSAGE_SEARCH_LIMIT, quotePhrase } from "../electron/backend/message-search.js";
 import type { Chat, Message } from "../shared/conversations.js";
+import { messageSearchText } from "../shared/message-search.js";
 
 function chat(id: string, messages: Message[] = []): Chat {
   return {
@@ -131,5 +132,33 @@ describe("buildSnippet", () => {
 
   it("quotes queries as one literal phrase", () => {
     expect(quotePhrase('  say "hi" OR * ')).toBe('"say ""hi"" OR *"');
+  });
+});
+
+describe("messageSearchText", () => {
+  it("covers the text of messages, cards, and prompts, and leaves time separators out", () => {
+    expect(messageSearchText({ type: "incoming", text: "Incoming project update" })).toBe("Incoming project update");
+    expect(messageSearchText({ type: "outgoing", text: "Outgoing review request" })).toBe("Outgoing review request");
+    expect(
+      messageSearchText({
+        type: "card",
+        items: [
+          { label: "Build", text: "Passed" },
+          { label: "Coverage", text: "Ninety percent" },
+        ],
+      }),
+    ).toBe("Build — Passed Coverage — Ninety percent");
+    expect(
+      messageSearchText({
+        type: "prompt",
+        question: "Which environment should deploy?",
+        options: [
+          { key: "A", label: "Staging" },
+          { key: "B", label: "Production" },
+        ],
+        answer: "Staging",
+      }),
+    ).toBe("Which environment should deploy? A Staging B Production Staging");
+    expect(messageSearchText({ type: "time", text: "Yesterday" })).toBe("");
   });
 });

@@ -106,10 +106,10 @@ const wispApi: WispApi = {
   getConversationMessages: (request) => ipcRenderer.invoke(WISP_IPC_CHANNELS.getConversationMessages, request),
   searchMessages: (request) => ipcRenderer.invoke(WISP_IPC_CHANNELS.searchMessages, request),
   subscribeToConversationChanges: (listener) => {
-    const handleChat = (_event: Electron.IpcRendererEvent, chat: Parameters<typeof listener>[0]): void =>
-      listener(chat);
-    ipcRenderer.on(WISP_IPC_CHANNELS.conversationChanged, handleChat);
-    return () => ipcRenderer.removeListener(WISP_IPC_CHANNELS.conversationChanged, handleChat);
+    const handleDelta = (_event: Electron.IpcRendererEvent, delta: Parameters<typeof listener>[0]): void =>
+      listener(delta);
+    ipcRenderer.on(WISP_IPC_CHANNELS.conversationChanged, handleDelta);
+    return () => ipcRenderer.removeListener(WISP_IPC_CHANNELS.conversationChanged, handleDelta);
   },
   getSessionReport: (request) => ipcRenderer.invoke(WISP_IPC_CHANNELS.getSessionReport, request),
   getUsageReport: (request) => ipcRenderer.invoke(WISP_IPC_CHANNELS.getUsageReport, request),

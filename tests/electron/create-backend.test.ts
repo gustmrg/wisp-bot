@@ -105,16 +105,16 @@ describe("createBackend", () => {
       apiKey: "test-key",
     });
     await invoke(WISP_IPC_CHANNELS.initializeConversations, { chats: { atlas } });
-    // Single-chat changes answer with that chat, not every conversation.
+    // Single-chat changes answer with what changed, not every conversation or transcript.
     await expect(
       invoke(WISP_IPC_CHANNELS.appendConversationMessage, {
         conversationId: "atlas",
         message: { id: "request-1", type: "outgoing", text: "Hello", status: "queued" },
       }),
     ).resolves.toMatchObject({
-      id: "atlas",
-      preview: "Hello",
-      messages: [expect.objectContaining({ id: "request-1" })],
+      chat: { id: "atlas", preview: "Hello" },
+      added: [expect.objectContaining({ id: "request-1" })],
+      updated: [],
     });
 
     await invoke(WISP_IPC_CHANNELS.sendMessage, { conversationId: "atlas", requestId: "request-1", text: "Hello" });
@@ -123,11 +123,8 @@ describe("createBackend", () => {
       () => {
         const pushed = broadcasts.filter(([channel]) => channel === WISP_IPC_CHANNELS.conversationChanged);
         expect(pushed.at(-1)?.[1]).toMatchObject({
-          id: "atlas",
-          messages: [
-            expect.objectContaining({ id: "request-1", status: "complete" }),
-            expect.objectContaining({ id: "request-1:assistant", type: "incoming", status: "complete" }),
-          ],
+          chat: { id: "atlas" },
+          added: [expect.objectContaining({ id: "request-1:assistant", type: "incoming", status: "complete" })],
         });
       },
       { timeout: 3_000 },

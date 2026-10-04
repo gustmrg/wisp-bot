@@ -1,24 +1,26 @@
 import type { ConversationModelView, ModelSelection, SequencedConversationAgentEvent } from "../../shared/contracts.js";
-import type {
-  Chat,
-  ChatChanges,
-  ChatCollection,
-  ConversationStateView,
-  Message,
-  MessagePage,
-  MessagePageRequest,
-  MessageSearchHit,
-  OutgoingMessage,
+import {
+  chatSummary,
+  type Chat,
+  type ChatChanges,
+  type ChatCollection,
+  type ConversationDelta,
+  type ConversationStateView,
+  type Message,
+  type MessagePage,
+  type MessagePageRequest,
+  type MessageSearchHit,
+  type OutgoingMessage,
 } from "../../shared/conversations.js";
 import type { ToolApprovalRequest } from "../../shared/tool-policy.js";
 import type { AgentRegistry } from "./agent-registry.js";
 import { sanitizeBackendError, WispBackendError } from "./backend-error.js";
-import type { ConversationRepository } from "./conversation-repository.js";
+import type { ConversationRepository, MessageChange } from "./conversation-repository.js";
 import type { StructuredLogger } from "./structured-logger.js";
 
 export interface ConversationServiceOptions {
-  /** Receives a chat after agent-driven changes to it are persisted, so the renderer never re-fetches everything. */
-  onChatChanged?: (chat: Chat) => void;
+  /** Receives what changed after agent-driven changes are persisted, so the renderer never re-fetches anything. */
+  onConversationChanged?: (delta: ConversationDelta) => void;
   logger?: Pick<StructuredLogger, "warn">;
 }
 
@@ -33,7 +35,7 @@ export class ConversationService {
   private model: ModelSelection | null = null;
   private readonly liveMessages = new Map<string, Map<string, Message>>();
   private readonly pendingApprovals: () => ReadonlyArray<ToolApprovalRequest>;
-  private readonly onChatChanged: (chat: Chat) => void;
+  private readonly onConversationChanged: (delta: ConversationDelta) => void;
   private readonly logger: Pick<StructuredLogger, "warn"> | undefined;
 
   constructor(
@@ -45,7 +47,7 @@ export class ConversationService {
     this.repository = repository;
     this.registry = registry;
     this.pendingApprovals = pendingApprovals;
-    this.onChatChanged = options.onChatChanged ?? (() => undefined);
+    this.onConversationChanged = options.onConversationChanged ?? (() => undefined);
     this.logger = options.logger;
   }
 
@@ -70,6 +72,9 @@ export class ConversationService {
       initialized: this.repository.isInitialized(),
       chats: this.withLiveMessages(this.repository.readChats()),
       statuses: this.registry.statuses(),
+      liveMessages: Object.fromEntries(
+        [...this.liveMessages].map(([conversationId, messages]) => [conversationId, [...messages.values()]]),
+      ),
       agentEventSequence: this.registry.getEventSequence(),
       pendingToolApprovals: this.pendingApprovals(),
       recoveredCorruptState: this.repository.didRecoverCorruptState(),
@@ -166,9 +171,9 @@ export class ConversationService {
   }
 
   /** Saves a message the user wrote. It may update the user's own message, never a reply or notice. */
-  async appendMessage(conversationId: string, message: OutgoingMessage): Promise<Chat> {
-    await this.repository.appendOutgoingMessage(conversationId, message);
-    return this.requireChatView(conversationId);
+  async appendMessage(conversationId: string, message: OutgoingMessage): Promise<ConversationDelta> {
+    const change = await this.repository.appendOutgoingMessage(conversationId, message);
+    return this.requireDelta(conversationId, changesOf(change));
   }
 
   /**
@@ -194,14 +199,14 @@ export class ConversationService {
     return this.repository.searchMessages(query);
   }
 
-  async answerPrompt(conversationId: string, messageId: string, answer: string): Promise<Chat> {
-    await this.repository.answerPrompt(conversationId, messageId, answer);
-    return this.requireChatView(conversationId);
+  async answerPrompt(conversationId: string, messageId: string, answer: string): Promise<ConversationDelta> {
+    const prompt = await this.repository.answerPrompt(conversationId, messageId, answer);
+    return this.requireDelta(conversationId, { updated: [prompt] });
   }
 
-  async markRead(conversationId: string): Promise<Chat> {
+  async markRead(conversationId: string): Promise<ConversationDelta> {
     await this.repository.markRead(conversationId);
-    return this.requireChatView(conversationId);
+    return this.requireDelta(conversationId, {});
   }
 
   async delete(conversationId: string): Promise<ConversationStateView> {
@@ -250,13 +255,13 @@ export class ConversationService {
   private persistLiveMessage(conversationId: string, message: Message & { id: string }): void {
     this.setLiveMessage(conversationId, message);
     void this.repository.appendMessage(conversationId, message).then(
-      () => {
+      (change) => {
         const messages = this.liveMessages.get(conversationId);
         if (messages?.get(message.id) === message) {
           messages.delete(message.id);
           if (messages.size === 0) this.liveMessages.delete(conversationId);
         }
-        this.publishChat(conversationId);
+        this.publish(conversationId, changesOf(change));
       },
       // The message stays live (visible) until restart, so say it will not survive one.
       (error) => this.reportPersistenceFailure(conversationId, message.id, error),
@@ -265,28 +270,22 @@ export class ConversationService {
 
   private persistOutgoingStatus(conversationId: string, requestId: string, status: "complete" | "failed"): void {
     void this.repository.setOutgoingStatus(conversationId, requestId, status).then(
-      (changed) => {
-        if (changed) this.publishChat(conversationId);
+      (outgoing) => {
+        if (outgoing) this.publish(conversationId, { updated: [outgoing] });
       },
       (error) => this.reportPersistenceFailure(conversationId, requestId, error),
     );
   }
 
-  private publishChat(conversationId: string): void {
-    const chat = this.chatView(conversationId);
-    if (chat) this.onChatChanged(chat);
-  }
-
-  /** One stored chat with live messages overlaid, as the renderer should see it. */
-  private chatView(conversationId: string): Chat | undefined {
+  private publish(conversationId: string, changes: MessageChanges): void {
     const chat = this.repository.readChat(conversationId);
-    return chat ? this.withLiveMessages({ [conversationId]: chat })[conversationId] : undefined;
+    if (chat) this.onConversationChanged(deltaOf(chat, changes));
   }
 
-  private requireChatView(conversationId: string): Chat {
-    const chat = this.chatView(conversationId);
+  private requireDelta(conversationId: string, changes: MessageChanges): ConversationDelta {
+    const chat = this.repository.readChat(conversationId);
     if (!chat) throw new WispBackendError("not_found", "The conversation was not found.");
-    return chat;
+    return deltaOf(chat, changes);
   }
 
   private reportPersistenceFailure(conversationId: string, messageId: string, error: unknown): void {
@@ -323,4 +322,14 @@ export class ConversationService {
     }
     return result;
   }
+}
+
+type MessageChanges = Partial<Pick<ConversationDelta, "added" | "updated">>;
+
+function changesOf({ message, added }: MessageChange): MessageChanges {
+  return added ? { added: [message] } : { updated: [message] };
+}
+
+function deltaOf(chat: Readonly<Chat>, changes: MessageChanges): ConversationDelta {
+  return { chat: chatSummary(chat), added: changes.added ?? [], updated: changes.updated ?? [] };
 }
