@@ -2,15 +2,17 @@ import { randomUUID } from "node:crypto";
 
 import type { ConversationAgentEvent } from "../../shared/contracts.js";
 import { getToolMetadata } from "../../shared/tool-catalog.js";
-import type {
-  ResolveToolApprovalRequest,
-  ToolActionCategory,
-  ToolApprovalRequest,
-  ToolPolicyBehavior,
-  ToolPolicySettings,
+import {
+  ruleMatchesCategory,
+  workspaceFileBehavior,
+  type ResolveToolApprovalRequest,
+  type ToolActionCategory,
+  type ToolApprovalRequest,
+  type ToolPolicyBehavior,
+  type ToolPolicySettings,
 } from "../../shared/tool-policy.js";
 import { WispBackendError } from "./backend-error.js";
-import { normalizeRuleAction, ToolPolicyStore } from "./tool-policy-store.js";
+import { ToolPolicyStore } from "./tool-policy-store.js";
 import { NullToolAuditSink, type ToolAuditSink } from "./tool-audit-store.js";
 
 const DEFAULT_APPROVAL_TTL_MS = 60_000;
@@ -293,29 +295,8 @@ export function evaluateToolPolicy(
       : "ask";
   }
   if (category !== "create_file" && category !== "modify_file") return "block";
-  if (!settings.autoReview) return "ask";
-  const matches = settings.rules
-    .filter(
-      (rule) =>
-        rule.scope === "workspace" && scopeKind === "workspace_path" && ruleMatchesCategory(rule.action, category),
-    )
-    .map(({ behavior }) => behavior);
-  if (matches.includes("block")) return "block";
-  if (matches.includes("ask")) return "ask";
-  if (matches.includes("allow")) return "allow";
-  return "ask";
-}
-
-function ruleMatchesCategory(action: string, category: ToolActionCategory): boolean {
-  const normalized = normalizeRuleAction(action);
-  if (normalized === category) return true;
-  if (category === "create_file") {
-    return ["create", "create_files", "write", "write_files", "file_changes", "all_file_changes"].includes(normalized);
-  }
-  if (category === "modify_file") {
-    return ["edit", "edit_files", "modify", "modify_files", "file_changes", "all_file_changes"].includes(normalized);
-  }
-  return false;
+  if (!settings.autoReview || scopeKind !== "workspace_path") return "ask";
+  return workspaceFileBehavior(settings.rules, category);
 }
 
 function sanitizeSummary(value: string): string {

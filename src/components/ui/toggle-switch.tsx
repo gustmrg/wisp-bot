@@ -4,9 +4,10 @@ interface ToggleSwitchProps {
   checked: boolean;
   label: string;
   onChange: () => void;
+  disabled?: boolean;
 }
 
-function ToggleSwitch({ checked, label, onChange }: ToggleSwitchProps) {
+function ToggleSwitch({ checked, label, onChange, disabled = false }: ToggleSwitchProps) {
   return (
     <button
       type="button"
@@ -14,8 +15,9 @@ function ToggleSwitch({ checked, label, onChange }: ToggleSwitchProps) {
       aria-checked={checked}
       aria-label={label}
       data-on={checked}
+      disabled={disabled}
       onClick={onChange}
-      className="relative h-5 w-[34px] shrink-0 rounded-[10px] bg-input data-[on=true]:bg-primary"
+      className="relative h-5 w-[34px] shrink-0 rounded-[10px] bg-input disabled:cursor-not-allowed disabled:opacity-50 data-[on=true]:bg-primary"
     >
       <span
         className={cn(

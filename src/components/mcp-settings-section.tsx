@@ -8,8 +8,18 @@ import type {
   SaveMcpServerRequest,
 } from "../../shared/mcp";
 import { ChevronLeftIcon, Plus, RefreshCw, ServerIcon, Settings2 } from "lucide-react";
+import {
+  ConfirmAction,
+  SettingsCard,
+  SettingsRow,
+  SettingsRowCopy,
+  StatusDot,
+  type StatusTone,
+} from "@/components/settings/settings-primitives";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { ToggleSwitch } from "@/components/ui/toggle-switch";
 
 const AUTH_MODE_OPTIONS: ReadonlyArray<{ value: McpAuthMode; label: string }> = [
   { value: "none", label: "No authentication" },
@@ -23,6 +33,14 @@ const STATE_LABELS: Record<McpConnectionState, string> = {
   needs_sign_in: "Needs sign-in",
   unavailable: "Unavailable",
 };
+
+function stateTone(server: McpServerSummary): StatusTone {
+  if (!server.enabled) return "muted";
+  if (server.state === "connected") return "success";
+  if (server.state === "needs_sign_in") return "warning";
+  if (server.state === "unavailable") return "danger";
+  return "muted";
+}
 
 interface McpDraft {
   name: string;
@@ -165,7 +183,8 @@ function McpServerCard({ server, onSelect }: { server?: McpServerSummary; onSele
         <span className="min-w-0 flex-1">
           <span className="block text-[14px] font-medium">{server.name}</span>
           <span className="mt-1 block truncate text-[12px] text-dim">{safeHost(server.endpoint)}</span>
-          <span className="mt-1.5 block text-[10.5px] text-dim">
+          <span className="mt-1.5 flex items-center gap-1.5 text-[10.5px] text-dim">
+            <StatusDot tone={stateTone(server)} />
             {STATE_LABELS[server.state]} · {server.tools.length} tool{server.tools.length === 1 ? "" : "s"}
             {server.enabled ? "" : " · disabled"}
           </span>
@@ -348,7 +367,8 @@ function McpServerForm({
       </p>
       <div className="flex flex-col gap-3 text-[11.5px]">
         {server ? (
-          <p>
+          <p className="flex items-center gap-1.5">
+            <StatusDot tone={stateTone(server)} />
             {STATE_LABELS[server.state]}
             {server.lastDiscoveredAt ? ` · tools discovered ${formatDate(server.lastDiscoveredAt)}` : ""}
             {server.tools.length ? ` · ${server.tools.length} tool${server.tools.length === 1 ? "" : "s"}` : ""}
@@ -386,26 +406,35 @@ function McpServerForm({
           />
         </label>
         <p className="text-dim">Only HTTPS endpoints are allowed.</p>
-        <label htmlFor={`${formId}-auth`} className="flex flex-col gap-1.5">
-          <strong>Authentication</strong>
-          <select
-            id={`${formId}-auth`}
-            className="rounded-md border border-border bg-transparent px-2 py-1.5"
+        <div className="flex flex-col gap-1.5">
+          <label htmlFor={`${formId}-auth`}>
+            <strong>Authentication</strong>
+          </label>
+          <Select
+            items={AUTH_MODE_OPTIONS}
             value={draft.authMode}
             disabled={busy}
-            onChange={(event) => {
-              setDraft({ ...draft, authMode: event.target.value as McpAuthMode });
+            onValueChange={(value) => {
+              if (value === null) return;
+              setDraft({ ...draft, authMode: value as McpAuthMode });
               setError("");
               setMessage("");
             }}
           >
-            {AUTH_MODE_OPTIONS.map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </select>
-        </label>
+            <SelectTrigger id={`${formId}-auth`} className="w-full">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent align="start" alignItemWithTrigger={false}>
+              <SelectGroup>
+                {AUTH_MODE_OPTIONS.map((option) => (
+                  <SelectItem key={option.value} value={option.value}>
+                    {option.label}
+                  </SelectItem>
+                ))}
+              </SelectGroup>
+            </SelectContent>
+          </Select>
+        </div>
         {draft.authMode === "header" ? (
           <>
             <label htmlFor={`${formId}-header-name`} className="flex flex-col gap-1.5">
@@ -452,22 +481,26 @@ function McpServerForm({
               : "Save the connection first, then use Sign in to connect through your browser."}
           </p>
         ) : null}
-        <label className="flex items-center gap-2">
-          <input
-            type="checkbox"
-            checked={draft.enabled}
-            disabled={busy}
-            onChange={(event) => {
-              setDraft({ ...draft, enabled: event.target.checked });
-              setError("");
-            }}
-          />
-          Enable {server?.name ?? "this server"}
-        </label>
-        <p className="text-dim">
-          Disabling blocks this server for every Wisp while keeping grants. Changing the endpoint or credentials revokes
-          Wisp access; removing the connection deletes its grants and saved secrets.
-        </p>
+        <SettingsCard>
+          <SettingsRow className="min-h-0">
+            <SettingsRowCopy>
+              <strong>Enabled</strong>
+              <small>
+                Disabling blocks this server for every Wisp while keeping grants. Changing the endpoint or credentials
+                revokes Wisp access.
+              </small>
+            </SettingsRowCopy>
+            <ToggleSwitch
+              checked={draft.enabled}
+              label={`Enable ${server?.name ?? "this server"}`}
+              disabled={busy}
+              onChange={() => {
+                setDraft({ ...draft, enabled: !draft.enabled });
+                setError("");
+              }}
+            />
+          </SettingsRow>
+        </SettingsCard>
         {server && server.tools.length ? (
           <details className="rounded-[10px] bg-popover p-3">
             <summary className="cursor-pointer">Reviewed tools ({server.tools.length})</summary>
@@ -524,9 +557,15 @@ function McpServerForm({
             </Button>
           ) : null}
           {server ? (
-            <Button variant="ghost" type="button" disabled={busy} onClick={() => void run("remove")}>
-              {operation === "remove" ? "Removing…" : "Remove connection"}
-            </Button>
+            <ConfirmAction
+              label="Remove connection"
+              confirmLabel="Remove connection"
+              pendingLabel="Removing…"
+              pending={operation === "remove"}
+              disabled={busy}
+              description={`Removes ${server.name}, its saved secrets and every Wisp's access to it.`}
+              onConfirm={() => void run("remove")}
+            />
           ) : null}
         </div>
       </div>

@@ -1,6 +1,11 @@
 import { readFile, rename } from "node:fs/promises";
 
-import type { ToolPolicyBehavior, ToolPolicyRule, ToolPolicySettings } from "../../shared/tool-policy.js";
+import {
+  normalizeRuleAction,
+  type ToolPolicyBehavior,
+  type ToolPolicyRule,
+  type ToolPolicySettings,
+} from "../../shared/tool-policy.js";
 import { writeFileAtomically } from "./atomic-file.js";
 import { WispBackendError } from "./backend-error.js";
 
@@ -75,14 +80,6 @@ export function normalizeToolPolicy(value: unknown): ToolPolicySettings {
     autoReview: raw.autoReview,
     rules: raw.rules.map(normalizeRule),
   };
-}
-
-export function normalizeRuleAction(value: string): string {
-  return value
-    .trim()
-    .toLocaleLowerCase()
-    .replaceAll(/[^a-z0-9]+/g, "_")
-    .replaceAll(/^_+|_+$/g, "");
 }
 
 function normalizeRule(value: unknown): ToolPolicyRule {

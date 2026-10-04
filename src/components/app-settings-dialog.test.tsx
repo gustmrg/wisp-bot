@@ -73,7 +73,7 @@ describe("AppSettingsDialog metadata", () => {
     await user.click(await screen.findByRole("button", { name: "Connect Web search" }));
     const key = await screen.findByLabelText("Brave Search API key");
     await user.type(key, "unsaved-secret");
-    await user.click(screen.getByRole("button", { name: "Close" }));
+    await user.click(screen.getByRole("button", { name: "Back to plugins" }));
     await user.click(screen.getByRole("button", { name: "General" }));
     await user.click(screen.getByRole("button", { name: "Plugins" }));
     await user.click(await screen.findByRole("button", { name: "Connect Web search" }));
@@ -159,6 +159,9 @@ describe("AppSettingsDialog metadata", () => {
     );
 
     expect(screen.getByLabelText("Preferred name")).toHaveValue("Ada");
+    expect(screen.getByRole("button", { name: "Notifications (coming soon)" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Shortcuts (coming soon)" })).toBeDisabled();
+    expect(screen.getByRole("switch", { name: "Launch at login" })).toBeDisabled();
     expect(screen.queryByText("ada@example.test")).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Sign out" })).not.toBeInTheDocument();
 

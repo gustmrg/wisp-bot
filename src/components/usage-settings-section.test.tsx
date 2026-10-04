@@ -42,9 +42,9 @@ describe("UsageSettingsSection", () => {
     const user = userEvent.setup();
     render(<UsageSettingsSection />);
     expect(await screen.findByText("Research Wisp")).toBeVisible();
-    expect(screen.getByText("Unknown estimated USD")).toBeVisible();
+    expect(screen.getAllByText("Unknown")[0]).toBeVisible();
     expect(getUsageReport).toHaveBeenCalledWith({ period: "30d" });
-    await user.selectOptions(screen.getByLabelText("Period"), "7d");
+    await user.click(screen.getByRole("radio", { name: "Last 7 days" }));
     await waitFor(() => expect(getUsageReport).toHaveBeenLastCalledWith({ period: "7d" }));
     await user.click(screen.getByRole("button", { name: "Refresh" }));
     await waitFor(() => expect(getUsageReport).toHaveBeenCalledTimes(3));
@@ -64,7 +64,7 @@ describe("UsageSettingsSection", () => {
     Object.defineProperty(window, "wisp", { configurable: true, value: { getUsageReport } });
     const user = userEvent.setup();
     render(<UsageSettingsSection />);
-    await user.selectOptions(screen.getByLabelText("Period"), "all");
+    await user.click(screen.getByRole("radio", { name: "All history" }));
     expect(await screen.findByText(/No Wisps yet/)).toBeVisible();
     resolveFirst({ ok: true, value: report });
     await waitFor(() => expect(screen.queryByText("Research Wisp")).not.toBeInTheDocument());
