@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
-import { PanelLeftCloseIcon, PlusIcon, SearchIcon, ShieldAlertIcon } from "lucide-react";
+import { PanelLeftCloseIcon, PlusIcon, SearchIcon, ShieldAlertIcon, UserIcon } from "lucide-react";
 
 import type { ChatId, ChatSummaryCollection } from "@/chat-data";
 import { ChatAvatar } from "@/components/chat-avatar";
@@ -274,7 +274,9 @@ function Sidebar({
             title="User settings"
             onClick={onOpenSettings}
           >
-            <span className={profileAvatar}>{currentUser.initials}</span>
+            <span className={profileAvatar}>
+              {currentUser.initials || <UserIcon aria-hidden="true" className="size-3.5" />}
+            </span>
             {collapsed ? null : <span className="min-w-0 flex-1 truncate">{currentUser.displayName}</span>}
           </button>
         )}

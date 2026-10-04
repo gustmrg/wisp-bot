@@ -1,4 +1,5 @@
 import type { AiSettingsView, ModelSelection } from "../../shared/contracts";
+import { missingModelSetup } from "../../shared/setup-status";
 import { SettingsCard, SettingsRow, SettingsRowCopy } from "@/components/settings/settings-primitives";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -32,12 +33,14 @@ function invalidMaxOutputTokens(draft: WispModelDraft, modelMax: number | undefi
   return !Number.isSafeInteger(parsed) || parsed < 1 || parsed > (modelMax ?? 1_000_000);
 }
 
+/** A new Wisp needs a model it can run: the global default or its own, with a saved provider key. */
 export function isWispModelDraftInvalid(draft: WispModelDraft, view: AiSettingsView | null): boolean {
-  if (draft.useGlobal) return false;
+  if (!view) return true;
+  if (draft.useGlobal) return missingModelSetup(view).length > 0;
   if (!draft.providerId || !draft.modelId) return true;
-  const model = view?.providers
-    .find(({ id }) => id === draft.providerId)
-    ?.models.find(({ id }) => id === draft.modelId);
+  const provider = view.providers.find(({ id }) => id === draft.providerId);
+  if (!provider?.credentialConfigured) return true;
+  const model = provider.models.find(({ id }) => id === draft.modelId);
   return invalidMaxOutputTokens(draft, model?.maxOutputTokens);
 }
 
@@ -112,9 +115,11 @@ function CreateWispModelSection({ view, loadError, draft, onChange }: CreateWisp
           {loadError}
         </p>
       ) : null}
-      {draft.useGlobal && view && !canCustomize ? (
-        <p className="m-0 px-3.5 pb-3 text-[11px] text-dim">
-          No providers are available yet. Set up a provider in Settings → AI Model after creating this Wisp.
+      {draft.useGlobal && view && missingModelSetup(view).length > 0 ? (
+        <p role="alert" className="m-0 px-3.5 pb-3 text-[11px] text-destructive">
+          {view.selection
+            ? "No API key is saved for the global default provider. Add one in Settings → AI Model, or choose a model for this Wisp."
+            : "No global default model is set. Choose one in Settings → AI Model, or choose a model for this Wisp."}
         </p>
       ) : null}
       {!draft.useGlobal && view ? (
@@ -193,7 +198,7 @@ function CreateWispModelSection({ view, loadError, draft, onChange }: CreateWisp
           </SettingsRow>
           {provider && !provider.credentialConfigured ? (
             <p role="alert" className="m-0 px-3.5 pb-3 text-[11px] text-destructive">
-              No API key saved for {provider.name} yet. Add one in Settings → AI Model to let this Wisp send messages.
+              No API key saved for {provider.name} yet. Add one in Settings → AI Model before creating this Wisp.
             </p>
           ) : null}
           {invalidMaxOutputTokens(draft, model?.maxOutputTokens) ? (

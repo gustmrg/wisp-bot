@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import type { AiSettingsView, ProviderSummary } from "../../shared/contracts";
 import { SearchableCombobox } from "@/components/searchable-combobox";
@@ -15,6 +15,10 @@ import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectVa
 
 interface ModelSettingsSectionProps {
   active: boolean;
+  /** Called with every loaded or saved view, so a parent can follow what is configured. */
+  onViewChange?: (view: AiSettingsView) => void;
+  /** Hide the panel title when a surrounding screen already provides one. */
+  showHeading?: boolean;
 }
 
 function initialProvider(view: AiSettingsView): ProviderSummary | undefined {
@@ -25,7 +29,7 @@ function initialProvider(view: AiSettingsView): ProviderSummary | undefined {
   );
 }
 
-function ModelSettingsSection({ active }: ModelSettingsSectionProps) {
+function ModelSettingsSection({ active, onViewChange, showHeading = true }: ModelSettingsSectionProps) {
   const [view, setView] = useState<AiSettingsView | null>(null);
   const [providerId, setProviderId] = useState("");
   const [modelId, setModelId] = useState("");
@@ -36,10 +40,14 @@ function ModelSettingsSection({ active }: ModelSettingsSectionProps) {
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
 
+  const onViewChangeRef = useRef(onViewChange);
+  onViewChangeRef.current = onViewChange;
+
   const provider = useMemo(() => view?.providers.find(({ id }) => id === providerId), [providerId, view]);
 
   const applyView = useCallback((nextView: AiSettingsView): void => {
     setView(nextView);
+    onViewChangeRef.current?.(nextView);
     const nextProvider = initialProvider(nextView);
     const nextSelection = nextView.selection;
     setProviderId(nextProvider?.id ?? "");
@@ -165,12 +173,15 @@ function ModelSettingsSection({ active }: ModelSettingsSectionProps) {
       aria-labelledby="model-settings-title"
       hidden={!active}
     >
-      <h2 id="model-settings-title" className="mb-1 mt-0 text-[17px]">
+      <h2 id="model-settings-title" className={showHeading ? "mb-1 mt-0 text-[17px]" : "sr-only"}>
         AI Model
       </h2>
-      <p className="mb-[22px] text-dim text-[11.5px] leading-relaxed">
-        Default provider and model for Wisps without their own selection. Saved provider keys are shared with all Wisps.
-      </p>
+      {showHeading ? (
+        <p className="mb-[22px] text-dim text-[11.5px] leading-relaxed">
+          Default provider and model for Wisps without their own selection. Saved provider keys are shared with all
+          Wisps.
+        </p>
+      ) : null}
 
       {view?.catalogError ? (
         <p role="alert" className="mb-[18px] text-[11.5px] leading-relaxed text-destructive">

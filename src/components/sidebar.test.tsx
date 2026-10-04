@@ -43,6 +43,23 @@ describe("Sidebar current user", () => {
     expect(screen.getByText("AL")).toBeVisible();
   });
 
+  it("shows a user icon instead of initials when no name is set", () => {
+    render(
+      <Sidebar
+        activeChatId=""
+        chats={{}}
+        collapsed={false}
+        currentUser={{ displayName: "Your profile", givenName: "", initials: "" }}
+        width={280}
+        {...callbacks}
+      />,
+    );
+
+    const profile = screen.getByRole("button", { name: "Open user settings" });
+    expect(profile.querySelector("svg.lucide-user")).toBeInTheDocument();
+    expect(profile).not.toHaveTextContent("?");
+  });
+
   it("opens a Wisp-only creation dialog without a kind selector", async () => {
     const user = userEvent.setup();
     render(

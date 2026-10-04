@@ -11,6 +11,7 @@ export function UserProfileSettings({ controller }: { controller: UserProfileCon
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const dirty = JSON.stringify(draft) !== JSON.stringify(controller.profile);
+  const nameMissing = !draft.preferredName.trim();
   return (
     <SettingsGroup label="Your profile">
       <SettingsCard>
@@ -68,11 +69,16 @@ export function UserProfileSettings({ controller }: { controller: UserProfileCon
               />
             </SettingsField>
             <div className="flex justify-end">
-              <Button type="submit" disabled={!dirty}>
+              <Button type="submit" disabled={!dirty || nameMissing}>
                 {saving ? "Saving…" : "Save profile"}
               </Button>
             </div>
           </fieldset>
+          {nameMissing ? (
+            <p role="alert" className="m-0 text-[11.5px] text-destructive">
+              Your preferred name is required.
+            </p>
+          ) : null}
           {controller.error ? (
             <p role="alert" className="m-0 text-[11.5px] text-destructive">
               {controller.error}
