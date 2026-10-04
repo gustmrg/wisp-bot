@@ -1,3 +1,4 @@
+import { LaunchAtLoginSetting } from "@/components/launch-at-login-setting";
 import { UserProfileSettings } from "@/components/user-profile-settings";
 import type { UserProfileController } from "@/hooks/use-user-profile";
 import { useEffect, useRef, useState } from "react";
@@ -20,7 +21,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 
-import { GeneralSettingsSections, PreferenceSwitch, SoonTitle } from "@/components/general-settings-sections";
+import { GeneralSettingsSections, PreferenceSwitch } from "@/components/general-settings-sections";
 import { UsageSettingsSection } from "@/components/usage-settings-section";
 import { ModelSettingsSection } from "@/components/model-settings-section";
 import { PluginSettingsSection } from "@/components/plugin-settings-section";
@@ -288,18 +289,7 @@ function AppSettingsDialog({
                     </SelectContent>
                   </Select>
                 </SettingsRow>
-                <SettingsRow>
-                  <SettingsRowCopy>
-                    <SoonTitle>Launch at login</SoonTitle>
-                    <small className="text-dim text-[11.5px]">Open Wisp automatically when you sign in.</small>
-                  </SettingsRowCopy>
-                  <PreferenceSwitch
-                    label="Launch at login"
-                    checked={preferences.launchAtLogin}
-                    disabled
-                    onChange={() => onPreferencesChange({ ...preferences, launchAtLogin: !preferences.launchAtLogin })}
-                  />
-                </SettingsRow>
+                <LaunchAtLoginSetting open={open} />
                 <SettingsRow>
                   <SettingsRowCopy>
                     <strong>Notification sounds</strong>

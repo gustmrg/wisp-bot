@@ -11,6 +11,7 @@ import {
 } from "electron";
 import { autoUpdater } from "electron-updater";
 import path from "node:path";
+import { LaunchAtLoginService } from "./backend/launch-at-login-service.js";
 
 import { WISP_RELEASES_URL } from "../shared/contracts.js";
 import { selectAgentMode } from "./backend/agent-mode.js";
@@ -185,6 +186,13 @@ async function bootstrap(): Promise<void> {
     : false;
   const backend = await createBackend({
     dataDirectory,
+    launchAtLoginService: new LaunchAtLoginService({
+      platform: process.platform,
+      packaged: app.isPackaged,
+      home: app.getPath("home"),
+      execPath: process.execPath,
+      env: process.env,
+    }),
     ipcMain,
     authorizeSender: isTrustedIpcSender,
     broadcast,

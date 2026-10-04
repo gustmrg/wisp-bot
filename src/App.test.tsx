@@ -160,6 +160,8 @@ function createApi(initialState: ConversationStateView): WispApi {
     saveUserProfile: vi.fn(async (profile) => ({ ok: true as const, value: profile })),
     saveToolPolicy: vi.fn(async (settings) => ({ ok: true as const, value: settings })),
     resolveToolApproval: vi.fn(async () => ({ ok: true as const, value: {} })),
+    getLaunchAtLoginState: async () => ({ ok: true, value: { supported: false, enabled: false } }),
+    setLaunchAtLogin: async () => ({ ok: true, value: { supported: false, enabled: false } }),
     getUpdateState: vi.fn(async () => ({
       ok: true as const,
       value: { phase: "idle" as const, currentVersion: "0.1.0" },

@@ -5,6 +5,8 @@ import { isWispBridgeAvailable } from "../src/lib/wisp-bridge.js";
 
 function completeBridge(): WispApi {
   return {
+    getLaunchAtLoginState: async () => ({ ok: true, value: { supported: false, enabled: false } }),
+    setLaunchAtLogin: async () => ({ ok: true, value: { supported: false, enabled: false } }),
     getPluginSettings: async () => ({ ok: true, value: { secureStorageAvailable: true, plugins: [] } }),
     savePluginSettings: async () => ({ ok: true, value: { secureStorageAvailable: true, plugins: [] } }),
     removePlugin: async () => ({ ok: true, value: { secureStorageAvailable: true, plugins: [] } }),

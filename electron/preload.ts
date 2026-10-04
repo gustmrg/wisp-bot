@@ -50,6 +50,8 @@ const WISP_IPC_CHANNELS = {
   saveToolPolicy: "wisp:tool-policy:save",
   resolveToolApproval: "wisp:tool-policy:resolve-approval",
   getSessionReport: "wisp:conversations:get-session-report",
+  getLaunchAtLoginState: "wisp:login:get",
+  setLaunchAtLogin: "wisp:login:set",
   getUpdateState: "wisp:update:get-state",
   checkForUpdates: "wisp:update:check",
   downloadUpdate: "wisp:update:download",
@@ -59,6 +61,8 @@ const WISP_IPC_CHANNELS = {
 } as const;
 
 const wispApi: WispApi = {
+  getLaunchAtLoginState: () => ipcRenderer.invoke(WISP_IPC_CHANNELS.getLaunchAtLoginState),
+  setLaunchAtLogin: (enabled) => ipcRenderer.invoke(WISP_IPC_CHANNELS.setLaunchAtLogin, enabled),
   getPluginSettings: () => ipcRenderer.invoke(WISP_IPC_CHANNELS.getPluginSettings),
   savePluginSettings: (request) => ipcRenderer.invoke(WISP_IPC_CHANNELS.savePluginSettings, request),
   removePlugin: (request) => ipcRenderer.invoke(WISP_IPC_CHANNELS.removePlugin, request),

@@ -80,6 +80,8 @@ export const WISP_IPC_CHANNELS = {
   saveUserProfile: "wisp:profile:save",
   saveToolPolicy: "wisp:tool-policy:save",
   resolveToolApproval: "wisp:tool-policy:resolve-approval",
+  getLaunchAtLoginState: "wisp:login:get",
+  setLaunchAtLogin: "wisp:login:set",
   getUpdateState: "wisp:update:get-state",
   checkForUpdates: "wisp:update:check",
   downloadUpdate: "wisp:update:download",
@@ -337,7 +339,15 @@ export interface UpdateState {
   message?: string;
 }
 
+export interface LaunchAtLoginState {
+  supported: boolean;
+  enabled: boolean;
+  reason?: string;
+}
+
 export interface WispApi {
+  getLaunchAtLoginState(): Promise<BackendResult<LaunchAtLoginState>>;
+  setLaunchAtLogin(enabled: boolean): Promise<BackendResult<LaunchAtLoginState>>;
   getPluginSettings(): Promise<BackendResult<PluginSettingsView>>;
   savePluginSettings(request: SavePluginSettingsRequest): Promise<BackendResult<PluginSettingsView>>;
   removePlugin(request: PluginRequest): Promise<BackendResult<PluginSettingsView>>;

@@ -1,3 +1,5 @@
+import type { LaunchAtLoginService } from "./backend/launch-at-login-service.js";
+import { registerLaunchAtLoginHandlers } from "./ipc/register-launch-at-login-handlers.js";
 import path from "node:path";
 
 import { WISP_IPC_CHANNELS, type ModelSelection, type SequencedConversationAgentEvent } from "../shared/contracts.js";
@@ -49,6 +51,7 @@ export interface BackendHost {
   /** The running application version, reported to remote MCP servers. */
   appVersion: string;
   updateService: UpdateService;
+  launchAtLoginService: LaunchAtLoginService;
   userName?: string;
   /** Refresh model catalogs over the network in the background after startup. Defaults to true. */
   allowModelNetwork?: boolean;
@@ -156,6 +159,7 @@ export async function createBackend(host: BackendHost): Promise<Backend> {
   // Disposed in this order on shutdown: stop new work and integrations first,
   // then the agents, which may still be settling their last turn.
   const handlers = [
+    registerLaunchAtLoginHandlers(ipcMain, host.launchAtLoginService, authorizeSender),
     registerToolPolicyHandlers(ipcMain, toolAuthorizationBroker, authorizeSender),
     registerPluginHandlers(ipcMain, pluginService, authorizeSender),
     registerMcpHandlers(ipcMain, mcpService, authorizeSender),
