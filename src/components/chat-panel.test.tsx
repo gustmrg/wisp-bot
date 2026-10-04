@@ -69,7 +69,6 @@ function renderPanel(held: MessageWindow | undefined, overrides: Partial<ChatPan
     status: "idle",
     acknowledging: false,
     approvals: [],
-    toolActivities: [],
     onAnswerPrompt: vi.fn(),
     onAbort: vi.fn(),
     onLoadOlder: vi.fn(),
@@ -91,6 +90,45 @@ function renderPanel(held: MessageWindow | undefined, overrides: Partial<ChatPan
 }
 
 describe("ChatPanel transcript", () => {
+  it("shows tool execution only in the chat, then removes it when the reply starts", () => {
+    const request: Message = { id: "request", type: "outgoing", text: "Search the web", status: "complete" };
+    const reply: Message = { id: "reply", type: "incoming", text: "", status: "streaming" };
+    const { scroller, show } = renderPanel(transcript([request, reply]), {
+      status: "working",
+      activity: "Searching the web…",
+    });
+
+    expect(screen.getAllByText("Searching the web…")).toHaveLength(1);
+    expect(scroller).toContainElement(screen.getByText("Searching the web…"));
+    expect(screen.queryByText("Atlas is working…")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Stop response" })).toBeInTheDocument();
+
+    show(transcript([request, { ...reply, text: "Here is what I found." }]), {
+      status: "working",
+      activity: undefined,
+    });
+    expect(screen.getByText("Here is what I found.")).toBeInTheDocument();
+    expect(screen.queryByText("Searching the web…")).not.toBeInTheDocument();
+    expect(screen.queryByText("Atlas is working…")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Stop response" })).toBeInTheDocument();
+
+    show(transcript([request, { ...reply, text: "Here is what I found.", status: "complete" }]), { status: "idle" });
+    expect(screen.queryByRole("list", { name: "Recent tool activity" })).not.toBeInTheDocument();
+    expect(screen.queryByText(/Search web — completed/)).not.toBeInTheDocument();
+  });
+
+  it("keeps the execution indicator hidden when a message is queued during the reply", () => {
+    renderPanel(
+      transcript([
+        { id: "reply", type: "incoming", text: "Here is what I found.", status: "streaming" },
+        { id: "queued", type: "outgoing", text: "Next question", status: "queued" },
+      ]),
+      { status: "working", activity: "Searching the web…" },
+    );
+    expect(screen.queryByText("Searching the web…")).not.toBeInTheDocument();
+    expect(screen.queryByText("Atlas is working…")).not.toBeInTheDocument();
+  });
+
   it("opens at the newest message once the first page arrives", () => {
     const { scroller, show, props } = renderPanel(undefined);
     expect(screen.queryByText("Message 9")).not.toBeInTheDocument();
@@ -174,7 +212,8 @@ describe("ChatPanel transcript", () => {
     expect(scroller.scrollTop).toBe(opened);
     show({ ...held, messages: messages(0, 22), newerCursor: null });
     expect(scroller.scrollTop).toBe(opened);
-    expect(screen.getByText("Atlas is working…")).toBeInTheDocument();
+    // Reattaching to a visible reply must not add an execution indicator below it.
+    expect(screen.queryByText("Atlas is working…")).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Jump to latest" })).not.toBeInTheDocument();
 
     show(held);

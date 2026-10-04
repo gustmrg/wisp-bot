@@ -4,8 +4,6 @@ import { ArrowDownIcon, ChevronLeftIcon, SettingsIcon } from "lucide-react";
 import type { ChatSummary, ChatSummaryCollection, Message } from "@/chat-data";
 import type { ManagedConversationStatus } from "../../shared/conversations";
 import type { ToolApprovalDecision, ToolApprovalRequest } from "../../shared/tool-policy";
-import { describeMcpAlias, getToolMetadata } from "../../shared/tool-catalog";
-import type { ToolActivityView } from "@/lib/conversation-stream";
 import { getCircleMembers } from "@/lib/circle-members";
 import { withDateDividers } from "@/lib/date-dividers";
 import { isAttached, type MessageWindow } from "@/lib/message-windows";
@@ -56,7 +54,6 @@ interface ChatPanelProps {
   approvals: ReadonlyArray<ToolApprovalRequest>;
   /** Auto-review is on, so approvals can offer a lasting Allow rule. */
   allowAlwaysAvailable?: boolean;
-  toolActivities: ReadonlyArray<ToolActivityView>;
   onAnswerPrompt: (messageId: string | undefined, answer: string) => void;
   onAbort: () => void;
   onLoadOlder: () => void;
@@ -81,7 +78,6 @@ function ChatPanel({
   acknowledging,
   approvals,
   allowAlwaysAvailable = false,
-  toolActivities,
   onAnswerPrompt,
   onAbort,
   onLoadOlder,
@@ -106,6 +102,12 @@ function ChatPanel({
   const targetMessageId = transcript?.targetMessageId;
   const firstMessageId = messages[0]?.id;
   const lastMessage = messages.at(-1);
+  const responding =
+    (lastMessage?.type === "incoming" && Boolean(lastMessage.text.trim())) ||
+    messages.some(
+      (message) => message.type === "incoming" && message.status === "streaming" && Boolean(message.text.trim()),
+    );
+  const showActivity = attached && working && !responding;
   const openKey = transcript && !hidden ? `${chat.id}:${transcript.epoch}` : null;
   const endKey = `${lastMessage?.id}:${lastMessage && "text" in lastMessage ? lastMessage.text.length : 0}:${working}`;
   const canLoadOlder = Boolean(transcript?.olderCursor) && !transcript?.loading;
@@ -240,19 +242,6 @@ function ChatPanel({
               );
             })}
             {/* These belong to the newest messages, so a window opened elsewhere in the transcript omits them. */}
-            {attached && toolActivities.length ? (
-              <ol className="my-2 flex list-none flex-col gap-1 p-0" aria-label="Recent tool activity">
-                {toolActivities.map((tool) => (
-                  <li key={tool.toolCallId} className="flex items-center gap-2 text-[11px] text-faint">
-                    <span className="size-1.5 rounded-full bg-current" aria-hidden="true" />
-                    <span>
-                      {toolLabel(tool.toolName)} —{" "}
-                      {tool.phase === "completed" ? (tool.isError ? "failed" : "completed") : "running"}
-                    </span>
-                  </li>
-                ))}
-              </ol>
-            ) : null}
             {attached
               ? approvals.map((request) => (
                   <ToolApprovalCard
@@ -264,10 +253,13 @@ function ChatPanel({
                   />
                 ))
               : null}
-            {attached && working ? (
-              <div className="mt-3 flex items-center gap-2 text-dim text-xs [&_svg]:animate-working-pulse">
+            {showActivity ? (
+              <div
+                role="status"
+                className="mt-3 flex items-center gap-2 text-dim text-xs [&_svg]:animate-working-pulse"
+              >
                 <ChatAvatar chat={chat} chats={chats} size="sm" />
-                <span>{chat.name} is working…</span>
+                <span>{activity || `${chat.name} is working…`}</span>
               </div>
             ) : null}
           </div>
@@ -290,7 +282,6 @@ function ChatPanel({
         key={chat.id}
         chat={chat}
         status={status}
-        activity={activity}
         error={error}
         acknowledging={acknowledging}
         onConfigure={onConfigure}
@@ -305,7 +296,3 @@ function ChatPanel({
 
 export { ChatPanel };
 export type { ChatPanelProps };
-
-function toolLabel(toolName: string): string {
-  return getToolMetadata(toolName)?.label ?? describeMcpAlias(toolName)?.label ?? "Tool action";
-}

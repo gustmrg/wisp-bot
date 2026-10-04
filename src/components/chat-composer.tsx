@@ -10,7 +10,6 @@ export interface ChatComposerProps {
   enterToSend?: boolean;
   chat: ChatSummary;
   status: ManagedConversationStatus;
-  activity?: string;
   error?: string;
   acknowledging: boolean;
   onConfigure?: () => void;
@@ -23,7 +22,6 @@ export function ChatComposer({
   enterToSend = true,
   chat,
   status,
-  activity,
   error,
   acknowledging,
   onConfigure,
@@ -94,7 +92,6 @@ export function ChatComposer({
         ) : (
           attachError ||
           error ||
-          activity ||
           (attaching ? "Copying files to the workspace…" : acknowledging ? "Queueing your message…" : null)
         )}
       </div>
