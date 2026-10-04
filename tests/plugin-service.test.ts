@@ -21,6 +21,7 @@ async function setup() {
     decrypt: (value) => value.toString().split("").reverse().join(""),
   };
   const execute = vi.fn(async () => "Provider result");
+  const executeFirecrawl = vi.fn(async () => "Firecrawl result");
   const testConnection = vi.fn(async () => "Connected");
   const authorize = vi.fn(async () => undefined);
   const sessions = new Map([
@@ -39,6 +40,14 @@ async function setup() {
   const adapters: PluginAdapter[] = [
     { id: "web-search", tools: [spec("web_search", "read")], testConnection },
     { id: "linear", tools: [spec("linear_get_issue", "read"), spec("linear_update_issue", "write")], testConnection },
+    {
+      id: "firecrawl",
+      tools: [
+        { ...spec("web_search", "read"), execute: executeFirecrawl },
+        { ...spec("web_read", "read"), execute: executeFirecrawl },
+      ],
+      testConnection,
+    },
   ];
   const options = {
     dataDirectory,
@@ -63,10 +72,107 @@ async function setup() {
       .getTools(conversationId)
       .find((tool) => tool.name === name)!
       .execute("tool-1", {}, signal, undefined, {} as never);
-  return { service, options, connect, grant, call, execute, authorize, testConnection, sessions, dataDirectory };
+  return {
+    service,
+    options,
+    connect,
+    grant,
+    call,
+    execute,
+    executeFirecrawl,
+    authorize,
+    testConnection,
+    sessions,
+    dataDirectory,
+  };
 }
 
 describe("plugin service", () => {
+  it("exposes one search capability, prefers authorized Brave and routes Firecrawl-only Wisps independently", async () => {
+    const { service, call, execute, executeFirecrawl, authorize } = await setup();
+    await service.save({ pluginId: "web-search", enabled: true, apiKey: "brave-key" });
+    await service.save({ pluginId: "firecrawl", enabled: true, apiKey: "firecrawl-key" });
+    expect(await service.getActiveToolNames("one")).toEqual([]);
+    expect(service.getTools("one").filter(({ name }) => name === "web_search")).toHaveLength(1);
+    await service.saveAccess({
+      ...service.getAccess({ conversationId: "one" }),
+      grants: [
+        { pluginId: "web-search", access: "read" },
+        { pluginId: "firecrawl", access: "read" },
+      ],
+    });
+    await service.saveAccess({
+      ...service.getAccess({ conversationId: "two" }),
+      grants: [{ pluginId: "firecrawl", access: "read" }],
+    });
+    expect(await service.getActiveToolNames("one")).toEqual(["web_search", "web_read"]);
+    expect((await service.getSnapshot("two")).activeNames).toEqual(["web_search", "web_read"]);
+    await call("web_search");
+    expect(execute).toHaveBeenCalledWith("brave-key", {}, expect.any(AbortSignal));
+    expect(executeFirecrawl).not.toHaveBeenCalled();
+    await call("web_search", "two");
+    await call("web_read");
+    expect(executeFirecrawl).toHaveBeenCalledTimes(2);
+    expect(executeFirecrawl).toHaveBeenCalledWith("firecrawl-key", {}, expect.any(AbortSignal));
+    expect(authorize).not.toHaveBeenCalled();
+  });
+
+  it("refreshes provider revisions and prevents revoked or stale web calls", async () => {
+    const { service, call, execute, executeFirecrawl, sessions } = await setup();
+    await service.save({ pluginId: "web-search", enabled: true, apiKey: "brave-key" });
+    await service.save({ pluginId: "firecrawl", enabled: true, apiKey: "firecrawl-key" });
+    await service.saveAccess({
+      ...service.getAccess({ conversationId: "one" }),
+      grants: [
+        { pluginId: "web-search", access: "read" },
+        { pluginId: "firecrawl", access: "read" },
+      ],
+    });
+    const before = await service.getSnapshot("one");
+    const staleTool = service.getTools("one").find(({ name }) => name === "web_search")!;
+    await service.saveAccess({
+      ...service.getAccess({ conversationId: "one" }),
+      grants: [{ pluginId: "firecrawl", access: "read" }],
+    });
+    const after = await service.getSnapshot("one");
+    expect(after.activeNames).toEqual(before.activeNames);
+    expect(after.revision).not.toBe(before.revision);
+    await call("web_search");
+    expect(execute).not.toHaveBeenCalled();
+    expect(executeFirecrawl).toHaveBeenCalledTimes(1);
+    await service.save({ pluginId: "firecrawl", enabled: true, apiKey: "replacement-key" });
+    await expect(call("web_read")).rejects.toMatchObject({ code: "tool_blocked" });
+    await service.saveAccess({
+      ...service.getAccess({ conversationId: "one" }),
+      grants: [{ pluginId: "firecrawl", access: "read" }],
+    });
+    sessions.set("one", "replacement-session");
+    await service.saveAccess({
+      ...service.getAccess({ conversationId: "one" }),
+      grants: [{ pluginId: "firecrawl", access: "read" }],
+    });
+    await expect(staleTool.execute("stale", {}, undefined, undefined, {} as never)).rejects.toMatchObject({
+      code: "tool_blocked",
+    });
+    expect(executeFirecrawl).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not retry a failed search on another paid provider", async () => {
+    const { service, call, execute, executeFirecrawl } = await setup();
+    await service.save({ pluginId: "web-search", enabled: true, apiKey: "brave-key" });
+    await service.save({ pluginId: "firecrawl", enabled: true, apiKey: "firecrawl-key" });
+    await service.saveAccess({
+      ...service.getAccess({ conversationId: "one" }),
+      grants: [
+        { pluginId: "web-search", access: "read" },
+        { pluginId: "firecrawl", access: "read" },
+      ],
+    });
+    execute.mockRejectedValueOnce(new Error("private provider failure"));
+    await expect(call("web_search")).rejects.toMatchObject({ code: "internal_error" });
+    expect(executeFirecrawl).not.toHaveBeenCalled();
+  });
+
   it("preserves existing connections and grants when loading settings without Firecrawl", async () => {
     const { service, connect, grant, options, dataDirectory } = await setup();
     await connect();

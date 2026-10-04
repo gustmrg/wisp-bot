@@ -29,7 +29,7 @@ export const PLUGIN_CATALOG = [
     name: "Firecrawl",
     category: "web",
     credentialLabel: "Firecrawl API key",
-    description: "Read web pages as Markdown with Firecrawl.",
+    description: "Search the web and read pages as Markdown with Firecrawl.",
     supportsWrite: false,
   },
 ] as const;
