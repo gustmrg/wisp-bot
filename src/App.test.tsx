@@ -177,6 +177,13 @@ function createApi(initialState: ConversationStateView): WispApi {
     installUpdate: vi.fn(async () => ({ ok: true as const, value: {} })),
     openReleasesPage: vi.fn(async () => ({ ok: true as const, value: {} })),
     subscribeToUpdateState: vi.fn(() => () => undefined),
+    getWorkspace: vi.fn(async () => ({ ok: true as const, value: { usedBytes: 0, quotaBytes: 1024 } })),
+    openWorkspaceFolder: vi.fn(async () => ({ ok: true as const, value: {} })),
+    openSkillsFolder: vi.fn(async () => ({ ok: true as const, value: {} })),
+    attachWorkspaceFiles: vi.fn(async () => ({
+      ok: true as const,
+      value: { files: [], workspace: { usedBytes: 0, quotaBytes: 1024 } },
+    })),
   };
 }
 

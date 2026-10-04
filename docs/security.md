@@ -35,6 +35,16 @@ blocked, and conflicting auto-review rules resolve with `block` → `ask` →
 `allow` precedence. File mutations are limited to 1 MB of input and tool
 output to 64 KB.
 
+Each Wisp's workspace is a private folder under the backend data directory,
+capped at 512 MB. A file change that would exceed the cap is refused before
+the approval prompt. **Wisp settings → General → Workspace** shows usage and
+opens the workspace or the Wisp's skills folder; both paths are computed by the
+main process. The skills folder lives in the Wisp's config directory, outside
+the workspace, so file tools cannot read or change it. Attached files are
+picked in a native dialog owned by the main process and copied into the
+workspace `inbox/` folder (at most 20 per request, never overwriting); the
+renderer never supplies a file path.
+
 An approval request expires after 60 seconds and is then denied; the card
 shows the remaining time. For a workspace file change, while auto-review is on,
 the card also offers **Always allow creating files** or **Always allow editing

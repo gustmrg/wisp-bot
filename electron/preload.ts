@@ -58,6 +58,10 @@ const WISP_IPC_CHANNELS = {
   installUpdate: "wisp:update:install",
   openReleasesPage: "wisp:update:open-releases",
   updateState: "wisp:update:state",
+  getWorkspace: "wisp:workspace:get",
+  openWorkspaceFolder: "wisp:workspace:open",
+  openSkillsFolder: "wisp:workspace:open-skills",
+  attachWorkspaceFiles: "wisp:workspace:attach",
 } as const;
 
 const wispApi: WispApi = {
@@ -135,6 +139,10 @@ const wispApi: WispApi = {
     ipcRenderer.on(WISP_IPC_CHANNELS.updateState, handleState);
     return () => ipcRenderer.removeListener(WISP_IPC_CHANNELS.updateState, handleState);
   },
+  getWorkspace: (request) => ipcRenderer.invoke(WISP_IPC_CHANNELS.getWorkspace, request),
+  openWorkspaceFolder: (request) => ipcRenderer.invoke(WISP_IPC_CHANNELS.openWorkspaceFolder, request),
+  openSkillsFolder: (request) => ipcRenderer.invoke(WISP_IPC_CHANNELS.openSkillsFolder, request),
+  attachWorkspaceFiles: (request) => ipcRenderer.invoke(WISP_IPC_CHANNELS.attachWorkspaceFiles, request),
 };
 
 contextBridge.exposeInMainWorld("wisp", Object.freeze(wispApi));

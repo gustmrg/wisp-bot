@@ -1,8 +1,9 @@
 import { useState } from "react";
 import type { FormEvent, KeyboardEvent } from "react";
-import { ArrowUpIcon, MicIcon, SquareIcon } from "lucide-react";
+import { ArrowUpIcon, FileIcon, MicIcon, PaperclipIcon, SquareIcon, XIcon } from "lucide-react";
 
 import type { ChatSummary, ManagedConversationStatus } from "../../shared/conversations";
+import { messageWithAttachments, type WorkspaceAttachment } from "../../shared/workspace";
 
 export interface ChatComposerProps {
   autoFocus?: boolean;
@@ -30,6 +31,9 @@ export function ChatComposer({
   onSend,
 }: ChatComposerProps) {
   const [draft, setDraft] = useState("");
+  const [attachments, setAttachments] = useState<ReadonlyArray<WorkspaceAttachment>>([]);
+  const [attaching, setAttaching] = useState(false);
+  const [attachError, setAttachError] = useState("");
   const working = status === "working";
   const needsConfiguration = status === "configuration_required";
   const canSend = (status === "idle" || working) && !acknowledging && chat.kind === "wisp";
@@ -37,9 +41,29 @@ export function ChatComposer({
   function handleSubmit(event: FormEvent<HTMLFormElement>): void {
     event.preventDefault();
     const text = draft.trim();
-    if (!text || !canSend) return;
+    if ((!text && !attachments.length) || !canSend) return;
     setDraft("");
-    onSend(text);
+    setAttachments([]);
+    setAttachError("");
+    onSend(messageWithAttachments(text, attachments));
+  }
+
+  async function attachFiles(): Promise<void> {
+    setAttaching(true);
+    setAttachError("");
+    try {
+      const result = await window.wisp.attachWorkspaceFiles({ conversationId: chat.id });
+      if (!result.ok) {
+        setAttachError(result.error.message);
+        return;
+      }
+      const added = result.value.files;
+      setAttachments((current) => [...current, ...added.filter((file) => !current.some((c) => c.path === file.path))]);
+    } catch {
+      setAttachError("Could not attach files.");
+    } finally {
+      setAttaching(false);
+    }
   }
 
   function handleKeyDown(event: KeyboardEvent<HTMLTextAreaElement>): void {
@@ -68,10 +92,47 @@ export function ChatComposer({
             ) : null}
           </div>
         ) : (
-          (error ?? activity ?? (acknowledging ? "Queueing your message…" : null))
+          attachError ||
+          error ||
+          activity ||
+          (attaching ? "Copying files to the workspace…" : acknowledging ? "Queueing your message…" : null)
         )}
       </div>
+      {attachments.length ? (
+        <ul className="mx-auto mb-1.5 flex w-full max-w-[1400px] flex-wrap gap-1.5" aria-label="Attached files">
+          {attachments.map((file) => (
+            <li
+              key={file.path}
+              className="flex max-w-[240px] items-center gap-1 rounded-md border border-border bg-muted py-0.5 pl-1.5 pr-0.5 text-[11px] [&_svg]:size-3"
+            >
+              <FileIcon aria-hidden="true" className="flex-none text-dim" />
+              <span className="truncate" title={file.path}>
+                {file.name}
+              </span>
+              <button
+                type="button"
+                className="flex size-4 flex-none items-center justify-center rounded text-dim hover:bg-accent hover:text-foreground"
+                aria-label={`Remove ${file.name} from this message`}
+                onClick={() => setAttachments((current) => current.filter((item) => item.path !== file.path))}
+              >
+                <XIcon aria-hidden="true" />
+              </button>
+            </li>
+          ))}
+        </ul>
+      ) : null}
       <div className="composer-input mx-auto flex min-h-[42px] w-full max-w-[1400px] items-end gap-2 rounded-[13px] border border-border bg-muted px-2 py-[7px] transition-[border-color] duration-[120ms] focus-within:border-ring">
+        {chat.kind === "wisp" ? (
+          <button
+            type="button"
+            className="flex size-[27px] flex-none items-center justify-center rounded-full border-0 bg-transparent text-dim enabled:hover:bg-accent enabled:hover:text-foreground disabled:opacity-[0.35] [&_svg]:size-3.5"
+            aria-label="Attach files"
+            disabled={attaching}
+            onClick={() => void attachFiles()}
+          >
+            <PaperclipIcon aria-hidden="true" />
+          </button>
+        ) : null}
         <textarea
           autoFocus={autoFocus}
           rows={1}
@@ -104,7 +165,7 @@ export function ChatComposer({
           type="submit"
           className="flex size-[27px] flex-none items-center justify-center rounded-full border-0 bg-primary text-primary-foreground enabled:hover:opacity-[0.85] disabled:opacity-[0.35] [&_svg]:size-3.5"
           aria-label={working ? "Queue message" : "Send message"}
-          disabled={!draft.trim() || !canSend}
+          disabled={(!draft.trim() && !attachments.length) || !canSend}
         >
           <ArrowUpIcon aria-hidden="true" />
         </button>

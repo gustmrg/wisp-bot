@@ -109,6 +109,13 @@ function completeBridge(): WispApi {
     installUpdate: async () => ({ ok: true, value: {} }),
     openReleasesPage: async () => ({ ok: true, value: {} }),
     subscribeToUpdateState: () => () => undefined,
+    getWorkspace: async () => ({ ok: true, value: { usedBytes: 0, quotaBytes: 1024 } }),
+    openWorkspaceFolder: async () => ({ ok: true, value: {} }),
+    openSkillsFolder: async () => ({ ok: true, value: {} }),
+    attachWorkspaceFiles: async () => ({
+      ok: true,
+      value: { files: [], workspace: { usedBytes: 0, quotaBytes: 1024 } },
+    }),
   };
 }
 

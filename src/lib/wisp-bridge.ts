@@ -54,6 +54,10 @@ const REQUIRED_WISP_METHODS = [
   "installUpdate",
   "openReleasesPage",
   "subscribeToUpdateState",
+  "getWorkspace",
+  "openWorkspaceFolder",
+  "openSkillsFolder",
+  "attachWorkspaceFiles",
 ] as const satisfies ReadonlyArray<keyof WispApi>;
 
 export function isWispBridgeAvailable(value: unknown): value is WispApi {

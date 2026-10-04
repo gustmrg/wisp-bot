@@ -32,6 +32,7 @@ import type {
   MarkConversationReadRequest,
   UpdateConversationRequest,
 } from "./conversations.js";
+import type { AttachWorkspaceFilesResult, WorkspaceView } from "./workspace.js";
 import type { ResolveToolApprovalRequest, ToolApprovalRequest, ToolPolicySettings } from "./tool-policy.js";
 
 export const WISP_IPC_CHANNELS = {
@@ -88,6 +89,10 @@ export const WISP_IPC_CHANNELS = {
   installUpdate: "wisp:update:install",
   openReleasesPage: "wisp:update:open-releases",
   updateState: "wisp:update:state",
+  getWorkspace: "wisp:workspace:get",
+  openWorkspaceFolder: "wisp:workspace:open",
+  openSkillsFolder: "wisp:workspace:open-skills",
+  attachWorkspaceFiles: "wisp:workspace:attach",
 } as const;
 
 export const WISP_RELEASES_URL = "https://github.com/gustmrg/wisp-bot/releases/latest";
@@ -405,4 +410,10 @@ export interface WispApi {
   installUpdate(): Promise<EmptyResult>;
   openReleasesPage(): Promise<EmptyResult>;
   subscribeToUpdateState(listener: (state: UpdateState) => void): () => void;
+  getWorkspace(request: ConversationRequest): Promise<BackendResult<WorkspaceView>>;
+  openWorkspaceFolder(request: ConversationRequest): Promise<EmptyResult>;
+  /** Opens the Wisp's skills folder, creating it on first use. */
+  openSkillsFolder(request: ConversationRequest): Promise<EmptyResult>;
+  /** Shows a native file picker and copies the chosen files into the Wisp's workspace inbox. */
+  attachWorkspaceFiles(request: ConversationRequest): Promise<BackendResult<AttachWorkspaceFilesResult>>;
 }

@@ -6,6 +6,7 @@ import { WispModelSettings } from "@/components/wisp-model-settings";
 import { WispPluginSettings } from "@/components/wisp-plugin-settings";
 import { WispSettingsFields } from "@/components/wisp-settings-fields";
 import { WispSessionReportSection } from "@/components/wisp-session-report";
+import { WispWorkspaceSettings } from "@/components/wisp-workspace-settings";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -96,6 +97,7 @@ export function WispDetails({ chat, onChange, generalActions }: WispDetailsProps
             onChange={(changes) => setDraft((current) => ({ ...current, ...changes }))}
           />
           <WispContextSettings conversationId={chat.id} />
+          <WispWorkspaceSettings conversationId={chat.id} />
           {generalActions ? (
             <div className="mt-5 flex flex-col gap-2 border-t border-border pt-4">{generalActions}</div>
           ) : null}

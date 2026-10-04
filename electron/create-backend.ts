@@ -32,6 +32,8 @@ import { registerPluginHandlers } from "./ipc/register-plugin-handlers.js";
 import { registerSessionReportHandlers } from "./ipc/register-session-report-handlers.js";
 import { registerToolPolicyHandlers } from "./ipc/register-tool-policy-handlers.js";
 import { registerUpdateHandlers } from "./ipc/register-update-handlers.js";
+import { registerWorkspaceHandlers } from "./ipc/register-workspace-handlers.js";
+import { WorkspaceService } from "./backend/workspace-service.js";
 
 /** Electron-specific capabilities the backend needs, injected so it can be composed and tested without Electron. */
 export interface BackendHost {
@@ -45,6 +47,10 @@ export interface BackendHost {
   selectApprovalWindowId: () => number | null;
   openExternal: (url: string) => Promise<void>;
   openReleasesPage: () => Promise<void>;
+  /** Opens a backend-owned local folder in the system file manager. */
+  openPath: (directory: string) => Promise<void>;
+  /** Shows a native multi-file picker; resolves with absolute paths, empty when dismissed. */
+  selectFiles: () => Promise<ReadonlyArray<string>>;
   encryption: EncryptionService;
   logger: StructuredLogger;
   agentMode: AgentMode;
@@ -156,6 +162,11 @@ export async function createBackend(host: BackendHost): Promise<Backend> {
     conversationRepository,
     new ModelPricingService({ cacheFilePath: path.join(dataDirectory, "model-pricing.json") }),
   );
+  const workspaceService = new WorkspaceService({
+    resolveDirectories: (id) => conversationRepository.getAgentContext(id),
+    openPath: host.openPath,
+    selectFiles: host.selectFiles,
+  });
   // Disposed in this order on shutdown: stop new work and integrations first,
   // then the agents, which may still be settling their last turn.
   const handlers = [
@@ -166,6 +177,7 @@ export async function createBackend(host: BackendHost): Promise<Backend> {
     registerUpdateHandlers(ipcMain, host.updateService, authorizeSender, host.openReleasesPage),
     registerModelSettingsHandlers(ipcMain, modelService, authorizeSender, (selection) => service.applyModel(selection)),
     registerSessionReportHandlers(ipcMain, sessionReportService, authorizeSender),
+    registerWorkspaceHandlers(ipcMain, workspaceService, authorizeSender),
     registerConversationHandlers(ipcMain, service, authorizeSender),
   ];
   const agentHandlers = registerAgentHandlers(ipcMain, registry, authorizeSender, async (id, model) => {

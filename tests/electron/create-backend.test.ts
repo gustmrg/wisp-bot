@@ -79,6 +79,8 @@ async function compose() {
     selectApprovalWindowId: () => 1,
     openExternal: vi.fn(async () => undefined),
     openReleasesPage: vi.fn(async () => undefined),
+    openPath: vi.fn(async () => undefined),
+    selectFiles: vi.fn(async () => []),
     encryption,
     logger: new StructuredLogger({ info: () => undefined, warn: () => undefined }),
     agentMode: "fake",

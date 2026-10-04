@@ -28,6 +28,7 @@ import type {
   ConversationAgentListener,
 } from "./conversation-agent.js";
 import type { ModelRuntimeLike } from "./model-service.js";
+import { assertWorkspaceCapacity } from "./workspace-service.js";
 import { PiEventTranslator, type PiAgentEvent, sanitizeErrorMessage } from "./pi-event-translator.js";
 import { describeProviderError } from "./provider-error.js";
 import type { ToolAuthorizationBroker, ToolAuthorizationRequest } from "./tool-authorization-broker.js";
@@ -869,7 +870,8 @@ function secureTool<TDefinition extends ToolDefinition<any, any, any>>(
       const category = configuredCategory === "create_file" && resolved.exists ? "modify_file" : configuredCategory;
       let executionPath = resolved.canonicalPath;
       if (category === "create_file" || category === "modify_file") {
-        assertMutationInputSize(parameters);
+        // Checked before asking, so the user is never prompted for a change that cannot fit.
+        await assertWorkspaceCapacity(context.workspaceDirectory, assertMutationInputSize(parameters));
         await authorizationBroker.authorize(
           {
             conversationId: context.conversationId,
@@ -961,7 +963,8 @@ function assertContainedPath(workspace: string, candidate: string): void {
   }
 }
 
-function assertMutationInputSize(value: unknown): void {
+/** Returns the serialized size of a file change, which bounds the bytes it can add. */
+function assertMutationInputSize(value: unknown): number {
   let serialized: string | undefined;
   try {
     serialized = JSON.stringify(value);
@@ -975,6 +978,7 @@ function assertMutationInputSize(value: unknown): void {
   if (bytes > MAX_MUTATION_INPUT_BYTES) {
     throw new WispBackendError("invalid_request", "The requested file change is too large.");
   }
+  return bytes;
 }
 
 function limitToolResult<T>(result: T): T {

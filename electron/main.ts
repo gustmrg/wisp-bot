@@ -203,6 +203,19 @@ async function bootstrap(): Promise<void> {
     },
     openExternal: openExternalUrl,
     openReleasesPage: () => openExternalUrl(WISP_RELEASES_URL),
+    openPath: async (directory) => {
+      const failure = await shell.openPath(directory);
+      if (failure) throw new WispBackendError("internal_error", "The folder could not be opened.");
+    },
+    selectFiles: async () => {
+      const options: Electron.OpenDialogOptions = {
+        title: "Attach files",
+        properties: ["openFile", "multiSelections"],
+      };
+      const window = BrowserWindow.getFocusedWindow();
+      const result = window ? await dialog.showOpenDialog(window, options) : await dialog.showOpenDialog(options);
+      return result.canceled ? [] : result.filePaths;
+    },
     encryption: new SafeStorageEncryption(),
     logger,
     agentMode: selectAgentMode(app.isPackaged, process.env.WISP_AGENT_MODE),

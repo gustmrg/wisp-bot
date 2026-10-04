@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, symlink, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, symlink, truncate, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
@@ -9,6 +9,7 @@ import type { IntegrationToolSource } from "../electron/backend/integration-tool
 import { snapshotRevision } from "../electron/backend/integration-tool-source.js";
 import type { ModelRuntimeLike } from "../electron/backend/model-service.js";
 import type { PluginToolSource } from "../electron/backend/plugin-types.js";
+import { WORKSPACE_QUOTA_BYTES } from "../shared/workspace.js";
 
 const sdk = vi.hoisted(() => {
   const session = {
@@ -256,6 +257,16 @@ describe("SdkPiSessionFactory", () => {
     await expect(
       write.execute("tool-6", { path: "broken-escape/new.txt", content: "blocked" }, undefined, undefined, {}),
     ).rejects.toMatchObject({ code: "invalid_request" });
+    expect(sdk.toolExecute).toHaveBeenCalledTimes(2);
+    // A sparse file reports its full size without using the disk space.
+    const fullFile = path.join(context.workspaceDirectory, "full.bin");
+    await writeFile(fullFile, "");
+    await truncate(fullFile, WORKSPACE_QUOTA_BYTES);
+    authorize.mockClear();
+    await expect(
+      write.execute("tool-full", { path: "more.txt", content: "no room" }, undefined, undefined, {}),
+    ).rejects.toMatchObject({ code: "invalid_request", message: expect.stringContaining("workspace is full") });
+    expect(authorize).not.toHaveBeenCalled();
     expect(sdk.toolExecute).toHaveBeenCalledTimes(2);
   });
 
