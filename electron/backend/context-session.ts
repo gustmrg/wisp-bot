@@ -78,7 +78,7 @@ export class ContextSession {
       // An append after resetting the leaf durably records the new branch. Old entries remain searchable.
       this.session.sessionManager.resetLeaf();
       this.session.sessionManager.appendCustomEntry("wisp:context-boundary", {});
-      this.session.state.messages = [];
+      this.session.refreshContext();
       this.renewed("new_topic");
     }
     return this.view();

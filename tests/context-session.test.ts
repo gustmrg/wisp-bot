@@ -40,6 +40,9 @@ async function fixture() {
     get messages() {
       return state.messages;
     },
+    refreshContext() {
+      state.messages = manager.buildSessionContext().messages;
+    },
     isIdle: true,
     getContextUsage: () => ({ tokens: 14010 }),
     compact: vi.fn(async () => ({ summary: "SQLite selected. Migration pending." })),

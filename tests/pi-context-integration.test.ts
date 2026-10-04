@@ -86,7 +86,7 @@ it("preserves continuity through real SDK compaction and a fresh-topic restart, 
     for (const key of ["workspaceDirectory", "sessionDirectory", "configDirectory"] as const)
       await mkdir(context[key], { recursive: true });
     const factory = new SdkPiSessionFactory(runtime);
-    const selection = { providerId: "openrouter", modelId: "anthropic/claude-sonnet-4" };
+    const selection = { providerId: "openrouter", modelId: "openai/gpt-4o-mini" };
     session = await factory.create(context, selection);
     await session.manageContext!({ action: "save", policy: DEFAULT_CONTEXT_POLICY, memory: "Prefer Portuguese" });
     // Settings survive even before the first assistant message creates the Pi transcript.
