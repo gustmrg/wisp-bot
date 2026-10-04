@@ -197,10 +197,16 @@ describe("PiConversationAgent", () => {
     sessions.get("one")?.finishPrompt();
     await send;
 
-    await agent.updateContext({ ...initialContext, description: "Financial advisor", userName: "Jane" });
+    await agent.updateContext({
+      ...initialContext,
+      description: "Financial advisor",
+      userName: "Jane",
+      userProfile: { preferredName: "Jane", aboutYou: "Developer", responsePreferences: "Be concise" },
+    });
 
     expect(initialContext.description).toBe("Financial advisor");
     expect(initialContext.userName).toBe("Jane");
+    expect(initialContext.userProfile?.aboutYou).toBe("Developer");
     expect(sessions.get("one")?.reloadCount).toBe(1);
     await agent.dispose();
   });

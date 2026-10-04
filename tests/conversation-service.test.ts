@@ -82,6 +82,34 @@ describe("ConversationService", () => {
     await service.dispose();
   });
 
+  it("refreshes every existing Wisp when the shared profile changes", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "wisp-service-profile-"));
+    const updateContext = vi.fn(async () => undefined);
+    const registry = new AgentRegistry(
+      {
+        create: (context) => {
+          const agent = new FakeConversationAgent(context.conversationId);
+          agent.updateContext = updateContext;
+          return agent;
+        },
+      },
+      () => undefined,
+    );
+    const service = new ConversationService(new ConversationRepository({ dataDirectory: directory }), registry);
+    await service.start(null);
+    await service.initialize({ one: chat("one"), two: chat("two"), circle: chat("circle", true) });
+    const profile = { preferredName: "Ada", aboutYou: "Developer", responsePreferences: "Be concise" };
+    await service.saveUserProfile(profile);
+    expect(service.getUserProfile()).toEqual(profile);
+    expect(updateContext).toHaveBeenCalledTimes(2);
+    for (const conversationId of ["one", "two"]) {
+      expect(updateContext).toHaveBeenCalledWith(
+        expect.objectContaining({ conversationId, userName: "Ada", userProfile: profile }),
+      );
+    }
+    await service.dispose();
+  });
+
   it("applies a creation-time model override and restores it after a restart", async () => {
     const directory = await mkdtemp(path.join(os.tmpdir(), "wisp-service-create-model-"));
     const repository = new ConversationRepository({ dataDirectory: directory });

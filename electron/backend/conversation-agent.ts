@@ -30,6 +30,7 @@ export interface ConversationAgentContext {
   label: string;
   description: string;
   userName?: string;
+  userProfile?: import("../../shared/user-profile.js").UserProfile;
   modelOverride?: ModelSelection | null;
   workspaceDirectory: string;
   sessionDirectory: string;

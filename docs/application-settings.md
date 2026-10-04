@@ -7,7 +7,7 @@ without panels yet.
 
 ## General
 
-- **Account** — shows a demo identity; sign-out is not connected yet.
+- **Your profile** — preferred name, optional background, and response preferences. Saved locally in `user-profile.json` and shared with every Wisp (and its AI provider when chatting). Changes refresh existing Wisp context; busy Wisps apply the refresh after their current turn. Blank fields remove that profile context. The preferred name also supplies the sidebar name and initials.
 - **Application** — theme, launch at login, and notification sounds.
 - **System** — microphone selection and hardware acceleration preferences.
 - **Wisp** — timezone and auto-review rules (see
@@ -36,7 +36,6 @@ the releases page — see [installing on macOS](installing-on-macos.md).
 
 - Microphone capture and voice input.
 - Launch at login (the preference is saved, nothing is registered).
-- Sign-out.
 - The Shortcuts settings panel (the `Cmd/Ctrl+K` search dialog itself works).
 - **Circles** are feature-flagged (`VITE_FEATURE_CIRCLES`) and cannot run
   their own model sessions; the create dialog currently only creates Wisps.

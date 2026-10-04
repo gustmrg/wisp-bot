@@ -91,6 +91,11 @@ function completeBridge(): WispApi {
     getToolPolicy: async () => {
       throw new Error("not called");
     },
+    getUserProfile: async () => ({
+      ok: true as const,
+      value: { preferredName: "", aboutYou: "", responsePreferences: "" },
+    }),
+    saveUserProfile: async (profile) => ({ ok: true as const, value: profile }),
     saveToolPolicy: async () => {
       throw new Error("not called");
     },

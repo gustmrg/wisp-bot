@@ -75,6 +75,8 @@ export const WISP_IPC_CHANNELS = {
   getSessionReport: "wisp:conversations:get-session-report",
   getUsageReport: "wisp:usage:get",
   getToolPolicy: "wisp:tool-policy:get",
+  getUserProfile: "wisp:profile:get",
+  saveUserProfile: "wisp:profile:save",
   saveToolPolicy: "wisp:tool-policy:save",
   resolveToolApproval: "wisp:tool-policy:resolve-approval",
   getUpdateState: "wisp:update:get-state",
@@ -377,6 +379,10 @@ export interface WispApi {
   getSessionReport(request: ConversationRequest): Promise<BackendResult<WispSessionReport | null>>;
   getUsageReport(request: UsageReportRequest): Promise<BackendResult<UsageReport>>;
   getToolPolicy(): Promise<BackendResult<ToolPolicySettings>>;
+  getUserProfile(): Promise<BackendResult<import("./user-profile.js").UserProfile>>;
+  saveUserProfile(
+    profile: import("./user-profile.js").UserProfile,
+  ): Promise<BackendResult<import("./user-profile.js").UserProfile>>;
   saveToolPolicy(settings: ToolPolicySettings): Promise<BackendResult<ToolPolicySettings>>;
   resolveToolApproval(request: ResolveToolApprovalRequest): Promise<EmptyResult>;
   getUpdateState(): Promise<BackendResult<UpdateState>>;

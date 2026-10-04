@@ -13,7 +13,6 @@ import { autoUpdater } from "electron-updater";
 import path from "node:path";
 
 import { WISP_RELEASES_URL } from "../shared/contracts.js";
-import { DEMO_CURRENT_USER } from "../shared/current-user.js";
 import { selectAgentMode } from "./backend/agent-mode.js";
 import { WispBackendError } from "./backend/backend-error.js";
 import { FileLogSink } from "./backend/file-log-sink.js";
@@ -200,7 +199,6 @@ async function bootstrap(): Promise<void> {
     logger,
     agentMode: selectAgentMode(app.isPackaged, process.env.WISP_AGENT_MODE),
     updateService: new UpdateService(autoUpdater, app.getVersion(), app.isPackaged, autoInstallSupported, logger),
-    userName: DEMO_CURRENT_USER.givenName,
   });
   let backendDisposed = false;
   let backendDisposing = false;

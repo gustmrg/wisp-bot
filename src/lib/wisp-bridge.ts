@@ -40,6 +40,8 @@ const REQUIRED_WISP_METHODS = [
   "searchMessages",
   "getSessionReport",
   "getUsageReport",
+  "getUserProfile",
+  "saveUserProfile",
   "getToolPolicy",
   "saveToolPolicy",
   "resolveToolApproval",

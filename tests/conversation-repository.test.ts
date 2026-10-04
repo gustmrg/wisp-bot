@@ -85,6 +85,29 @@ describe("ConversationRepository", () => {
     expect(restored.getAgentContext("first").piSessionId).toBe("pi-history-id");
   });
 
+  it("persists profile context across restarts, rejects invalid input, and clears it for every Wisp", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "wisp-profile-"));
+    const repository = await reload(directory);
+    await repository.initialize({ first: chat("first"), second: chat("second") });
+    const profile = { preferredName: "Ada", aboutYou: "Backend developer", responsePreferences: "Be concise" };
+    await repository.saveUserProfile(profile);
+    const restored = await reload(directory);
+    expect(restored.getUserProfile()).toEqual(profile);
+    for (const context of restored.listAgentContexts()) {
+      expect(context.userName).toBe("Ada");
+      expect(context.userProfile).toEqual(profile);
+    }
+    await expect(restored.saveUserProfile({ ...profile, aboutYou: "x".repeat(2001) })).rejects.toMatchObject({
+      code: "invalid_request",
+    });
+    expect(restored.getUserProfile()).toEqual(profile);
+    const empty = { preferredName: "", aboutYou: "", responsePreferences: "" };
+    await restored.saveUserProfile(empty);
+    expect((await reload(directory)).getUserProfile()).toEqual(empty);
+    expect(restored.getAgentContext("first").userName).toBeUndefined();
+    expect(restored.getAgentContext("second").userProfile).toEqual(empty);
+  });
+
   it("includes the configured user name in every agent context", async () => {
     const directory = await mkdtemp(path.join(os.tmpdir(), "wisp-user-context-"));
     const repository = new ConversationRepository({ dataDirectory: directory, userName: "  John\nDoe  " });

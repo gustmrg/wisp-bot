@@ -128,6 +128,11 @@ function createApi(initialState: ConversationStateView): WispApi {
     getUsageReport: vi.fn(),
     getSessionReport: vi.fn(async () => ({ ok: true as const, value: null })),
     getToolPolicy: vi.fn(async () => ({ ok: true as const, value: { autoReview: true, rules: [] } })),
+    getUserProfile: async () => ({
+      ok: true as const,
+      value: { preferredName: "", aboutYou: "", responsePreferences: "" },
+    }),
+    saveUserProfile: async (profile) => ({ ok: true as const, value: profile }),
     saveToolPolicy: vi.fn(async (settings) => ({ ok: true as const, value: settings })),
     resolveToolApproval: vi.fn(async () => ({ ok: true as const, value: {} })),
     getUpdateState: vi.fn(async () => ({

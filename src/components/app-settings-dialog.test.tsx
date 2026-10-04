@@ -9,7 +9,6 @@ import { PLUGIN_CATALOG } from "../../shared/plugins";
 
 const currentUser: CurrentUser = {
   displayName: "Ada Lovelace",
-  email: "ada@example.test",
   givenName: "Ada",
   initials: "AL",
 };
@@ -55,6 +54,12 @@ describe("AppSettingsDialog metadata", () => {
       <AppSettingsDialog
         appMetadata={appMetadata}
         currentUser={currentUser}
+        userProfile={{
+          profile: { preferredName: "Ada", aboutYou: "", responsePreferences: "" },
+          loading: false,
+          error: null,
+          save: vi.fn(),
+        }}
         open
         preferences={DEFAULT_PREFERENCES}
         persistenceStatus="saved"
@@ -102,6 +107,12 @@ describe("AppSettingsDialog metadata", () => {
       <AppSettingsDialog
         appMetadata={appMetadata}
         currentUser={currentUser}
+        userProfile={{
+          profile: { preferredName: "Ada", aboutYou: "", responsePreferences: "" },
+          loading: false,
+          error: null,
+          save: vi.fn(),
+        }}
         open
         preferences={DEFAULT_PREFERENCES}
         persistenceStatus="saved"
@@ -132,6 +143,12 @@ describe("AppSettingsDialog metadata", () => {
       <AppSettingsDialog
         appMetadata={appMetadata}
         currentUser={currentUser}
+        userProfile={{
+          profile: { preferredName: "Ada", aboutYou: "", responsePreferences: "" },
+          loading: false,
+          error: null,
+          save: vi.fn(),
+        }}
         open
         preferences={DEFAULT_PREFERENCES}
         persistenceStatus="saved"
@@ -141,9 +158,9 @@ describe("AppSettingsDialog metadata", () => {
       />,
     );
 
-    expect(screen.getByText("Ada Lovelace")).toBeVisible();
-    expect(screen.getByText("ada@example.test")).toBeVisible();
-    expect(screen.getByText("AL")).toBeVisible();
+    expect(screen.getByLabelText("Preferred name")).toHaveValue("Ada");
+    expect(screen.queryByText("ada@example.test")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Sign out" })).not.toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "About" }));
 

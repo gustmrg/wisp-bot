@@ -124,6 +124,7 @@ describe("SdkPiSessionFactory", () => {
       label: "Finance",
       description: "You are a financial advisor who explains markets clearly.",
       userName: "John",
+      userProfile: { preferredName: "John", aboutYou: "Backend developer", responsePreferences: "Be concise" },
       workspaceDirectory: path.join(directory, "workspace"),
       sessionDirectory: directory,
       configDirectory: path.join(directory, "config"),
@@ -191,6 +192,8 @@ describe("SdkPiSessionFactory", () => {
     expect(prompt).not.toContain("coding agent");
     expect(prompt).toContain("Mention an operational limitation only when it materially affects the user's request");
     expect(prompt).toContain("## Relationship with the user");
+    expect(prompt).toContain('"aboutYou":"Backend developer"');
+    expect(prompt).toContain('"responsePreferences":"Be concise"');
     expect(prompt).toContain('The user\'s preferred name is "John".');
     expect(prompt).toContain("do not force it or use their name in every response");
     expect(prompt).toContain("Never infer the user's name from paths, workspace metadata");
