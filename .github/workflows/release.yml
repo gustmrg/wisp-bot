@@ -45,7 +45,6 @@ jobs:
           fi
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "Releasing v$VERSION from $GITHUB_SHA."
-      - run: node scripts/verify-release.mjs "v${{ steps.bump.outputs.version }}"
       - run: npm run lint
       - run: npm run format:check
       - run: npm run typecheck

@@ -69,5 +69,5 @@ in an installed release").
 - Hardware acceleration and timezone (saved, but not read by the desktop or by
   Wisps).
 - The Shortcuts settings panel (the `Cmd/Ctrl+K` search dialog itself works).
-- **Circles** are feature-flagged (`VITE_FEATURE_CIRCLES`) and cannot run
-  their own model sessions; the create dialog currently only creates Wisps.
+- **Circles** cannot run their own model sessions, and the create dialog only
+  creates Wisps.

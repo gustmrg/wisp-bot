@@ -125,28 +125,6 @@
       ],
       "syncDesktopName": true
     },
-    "win": {
-      "icon": "build/icon.ico",
-      "target": [
-        {
-          "target": "nsis",
-          "arch": [
-            "x64"
-          ]
-        }
-      ],
-      "azureSignOptions": {
-        "publisherName": "${env.WINDOWS_PUBLISHER_NAME}",
-        "endpoint": "${env.AZURE_TRUSTED_SIGNING_ENDPOINT}",
-        "certificateProfileName": "${env.AZURE_TRUSTED_SIGNING_PROFILE}",
-        "codeSigningAccountName": "${env.AZURE_TRUSTED_SIGNING_ACCOUNT}"
-      }
-    },
-    "nsis": {
-      "oneClick": false,
-      "perMachine": false,
-      "allowToChangeInstallationDirectory": false
-    },
     "publish": {
       "provider": "github",
       "owner": "gustmrg",

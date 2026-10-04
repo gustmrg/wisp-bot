@@ -23,4 +23,4 @@ Verified for the Phase 6 backend boundary:
 - Structured logs redact sensitive keys and secret-shaped values and omit prompts/tool content.
 - Agent sessions, pending approvals, subscriptions, and IPC handlers are disposed on shutdown.
 
-The release workflow packages macOS on `macos-14` and Linux on `ubuntu-latest` with electron-builder ([release runbook](release-runbook.md)). macOS builds are ad-hoc signed and Linux builds are unsigned. Windows packaging is configured but not built.
+The release workflow packages macOS on `macos-14` and Linux on `ubuntu-latest` with electron-builder ([release runbook](release-runbook.md)). macOS builds are ad-hoc signed and Linux builds are unsigned. Windows is not packaged.

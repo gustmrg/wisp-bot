@@ -93,7 +93,7 @@ wisp-bot/
 │   ├── lib/                       # Renderer policies and pure helpers
 │   ├── App.tsx                    # Top-level renderer composition
 │   └── main.tsx                   # Renderer entry point and bridge guard
-├── scripts/                       # Release checks, checksums, and live Pi smoke
+├── scripts/                       # Release checksums and live Pi smoke
 ├── tests/                         # Electron/backend and contract tests
 ├── template/                      # Non-runtime prototype/reference material
 ├── index.html                     # Renderer HTML and generated CSP slot

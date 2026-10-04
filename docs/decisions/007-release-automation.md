@@ -17,7 +17,7 @@ ADR 002 planned signed Windows and notarized macOS betas, staged rollouts, and a
 | macOS 14+ | arm64, x64 | DMG, ZIP | ad-hoc, not notarized |
 | Linux | x64 | AppImage, `.deb` | unsigned; updates verified by SHA-512 |
 
-Windows is deferred. Its electron-builder configuration stays unused until a Windows build is added.
+Windows is deferred, and its electron-builder and Azure Trusted Signing configuration has been removed. A Windows build will need it added back.
 
 One manual **Desktop release** dispatch from `main` takes a version (`patch`, `minor`, `major`, or an exact version). It runs every quality gate against the bumped tree and packages both platforms. Only then does it commit `chore(release): prepare vX.Y.Z`, push that commit and the tag atomically, and publish the GitHub release. The workflow pushes straight to `main` with `GITHUB_TOKEN`. It does not open a release pull request.
 

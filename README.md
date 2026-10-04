@@ -58,7 +58,6 @@ noted):
 | --- | --- |
 | `WISP_AGENT_MODE=fake` | Use the deterministic fake agent (unpackaged dev runs only). |
 | `WISP_DATA_DIR` | Redirect the user-data directory for unpackaged runs (default `wisp-bot-dev`). |
-| `VITE_FEATURE_CIRCLES=true` | Compile the experimental circles UI (no model sessions). |
 
 ### Quality gates
 
