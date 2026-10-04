@@ -59,13 +59,22 @@ export function isAllowedExternalUrl(value: string): boolean {
   }
 }
 
+/**
+ * `mediaTypes` lists what a "media" request captures. Voice input needs the
+ * microphone only, so camera and screen capture stay denied.
+ */
 export function isAllowedPermission(
   permission: string,
   requestingUrl: string,
   isMainFrame: boolean,
   target: RendererTarget,
+  mediaTypes: ReadonlyArray<string> = [],
 ): boolean {
-  return isMainFrame && ALLOWED_PERMISSIONS.has(permission) && isAllowedRendererUrl(requestingUrl, target);
+  const allowed =
+    permission === "media"
+      ? mediaTypes.length > 0 && mediaTypes.every((type) => type === "audio")
+      : ALLOWED_PERMISSIONS.has(permission);
+  return isMainFrame && allowed && isAllowedRendererUrl(requestingUrl, target);
 }
 
 export function contentSecurityPolicy(development: boolean): string {

@@ -166,13 +166,25 @@ async function bootstrap(): Promise<void> {
     return (
       webContents !== null &&
       BrowserWindow.fromWebContents(webContents) !== null &&
-      isAllowedPermission(permission, requestingUrl, details.isMainFrame, target)
+      isAllowedPermission(
+        permission,
+        requestingUrl,
+        details.isMainFrame,
+        target,
+        details.mediaType ? [details.mediaType] : [],
+      )
     );
   });
   session.defaultSession.setPermissionRequestHandler((webContents, permission, callback, details) => {
     callback(
       BrowserWindow.fromWebContents(webContents) !== null &&
-        isAllowedPermission(permission, details.requestingUrl, details.isMainFrame, target),
+        isAllowedPermission(
+          permission,
+          details.requestingUrl,
+          details.isMainFrame,
+          target,
+          "mediaTypes" in details ? (details.mediaTypes ?? []) : [],
+        ),
     );
   });
   nativeTheme.themeSource = "system";

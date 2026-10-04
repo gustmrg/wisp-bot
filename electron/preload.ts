@@ -64,6 +64,9 @@ const WISP_IPC_CHANNELS = {
   attachWorkspaceFiles: "wisp:workspace:attach",
   listSkills: "wisp:skills:list",
   deleteSkill: "wisp:skills:delete",
+  getVoiceSettings: "wisp:voice:get",
+  saveVoiceCredential: "wisp:voice:save-credential",
+  transcribeAudio: "wisp:voice:transcribe",
 } as const;
 
 const wispApi: WispApi = {
@@ -147,6 +150,9 @@ const wispApi: WispApi = {
   attachWorkspaceFiles: (request) => ipcRenderer.invoke(WISP_IPC_CHANNELS.attachWorkspaceFiles, request),
   listSkills: (request) => ipcRenderer.invoke(WISP_IPC_CHANNELS.listSkills, request),
   deleteSkill: (request) => ipcRenderer.invoke(WISP_IPC_CHANNELS.deleteSkill, request),
+  getVoiceSettings: () => ipcRenderer.invoke(WISP_IPC_CHANNELS.getVoiceSettings),
+  saveVoiceCredential: (request) => ipcRenderer.invoke(WISP_IPC_CHANNELS.saveVoiceCredential, request),
+  transcribeAudio: (request) => ipcRenderer.invoke(WISP_IPC_CHANNELS.transcribeAudio, request),
 };
 
 contextBridge.exposeInMainWorld("wisp", Object.freeze(wispApi));

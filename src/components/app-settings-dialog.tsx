@@ -13,6 +13,7 @@ import {
   InfoIcon,
   KeyboardIcon,
   LoaderCircleIcon,
+  MicIcon,
   PlugIcon,
   RefreshCwIcon,
   ServerIcon,
@@ -26,6 +27,8 @@ import { UsageSettingsSection } from "@/components/usage-settings-section";
 import { ModelSettingsSection } from "@/components/model-settings-section";
 import { PluginSettingsSection } from "@/components/plugin-settings-section";
 import { McpSettingsSection } from "@/components/mcp-settings-section";
+import { ShortcutSettingsSection } from "@/components/shortcut-settings-section";
+import { VoiceSettingsSection } from "@/components/voice-settings-section";
 import { MobileNavigation } from "@/components/mobile-navigation";
 import {
   SettingsCard,
@@ -45,7 +48,9 @@ import { profileAvatar } from "@/lib/ui-classes";
 import { cn } from "@/lib/utils";
 import type { UpdateState } from "../../shared/contracts";
 
-type SettingsSection = "general" | "model" | "plugins" | "mcp" | "about" | "usage";
+type SettingsSection = "general" | "model" | "voice" | "plugins" | "mcp" | "shortcuts" | "about" | "usage";
+/** Sections other parts of the app can open the dialog at. */
+export type SettingsEntrySection = "general" | "model" | "voice";
 
 /** Navigation order; entries without a section are announced but not available yet. */
 const NAV_ITEMS: ReadonlyArray<
@@ -53,11 +58,12 @@ const NAV_ITEMS: ReadonlyArray<
 > = [
   { section: "general", panelId: "general-settings-panel", label: "General", icon: SettingsIcon },
   { section: "model", panelId: "model-settings-panel", label: "AI Model", icon: BotIcon },
+  { section: "voice", panelId: "voice-settings-panel", label: "Voice input", icon: MicIcon },
   { section: "plugins", panelId: "plugin-settings-panel", label: "Plugins", icon: PlugIcon },
   { section: "mcp", panelId: "mcp-settings-panel", label: "MCP servers", icon: ServerIcon },
   { section: "usage", panelId: "usage-settings-panel", label: "Token usage", icon: BarChart3Icon },
   { soon: true, label: "Notifications", icon: BellIcon },
-  { soon: true, label: "Shortcuts", icon: KeyboardIcon },
+  { section: "shortcuts", panelId: "shortcut-settings-panel", label: "Shortcuts", icon: KeyboardIcon },
   { section: "about", panelId: "about-settings-panel", label: "About", icon: InfoIcon },
 ];
 
@@ -74,7 +80,7 @@ interface AppSettingsDialogProps {
   currentUser: CurrentUser;
   userProfile: UserProfileController;
   open: boolean;
-  initialSection?: "general" | "model";
+  initialSection?: SettingsEntrySection;
   preferences: AppPreferences;
   persistenceStatus: PersistenceStatus;
   persistenceError: string | null;
@@ -112,6 +118,8 @@ function AppSettingsDialog({
   const sectionTitles = {
     general: "General",
     model: "AI Model",
+    voice: "Voice input",
+    shortcuts: "Shortcuts",
     plugins: "Plugins",
     mcp: "MCP servers",
     about: "About",
@@ -317,6 +325,16 @@ function AppSettingsDialog({
           </div>
         </section>
         <ModelSettingsSection active={section === "model" && !showOverview} />
+        <VoiceSettingsSection
+          active={open && section === "voice" && !showOverview}
+          preferences={preferences}
+          onPreferencesChange={onPreferencesChange}
+        />
+        <ShortcutSettingsSection
+          active={section === "shortcuts" && !showOverview}
+          preferences={preferences}
+          onPreferencesChange={onPreferencesChange}
+        />
         <section
           className="overflow-y-auto px-[30px] py-6 max-[620px]:px-4 max-[620px]:py-5"
           id="about-settings-panel"

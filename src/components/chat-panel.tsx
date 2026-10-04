@@ -10,7 +10,7 @@ import { isAttached, type MessageWindow } from "@/lib/message-windows";
 import { mainPanel } from "@/lib/ui-classes";
 import { cn } from "@/lib/utils";
 import { ChatAvatar } from "@/components/chat-avatar";
-import { ChatComposer } from "@/components/chat-composer";
+import { ChatComposer, type VoiceInputSettings } from "@/components/chat-composer";
 import { Button } from "@/components/ui/button";
 import { MessageView } from "@/components/message-view";
 import { ToolApprovalCard } from "@/components/tool-approval-card";
@@ -61,6 +61,8 @@ interface ChatPanelProps {
   onShowLatest: () => void;
   onOpenDetails: () => void;
   onConfigure?: () => void;
+  voice?: VoiceInputSettings;
+  onConfigureVoice?: () => void;
   onRetry: (messageId: string | undefined) => void;
   onResolveApproval: (request: ToolApprovalRequest, decision: ToolApprovalDecision) => void;
   onSend: (text: string) => void;
@@ -85,6 +87,8 @@ function ChatPanel({
   onShowLatest,
   onOpenDetails,
   onConfigure,
+  voice,
+  onConfigureVoice,
   onRetry,
   onResolveApproval,
   onSend,
@@ -285,6 +289,9 @@ function ChatPanel({
         error={error}
         acknowledging={acknowledging}
         onConfigure={onConfigure}
+        voice={voice}
+        voiceShortcutEnabled={!hidden}
+        onConfigureVoice={onConfigureVoice}
         onAbort={onAbort}
         onSend={onSend}
         autoFocus={!onBack && !hidden}

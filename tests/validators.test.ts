@@ -11,9 +11,45 @@ import {
   parseRemoveProviderCredentialRequest,
   parseResolveToolApprovalRequest,
   parseSaveAiSettingsRequest,
+  parseSaveVoiceCredentialRequest,
   parseSendMessageRequest,
+  parseTranscribeAudioRequest,
   parseUpdateConversationRequest,
 } from "../electron/ipc/validators.js";
+import { MAX_VOICE_AUDIO_BYTES } from "../shared/voice.js";
+
+describe("voice request validators", () => {
+  const audio = new Uint8Array([1, 2, 3]);
+  const valid = { providerId: "groq", modelId: "whisper-large-v3", language: "auto", mimeType: "audio/webm", audio };
+
+  it("accepts a recording for a known provider, model, and language", () => {
+    expect(parseTranscribeAudioRequest(valid)).toEqual(valid);
+    expect(parseSaveVoiceCredentialRequest({ providerId: "openai", apiKey: "key" })).toEqual({
+      providerId: "openai",
+      apiKey: "key",
+    });
+  });
+
+  it("rejects unknown providers, models from another provider, and non-binary audio", () => {
+    for (const request of [
+      { ...valid, providerId: "deepgram" },
+      { ...valid, modelId: "gpt-4o-transcribe" },
+      { ...valid, language: "xx" },
+      { ...valid, mimeType: "video/webm" },
+      { ...valid, audio: [1, 2, 3] },
+    ]) {
+      expect(() => parseTranscribeAudioRequest(request)).toThrow("The backend request is invalid.");
+    }
+    expect(() => parseSaveVoiceCredentialRequest({ providerId: "openrouter", apiKey: "key" })).toThrow();
+  });
+
+  it("explains empty and oversized recordings", () => {
+    expect(() => parseTranscribeAudioRequest({ ...valid, audio: new Uint8Array() })).toThrow("The recording is empty.");
+    expect(() => parseTranscribeAudioRequest({ ...valid, audio: new Uint8Array(MAX_VOICE_AUDIO_BYTES + 1) })).toThrow(
+      "too long",
+    );
+  });
+});
 
 describe("IPC request validators", () => {
   it("accepts valid conversation and message requests", () => {

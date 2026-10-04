@@ -1,4 +1,14 @@
+import { DEFAULT_SHORTCUTS, normalizeShortcuts, type ShortcutPreferences } from "@/lib/shortcuts";
 import { normalizeTheme, type ThemePreference } from "@/lib/theme";
+import {
+  DEFAULT_VOICE_PROVIDER,
+  defaultVoiceModel,
+  isVoiceLanguage,
+  isVoiceModel,
+  isVoiceProviderId,
+  type VoiceLanguage,
+  type VoiceProviderId,
+} from "../../shared/voice";
 
 export type RuleBehavior = "allow" | "ask" | "block";
 
@@ -15,6 +25,12 @@ export interface AppPreferences {
   launchAtLogin: boolean;
   notificationSounds: boolean;
   microphone: string;
+  voiceProvider: VoiceProviderId;
+  voiceModel: string;
+  voiceLanguage: VoiceLanguage;
+  /** Send the message as soon as a recording is transcribed instead of leaving it in the composer. */
+  voiceAutoSend: boolean;
+  shortcuts: ShortcutPreferences;
   hardwareAcceleration: boolean;
   timezone: string;
   autoReview: boolean;
@@ -26,6 +42,11 @@ export const DEFAULT_PREFERENCES: AppPreferences = {
   launchAtLogin: false,
   notificationSounds: true,
   microphone: "default",
+  voiceProvider: DEFAULT_VOICE_PROVIDER,
+  voiceModel: defaultVoiceModel(DEFAULT_VOICE_PROVIDER),
+  voiceLanguage: "auto",
+  voiceAutoSend: false,
+  shortcuts: DEFAULT_SHORTCUTS,
   hardwareAcceleration: true,
   timezone: "auto",
   autoReview: true,
@@ -63,11 +84,17 @@ export function normalizePreferences(value: unknown): AppPreferences {
       // Invalid saved timezones fall back to the device's timezone.
     }
   }
+  const voiceProvider = isVoiceProviderId(saved?.voiceProvider) ? saved.voiceProvider : DEFAULT_VOICE_PROVIDER;
   return {
     theme: normalizeTheme(saved?.theme),
     launchAtLogin: typeof saved?.launchAtLogin === "boolean" ? saved.launchAtLogin : false,
     notificationSounds: typeof saved?.notificationSounds === "boolean" ? saved.notificationSounds : true,
     microphone: typeof saved?.microphone === "string" && saved.microphone ? saved.microphone : "default",
+    voiceProvider,
+    voiceModel: isVoiceModel(voiceProvider, saved?.voiceModel) ? saved.voiceModel : defaultVoiceModel(voiceProvider),
+    voiceLanguage: isVoiceLanguage(saved?.voiceLanguage) ? saved.voiceLanguage : "auto",
+    voiceAutoSend: typeof saved?.voiceAutoSend === "boolean" ? saved.voiceAutoSend : false,
+    shortcuts: normalizeShortcuts(saved?.shortcuts),
     hardwareAcceleration: typeof saved?.hardwareAcceleration === "boolean" ? saved.hardwareAcceleration : true,
     timezone,
     autoReview: typeof saved?.autoReview === "boolean" ? saved.autoReview : true,

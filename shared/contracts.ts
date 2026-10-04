@@ -35,6 +35,12 @@ import type {
 import type { AttachWorkspaceFilesResult, WorkspaceView } from "./workspace.js";
 import type { SkillRequest, SkillView } from "./skills.js";
 import type { ResolveToolApprovalRequest, ToolApprovalRequest, ToolPolicySettings } from "./tool-policy.js";
+import type {
+  SaveVoiceCredentialRequest,
+  TranscribeAudioRequest,
+  TranscriptionResult,
+  VoiceSettingsView,
+} from "./voice.js";
 
 export const WISP_IPC_CHANNELS = {
   startConversation: "wisp:agent:start",
@@ -96,6 +102,9 @@ export const WISP_IPC_CHANNELS = {
   attachWorkspaceFiles: "wisp:workspace:attach",
   listSkills: "wisp:skills:list",
   deleteSkill: "wisp:skills:delete",
+  getVoiceSettings: "wisp:voice:get",
+  saveVoiceCredential: "wisp:voice:save-credential",
+  transcribeAudio: "wisp:voice:transcribe",
 } as const;
 
 export const WISP_RELEASES_URL = "https://github.com/gustmrg/wisp-bot/releases/latest";
@@ -422,4 +431,10 @@ export interface WispApi {
   /** The Wisp's saved skills, alphabetically; malformed skill files are left out. */
   listSkills(request: ConversationRequest): Promise<BackendResult<ReadonlyArray<SkillView>>>;
   deleteSkill(request: SkillRequest): Promise<BackendResult<ReadonlyArray<SkillView>>>;
+  /** Which voice providers have a saved key; keys themselves never leave the backend. */
+  getVoiceSettings(): Promise<BackendResult<VoiceSettingsView>>;
+  /** Saves a provider key for voice input; chat models of the same provider can use it too. */
+  saveVoiceCredential(request: SaveVoiceCredentialRequest): Promise<BackendResult<VoiceSettingsView>>;
+  /** Sends a recording to the chosen speech-to-text provider and returns its text. */
+  transcribeAudio(request: TranscribeAudioRequest): Promise<BackendResult<TranscriptionResult>>;
 }

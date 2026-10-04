@@ -34,6 +34,8 @@ import { registerToolPolicyHandlers } from "./ipc/register-tool-policy-handlers.
 import { registerUpdateHandlers } from "./ipc/register-update-handlers.js";
 import { registerWorkspaceHandlers } from "./ipc/register-workspace-handlers.js";
 import { WorkspaceService } from "./backend/workspace-service.js";
+import { fakeTranscriptionFetch, TranscriptionService } from "./backend/transcription-service.js";
+import { registerVoiceHandlers } from "./ipc/register-voice-handlers.js";
 
 /** Electron-specific capabilities the backend needs, injected so it can be composed and tested without Electron. */
 export interface BackendHost {
@@ -167,6 +169,11 @@ export async function createBackend(host: BackendHost): Promise<Backend> {
     openPath: host.openPath,
     selectFiles: host.selectFiles,
   });
+  const transcriptionService = new TranscriptionService({
+    credentials: modelService,
+    logger,
+    ...(host.agentMode === "fake" ? { fetch: fakeTranscriptionFetch() } : {}),
+  });
   // Disposed in this order on shutdown: stop new work and integrations first,
   // then the agents, which may still be settling their last turn.
   const handlers = [
@@ -178,6 +185,10 @@ export async function createBackend(host: BackendHost): Promise<Backend> {
     registerModelSettingsHandlers(ipcMain, modelService, authorizeSender, (selection) => service.applyModel(selection)),
     registerSessionReportHandlers(ipcMain, sessionReportService, authorizeSender),
     registerWorkspaceHandlers(ipcMain, workspaceService, authorizeSender),
+    // A key added for voice input can make the saved chat model usable, so Wisps re-apply it.
+    registerVoiceHandlers(ipcMain, transcriptionService, authorizeSender, async () =>
+      service.applyModel(await modelService.getSelection()),
+    ),
     registerConversationHandlers(ipcMain, service, authorizeSender),
   ];
   const agentHandlers = registerAgentHandlers(ipcMain, registry, authorizeSender, async (id, model) => {
@@ -193,6 +204,7 @@ export async function createBackend(host: BackendHost): Promise<Backend> {
     dispose: async () => {
       for (const registration of handlers) registration.dispose();
       modelService.dispose();
+      transcriptionService.dispose();
       pluginService.dispose();
       mcpService.dispose();
       unsubscribeUpdateState();

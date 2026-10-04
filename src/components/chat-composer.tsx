@@ -1,9 +1,32 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { FormEvent, KeyboardEvent } from "react";
-import { ArrowUpIcon, FileIcon, MicIcon, PaperclipIcon, SquareIcon, XIcon } from "lucide-react";
+import { ArrowUpIcon, FileIcon, LoaderCircleIcon, MicIcon, PaperclipIcon, SquareIcon, XIcon } from "lucide-react";
 
+import { useVoiceInput } from "@/hooks/use-voice-input";
+import { DEFAULT_PREFERENCES } from "@/lib/app-preferences";
+import { formatShortcut, matchesShortcut } from "@/lib/shortcuts";
+import { cn } from "@/lib/utils";
 import type { ChatSummary, ManagedConversationStatus } from "../../shared/conversations";
+import type { VoiceLanguage, VoiceProviderId } from "../../shared/voice";
 import { messageWithAttachments, type WorkspaceAttachment } from "../../shared/workspace";
+
+export interface VoiceInputSettings {
+  deviceId: string;
+  providerId: VoiceProviderId;
+  modelId: string;
+  language: VoiceLanguage;
+  autoSend: boolean;
+  shortcut: string;
+}
+
+const DEFAULT_VOICE_SETTINGS: VoiceInputSettings = {
+  deviceId: DEFAULT_PREFERENCES.microphone,
+  providerId: DEFAULT_PREFERENCES.voiceProvider,
+  modelId: DEFAULT_PREFERENCES.voiceModel,
+  language: DEFAULT_PREFERENCES.voiceLanguage,
+  autoSend: DEFAULT_PREFERENCES.voiceAutoSend,
+  shortcut: DEFAULT_PREFERENCES.shortcuts.voiceInput,
+};
 
 export interface ChatComposerProps {
   autoFocus?: boolean;
@@ -13,6 +36,10 @@ export interface ChatComposerProps {
   error?: string;
   acknowledging: boolean;
   onConfigure?: () => void;
+  voice?: VoiceInputSettings;
+  /** Listen for the voice input shortcut; off while the composer is not on screen. */
+  voiceShortcutEnabled?: boolean;
+  onConfigureVoice?: () => void;
   onAbort: () => void;
   onSend: (text: string) => void;
 }
@@ -25,6 +52,9 @@ export function ChatComposer({
   error,
   acknowledging,
   onConfigure,
+  voice = DEFAULT_VOICE_SETTINGS,
+  voiceShortcutEnabled = true,
+  onConfigureVoice,
   onAbort,
   onSend,
 }: ChatComposerProps) {
@@ -35,16 +65,91 @@ export function ChatComposer({
   const working = status === "working";
   const needsConfiguration = status === "configuration_required";
   const canSend = (status === "idle" || working) && !acknowledging && chat.kind === "wisp";
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  // Where the transcript goes: the text selected when recording started.
+  const insertAt = useRef<readonly [number, number] | null>(null);
+  const latest = useRef({ draft, attachments, canSend, autoSend: voice.autoSend });
+  latest.current = { draft, attachments, canSend, autoSend: voice.autoSend };
+  const voiceInput = useVoiceInput({
+    deviceId: voice.deviceId,
+    providerId: voice.providerId,
+    modelId: voice.modelId,
+    language: voice.language,
+    onTranscript: insertTranscript,
+  });
+  const voiceBusy = voiceInput.phase !== "idle";
+  const recording = voiceInput.phase === "recording";
+  const transcribing = voiceInput.phase === "transcribing";
+  const voiceAvailable = chat.kind === "wisp";
+  const shortcutLabel = formatShortcut(voice.shortcut);
+
+  function submit(text: string, files: ReadonlyArray<WorkspaceAttachment>): void {
+    setDraft("");
+    setAttachments([]);
+    setAttachError("");
+    onSend(messageWithAttachments(text, files));
+  }
 
   function handleSubmit(event: FormEvent<HTMLFormElement>): void {
     event.preventDefault();
     const text = draft.trim();
-    if ((!text && !attachments.length) || !canSend) return;
-    setDraft("");
-    setAttachments([]);
-    setAttachError("");
-    onSend(messageWithAttachments(text, attachments));
+    if ((!text && !attachments.length) || !canSend || voiceBusy) return;
+    submit(text, attachments);
   }
+
+  function insertTranscript(text: string): void {
+    const current = latest.current;
+    const [start, end] = insertAt.current ?? [current.draft.length, current.draft.length];
+    const before = current.draft.slice(0, start);
+    const after = current.draft.slice(end);
+    const lead = before && !/\s$/.test(before) ? " " : "";
+    const trail = after && !/^\s/.test(after) ? " " : "";
+    const next = `${before}${lead}${text}${trail}${after}`;
+    if (current.autoSend && current.canSend) {
+      submit(next.trim(), current.attachments);
+      return;
+    }
+    setDraft(next);
+    const cursor = before.length + lead.length + text.length;
+    requestAnimationFrame(() => {
+      const textarea = textareaRef.current;
+      if (!textarea) return;
+      textarea.focus();
+      textarea.setSelectionRange(cursor, cursor);
+    });
+  }
+
+  function toggleVoiceInput(): void {
+    if (voiceInput.phase === "idle") {
+      const textarea = textareaRef.current;
+      insertAt.current = textarea ? [textarea.selectionStart, textarea.selectionEnd] : null;
+    }
+    voiceInput.toggle();
+  }
+
+  const toggleRef = useRef(toggleVoiceInput);
+  toggleRef.current = toggleVoiceInput;
+  const phaseRef = useRef(voiceInput.phase);
+  phaseRef.current = voiceInput.phase;
+  const { cancel: cancelVoiceInput } = voiceInput;
+  useEffect(() => {
+    if (!voiceShortcutEnabled || !voiceAvailable) return;
+    function handleKeyDown(event: globalThis.KeyboardEvent): void {
+      // Settings and other dialogs keep their own keys, including the shortcut recorder.
+      if (event.defaultPrevented || (event.target instanceof Element && event.target.closest("[role='dialog']"))) {
+        return;
+      }
+      if (matchesShortcut(event, voice.shortcut)) {
+        event.preventDefault();
+        if (!event.repeat) toggleRef.current();
+      } else if (event.key === "Escape" && phaseRef.current !== "idle") {
+        event.preventDefault();
+        cancelVoiceInput();
+      }
+    }
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [voiceShortcutEnabled, voiceAvailable, voice.shortcut, cancelVoiceInput]);
 
   async function attachFiles(): Promise<void> {
     setAttaching(true);
@@ -89,6 +194,25 @@ export function ChatComposer({
               </button>
             ) : null}
           </div>
+        ) : voiceInput.error ? (
+          <div className="mb-2 flex flex-wrap items-center gap-2">
+            <span>{voiceInput.error.message}</span>
+            {voiceInput.error.needsSetup && onConfigureVoice ? (
+              <button
+                type="button"
+                className="font-medium text-primary underline underline-offset-2"
+                onClick={onConfigureVoice}
+              >
+                Set up voice input
+              </button>
+            ) : null}
+          </div>
+        ) : recording ? (
+          `Recording… Press ${shortcutLabel} or the stop button to transcribe, Esc to cancel.`
+        ) : transcribing ? (
+          "Transcribing…"
+        ) : voiceInput.phase === "starting" ? (
+          "Starting the microphone…"
         ) : (
           attachError ||
           error ||
@@ -118,8 +242,23 @@ export function ChatComposer({
           ))}
         </ul>
       ) : null}
-      <div className="composer-input mx-auto flex min-h-[42px] w-full max-w-[1400px] items-end gap-2 rounded-[13px] border border-border bg-muted px-2 py-[7px] transition-[border-color] duration-[120ms] focus-within:border-ring">
-        {chat.kind === "wisp" ? (
+      <div
+        className={cn(
+          "composer-input mx-auto flex min-h-[42px] w-full max-w-[1400px] items-end gap-2 rounded-[13px] border border-border bg-muted px-2 py-[7px] transition-[border-color] duration-[120ms] focus-within:border-ring",
+          recording && "border-destructive/60 focus-within:border-destructive/60",
+        )}
+      >
+        {recording ? (
+          <button
+            type="button"
+            className="flex size-[27px] flex-none items-center justify-center rounded-full border-0 bg-transparent text-dim hover:bg-accent hover:text-foreground [&_svg]:size-3.5"
+            aria-label="Cancel recording"
+            title="Cancel recording (Esc)"
+            onClick={cancelVoiceInput}
+          >
+            <XIcon aria-hidden="true" />
+          </button>
+        ) : chat.kind === "wisp" ? (
           <button
             type="button"
             className="flex size-[27px] flex-none items-center justify-center rounded-full border-0 bg-transparent text-dim enabled:hover:bg-accent enabled:hover:text-foreground disabled:opacity-[0.35] [&_svg]:size-3.5"
@@ -130,23 +269,42 @@ export function ChatComposer({
             <PaperclipIcon aria-hidden="true" />
           </button>
         ) : null}
+        {recording ? <RecordingMeter levels={voiceInput.levels} elapsed={voiceInput.elapsed} /> : null}
         <textarea
+          ref={textareaRef}
+          hidden={recording}
           autoFocus={autoFocus}
           rows={1}
           className="max-h-[120px] min-h-[26px] flex-1 resize-none overflow-y-auto border-0 bg-transparent py-1 pl-0 pr-0 text-foreground outline-none leading-[18px] placeholder:text-dim field-sizing-content"
           aria-label={`Message ${chat.name}`}
-          placeholder={`Message ${chat.name}`}
+          placeholder={transcribing ? "Transcribing…" : `Message ${chat.name}`}
           value={draft}
           disabled={chat.kind === "circle"}
+          readOnly={transcribing}
           onChange={(event) => setDraft(event.currentTarget.value)}
           onKeyDown={handleKeyDown}
         />
         <button
           type="button"
-          className="flex size-[27px] flex-none items-center justify-center rounded-full border-0 bg-secondary text-dim hover:bg-accent hover:text-foreground [&_svg]:size-3.5"
-          aria-label="Start voice input"
+          className={cn(
+            "flex size-[27px] flex-none items-center justify-center rounded-full border-0 [&_svg]:size-3.5 disabled:opacity-[0.35]",
+            recording
+              ? "bg-destructive text-white hover:opacity-[0.85] [&_svg]:size-3"
+              : "bg-secondary text-dim enabled:hover:bg-accent enabled:hover:text-foreground",
+          )}
+          aria-label={recording ? "Stop recording and transcribe" : transcribing ? "Transcribing" : "Start voice input"}
+          title={`${recording ? "Stop recording" : "Voice input"} (${shortcutLabel})`}
+          aria-keyshortcuts={voice.shortcut.replaceAll("Ctrl", "Control").replace(/Key([A-Z])$/, "$1")}
+          disabled={!voiceAvailable || transcribing || voiceInput.phase === "starting"}
+          onClick={toggleVoiceInput}
         >
-          <MicIcon aria-hidden="true" />
+          {recording ? (
+            <SquareIcon aria-hidden="true" fill="currentColor" />
+          ) : transcribing ? (
+            <LoaderCircleIcon aria-hidden="true" className="animate-spin" />
+          ) : (
+            <MicIcon aria-hidden="true" />
+          )}
         </button>
         {working ? (
           <button
@@ -162,11 +320,67 @@ export function ChatComposer({
           type="submit"
           className="flex size-[27px] flex-none items-center justify-center rounded-full border-0 bg-primary text-primary-foreground enabled:hover:opacity-[0.85] disabled:opacity-[0.35] [&_svg]:size-3.5"
           aria-label={working ? "Queue message" : "Send message"}
-          disabled={(!draft.trim() && !attachments.length) || !canSend}
+          disabled={(!draft.trim() && !attachments.length) || !canSend || voiceBusy}
         >
           <ArrowUpIcon aria-hidden="true" />
         </button>
       </div>
     </form>
+  );
+}
+
+function formatElapsed(seconds: number): string {
+  return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
+}
+
+const METER_BAR_PITCH_PX = 6;
+const FALLBACK_METER_BARS = 24;
+
+/** How many meter bars fit across the element, following its size as the window changes. */
+function useBarCount() {
+  const ref = useRef<HTMLSpanElement>(null);
+  const [count, setCount] = useState(FALLBACK_METER_BARS);
+  useEffect(() => {
+    const element = ref.current;
+    if (!element || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(([entry]) => {
+      const width = entry?.contentRect.width ?? 0;
+      // A bar is 3px with a 3px gap, so the last bar needs no gap after it.
+      setCount(Math.max(1, Math.floor((width + 3) / METER_BAR_PITCH_PX)));
+    });
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, []);
+  return [ref, count] as const;
+}
+
+/**
+ * Live microphone level while recording. The bars span the whole composer:
+ * quiet dots form the track and new samples enter on the right, scrolling the
+ * older ones left. A still dot replaces them when the user prefers reduced motion.
+ */
+function RecordingMeter({ levels, elapsed }: { levels: ReadonlyArray<number>; elapsed: number }) {
+  const [trackRef, barCount] = useBarCount();
+  const recent = levels.slice(-barCount);
+  const bars = [...Array.from({ length: barCount - recent.length }, () => 0), ...recent];
+  return (
+    <div className="flex min-h-[26px] min-w-0 flex-1 items-center gap-2.5 overflow-hidden" aria-hidden="true">
+      <span className="size-2 flex-none rounded-full bg-destructive motion-safe:animate-pulse" />
+      <span
+        ref={trackRef}
+        data-voice-meter=""
+        className="flex h-[22px] min-w-0 flex-1 items-center justify-end gap-[3px] overflow-hidden motion-reduce:invisible"
+      >
+        {bars.map((level, index) => (
+          <span
+            // The bars scroll left as new samples arrive, so their position is their identity.
+            key={index}
+            className="w-[3px] flex-none rounded-full bg-destructive/70 transition-[height] duration-[60ms]"
+            style={{ height: `${Math.max(3, Math.round(level * 22))}px` }}
+          />
+        ))}
+      </span>
+      <span className="flex-none text-[11.5px] tabular-nums text-dim">{formatElapsed(elapsed)}</span>
+    </div>
   );
 }

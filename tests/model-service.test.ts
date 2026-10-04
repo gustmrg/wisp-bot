@@ -263,6 +263,19 @@ describe("ModelService", () => {
     );
   });
 
+  it("saves a key outside a selection and reads it back for direct provider calls", async () => {
+    const { service, runtime } = await createService();
+
+    await expect(service.setApiKey("groq", "   ")).rejects.toMatchObject({ code: "invalid_request" });
+    await service.setApiKey("groq", "  voice-key  ");
+
+    expect(runtime.setRuntimeApiKey).toHaveBeenCalledWith("groq", "voice-key");
+    await expect(service.getApiKey("groq")).resolves.toBe("voice-key");
+    await expect(service.getApiKey("openai")).resolves.toBeUndefined();
+    expect([...(await service.listCredentialProviders())]).toEqual(["groq"]);
+    expect((await service.getView()).selection).toBeNull();
+  });
+
   it("removes the key and clears the active selection", async () => {
     const { service, runtime } = await createService();
     await service.save({

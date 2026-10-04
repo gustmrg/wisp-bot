@@ -1,9 +1,13 @@
 import { forwardRef, useImperativeHandle, useState } from "react";
 
-import { AppSettingsDialog, type AppSettingsDialogProps } from "@/components/app-settings-dialog";
+import {
+  AppSettingsDialog,
+  type AppSettingsDialogProps,
+  type SettingsEntrySection,
+} from "@/components/app-settings-dialog";
 
 export interface AppSettingsDialogHandle {
-  open(section: "general" | "model"): void;
+  open(section: SettingsEntrySection): void;
 }
 
 type AppSettingsDialogHostProps = Omit<AppSettingsDialogProps, "open" | "initialSection" | "onOpenChange">;
@@ -15,7 +19,7 @@ type AppSettingsDialogHostProps = Omit<AppSettingsDialogProps, "open" | "initial
  */
 export const AppSettingsDialogHost = forwardRef<AppSettingsDialogHandle, AppSettingsDialogHostProps>(
   function AppSettingsDialogHost({ onOpenConversations, ...dialogProps }, ref) {
-    const [section, setSection] = useState<"general" | "model" | null>(null);
+    const [section, setSection] = useState<SettingsEntrySection | null>(null);
     useImperativeHandle(ref, () => ({ open: (next) => setSection(next) }), []);
     return (
       <AppSettingsDialog

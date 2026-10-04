@@ -97,6 +97,11 @@
       "category": "public.app-category.productivity",
       "icon": "build/icon.icns",
       "hardenedRuntime": true,
+      "entitlements": "build/entitlements.mac.plist",
+      "entitlementsInherit": "build/entitlements.mac.plist",
+      "extendInfo": {
+        "NSMicrophoneUsageDescription": "Wisp Bot uses the microphone to transcribe your voice into messages."
+      },
       "target": [
         "dmg",
         "zip"
