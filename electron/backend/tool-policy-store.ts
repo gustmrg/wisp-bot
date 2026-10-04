@@ -2,9 +2,11 @@ import { readFile, rename } from "node:fs/promises";
 
 import {
   normalizeRuleAction,
+  withWorkspaceFileBehavior,
   type ToolPolicyBehavior,
   type ToolPolicyRule,
   type ToolPolicySettings,
+  type WorkspaceFileCategory,
 } from "../../shared/tool-policy.js";
 import { writeFileAtomically } from "./atomic-file.js";
 import { WispBackendError } from "./backend-error.js";
@@ -52,12 +54,18 @@ export class ToolPolicyStore {
 
   async blockCategory(category: string, createId: () => string): Promise<void> {
     const current = this.get();
-    const scope = category === "external_write" ? "integration" : "workspace";
+    const scope = category === "external_write" || category === "integration_call" ? "integration" : "workspace";
     const rules = current.rules.filter((rule) => normalizeRuleAction(rule.action) !== category || rule.scope !== scope);
     await this.save({
       ...current,
       rules: [...rules, { id: createId(), action: category, behavior: "block", scope }],
     });
+  }
+
+  /** Saves an Allow rule for one workspace file category and keeps the other category's behavior. */
+  async allowFileCategory(category: WorkspaceFileCategory, createId: () => string): Promise<void> {
+    const current = this.get();
+    await this.save({ ...current, rules: withWorkspaceFileBehavior(current.rules, category, "allow", createId) });
   }
 
   private enqueue<T>(operation: () => Promise<T>): Promise<T> {

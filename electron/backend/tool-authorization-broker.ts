@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import type { ConversationAgentEvent } from "../../shared/contracts.js";
 import { getToolMetadata } from "../../shared/tool-catalog.js";
 import {
+  isWorkspaceFileCategory,
   ruleMatchesCategory,
   workspaceFileBehavior,
   type ResolveToolApprovalRequest,
@@ -134,16 +135,36 @@ export class ToolAuthorizationBroker {
     ) {
       throw new WispBackendError("invalid_request", "The approval response does not match the pending action.");
     }
+    const { category } = pending.request;
+    if (
+      request.decision === "allow_always" &&
+      !(
+        isWorkspaceFileCategory(category) &&
+        pending.request.scope.kind === "workspace_path" &&
+        this.store.get().autoReview
+      )
+    ) {
+      throw new WispBackendError(
+        "invalid_request",
+        "Always allow is available only for workspace file changes while auto-review is on.",
+      );
+    }
     // Claim the approval before awaiting anything, so a repeated decision, an
     // expiry, or a cancellation during the policy write cannot settle it twice.
     this.pending.delete(request.approvalId);
     this.cleanup(pending);
     let policyError: unknown;
     if (request.decision === "block") {
-      await this.store.blockCategory(pending.request.category, this.createId).catch((error: unknown) => {
+      await this.store.blockCategory(category, this.createId).catch((error: unknown) => {
         policyError = error;
       });
     }
+    if (request.decision === "allow_always" && isWorkspaceFileCategory(category)) {
+      await this.store.allowFileCategory(category, this.createId).catch((error: unknown) => {
+        policyError = error;
+      });
+    }
+    const allowed = request.decision === "allow_once" || request.decision === "allow_always";
     this.audit.append({
       actionId: request.approvalId,
       conversationId: request.conversationId,
@@ -153,7 +174,7 @@ export class ToolAuthorizationBroker {
       matchedPolicy: "ask",
       decision: request.decision,
       actor: "user",
-      outcome: request.decision === "allow_once" ? "allowed" : "blocked",
+      outcome: allowed ? "allowed" : "blocked",
       timestamp: this.now().toISOString(),
     });
     this.publish({
@@ -163,9 +184,9 @@ export class ToolAuthorizationBroker {
       toolCallId: request.toolCallId,
       decision: request.decision,
     });
-    if (request.decision === "allow_once") pending.resolve();
+    if (allowed) pending.resolve();
     else pending.reject(new WispBackendError("tool_blocked", "The tool action was denied."));
-    // The action is blocked either way; still report that the lasting rule was not saved.
+    // The decision applies to this action either way; still report that the lasting rule was not saved.
     if (policyError !== undefined) throw policyError;
   }
 

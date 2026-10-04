@@ -171,6 +171,14 @@ describe("IPC request validators", () => {
         decision: "allow_forever",
       }),
     ).toThrow(WispBackendError);
+    expect(
+      parseResolveToolApprovalRequest({
+        approvalId: "approval-1",
+        conversationId: "wisp-1",
+        toolCallId: "tool-1",
+        decision: "allow_always",
+      }).decision,
+    ).toBe("allow_always");
   });
 
   it("rejects fields from the other conversation variant", () => {

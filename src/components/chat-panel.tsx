@@ -54,6 +54,8 @@ interface ChatPanelProps {
   error?: string;
   acknowledging: boolean;
   approvals: ReadonlyArray<ToolApprovalRequest>;
+  /** Auto-review is on, so approvals can offer a lasting Allow rule. */
+  allowAlwaysAvailable?: boolean;
   toolActivities: ReadonlyArray<ToolActivityView>;
   onAnswerPrompt: (messageId: string | undefined, answer: string) => void;
   onAbort: () => void;
@@ -78,6 +80,7 @@ function ChatPanel({
   error,
   acknowledging,
   approvals,
+  allowAlwaysAvailable = false,
   toolActivities,
   onAnswerPrompt,
   onAbort,
@@ -255,6 +258,8 @@ function ChatPanel({
                   <ToolApprovalCard
                     key={request.approvalId}
                     request={request}
+                    wispName={chat.name}
+                    allowAlwaysAvailable={allowAlwaysAvailable}
                     onResolve={(decision) => onResolveApproval(request, decision)}
                   />
                 ))

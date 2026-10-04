@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
-import { PanelLeftCloseIcon, PlusIcon, SearchIcon } from "lucide-react";
+import { PanelLeftCloseIcon, PlusIcon, SearchIcon, ShieldAlertIcon } from "lucide-react";
 
 import type { ChatId, ChatSummaryCollection } from "@/chat-data";
 import { ChatAvatar } from "@/components/chat-avatar";
@@ -39,6 +39,8 @@ interface SidebarProps {
 // Product notification color intentionally remains explicit rather than a neutral surface token.
 const unreadIndicator =
   "unread-dot absolute -top-1 -right-1 size-[10px] rounded-full border-2 border-sidebar bg-[#ff3b30]";
+const approvalIndicator =
+  "approval-indicator absolute -right-1 -bottom-1 flex size-[15px] items-center justify-center rounded-full border-2 border-sidebar bg-amber-500 text-white [&_svg]:size-[8px]";
 
 function Sidebar({
   activeChatId,
@@ -179,14 +181,23 @@ function Sidebar({
                 data-selected={selected}
                 type="button"
                 aria-current={selected ? "page" : undefined}
-                aria-label={collapsed ? chat.name : undefined}
-                title={collapsed ? chat.name : undefined}
+                aria-label={
+                  collapsed ? (pendingApproval ? `${chat.name}, waiting for your approval` : chat.name) : undefined
+                }
+                title={
+                  collapsed ? (pendingApproval ? `${chat.name} — waiting for your approval` : chat.name) : undefined
+                }
                 key={chatId}
                 onClick={() => onSelectChat(chatId)}
               >
                 <span className="conversation-avatar relative inline-flex flex-none">
                   <ChatAvatar chat={chat} chats={chats} />
                   {chat.unread ? <span className={unreadIndicator} aria-label="Unread activity" /> : null}
+                  {pendingApproval ? (
+                    <span className={approvalIndicator} aria-hidden="true">
+                      <ShieldAlertIcon strokeWidth={3} />
+                    </span>
+                  ) : null}
                 </span>
                 {collapsed ? null : (
                   <span className="flex min-w-0 flex-1 flex-col">
@@ -204,16 +215,13 @@ function Sidebar({
                       ) : null}
                     </span>
                     <span
-                      className="conversation-preview mt-px overflow-hidden text-faint text-[12.5px] leading-[17px] text-ellipsis whitespace-nowrap"
-                      data-activity={
-                        mobile ? (pendingApproval ? "approval" : working ? "working" : undefined) : undefined
-                      }
+                      className={cn(
+                        "conversation-preview mt-px overflow-hidden text-faint text-[12.5px] leading-[17px] text-ellipsis whitespace-nowrap",
+                        pendingApproval && "font-medium text-[#855c17] dark:text-[#e6b765]",
+                      )}
+                      data-activity={pendingApproval ? "approval" : mobile && working ? "working" : undefined}
                     >
-                      {mobile && pendingApproval
-                        ? "Waiting for your approval"
-                        : mobile && working
-                          ? "Working…"
-                          : chat.preview}
+                      {pendingApproval ? "Waiting for your approval" : mobile && working ? "Working…" : chat.preview}
                     </span>
                   </span>
                 )}

@@ -239,6 +239,100 @@ describe("tool policy", () => {
     }
   });
 
+  it("saves a lasting Allow rule for one file category and keeps the other category asking", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "wisp-approval-always-"));
+    const store = new ToolPolicyStore(path.join(directory, "policy.json"));
+    let nextId = 0;
+    const broker = new ToolAuthorizationBroker(store, () => undefined, {
+      createId: () => `id-${++nextId}`,
+      selectWindowId: () => 1,
+    });
+    const authorization = broker.authorize({
+      conversationId: "one",
+      toolCallId: "tool-create",
+      toolName: "write",
+      category: "create_file",
+      scope: { kind: "workspace_path", value: "notes.txt" },
+      summary: "Create notes.txt",
+    });
+    await broker.resolve(
+      { approvalId: "id-1", conversationId: "one", toolCallId: "tool-create", decision: "allow_always" },
+      1,
+    );
+    await expect(authorization).resolves.toBeUndefined();
+    expect(evaluateToolPolicy(store.get(), "create_file")).toBe("allow");
+    expect(evaluateToolPolicy(store.get(), "modify_file")).toBe("ask");
+    await expect(
+      broker.authorize({
+        conversationId: "one",
+        toolCallId: "tool-create-2",
+        toolName: "write",
+        category: "create_file",
+        scope: { kind: "workspace_path", value: "other.txt" },
+        summary: "Create other.txt",
+      }),
+    ).resolves.toBeUndefined();
+  });
+
+  it("refuses a lasting Allow for integrations or while auto-review is off", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "wisp-approval-always-refused-"));
+    const store = new ToolPolicyStore(path.join(directory, "policy.json"));
+    let nextId = 0;
+    const broker = new ToolAuthorizationBroker(store, () => undefined, {
+      createId: () => `id-${++nextId}`,
+      selectWindowId: () => 1,
+    });
+    const integration = broker.authorize({
+      conversationId: "one",
+      toolCallId: "tool-linear",
+      toolName: "linear_update_issue",
+      category: "external_write",
+      scope: { kind: "integration", value: "Linear issue ENG-1" },
+      summary: "Update ENG-1",
+    });
+    await expect(
+      broker.resolve(
+        { approvalId: "id-1", conversationId: "one", toolCallId: "tool-linear", decision: "allow_always" },
+        1,
+      ),
+    ).rejects.toMatchObject({ code: "invalid_request" });
+    // The refused decision leaves the request pending for a valid answer.
+    await broker.resolve({ approvalId: "id-1", conversationId: "one", toolCallId: "tool-linear", decision: "deny" }, 1);
+    await expect(integration).rejects.toMatchObject({ code: "tool_blocked" });
+
+    await store.save({ autoReview: false, rules: [] });
+    const file = broker.authorize({
+      conversationId: "one",
+      toolCallId: "tool-edit",
+      toolName: "edit",
+      category: "modify_file",
+      scope: { kind: "workspace_path", value: "notes.txt" },
+      summary: "Edit notes.txt",
+    });
+    await expect(
+      broker.resolve(
+        { approvalId: "id-2", conversationId: "one", toolCallId: "tool-edit", decision: "allow_always" },
+        1,
+      ),
+    ).rejects.toMatchObject({ code: "invalid_request" });
+    await broker.resolve(
+      { approvalId: "id-2", conversationId: "one", toolCallId: "tool-edit", decision: "allow_once" },
+      1,
+    );
+    await expect(file).resolves.toBeUndefined();
+    expect(store.get().rules).toEqual([]);
+  });
+
+  it("stores a blocked MCP tool call as an integration rule", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "wisp-approval-mcp-block-"));
+    const store = new ToolPolicyStore(path.join(directory, "policy.json"));
+    await store.blockCategory("integration_call", () => "rule-1");
+    expect(store.get().rules).toEqual([
+      { id: "rule-1", action: "integration_call", behavior: "block", scope: "integration" },
+    ]);
+    expect(evaluateToolPolicy(store.get(), "integration_call", "integration")).toBe("block");
+  });
+
   it("settles a blocked approval once even when the decision arrives twice", async () => {
     const directory = await mkdtemp(path.join(os.tmpdir(), "wisp-approval-double-"));
     const store = new ToolPolicyStore(path.join(directory, "policy.json"));

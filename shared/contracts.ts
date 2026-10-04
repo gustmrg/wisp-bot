@@ -249,7 +249,7 @@ export type ConversationAgentEvent =
       conversationId: string;
       approvalId: string;
       toolCallId: string;
-      decision: "allow_once" | "deny" | "block" | "expired";
+      decision: "allow_once" | "allow_always" | "deny" | "block" | "expired";
     };
 
 export type SequencedConversationAgentEvent = ConversationAgentEvent & { sequence: number };

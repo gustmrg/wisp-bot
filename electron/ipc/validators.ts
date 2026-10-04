@@ -212,7 +212,9 @@ export function parseMarkConversationReadRequest(value: unknown): MarkConversati
 export function parseResolveToolApprovalRequest(value: unknown): ResolveToolApprovalRequest {
   const request = asRecord(value);
   const decision = request.decision;
-  if (decision !== "allow_once" && decision !== "deny" && decision !== "block") throw invalidRequest();
+  if (decision !== "allow_once" && decision !== "allow_always" && decision !== "deny" && decision !== "block") {
+    throw invalidRequest();
+  }
   return {
     approvalId: parseId(request.approvalId),
     conversationId: parseId(request.conversationId),
