@@ -75,7 +75,8 @@ Use `npm run format` to apply the repository's Biome formatting rules.
 application.
 
 Tests use fake agents and never contact a model provider. CI runs the test,
-lint, formatting, typechecking, and build gates.
+lint, formatting, typechecking, and build gates. Releases also require
+`npm run audit:prod` to pass.
 
 ### Optional live Pi smoke
 
@@ -114,22 +115,27 @@ locally.
 | [Mobile layout](docs/mobile-layout.md) | Responsive single-screen layout below 760px |
 | [Application settings](docs/application-settings.md) | App settings, notification sounds, updates, known limitations |
 | [Installing on macOS](docs/installing-on-macos.md) | Running unsigned builds under Gatekeeper |
-| [Release runbook](docs/release-runbook.md) | Staging, verification, and rollback for releases |
+| [Installing on Linux](docs/installing-on-linux.md) | `.deb` and AppImage installation, keyring requirement |
+| [Release runbook](docs/release-runbook.md) | Publishing, verification, and rollback for releases |
 | [Decision records](docs/decisions/) | Architecture decision records (ADRs) |
 
 ## Desktop releases
 
-Release targets, signing custody, staged channels, and rollback policy are
-defined in [ADR 002](docs/decisions/002-distribution.md) and the
-[release runbook](docs/release-runbook.md). `npm run dist:dir` creates an
-unpacked local application for inspection; installers are produced only by the
-protected `Desktop release` workflow, which creates drafts and never publishes
-automatically.
+[GitHub Releases](https://github.com/gustmrg/wisp-bot/releases) has macOS
+(arm64 and x64 DMG/ZIP) and Linux (x64 AppImage and `.deb`) builds. Windows is
+not built yet.
 
-Windows installers are signed through Azure Trusted Signing. macOS artifacts
-are currently ad-hoc signed and not notarized, so first launch requires
-removing the quarantine attribute — see
-[installing on macOS](docs/installing-on-macos.md).
+macOS builds are ad-hoc signed and not notarized, so you have to remove the
+quarantine attribute before the first launch. See
+[installing on macOS](docs/installing-on-macos.md). Linux builds update in
+place from Settings → About. See [installing on Linux](docs/installing-on-linux.md).
+
+To release, run the **Desktop release** workflow from `main` with a version
+(`patch`, `minor`, `major`, or an exact version). It runs every quality gate,
+packages both platforms, commits the version bump, tags it, and publishes the
+release. See the [release runbook](docs/release-runbook.md) and
+[ADR 007](docs/decisions/007-release-automation.md). `npm run dist` and
+`npm run dist:dir` package the current OS locally without publishing.
 
 ## Contributing
 

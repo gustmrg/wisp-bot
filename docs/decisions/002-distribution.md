@@ -1,6 +1,6 @@
 # ADR 002: Desktop distribution, signing, and updates
 
-- Status: Accepted
+- Status: Partially superseded by [ADR 007](007-release-automation.md). The platform matrix, signing, rollout, and release gates below were never put in place; ADR 007 records what ships. The persistence compatibility rules still apply.
 - Date: 2026-09-02
 - Owners: Wisp product, release operations, and security
 

@@ -2,8 +2,8 @@
 
 Current macOS artifacts are **ad-hoc signed, not notarized** — the release
 pipeline packages them without a Developer ID certificate
-(`CSC_IDENTITY_AUTO_DISCOVERY: false`), pending the Apple Developer account
-setup described in [ADR 002](decisions/002-distribution.md). When you open a
+(`CSC_IDENTITY_AUTO_DISCOVERY: false`) because there is no Apple Developer
+account ([ADR 007](decisions/007-release-automation.md)). When you open a
 downloaded build for the first time, Gatekeeper may report that the app
 "is damaged and can't be opened" and suggest moving it to the Trash. The app
 is not damaged; Gatekeeper refuses quarantined downloads without a valid
@@ -30,6 +30,9 @@ Notes:
   `codesign -dv "/Applications/Wisp Bot.app"` (`Signature=adhoc`,
   `TeamIdentifier=not set`).
 
-Once macOS builds are Developer ID signed and notarized, this step will no
-longer be necessary; the [release runbook](release-runbook.md) tracks the
-signing and notarization workflow.
+The same goes for updates. Ad-hoc builds cannot install updates themselves,
+so Settings → About opens the releases page. Download the new DMG, replace the
+app in `/Applications`, and run the `xattr` command again.
+
+This step will go away once macOS builds are Developer ID signed and
+notarized.

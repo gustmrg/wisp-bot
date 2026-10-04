@@ -50,12 +50,17 @@ toggle.
 
 ## Updates (About)
 
-Installed releases expose explicit check, download, and restart-to-install
-update states; checking is manual only and nothing downloads automatically.
-The update feed is disabled in development ("Updates are available only in an
-installed release"). macOS artifacts are currently ad-hoc signed rather than
-notarized, so updates there fall back to a manual-download state that opens
-the releases page — see [installing on macOS](installing-on-macos.md).
+Installed releases have explicit check, download, and restart-to-install
+update steps. Checking runs only when you ask, and nothing downloads on its
+own. The update feed is turned off in development ("Updates are available only
+in an installed release").
+
+- **Linux** (AppImage and `.deb`) downloads and installs updates in place. The
+  `.deb` asks for the administrator password. See
+  [installing on Linux](installing-on-linux.md).
+- **macOS** builds are ad-hoc signed rather than notarized, so they cannot
+  install updates themselves. They show the new version and open the releases
+  page instead. See [installing on macOS](installing-on-macos.md).
 
 ## Not connected yet
 

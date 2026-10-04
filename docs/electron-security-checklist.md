@@ -10,7 +10,7 @@ Verified for the Phase 6 backend boundary:
 - The renderer applies a restrictive content security policy.
 - Provider credentials remain encrypted in the main process and never enter renderer events.
 - Plugin keys use a separate encrypted store; configuration responses never return saved secrets.
-- Automatic discovery of project Pi extensions, skills, prompts, and context files is disabled. Controlled bundled Brave Search and Linear tools are registered explicitly; arbitrary plugins, endpoints, and MCP servers are not accepted.
+- Automatic discovery of project Pi extensions, skills, prompts, and context files is disabled. The bundled Brave Search, Linear, and Firecrawl tools are registered explicitly, and arbitrary plugins are not accepted. Remote MCP servers are accepted only as user-configured HTTPS Streamable HTTP endpoints, and every Wisp is denied access to them by default ([ADR 005](decisions/005-remote-mcp-servers.md)).
 - Plugin access defaults to deny for every Wisp and is bound to its immutable application session ID. Calls recheck live grants; revocation cancels pending approvals and requests.
 - Linear mutations require an expiring, single-use integration approval. Workspace auto-review rules cannot authorize external writes.
 - Bundled plugin requests use fixed HTTPS provider endpoints, reject redirects, and enforce request/response bounds. Remote mutation cancellation is not a rollback guarantee.
@@ -23,4 +23,4 @@ Verified for the Phase 6 backend boundary:
 - Structured logs redact sensitive keys and secret-shaped values and omit prompts/tool content.
 - Agent sessions, pending approvals, subscriptions, and IPC handlers are disposed on shutdown.
 
-Packaging validation in this repository currently covers the Linux Electron runtime. Windows and macOS packaging remain release-environment checks because no cross-platform packager or signing configuration is checked in yet.
+The release workflow packages macOS on `macos-14` and Linux on `ubuntu-latest` with electron-builder ([release runbook](release-runbook.md)). macOS builds are ad-hoc signed and Linux builds are unsigned. Windows packaging is configured but not built.

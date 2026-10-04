@@ -70,7 +70,11 @@ not the production transport.
 
 ```text
 wisp-bot/
-├── .github/workflows/ci.yml       # Repository quality gates
+├── .github/workflows/
+│   ├── ci.yml                     # Repository quality gates
+│   └── release.yml                # Version bump, packaging, and GitHub release
+├── build/                         # Packaging icons
+├── docs/                          # Guides and decision records
 ├── electron/
 │   ├── backend/                   # Persistence, services, agents, and authorization
 │   ├── ipc/                       # Validated main-process IPC handlers
@@ -89,6 +93,7 @@ wisp-bot/
 │   ├── lib/                       # Renderer policies and pure helpers
 │   ├── App.tsx                    # Top-level renderer composition
 │   └── main.tsx                   # Renderer entry point and bridge guard
+├── scripts/                       # Release checks, checksums, and live Pi smoke
 ├── tests/                         # Electron/backend and contract tests
 ├── template/                      # Non-runtime prototype/reference material
 ├── index.html                     # Renderer HTML and generated CSP slot
