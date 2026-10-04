@@ -31,6 +31,7 @@ import {
 } from "./security-policy.js";
 
 const productionRendererPath = path.join(__dirname, "../../dist/index.html");
+const developmentIconPath = path.join(__dirname, "../../build/icon-mac-dev.png");
 const windowBackground = (): string => (nativeTheme.shouldUseDarkColors ? "#0a0a0a" : "#ffffff");
 // Agents get this long to settle their last turn on quit before the app exits anyway.
 const SHUTDOWN_TIMEOUT_MS = 5_000;
@@ -48,6 +49,7 @@ function isolateDevData(): void {
   const override = process.env.WISP_DATA_DIR?.trim();
   app.setPath("userData", override ? path.resolve(override) : path.join(app.getPath("appData"), "wisp-bot-dev"));
   app.setName("wisp-bot-dev");
+  if (process.platform === "linux") app.setDesktopName("com.gustavomiranda.wispbot.dev.desktop");
 }
 
 isolateDevData();
@@ -94,6 +96,7 @@ async function createWindow(target: RendererTarget): Promise<void> {
     minHeight: 480,
     backgroundColor: windowBackground(),
     autoHideMenuBar: true,
+    ...(!app.isPackaged ? { icon: developmentIconPath } : {}),
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,
@@ -156,7 +159,7 @@ async function bootstrap(): Promise<void> {
   if (!app.isPackaged && process.platform === "darwin" && app.dock) {
     // Amber recolor of build/icon-mac.png so a dev run is distinguishable from
     // the installed (blue) app when both are in the Dock.
-    const devIcon = nativeImage.createFromPath(path.join(__dirname, "../../build/icon-mac-dev.png"));
+    const devIcon = nativeImage.createFromPath(developmentIconPath);
     if (!devIcon.isEmpty()) app.dock.setIcon(devIcon);
   }
   const target = resolveRendererTarget(app.isPackaged, process.env.VITE_DEV_SERVER_URL, productionRendererPath);
