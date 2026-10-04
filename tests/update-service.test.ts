@@ -38,6 +38,7 @@ describe("UpdateService", () => {
     expect(service.getState()).toMatchObject({ phase: "available", availableVersion: "1.1.0" });
 
     const downloading = service.download();
+    expect(service.getState()).toMatchObject({ phase: "downloading", progress: 0, availableVersion: "1.1.0" });
     adapter.emit("download-progress", { percent: 42 });
     adapter.emit("update-downloaded", { version: "1.1.0" });
     await downloading;
@@ -104,5 +105,16 @@ describe("UpdateService", () => {
     expect(record.message).toContain("HttpError: 404");
     expect(record.message).toContain("[REDACTED]");
     expect(record.message).not.toContain("sk-abcdefghijklmnop1234");
+  });
+
+  it("leaves the downloading state when the download fails without an updater event", async () => {
+    const adapter = updater();
+    adapter.downloadUpdate.mockRejectedValueOnce(new Error("socket hang up"));
+    const service = new UpdateService(adapter as never, "1.0.0", true);
+    const checking = service.check();
+    adapter.emit("update-available", { version: "1.1.0" });
+    await checking;
+    await expect(service.download()).rejects.toThrow("socket hang up");
+    expect(service.getState()).toMatchObject({ phase: "error" });
   });
 });

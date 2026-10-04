@@ -74,7 +74,21 @@ export class UpdateService {
     if (this.state.phase !== "available") {
       throw new WispBackendError("invalid_request", "No update is available to download.");
     }
-    await this.updater.downloadUpdate();
+    // The updater's first progress event arrives about a second in, and a
+    // cached download reports none, so leave "available" before it starts.
+    this.setState({ ...this.state, phase: "downloading", progress: 0 });
+    try {
+      await this.updater.downloadUpdate();
+    } catch (error) {
+      if (this.getState().phase === "downloading") {
+        this.setState({
+          phase: "error",
+          currentVersion: this.state.currentVersion,
+          message: "The update service could not complete the request.",
+        });
+      }
+      throw error;
+    }
     return this.getState();
   }
 

@@ -6,10 +6,12 @@ import {
   BellIcon,
   BotIcon,
   ChevronLeftIcon,
+  CircleFadingArrowUpIcon,
   DownloadIcon,
   ExternalLinkIcon,
   InfoIcon,
   KeyboardIcon,
+  LoaderCircleIcon,
   PlugIcon,
   RefreshCwIcon,
   ServerIcon,
@@ -250,77 +252,79 @@ function AppSettingsDialog({
           <h2 id="general-settings-title" className="mb-[22px] mt-0 text-[17px]">
             General
           </h2>
-          {userProfile.loading ? (
-            <p role="status">Loading profile…</p>
-          ) : (
-            <UserProfileSettings controller={userProfile} />
-          )}
-          <SettingsGroup label="Application">
-            <SettingsCard variant="stacked">
-              <SettingsRow>
-                <SettingsRowCopy>
-                  <label htmlFor="app-theme">
-                    <strong>Theme</strong>
-                  </label>
-                  <small className="text-dim text-[11.5px]">Choose how Wisp looks on this device.</small>
-                </SettingsRowCopy>
-                <Select
-                  items={THEME_OPTIONS}
-                  value={preferences.theme}
-                  onValueChange={(value) => {
-                    if (value !== null) onPreferencesChange({ ...preferences, theme: normalizeTheme(value) });
-                  }}
-                >
-                  <SelectTrigger id="app-theme" className="w-28 shrink-0">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent align="end" alignItemWithTrigger={false}>
-                    <SelectGroup>
-                      {THEME_OPTIONS.map((option) => (
-                        <SelectItem key={option.value} value={option.value}>
-                          {option.label}
-                        </SelectItem>
-                      ))}
-                    </SelectGroup>
-                  </SelectContent>
-                </Select>
-              </SettingsRow>
-              <SettingsRow>
-                <SettingsRowCopy>
-                  <SoonTitle>Launch at login</SoonTitle>
-                  <small className="text-dim text-[11.5px]">Open Wisp automatically when you sign in.</small>
-                </SettingsRowCopy>
-                <PreferenceSwitch
-                  label="Launch at login"
-                  checked={preferences.launchAtLogin}
-                  disabled
-                  onChange={() => onPreferencesChange({ ...preferences, launchAtLogin: !preferences.launchAtLogin })}
-                />
-              </SettingsRow>
-              <SettingsRow>
-                <SettingsRowCopy>
-                  <strong>Notification sounds</strong>
-                  <small className="text-dim text-[11.5px]">Play a sound when a Wisp finishes or needs input.</small>
-                </SettingsRowCopy>
-                <PreferenceSwitch
-                  label="Notification sounds"
-                  checked={preferences.notificationSounds}
-                  onChange={() =>
-                    onPreferencesChange({ ...preferences, notificationSounds: !preferences.notificationSounds })
-                  }
-                />
-              </SettingsRow>
-            </SettingsCard>
-          </SettingsGroup>
-          <GeneralSettingsSections preferences={preferences} onPreferencesChange={onPreferencesChange} />
-          <p className="mt-4 text-[11.5px] text-dim" role={persistenceError ? "alert" : "status"} aria-live="polite">
-            {persistenceError ??
-              (persistenceStatus === "saving"
-                ? "Saving preferences…"
-                : persistenceStatus === "saved"
-                  ? "Preferences saved on this device."
-                  : "Preferences are stored on this device.")}
-          </p>
+          <div className="animate-tab-forward">
+            {userProfile.loading ? (
+              <p role="status">Loading profile…</p>
+            ) : (
+              <UserProfileSettings controller={userProfile} />
+            )}
+            <SettingsGroup label="Application">
+              <SettingsCard variant="stacked">
+                <SettingsRow>
+                  <SettingsRowCopy>
+                    <label htmlFor="app-theme">
+                      <strong>Theme</strong>
+                    </label>
+                    <small className="text-dim text-[11.5px]">Choose how Wisp looks on this device.</small>
+                  </SettingsRowCopy>
+                  <Select
+                    items={THEME_OPTIONS}
+                    value={preferences.theme}
+                    onValueChange={(value) => {
+                      if (value !== null) onPreferencesChange({ ...preferences, theme: normalizeTheme(value) });
+                    }}
+                  >
+                    <SelectTrigger id="app-theme" className="w-28 shrink-0">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent align="end" alignItemWithTrigger={false}>
+                      <SelectGroup>
+                        {THEME_OPTIONS.map((option) => (
+                          <SelectItem key={option.value} value={option.value}>
+                            {option.label}
+                          </SelectItem>
+                        ))}
+                      </SelectGroup>
+                    </SelectContent>
+                  </Select>
+                </SettingsRow>
+                <SettingsRow>
+                  <SettingsRowCopy>
+                    <SoonTitle>Launch at login</SoonTitle>
+                    <small className="text-dim text-[11.5px]">Open Wisp automatically when you sign in.</small>
+                  </SettingsRowCopy>
+                  <PreferenceSwitch
+                    label="Launch at login"
+                    checked={preferences.launchAtLogin}
+                    disabled
+                    onChange={() => onPreferencesChange({ ...preferences, launchAtLogin: !preferences.launchAtLogin })}
+                  />
+                </SettingsRow>
+                <SettingsRow>
+                  <SettingsRowCopy>
+                    <strong>Notification sounds</strong>
+                    <small className="text-dim text-[11.5px]">Play a sound when a Wisp finishes or needs input.</small>
+                  </SettingsRowCopy>
+                  <PreferenceSwitch
+                    label="Notification sounds"
+                    checked={preferences.notificationSounds}
+                    onChange={() =>
+                      onPreferencesChange({ ...preferences, notificationSounds: !preferences.notificationSounds })
+                    }
+                  />
+                </SettingsRow>
+              </SettingsCard>
+            </SettingsGroup>
+            <GeneralSettingsSections preferences={preferences} onPreferencesChange={onPreferencesChange} />
+            <p className="mt-4 text-[11.5px] text-dim" role={persistenceError ? "alert" : "status"} aria-live="polite">
+              {persistenceError ??
+                (persistenceStatus === "saving"
+                  ? "Saving preferences…"
+                  : persistenceStatus === "saved"
+                    ? "Preferences saved on this device."
+                    : "Preferences are stored on this device.")}
+            </p>
+          </div>
         </section>
         <ModelSettingsSection active={section === "model" && !showOverview} />
         <section
@@ -332,37 +336,35 @@ function AppSettingsDialog({
           <h2 id="about-settings-title" className="mb-[22px] mt-0 text-[17px]">
             About
           </h2>
-          <SettingsGroup label="Version">
-            <SettingsCard>
-              <SettingsRow>
-                <SettingsRowCopy>
-                  <strong className="text-[12.5px]">{appMetadata.displayName}</strong>
-                  <small className="text-dim text-[11.5px]">Version {appMetadata.version}</small>
-                </SettingsRowCopy>
-                <Button
-                  variant="ghost"
-                  size="icon-sm"
-                  type="button"
-                  aria-label={updateActionLabel(updateState)}
-                  title={updateActionLabel(updateState)}
-                  disabled={updateState.phase === "checking" || updateState.phase === "downloading"}
-                  onClick={() => void handleUpdateAction()}
-                >
-                  {updateState.phase === "available" ? (
-                    <DownloadIcon aria-hidden="true" />
-                  ) : updateState.phase === "manual-download" ? (
-                    <ExternalLinkIcon aria-hidden="true" />
-                  ) : (
-                    <RefreshCwIcon aria-hidden="true" />
-                  )}
-                </Button>
-              </SettingsRow>
-            </SettingsCard>
-          </SettingsGroup>
-          <p className="mt-3 text-[11.5px] text-dim" role={updateState.phase === "error" ? "alert" : "status"}>
-            {updateStatusText(updateState)}
-          </p>
-          <p className="mt-2 text-[11px] text-faint">Manual recovery: github.com/gustmrg/wisp-bot/releases/latest</p>
+          <div className="animate-tab-forward">
+            <SettingsGroup label="Version">
+              <SettingsCard>
+                <SettingsRow>
+                  <SettingsRowCopy>
+                    <strong className="text-[12.5px]">{appMetadata.displayName}</strong>
+                    <small className="text-dim text-[11.5px]">Version {appMetadata.version}</small>
+                  </SettingsRowCopy>
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    type="button"
+                    className={cn(updateNeedsAction(updateState) && "text-blue hover:text-blue")}
+                    aria-label={updateActionLabel(updateState)}
+                    aria-busy={updateBusy(updateState)}
+                    title={updateActionLabel(updateState)}
+                    disabled={updateBusy(updateState)}
+                    onClick={() => void handleUpdateAction()}
+                  >
+                    <UpdateActionIcon state={updateState} />
+                  </Button>
+                </SettingsRow>
+              </SettingsCard>
+            </SettingsGroup>
+            <p className="mt-3 text-[11.5px] text-dim" role={updateState.phase === "error" ? "alert" : "status"}>
+              {updateStatusText(updateState)}
+            </p>
+            <p className="mt-2 text-[11px] text-faint">Manual recovery: github.com/gustmrg/wisp-bot/releases/latest</p>
+          </div>
         </section>
         {mobile ? (
           <MobileNavigation
@@ -379,7 +381,26 @@ function AppSettingsDialog({
 export { AppSettingsDialog };
 export type { AppPreferences, AppSettingsDialogProps };
 
+function updateBusy(state: UpdateState): boolean {
+  return state.phase === "checking" || state.phase === "downloading";
+}
+
+/** A found or downloaded update waits on the user, so the button stands out. */
+function updateNeedsAction(state: UpdateState): boolean {
+  return state.phase === "available" || state.phase === "manual-download" || state.phase === "downloaded";
+}
+
+function UpdateActionIcon({ state }: { state: UpdateState }) {
+  if (state.phase === "available") return <DownloadIcon aria-hidden="true" />;
+  if (state.phase === "manual-download") return <ExternalLinkIcon aria-hidden="true" />;
+  if (state.phase === "downloading") return <LoaderCircleIcon aria-hidden="true" className="animate-spin" />;
+  if (state.phase === "downloaded") return <CircleFadingArrowUpIcon aria-hidden="true" />;
+  return <RefreshCwIcon aria-hidden="true" className={cn(state.phase === "checking" && "animate-spin")} />;
+}
+
 function updateActionLabel(state: UpdateState): string {
+  if (state.phase === "checking") return "Checking for updates";
+  if (state.phase === "downloading") return "Downloading update";
   if (state.phase === "available") return "Download update";
   if (state.phase === "manual-download") return "Open the releases page to download the update";
   if (state.phase === "downloaded") return "Restart and install update";
