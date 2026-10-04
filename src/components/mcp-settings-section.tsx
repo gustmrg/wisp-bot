@@ -116,7 +116,7 @@ export function McpSettingsSection() {
         any Wisp access automatically, and every tool call requires approval.
       </p>
       {view ? (
-        <>
+        <div className="animate-tab-forward">
           {!view.secureStorageAvailable ? (
             <p role="alert" className="mb-3 text-[11.5px] text-destructive">
               Secure credential storage is unavailable. New connections cannot be saved on this device.
@@ -149,7 +149,7 @@ export function McpSettingsSection() {
               <McpServerCard onSelect={() => setEditing("new")} />
             </>
           )}
-        </>
+        </div>
       ) : error ? (
         <div className="flex flex-col items-start gap-3">
           <p role="alert" className="text-[11.5px] text-destructive">

@@ -191,7 +191,7 @@ function ModelSettingsSection({ active, onViewChange, showHeading = true }: Mode
 
       {loading ? <p className="text-dim text-[12px]">Loading providers and models…</p> : null}
       {!loading && view ? (
-        <>
+        <div className="animate-tab-forward">
           <SettingsGroup label="Provider">
             <SettingsCard variant="stacked">
               <SettingsRow>
@@ -320,7 +320,7 @@ function ModelSettingsSection({ active, onViewChange, showHeading = true }: Mode
               </Button>
             </div>
           </div>
-        </>
+        </div>
       ) : null}
       {!loading && !view && error ? <p className="text-[12px] text-destructive">{error}</p> : null}
     </section>
