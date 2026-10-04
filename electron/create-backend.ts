@@ -46,6 +46,8 @@ export interface BackendHost {
   encryption: EncryptionService;
   logger: StructuredLogger;
   agentMode: AgentMode;
+  /** The running application version, reported to remote MCP servers. */
+  appVersion: string;
   updateService: UpdateService;
   userName?: string;
   /** Refresh model catalogs over the network in the background after startup. Defaults to true. */
@@ -116,6 +118,7 @@ export async function createBackend(host: BackendHost): Promise<Backend> {
     authorizationBroker: toolAuthorizationBroker,
     resolveWisp,
     openExternal: host.openExternal,
+    clientVersion: host.appVersion,
     // Health updates: push the sanitized view; secrets never leave the backend.
     onSettingsChanged: (view) => broadcast(WISP_IPC_CHANNELS.mcpSettingsChanged, view),
   });

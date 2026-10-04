@@ -81,6 +81,8 @@ export interface McpServiceOptions {
   authorizationBroker: Pick<ToolAuthorizationBroker, "authorize">;
   resolveWisp: (conversationId: string) => string;
   openExternal: (url: string) => Promise<void>;
+  /** The application version advertised to MCP servers. */
+  clientVersion?: string;
   createConnection?: (options: McpConnectionOptions) => McpConnection;
   createOAuthProvider?: (serverId: string) => McpOAuthProvider;
   /** Observes sanitized settings changes; raw secrets never reach the renderer. */
@@ -907,6 +909,7 @@ export class McpService {
   private createConnection(): McpConnection {
     if (this.options.createConnection) return this.options.createConnection({ fetch: undefined });
     return new McpConnection({
+      clientVersion: this.options.clientVersion,
       onClosed: () => {
         void this.publishAndView();
       },

@@ -74,6 +74,7 @@ async function compose() {
     encryption,
     logger: new StructuredLogger({ info: () => undefined, warn: () => undefined }),
     agentMode: "fake",
+    appVersion: "0.0.0-test",
     updateService: new UpdateService(updater as never, "0.1.0", false),
     allowModelNetwork: false,
   });

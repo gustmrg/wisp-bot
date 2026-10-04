@@ -44,6 +44,8 @@ export type McpConnectionAuth =
   | { mode: "oauth"; provider: unknown };
 
 export interface McpConnectionOptions {
+  /** The application version advertised to the server during initialization. */
+  clientVersion?: string;
   connectTimeoutMs?: number;
   toolTimeoutMs?: number;
   /** Maximum tools accepted from one server; discovery fails beyond this. */
@@ -109,7 +111,7 @@ export class McpConnection {
       let client: McpSdkClient | null = null;
       try {
         client = new sdk.Client(
-          { name: CLIENT_NAME, version: "0.3.0" },
+          { name: CLIENT_NAME, version: this.options.clientVersion ?? "0.0.0" },
           {
             // Advertise no sampling, elicitation, or roots capabilities; the
             // SDK fails unsupported interaction requests clearly.

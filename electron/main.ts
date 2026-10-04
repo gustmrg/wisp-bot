@@ -198,6 +198,7 @@ async function bootstrap(): Promise<void> {
     encryption: new SafeStorageEncryption(),
     logger,
     agentMode: selectAgentMode(app.isPackaged, process.env.WISP_AGENT_MODE),
+    appVersion: app.getVersion(),
     updateService: new UpdateService(autoUpdater, app.getVersion(), app.isPackaged, autoInstallSupported, logger),
   });
   let backendDisposed = false;

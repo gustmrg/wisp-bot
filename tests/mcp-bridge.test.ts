@@ -41,7 +41,11 @@ function fakeSdk(
   }
   class FakeClient implements McpSdkClient {
     onclose: (() => void) | undefined;
-    constructor(_info: unknown, _clientOptions: unknown, clientConfig: typeof options) {}
+    constructor(
+      readonly info: unknown,
+      _clientOptions: unknown,
+      clientConfig: typeof options,
+    ) {}
     connect = vi.fn(async () => {
       if (options.connect) await options.connect(this);
     });
@@ -56,13 +60,14 @@ describe("McpConnection", () => {
   it("connects with header authentication and lists tools", async () => {
     const { sdk, clients, transports } = fakeSdk();
     const onClosed = vi.fn();
-    const connection = new McpConnection({ sdk, onClosed });
+    const connection = new McpConnection({ sdk, onClosed, clientVersion: "1.2.3" });
     const outcome = await connection.connect("https://example.com/mcp", {
       mode: "header",
       headerName: "Authorization",
       headerValue: "Bearer sekrit",
     });
     expect(outcome).toBe("connected");
+    expect(clients[0]?.info).toEqual({ name: "wisp-bot", version: "1.2.3" });
     expect(transports[0]?.url).toBe("https://example.com/mcp");
     const transportOptions = transports[0]?.options as { requestInit?: { headers?: Record<string, string> } };
     expect(transportOptions.requestInit?.headers).toEqual({ Authorization: "Bearer sekrit" });
