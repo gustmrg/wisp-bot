@@ -22,6 +22,16 @@ import type {
 import { MAX_MESSAGE_SEARCH_LENGTH, MIN_MESSAGE_SEARCH_LENGTH } from "../../shared/message-search.js";
 import { isValidSkillName, type SkillRequest } from "../../shared/skills.js";
 import type { ResolveToolApprovalRequest } from "../../shared/tool-policy.js";
+import {
+  isVoiceLanguage,
+  isVoiceModel,
+  isVoiceProviderId,
+  MAX_VOICE_AUDIO_BYTES,
+  VOICE_AUDIO_MIME_TYPES,
+  type SaveVoiceCredentialRequest,
+  type TranscribeAudioRequest,
+  type VoiceAudioMimeType,
+} from "../../shared/voice.js";
 import { WispBackendError } from "../backend/backend-error.js";
 import {
   normalizeChatChanges,
@@ -259,4 +269,32 @@ export function parseContextRequest(value: unknown): ContextRequest {
   if (Object.keys(command).length !== 1 || !["get", "compact", "new_topic"].includes(String(command.action)))
     throw invalidRequest();
   return { conversationId, command: { action: command.action as "get" | "compact" | "new_topic" } };
+}
+
+export function parseSaveVoiceCredentialRequest(value: unknown): SaveVoiceCredentialRequest {
+  const request = asRecord(value);
+  if (!isVoiceProviderId(request.providerId)) throw invalidRequest();
+  if (typeof request.apiKey !== "string" || request.apiKey.length > 20_000) throw invalidRequest();
+  return { providerId: request.providerId, apiKey: request.apiKey };
+}
+
+export function parseTranscribeAudioRequest(value: unknown): TranscribeAudioRequest {
+  const request = asRecord(value);
+  const { providerId, modelId, language, mimeType, audio } = request;
+  if (
+    !isVoiceProviderId(providerId) ||
+    !isVoiceModel(providerId, modelId) ||
+    !isVoiceLanguage(language) ||
+    !VOICE_AUDIO_MIME_TYPES.some((type) => type === mimeType) ||
+    !(audio instanceof Uint8Array)
+  ) {
+    throw invalidRequest();
+  }
+  if (audio.byteLength === 0) {
+    throw new WispBackendError("invalid_request", "The recording is empty.");
+  }
+  if (audio.byteLength > MAX_VOICE_AUDIO_BYTES) {
+    throw new WispBackendError("invalid_request", "The recording is too long to transcribe. Try a shorter one.");
+  }
+  return { providerId, modelId, language, mimeType: mimeType as VoiceAudioMimeType, audio };
 }

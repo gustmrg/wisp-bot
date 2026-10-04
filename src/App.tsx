@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 
 import { AppSettingsDialogHost } from "@/components/app-settings-dialog-host";
 import type { AppSettingsDialogHandle } from "@/components/app-settings-dialog-host";
+import type { SettingsEntrySection } from "@/components/app-settings-dialog";
 import { ChatPanel } from "@/components/chat-panel";
 import { DetailsPanel } from "@/components/details-panel";
 import { SearchDialog } from "@/components/search-dialog";
@@ -91,7 +92,7 @@ function Workspace({ userProfile }: { userProfile: UserProfileController }) {
     setDetailsOpen(open);
   }
 
-  function showSettings(section: "general" | "model") {
+  function showSettings(section: SettingsEntrySection) {
     navigationVersion.current += 1;
     settingsDialog.current?.open(section);
   }
@@ -164,6 +165,15 @@ function Workspace({ userProfile }: { userProfile: UserProfileController }) {
             onShowLatest={workspace.showLatestMessages}
             onOpenDetails={() => showDetails(true)}
             onConfigure={() => showSettings("model")}
+            voice={{
+              deviceId: workspace.preferences.microphone,
+              providerId: workspace.preferences.voiceProvider,
+              modelId: workspace.preferences.voiceModel,
+              language: workspace.preferences.voiceLanguage,
+              autoSend: workspace.preferences.voiceAutoSend,
+              shortcut: workspace.preferences.shortcuts.voiceInput,
+            }}
+            onConfigureVoice={() => showSettings("voice")}
             onRetry={(messageId) => void workspace.retryMessage(messageId)}
             onResolveApproval={(request, decision) => void workspace.resolveApproval(request, decision)}
             onSend={(text) => void workspace.sendMessage(text)}

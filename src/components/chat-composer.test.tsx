@@ -1,7 +1,8 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
+import type { WispApi } from "../../shared/contracts";
 import type { Chat } from "../../shared/conversations";
 import { ChatComposer } from "@/components/chat-composer";
 
@@ -163,4 +164,178 @@ it("blocks first-run sends without losing the draft and offers configuration", a
   expect(input).toHaveValue("First task");
   await user.click(screen.getByRole("button", { name: "Send message" }));
   expect(onSend).toHaveBeenCalledWith("First task");
+});
+
+describe("ChatComposer voice input", () => {
+  class FakeMediaRecorder extends EventTarget {
+    static isTypeSupported = (type: string) => type === "audio/webm;codecs=opus";
+    state: RecordingState = "inactive";
+    mimeType = "audio/webm;codecs=opus";
+    start() {
+      this.state = "recording";
+    }
+    stop() {
+      this.state = "inactive";
+      this.dispatchEvent(Object.assign(new Event("dataavailable"), { data: new Blob(["voice"]) }));
+      this.dispatchEvent(new Event("stop"));
+    }
+  }
+  const track = { stop: vi.fn() };
+  const getUserMedia = vi.fn(async () => ({ getTracks: () => [track] }) as unknown as MediaStream);
+
+  type TranscribeAudio = ReturnType<typeof vi.fn<WispApi["transcribeAudio"]>>;
+  function setup(
+    transcribeAudio: TranscribeAudio = vi.fn<WispApi["transcribeAudio"]>(async () => ({
+      ok: true,
+      value: { text: "dictated words" },
+    })),
+  ): TranscribeAudio {
+    vi.stubGlobal("MediaRecorder", FakeMediaRecorder);
+    Object.defineProperty(navigator, "mediaDevices", { configurable: true, value: { getUserMedia } });
+    Object.defineProperty(window, "wisp", { configurable: true, value: { transcribeAudio } });
+    return transcribeAudio;
+  }
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    getUserMedia.mockClear();
+    track.stop.mockClear();
+  });
+
+  it("records, transcribes, and inserts the text at the cursor without sending", async () => {
+    const user = userEvent.setup();
+    const transcribeAudio = setup();
+    const onSend = vi.fn();
+    render(<ChatComposer {...defaultProps} chat={wisp("one", "One")} onSend={onSend} />);
+    const input = screen.getByRole("textbox", { name: "Message One" });
+    await user.type(input, "Please  now");
+    (input as HTMLTextAreaElement).setSelectionRange(7, 7);
+
+    await user.click(screen.getByRole("button", { name: "Start voice input" }));
+    expect(await screen.findByText(/Recording… Press Ctrl\+Space/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Send message" })).toBeDisabled();
+    await user.click(screen.getByRole("button", { name: "Stop recording and transcribe" }));
+
+    await waitFor(() => expect(input).toHaveValue("Please dictated words now"));
+    expect(transcribeAudio).toHaveBeenCalledWith(
+      expect.objectContaining({
+        providerId: "groq",
+        modelId: "whisper-large-v3-turbo",
+        language: "auto",
+        mimeType: "audio/webm",
+        audio: expect.any(Uint8Array),
+      }),
+    );
+    expect(getUserMedia).toHaveBeenCalledWith({ audio: true });
+    expect(track.stop).toHaveBeenCalled();
+    expect(onSend).not.toHaveBeenCalled();
+  });
+
+  it("fills the composer width with meter bars", async () => {
+    const user = userEvent.setup();
+    setup();
+    vi.stubGlobal(
+      "ResizeObserver",
+      class {
+        constructor(private readonly callback: ResizeObserverCallback) {}
+        observe() {
+          this.callback([{ contentRect: { width: 597 } } as ResizeObserverEntry], this as unknown as ResizeObserver);
+        }
+        disconnect() {}
+      },
+    );
+    const { container } = render(<ChatComposer {...defaultProps} chat={wisp("one", "One")} />);
+
+    await user.click(screen.getByRole("button", { name: "Start voice input" }));
+    await screen.findByRole("button", { name: "Stop recording and transcribe" });
+
+    // 3px bars with 3px gaps: (597 + 3) / 6.
+    expect(container.querySelector("[data-voice-meter]")?.children).toHaveLength(100);
+  });
+
+  it("sends the transcript right away when auto-send is on", async () => {
+    const user = userEvent.setup();
+    setup();
+    const onSend = vi.fn();
+    render(
+      <ChatComposer
+        {...defaultProps}
+        chat={wisp("one", "One")}
+        onSend={onSend}
+        voice={{
+          deviceId: "default",
+          providerId: "groq",
+          modelId: "whisper-large-v3-turbo",
+          language: "auto",
+          autoSend: true,
+          shortcut: "Ctrl+Space",
+        }}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Start voice input" }));
+    await user.click(await screen.findByRole("button", { name: "Stop recording and transcribe" }));
+
+    await waitFor(() => expect(onSend).toHaveBeenCalledWith("dictated words"));
+    expect(screen.getByRole("textbox", { name: "Message One" })).toHaveValue("");
+  });
+
+  it("toggles recording with the shortcut and discards it with Escape", async () => {
+    const user = userEvent.setup();
+    const transcribeAudio = setup();
+    render(<ChatComposer {...defaultProps} chat={wisp("one", "One")} />);
+
+    await user.keyboard("{Control>} {/Control}");
+    expect(await screen.findByRole("button", { name: "Stop recording and transcribe" })).toBeInTheDocument();
+    await user.keyboard("{Escape}");
+
+    expect(await screen.findByRole("button", { name: "Start voice input" })).toBeInTheDocument();
+    expect(transcribeAudio).not.toHaveBeenCalled();
+    expect(track.stop).toHaveBeenCalled();
+  });
+
+  it("ignores the shortcut while the composer is not on screen", async () => {
+    const user = userEvent.setup();
+    setup();
+    render(<ChatComposer {...defaultProps} chat={wisp("one", "One")} voiceShortcutEnabled={false} />);
+
+    await user.keyboard("{Control>} {/Control}");
+
+    expect(getUserMedia).not.toHaveBeenCalled();
+  });
+
+  it("points to voice settings when the provider key is missing", async () => {
+    const user = userEvent.setup();
+    setup(
+      vi.fn(async () => ({
+        ok: false as const,
+        error: {
+          code: "configuration_required" as const,
+          message: "Add a Groq API key in Settings to use voice input.",
+          retryable: false,
+        },
+      })),
+    );
+    const onConfigureVoice = vi.fn();
+    render(<ChatComposer {...defaultProps} chat={wisp("one", "One")} onConfigureVoice={onConfigureVoice} />);
+
+    await user.click(screen.getByRole("button", { name: "Start voice input" }));
+    await user.click(await screen.findByRole("button", { name: "Stop recording and transcribe" }));
+    await user.click(await screen.findByRole("button", { name: "Set up voice input" }));
+
+    expect(screen.getByText("Add a Groq API key in Settings to use voice input.")).toBeInTheDocument();
+    expect(onConfigureVoice).toHaveBeenCalledOnce();
+  });
+
+  it("explains a denied microphone", async () => {
+    const user = userEvent.setup();
+    setup();
+    getUserMedia.mockRejectedValueOnce(new DOMException("denied", "NotAllowedError"));
+    render(<ChatComposer {...defaultProps} chat={wisp("one", "One")} />);
+
+    await user.click(screen.getByRole("button", { name: "Start voice input" }));
+
+    expect(await screen.findByText("Microphone access was denied.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Start voice input" })).toBeEnabled();
+  });
 });

@@ -179,23 +179,52 @@ export class ModelService {
       throw new WispBackendError("invalid_configuration", "Add an API key before selecting this provider.");
     }
 
-    if (apiKey) {
-      if (!this.credentials.isSecureStorageAvailable()) {
-        throw new WispBackendError(
-          "secure_storage_unavailable",
-          "Secure credential storage is unavailable on this device.",
-        );
-      }
-      await this.runtime.setRuntimeApiKey(selection.providerId, apiKey);
-      try {
-        await this.credentials.setApiKey(selection.providerId, apiKey);
-      } catch (error) {
-        await this.runtime.removeRuntimeApiKey(selection.providerId).catch(() => undefined);
-        throw error;
-      }
-    }
+    if (apiKey) await this.storeApiKey(selection.providerId, apiKey);
     await this.settings.setSelection(selection);
     return this.getView();
+  }
+
+  /**
+   * Saves a provider key outside of a model selection, for features such as
+   * voice input that call the provider directly. Chat models of the same
+   * provider can use the key too.
+   */
+  async setApiKey(providerId: string, value: string): Promise<void> {
+    const apiKey = value.trim();
+    if (!apiKey || apiKey.length > MAX_API_KEY_LENGTH) {
+      throw new WispBackendError("invalid_request", "Enter a valid API key.");
+    }
+    await this.storeApiKey(providerId, apiKey);
+  }
+
+  /** The saved key for a provider, or undefined when none is saved. */
+  async getApiKey(providerId: string): Promise<string | undefined> {
+    const credential = await this.credentials.read(providerId);
+    return credential?.type === "api_key" && credential.key ? credential.key : undefined;
+  }
+
+  async listCredentialProviders(): Promise<ReadonlySet<string>> {
+    return new Set((await this.credentials.list()).map(({ providerId }) => providerId));
+  }
+
+  isSecureStorageAvailable(): boolean {
+    return this.credentials.isSecureStorageAvailable();
+  }
+
+  private async storeApiKey(providerId: string, apiKey: string): Promise<void> {
+    if (!this.credentials.isSecureStorageAvailable()) {
+      throw new WispBackendError(
+        "secure_storage_unavailable",
+        "Secure credential storage is unavailable on this device.",
+      );
+    }
+    await this.runtime.setRuntimeApiKey(providerId, apiKey);
+    try {
+      await this.credentials.setApiKey(providerId, apiKey);
+    } catch (error) {
+      await this.runtime.removeRuntimeApiKey(providerId).catch(() => undefined);
+      throw error;
+    }
   }
 
   async removeCredential(providerId: string): Promise<AiSettingsView> {

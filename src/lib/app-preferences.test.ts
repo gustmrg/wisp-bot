@@ -14,6 +14,11 @@ describe("normalizePreferences", () => {
         launchAtLogin: true,
         notificationSounds: false,
         microphone: "studio-mic",
+        voiceProvider: "openai",
+        voiceModel: "gpt-4o-transcribe",
+        voiceLanguage: "pt",
+        voiceAutoSend: true,
+        shortcuts: { voiceInput: "Ctrl+Shift+KeyM" },
         hardwareAcceleration: false,
         timezone: "UTC",
         autoReview: false,
@@ -24,6 +29,11 @@ describe("normalizePreferences", () => {
       launchAtLogin: true,
       notificationSounds: false,
       microphone: "studio-mic",
+      voiceProvider: "openai",
+      voiceModel: "gpt-4o-transcribe",
+      voiceLanguage: "pt",
+      voiceAutoSend: true,
+      shortcuts: { voiceInput: "Ctrl+Shift+KeyM" },
       hardwareAcceleration: false,
       timezone: "UTC",
       autoReview: false,
@@ -51,6 +61,25 @@ describe("normalizePreferences", () => {
       ...DEFAULT_PREFERENCES,
       autoReviewRules: [{ id: "valid", action: "Run tests", behavior: "ask", scope: "workspace" }],
     });
+  });
+
+  it("falls back for voice settings that no longer match a provider", () => {
+    expect(
+      normalizePreferences({
+        voiceProvider: "groq",
+        voiceModel: "gpt-4o-transcribe",
+        voiceLanguage: "klingon",
+        voiceAutoSend: "yes",
+        shortcuts: { voiceInput: "KeyM" },
+      }),
+    ).toMatchObject({
+      voiceProvider: "groq",
+      voiceModel: "whisper-large-v3-turbo",
+      voiceLanguage: "auto",
+      voiceAutoSend: false,
+      shortcuts: { voiceInput: "Ctrl+Space" },
+    });
+    expect(normalizePreferences({ voiceProvider: "deepgram" }).voiceProvider).toBe("groq");
   });
 
   it("never migrates a legacy free-text allow rule into automatic authorization", () => {

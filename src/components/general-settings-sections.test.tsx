@@ -51,7 +51,7 @@ describe("GeneralSettingsSections auto-review", () => {
     renderSections({ ...DEFAULT_PREFERENCES, autoReview: false });
     for (const radio of screen.getAllByRole("radio")) expect(radio).toBeDisabled();
     expect(screen.getByText(/Wisp asks before every file change/)).toBeVisible();
-    expect(screen.getAllByText("Soon")).toHaveLength(3);
+    expect(screen.getAllByText("Soon")).toHaveLength(2);
     expect(screen.getByRole("switch", { name: "Use hardware acceleration" })).toBeDisabled();
   });
 });

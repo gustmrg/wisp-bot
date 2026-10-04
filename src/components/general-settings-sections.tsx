@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import type { ReactNode } from "react";
 import { XIcon } from "lucide-react";
 
@@ -114,42 +114,9 @@ interface GeneralSettingsSectionsProps {
 }
 
 function GeneralSettingsSections({ preferences, onPreferencesChange }: GeneralSettingsSectionsProps) {
-  const [microphones, setMicrophones] = useState<SettingsOption[]>([]);
   const [detectedTimezone] = useState(() => Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC");
   const [ruleNotice, setRuleNotice] = useState("");
 
-  useEffect(() => {
-    const mediaDevices = navigator.mediaDevices;
-    if (!mediaDevices?.enumerateDevices) return;
-    let active = true;
-    let request = 0;
-    async function refreshMicrophones() {
-      const version = ++request;
-      try {
-        // List only devices already exposed by the browser. Never request recording permission here.
-        const devices = await mediaDevices.enumerateDevices();
-        if (!active || version !== request) return;
-        setMicrophones(
-          devices
-            .filter((device) => device.kind === "audioinput" && device.deviceId && device.deviceId !== "default")
-            .map((device, index) => ({ value: device.deviceId, label: device.label || `Microphone ${index + 1}` })),
-        );
-      } catch {
-        if (active && version === request) setMicrophones([]);
-      }
-    }
-    void refreshMicrophones();
-    mediaDevices.addEventListener("devicechange", refreshMicrophones);
-    return () => {
-      active = false;
-      mediaDevices.removeEventListener("devicechange", refreshMicrophones);
-    };
-  }, []);
-
-  const microphoneOptions = [{ value: "default", label: "System Default" }, ...microphones];
-  if (!microphoneOptions.some((option) => option.value === preferences.microphone)) {
-    microphoneOptions.push({ value: preferences.microphone, label: "Saved microphone (unavailable)" });
-  }
   const timezoneOptions = [
     { value: "auto", label: `Auto-detect (${detectedTimezone})` },
     ...Array.from(new Set([...TIMEZONES, ...(preferences.timezone === "auto" ? [] : [preferences.timezone])])).map(
@@ -174,19 +141,6 @@ function GeneralSettingsSections({ preferences, onPreferencesChange }: GeneralSe
     <>
       <SettingsGroup label="System">
         <SettingsCard variant="stacked">
-          <SettingsRow>
-            <SettingsRowCopy>
-              <SoonTitle htmlFor="app-microphone">Microphone</SoonTitle>
-              <small>Voice input is not available yet.</small>
-            </SettingsRowCopy>
-            <SettingsSelect
-              id="app-microphone"
-              value={preferences.microphone}
-              options={microphoneOptions}
-              disabled
-              onChange={(microphone) => onPreferencesChange({ ...preferences, microphone })}
-            />
-          </SettingsRow>
           <SettingsRow>
             <SettingsRowCopy>
               <SoonTitle>Use hardware acceleration</SoonTitle>
@@ -299,4 +253,5 @@ function GeneralSettingsSections({ preferences, onPreferencesChange }: GeneralSe
   );
 }
 
-export { GeneralSettingsSections, PreferenceSwitch, SoonTitle };
+export { GeneralSettingsSections, PreferenceSwitch, SettingsSelect, SoonTitle };
+export type { SettingsOption };

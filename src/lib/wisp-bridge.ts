@@ -60,6 +60,9 @@ const REQUIRED_WISP_METHODS = [
   "attachWorkspaceFiles",
   "listSkills",
   "deleteSkill",
+  "getVoiceSettings",
+  "saveVoiceCredential",
+  "transcribeAudio",
 ] as const satisfies ReadonlyArray<keyof WispApi>;
 
 export function isWispBridgeAvailable(value: unknown): value is WispApi {

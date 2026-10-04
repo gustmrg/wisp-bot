@@ -69,7 +69,7 @@ describe("Electron renderer security policy", () => {
     expect(isAllowedExternalUrl(url)).toBe(false);
   });
 
-  it("defaults permissions to deny with a narrow clipboard exception", () => {
+  it("defaults permissions to deny with narrow clipboard and microphone exceptions", () => {
     const target = resolveRendererTarget(false, `${TRUSTED_DEVELOPMENT_ORIGIN}/`, renderer);
     expect(isAllowedPermission("clipboard-sanitized-write", `${TRUSTED_DEVELOPMENT_ORIGIN}/`, true, target)).toBe(true);
     expect(isAllowedPermission("clipboard-sanitized-write", "https://example.com/", true, target)).toBe(false);
@@ -77,6 +77,13 @@ describe("Electron renderer security policy", () => {
       false,
     );
     expect(isAllowedPermission("media", `${TRUSTED_DEVELOPMENT_ORIGIN}/`, true, target)).toBe(false);
+    expect(isAllowedPermission("media", `${TRUSTED_DEVELOPMENT_ORIGIN}/`, true, target, ["audio"])).toBe(true);
+    expect(isAllowedPermission("media", "https://example.com/", true, target, ["audio"])).toBe(false);
+    expect(isAllowedPermission("media", `${TRUSTED_DEVELOPMENT_ORIGIN}/`, false, target, ["audio"])).toBe(false);
+    expect(isAllowedPermission("media", `${TRUSTED_DEVELOPMENT_ORIGIN}/`, true, target, ["video"])).toBe(false);
+    expect(isAllowedPermission("media", `${TRUSTED_DEVELOPMENT_ORIGIN}/`, true, target, ["audio", "video"])).toBe(
+      false,
+    );
     expect(isAllowedPermission("geolocation", `${TRUSTED_DEVELOPMENT_ORIGIN}/`, true, target)).toBe(false);
     expect(isAllowedPermission("notifications", `${TRUSTED_DEVELOPMENT_ORIGIN}/`, true, target)).toBe(false);
   });
