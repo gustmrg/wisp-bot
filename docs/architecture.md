@@ -88,21 +88,15 @@ wisp-bot/
 │   ├── config/                    # Application metadata
 │   ├── features/persistence/      # Validated local preference persistence
 │   ├── features/workspace/        # Workspace controller and domain actions
-│   ├── fixtures/                  # Demo-only identity and initial data
 │   ├── hooks/                     # Conversation and interaction adapters
 │   ├── lib/                       # Renderer policies and pure helpers
 │   ├── App.tsx                    # Top-level renderer composition
 │   └── main.tsx                   # Renderer entry point and bridge guard
 ├── scripts/                       # Release checksums and live Pi smoke
 ├── tests/                         # Electron/backend and contract tests
-├── template/                      # Non-runtime prototype/reference material
 ├── index.html                     # Renderer HTML and generated CSP slot
 └── vite.config.mts                # Renderer build and development policy
 ```
-
-Maintained runtime code lives in `src/`, `shared/`, and `electron/`. Nothing
-under `template/` is imported into the application or treated as production
-source.
 
 ## Data storage
 

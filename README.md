@@ -1,16 +1,26 @@
 # Wisp Bot
 
-Wisp Bot is an Electron desktop application for running persistent AI-agent
-conversations. Each Wisp owns a persistent agent session on the Pi runtime,
-with per-Wisp models, plugins, and approval-gated tools, while a sandboxed
-Electron boundary owns credentials, sessions, and durable state.
+Wisp Bot is an open-source desktop app that gives you a squad of AI agents —
+your Wisps — that keep working with you across days instead of starting over in
+every chat. Each Wisp has its own name, look, model, memory, skills, tools, and
+private workspace folder, so you can keep a research Wisp, a coding Wisp, and a
+planning Wisp side by side, each picking up where it left off.
+
+The project is inspired by Grok Bot but built from scratch and is not affiliated
+with it. The app runs on your own machine: you bring your own model provider
+keys, and conversations, credentials, and workspaces stay in your local
+user-data directory.
 
 <p align="center">
   <img src="docs/screenshot.png" alt="Wisp Bot app screenshot" width="800" />
 </p>
 
-The renderer uses React 19, TypeScript 7, Vite 8, Tailwind CSS 4, and locally
-owned shadcn/ui components with the Base Nova preset.
+Under the hood, each Wisp owns a persistent agent session on the
+[Pi](https://www.npmjs.com/package/@earendil-works/pi-coding-agent) runtime,
+while a sandboxed Electron main process owns credentials, sessions, tool
+approval, and durable state. The renderer uses React 19, TypeScript 7, Vite 8,
+Tailwind CSS 4, and locally owned shadcn/ui components with the Base Nova
+preset.
 
 ## Highlights
 
@@ -22,6 +32,11 @@ owned shadcn/ui components with the Base Nova preset.
   authentication, granted per Wisp. See [MCP servers](docs/mcp-servers.md).
 - **Context and memory** — continuity summaries, explicit new topics, and
   user-maintained saved memory. See [context and memory](docs/context-and-memory.md).
+- **Workspaces and attachments** — each Wisp gets a private folder (capped at
+  512 MB) for the files it writes and the files you attach. See
+  [security](docs/security.md).
+- **Message search** — search every conversation with `Cmd/Ctrl+K` and jump to
+  the matching message.
 - **Skills** — per-Wisp reusable procedures, saved on request after you
   approve them. See [context and memory](docs/context-and-memory.md#skills).
 - **Usage reports** — per-Wisp session reports and a local token/cost

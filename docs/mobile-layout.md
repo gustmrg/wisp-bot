@@ -17,8 +17,7 @@ composer merely because a conversation was opened.
 
 ## Scope
 
-This implements the mobile **renderer layout**, using `template/mobile/` as its
-visual reference. The app still requires the Electron bridge: opening the Vite
+This implements the mobile **renderer layout**. The app still requires the Electron bridge: opening the Vite
 URL in a standalone mobile browser continues to show the bridge-required
 screen. Remote access, web authentication, a PWA manifest, and offline support
 require a separate web transport implementation; no desktop security checks are
