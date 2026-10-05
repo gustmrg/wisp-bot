@@ -1,4 +1,5 @@
 import type { BackendError, ConversationAgentEvent, SendMessageRequest } from "../../shared/contracts.js";
+import { assistantMessageId } from "../../shared/conversations.js";
 import { describeProviderError, isRetryableProviderError } from "./provider-error.js";
 import { getToolMetadata } from "../../shared/tool-catalog.js";
 
@@ -50,7 +51,10 @@ export class PiEventTranslator {
   private readonly flushDelayMs: number;
   private request: SendMessageRequest | null = null;
   private messageId = "";
+  private messagePart = 1;
   private messageStarted = false;
+  /** Whether the current message has visible text, so a tool call only splits a message the user can see. */
+  private messageHasText = false;
   private pendingDelta = "";
   private flushTimer: ReturnType<typeof setTimeout> | undefined;
   private failed = false;
@@ -68,8 +72,10 @@ export class PiEventTranslator {
   begin(request: SendMessageRequest): void {
     this.clearTimer();
     this.request = request;
-    this.messageId = `${request.requestId}:assistant`;
+    this.messagePart = 1;
+    this.messageId = assistantMessageId(request.requestId);
     this.messageStarted = false;
+    this.messageHasText = false;
     this.pendingDelta = "";
     this.failed = false;
     this.cancelled = false;
@@ -104,6 +110,7 @@ export class PiEventTranslator {
         this.captureError(event.message);
         break;
       case "tool_execution_start":
+        this.completeMessagePart();
         this.publishTool(event, "started");
         break;
       case "tool_execution_update":
@@ -147,6 +154,7 @@ export class PiEventTranslator {
       type: "conversation_error",
       conversationId: this.conversationId,
       requestId: this.request.requestId,
+      messageId: this.messageId,
       createdAt: new Date().toISOString(),
       error,
     });
@@ -175,6 +183,8 @@ export class PiEventTranslator {
       });
     } else if (this.responseCharacters === 0) {
       this.reportError({ code: "internal_error", message: GENERIC_ERROR_MESSAGE, retryable: true });
+    } else if (this.messagePart > 1 && !this.messageStarted) {
+      // The reply ended right after a tool call: its earlier parts are already complete.
     } else {
       this.startMessage();
       this.publish({
@@ -204,6 +214,27 @@ export class PiEventTranslator {
       messageId: this.messageId,
       createdAt: new Date().toISOString(),
     });
+  }
+
+  /**
+   * Ends the current message before a tool runs, so text written before the
+   * tool call ("Let me look that up") stands as its own message. The next text
+   * starts a new message. A message without text stays open.
+   */
+  private completeMessagePart(): void {
+    if (!this.request || this.failed || this.cancelled) return;
+    this.flush();
+    if (!this.messageStarted || !this.messageHasText) return;
+    this.publish({
+      type: "assistant_message_completed",
+      conversationId: this.conversationId,
+      requestId: this.request.requestId,
+      messageId: this.messageId,
+    });
+    this.messagePart += 1;
+    this.messageId = assistantMessageId(this.request.requestId, this.messagePart);
+    this.messageStarted = false;
+    this.messageHasText = false;
   }
 
   private captureError(message: PiAssistantMessageSnapshot | undefined): void {
@@ -253,6 +284,7 @@ export class PiEventTranslator {
     if (!this.request || !this.pendingDelta) return;
     const delta = this.pendingDelta;
     this.pendingDelta = "";
+    if (delta.trim()) this.messageHasText = true;
     this.publish({
       type: "assistant_text_delta",
       conversationId: this.conversationId,

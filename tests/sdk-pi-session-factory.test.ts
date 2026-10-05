@@ -219,7 +219,8 @@ describe("SdkPiSessionFactory", () => {
     expect(prompt).not.toContain("Description:");
     expect(prompt).toContain("subject to app policy and user approval");
     expect(prompt).toContain("must not execute shell commands");
-    expect(prompt).toContain("Return only the final answer");
+    expect(prompt).toContain("first write one short sentence in the user's language");
+    expect(prompt).toContain("Apart from that sentence, return only the final answer");
     expect(prompt).toContain("## Response style");
     expect(prompt).toContain("1. Explicit instructions in the user's current message.");
     expect(prompt).toContain("2. This Wisp's configured tone, below.");

@@ -107,6 +107,20 @@ export type ChatChanges = WispChatChanges | CircleChatChanges;
 export type ChatCollection = Record<ChatId, Chat>;
 export type ChatSummaryCollection = Record<ChatId, ChatSummary>;
 
+/**
+ * A reply to a request can span several messages: text the Wisp writes before
+ * using a tool ("Let me look that up") is its own message, and the reply that
+ * follows is the next part. The first part keeps the original ID.
+ */
+export function assistantMessageId(requestId: string, part = 1): string {
+  return part === 1 ? `${requestId}:assistant` : `${requestId}:assistant:${part}`;
+}
+
+/** The request a reply message answers, or null for any other message. */
+export function requestIdOfAssistantMessage(messageId: string): string | null {
+  return /^(.+):assistant(?::\d+)?$/.exec(messageId)?.[1] ?? null;
+}
+
 export function chatSummary(chat: Chat): ChatSummary {
   const { messages: _messages, ...summary } = chat;
   return summary;

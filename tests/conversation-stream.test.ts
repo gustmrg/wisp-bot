@@ -162,6 +162,48 @@ describe("conversation stream reducer", () => {
     expect(state.errors.two?.retryable).toBe(true);
   });
 
+  it("reports an error on the reply part it names, keeping earlier parts complete", () => {
+    const chats = stored(["one"]);
+    let state = createConversationRuntime(0, { one: "working" });
+    const events = [
+      {
+        type: "assistant_message_started",
+        conversationId: "one",
+        requestId: "request-1",
+        messageId: "request-1:assistant",
+        createdAt: "2026-08-31T23:10:00.000Z",
+      },
+      {
+        type: "assistant_text_delta",
+        conversationId: "one",
+        requestId: "request-1",
+        messageId: "request-1:assistant",
+        delta: "Let me look.",
+      },
+      {
+        type: "assistant_message_completed",
+        conversationId: "one",
+        requestId: "request-1",
+        messageId: "request-1:assistant",
+      },
+      {
+        type: "conversation_error",
+        conversationId: "one",
+        requestId: "request-1",
+        messageId: "request-1:assistant:2",
+        createdAt: "2026-08-31T23:11:00.000Z",
+        error: { code: "internal_error", message: "Try again.", retryable: true },
+      },
+    ] as const;
+    events.forEach((event, index) => {
+      state = reduceConversationAgentEvent(state, { ...event, sequence: index + 1 }, chats);
+    });
+    expect(state.messages.one).toEqual([
+      expect.objectContaining({ id: "request-1:assistant", status: "complete", text: "Let me look." }),
+      expect.objectContaining({ id: "request-1:assistant:2", status: "failed", text: "Try again." }),
+    ]);
+  });
+
   it("tracks approval requests until the matching resolution arrives", () => {
     const chats = stored(["one"]);
     let state = createConversationRuntime(0, {});

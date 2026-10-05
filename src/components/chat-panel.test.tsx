@@ -117,6 +117,18 @@ describe("ChatPanel transcript", () => {
     expect(screen.queryByText(/Search web — completed/)).not.toBeInTheDocument();
   });
 
+  it("keeps the execution indicator below text the Wisp wrote before using a tool", () => {
+    renderPanel(
+      transcript([
+        { id: "request", type: "outgoing", text: "Search the web", status: "complete" },
+        { id: "request:assistant", type: "incoming", text: "Let me look that up.", status: "complete" },
+      ]),
+      { status: "working", activity: "Searching the web…" },
+    );
+    expect(screen.getByText("Let me look that up.")).toBeInTheDocument();
+    expect(screen.getByText("Searching the web…")).toBeInTheDocument();
+  });
+
   it("keeps the execution indicator hidden when a message is queued during the reply", () => {
     renderPanel(
       transcript([
