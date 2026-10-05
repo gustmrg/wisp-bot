@@ -24,6 +24,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { AVATAR_COLORS } from "@/lib/wisp-appearance";
+import { storedWispTone } from "../../shared/wisp-tone";
 
 type NewAgent = NewWisp;
 
@@ -100,6 +101,7 @@ function CreateAgentDialog({ onCreate, trigger }: CreateAgentDialogProps) {
           shape: settings.shape,
           avatarImage: settings.avatarImage,
           notifyOnUpdatesEnabled: settings.notifyOnUpdatesEnabled,
+          tone: storedWispTone(settings.tone),
         },
         resolveWispModelSelection(modelDraft),
       );

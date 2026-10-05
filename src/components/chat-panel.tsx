@@ -106,8 +106,10 @@ function ChatPanel({
   const targetMessageId = transcript?.targetMessageId;
   const firstMessageId = messages[0]?.id;
   const lastMessage = messages.at(-1);
+  // A complete reply part followed by more work is text the Wisp wrote before
+  // using a tool, so the activity indicator stays visible below it.
   const responding =
-    (lastMessage?.type === "incoming" && Boolean(lastMessage.text.trim())) ||
+    (lastMessage?.type === "incoming" && lastMessage.status !== "complete" && Boolean(lastMessage.text.trim())) ||
     messages.some(
       (message) => message.type === "incoming" && message.status === "streaming" && Boolean(message.text.trim()),
     );

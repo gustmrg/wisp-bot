@@ -1,5 +1,6 @@
 import type { ConversationModelView, ModelSelection, SequencedConversationAgentEvent } from "../../shared/contracts.js";
 import {
+  assistantMessageId,
   chatSummary,
   type Chat,
   type ChatChanges,
@@ -127,7 +128,7 @@ export class ConversationService {
     }
     if (event.type === "conversation_error" && event.requestId) {
       this.persistOutgoingStatus(event.conversationId, event.requestId, "failed");
-      const messageId = `${event.requestId}:assistant`;
+      const messageId = event.messageId ?? assistantMessageId(event.requestId);
       const current = this.getLiveMessage(event.conversationId, messageId);
       this.persistLiveMessage(event.conversationId, {
         id: messageId,
@@ -163,7 +164,10 @@ export class ConversationService {
     await this.repository.update(conversationId, changes);
     if (
       changes.kind === "wisp" &&
-      (changes.name !== undefined || changes.label !== undefined || changes.description !== undefined)
+      (changes.name !== undefined ||
+        changes.label !== undefined ||
+        changes.description !== undefined ||
+        Object.hasOwn(changes, "tone"))
     ) {
       await this.registry.updateContext(this.repository.getAgentContext(conversationId));
     }

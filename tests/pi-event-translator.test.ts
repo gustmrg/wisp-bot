@@ -50,14 +50,15 @@ describe("PiEventTranslator", () => {
       "conversation_status",
       "assistant_message_started",
       "assistant_text_delta",
-      "tool_activity",
-      "tool_activity",
-      "tool_activity",
-      "conversation_notice",
-      "conversation_notice",
-      "conversation_notice",
-      "conversation_notice",
+      // Text before a tool call is its own message; nothing followed the tools.
       "assistant_message_completed",
+      "tool_activity",
+      "tool_activity",
+      "tool_activity",
+      "conversation_notice",
+      "conversation_notice",
+      "conversation_notice",
+      "conversation_notice",
       "conversation_status",
     ]);
     expect(events).toContainEqual(
@@ -82,6 +83,78 @@ describe("PiEventTranslator", () => {
     );
     expect(JSON.stringify(events)).not.toContain("secret");
     expect(JSON.stringify(events)).not.toContain("bash-1");
+  });
+
+  it("splits a reply at tool calls so text written before a tool is its own message", () => {
+    const events: ConversationAgentEvent[] = [];
+    const translator = new PiEventTranslator("wisp-1", (event) => events.push(event), 0);
+    translator.begin({ conversationId: "wisp-1", requestId: "request-1", text: "Search" });
+
+    translator.handle({ type: "agent_start" });
+    translator.handle({ type: "message_update", assistantMessageEvent: { type: "text_delta", delta: "Let me look." } });
+    translator.handle({ type: "tool_execution_start", toolCallId: "read-1", toolName: "read" });
+    translator.handle({ type: "tool_execution_end", toolCallId: "read-1", toolName: "read", isError: false });
+    // A second tool call without new text does not add an empty message.
+    translator.handle({ type: "tool_execution_start", toolCallId: "read-2", toolName: "read" });
+    translator.handle({ type: "tool_execution_end", toolCallId: "read-2", toolName: "read", isError: false });
+    translator.handle({ type: "message_update", assistantMessageEvent: { type: "text_delta", delta: "Found it." } });
+    translator.handle({ type: "agent_settled" });
+
+    const messageEvents = events.flatMap((event) =>
+      "messageId" in event && event.type !== "conversation_error"
+        ? [{ type: event.type, messageId: event.messageId }]
+        : [],
+    );
+    expect(messageEvents).toEqual([
+      { type: "assistant_message_started", messageId: "request-1:assistant" },
+      { type: "assistant_text_delta", messageId: "request-1:assistant" },
+      { type: "assistant_message_completed", messageId: "request-1:assistant" },
+      { type: "assistant_message_started", messageId: "request-1:assistant:2" },
+      { type: "assistant_text_delta", messageId: "request-1:assistant:2" },
+      { type: "assistant_message_completed", messageId: "request-1:assistant:2" },
+    ]);
+  });
+
+  it("does not split a message without visible text, and reports later errors on the current part", () => {
+    const events: ConversationAgentEvent[] = [];
+    const translator = new PiEventTranslator("wisp-1", (event) => events.push(event), 0);
+    translator.begin({ conversationId: "wisp-1", requestId: "request-1", text: "Search" });
+
+    translator.handle({ type: "agent_start" });
+    translator.handle({ type: "message_update", assistantMessageEvent: { type: "text_delta", delta: "\n " } });
+    translator.handle({ type: "tool_execution_start", toolCallId: "read-1", toolName: "read" });
+    expect(events.filter(({ type }) => type === "assistant_message_completed")).toHaveLength(0);
+
+    translator.handle({ type: "message_update", assistantMessageEvent: { type: "text_delta", delta: "Checking." } });
+    translator.handle({ type: "tool_execution_start", toolCallId: "read-2", toolName: "read" });
+    translator.handle({
+      type: "message_end",
+      message: { role: "assistant", stopReason: "error", errorMessage: "Provider unavailable" },
+    });
+    translator.handle({ type: "agent_settled" });
+
+    expect(events).toContainEqual(
+      expect.objectContaining({ type: "conversation_error", messageId: "request-1:assistant:2" }),
+    );
+  });
+
+  it("marks the next part stopped when the reply is cancelled after a tool call", () => {
+    const events: ConversationAgentEvent[] = [];
+    const translator = new PiEventTranslator("wisp-1", (event) => events.push(event), 0);
+    translator.begin({ conversationId: "wisp-1", requestId: "request-1", text: "Search" });
+
+    translator.handle({ type: "agent_start" });
+    translator.handle({ type: "message_update", assistantMessageEvent: { type: "text_delta", delta: "Let me look." } });
+    translator.handle({ type: "tool_execution_start", toolCallId: "read-1", toolName: "read" });
+    translator.markCancelled();
+    translator.handle({ type: "agent_settled" });
+
+    expect(events).toContainEqual(
+      expect.objectContaining({ type: "assistant_message_completed", messageId: "request-1:assistant" }),
+    );
+    expect(events).toContainEqual(
+      expect.objectContaining({ type: "assistant_message_cancelled", messageId: "request-1:assistant:2" }),
+    );
   });
 
   it("maps aborted streams and surfaces the final provider error", () => {

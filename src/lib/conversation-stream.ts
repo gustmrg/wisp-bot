@@ -1,5 +1,10 @@
 import type { BackendError, ConversationAgentEvent, SequencedConversationAgentEvent } from "../../shared/contracts";
-import type { ManagedConversationStatus, Message, TextMessage } from "../../shared/conversations";
+import {
+  assistantMessageId,
+  type ManagedConversationStatus,
+  type Message,
+  type TextMessage,
+} from "../../shared/conversations";
 import type { ToolApprovalRequest } from "../../shared/tool-policy";
 import { describeMcpAlias, getToolMetadata } from "../../shared/tool-catalog";
 
@@ -88,7 +93,7 @@ export function markOutgoingFailed(
     next = setRuntimeMessage(next, conversationId, { ...outgoing, id: requestId, status: "failed" });
   }
   return setRuntimeMessage(next, conversationId, {
-    id: `${requestId}:assistant`,
+    id: assistantMessageId(requestId),
     type: "incoming",
     text: error.message,
     status: "failed",
@@ -175,7 +180,7 @@ export function reduceConversationAgentEvent(
           status: "failed",
         });
       }
-      const assistantId = `${event.requestId}:assistant`;
+      const assistantId = event.messageId ?? assistantMessageId(event.requestId);
       const assistant = findMessage(next, stored, event.conversationId, assistantId);
       return setRuntimeMessage(next, event.conversationId, {
         id: assistantId,

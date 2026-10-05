@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useLayoutEffect, useState } from "react";
 
-import type {
-  ChatChanges,
-  ChatId,
-  ChatSummary,
-  ChatSummaryCollection,
-  ManagedConversationStatus,
-  NewChat,
+import {
+  requestIdOfAssistantMessage,
+  type ChatChanges,
+  type ChatId,
+  type ChatSummary,
+  type ChatSummaryCollection,
+  type ManagedConversationStatus,
+  type NewChat,
 } from "../../../shared/conversations";
 import type { ToolApprovalDecision, ToolApprovalRequest } from "../../../shared/tool-policy";
 import type { BackendError, ModelSelection } from "../../../shared/contracts";
@@ -201,10 +202,10 @@ export function useWorkspaceController(): WorkspaceController {
   );
 
   const retryMessage = useCallback(
-    (messageId: string | undefined): Promise<boolean> =>
-      activeChatId && messageId?.endsWith(":assistant")
-        ? conversations.retryMessage(activeChatId, messageId.slice(0, -":assistant".length))
-        : Promise.resolve(false),
+    (messageId: string | undefined): Promise<boolean> => {
+      const requestId = messageId ? requestIdOfAssistantMessage(messageId) : null;
+      return activeChatId && requestId ? conversations.retryMessage(activeChatId, requestId) : Promise.resolve(false);
+    },
     [activeChatId, conversations.retryMessage],
   );
 

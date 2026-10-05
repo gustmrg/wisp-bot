@@ -242,6 +242,8 @@ export type ConversationAgentEvent =
       type: "conversation_error";
       conversationId: string;
       requestId?: string;
+      /** The reply message the error belongs to; the request's first reply message when absent. */
+      messageId?: string;
       createdAt: string;
       error: BackendError;
     }

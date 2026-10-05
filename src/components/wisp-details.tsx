@@ -11,6 +11,7 @@ import { WispWorkspaceSettings } from "@/components/wisp-workspace-settings";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { sameWispTone, storedWispTone } from "../../shared/wisp-tone";
 import type { IntegrationSettingsTarget } from "@/lib/plugin-access";
 
 const TAB_ORDER = ["general", "model", "access", "usage"] as const;
@@ -37,10 +38,12 @@ export function WispDetails({ chat, onChange, onOpenSettings, generalActions }: 
     draft.color !== chat.color ||
     draft.avatarImage !== chat.avatarImage ||
     draft.shape !== chat.shape ||
-    draft.notifyOnUpdatesEnabled !== chat.notifyOnUpdatesEnabled;
+    draft.notifyOnUpdatesEnabled !== chat.notifyOnUpdatesEnabled ||
+    !sameWispTone(storedWispTone(draft.tone), chat.tone);
 
   async function save() {
     const name = draft.name.trim() || "Untitled";
+    const tone = storedWispTone(draft.tone);
     setSaving(true);
     setError("");
     try {
@@ -53,12 +56,13 @@ export function WispDetails({ chat, onChange, onOpenSettings, generalActions }: 
         avatarImage: draft.avatarImage,
         shape: draft.shape,
         notifyOnUpdatesEnabled: draft.notifyOnUpdatesEnabled,
+        tone,
       });
       if (saved === false) {
         setError("Could not save Wisp settings.");
         return;
       }
-      setDraft((current) => ({ ...current, name }));
+      setDraft((current) => ({ ...current, name, tone }));
     } catch {
       setError("Could not save Wisp settings.");
     } finally {

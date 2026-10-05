@@ -7,6 +7,7 @@ import {
   type MessageStatus,
   type WispShape,
 } from "../../shared/conversations.js";
+import { normalizeWispTone, type WispTone } from "../../shared/wisp-tone.js";
 import { WispBackendError } from "./backend-error.js";
 import { CONVERSATION_STORAGE_POLICY, WEBP_DATA_URL_PREFIX } from "./storage-policy.js";
 
@@ -20,6 +21,14 @@ function wispShape(value: unknown): WispShape {
   if (value === "pill") return "pebble";
   if (typeof value !== "string" || !SHAPES.has(value as WispShape)) throw invalidRequest();
   return value as WispShape;
+}
+
+function wispTone(value: unknown): WispTone | undefined {
+  try {
+    return normalizeWispTone(value);
+  } catch {
+    throw invalidRequest();
+  }
 }
 
 function invalidRequest(): WispBackendError {
@@ -192,7 +201,7 @@ export function normalizeChat(value: unknown): Chat {
   if (kind === "circle") {
     if (
       raw.kind !== undefined &&
-      (raw.shape !== undefined || raw.color !== undefined || raw.avatarImage !== undefined)
+      (raw.shape !== undefined || raw.color !== undefined || raw.avatarImage !== undefined || raw.tone !== undefined)
     ) {
       throw invalidRequest();
     }
@@ -207,12 +216,14 @@ export function normalizeChat(value: unknown): Chat {
   }
   if (raw.kind !== undefined && raw.memberIds !== undefined) throw invalidRequest();
   const shape = wispShape(raw.shape);
+  const tone = raw.tone === undefined ? undefined : wispTone(raw.tone);
   return {
     ...base,
     kind,
     shape,
     ...(raw.color === undefined ? {} : { color: string(raw.color, 100) }),
     ...(raw.avatarImage === undefined ? {} : { avatarImage: avatarDataUrl(raw.avatarImage) }),
+    ...(tone ? { tone } : {}),
   };
 }
 
@@ -248,7 +259,7 @@ export function normalizeChatChanges(value: unknown): ChatChanges {
   const allowed = new Set([
     "kind",
     ...shared,
-    ...(raw.kind === "wisp" ? ["color", "avatarImage", "shape"] : ["memberIds"]),
+    ...(raw.kind === "wisp" ? ["color", "avatarImage", "shape", "tone"] : ["memberIds"]),
   ]);
   if (Object.keys(raw).some((key) => !allowed.has(key))) throw invalidRequest();
   const result: Record<string, unknown> = { kind: raw.kind };
@@ -262,6 +273,8 @@ export function normalizeChatChanges(value: unknown): ChatChanges {
   if (raw.shape !== undefined) {
     result.shape = wispShape(raw.shape);
   }
+  // An absent or default tone clears the stored one.
+  if (Object.hasOwn(raw, "tone")) result.tone = raw.tone === undefined ? undefined : wispTone(raw.tone);
   if (raw.memberIds !== undefined) {
     if (!Array.isArray(raw.memberIds) || raw.memberIds.length > 1_000) throw invalidRequest();
     result.memberIds = raw.memberIds.map(normalizeConversationId);
