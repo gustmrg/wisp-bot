@@ -11,6 +11,8 @@ import type { EncryptionService } from "../../backend/encrypted-credential-store
 import { StructuredLogger } from "../../backend/structured-logger.js";
 import { UpdateService } from "../../electron/backend/update-service.js";
 import { disposeWithin, refreshModelCatalog } from "../../backend/runtime.js";
+import { InProcessLocalServer } from "../helpers/in-process-local-server.js";
+import type { ConnectionsView } from "../../shared/connections.js";
 import { createBackend, type Backend } from "../../electron/create-backend.js";
 import { WISP_IPC_CHANNELS, type BackendResult } from "../../shared/contracts.js";
 import type { Chat, ConversationStateView } from "../../shared/conversations.js";
@@ -63,8 +65,8 @@ async function compose() {
     downloadUpdate: vi.fn(async () => []),
     quitAndInstall: vi.fn(),
   });
+  const localServer = new InProcessLocalServer(dataDirectory);
   const backend = await createBackend({
-    dataDirectory,
     launchAtLoginService: new LaunchAtLoginService({
       platform: "linux",
       packaged: false,
@@ -78,17 +80,16 @@ async function compose() {
     },
     authorizeSender: () => true,
     broadcast: (channel, payload) => void broadcasts.push([channel, payload]),
-    selectApprovalWindowId: () => 1,
-    openExternal: vi.fn(async () => undefined),
     openReleasesPage: vi.fn(async () => undefined),
-    openPath: vi.fn(async () => undefined),
-    selectFiles: vi.fn(async () => []),
+    hostActions: {
+      openExternal: vi.fn(async () => undefined),
+      openPath: vi.fn(async () => undefined),
+      selectFiles: vi.fn(async () => []),
+    },
+    localServer,
     encryption,
     logger: new StructuredLogger({ info: () => undefined, warn: () => undefined }),
-    agentMode: "fake",
-    appVersion: "0.0.0-test",
     updateService: new UpdateService(updater as never, "0.1.0", false),
-    allowModelNetwork: false,
     connectionsDirectory: dataDirectory,
     deviceName: "Test computer",
   });
@@ -98,6 +99,10 @@ async function compose() {
     if (!result.ok) throw new Error(`${channel}: ${result.error.message}`);
     return result.value as T;
   };
+  // The local server starts in the background, as it does behind the app's connecting screen.
+  await vi.waitFor(async () => {
+    expect((await invoke<ConnectionsView>(WISP_IPC_CHANNELS.getConnections)).status.phase).toBe("local");
+  });
   return { backend, handlers, broadcasts, invoke };
 }
 

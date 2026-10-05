@@ -42,10 +42,24 @@ export interface DeviceCredentials {
   refreshToken: string;
 }
 
+/**
+ * Something the server needs a screen for, asked of the desktop app running
+ * on the same computer: a server only sends these to a local device.
+ */
+export type HostRequest =
+  | { id: string; kind: "openPath"; path: string }
+  | { id: string; kind: "openExternal"; url: string }
+  | { id: string; kind: "selectFiles" };
+
+/** The answer to a host request: `selectFiles` returns absolute paths; the others return nothing. */
+export type HostResponse = { ok: true; value?: ReadonlyArray<string> } | { ok: false; message: string };
+
 export interface RemoteEventPayloads {
   agentEvent: SequencedConversationAgentEvent;
   conversationChanged: ConversationDelta;
   mcpSettingsChanged: McpSettingsView;
+  /** Sent only to the device that asked for the operation; never replayed. */
+  hostRequest: HostRequest;
   /** The client's cursor is unknown (another boot, or older than the buffer): reload state. */
   resync: Record<string, never>;
 }

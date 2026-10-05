@@ -2,6 +2,8 @@ import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
+import { DatabaseSync } from "node:sqlite";
+
 import { afterEach, describe, expect, it } from "vitest";
 
 import { DeviceAuth } from "../../server/device-auth.js";
@@ -41,6 +43,29 @@ function status(operation: () => unknown): number | undefined {
   }
   return undefined;
 }
+
+describe("ServerStore", () => {
+  it("upgrades a version 1 database, keeping its identity and devices", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "wisp-store-"));
+    directories.push(directory);
+    const v1 = new DatabaseSync(path.join(directory, "server.sqlite"));
+    v1.exec(`
+      CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL) STRICT;
+      CREATE TABLE devices (id TEXT PRIMARY KEY, name TEXT NOT NULL, created_at TEXT NOT NULL, last_seen_at TEXT,
+        refresh_hash TEXT NOT NULL UNIQUE, refresh_expires_at INTEGER NOT NULL, previous_refresh_hash TEXT,
+        rotated_at INTEGER) STRICT;
+      CREATE TABLE pairing_codes (hash TEXT PRIMARY KEY, expires_at INTEGER NOT NULL) STRICT;
+      INSERT INTO meta VALUES ('schemaVersion', '1'), ('serverId', 'kept-server');
+      INSERT INTO devices VALUES ('laptop', 'Laptop', '2026-10-01T00:00:00.000Z', NULL, 'hash', 9999999999999, NULL, NULL);
+    `);
+    v1.close();
+    const store = new ServerStore(directory);
+    stores.push(store);
+    expect(store.serverId).toBe("kept-server");
+    expect(store.getMeta("schemaVersion")).toBe("2");
+    expect(new DeviceAuth(store).devices()).toEqual([expect.objectContaining({ id: "laptop", local: false })]);
+  });
+});
 
 describe("DeviceAuth", () => {
   it("pairs once per code, accepting the code without its dash or case", async () => {
@@ -98,6 +123,16 @@ describe("DeviceAuth", () => {
     const restarted = new DeviceAuth(reopened);
     expect(status(() => restarted.authenticate(credentials.accessToken))).toBe(401);
     expect(restarted.refresh(credentials.refreshToken).deviceId).toBe(credentials.deviceId);
+  });
+
+  it("marks only the device paired with the desktop app's code as local", async () => {
+    const { auth } = await setup();
+    auth.registerLocalPairingCode("LOCALCODEFROMTHEAPPXYZ234");
+    const local = auth.pair("LOCALCODEFROMTHEAPPXYZ234", "This computer");
+    const remote = auth.pair(auth.createPairingCode().code, "Phone");
+    expect(auth.isLocal(local.deviceId)).toBe(true);
+    expect(auth.isLocal(remote.deviceId)).toBe(false);
+    expect(status(() => auth.pair("LOCALCODEFROMTHEAPPXYZ234", "Again"))).toBe(401);
   });
 
   it("revokes a device's tokens and notifies listeners", async () => {

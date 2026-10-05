@@ -33,20 +33,19 @@ URL.
   concerns: `safeStorage` encryption, updates, and launch at login.
 - `backend/handlers/` registers the operations a client can call; every
   handler goes through `guarded-handlers.ts`, which checks the sender and
-  returns sanitized `BackendResult`s. `electron/create-backend.ts` composes the
-  runtime with Electron capabilities and registers those handlers, plus the
-  desktop-only ones in `electron/ipc/`, on `ipcMain`, so the whole backend can
-  be built and tested without Electron.
-- `electron/connections/` decides where the backend runs. The main process
-  routes every runtime operation to the local runtime, started only while
-  **This computer** is chosen, or to a Wisp server through `client/`'s
-  reconnecting session over an SSH tunnel or HTTPS. The renderer's
-  `ConnectionGate` remounts the app whenever the backend changes.
-- `server/` runs the same runtime and handlers as a headless process behind
-  authenticated HTTP and server-sent events. See
-  [headless server](remote-server.md) and
+  returns sanitized `BackendResult`s.
+- `server/` runs the runtime and those handlers behind authenticated HTTP and
+  server-sent events. The desktop app is always its client: on **This
+  computer** it starts the server as a child process
+  (`electron/local-server/`), and it reaches servers on other machines over SSH
+  or HTTPS the same way. See [headless server](remote-server.md) and
   [ADR 009](decisions/009-headless-server.md).
-- The main process is the only writer of agent-driven conversation state (reply
+- `electron/connections/` chooses the server. The main process routes every
+  runtime operation through `client/`'s reconnecting session, answers the local
+  server's requests for screen actions (folders, file pickers, sign-in pages),
+  and keeps only desktop concerns itself: updates and launch at login. The
+  renderer's `ConnectionGate` remounts the app whenever the server changes.
+- The backend is the only writer of agent-driven conversation state (reply
   text, outgoing delivery status, context notices). After persisting a change it
   pushes what changed on `wisp:conversations:changed`: the conversation's
   summary and the messages it added or updated. The renderer writes only what
@@ -97,8 +96,9 @@ wisp-bot/
 ├── electron/
 │   ├── backend/                   # Desktop-only services (safeStorage, updates, login)
 │   ├── connections/               # Connection profiles, SSH tunnels, backend routing
+│   ├── local-server/              # The server child process, its key, credential migration
 │   ├── ipc/                       # Desktop-only IPC handlers (updates, launch at login)
-│   ├── create-backend.ts          # Runtime exposed over IPC, with shutdown
+│   ├── create-backend.ts          # The active server exposed over IPC, with shutdown
 │   ├── main.ts                    # Window lifecycle and trust-boundary wiring
 │   ├── preload.ts                 # Sandboxed typed renderer bridge
 │   └── security-policy.ts         # Pure URL, permission, and CSP policy

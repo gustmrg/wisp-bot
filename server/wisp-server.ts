@@ -12,7 +12,7 @@ import { startAdminSocket } from "./admin.js";
 import { DeviceAuth } from "./device-auth.js";
 import { boundedString, HttpError } from "./errors.js";
 import { EventHub } from "./event-hub.js";
-import { createHttpApi, OWNER_PRINCIPAL_ID, type OperationListener } from "./http-api.js";
+import { createHttpApi, OWNER_PRINCIPAL_ID, type HttpApi, type OperationListener } from "./http-api.js";
 import { InstanceLock } from "./instance-lock.js";
 import { ServerStore } from "./server-store.js";
 
@@ -37,6 +37,16 @@ export interface WispServerOptions {
   allowModelNetwork?: boolean;
   /** Serve administrative commands on `<dataDirectory>/admin.sock`. Defaults to true. */
   adminSocket?: boolean;
+  /**
+   * A pairing code from the desktop app that started this server. The device
+   * it pairs is local, so the server can ask it to open folders and pickers.
+   */
+  localPairingCode?: string;
+  /**
+   * Refuse a data directory other accounts can read. Defaults to true; the
+   * desktop app's own data directory is protected by the operating system.
+   */
+  requirePrivateDirectory?: boolean;
   now?: () => number;
 }
 
@@ -57,9 +67,10 @@ export async function createWispServer(options: WispServerOptions): Promise<Wisp
     throw new Error("The server listens on loopback only. Expose it through SSH or a private proxy.");
   }
   const publicOrigin = options.publicOrigin ? parsePublicOrigin(options.publicOrigin) : undefined;
-  await preparePrivateDirectory(options.dataDirectory);
+  const requirePrivate = options.requirePrivateDirectory ?? true;
+  await preparePrivateDirectory(options.dataDirectory, requirePrivate);
   const backendDirectory = path.join(options.dataDirectory, "backend");
-  await preparePrivateDirectory(backendDirectory);
+  await preparePrivateDirectory(backendDirectory, requirePrivate);
 
   const lock = InstanceLock.acquire(options.dataDirectory);
   const cleanup: Array<() => Promise<void> | void> = [() => lock.release()];
@@ -70,9 +81,20 @@ export async function createWispServer(options: WispServerOptions): Promise<Wisp
     const store = new ServerStore(options.dataDirectory);
     cleanup.push(() => store.close());
     const auth = new DeviceAuth(store, options.now);
+    if (options.localPairingCode) auth.registerLocalPairingCode(options.localPairingCode);
     const hub = new EventHub();
-    const unavailable = (message: string) => async (): Promise<never> => {
-      throw new WispBackendError("unsupported", message);
+    // Screen actions go to the desktop app on this computer; the API is
+    // created after the runtime, which needs these from the start.
+    let api: HttpApi | undefined;
+    const askHost = async (
+      request: Parameters<HttpApi["requestHost"]>[0],
+      timeoutMs: number,
+      unsupported: string,
+    ): Promise<ReadonlyArray<string>> => {
+      if (!api) throw new WispBackendError("unavailable", "The server is starting.", true);
+      const answer = await api.requestHost(request, timeoutMs, unsupported);
+      if (!answer.ok) throw new WispBackendError("internal_error", answer.message);
+      return answer.value ?? [];
     };
     const runtime = await createBackendRuntime({
       dataDirectory: backendDirectory,
@@ -83,9 +105,23 @@ export async function createWispServer(options: WispServerOptions): Promise<Wisp
       ...(options.allowModelNetwork === undefined ? {} : { allowModelNetwork: options.allowModelNetwork }),
       // Pending approvals wait for any paired device, even when none is connected yet.
       selectApprovalWindowId: () => OWNER_PRINCIPAL_ID,
-      openExternal: unavailable("Signing in to an MCP server needs a browser on the server. Use a local Wisp for it."),
-      openPath: unavailable("Folders on the server cannot be opened from this device."),
-      selectFiles: unavailable("Attaching files to a Wisp on a server is not available yet."),
+      openExternal: async (url) => {
+        await askHost(
+          { kind: "openExternal", url },
+          30_000,
+          "Signing in to an MCP server needs a browser on the server's computer.",
+        );
+      },
+      openPath: async (directory) => {
+        await askHost(
+          { kind: "openPath", path: directory },
+          30_000,
+          "Folders on the server cannot be opened from this device.",
+        );
+      },
+      // A file picker stays open while the person chooses.
+      selectFiles: () =>
+        askHost({ kind: "selectFiles" }, 30 * 60_000, "Attaching files to a Wisp on a server is not available yet."),
       onAgentEvent: (event) => hub.publish("agentEvent", event),
       onConversationChanged: (delta) => hub.publish("conversationChanged", delta),
       onMcpSettingsChanged: (view) => hub.publish("mcpSettingsChanged", view),
@@ -105,7 +141,7 @@ export async function createWispServer(options: WispServerOptions): Promise<Wisp
 
     const allowedHostNames = new Set(["127.0.0.1", "localhost", "[::1]"]);
     if (publicOrigin) allowedHostNames.add(publicOrigin.hostname);
-    const api = createHttpApi({
+    api = createHttpApi({
       auth,
       hub,
       operations,
@@ -177,11 +213,12 @@ function parsePublicOrigin(value: string): URL {
   return url;
 }
 
-/** Creates the directory owner-only, and refuses one that other accounts can read. */
-async function preparePrivateDirectory(directory: string): Promise<void> {
+/** Creates the directory owner-only, and optionally refuses one that other accounts can read. */
+async function preparePrivateDirectory(directory: string, requirePrivate: boolean): Promise<void> {
   await mkdir(directory, { recursive: true, mode: 0o700 });
   const info = await stat(directory);
-  if (!info.isDirectory() || (info.mode & 0o077) !== 0) {
+  if (!info.isDirectory()) throw new Error(`${directory} is not a directory.`);
+  if (requirePrivate && (info.mode & 0o077) !== 0) {
     throw new Error(`${directory} must be a directory only its owner can access (chmod 700).`);
   }
 }

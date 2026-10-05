@@ -1,6 +1,6 @@
 import { randomBytes } from "node:crypto";
 import { EventEmitter } from "node:events";
-import { access, mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
@@ -12,6 +12,7 @@ import { LaunchAtLoginService } from "../../electron/backend/launch-at-login-ser
 import { UpdateService } from "../../electron/backend/update-service.js";
 import { openSshTunnel } from "../../electron/connections/ssh-tunnel.js";
 import { createBackend, type Backend } from "../../electron/create-backend.js";
+import { InProcessLocalServer } from "../helpers/in-process-local-server.js";
 import { adminRequest } from "../../server/admin.js";
 import { MasterKeyEncryption } from "../../server/master-key.js";
 import { createWispServer, type WispServer } from "../../server/wisp-server.js";
@@ -76,8 +77,13 @@ async function desktop(userData?: string, key = randomBytes(32)) {
     downloadUpdate: vi.fn(async () => []),
     quitAndInstall: vi.fn(),
   });
+  const localServer = new InProcessLocalServer(directory, key);
+  const hostActions = {
+    openExternal: vi.fn(async () => undefined),
+    openPath: vi.fn(async () => undefined),
+    selectFiles: vi.fn(async (): Promise<ReadonlyArray<string>> => []),
+  };
   const backend: Backend = await createBackend({
-    dataDirectory: path.join(directory, "backend"),
     launchAtLoginService: new LaunchAtLoginService({
       platform: "linux",
       packaged: false,
@@ -91,18 +97,13 @@ async function desktop(userData?: string, key = randomBytes(32)) {
     },
     authorizeSender: () => true,
     broadcast: (channel, payload) => void broadcasts.push([channel, payload]),
-    selectApprovalWindowId: () => 1,
-    openExternal: vi.fn(async () => undefined),
     openReleasesPage: vi.fn(async () => undefined),
-    openPath: vi.fn(async () => undefined),
-    selectFiles: vi.fn(async () => []),
+    hostActions,
+    localServer,
     // Stands in for the desktop keychain, which keeps its key across restarts.
     encryption: new MasterKeyEncryption(key),
     logger: silent,
-    agentMode: "fake",
-    appVersion: "0.0.0-test",
     updateService: new UpdateService(updater as never, "0.1.0", false),
-    allowModelNetwork: false,
     connectionsDirectory: directory,
     deviceName: "Test computer",
     openSshTunnel: (profile, signal) => openSshTunnel(profile, { sshPath: fakeSsh, signal }),
@@ -131,12 +132,26 @@ async function desktop(userData?: string, key = randomBytes(32)) {
     );
   const chats = async () =>
     Object.keys((await invoke<ConversationStateView>(WISP_IPC_CHANNELS.getConversationState)).chats).sort();
-  return { directory, key, handlers, broadcasts, call, invoke, view, waitForPhase, chats, dispose };
+  return {
+    directory,
+    key,
+    localServer,
+    hostActions,
+    handlers,
+    broadcasts,
+    call,
+    invoke,
+    view,
+    waitForPhase,
+    chats,
+    dispose,
+  };
 }
 
 describe("desktop connections", () => {
-  it("starts on this computer and lists only the local connection", async () => {
+  it("starts its own server on this computer, pairs with it, and lists only the local connection", async () => {
     const app = await desktop();
+    await app.waitForPhase("local");
     const view = await app.view();
     expect(view).toMatchObject({
       activeId: "local",
@@ -146,11 +161,32 @@ describe("desktop connections", () => {
     expect(view.status.epoch).toBeGreaterThan(0);
     await app.invoke(WISP_IPC_CHANNELS.initializeConversations, { chats: { local: wisp("local", "Local") } });
     expect(await app.chats()).toEqual(["local"]);
+    expect(app.localServer.starts).toBe(1);
+    expect(app.localServer.server?.auth.devices()).toEqual([
+      expect.objectContaining({ name: "Test computer", local: true }),
+    ]);
+  });
+
+  it("does what the local server asks on this computer's screen", async () => {
+    const app = await desktop();
+    await app.waitForPhase("local");
+    await app.invoke(WISP_IPC_CHANNELS.initializeConversations, { chats: { local: wisp("local", "Local") } });
+    await app.invoke(WISP_IPC_CHANNELS.openWorkspaceFolder, { conversationId: "local" });
+    expect(app.hostActions.openPath).toHaveBeenCalledWith(expect.stringContaining(app.directory));
+    const attachment = path.join(app.directory, "notes.txt");
+    await writeFile(attachment, "hello");
+    app.hostActions.selectFiles.mockResolvedValueOnce([attachment]);
+    await expect(
+      app.invoke(WISP_IPC_CHANNELS.attachWorkspaceFiles, { conversationId: "local" }),
+    ).resolves.toMatchObject({
+      files: [expect.objectContaining({ name: "notes.txt" })],
+    });
   });
 
   it("switches to a server with a pairing code, routes every call there, and comes back", async () => {
     const { server, directory: serverDirectory } = await startServer();
     const app = await desktop();
+    await app.waitForPhase("local");
     await app.invoke(WISP_IPC_CHANNELS.initializeConversations, { chats: { local: wisp("local", "Local") } });
     const added = await app.invoke<ConnectionsView>(WISP_IPC_CHANNELS.saveConnection, {
       kind: "url",
@@ -197,9 +233,17 @@ describe("desktop connections", () => {
     expect(await app.chats()).toEqual(["remote"]);
     // Desktop-only operations stay on this computer.
     expect(await app.call(WISP_IPC_CHANNELS.getLaunchAtLoginState)).toMatchObject({ ok: true });
+    // Screen actions on a server on another computer are refused, never sent to this app.
+    expect(await app.call(WISP_IPC_CHANNELS.openWorkspaceFolder, { conversationId: "remote" })).toMatchObject({
+      ok: false,
+      error: { code: "unsupported" },
+    });
+    expect(app.hostActions.openPath).not.toHaveBeenCalled();
+    // Wisps on this computer stopped when the server was chosen.
+    expect(app.localServer.server).toBeUndefined();
 
     await app.invoke(WISP_IPC_CHANNELS.activateConnection, { id: "local" });
-    expect((await app.view()).status.phase).toBe("local");
+    await app.waitForPhase("local");
     expect(await app.chats()).toEqual(["local"]);
     // The server kept its Wisp.
     expect(Object.keys(server.runtime.conversations.getState().chats)).toEqual(["remote"]);
@@ -218,15 +262,12 @@ describe("desktop connections", () => {
     await first.invoke(WISP_IPC_CHANNELS.activateConnection, { id: remote.id, pairingCode: code });
     await first.waitForPhase("connected");
     await first.dispose();
-    // The first launch started on this computer; the second must not touch it.
-    await rm(path.join(first.directory, "backend"), { recursive: true, force: true });
 
     const second = await desktop(first.directory, first.key);
     expect((await second.view()).activeId).toBe(remote.id);
     await second.waitForPhase("connected");
     expect(await second.chats()).toEqual([]);
-    // The local backend never ran: it would have recreated its data directory.
-    await expect(access(path.join(first.directory, "backend"))).rejects.toThrow();
+    expect(second.localServer.starts).toBe(0);
   });
 
   it("connects over SSH, pairing through wispctl on the server", async () => {
@@ -260,7 +301,8 @@ describe("desktop connections", () => {
     await app.waitForPhase("error");
     expect((await app.view()).status.message).toMatch(/host key of raspberrypi/);
     await app.invoke(WISP_IPC_CHANNELS.removeConnection, { id: ssh.id });
-    expect(await app.view()).toMatchObject({ activeId: "local", status: { phase: "local" } });
+    await app.waitForPhase("local");
+    expect((await app.view()).activeId).toBe("local");
     expect(await app.call(WISP_IPC_CHANNELS.removeConnection, { id: "local" })).toMatchObject({ ok: false });
   });
 });

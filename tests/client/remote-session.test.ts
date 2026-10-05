@@ -224,6 +224,27 @@ describe("RemoteSession", () => {
     expect(await client.instance.call("getConversationState", {})).toMatchObject({ ok: false });
   });
 
+  it("stops cleanly when stopped while its transport is still opening", async () => {
+    const { server } = await setup();
+    let close = 0;
+    let release!: () => void;
+    const opening = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const client = session("", {
+      openTransport: async () => {
+        await opening;
+        return { baseUrl: server.url, closed: new Promise(() => undefined), close: () => close++ };
+      },
+    });
+    client.instance.start();
+    const stopped = client.instance.stop();
+    release();
+    await stopped;
+    expect(close).toBe(1);
+    expect(client.phase()).not.toBe("connected");
+  });
+
   it("reports transport failures that retrying cannot fix and retries on request", async () => {
     let attempts = 0;
     const client = session("", {

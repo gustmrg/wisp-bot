@@ -28,6 +28,8 @@ export interface DeviceView {
   name: string;
   createdAt: string;
   lastSeenAt: string | null;
+  /** Paired by the desktop app that started this server, on the same computer. */
+  local: boolean;
 }
 
 interface DeviceRow {
@@ -38,6 +40,15 @@ interface DeviceRow {
   rotated_at: number | null;
 }
 
+// Codes from the desktop app that starts a local server; never typed by a person.
+const LOCAL_PAIRING_TTL_MS = 60 * 60_000;
+
+const normalize = (code: string): string => code.toUpperCase().replace(/[\s-]/g, "");
+const randomCode = (length: number): string => {
+  let raw = "";
+  for (let index = 0; index < length; index++) raw += CODE_ALPHABET[randomInt(CODE_ALPHABET.length)];
+  return raw;
+};
 const hash = (value: string): string => createHash("sha256").update(value).digest("hex");
 const token = (): string => randomBytes(32).toString("base64url");
 
@@ -58,16 +69,36 @@ export class DeviceAuth {
   ) {}
 
   createPairingCode(): PairingCode {
-    let raw = "";
-    for (let index = 0; index < CODE_LENGTH; index++) raw += CODE_ALPHABET[randomInt(CODE_ALPHABET.length)];
-    const expiresAt = this.now() + PAIRING_TTL_MS;
+    const raw = randomCode(CODE_LENGTH);
+    const expiresAt = this.storeCode(raw, PAIRING_TTL_MS, false);
+    return { code: `${raw.slice(0, 5)}-${raw.slice(5)}`, expiresAt: new Date(expiresAt).toISOString() };
+  }
+
+  /**
+   * Accepts a code handed over by the desktop app that started this server,
+   * through a channel only that app can read. The device it pairs is local:
+   * it may open folders and pickers on this computer for the server.
+   */
+  registerLocalPairingCode(code: string): void {
+    this.storeCode(normalize(code), LOCAL_PAIRING_TTL_MS, true);
+  }
+
+  isLocal(deviceId: string): boolean {
+    const row = this.store.database.prepare("SELECT local FROM devices WHERE id = ?").get(deviceId) as
+      | { local: number }
+      | undefined;
+    return row?.local === 1;
+  }
+
+  private storeCode(raw: string, ttlMs: number, local: boolean): number {
+    const expiresAt = this.now() + ttlMs;
     this.store.transaction(() => {
       this.store.database.prepare("DELETE FROM pairing_codes WHERE expires_at <= ?").run(this.now());
       this.store.database
-        .prepare("INSERT INTO pairing_codes (hash, expires_at) VALUES (?, ?)")
-        .run(hash(raw), expiresAt);
+        .prepare("INSERT INTO pairing_codes (hash, expires_at, local) VALUES (?, ?, ?)")
+        .run(hash(raw), expiresAt, local ? 1 : 0);
     });
-    return { code: `${raw.slice(0, 5)}-${raw.slice(5)}`, expiresAt: new Date(expiresAt).toISOString() };
+    return expiresAt;
   }
 
   pair(code: string, deviceName: string): DeviceCredentials {
@@ -76,11 +107,11 @@ export class DeviceAuth {
     if (this.pairingFailures.length >= MAX_PAIRING_FAILURES) {
       throw new HttpError(429, "rate_limited", "Too many pairing attempts. Wait a minute and try again.", true);
     }
-    const normalized = code.toUpperCase().replace(/[\s-]/g, "");
-    const consumed = this.store.transaction(() =>
-      this.store.database
-        .prepare("DELETE FROM pairing_codes WHERE hash = ? AND expires_at > ? RETURNING hash")
-        .get(hash(normalized), now),
+    const consumed = this.store.transaction(
+      () =>
+        this.store.database
+          .prepare("DELETE FROM pairing_codes WHERE hash = ? AND expires_at > ? RETURNING local")
+          .get(hash(normalize(code)), now) as { local: number } | undefined,
     );
     if (!consumed) {
       this.pairingFailures.push(now);
@@ -90,7 +121,7 @@ export class DeviceAuth {
     const refreshToken = token();
     this.store.database
       .prepare(
-        "INSERT INTO devices (id, name, created_at, last_seen_at, refresh_hash, refresh_expires_at) VALUES (?, ?, ?, ?, ?, ?)",
+        "INSERT INTO devices (id, name, created_at, last_seen_at, refresh_hash, refresh_expires_at, local) VALUES (?, ?, ?, ?, ?, ?, ?)",
       )
       .run(
         deviceId,
@@ -99,6 +130,7 @@ export class DeviceAuth {
         new Date(now).toISOString(),
         hash(refreshToken),
         now + REFRESH_TTL_MS,
+        consumed.local,
       );
     return this.issueAccess(deviceId, refreshToken);
   }
@@ -151,9 +183,12 @@ export class DeviceAuth {
   }
 
   devices(): DeviceView[] {
-    return this.store.database
-      .prepare("SELECT id, name, created_at AS createdAt, last_seen_at AS lastSeenAt FROM devices ORDER BY created_at")
-      .all() as unknown as DeviceView[];
+    const rows = this.store.database
+      .prepare(
+        "SELECT id, name, created_at AS createdAt, last_seen_at AS lastSeenAt, local FROM devices ORDER BY created_at",
+      )
+      .all() as unknown as Array<Omit<DeviceView, "local"> & { local: number }>;
+    return rows.map((row) => ({ ...row, local: row.local === 1 }));
   }
 
   /** Removes the device and ends its sessions, including open event streams. Resolves false when unknown. */

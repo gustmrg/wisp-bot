@@ -9,6 +9,11 @@ export interface ServerConfig {
   publicOrigin?: string;
   keyFile?: string;
   agentMode: "pi" | "fake";
+  /**
+   * Started by the desktop app: read the master key and a local pairing code
+   * from the first stdin line, and stop when stdin closes.
+   */
+  bootstrapStdin: boolean;
 }
 
 const FLAGS: Record<string, keyof ServerConfig> = {
@@ -28,10 +33,15 @@ export function defaultDataDirectory(env: NodeJS.ProcessEnv = process.env): stri
 export function parseServerConfig(args: readonly string[], env: NodeJS.ProcessEnv = process.env): ServerConfig {
   const values = new Map<keyof ServerConfig, string>();
   let allowExternalBind = env.WISP_ALLOW_EXTERNAL_BIND === "1";
+  let bootstrapStdin = false;
   for (let index = 0; index < args.length; index++) {
     const flag = args[index]!;
     if (flag === "--allow-external-bind") {
       allowExternalBind = true;
+      continue;
+    }
+    if (flag === "--bootstrap-stdin") {
+      bootstrapStdin = true;
       continue;
     }
     const key = FLAGS[flag];
@@ -56,5 +66,6 @@ export function parseServerConfig(args: readonly string[], env: NodeJS.ProcessEn
     ...(publicOrigin ? { publicOrigin } : {}),
     ...(keyFile ? { keyFile: path.resolve(keyFile) } : {}),
     agentMode,
+    bootstrapStdin,
   };
 }
