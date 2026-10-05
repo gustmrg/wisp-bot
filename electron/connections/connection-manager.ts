@@ -25,6 +25,8 @@ export interface ConnectionManagerOptions {
   /** Sends a push channel payload to every renderer window. */
   broadcast(channel: string, payload: unknown): void;
   logger: Pick<StructuredLogger, "info" | "warn">;
+  /** Whether this computer already has Wisps from a version that had no connection choice. */
+  hasLocalData(): Promise<boolean>;
 }
 
 const OPERATIONS_BY_CHANNEL = new Map<string, string>(
@@ -46,9 +48,20 @@ export class ConnectionManager {
 
   constructor(private readonly options: ConnectionManagerOptions) {}
 
-  /** Opens the connection chosen last time. */
+  /**
+   * Opens the connection chosen last time. On a first run nothing starts:
+   * the person chooses this computer or a server first. People upgrading
+   * with Wisps already on this computer keep using it.
+   */
   start(): Promise<void> {
-    return this.serialized(() => this.open(this.options.store.active.id, undefined, false));
+    return this.serialized(async () => {
+      const { store } = this.options;
+      if (!store.hasChoice && !(await this.options.hasLocalData())) {
+        this.setStatus({ profileId: LOCAL_CONNECTION_ID, phase: "choosing" });
+        return;
+      }
+      await this.open(store.active.id, undefined, false);
+    });
   }
 
   view(): ConnectionsView {
@@ -87,7 +100,7 @@ export class ConnectionManager {
   retry(): Promise<ConnectionsView> {
     return this.serialized(async () => {
       if (this.session) this.session.start();
-      else await this.open(this.status.profileId, undefined, true);
+      else if (this.status.phase !== "choosing") await this.open(this.status.profileId, undefined, true);
       return this.view();
     });
   }
@@ -130,7 +143,7 @@ export class ConnectionManager {
     if (this.disposed) return;
     const { store } = this.options;
     const profile = store.get(id) ?? store.active;
-    if (profile.id !== store.active.id) await store.setActive(profile.id);
+    if (profile.id !== store.active.id || !store.hasChoice) await store.setActive(profile.id);
     this.openSession(profile, pairingCode, userInitiated);
   }
 

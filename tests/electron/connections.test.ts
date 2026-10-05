@@ -1,6 +1,6 @@
 import { randomBytes } from "node:crypto";
 import { EventEmitter } from "node:events";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
@@ -68,7 +68,8 @@ async function startServer(): Promise<{ server: WispServer; directory: string }>
 }
 
 /** The desktop backend with fake IPC; reopening the same directory simulates a restart. */
-async function desktop(userData?: string, key = randomBytes(32)) {
+/** Pass `choose: false` to stay at the first-run choice. */
+async function desktop(userData?: string, key = randomBytes(32), { choose = true }: { choose?: boolean } = {}) {
   const directory = userData ?? (await temporaryDirectory("wisp-desktop-"));
   const handlers = new Map<string, Handler>();
   const broadcasts: Array<[string, unknown]> = [];
@@ -132,6 +133,9 @@ async function desktop(userData?: string, key = randomBytes(32)) {
     );
   const chats = async () =>
     Object.keys((await invoke<ConversationStateView>(WISP_IPC_CHANNELS.getConversationState)).chats).sort();
+  if (choose && (await view()).status.phase === "choosing") {
+    await invoke(WISP_IPC_CHANNELS.activateConnection, { id: "local" });
+  }
   return {
     directory,
     key,
@@ -149,6 +153,36 @@ async function desktop(userData?: string, key = randomBytes(32)) {
 }
 
 describe("desktop connections", () => {
+  it("runs nothing on a new installation until this computer or a server is chosen", async () => {
+    const app = await desktop(undefined, undefined, { choose: false });
+    expect((await app.view()).status.phase).toBe("choosing");
+    expect(app.localServer.starts).toBe(0);
+    expect(await app.call(WISP_IPC_CHANNELS.getConversationState)).toMatchObject({
+      ok: false,
+      error: { code: "unavailable" },
+    });
+    // Adding a server is not a choice yet: a restart still asks.
+    await app.invoke(WISP_IPC_CHANNELS.saveConnection, { kind: "url", name: "Later", url: "http://127.0.0.1:9" });
+    await app.dispose();
+    const restarted = await desktop(app.directory, app.key, { choose: false });
+    expect((await restarted.view()).status.phase).toBe("choosing");
+
+    await restarted.invoke(WISP_IPC_CHANNELS.activateConnection, { id: "local" });
+    await restarted.waitForPhase("local");
+    await restarted.dispose();
+    const chosen = await desktop(app.directory, app.key, { choose: false });
+    await chosen.waitForPhase("local");
+  });
+
+  it("keeps using this computer after an upgrade from a version that never asked", async () => {
+    const directory = await temporaryDirectory("wisp-upgrade-");
+    await mkdir(path.join(directory, "backend"), { recursive: true });
+    await writeFile(path.join(directory, "backend", "conversations.json"), "{}");
+    const app = await desktop(directory, undefined, { choose: false });
+    await app.waitForPhase("local");
+    expect(app.localServer.starts).toBe(1);
+  });
+
   it("starts its own server on this computer, pairs with it, and lists only the local connection", async () => {
     const app = await desktop();
     await app.waitForPhase("local");

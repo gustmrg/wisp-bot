@@ -99,7 +99,8 @@ async function compose() {
     if (!result.ok) throw new Error(`${channel}: ${result.error.message}`);
     return result.value as T;
   };
-  // The local server starts in the background, as it does behind the app's connecting screen.
+  // A new installation runs nothing until this computer is chosen; then its server starts in the background.
+  await invoke(WISP_IPC_CHANNELS.activateConnection, { id: "local" });
   await vi.waitFor(async () => {
     expect((await invoke<ConnectionsView>(WISP_IPC_CHANNELS.getConnections)).status.phase).toBe("local");
   });

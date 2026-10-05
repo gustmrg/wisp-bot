@@ -22,6 +22,8 @@ export const LOCAL_PROFILE: LocalConnectionProfile = { id: LOCAL_CONNECTION_ID, 
 interface ProfilesFile {
   version: 1;
   activeId: string;
+  /** Whether the person has chosen where Wisps run; absent in files from before the first-run choice. */
+  chosen?: boolean;
   profiles: RemoteConnectionProfile[];
 }
 
@@ -99,6 +101,7 @@ export function parseRemoteProfile(value: unknown, id: string): RemoteConnection
 export class ConnectionStore {
   private profiles: RemoteConnectionProfile[] = [];
   private activeId = LOCAL_CONNECTION_ID;
+  private chosen = false;
   private credentials = new Map<string, DeviceCredentials>();
   private writes = Promise.resolve();
 
@@ -123,6 +126,7 @@ export class ConnectionStore {
         }
       }
       if (this.get(profiles.activeId)) this.activeId = profiles.activeId;
+      this.chosen = profiles.chosen ?? true;
     }
     const stored = await readJson<CredentialsFile>(path.join(this.directory, CREDENTIALS_FILE));
     if (stored?.version === 1 && this.encryption.isAvailable()) {
@@ -145,6 +149,11 @@ export class ConnectionStore {
     return this.list().find((profile) => profile.id === id);
   }
 
+  /** False until the person first chooses where Wisps run. */
+  get hasChoice(): boolean {
+    return this.chosen;
+  }
+
   get active(): ConnectionProfile {
     return this.get(this.activeId) ?? LOCAL_PROFILE;
   }
@@ -152,6 +161,7 @@ export class ConnectionStore {
   async setActive(id: string): Promise<void> {
     if (!this.get(id)) throw new WispBackendError("not_found", "That connection no longer exists.");
     this.activeId = id;
+    this.chosen = true;
     await this.persistProfiles();
   }
 
@@ -200,7 +210,7 @@ export class ConnectionStore {
   }
 
   private persistProfiles(): Promise<void> {
-    const file: ProfilesFile = { version: 1, activeId: this.activeId, profiles: this.profiles };
+    const file: ProfilesFile = { version: 1, activeId: this.activeId, chosen: this.chosen, profiles: this.profiles };
     return this.enqueue(path.join(this.directory, PROFILES_FILE), `${JSON.stringify(file, null, 2)}\n`);
   }
 

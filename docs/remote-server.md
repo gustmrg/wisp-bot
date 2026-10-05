@@ -138,8 +138,14 @@ The compose file publishes the port on host loopback only and keeps data in the
 
 ## Connect the desktop app
 
-Open **Settings → Connections** (or, on first launch, **Connect to a Wisp
-server instead**) and add the server:
+A new installation first asks **Where should your Wisps run?**: **On this
+computer** (recommended) or **On a Wisp server**. Nothing runs until one is
+chosen. Installations that already have Wisps on this computer keep using it.
+Each place keeps its own Wisps, conversations, settings, and credentials;
+nothing is copied between them.
+
+To add or switch servers later, open **Settings → Connections** and add the
+server:
 
 - **SSH** uses this computer's OpenSSH client with your agent, keys,
   `~/.ssh/config`, and known hosts. Enter a host name, IP address, or alias,

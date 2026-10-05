@@ -1,6 +1,6 @@
 import { useState } from "react";
 import type { FormEvent, ReactNode } from "react";
-import { ServerIcon, SparklesIcon } from "lucide-react";
+import { LaptopIcon, ServerIcon, SparklesIcon } from "lucide-react";
 
 import type { AiSettingsView } from "../../shared/contracts";
 import { missingModelSetup, type SetupRequirement } from "../../shared/setup-status";
@@ -92,10 +92,7 @@ function ProfileStep({ controller, onNext }: { controller: UserProfileController
   );
 }
 
-/**
- * Says where this setup is saved, and lets someone who already runs a Wisp
- * server use it instead of setting up this computer.
- */
+/** Says where this setup is saved, and lets the person change it. */
 function ServerChoice() {
   const [open, setOpen] = useState(false);
   const [view] = useConnections();
@@ -105,29 +102,19 @@ function ServerChoice() {
   return (
     <div className="min-h-0 overflow-y-auto border-t border-border px-6 py-4">
       {open ? (
-        <>
-          <p className="mb-2 mt-0 text-[11.5px] leading-relaxed text-dim">
-            Wisps on a server keep working while this app is closed. Add your server, then choose Use.
-          </p>
-          <ConnectionsPanel view={view} />
-        </>
+        <ConnectionsPanel view={view} />
       ) : (
         <div className="flex items-center justify-between gap-3">
-          {server ? (
-            <p className="m-0 flex items-center gap-2 text-[12px] text-dim">
+          <p className="m-0 flex items-center gap-2 text-[12px] text-dim">
+            {server ? (
               <ServerIcon aria-hidden="true" className="size-4" />
-              Setting up {server.name}, a Wisp server.
-            </p>
-          ) : null}
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            className={server ? "" : "-ml-2"}
-            onClick={() => setOpen(true)}
-          >
-            {server ? null : <ServerIcon aria-hidden="true" />}
-            {server ? "Change" : "Connect to a Wisp server instead"}
+            ) : (
+              <LaptopIcon aria-hidden="true" className="size-4" />
+            )}
+            {server ? `Setting up ${server.name}, a Wisp server.` : "Setting up Wisps on this computer."}
+          </p>
+          <Button type="button" variant="ghost" size="sm" onClick={() => setOpen(true)}>
+            Change
           </Button>
         </div>
       )}

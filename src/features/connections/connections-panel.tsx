@@ -13,6 +13,7 @@ import type {
 } from "../../../shared/connections";
 
 const PHASE_LABELS: Record<ConnectionStatus["phase"], string> = {
+  choosing: "Not in use",
   local: "In use",
   connected: "Connected",
   connecting: "Connecting…",
@@ -22,6 +23,7 @@ const PHASE_LABELS: Record<ConnectionStatus["phase"], string> = {
 };
 
 function phaseTone(phase: ConnectionStatus["phase"]): StatusTone {
+  if (phase === "choosing") return "muted";
   if (phase === "local" || phase === "connected") return "success";
   if (phase === "connecting" || phase === "reconnecting") return "warning";
   return "danger";
@@ -43,7 +45,7 @@ type ConnectionsResult = { ok: true; value: ConnectionsView } | { ok: false; err
  * the screen shown while a server cannot be used. The main process pushes every
  * change, so action results only report errors.
  */
-export function ConnectionsPanel({ view }: { view: ConnectionsView }) {
+export function ConnectionsPanel({ view, serversOnly = false }: { view: ConnectionsView; serversOnly?: boolean }) {
   const [editing, setEditing] = useState<"new" | string | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
@@ -81,55 +83,57 @@ export function ConnectionsPanel({ view }: { view: ConnectionsView }) {
         </p>
       ) : null}
       <ul className="m-0 flex list-none flex-col gap-1 p-0" aria-label="Connections">
-        {view.profiles.map((profile) => {
-          const active = profile.id === view.activeId;
-          return (
-            <li key={profile.id} className="flex items-center gap-3 rounded-xl px-2 py-3">
-              <span className="flex size-9 flex-none items-center justify-center rounded-lg bg-muted">
-                {profile.kind === "local" ? (
-                  <LaptopIcon className="size-4 text-dim" aria-hidden="true" />
-                ) : (
-                  <ServerIcon className="size-4 text-dim" aria-hidden="true" />
+        {view.profiles
+          .filter((profile) => !serversOnly || profile.kind !== "local")
+          .map((profile) => {
+            const active = profile.id === view.activeId;
+            return (
+              <li key={profile.id} className="flex items-center gap-3 rounded-xl px-2 py-3">
+                <span className="flex size-9 flex-none items-center justify-center rounded-lg bg-muted">
+                  {profile.kind === "local" ? (
+                    <LaptopIcon className="size-4 text-dim" aria-hidden="true" />
+                  ) : (
+                    <ServerIcon className="size-4 text-dim" aria-hidden="true" />
+                  )}
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block text-[14px] font-medium">{profile.name}</span>
+                  <span className="mt-1 block truncate text-[12px] text-dim">{describeProfile(profile)}</span>
+                  {active ? (
+                    <span className="mt-1.5 flex items-center gap-1.5 text-[10.5px] text-dim">
+                      <StatusDot tone={phaseTone(view.status.phase)} />
+                      {PHASE_LABELS[view.status.phase]}
+                    </span>
+                  ) : profile.kind !== "local" && !profile.paired ? (
+                    <span className="mt-1.5 block text-[10.5px] text-dim">Not paired yet</span>
+                  ) : null}
+                </span>
+                {active ? null : (
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    disabled={busy !== null}
+                    onClick={() => void run(profile.id, () => window.wisp.activateConnection({ id: profile.id }))}
+                  >
+                    {busy === profile.id ? "Switching…" : "Use"}
+                  </Button>
                 )}
-              </span>
-              <span className="min-w-0 flex-1">
-                <span className="block text-[14px] font-medium">{profile.name}</span>
-                <span className="mt-1 block truncate text-[12px] text-dim">{describeProfile(profile)}</span>
-                {active ? (
-                  <span className="mt-1.5 flex items-center gap-1.5 text-[10.5px] text-dim">
-                    <StatusDot tone={phaseTone(view.status.phase)} />
-                    {PHASE_LABELS[view.status.phase]}
-                  </span>
-                ) : profile.kind !== "local" && !profile.paired ? (
-                  <span className="mt-1.5 block text-[10.5px] text-dim">Not paired yet</span>
-                ) : null}
-              </span>
-              {active ? null : (
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  disabled={busy !== null}
-                  onClick={() => void run(profile.id, () => window.wisp.activateConnection({ id: profile.id }))}
-                >
-                  {busy === profile.id ? "Switching…" : "Use"}
-                </Button>
-              )}
-              {profile.kind === "local" ? null : (
-                <Button
-                  type="button"
-                  size="icon-sm"
-                  variant="ghost"
-                  aria-label={`Edit ${profile.name}`}
-                  disabled={busy !== null}
-                  onClick={() => setEditing(profile.id)}
-                >
-                  <Settings2 aria-hidden="true" />
-                </Button>
-              )}
-            </li>
-          );
-        })}
+                {profile.kind === "local" ? null : (
+                  <Button
+                    type="button"
+                    size="icon-sm"
+                    variant="ghost"
+                    aria-label={`Edit ${profile.name}`}
+                    disabled={busy !== null}
+                    onClick={() => setEditing(profile.id)}
+                  >
+                    <Settings2 aria-hidden="true" />
+                  </Button>
+                )}
+              </li>
+            );
+          })}
       </ul>
       <button
         type="button"

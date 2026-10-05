@@ -1,3 +1,6 @@
+import { access } from "node:fs/promises";
+import path from "node:path";
+
 import type { IpcMainInvokeEvent } from "electron";
 
 import { WISP_IPC_CHANNELS } from "../shared/contracts.js";
@@ -78,6 +81,7 @@ export async function createBackend(host: BackendHost): Promise<Backend> {
     deviceName: host.deviceName,
     broadcast,
     logger: host.logger,
+    hasLocalData: () => hasLocalData(host.connectionsDirectory),
   });
   const unsubscribeUpdateState = host.updateService.subscribe((state) =>
     broadcast(WISP_IPC_CHANNELS.updateState, state),
@@ -128,6 +132,19 @@ export async function createBackend(host: BackendHost): Promise<Backend> {
       await manager.dispose();
     },
   };
+}
+
+/** Conversations from a version that ran Wisps on this computer without asking. */
+async function hasLocalData(userData: string): Promise<boolean> {
+  for (const name of ["conversations.sqlite", "conversations.json"]) {
+    try {
+      await access(path.join(userData, "backend", name));
+      return true;
+    } catch {
+      // Not there.
+    }
+  }
+  return false;
 }
 
 async function runHostAction(actions: HostActions, request: HostRequest): Promise<HostResponse> {

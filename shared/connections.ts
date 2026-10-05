@@ -40,7 +40,9 @@ export type ConnectionProfileView = ConnectionProfile & {
   paired: boolean;
 };
 
-export type ConnectionPhase = "local" | "connecting" | "pairing_required" | "connected" | "reconnecting" | "error";
+export type ConnectionPhase =
+  /** First run: nothing runs until the person chooses this computer or a server. */
+  "choosing" | "local" | "connecting" | "pairing_required" | "connected" | "reconnecting" | "error";
 
 export interface ConnectionStatus {
   profileId: string;
