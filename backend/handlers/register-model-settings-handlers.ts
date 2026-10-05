@@ -1,15 +1,15 @@
 import { WISP_IPC_CHANNELS, type ModelSelection } from "../../shared/contracts.js";
-import type { ModelService } from "../../backend/model-service.js";
-import { registerGuardedHandlers, type HandlerIpcMain, type SenderAuthorizer } from "./guarded-handlers.js";
-import { parseRemoveProviderCredentialRequest, parseSaveAiSettingsRequest } from "../../backend/validators.js";
+import type { ModelService } from "../model-service.js";
+import { registerGuardedHandlers, type HandlerRouter, type SenderAuthorizer } from "./guarded-handlers.js";
+import { parseRemoveProviderCredentialRequest, parseSaveAiSettingsRequest } from "../validators.js";
 
 export function registerModelSettingsHandlers(
-  ipcMain: HandlerIpcMain,
+  router: HandlerRouter,
   modelService: ModelService,
   authorizeSender: SenderAuthorizer,
   onSelectionChange?: (selection: ModelSelection | null) => Promise<void>,
 ): { dispose: () => void } {
-  return registerGuardedHandlers(ipcMain, authorizeSender, [
+  return registerGuardedHandlers(router, authorizeSender, [
     [WISP_IPC_CHANNELS.getAiSettings, () => modelService.getView()],
     [
       WISP_IPC_CHANNELS.saveAiSettings,

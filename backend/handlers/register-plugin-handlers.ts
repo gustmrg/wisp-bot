@@ -1,13 +1,13 @@
 import { WISP_IPC_CHANNELS } from "../../shared/contracts.js";
-import type { PluginService } from "../../backend/plugin-service.js";
-import { registerGuardedHandlers, type HandlerIpcMain, type SenderAuthorizer } from "./guarded-handlers.js";
+import type { PluginService } from "../plugin-service.js";
+import { registerGuardedHandlers, type HandlerRouter, type SenderAuthorizer } from "./guarded-handlers.js";
 
 export function registerPluginHandlers(
-  ipcMain: HandlerIpcMain,
+  router: HandlerRouter,
   service: PluginService,
   authorizeSender: SenderAuthorizer,
 ): { dispose: () => void } {
-  return registerGuardedHandlers(ipcMain, authorizeSender, [
+  return registerGuardedHandlers(router, authorizeSender, [
     [WISP_IPC_CHANNELS.getPluginSettings, () => service.getView()],
     [WISP_IPC_CHANNELS.savePluginSettings, (payload) => service.save(payload)],
     [WISP_IPC_CHANNELS.savePluginDefaults, (payload) => service.saveDefaults(payload)],

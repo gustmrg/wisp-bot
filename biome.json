@@ -7,7 +7,7 @@
   },
   "files": {
     "ignoreUnknown": true,
-    "includes": ["**", "!!node_modules", "!!dist", "!!dist-electron"]
+    "includes": ["**", "!!node_modules", "!!dist", "!!dist-electron", "!!dist-server"]
   },
   "formatter": {
     "enabled": true,

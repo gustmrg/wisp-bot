@@ -6,7 +6,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import { ToolAuthorizationBroker } from "../backend/tool-authorization-broker.js";
 import { ToolPolicyStore } from "../backend/tool-policy-store.js";
-import { registerToolPolicyHandlers } from "../electron/ipc/register-tool-policy-handlers.js";
+import { registerToolPolicyHandlers } from "../backend/handlers/register-tool-policy-handlers.js";
 import { WISP_IPC_CHANNELS } from "../shared/contracts.js";
 
 describe("tool policy IPC", () => {

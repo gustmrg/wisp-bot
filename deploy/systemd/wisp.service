@@ -1,0 +1,19 @@
+# User unit: install in ~/.config/systemd/user/ and adjust the Node path.
+[Unit]
+Description=Wisp server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+EnvironmentFile=%h/.config/wisp/server.env
+ExecStart=/usr/bin/node %h/.local/lib/wisp/server/main.js
+Restart=on-failure
+RestartSec=5
+# Agents get ten seconds to settle their last turn on stop.
+TimeoutStopSec=30
+UMask=0077
+NoNewPrivileges=yes
+
+[Install]
+WantedBy=default.target

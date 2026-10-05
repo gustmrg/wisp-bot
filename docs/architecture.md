@@ -31,11 +31,16 @@ URL.
   host capabilities (encryption, folder and file pickers, event sinks), so any
   host can run the same backend. `electron/backend/` keeps only desktop
   concerns: `safeStorage` encryption, updates, and launch at login.
-- `electron/ipc/` registers the narrow bridge handlers; every handler goes
-  through `guarded-handlers.ts`, which checks the sender and returns sanitized
-  `BackendResult`s. `electron/create-backend.ts` composes the runtime with
-  Electron capabilities and exposes it over IPC, so the whole backend can be
-  built and tested without Electron.
+- `backend/handlers/` registers the operations a client can call; every
+  handler goes through `guarded-handlers.ts`, which checks the sender and
+  returns sanitized `BackendResult`s. `electron/create-backend.ts` composes the
+  runtime with Electron capabilities and registers those handlers, plus the
+  desktop-only ones in `electron/ipc/`, on `ipcMain`, so the whole backend can
+  be built and tested without Electron.
+- `server/` runs the same runtime and handlers as a headless process behind
+  authenticated HTTP and server-sent events. See
+  [headless server](remote-server.md) and
+  [ADR 009](decisions/009-headless-server.md).
 - The main process is the only writer of agent-driven conversation state (reply
   text, outgoing delivery status, context notices). After persisting a change it
   pushes what changed on `wisp:conversations:changed`: the conversation's
@@ -80,14 +85,17 @@ wisp-bot/
 ├── build/                         # Packaging icons
 ├── docs/                          # Guides and decision records
 ├── backend/                       # Persistence, services, agents, and authorization
+│   ├── handlers/                  # Operation handlers shared by IPC and HTTP
 │   └── runtime.ts                 # Host-independent backend composition and shutdown
+├── deploy/                        # systemd, Docker, and wispctl for the server
 ├── electron/
 │   ├── backend/                   # Desktop-only services (safeStorage, updates, login)
-│   ├── ipc/                       # Main-process IPC handlers
+│   ├── ipc/                       # Desktop-only IPC handlers (updates, launch at login)
 │   ├── create-backend.ts          # Runtime exposed over IPC, with shutdown
 │   ├── main.ts                    # Window lifecycle and trust-boundary wiring
 │   ├── preload.ts                 # Sandboxed typed renderer bridge
 │   └── security-policy.ts         # Pure URL, permission, and CSP policy
+├── server/                        # Headless server: HTTP API, pairing, admin CLI
 ├── shared/                        # Cross-process contracts and domain types
 ├── src/
 │   ├── components/                # Renderer feature and UI components

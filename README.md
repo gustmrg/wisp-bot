@@ -45,6 +45,8 @@ preset.
   authorization. See [security](docs/security.md).
 - **Responsive layout** — a mobile-style single-screen layout below 760px.
   See [mobile layout](docs/mobile-layout.md).
+- **Headless server (preview)** — run the same backend on a Linux machine so
+  Wisps keep working with no app open. See [headless server](docs/remote-server.md).
 
 ## Getting started
 

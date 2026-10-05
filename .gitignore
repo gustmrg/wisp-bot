@@ -4,3 +4,5 @@ dist-electron/
 release/
 *.log
 .zcode
+dist-server/
+deploy/docker/master.key

@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import { WISP_IPC_CHANNELS, type WispSessionReport } from "../shared/contracts.js";
 import { WispBackendError } from "../backend/backend-error.js";
 import type { SessionReportService } from "../backend/session-report-service.js";
-import { registerSessionReportHandlers } from "../electron/ipc/register-session-report-handlers.js";
+import { registerSessionReportHandlers } from "../backend/handlers/register-session-report-handlers.js";
 
 const REPORT: WispSessionReport = {
   sessionId: "pi-session-1",

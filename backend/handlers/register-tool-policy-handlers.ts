@@ -1,14 +1,14 @@
 import { WISP_IPC_CHANNELS } from "../../shared/contracts.js";
-import type { ToolAuthorizationBroker } from "../../backend/tool-authorization-broker.js";
-import { registerGuardedHandlers, type HandlerIpcMain, type SenderAuthorizer } from "./guarded-handlers.js";
-import { parseResolveToolApprovalRequest } from "../../backend/validators.js";
+import type { ToolAuthorizationBroker } from "../tool-authorization-broker.js";
+import { registerGuardedHandlers, type HandlerRouter, type SenderAuthorizer } from "./guarded-handlers.js";
+import { parseResolveToolApprovalRequest } from "../validators.js";
 
 export function registerToolPolicyHandlers(
-  ipcMain: HandlerIpcMain,
+  router: HandlerRouter,
   broker: ToolAuthorizationBroker,
   authorizeSender: SenderAuthorizer,
 ): { dispose: () => void } {
-  return registerGuardedHandlers(ipcMain, authorizeSender, [
+  return registerGuardedHandlers(router, authorizeSender, [
     [WISP_IPC_CHANNELS.getToolPolicy, () => broker.getPolicy()],
     [WISP_IPC_CHANNELS.saveToolPolicy, (payload) => broker.savePolicy(payload)],
     [

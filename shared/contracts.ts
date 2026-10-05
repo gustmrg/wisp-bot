@@ -183,7 +183,8 @@ export type BackendErrorCode =
   | "model_unavailable"
   | "approval_expired"
   | "tool_blocked"
-  | "secure_storage_unavailable";
+  | "secure_storage_unavailable"
+  | "unsupported";
 
 export interface BackendError {
   code: BackendErrorCode;
