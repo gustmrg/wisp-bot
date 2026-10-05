@@ -205,6 +205,10 @@ describe("Wisp server", () => {
     expect(await rawRequest(server, { Host: "attacker.example:80" })).toBe(403);
     expect(await rawRequest(server, { Origin: "https://attacker.example" })).toBe(403);
     expect(await rawRequest(server, { Host: `localhost:${server.port}` })).toBe(200);
+    // A tunnel forwards from another local port.
+    expect(await rawRequest(server, { Host: "127.0.0.1:40001" })).toBe(200);
+    expect(await rawRequest(server, { Host: "[::1]:9" })).toBe(200);
+    expect(await rawRequest(server, { Host: "127.0.0.1.attacker.example:80" })).toBe(403);
   });
 
   it("describes itself to paired devices with only the operations it serves", async () => {

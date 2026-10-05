@@ -39,8 +39,12 @@ export interface HttpApiOptions {
   operations: ReadonlyMap<string, OperationListener>;
   serverId: string;
   version: string;
-  /** `host:port` values the Host header may carry; anything else is refused (DNS rebinding). */
-  allowedHosts: ReadonlySet<string>;
+  /**
+   * Host names the Host header may carry, on any port: a tunnel or container
+   * can forward a different port. Any other name is refused, which blocks DNS
+   * rebinding.
+   */
+  allowedHostNames: ReadonlySet<string>;
   /** Browser origins allowed to call the API; requests from any other origin are refused. */
   allowedOrigins: ReadonlySet<string>;
   logger: Pick<StructuredLogger, "warn">;
@@ -79,8 +83,7 @@ export function createHttpApi(options: HttpApiOptions): HttpApi {
   };
 
   const checkCaller = (request: IncomingMessage): void => {
-    const host = request.headers.host?.toLowerCase();
-    if (!host || !options.allowedHosts.has(host)) {
+    if (!options.allowedHostNames.has(hostNameOf(request.headers.host))) {
       throw new HttpError(403, "forbidden", "This host name is not served here.");
     }
     const origin = request.headers.origin;
@@ -208,6 +211,14 @@ export function createHttpApi(options: HttpApiOptions): HttpApi {
       streams.clear();
     },
   };
+}
+
+function hostNameOf(host: string | undefined): string {
+  try {
+    return host ? new URL(`http://${host}`).hostname : "";
+  } catch {
+    return "";
+  }
 }
 
 function asRecord(value: unknown): Record<string, unknown> {

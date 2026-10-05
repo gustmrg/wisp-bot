@@ -76,9 +76,10 @@ WISP_MASTER_KEY_FILE=~/.config/wisp/master.key node ~/.local/lib/wisp/server/mai
 The server listens on loopback only. Reach it through an SSH tunnel or a
 private HTTPS proxy such as Tailscale Serve; never publish the port. Binding
 another address requires `--allow-external-bind`, meant for containers that
-publish the port on host loopback. Requests must name the host the server
-listens on (`127.0.0.1:<port>` or `localhost:<port>`), or the public origin's
-host when one is set; anything else is refused, which blocks DNS rebinding.
+publish the port on host loopback. Requests must address a loopback name
+(`127.0.0.1`, `localhost`, or `[::1]`, on any port, since tunnels forward from
+another port) or the public origin's host name when one is set; anything else
+is refused, which blocks DNS rebinding.
 
 One server owns a data directory at a time. A second one exits with "Another
 Wisp server is already using this data directory." On `SIGTERM` the server
@@ -115,8 +116,7 @@ docker compose -f deploy/docker/compose.yaml exec wisp wispctl pair
 ```
 
 The compose file publishes the port on host loopback only and keeps data in the
-`wisp-data` volume. Keep the host port equal to `WISP_PORT`, since the server
-checks the Host header.
+`wisp-data` volume.
 
 ## Pair devices
 

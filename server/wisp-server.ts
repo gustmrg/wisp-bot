@@ -103,14 +103,15 @@ export async function createWispServer(options: WispServerOptions): Promise<Wisp
     // HTTP authenticates every device before an operation runs.
     registerRuntimeHandlers(router, runtime, () => true);
 
-    const allowedHosts = new Set<string>();
+    const allowedHostNames = new Set(["127.0.0.1", "localhost", "[::1]"]);
+    if (publicOrigin) allowedHostNames.add(publicOrigin.hostname);
     const api = createHttpApi({
       auth,
       hub,
       operations,
       serverId: store.serverId,
       version: options.appVersion,
-      allowedHosts,
+      allowedHostNames,
       allowedOrigins: new Set(publicOrigin ? [publicOrigin.origin] : []),
       logger: options.logger,
     });
@@ -121,8 +122,6 @@ export async function createWispServer(options: WispServerOptions): Promise<Wisp
     cleanup.push(() => closeServer(http, () => api.closeStreams()));
     const address = http.address();
     if (!address || typeof address === "string") throw new Error("The HTTP listener is unavailable.");
-    for (const name of ["127.0.0.1", "localhost", "[::1]"]) allowedHosts.add(`${name}:${address.port}`);
-    if (publicOrigin) allowedHosts.add(publicOrigin.host);
 
     if (options.adminSocket ?? true) {
       const admin = await startAdminSocket(options.dataDirectory, (command) => {
