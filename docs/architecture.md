@@ -37,6 +37,11 @@ URL.
   runtime with Electron capabilities and registers those handlers, plus the
   desktop-only ones in `electron/ipc/`, on `ipcMain`, so the whole backend can
   be built and tested without Electron.
+- `electron/connections/` decides where the backend runs. The main process
+  routes every runtime operation to the local runtime, started only while
+  **This computer** is chosen, or to a Wisp server through `client/`'s
+  reconnecting session over an SSH tunnel or HTTPS. The renderer's
+  `ConnectionGate` remounts the app whenever the backend changes.
 - `server/` runs the same runtime and handlers as a headless process behind
   authenticated HTTP and server-sent events. See
   [headless server](remote-server.md) and
@@ -87,9 +92,11 @@ wisp-bot/
 ├── backend/                       # Persistence, services, agents, and authorization
 │   ├── handlers/                  # Operation handlers shared by IPC and HTTP
 │   └── runtime.ts                 # Host-independent backend composition and shutdown
+├── client/                        # Remote client: protocol, events, reconnecting session
 ├── deploy/                        # systemd, Docker, and wispctl for the server
 ├── electron/
 │   ├── backend/                   # Desktop-only services (safeStorage, updates, login)
+│   ├── connections/               # Connection profiles, SSH tunnels, backend routing
 │   ├── ipc/                       # Desktop-only IPC handlers (updates, launch at login)
 │   ├── create-backend.ts          # Runtime exposed over IPC, with shutdown
 │   ├── main.ts                    # Window lifecycle and trust-boundary wiring

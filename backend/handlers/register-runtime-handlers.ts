@@ -1,3 +1,4 @@
+import type { WISP_IPC_CHANNELS } from "../../shared/contracts.js";
 import type { BackendRuntime } from "../runtime.js";
 import type { HandlerRouter, SenderAuthorizer } from "./guarded-handlers.js";
 import { registerAgentHandlers } from "./register-agent-handlers.js";
@@ -9,6 +10,66 @@ import { registerSessionReportHandlers } from "./register-session-report-handler
 import { registerToolPolicyHandlers } from "./register-tool-policy-handlers.js";
 import { registerVoiceHandlers } from "./register-voice-handlers.js";
 import { registerWorkspaceHandlers } from "./register-workspace-handlers.js";
+
+/**
+ * Every operation `registerRuntimeHandlers` answers. A host that can switch
+ * runtimes (the desktop app, between this computer and a server) routes
+ * exactly these.
+ */
+export const RUNTIME_OPERATIONS = [
+  "startConversation",
+  "sendMessage",
+  "abortConversation",
+  "applyModel",
+  "getConversationModel",
+  "manageContext",
+  "disposeConversation",
+  "getAiSettings",
+  "saveAiSettings",
+  "removeProviderCredential",
+  "getPluginSettings",
+  "savePluginSettings",
+  "savePluginDefaults",
+  "removePlugin",
+  "testPluginConnection",
+  "getWispPluginAccess",
+  "saveWispPluginAccess",
+  "getMcpSettings",
+  "saveMcpServer",
+  "removeMcpServer",
+  "testMcpConnection",
+  "refreshMcpTools",
+  "startMcpSignIn",
+  "cancelMcpSignIn",
+  "getWispMcpAccess",
+  "saveWispMcpAccess",
+  "getConversationState",
+  "initializeConversations",
+  "createConversation",
+  "updateConversation",
+  "deleteConversation",
+  "appendConversationMessage",
+  "answerConversationPrompt",
+  "markConversationRead",
+  "getConversationMessages",
+  "searchMessages",
+  "getSessionReport",
+  "getUsageReport",
+  "getUserProfile",
+  "saveUserProfile",
+  "getToolPolicy",
+  "saveToolPolicy",
+  "resolveToolApproval",
+  "getWorkspace",
+  "openWorkspaceFolder",
+  "openSkillsFolder",
+  "attachWorkspaceFiles",
+  "listSkills",
+  "deleteSkill",
+  "getVoiceSettings",
+  "saveVoiceCredential",
+  "transcribeAudio",
+] as const satisfies ReadonlyArray<keyof typeof WISP_IPC_CHANNELS>;
 
 /**
  * Registers every runtime operation a client can call, whatever the transport.

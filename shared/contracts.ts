@@ -43,6 +43,13 @@ import type {
   VoiceSettingsView,
 } from "./voice.js";
 
+import type {
+  ActivateConnectionRequest,
+  ConnectionRequest,
+  ConnectionsView,
+  SaveConnectionRequest,
+} from "./connections.js";
+
 export const WISP_IPC_CHANNELS = {
   startConversation: "wisp:agent:start",
   sendMessage: "wisp:agent:send",
@@ -107,6 +114,12 @@ export const WISP_IPC_CHANNELS = {
   getVoiceSettings: "wisp:voice:get",
   saveVoiceCredential: "wisp:voice:save-credential",
   transcribeAudio: "wisp:voice:transcribe",
+  getConnections: "wisp:connections:get",
+  saveConnection: "wisp:connections:save",
+  removeConnection: "wisp:connections:remove",
+  activateConnection: "wisp:connections:activate",
+  retryConnection: "wisp:connections:retry",
+  connectionsChanged: "wisp:connections:changed",
 } as const;
 
 export const WISP_RELEASES_URL = "https://github.com/gustmrg/wisp-bot/releases/latest";
@@ -184,7 +197,8 @@ export type BackendErrorCode =
   | "approval_expired"
   | "tool_blocked"
   | "secure_storage_unavailable"
-  | "unsupported";
+  | "unsupported"
+  | "unavailable";
 
 export interface BackendError {
   code: BackendErrorCode;
@@ -443,4 +457,11 @@ export interface WispApi {
   saveVoiceCredential(request: SaveVoiceCredentialRequest): Promise<BackendResult<VoiceSettingsView>>;
   /** Sends a recording to the chosen speech-to-text provider and returns its text. */
   transcribeAudio(request: TranscribeAudioRequest): Promise<BackendResult<TranscriptionResult>>;
+  getConnections(): Promise<BackendResult<ConnectionsView>>;
+  saveConnection(request: SaveConnectionRequest): Promise<BackendResult<ConnectionsView>>;
+  removeConnection(request: ConnectionRequest): Promise<BackendResult<ConnectionsView>>;
+  /** Switches the backend; the renderer reloads its state when the status epoch changes. */
+  activateConnection(request: ActivateConnectionRequest): Promise<BackendResult<ConnectionsView>>;
+  retryConnection(): Promise<BackendResult<ConnectionsView>>;
+  subscribeToConnections(listener: (view: ConnectionsView) => void): () => void;
 }

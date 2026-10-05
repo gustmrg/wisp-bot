@@ -68,6 +68,12 @@ const WISP_IPC_CHANNELS = {
   getVoiceSettings: "wisp:voice:get",
   saveVoiceCredential: "wisp:voice:save-credential",
   transcribeAudio: "wisp:voice:transcribe",
+  getConnections: "wisp:connections:get",
+  saveConnection: "wisp:connections:save",
+  removeConnection: "wisp:connections:remove",
+  activateConnection: "wisp:connections:activate",
+  retryConnection: "wisp:connections:retry",
+  connectionsChanged: "wisp:connections:changed",
 } as const;
 
 const wispApi: WispApi = {
@@ -155,6 +161,17 @@ const wispApi: WispApi = {
   getVoiceSettings: () => ipcRenderer.invoke(WISP_IPC_CHANNELS.getVoiceSettings),
   saveVoiceCredential: (request) => ipcRenderer.invoke(WISP_IPC_CHANNELS.saveVoiceCredential, request),
   transcribeAudio: (request) => ipcRenderer.invoke(WISP_IPC_CHANNELS.transcribeAudio, request),
+  getConnections: () => ipcRenderer.invoke(WISP_IPC_CHANNELS.getConnections),
+  saveConnection: (request) => ipcRenderer.invoke(WISP_IPC_CHANNELS.saveConnection, request),
+  removeConnection: (request) => ipcRenderer.invoke(WISP_IPC_CHANNELS.removeConnection, request),
+  activateConnection: (request) => ipcRenderer.invoke(WISP_IPC_CHANNELS.activateConnection, request),
+  retryConnection: () => ipcRenderer.invoke(WISP_IPC_CHANNELS.retryConnection),
+  subscribeToConnections: (listener) => {
+    const handleView = (_event: Electron.IpcRendererEvent, view: Parameters<typeof listener>[0]): void =>
+      listener(view);
+    ipcRenderer.on(WISP_IPC_CHANNELS.connectionsChanged, handleView);
+    return () => ipcRenderer.removeListener(WISP_IPC_CHANNELS.connectionsChanged, handleView);
+  },
 };
 
 contextBridge.exposeInMainWorld("wisp", Object.freeze(wispApi));

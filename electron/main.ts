@@ -10,6 +10,7 @@ import {
   type IpcMainInvokeEvent,
 } from "electron";
 import { autoUpdater } from "electron-updater";
+import { hostname } from "node:os";
 import path from "node:path";
 import { LaunchAtLoginService } from "./backend/launch-at-login-service.js";
 
@@ -237,6 +238,8 @@ async function bootstrap(): Promise<void> {
     agentMode: selectAgentMode(app.isPackaged, process.env.WISP_AGENT_MODE),
     appVersion: app.getVersion(),
     updateService: new UpdateService(autoUpdater, app.getVersion(), app.isPackaged, autoInstallSupported, logger),
+    connectionsDirectory: app.getPath("userData"),
+    deviceName: `Wisp on ${hostname()}`,
   });
   let backendDisposed = false;
   let backendDisposing = false;
@@ -257,6 +260,12 @@ async function bootstrap(): Promise<void> {
     if (BrowserWindow.getAllWindows().length === 0) createWindow(target).catch(handleFatalStartupError);
   };
   app.on("activate", () => showWindow?.());
+}
+
+// A termination signal (logout, `kill`) quits like the menu does, so agents
+// settle and SSH tunnels close instead of being left running.
+for (const signal of ["SIGTERM", "SIGINT"] as const) {
+  process.once(signal, () => app.quit());
 }
 
 app.on("window-all-closed", () => {

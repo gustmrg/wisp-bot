@@ -2,6 +2,7 @@ import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
+import type { ConnectionsView } from "../shared/connections";
 import type { AiSettingsView, WispApi } from "../shared/contracts";
 import { chatSummary, type Chat, type ConversationStateView } from "../shared/conversations";
 import App from "@/App";
@@ -61,6 +62,13 @@ function conversationState(initialized: boolean, chats: Record<string, Chat> = {
     recoveredCorruptState: false,
   };
 }
+
+const localConnections: ConnectionsView = {
+  activeId: "local",
+  profiles: [{ id: "local", kind: "local", name: "This computer", paired: true }],
+  status: { profileId: "local", phase: "local", epoch: 1 },
+  secureStorageAvailable: true,
+};
 
 function createApi(initialState: ConversationStateView): WispApi {
   let state = initialState;
@@ -211,6 +219,12 @@ function createApi(initialState: ConversationStateView): WispApi {
       value: { secureStorageAvailable: true, providers: [] },
     })),
     transcribeAudio: vi.fn(async () => ({ ok: true as const, value: { text: "" } })),
+    getConnections: async () => ({ ok: true as const, value: localConnections }),
+    saveConnection: async () => ({ ok: true as const, value: localConnections }),
+    removeConnection: async () => ({ ok: true as const, value: localConnections }),
+    activateConnection: async () => ({ ok: true as const, value: localConnections }),
+    retryConnection: async () => ({ ok: true as const, value: localConnections }),
+    subscribeToConnections: () => () => undefined,
   };
 }
 

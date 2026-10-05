@@ -64,6 +64,12 @@ const REQUIRED_WISP_METHODS = [
   "getVoiceSettings",
   "saveVoiceCredential",
   "transcribeAudio",
+  "getConnections",
+  "saveConnection",
+  "removeConnection",
+  "activateConnection",
+  "retryConnection",
+  "subscribeToConnections",
 ] as const satisfies ReadonlyArray<keyof WispApi>;
 
 export function isWispBridgeAvailable(value: unknown): value is WispApi {

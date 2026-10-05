@@ -1,0 +1,115 @@
+import { randomBytes } from "node:crypto";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+
+import { afterEach, describe, expect, it } from "vitest";
+
+import { StructuredLogger } from "../../backend/structured-logger.js";
+import { FatalTransportError } from "../../client/remote-session.js";
+import { openSshTunnel, sshArguments } from "../../electron/connections/ssh-tunnel.js";
+import { MasterKeyEncryption } from "../../server/master-key.js";
+import { createWispServer } from "../../server/wisp-server.js";
+import type { SshConnectionProfile } from "../../shared/connections.js";
+
+const fakeSsh = path.join(__dirname, "../fixtures/fake-ssh.cjs");
+const cleanups: Array<() => Promise<void> | void> = [];
+const environment = { ...process.env };
+
+afterEach(async () => {
+  for (const cleanup of cleanups.splice(0).reverse()) await cleanup();
+  process.env = { ...environment };
+});
+
+const profile = (serverPort: number): SshConnectionProfile => ({
+  id: "home",
+  kind: "ssh",
+  name: "Home",
+  host: "home-server",
+  user: "wisp",
+  sshPort: 2222,
+  serverPort,
+});
+
+async function server() {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "wisp-ssh-"));
+  cleanups.push(() => rm(directory, { recursive: true, force: true }));
+  const instance = await createWispServer({
+    dataDirectory: directory,
+    host: "127.0.0.1",
+    port: 0,
+    encryption: new MasterKeyEncryption(randomBytes(32)),
+    logger: new StructuredLogger({ info: () => undefined, warn: () => undefined }),
+    agentMode: "fake",
+    appVersion: "1.0.0",
+    allowModelNetwork: false,
+  });
+  cleanups.push(() => instance.close());
+  return { directory, instance };
+}
+
+describe("openSshTunnel", () => {
+  it("forwards a free loopback port to the server and pairs through wispctl", async () => {
+    const { directory, instance } = await server();
+    const log = path.join(directory, "ssh.log");
+    process.env.FAKE_WISP_DATA_DIR = directory;
+    process.env.FAKE_SSH_LOG = log;
+    const tunnel = await openSshTunnel(profile(instance.port), { sshPath: fakeSsh });
+    cleanups.push(() => tunnel.close());
+    expect(tunnel.baseUrl).toMatch(/^http:\/\/127\.0\.0\.1:\d+$/);
+    expect(new URL(tunnel.baseUrl).port).not.toBe(String(instance.port));
+    expect((await fetch(`${tunnel.baseUrl}/health`)).status).toBe(200);
+    expect(await tunnel.requestPairingCode?.()).toMatch(/^[A-Z2-9]{5}-[A-Z2-9]{5}$/);
+
+    const calls = (await readFile(log, "utf8"))
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line) as string[]);
+    expect(calls[0]).toEqual(
+      expect.arrayContaining(["-N", "-o", "BatchMode=yes", "-p", "2222", "-l", "wisp", "--", "home-server"]),
+    );
+    expect(calls[0]?.at(-1)).toBe("home-server");
+    expect(calls[1]?.slice(-2)).toEqual(["home-server", 'PATH="$HOME/.local/bin:$PATH" wispctl pair --json']);
+
+    tunnel.close();
+    await tunnel.closed;
+  });
+
+  it("explains failures that retrying cannot fix", async () => {
+    for (const [mode, message] of [
+      ["hostkey", /host key of home-server is not trusted/],
+      ["denied", /rejected this computer's SSH key/],
+    ] as const) {
+      process.env.FAKE_SSH_FAIL = mode;
+      const failure = openSshTunnel(profile(1), { sshPath: fakeSsh });
+      await expect(failure).rejects.toBeInstanceOf(FatalTransportError);
+      await expect(failure).rejects.toThrow(message);
+    }
+    process.env.FAKE_SSH_FAIL = "resolve";
+    await expect(openSshTunnel(profile(1), { sshPath: fakeSsh })).rejects.not.toBeInstanceOf(FatalTransportError);
+    await expect(openSshTunnel(profile(1), { sshPath: path.join(os.tmpdir(), "no-such-ssh") })).rejects.toThrow(
+      /OpenSSH is not installed/,
+    );
+  });
+
+  it("reports a missing wispctl as a reason to enter the code by hand", async () => {
+    const { directory, instance } = await server();
+    process.env.FAKE_WISP_DATA_DIR = path.join(directory, "elsewhere");
+    const tunnel = await openSshTunnel(profile(instance.port), { sshPath: fakeSsh });
+    cleanups.push(() => tunnel.close());
+    await expect(tunnel.requestPairingCode?.()).rejects.toThrow(/run `wispctl pair` there and enter the code here/);
+  });
+
+  it("never passes options from profile fields", () => {
+    expect(sshArguments({ ...profile(8787), sshPort: undefined, user: undefined })).toEqual([
+      "-o",
+      "BatchMode=yes",
+      "-o",
+      "ConnectTimeout=15",
+      "-o",
+      "ServerAliveInterval=15",
+      "-o",
+      "ServerAliveCountMax=3",
+    ]);
+  });
+});

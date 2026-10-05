@@ -22,7 +22,7 @@ async function importsOf(directories: string[]): Promise<Array<[string, string]>
 
 describe("backend and server boundary", () => {
   it("never imports Electron or desktop code", async () => {
-    const imports = await importsOf(["backend", "server", "shared"]);
+    const imports = await importsOf(["backend", "client", "server", "shared"]);
     expect(imports.length).toBeGreaterThan(0);
     const offenders = imports.filter(([, specifier]) =>
       /^electron(-updater)?$|\/electron\/|^\.\.\/src\//.test(specifier),
@@ -33,7 +33,7 @@ describe("backend and server boundary", () => {
   it("only uses packages the server package installs", async () => {
     const manifest = JSON.parse(await readFile(path.join(root, "server/package.json"), "utf8"));
     const serverDependencies = Object.keys(manifest.dependencies as object);
-    const external = (await importsOf(["backend", "server", "shared"])).filter(
+    const external = (await importsOf(["backend", "client", "server", "shared"])).filter(
       ([, specifier]) => !specifier.startsWith(".") && !specifier.startsWith("node:"),
     );
     const missing = external.filter(([, specifier]) => {

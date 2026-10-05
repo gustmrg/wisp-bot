@@ -4,10 +4,9 @@ The Wisp server runs the same backend as the desktop app as a long-lived Linux
 process, without Electron. Wisps keep working when no client is connected:
 closing a client only closes its connection.
 
-This is a preview. The server, pairing, and the HTTP API are complete, but no
-client connects to it yet; the desktop app will connect over SSH in a later
-release. Until then the server is useful for trying the deployment and for
-building clients.
+The desktop app connects to a server over SSH or a private HTTPS address; see
+[Connect the desktop app](#connect-the-desktop-app). Web and mobile clients
+come later.
 
 ## What runs where
 
@@ -118,9 +117,43 @@ docker compose -f deploy/docker/compose.yaml exec wisp wispctl pair
 The compose file publishes the port on host loopback only and keeps data in the
 `wisp-data` volume.
 
+## Connect the desktop app
+
+Open **Settings → Connections** (or, on first launch, **Connect to a Wisp
+server instead**) and add the server:
+
+- **SSH** uses this computer's OpenSSH client with your agent, keys,
+  `~/.ssh/config`, and known hosts. Enter a host name, IP address, or alias,
+  an optional user and SSH port, and the server's port (8787 by default). Wisp
+  forwards a free local port to the server's loopback port; it never stores SSH
+  keys or passwords. Connect once with `ssh` in a terminal first, so the host
+  key is verified; Wisp refuses unknown or changed host keys rather than
+  accepting them. MagicDNS names and Tailscale SSH work like any other host; if
+  Tailscale SSH asks for a browser check, run `ssh` in a terminal once.
+- **HTTPS address** connects directly, for example to a Tailscale Serve
+  address. Plain HTTP is accepted only for `127.0.0.1` and `localhost`.
+
+Choosing **Use** switches every Wisp, conversation, setting, credential, and
+approval to that server; the app reloads from it. Over SSH, pairing runs
+`wispctl pair` on the server for you; this needs `wispctl` in `~/.local/bin`
+or on the PATH of non-interactive SSH sessions. Otherwise, or for an HTTPS
+address, enter a code from `wispctl pair` when asked.
+
+The app reopens the last connection on its next start, and starts Wisps on
+this computer only while **This computer** is chosen. If the server cannot be
+reached, a banner says so and the app reconnects with backoff; Wisps on the
+server keep working meanwhile. A device that was revoked asks to pair again
+and never pairs again on its own. Pairing credentials are kept with the
+system keychain; without one, the app pairs again after every restart.
+
+Some actions need a screen on the server and are not available while
+connected: opening a Wisp's folder, attaching files from this computer, and
+signing in to an MCP server with OAuth.
+
 ## Pair devices
 
-Every client pairs once with a one-time code:
+Every client pairs once with a one-time code. The desktop app does this over
+SSH by itself; other clients use:
 
 ```sh
 wispctl pair        # prints a code such as KD7QX-M2PZR, valid for 10 minutes
