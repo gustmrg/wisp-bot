@@ -1,7 +1,7 @@
 import type { IpcMain, IpcMainInvokeEvent } from "electron";
 
 import type { BackendResult } from "../../shared/contracts.js";
-import { sanitizeBackendError } from "../backend/backend-error.js";
+import { sanitizeBackendError } from "../../backend/backend-error.js";
 
 export type HandlerIpcMain = Pick<IpcMain, "handle" | "removeHandler">;
 export type SenderAuthorizer = (event: IpcMainInvokeEvent) => boolean;

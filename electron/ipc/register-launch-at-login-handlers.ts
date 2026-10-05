@@ -1,6 +1,6 @@
 import { WISP_IPC_CHANNELS } from "../../shared/contracts.js";
 import type { LaunchAtLoginService } from "../backend/launch-at-login-service.js";
-import { WispBackendError } from "../backend/backend-error.js";
+import { WispBackendError } from "../../backend/backend-error.js";
 import { registerGuardedHandlers, type HandlerIpcMain, type SenderAuthorizer } from "./guarded-handlers.js";
 
 export function registerLaunchAtLoginHandlers(

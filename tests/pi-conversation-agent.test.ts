@@ -1,13 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 
 import type { ModelSelection } from "../shared/contracts.js";
-import type { ConversationAgentContext } from "../electron/backend/conversation-agent.js";
-import {
-  PiConversationAgent,
-  type PiSessionFactory,
-  type PiSessionLike,
-} from "../electron/backend/pi-conversation-agent.js";
-import type { PiAgentEvent } from "../electron/backend/pi-event-translator.js";
+import type { ConversationAgentContext } from "../backend/conversation-agent.js";
+import { PiConversationAgent, type PiSessionFactory, type PiSessionLike } from "../backend/pi-conversation-agent.js";
+import type { PiAgentEvent } from "../backend/pi-event-translator.js";
 
 class MockPiSession implements PiSessionLike {
   isIdle = true;

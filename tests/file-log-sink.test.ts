@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { FileLogSink } from "../electron/backend/file-log-sink.js";
-import type { FileLogFs } from "../electron/backend/file-log-sink.js";
+import { FileLogSink } from "../backend/file-log-sink.js";
+import type { FileLogFs } from "../backend/file-log-sink.js";
 
 function fsStub() {
   const files = new Map<string, string>();

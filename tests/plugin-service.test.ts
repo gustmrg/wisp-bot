@@ -2,10 +2,10 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { PluginService } from "../electron/backend/plugin-service.js";
-import type { PluginAdapter, PluginToolSpec } from "../electron/backend/plugin-types.js";
-import type { EncryptionService } from "../electron/backend/encrypted-credential-store.js";
-import { WispBackendError } from "../electron/backend/backend-error.js";
+import { PluginService } from "../backend/plugin-service.js";
+import type { PluginAdapter, PluginToolSpec } from "../backend/plugin-types.js";
+import type { EncryptionService } from "../backend/encrypted-credential-store.js";
+import { WispBackendError } from "../backend/backend-error.js";
 
 const directories: string[] = [];
 

@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { WispBackendError } from "../electron/backend/backend-error.js";
-import { FakeConversationAgent } from "../electron/backend/fake-conversation-agent.js";
+import { WispBackendError } from "../backend/backend-error.js";
+import { FakeConversationAgent } from "../backend/fake-conversation-agent.js";
 import type { ConversationAgentEvent } from "../shared/contracts.js";
 
 describe("FakeConversationAgent", () => {

@@ -1,5 +1,5 @@
 import { WISP_IPC_CHANNELS } from "../../shared/contracts.js";
-import type { PluginService } from "../backend/plugin-service.js";
+import type { PluginService } from "../../backend/plugin-service.js";
 import { registerGuardedHandlers, type HandlerIpcMain, type SenderAuthorizer } from "./guarded-handlers.js";
 
 export function registerPluginHandlers(

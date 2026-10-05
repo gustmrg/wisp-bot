@@ -3,7 +3,7 @@ import { access, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises
 import { constants } from "node:fs";
 import path from "node:path";
 import type { LaunchAtLoginState } from "../../shared/contracts.js";
-import { WispBackendError } from "./backend-error.js";
+import { WispBackendError } from "../../backend/backend-error.js";
 
 interface Options {
   platform: string;

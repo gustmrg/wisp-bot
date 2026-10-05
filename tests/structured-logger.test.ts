@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { StructuredLogger } from "../electron/backend/structured-logger.js";
+import { StructuredLogger } from "../backend/structured-logger.js";
 
 describe("StructuredLogger", () => {
   it("redacts sensitive keys and secret-shaped values", () => {

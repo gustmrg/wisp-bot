@@ -14,6 +14,6 @@
     "noUncheckedIndexedAccess": true,
     "skipLibCheck": true
   },
-  "include": ["electron/**/*.ts", "shared/**/*.ts"],
+  "include": ["backend/**/*.ts", "electron/**/*.ts", "shared/**/*.ts"],
   "exclude": ["**/*.test.ts"]
 }

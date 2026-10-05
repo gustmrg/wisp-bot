@@ -26,7 +26,7 @@ vi.mock("node:fs/promises", async (importOriginal) => {
   };
 });
 
-import { writeFileAtomically } from "../electron/backend/atomic-file.js";
+import { writeFileAtomically } from "../backend/atomic-file.js";
 
 describe("writeFileAtomically", () => {
   it("flushes the data before the rename and the directory after it", async () => {

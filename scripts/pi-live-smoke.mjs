@@ -18,7 +18,7 @@ async function run() {
   try {
     const { ModelRuntime } = await import("@earendil-works/pi-coding-agent");
     const { PiConversationAgent, SdkPiSessionFactory } = await import(
-      "../dist-electron/electron/backend/pi-conversation-agent.js"
+      "../dist-electron/backend/pi-conversation-agent.js"
     );
     const workspaceDirectory = path.join(smokeDirectory, "workspace");
     const sessionDirectory = path.join(smokeDirectory, "sessions");

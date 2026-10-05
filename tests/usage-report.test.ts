@@ -2,9 +2,9 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { ConversationRepository } from "../electron/backend/conversation-repository.js";
-import { SessionReportService } from "../electron/backend/session-report-service.js";
-import { ModelPricingService } from "../electron/backend/model-pricing-service.js";
+import { ConversationRepository } from "../backend/conversation-repository.js";
+import { SessionReportService } from "../backend/session-report-service.js";
+import { ModelPricingService } from "../backend/model-pricing-service.js";
 import type { Chat } from "../shared/conversations.js";
 
 const directories: string[] = [];

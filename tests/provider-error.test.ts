@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { describeProviderError, isRetryableProviderError } from "../electron/backend/provider-error.js";
+import { describeProviderError, isRetryableProviderError } from "../backend/provider-error.js";
 
 describe("describeProviderError", () => {
   it("classifies by HTTP status with short actionable messages", () => {

@@ -5,12 +5,12 @@ import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { getToolMetadata, resetDynamicToolMetadata } from "../shared/tool-catalog.js";
-import { McpOAuthProvider } from "../electron/backend/mcp-oauth.js";
-import { McpSecretStore } from "../electron/backend/mcp-secret-store.js";
-import { McpService } from "../electron/backend/mcp-service.js";
-import type { McpConnection, McpConnectionAuth, McpConnectionOptions } from "../electron/backend/mcp-bridge.js";
-import type { EncryptionService } from "../electron/backend/encrypted-credential-store.js";
-import type { ToolAuthorizationBroker } from "../electron/backend/tool-authorization-broker.js";
+import { McpOAuthProvider } from "../backend/mcp-oauth.js";
+import { McpSecretStore } from "../backend/mcp-secret-store.js";
+import { McpService } from "../backend/mcp-service.js";
+import type { McpConnection, McpConnectionAuth, McpConnectionOptions } from "../backend/mcp-bridge.js";
+import type { EncryptionService } from "../backend/encrypted-credential-store.js";
+import type { ToolAuthorizationBroker } from "../backend/tool-authorization-broker.js";
 
 const encryption: EncryptionService = {
   isAvailable: () => encryptionAvailable,

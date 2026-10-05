@@ -5,8 +5,8 @@ import { DatabaseSync } from "node:sqlite";
 
 import { describe, expect, it } from "vitest";
 
-import { ConversationRepository } from "../electron/backend/conversation-repository.js";
-import { CONVERSATION_STORAGE_POLICY } from "../electron/backend/storage-policy.js";
+import { ConversationRepository } from "../backend/conversation-repository.js";
+import { CONVERSATION_STORAGE_POLICY } from "../backend/storage-policy.js";
 import type { Chat, Message } from "../shared/conversations.js";
 
 async function reload(directory: string): Promise<ConversationRepository> {

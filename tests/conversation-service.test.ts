@@ -4,11 +4,11 @@ import path from "node:path";
 
 import { describe, expect, it, vi } from "vitest";
 
-import { AgentRegistry } from "../electron/backend/agent-registry.js";
-import type { ConversationAgentContext, ConversationAgentFactory } from "../electron/backend/conversation-agent.js";
-import { ConversationRepository } from "../electron/backend/conversation-repository.js";
-import { ConversationService } from "../electron/backend/conversation-service.js";
-import { FakeConversationAgent, FakeConversationAgentFactory } from "../electron/backend/fake-conversation-agent.js";
+import { AgentRegistry } from "../backend/agent-registry.js";
+import type { ConversationAgentContext, ConversationAgentFactory } from "../backend/conversation-agent.js";
+import { ConversationRepository } from "../backend/conversation-repository.js";
+import { ConversationService } from "../backend/conversation-service.js";
+import { FakeConversationAgent, FakeConversationAgentFactory } from "../backend/fake-conversation-agent.js";
 import type { SequencedConversationAgentEvent } from "../shared/contracts.js";
 import type { Chat, ConversationDelta } from "../shared/conversations.js";
 

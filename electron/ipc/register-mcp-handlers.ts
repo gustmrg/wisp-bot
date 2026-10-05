@@ -1,5 +1,5 @@
 import { WISP_IPC_CHANNELS } from "../../shared/contracts.js";
-import type { McpService } from "../backend/mcp-service.js";
+import type { McpService } from "../../backend/mcp-service.js";
 import { registerGuardedHandlers, type HandlerIpcMain, type SenderAuthorizer } from "./guarded-handlers.js";
 
 export function registerMcpHandlers(

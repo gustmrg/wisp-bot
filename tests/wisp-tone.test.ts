@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { normalizeChat, normalizeChatChanges } from "../electron/backend/conversation-normalizer.js";
+import { normalizeChat, normalizeChatChanges } from "../backend/conversation-normalizer.js";
 import { normalizeWispTone, sameWispTone, storedWispTone } from "../shared/wisp-tone.js";
 
 const FORMAL_TONE = { style: "formal", length: "default", custom: "" };
