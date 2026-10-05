@@ -40,6 +40,9 @@ URL.
   (`electron/local-server/`), and it reaches servers on other machines over SSH
   or HTTPS the same way. See [headless server](remote-server.md) and
   [ADR 009](decisions/009-headless-server.md).
+- The browser app (`web/`, `src/web/`) is the same renderer served by a Wisp
+  server: `src/web/web-api.ts` implements `WispApi` over HTTP with cookie
+  sessions, so the app runs unchanged in a browser or installed on a phone.
 - `electron/connections/` chooses the server. The main process routes every
   runtime operation through `client/`'s reconnecting session, answers the local
   server's requests for screen actions (folders, file pickers, sign-in pages),
@@ -104,6 +107,7 @@ wisp-bot/
 │   └── security-policy.ts         # Pure URL, permission, and CSP policy
 ├── server/                        # Headless server: HTTP API, pairing, admin CLI
 ├── shared/                        # Cross-process contracts and domain types
+├── web/                           # Browser app shell: HTML, manifest, service worker
 ├── src/
 │   ├── components/                # Renderer feature and UI components
 │   ├── config/                    # Application metadata

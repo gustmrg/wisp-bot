@@ -1,5 +1,5 @@
 import type { BackendResult } from "../shared/contracts.js";
-import type { DeviceCredentials, HostRequest, HostResponse, RemoteEventType } from "../shared/remote-protocol.js";
+import type { HostRequest, HostResponse, RemoteEventType } from "../shared/remote-protocol.js";
 import { RemoteClient, RemoteError, type CredentialStore } from "./remote-client.js";
 
 /** A path to the server, such as an SSH tunnel or a direct HTTPS origin. */
@@ -25,7 +25,9 @@ export interface RemoteSessionOptions {
   serverName: string;
   deviceName: string;
   openTransport(signal: AbortSignal): Promise<RemoteTransport>;
-  credentials: CredentialStore & { load(): StoredCredentials | undefined };
+  credentials: CredentialStore;
+  /** Authenticate with HttpOnly cookies, as the browser app does. */
+  cookies?: boolean;
   onStatus(phase: RemoteSessionPhase, message?: string): void;
   onEvent(type: Exclude<RemoteEventType, "resync" | "hostRequest">, payload: unknown): void;
   /** Does what the server asked on this computer's screen; without it, every request is refused. */
@@ -35,8 +37,6 @@ export interface RemoteSessionOptions {
   /** Delay before reconnect attempt `attempt` (from 0). */
   backoffMs?: (attempt: number) => number;
 }
-
-export type StoredCredentials = DeviceCredentials;
 
 const defaultBackoff = (attempt: number): number =>
   Math.min(30_000, 1_000 * 2 ** attempt) * (0.8 + Math.random() * 0.4);
@@ -117,6 +117,15 @@ export class RemoteSession {
     };
   }
 
+  /** Ends this device's access to the server; it must pair again to come back. */
+  async signOut(): Promise<void> {
+    const client = this.client;
+    if (client && this.connected) await client.signOut().catch(() => undefined);
+    await this.options.credentials.save(undefined);
+    this.cursor = undefined;
+    this.requirePairing("Signed out. Enter a pairing code from `wispctl pair` to use this server again.");
+  }
+
   private async answer(client: RemoteClient, request: HostRequest): Promise<void> {
     let response: HostResponse;
     try {
@@ -159,6 +168,7 @@ export class RemoteSession {
         const client = new RemoteClient({
           baseUrl: transport.baseUrl,
           credentials: this.options.credentials,
+          ...(this.options.cookies ? { cookies: true } : {}),
           ...(transport.fetch ? { fetch: transport.fetch } : {}),
         });
         this.client = client;

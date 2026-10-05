@@ -31,6 +31,8 @@ export interface WispServerOptions {
   allowExternalBind?: boolean;
   /** The exact HTTPS origin a reverse proxy (such as Tailscale Serve) exposes the server at. */
   publicOrigin?: string;
+  /** The browser app's built files; without them the server answers only the API. */
+  webRoot?: string;
   encryption: EncryptionService;
   logger: StructuredLogger;
   agentMode: "pi" | "fake";
@@ -153,6 +155,8 @@ export async function createWispServer(options: WispServerOptions): Promise<Wisp
       version: options.appVersion,
       allowedHostNames,
       allowedOrigins: new Set(publicOrigin ? [publicOrigin.origin] : []),
+      ...(publicOrigin ? { publicOrigin: publicOrigin.origin } : {}),
+      ...(options.webRoot ? { webRoot: options.webRoot } : {}),
       logger: options.logger,
     });
     const http = createServer({ headersTimeout: 15_000, requestTimeout: 120_000 }, (request, response) =>

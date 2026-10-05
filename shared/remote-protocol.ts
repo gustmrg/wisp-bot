@@ -28,6 +28,13 @@ export interface PairRequest {
   deviceName: string;
 }
 
+/** A browser's view of its session: the tokens themselves stay in HttpOnly cookies. */
+export interface WebSession {
+  deviceId: string;
+  serverId: string;
+  accessExpiresAt: string;
+}
+
 export interface RefreshRequest {
   refreshToken: string;
 }

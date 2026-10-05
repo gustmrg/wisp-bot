@@ -4,6 +4,7 @@ import { useEffect, useRef } from "react";
 import { describe, expect, it, vi } from "vitest";
 
 import type { ConnectionsView, ConnectionStatus } from "../../../shared/connections";
+import { useScreenActions } from "./active-connection";
 import { ConnectionGate } from "./connection-gate";
 
 const profiles: ConnectionsView["profiles"] = [
@@ -31,6 +32,10 @@ function bridge(initial: ConnectionsView) {
   };
   Object.defineProperty(window, "wisp", { configurable: true, value: api });
   return { api, push: (next: ConnectionsView) => act(() => push(next)) };
+}
+
+function ScreenActionProbe() {
+  return <p>screen actions: {useScreenActions() ? "yes" : "no"}</p>;
 }
 
 function App({ onMount }: { onMount: () => void }) {
@@ -100,6 +105,39 @@ describe("ConnectionGate", () => {
     expect(api.retryConnection).toHaveBeenCalled();
     await userEvent.click(screen.getByRole("button", { name: "Use this computer instead" }));
     expect(api.activateConnection).toHaveBeenCalledWith({ id: "local" });
+  });
+
+  it("in the browser app, offers only pairing with the server that served it", async () => {
+    const web: ConnectionsView = {
+      activeId: "server",
+      profiles: [
+        { id: "server", kind: "url", name: "wisp.example.ts.net", url: "https://wisp.example.ts.net", paired: false },
+      ],
+      status: { profileId: "server", phase: "pairing_required", epoch: 0, message: "Enter a pairing code." },
+      secureStorageAvailable: true,
+      canManage: false,
+    };
+    bridge(web);
+    render(
+      <ConnectionGate>
+        <App onMount={() => undefined} />
+      </ConnectionGate>,
+    );
+    expect(await screen.findByRole("heading", { name: "Pair with wisp.example.ts.net" })).toBeVisible();
+    expect(screen.queryByRole("button", { name: "Use this computer instead" })).toBeNull();
+    expect(screen.queryByRole("button", { name: /Add a server/ })).toBeNull();
+  });
+
+  it("hides actions that need this computer's screen when Wisps run elsewhere", async () => {
+    const { push } = bridge(view({ phase: "local" }, "local"));
+    render(
+      <ConnectionGate>
+        <ScreenActionProbe />
+      </ConnectionGate>,
+    );
+    expect(await screen.findByText("screen actions: yes")).toBeVisible();
+    await push(view({ phase: "connected", epoch: 2 }));
+    expect(await screen.findByText("screen actions: no")).toBeVisible();
   });
 
   it("asks where Wisps run on a new installation", async () => {

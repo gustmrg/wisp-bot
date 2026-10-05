@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { FormEvent, KeyboardEvent } from "react";
+import { useScreenActions } from "@/features/connections/active-connection";
 import { ArrowUpIcon, FileIcon, LoaderCircleIcon, MicIcon, PaperclipIcon, SquareIcon, XIcon } from "lucide-react";
 
 import { useVoiceInput } from "@/hooks/use-voice-input";
@@ -62,6 +63,8 @@ export function ChatComposer({
   const [attachments, setAttachments] = useState<ReadonlyArray<WorkspaceAttachment>>([]);
   const [attaching, setAttaching] = useState(false);
   const [attachError, setAttachError] = useState("");
+  // Attaching picks files on this computer, so a server elsewhere cannot use them.
+  const screenActions = useScreenActions();
   const working = status === "working";
   const needsConfiguration = status === "configuration_required";
   const canSend = (status === "idle" || working) && !acknowledging && chat.kind === "wisp";
@@ -258,7 +261,7 @@ export function ChatComposer({
           >
             <XIcon aria-hidden="true" />
           </button>
-        ) : chat.kind === "wisp" ? (
+        ) : chat.kind === "wisp" && screenActions ? (
           <button
             type="button"
             className="flex size-[27px] flex-none items-center justify-center rounded-full border-0 bg-transparent text-dim enabled:hover:bg-accent enabled:hover:text-foreground disabled:opacity-[0.35] [&_svg]:size-3.5"

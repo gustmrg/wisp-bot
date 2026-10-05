@@ -4,6 +4,9 @@
 @import "@fontsource-variable/geist";
 @import "./src/mobile.css";
 
+/* Builds whose Vite root is elsewhere (the browser app in web/) still scan the renderer. */
+@source "./src";
+
 @custom-variant dark (&:where(.dark, .dark *));
 
 @theme inline {

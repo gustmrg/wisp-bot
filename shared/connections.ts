@@ -62,6 +62,11 @@ export interface ConnectionsView {
   status: ConnectionStatus;
   /** Whether pairing credentials are kept across restarts on this device. */
   secureStorageAvailable: boolean;
+  /**
+   * Whether this client can add, switch, or remove connections. False in the
+   * browser app, which always talks to the server that served it.
+   */
+  canManage?: boolean;
 }
 
 export type SaveConnectionRequest =

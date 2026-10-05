@@ -6,3 +6,4 @@ release/
 .zcode
 dist-server/
 deploy/docker/master.key
+dist-web/

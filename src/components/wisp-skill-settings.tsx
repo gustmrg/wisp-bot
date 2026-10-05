@@ -1,3 +1,4 @@
+import { useScreenActions } from "@/features/connections/active-connection";
 import { useCallback, useEffect, useState } from "react";
 import { FolderOpenIcon, RefreshCwIcon } from "lucide-react";
 
@@ -25,6 +26,8 @@ export function WispSkillSettings({ conversationId }: { conversationId: string }
 }
 
 function SkillPanel({ conversationId }: { conversationId: string }) {
+  // Opening a folder needs this computer's file manager and the Wisp's files on this computer.
+  const screenActions = useScreenActions();
   const [skills, setSkills] = useState<ReadonlyArray<SkillView> | null>(null);
   const [confirming, setConfirming] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -119,10 +122,12 @@ function SkillPanel({ conversationId }: { conversationId: string }) {
           ))}
         </ul>
       ) : null}
-      <Button className="w-full" variant="outline" onClick={() => void openFolder()}>
-        <FolderOpenIcon aria-hidden="true" />
-        Open skills folder
-      </Button>
+      {screenActions ? (
+        <Button className="w-full" variant="outline" onClick={() => void openFolder()}>
+          <FolderOpenIcon aria-hidden="true" />
+          Open skills folder
+        </Button>
+      ) : null}
       <Button className="w-full" variant="ghost" onClick={() => void load()}>
         <RefreshCwIcon aria-hidden="true" />
         Reload skills

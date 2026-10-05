@@ -7,6 +7,7 @@ import {
   type RemoteEventType,
   type RemoteTransportErrorCode,
   type ServerDescriptor,
+  type WebSession,
 } from "../shared/remote-protocol.js";
 import { readServerSentEvents } from "./sse.js";
 
@@ -29,19 +30,30 @@ export class RemoteError extends Error {
   }
 }
 
+/** Bearer credentials (desktop), or a browser's knowledge of its cookie session. */
+export type StoredSession = DeviceCredentials | WebSession;
+
 export interface CredentialStore {
-  load(): DeviceCredentials | undefined;
+  load(): StoredSession | undefined;
   /** Persists rotated credentials; `undefined` forgets them after the device lost access. */
-  save(credentials: DeviceCredentials | undefined): Promise<void>;
+  save(credentials: StoredSession | undefined): Promise<void>;
 }
 
 export interface RemoteClientOptions {
   /** The server origin, such as `http://127.0.0.1:43210` for a tunnel. */
   baseUrl: string;
   credentials: CredentialStore;
+  /**
+   * Authenticate with the server's HttpOnly cookies instead of bearer tokens,
+   * as a browser app served by the server does. No token reaches the page.
+   */
+  cookies?: boolean;
   fetch?: typeof fetch;
   now?: () => number;
 }
+
+/** Marks a cookie-authenticated request as the app's own; cross-site forms cannot set it. */
+const COOKIE_HEADERS: Record<string, string> = { "X-Wisp-Request": "1" };
 
 /** Routes other than operations answer `{ ok: true, value }`. */
 function valueOf(body: unknown): unknown {
@@ -58,17 +70,25 @@ export interface EventStreamHandlers {
 export class RemoteClient {
   private readonly fetch: typeof fetch;
   private readonly now: () => number;
-  private refreshing: Promise<DeviceCredentials> | undefined;
+  private refreshing: Promise<StoredSession> | undefined;
 
   constructor(private readonly options: RemoteClientOptions) {
     this.fetch = options.fetch ?? globalThis.fetch.bind(globalThis);
     this.now = options.now ?? Date.now;
   }
 
-  async pair(code: string, deviceName: string): Promise<DeviceCredentials> {
-    const credentials = valueOf(await this.request("/auth/pair", { code, deviceName })) as DeviceCredentials;
-    await this.options.credentials.save(credentials);
-    return credentials;
+  async pair(code: string, deviceName: string): Promise<StoredSession> {
+    const session = valueOf(
+      await this.request("/auth/pair", { code, deviceName, ...(this.options.cookies ? { mode: "web" } : {}) }),
+    ) as StoredSession;
+    await this.options.credentials.save(session);
+    return session;
+  }
+
+  /** Ends this device's access to the server. */
+  async signOut(): Promise<void> {
+    await this.authorized("POST", "/auth/logout", {});
+    await this.options.credentials.save(undefined);
   }
 
   async describe(): Promise<ServerDescriptor> {
@@ -103,13 +123,13 @@ export class RemoteClient {
       idle = setTimeout(abort, STREAM_IDLE_TIMEOUT_MS);
     };
     try {
-      const open = (token: string): Promise<Response> =>
+      const open = (auth: Record<string, string>): Promise<Response> =>
         this.send(`${REMOTE_API_PREFIX}/events`, {
-          headers: { Authorization: `Bearer ${token}`, ...(cursor ? { "Last-Event-ID": cursor } : {}) },
+          headers: { ...auth, ...(cursor ? { "Last-Event-ID": cursor } : {}) },
           signal: controller.signal,
         });
-      let response = await open(await this.accessToken());
-      if (response.status === 401) response = await open((await this.refresh()).accessToken);
+      let response = await open(await this.authHeaders());
+      if (response.status === 401) response = await open(await this.authHeaders(true));
       if (!response.ok || !response.body) throw await this.failure(response);
       resetIdle();
       handlers.onOpen();
@@ -131,48 +151,52 @@ export class RemoteClient {
   }
 
   private async authorized(method: "GET" | "POST", path: string, body?: unknown, timeout = false): Promise<unknown> {
-    const attempt = async (token: string): Promise<Response> =>
+    const attempt = async (auth: Record<string, string>): Promise<Response> =>
       this.send(`${REMOTE_API_PREFIX}${path}`, {
         method,
         headers: {
-          Authorization: `Bearer ${token}`,
+          ...auth,
           ...(body === undefined ? {} : { "Content-Type": "application/json" }),
         },
         ...(body === undefined ? {} : { body: encodeRemoteJson(body) }),
         ...(timeout ? { signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) } : {}),
       });
-    let response = await attempt(await this.accessToken());
+    let response = await attempt(await this.authHeaders());
     // A 401 means the request never ran, so repeating it once with fresh credentials is safe.
-    if (response.status === 401) response = await attempt((await this.refresh()).accessToken);
+    if (response.status === 401) response = await attempt(await this.authHeaders(true));
     return this.bodyOf(response);
   }
 
   private async request(path: string, body: unknown): Promise<unknown> {
     const response = await this.send(`${REMOTE_API_PREFIX}${path}`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...(this.options.cookies ? COOKIE_HEADERS : {}) },
       body: encodeRemoteJson(body),
       signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     });
     return this.bodyOf(response);
   }
 
-  private async accessToken(): Promise<string> {
-    const credentials = this.options.credentials.load();
-    if (!credentials) throw new RemoteError("unauthorized", "This device is not paired with the server.");
-    if (Date.parse(credentials.accessExpiresAt) - REFRESH_MARGIN_MS > this.now()) return credentials.accessToken;
-    return (await this.refresh()).accessToken;
+  /** Headers that authenticate a request, refreshing first when asked or when the access token is about to expire. */
+  private async authHeaders(refreshFirst = false): Promise<Record<string, string>> {
+    let session = this.options.credentials.load();
+    if (!session) throw new RemoteError("unauthorized", "This device is not paired with the server.");
+    if (refreshFirst || Date.parse(session.accessExpiresAt) - REFRESH_MARGIN_MS <= this.now()) {
+      session = await this.refresh();
+    }
+    if (this.options.cookies) return COOKIE_HEADERS;
+    return { Authorization: `Bearer ${(session as DeviceCredentials).accessToken}` };
   }
 
   /** Rotates credentials once for every concurrent caller. */
-  private refresh(): Promise<DeviceCredentials> {
+  private refresh(): Promise<StoredSession> {
     this.refreshing ??= (async () => {
       const current = this.options.credentials.load();
       if (!current) throw new RemoteError("unauthorized", "This device is not paired with the server.");
       try {
-        const next = valueOf(
-          await this.request("/auth/refresh", { refreshToken: current.refreshToken }),
-        ) as DeviceCredentials;
+        // A browser's refresh token is a cookie the page cannot read.
+        const body = this.options.cookies ? {} : { refreshToken: (current as DeviceCredentials).refreshToken };
+        const next = valueOf(await this.request("/auth/refresh", body)) as StoredSession;
         await this.options.credentials.save(next);
         return next;
       } catch (error) {
@@ -188,7 +212,10 @@ export class RemoteClient {
 
   private async send(path: string, init: RequestInit): Promise<Response> {
     try {
-      return await this.fetch(new URL(path, this.options.baseUrl), init);
+      return await this.fetch(new URL(path, this.options.baseUrl), {
+        ...init,
+        ...(this.options.cookies ? { credentials: "same-origin" as const } : {}),
+      });
     } catch (error) {
       if (
         init.signal?.aborted &&
