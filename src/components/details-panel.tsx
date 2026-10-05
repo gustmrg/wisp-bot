@@ -20,6 +20,7 @@ import { canDeleteChat } from "@/lib/chat-schema";
 import { detailsLayoutStyle } from "@/lib/layout";
 import { panelResizer } from "@/lib/ui-classes";
 import { cn } from "@/lib/utils";
+import type { IntegrationSettingsTarget } from "@/lib/plugin-access";
 
 interface DetailsPanelProps {
   mobile?: boolean;
@@ -27,6 +28,7 @@ interface DetailsPanelProps {
   chats: ChatSummaryCollection;
   width: number;
   onChange: (changes: ChatChanges) => Promise<boolean> | void;
+  onOpenSettings?: (target: IntegrationSettingsTarget) => void;
   onClose: () => void;
   onDelete: () => void;
   onResizeStart: (event: ReactPointerEvent<HTMLDivElement>) => void;
@@ -37,6 +39,7 @@ function DetailsPanel({
   chats,
   width,
   onChange,
+  onOpenSettings,
   onClose,
   onDelete,
   onResizeStart,
@@ -141,6 +144,7 @@ function DetailsPanel({
           key={chat.id}
           chat={chat}
           onChange={onChange}
+          onOpenSettings={onOpenSettings}
           generalActions={
             <>
               {shareControl}

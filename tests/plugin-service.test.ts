@@ -8,6 +8,12 @@ import type { EncryptionService } from "../electron/backend/encrypted-credential
 import { WispBackendError } from "../electron/backend/backend-error.js";
 
 const directories: string[] = [];
+
+/** An access form without provider choices, so web tools follow catalog order among grants. */
+function accessForm(service: PluginService, conversationId: string) {
+  const { revision, grants } = service.getAccess({ conversationId });
+  return { conversationId, revision, grants };
+}
 afterEach(async () => {
   await Promise.all(directories.splice(0).map((directory) => rm(directory, { recursive: true, force: true })));
 });
@@ -22,6 +28,8 @@ async function setup() {
   };
   const execute = vi.fn(async () => "Provider result");
   const executeFirecrawl = vi.fn(async () => "Firecrawl result");
+  const executeTavily = vi.fn(async () => "Tavily result");
+  const executeExa = vi.fn(async () => "Exa result");
   const testConnection = vi.fn(async () => "Connected");
   const authorize = vi.fn(async () => undefined);
   const sessions = new Map([
@@ -48,6 +56,22 @@ async function setup() {
       ],
       testConnection,
     },
+    {
+      id: "tavily",
+      tools: [
+        { ...spec("web_search", "read"), execute: executeTavily },
+        { ...spec("web_read", "read"), execute: executeTavily },
+      ],
+      testConnection,
+    },
+    {
+      id: "exa",
+      tools: [
+        { ...spec("web_search", "read"), execute: executeExa },
+        { ...spec("web_read", "read"), execute: executeExa },
+      ],
+      testConnection,
+    },
   ];
   const options = {
     dataDirectory,
@@ -66,7 +90,7 @@ async function setup() {
     await service.save({ pluginId: "linear", enabled: true, apiKey: "secret-linear-key" });
   };
   const grant = (access: "none" | "read" | "write", conversationId = "one") =>
-    service.saveAccess({ ...service.getAccess({ conversationId }), grants: [{ pluginId: "linear", access }] });
+    service.saveAccess({ ...accessForm(service, conversationId), grants: [{ pluginId: "linear", access }] });
   const call = (name: string, conversationId = "one", signal?: AbortSignal) =>
     service
       .getTools(conversationId)
@@ -80,6 +104,8 @@ async function setup() {
     call,
     execute,
     executeFirecrawl,
+    executeTavily,
+    executeExa,
     authorize,
     testConnection,
     sessions,
@@ -88,6 +114,133 @@ async function setup() {
 }
 
 describe("plugin service", () => {
+  it.each(["tavily", "exa"] as const)("isolates %s access and revokes it after key replacement", async (pluginId) => {
+    const { service, call, executeTavily, executeExa, authorize } = await setup();
+    const executeProvider = pluginId === "tavily" ? executeTavily : executeExa;
+    await service.save({ pluginId, enabled: true, apiKey: `${pluginId}-key` });
+    expect(await service.getActiveToolNames("one")).toEqual([]);
+    await service.saveAccess({
+      ...accessForm(service, "one"),
+      grants: [{ pluginId, access: "read" }],
+    });
+    expect(service.getTools("one").filter(({ name }) => name === "web_search")).toHaveLength(1);
+    expect(service.getTools("one").filter(({ name }) => name === "web_read")).toHaveLength(1);
+    expect(await service.getActiveToolNames("one")).toEqual(["web_search", "web_read"]);
+    await expect(call("web_search", "two")).rejects.toMatchObject({ code: "tool_blocked" });
+    await expect(call("web_read", "two")).rejects.toMatchObject({ code: "tool_blocked" });
+    expect(executeProvider).not.toHaveBeenCalled();
+    await call("web_search");
+    await call("web_read");
+    expect(executeProvider).toHaveBeenCalledTimes(2);
+    expect(executeProvider).toHaveBeenCalledWith(`${pluginId}-key`, {}, expect.any(AbortSignal));
+    expect(authorize).not.toHaveBeenCalled();
+    expect(() =>
+      service.saveAccess({
+        ...accessForm(service, "one"),
+        grants: [{ pluginId, access: "write" }],
+      }),
+    ).toThrow();
+    await service.save({ pluginId, enabled: true, apiKey: "replacement-key" });
+    expect(await service.getActiveToolNames("one")).toEqual([]);
+    await expect(call("web_read")).rejects.toMatchObject({ code: "tool_blocked" });
+  });
+
+  it("keeps existing provider priority and selects Tavily then Exa using live grants", async () => {
+    const { service, call, execute, executeFirecrawl, executeTavily, executeExa } = await setup();
+    const providers = ["web-search", "firecrawl", "tavily", "exa"] as const;
+    for (const pluginId of providers) await service.save({ pluginId, enabled: true, apiKey: `${pluginId}-key` });
+    await service.saveAccess({
+      ...accessForm(service, "one"),
+      grants: providers.map((pluginId) => ({ pluginId, access: "read" })),
+    });
+    expect(await service.getActiveToolNames("one")).toEqual(["web_search", "web_read"]);
+    await call("web_search");
+    await call("web_read");
+    expect(execute).toHaveBeenCalledTimes(1);
+    expect(executeFirecrawl).toHaveBeenCalledTimes(1);
+    expect(executeTavily).not.toHaveBeenCalled();
+    expect(executeExa).not.toHaveBeenCalled();
+    await service.save({ pluginId: "firecrawl", enabled: false });
+    await service.save({ pluginId: "web-search", enabled: false });
+    const before = await service.getSnapshot("one");
+    await call("web_search");
+    await call("web_read");
+    expect(executeTavily).toHaveBeenCalledTimes(2);
+    expect(executeExa).not.toHaveBeenCalled();
+    await service.saveAccess({
+      ...accessForm(service, "one"),
+      grants: [{ pluginId: "exa", access: "read" }],
+    });
+    const after = await service.getSnapshot("one");
+    expect(after.activeNames).toEqual(before.activeNames);
+    expect(after.revision).not.toBe(before.revision);
+    await call("web_search");
+    await call("web_read");
+    expect(executeExa).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not retry failed Tavily search or reading with Exa", async () => {
+    const { service, call, executeTavily, executeExa } = await setup();
+    for (const pluginId of ["tavily", "exa"] as const)
+      await service.save({ pluginId, enabled: true, apiKey: `${pluginId}-key` });
+    await service.saveAccess({
+      ...accessForm(service, "one"),
+      grants: [
+        { pluginId: "tavily", access: "read" },
+        { pluginId: "exa", access: "read" },
+      ],
+    });
+    for (const name of ["web_search", "web_read"]) {
+      executeTavily.mockRejectedValueOnce(new Error("private provider failure"));
+      await expect(call(name)).rejects.toMatchObject({ code: "internal_error" });
+    }
+    expect(executeExa).not.toHaveBeenCalled();
+  });
+
+  it("preserves all prior connections and grants when settings predate Tavily and Exa", async () => {
+    const { service, options, dataDirectory } = await setup();
+    for (const pluginId of ["web-search", "linear", "firecrawl"] as const)
+      await service.save({ pluginId, enabled: true, apiKey: `${pluginId}-key` });
+    await service.saveAccess({
+      ...accessForm(service, "one"),
+      grants: [
+        { pluginId: "web-search", access: "read" },
+        { pluginId: "linear", access: "write" },
+        { pluginId: "firecrawl", access: "read" },
+      ],
+    });
+    const priorAccess = service.getAccess({ conversationId: "one" });
+    const file = path.join(dataDirectory, "plugins.json");
+    const state = JSON.parse(await readFile(file, "utf8"));
+    delete state.enabled.tavily;
+    delete state.enabled.exa;
+    await writeFile(file, JSON.stringify(state));
+    const reopened = new PluginService(options);
+    await reopened.load();
+    expect(reopened.getAccess({ conversationId: "one" })).toEqual(priorAccess);
+    expect(await reopened.getActiveToolNames("one")).toEqual([
+      "web_search",
+      "linear_get_issue",
+      "linear_update_issue",
+      "web_read",
+    ]);
+    const view = await reopened.getView();
+    expect(view.plugins.filter(({ id }) => id === "tavily" || id === "exa")).toHaveLength(2);
+    expect(
+      view.plugins.every(({ id, enabled, configured }) =>
+        id === "tavily" || id === "exa" ? !enabled && !configured : enabled && configured,
+      ),
+    ).toBe(true);
+    await reopened.save({ pluginId: "tavily", enabled: true, apiKey: "tavily-key" });
+    const persisted = new PluginService(options);
+    await persisted.load();
+    expect(persisted.getAccess({ conversationId: "one" }).grants).toEqual(priorAccess.grants);
+    expect((await persisted.getView()).plugins.find(({ id }) => id === "tavily")).toMatchObject({
+      enabled: true,
+      configured: true,
+    });
+  });
+
   it("exposes one search capability, prefers authorized Brave and routes Firecrawl-only Wisps independently", async () => {
     const { service, call, execute, executeFirecrawl, authorize } = await setup();
     await service.save({ pluginId: "web-search", enabled: true, apiKey: "brave-key" });
@@ -95,14 +248,14 @@ describe("plugin service", () => {
     expect(await service.getActiveToolNames("one")).toEqual([]);
     expect(service.getTools("one").filter(({ name }) => name === "web_search")).toHaveLength(1);
     await service.saveAccess({
-      ...service.getAccess({ conversationId: "one" }),
+      ...accessForm(service, "one"),
       grants: [
         { pluginId: "web-search", access: "read" },
         { pluginId: "firecrawl", access: "read" },
       ],
     });
     await service.saveAccess({
-      ...service.getAccess({ conversationId: "two" }),
+      ...accessForm(service, "two"),
       grants: [{ pluginId: "firecrawl", access: "read" }],
     });
     expect(await service.getActiveToolNames("one")).toEqual(["web_search", "web_read"]);
@@ -122,7 +275,7 @@ describe("plugin service", () => {
     await service.save({ pluginId: "web-search", enabled: true, apiKey: "brave-key" });
     await service.save({ pluginId: "firecrawl", enabled: true, apiKey: "firecrawl-key" });
     await service.saveAccess({
-      ...service.getAccess({ conversationId: "one" }),
+      ...accessForm(service, "one"),
       grants: [
         { pluginId: "web-search", access: "read" },
         { pluginId: "firecrawl", access: "read" },
@@ -131,7 +284,7 @@ describe("plugin service", () => {
     const before = await service.getSnapshot("one");
     const staleTool = service.getTools("one").find(({ name }) => name === "web_search")!;
     await service.saveAccess({
-      ...service.getAccess({ conversationId: "one" }),
+      ...accessForm(service, "one"),
       grants: [{ pluginId: "firecrawl", access: "read" }],
     });
     const after = await service.getSnapshot("one");
@@ -143,12 +296,12 @@ describe("plugin service", () => {
     await service.save({ pluginId: "firecrawl", enabled: true, apiKey: "replacement-key" });
     await expect(call("web_read")).rejects.toMatchObject({ code: "tool_blocked" });
     await service.saveAccess({
-      ...service.getAccess({ conversationId: "one" }),
+      ...accessForm(service, "one"),
       grants: [{ pluginId: "firecrawl", access: "read" }],
     });
     sessions.set("one", "replacement-session");
     await service.saveAccess({
-      ...service.getAccess({ conversationId: "one" }),
+      ...accessForm(service, "one"),
       grants: [{ pluginId: "firecrawl", access: "read" }],
     });
     await expect(staleTool.execute("stale", {}, undefined, undefined, {} as never)).rejects.toMatchObject({
@@ -162,7 +315,7 @@ describe("plugin service", () => {
     await service.save({ pluginId: "web-search", enabled: true, apiKey: "brave-key" });
     await service.save({ pluginId: "firecrawl", enabled: true, apiKey: "firecrawl-key" });
     await service.saveAccess({
-      ...service.getAccess({ conversationId: "one" }),
+      ...accessForm(service, "one"),
       grants: [
         { pluginId: "web-search", access: "read" },
         { pluginId: "firecrawl", access: "read" },
@@ -180,6 +333,8 @@ describe("plugin service", () => {
     const file = path.join(dataDirectory, "plugins.json");
     const state = JSON.parse(await readFile(file, "utf8"));
     delete state.enabled.firecrawl;
+    delete state.enabled.tavily;
+    delete state.enabled.exa;
     await writeFile(file, JSON.stringify(state));
     const reopened = new PluginService(options);
     await reopened.load();
@@ -190,7 +345,7 @@ describe("plugin service", () => {
     });
     expect(() =>
       service.saveAccess({
-        ...service.getAccess({ conversationId: "one" }),
+        ...accessForm(service, "one"),
         grants: [{ pluginId: "firecrawl", access: "write" }],
       }),
     ).toThrow();
@@ -306,19 +461,19 @@ describe("plugin service", () => {
     }
     expect(() =>
       service.saveAccess({
-        ...service.getAccess({ conversationId: "one" }),
+        ...accessForm(service, "one"),
         grants: [{ pluginId: "web-search", access: "write" }],
       }),
     ).toThrow();
     expect(() =>
       service.saveAccess({
-        ...service.getAccess({ conversationId: "one" }),
+        ...accessForm(service, "one"),
         grants: [{ pluginId: "linear", access: ["read"] }],
       }),
     ).toThrow();
     expect(() =>
       service.saveAccess({
-        ...service.getAccess({ conversationId: "one" }),
+        ...accessForm(service, "one"),
         grants: [
           { pluginId: "linear", access: "read" },
           { pluginId: "linear", access: "none" },
@@ -381,7 +536,7 @@ describe("plugin service", () => {
     await expect(reopened.saveAccess(beforeRevocation)).rejects.toMatchObject({ code: "invalid_request" });
     expect(await reopened.getActiveToolNames("one")).toEqual([]);
     await reopened.saveAccess({
-      ...reopened.getAccess({ conversationId: "one" }),
+      ...accessForm(reopened, "one"),
       grants: [{ pluginId: "linear", access: "read" }],
     });
     expect(await reopened.getActiveToolNames("one")).toEqual(["linear_get_issue"]);
@@ -453,5 +608,82 @@ describe("plugin service", () => {
     const reopened = new PluginService(options);
     await reopened.load();
     expect(reopened.getAccess({ conversationId: "one" }).grants.every(({ access }) => access === "none")).toBe(true);
+  });
+
+  it("routes each web capability to the provider chosen for that Wisp, regardless of catalog order", async () => {
+    const { service, call, execute, executeFirecrawl, executeTavily, executeExa, options } = await setup();
+    for (const pluginId of ["web-search", "firecrawl", "tavily", "exa"] as const)
+      await service.save({ pluginId, enabled: true, apiKey: `${pluginId}-key` });
+    const view = service.getAccess({ conversationId: "one" });
+    expect(view.webProviders).toEqual({ search: null, read: null });
+    await service.saveAccess({
+      conversationId: "one",
+      revision: view.revision,
+      grants: [
+        { pluginId: "tavily", access: "read" },
+        { pluginId: "exa", access: "read" },
+      ],
+      webProviders: { search: "tavily", read: "exa" },
+    });
+    expect(service.getAccess({ conversationId: "one" }).webProviders).toEqual({ search: "tavily", read: "exa" });
+    expect(await service.getActiveToolNames("one")).toEqual(["web_search", "web_read"]);
+    await call("web_search");
+    await call("web_read");
+    expect(executeTavily).toHaveBeenCalledTimes(1);
+    expect(executeExa).toHaveBeenCalledTimes(1);
+    expect(execute).not.toHaveBeenCalled();
+    expect(executeFirecrawl).not.toHaveBeenCalled();
+
+    // An unavailable choice turns the capability off instead of falling back to another paid provider.
+    await service.save({ pluginId: "tavily", enabled: false });
+    expect(await service.getActiveToolNames("one")).toEqual(["web_read"]);
+    await expect(call("web_search")).rejects.toMatchObject({ code: "tool_blocked" });
+    await service.save({ pluginId: "tavily", enabled: true });
+
+    const reopened = new PluginService(options);
+    await reopened.load();
+    expect(reopened.getAccess({ conversationId: "one" }).webProviders).toEqual({ search: "tavily", read: "exa" });
+
+    // Removing a provider clears it from every capability that used it.
+    await reopened.remove({ pluginId: "exa" });
+    expect(reopened.getAccess({ conversationId: "one" }).webProviders).toEqual({ search: "tavily", read: null });
+    expect(await reopened.getActiveToolNames("one")).toEqual(["web_search"]);
+  });
+
+  it("rejects provider choices that are not granted or cannot supply the capability", async () => {
+    const { service } = await setup();
+    await service.save({ pluginId: "web-search", enabled: true, apiKey: "brave-key" });
+    await service.save({ pluginId: "tavily", enabled: true, apiKey: "tavily-key" });
+    const { revision } = service.getAccess({ conversationId: "one" });
+    for (const webProviders of [
+      { search: "tavily", read: null },
+      { search: null, read: "web-search" },
+      { search: "linear", read: null },
+      { search: "tavily", read: null, extra: null },
+    ])
+      expect(() =>
+        service.saveAccess({
+          conversationId: "one",
+          revision,
+          grants: [{ pluginId: "web-search", access: "read" }],
+          webProviders,
+        }),
+      ).toThrow();
+  });
+
+  it("saves default providers only for connected providers and reports a fallback default", async () => {
+    const { service } = await setup();
+    expect((await service.getView()).defaultProviders).toEqual({ search: null, read: null });
+    await service.save({ pluginId: "web-search", enabled: true, apiKey: "brave-key" });
+    await service.save({ pluginId: "exa", enabled: true, apiKey: "exa-key" });
+    expect((await service.getView()).defaultProviders).toEqual({ search: "web-search", read: "exa" });
+    await expect(service.saveDefaults({ defaultProviders: { search: "tavily", read: null } })).rejects.toMatchObject({
+      code: "configuration_required",
+    });
+    expect(() => service.saveDefaults({ defaultProviders: { search: null, read: "web-search" } })).toThrow();
+    const view = await service.saveDefaults({ defaultProviders: { search: "exa", read: "exa" } });
+    expect(view.defaultProviders).toEqual({ search: "exa", read: "exa" });
+    await service.remove({ pluginId: "exa" });
+    expect((await service.getView()).defaultProviders).toEqual({ search: "web-search", read: null });
   });
 });

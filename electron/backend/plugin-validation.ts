@@ -1,11 +1,15 @@
 import {
   PLUGIN_IDS,
   PLUGIN_CATALOG,
+  WEB_CAPABILITIES,
+  pluginCatalogEntry,
   type PluginId,
   type PluginGrant,
+  type SavePluginDefaultsRequest,
   type SavePluginSettingsRequest,
   type TestPluginConnectionRequest,
   type SaveWispPluginAccessRequest,
+  type WebProviders,
 } from "../../shared/plugins.js";
 import { WispBackendError } from "./backend-error.js";
 
@@ -70,13 +74,42 @@ export function parseGrants(value: unknown): PluginGrant[] {
   });
 }
 
+/** Parses one provider per web capability; each provider must supply that capability. */
+export function parseWebProviders(value: unknown): WebProviders {
+  const raw = pluginRecord(
+    value,
+    WEB_CAPABILITIES.map(({ id }) => id),
+  );
+  const providers = { search: null, read: null } as WebProviders;
+  for (const { id: capability } of WEB_CAPABILITIES) {
+    if (raw[capability] === null || raw[capability] === undefined) continue;
+    const pluginId = parsePluginId(raw[capability]);
+    if (!pluginCatalogEntry(pluginId).capabilities.includes(capability)) throw invalidPluginRequest();
+    providers[capability] = pluginId;
+  }
+  return providers;
+}
+
+export function parseSavePluginDefaults(value: unknown): SavePluginDefaultsRequest {
+  return { defaultProviders: parseWebProviders(pluginRecord(value, ["defaultProviders"]).defaultProviders) };
+}
+
 export function parseSaveWispPluginAccess(value: unknown): SaveWispPluginAccessRequest {
-  const raw = pluginRecord(value, ["conversationId", "revision", "grants"]);
+  const raw = pluginRecord(value, ["conversationId", "revision", "grants", "webProviders"]);
   if (typeof raw.revision !== "string" || !/^[a-f0-9]{64}$/.test(raw.revision)) throw invalidPluginRequest();
+  const grants = parseGrants(raw.grants);
+  if (raw.webProviders === undefined)
+    return { ...parsePluginConversation({ conversationId: raw.conversationId }), revision: raw.revision, grants };
+  const webProviders = parseWebProviders(raw.webProviders);
+  // A selected provider needs its own grant, so revocation and key replacement keep working per plugin.
+  for (const pluginId of Object.values(webProviders))
+    if (pluginId && grants.find((grant) => grant.pluginId === pluginId)?.access !== "read")
+      throw invalidPluginRequest();
   return {
     ...parsePluginConversation({ conversationId: raw.conversationId }),
     revision: raw.revision,
-    grants: parseGrants(raw.grants),
+    grants,
+    webProviders,
   };
 }
 

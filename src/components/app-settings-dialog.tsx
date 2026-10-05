@@ -47,10 +47,12 @@ import { normalizeTheme } from "@/lib/theme";
 import { profileAvatar } from "@/lib/ui-classes";
 import { cn } from "@/lib/utils";
 import type { UpdateState } from "../../shared/contracts";
+import type { PluginId } from "../../shared/plugins";
+import type { WispOption } from "@/lib/plugin-access";
 
 type SettingsSection = "general" | "model" | "voice" | "plugins" | "mcp" | "shortcuts" | "about" | "usage";
 /** Sections other parts of the app can open the dialog at. */
-export type SettingsEntrySection = "general" | "model" | "voice";
+export type SettingsEntrySection = "general" | "model" | "voice" | "plugins" | "mcp";
 
 /** Navigation order; entries without a section are announced but not available yet. */
 const NAV_ITEMS: ReadonlyArray<
@@ -81,6 +83,10 @@ interface AppSettingsDialogProps {
   userProfile: UserProfileController;
   open: boolean;
   initialSection?: SettingsEntrySection;
+  /** Plugin to open directly when the dialog starts at Plugins. */
+  initialPluginId?: PluginId;
+  /** Wisps that Plugins can give access to. */
+  wisps?: ReadonlyArray<WispOption>;
   preferences: AppPreferences;
   persistenceStatus: PersistenceStatus;
   persistenceError: string | null;
@@ -94,6 +100,8 @@ const navButton =
 function AppSettingsDialog({
   appMetadata,
   initialSection = "general",
+  initialPluginId,
+  wisps,
   mobile = false,
   onOpenConversations,
   currentUser,
@@ -250,7 +258,13 @@ function AppSettingsDialog({
           )}
         </nav>
         {section === "usage" && open && !showOverview ? <UsageSettingsSection /> : null}
-        {section === "plugins" && open && !showOverview ? <PluginSettingsSection /> : null}
+        {section === "plugins" && open && !showOverview ? (
+          <PluginSettingsSection
+            wisps={wisps}
+            initialPluginId={initialPluginId}
+            onOpenMcpSettings={() => openSection("mcp")}
+          />
+        ) : null}
         {section === "mcp" && open && !showOverview ? <McpSettingsSection /> : null}
         <section
           className="overflow-y-auto px-[30px] py-6 max-[620px]:px-4 max-[620px]:py-5"

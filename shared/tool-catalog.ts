@@ -52,7 +52,7 @@ export const TOOL_CATALOG: ReadonlyArray<ToolMetadata> = [
     label: "Read web page",
     activityLabel: "Reading a web page…",
     category: "read",
-    pluginId: "firecrawl",
+    pluginIds: ["firecrawl", "tavily", "exa"],
   },
   // Preserve display metadata for saved conversations using the old name.
   {
@@ -67,7 +67,7 @@ export const TOOL_CATALOG: ReadonlyArray<ToolMetadata> = [
     label: "Search web",
     activityLabel: "Searching the web…",
     category: "search",
-    pluginIds: ["web-search", "firecrawl"],
+    pluginIds: ["web-search", "firecrawl", "tavily", "exa"],
   },
   {
     name: "linear_search_issues",

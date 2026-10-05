@@ -3,6 +3,7 @@ import type { WispApi } from "../../shared/contracts";
 const REQUIRED_WISP_METHODS = [
   "getPluginSettings",
   "savePluginSettings",
+  "savePluginDefaults",
   "removePlugin",
   "testPluginConnection",
   "getWispPluginAccess",

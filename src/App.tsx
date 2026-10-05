@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { AppSettingsDialogHost } from "@/components/app-settings-dialog-host";
 import type { AppSettingsDialogHandle } from "@/components/app-settings-dialog-host";
@@ -18,6 +18,7 @@ import { useWorkspaceController } from "@/features/workspace/use-workspace-contr
 import { DETAILS_LAYOUT, SIDEBAR_LAYOUT } from "@/lib/layout";
 import { mainPanel } from "@/lib/ui-classes";
 import { cn } from "@/lib/utils";
+import type { PluginId } from "../shared/plugins";
 
 export default function App() {
   const userProfile = useUserProfile();
@@ -51,6 +52,13 @@ function Workspace({ userProfile }: { userProfile: UserProfileController }) {
   const [searchOpen, setSearchOpen] = useState(false);
   const settingsDialog = useRef<AppSettingsDialogHandle>(null);
   const navigationVersion = useRef(0);
+  const wisps = useMemo(
+    () =>
+      Object.values(workspace.chats)
+        .filter((chat) => chat.kind === "wisp")
+        .map(({ id, name }) => ({ id, name })),
+    [workspace.chats],
+  );
   const sidebarPanel = useResizablePanel({
     ...SIDEBAR_LAYOUT.resize,
     enabled: !mobile && !sidebarCollapsed,
@@ -92,9 +100,9 @@ function Workspace({ userProfile }: { userProfile: UserProfileController }) {
     setDetailsOpen(open);
   }
 
-  function showSettings(section: SettingsEntrySection) {
+  function showSettings(section: SettingsEntrySection, pluginId?: PluginId) {
     navigationVersion.current += 1;
-    settingsDialog.current?.open(section);
+    settingsDialog.current?.open(section, pluginId);
   }
 
   function showSearch(open: boolean) {
@@ -189,6 +197,9 @@ function Workspace({ userProfile }: { userProfile: UserProfileController }) {
             chats={workspace.chats}
             width={detailsPanel.width}
             onChange={workspace.updateActiveChat}
+            onOpenSettings={(target) =>
+              showSettings(target.section, target.section === "plugins" ? target.pluginId : undefined)
+            }
             onClose={() => showDetails(false)}
             onDelete={async () => {
               const startedAt = navigationVersion.current;
@@ -212,6 +223,7 @@ function Workspace({ userProfile }: { userProfile: UserProfileController }) {
         currentUser={currentUser}
         mobile={mobile}
         onOpenConversations={showConversations}
+        wisps={wisps}
         userProfile={userProfile}
         preferences={workspace.preferences}
         persistenceStatus={workspace.persistenceStatus}

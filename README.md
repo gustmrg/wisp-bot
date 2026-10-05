@@ -26,7 +26,7 @@ preset.
 
 - **Persistent agent conversations** — one durable Pi session per Wisp, with
   streaming events, retries, and compaction. See [AI models](docs/models.md).
-- **Bundled plugins** — Brave Search, Linear, and Firecrawl, connected once and
+- **Bundled plugins** — Brave Search, Linear, Firecrawl, Tavily, and Exa, connected once and
   granted per Wisp. See [plugins](docs/plugins.md).
 - **Remote MCP servers** — Streamable HTTP integrations with header or OAuth
   authentication, granted per Wisp. See [MCP servers](docs/mcp-servers.md).
@@ -124,7 +124,7 @@ locally.
 | [Architecture](docs/architecture.md) | Process boundary, project structure, runtime, data storage |
 | [Security](docs/security.md) | Trust boundary, credential storage, tool authorization |
 | [AI models](docs/models.md) | Global model settings and per-Wisp overrides |
-| [Plugins](docs/plugins.md) | Brave Search, Linear, and Firecrawl connections and access |
+| [Plugins](docs/plugins.md) | Brave Search, Linear, Firecrawl, Tavily, and Exa connections and access |
 | [MCP servers](docs/mcp-servers.md) | Remote MCP integrations, access, and revocation |
 | [Context and memory](docs/context-and-memory.md) | Context renewal, summaries, new topics, saved memory |
 | [Token usage](docs/token-usage.md) | Session reports and the usage dashboard |

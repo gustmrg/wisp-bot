@@ -7,15 +7,31 @@ function completeBridge(): WispApi {
   return {
     getLaunchAtLoginState: async () => ({ ok: true, value: { supported: false, enabled: false } }),
     setLaunchAtLogin: async () => ({ ok: true, value: { supported: false, enabled: false } }),
-    getPluginSettings: async () => ({ ok: true, value: { secureStorageAvailable: true, plugins: [] } }),
-    savePluginSettings: async () => ({ ok: true, value: { secureStorageAvailable: true, plugins: [] } }),
-    removePlugin: async () => ({ ok: true, value: { secureStorageAvailable: true, plugins: [] } }),
+    getPluginSettings: async () => ({
+      ok: true,
+      value: { secureStorageAvailable: true, plugins: [], defaultProviders: { search: null, read: null } },
+    }),
+    savePluginSettings: async () => ({
+      ok: true,
+      value: { secureStorageAvailable: true, plugins: [], defaultProviders: { search: null, read: null } },
+    }),
+    savePluginDefaults: async () => ({
+      ok: true,
+      value: { secureStorageAvailable: true, plugins: [], defaultProviders: { search: null, read: null } },
+    }),
+    removePlugin: async () => ({
+      ok: true,
+      value: { secureStorageAvailable: true, plugins: [], defaultProviders: { search: null, read: null } },
+    }),
     testPluginConnection: async () => ({ ok: true, value: { message: "Connected" } }),
     getWispPluginAccess: async ({ conversationId }) => ({
       ok: true,
-      value: { conversationId, grants: [], revision: "test-revision" },
+      value: { conversationId, grants: [], revision: "test-revision", webProviders: { search: null, read: null } },
     }),
-    saveWispPluginAccess: async (request) => ({ ok: true, value: request }),
+    saveWispPluginAccess: async (request) => ({
+      ok: true,
+      value: { ...request, webProviders: request.webProviders ?? { search: null, read: null } },
+    }),
     getMcpSettings: async () => ({ ok: true, value: { secureStorageAvailable: true, servers: [] } }),
     saveMcpServer: async () => ({ ok: true, value: { secureStorageAvailable: true, servers: [] } }),
     removeMcpServer: async () => ({ ok: true, value: { secureStorageAvailable: true, servers: [] } }),
@@ -25,7 +41,7 @@ function completeBridge(): WispApi {
     cancelMcpSignIn: async () => ({ ok: true, value: { secureStorageAvailable: true, servers: [] } }),
     getWispMcpAccess: async ({ conversationId }) => ({
       ok: true,
-      value: { conversationId, grants: [], revision: "test-revision" },
+      value: { conversationId, grants: [], revision: "test-revision", webProviders: { search: null, read: null } },
     }),
     saveWispMcpAccess: async (request) => ({ ok: true, value: request }),
     subscribeToMcpSettings: () => () => undefined,
