@@ -163,7 +163,10 @@ export class ConversationService {
     await this.repository.update(conversationId, changes);
     if (
       changes.kind === "wisp" &&
-      (changes.name !== undefined || changes.label !== undefined || changes.description !== undefined)
+      (changes.name !== undefined ||
+        changes.label !== undefined ||
+        changes.description !== undefined ||
+        Object.hasOwn(changes, "tone"))
     ) {
       await this.registry.updateContext(this.repository.getAgentContext(conversationId));
     }

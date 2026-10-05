@@ -4,6 +4,7 @@ import { SettingsCard, SettingsField, SettingsRow, SettingsRowCopy } from "@/com
 import { ToggleSwitch } from "@/components/ui/toggle-switch";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { WispToneFields } from "@/components/wisp-tone-fields";
 
 interface WispSettingsFieldsProps {
   settings: WispSummary;
@@ -42,6 +43,7 @@ function WispSettingsFields({ settings, onChange }: WispSettingsFieldsProps) {
           onChange={(event) => onChange({ description: event.currentTarget.value })}
         />
       </SettingsField>
+      <WispToneFields tone={settings.tone} onChange={(tone) => onChange({ tone })} />
       <SettingsCard className="mt-[15px]">
         <SettingsRow className="min-h-0 p-[11px]">
           <SettingsRowCopy>

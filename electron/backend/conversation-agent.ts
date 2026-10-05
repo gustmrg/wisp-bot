@@ -29,6 +29,7 @@ export interface ConversationAgentContext {
   name: string;
   label: string;
   description: string;
+  tone?: import("../../shared/wisp-tone.js").WispTone;
   userName?: string;
   userProfile?: import("../../shared/user-profile.js").UserProfile;
   modelOverride?: ModelSelection | null;

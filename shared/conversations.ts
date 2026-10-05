@@ -1,5 +1,6 @@
 import type { ModelSelection } from "./contracts.js";
 import type { ToolApprovalRequest } from "./tool-policy.js";
+import type { WispTone } from "./wisp-tone.js";
 
 export type ChatId = string;
 
@@ -46,6 +47,8 @@ export interface WispChat extends ChatBase {
   color?: string;
   avatarImage?: string;
   shape: WispShape;
+  /** Absent when the Wisp uses the default tone. */
+  tone?: WispTone;
 }
 
 export interface CircleChat extends ChatBase {
@@ -88,7 +91,7 @@ export type ChatSummary = WispSummary | CircleSummary;
 
 type NewChatBase = Pick<ChatBase, "name" | "label" | "description" | "notifyOnUpdatesEnabled">;
 
-export type NewWisp = NewChatBase & Pick<WispChat, "color" | "avatarImage" | "shape"> & { kind: "wisp" };
+export type NewWisp = NewChatBase & Pick<WispChat, "color" | "avatarImage" | "shape" | "tone"> & { kind: "wisp" };
 export type NewCircle = NewChatBase & Pick<CircleChat, "memberIds"> & { kind: "circle" };
 export type NewChat = NewWisp | NewCircle;
 
@@ -97,7 +100,7 @@ type SharedChatChanges = Partial<
 >;
 
 export type WispChatChanges = SharedChatChanges &
-  Partial<Pick<WispChat, "color" | "avatarImage" | "shape">> & { kind: "wisp" };
+  Partial<Pick<WispChat, "color" | "avatarImage" | "shape" | "tone">> & { kind: "wisp" };
 export type CircleChatChanges = SharedChatChanges & Partial<Pick<CircleChat, "memberIds">> & { kind: "circle" };
 export type ChatChanges = WispChatChanges | CircleChatChanges;
 

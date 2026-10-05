@@ -136,6 +136,7 @@ describe("SdkPiSessionFactory", () => {
       name: "Research Wisp",
       label: "Finance",
       description: "You are a financial advisor who explains markets clearly.",
+      tone: { style: "direct", length: "short", custom: "" },
       userName: "John",
       userProfile: { preferredName: "John", aboutYou: "Backend developer", responsePreferences: "Be concise" },
       workspaceDirectory: path.join(directory, "workspace"),
@@ -219,6 +220,13 @@ describe("SdkPiSessionFactory", () => {
     expect(prompt).toContain("subject to app policy and user approval");
     expect(prompt).toContain("must not execute shell commands");
     expect(prompt).toContain("Return only the final answer");
+    expect(prompt).toContain("## Response style");
+    expect(prompt).toContain("1. Explicit instructions in the user's current message.");
+    expect(prompt).toContain("2. This Wisp's configured tone, below.");
+    expect(prompt).toContain("3. The user's general response preferences from the user profile.");
+    expect(prompt).toContain("Tone: Straight to the point.");
+    expect(prompt).toContain("Length: Keep responses brief");
+    expect(prompt).not.toContain("Be concise, factual");
     expect(savePiSessionIdentity).toHaveBeenCalledWith({
       sessionId: "pi-session-id",
       sessionFile: "/sessions/concrete.jsonl",
