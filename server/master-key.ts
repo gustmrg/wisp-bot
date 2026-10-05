@@ -14,6 +14,17 @@ interface Envelope {
   payload: string;
 }
 
+/** Reads a 32-byte key, refusing files other accounts could read or replace. */
+export function readPrivateKeyFile(file: string): Buffer {
+  const stat = lstatSync(file);
+  if (!stat.isFile() || (stat.mode & 0o077) !== 0) {
+    throw new Error("A key must be a regular file readable only by its owner (mode 0600 or 0400).");
+  }
+  const key = readFileSync(file);
+  if (key.length !== KEY_BYTES) throw new Error("A key file must contain exactly 32 bytes.");
+  return key;
+}
+
 /**
  * Encrypts stored credentials with AES-256-GCM under a 32-byte key kept in a
  * private file outside the data directory. Each envelope names its key, so a
@@ -29,12 +40,7 @@ export class MasterKeyEncryption implements EncryptionService {
 
   /** Reads the key, refusing files other accounts could read or replace. */
   static fromFile(file: string | undefined): MasterKeyEncryption {
-    if (!file) return new MasterKeyEncryption();
-    const stat = lstatSync(file);
-    if (!stat.isFile() || (stat.mode & 0o077) !== 0) {
-      throw new Error("The master key must be a regular file readable only by its owner (mode 0600 or 0400).");
-    }
-    return new MasterKeyEncryption(readFileSync(file));
+    return new MasterKeyEncryption(file ? readPrivateKeyFile(file) : undefined);
   }
 
   /** Writes a new random key; never overwrites an existing file. */

@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { access, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { access, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
@@ -45,6 +45,22 @@ describe("local server credentials", () => {
     expect(await loadOrCreateLocalMasterKey(root, keychain())).toEqual(key);
     expect(await readFile(path.join(root, "local-server-key.json"), "utf8")).not.toContain(key!.toString("base64"));
     expect(await loadOrCreateLocalMasterKey(root, keychain(false))).toBeUndefined();
+  });
+
+  it("starts over with a new key when the keychain cannot open the stored one", async () => {
+    const root = await directory();
+    const original = await loadOrCreateLocalMasterKey(root, keychain());
+    // Another computer's keychain, as after restoring a backup there.
+    const elsewhere: EncryptionService = {
+      ...keychain(),
+      decrypt: () => {
+        throw new Error("Error while decrypting the ciphertext provided.");
+      },
+    };
+    const replacement = await loadOrCreateLocalMasterKey(root, elsewhere);
+    expect(replacement).toHaveLength(32);
+    expect(replacement).not.toEqual(original);
+    expect((await readdir(root)).some((name) => name.startsWith("local-server-key.json.unreadable-"))).toBe(true);
   });
 
   it("re-encrypts keychain credentials for the server once, keeping a backup", async () => {

@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, readdir, writeFile } from "node:fs/promises";
+import { cp, mkdtemp, readFile, readdir, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
@@ -83,6 +83,25 @@ describe("ConversationRepository", () => {
       }),
     ).rejects.toMatchObject({ code: "invalid_request" });
     expect(restored.getAgentContext("first").piSessionId).toBe("pi-history-id");
+  });
+
+  it("finds Pi sessions after its data directory moves, such as a restored backup", async () => {
+    const original = await mkdtemp(path.join(os.tmpdir(), "wisp-original-"));
+    const repository = await reload(original);
+    await repository.initialize({ first: chat("first") });
+    const { sessionDirectory } = repository.getAgentContext("first");
+    await repository.savePiSessionIdentity("first", {
+      sessionId: "pi-history-id",
+      sessionFile: path.join(sessionDirectory, "history.jsonl"),
+    });
+    await repository.close();
+
+    const moved = path.join(await mkdtemp(path.join(os.tmpdir(), "wisp-moved-")), "data");
+    await cp(original, moved, { recursive: true });
+    const restored = await reload(moved);
+    const context = restored.getAgentContext("first");
+    expect(context.piSessionFile).toBe(path.join(context.sessionDirectory, "history.jsonl"));
+    expect(context.piSessionFile?.startsWith(moved)).toBe(true);
   });
 
   it("persists profile context across restarts, rejects invalid input, and clears it for every Wisp", async () => {

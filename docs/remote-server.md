@@ -175,6 +175,62 @@ Some actions need a screen on the server's computer and are not available on a
 server on another machine: opening a Wisp's folder, attaching files from this
 computer, and signing in to an MCP server with OAuth.
 
+## Back up and restore
+
+A backup covers one environment: a server's data directory, or the desktop
+app's own (the Wisps that run on **This computer**). Environments stay
+isolated; there is no tool to copy conversations from one to another.
+
+A backup holds the conversations, Wisps, Pi sessions, workspaces, skills,
+settings, tool policy, paired devices, and credentials (still encrypted with
+the environment's key). Logs, caches, locks, and sockets are left out, and so
+are links and special files. The archive is encrypted with AES-256-GCM under
+its own 32-byte key, so keep that key apart from the backups:
+
+```sh
+wispctl keygen --output ~/.config/wisp/backup.key
+wispctl backup --output /backups/wisp-2026-10-05.wispbak --key-file ~/.config/wisp/backup.key
+wispctl verify --input /backups/wisp-2026-10-05.wispbak --key-file ~/.config/wisp/backup.key
+```
+
+A running server writes the backup itself, so give paths the server's account
+can write (inside a container, container paths). It refuses while a Wisp is
+working, and pauses API calls while it copies; databases are copied through
+SQLite's backup API. With no server running, `wispctl` backs up the directory
+directly, holding its lock so no server starts meanwhile.
+
+Restore always goes into a new, empty directory. Nothing is written there
+unless the whole archive is authentic and complete:
+
+```sh
+wispctl restore --input /backups/wisp-2026-10-05.wispbak \
+  --key-file ~/.config/wisp/backup.key --target ~/.local/share/wisp-restored
+```
+
+Start the server on the restored directory with the **same master key** it
+had, or the saved provider keys cannot be read and must be entered again.
+The server keeps its identity and paired devices; clients reconnect and
+reload. The directory may live at a different path than the original.
+
+### The desktop app's data
+
+Quit the app first: its server has no admin socket, and `wispctl` refuses a
+directory in use. The app bundles `wispctl`; run it with the app's own runtime,
+for example on Linux with the `.deb` package:
+
+```sh
+ELECTRON_RUN_AS_NODE=1 "/opt/Wisp Bot/wisp-bot" \
+  "/opt/Wisp Bot/resources/app.asar/dist-electron/server/cli.js" \
+  backup --data-dir ~/.config/wisp-bot --output ~/wisp-desktop.wispbak --key-file ~/backup.key
+```
+
+To restore, restore into a new directory, then, with the app closed, move the
+current `~/.config/wisp-bot` aside and put the restored one in its place. The
+app's credential key is sealed by the system keychain: on the same computer and
+account, saved API keys keep working; elsewhere the app starts with a new key
+and asks for them again. Connection profiles and window preferences are not part
+of the environment and start fresh.
+
 ## Pair devices
 
 Every client pairs once with a one-time code. The desktop app does this over

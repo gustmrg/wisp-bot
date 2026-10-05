@@ -54,6 +54,8 @@ export interface HttpApiOptions {
   /** Browser origins allowed to call the API; requests from any other origin are refused. */
   allowedOrigins: ReadonlySet<string>;
   logger: Pick<StructuredLogger, "warn">;
+  /** While true (a backup is being written), operations wait for the client to retry. */
+  isPaused?: () => boolean;
 }
 
 export interface HttpApi {
@@ -154,6 +156,9 @@ export function createHttpApi(options: HttpApiOptions): HttpApi {
       return;
     }
     if (path.startsWith("/rpc/") && method === "POST") {
+      if (options.isPaused?.()) {
+        throw new HttpError(503, "unavailable", "The server is writing a backup. Try again in a moment.", true);
+      }
       const operation = path.slice("/rpc/".length);
       const channel = channelsByOperation.get(operation);
       const listener = channel ? options.operations.get(channel) : undefined;

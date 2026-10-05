@@ -698,7 +698,7 @@ export class ConversationRepository {
         piSessionId: typeof record.piSessionId === "string" ? normalizeConversationId(record.piSessionId) : null,
         piSessionFile:
           typeof record.piSessionFile === "string" && sessionId
-            ? this.normalizePiSessionFile(sessionId, record.piSessionFile)
+            ? this.relocatedPiSessionFile(sessionId, record.piSessionFile)
             : null,
         createdAt: record.createdAt,
         updatedAt: record.updatedAt,
@@ -720,6 +720,20 @@ export class ConversationRepository {
 
   private isTimestamp(value: unknown): value is string {
     return typeof value === "string" && value.length <= 100 && !Number.isNaN(Date.parse(value));
+  }
+
+  /**
+   * Reads a stored session path. The data directory may have moved since it
+   * was saved (a restored backup, another machine), so a path under another
+   * root is re-anchored in this conversation's session directory by file name.
+   */
+  private relocatedPiSessionFile(sessionId: string, filePath: string): string {
+    const sessionDirectory = path.resolve(this.sessionRoot, sessionId);
+    const name = path.basename(filePath);
+    if (path.relative(sessionDirectory, path.resolve(filePath)).startsWith("..") && name && name !== "..") {
+      return this.normalizePiSessionFile(sessionId, path.join(sessionDirectory, name));
+    }
+    return this.normalizePiSessionFile(sessionId, filePath);
   }
 
   private normalizePiSessionFile(sessionId: string, filePath: string): string {
