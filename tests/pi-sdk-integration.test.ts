@@ -180,22 +180,40 @@ describe("Pi SDK integration", () => {
       await pluginService.save({ pluginId: "linear", enabled: true, apiKey: "test-only-plugin-key" });
       await pluginService.save({ pluginId: "web-search", enabled: true, apiKey: "test-only-brave-key" });
       await pluginService.save({ pluginId: "firecrawl", enabled: true, apiKey: "test-only-firecrawl-key" });
+      await pluginService.save({ pluginId: "tavily", enabled: true, apiKey: "test-only-tavily-key" });
+      await pluginService.save({ pluginId: "exa", enabled: true, apiKey: "test-only-exa-key" });
       await pluginService.saveAccess({
-        ...pluginService.getAccess({ conversationId: context.conversationId }),
+        conversationId: context.conversationId,
+        revision: pluginService.getAccess({ conversationId: context.conversationId }).revision,
         grants: [
           { pluginId: "linear", access: "read" },
           { pluginId: "web-search", access: "read" },
           { pluginId: "firecrawl", access: "read" },
+          { pluginId: "tavily", access: "read" },
+          { pluginId: "exa", access: "read" },
         ],
       });
       const pluginFactory = new SdkPiSessionFactory(runtime as ModelRuntimeLike, undefined, pluginService);
       const webSession = await pluginFactory.create({ ...context, ...persistedIdentity }, selection);
       try {
         expect(webSession.getActiveToolNames().filter((name) => name === "web_search")).toHaveLength(1);
-        expect(webSession.getActiveToolNames()).toContain("web_read");
+        expect(webSession.getActiveToolNames().filter((name) => name === "web_read")).toHaveLength(1);
         expect(webSession.getActiveToolNames()).not.toContain("firecrawl_scrape");
         await webSession.reload();
         expect(webSession.getActiveToolNames()).toContain("web_read");
+        for (const pluginId of ["tavily", "exa"] as const) {
+          await pluginService.saveAccess({
+            conversationId: context.conversationId,
+            revision: pluginService.getAccess({ conversationId: context.conversationId }).revision,
+            grants: [{ pluginId, access: "read" }],
+          });
+          await webSession.reload();
+          expect(webSession.getActiveToolNames().filter((name) => name.startsWith("web_"))).toEqual([
+            "web_search",
+            "web_read",
+          ]);
+          expect(webSession.getActiveToolNames()).not.toContain("linear_get_issue");
+        }
       } finally {
         webSession.dispose();
       }

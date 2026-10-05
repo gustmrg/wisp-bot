@@ -11,6 +11,7 @@ import { WispWorkspaceSettings } from "@/components/wisp-workspace-settings";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import type { IntegrationSettingsTarget } from "@/lib/plugin-access";
 
 const TAB_ORDER = ["general", "model", "access", "usage"] as const;
 
@@ -18,9 +19,10 @@ interface WispDetailsProps {
   chat: WispSummary;
   generalActions?: ReactNode;
   onChange: (changes: WispChatChanges) => Promise<boolean> | void;
+  onOpenSettings?: (target: IntegrationSettingsTarget) => void;
 }
 
-export function WispDetails({ chat, onChange, generalActions }: WispDetailsProps) {
+export function WispDetails({ chat, onChange, onOpenSettings, generalActions }: WispDetailsProps) {
   const [tab, setTab] = useState("general");
   const [slideDirection, setSlideDirection] = useState<"forward" | "back">("forward");
   const [visited, setVisited] = useState(() => new Set(["general"]));
@@ -133,7 +135,7 @@ export function WispDetails({ chat, onChange, generalActions }: WispDetailsProps
         value="access"
         className={cn("flex min-h-0 flex-col overflow-hidden", tab === "access" && slideClass)}
       >
-        {tab === "access" ? <WispPluginSettings conversationId={chat.id} /> : null}
+        {tab === "access" ? <WispPluginSettings conversationId={chat.id} onOpenSettings={onOpenSettings} /> : null}
       </TabsContent>
     </Tabs>
   );

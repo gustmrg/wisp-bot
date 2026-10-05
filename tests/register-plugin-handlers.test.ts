@@ -15,13 +15,21 @@ describe("plugin IPC", () => {
       throw new Error("secret-key and provider body");
     });
     const getAccess = vi.fn(() => ({ conversationId: "one", grants: [] }));
-    const service = { getView, save, getAccess, remove: vi.fn(), testConnection: vi.fn(), saveAccess: vi.fn() };
+    const service = {
+      getView,
+      save,
+      getAccess,
+      remove: vi.fn(),
+      saveDefaults: vi.fn(),
+      testConnection: vi.fn(),
+      saveAccess: vi.fn(),
+    };
     const registered = registerPluginHandlers(
       ipc as never,
       service as unknown as PluginService,
       (event) => event.sender.id === 10,
     );
-    expect(handlers.size).toBe(6);
+    expect(handlers.size).toBe(7);
     for (const handler of handlers.values())
       await expect(handler({ sender: { id: 20 } }, {})).resolves.toMatchObject({
         ok: false,

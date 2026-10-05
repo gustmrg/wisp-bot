@@ -5,9 +5,12 @@ import type { ToolDefinition } from "@earendil-works/pi-coding-agent" with { "re
 import {
   PLUGIN_CATALOG,
   PLUGIN_IDS,
+  WEB_CAPABILITIES,
   type PluginAccess,
   type PluginId,
   type PluginSettingsView,
+  type WebCapability,
+  type WebProviders,
   type WispPluginAccessView,
   type PluginConnectionResult,
 } from "../../shared/plugins.js";
@@ -25,9 +28,11 @@ import {
   parsePluginConversation,
   parsePluginId,
   parsePluginRequest,
+  parseSavePluginDefaults,
   parseSavePluginSettings,
   parseSaveWispPluginAccess,
   parseTestPluginConnection,
+  parseWebProviders,
   pluginRecord,
 } from "./plugin-validation.js";
 import type { ToolAuthorizationBroker } from "./tool-authorization-broker.js";
@@ -45,6 +50,10 @@ interface PluginState {
   enabled: Record<PluginId, boolean>;
   // Application session IDs prevent a deleted/recreated conversation from inheriting access.
   grants: Record<string, AccessMap>;
+  /** Explicit provider per web capability. Sessions without an entry use catalog order among their grants. */
+  webProviders: Record<string, WebProviders>;
+  /** Provider preselected when a Wisp turns a capability on. */
+  defaultProviders: Partial<Record<WebCapability, PluginId>>;
 }
 
 export interface PluginServiceOptions {
@@ -59,8 +68,10 @@ function defaultState(): PluginState {
   return {
     schemaVersion: 1,
     revision: randomUUID(),
-    enabled: { "web-search": false, linear: false, firecrawl: false },
+    enabled: { "web-search": false, linear: false, firecrawl: false, tavily: false, exa: false },
     grants: {},
+    webProviders: {},
+    defaultProviders: {},
   };
 }
 
@@ -86,7 +97,14 @@ export class PluginService implements PluginToolSource, IntegrationToolSource {
     try {
       const content = await readFile(this.filePath, "utf8");
       if (Buffer.byteLength(content) > 2_000_000) throw invalidPluginRequest();
-      const raw = pluginRecord(JSON.parse(content), ["schemaVersion", "revision", "enabled", "grants"]);
+      const raw = pluginRecord(JSON.parse(content), [
+        "schemaVersion",
+        "revision",
+        "enabled",
+        "grants",
+        "webProviders",
+        "defaultProviders",
+      ]);
       if (raw.schemaVersion !== 1) throw invalidPluginRequest();
       if (
         raw.revision !== undefined &&
@@ -94,19 +112,16 @@ export class PluginService implements PluginToolSource, IntegrationToolSource {
       )
         throw invalidPluginRequest();
       const enabled = pluginRecord(raw.enabled, PLUGIN_IDS);
-      if (
-        PLUGIN_IDS.some((id) => typeof enabled[id] !== "boolean" && !(id === "firecrawl" && enabled[id] === undefined))
-      )
-        throw invalidPluginRequest();
       const grants = pluginRecord(raw.grants);
       const normalized = defaultState();
       // Older settings have no revision. A fresh token invalidates any old form.
       if (typeof raw.revision === "string") normalized.revision = raw.revision;
-      normalized.enabled = {
-        "web-search": enabled["web-search"] as boolean,
-        linear: enabled.linear as boolean,
-        firecrawl: enabled.firecrawl === true,
-      };
+      for (const id of PLUGIN_IDS) {
+        // Plugins added after the original schema start disabled in older settings.
+        if (enabled[id] === undefined && id !== "web-search" && id !== "linear") continue;
+        if (typeof enabled[id] !== "boolean") throw invalidPluginRequest();
+        normalized.enabled[id] = enabled[id] === true;
+      }
       for (const [sessionId, value] of Object.entries(grants)) {
         if (!/^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$/.test(sessionId)) throw invalidPluginRequest();
         const entries = parseGrants(
@@ -119,6 +134,18 @@ export class PluginService implements PluginToolSource, IntegrationToolSource {
           configurable: true,
         });
       }
+      // Both fields are optional: settings saved before explicit provider choices fall back to catalog order.
+      for (const [sessionId, value] of Object.entries(pluginRecord(raw.webProviders ?? {}))) {
+        if (!Object.hasOwn(normalized.grants, sessionId)) throw invalidPluginRequest();
+        Object.defineProperty(normalized.webProviders, sessionId, {
+          value: parseWebProviders(value),
+          enumerable: true,
+          writable: true,
+          configurable: true,
+        });
+      }
+      const defaults = parseWebProviders(raw.defaultProviders ?? {});
+      for (const { id } of WEB_CAPABILITIES) if (defaults[id]) normalized.defaultProviders[id] = defaults[id];
       this.state = normalized;
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === "ENOENT") return;
@@ -137,6 +164,16 @@ export class PluginService implements PluginToolSource, IntegrationToolSource {
       credentialError =
         "Saved plugin credentials are unavailable. Plugin access is disabled until secure storage can be read again.";
     }
+    const available = (pluginId: PluginId) => this.state.enabled[pluginId] && configured.has(pluginId);
+    const defaultProviders = { search: null, read: null } as WebProviders;
+    for (const { id: capability } of WEB_CAPABILITIES) {
+      const chosen = this.state.defaultProviders[capability];
+      defaultProviders[capability] =
+        chosen && available(chosen)
+          ? chosen
+          : (PLUGIN_CATALOG.find(({ id, capabilities }) => capabilities.includes(capability) && available(id))?.id ??
+            null);
+    }
     return {
       secureStorageAvailable: this.credentials.isSecureStorageAvailable(),
       ...(credentialError ? { credentialError } : {}),
@@ -145,7 +182,29 @@ export class PluginService implements PluginToolSource, IntegrationToolSource {
         enabled: this.state.enabled[plugin.id],
         configured: configured.has(plugin.id),
       })),
+      defaultProviders,
     };
+  }
+
+  saveDefaults(value: unknown): Promise<PluginSettingsView> {
+    const { defaultProviders } = parseSavePluginDefaults(value);
+    return this.enqueue(async () => {
+      const configured = new Set((await this.credentials.list()).map(({ providerId }) => providerId));
+      const next = structuredClone(this.state);
+      next.defaultProviders = {};
+      for (const { id: capability } of WEB_CAPABILITIES) {
+        const pluginId = defaultProviders[capability];
+        if (!pluginId) continue;
+        if (!this.state.enabled[pluginId] || !configured.has(pluginId))
+          throw new WispBackendError(
+            "configuration_required",
+            "Connect and enable the plugin before making it the default.",
+          );
+        next.defaultProviders[capability] = pluginId;
+      }
+      await this.commit(next);
+      return this.getView();
+    });
   }
 
   save(value: unknown): Promise<PluginSettingsView> {
@@ -205,10 +264,13 @@ export class PluginService implements PluginToolSource, IntegrationToolSource {
   getAccess(value: unknown): WispPluginAccessView {
     const { conversationId } = parsePluginConversation(value);
     const sessionId = this.options.resolveWisp(conversationId);
+    const webProviders = { search: null, read: null } as WebProviders;
+    for (const { id } of WEB_CAPABILITIES) webProviders[id] = this.webProvider(sessionId, id);
     return {
       conversationId,
       revision: this.accessRevision(sessionId),
       grants: PLUGIN_IDS.map((pluginId) => ({ pluginId, access: this.access(sessionId, pluginId) })),
+      webProviders,
     };
   }
 
@@ -240,6 +302,19 @@ export class PluginService implements PluginToolSource, IntegrationToolSource {
         writable: true,
         configurable: true,
       });
+      if (request.webProviders) {
+        // A provider replaced for a capability stops its in-flight calls, like a revoked grant.
+        for (const { id } of WEB_CAPABILITIES) {
+          const previous = this.webProvider(sessionId, id);
+          if (previous && previous !== request.webProviders[id]) changedPlugins.push(previous);
+        }
+        Object.defineProperty(next.webProviders, sessionId, {
+          value: request.webProviders,
+          enumerable: true,
+          writable: true,
+          configurable: true,
+        });
+      } else delete next.webProviders[sessionId];
       await this.commit(next);
       for (const [controller, running] of this.running)
         if (running.sessionId === sessionId && changedPlugins.includes(running.pluginId)) controller.abort();
@@ -347,11 +422,25 @@ export class PluginService implements PluginToolSource, IntegrationToolSource {
     }
     this.assertLive();
     if (this.options.resolveWisp(conversationId) !== sessionId) return [];
+    const usable = (pluginId: PluginId) =>
+      this.state.enabled[pluginId] && configured.has(pluginId) && this.access(sessionId, pluginId) !== "none";
+    // Each shared web tool is backed by exactly one provider: the Wisp's choice, or the
+    // first usable granted provider in catalog order for settings saved before choices existed.
+    const webTools = new Map<string, PluginId>();
+    const explicit = this.explicitWebProviders(sessionId);
+    for (const { id, toolName } of WEB_CAPABILITIES) {
+      const provider = explicit
+        ? explicit[id]
+        : this.adapters.find((adapter) => usable(adapter.id) && adapter.tools.some(({ name }) => name === toolName))
+            ?.id;
+      if (provider && usable(provider)) webTools.set(toolName, provider);
+    }
     return this.adapters.flatMap((adapter) => {
-      if (!this.state.enabled[adapter.id] || !configured.has(adapter.id)) return [];
+      if (!usable(adapter.id)) return [];
       const access = this.access(sessionId, adapter.id);
       return adapter.tools
         .filter((tool) => access === "write" || (access === "read" && tool.access === "read"))
+        .filter((tool) => !isSharedWebTool(tool.name) || webTools.get(tool.name) === adapter.id)
         .map((tool) => ({ pluginId: adapter.id, tool }));
     });
   }
@@ -432,6 +521,20 @@ export class PluginService implements PluginToolSource, IntegrationToolSource {
     return Object.hasOwn(this.state.grants, sessionId) ? (this.state.grants[sessionId]?.[pluginId] ?? "none") : "none";
   }
 
+  private explicitWebProviders(sessionId: string): WebProviders | undefined {
+    return Object.hasOwn(this.state.webProviders, sessionId) ? this.state.webProviders[sessionId] : undefined;
+  }
+
+  /** Provider shown for a capability; legacy sessions report the first granted provider in catalog order. */
+  private webProvider(sessionId: string, capability: WebCapability): PluginId | null {
+    const explicit = this.explicitWebProviders(sessionId);
+    if (explicit) return explicit[capability];
+    const granted = PLUGIN_CATALOG.filter(
+      ({ id, capabilities }) => capabilities.includes(capability) && this.access(sessionId, id) !== "none",
+    );
+    return (granted.find(({ id }) => this.state.enabled[id]) ?? granted[0])?.id ?? null;
+  }
+
   private accessRevision(sessionId: string): string {
     return createHash("sha256")
       .update(JSON.stringify([this.state.revision, sessionId]))
@@ -458,6 +561,9 @@ export class PluginService implements PluginToolSource, IntegrationToolSource {
     const next = structuredClone(this.state);
     next.enabled[pluginId] = false;
     for (const grants of Object.values(next.grants)) delete grants[pluginId];
+    for (const providers of Object.values(next.webProviders))
+      for (const { id } of WEB_CAPABILITIES) if (providers[id] === pluginId) providers[id] = null;
+    for (const { id } of WEB_CAPABILITIES) if (next.defaultProviders[id] === pluginId) delete next.defaultProviders[id];
     return next;
   }
 

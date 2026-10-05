@@ -1,5 +1,7 @@
 import { forwardRef, useImperativeHandle, useState } from "react";
 
+import type { PluginId } from "../../shared/plugins";
+
 import {
   AppSettingsDialog,
   type AppSettingsDialogProps,
@@ -7,10 +9,13 @@ import {
 } from "@/components/app-settings-dialog";
 
 export interface AppSettingsDialogHandle {
-  open(section: SettingsEntrySection): void;
+  open(section: SettingsEntrySection, pluginId?: PluginId): void;
 }
 
-type AppSettingsDialogHostProps = Omit<AppSettingsDialogProps, "open" | "initialSection" | "onOpenChange">;
+type AppSettingsDialogHostProps = Omit<
+  AppSettingsDialogProps,
+  "open" | "initialSection" | "initialPluginId" | "onOpenChange"
+>;
 
 /**
  * Owns the open state for the settings dialog so that opening or closing it does
@@ -20,13 +25,27 @@ type AppSettingsDialogHostProps = Omit<AppSettingsDialogProps, "open" | "initial
 export const AppSettingsDialogHost = forwardRef<AppSettingsDialogHandle, AppSettingsDialogHostProps>(
   function AppSettingsDialogHost({ onOpenConversations, ...dialogProps }, ref) {
     const [section, setSection] = useState<SettingsEntrySection | null>(null);
-    useImperativeHandle(ref, () => ({ open: (next) => setSection(next) }), []);
+    const [pluginId, setPluginId] = useState<PluginId | undefined>();
+    useImperativeHandle(
+      ref,
+      () => ({
+        open: (next, nextPluginId) => {
+          setSection(next);
+          setPluginId(nextPluginId);
+        },
+      }),
+      [],
+    );
     return (
       <AppSettingsDialog
         {...dialogProps}
         open={section !== null}
         initialSection={section ?? "general"}
-        onOpenChange={(nextOpen) => setSection(nextOpen ? "general" : null)}
+        initialPluginId={pluginId}
+        onOpenChange={(nextOpen) => {
+          setSection(nextOpen ? "general" : null);
+          setPluginId(undefined);
+        }}
         onOpenConversations={() => {
           setSection(null);
           onOpenConversations?.();

@@ -1,7 +1,8 @@
 # Bundled plugins
 
-Wisp ships with three bundled integrations: **Brave Search** (web search),
-**Linear**, and **Firecrawl** (web search and page reading). Connections are configured globally in
+Wisp ships with five bundled integrations: **Brave Search** (web search),
+**Linear**, **Firecrawl**, **Tavily**, and **Exa** (the latter three support web
+search and page reading). Connections are configured globally in
 **Settings → Plugins**; each Wisp receives access independently through its
 **Access** tab. Connecting a plugin grants no Wisp access automatically.
 
@@ -9,26 +10,45 @@ For dynamically discovered integrations, see [remote MCP servers](mcp-servers.md
 
 ## Connecting a plugin
 
-Open **Settings → Plugins**, enter a **Brave Search API key**, **Linear
-personal API key**, or **Firecrawl API key**, optionally select **Test
-connection**, and select **Save plugin** with the plugin enabled. Testing
-checks the entered key, or the saved key when the field is blank; it does not
-save a new key. Each plugin supports one connection on this device.
+Open **Settings → Plugins**. Connected plugins are listed first, with an
+**Enabled** switch and the number of Wisps that can use them; the rest are
+listed under **Available** with what they provide (search, page reading, or
+their category). Select a plugin, enter its **Brave Search API key**, **Linear
+personal API key**, **Firecrawl API key**, **Tavily API key**, or **Exa API
+key** (each form links to the provider page that issues it), and select
+**Connect**. Connecting tests the key first and saves it only if the test
+succeeds. Each plugin supports one connection on this device.
+
+A connected plugin's page has **Test connection** for the saved key, **Replace
+key** (which also tests the new key before saving it), and **Remove
+connection**. Right after connecting, the same page lists your Wisps so you can
+give them access without opening each one.
 
 - Brave testing performs one search request.
 - Linear testing reads the authenticated viewer.
 - Firecrawl testing checks credit usage without scraping.
+- Tavily testing checks API-key usage without searching or extracting a page.
+- Exa testing performs one search with one result and no content extraction;
+  this can consume search credits.
 
 A successful connection test does not guarantee access to every resource or
 permission to write.
 
 ## Per-Wisp access
 
-Open a Wisp's **Access** tab, choose **Read only** for web search or Firecrawl,
-**Read only** / **Read and write** for Linear, and select **Save access**.
-Every Wisp starts with **No access**. New tools become available on its next
-message. Linear issue creation and updates still require an **Allow once**
-approval before execution, regardless of file auto-review rules.
+Open a Wisp's **Access** tab. Under **Web**, choose a provider for **Search
+the web** and for **Read web pages**; under **Apps**, choose **Read only** or
+**Read and write** for Linear. Select **Save access**. Each plugin's page in
+**Settings → Plugins** offers the same choices for every Wisp. Plugins that are
+not connected or are turned off are summarized in one line that links to
+Settings. Every Wisp starts with **No access**. New tools become available on
+its next message. Linear issue creation and updates still require an **Allow
+once** approval before execution, regardless of file auto-review rules.
+
+When more than one connected plugin can search or read pages, **Settings →
+Plugins → Default web providers** sets which one is listed first and marked
+as the default in each Wisp's Access tab. Changing the default does not change
+the provider a Wisp already uses.
 
 ## Capabilities
 
@@ -37,6 +57,8 @@ approval before execution, regardless of file auto-review rules.
 | Brave Search | Web & research | `none`, `read` | `web_search` |
 | Linear | Productivity | `none`, `read`, `write` | `linear_search_issues`, `linear_get_issue`, `linear_list_teams`, `linear_list_statuses`; write also enables `linear_create_issue` and `linear_update_issue` |
 | Firecrawl | Web & research | `none`, `read` | `web_search`, `web_read` |
+| Tavily | Web & research | `none`, `read` | `web_search`, `web_read` |
+| Exa | Web & research | `none`, `read` | `web_search`, `web_read` |
 
 ## Shared web tools
 
@@ -46,26 +68,34 @@ provider-independent tools backed by their connected, enabled, and granted plugi
 - `web_search({ query, count? })` finds sources and returns `provider`, `query`,
   `results` (titles, URLs, snippets), and `moreResultsAvailable`. Queries are
   limited to 500 characters and 75 words; `count` is 1–10 (default 5).
-  Brave Search is preferred when both providers are available to that Wisp;
-  otherwise Firecrawl supplies search. Firecrawl reports `moreResultsAvailable`
-  as `null` because its API does not indicate additional results.
-- `web_read({ url })` reads one HTTP(S) URL as Markdown through Firecrawl,
+  Search uses the provider chosen for that Wisp. Firecrawl,
+  Tavily, and Exa report `moreResultsAvailable` as `null` because their APIs
+  do not indicate additional results.
+- `web_read({ url })` reads one HTTP(S) URL as Markdown or plain text,
   returning `provider`, `url`, `title`, `markdown`, and `truncated`. URLs are
   limited to 2,000 characters and must not contain credentials. It does not
   search, click, or fill forms. Page text is bounded to 20,000 characters.
+  Reading uses the provider chosen for that Wisp. Tavily Extract does not
+  return a separate title, so its `title` is `null`.
 
-Search registers only once even when both plugins are connected. Provider
-selection is checked again for every call against that Wisp's current grants;
-a denied plugin is never used. Failures are returned without automatically
-retrying on another provider. Search and reading can consume provider credits.
-Connecting Firecrawl alone and granting **Read only** enables both web tools;
-connecting only Brave enables search but not page reading. Existing Firecrawl
-grants apply to the new capabilities without reconfiguration.
+Each web tool registers only once even when multiple plugins are connected.
+Each Wisp chooses one provider per capability, and the chosen provider is also
+granted `read`; the provider is checked again for every call against that
+Wisp's current grants and connection state. If the chosen provider is turned
+off or disconnected, the capability is unavailable: Wisp never falls back to
+another paid provider, and failures are not retried elsewhere. Search and
+reading can consume provider credits. Brave Search provides search only.
+
+Wisps whose access was saved before per-capability choices existed keep their
+grants and use the first granted, connected provider in catalog order (Brave
+Search → Firecrawl → Tavily → Exa) until their access is saved again. Updating
+from an older version preserves existing connections and grants; newly added
+plugins start disabled with no Wisp access.
 
 `web_read` replaces the former `firecrawl_scrape` tool name. Saved activity and
 usage reports still recognize the old name, but new sessions advertise `web_read`.
 
-Web search returns titles, source URLs, and snippets through the
+Brave Search returns titles, source URLs, and snippets through the
 [Brave Search API](https://api-dashboard.search.brave.com/documentation/services/web-search);
 it does not browse pages or fetch arbitrary URLs. Linear can search/read
 issues, list teams and statuses, and create/update issues through its
@@ -75,6 +105,22 @@ one HTTP(S) page as Markdown (long content is truncated) using the
 scraping uses Firecrawl credits. Firecrawl-backed `web_search` uses the
 [Firecrawl v2 search API](https://docs.firecrawl.dev/api-reference/endpoint/search)
 without scraping every result. The connected key's own permissions also apply.
+
+Tavily-backed `web_search` uses the
+[Search API](https://docs.tavily.com/documentation/api-reference/endpoint/search)
+with basic search, without a generated answer or full result-page content.
+`web_read` uses the
+[Extract API](https://docs.tavily.com/documentation/api-reference/endpoint/extract)
+for a single URL in Markdown format. Per-URL extraction failures are reported
+as errors even when Tavily responds with HTTP 200.
+
+Exa-backed `web_search` uses the
+[Search API](https://exa.ai/docs/reference/search) with automatic search type
+and bounded highlights for snippets. `web_read` uses the
+[Contents API](https://exa.ai/docs/reference/get-contents) with text extraction,
+without HTML tags, and bounded crawl time and content length. Both adapters
+use fixed API endpoints and the same request limits and sanitized errors as
+the other bundled plugins. Page content and highlights can consume credits.
 
 ## Revocation and key changes
 
@@ -86,7 +132,7 @@ Linear before retrying a write whose outcome is uncertain.
 
 ## Extension boundary
 
-These three bundled plugins plus remote MCP servers are the supported
+These five bundled plugins plus remote MCP servers are the supported
 integrations. Arbitrary plugin installation, custom endpoints, and multiple
 accounts per plugin are not available yet. See
 [ADR 004](decisions/004-wisp-plugins.md) for the connection model, adapter

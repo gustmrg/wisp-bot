@@ -6,30 +6,51 @@ import type { BackendResult } from "../../shared/contracts";
 import {
   PLUGIN_CATALOG,
   type PluginGrant,
+  type PluginId,
   type SaveWispPluginAccessRequest,
+  type WebProviders,
   type WispPluginAccessView,
 } from "../../shared/plugins";
 import { WispPluginSettings } from "./wisp-plugin-settings";
 import { WispDetails } from "./wisp-details";
 
-function setup({ available = true, grants = [] }: { available?: boolean; grants?: ReadonlyArray<PluginGrant> } = {}) {
+const NO_PROVIDERS: WebProviders = { search: null, read: null };
+
+function setup({
+  available = PLUGIN_CATALOG.map(({ id }) => id),
+  disabled = [],
+  grants = [],
+  webProviders = NO_PROVIDERS,
+  defaultProviders = { search: "web-search", read: "firecrawl" },
+}: {
+  available?: ReadonlyArray<PluginId>;
+  disabled?: ReadonlyArray<PluginId>;
+  grants?: ReadonlyArray<PluginGrant>;
+  webProviders?: WebProviders;
+  defaultProviders?: WebProviders;
+} = {}) {
   const getPluginSettings = vi.fn(async () => ({
     ok: true,
     value: {
       secureStorageAvailable: true,
-      plugins: PLUGIN_CATALOG.map((plugin) => ({ ...plugin, configured: available, enabled: available })),
+      plugins: PLUGIN_CATALOG.map((plugin) => ({
+        ...plugin,
+        configured: available.includes(plugin.id) || disabled.includes(plugin.id),
+        enabled: available.includes(plugin.id),
+      })),
+      defaultProviders,
     },
   }));
   const getWispPluginAccess = vi.fn(
     async ({ conversationId }: { conversationId: string }): Promise<BackendResult<WispPluginAccessView>> => ({
       ok: true,
-      value: { conversationId, grants, revision: "original-revision" },
+      value: { conversationId, grants, webProviders, revision: "original-revision" },
     }),
   );
   const saveWispPluginAccess = vi.fn(
     async (request: SaveWispPluginAccessRequest): Promise<BackendResult<WispPluginAccessView>> => ({
       ok: true,
-      value: request,
+      value: { ...request, webProviders: request.webProviders ?? NO_PROVIDERS },
     }),
   );
   const getMcpSettings = vi.fn(async () => ({ ok: true, value: { secureStorageAvailable: true, servers: [] } }));
@@ -57,56 +78,101 @@ function setup({ available = true, grants = [] }: { available?: boolean; grants?
   return { getPluginSettings, getWispPluginAccess, saveWispPluginAccess };
 }
 
+function grantsFor(access: Partial<Record<PluginId, PluginGrant["access"]>>): PluginGrant[] {
+  return PLUGIN_CATALOG.map(({ id }) => ({ pluginId: id, access: access[id] ?? "none" }));
+}
+
 async function openSelect(user: ReturnType<typeof userEvent.setup>, trigger: HTMLElement) {
   act(() => trigger.focus());
   await user.keyboard("{Enter}");
 }
 
 describe("WispPluginSettings", () => {
-  it("defaults to no access and saves different read and write grants for only the selected Wisp", async () => {
+  it("picks one provider per web capability and grants only the providers in use", async () => {
     const api = setup();
     const user = userEvent.setup();
     render(<WispPluginSettings conversationId="researcher" />);
-    const web = await screen.findByRole("combobox", { name: "Web search access" });
-    expect(web).toHaveTextContent("No access");
-    expect(screen.getByRole("combobox", { name: "Linear access" })).toHaveTextContent("No access");
+    const search = await screen.findByRole("combobox", { name: "Search the web access" });
+    expect(search).toHaveTextContent("No access");
     expect(screen.getByRole("button", { name: "Save access" })).toBeDisabled();
-    await openSelect(user, web);
-    expect(screen.queryByRole("option", { name: "Read and write" })).not.toBeInTheDocument();
-    await user.click(screen.getByRole("option", { name: "Read only" }));
-    await openSelect(user, screen.getByRole("combobox", { name: "Linear access" }));
-    await user.click(screen.getByRole("option", { name: "Read and write" }));
-    expect(api.saveWispPluginAccess).not.toHaveBeenCalled();
+    await openSelect(user, search);
+    expect(screen.getAllByRole("option").map((option) => option.textContent)).toEqual([
+      "No access",
+      "Brave Search (default)",
+      "Firecrawl",
+      "Tavily",
+      "Exa",
+    ]);
+    await user.click(screen.getByRole("option", { name: "Tavily" }));
+    await openSelect(user, screen.getByRole("combobox", { name: "Read web pages access" }));
+    expect(screen.queryByRole("option", { name: /Brave Search/ })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("option", { name: "Exa" }));
     await user.click(screen.getByRole("button", { name: "Save access" }));
     expect(api.saveWispPluginAccess).toHaveBeenCalledWith({
       conversationId: "researcher",
       revision: "original-revision",
-      grants: [
-        { pluginId: "web-search", access: "read" },
-        { pluginId: "linear", access: "write" },
-        { pluginId: "firecrawl", access: "none" },
-      ],
+      grants: grantsFor({ tavily: "read", exa: "read" }),
+      webProviders: { search: "tavily", read: "exa" },
     });
     expect(await screen.findByRole("status")).toHaveTextContent("Access settings saved for this Wisp.");
   });
 
-  it("disables new grants for unavailable plugins but permits revocation", async () => {
-    const api = setup({ available: false, grants: [{ pluginId: "linear", access: "write" }] });
+  it("saves read and write access for apps alongside web choices", async () => {
+    const api = setup();
     const user = userEvent.setup();
     render(<WispPluginSettings conversationId="researcher" />);
     await openSelect(user, await screen.findByRole("combobox", { name: "Linear access" }));
-    expect(screen.getByRole("option", { name: "Read only" })).toHaveAttribute("aria-disabled", "true");
-    expect(screen.getByRole("option", { name: "Read and write" })).toHaveAttribute("aria-disabled", "true");
-    await user.click(screen.getByRole("option", { name: "No access" }));
+    await user.click(screen.getByRole("option", { name: "Read and write" }));
     await user.click(screen.getByRole("button", { name: "Save access" }));
     expect(api.saveWispPluginAccess).toHaveBeenCalledWith({
       conversationId: "researcher",
       revision: "original-revision",
-      grants: [
-        { pluginId: "web-search", access: "none" },
-        { pluginId: "linear", access: "none" },
-        { pluginId: "firecrawl", access: "none" },
-      ],
+      grants: grantsFor({ linear: "write" }),
+      webProviders: NO_PROVIDERS,
+    });
+  });
+
+  it("summarizes unavailable plugins in one line and links to Settings", async () => {
+    setup({ available: ["web-search"], disabled: ["linear"], defaultProviders: { search: "web-search", read: null } });
+    const onOpenSettings = vi.fn();
+    const user = userEvent.setup();
+    render(<WispPluginSettings conversationId="researcher" onOpenSettings={onOpenSettings} />);
+    expect(await screen.findByRole("combobox", { name: "Search the web access" })).toBeVisible();
+    expect(screen.queryByRole("combobox", { name: "Linear access" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("combobox", { name: "Read web pages access" })).not.toBeInTheDocument();
+    expect(screen.getByText(/Read web pages: no connected plugin provides this/)).toBeVisible();
+    expect(screen.getByText(/Unavailable: Linear \(turned off\), Firecrawl, Tavily, Exa/)).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "Set up plugins" }));
+    expect(onOpenSettings).toHaveBeenLastCalledWith({ section: "plugins" });
+    await user.click(screen.getByRole("button", { name: "Add an MCP server" }));
+    expect(onOpenSettings).toHaveBeenLastCalledWith({ section: "mcp" });
+  });
+
+  it("keeps unavailable grants visible so they can be revoked", async () => {
+    const api = setup({
+      available: [],
+      grants: grantsFor({ linear: "write", "web-search": "read" }),
+      webProviders: { search: "web-search", read: null },
+      defaultProviders: NO_PROVIDERS,
+    });
+    const onOpenSettings = vi.fn();
+    const user = userEvent.setup();
+    render(<WispPluginSettings conversationId="researcher" onOpenSettings={onOpenSettings} />);
+    await openSelect(user, await screen.findByRole("combobox", { name: "Linear access" }));
+    expect(screen.getByRole("option", { name: "Read only" })).toHaveAttribute("aria-disabled", "true");
+    expect(screen.getByRole("option", { name: "Read and write" })).toHaveAttribute("aria-disabled", "true");
+    await user.click(screen.getByRole("option", { name: "No access" }));
+    await openSelect(user, screen.getByRole("combobox", { name: "Search the web access" }));
+    expect(screen.getByRole("option", { name: "Brave Search" })).toHaveAttribute("aria-disabled", "true");
+    await user.click(screen.getByRole("option", { name: "No access" }));
+    await user.click(screen.getByRole("button", { name: "Connect Linear" }));
+    expect(onOpenSettings).toHaveBeenCalledWith({ section: "plugins", pluginId: "linear" });
+    await user.click(screen.getByRole("button", { name: "Save access" }));
+    expect(api.saveWispPluginAccess).toHaveBeenCalledWith({
+      conversationId: "researcher",
+      revision: "original-revision",
+      grants: grantsFor({}),
+      webProviders: NO_PROVIDERS,
     });
   });
 
@@ -128,7 +194,6 @@ describe("WispPluginSettings", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent("Linear was disconnected");
     expect(screen.getByRole("combobox", { name: "Linear access" })).toHaveTextContent("Read only");
     expect(screen.getByRole("button", { name: "Save access" })).toBeEnabled();
-    expect(screen.queryByText("Plugin access saved for this Wisp.")).not.toBeInTheDocument();
   });
 
   it("does not apply a previous Wisp's delayed response when the selected Wisp changes", async () => {
@@ -151,18 +216,19 @@ describe("WispPluginSettings", () => {
           conversationId: "first",
           revision: "first-revision",
           grants: [{ pluginId: "linear", access: "write" }],
+          webProviders: NO_PROVIDERS,
         },
       });
     });
     expect(screen.getByRole("combobox", { name: "Linear access" })).toHaveTextContent("No access");
     const user = userEvent.setup();
-    await openSelect(user, screen.getByRole("combobox", { name: "Web search access" }));
-    await user.click(screen.getByRole("option", { name: "Read only" }));
+    await openSelect(user, screen.getByRole("combobox", { name: "Search the web access" }));
+    await user.click(screen.getByRole("option", { name: /Brave Search/ }));
     await user.click(screen.getByRole("button", { name: "Save access" }));
     expect(api.saveWispPluginAccess).toHaveBeenCalledWith(expect.objectContaining({ conversationId: "second" }));
   });
 
-  it("reloads a rejected stale form without replaying its previous grants", async () => {
+  it("reloads a rejected stale form without replaying its previous choices", async () => {
     const api = setup();
     const user = userEvent.setup();
     api.saveWispPluginAccess.mockResolvedValueOnce({
@@ -181,24 +247,20 @@ describe("WispPluginSettings", () => {
     expect(api.saveWispPluginAccess).toHaveBeenCalledTimes(1);
     api.getWispPluginAccess.mockResolvedValueOnce({
       ok: true,
-      value: { conversationId: "researcher", grants: [], revision: "replacement-revision" },
+      value: { conversationId: "researcher", grants: [], webProviders: NO_PROVIDERS, revision: "replacement-revision" },
     });
     await user.click(screen.getByRole("button", { name: "Reload access settings" }));
-    const web = await screen.findByRole("combobox", { name: "Web search access" });
+    const search = await screen.findByRole("combobox", { name: "Search the web access" });
     expect(screen.getByRole("combobox", { name: "Linear access" })).toHaveTextContent("No access");
     expect(screen.getByRole("button", { name: "Save access" })).toBeDisabled();
-    expect(api.saveWispPluginAccess).toHaveBeenCalledTimes(1);
-    await openSelect(user, web);
-    await user.click(screen.getByRole("option", { name: "Read only" }));
+    await openSelect(user, search);
+    await user.click(screen.getByRole("option", { name: /Brave Search/ }));
     await user.click(screen.getByRole("button", { name: "Save access" }));
     expect(api.saveWispPluginAccess).toHaveBeenLastCalledWith({
       conversationId: "researcher",
       revision: "replacement-revision",
-      grants: [
-        { pluginId: "web-search", access: "read" },
-        { pluginId: "linear", access: "none" },
-        { pluginId: "firecrawl", access: "none" },
-      ],
+      grants: grantsFor({ "web-search": "read" }),
+      webProviders: { search: "web-search", read: null },
     });
   });
 

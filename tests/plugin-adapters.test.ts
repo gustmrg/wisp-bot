@@ -443,3 +443,211 @@ describe("Firecrawl", () => {
     );
   });
 });
+
+describe("Tavily", () => {
+  const adapter = PLUGIN_ADAPTERS.find(({ id }) => id === "tavily")!;
+  const search = adapter.tools.find(({ name }) => name === "web_search")!;
+  const read = adapter.tools.find(({ name }) => name === "web_read")!;
+
+  it("searches with bounded results and normalizes content into snippets", async () => {
+    const fetchMock = mockJson({
+      results: [{ title: "Example", url: "https://example.com", content: "Snippet" }, { title: "Ignored" }],
+      answer: "Do not return generated answers",
+    });
+    const result = JSON.parse(await search.execute(KEY, { query: "a query & more", count: 1 }));
+    expect(fetchMock.mock.calls[0]?.[0]).toBe("https://api.tavily.com/search");
+    expect(fetchMock.mock.calls[0]?.[1]).toMatchObject({
+      method: "POST",
+      headers: { Authorization: `Bearer ${KEY}` },
+      redirect: "error",
+    });
+    expect(requestBody(fetchMock)).toEqual({
+      query: "a query & more",
+      max_results: 1,
+      search_depth: "basic",
+      include_answer: false,
+      include_raw_content: false,
+      include_images: false,
+    });
+    expect(result).toEqual({
+      provider: "tavily",
+      query: "a query & more",
+      results: [{ title: "Example", url: "https://example.com", snippet: "Snippet" }],
+      moreResultsAvailable: null,
+    });
+  });
+
+  it("extracts one page as bounded Markdown without inventing a title", async () => {
+    const fetchMock = mockJson({
+      results: [{ url: "https://example.com/", raw_content: "x".repeat(20_001) }],
+      failed_results: [],
+    });
+    const result = JSON.parse(await read.execute(KEY, { url: "https://example.com" }));
+    expect(fetchMock.mock.calls[0]?.[0]).toBe("https://api.tavily.com/extract");
+    expect(requestBody(fetchMock)).toEqual({
+      urls: ["https://example.com/"],
+      format: "markdown",
+      extract_depth: "basic",
+      include_images: false,
+      timeout: 20,
+    });
+    expect(result).toEqual({
+      provider: "tavily",
+      url: "https://example.com",
+      title: null,
+      markdown: `${"x".repeat(20_000)}… [truncated]`,
+      truncated: true,
+    });
+  });
+
+  it("rejects per-page failures even when extraction responds with HTTP 200", async () => {
+    mockJson({ results: [], failed_results: [{ url: "https://example.com", error: KEY }] });
+    await expect(read.execute(KEY, { url: "https://example.com" })).rejects.toThrow(
+      "Tavily could not read this page. Check the URL and its accessibility.",
+    );
+  });
+
+  it("tests credentials using usage without consuming a search or extraction", async () => {
+    const fetchMock = mockJson({ key: { usage: 0, limit: 0 }, account: { current_plan: "Researcher" } });
+    await expect(adapter.testConnection(KEY)).resolves.toBe("Connected to Tavily.");
+    expect(fetchMock.mock.calls[0]?.[0]).toBe("https://api.tavily.com/usage");
+    expect(fetchMock.mock.calls[0]?.[1]).toMatchObject({ method: "GET", headers: { Authorization: `Bearer ${KEY}` } });
+    expect(fetchMock.mock.calls[0]?.[1]?.body).toBeUndefined();
+    mockJson({ detail: { error: KEY } });
+    await expect(adapter.testConnection(KEY)).rejects.toThrow("Tavily did not confirm the connected account.");
+  });
+});
+
+describe("Exa", () => {
+  const adapter = PLUGIN_ADAPTERS.find(({ id }) => id === "exa")!;
+  const search = adapter.tools.find(({ name }) => name === "web_search")!;
+  const read = adapter.tools.find(({ name }) => name === "web_read")!;
+
+  it("searches with bounded highlights and normalizes them into snippets", async () => {
+    const fetchMock = mockJson({
+      results: [
+        { title: "Example", url: "https://example.com", highlights: ["First", null, "Second"] },
+        { title: "Ignored" },
+      ],
+    });
+    const result = JSON.parse(await search.execute(KEY, { query: "a query", count: 1 }));
+    expect(fetchMock.mock.calls[0]?.[0]).toBe("https://api.exa.ai/search");
+    expect(fetchMock.mock.calls[0]?.[1]).toMatchObject({
+      method: "POST",
+      headers: { "x-api-key": KEY },
+      redirect: "error",
+    });
+    expect(requestBody(fetchMock)).toEqual({
+      query: "a query",
+      numResults: 1,
+      type: "auto",
+      contents: { highlights: { maxCharacters: 1_500 } },
+    });
+    expect(result).toEqual({
+      provider: "exa",
+      query: "a query",
+      results: [{ title: "Example", url: "https://example.com", snippet: "First\nSecond" }],
+      moreResultsAvailable: null,
+    });
+  });
+
+  it("reads one page while bounding extraction size and crawl time", async () => {
+    const fetchMock = mockJson({
+      results: [{ title: "Example", url: "https://example.com/", text: "x".repeat(20_001) }],
+      statuses: [{ id: "https://example.com/", status: "success" }],
+    });
+    const result = JSON.parse(await read.execute(KEY, { url: "https://example.com" }));
+    expect(fetchMock.mock.calls[0]?.[0]).toBe("https://api.exa.ai/contents");
+    expect(requestBody(fetchMock)).toEqual({
+      urls: ["https://example.com/"],
+      text: { maxCharacters: 20_001, includeHtmlTags: false },
+      livecrawlTimeout: 20_000,
+    });
+    expect(result).toMatchObject({ provider: "exa", url: "https://example.com", title: "Example", truncated: true });
+    expect(result.markdown).toBe(`${"x".repeat(20_000)}… [truncated]`);
+  });
+
+  it("rejects failed content retrieval without exposing provider error details", async () => {
+    mockJson({ results: [], statuses: [{ status: "error", error: { tag: KEY } }] });
+    await expect(read.execute(KEY, { url: "https://example.com" })).rejects.toThrow(
+      "Exa could not read this page. Check the URL and its accessibility.",
+    );
+  });
+
+  it("tests credentials with one search result and no content extraction", async () => {
+    const fetchMock = mockJson({ results: [] });
+    await expect(adapter.testConnection(KEY)).resolves.toBe("Connected to Exa.");
+    expect(fetchMock.mock.calls[0]?.[0]).toBe("https://api.exa.ai/search");
+    expect(requestBody(fetchMock)).toEqual({ query: "Exa", numResults: 1, type: "auto" });
+    mockJson({ error: KEY });
+    await expect(adapter.testConnection(KEY)).rejects.toThrow("Exa did not confirm the connection.");
+  });
+});
+
+describe.each(["tavily", "exa"] as const)("%s web adapter boundaries", (id) => {
+  const adapter = PLUGIN_ADAPTERS.find((item) => item.id === id)!;
+  const search = adapter.tools.find(({ name }) => name === "web_search")!;
+  const read = adapter.tools.find(({ name }) => name === "web_read")!;
+
+  it.each([
+    { query: "" },
+    { query: "x".repeat(501) },
+    { query: "a ".repeat(76) },
+    { query: "example", count: 11 },
+    { query: "example", count: 1.5 },
+    { query: "example", url: "https://other-provider.example" },
+  ])("validates search arguments before fetching (%j)", async (input) => {
+    const fetchMock = mockJson({});
+    await expect(search.execute(KEY, input)).rejects.toMatchObject({ code: "invalid_request" });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    { url: "file:///etc/passwd" },
+    { url: "https://user:secret@example.com" },
+    { url: "not a URL" },
+    { url: "https://example.com/" + "x".repeat(2_000) },
+    { url: "https://example.com", endpoint: "https://other-provider.example" },
+  ])("validates page arguments before fetching (%j)", async (input) => {
+    const fetchMock = mockJson({});
+    await expect(read.execute(KEY, input)).rejects.toMatchObject({ code: "invalid_request" });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("uses the default result count, handles empty searches and rejects malformed responses", async () => {
+    const fetchMock = mockJson({ results: [] });
+    const result = JSON.parse(await search.execute(KEY, { query: "example" }));
+    expect(result.results).toEqual([]);
+    expect(requestBody(fetchMock)[id === "tavily" ? "max_results" : "numResults"]).toBe(5);
+    mockJson({ error: KEY });
+    await expect(search.execute(KEY, { query: "example" })).rejects.toThrow("invalid search result");
+    mockJson({ results: [{}] });
+    await expect(read.execute(KEY, { url: "https://example.com" })).rejects.toThrow("could not read this page");
+  });
+
+  it.each([401, 429])("sanitizes HTTP %s failures", async (status) => {
+    mockJson({ error: KEY }, status);
+    const error = await search.execute(KEY, { query: "example" }).catch((error: unknown) => error);
+    expect(sanitizeBackendError(error)).toMatchObject({
+      code: status === 401 ? "invalid_configuration" : "internal_error",
+    });
+    expect(JSON.stringify(sanitizeBackendError(error))).not.toContain(KEY);
+  });
+
+  it("cancels provider requests through the shared HTTP boundary", async () => {
+    const fetchMock = vi.fn(
+      (_url: string, init?: RequestInit) =>
+        new Promise<Response>((_resolve, reject) => {
+          init?.signal?.addEventListener("abort", () => reject(new Error(KEY)), { once: true });
+        }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const controller = new AbortController();
+    const pending = expect(search.execute(KEY, { query: "example" }, controller.signal)).rejects.toMatchObject({
+      code: "aborted",
+    });
+    controller.abort();
+    await pending;
+    expect(fetchMock.mock.calls[0]?.[1]?.signal?.aborted).toBe(true);
+  });
+});

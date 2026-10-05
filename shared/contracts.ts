@@ -2,6 +2,7 @@ import type { ContextRequest, ContextView } from "./context-policy.js";
 import type {
   PluginSettingsView,
   PluginRequest,
+  SavePluginDefaultsRequest,
   SavePluginSettingsRequest,
   TestPluginConnectionRequest,
   PluginConnectionResult,
@@ -54,6 +55,7 @@ export const WISP_IPC_CHANNELS = {
   getAiSettings: "wisp:settings:ai:get",
   getPluginSettings: "wisp:plugins:get",
   savePluginSettings: "wisp:plugins:save",
+  savePluginDefaults: "wisp:plugins:defaults:save",
   removePlugin: "wisp:plugins:remove",
   testPluginConnection: "wisp:plugins:test",
   getWispPluginAccess: "wisp:plugins:access:get",
@@ -367,6 +369,7 @@ export interface WispApi {
   setLaunchAtLogin(enabled: boolean): Promise<BackendResult<LaunchAtLoginState>>;
   getPluginSettings(): Promise<BackendResult<PluginSettingsView>>;
   savePluginSettings(request: SavePluginSettingsRequest): Promise<BackendResult<PluginSettingsView>>;
+  savePluginDefaults(request: SavePluginDefaultsRequest): Promise<BackendResult<PluginSettingsView>>;
   removePlugin(request: PluginRequest): Promise<BackendResult<PluginSettingsView>>;
   testPluginConnection(request: TestPluginConnectionRequest): Promise<BackendResult<PluginConnectionResult>>;
   getWispPluginAccess(request: ConversationRequest): Promise<BackendResult<WispPluginAccessView>>;

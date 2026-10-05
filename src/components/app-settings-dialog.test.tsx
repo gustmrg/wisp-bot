@@ -28,6 +28,7 @@ describe("AppSettingsDialog metadata", () => {
       value: {
         secureStorageAvailable: true,
         plugins: PLUGIN_CATALOG.map((plugin) => ({ ...plugin, configured: false, enabled: false })),
+        defaultProviders: { search: null, read: null },
       },
     }));
     Object.defineProperty(window, "wisp", {
@@ -71,13 +72,13 @@ describe("AppSettingsDialog metadata", () => {
     );
     expect(getPluginSettings).not.toHaveBeenCalled();
     await user.click(screen.getByRole("button", { name: "Plugins" }));
-    await user.click(await screen.findByRole("button", { name: "Connect Web search" }));
+    await user.click(await screen.findByRole("button", { name: "Connect Brave Search" }));
     const key = await screen.findByLabelText("Brave Search API key");
     await user.type(key, "unsaved-secret");
     await user.click(screen.getByRole("button", { name: "Back to plugins" }));
     await user.click(screen.getByRole("button", { name: "General" }));
     await user.click(screen.getByRole("button", { name: "Plugins" }));
-    await user.click(await screen.findByRole("button", { name: "Connect Web search" }));
+    await user.click(await screen.findByRole("button", { name: "Connect Brave Search" }));
     expect(await screen.findByLabelText("Brave Search API key")).toHaveValue("");
     expect(getPluginSettings).toHaveBeenCalledTimes(2);
   });
@@ -98,6 +99,7 @@ describe("AppSettingsDialog metadata", () => {
           value: {
             secureStorageAvailable: true,
             plugins: PLUGIN_CATALOG.map((plugin) => ({ ...plugin, configured: false, enabled: false })),
+            defaultProviders: { search: null, read: null },
           },
         })),
         getMcpSettings,

@@ -10,6 +10,7 @@ export function registerPluginHandlers(
   return registerGuardedHandlers(ipcMain, authorizeSender, [
     [WISP_IPC_CHANNELS.getPluginSettings, () => service.getView()],
     [WISP_IPC_CHANNELS.savePluginSettings, (payload) => service.save(payload)],
+    [WISP_IPC_CHANNELS.savePluginDefaults, (payload) => service.saveDefaults(payload)],
     [WISP_IPC_CHANNELS.removePlugin, (payload) => service.remove(payload)],
     [WISP_IPC_CHANNELS.testPluginConnection, (payload) => service.testConnection(payload)],
     [WISP_IPC_CHANNELS.getWispPluginAccess, (payload) => service.getAccess(payload)],
