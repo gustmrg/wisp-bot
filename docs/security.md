@@ -62,7 +62,10 @@ the approval prompt. **Wisp settings → General → Workspace** shows usage and
 opens the workspace folder; the path is computed by the main process. Attached
 files are picked in a native dialog owned by the main process and copied into the
 workspace `inbox/` folder (at most 20 per request, never overwriting); the
-renderer never supplies a file path.
+renderer never supplies a file path. On a server on another computer, and in
+the browser app, the device uploads the picked files instead: the server takes
+only the base name, sanitizes it, writes to a hidden partial file, and links it
+into `inbox/` without overwriting once exactly the declared size arrived.
 
 An approval request expires after 60 seconds and is then denied; the card
 shows the remaining time. For a workspace file change, while auto-review is on,

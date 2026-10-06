@@ -2,9 +2,11 @@ import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import type { ConnectionsView } from "../../shared/connections";
 import type { WispApi } from "../../shared/contracts";
 import type { Chat } from "../../shared/conversations";
 import { ChatComposer } from "@/components/chat-composer";
+import { ActiveConnectionContext } from "@/features/connections/active-connection";
 
 function wisp(id: string, name = id): Chat {
   return {
@@ -73,6 +75,21 @@ describe("ChatComposer", () => {
 
     expect(onSend).toHaveBeenCalledWith("Attached to the workspace:\n- `inbox/a.txt`");
     expect(screen.queryByRole("list", { name: "Attached files" })).not.toBeInTheDocument();
+  });
+
+  it("offers attaching files when Wisps run on a server elsewhere", () => {
+    const remote: ConnectionsView = {
+      activeId: "home",
+      profiles: [],
+      status: { profileId: "home", phase: "connected", epoch: 1 },
+      secureStorageAvailable: true,
+    };
+    render(
+      <ActiveConnectionContext.Provider value={remote}>
+        <ChatComposer {...defaultProps} chat={wisp("one", "One")} />
+      </ActiveConnectionContext.Provider>,
+    );
+    expect(screen.getByRole("button", { name: "Attach files" })).toBeVisible();
   });
 
   it("shows why files could not be attached", async () => {

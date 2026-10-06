@@ -151,6 +151,13 @@ describe("ConnectionGate", () => {
     expect(screen.queryByText("Workspace")).toBeNull();
     await userEvent.click(screen.getByRole("button", { name: /On a Wisp server/ }));
     expect(screen.getByRole("button", { name: /Add a server/ })).toBeVisible();
+    // Someone without a server yet learns how to set one up.
+    await userEvent.click(screen.getByText("How to set up a Wisp server"));
+    expect(screen.getByText(/on the server for you/)).toBeVisible();
+    expect(screen.getByRole("link", { name: /Full guide/ })).toHaveAttribute(
+      "href",
+      "https://github.com/gustmrg/wisp-bot/blob/main/docs/remote-server.md",
+    );
     expect(api.activateConnection).not.toHaveBeenCalled();
     await userEvent.click(screen.getByRole("button", { name: /On this computer/ }));
     expect(api.activateConnection).toHaveBeenCalledWith({ id: "local" });

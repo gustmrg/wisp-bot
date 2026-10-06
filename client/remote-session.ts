@@ -1,5 +1,12 @@
 import type { BackendResult } from "../shared/contracts.js";
 import type { HostRequest, HostResponse, RemoteEventType } from "../shared/remote-protocol.js";
+import {
+  MAX_ATTACHMENTS_PER_REQUEST,
+  formatBytes,
+  type AttachWorkspaceFilesResult,
+  type WorkspaceAttachment,
+  type WorkspaceView,
+} from "../shared/workspace.js";
 import { RemoteClient, RemoteError, type CredentialStore } from "./remote-client.js";
 
 /** A path to the server, such as an SSH tunnel or a direct HTTPS origin. */
@@ -11,6 +18,8 @@ export interface RemoteTransport {
   close(): void;
   /** Asks the server for a pairing code over an already authenticated channel, such as SSH. */
   requestPairingCode?(): Promise<string>;
+  /** A clearer reason for the last failure to reach the server, when the transport knows one. */
+  explainFailure?(): string | undefined;
 }
 
 /** A transport failure that retrying cannot fix, such as an untrusted host key. */
@@ -92,18 +101,60 @@ export class RemoteSession {
     try {
       return await client.call(operation, payload);
     } catch (error) {
-      if (error instanceof RemoteError && error.code === "unauthorized") this.requirePairing();
-      if (error instanceof RemoteError && error.code === "not_found") {
-        return {
-          ok: false,
-          error: { code: "unsupported", message: "This server does not offer that action.", retryable: false },
-        };
-      }
-      if (error instanceof RemoteError && error.code !== "network") {
-        return { ok: false, error: { code: "unavailable", message: error.message, retryable: false } };
-      }
-      return this.unavailable();
+      return this.failureOf(error, "This server does not offer that action.");
     }
+  }
+
+  /**
+   * Sends files from this device into a Wisp's workspace inbox, one request
+   * per file, and answers like `attachWorkspaceFiles` does for a local picker.
+   */
+  async attachFiles(
+    conversationId: string,
+    files: ReadonlyArray<{ name: string; content: Blob }>,
+  ): Promise<BackendResult<AttachWorkspaceFilesResult>> {
+    const workspace = async (): Promise<BackendResult<WorkspaceView>> =>
+      (await this.call("getWorkspace", { conversationId })) as BackendResult<WorkspaceView>;
+    const before = await workspace();
+    if (!before.ok || !files.length)
+      return before.ok ? { ok: true, value: { files: [], workspace: before.value } } : before;
+    if (files.length > MAX_ATTACHMENTS_PER_REQUEST) {
+      return invalid(`Attach at most ${MAX_ATTACHMENTS_PER_REQUEST} files at a time.`);
+    }
+    // Checked here too, so a full workspace fails before any bytes are sent.
+    const { usedBytes, quotaBytes } = before.value;
+    if (usedBytes + files.reduce((sum, file) => sum + file.content.size, 0) > quotaBytes) {
+      return invalid(
+        `This Wisp's workspace is full (${formatBytes(usedBytes)} of ${formatBytes(quotaBytes)} used). Free some space before adding more files.`,
+      );
+    }
+    const client = this.client;
+    if (!client || !this.connected) return this.unavailable();
+    const attached: WorkspaceAttachment[] = [];
+    for (const file of files) {
+      let result: BackendResult<WorkspaceAttachment>;
+      try {
+        result = await client.uploadWorkspaceFile(conversationId, file.name, file.content);
+      } catch (error) {
+        return this.failureOf(error, "This server cannot receive files. Update it to attach files from this device.");
+      }
+      if (!result.ok) return result;
+      attached.push(result.value);
+    }
+    const after = await workspace();
+    return after.ok ? { ok: true, value: { files: attached, workspace: after.value } } : after;
+  }
+
+  /** The result for a request the server never answered with an operation result. */
+  private failureOf(error: unknown, notOffered: string): BackendResult<never> {
+    if (error instanceof RemoteError && error.code === "unauthorized") this.requirePairing();
+    if (error instanceof RemoteError && error.code === "not_found") {
+      return { ok: false, error: { code: "unsupported", message: notOffered, retryable: false } };
+    }
+    if (error instanceof RemoteError && error.code !== "network") {
+      return { ok: false, error: { code: "unavailable", message: error.message, retryable: false } };
+    }
+    return this.unavailable();
   }
 
   private unavailable(): BackendResult<never> {
@@ -230,7 +281,10 @@ export class RemoteSession {
           );
           waitForUser = true;
         } else {
-          this.disconnected(error instanceof Error ? error.message : "The server cannot be reached.");
+          this.disconnected(
+            this.transport?.explainFailure?.() ??
+              (error instanceof Error ? error.message : "The server cannot be reached."),
+          );
         }
       }
       if (signal.aborted) break;
@@ -267,4 +321,8 @@ export class RemoteSession {
       this.wake = undefined;
     });
   }
+}
+
+function invalid(message: string): BackendResult<never> {
+  return { ok: false, error: { code: "invalid_request", message, retryable: false } };
 }

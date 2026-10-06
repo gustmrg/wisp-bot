@@ -59,8 +59,9 @@ without relying on PIDs.
   the desktop, and a retried request ID is rejected rather than run twice.
 - Restarting the server makes every client refresh its access token once and
   resync its event stream.
-- MCP OAuth sign-in, opening folders, and attaching files need a client-side
-  flow before they work remotely.
+- MCP OAuth sign-in and opening folders need a client-side flow before they
+  work remotely. Attaching files has one: other devices pick files on their
+  own screen and upload them to the workspace.
 - The desktop app is always a client. For **This computer** it runs the same
   server as a child process with Electron's Node, handing it the credential
   key and a one-time local pairing code on stdin, as T3 Code does with its

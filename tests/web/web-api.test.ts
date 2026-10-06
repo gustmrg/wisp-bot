@@ -87,12 +87,14 @@ describe("browser WispApi", () => {
     cleanups.push(() => server.close());
     const browser = browserFetch(server.url);
     const storage = memoryStorage();
+    const picks: File[] = [];
     const api = createWebWispApi({
       origin: server.url,
       storage,
       deviceName: browserDeviceName("Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) Version/18.0 Safari/604.1"),
       appVersion: "1.0.0",
       fetch: browser.fetch,
+      pickFiles: async () => picks.splice(0),
     });
     expect(isWispBridgeAvailable(api)).toBe(true);
     const views: ConnectionsView[] = [];
@@ -123,6 +125,29 @@ describe("browser WispApi", () => {
       ok: false,
       error: { code: "unsupported" },
     });
+
+    // Attached files travel from the browser to the Wisp's workspace on the server.
+    expect(await api.attachWorkspaceFiles({ conversationId: "atlas" })).toMatchObject({
+      ok: true,
+      value: { files: [], workspace: { usedBytes: 0 } },
+    });
+    picks.push(new File(["hello"], "notes.txt"), new File(["a,b"], "notes.txt"));
+    expect(await api.attachWorkspaceFiles({ conversationId: "atlas" })).toEqual({
+      ok: true,
+      value: {
+        files: [
+          { name: "notes.txt", path: "inbox/notes.txt", size: 5 },
+          { name: "notes (2).txt", path: "inbox/notes (2).txt", size: 3 },
+        ],
+        workspace: expect.objectContaining({ usedBytes: 8 }),
+      },
+    });
+    // A cookie alone cannot send files: a cross-site form could.
+    const forged = await browser.fetch(`${server.url}/api/v1/workspace-files?conversationId=atlas&name=x.txt`, {
+      method: "POST",
+      body: "x",
+    });
+    expect(forged.status).toBe(403);
 
     await api.removeConnection({ id: "server" });
     await until(async () => (await phase()) === "pairing_required", "signing out");

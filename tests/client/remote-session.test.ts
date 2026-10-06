@@ -261,4 +261,41 @@ describe("RemoteSession", () => {
     client.instance.start();
     await waitUntil(() => attempts === 2, "the retry");
   });
+
+  it("shows the transport's own reason when the server cannot be reached", async () => {
+    const port = await freePort();
+    // A paired device goes on to reach the server, which nothing answers for.
+    let stored: DeviceCredentials | undefined = {
+      deviceId: "d",
+      serverId: "s",
+      accessToken: "a",
+      accessExpiresAt: new Date(Date.now() + 600_000).toISOString(),
+      refreshToken: "r",
+    };
+    const phases: Array<[RemoteSessionPhase, string | undefined]> = [];
+    const paired = new RemoteSession({
+      serverName: "Test server",
+      deviceName: "Test device",
+      openTransport: async () => ({
+        baseUrl: `http://127.0.0.1:${port}`,
+        closed: new Promise(() => undefined),
+        close: () => undefined,
+        explainFailure: () => "Nothing answers on port 8787.",
+      }),
+      credentials: {
+        load: () => stored,
+        save: async (credentials) => {
+          stored = credentials as DeviceCredentials | undefined;
+        },
+      },
+      onStatus: (phase, message) => phases.push([phase, message]),
+      onEvent: () => undefined,
+      onReset: () => undefined,
+      backoffMs: () => 50,
+    });
+    cleanups.push(() => paired.stop());
+    paired.start(undefined, false);
+    await waitUntil(() => phases.length > 0, "a status");
+    expect(phases.at(-1)).toEqual(["connecting", "Nothing answers on port 8787."]);
+  });
 });

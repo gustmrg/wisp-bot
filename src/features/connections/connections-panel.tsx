@@ -11,6 +11,7 @@ import type {
   ConnectionStatus,
   SaveConnectionRequest,
 } from "../../../shared/connections";
+import { ServerSetupGuide } from "./server-setup-guide";
 
 const PHASE_LABELS: Record<ConnectionStatus["phase"], string> = {
   choosing: "Not in use",
@@ -148,6 +149,7 @@ export function ConnectionsPanel({ view, serversOnly = false }: { view: Connecti
           <span className="mt-1 block text-[12px] text-dim">Use Wisps running on a Wisp server over SSH or HTTPS.</span>
         </span>
       </button>
+      <ServerSetupGuide />
       {error ? (
         <p role="alert" className="mt-3 text-[11.5px] text-destructive">
           {error}
@@ -345,6 +347,7 @@ function ConnectionForm({
           />
         ) : null}
       </div>
+      {profile ? null : <ServerSetupGuide />}
     </form>
   );
 }

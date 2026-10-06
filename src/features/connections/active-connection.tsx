@@ -7,8 +7,9 @@ export const ActiveConnectionContext = createContext<ConnectionsView | null>(nul
 
 /**
  * Whether the backend can use this computer's screen: open its folders in the
- * file manager and pick files from its disk. Only true for Wisps on this
- * computer in the desktop app; a server elsewhere, or the browser app, cannot.
+ * file manager. Only true for Wisps on this computer in the desktop app; a
+ * server elsewhere, or the browser app, cannot. Attaching files works
+ * everywhere: other devices send the files to the server.
  */
 export function useScreenActions(): boolean {
   const view = useContext(ActiveConnectionContext);

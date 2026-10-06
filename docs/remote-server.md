@@ -28,11 +28,12 @@ tool policy, and approvals. Its data directory has the desktop's layout under
 ```
 
 A few actions need a screen on the server's computer: opening a Wisp's
-folder, attaching files, and signing in to an MCP server with OAuth (its
-callback must reach a browser on the same machine). The server asks the
+folder, picking files to attach, and signing in to an MCP server with OAuth
+(its callback must reach a browser on the same machine). The server asks the
 desktop app that started it to do these, through `hostRequest` events; for any
-other device they return an `unsupported` error. Updates and launch at login
-are desktop-only and are not offered.
+other device, opening folders and signing in return an `unsupported` error.
+Other devices attach files by picking them on their own screen and uploading
+them. Updates and launch at login are desktop-only and are not offered.
 
 ## On this computer
 
@@ -173,9 +174,16 @@ server keep working meanwhile. A device that was revoked asks to pair again
 and never pairs again on its own. Pairing credentials are kept with the
 system keychain; without one, the app pairs again after every restart.
 
-Some actions need a screen on the server's computer and are not available on a
-server on another machine: opening a Wisp's folder, attaching files from this
-computer, and signing in to an MCP server with OAuth.
+Attaching files works on any server: the app opens this computer's file picker
+and uploads the files into the Wisp's workspace `inbox/` folder, with the same
+512 MB workspace cap and 20 files per message. Opening a Wisp's folder and
+signing in to an MCP server with OAuth need a screen on the server's computer
+and are not available on a server on another machine.
+
+**Settings → Connections** has a short **How to set up a Wisp server** guide
+that summarizes this page. When pairing over SSH fails, the app says what is
+missing on the server: `wispctl`, Node.js, the server files, or a running
+server.
 
 ## Back up and restore
 
@@ -283,9 +291,11 @@ The browser app is the same Wisp with a few differences:
 
 - It always uses the server that served it. **Settings → Connections** shows
   that server and **Sign out of this browser**, which revokes the device.
-- Attaching files, opening a Wisp's folder, signing in to an MCP server with
-  OAuth, updates, and launch at login belong to the desktop app and are hidden
-  or report that they are unavailable.
+- Attaching files uses the browser's file picker and uploads the files to the
+  server.
+- Opening a Wisp's folder, signing in to an MCP server with OAuth, updates,
+  and launch at login belong to the desktop app and are hidden or report that
+  they are unavailable.
 - Voice input works over HTTPS. iPhones record `audio/mp4`, which the voice
   providers accept.
 - A service worker caches only the app's files, never conversations or API
@@ -311,6 +321,14 @@ The API mirrors the desktop bridge, so a client implements it mechanically:
   reconnecting with `Last-Event-ID` replays what was missed. When that is not
   possible (the server restarted, or the gap is too long) the stream starts
   with a `resync` event, and the client reloads state before continuing.
+- `POST /api/v1/workspace-files?conversationId=<id>&name=<file name>` stores
+  one file in a Wisp's workspace `inbox/` folder. The body is the file's raw
+  bytes and must declare its `Content-Length`; the answer is a
+  `BackendResult` with the attachment's name, workspace path, and size. A file
+  that would exceed the workspace cap is refused before it is read, and one
+  that arrives shorter or longer than declared is discarded. Requests have no
+  overall time limit so large files can finish over slow links; a connection
+  that sends nothing for two minutes is closed.
 - `POST /api/v1/auth/logout` revokes the calling device.
 - `GET /health` reports liveness without authentication.
 
