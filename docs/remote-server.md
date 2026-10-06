@@ -1,10 +1,13 @@
 # Headless Wisp server
 
-The Wisp server runs the same backend as the desktop app as a long-lived Linux
-process, without Electron. Wisps keep working when no client is connected:
-closing a client only closes its connection.
+The Wisp server is the backend: conversations, agents, credentials, and
+tools. The desktop app is always its client. On **This computer**, the app
+starts the server as a child process and talks to it exactly as it talks to a
+server on another machine.
 
-The desktop app connects to a server over SSH or a private HTTPS address; see
+Run the server by itself on a Linux machine and Wisps keep working when no
+client is connected: closing a client only closes its connection. The desktop
+app connects to such a server over SSH or a private HTTPS address; see
 [Connect the desktop app](#connect-the-desktop-app). Web and mobile clients
 come later.
 
@@ -23,10 +26,26 @@ tool policy, and approvals. Its data directory has the desktop's layout under
 └── admin.sock                # Owner-only administrative socket
 ```
 
-A few desktop actions need a screen on the server and return an `unsupported`
-error instead: opening a Wisp's folder, attaching local files, and signing in to
-an MCP server with OAuth (its callback must reach a browser on the same
-machine). Updates and launch at login are desktop-only and are not offered.
+A few actions need a screen on the server's computer: opening a Wisp's
+folder, attaching files, and signing in to an MCP server with OAuth (its
+callback must reach a browser on the same machine). The server asks the
+desktop app that started it to do these, through `hostRequest` events; for any
+other device they return an `unsupported` error. Updates and launch at login
+are desktop-only and are not offered.
+
+## On this computer
+
+The desktop app starts `server/main.js` with its own Electron runtime as Node
+(`ELECTRON_RUN_AS_NODE`), using the app's data directory, so conversations
+created by earlier versions stay where they are. The first stdin line carries
+the credential key and a one-time pairing code; stdin stays open, and the
+server shuts down when it closes, so it never outlives the app, even after a
+crash. The key is random and kept encrypted by the system keychain
+(`local-server-key.json`); on first start the app re-encrypts credentials that
+earlier versions encrypted with the keychain directly, keeping each original as
+`*.keychain-backup`. The local server starts only while **This computer** is
+the chosen connection and stops, after its Wisps settle, when you switch away
+or quit. Disabling Electron's `RunAsNode` fuse would break this mode.
 
 ## Install
 
@@ -119,8 +138,14 @@ The compose file publishes the port on host loopback only and keeps data in the
 
 ## Connect the desktop app
 
-Open **Settings → Connections** (or, on first launch, **Connect to a Wisp
-server instead**) and add the server:
+A new installation first asks **Where should your Wisps run?**: **On this
+computer** (recommended) or **On a Wisp server**. Nothing runs until one is
+chosen. Installations that already have Wisps on this computer keep using it.
+Each place keeps its own Wisps, conversations, settings, and credentials;
+nothing is copied between them.
+
+To add or switch servers later, open **Settings → Connections** and add the
+server:
 
 - **SSH** uses this computer's OpenSSH client with your agent, keys,
   `~/.ssh/config`, and known hosts. Enter a host name, IP address, or alias,
@@ -139,16 +164,16 @@ approval to that server; the app reloads from it. Over SSH, pairing runs
 or on the PATH of non-interactive SSH sessions. Otherwise, or for an HTTPS
 address, enter a code from `wispctl pair` when asked.
 
-The app reopens the last connection on its next start, and starts Wisps on
-this computer only while **This computer** is chosen. If the server cannot be
+The app reopens the last connection on its next start, and starts its local
+server only while **This computer** is chosen. If the server cannot be
 reached, a banner says so and the app reconnects with backoff; Wisps on the
 server keep working meanwhile. A device that was revoked asks to pair again
 and never pairs again on its own. Pairing credentials are kept with the
 system keychain; without one, the app pairs again after every restart.
 
-Some actions need a screen on the server and are not available while
-connected: opening a Wisp's folder, attaching files from this computer, and
-signing in to an MCP server with OAuth.
+Some actions need a screen on the server's computer and are not available on a
+server on another machine: opening a Wisp's folder, attaching files from this
+computer, and signing in to an MCP server with OAuth.
 
 ## Pair devices
 

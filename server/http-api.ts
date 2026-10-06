@@ -1,4 +1,8 @@
+import { AsyncLocalStorage } from "node:async_hooks";
+import { randomUUID } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
+
+import { WispBackendError } from "../backend/backend-error.js";
 
 import type { BackendResult } from "../shared/contracts.js";
 import { WISP_IPC_CHANNELS } from "../shared/contracts.js";
@@ -6,6 +10,8 @@ import { encodeRemoteJson } from "../shared/remote-codec.js";
 import {
   REMOTE_API_PREFIX,
   REMOTE_PROTOCOL_VERSION,
+  type HostRequest,
+  type HostResponse,
   type RemoteEventType,
   type ServerDescriptor,
 } from "../shared/remote-protocol.js";
@@ -52,13 +58,29 @@ export interface HttpApiOptions {
 
 export interface HttpApi {
   handle(request: IncomingMessage, response: ServerResponse): void;
+  /**
+   * Asks the device behind the current operation to do something on its
+   * screen. Only a local device can: on another computer, a server path or a
+   * loopback sign-in callback means nothing.
+   */
+  requestHost(
+    request: DistributiveOmit<HostRequest, "id">,
+    timeoutMs: number,
+    unsupported: string,
+  ): Promise<HostResponse>;
   /** Ends every open event stream, e.g. on shutdown. */
   closeStreams(): void;
 }
 
+type DistributiveOmit<T, K extends keyof T> = T extends unknown ? Omit<T, K> : never;
+
+/** The device whose operation is running, so host requests reach the right screen. */
+const caller = new AsyncLocalStorage<{ deviceId: string }>();
+
 export function createHttpApi(options: HttpApiOptions): HttpApi {
   const { auth, hub, logger } = options;
   const streams = new Map<ServerResponse, string>();
+  const hostRequests = new Map<string, { deviceId: string; resolve: (response: HostResponse) => void }>();
   const channelsByOperation = new Map<string, string>();
   for (const [operation, channel] of Object.entries(WISP_IPC_CHANNELS)) {
     if (!PUSH_OPERATIONS.has(operation) && options.operations.has(channel)) {
@@ -138,7 +160,18 @@ export function createHttpApi(options: HttpApiOptions): HttpApi {
       if (!listener) throw new HttpError(404, "not_found", "This server does not offer that operation.");
       const limit = operation === "transcribeAudio" ? AUDIO_BODY_LIMIT : DEFAULT_BODY_LIMIT;
       const payload = await readJsonBody(request, limit);
-      sendJson(response, 200, await listener(OWNER_EVENT, payload));
+      sendJson(response, 200, await caller.run({ deviceId }, () => listener(OWNER_EVENT, payload)));
+      return;
+    }
+    if (path.startsWith("/host-requests/") && method === "POST") {
+      const id = path.slice("/host-requests/".length);
+      const pending = hostRequests.get(id);
+      // Only the device that was asked may answer.
+      if (!pending || pending.deviceId !== deviceId) throw new HttpError(404, "not_found", "No such host request.");
+      const body = asRecord(await readJsonBody(request, DEFAULT_BODY_LIMIT));
+      hostRequests.delete(id);
+      pending.resolve(parseHostResponse(body));
+      sendJson(response, 200, { ok: true, value: {} });
       return;
     }
     throw new HttpError(404, "not_found", "Not found.");
@@ -189,6 +222,31 @@ export function createHttpApi(options: HttpApiOptions): HttpApi {
   };
 
   return {
+    async requestHost(request, timeoutMs, unsupported) {
+      const deviceId = caller.getStore()?.deviceId;
+      if (!deviceId || !auth.isLocal(deviceId)) throw new WispBackendError("unsupported", unsupported);
+      const targets = [...streams].filter(([, owner]) => owner === deviceId).map(([response]) => response);
+      if (targets.length === 0) {
+        throw new WispBackendError("unavailable", "Wisp is not connected to the app on this computer.", true);
+      }
+      const id = randomUUID();
+      const answer = new Promise<HostResponse>((resolve) => {
+        hostRequests.set(id, { deviceId, resolve });
+      });
+      const timer = setTimeout(() => {
+        hostRequests.get(id)?.resolve({ ok: false, message: "The app did not answer in time." });
+        hostRequests.delete(id);
+      }, timeoutMs);
+      const event = { ...request, id } as HostRequest;
+      for (const response of targets) {
+        if (!response.writableEnded) response.write(`event: hostRequest\ndata: ${encodeRemoteJson(event)}\n\n`);
+      }
+      try {
+        return await answer;
+      } finally {
+        clearTimeout(timer);
+      }
+    },
     handle(request, response) {
       route(request, response).catch((error: unknown) => {
         if (response.headersSent) {
@@ -211,6 +269,22 @@ export function createHttpApi(options: HttpApiOptions): HttpApi {
       streams.clear();
     },
   };
+}
+
+function parseHostResponse(body: Record<string, unknown>): HostResponse {
+  if (body.ok === false) {
+    return { ok: false, message: typeof body.message === "string" ? body.message.slice(0, 500) : "The app failed." };
+  }
+  const value = body.value;
+  if (value === undefined) return { ok: true };
+  if (
+    !Array.isArray(value) ||
+    value.length > 100 ||
+    !value.every((item) => typeof item === "string" && item.length < 4096)
+  ) {
+    throw invalidRequest();
+  }
+  return { ok: true, value: value as string[] };
 }
 
 function hostNameOf(host: string | undefined): string {

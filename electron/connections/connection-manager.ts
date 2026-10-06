@@ -1,37 +1,32 @@
 import { WispBackendError } from "../../backend/backend-error.js";
-import type { HandlerEvent } from "../../backend/handlers/guarded-handlers.js";
-import { disposeWithin } from "../../backend/runtime.js";
 import type { StructuredLogger } from "../../backend/structured-logger.js";
-import { RemoteSession, type RemoteTransport } from "../../client/remote-session.js";
+import { RemoteSession, type RemoteSessionPhase, type RemoteTransport } from "../../client/remote-session.js";
 import {
   LOCAL_CONNECTION_ID,
+  type ConnectionPhase,
+  type ConnectionProfile,
   type ConnectionStatus,
   type ConnectionsView,
-  type RemoteConnectionProfile,
   type SshConnectionProfile,
 } from "../../shared/connections.js";
 import { WISP_IPC_CHANNELS, type BackendResult } from "../../shared/contracts.js";
+import type { HostRequest, HostResponse } from "../../shared/remote-protocol.js";
+import type { LocalServer } from "../local-server/local-server.js";
 import type { ConnectionStore } from "./connection-store.js";
-
-export type OperationListener = (event: HandlerEvent, payload: unknown) => Promise<BackendResult<unknown>>;
-
-/** The backend running on this computer, with its operations by IPC channel. */
-export interface LocalBackend {
-  operations: ReadonlyMap<string, OperationListener>;
-  dispose(): Promise<void>;
-}
 
 export interface ConnectionManagerOptions {
   store: ConnectionStore;
-  /** Starts the local backend; `publish` sends its pushed events to the renderer. */
-  createLocalBackend(publish: (channel: string, payload: unknown) => void): Promise<LocalBackend>;
+  /** The Wisp server on this computer, started only while it is the chosen connection. */
+  localServer: LocalServer;
   openSshTunnel(profile: SshConnectionProfile, signal: AbortSignal): Promise<RemoteTransport>;
+  /** Does what the local server asks on this computer's screen. */
+  onHostRequest(request: HostRequest): Promise<HostResponse>;
   deviceName: string;
   /** Sends a push channel payload to every renderer window. */
   broadcast(channel: string, payload: unknown): void;
   logger: Pick<StructuredLogger, "info" | "warn">;
-  /** How long local Wisps may take to settle when switching away from this computer. */
-  localShutdownTimeoutMs?: number;
+  /** Whether this computer already has Wisps from a version that had no connection choice. */
+  hasLocalData(): Promise<boolean>;
 }
 
 const OPERATIONS_BY_CHANNEL = new Map<string, string>(
@@ -40,23 +35,33 @@ const OPERATIONS_BY_CHANNEL = new Map<string, string>(
 const PUSHED = new Set(["agentEvent", "conversationChanged", "mcpSettingsChanged"]);
 
 /**
- * Owns where the backend runs. Exactly one target is active: the local
- * backend, started only while it is chosen, or a session with a Wisp server.
- * Renderer requests go to the active target, and only its events reach the
- * renderer.
+ * Owns where the backend runs. The app is always a client: "This computer"
+ * is a Wisp server the app starts as a child process, reached exactly like a
+ * server over SSH or HTTPS. Renderer requests go to the active session, and
+ * only its events reach the renderer.
  */
 export class ConnectionManager {
   private status: ConnectionStatus = { profileId: LOCAL_CONNECTION_ID, phase: "connecting", epoch: 0 };
-  private local: { ready: Promise<LocalBackend | undefined>; backend?: LocalBackend } | undefined;
   private session: RemoteSession | undefined;
   private queue: Promise<unknown> = Promise.resolve();
   private disposed = false;
 
   constructor(private readonly options: ConnectionManagerOptions) {}
 
-  /** Opens the connection chosen last time; resolves once a local backend is ready. */
+  /**
+   * Opens the connection chosen last time. On a first run nothing starts:
+   * the person chooses this computer or a server first. People upgrading
+   * with Wisps already on this computer keep using it.
+   */
   start(): Promise<void> {
-    return this.serialized(() => this.open(this.options.store.active.id, undefined, false));
+    return this.serialized(async () => {
+      const { store } = this.options;
+      if (!store.hasChoice && !(await this.options.hasLocalData())) {
+        this.setStatus({ profileId: LOCAL_CONNECTION_ID, phase: "choosing" });
+        return;
+      }
+      await this.open(store.active.id, undefined, false);
+    });
   }
 
   view(): ConnectionsView {
@@ -72,16 +77,10 @@ export class ConnectionManager {
     };
   }
 
-  /** Runs a renderer request on the active target. */
-  async dispatch(channel: string, event: HandlerEvent, payload: unknown): Promise<BackendResult<unknown>> {
-    if (this.local) {
-      const backend = await this.local.ready;
-      const listener = backend?.operations.get(channel);
-      if (listener) return listener(event, payload);
-    } else if (this.session) {
-      const operation = OPERATIONS_BY_CHANNEL.get(channel);
-      if (operation) return this.session.call(operation, payload);
-    }
+  /** Runs a renderer request on the active server. */
+  async dispatch(channel: string, payload: unknown): Promise<BackendResult<unknown>> {
+    const operation = OPERATIONS_BY_CHANNEL.get(channel);
+    if (this.session && operation) return this.session.call(operation, payload);
     return {
       ok: false,
       error: { code: "unavailable", message: "Wisp is switching connections. Try again.", retryable: true },
@@ -91,9 +90,8 @@ export class ConnectionManager {
   activate(id: string, pairingCode?: string): Promise<ConnectionsView> {
     return this.serialized(async () => {
       if (!this.options.store.get(id)) throw new WispBackendError("not_found", "That connection no longer exists.");
-      const sameRemote = id === this.status.profileId && this.session;
-      if (sameRemote) this.session?.start(pairingCode);
-      else if (id !== this.status.profileId || this.status.phase === "error") await this.open(id, pairingCode, true);
+      if (id === this.status.profileId && this.session) this.session.start(pairingCode);
+      else await this.open(id, pairingCode, true);
       return this.view();
     });
   }
@@ -102,7 +100,7 @@ export class ConnectionManager {
   retry(): Promise<ConnectionsView> {
     return this.serialized(async () => {
       if (this.session) this.session.start();
-      else if (this.status.phase === "error") await this.open(this.status.profileId, undefined, true);
+      else if (this.status.phase !== "choosing") await this.open(this.status.profileId, undefined, true);
       return this.view();
     });
   }
@@ -128,71 +126,50 @@ export class ConnectionManager {
     });
   }
 
-  /** Disconnects or stops the local backend; Wisps on a server keep running. */
+  /** Disconnects and stops the local server; Wisps on other servers keep running. */
   dispose(): Promise<void> {
     this.disposed = true;
     return this.serialized(async () => {
       await this.close();
+      await this.options.localServer.stop();
       await this.options.store.flush();
     });
   }
 
   private async open(id: string, pairingCode: string | undefined, userInitiated: boolean): Promise<void> {
     await this.close();
+    // Wisps on this computer run only while it is chosen.
+    if (id !== LOCAL_CONNECTION_ID) await this.options.localServer.stop();
     if (this.disposed) return;
-    const profile = this.options.store.get(id) ?? this.options.store.active;
-    if (profile.id !== this.options.store.active.id) await this.options.store.setActive(profile.id);
-    if (profile.kind === "local") await this.openLocal();
-    else this.openRemote(profile, pairingCode, userInitiated);
-  }
-
-  private async openLocal(): Promise<void> {
-    this.setStatus({
-      profileId: LOCAL_CONNECTION_ID,
-      phase: "connecting",
-      message: "Starting Wisps on this computer…",
-    });
-    const entry: { ready: Promise<LocalBackend | undefined>; backend?: LocalBackend } = {
-      ready: Promise.resolve(undefined),
-    };
-    entry.ready = this.options
-      .createLocalBackend((channel, payload) => {
-        if (this.local === entry) this.options.broadcast(channel, payload);
-      })
-      .then(
-        (backend) => {
-          entry.backend = backend;
-          return backend;
-        },
-        (error: unknown) => {
-          this.options.logger.warn("local_backend_failed", { name: error instanceof Error ? error.name : "unknown" });
-          return undefined;
-        },
-      );
-    this.local = entry;
-    const backend = await entry.ready;
-    if (this.local !== entry) return;
-    if (backend) this.setStatus({ profileId: LOCAL_CONNECTION_ID, phase: "local" }, true);
-    else {
-      this.local = undefined;
-      this.setStatus({
-        profileId: LOCAL_CONNECTION_ID,
-        phase: "error",
-        message: "Wisps on this computer could not start. Restart Wisp.",
-      });
-    }
-  }
-
-  private openRemote(profile: RemoteConnectionProfile, pairingCode: string | undefined, userInitiated: boolean): void {
     const { store } = this.options;
-    this.setStatus({ profileId: profile.id, phase: "connecting", message: `Connecting to ${profile.name}…` });
+    const profile = store.get(id) ?? store.active;
+    if (profile.id !== store.active.id || !store.hasChoice) await store.setActive(profile.id);
+    this.openSession(profile, pairingCode, userInitiated);
+  }
+
+  private openSession(profile: ConnectionProfile, pairingCode: string | undefined, userInitiated: boolean): void {
+    const { store, localServer } = this.options;
+    const local = profile.kind === "local";
+    this.setStatus({
+      profileId: profile.id,
+      phase: "connecting",
+      message: local ? "Starting Wisps on this computer…" : `Connecting to ${profile.name}…`,
+    });
     const session = new RemoteSession({
-      serverName: profile.name,
+      serverName: local ? "Wisp on this computer" : profile.name,
       deviceName: this.options.deviceName,
-      openTransport: (signal) =>
-        profile.kind === "ssh"
-          ? this.options.openSshTunnel(profile, signal)
-          : Promise.resolve(directTransport(profile.url)),
+      openTransport: async (signal) => {
+        if (profile.kind === "ssh") return this.options.openSshTunnel(profile, signal);
+        if (profile.kind === "url") return directTransport(profile.url);
+        const running = await localServer.ensureRunning();
+        return {
+          baseUrl: running.baseUrl,
+          closed: running.exited,
+          // The server outlives a dropped connection; `stop` ends it.
+          close: () => undefined,
+          requestPairingCode: async () => running.localPairingCode,
+        };
+      },
       credentials: {
         load: () => store.loadCredentials(profile.id),
         save: async (credentials) => {
@@ -202,31 +179,29 @@ export class ConnectionManager {
       },
       onStatus: (phase, message) => {
         if (this.session !== session) return;
-        this.setStatus({ profileId: profile.id, phase, ...(message ? { message } : {}) });
+        this.setStatus({ profileId: profile.id, phase: phaseOf(phase, local), ...(message ? { message } : {}) });
       },
       onEvent: (type, payload) => {
         if (this.session === session && PUSHED.has(type)) {
           this.options.broadcast(WISP_IPC_CHANNELS[type], payload);
         }
       },
+      // Only the local server sends these, and only to the app that started it.
+      onHostRequest: (request) =>
+        local ? this.options.onHostRequest(request) : Promise.resolve({ ok: false, message: "Not available." }),
       onReset: () => {
         if (this.session === session) this.setStatus({ ...this.status }, true);
       },
     });
     this.session = session;
-    session.start(pairingCode, userInitiated);
+    // This app pairs with its own server by itself; other servers only on request.
+    session.start(pairingCode, local || userInitiated);
   }
 
   private async close(): Promise<void> {
-    const { local, session } = this;
-    this.local = undefined;
+    const session = this.session;
     this.session = undefined;
     await session?.stop();
-    const backend = await local?.ready;
-    if (backend) {
-      const settled = await disposeWithin(() => backend.dispose(), this.options.localShutdownTimeoutMs ?? 5_000);
-      if (!settled) this.options.logger.warn("local_backend_shutdown_timeout", {});
-    }
   }
 
   private setStatus(next: Omit<ConnectionStatus, "epoch">, reset = false): void {
@@ -245,6 +220,11 @@ export class ConnectionManager {
     this.queue = result.catch(() => undefined);
     return result;
   }
+}
+
+/** The local server is "this computer" to the renderer once connected. */
+function phaseOf(phase: RemoteSessionPhase, local: boolean): ConnectionPhase {
+  return local && phase === "connected" ? "local" : phase;
 }
 
 function directTransport(url: string): RemoteTransport {

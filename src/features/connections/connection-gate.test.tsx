@@ -1,6 +1,6 @@
 import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { describe, expect, it, vi } from "vitest";
 
 import type { ConnectionsView, ConnectionStatus } from "../../../shared/connections";
@@ -34,7 +34,8 @@ function bridge(initial: ConnectionsView) {
 }
 
 function App({ onMount }: { onMount: () => void }) {
-  useEffect(onMount, []);
+  const mounted = useRef(onMount);
+  useEffect(() => mounted.current(), []);
   return <p>Workspace</p>;
 }
 
@@ -98,6 +99,22 @@ describe("ConnectionGate", () => {
     await userEvent.click(screen.getByRole("button", { name: "Retry" }));
     expect(api.retryConnection).toHaveBeenCalled();
     await userEvent.click(screen.getByRole("button", { name: "Use this computer instead" }));
+    expect(api.activateConnection).toHaveBeenCalledWith({ id: "local" });
+  });
+
+  it("asks where Wisps run on a new installation", async () => {
+    const { api } = bridge(view({ phase: "choosing" }, "local"));
+    render(
+      <ConnectionGate>
+        <App onMount={() => undefined} />
+      </ConnectionGate>,
+    );
+    expect(await screen.findByRole("heading", { name: "Where should your Wisps run?" })).toBeVisible();
+    expect(screen.queryByText("Workspace")).toBeNull();
+    await userEvent.click(screen.getByRole("button", { name: /On a Wisp server/ }));
+    expect(screen.getByRole("button", { name: /Add a server/ })).toBeVisible();
+    expect(api.activateConnection).not.toHaveBeenCalled();
+    await userEvent.click(screen.getByRole("button", { name: /On this computer/ }));
     expect(api.activateConnection).toHaveBeenCalledWith({ id: "local" });
   });
 

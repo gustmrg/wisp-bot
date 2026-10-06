@@ -1,8 +1,10 @@
+import { access } from "node:fs/promises";
+import path from "node:path";
+
 import type { IpcMainInvokeEvent } from "electron";
 
 import { WISP_IPC_CHANNELS } from "../shared/contracts.js";
 import { WispBackendError } from "../backend/backend-error.js";
-import type { AgentMode } from "../backend/agent-mode.js";
 import type { EncryptionService } from "../backend/encrypted-credential-store.js";
 import {
   registerAuthorizedHandlers,
@@ -10,45 +12,44 @@ import {
   type HandlerEvent,
   type HandlerRouter,
 } from "../backend/handlers/guarded-handlers.js";
-import { registerRuntimeHandlers, RUNTIME_OPERATIONS } from "../backend/handlers/register-runtime-handlers.js";
-import { createBackendRuntime } from "../backend/runtime.js";
+import { RUNTIME_OPERATIONS } from "../backend/handlers/register-runtime-handlers.js";
 import type { StructuredLogger } from "../backend/structured-logger.js";
-import type { LaunchAtLoginService } from "./backend/launch-at-login-service.js";
-import type { UpdateService } from "./backend/update-service.js";
 import type { RemoteTransport } from "../client/remote-session.js";
 import type { SshConnectionProfile } from "../shared/connections.js";
-import { ConnectionManager, type OperationListener } from "./connections/connection-manager.js";
+import type { HostRequest, HostResponse } from "../shared/remote-protocol.js";
+import type { LaunchAtLoginService } from "./backend/launch-at-login-service.js";
+import type { UpdateService } from "./backend/update-service.js";
+import { ConnectionManager } from "./connections/connection-manager.js";
 import { ConnectionStore } from "./connections/connection-store.js";
 import { openSshTunnel } from "./connections/ssh-tunnel.js";
 import { registerLaunchAtLoginHandlers } from "./ipc/register-launch-at-login-handlers.js";
 import { registerUpdateHandlers } from "./ipc/register-update-handlers.js";
+import type { LocalServer } from "./local-server/local-server.js";
 
-/** Electron-specific capabilities the backend needs, injected so it can be composed and tested without Electron. */
+/** What the local server may ask the app to do on this computer's screen. */
+export interface HostActions {
+  openExternal: (url: string) => Promise<void>;
+  /** Opens a folder of the local server in the system file manager. */
+  openPath: (directory: string) => Promise<void>;
+  /** Shows a native multi-file picker; resolves with absolute paths, empty when dismissed. */
+  selectFiles: () => Promise<ReadonlyArray<string>>;
+}
+
+/** Electron-specific capabilities, injected so the desktop backend can be composed and tested without Electron. */
 export interface BackendHost {
-  /** Root for every backend store: conversations, sessions, credentials, and policy. */
-  dataDirectory: string;
   ipcMain: HandlerRouter;
   authorizeSender: (event: IpcMainInvokeEvent) => boolean;
   /** Sends a push channel payload to every open renderer window. */
   broadcast: (channel: string, payload: unknown) => void;
-  /** The window that should own a new tool approval prompt, or null when none is open. */
-  selectApprovalWindowId: () => number | null;
-  openExternal: (url: string) => Promise<void>;
   openReleasesPage: () => Promise<void>;
-  /** Opens a backend-owned local folder in the system file manager. */
-  openPath: (directory: string) => Promise<void>;
-  /** Shows a native multi-file picker; resolves with absolute paths, empty when dismissed. */
-  selectFiles: () => Promise<ReadonlyArray<string>>;
+  hostActions: HostActions;
+  /** The Wisp server on this computer. */
+  localServer: LocalServer;
+  /** Encrypts pairing credentials; the system keychain in the app. */
   encryption: EncryptionService;
   logger: StructuredLogger;
-  agentMode: AgentMode;
-  /** The running application version, reported to remote MCP servers. */
-  appVersion: string;
   updateService: UpdateService;
   launchAtLoginService: LaunchAtLoginService;
-  userName?: string;
-  /** Refresh model catalogs over the network in the background after startup. Defaults to true. */
-  allowModelNetwork?: boolean;
   /** Where connection profiles and encrypted pairing credentials are kept. */
   connectionsDirectory: string;
   /** How this computer introduces itself when pairing with a server. */
@@ -58,14 +59,15 @@ export interface BackendHost {
 }
 
 export interface Backend {
-  /** Removes IPC handlers, then stops the local backend or disconnects from the server. */
+  /** Removes IPC handlers, disconnects, and stops the local server after its Wisps settle. */
   dispose(): Promise<void>;
 }
 
 /**
- * Exposes the active backend to renderer windows over IPC. The backend runs on
- * this computer, started only while it is the chosen connection, or on a Wisp
- * server; the renderer calls the same operations either way.
+ * Exposes the active Wisp server to renderer windows over IPC. The app is
+ * always a client: on this computer it starts a server as a child process,
+ * started only while it is the chosen connection, and reaches it like a server
+ * over SSH or HTTPS.
  */
 export async function createBackend(host: BackendHost): Promise<Backend> {
   const { ipcMain, authorizeSender, broadcast } = host;
@@ -73,11 +75,13 @@ export async function createBackend(host: BackendHost): Promise<Backend> {
   await store.load();
   const manager = new ConnectionManager({
     store,
-    createLocalBackend: (publish) => createLocalBackend(host, publish),
+    localServer: host.localServer,
+    onHostRequest: (request) => runHostAction(host.hostActions, request),
     openSshTunnel: host.openSshTunnel ?? ((profile, signal) => openSshTunnel(profile, { signal })),
     deviceName: host.deviceName,
     broadcast,
     logger: host.logger,
+    hasLocalData: () => hasLocalData(host.connectionsDirectory),
   });
   const unsubscribeUpdateState = host.updateService.subscribe((state) =>
     broadcast(WISP_IPC_CHANNELS.updateState, state),
@@ -92,7 +96,7 @@ export async function createBackend(host: BackendHost): Promise<Backend> {
       authorize,
       RUNTIME_OPERATIONS.map((operation) => {
         const channel = WISP_IPC_CHANNELS[operation];
-        return [channel, (payload, event) => manager.dispatch(channel, event, payload)] as const;
+        return [channel, (payload) => manager.dispatch(channel, payload)] as const;
       }),
     ),
     registerGuardedHandlers(ipcMain, authorize, [
@@ -130,38 +134,24 @@ export async function createBackend(host: BackendHost): Promise<Backend> {
   };
 }
 
-/** Starts the shared runtime on this computer, with its operations in a channel table. */
-async function createLocalBackend(
-  host: BackendHost,
-  publish: (channel: string, payload: unknown) => void,
-): Promise<{ operations: Map<string, OperationListener>; dispose(): Promise<void> }> {
-  const runtime = await createBackendRuntime({
-    dataDirectory: host.dataDirectory,
-    encryption: host.encryption,
-    logger: host.logger,
-    agentMode: host.agentMode,
-    appVersion: host.appVersion,
-    ...(host.userName === undefined ? {} : { userName: host.userName }),
-    ...(host.allowModelNetwork === undefined ? {} : { allowModelNetwork: host.allowModelNetwork }),
-    selectApprovalWindowId: host.selectApprovalWindowId,
-    openExternal: host.openExternal,
-    openPath: host.openPath,
-    selectFiles: host.selectFiles,
-    onAgentEvent: (event) => publish(WISP_IPC_CHANNELS.agentEvent, event),
-    onConversationChanged: (delta) => publish(WISP_IPC_CHANNELS.conversationChanged, delta),
-    onMcpSettingsChanged: (view) => publish(WISP_IPC_CHANNELS.mcpSettingsChanged, view),
-  });
-  const operations = new Map<string, OperationListener>();
-  // The IPC layer has already checked the sender before routing here.
-  registerRuntimeHandlers(
-    {
-      handle: (channel, listener) => void operations.set(channel, listener),
-      removeHandler: (channel) => void operations.delete(channel),
-    },
-    runtime,
-    () => true,
-  );
-  return { operations, dispose: () => runtime.dispose() };
+/** Conversations from a version that ran Wisps on this computer without asking. */
+async function hasLocalData(userData: string): Promise<boolean> {
+  for (const name of ["conversations.sqlite", "conversations.json"]) {
+    try {
+      await access(path.join(userData, "backend", name));
+      return true;
+    } catch {
+      // Not there.
+    }
+  }
+  return false;
+}
+
+async function runHostAction(actions: HostActions, request: HostRequest): Promise<HostResponse> {
+  if (request.kind === "openPath") await actions.openPath(request.path);
+  else if (request.kind === "openExternal") await actions.openExternal(request.url);
+  else return { ok: true, value: await actions.selectFiles() };
+  return { ok: true };
 }
 
 function connectionId(payload: unknown): string {

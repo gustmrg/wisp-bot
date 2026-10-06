@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 
-const SCHEMA_VERSION = 1;
+const SCHEMA_VERSION = 2;
 
 const SCHEMA = `
   CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL) STRICT;
@@ -14,10 +14,23 @@ const SCHEMA = `
     refresh_hash TEXT NOT NULL UNIQUE,
     refresh_expires_at INTEGER NOT NULL,
     previous_refresh_hash TEXT,
-    rotated_at INTEGER
+    rotated_at INTEGER,
+    local INTEGER NOT NULL DEFAULT 0
   ) STRICT;
-  CREATE TABLE IF NOT EXISTS pairing_codes (hash TEXT PRIMARY KEY, expires_at INTEGER NOT NULL) STRICT;
+  CREATE TABLE IF NOT EXISTS pairing_codes (
+    hash TEXT PRIMARY KEY,
+    expires_at INTEGER NOT NULL,
+    local INTEGER NOT NULL DEFAULT 0
+  ) STRICT;
 `;
+
+// Version 2 marks the desktop app that started this server as a local device.
+const MIGRATIONS: Record<number, string> = {
+  2: `
+    ALTER TABLE devices ADD COLUMN local INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE pairing_codes ADD COLUMN local INTEGER NOT NULL DEFAULT 0;
+  `,
+};
 
 /**
  * Server-only state that the shared backend does not own: the server identity,
@@ -36,12 +49,17 @@ export class ServerStore {
         PRAGMA synchronous = FULL;
         PRAGMA busy_timeout = 5000;
       `);
-      this.database.exec(SCHEMA);
-      const version = Number(this.getMeta("schemaVersion") ?? SCHEMA_VERSION);
+      this.database.exec("CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL) STRICT");
+      const stored = this.getMeta("schemaVersion");
+      const version = stored === undefined ? SCHEMA_VERSION : Number(stored);
       if (version > SCHEMA_VERSION) {
         throw new Error("This data directory was written by a newer Wisp server.");
       }
-      this.setMeta("schemaVersion", String(SCHEMA_VERSION));
+      this.transaction(() => {
+        if (stored === undefined) this.database.exec(SCHEMA);
+        for (let next = version + 1; next <= SCHEMA_VERSION; next++) this.database.exec(MIGRATIONS[next] ?? "");
+        this.setMeta("schemaVersion", String(SCHEMA_VERSION));
+      });
       let serverId = this.getMeta("serverId");
       if (!serverId) {
         serverId = randomUUID();

@@ -24,6 +24,9 @@ import { resolveAutoInstallSupport } from "./backend/update-capability.js";
 import { UpdateService } from "./backend/update-service.js";
 import { disposeWithin } from "../backend/runtime.js";
 import { createBackend } from "./create-backend.js";
+import { loadOrCreateLocalMasterKey, migrateKeychainCredentials } from "./local-server/local-credentials.js";
+import { ChildProcessLocalServer } from "./local-server/local-server.js";
+import { MasterKeyEncryption } from "../server/master-key.js";
 import {
   isAllowedExternalUrl,
   isAllowedPermission,
@@ -36,7 +39,8 @@ const productionRendererPath = path.join(__dirname, "../../dist/index.html");
 const developmentIconPath = path.join(__dirname, "../../build/icon-mac-dev.png");
 const windowBackground = (): string => (nativeTheme.shouldUseDarkColors ? "#0a0a0a" : "#ffffff");
 // Agents get this long to settle their last turn on quit before the app exits anyway.
-const SHUTDOWN_TIMEOUT_MS = 5_000;
+// The local server gives agents ten seconds to settle, then has a few seconds to exit.
+const SHUTDOWN_TIMEOUT_MS = 15_000;
 let rendererTarget: RendererTarget | undefined;
 let fatalErrorHandled = false;
 // Set once the backend is ready; opens a window if none is open.
@@ -193,16 +197,24 @@ async function bootstrap(): Promise<void> {
     );
   });
   nativeTheme.themeSource = "system";
-  const dataDirectory = path.join(app.getPath("userData"), "backend");
-  const logger = new StructuredLogger(
-    new CompositeLogSink([console, new FileLogSink(path.join(dataDirectory, "logs"))]),
-  );
+  const userData = app.getPath("userData");
+  // The local server writes its own logs under backend/logs.
+  const logger = new StructuredLogger(new CompositeLogSink([console, new FileLogSink(path.join(userData, "logs"))]));
   autoUpdater.channel = app.getVersion().includes("-beta.") ? "beta" : "latest";
   const autoInstallSupported = app.isPackaged
     ? await resolveAutoInstallSupport(process.platform, process.execPath)
     : false;
+  const keychain = new SafeStorageEncryption();
+  const masterKey = await loadOrCreateLocalMasterKey(userData, keychain);
+  if (masterKey) {
+    await migrateKeychainCredentials(
+      path.join(userData, "backend"),
+      keychain,
+      new MasterKeyEncryption(masterKey),
+      logger,
+    );
+  }
   const backend = await createBackend({
-    dataDirectory,
     launchAtLoginService: new LaunchAtLoginService({
       platform: process.platform,
       packaged: app.isPackaged,
@@ -213,32 +225,34 @@ async function bootstrap(): Promise<void> {
     ipcMain,
     authorizeSender: isTrustedIpcSender,
     broadcast,
-    selectApprovalWindowId: () => {
-      const window =
-        BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows().find((candidate) => !candidate.isDestroyed());
-      return window?.webContents.id ?? null;
-    },
-    openExternal: openExternalUrl,
     openReleasesPage: () => openExternalUrl(WISP_RELEASES_URL),
-    openPath: async (directory) => {
-      const failure = await shell.openPath(directory);
-      if (failure) throw new WispBackendError("internal_error", "The folder could not be opened.");
+    hostActions: {
+      openExternal: openExternalUrl,
+      openPath: async (directory) => {
+        const failure = await shell.openPath(directory);
+        if (failure) throw new WispBackendError("internal_error", "The folder could not be opened.");
+      },
+      selectFiles: async () => {
+        const options: Electron.OpenDialogOptions = {
+          title: "Attach files",
+          properties: ["openFile", "multiSelections"],
+        };
+        const window = BrowserWindow.getFocusedWindow();
+        const result = window ? await dialog.showOpenDialog(window, options) : await dialog.showOpenDialog(options);
+        return result.canceled ? [] : result.filePaths;
+      },
     },
-    selectFiles: async () => {
-      const options: Electron.OpenDialogOptions = {
-        title: "Attach files",
-        properties: ["openFile", "multiSelections"],
-      };
-      const window = BrowserWindow.getFocusedWindow();
-      const result = window ? await dialog.showOpenDialog(window, options) : await dialog.showOpenDialog(options);
-      return result.canceled ? [] : result.filePaths;
-    },
-    encryption: new SafeStorageEncryption(),
+    localServer: new ChildProcessLocalServer({
+      scriptPath: path.join(__dirname, "../server/main.js"),
+      dataDirectory: userData,
+      agentMode: selectAgentMode(app.isPackaged, process.env.WISP_AGENT_MODE),
+      ...(masterKey ? { masterKey } : {}),
+      logger,
+    }),
+    encryption: keychain,
     logger,
-    agentMode: selectAgentMode(app.isPackaged, process.env.WISP_AGENT_MODE),
-    appVersion: app.getVersion(),
     updateService: new UpdateService(autoUpdater, app.getVersion(), app.isPackaged, autoInstallSupported, logger),
-    connectionsDirectory: app.getPath("userData"),
+    connectionsDirectory: userData,
     deviceName: `Wisp on ${hostname()}`,
   });
   let backendDisposed = false;

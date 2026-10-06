@@ -12,9 +12,10 @@ reviewed invariants.
 
 ## Credential storage
 
-API keys are encrypted with Electron's operating-system-backed `safeStorage`
-API and stored under the user-data directory, separate per store (model keys,
-plugin keys, MCP secrets):
+API keys are stored under the user-data directory, separate per store (model
+keys, plugin keys, MCP secrets), encrypted with AES-256-GCM under the local
+server's key. That key is random and is itself encrypted with Electron's
+operating-system-backed `safeStorage` API:
 
 - macOS: Keychain-backed encryption;
 - Windows: DPAPI-backed encryption for the current OS user;
@@ -29,9 +30,13 @@ Wisp conversations.
 
 ## Remote servers
 
-When the app uses a Wisp server, the server holds every provider key,
-encrypted with its own master key file, and runs every tool on its own
-files. The desktop keeps only the device's pairing credentials, encrypted with
+The backend always runs as a Wisp server. On this computer, the app starts it
+as a child process and keeps its credential key encrypted with `safeStorage`;
+the key reaches the server only on its stdin. Only that app's device is
+"local": the server asks it, and no other device, to open folders, file
+pickers, or sign-in pages. When the app uses a server on another machine, that
+server holds every provider key, encrypted with its own master key file, and
+runs every tool on its own files. The desktop keeps only the device's pairing credentials, encrypted with
 `safeStorage` like other keys; they stay in the main process and never reach
 the renderer. SSH tunnels use the system OpenSSH client with BatchMode, so
 OpenSSH verifies host keys against `known_hosts` and Wisp never sees SSH keys

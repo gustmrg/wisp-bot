@@ -1,5 +1,5 @@
 import type { BackendResult } from "../shared/contracts.js";
-import type { DeviceCredentials, RemoteEventType } from "../shared/remote-protocol.js";
+import type { DeviceCredentials, HostRequest, HostResponse, RemoteEventType } from "../shared/remote-protocol.js";
 import { RemoteClient, RemoteError, type CredentialStore } from "./remote-client.js";
 
 /** A path to the server, such as an SSH tunnel or a direct HTTPS origin. */
@@ -27,7 +27,9 @@ export interface RemoteSessionOptions {
   openTransport(signal: AbortSignal): Promise<RemoteTransport>;
   credentials: CredentialStore & { load(): StoredCredentials | undefined };
   onStatus(phase: RemoteSessionPhase, message?: string): void;
-  onEvent(type: Exclude<RemoteEventType, "resync">, payload: unknown): void;
+  onEvent(type: Exclude<RemoteEventType, "resync" | "hostRequest">, payload: unknown): void;
+  /** Does what the server asked on this computer's screen; without it, every request is refused. */
+  onHostRequest?(request: HostRequest): Promise<HostResponse>;
   /** Everything the client holds must be reloaded: first connection, or events were missed. */
   onReset(): void;
   /** Delay before reconnect attempt `attempt` (from 0). */
@@ -115,6 +117,19 @@ export class RemoteSession {
     };
   }
 
+  private async answer(client: RemoteClient, request: HostRequest): Promise<void> {
+    let response: HostResponse;
+    try {
+      response = this.options.onHostRequest
+        ? await this.options.onHostRequest(request)
+        : { ok: false, message: "This app cannot do that." };
+    } catch (error) {
+      response = { ok: false, message: error instanceof Error ? error.message : "The app could not do that." };
+    }
+    // The server times the request out if this answer is lost.
+    await client.answerHostRequest(request.id, response).catch(() => undefined);
+  }
+
   private requirePairing(message = "This device needs to be paired with the server again."): void {
     this.connected = false;
     this.autoPair = false;
@@ -129,6 +144,11 @@ export class RemoteSession {
       try {
         if (!this.transport) {
           const opened = await this.options.openTransport(signal);
+          // Stopped while the transport was opening: nothing else may start.
+          if (signal.aborted) {
+            opened.close();
+            break;
+          }
           this.transport = opened;
           // A tunnel that exits is reopened on the next attempt.
           void opened.closed.then(() => {
@@ -177,6 +197,7 @@ export class RemoteSession {
               onEvent: (id, type, payload) => {
                 if (id) this.cursor = id;
                 if (type === "resync") this.options.onReset();
+                else if (type === "hostRequest") void this.answer(client, payload as HostRequest);
                 else this.options.onEvent(type, payload);
               },
             },

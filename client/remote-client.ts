@@ -3,6 +3,7 @@ import { decodeRemoteJson, encodeRemoteJson } from "../shared/remote-codec.js";
 import {
   REMOTE_API_PREFIX,
   type DeviceCredentials,
+  type HostResponse,
   type RemoteEventType,
   type RemoteTransportErrorCode,
   type ServerDescriptor,
@@ -84,8 +85,15 @@ export class RemoteClient {
     )) as BackendResult<unknown>;
   }
 
+  /** Answers a server's request to act on this computer's screen. */
+  async answerHostRequest(id: string, response: HostResponse): Promise<void> {
+    await this.authorized("POST", `/host-requests/${encodeURIComponent(id)}`, response);
+  }
+
   /** Streams events after `cursor` until the server ends the stream or `signal` aborts. */
   async streamEvents(cursor: string | undefined, handlers: EventStreamHandlers, signal: AbortSignal): Promise<void> {
+    // An abort listener added after the abort never runs.
+    if (signal.aborted) return;
     const controller = new AbortController();
     const abort = (): void => controller.abort();
     signal.addEventListener("abort", abort, { once: true });

@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useState, type ReactNode } from "react";
-import { LoaderCircleIcon, ServerIcon } from "lucide-react";
+import { LaptopIcon, LoaderCircleIcon, ServerIcon } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -57,7 +57,89 @@ export function ConnectionGate({ children }: { children: ReactNode }) {
       </div>
     );
   }
+  if (status.phase === "choosing") return <FirstRunChoice view={view} />;
   return <ConnectionScreen view={view} />;
+}
+
+/**
+ * The first screen of a new installation: where Wisps run. Nothing runs until
+ * the person chooses, and each place keeps its own Wisps and settings.
+ */
+function FirstRunChoice({ view }: { view: ConnectionsView }) {
+  const [serverOpen, setServerOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  async function chooseThisComputer() {
+    setBusy(true);
+    setError("");
+    try {
+      const result = await window.wisp.activateConnection({ id: LOCAL_CONNECTION_ID });
+      if (!result.ok) setError(result.error.message);
+    } catch {
+      setError("Wisp could not start on this computer.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const option =
+    "flex w-full items-start gap-3 rounded-xl border border-border p-4 text-left outline-none transition-colors hover:bg-popover focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50";
+  return (
+    <main className="flex h-full min-h-0 items-start justify-center overflow-y-auto bg-background p-6 text-foreground max-[620px]:p-3">
+      <section
+        className="my-auto w-full max-w-lg rounded-2xl border border-border bg-card p-6 shadow-sm"
+        aria-labelledby="first-run-title"
+      >
+        <h1 id="first-run-title" className="m-0 text-lg font-semibold">
+          Where should your Wisps run?
+        </h1>
+        <p className="mb-4 mt-1 text-sm leading-6 text-dim">
+          Each place keeps its own Wisps, conversations, and settings. You can add the other one later in Settings.
+        </p>
+        <div className="flex flex-col gap-2">
+          <button type="button" className={option} disabled={busy} onClick={() => void chooseThisComputer()}>
+            <LaptopIcon aria-hidden="true" className="mt-0.5 size-5 shrink-0 text-dim" />
+            <span>
+              <span className="flex items-center gap-2 text-[14px] font-medium">
+                On this computer
+                <span className="rounded-full bg-muted px-1.5 py-px text-[10px] font-medium text-dim">Recommended</span>
+              </span>
+              <span className="mt-1 block text-[12px] leading-relaxed text-dim">
+                Wisps work while this app is open, and everything stays on this computer.
+              </span>
+            </span>
+          </button>
+          <button
+            type="button"
+            className={option}
+            aria-expanded={serverOpen}
+            disabled={busy}
+            onClick={() => setServerOpen(true)}
+          >
+            <ServerIcon aria-hidden="true" className="mt-0.5 size-5 shrink-0 text-dim" />
+            <span>
+              <span className="block text-[14px] font-medium">On a Wisp server</span>
+              <span className="mt-1 block text-[12px] leading-relaxed text-dim">
+                Wisps keep working with this app closed. Connect to a server you run, over SSH or a private HTTPS
+                address.
+              </span>
+            </span>
+          </button>
+        </div>
+        {error ? (
+          <p role="alert" className="mt-3 text-[12px] text-destructive">
+            {error}
+          </p>
+        ) : null}
+        {serverOpen ? (
+          <div className="mt-4 border-t border-border pt-4">
+            <ConnectionsPanel view={view} serversOnly />
+          </div>
+        ) : null}
+      </section>
+    </main>
+  );
 }
 
 function activeName(view: ConnectionsView): string {
