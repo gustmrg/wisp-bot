@@ -99,8 +99,8 @@ function CreateWispModelSection({ view, loadError, draft, onChange }: CreateWisp
     <SettingsCard className="mt-[15px]">
       <SettingsRow className="min-h-0 p-[11px]">
         <SettingsRowCopy>
-          <strong className="text-[12.5px]">Model</strong>
-          <small className="text-dim text-[11px] leading-[1.3]">
+          <strong className="text-sm">Model</strong>
+          <small className="text-dim text-xs leading-[1.3]">
             {draft.useGlobal ? globalSummary(view) : "Specific to this Wisp"}
           </small>
         </SettingsRowCopy>
@@ -111,12 +111,12 @@ function CreateWispModelSection({ view, loadError, draft, onChange }: CreateWisp
         />
       </SettingsRow>
       {draft.useGlobal && !canCustomize && loadError ? (
-        <p role="alert" className="m-0 px-3.5 pb-3 text-[11px] text-destructive">
+        <p role="alert" className="m-0 px-3.5 pb-3 text-xs text-destructive">
           {loadError}
         </p>
       ) : null}
       {draft.useGlobal && view && missingModelSetup(view).length > 0 ? (
-        <p role="alert" className="m-0 px-3.5 pb-3 text-[11px] text-destructive">
+        <p role="alert" className="m-0 px-3.5 pb-3 text-xs text-destructive">
           {view.selection
             ? "No API key is saved for the global default provider. Add one in Settings → AI Model, or choose a model for this Wisp."
             : "No global default model is set. Choose one in Settings → AI Model, or choose a model for this Wisp."}
@@ -197,12 +197,12 @@ function CreateWispModelSection({ view, loadError, draft, onChange }: CreateWisp
             />
           </SettingsRow>
           {provider && !provider.credentialConfigured ? (
-            <p role="alert" className="m-0 px-3.5 pb-3 text-[11px] text-destructive">
+            <p role="alert" className="m-0 px-3.5 pb-3 text-xs text-destructive">
               No API key saved for {provider.name} yet. Add one in Settings → AI Model before creating this Wisp.
             </p>
           ) : null}
           {invalidMaxOutputTokens(draft, model?.maxOutputTokens) ? (
-            <p role="alert" className="m-0 px-3.5 pb-3 text-[11px] text-destructive">
+            <p role="alert" className="m-0 px-3.5 pb-3 text-xs text-destructive">
               Maximum output tokens must be a whole number between 1 and {model?.maxOutputTokens ?? 1_000_000}.
             </p>
           ) : null}

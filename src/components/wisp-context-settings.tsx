@@ -115,7 +115,7 @@ function ContextForm({ conversationId }: { conversationId: string }) {
   }
   if (!view)
     return (
-      <div className="space-y-2 text-xs">
+      <div className="space-y-2 text-sm">
         <p role={error ? "alert" : "status"}>{error || "Loading context…"}</p>
         {error ? (
           <Button variant="outline" onClick={() => setLoadRequest({ conversationId })}>
@@ -127,8 +127,8 @@ function ContextForm({ conversationId }: { conversationId: string }) {
   const disabled = busy || working;
   const dirty = JSON.stringify(policy) !== JSON.stringify(view.policy) || memory !== view.memory;
   return (
-    <div className="space-y-3 text-xs">
-      <p className="text-muted-foreground">
+    <div className="space-y-3 text-sm">
+      <p className="text-dim">
         Your chat history stays visible. Summaries retain goals, decisions and pending work; the Wisp can search older
         messages when needed.
       </p>
@@ -192,7 +192,7 @@ function ContextForm({ conversationId }: { conversationId: string }) {
               onChange={(event) => setPolicy((current) => ({ ...current, minimumTokens: Number(event.target.value) }))}
             />
           </label>
-          <p className="text-muted-foreground">
+          <p className="text-dim">
             Checked when your next message arrives. Small conversations are kept intact. Summaries use model tokens.
             Automatic compression near the model limit remains enabled.
           </p>
@@ -209,7 +209,7 @@ function ContextForm({ conversationId }: { conversationId: string }) {
           placeholder="Preferences and facts to keep across topics"
         />
       </label>
-      <p className="text-muted-foreground">
+      <p className="text-dim">
         Memory is stored locally and included in model requests. Starting a new topic keeps it.
       </p>
       <Button

@@ -318,7 +318,7 @@ function WispAccessForm({
   );
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col text-xs">
+    <div className="flex min-h-0 flex-1 flex-col text-sm">
       <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-3.5">
         <p className="leading-relaxed text-dim">
           Choose the services this Wisp can use. Every Wisp starts with no access.

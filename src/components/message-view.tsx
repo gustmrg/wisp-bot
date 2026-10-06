@@ -44,7 +44,7 @@ function MessageTools({
       )}
     >
       {time ? (
-        <time className="mr-[3px] text-faint text-[10px]" dateTime={createdAt}>
+        <time className="mr-[3px] text-faint text-2xs" dateTime={createdAt}>
           {time}
         </time>
       ) : null}
@@ -65,7 +65,7 @@ function MessageTools({
 function MessageView({ message, dense = false, onAnswer, onRetry }: MessageViewProps) {
   if (message.type === "time") {
     return (
-      <div className="mt-[13px] mb-[5px] flex items-center justify-center text-faint text-[10.5px]">
+      <div className="mt-[13px] mb-[5px] flex items-center justify-center text-faint text-2xs">
         <span>{message.text}</span>
       </div>
     );
@@ -80,7 +80,7 @@ function MessageView({ message, dense = false, onAnswer, onRetry }: MessageViewP
               <li key={item.label} className="flex items-start gap-[7px]">
                 <CheckIcon aria-hidden="true" className="mt-0.5 size-[13px] flex-none text-dim" />
                 <span>
-                  <strong className="font-[650]">{item.label}</strong> — {item.text}
+                  <strong className="font-semibold">{item.label}</strong> — {item.text}
                 </span>
               </li>
             ))}
@@ -112,7 +112,7 @@ function MessageView({ message, dense = false, onAnswer, onRetry }: MessageViewP
                   className="flex w-full items-center gap-2 rounded-lg border border-border bg-card px-2 py-[7px] text-left hover:border-ring hover:bg-muted"
                   onClick={() => onAnswer?.(option.label)}
                 >
-                  <kbd className="inline-flex size-5 items-center justify-center rounded-[5px] bg-secondary text-[10px] text-dim [font-family:inherit]">
+                  <kbd className="inline-flex size-5 items-center justify-center rounded-[5px] bg-secondary text-2xs text-dim [font-family:inherit]">
                     {option.key}
                   </kbd>
                   <span>{option.label}</span>
@@ -130,7 +130,7 @@ function MessageView({ message, dense = false, onAnswer, onRetry }: MessageViewP
   if (empty && (message.status === "cancelled" || message.status === "failed")) {
     const failed = message.status === "failed";
     return (
-      <div className="mt-[13px] mb-[5px] flex animate-message-in items-center justify-center gap-1.5 text-faint text-[10.5px]">
+      <div className="mt-[13px] mb-[5px] flex animate-message-in items-center justify-center gap-1.5 text-faint text-2xs">
         {failed ? (
           <CircleAlertIcon aria-hidden="true" className="size-3 flex-none" />
         ) : (
@@ -180,7 +180,7 @@ function MessageView({ message, dense = false, onAnswer, onRetry }: MessageViewP
             <button
               type="button"
               key={reaction}
-              className="rounded-[10px] border border-border bg-muted px-[7px] py-0.5 text-[11px] text-dim"
+              className="rounded-[10px] border border-border bg-muted px-[7px] py-0.5 text-xs text-dim"
             >
               {reaction}
             </button>
@@ -188,7 +188,7 @@ function MessageView({ message, dense = false, onAnswer, onRetry }: MessageViewP
         </div>
       ) : null}
       {message.status === "queued" || message.status === "cancelled" || message.status === "failed" ? (
-        <div className={cn("mt-1 flex items-center gap-2 text-[10.5px] text-faint", outgoing && "mr-1")}>
+        <div className={cn("mt-1 flex items-center gap-2 text-2xs text-faint", outgoing && "mr-1")}>
           <span>{message.status === "queued" ? "Queued" : message.status === "cancelled" ? "Stopped" : "Failed"}</span>
           {!outgoing && message.status === "failed" && message.retryable ? (
             <button

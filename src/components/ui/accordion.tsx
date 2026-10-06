@@ -23,13 +23,13 @@ function AccordionTrigger({ className, children, ...props }: AccordionPrimitive.
       <AccordionPrimitive.Trigger
         data-slot="accordion-trigger"
         className={cn(
-          "group flex w-full items-center justify-between gap-4 py-3 text-left text-sm font-medium outline-none transition-colors hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50",
+          "group flex w-full items-center justify-between gap-4 py-3 text-left text-base font-medium outline-none transition-colors hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50",
           className,
         )}
         {...props}
       >
         {children}
-        <ChevronDownIcon className="size-4 shrink-0 text-muted-foreground transition-transform duration-200 group-data-panel-open:rotate-180" />
+        <ChevronDownIcon className="size-4 shrink-0 text-dim transition-transform duration-200 group-data-panel-open:rotate-180" />
       </AccordionPrimitive.Trigger>
     </AccordionPrimitive.Header>
   );
@@ -40,7 +40,7 @@ function AccordionContent({ className, children, ...props }: AccordionPrimitive.
     <AccordionPrimitive.Panel
       data-slot="accordion-content"
       className={cn(
-        "h-[var(--accordion-panel-height)] overflow-hidden text-sm transition-[height] duration-200 data-ending-style:h-0 data-starting-style:h-0",
+        "h-[var(--accordion-panel-height)] overflow-hidden text-base transition-[height] duration-200 data-ending-style:h-0 data-starting-style:h-0",
         className,
       )}
       {...props}

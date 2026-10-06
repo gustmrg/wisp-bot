@@ -124,7 +124,7 @@
     color: var(--green);
   }
   .conversation-preview[data-activity="approval"] {
-    color: light-dark(#855c17, #e6b765);
+    color: var(--warning);
   }
   .mobile-list-empty {
     padding: 28px 18px;

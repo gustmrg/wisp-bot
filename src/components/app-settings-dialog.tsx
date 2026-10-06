@@ -245,7 +245,7 @@ function AppSettingsDialog({
               </div>
             </div>
           ) : (
-            <strong className="mx-2 mb-[15px] mt-0 text-[17px]">Settings</strong>
+            <strong className="mx-2 mb-[15px] mt-0 text-lg">Settings</strong>
           )}
           {NAV_ITEMS.map((item) =>
             "section" in item ? (
@@ -292,7 +292,7 @@ function AppSettingsDialog({
           aria-labelledby="general-settings-title"
           hidden={section !== "general" || showOverview}
         >
-          <h2 id="general-settings-title" className="mb-[22px] mt-0 text-[17px]">
+          <h2 id="general-settings-title" className="mb-[22px] mt-0 text-lg font-semibold">
             General
           </h2>
           <div className="animate-tab-forward">
@@ -308,7 +308,7 @@ function AppSettingsDialog({
                     <label htmlFor="app-theme">
                       <strong>Theme</strong>
                     </label>
-                    <small className="text-dim text-[11.5px]">Choose how Wisp looks on this device.</small>
+                    <small className="text-dim text-xs">Choose how Wisp looks on this device.</small>
                   </SettingsRowCopy>
                   <Select
                     items={THEME_OPTIONS}
@@ -335,7 +335,7 @@ function AppSettingsDialog({
               </SettingsCard>
             </SettingsGroup>
             <GeneralSettingsSections preferences={preferences} onPreferencesChange={onPreferencesChange} />
-            <p className="mt-4 text-[11.5px] text-dim" role={persistenceError ? "alert" : "status"} aria-live="polite">
+            <p className="mt-4 text-xs text-dim" role={persistenceError ? "alert" : "status"} aria-live="polite">
               {persistenceError ??
                 (persistenceStatus === "saving"
                   ? "Saving preferences…"
@@ -370,7 +370,7 @@ function AppSettingsDialog({
           aria-labelledby="about-settings-title"
           hidden={section !== "about" || showOverview}
         >
-          <h2 id="about-settings-title" className="mb-[22px] mt-0 text-[17px]">
+          <h2 id="about-settings-title" className="mb-[22px] mt-0 text-lg font-semibold">
             About
           </h2>
           <div className="animate-tab-forward">
@@ -378,8 +378,8 @@ function AppSettingsDialog({
               <SettingsCard>
                 <SettingsRow>
                   <SettingsRowCopy>
-                    <strong className="text-[12.5px]">{appMetadata.displayName}</strong>
-                    <small className="text-dim text-[11.5px]">Version {appMetadata.version}</small>
+                    <strong className="text-sm">{appMetadata.displayName}</strong>
+                    <small className="text-dim text-xs">Version {appMetadata.version}</small>
                   </SettingsRowCopy>
                   {browserApp ? null : (
                     <Button
@@ -400,15 +400,13 @@ function AppSettingsDialog({
               </SettingsCard>
             </SettingsGroup>
             {browserApp ? (
-              <p className="mt-3 text-[11.5px] text-dim">Served by your Wisp server, which updates this app with it.</p>
+              <p className="mt-3 text-xs text-dim">Served by your Wisp server, which updates this app with it.</p>
             ) : (
               <>
-                <p className="mt-3 text-[11.5px] text-dim" role={updateState.phase === "error" ? "alert" : "status"}>
+                <p className="mt-3 text-xs text-dim" role={updateState.phase === "error" ? "alert" : "status"}>
                   {updateStatusText(updateState)}
                 </p>
-                <p className="mt-2 text-[11px] text-faint">
-                  Manual recovery: github.com/gustmrg/wisp-bot/releases/latest
-                </p>
+                <p className="mt-2 text-xs text-faint">Manual recovery: github.com/gustmrg/wisp-bot/releases/latest</p>
               </>
             )}
           </div>

@@ -26,7 +26,7 @@ export function UserProfileSettings({ controller }: { controller: UserProfileCon
             setSaving(false);
           }}
         >
-          <p className="m-0 text-[11.5px] leading-relaxed text-dim">
+          <p className="m-0 text-xs leading-relaxed text-dim">
             Saved on this device. Shared with your Wisps to personalize responses, including with their AI provider when
             you chat.
           </p>
@@ -75,17 +75,17 @@ export function UserProfileSettings({ controller }: { controller: UserProfileCon
             </div>
           </fieldset>
           {nameMissing ? (
-            <p role="alert" className="m-0 text-[11.5px] text-destructive">
+            <p role="alert" className="m-0 text-xs text-destructive">
               Your preferred name is required.
             </p>
           ) : null}
           {controller.error ? (
-            <p role="alert" className="m-0 text-[11.5px] text-destructive">
+            <p role="alert" className="m-0 text-xs text-destructive">
               {controller.error}
             </p>
           ) : null}
           {saved ? (
-            <p role="status" className="m-0 text-[11.5px] text-dim">
+            <p role="status" className="m-0 text-xs text-dim">
               Profile saved.
             </p>
           ) : null}

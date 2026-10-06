@@ -215,7 +215,7 @@ function GeneralSettingsSections({ preferences, onPreferencesChange }: GeneralSe
               <ul className="m-0 mt-[3px] flex list-none flex-col p-0" aria-label="Integration blocks">
                 {integrationRules.map((rule) => (
                   <li key={rule.id} className="flex items-center gap-3 border-t border-border py-2">
-                    <span className="min-w-0 flex-1 text-xs [overflow-wrap:anywhere]">
+                    <span className="min-w-0 flex-1 text-sm [overflow-wrap:anywhere]">
                       {INTEGRATION_ACTION_LABELS[rule.action] ?? rule.action}
                       <small className="mt-0.5 block">
                         {RULE_BEHAVIORS.find((behavior) => behavior.value === rule.behavior)?.label}
@@ -241,7 +241,7 @@ function GeneralSettingsSections({ preferences, onPreferencesChange }: GeneralSe
             </SettingsRow>
           ) : null}
         </SettingsCard>
-        <p className="mx-0.5 mt-[7px] text-dim text-[11px] leading-[1.45]">
+        <p className="mx-0.5 mt-[7px] text-dim text-xs leading-[1.45]">
           Rules are enforced in the desktop backend before Pi can create or modify a file. Shell execution remains
           blocked.
         </p>

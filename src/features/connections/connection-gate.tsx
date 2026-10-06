@@ -98,18 +98,18 @@ function FirstRunChoice({ view }: { view: ConnectionsView }) {
         <h1 id="first-run-title" className="m-0 text-lg font-semibold">
           Where should your Wisps run?
         </h1>
-        <p className="mb-4 mt-1 text-sm leading-6 text-dim">
+        <p className="mb-4 mt-1 text-base leading-relaxed text-dim">
           Each place keeps its own Wisps, conversations, and settings. You can add the other one later in Settings.
         </p>
         <div className="flex flex-col gap-2">
           <button type="button" className={option} disabled={busy} onClick={() => void chooseThisComputer()}>
             <LaptopIcon aria-hidden="true" className="mt-0.5 size-5 shrink-0 text-dim" />
             <span>
-              <span className="flex items-center gap-2 text-[14px] font-medium">
+              <span className="flex items-center gap-2 text-base font-medium">
                 On this computer
-                <span className="rounded-full bg-muted px-1.5 py-px text-[10px] font-medium text-dim">Recommended</span>
+                <span className="rounded-full bg-muted px-1.5 py-px text-2xs font-medium text-dim">Recommended</span>
               </span>
-              <span className="mt-1 block text-[12px] leading-relaxed text-dim">
+              <span className="mt-1 block text-sm leading-relaxed text-dim">
                 Wisps work while this app is open, and everything stays on this computer.
               </span>
             </span>
@@ -123,8 +123,8 @@ function FirstRunChoice({ view }: { view: ConnectionsView }) {
           >
             <ServerIcon aria-hidden="true" className="mt-0.5 size-5 shrink-0 text-dim" />
             <span>
-              <span className="block text-[14px] font-medium">On a Wisp server</span>
-              <span className="mt-1 block text-[12px] leading-relaxed text-dim">
+              <span className="block text-base font-medium">On a Wisp server</span>
+              <span className="mt-1 block text-sm leading-relaxed text-dim">
                 Wisps keep working with this app closed. Connect to a server you run, over SSH or a private HTTPS
                 address.
               </span>
@@ -132,7 +132,7 @@ function FirstRunChoice({ view }: { view: ConnectionsView }) {
           </button>
         </div>
         {error ? (
-          <p role="alert" className="mt-3 text-[12px] text-destructive">
+          <p role="alert" className="mt-3 text-sm text-destructive">
             {error}
           </p>
         ) : null}
@@ -154,7 +154,7 @@ function ReconnectingBanner({ view }: { view: ConnectionsView }) {
   return (
     <div
       role="status"
-      className="flex flex-none items-center justify-center gap-3 bg-amber-500/15 px-4 py-1.5 text-[12px] text-foreground"
+      className="flex flex-none items-center justify-center gap-3 bg-warning-solid/15 px-4 py-1.5 text-sm text-foreground"
     >
       <LoaderCircleIcon className="size-3.5 animate-spin" aria-hidden="true" />
       <span>Reconnecting to {activeName(view)}. Wisps on it keep working.</span>
@@ -170,7 +170,7 @@ function ConnectionMessage({ title, message }: { title: string; message: string 
     <main className="flex h-full min-h-0 items-center justify-center bg-background p-6 text-foreground">
       <section className="w-full max-w-md rounded-2xl border border-border bg-card p-6 shadow-sm" role="alert">
         <h1 className="text-lg font-semibold">{title}</h1>
-        <p className="mt-2 text-sm leading-6 text-dim">{message}</p>
+        <p className="mt-2 text-base leading-relaxed text-dim">{message}</p>
       </section>
     </main>
   );
@@ -219,7 +219,7 @@ function ConnectionScreen({ view }: { view: ConnectionsView }) {
             {title}
           </h1>
           {status.message ? (
-            <p role={status.phase === "error" ? "alert" : "status"} className="mt-2 text-sm leading-6 text-dim">
+            <p role={status.phase === "error" ? "alert" : "status"} className="mt-2 text-base leading-relaxed text-dim">
               {status.message}
             </p>
           ) : null}
@@ -255,7 +255,7 @@ function ConnectionScreen({ view }: { view: ConnectionsView }) {
           ) : null}
           {status.phase === "error" && profile?.kind === "ssh" ? (
             <div className="mt-4 border-t border-border pt-4">
-              <p className="mb-2 mt-0 text-[12px] leading-relaxed text-dim">
+              <p className="mb-2 mt-0 text-sm leading-relaxed text-dim">
                 If Wisp is not installed on {profile.host} yet, Wisp can set it up for you.
               </p>
               <InstallServerAction profileId={profile.id} host={profile.host} disabled={busy} />
@@ -289,7 +289,7 @@ function ConnectionScreen({ view }: { view: ConnectionsView }) {
             )}
           </div>
           {actionError ? (
-            <p role="alert" className="mt-3 text-[12px] text-destructive">
+            <p role="alert" className="mt-3 text-sm text-destructive">
               {actionError}
             </p>
           ) : null}

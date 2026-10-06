@@ -77,7 +77,7 @@ function SearchableCombobox({
         <span className="min-w-0 truncate">
           <Combobox.Value />
         </span>
-        <ChevronDownIcon aria-hidden="true" className="size-3.5 shrink-0 text-muted-foreground" />
+        <ChevronDownIcon aria-hidden="true" className="size-3.5 shrink-0 text-dim" />
       </Combobox.Trigger>
       <Combobox.Portal>
         <Combobox.Positioner side="bottom" align="end" sideOffset={4} collisionPadding={12} className="z-50">
@@ -86,7 +86,7 @@ function SearchableCombobox({
             className="flex max-h-(--available-height) w-80 max-w-[calc(100vw-1.5rem)] flex-col overflow-hidden rounded-lg bg-popover text-popover-foreground shadow-md ring-1 ring-foreground/10"
           >
             <div className="flex items-center gap-2 border-b border-border px-3 py-2">
-              <SearchIcon className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+              <SearchIcon className="size-4 shrink-0 text-dim" aria-hidden="true" />
               <Combobox.Input
                 ref={inputRef}
                 aria-label={searchLabel}
@@ -96,18 +96,18 @@ function SearchableCombobox({
                 }
               />
             </div>
-            <Combobox.Empty className="px-3 text-sm text-muted-foreground not-empty:py-5">{emptyText}</Combobox.Empty>
+            <Combobox.Empty className="px-3 text-base text-dim not-empty:py-5">{emptyText}</Combobox.Empty>
             <Combobox.List className="max-h-64 min-h-0 overflow-y-auto overscroll-contain p-1 empty:p-0">
               {(option: SearchableOption) => (
                 <Combobox.Item
                   key={option.value}
                   value={option}
-                  className="flex cursor-default items-center gap-4 rounded-md px-2 py-1.5 text-sm outline-none data-highlighted:bg-accent data-highlighted:text-accent-foreground"
+                  className="flex cursor-default items-center gap-4 rounded-md px-2 py-1.5 text-base outline-none data-highlighted:bg-accent data-highlighted:text-accent-foreground"
                 >
                   <span className="min-w-0 flex-1 break-words">
                     {option.label}
                     {option.description ? (
-                      <span className="block break-all text-xs text-muted-foreground">{option.description}</span>
+                      <span className="block break-all text-sm text-dim">{option.description}</span>
                     ) : null}
                   </span>
                   <span className="flex size-4 shrink-0 items-center justify-center">

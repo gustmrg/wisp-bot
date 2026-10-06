@@ -121,10 +121,10 @@ function VoiceSettingsSection({ active, preferences, onPreferencesChange }: Voic
       aria-labelledby="voice-settings-title"
       hidden={!active}
     >
-      <h2 id="voice-settings-title" className="mb-1 mt-0 text-[17px]">
+      <h2 id="voice-settings-title" className="mb-1 mt-0 text-lg font-semibold">
         Voice input
       </h2>
-      <p className="mb-[22px] text-dim text-[11.5px] leading-relaxed">
+      <p className="mb-[22px] text-dim text-xs leading-relaxed">
         Dictate messages with the microphone button or {formatShortcut(preferences.shortcuts.voiceInput)}. Recordings
         are sent to the provider below for transcription and are not stored.
       </p>
@@ -249,7 +249,7 @@ function VoiceSettingsSection({ active, preferences, onPreferencesChange }: Voic
                 </Button>
               </div>
               {view && !view.secureStorageAvailable ? (
-                <p className="m-0 text-[11.5px] leading-relaxed text-destructive">
+                <p className="m-0 text-xs leading-relaxed text-destructive">
                   Secure credential storage is unavailable. Wisp will not save an API key as plaintext.
                 </p>
               ) : null}
@@ -257,8 +257,8 @@ function VoiceSettingsSection({ active, preferences, onPreferencesChange }: Voic
           </SettingsCard>
         </SettingsGroup>
         <div aria-live="polite" className="mt-3">
-          {error ? <p className="m-0 text-[11.5px] text-destructive">{error}</p> : null}
-          {saved ? <p className="m-0 text-[11.5px] text-dim">{provider.name} key saved.</p> : null}
+          {error ? <p className="m-0 text-xs text-destructive">{error}</p> : null}
+          {saved ? <p className="m-0 text-xs text-dim">{provider.name} key saved.</p> : null}
         </div>
       </div>
     </section>

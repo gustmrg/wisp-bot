@@ -70,7 +70,7 @@ export function InitialsBadge({ name }: { name: string }) {
   return (
     <span
       aria-hidden="true"
-      className="flex size-7 flex-none items-center justify-center rounded-lg bg-muted text-[10px] font-medium"
+      className="flex size-7 flex-none items-center justify-center rounded-lg bg-muted text-2xs font-medium"
     >
       {name.slice(0, 2).toUpperCase()}
     </span>

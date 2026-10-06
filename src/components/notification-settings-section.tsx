@@ -40,7 +40,7 @@ export function NotificationSettingsSection({
       aria-labelledby="notification-settings-title"
       className="overflow-y-auto px-[30px] py-6 max-[620px]:px-4 max-[620px]:py-5 [&>*]:max-w-[760px]"
     >
-      <h2 id="notification-settings-title" className="mb-[22px] mt-0 text-[17px]">
+      <h2 id="notification-settings-title" className="mb-[22px] mt-0 text-lg font-semibold">
         Notifications
       </h2>
       <div className="animate-tab-forward">
@@ -135,11 +135,11 @@ export function NotificationSettingsSection({
               />
             </SettingsRow>
           </SettingsCard>
-          <p className="mx-0.5 mt-[7px] text-dim text-[11px] leading-[1.45]">
+          <p className="mx-0.5 mt-[7px] text-dim text-xs leading-[1.45]">
             Wisps with notifications turned off in their own settings stay silent.
           </p>
         </SettingsGroup>
-        <p className="mt-4 text-[11.5px] text-dim" role={persistenceError ? "alert" : "status"} aria-live="polite">
+        <p className="mt-4 text-xs text-dim" role={persistenceError ? "alert" : "status"} aria-live="polite">
           {persistenceError ??
             (persistenceStatus === "saving"
               ? "Saving preferences…"
