@@ -7,6 +7,8 @@ export interface ServerConfig {
   port: number;
   allowExternalBind: boolean;
   publicOrigin?: string;
+  /** The browser app's files; defaults to the `web/` folder of an installed server package. */
+  webRoot?: string;
   keyFile?: string;
   agentMode: "pi" | "fake";
   /**
@@ -21,6 +23,7 @@ const FLAGS: Record<string, keyof ServerConfig> = {
   "--host": "host",
   "--port": "port",
   "--public-origin": "publicOrigin",
+  "--web-root": "webRoot",
   "--key-file": "keyFile",
   "--agent-mode": "agentMode",
 };
@@ -58,12 +61,14 @@ export function parseServerConfig(args: readonly string[], env: NodeJS.ProcessEn
   if (agentMode !== "pi" && agentMode !== "fake") throw new Error("The agent mode must be pi or fake.");
   const keyFile = pick("keyFile", "WISP_MASTER_KEY_FILE");
   const publicOrigin = pick("publicOrigin", "WISP_PUBLIC_ORIGIN");
+  const webRoot = pick("webRoot", "WISP_WEB_ROOT");
   return {
     dataDirectory: values.has("dataDirectory") ? path.resolve(values.get("dataDirectory")!) : defaultDataDirectory(env),
     host: pick("host", "WISP_HOST") ?? "127.0.0.1",
     port,
     allowExternalBind,
     ...(publicOrigin ? { publicOrigin } : {}),
+    ...(webRoot ? { webRoot: path.resolve(webRoot) } : {}),
     ...(keyFile ? { keyFile: path.resolve(keyFile) } : {}),
     agentMode,
     bootstrapStdin,

@@ -1,5 +1,5 @@
 // Assembles a self-contained server package in release/server: the compiled
-// backend, server, and shared code, a manifest whose dependencies are pinned
+// backend, server, and shared code, the browser app, a manifest whose dependencies are pinned
 // to the versions this repository was tested with, and the deployment files.
 // Install it on the target with `npm install --omit=dev`.
 import { cp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
@@ -26,6 +26,8 @@ for (const directory of ["backend", "server", "shared"]) {
   await cp(path.join(root, "dist-server", directory), path.join(output, directory), { recursive: true });
 }
 await cp(path.join(root, "deploy"), path.join(output, "deploy"), { recursive: true });
+// The browser app, served by the server on every path outside the API.
+await cp(path.join(root, "dist-web"), path.join(output, "web"), { recursive: true });
 await cp(path.join(root, "LICENSE"), path.join(output, "LICENSE"));
 await writeFile(path.join(output, "package.json"), `${JSON.stringify(manifest, null, 2)}\n`);
 console.log(`Packaged wisp-server ${manifest.version} in ${path.relative(root, output)}`);

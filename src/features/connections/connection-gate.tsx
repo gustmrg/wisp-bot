@@ -4,6 +4,7 @@ import { LaptopIcon, LoaderCircleIcon, ServerIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { LOCAL_CONNECTION_ID, type ConnectionsView } from "../../../shared/connections";
+import { ActiveConnectionContext } from "./active-connection";
 import { ConnectionsPanel } from "./connections-panel";
 
 /** The active connection, kept current from the main process. */
@@ -52,7 +53,9 @@ export function ConnectionGate({ children }: { children: ReactNode }) {
       <div className="flex h-full min-h-0 flex-col">
         {status.phase === "reconnecting" ? <ReconnectingBanner view={view} /> : null}
         <div className="min-h-0 flex-1">
-          <Fragment key={`${view.activeId}:${status.epoch}`}>{children}</Fragment>
+          <ActiveConnectionContext.Provider value={view}>
+            <Fragment key={`${view.activeId}:${status.epoch}`}>{children}</Fragment>
+          </ActiveConnectionContext.Provider>
         </div>
       </div>
     );
@@ -255,7 +258,7 @@ function ConnectionScreen({ view }: { view: ConnectionsView }) {
                 Retry
               </Button>
             ) : null}
-            {view.activeId === LOCAL_CONNECTION_ID ? null : (
+            {view.activeId === LOCAL_CONNECTION_ID || !view.profiles.some(({ kind }) => kind === "local") ? null : (
               <Button
                 type="button"
                 variant="outline"
@@ -272,9 +275,11 @@ function ConnectionScreen({ view }: { view: ConnectionsView }) {
             </p>
           ) : null}
         </section>
-        <section className="mt-4 rounded-2xl border border-border bg-card p-4" aria-label="Connections">
-          <ConnectionsPanel view={view} />
-        </section>
+        {view.canManage === false ? null : (
+          <section className="mt-4 rounded-2xl border border-border bg-card p-4" aria-label="Connections">
+            <ConnectionsPanel view={view} />
+          </section>
+        )}
       </div>
     </main>
   );

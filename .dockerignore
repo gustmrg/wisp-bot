@@ -5,3 +5,4 @@ dist-server
 release
 deploy/docker/master.key
 *.log
+dist-web

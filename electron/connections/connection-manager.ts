@@ -10,7 +10,7 @@ import {
   type SshConnectionProfile,
 } from "../../shared/connections.js";
 import { WISP_IPC_CHANNELS, type BackendResult } from "../../shared/contracts.js";
-import type { HostRequest, HostResponse } from "../../shared/remote-protocol.js";
+import type { DeviceCredentials, HostRequest, HostResponse } from "../../shared/remote-protocol.js";
 import type { LocalServer } from "../local-server/local-server.js";
 import type { ConnectionStore } from "./connection-store.js";
 
@@ -173,7 +173,8 @@ export class ConnectionManager {
       credentials: {
         load: () => store.loadCredentials(profile.id),
         save: async (credentials) => {
-          await store.saveCredentials(profile.id, credentials);
+          // The desktop app always pairs with bearer tokens, never cookies.
+          await store.saveCredentials(profile.id, credentials as DeviceCredentials | undefined);
           if (this.session === session) this.publish();
         },
       },

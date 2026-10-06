@@ -10,8 +10,10 @@ import { encodeRemoteJson } from "../shared/remote-codec.js";
 import {
   REMOTE_API_PREFIX,
   REMOTE_PROTOCOL_VERSION,
+  type DeviceCredentials,
   type HostRequest,
   type HostResponse,
+  type WebSession,
   type RemoteEventType,
   type ServerDescriptor,
 } from "../shared/remote-protocol.js";
@@ -21,6 +23,7 @@ import type { DeviceAuth } from "./device-auth.js";
 import { boundedString, HttpError, invalidRequest, unauthorized } from "./errors.js";
 import type { EventHub, HubEvent } from "./event-hub.js";
 import { readJsonBody, sendError, sendJson } from "./http-util.js";
+import { serveWeb } from "./web-assets.js";
 
 /** Every authenticated device acts for the single owner, so approvals are shared between them. */
 export const OWNER_PRINCIPAL_ID = 1;
@@ -56,6 +59,10 @@ export interface HttpApiOptions {
   logger: Pick<StructuredLogger, "warn">;
   /** While true (a backup is being written), operations wait for the client to retry. */
   isPaused?: () => boolean;
+  /** The exact HTTPS origin a private proxy serves the server at, if any. */
+  publicOrigin?: string;
+  /** The browser app's files, served on every path outside the API. */
+  webRoot?: string;
 }
 
 export interface HttpApi {
@@ -100,10 +107,45 @@ export function createHttpApi(options: HttpApiOptions): HttpApi {
     for (const [response, owner] of streams) if (owner === deviceId) response.end();
   });
 
+  /** The origin the browser sees for this request: the public HTTPS origin, or a loopback address. */
+  const ownOrigin = (request: IncomingMessage): string => {
+    const host = request.headers.host ?? "";
+    if (options.publicOrigin && hostNameOf(host) === new URL(options.publicOrigin).hostname)
+      return options.publicOrigin;
+    return `http://${host}`;
+  };
+
+  /**
+   * Browser sessions use HttpOnly cookies, so the page's scripts never hold a
+   * token. A cookie-authenticated change must come from the app's own origin
+   * and carry a header a cross-site form cannot set.
+   */
+  const assertSameOriginRequest = (request: IncomingMessage): void => {
+    if (request.headers.origin !== ownOrigin(request) || request.headers["x-wisp-request"] !== "1") {
+      throw new HttpError(403, "forbidden", "This request must come from the Wisp app.");
+    }
+  };
+
   const authenticate = (request: IncomingMessage): string => {
     const header = request.headers.authorization;
-    if (!header?.startsWith("Bearer ")) throw unauthorized();
-    return auth.authenticate(header.slice("Bearer ".length));
+    if (header?.startsWith("Bearer ")) return auth.authenticate(header.slice("Bearer ".length));
+    const token = cookiesOf(request).get(ACCESS_COOKIE);
+    if (!token) throw unauthorized();
+    if (request.method !== "GET" && request.method !== "HEAD") assertSameOriginRequest(request);
+    return auth.authenticate(token);
+  };
+
+  const setSessionCookies = (
+    request: IncomingMessage,
+    response: ServerResponse,
+    credentials: DeviceCredentials | undefined,
+  ): void => {
+    const secure = ownOrigin(request).startsWith("https:") ? "; Secure" : "";
+    const attributes = `HttpOnly; SameSite=Strict${secure}`;
+    response.setHeader("Set-Cookie", [
+      `${ACCESS_COOKIE}=${credentials?.accessToken ?? ""}; Path=${REMOTE_API_PREFIX}; Max-Age=${credentials ? 900 : 0}; ${attributes}`,
+      `${REFRESH_COOKIE}=${credentials?.refreshToken ?? ""}; Path=${REMOTE_API_PREFIX}/auth; Max-Age=${credentials ? 30 * 86_400 : 0}; ${attributes}`,
+    ]);
   };
 
   const checkCaller = (request: IncomingMessage): void => {
@@ -111,7 +153,7 @@ export function createHttpApi(options: HttpApiOptions): HttpApi {
       throw new HttpError(403, "forbidden", "This host name is not served here.");
     }
     const origin = request.headers.origin;
-    if (origin !== undefined && !options.allowedOrigins.has(origin)) {
+    if (origin !== undefined && !options.allowedOrigins.has(origin) && origin !== ownOrigin(request)) {
       throw new HttpError(403, "forbidden", "This origin may not call the Wisp server.");
     }
   };
@@ -124,18 +166,45 @@ export function createHttpApi(options: HttpApiOptions): HttpApi {
       sendJson(response, 200, { ok: true, value: { status: "ok" } });
       return;
     }
-    if (!pathname.startsWith(`${REMOTE_API_PREFIX}/`)) throw new HttpError(404, "not_found", "Not found.");
+    if (!pathname.startsWith(`${REMOTE_API_PREFIX}/`)) {
+      if (options.webRoot && (method === "GET" || method === "HEAD")) {
+        await serveWeb(response, options.webRoot, pathname, method === "HEAD");
+        return;
+      }
+      throw new HttpError(404, "not_found", "Not found.");
+    }
     const path = pathname.slice(REMOTE_API_PREFIX.length);
 
     if (path === "/auth/pair" && method === "POST") {
       const body = asRecord(await readJsonBody(request, DEFAULT_BODY_LIMIT));
+      const web = body.mode === "web";
+      if (web) assertSameOriginRequest(request);
       const credentials = auth.pair(boundedString(body.code, 64), boundedString(body.deviceName, 128));
-      sendJson(response, 200, { ok: true, value: credentials });
+      if (!web) {
+        sendJson(response, 200, { ok: true, value: credentials });
+        return;
+      }
+      setSessionCookies(request, response, credentials);
+      sendJson(response, 200, { ok: true, value: webSessionOf(credentials) });
       return;
     }
     if (path === "/auth/refresh" && method === "POST") {
-      const body = asRecord(await readJsonBody(request, DEFAULT_BODY_LIMIT));
-      sendJson(response, 200, { ok: true, value: auth.refresh(boundedString(body.refreshToken, 128)) });
+      const body = asRecord((await readJsonBody(request, DEFAULT_BODY_LIMIT)) ?? {});
+      if (body.refreshToken !== undefined) {
+        sendJson(response, 200, { ok: true, value: auth.refresh(boundedString(body.refreshToken, 128)) });
+        return;
+      }
+      assertSameOriginRequest(request);
+      const token = cookiesOf(request).get(REFRESH_COOKIE);
+      try {
+        if (!token) throw unauthorized();
+        const credentials = auth.refresh(token);
+        setSessionCookies(request, response, credentials);
+        sendJson(response, 200, { ok: true, value: webSessionOf(credentials) });
+      } catch (error) {
+        setSessionCookies(request, response, undefined);
+        throw error;
+      }
       return;
     }
 
@@ -146,6 +215,7 @@ export function createHttpApi(options: HttpApiOptions): HttpApi {
     }
     if (path === "/auth/logout" && method === "POST") {
       auth.revoke(deviceId);
+      setSessionCookies(request, response, undefined);
       sendJson(response, 200, { ok: true, value: {} });
       return;
     }
@@ -273,6 +343,27 @@ export function createHttpApi(options: HttpApiOptions): HttpApi {
       for (const response of streams.keys()) response.end();
       streams.clear();
     },
+  };
+}
+
+const ACCESS_COOKIE = "wisp_access";
+const REFRESH_COOKIE = "wisp_refresh";
+
+function cookiesOf(request: IncomingMessage): Map<string, string> {
+  const cookies = new Map<string, string>();
+  for (const part of (request.headers.cookie ?? "").split(";")) {
+    const separator = part.indexOf("=");
+    if (separator > 0) cookies.set(part.slice(0, separator).trim(), part.slice(separator + 1).trim());
+  }
+  return cookies;
+}
+
+/** What a browser learns about its session; the tokens stay in HttpOnly cookies. */
+function webSessionOf(credentials: DeviceCredentials): WebSession {
+  return {
+    deviceId: credentials.deviceId,
+    serverId: credentials.serverId,
+    accessExpiresAt: credentials.accessExpiresAt,
   };
 }
 

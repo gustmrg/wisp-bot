@@ -6,6 +6,7 @@ import path from "node:path";
 
 import { afterEach, describe, expect, it } from "vitest";
 
+import { FileLogSink } from "../../backend/file-log-sink.js";
 import { StructuredLogger } from "../../backend/structured-logger.js";
 import { adminRequest } from "../../server/admin.js";
 import { runCli } from "../../server/cli.js";
@@ -191,6 +192,27 @@ async function setUpWisp(server: WispServer, credentials: DeviceCredentials): Pr
 }
 
 describe("Wisp server", () => {
+  it("starts when a log line created its folders first", async () => {
+    // A warning logged before the server starts, such as a missing master key, creates backend/logs.
+    const directory = path.join(await mkdtemp(path.join(os.tmpdir(), "wisp-logs-first-")), "data");
+    directories.push(path.dirname(directory));
+    const sink = new FileLogSink(path.join(directory, "backend", "logs"));
+    sink.warn("early warning");
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    const server = await createWispServer({
+      dataDirectory: directory,
+      host: "127.0.0.1",
+      port: 0,
+      encryption: new MasterKeyEncryption(),
+      logger: silent,
+      agentMode: "fake",
+      appVersion: "1.0.0",
+      allowModelNetwork: false,
+    });
+    servers.push(server);
+    expect((await fetch(`${server.url}/health`)).status).toBe(200);
+  });
+
   it("answers health checks but requires a paired device for the API", async () => {
     const { server } = await start();
     expect((await fetch(`${server.url}/health`)).status).toBe(200);

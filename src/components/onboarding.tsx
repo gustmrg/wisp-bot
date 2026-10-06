@@ -113,9 +113,11 @@ function ServerChoice() {
             )}
             {server ? `Setting up ${server.name}, a Wisp server.` : "Setting up Wisps on this computer."}
           </p>
-          <Button type="button" variant="ghost" size="sm" onClick={() => setOpen(true)}>
-            Change
-          </Button>
+          {view.canManage === false ? null : (
+            <Button type="button" variant="ghost" size="sm" onClick={() => setOpen(true)}>
+              Change
+            </Button>
+          )}
         </div>
       )}
     </div>

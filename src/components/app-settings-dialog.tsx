@@ -1,4 +1,5 @@
 import { LaunchAtLoginSetting } from "@/components/launch-at-login-setting";
+import { isBrowserApp } from "@/lib/platform";
 import { UserProfileSettings } from "@/components/user-profile-settings";
 import type { UserProfileController } from "@/hooks/use-user-profile";
 import { useEffect, useRef, useState } from "react";
@@ -155,6 +156,8 @@ function AppSettingsDialog({
     if (focusSection) mobileHeadingRef.current?.focus();
   }, [focusSection]);
   const selected = "bg-accent text-accent-foreground";
+  // Updates and launch at login belong to the desktop app.
+  const browserApp = isBrowserApp();
   const [updateState, setUpdateState] = useState<UpdateState>({
     phase: "idle",
     currentVersion: appMetadata.version,
@@ -325,7 +328,7 @@ function AppSettingsDialog({
                     </SelectContent>
                   </Select>
                 </SettingsRow>
-                <LaunchAtLoginSetting open={open} />
+                {browserApp ? null : <LaunchAtLoginSetting open={open} />}
                 <SettingsRow>
                   <SettingsRowCopy>
                     <strong>Notification sounds</strong>
@@ -380,26 +383,36 @@ function AppSettingsDialog({
                     <strong className="text-[12.5px]">{appMetadata.displayName}</strong>
                     <small className="text-dim text-[11.5px]">Version {appMetadata.version}</small>
                   </SettingsRowCopy>
-                  <Button
-                    variant="ghost"
-                    size="icon-sm"
-                    type="button"
-                    className={cn(updateNeedsAction(updateState) && "text-blue hover:text-blue")}
-                    aria-label={updateActionLabel(updateState)}
-                    aria-busy={updateBusy(updateState)}
-                    title={updateActionLabel(updateState)}
-                    disabled={updateBusy(updateState)}
-                    onClick={() => void handleUpdateAction()}
-                  >
-                    <UpdateActionIcon state={updateState} />
-                  </Button>
+                  {browserApp ? null : (
+                    <Button
+                      variant="ghost"
+                      size="icon-sm"
+                      type="button"
+                      className={cn(updateNeedsAction(updateState) && "text-blue hover:text-blue")}
+                      aria-label={updateActionLabel(updateState)}
+                      aria-busy={updateBusy(updateState)}
+                      title={updateActionLabel(updateState)}
+                      disabled={updateBusy(updateState)}
+                      onClick={() => void handleUpdateAction()}
+                    >
+                      <UpdateActionIcon state={updateState} />
+                    </Button>
+                  )}
                 </SettingsRow>
               </SettingsCard>
             </SettingsGroup>
-            <p className="mt-3 text-[11.5px] text-dim" role={updateState.phase === "error" ? "alert" : "status"}>
-              {updateStatusText(updateState)}
-            </p>
-            <p className="mt-2 text-[11px] text-faint">Manual recovery: github.com/gustmrg/wisp-bot/releases/latest</p>
+            {browserApp ? (
+              <p className="mt-3 text-[11.5px] text-dim">Served by your Wisp server, which updates this app with it.</p>
+            ) : (
+              <>
+                <p className="mt-3 text-[11.5px] text-dim" role={updateState.phase === "error" ? "alert" : "status"}>
+                  {updateStatusText(updateState)}
+                </p>
+                <p className="mt-2 text-[11px] text-faint">
+                  Manual recovery: github.com/gustmrg/wisp-bot/releases/latest
+                </p>
+              </>
+            )}
           </div>
         </section>
         {mobile ? (

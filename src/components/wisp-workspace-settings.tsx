@@ -1,3 +1,4 @@
+import { useScreenActions } from "@/features/connections/active-connection";
 import { useEffect, useState } from "react";
 import { FolderOpenIcon } from "lucide-react";
 
@@ -25,6 +26,8 @@ export function WispWorkspaceSettings({ conversationId }: { conversationId: stri
 }
 
 function WorkspacePanel({ conversationId }: { conversationId: string }) {
+  // Opening a folder needs this computer's file manager and the Wisp's files on this computer.
+  const screenActions = useScreenActions();
   const [view, setView] = useState<WorkspaceView | null>(null);
   const [error, setError] = useState("");
 
@@ -81,10 +84,12 @@ function WorkspacePanel({ conversationId }: { conversationId: string }) {
           </div>
         </div>
       ) : null}
-      <Button className="w-full" variant="outline" onClick={() => void openFolder()}>
-        <FolderOpenIcon aria-hidden="true" />
-        Open workspace folder
-      </Button>
+      {screenActions ? (
+        <Button className="w-full" variant="outline" onClick={() => void openFolder()}>
+          <FolderOpenIcon aria-hidden="true" />
+          Open workspace folder
+        </Button>
+      ) : null}
       {error ? (
         <p role="alert" className="text-destructive">
           {error}

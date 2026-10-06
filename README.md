@@ -46,8 +46,9 @@ preset.
 - **Responsive layout** — a mobile-style single-screen layout below 760px.
   See [mobile layout](docs/mobile-layout.md).
 - **Wisp server** — run the same backend on a Linux machine and connect the
-  app over SSH or Tailscale, so Wisps keep working with the app closed. See
-  [headless server](docs/remote-server.md).
+  app over SSH or Tailscale, so Wisps keep working with the app closed. The
+  server also serves the app to browsers and phones as an installable web app.
+  See [headless server](docs/remote-server.md).
 
 ## Getting started
 

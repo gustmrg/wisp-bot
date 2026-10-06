@@ -12,7 +12,7 @@ export interface FileLogSinkOptions {
 
 export interface FileLogFs {
   appendFile(filePath: string, data: string): Promise<void>;
-  mkdir(directory: string, options: { recursive: true }): Promise<string | undefined>;
+  mkdir(directory: string, options: { recursive: true; mode: number }): Promise<string | undefined>;
   rename(from: string, to: string): Promise<void>;
   stat(filePath: string): Promise<{ size: number } | undefined>;
 }
@@ -53,7 +53,8 @@ export class FileLogSink implements LogSink {
 
   private async write(value: string): Promise<void> {
     try {
-      this.directoryReady ??= this.fs.mkdir(this.directory, { recursive: true }).then(() => undefined);
+      // Owner-only, like the data directory the logs usually live in.
+      this.directoryReady ??= this.fs.mkdir(this.directory, { recursive: true, mode: 0o700 }).then(() => undefined);
       await this.directoryReady;
       const line = `${value}\n`;
       const size = this.currentSize ?? (await this.measureCurrentSize());

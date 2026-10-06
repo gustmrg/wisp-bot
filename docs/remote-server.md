@@ -8,8 +8,9 @@ server on another machine.
 Run the server by itself on a Linux machine and Wisps keep working when no
 client is connected: closing a client only closes its connection. The desktop
 app connects to such a server over SSH or a private HTTPS address; see
-[Connect the desktop app](#connect-the-desktop-app). Web and mobile clients
-come later.
+[Connect the desktop app](#connect-the-desktop-app). The server also serves
+the app to browsers, which you can install on a phone; see
+[Use Wisp in a browser or on your phone](#use-wisp-in-a-browser-or-on-your-phone).
 
 ## What runs where
 
@@ -90,6 +91,7 @@ WISP_MASTER_KEY_FILE=~/.config/wisp/master.key node ~/.local/lib/wisp/server/mai
 | `--host` | `WISP_HOST` | `127.0.0.1` |
 | `--allow-external-bind` | `WISP_ALLOW_EXTERNAL_BIND=1` | off |
 | `--public-origin` | `WISP_PUBLIC_ORIGIN` | none |
+| `--web-root` | `WISP_WEB_ROOT` | the package's `web/` folder |
 
 The server listens on loopback only. Reach it through an SSH tunnel or a
 private HTTPS proxy such as Tailscale Serve; never publish the port. Binding
@@ -250,6 +252,46 @@ owner, including tools that touch the server's files. Revoking a device ends
 its sessions and closes its event stream. After ten failed pairing attempts in
 a minute, pairing pauses for a minute.
 
+## Use Wisp in a browser or on your phone
+
+The server serves the same app as the desktop, on every path outside the API.
+Open its address in a browser, pair once with a code from `wispctl pair`, and
+use the Wisps on the server. Browsers need HTTPS for the microphone and for
+installing the app, so reach the server through a private HTTPS proxy such as
+Tailscale Serve:
+
+```sh
+tailscale serve --bg http://127.0.0.1:8787
+tailscale serve status        # shows https://<machine>.<tailnet>.ts.net
+```
+
+Set `WISP_PUBLIC_ORIGIN` to that exact origin (for example
+`https://pi.tail1234.ts.net`) and restart the server: it accepts that host
+name, marks session cookies `Secure`, and lets pages from that origin call it.
+Do not use Funnel; the server must stay on your tailnet.
+
+On a phone:
+
+1. Install the Tailscale app and sign in to the same tailnet.
+2. Open the server's address in Safari (iPhone) or Chrome (Android).
+3. Run `wispctl pair` on the server and enter the code.
+4. Install it: **Share → Add to Home Screen** in Safari, or **Install app** in
+   Chrome. It then opens full screen, like an app, with no account or app
+   store.
+
+The browser app is the same Wisp with a few differences:
+
+- It always uses the server that served it. **Settings → Connections** shows
+  that server and **Sign out of this browser**, which revokes the device.
+- Attaching files, opening a Wisp's folder, signing in to an MCP server with
+  OAuth, updates, and launch at login belong to the desktop app and are hidden
+  or report that they are unavailable.
+- Voice input works over HTTPS. iPhones record `audio/mp4`, which the voice
+  providers accept.
+- A service worker caches only the app's files, never conversations or API
+  responses, so the app opens without a network and reconnects when it can.
+  A new server version is picked up on the next launch.
+
 ## HTTP API
 
 The API mirrors the desktop bridge, so a client implements it mechanically:
@@ -272,10 +314,17 @@ The API mirrors the desktop bridge, so a client implements it mechanically:
 - `POST /api/v1/auth/logout` revokes the calling device.
 - `GET /health` reports liveness without authentication.
 
-Authenticated requests carry `Authorization: Bearer <accessToken>`. An event
-stream is authorized when it opens and stays open until the device is revoked
-or disconnects; an expired access token only affects new requests. The server
-answers no browser origins in this release.
+Authenticated requests carry `Authorization: Bearer <accessToken>`, or, for
+the browser app, the session cookies described below. An event stream is
+authorized when it opens and stays open until the device is revoked or
+disconnects; an expired access token only affects new requests.
+
+Browsers pair with `{ "mode": "web" }`. The server then keeps both tokens in
+`HttpOnly`, `SameSite=Strict` cookies (`Secure` behind HTTPS) and answers only
+the device and server IDs, so no script on the page can read a token. Every
+cookie-authenticated change, including pairing and refreshing, must come from
+the server's own origin and carry `X-Wisp-Request: 1`, which a cross-site form
+cannot send. Other browser origins are refused.
 
 Repeating `sendMessage` with a request ID the server already accepted is
 rejected rather than run again, so a client can retry safely when a response is

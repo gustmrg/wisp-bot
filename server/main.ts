@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import path from "node:path";
 import { createInterface } from "node:readline";
 
@@ -42,6 +43,13 @@ function readBootstrap(onClose: () => void): Promise<ServerBootstrap> {
   });
 }
 
+/** An explicit web root, or the `web/` folder next to an installed server package when it exists. */
+function webRootOption(configured: string | undefined): { webRoot?: string } {
+  if (configured) return { webRoot: configured };
+  const bundled = path.join(__dirname, "..", "web");
+  return existsSync(path.join(bundled, "index.html")) ? { webRoot: bundled } : {};
+}
+
 async function main(): Promise<void> {
   const config = parseServerConfig(process.argv.slice(2));
   const logger = new StructuredLogger(
@@ -61,6 +69,8 @@ async function main(): Promise<void> {
     port: config.port,
     allowExternalBind: config.allowExternalBind,
     ...(config.publicOrigin ? { publicOrigin: config.publicOrigin } : {}),
+    // The desktop app's own server needs no browser app.
+    ...(bootstrap ? {} : webRootOption(config.webRoot)),
     encryption,
     logger,
     agentMode: config.agentMode,

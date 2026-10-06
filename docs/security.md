@@ -43,7 +43,10 @@ OpenSSH verifies host keys against `known_hosts` and Wisp never sees SSH keys
 or passwords; profile fields are validated so they cannot become OpenSSH
 options. Direct connections require HTTPS, except to this computer. Revoking a
 device on the server ends its sessions, and the app does not pair again
-without a user's request. See [headless server](remote-server.md).
+without a user's request. The browser app served by a server keeps its
+session in `HttpOnly`, `SameSite=Strict` cookies, never in page storage, and
+the server accepts cookie-authenticated changes only from its own origin with
+an `X-Wisp-Request` header. See [headless server](remote-server.md).
 
 ## Tool authorization
 

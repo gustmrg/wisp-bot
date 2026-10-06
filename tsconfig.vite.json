@@ -9,5 +9,5 @@
     "noEmit": true,
     "skipLibCheck": true
   },
-  "include": ["vite.config.mts"]
+  "include": ["vite.config.mts", "vite.web.config.mts"]
 }

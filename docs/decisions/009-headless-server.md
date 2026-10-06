@@ -69,5 +69,7 @@ without relying on PIDs.
   by asking the app that started it. The main process routes each IPC
   operation to the active session, so the renderer keeps calling the same
   `WispApi` and tokens never reach the renderer.
-- Web and mobile clients will need cookie sessions or allowed origins; the
-  server answers no browser origins yet.
+- Browsers, including phones through an installed web app, use the same
+  operations with HttpOnly cookie sessions; cookie-authenticated changes must
+  come from the server's own origin with an `X-Wisp-Request` header. A native
+  mobile app (Capacitor) could wrap the same build later with bearer tokens.
