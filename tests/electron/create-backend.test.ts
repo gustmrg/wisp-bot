@@ -23,6 +23,7 @@ const PUSH_CHANNELS = new Set<string>([
   WISP_IPC_CHANNELS.mcpSettingsChanged,
   WISP_IPC_CHANNELS.updateState,
   WISP_IPC_CHANNELS.conversationChanged,
+  WISP_IPC_CHANNELS.connectionsChanged,
 ]);
 
 const encryption: EncryptionService = {
@@ -88,6 +89,8 @@ async function compose() {
     appVersion: "0.0.0-test",
     updateService: new UpdateService(updater as never, "0.1.0", false),
     allowModelNetwork: false,
+    connectionsDirectory: dataDirectory,
+    deviceName: "Test computer",
   });
   backends.push(backend);
   const invoke = async <T>(channel: string, payload?: unknown): Promise<T> => {

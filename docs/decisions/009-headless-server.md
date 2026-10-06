@@ -61,5 +61,9 @@ without relying on PIDs.
   resync its event stream.
 - MCP OAuth sign-in, opening folders, and attaching files need a client-side
   flow before they work remotely.
+- The desktop app routes each IPC operation to the active backend in its main
+  process (`electron/connections/`), so the renderer keeps calling the same
+  `WispApi` and remounts when the backend changes or a reconnect cannot
+  replay. Tokens never reach the renderer.
 - Web and mobile clients will need cookie sessions or allowed origins; the
   server answers no browser origins yet.

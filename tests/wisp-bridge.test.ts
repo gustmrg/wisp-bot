@@ -1,7 +1,15 @@
 import { describe, expect, it } from "vitest";
 
+import type { ConnectionsView } from "../shared/connections.js";
 import type { WispApi } from "../shared/contracts.js";
 import { isWispBridgeAvailable } from "../src/lib/wisp-bridge.js";
+
+const connections: ConnectionsView = {
+  activeId: "local",
+  profiles: [{ id: "local", kind: "local", name: "This computer", paired: true }],
+  status: { profileId: "local", phase: "local", epoch: 1 },
+  secureStorageAvailable: true,
+};
 
 function completeBridge(): WispApi {
   return {
@@ -137,6 +145,12 @@ function completeBridge(): WispApi {
     getVoiceSettings: async () => ({ ok: true, value: { secureStorageAvailable: true, providers: [] } }),
     saveVoiceCredential: async () => ({ ok: true, value: { secureStorageAvailable: true, providers: [] } }),
     transcribeAudio: async () => ({ ok: true, value: { text: "" } }),
+    getConnections: async () => ({ ok: true, value: connections }),
+    saveConnection: async () => ({ ok: true, value: connections }),
+    removeConnection: async () => ({ ok: true, value: connections }),
+    activateConnection: async () => ({ ok: true, value: connections }),
+    retryConnection: async () => ({ ok: true, value: connections }),
+    subscribeToConnections: () => () => undefined,
   };
 }
 

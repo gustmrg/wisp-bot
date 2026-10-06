@@ -27,6 +27,19 @@ arguments, telemetry, and logs are prohibited credential locations. Unreadable
 credentials disable the affected integration tools without preventing core
 Wisp conversations.
 
+## Remote servers
+
+When the app uses a Wisp server, the server holds every provider key,
+encrypted with its own master key file, and runs every tool on its own
+files. The desktop keeps only the device's pairing credentials, encrypted with
+`safeStorage` like other keys; they stay in the main process and never reach
+the renderer. SSH tunnels use the system OpenSSH client with BatchMode, so
+OpenSSH verifies host keys against `known_hosts` and Wisp never sees SSH keys
+or passwords; profile fields are validated so they cannot become OpenSSH
+options. Direct connections require HTTPS, except to this computer. Revoking a
+device on the server ends its sessions, and the app does not pair again
+without a user's request. See [headless server](remote-server.md).
+
 ## Tool authorization
 
 Read-only workspace tools are always available; file creation and modification

@@ -6,6 +6,7 @@ import {
   BarChart3Icon,
   BellIcon,
   BotIcon,
+  CableIcon,
   ChevronLeftIcon,
   CircleFadingArrowUpIcon,
   DownloadIcon,
@@ -29,6 +30,7 @@ import { PluginSettingsSection } from "@/components/plugin-settings-section";
 import { McpSettingsSection } from "@/components/mcp-settings-section";
 import { ShortcutSettingsSection } from "@/components/shortcut-settings-section";
 import { VoiceSettingsSection } from "@/components/voice-settings-section";
+import { ConnectionSettingsSection } from "@/components/connection-settings-section";
 import { MobileNavigation } from "@/components/mobile-navigation";
 import {
   SettingsCard,
@@ -50,7 +52,16 @@ import type { UpdateState } from "../../shared/contracts";
 import type { PluginId } from "../../shared/plugins";
 import type { WispOption } from "@/lib/plugin-access";
 
-type SettingsSection = "general" | "model" | "voice" | "plugins" | "mcp" | "shortcuts" | "about" | "usage";
+type SettingsSection =
+  | "general"
+  | "connections"
+  | "model"
+  | "voice"
+  | "plugins"
+  | "mcp"
+  | "shortcuts"
+  | "about"
+  | "usage";
 /** Sections other parts of the app can open the dialog at. */
 export type SettingsEntrySection = "general" | "model" | "voice" | "plugins" | "mcp";
 
@@ -59,6 +70,7 @@ const NAV_ITEMS: ReadonlyArray<
   { label: string; icon: LucideIcon } & ({ section: SettingsSection; panelId: string } | { soon: true })
 > = [
   { section: "general", panelId: "general-settings-panel", label: "General", icon: SettingsIcon },
+  { section: "connections", panelId: "connection-settings-panel", label: "Connections", icon: CableIcon },
   { section: "model", panelId: "model-settings-panel", label: "AI Model", icon: BotIcon },
   { section: "voice", panelId: "voice-settings-panel", label: "Voice input", icon: MicIcon },
   { section: "plugins", panelId: "plugin-settings-panel", label: "Plugins", icon: PlugIcon },
@@ -125,6 +137,7 @@ function AppSettingsDialog({
   const mobileHeadingRef = useRef<HTMLHeadingElement>(null);
   const sectionTitles = {
     general: "General",
+    connections: "Connections",
     model: "AI Model",
     voice: "Voice input",
     shortcuts: "Shortcuts",
@@ -266,6 +279,7 @@ function AppSettingsDialog({
           />
         ) : null}
         {section === "mcp" && open && !showOverview ? <McpSettingsSection /> : null}
+        {section === "connections" && open && !showOverview ? <ConnectionSettingsSection /> : null}
         <section
           className="overflow-y-auto px-[30px] py-6 max-[620px]:px-4 max-[620px]:py-5"
           id="general-settings-panel"
