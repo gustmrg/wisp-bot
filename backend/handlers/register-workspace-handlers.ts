@@ -1,14 +1,14 @@
 import { WISP_IPC_CHANNELS } from "../../shared/contracts.js";
-import type { WorkspaceService } from "../../backend/workspace-service.js";
-import { registerGuardedHandlers, type HandlerIpcMain, type SenderAuthorizer } from "./guarded-handlers.js";
-import { parseConversationRequest, parseSkillRequest } from "../../backend/validators.js";
+import type { WorkspaceService } from "../workspace-service.js";
+import { registerGuardedHandlers, type HandlerRouter, type SenderAuthorizer } from "./guarded-handlers.js";
+import { parseConversationRequest, parseSkillRequest } from "../validators.js";
 
 export function registerWorkspaceHandlers(
-  ipcMain: HandlerIpcMain,
+  router: HandlerRouter,
   service: WorkspaceService,
   authorizeSender: SenderAuthorizer,
 ): { dispose: () => void } {
-  return registerGuardedHandlers(ipcMain, authorizeSender, [
+  return registerGuardedHandlers(router, authorizeSender, [
     [WISP_IPC_CHANNELS.getWorkspace, (payload) => service.getView(parseConversationRequest(payload).conversationId)],
     [
       WISP_IPC_CHANNELS.openWorkspaceFolder,

@@ -1,14 +1,18 @@
 import { WISP_IPC_CHANNELS } from "../../shared/contracts.js";
 import type { LaunchAtLoginService } from "../backend/launch-at-login-service.js";
 import { WispBackendError } from "../../backend/backend-error.js";
-import { registerGuardedHandlers, type HandlerIpcMain, type SenderAuthorizer } from "./guarded-handlers.js";
+import {
+  registerGuardedHandlers,
+  type HandlerRouter,
+  type SenderAuthorizer,
+} from "../../backend/handlers/guarded-handlers.js";
 
 export function registerLaunchAtLoginHandlers(
-  ipcMain: HandlerIpcMain,
+  router: HandlerRouter,
   service: LaunchAtLoginService,
   authorizeSender: SenderAuthorizer,
 ): { dispose: () => void } {
-  return registerGuardedHandlers(ipcMain, authorizeSender, [
+  return registerGuardedHandlers(router, authorizeSender, [
     [WISP_IPC_CHANNELS.getLaunchAtLoginState, () => service.getState()],
     [
       WISP_IPC_CHANNELS.setLaunchAtLogin,

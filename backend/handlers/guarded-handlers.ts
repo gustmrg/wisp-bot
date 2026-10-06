@@ -1,14 +1,22 @@
-import type { IpcMain, IpcMainInvokeEvent } from "electron";
-
 import type { BackendResult } from "../../shared/contracts.js";
-import { sanitizeBackendError } from "../../backend/backend-error.js";
+import { sanitizeBackendError } from "../backend-error.js";
 
-export type HandlerIpcMain = Pick<IpcMain, "handle" | "removeHandler">;
-export type SenderAuthorizer = (event: IpcMainInvokeEvent) => boolean;
+/** What a handler may know about who sent a request: approvals are bound to the requester that showed them. */
+export interface HandlerEvent {
+  readonly sender: { readonly id: number };
+}
+
+/** Where handlers are registered: Electron's `ipcMain`, or a host's own operation table. */
+export interface HandlerRouter {
+  handle(channel: string, listener: (event: HandlerEvent, payload: unknown) => Promise<BackendResult<unknown>>): void;
+  removeHandler(channel: string): void;
+}
+
+export type SenderAuthorizer = (event: HandlerEvent) => boolean;
 
 /** Returns the value to send back, or throws to report a sanitized error. */
-export type GuardedHandler = (payload: unknown, event: IpcMainInvokeEvent) => unknown;
-type ResultHandler = (payload: unknown, event: IpcMainInvokeEvent) => Promise<BackendResult<unknown>>;
+export type GuardedHandler = (payload: unknown, event: HandlerEvent) => unknown;
+type ResultHandler = (payload: unknown, event: HandlerEvent) => Promise<BackendResult<unknown>>;
 
 export async function toBackendResult<T>(operation: () => Promise<T> | T): Promise<BackendResult<T>> {
   try {
@@ -27,22 +35,22 @@ function unauthorizedResult(): BackendResult<never> {
 
 /**
  * Registers handlers whose results are already `BackendResult`s. Every channel
- * answers only the trusted renderer; others get the same opaque invalid-request
+ * answers only authorized senders; others get the same opaque invalid-request
  * error as a malformed payload.
  */
 export function registerAuthorizedHandlers(
-  ipcMain: HandlerIpcMain,
+  router: HandlerRouter,
   authorizeSender: SenderAuthorizer,
   handlers: ReadonlyArray<readonly [string, ResultHandler]>,
 ): { dispose: () => void } {
   for (const [channel, handler] of handlers) {
-    ipcMain.handle(channel, (event: IpcMainInvokeEvent, payload: unknown) =>
+    router.handle(channel, (event: HandlerEvent, payload: unknown) =>
       authorizeSender(event) ? handler(payload, event) : Promise.resolve(unauthorizedResult()),
     );
   }
   return {
     dispose: () => {
-      for (const [channel] of handlers) ipcMain.removeHandler(channel);
+      for (const [channel] of handlers) router.removeHandler(channel);
     },
   };
 }
@@ -53,12 +61,12 @@ export function registerAuthorizedHandlers(
  * check or leak an exception across the process boundary.
  */
 export function registerGuardedHandlers(
-  ipcMain: HandlerIpcMain,
+  router: HandlerRouter,
   authorizeSender: SenderAuthorizer,
   handlers: ReadonlyArray<readonly [string, GuardedHandler]>,
 ): { dispose: () => void } {
   return registerAuthorizedHandlers(
-    ipcMain,
+    router,
     authorizeSender,
     handlers.map(([channel, handler]) => [channel, (payload, event) => toBackendResult(() => handler(payload, event))]),
   );

@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { WISP_IPC_CHANNELS } from "../shared/contracts.js";
-import { registerPluginHandlers } from "../electron/ipc/register-plugin-handlers.js";
+import { registerPluginHandlers } from "../backend/handlers/register-plugin-handlers.js";
 import type { PluginService } from "../backend/plugin-service.js";
 
 describe("plugin IPC", () => {

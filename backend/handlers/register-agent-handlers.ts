@@ -7,11 +7,11 @@ import {
   type ModelSelection,
   type EmptyResult,
 } from "../../shared/contracts.js";
-import type { AgentRegistry } from "../../backend/agent-registry.js";
+import type { AgentRegistry } from "../agent-registry.js";
 import {
   registerAuthorizedHandlers,
   toBackendResult as toResult,
-  type HandlerIpcMain,
+  type HandlerRouter,
   type SenderAuthorizer,
 } from "./guarded-handlers.js";
 import {
@@ -19,7 +19,7 @@ import {
   parseApplyModelRequest,
   parseConversationRequest,
   parseSendMessageRequest,
-} from "../../backend/validators.js";
+} from "../validators.js";
 
 const emptyValue: Record<string, never> = {};
 
@@ -84,14 +84,14 @@ export class AgentIpcController {
 }
 
 export function registerAgentHandlers(
-  ipcMain: HandlerIpcMain,
+  router: HandlerRouter,
   registry: AgentRegistry,
   authorizeSender: SenderAuthorizer,
   saveModel?: (id: string, model: ModelSelection | null) => Promise<void>,
 ): { dispose: () => void } {
   const controller = new AgentIpcController(registry, saveModel);
   // The controller already returns BackendResults, so only the sender check is added here.
-  return registerAuthorizedHandlers(ipcMain, authorizeSender, [
+  return registerAuthorizedHandlers(router, authorizeSender, [
     [WISP_IPC_CHANNELS.startConversation, (payload) => controller.start(payload)],
     [WISP_IPC_CHANNELS.sendMessage, (payload) => controller.send(payload)],
     [WISP_IPC_CHANNELS.abortConversation, (payload) => controller.abort(payload)],

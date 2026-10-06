@@ -1,14 +1,18 @@
 import { WISP_IPC_CHANNELS } from "../../shared/contracts.js";
 import type { UpdateService } from "../backend/update-service.js";
-import { registerGuardedHandlers, type HandlerIpcMain, type SenderAuthorizer } from "./guarded-handlers.js";
+import {
+  registerGuardedHandlers,
+  type HandlerRouter,
+  type SenderAuthorizer,
+} from "../../backend/handlers/guarded-handlers.js";
 
 export function registerUpdateHandlers(
-  ipcMain: HandlerIpcMain,
+  router: HandlerRouter,
   service: UpdateService,
   authorizeSender: SenderAuthorizer,
   openReleasesPage: () => Promise<void>,
 ): { dispose: () => void } {
-  return registerGuardedHandlers(ipcMain, authorizeSender, [
+  return registerGuardedHandlers(router, authorizeSender, [
     [WISP_IPC_CHANNELS.getUpdateState, () => service.getState()],
     [WISP_IPC_CHANNELS.checkForUpdates, () => service.check()],
     [WISP_IPC_CHANNELS.downloadUpdate, () => service.download()],

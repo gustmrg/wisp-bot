@@ -1,0 +1,29 @@
+# The port is published on host loopback only; reach it through SSH or a private proxy.
+services:
+  wisp:
+    build:
+      context: ../..
+      dockerfile: deploy/docker/Dockerfile
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8787:8787"
+    environment:
+      WISP_MASTER_KEY_FILE: /run/secrets/wisp_master_key
+      # WISP_PUBLIC_ORIGIN: https://machine.tailnet-name.ts.net
+    secrets:
+      - wisp_master_key
+    volumes:
+      - wisp-data:/data
+    stop_grace_period: 30s
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+
+secrets:
+  wisp_master_key:
+    # Owned by uid 1000 with mode 0600; create it with `wispctl keygen`.
+    file: ./master.key
+
+volumes:
+  wisp-data:

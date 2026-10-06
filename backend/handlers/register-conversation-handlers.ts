@@ -1,6 +1,6 @@
 import { WISP_IPC_CHANNELS } from "../../shared/contracts.js";
-import type { ConversationService } from "../../backend/conversation-service.js";
-import { registerGuardedHandlers, type HandlerIpcMain, type SenderAuthorizer } from "./guarded-handlers.js";
+import type { ConversationService } from "../conversation-service.js";
+import { registerGuardedHandlers, type HandlerRouter, type SenderAuthorizer } from "./guarded-handlers.js";
 import {
   parseAnswerConversationPromptRequest,
   parseAppendConversationMessageRequest,
@@ -11,14 +11,14 @@ import {
   parseMessagePageRequest,
   parseSearchMessagesRequest,
   parseUpdateConversationRequest,
-} from "../../backend/validators.js";
+} from "../validators.js";
 
 export function registerConversationHandlers(
-  ipcMain: HandlerIpcMain,
+  router: HandlerRouter,
   service: ConversationService,
   authorizeSender: SenderAuthorizer,
 ): { dispose: () => void } {
-  return registerGuardedHandlers(ipcMain, authorizeSender, [
+  return registerGuardedHandlers(router, authorizeSender, [
     [WISP_IPC_CHANNELS.getUserProfile, () => service.getUserProfile()],
     [WISP_IPC_CHANNELS.saveUserProfile, (payload) => service.saveUserProfile(payload)],
     [WISP_IPC_CHANNELS.getConversationState, () => service.getState()],

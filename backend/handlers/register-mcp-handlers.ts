@@ -1,13 +1,13 @@
 import { WISP_IPC_CHANNELS } from "../../shared/contracts.js";
-import type { McpService } from "../../backend/mcp-service.js";
-import { registerGuardedHandlers, type HandlerIpcMain, type SenderAuthorizer } from "./guarded-handlers.js";
+import type { McpService } from "../mcp-service.js";
+import { registerGuardedHandlers, type HandlerRouter, type SenderAuthorizer } from "./guarded-handlers.js";
 
 export function registerMcpHandlers(
-  ipcMain: HandlerIpcMain,
+  router: HandlerRouter,
   service: McpService,
   authorizeSender: SenderAuthorizer,
 ): { dispose: () => void } {
-  return registerGuardedHandlers(ipcMain, authorizeSender, [
+  return registerGuardedHandlers(router, authorizeSender, [
     [WISP_IPC_CHANNELS.getMcpSettings, () => service.getView()],
     [WISP_IPC_CHANNELS.saveMcpServer, (payload) => service.save(payload)],
     [WISP_IPC_CHANNELS.removeMcpServer, (payload) => service.remove(payload)],

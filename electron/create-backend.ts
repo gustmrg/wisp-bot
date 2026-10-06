@@ -1,29 +1,23 @@
+import type { IpcMainInvokeEvent } from "electron";
+
 import { WISP_IPC_CHANNELS } from "../shared/contracts.js";
 import type { AgentMode } from "../backend/agent-mode.js";
 import type { EncryptionService } from "../backend/encrypted-credential-store.js";
+import type { HandlerEvent, HandlerRouter } from "../backend/handlers/guarded-handlers.js";
+import { registerRuntimeHandlers } from "../backend/handlers/register-runtime-handlers.js";
 import { createBackendRuntime } from "../backend/runtime.js";
 import type { StructuredLogger } from "../backend/structured-logger.js";
 import type { LaunchAtLoginService } from "./backend/launch-at-login-service.js";
 import type { UpdateService } from "./backend/update-service.js";
-import type { HandlerIpcMain, SenderAuthorizer } from "./ipc/guarded-handlers.js";
-import { registerConversationHandlers } from "./ipc/register-conversation-handlers.js";
-import { registerAgentHandlers } from "./ipc/register-handlers.js";
 import { registerLaunchAtLoginHandlers } from "./ipc/register-launch-at-login-handlers.js";
-import { registerMcpHandlers } from "./ipc/register-mcp-handlers.js";
-import { registerModelSettingsHandlers } from "./ipc/register-model-settings-handlers.js";
-import { registerPluginHandlers } from "./ipc/register-plugin-handlers.js";
-import { registerSessionReportHandlers } from "./ipc/register-session-report-handlers.js";
-import { registerToolPolicyHandlers } from "./ipc/register-tool-policy-handlers.js";
 import { registerUpdateHandlers } from "./ipc/register-update-handlers.js";
-import { registerVoiceHandlers } from "./ipc/register-voice-handlers.js";
-import { registerWorkspaceHandlers } from "./ipc/register-workspace-handlers.js";
 
 /** Electron-specific capabilities the backend needs, injected so it can be composed and tested without Electron. */
 export interface BackendHost {
   /** Root for every backend store: conversations, sessions, credentials, and policy. */
   dataDirectory: string;
-  ipcMain: HandlerIpcMain;
-  authorizeSender: SenderAuthorizer;
+  ipcMain: HandlerRouter;
+  authorizeSender: (event: IpcMainInvokeEvent) => boolean;
   /** Sends a push channel payload to every open renderer window. */
   broadcast: (channel: string, payload: unknown) => void;
   /** The window that should own a new tool approval prompt, or null when none is open. */
@@ -73,24 +67,12 @@ export async function createBackend(host: BackendHost): Promise<Backend> {
   const unsubscribeUpdateState = host.updateService.subscribe((state) =>
     broadcast(WISP_IPC_CHANNELS.updateState, state),
   );
-  const { conversations } = runtime;
+  // Handlers registered on ipcMain only ever receive Electron invoke events.
+  const authorize = (event: HandlerEvent): boolean => authorizeSender(event as IpcMainInvokeEvent);
   const handlers = [
-    registerLaunchAtLoginHandlers(ipcMain, host.launchAtLoginService, authorizeSender),
-    registerToolPolicyHandlers(ipcMain, runtime.toolAuthorization, authorizeSender),
-    registerPluginHandlers(ipcMain, runtime.plugins, authorizeSender),
-    registerMcpHandlers(ipcMain, runtime.mcp, authorizeSender),
-    registerUpdateHandlers(ipcMain, host.updateService, authorizeSender, host.openReleasesPage),
-    registerModelSettingsHandlers(ipcMain, runtime.models, authorizeSender, (selection) =>
-      conversations.applyModel(selection),
-    ),
-    registerSessionReportHandlers(ipcMain, runtime.sessionReports, authorizeSender),
-    registerWorkspaceHandlers(ipcMain, runtime.workspace, authorizeSender),
-    // A key added for voice input can make the saved chat model usable, so Wisps re-apply it.
-    registerVoiceHandlers(ipcMain, runtime.transcription, authorizeSender, () => runtime.reapplySavedModel()),
-    registerConversationHandlers(ipcMain, conversations, authorizeSender),
-    registerAgentHandlers(ipcMain, runtime.registry, authorizeSender, (id, model) =>
-      runtime.applyConversationModel(id, model),
-    ),
+    registerLaunchAtLoginHandlers(ipcMain, host.launchAtLoginService, authorize),
+    registerUpdateHandlers(ipcMain, host.updateService, authorize, host.openReleasesPage),
+    registerRuntimeHandlers(ipcMain, runtime, authorize),
   ];
 
   return {
