@@ -32,6 +32,21 @@ describe("server package manifest", () => {
   });
 });
 
+describe("server package README", () => {
+  it("documents the setup command and each of its options", () => {
+    const readme = readFileSync(path.join(root, "server/README.md"), "utf8");
+    expect(readme).toContain(`npx ${WISP_SERVER_PACKAGE} setup`);
+    const help = readFileSync(path.join(root, "server/cli.ts"), "utf8").split("Options of setup:")[1]!;
+    const options = [...help.matchAll(/^ {2}(--[a-z-]+)/gm)].map((match) => match[1]!);
+    expect(options.length).toBeGreaterThan(3);
+    // The desktop app's own option is not for people.
+    for (const option of options.filter((name) => name !== "--until-stdin-closes")) {
+      expect(readme, option).toContain(`\`${option}`);
+    }
+    expect(readFileSync(path.join(root, "scripts/package-server.mjs"), "utf8")).toContain('"README.md"');
+  });
+});
+
 describe("isSupportedNode", () => {
   it("requires Node.js 22.19", () => {
     for (const version of ["22.19.0", "v22.19.1", "22.20.0", "24.1.0"])

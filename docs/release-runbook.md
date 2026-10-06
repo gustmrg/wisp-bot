@@ -37,13 +37,19 @@ To package locally, `npm run dist` builds installers for the current OS and `npm
 
 `@gustmrg/wisp-server` is the headless server that `npx @gustmrg/wisp-server setup` installs, and that the desktop app installs on a machine over SSH. The app always installs its own version, so every release publishes the matching one; a version missing from npm makes **Install the Wisp server** fail with "is not published on npm".
 
-The last job, **publish-server**, builds `npm run package:server` from the release tag and runs `npm publish --provenance`. Prereleases (`-beta.1`) get the `beta` dist-tag, so `npx @gustmrg/wisp-server` never runs one.
+The last job, **publish-server**, builds `npm run package:server` from the release tag, updates npm to 11.5.1 or later, and runs `npm publish --provenance`. Prereleases (`-beta.1`) get the `beta` dist-tag, so `npx @gustmrg/wisp-server` never runs one. The package's page on npm shows `server/README.md`.
 
-One-time setup:
+The job runs after the GitHub release is out. If it fails, fix the cause and re-run only that job; npm refuses a version published twice.
 
-1. Create or use the npm account that owns the `@gustmrg` scope (its username, or an organization with that name).
-2. Create a granular access token that can publish `@gustmrg/wisp-server` and store it as the repository secret `NPM_TOKEN`. Without it the job fails after the GitHub release is already out; add the secret and re-run only that job.
-3. Optional, once the first version is on npm: configure **Trusted publishing** for the package with the GitHub repository and the `release.yml` workflow, then delete the token. npm then authenticates the job with its OIDC identity.
+### Authentication
+
+npm authenticates the job with **trusted publishing**: an OIDC identity of this repository's `release.yml`, with no secret to store or renew. npm only lets a package that already exists use it, so the first version is published with a token:
+
+1. The account `gustmrg` owns the `@gustmrg` scope. Turn on two-factor authentication for it.
+2. **First release only:** on npmjs.com, create a granular access token (**Access Tokens → Generate New Token**) with read and write access to packages, **Bypass 2FA** checked (CI cannot answer a 2FA prompt), and a short expiration. Store it as the repository secret `NPM_TOKEN`, then run the release.
+3. Once the version is on npm, open the package's **Settings → Trusted Publisher**, choose GitHub Actions, and enter the repository `gustmrg/wisp-bot` and the workflow `release.yml`. Then delete the `NPM_TOKEN` secret and revoke the token on npm.
+
+Later releases need nothing else. npm prefers the OIDC identity when it is available, so a token left behind is unused, but it remains a credential that can publish; revoke it.
 
 ## In-app updates
 
