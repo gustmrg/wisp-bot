@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { FormEvent, ReactElement } from "react";
 import { PlusIcon } from "lucide-react";
 
@@ -11,7 +11,7 @@ import {
   resolveWispModelSelection,
   type WispModelDraft,
 } from "@/components/create-wisp-model-section";
-import { CreateWispForm } from "@/components/create-wisp-form";
+import { CreateWispForm, type CreateWispStep } from "@/components/create-wisp-form";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -49,6 +49,9 @@ const DEFAULT_WISP: WispChat = {
 
 function CreateAgentDialog({ onCreate, trigger }: CreateAgentDialogProps) {
   const [open, setOpen] = useState(false);
+  const [step, setStep] = useState<CreateWispStep>("identity");
+  const stepRef = useRef<HTMLDivElement>(null);
+  const focusStep = useRef<CreateWispStep | null>(null);
   const [settings, setSettings] = useState<WispChat>(DEFAULT_WISP);
   const [modelDraft, setModelDraft] = useState<WispModelDraft>(createDefaultWispModelDraft);
   const [modelView, setModelView] = useState<AiSettingsView | null>(null);
@@ -56,6 +59,19 @@ function CreateAgentDialog({ onCreate, trigger }: CreateAgentDialogProps) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const { name, description, color } = settings;
+  const modelInvalid = isWispModelDraftInvalid(modelDraft, modelView);
+
+  // Moving between steps unmounts the button that had focus, so hand it to the new step's first field.
+  useEffect(() => {
+    if (focusStep.current !== step) return;
+    focusStep.current = null;
+    stepRef.current?.querySelector<HTMLElement>("input, textarea")?.focus();
+  }, [step]);
+
+  function goToStep(nextStep: CreateWispStep) {
+    focusStep.current = nextStep;
+    setStep(nextStep);
+  }
 
   useEffect(() => {
     if (!open || modelView) return;
@@ -76,6 +92,7 @@ function CreateAgentDialog({ onCreate, trigger }: CreateAgentDialogProps) {
   }, [open, modelView]);
 
   function resetForm() {
+    setStep("identity");
     setSettings(DEFAULT_WISP);
     setModelDraft(createDefaultWispModelDraft());
     setModelView(null);
@@ -153,11 +170,15 @@ function CreateAgentDialog({ onCreate, trigger }: CreateAgentDialogProps) {
       >
         <DialogHeader className="flex-none">
           <DialogTitle>Create new Wisp</DialogTitle>
-          <DialogDescription>Create a Wisp for focused work.</DialogDescription>
+          <DialogDescription>
+            {step === "identity" ? "Step 1 of 2 · Appearance and name" : "Step 2 of 2 · Personality and behavior"}
+          </DialogDescription>
         </DialogHeader>
 
         <form className="flex min-h-0 flex-col gap-5" onSubmit={(event) => void handleSubmit(event)}>
           <CreateWispForm
+            ref={stepRef}
+            step={step}
             settings={settings}
             onChange={(changes) => setSettings((current) => ({ ...current, ...changes }))}
           >
@@ -168,14 +189,35 @@ function CreateAgentDialog({ onCreate, trigger }: CreateAgentDialogProps) {
               onChange={setModelDraft}
             />
           </CreateWispForm>
+          {step === "identity" && (modelLoadError || (modelView && modelInvalid)) ? (
+            <p className="text-[11.5px] text-dim" role="status">
+              This Wisp needs a model before it can be created. Choose one in the next step.
+            </p>
+          ) : null}
           {error ? (
             <p className="text-sm text-destructive" role="alert">
               {error}
             </p>
           ) : null}
           <DialogFooter className="flex-none">
-            <DialogClose render={<Button variant="outline" type="button" disabled={saving} />}>Cancel</DialogClose>
-            <Button type="submit" disabled={!name.trim() || saving || isWispModelDraftInvalid(modelDraft, modelView)}>
+            {step === "identity" ? (
+              <>
+                <DialogClose render={<Button variant="outline" type="button" disabled={saving} />}>Cancel</DialogClose>
+                <Button
+                  variant="outline"
+                  type="button"
+                  disabled={!name.trim() || saving}
+                  onClick={() => goToStep("behavior")}
+                >
+                  Next
+                </Button>
+              </>
+            ) : (
+              <Button variant="outline" type="button" disabled={saving} onClick={() => goToStep("identity")}>
+                Back
+              </Button>
+            )}
+            <Button type="submit" disabled={!name.trim() || saving || modelInvalid}>
               {saving ? "Creating…" : "Create Wisp"}
             </Button>
           </DialogFooter>

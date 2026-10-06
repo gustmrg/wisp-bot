@@ -124,7 +124,7 @@ function CreateWispModelSection({ view, loadError, draft, onChange }: CreateWisp
       ) : null}
       {!draft.useGlobal && view ? (
         <>
-          <SettingsRow className="min-h-0 flex-col items-stretch gap-2 p-[11px]">
+          <SettingsRow className="min-h-0 p-[11px]">
             <SettingsRowCopy>
               <label htmlFor="create-wisp-provider">
                 <strong>Provider</strong>
@@ -135,10 +135,10 @@ function CreateWispModelSection({ view, loadError, draft, onChange }: CreateWisp
               value={draft.providerId}
               onValueChange={handleProviderChange}
             >
-              <SelectTrigger id="create-wisp-provider" className="w-full">
+              <SelectTrigger id="create-wisp-provider" className="w-[220px] max-w-[55%]">
                 <SelectValue />
               </SelectTrigger>
-              <SelectContent alignItemWithTrigger={false}>
+              <SelectContent align="end" alignItemWithTrigger={false}>
                 <SelectGroup>
                   {catalog.map((item) => (
                     <SelectItem key={item.id} value={item.id}>
@@ -149,7 +149,7 @@ function CreateWispModelSection({ view, loadError, draft, onChange }: CreateWisp
               </SelectContent>
             </Select>
           </SettingsRow>
-          <SettingsRow className="min-h-0 flex-col items-stretch gap-2 p-[11px]">
+          <SettingsRow className="min-h-0 p-[11px]">
             <SettingsRowCopy>
               <label htmlFor="create-wisp-model">
                 <strong>Model</strong>
@@ -163,10 +163,10 @@ function CreateWispModelSection({ view, loadError, draft, onChange }: CreateWisp
                 if (value !== null) onChange({ ...draft, modelId: value, maxOutputTokens: "" });
               }}
             >
-              <SelectTrigger id="create-wisp-model" className="w-full">
+              <SelectTrigger id="create-wisp-model" className="w-[220px] max-w-[55%]">
                 <SelectValue />
               </SelectTrigger>
-              <SelectContent alignItemWithTrigger={false}>
+              <SelectContent align="end" alignItemWithTrigger={false}>
                 <SelectGroup>
                   {provider?.models.map((item) => (
                     <SelectItem key={item.id} value={item.id}>
@@ -177,7 +177,7 @@ function CreateWispModelSection({ view, loadError, draft, onChange }: CreateWisp
               </SelectContent>
             </Select>
           </SettingsRow>
-          <SettingsRow className="min-h-0 flex-col items-stretch gap-2 p-[11px]">
+          <SettingsRow className="min-h-0 p-[11px]">
             <SettingsRowCopy>
               <label htmlFor="create-wisp-max-output-tokens">
                 <strong>Maximum output tokens</strong>
@@ -192,7 +192,7 @@ function CreateWispModelSection({ view, loadError, draft, onChange }: CreateWisp
               step={1}
               value={draft.maxOutputTokens}
               placeholder="Automatic"
-              className="w-[160px]"
+              className="w-[160px] max-w-[45%]"
               onChange={(event) => onChange({ ...draft, maxOutputTokens: event.currentTarget.value })}
             />
           </SettingsRow>

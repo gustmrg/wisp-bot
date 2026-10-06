@@ -116,7 +116,7 @@ function VoiceSettingsSection({ active, preferences, onPreferencesChange }: Voic
 
   return (
     <section
-      className="overflow-y-auto px-[30px] py-6 max-[620px]:px-4 max-[620px]:py-5"
+      className="overflow-y-auto px-[30px] py-6 max-[620px]:px-4 max-[620px]:py-5 [&>*]:max-w-[760px]"
       id="voice-settings-panel"
       aria-labelledby="voice-settings-title"
       hidden={!active}

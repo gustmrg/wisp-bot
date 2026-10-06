@@ -13,7 +13,8 @@ interface WispSettingsFieldsProps {
 
 const WISP_PERSONALITY_MAX_LENGTH = 4_000;
 
-function WispSettingsFields({ settings, onChange }: WispSettingsFieldsProps) {
+/** Appearance, name, and label: how the Wisp shows up in the app. */
+function WispIdentityFields({ settings, onChange }: WispSettingsFieldsProps) {
   return (
     <>
       <AvatarEditor key={settings.id} chat={settings} onChange={onChange} />
@@ -34,6 +35,14 @@ function WispSettingsFields({ settings, onChange }: WispSettingsFieldsProps) {
           onChange={(event) => onChange({ label: event.currentTarget.value })}
         />
       </SettingsField>
+    </>
+  );
+}
+
+/** Personality, tone, and notifications: how the Wisp works. */
+function WispBehaviorFields({ settings, onChange }: WispSettingsFieldsProps) {
+  return (
+    <>
       <SettingsField label="Identity & personality">
         <Textarea
           rows={5}
@@ -63,4 +72,13 @@ function WispSettingsFields({ settings, onChange }: WispSettingsFieldsProps) {
   );
 }
 
-export { WispSettingsFields };
+function WispSettingsFields(props: WispSettingsFieldsProps) {
+  return (
+    <>
+      <WispIdentityFields {...props} />
+      <WispBehaviorFields {...props} />
+    </>
+  );
+}
+
+export { WispBehaviorFields, WispIdentityFields, WispSettingsFields };
