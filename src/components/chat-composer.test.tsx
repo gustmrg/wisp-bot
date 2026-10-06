@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -199,6 +199,9 @@ describe("ChatComposer voice input", () => {
   }
   const track = { stop: vi.fn() };
   const getUserMedia = vi.fn(async () => ({ getTracks: () => [track] }) as unknown as MediaStream);
+  const microphone = { kind: "audioinput", deviceId: "default", label: "" } as MediaDeviceInfo;
+  const enumerateDevices = vi.fn(async () => [microphone]);
+  let mediaDevices: EventTarget;
 
   type TranscribeAudio = ReturnType<typeof vi.fn<WispApi["transcribeAudio"]>>;
   function setup(
@@ -208,7 +211,9 @@ describe("ChatComposer voice input", () => {
     })),
   ): TranscribeAudio {
     vi.stubGlobal("MediaRecorder", FakeMediaRecorder);
-    Object.defineProperty(navigator, "mediaDevices", { configurable: true, value: { getUserMedia } });
+    enumerateDevices.mockReset().mockResolvedValue([microphone]);
+    mediaDevices = Object.assign(new EventTarget(), { getUserMedia, enumerateDevices });
+    Object.defineProperty(navigator, "mediaDevices", { configurable: true, value: mediaDevices });
     Object.defineProperty(window, "wisp", { configurable: true, value: { transcribeAudio } });
     return transcribeAudio;
   }
@@ -217,6 +222,79 @@ describe("ChatComposer voice input", () => {
     vi.unstubAllGlobals();
     getUserMedia.mockClear();
     track.stop.mockClear();
+    Object.defineProperty(navigator, "mediaDevices", { configurable: true, value: undefined });
+  });
+
+  it("blocks clicks and the shortcut without a microphone and explains why on hover", async () => {
+    const user = userEvent.setup();
+    setup();
+    enumerateDevices.mockResolvedValue([{ kind: "audiooutput" } as MediaDeviceInfo]);
+    render(<ChatComposer {...defaultProps} chat={wisp("one", "One")} />);
+    await waitFor(() => expect(enumerateDevices).toHaveBeenCalledOnce());
+    const button = screen.getByRole("button", { name: "Start voice input" });
+    expect(button).toBeDisabled();
+    await user.click(button.parentElement!);
+    await user.keyboard("{Control>} {/Control}");
+    expect(getUserMedia).not.toHaveBeenCalled();
+    await user.unhover(button.parentElement!);
+    await user.hover(button.parentElement!);
+    expect(await screen.findByText("No microphone was found. Connect a microphone to use voice input.")).toBeVisible();
+    expect(screen.getByRole("status")).toBeEmptyDOMElement();
+  });
+
+  it("updates the button when microphones are connected or removed", async () => {
+    setup();
+    enumerateDevices.mockResolvedValue([]);
+    render(<ChatComposer {...defaultProps} chat={wisp("one", "One")} />);
+    await waitFor(() => expect(enumerateDevices).toHaveBeenCalledOnce());
+    const button = screen.getByRole("button", { name: "Start voice input" });
+    expect(button).toBeDisabled();
+    enumerateDevices.mockResolvedValue([microphone]);
+    await act(async () => mediaDevices.dispatchEvent(new Event("devicechange")));
+    expect(button).toBeEnabled();
+    enumerateDevices.mockResolvedValue([]);
+    await act(async () => mediaDevices.dispatchEvent(new Event("devicechange")));
+    expect(button).toBeDisabled();
+  });
+
+  it("blocks voice input until device detection finishes", async () => {
+    const user = userEvent.setup();
+    setup();
+    let resolveDevices!: (devices: MediaDeviceInfo[]) => void;
+    enumerateDevices.mockReturnValue(
+      new Promise((resolve) => {
+        resolveDevices = resolve;
+      }),
+    );
+    render(<ChatComposer {...defaultProps} chat={wisp("one", "One")} />);
+    const button = screen.getByRole("button", { name: "Start voice input" });
+    expect(button).toBeDisabled();
+    await user.keyboard("{Control>} {/Control}");
+    expect(getUserMedia).not.toHaveBeenCalled();
+    await act(async () => resolveDevices([microphone]));
+    expect(button).toBeEnabled();
+  });
+
+  it("allows requesting microphone access if enumeration fails", async () => {
+    setup();
+    enumerateDevices.mockRejectedValue(new DOMException("denied", "NotAllowedError"));
+    render(<ChatComposer {...defaultProps} chat={wisp("one", "One")} />);
+    await waitFor(() => expect(screen.getByRole("button", { name: "Start voice input" })).toBeEnabled());
+    expect(getUserMedia).not.toHaveBeenCalled();
+  });
+
+  it("disables recording if the microphone disappears before it starts", async () => {
+    const user = userEvent.setup();
+    setup();
+    getUserMedia.mockRejectedValueOnce(new DOMException("missing", "NotFoundError"));
+    render(<ChatComposer {...defaultProps} chat={wisp("one", "One")} />);
+    const button = screen.getByRole("button", { name: "Start voice input" });
+    await waitFor(() => expect(button).toBeEnabled());
+    await user.click(button);
+    expect(await screen.findByText("No microphone was found.")).toBeInTheDocument();
+    expect(button).toBeDisabled();
+    await user.keyboard("{Control>} {/Control}");
+    expect(getUserMedia).toHaveBeenCalledOnce();
   });
 
   it("records, transcribes, and inserts the text at the cursor without sending", async () => {
