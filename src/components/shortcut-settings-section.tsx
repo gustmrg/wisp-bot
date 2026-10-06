@@ -79,7 +79,7 @@ function ShortcutSettingsSection({ active, preferences, onPreferencesChange }: S
 
   return (
     <section
-      className="overflow-y-auto px-[30px] py-6 max-[620px]:px-4 max-[620px]:py-5"
+      className="overflow-y-auto px-[30px] py-6 max-[620px]:px-4 max-[620px]:py-5 [&>*]:max-w-[760px]"
       id="shortcut-settings-panel"
       aria-labelledby="shortcut-settings-title"
       hidden={!active}

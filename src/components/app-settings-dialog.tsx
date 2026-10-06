@@ -201,7 +201,7 @@ function AppSettingsDialog({
       <DialogContent
         mobileFullscreen
         showCloseButton={!mobile}
-        className="app-settings-dialog grid h-[min(580px,calc(100vh-32px))] w-[min(760px,calc(100vw-32px))] max-w-[760px] grid-cols-[190px_1fr] gap-0 overflow-hidden p-0"
+        className="app-settings-dialog grid h-[min(760px,calc(100vh-64px))] w-[min(1080px,calc(100vw-32px))] max-w-[1080px] grid-cols-[190px_1fr] lg:grid-cols-[220px_1fr] gap-0 overflow-hidden p-0"
       >
         <DialogHeader className="sr-only">
           <DialogTitle>Wisp settings</DialogTitle>
@@ -284,7 +284,7 @@ function AppSettingsDialog({
         {section === "mcp" && open && !showOverview ? <McpSettingsSection /> : null}
         {section === "connections" && open && !showOverview ? <ConnectionSettingsSection /> : null}
         <section
-          className="overflow-y-auto px-[30px] py-6 max-[620px]:px-4 max-[620px]:py-5"
+          className="overflow-y-auto px-[30px] py-6 max-[620px]:px-4 max-[620px]:py-5 [&>*]:max-w-[760px]"
           id="general-settings-panel"
           aria-labelledby="general-settings-title"
           hidden={section !== "general" || showOverview}
@@ -367,7 +367,7 @@ function AppSettingsDialog({
           onPreferencesChange={onPreferencesChange}
         />
         <section
-          className="overflow-y-auto px-[30px] py-6 max-[620px]:px-4 max-[620px]:py-5"
+          className="overflow-y-auto px-[30px] py-6 max-[620px]:px-4 max-[620px]:py-5 [&>*]:max-w-[760px]"
           id="about-settings-panel"
           aria-labelledby="about-settings-title"
           hidden={section !== "about" || showOverview}
