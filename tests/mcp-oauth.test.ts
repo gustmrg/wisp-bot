@@ -2,8 +2,8 @@ import { connect } from "node:net";
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { McpOAuthProvider } from "../electron/backend/mcp-oauth.js";
-import type { McpSecretStore } from "../electron/backend/mcp-secret-store.js";
+import { McpOAuthProvider } from "../backend/mcp-oauth.js";
+import type { McpSecretStore } from "../backend/mcp-secret-store.js";
 
 describe("McpOAuthProvider authorization redirect", () => {
   const providers: McpOAuthProvider[] = [];

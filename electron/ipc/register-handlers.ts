@@ -7,7 +7,7 @@ import {
   type ModelSelection,
   type EmptyResult,
 } from "../../shared/contracts.js";
-import type { AgentRegistry } from "../backend/agent-registry.js";
+import type { AgentRegistry } from "../../backend/agent-registry.js";
 import {
   registerAuthorizedHandlers,
   toBackendResult as toResult,
@@ -19,7 +19,7 @@ import {
   parseApplyModelRequest,
   parseConversationRequest,
   parseSendMessageRequest,
-} from "./validators.js";
+} from "../../backend/validators.js";
 
 const emptyValue: Record<string, never> = {};
 
@@ -81,10 +81,6 @@ export class AgentIpcController {
       return emptyValue;
     });
   }
-
-  async disposeAll(): Promise<void> {
-    await this.registry.disposeAll();
-  }
 }
 
 export function registerAgentHandlers(
@@ -92,10 +88,10 @@ export function registerAgentHandlers(
   registry: AgentRegistry,
   authorizeSender: SenderAuthorizer,
   saveModel?: (id: string, model: ModelSelection | null) => Promise<void>,
-): { dispose: () => Promise<void> } {
+): { dispose: () => void } {
   const controller = new AgentIpcController(registry, saveModel);
   // The controller already returns BackendResults, so only the sender check is added here.
-  const registration = registerAuthorizedHandlers(ipcMain, authorizeSender, [
+  return registerAuthorizedHandlers(ipcMain, authorizeSender, [
     [WISP_IPC_CHANNELS.startConversation, (payload) => controller.start(payload)],
     [WISP_IPC_CHANNELS.sendMessage, (payload) => controller.send(payload)],
     [WISP_IPC_CHANNELS.abortConversation, (payload) => controller.abort(payload)],
@@ -104,11 +100,4 @@ export function registerAgentHandlers(
     [WISP_IPC_CHANNELS.applyModel, (payload) => controller.applyModel(payload)],
     [WISP_IPC_CHANNELS.disposeConversation, (payload) => controller.dispose(payload)],
   ]);
-
-  return {
-    dispose: async () => {
-      registration.dispose();
-      await controller.disposeAll();
-    },
-  };
 }

@@ -4,7 +4,7 @@ import path from "node:path";
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { ModelPricingService } from "../electron/backend/model-pricing-service.js";
+import { ModelPricingService } from "../backend/model-pricing-service.js";
 
 const OPENROUTER_PAYLOAD = {
   data: [

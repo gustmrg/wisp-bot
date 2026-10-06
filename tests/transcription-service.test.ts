@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { TranscriptionService } from "../electron/backend/transcription-service.js";
+import { TranscriptionService } from "../backend/transcription-service.js";
 import type { TranscribeAudioRequest } from "../shared/voice.js";
 
 function createService(options: { keys?: Record<string, string>; response?: Response | Error } = {}) {

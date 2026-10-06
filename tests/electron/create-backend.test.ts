@@ -7,10 +7,11 @@ import path from "node:path";
 import type { IpcMainInvokeEvent } from "electron";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import type { EncryptionService } from "../../electron/backend/encrypted-credential-store.js";
-import { StructuredLogger } from "../../electron/backend/structured-logger.js";
+import type { EncryptionService } from "../../backend/encrypted-credential-store.js";
+import { StructuredLogger } from "../../backend/structured-logger.js";
 import { UpdateService } from "../../electron/backend/update-service.js";
-import { createBackend, disposeWithin, refreshModelCatalog, type Backend } from "../../electron/create-backend.js";
+import { disposeWithin, refreshModelCatalog } from "../../backend/runtime.js";
+import { createBackend, type Backend } from "../../electron/create-backend.js";
 import { WISP_IPC_CHANNELS, type BackendResult } from "../../shared/contracts.js";
 import type { Chat, ConversationStateView } from "../../shared/conversations.js";
 

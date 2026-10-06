@@ -4,15 +4,15 @@ import path from "node:path";
 
 import { describe, expect, it, vi } from "vitest";
 
-import type { ConversationAgentContext } from "../electron/backend/conversation-agent.js";
-import type { IntegrationToolSource, IntegrationToolSnapshot } from "../electron/backend/integration-tool-source.js";
-import { snapshotRevision } from "../electron/backend/integration-tool-source.js";
+import type { ConversationAgentContext } from "../backend/conversation-agent.js";
+import type { IntegrationToolSource, IntegrationToolSnapshot } from "../backend/integration-tool-source.js";
+import { snapshotRevision } from "../backend/integration-tool-source.js";
 import { mcpToolAlias } from "../shared/mcp.js";
 import { registerDynamicToolMetadata, resetDynamicToolMetadata } from "../shared/tool-catalog.js";
-import type { ModelRuntimeLike } from "../electron/backend/model-service.js";
-import { SdkPiSessionFactory } from "../electron/backend/pi-conversation-agent.js";
-import type { PluginToolSource } from "../electron/backend/plugin-types.js";
-import { PluginService } from "../electron/backend/plugin-service.js";
+import type { ModelRuntimeLike } from "../backend/model-service.js";
+import { SdkPiSessionFactory } from "../backend/pi-conversation-agent.js";
+import type { PluginToolSource } from "../backend/plugin-types.js";
+import { PluginService } from "../backend/plugin-service.js";
 
 function toToolSource(pluginTools: PluginToolSource): IntegrationToolSource {
   return {

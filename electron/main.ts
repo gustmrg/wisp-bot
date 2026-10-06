@@ -14,14 +14,15 @@ import path from "node:path";
 import { LaunchAtLoginService } from "./backend/launch-at-login-service.js";
 
 import { WISP_RELEASES_URL } from "../shared/contracts.js";
-import { selectAgentMode } from "./backend/agent-mode.js";
-import { WispBackendError } from "./backend/backend-error.js";
-import { FileLogSink } from "./backend/file-log-sink.js";
+import { selectAgentMode } from "../backend/agent-mode.js";
+import { WispBackendError } from "../backend/backend-error.js";
+import { FileLogSink } from "../backend/file-log-sink.js";
 import { SafeStorageEncryption } from "./backend/safe-storage-encryption.js";
-import { CompositeLogSink, StructuredLogger } from "./backend/structured-logger.js";
+import { CompositeLogSink, StructuredLogger } from "../backend/structured-logger.js";
 import { resolveAutoInstallSupport } from "./backend/update-capability.js";
 import { UpdateService } from "./backend/update-service.js";
-import { createBackend, disposeWithin } from "./create-backend.js";
+import { disposeWithin } from "../backend/runtime.js";
+import { createBackend } from "./create-backend.js";
 import {
   isAllowedExternalUrl,
   isAllowedPermission,

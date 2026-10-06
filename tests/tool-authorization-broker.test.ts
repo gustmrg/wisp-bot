@@ -4,8 +4,8 @@ import path from "node:path";
 
 import { describe, expect, it, vi } from "vitest";
 
-import { evaluateToolPolicy, ToolAuthorizationBroker } from "../electron/backend/tool-authorization-broker.js";
-import { ToolPolicyStore } from "../electron/backend/tool-policy-store.js";
+import { evaluateToolPolicy, ToolAuthorizationBroker } from "../backend/tool-authorization-broker.js";
+import { ToolPolicyStore } from "../backend/tool-policy-store.js";
 import type { ConversationAgentEvent } from "../shared/contracts.js";
 import type { ToolPolicySettings } from "../shared/tool-policy.js";
 

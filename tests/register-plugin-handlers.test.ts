@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { WISP_IPC_CHANNELS } from "../shared/contracts.js";
 import { registerPluginHandlers } from "../electron/ipc/register-plugin-handlers.js";
-import type { PluginService } from "../electron/backend/plugin-service.js";
+import type { PluginService } from "../backend/plugin-service.js";
 
 describe("plugin IPC", () => {
   it("rejects untrusted senders on every plugin channel, wraps failures, and removes handlers", async () => {

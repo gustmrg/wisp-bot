@@ -1,7 +1,7 @@
 import { WISP_IPC_CHANNELS } from "../../shared/contracts.js";
-import type { TranscriptionService } from "../backend/transcription-service.js";
+import type { TranscriptionService } from "../../backend/transcription-service.js";
 import { registerGuardedHandlers, type HandlerIpcMain, type SenderAuthorizer } from "./guarded-handlers.js";
-import { parseSaveVoiceCredentialRequest, parseTranscribeAudioRequest } from "./validators.js";
+import { parseSaveVoiceCredentialRequest, parseTranscribeAudioRequest } from "../../backend/validators.js";
 
 export function registerVoiceHandlers(
   ipcMain: HandlerIpcMain,

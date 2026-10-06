@@ -4,7 +4,7 @@ import path from "node:path";
 
 import { afterEach, describe, expect, it } from "vitest";
 
-import { parseSkillFile, SkillStore } from "../electron/backend/skill-store.js";
+import { parseSkillFile, SkillStore } from "../backend/skill-store.js";
 import { MAX_SKILLS_PER_WISP } from "../shared/skills.js";
 
 const directories: string[] = [];

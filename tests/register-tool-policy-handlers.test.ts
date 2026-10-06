@@ -4,8 +4,8 @@ import path from "node:path";
 
 import { describe, expect, it, vi } from "vitest";
 
-import { ToolAuthorizationBroker } from "../electron/backend/tool-authorization-broker.js";
-import { ToolPolicyStore } from "../electron/backend/tool-policy-store.js";
+import { ToolAuthorizationBroker } from "../backend/tool-authorization-broker.js";
+import { ToolPolicyStore } from "../backend/tool-policy-store.js";
 import { registerToolPolicyHandlers } from "../electron/ipc/register-tool-policy-handlers.js";
 import { WISP_IPC_CHANNELS } from "../shared/contracts.js";
 

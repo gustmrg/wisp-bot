@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { selectAgentMode } from "../electron/backend/agent-mode.js";
+import { selectAgentMode } from "../backend/agent-mode.js";
 
 describe("selectAgentMode", () => {
   it("allows the explicit fake adapter only in unpackaged development", () => {

@@ -16,7 +16,7 @@ import {
   snapshotRevision,
   type IntegrationToolSource,
   type IntegrationToolSnapshot,
-} from "../electron/backend/integration-tool-source.js";
+} from "../backend/integration-tool-source.js";
 
 afterEach(() => {
   resetDynamicToolMetadata();

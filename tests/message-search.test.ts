@@ -4,8 +4,8 @@ import path from "node:path";
 
 import { afterEach, describe, expect, it } from "vitest";
 
-import { ConversationRepository } from "../electron/backend/conversation-repository.js";
-import { buildSnippet, MESSAGE_SEARCH_LIMIT, quotePhrase } from "../electron/backend/message-search.js";
+import { ConversationRepository } from "../backend/conversation-repository.js";
+import { buildSnippet, MESSAGE_SEARCH_LIMIT, quotePhrase } from "../backend/message-search.js";
 import type { Chat, Message } from "../shared/conversations.js";
 import { messageSearchText } from "../shared/message-search.js";
 

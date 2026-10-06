@@ -1,7 +1,7 @@
 import { WISP_IPC_CHANNELS } from "../../shared/contracts.js";
-import type { ToolAuthorizationBroker } from "../backend/tool-authorization-broker.js";
+import type { ToolAuthorizationBroker } from "../../backend/tool-authorization-broker.js";
 import { registerGuardedHandlers, type HandlerIpcMain, type SenderAuthorizer } from "./guarded-handlers.js";
-import { parseResolveToolApprovalRequest } from "./validators.js";
+import { parseResolveToolApprovalRequest } from "../../backend/validators.js";
 
 export function registerToolPolicyHandlers(
   ipcMain: HandlerIpcMain,

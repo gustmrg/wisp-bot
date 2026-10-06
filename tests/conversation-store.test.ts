@@ -10,8 +10,8 @@ import {
   MESSAGE_PAGE_RADIUS,
   MESSAGE_PAGE_SIZE,
   type StoredMessagePage,
-} from "../electron/backend/conversation-store.js";
-import type { ConversationRecord } from "../electron/backend/workspace-actions.js";
+} from "../backend/conversation-store.js";
+import type { ConversationRecord } from "../backend/workspace-actions.js";
 import type { Message } from "../shared/conversations.js";
 import { messageSearchText } from "../shared/message-search.js";
 

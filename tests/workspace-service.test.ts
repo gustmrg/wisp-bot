@@ -4,7 +4,7 @@ import path from "node:path";
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { measureDirectory, safeFileName, WorkspaceService } from "../electron/backend/workspace-service.js";
+import { measureDirectory, safeFileName, WorkspaceService } from "../backend/workspace-service.js";
 import { messageWithAttachments } from "../shared/workspace.js";
 
 const directories: string[] = [];

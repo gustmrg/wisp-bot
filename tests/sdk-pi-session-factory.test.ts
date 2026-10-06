@@ -4,11 +4,11 @@ import path from "node:path";
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { ConversationAgentContext } from "../electron/backend/conversation-agent.js";
-import type { IntegrationToolSource } from "../electron/backend/integration-tool-source.js";
-import { snapshotRevision } from "../electron/backend/integration-tool-source.js";
-import type { ModelRuntimeLike } from "../electron/backend/model-service.js";
-import type { PluginToolSource } from "../electron/backend/plugin-types.js";
+import type { ConversationAgentContext } from "../backend/conversation-agent.js";
+import type { IntegrationToolSource } from "../backend/integration-tool-source.js";
+import { snapshotRevision } from "../backend/integration-tool-source.js";
+import type { ModelRuntimeLike } from "../backend/model-service.js";
+import type { PluginToolSource } from "../backend/plugin-types.js";
 import { WORKSPACE_QUOTA_BYTES } from "../shared/workspace.js";
 
 const sdk = vi.hoisted(() => {
@@ -88,7 +88,7 @@ import {
   excludeOpenRouterReasoning,
   sanitizeWorkspacePath,
   SdkPiSessionFactory,
-} from "../electron/backend/pi-conversation-agent.js";
+} from "../backend/pi-conversation-agent.js";
 
 /** Adapts the legacy sync plugin tool source into the async snapshot source. */
 function toToolSource(pluginTools: PluginToolSource): IntegrationToolSource {

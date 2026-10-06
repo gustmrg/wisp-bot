@@ -1,5 +1,5 @@
 import { WISP_IPC_CHANNELS } from "../../shared/contracts.js";
-import type { ConversationService } from "../backend/conversation-service.js";
+import type { ConversationService } from "../../backend/conversation-service.js";
 import { registerGuardedHandlers, type HandlerIpcMain, type SenderAuthorizer } from "./guarded-handlers.js";
 import {
   parseAnswerConversationPromptRequest,
@@ -11,7 +11,7 @@ import {
   parseMessagePageRequest,
   parseSearchMessagesRequest,
   parseUpdateConversationRequest,
-} from "./validators.js";
+} from "../../backend/validators.js";
 
 export function registerConversationHandlers(
   ipcMain: HandlerIpcMain,

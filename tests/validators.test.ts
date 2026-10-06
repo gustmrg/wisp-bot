@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { WispBackendError } from "../electron/backend/backend-error.js";
+import { WispBackendError } from "../backend/backend-error.js";
 import {
   parseAppendConversationMessageRequest,
   parseMessagePageRequest,
@@ -15,7 +15,7 @@ import {
   parseSendMessageRequest,
   parseTranscribeAudioRequest,
   parseUpdateConversationRequest,
-} from "../electron/ipc/validators.js";
+} from "../backend/validators.js";
 import { MAX_VOICE_AUDIO_BYTES } from "../shared/voice.js";
 
 describe("voice request validators", () => {

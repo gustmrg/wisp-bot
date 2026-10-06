@@ -1,7 +1,7 @@
 import { WISP_IPC_CHANNELS } from "../../shared/contracts.js";
-import type { SessionReportService } from "../backend/session-report-service.js";
+import type { SessionReportService } from "../../backend/session-report-service.js";
 import { registerGuardedHandlers, type HandlerIpcMain, type SenderAuthorizer } from "./guarded-handlers.js";
-import { parseConversationRequest, parseUsageReportRequest } from "./validators.js";
+import { parseConversationRequest, parseUsageReportRequest } from "../../backend/validators.js";
 
 export function registerSessionReportHandlers(
   ipcMain: HandlerIpcMain,

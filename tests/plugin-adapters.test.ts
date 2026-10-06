@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { BUILTIN_TOOL_NAMES, getToolMetadata } from "../shared/tool-catalog.js";
-import { PLUGIN_ADAPTERS } from "../electron/backend/plugin-adapters.js";
-import { sanitizeBackendError } from "../electron/backend/backend-error.js";
+import { PLUGIN_ADAPTERS } from "../backend/plugin-adapters.js";
+import { sanitizeBackendError } from "../backend/backend-error.js";
 
 const KEY = "private-api-key-must-not-appear";
 const tools = PLUGIN_ADAPTERS.flatMap((adapter) => adapter.tools);

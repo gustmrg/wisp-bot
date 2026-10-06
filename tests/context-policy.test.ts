@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { DEFAULT_CONTEXT_POLICY, shouldRenewContext } from "../shared/context-policy.js";
-import { parseContextRequest } from "../electron/ipc/validators.js";
+import { parseContextRequest } from "../backend/validators.js";
 
 describe("context renewal policy", () => {
   const now = new Date(2026, 8, 5, 10);

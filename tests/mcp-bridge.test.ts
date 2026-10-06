@@ -6,8 +6,8 @@ import {
   type McpSdkClient,
   type McpSdkModuleShape,
   type McpSdkTool,
-} from "../electron/backend/mcp-bridge.js";
-import { McpSignInRequiredError } from "../electron/backend/mcp-oauth.js";
+} from "../backend/mcp-bridge.js";
+import { McpSignInRequiredError } from "../backend/mcp-oauth.js";
 
 const TOOLS: McpSdkTool[] = [
   { name: "search", description: "Search things", inputSchema: { type: "object" } },

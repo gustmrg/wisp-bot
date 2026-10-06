@@ -1,8 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { AgentRegistry } from "../electron/backend/agent-registry.js";
-import type { ConversationAgentContext, ConversationAgentFactory } from "../electron/backend/conversation-agent.js";
-import { FakeConversationAgent } from "../electron/backend/fake-conversation-agent.js";
+import { AgentRegistry } from "../backend/agent-registry.js";
+import type { ConversationAgentContext, ConversationAgentFactory } from "../backend/conversation-agent.js";
+import { FakeConversationAgent } from "../backend/fake-conversation-agent.js";
 import type { ConversationAgentEvent, SequencedConversationAgentEvent } from "../shared/contracts.js";
 
 function context(conversationId: string): ConversationAgentContext {

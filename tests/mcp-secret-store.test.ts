@@ -4,8 +4,8 @@ import path from "node:path";
 
 import { describe, expect, it } from "vitest";
 
-import type { EncryptionService } from "../electron/backend/encrypted-credential-store.js";
-import { McpSecretStore } from "../electron/backend/mcp-secret-store.js";
+import type { EncryptionService } from "../backend/encrypted-credential-store.js";
+import { McpSecretStore } from "../backend/mcp-secret-store.js";
 
 const encryption: EncryptionService = {
   isAvailable: () => true,

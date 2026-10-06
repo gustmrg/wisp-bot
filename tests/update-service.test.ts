@@ -1,7 +1,7 @@
 import { EventEmitter } from "node:events";
 import { describe, expect, it, vi } from "vitest";
 
-import { StructuredLogger, type LogSink } from "../electron/backend/structured-logger.js";
+import { StructuredLogger, type LogSink } from "../backend/structured-logger.js";
 import { UpdateService } from "../electron/backend/update-service.js";
 
 function updater() {

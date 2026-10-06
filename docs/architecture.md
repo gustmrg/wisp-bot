@@ -24,13 +24,17 @@ URL.
 - `shared/` defines process-safe conversation, tool-policy, and IPC contracts
   (`shared/contracts.ts` is canonical). Results cross the boundary as
   `BackendResult<T>` values; exceptions and SDK objects do not.
-- `electron/backend/` owns durable conversations, model configuration, Pi
-  sessions, plugin and MCP connections with per-Wisp grants, the fake test
-  gateway, encrypted credentials, and tool authorization. `electron/ipc/`
-  validates and registers the narrow bridge handlers; every handler goes
+- `backend/` owns durable conversations, model configuration, Pi sessions,
+  plugin and MCP connections with per-Wisp grants, the fake test gateway,
+  encrypted credentials, tool authorization, and request validation. It never
+  imports Electron: `backend/runtime.ts` composes the services from injected
+  host capabilities (encryption, folder and file pickers, event sinks), so any
+  host can run the same backend. `electron/backend/` keeps only desktop
+  concerns: `safeStorage` encryption, updates, and launch at login.
+- `electron/ipc/` registers the narrow bridge handlers; every handler goes
   through `guarded-handlers.ts`, which checks the sender and returns sanitized
-  `BackendResult`s. `electron/create-backend.ts` composes the services and
-  handlers from injected Electron capabilities, so the whole backend can be
+  `BackendResult`s. `electron/create-backend.ts` composes the runtime with
+  Electron capabilities and exposes it over IPC, so the whole backend can be
   built and tested without Electron.
 - The main process is the only writer of agent-driven conversation state (reply
   text, outgoing delivery status, context notices). After persisting a change it
@@ -75,10 +79,12 @@ wisp-bot/
 │   └── release.yml                # Version bump, packaging, and GitHub release
 ├── build/                         # Packaging icons
 ├── docs/                          # Guides and decision records
+├── backend/                       # Persistence, services, agents, and authorization
+│   └── runtime.ts                 # Host-independent backend composition and shutdown
 ├── electron/
-│   ├── backend/                   # Persistence, services, agents, and authorization
-│   ├── ipc/                       # Validated main-process IPC handlers
-│   ├── create-backend.ts          # Backend composition and shutdown
+│   ├── backend/                   # Desktop-only services (safeStorage, updates, login)
+│   ├── ipc/                       # Main-process IPC handlers
+│   ├── create-backend.ts          # Runtime exposed over IPC, with shutdown
 │   ├── main.ts                    # Window lifecycle and trust-boundary wiring
 │   ├── preload.ts                 # Sandboxed typed renderer bridge
 │   └── security-policy.ts         # Pure URL, permission, and CSP policy
@@ -93,7 +99,7 @@ wisp-bot/
 │   ├── App.tsx                    # Top-level renderer composition
 │   └── main.tsx                   # Renderer entry point and bridge guard
 ├── scripts/                       # Release checksums and live Pi smoke
-├── tests/                         # Electron/backend and contract tests
+├── tests/                         # Backend, Electron, and contract tests
 ├── index.html                     # Renderer HTML and generated CSP slot
 └── vite.config.mts                # Renderer build and development policy
 ```

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { PiEventTranslator } from "../electron/backend/pi-event-translator.js";
+import { PiEventTranslator } from "../backend/pi-event-translator.js";
 import type { ConversationAgentEvent } from "../shared/contracts.js";
 
 describe("PiEventTranslator", () => {

@@ -1,7 +1,7 @@
 import type { IpcMainInvokeEvent } from "electron";
 import { describe, expect, it, vi } from "vitest";
 
-import { WispBackendError } from "../electron/backend/backend-error.js";
+import { WispBackendError } from "../backend/backend-error.js";
 import { registerGuardedHandlers } from "../electron/ipc/guarded-handlers.js";
 
 type Handler = (event: IpcMainInvokeEvent, payload: unknown) => Promise<unknown>;

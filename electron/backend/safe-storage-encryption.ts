@@ -1,6 +1,6 @@
 import { safeStorage } from "electron";
 
-import type { EncryptionService } from "./encrypted-credential-store.js";
+import type { EncryptionService } from "../../backend/encrypted-credential-store.js";
 
 export class SafeStorageEncryption implements EncryptionService {
   isAvailable(): boolean {
