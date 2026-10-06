@@ -273,6 +273,20 @@ describe("desktop connections", () => {
       error: { code: "unsupported" },
     });
     expect(app.hostActions.openPath).not.toHaveBeenCalled();
+    // Files picked on this computer are sent to the server's workspace.
+    const attachment = path.join(app.directory, "notes.txt");
+    await writeFile(attachment, "hello");
+    app.hostActions.selectFiles.mockResolvedValueOnce([attachment]);
+    expect(await app.invoke(WISP_IPC_CHANNELS.attachWorkspaceFiles, { conversationId: "remote" })).toEqual({
+      files: [{ name: "notes.txt", path: "inbox/notes.txt", size: 5 }],
+      workspace: expect.objectContaining({ usedBytes: 5 }),
+    });
+    expect(await server.runtime.workspace.getView("remote")).toMatchObject({ usedBytes: 5 });
+    app.hostActions.selectFiles.mockResolvedValueOnce([app.directory]);
+    expect(await app.call(WISP_IPC_CHANNELS.attachWorkspaceFiles, { conversationId: "remote" })).toMatchObject({
+      ok: false,
+      error: { message: expect.stringContaining("is not a readable file") },
+    });
     // Wisps on this computer stopped when the server was chosen.
     expect(app.localServer.server).toBeUndefined();
 

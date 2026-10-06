@@ -1,5 +1,6 @@
+import { randomUUID } from "node:crypto";
 import { constants } from "node:fs";
-import { copyFile, lstat, mkdir, readdir, stat } from "node:fs/promises";
+import { copyFile, link, lstat, mkdir, open, readdir, stat, unlink } from "node:fs/promises";
 import path from "node:path";
 
 import {
@@ -150,11 +151,7 @@ export class WorkspaceService {
       this.quotaBytes,
     );
 
-    const inbox = path.join(workspaceDirectory, WORKSPACE_INBOX_DIRECTORY);
-    await mkdir(inbox, { recursive: true });
-    if (!(await lstat(inbox)).isDirectory()) {
-      throw new WispBackendError("invalid_request", "The workspace inbox is not a folder.");
-    }
+    const inbox = await prepareInbox(workspaceDirectory);
     const files: WorkspaceAttachment[] = [];
     for (const { source, size } of sources) {
       const name = await copyWithUniqueName(source, inbox, safeFileName(path.basename(source)));
@@ -162,6 +159,52 @@ export class WorkspaceService {
     }
     return { files, workspace: await this.getView(conversationId) };
   }
+
+  /**
+   * Writes a file sent by a device on another computer into the workspace
+   * inbox. The bytes land in a hidden partial file and take their name only
+   * once exactly `size` bytes arrived, so a Wisp never reads half a file.
+   */
+  async receive(
+    conversationId: string,
+    file: { name: string; size: number },
+    content: AsyncIterable<Uint8Array>,
+  ): Promise<WorkspaceAttachment> {
+    const { workspaceDirectory } = this.options.resolveDirectories(conversationId);
+    await assertWorkspaceCapacity(workspaceDirectory, file.size, this.quotaBytes);
+    const inbox = await prepareInbox(workspaceDirectory);
+    const partial = path.join(inbox, `.upload-${randomUUID()}.partial`);
+    const handle = await open(partial, "wx", 0o600);
+    try {
+      let received = 0;
+      try {
+        for await (const chunk of content) {
+          received += chunk.byteLength;
+          if (received > file.size) break;
+          await handle.write(chunk);
+        }
+      } finally {
+        await handle.close();
+      }
+      if (received !== file.size) {
+        throw new WispBackendError("invalid_request", `${file.name} did not arrive complete. Try attaching it again.`);
+      }
+      const name = await linkWithUniqueName(partial, inbox, safeFileName(file.name));
+      return { name, path: `${WORKSPACE_INBOX_DIRECTORY}/${name}`, size: file.size };
+    } finally {
+      await unlink(partial).catch(() => undefined);
+    }
+  }
+}
+
+/** The workspace folder that receives attachments, created on first use. */
+async function prepareInbox(workspaceDirectory: string): Promise<string> {
+  const inbox = path.join(workspaceDirectory, WORKSPACE_INBOX_DIRECTORY);
+  await mkdir(inbox, { recursive: true });
+  if (!(await lstat(inbox)).isDirectory()) {
+    throw new WispBackendError("invalid_request", "The workspace inbox is not a folder.");
+  }
+  return inbox;
 }
 
 /** A single path segment safe on every platform, keeping the original name where possible. */
@@ -174,19 +217,41 @@ export function safeFileName(name: string): string {
   return cleaned || "attachment";
 }
 
-async function copyWithUniqueName(source: string, directory: string, name: string): Promise<string> {
+function copyWithUniqueName(source: string, directory: string, name: string): Promise<string> {
+  // COPYFILE_EXCL never replaces an existing file, so concurrent copies cannot clobber each other.
+  return placeWithUniqueName(
+    directory,
+    name,
+    (target) => copyFile(source, target, constants.COPYFILE_EXCL),
+    `Could not copy ${path.basename(source)} into the workspace.`,
+  );
+}
+
+function linkWithUniqueName(partial: string, directory: string, name: string): Promise<string> {
+  // Unlike a rename, a hard link never replaces an existing file.
+  return placeWithUniqueName(
+    directory,
+    name,
+    (target) => link(partial, target),
+    `Could not save ${name} in the workspace.`,
+  );
+}
+
+async function placeWithUniqueName(
+  directory: string,
+  name: string,
+  place: (target: string) => Promise<void>,
+  failure: string,
+): Promise<string> {
   const extension = path.extname(name);
   const stem = name.slice(0, name.length - extension.length) || name;
   for (let attempt = 1; attempt <= MAX_NAME_ATTEMPTS; attempt += 1) {
     const candidate = attempt === 1 ? name : `${stem} (${attempt})${extension}`;
     try {
-      // COPYFILE_EXCL never replaces an existing file, so concurrent copies cannot clobber each other.
-      await copyFile(source, path.join(directory, candidate), constants.COPYFILE_EXCL);
+      await place(path.join(directory, candidate));
       return candidate;
     } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== "EEXIST") {
-        throw new WispBackendError("invalid_request", `Could not copy ${path.basename(source)} into the workspace.`);
-      }
+      if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw new WispBackendError("invalid_request", failure);
     }
   }
   throw new WispBackendError("invalid_request", `Could not find a free name for ${name} in the workspace.`);

@@ -77,6 +77,7 @@ export async function createBackend(host: BackendHost): Promise<Backend> {
     store,
     localServer: host.localServer,
     onHostRequest: (request) => runHostAction(host.hostActions, request),
+    selectFiles: () => host.hostActions.selectFiles(),
     openSshTunnel: host.openSshTunnel ?? ((profile, signal) => openSshTunnel(profile, { signal })),
     deviceName: host.deviceName,
     broadcast,

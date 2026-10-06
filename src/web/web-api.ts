@@ -16,6 +16,8 @@ export interface WebApiOptions {
   deviceName: string;
   appVersion: string;
   fetch?: typeof fetch;
+  /** Asks the person for files to attach; resolves empty when dismissed. Defaults to the browser's file picker. */
+  pickFiles?: () => Promise<ReadonlyArray<File>>;
 }
 
 type Listener<T> = (value: T) => void;
@@ -132,7 +134,29 @@ export function createWebWispApi(options: WebApiOptions): WispApi {
   for (const operation of RUNTIME_OPERATIONS) {
     api[operation] = (payload?: unknown) => session.call(operation, payload);
   }
+  // The server has no screen here: the browser picks the files and sends them.
+  const pickFiles = options.pickFiles ?? pickFilesWithInput;
+  api.attachWorkspaceFiles = async (request: { conversationId: string }) =>
+    session.attachFiles(
+      request.conversationId,
+      (await pickFiles()).map((file) => ({ name: file.name, content: file })),
+    );
   return api as unknown as WispApi;
+}
+
+/**
+ * Opens the browser's file picker. It must run inside the click that asked
+ * for it, before any `await`, or browsers refuse to show the picker.
+ */
+function pickFilesWithInput(): Promise<ReadonlyArray<File>> {
+  return new Promise((resolve) => {
+    const input = document.createElement("input");
+    input.type = "file";
+    input.multiple = true;
+    input.addEventListener("change", () => resolve([...(input.files ?? [])]), { once: true });
+    input.addEventListener("cancel", () => resolve([]), { once: true });
+    input.click();
+  });
 }
 
 /** A readable name for this browser, shown in `wispctl devices`. */

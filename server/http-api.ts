@@ -4,6 +4,7 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 
 import { WispBackendError } from "../backend/backend-error.js";
 
+import { toBackendResult, type HandlerEvent } from "../backend/handlers/guarded-handlers.js";
 import type { BackendResult } from "../shared/contracts.js";
 import { WISP_IPC_CHANNELS } from "../shared/contracts.js";
 import { encodeRemoteJson } from "../shared/remote-codec.js";
@@ -16,8 +17,9 @@ import {
   type WebSession,
   type RemoteEventType,
   type ServerDescriptor,
+  WORKSPACE_UPLOAD_PATH,
 } from "../shared/remote-protocol.js";
-import type { HandlerEvent } from "../backend/handlers/guarded-handlers.js";
+import type { WorkspaceAttachment } from "../shared/workspace.js";
 import type { StructuredLogger } from "../backend/structured-logger.js";
 import type { DeviceAuth } from "./device-auth.js";
 import { boundedString, HttpError, invalidRequest, unauthorized } from "./errors.js";
@@ -41,6 +43,14 @@ const PUSH_OPERATIONS = new Set(["agentEvent", "conversationChanged", "mcpSettin
 
 export type OperationListener = (event: HandlerEvent, payload: unknown) => Promise<BackendResult<unknown>>;
 
+/** A file a device sends into a Wisp's workspace, read straight from the request. */
+export interface WorkspaceUpload {
+  conversationId: string;
+  name: string;
+  size: number;
+  content: AsyncIterable<Uint8Array>;
+}
+
 export interface HttpApiOptions {
   auth: DeviceAuth;
   hub: EventHub;
@@ -63,6 +73,8 @@ export interface HttpApiOptions {
   publicOrigin?: string;
   /** The browser app's files, served on every path outside the API. */
   webRoot?: string;
+  /** Stores an uploaded file in a Wisp's workspace; without it, uploads are not offered. */
+  uploadWorkspaceFile?: (upload: WorkspaceUpload) => Promise<WorkspaceAttachment>;
 }
 
 export interface HttpApi {
@@ -236,6 +248,24 @@ export function createHttpApi(options: HttpApiOptions): HttpApi {
       const limit = operation === "transcribeAudio" ? AUDIO_BODY_LIMIT : DEFAULT_BODY_LIMIT;
       const payload = await readJsonBody(request, limit);
       sendJson(response, 200, await caller.run({ deviceId }, () => listener(OWNER_EVENT, payload)));
+      return;
+    }
+    if (path === WORKSPACE_UPLOAD_PATH && method === "POST" && options.uploadWorkspaceFile) {
+      if (options.isPaused?.()) {
+        throw new HttpError(503, "unavailable", "The server is writing a backup. Try again in a moment.", true);
+      }
+      const upload = options.uploadWorkspaceFile;
+      const declared = request.headers["content-length"];
+      const size = Number(declared);
+      if (declared === undefined || !Number.isSafeInteger(size) || size < 0) {
+        throw new HttpError(411, "invalid_request", "An upload must declare its size.");
+      }
+      const conversationId = boundedString(searchParams.get("conversationId") ?? undefined, 128);
+      const name = boundedString(searchParams.get("name") ?? undefined, 255);
+      const result = await toBackendResult(() => upload({ conversationId, name, size, content: request }));
+      // Refused before the body was read (a full workspace): end the connection instead of reading it all.
+      if (!request.complete) response.setHeader("Connection", "close");
+      sendJson(response, 200, result);
       return;
     }
     if (path.startsWith("/host-requests/") && method === "POST") {

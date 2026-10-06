@@ -6,6 +6,7 @@ import { WispBackendError } from "../backend/backend-error.js";
 import type { EncryptionService } from "../backend/encrypted-credential-store.js";
 import type { HandlerRouter } from "../backend/handlers/guarded-handlers.js";
 import { registerRuntimeHandlers } from "../backend/handlers/register-runtime-handlers.js";
+import { parseConversationRequest } from "../backend/validators.js";
 import { createBackendRuntime, disposeWithin, type BackendRuntime } from "../backend/runtime.js";
 import type { StructuredLogger } from "../backend/structured-logger.js";
 import { startAdminSocket } from "./admin.js";
@@ -21,6 +22,7 @@ import { ServerStore } from "./server-store.js";
 const LOOPBACK_HOSTS = new Set(["127.0.0.1", "::1", "localhost"]);
 // Agents get this long to settle their last turn on shutdown.
 const SHUTDOWN_TIMEOUT_MS = 10_000;
+const IDLE_TIMEOUT_MS = 120_000;
 
 export interface WispServerOptions {
   /** Owns `server.sqlite`, the admin socket, and the backend stores under `backend/`. */
@@ -123,9 +125,9 @@ export async function createWispServer(options: WispServerOptions): Promise<Wisp
           "Folders on the server cannot be opened from this device.",
         );
       },
-      // A file picker stays open while the person chooses.
+      // A file picker stays open while the person chooses. Other devices upload their files instead.
       selectFiles: () =>
-        askHost({ kind: "selectFiles" }, 30 * 60_000, "Attaching files to a Wisp on a server is not available yet."),
+        askHost({ kind: "selectFiles" }, 30 * 60_000, "This device sends attached files to the server instead."),
       onAgentEvent: (event) => hub.publish("agentEvent", event),
       onConversationChanged: (delta) => hub.publish("conversationChanged", delta),
       onMcpSettingsChanged: (view) => hub.publish("mcpSettingsChanged", view),
@@ -157,11 +159,16 @@ export async function createWispServer(options: WispServerOptions): Promise<Wisp
       allowedOrigins: new Set(publicOrigin ? [publicOrigin.origin] : []),
       ...(publicOrigin ? { publicOrigin: publicOrigin.origin } : {}),
       ...(options.webRoot ? { webRoot: options.webRoot } : {}),
+      uploadWorkspaceFile: ({ conversationId, name, size, content }) =>
+        runtime.workspace.receive(parseConversationRequest({ conversationId }).conversationId, { name, size }, content),
       logger: options.logger,
     });
-    const http = createServer({ headersTimeout: 15_000, requestTimeout: 120_000 }, (request, response) =>
+    // No limit on a whole request, so a large upload over a slow link can finish;
+    // a connection that sends nothing for two minutes is closed instead.
+    const http = createServer({ headersTimeout: 15_000, requestTimeout: 0 }, (request, response) =>
       api.handle(request, response),
     );
+    http.setTimeout(IDLE_TIMEOUT_MS);
     await listen(http, options.port, options.host);
     cleanup.push(() => closeServer(http, () => api.closeStreams()));
     const address = http.address();

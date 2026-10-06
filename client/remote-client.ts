@@ -8,7 +8,9 @@ import {
   type RemoteTransportErrorCode,
   type ServerDescriptor,
   type WebSession,
+  WORKSPACE_UPLOAD_PATH,
 } from "../shared/remote-protocol.js";
+import type { WorkspaceAttachment } from "../shared/workspace.js";
 import { readServerSentEvents } from "./sse.js";
 
 // Refresh this long before the access token expires rather than waiting for a 401.
@@ -103,6 +105,29 @@ export class RemoteClient {
       payload ?? {},
       true,
     )) as BackendResult<unknown>;
+  }
+
+  /**
+   * Sends one file into a Wisp's workspace. No timeout applies: a large file
+   * over a slow link takes as long as it takes, and the server closes a
+   * connection that stops sending.
+   */
+  async uploadWorkspaceFile(
+    conversationId: string,
+    name: string,
+    content: Blob,
+  ): Promise<BackendResult<WorkspaceAttachment>> {
+    const query = new URLSearchParams({ conversationId, name });
+    const attempt = async (auth: Record<string, string>): Promise<Response> =>
+      this.send(`${REMOTE_API_PREFIX}${WORKSPACE_UPLOAD_PATH}?${query}`, {
+        method: "POST",
+        headers: { ...auth, "Content-Type": "application/octet-stream" },
+        body: content,
+      });
+    let response = await attempt(await this.authHeaders());
+    // A Blob can be sent again, so the same retry as `authorized` applies.
+    if (response.status === 401) response = await attempt(await this.authHeaders(true));
+    return (await this.bodyOf(response)) as BackendResult<WorkspaceAttachment>;
   }
 
   /** Answers a server's request to act on this computer's screen. */

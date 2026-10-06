@@ -1,3 +1,7 @@
+import { openAsBlob } from "node:fs";
+import { stat } from "node:fs/promises";
+import path from "node:path";
+
 import { WispBackendError } from "../../backend/backend-error.js";
 import type { StructuredLogger } from "../../backend/structured-logger.js";
 import { RemoteSession, type RemoteSessionPhase, type RemoteTransport } from "../../client/remote-session.js";
@@ -21,6 +25,8 @@ export interface ConnectionManagerOptions {
   openSshTunnel(profile: SshConnectionProfile, signal: AbortSignal): Promise<RemoteTransport>;
   /** Does what the local server asks on this computer's screen. */
   onHostRequest(request: HostRequest): Promise<HostResponse>;
+  /** Shows a native multi-file picker; resolves with absolute paths, empty when dismissed. */
+  selectFiles(): Promise<ReadonlyArray<string>>;
   deviceName: string;
   /** Sends a push channel payload to every renderer window. */
   broadcast(channel: string, payload: unknown): void;
@@ -80,11 +86,34 @@ export class ConnectionManager {
   /** Runs a renderer request on the active server. */
   async dispatch(channel: string, payload: unknown): Promise<BackendResult<unknown>> {
     const operation = OPERATIONS_BY_CHANNEL.get(channel);
+    // A server on another computer cannot open this computer's file picker: the app does, and sends the files.
+    if (
+      this.session &&
+      channel === WISP_IPC_CHANNELS.attachWorkspaceFiles &&
+      this.status.profileId !== LOCAL_CONNECTION_ID
+    ) {
+      return this.attachFromThisComputer(this.session, payload);
+    }
     if (this.session && operation) return this.session.call(operation, payload);
     return {
       ok: false,
       error: { code: "unavailable", message: "Wisp is switching connections. Try again.", retryable: true },
     };
+  }
+
+  private async attachFromThisComputer(session: RemoteSession, payload: unknown): Promise<BackendResult<unknown>> {
+    const conversationId = (payload as { conversationId?: unknown } | null)?.conversationId;
+    if (typeof conversationId !== "string" || !conversationId || conversationId.length > 128) {
+      return invalidResult("The request is invalid.");
+    }
+    const files: Array<{ name: string; content: Blob }> = [];
+    for (const file of await this.options.selectFiles()) {
+      const name = path.basename(file);
+      const info = await stat(file).catch(() => undefined);
+      if (!info?.isFile()) return invalidResult(`${name} is not a readable file.`);
+      files.push({ name, content: await openAsBlob(file) });
+    }
+    return session.attachFiles(conversationId, files);
   }
 
   activate(id: string, pairingCode?: string): Promise<ConnectionsView> {
@@ -230,4 +259,8 @@ function phaseOf(phase: RemoteSessionPhase, local: boolean): ConnectionPhase {
 
 function directTransport(url: string): RemoteTransport {
   return { baseUrl: url, closed: new Promise(() => undefined), close: () => undefined };
+}
+
+function invalidResult(message: string): BackendResult<never> {
+  return { ok: false, error: { code: "invalid_request", message, retryable: false } };
 }

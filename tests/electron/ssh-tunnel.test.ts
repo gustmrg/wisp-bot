@@ -7,7 +7,7 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import { StructuredLogger } from "../../backend/structured-logger.js";
 import { FatalTransportError } from "../../client/remote-session.js";
-import { openSshTunnel, sshArguments } from "../../electron/connections/ssh-tunnel.js";
+import { explainPairingFailure, openSshTunnel, sshArguments } from "../../electron/connections/ssh-tunnel.js";
 import { MasterKeyEncryption } from "../../server/master-key.js";
 import { createWispServer } from "../../server/wisp-server.js";
 import type { SshConnectionProfile } from "../../shared/connections.js";
@@ -85,19 +85,60 @@ describe("openSshTunnel", () => {
       await expect(failure).rejects.toBeInstanceOf(FatalTransportError);
       await expect(failure).rejects.toThrow(message);
     }
-    process.env.FAKE_SSH_FAIL = "resolve";
-    await expect(openSshTunnel(profile(1), { sshPath: fakeSsh })).rejects.not.toBeInstanceOf(FatalTransportError);
+    for (const [mode, message] of [
+      ["resolve", /home-server could not be resolved/],
+      ["refused", /home-server refused the SSH connection/],
+    ] as const) {
+      process.env.FAKE_SSH_FAIL = mode;
+      const failure = openSshTunnel(profile(1), { sshPath: fakeSsh });
+      await expect(failure).rejects.not.toBeInstanceOf(FatalTransportError);
+      await expect(failure).rejects.toThrow(message);
+    }
     await expect(openSshTunnel(profile(1), { sshPath: path.join(os.tmpdir(), "no-such-ssh") })).rejects.toThrow(
       /OpenSSH is not installed/,
     );
   });
 
-  it("reports a missing wispctl as a reason to enter the code by hand", async () => {
+  it("says what to fix on the server when pairing over SSH fails", async () => {
     const { directory, instance } = await server();
     process.env.FAKE_WISP_DATA_DIR = path.join(directory, "elsewhere");
     const tunnel = await openSshTunnel(profile(instance.port), { sshPath: fakeSsh });
     cleanups.push(() => tunnel.close());
-    await expect(tunnel.requestPairingCode?.()).rejects.toThrow(/run `wispctl pair` there and enter the code here/);
+    await expect(tunnel.requestPairingCode?.()).rejects.toThrow(/The Wisp server is not running on home-server/);
+
+    process.env.FAKE_SSH_REMOTE = "missing";
+    const missing = tunnel.requestPairingCode?.();
+    await expect(missing).rejects.toBeInstanceOf(FatalTransportError);
+    await expect(missing).rejects.toThrow(/wispctl is not installed on home-server.*enter the code here/);
+  });
+
+  it("explains a tunnel that reaches the host but no server", async () => {
+    const { instance } = await server();
+    const port = instance.port;
+    await instance.close();
+    const tunnel = await openSshTunnel(profile(port), { sshPath: fakeSsh });
+    cleanups.push(() => tunnel.close());
+    await expect(fetch(`${tunnel.baseUrl}/health`)).rejects.toThrow();
+    await expect.poll(() => tunnel.explainFailure?.()).toMatch(/nothing answers on its port \d+/);
+    // Explained once: a later failure needs its own report.
+    expect(tunnel.explainFailure?.()).toBeUndefined();
+  });
+
+  it("maps pairing command failures to what to do", () => {
+    expect(explainPairingFailure("pi", 255, "user@pi: Permission denied (publickey).", false).message).toMatch(
+      /pi rejected this computer's SSH key/,
+    );
+    expect(
+      explainPairingFailure("pi", 127, "/home/u/.local/bin/wispctl: 4: exec: node: not found", false).message,
+    ).toMatch(/Node.js is missing on pi/);
+    expect(
+      explainPairingFailure("pi", 1, "Error: Cannot find module '/home/u/.local/lib/wisp/server/cli.js'", false)
+        .message,
+    ).toMatch(/server files are missing on pi/);
+    expect(explainPairingFailure("pi", null, "", true).message).toMatch(/did not answer within 30 seconds/);
+    expect(explainPairingFailure("pi", 1, "something odd\n", false).message).toMatch(
+      /Could not get a pairing code from pi\. Or run `wispctl pair` there and enter the code here\. \(something odd\)/,
+    );
   });
 
   it("never passes options from profile fields", () => {

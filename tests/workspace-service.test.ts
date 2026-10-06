@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
@@ -94,6 +94,54 @@ describe("WorkspaceService", () => {
     await expect(many.service.attach("atlas")).rejects.toMatchObject({
       message: expect.stringContaining("at most 20"),
     });
+  });
+});
+
+async function* chunks(...parts: string[]): AsyncIterable<Uint8Array> {
+  for (const part of parts) yield Buffer.from(part);
+}
+
+describe("WorkspaceService.receive", () => {
+  it("stores a streamed file in the inbox without replacing existing ones", async () => {
+    const { service, workspaceDirectory } = await setup();
+    await mkdir(path.join(workspaceDirectory, "inbox"));
+    await writeFile(path.join(workspaceDirectory, "inbox", "notes.txt"), "older", "utf8");
+
+    await expect(service.receive("atlas", { name: "notes.txt", size: 11 }, chunks("hello", " world"))).resolves.toEqual(
+      { name: "notes (2).txt", path: "inbox/notes (2).txt", size: 11 },
+    );
+    await expect(service.receive("atlas", { name: "../evil", size: 1 }, chunks("x"))).resolves.toMatchObject({
+      path: "inbox/_evil",
+    });
+    expect(await readFile(path.join(workspaceDirectory, "inbox", "notes (2).txt"), "utf8")).toBe("hello world");
+    expect((await readdir(path.join(workspaceDirectory, "inbox"))).sort()).toEqual([
+      "_evil",
+      "notes (2).txt",
+      "notes.txt",
+    ]);
+  });
+
+  it("keeps nothing from a file that arrived shorter or longer than declared", async () => {
+    const { service, workspaceDirectory } = await setup();
+    for (const [size, parts] of [
+      [10, ["short"]],
+      [3, ["too", " long"]],
+    ] as const) {
+      await expect(service.receive("atlas", { name: "a.txt", size }, chunks(...parts))).rejects.toMatchObject({
+        code: "invalid_request",
+        message: expect.stringContaining("did not arrive complete"),
+      });
+    }
+    expect(await readdir(path.join(workspaceDirectory, "inbox"))).toEqual([]);
+  });
+
+  it("refuses a file that would exceed the quota before reading it", async () => {
+    const { service, workspaceDirectory } = await setup([], 10);
+    await writeFile(path.join(workspaceDirectory, "existing.txt"), "1234", "utf8");
+    await expect(service.receive("atlas", { name: "big.bin", size: 8 }, chunks("x".repeat(8)))).rejects.toMatchObject({
+      message: expect.stringContaining("workspace is full"),
+    });
+    expect(await measureDirectory(workspaceDirectory)).toBe(4);
   });
 });
 

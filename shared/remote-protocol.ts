@@ -23,6 +23,13 @@ export interface ServerDescriptor {
   operations: string[];
 }
 
+/**
+ * `POST /api/v1/workspace-files?conversationId=<id>&name=<file name>` sends
+ * one file into a Wisp's workspace inbox. The body is the file's raw bytes
+ * with a `Content-Length`; the answer is a `BackendResult<WorkspaceAttachment>`.
+ */
+export const WORKSPACE_UPLOAD_PATH = "/workspace-files";
+
 export interface PairRequest {
   code: string;
   deviceName: string;

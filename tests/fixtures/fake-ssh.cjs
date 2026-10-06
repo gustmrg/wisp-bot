@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 // Stands in for OpenSSH in tests. `-L 127.0.0.1:L:127.0.0.1:R` forwards a real
 // local port to R; a trailing remote command answers `wispctl pair` through the
-// server's admin socket. FAKE_SSH_FAIL makes it fail like OpenSSH does.
+// server's admin socket. FAKE_SSH_FAIL makes it fail like OpenSSH does, and
+// FAKE_SSH_REMOTE=missing makes the remote shell lack wispctl.
 const http = require("node:http");
 const net = require("node:net");
 const fs = require("node:fs");
@@ -13,6 +14,7 @@ const failures = {
   hostkey: "Host key verification failed.",
   denied: "user@host: Permission denied (publickey).",
   resolve: "ssh: Could not resolve hostname nowhere: Name or service not known",
+  refused: "ssh: connect to host home-server port 2222: Connection refused",
 };
 if (failures[process.env.FAKE_SSH_FAIL]) {
   process.stderr.write(`${failures[process.env.FAKE_SSH_FAIL]}\n`);
@@ -21,7 +23,10 @@ if (failures[process.env.FAKE_SSH_FAIL]) {
 const separator = args.indexOf("--");
 const command = args.slice(separator + 2).join(" ");
 if (command) {
-  if (!command.includes("wispctl pair --json")) process.exit(127);
+  if (!command.includes("wispctl pair --json") || process.env.FAKE_SSH_REMOTE === "missing") {
+    process.stderr.write("bash: line 1: wispctl: command not found\n");
+    process.exit(127);
+  }
   const request = http.request(
     { socketPath: path.join(process.env.FAKE_WISP_DATA_DIR, "admin.sock"), path: "/admin", method: "POST" },
     (response) => {
@@ -43,7 +48,11 @@ if (command) {
   const server = net.createServer((socket) => {
     const upstream = net.connect(Number(spec[3]), "127.0.0.1");
     socket.pipe(upstream).pipe(socket);
-    upstream.on("error", () => socket.destroy());
+    // OpenSSH reports a forward the server refused, then drops the local connection.
+    upstream.on("error", () => {
+      process.stderr.write("channel 2: open failed: connect failed: Connection refused\n");
+      socket.destroy();
+    });
     socket.on("error", () => upstream.destroy());
   });
   server.listen(Number(spec[1]), spec[0]);
