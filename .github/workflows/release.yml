@@ -145,8 +145,7 @@ jobs:
   # desktop app installs exactly its own version on a remote machine, and
   # `npx @gustmrg/wisp-server setup` runs this package, so every release needs it.
   # Re-run this job alone if it fails; npm refuses a version published twice.
-  # It authenticates with npm trusted publishing (OIDC) once that is set up for
-  # the package, or with the NPM_TOKEN secret until then.
+  # It authenticates with the package's npm trusted publisher (OIDC).
   publish-server:
     needs: [prepare, release]
     runs-on: ubuntu-latest
@@ -169,13 +168,12 @@ jobs:
       - name: Publish to npm
         working-directory: release/server
         env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
           VERSION: ${{ needs.prepare.outputs.version }}
         run: |
           # A prerelease must not become what `npx @gustmrg/wisp-server` runs.
           TAG=latest
           if [[ "$VERSION" == *-* ]]; then TAG=beta; fi
           if ! npm publish --provenance --access public --tag "$TAG"; then
-            echo "::error::@gustmrg/wisp-server $VERSION was not published. Check the package's trusted publisher on npm (or the NPM_TOKEN secret), then re-run this job."
+            echo "::error::@gustmrg/wisp-server $VERSION was not published. Check the package's trusted publisher on npm, then re-run this job."
             exit 1
           fi
