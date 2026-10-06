@@ -24,7 +24,8 @@ import {
   type LucideIcon,
 } from "lucide-react";
 
-import { GeneralSettingsSections, PreferenceSwitch } from "@/components/general-settings-sections";
+import { GeneralSettingsSections } from "@/components/general-settings-sections";
+import { NotificationSettingsSection } from "@/components/notification-settings-section";
 import { UsageSettingsSection } from "@/components/usage-settings-section";
 import { ModelSettingsSection } from "@/components/model-settings-section";
 import { PluginSettingsSection } from "@/components/plugin-settings-section";
@@ -55,6 +56,7 @@ import type { WispOption } from "@/lib/plugin-access";
 
 type SettingsSection =
   | "general"
+  | "notifications"
   | "connections"
   | "model"
   | "voice"
@@ -77,7 +79,7 @@ const NAV_ITEMS: ReadonlyArray<
   { section: "plugins", panelId: "plugin-settings-panel", label: "Plugins", icon: PlugIcon },
   { section: "mcp", panelId: "mcp-settings-panel", label: "MCP servers", icon: ServerIcon },
   { section: "usage", panelId: "usage-settings-panel", label: "Token usage", icon: BarChart3Icon },
-  { soon: true, label: "Notifications", icon: BellIcon },
+  { section: "notifications", panelId: "notification-settings-panel", label: "Notifications", icon: BellIcon },
   { section: "shortcuts", panelId: "shortcut-settings-panel", label: "Shortcuts", icon: KeyboardIcon },
   { section: "about", panelId: "about-settings-panel", label: "About", icon: InfoIcon },
 ];
@@ -138,6 +140,7 @@ function AppSettingsDialog({
   const mobileHeadingRef = useRef<HTMLHeadingElement>(null);
   const sectionTitles = {
     general: "General",
+    notifications: "Notifications",
     connections: "Connections",
     model: "AI Model",
     voice: "Voice input",
@@ -329,19 +332,6 @@ function AppSettingsDialog({
                   </Select>
                 </SettingsRow>
                 {browserApp ? null : <LaunchAtLoginSetting open={open} />}
-                <SettingsRow>
-                  <SettingsRowCopy>
-                    <strong>Notification sounds</strong>
-                    <small className="text-dim text-xs">Play a sound when a Wisp finishes or needs input.</small>
-                  </SettingsRowCopy>
-                  <PreferenceSwitch
-                    label="Notification sounds"
-                    checked={preferences.notificationSounds}
-                    onChange={() =>
-                      onPreferencesChange({ ...preferences, notificationSounds: !preferences.notificationSounds })
-                    }
-                  />
-                </SettingsRow>
               </SettingsCard>
             </SettingsGroup>
             <GeneralSettingsSections preferences={preferences} onPreferencesChange={onPreferencesChange} />
@@ -355,6 +345,14 @@ function AppSettingsDialog({
             </p>
           </div>
         </section>
+        {section === "notifications" && open && !showOverview ? (
+          <NotificationSettingsSection
+            preferences={preferences}
+            onPreferencesChange={onPreferencesChange}
+            persistenceStatus={persistenceStatus}
+            persistenceError={persistenceError}
+          />
+        ) : null}
         <ModelSettingsSection active={section === "model" && !showOverview} />
         <VoiceSettingsSection
           active={open && section === "voice" && !showOverview}

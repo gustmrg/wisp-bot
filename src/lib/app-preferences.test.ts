@@ -25,6 +25,7 @@ describe("normalizePreferences", () => {
         autoReviewRules: [{ id: "rule-1", action: "Read files", behavior: "ask" }],
       }),
     ).toEqual({
+      ...DEFAULT_PREFERENCES,
       theme: "dark",
       launchAtLogin: true,
       notificationSounds: false,
@@ -115,5 +116,31 @@ describe("normalizePreferences", () => {
         ],
       }).autoReviewRules,
     ).toEqual([{ id: "external-allow", action: "external_write", behavior: "ask", scope: "integration" }]);
+  });
+});
+
+it("migrates notification settings and validates saved volume", () => {
+  expect(normalizePreferences({ notificationSounds: false })).toEqual({
+    ...DEFAULT_PREFERENCES,
+    notificationSounds: false,
+  });
+  for (const value of [NaN, Infinity, "25", null])
+    expect(normalizePreferences({ notificationVolume: value }).notificationVolume).toBe(100);
+  expect(normalizePreferences({ notificationVolume: -10 }).notificationVolume).toBe(0);
+  expect(normalizePreferences({ notificationVolume: 120 }).notificationVolume).toBe(100);
+  expect(
+    normalizePreferences({
+      notificationVolume: 25,
+      notifyOnCompletion: false,
+      notifyOnApproval: false,
+      notifyOnError: false,
+      muteActiveConversation: true,
+    }),
+  ).toMatchObject({
+    notificationVolume: 25,
+    notifyOnCompletion: false,
+    notifyOnApproval: false,
+    notifyOnError: false,
+    muteActiveConversation: true,
   });
 });

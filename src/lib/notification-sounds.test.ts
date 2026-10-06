@@ -94,6 +94,16 @@ describe("notification sound player", () => {
     expect(envelope.exponentialRampToValueAtTime).toHaveBeenCalledWith(0.0001, 12.66);
   });
 
+  it("scales volume and keeps zero volume silent", () => {
+    const stub = stubContext();
+    const { player } = playerOver(stub);
+    player.play("error", 0);
+    expect(stub.oscillators).toHaveLength(0);
+    player.play("error", 50);
+    expect(stub.oscillators.map(({ frequency }) => frequency.value)).toEqual([440, 329.63]);
+    expect(stub.gains[0]!.gain.linearRampToValueAtTime).toHaveBeenCalledWith(0.07, 12.512);
+  });
+
   it("creates the audio context lazily on the first play", () => {
     const stub = stubContext();
     const { createAudioContext, player } = playerOver(stub);

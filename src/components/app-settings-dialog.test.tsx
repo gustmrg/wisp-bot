@@ -162,7 +162,12 @@ describe("AppSettingsDialog metadata", () => {
     );
 
     expect(screen.getByLabelText("Preferred name")).toHaveValue("Ada");
-    expect(screen.getByRole("button", { name: "Notifications (coming soon)" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Notifications" })).toBeEnabled();
+    expect(screen.queryByRole("switch", { name: "Notification sounds" })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Notifications" }));
+    expect(screen.getByRole("switch", { name: "Notification sounds" })).toBeChecked();
+    expect(screen.getByRole("slider", { name: "Volume" })).toHaveValue("100");
+    await user.click(screen.getByRole("button", { name: "General" }));
     expect(screen.getByRole("button", { name: "Shortcuts" })).toBeEnabled();
     expect(screen.getByRole("button", { name: "Voice input" })).toBeEnabled();
     expect(screen.getByRole("switch", { name: "Launch at login" })).toBeDisabled();

@@ -1,9 +1,8 @@
 # Application settings and status
 
 **Settings** (application-level) has panels for **General**, **AI Model**,
-**Plugins**, **MCP servers**, **Token usage**, and **About**. The
-**Notifications** and **Shortcuts** navigation entries are disabled and
-marked **Soon** until their panels exist.
+**Plugins**, **MCP servers**, **Token usage**, **Notifications**,
+**Shortcuts**, and **About**.
 
 ## First-run setup
 
@@ -21,7 +20,7 @@ saved key.
 ## General
 
 - **Your profile** — preferred name, optional background, and response preferences. Saved locally in `user-profile.json` and shared with every Wisp (and its AI provider when chatting). Changes refresh existing Wisp context; busy Wisps apply the refresh after their current turn. Blank fields remove that profile context. The preferred name is required and also supplies the sidebar name and initials.
-- **Application** — theme, launch at login, and notification sounds.
+- **Application** — theme and launch at login.
 - **System** — microphone selection and hardware acceleration preferences.
 - **Wisp** — timezone and auto-review. Auto-review shows one Allow / Ask /
   Block choice for **Create files** and one for **Modify files**; turning
@@ -59,12 +58,27 @@ mounted executable. Keep the AppImage in a stable location. After moving or
 renaming it, open the new file and enable Launch at login again to update the
 registration. Disable this option before removing the application.
 
-## Notification sounds
+## Notifications
 
-The renderer plays a synthesized two-note chime when a Wisp finishes its turn
-and a second, falling tone when one awaits a tool approval. Sounds are gated
-by the app-level **Notification sounds** setting and the per-Wisp notification
-toggle.
+The **Notifications** panel contains the app-level **Notification sounds** toggle,
+a volume slider (0–100%), and a Test button for each sound.
+Existing sound preferences are preserved. New settings default to full volume,
+all three events enabled, and open-conversation muting off.
+
+- **Response completed** — a rising chime when a Wisp finishes its turn.
+- **Approval needed** — a falling chime when a Wisp awaits tool approval.
+- **Execution error** — a lower falling chime when a Wisp's turn fails. Errors
+  outside a turn, such as a rejected model change, stay silent.
+- **Mute the open conversation** — skips sounds for the selected conversation
+  while the app window is visible and focused; background conversations still notify.
+
+All live sounds respect both the global sound toggle and the individual Wisp's
+notification toggle. Failed or cancelled turns do not also play the completion
+sound. Volume zero is silent. Test buttons preview sounds at the chosen volume,
+even if that event is disabled, but are disabled when global sounds are off or
+volume is zero. Settings are saved on this device; disabling sounds retains the
+volume and event choices. This panel currently controls sounds only, without
+system notifications or scheduled quiet hours.
 
 ## Updates (About)
 
