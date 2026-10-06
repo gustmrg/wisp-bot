@@ -1,7 +1,17 @@
+import {
+  ArrowUpIcon,
+  CircleAlertIcon,
+  FileIcon,
+  LoaderCircleIcon,
+  MicIcon,
+  PaperclipIcon,
+  SquareIcon,
+  XIcon,
+} from "lucide-react";
+import type { FormEvent, KeyboardEvent, ReactNode } from "react";
 import { useEffect, useRef, useState } from "react";
-import type { FormEvent, KeyboardEvent } from "react";
-import { ArrowUpIcon, FileIcon, LoaderCircleIcon, MicIcon, PaperclipIcon, SquareIcon, XIcon } from "lucide-react";
 
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useVoiceInput } from "@/hooks/use-voice-input";
 import { DEFAULT_PREFERENCES } from "@/lib/app-preferences";
 import { formatShortcut, matchesShortcut } from "@/lib/shortcuts";
@@ -83,6 +93,14 @@ export function ChatComposer({
   const transcribing = voiceInput.phase === "transcribing";
   const voiceAvailable = chat.kind === "wisp";
   const shortcutLabel = formatShortcut(voice.shortcut);
+  const voiceDisabled =
+    !voiceAvailable ||
+    transcribing ||
+    voiceInput.phase === "starting" ||
+    (!recording && !!voiceInput.unavailableReason);
+  const voiceHint =
+    (!recording && voiceInput.unavailableReason) ||
+    `${recording ? "Stop recording" : "Voice input"} (${shortcutLabel})`;
 
   function submit(text: string, files: ReadonlyArray<WorkspaceAttachment>): void {
     setDraft("");
@@ -121,6 +139,7 @@ export function ChatComposer({
   }
 
   function toggleVoiceInput(): void {
+    if (!voiceAvailable || (voiceInput.phase === "idle" && voiceInput.unavailableReason)) return;
     if (voiceInput.phase === "idle") {
       const textarea = textareaRef.current;
       insertAt.current = textarea ? [textarea.selectionStart, textarea.selectionEnd] : null;
@@ -186,39 +205,44 @@ export function ChatComposer({
           <div className="mb-2 flex flex-wrap items-center gap-2">
             <span>Choose a provider and model before sending a message.</span>
             {onConfigure ? (
-              <button
-                type="button"
-                className="font-medium text-primary underline underline-offset-2"
-                onClick={onConfigure}
-              >
-                Configure AI model
-              </button>
+              <ComposerTooltip message="Configure AI model">
+                <button
+                  type="button"
+                  className="font-medium text-primary underline underline-offset-2"
+                  onClick={onConfigure}
+                >
+                  Configure AI model
+                </button>
+              </ComposerTooltip>
             ) : null}
           </div>
         ) : voiceInput.error ? (
-          <div className="mb-2 flex flex-wrap items-center gap-2">
-            <span>{voiceInput.error.message}</span>
+          <ComposerError message={voiceInput.error.message}>
             {voiceInput.error.needsSetup && onConfigureVoice ? (
-              <button
-                type="button"
-                className="font-medium text-primary underline underline-offset-2"
-                onClick={onConfigureVoice}
-              >
-                Set up voice input
-              </button>
+              <ComposerTooltip message="Set up voice input">
+                <button
+                  type="button"
+                  className="font-medium text-foreground underline underline-offset-2"
+                  onClick={onConfigureVoice}
+                >
+                  Set up voice input
+                </button>
+              </ComposerTooltip>
             ) : null}
-          </div>
+          </ComposerError>
         ) : recording ? (
           `Recording… Press ${shortcutLabel} or the stop button to transcribe, Esc to cancel.`
         ) : transcribing ? (
           "Transcribing…"
         ) : voiceInput.phase === "starting" ? (
           "Starting the microphone…"
-        ) : (
-          attachError ||
-          error ||
-          (attaching ? "Copying files to the workspace…" : acknowledging ? "Queueing your message…" : null)
-        )}
+        ) : attachError || error ? (
+          <ComposerError message={attachError || error || ""} />
+        ) : attaching ? (
+          "Copying files to the workspace…"
+        ) : acknowledging ? (
+          "Queueing your message…"
+        ) : null}
       </div>
       {attachments.length ? (
         <ul className="mx-auto mb-1.5 flex w-full max-w-[1400px] flex-wrap gap-1.5" aria-label="Attached files">
@@ -231,14 +255,16 @@ export function ChatComposer({
               <span className="truncate" title={file.path}>
                 {file.name}
               </span>
-              <button
-                type="button"
-                className="flex size-4 flex-none items-center justify-center rounded text-dim hover:bg-accent hover:text-foreground"
-                aria-label={`Remove ${file.name} from this message`}
-                onClick={() => setAttachments((current) => current.filter((item) => item.path !== file.path))}
-              >
-                <XIcon aria-hidden="true" />
-              </button>
+              <ComposerTooltip message={`Remove ${file.name} from this message`}>
+                <button
+                  type="button"
+                  className="flex size-4 flex-none items-center justify-center rounded text-dim hover:bg-accent hover:text-foreground"
+                  aria-label={`Remove ${file.name} from this message`}
+                  onClick={() => setAttachments((current) => current.filter((item) => item.path !== file.path))}
+                >
+                  <XIcon aria-hidden="true" />
+                </button>
+              </ComposerTooltip>
             </li>
           ))}
         </ul>
@@ -250,25 +276,28 @@ export function ChatComposer({
         )}
       >
         {recording ? (
-          <button
-            type="button"
-            className="flex size-[27px] flex-none items-center justify-center rounded-full border-0 bg-transparent text-dim hover:bg-accent hover:text-foreground [&_svg]:size-3.5"
-            aria-label="Cancel recording"
-            title="Cancel recording (Esc)"
-            onClick={cancelVoiceInput}
-          >
-            <XIcon aria-hidden="true" />
-          </button>
+          <ComposerTooltip message="Cancel recording (Esc)">
+            <button
+              type="button"
+              className="flex size-[27px] flex-none items-center justify-center rounded-full border-0 bg-transparent text-dim hover:bg-accent hover:text-foreground [&_svg]:size-3.5"
+              aria-label="Cancel recording"
+              onClick={cancelVoiceInput}
+            >
+              <XIcon aria-hidden="true" />
+            </button>
+          </ComposerTooltip>
         ) : chat.kind === "wisp" ? (
-          <button
-            type="button"
-            className="flex size-[27px] flex-none items-center justify-center rounded-full border-0 bg-transparent text-dim enabled:hover:bg-accent enabled:hover:text-foreground disabled:opacity-[0.35] [&_svg]:size-3.5"
-            aria-label="Attach files"
-            disabled={attaching}
-            onClick={() => void attachFiles()}
-          >
-            <PaperclipIcon aria-hidden="true" />
-          </button>
+          <ComposerTooltip message={attaching ? "Copying files to the workspace…" : "Attach files"}>
+            <button
+              type="button"
+              className="flex size-[27px] flex-none items-center justify-center rounded-full border-0 bg-transparent text-dim enabled:hover:bg-accent enabled:hover:text-foreground disabled:opacity-[0.35] [&_svg]:size-3.5"
+              aria-label="Attach files"
+              disabled={attaching}
+              onClick={() => void attachFiles()}
+            >
+              <PaperclipIcon aria-hidden="true" />
+            </button>
+          </ComposerTooltip>
         ) : null}
         {recording ? <RecordingMeter levels={voiceInput.levels} elapsed={voiceInput.elapsed} /> : null}
         <textarea
@@ -285,48 +314,70 @@ export function ChatComposer({
           onChange={(event) => setDraft(event.currentTarget.value)}
           onKeyDown={handleKeyDown}
         />
-        <button
-          type="button"
-          className={cn(
-            "flex size-[27px] flex-none items-center justify-center rounded-full border-0 [&_svg]:size-3.5 disabled:opacity-[0.35]",
-            recording
-              ? "bg-destructive text-white hover:opacity-[0.85] [&_svg]:size-3"
-              : "bg-secondary text-dim enabled:hover:bg-accent enabled:hover:text-foreground",
-          )}
-          aria-label={recording ? "Stop recording and transcribe" : transcribing ? "Transcribing" : "Start voice input"}
-          title={`${recording ? "Stop recording" : "Voice input"} (${shortcutLabel})`}
-          aria-keyshortcuts={voice.shortcut.replaceAll("Ctrl", "Control").replace(/Key([A-Z])$/, "$1")}
-          disabled={!voiceAvailable || transcribing || voiceInput.phase === "starting"}
-          onClick={toggleVoiceInput}
-        >
-          {recording ? (
-            <SquareIcon aria-hidden="true" fill="currentColor" />
-          ) : transcribing ? (
-            <LoaderCircleIcon aria-hidden="true" className="animate-spin" />
-          ) : (
-            <MicIcon aria-hidden="true" />
-          )}
-        </button>
-        {working ? (
+        <ComposerTooltip message={voiceHint}>
           <button
             type="button"
-            className="flex size-[27px] flex-none items-center justify-center rounded-full border-0 bg-primary text-primary-foreground hover:opacity-[0.85] [&_svg]:size-3"
-            aria-label="Stop response"
-            onClick={onAbort}
+            className={cn(
+              "flex size-[27px] flex-none items-center justify-center rounded-full border-0 [&_svg]:size-3.5 disabled:opacity-[0.35]",
+              recording
+                ? "bg-destructive text-white hover:opacity-[0.85] [&_svg]:size-3"
+                : "bg-secondary text-dim enabled:hover:bg-accent enabled:hover:text-foreground",
+            )}
+            aria-label={
+              recording ? "Stop recording and transcribe" : transcribing ? "Transcribing" : "Start voice input"
+            }
+            aria-keyshortcuts={voice.shortcut.replaceAll("Ctrl", "Control").replace(/Key([A-Z])$/, "$1")}
+            disabled={voiceDisabled}
+            onClick={toggleVoiceInput}
           >
-            <SquareIcon aria-hidden="true" fill="currentColor" />
+            {recording ? (
+              <SquareIcon aria-hidden="true" fill="currentColor" />
+            ) : transcribing ? (
+              <LoaderCircleIcon aria-hidden="true" className="animate-spin" />
+            ) : (
+              <MicIcon aria-hidden="true" />
+            )}
           </button>
+        </ComposerTooltip>
+        {working ? (
+          <ComposerTooltip message="Stop response">
+            <button
+              type="button"
+              className="flex size-[27px] flex-none items-center justify-center rounded-full border-0 bg-primary text-primary-foreground hover:opacity-[0.85] [&_svg]:size-3"
+              aria-label="Stop response"
+              onClick={onAbort}
+            >
+              <SquareIcon aria-hidden="true" fill="currentColor" />
+            </button>
+          </ComposerTooltip>
         ) : null}
-        <button
-          type="submit"
-          className="flex size-[27px] flex-none items-center justify-center rounded-full border-0 bg-primary text-primary-foreground enabled:hover:opacity-[0.85] disabled:opacity-[0.35] [&_svg]:size-3.5"
-          aria-label={working ? "Queue message" : "Send message"}
-          disabled={(!draft.trim() && !attachments.length) || !canSend || voiceBusy}
-        >
-          <ArrowUpIcon aria-hidden="true" />
-        </button>
+        <ComposerTooltip message={`${working ? "Queue message" : "Send message"}${enterToSend ? " (Enter)" : ""}`}>
+          <button
+            type="submit"
+            className="flex size-[27px] flex-none items-center justify-center rounded-full border-0 bg-primary text-primary-foreground enabled:hover:opacity-[0.85] disabled:opacity-[0.35] [&_svg]:size-3.5"
+            aria-label={working ? "Queue message" : "Send message"}
+            disabled={(!draft.trim() && !attachments.length) || !canSend || voiceBusy}
+          >
+            <ArrowUpIcon aria-hidden="true" />
+          </button>
+        </ComposerTooltip>
       </div>
     </form>
+  );
+}
+
+function ComposerTooltip({ message, children }: { message: string; children: ReactNode }) {
+  return (
+    <Tooltip>
+      <TooltipTrigger
+        render={<span />}
+        className="inline-flex flex-none [&>button:disabled]:pointer-events-none"
+        delay={300}
+      >
+        {children}
+      </TooltipTrigger>
+      <TooltipContent>{message}</TooltipContent>
+    </Tooltip>
   );
 }
 
@@ -382,6 +433,19 @@ function RecordingMeter({ levels, elapsed }: { levels: ReadonlyArray<number>; el
         ))}
       </span>
       <span className="flex-none text-xs tabular-nums text-dim">{formatElapsed(elapsed)}</span>
+    </div>
+  );
+}
+
+function ComposerError({ message, children }: { message: string; children?: ReactNode }) {
+  return (
+    <div
+      role="alert"
+      className="mb-2 mr-2.5 flex flex-wrap items-center gap-x-2 gap-y-1 rounded-md border border-destructive/30 bg-destructive/10 px-2.5 py-1.5 text-destructive"
+    >
+      <CircleAlertIcon aria-hidden="true" className="size-3.5 flex-none" />
+      <span className="min-w-0 flex-1">{message}</span>
+      {children}
     </div>
   );
 }

@@ -87,6 +87,9 @@ function sampleLevel(analyser: AnalyserNode, buffer: Uint8Array<ArrayBuffer>): n
  * Only one recording runs at a time; unmounting discards it.
  */
 export function useVoiceInput(options: VoiceInputOptions) {
+  const [microphoneStatus, setMicrophoneStatus] = useState<"checking" | "available" | "missing" | "unsupported">(
+    "checking",
+  );
   const [phase, setPhase] = useState<VoicePhase>("idle");
   const [elapsed, setElapsed] = useState(0);
   const [levels, setLevels] = useState<ReadonlyArray<number>>(NO_LEVELS);
@@ -97,6 +100,39 @@ export function useVoiceInput(options: VoiceInputOptions) {
   const phaseRef = useRef<VoicePhase>("idle");
   // Bumped on cancel and unmount so a transcription that is still running is ignored.
   const generation = useRef(0);
+
+  useEffect(() => {
+    const devices = navigator.mediaDevices;
+    if (!devices?.getUserMedia || typeof MediaRecorder === "undefined") {
+      setMicrophoneStatus("unsupported");
+      return;
+    }
+    // Older browsers may support recording without device enumeration.
+    if (!devices.enumerateDevices) {
+      setMicrophoneStatus("available");
+      return;
+    }
+    let active = true;
+    let request = 0;
+    async function refresh() {
+      const current = ++request;
+      try {
+        const list = await devices.enumerateDevices();
+        if (active && current === request) {
+          setMicrophoneStatus(list.some((device) => device.kind === "audioinput") ? "available" : "missing");
+        }
+      } catch {
+        // An enumeration failure does not prove that recording is unavailable.
+        if (active && current === request) setMicrophoneStatus("available");
+      }
+    }
+    void refresh();
+    devices.addEventListener("devicechange", refresh);
+    return () => {
+      active = false;
+      devices.removeEventListener("devicechange", refresh);
+    };
+  }, []);
 
   const changePhase = useCallback((next: VoicePhase) => {
     phaseRef.current = next;
@@ -137,7 +173,7 @@ export function useVoiceInput(options: VoiceInputOptions) {
   );
 
   const start = useCallback(async () => {
-    if (phaseRef.current !== "idle") return;
+    if (phaseRef.current !== "idle" || microphoneStatus !== "available") return;
     setError(null);
     if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined") {
       setError({ message: "Voice input is not supported on this device.", needsSetup: false });
@@ -150,6 +186,7 @@ export function useVoiceInput(options: VoiceInputOptions) {
       stream = await openMicrophone(latest.current.deviceId);
     } catch (cause) {
       if (attempt === generation.current) {
+        if (cause instanceof DOMException && cause.name === "NotFoundError") setMicrophoneStatus("missing");
         setError({ message: microphoneError(cause), needsSetup: false });
         changePhase("idle");
       }
@@ -215,7 +252,7 @@ export function useVoiceInput(options: VoiceInputOptions) {
     setLevels(NO_LEVELS);
     recorder.start();
     changePhase("recording");
-  }, [changePhase, release, transcribe]);
+  }, [changePhase, release, transcribe, microphoneStatus]);
 
   /** Ends the recording and transcribes it. */
   const stop = useCallback(() => {
@@ -254,5 +291,14 @@ export function useVoiceInput(options: VoiceInputOptions) {
     [release],
   );
 
-  return { phase, elapsed, levels, error, start, stop, cancel, toggle, clearError };
+  const unavailableReason =
+    microphoneStatus === "checking"
+      ? "Checking for a microphone…"
+      : microphoneStatus === "missing"
+        ? "No microphone was found. Connect a microphone to use voice input."
+        : microphoneStatus === "unsupported"
+          ? "Voice input is not supported on this device."
+          : null;
+
+  return { phase, elapsed, levels, error, unavailableReason, start, stop, cancel, toggle, clearError };
 }
