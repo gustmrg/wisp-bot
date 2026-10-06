@@ -160,7 +160,7 @@ function Sidebar({
         <nav
           className={cn(
             "conversation-list min-h-0 flex-1 overflow-x-hidden overflow-y-auto [&::-webkit-scrollbar]:w-0",
-            collapsed ? "px-2" : "pl-[17px] pr-[10px]",
+            collapsed ? "px-2" : "px-2.5",
           )}
           aria-label="Wisps and circles"
         >
