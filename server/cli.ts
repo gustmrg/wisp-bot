@@ -1,18 +1,28 @@
 #!/usr/bin/env node
 import path from "node:path";
 
-import { adminRequest } from "./admin.js";
+import { adminRequest, ServerNotRunningError } from "./admin.js";
+import { readAppVersion } from "./app-version.js";
+import { createBackup, restoreBackup, verifyBackup } from "./backup.js";
 import { defaultDataDirectory } from "./config.js";
-import { MasterKeyEncryption } from "./master-key.js";
+import { InstanceLock } from "./instance-lock.js";
+import { MasterKeyEncryption, readPrivateKeyFile } from "./master-key.js";
 
 const HELP = `Usage: wispctl <command> [options]
 
 Commands:
-  keygen --output FILE     Write a new private master key (never overwrites)
+  keygen --output FILE     Write a new private 32-byte key (never overwrites)
   pair                     Print a one-time pairing code for a new device
   devices                  List paired devices
   revoke --device-id ID    Remove a device and end its sessions
   status                   Show the running server's identity
+  backup --output FILE --key-file KEY
+                           Write an encrypted backup of the data directory. A running
+                           server writes it itself; otherwise the directory must be idle.
+  restore --input FILE --key-file KEY --target DIR
+                           Restore a backup into a new, empty directory
+  verify --input FILE --key-file KEY
+                           Check that a backup is complete and readable with KEY
 
 Options:
   --data-dir DIR           Server data directory (default: $WISP_DATA_DIR or ~/.local/share/wisp)
@@ -24,7 +34,9 @@ export async function runCli(args: readonly string[], write: (text: string) => v
   const flags = new Map<string, string | true>();
   for (let index = 0; index < rest.length; index++) {
     const flag = rest[index]!;
-    if (!["--output", "--device-id", "--data-dir", "--json"].includes(flag)) throw new Error(`Unknown option ${flag}.`);
+    if (!["--output", "--device-id", "--data-dir", "--json", "--key-file", "--input", "--target"].includes(flag)) {
+      throw new Error(`Unknown option ${flag}.`);
+    }
     if (flag === "--json") {
       flags.set(flag, true);
       continue;
@@ -57,10 +69,54 @@ export async function runCli(args: readonly string[], write: (text: string) => v
     case "revoke":
       result = await adminRequest(dataDirectory, { command, deviceId: option("--device-id") });
       break;
+    case "backup": {
+      const output = path.resolve(option("--output"));
+      const keyFile = path.resolve(option("--key-file"));
+      try {
+        result = await adminRequest(dataDirectory, { command, output, keyFile });
+      } catch (error) {
+        if (!(error instanceof ServerNotRunningError)) throw error;
+        result = await backUpIdleDirectory(dataDirectory, output, readPrivateKeyFile(keyFile));
+      }
+      break;
+    }
+    case "restore":
+      result = await restoreBackup({
+        input: path.resolve(option("--input")),
+        key: readPrivateKeyFile(path.resolve(option("--key-file"))),
+        target: path.resolve(option("--target")),
+      });
+      break;
+    case "verify":
+      result = await verifyBackup({
+        input: path.resolve(option("--input")),
+        key: readPrivateKeyFile(path.resolve(option("--key-file"))),
+      });
+      break;
     default:
       throw new Error(`Unknown command ${command}. Run wispctl help.`);
   }
   write(`${JSON.stringify(result, null, flags.has("--json") ? undefined : 2)}\n`);
+}
+
+/** Backs up a directory no server is using, holding its lock so none starts meanwhile. */
+async function backUpIdleDirectory(dataDirectory: string, output: string, key: Buffer): Promise<unknown> {
+  let lock: InstanceLock;
+  try {
+    lock = InstanceLock.acquire(dataDirectory);
+  } catch (error) {
+    if (error instanceof Error && /already using/.test(error.message)) {
+      throw new Error(
+        `Wisp is using ${dataDirectory} without an admin socket, as the desktop app does. Quit it, then back up again.`,
+      );
+    }
+    throw error;
+  }
+  try {
+    return await createBackup({ dataDirectory, output, key, appVersion: readAppVersion() });
+  } finally {
+    lock.release();
+  }
 }
 
 if (require.main === module) {

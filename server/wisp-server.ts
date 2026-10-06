@@ -9,6 +9,8 @@ import { registerRuntimeHandlers } from "../backend/handlers/register-runtime-ha
 import { createBackendRuntime, disposeWithin, type BackendRuntime } from "../backend/runtime.js";
 import type { StructuredLogger } from "../backend/structured-logger.js";
 import { startAdminSocket } from "./admin.js";
+import { createBackup } from "./backup.js";
+import { readPrivateKeyFile } from "./master-key.js";
 import { DeviceAuth } from "./device-auth.js";
 import { boundedString, HttpError } from "./errors.js";
 import { EventHub } from "./event-hub.js";
@@ -141,7 +143,9 @@ export async function createWispServer(options: WispServerOptions): Promise<Wisp
 
     const allowedHostNames = new Set(["127.0.0.1", "localhost", "[::1]"]);
     if (publicOrigin) allowedHostNames.add(publicOrigin.hostname);
+    let backingUp = false;
     api = createHttpApi({
+      isPaused: () => backingUp,
       auth,
       hub,
       operations,
@@ -160,7 +164,7 @@ export async function createWispServer(options: WispServerOptions): Promise<Wisp
     if (!address || typeof address === "string") throw new Error("The HTTP listener is unavailable.");
 
     if (options.adminSocket ?? true) {
-      const admin = await startAdminSocket(options.dataDirectory, (command) => {
+      const admin = await startAdminSocket(options.dataDirectory, async (command) => {
         switch (command.command) {
           case "pair":
             return auth.createPairingCode();
@@ -171,6 +175,47 @@ export async function createWispServer(options: WispServerOptions): Promise<Wisp
               throw new HttpError(404, "not_found", "No paired device has that ID.");
             }
             return {};
+          }
+          case "backup": {
+            const output = boundedString(command.output, 4096);
+            if (!path.isAbsolute(output))
+              throw new HttpError(400, "invalid_request", "Give the backup file as an absolute path.");
+            if (backingUp) throw new HttpError(409, "invalid_request", "A backup is already being written.");
+            const working = Object.values(runtime.registry.statuses()).filter((status) => status === "working").length;
+            if (working > 0) {
+              throw new HttpError(
+                409,
+                "invalid_request",
+                `${working} Wisp${working === 1 ? " is" : "s are"} working. Back up when they finish.`,
+              );
+            }
+            let key: Buffer;
+            try {
+              key = readPrivateKeyFile(boundedString(command.keyFile, 4096));
+            } catch (error) {
+              throw new HttpError(
+                400,
+                "invalid_request",
+                error instanceof Error ? error.message : "The key is invalid.",
+              );
+            }
+            backingUp = true;
+            try {
+              return await createBackup({
+                dataDirectory: options.dataDirectory,
+                output,
+                key,
+                appVersion: options.appVersion,
+              });
+            } catch (error) {
+              throw new HttpError(
+                400,
+                "invalid_request",
+                error instanceof Error ? error.message : "The backup failed.",
+              );
+            } finally {
+              backingUp = false;
+            }
           }
           case "status":
             return {

@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { copyFile, readFile } from "node:fs/promises";
+import { copyFile, readFile, rename } from "node:fs/promises";
 import path from "node:path";
 
 import { writeFileAtomically } from "../../backend/atomic-file.js";
@@ -21,14 +21,25 @@ export async function loadOrCreateLocalMasterKey(
 ): Promise<Buffer | undefined> {
   if (!keychain.isAvailable()) return undefined;
   const file = path.join(directory, KEY_FILE);
+  let text: string | undefined;
   try {
-    const stored = JSON.parse(await readFile(file, "utf8")) as { version?: number; key?: string };
-    if (stored.version === 1 && typeof stored.key === "string") {
-      const key = Buffer.from(keychain.decrypt(Buffer.from(stored.key, "base64")), "base64");
-      if (key.length === 32) return key;
-    }
+    text = await readFile(file, "utf8");
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+  }
+  if (text !== undefined) {
+    try {
+      const stored = JSON.parse(text) as { version?: number; key?: string };
+      if (stored.version === 1 && typeof stored.key === "string") {
+        const key = Buffer.from(keychain.decrypt(Buffer.from(stored.key, "base64")), "base64");
+        if (key.length === 32) return key;
+      }
+    } catch {
+      // Sealed by another keychain, e.g. data restored on another computer.
+    }
+    // Keep the unreadable key: the same keychain could still open it later.
+    // Credentials saved under it must be entered again.
+    await rename(file, `${file}.unreadable-${Date.now()}`);
   }
   const key = randomBytes(32);
   const sealed = keychain.encrypt(key.toString("base64")).toString("base64");

@@ -55,6 +55,11 @@ export async function startAdminSocket(dataDirectory: string, handle: AdminHandl
   return server;
 }
 
+/** No server answers on the data directory's admin socket. */
+export class ServerNotRunningError extends Error {
+  override name = "ServerNotRunningError";
+}
+
 /** Sends one command to a running server's admin socket and resolves with its value. */
 export function adminRequest(dataDirectory: string, command: AdminCommand): Promise<unknown> {
   return new Promise((resolve, reject) => {
@@ -64,7 +69,8 @@ export function adminRequest(dataDirectory: string, command: AdminCommand): Prom
         path: "/admin",
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        timeout: 30_000,
+        // A backup of large workspaces can take a while.
+        timeout: 60 * 60_000,
       },
       (response) => {
         let text = "";
@@ -85,8 +91,9 @@ export function adminRequest(dataDirectory: string, command: AdminCommand): Prom
     );
     request.on("error", (error: NodeJS.ErrnoException) =>
       reject(
-        error.code === "ENOENT" || error.code === "ECONNREFUSED"
-          ? new Error(`No Wisp server is running for ${dataDirectory}. Start it, or set WISP_DATA_DIR.`)
+        // A socket left by a stopped server can also accept and drop the connection.
+        ["ENOENT", "ECONNREFUSED", "EPIPE", "ECONNRESET"].includes(error.code ?? "")
+          ? new ServerNotRunningError(`No Wisp server is running for ${dataDirectory}. Start it, or set WISP_DATA_DIR.`)
           : error,
       ),
     );

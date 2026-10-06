@@ -1,25 +1,12 @@
-import { readFileSync } from "node:fs";
 import path from "node:path";
 import { createInterface } from "node:readline";
 
 import { FileLogSink } from "../backend/file-log-sink.js";
 import { CompositeLogSink, StructuredLogger } from "../backend/structured-logger.js";
+import { readAppVersion } from "./app-version.js";
 import { parseServerConfig } from "./config.js";
 import { MasterKeyEncryption } from "./master-key.js";
 import { createWispServer } from "./wisp-server.js";
-
-/** The version of the package this file was built from, found next to the build output. */
-export function readAppVersion(directory = __dirname): string {
-  for (const candidate of ["../package.json", "../../package.json"]) {
-    try {
-      const { version } = JSON.parse(readFileSync(path.join(directory, candidate), "utf8")) as { version?: unknown };
-      if (typeof version === "string") return version;
-    } catch {
-      // Try the next location.
-    }
-  }
-  return "0.0.0";
-}
 
 /** What the desktop app hands a server it starts, as one JSON line on stdin. */
 export interface ServerBootstrap {
