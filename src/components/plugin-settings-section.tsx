@@ -52,7 +52,7 @@ function PluginTags({ pluginId }: { pluginId: PluginId }) {
   return (
     <span className="mt-1.5 flex flex-wrap gap-1">
       {pluginTags(pluginId).map((tag) => (
-        <span key={tag} className="rounded-full bg-muted px-1.5 py-px text-[10px] leading-4 text-dim">
+        <span key={tag} className="rounded-full bg-muted px-1.5 py-px text-2xs leading-4 text-dim">
           {tag}
         </span>
       ))}
@@ -123,22 +123,22 @@ export function PluginSettingsSection({
       id="plugin-settings-panel"
       aria-labelledby="plugin-settings-title"
     >
-      <h2 id="plugin-settings-title" className="mb-1 mt-0 text-[17px]">
+      <h2 id="plugin-settings-title" className="mb-1 mt-0 text-lg font-semibold">
         Plugins
       </h2>
-      <p className="mb-4 text-[11.5px] leading-relaxed text-dim">
+      <p className="mb-4 text-xs leading-relaxed text-dim">
         Connect services on this device, then choose which Wisps can use them. Connecting a plugin does not give any
         Wisp access automatically.
       </p>
       {view ? (
         <div className="animate-tab-forward">
           {!view.secureStorageAvailable ? (
-            <p role="alert" className="mb-3 text-[11.5px] text-destructive">
+            <p role="alert" className="mb-3 text-xs text-destructive">
               Secure credential storage is unavailable. New API keys cannot be saved on this device.
             </p>
           ) : null}
           {view.credentialError ? (
-            <p role="alert" className="mb-3 text-[11.5px] text-destructive">
+            <p role="alert" className="mb-3 text-xs text-destructive">
               {view.credentialError}
             </p>
           ) : null}
@@ -176,13 +176,13 @@ export function PluginSettingsSection({
           ) : (
             <>
               {listError ? (
-                <p role="alert" className="mb-3 text-[11.5px] text-destructive">
+                <p role="alert" className="mb-3 text-xs text-destructive">
                   {listError}
                 </p>
               ) : null}
               {view.plugins.some(connected) ? (
                 <section aria-label="Connected" className="mb-6">
-                  <h3 className="mb-3 mt-2 border-b border-border pb-3 text-[15px] font-medium">Connected</h3>
+                  <h3 className="mb-3 mt-2 border-b border-border pb-3 text-md font-medium">Connected</h3>
                   <div className="grid grid-cols-1 gap-x-7 gap-y-1 @min-[560px]:grid-cols-2">
                     {view.plugins.filter(connected).map((plugin) => (
                       <ConnectedPluginCard
@@ -200,7 +200,7 @@ export function PluginSettingsSection({
               <DefaultProviders view={view} onSaved={setView} />
               {view.plugins.some((plugin) => !connected(plugin)) ? (
                 <section aria-label="Available" className="mb-6">
-                  <h3 className="mb-3 mt-7 border-b border-border pb-3 text-[15px] font-medium">Available</h3>
+                  <h3 className="mb-3 mt-7 border-b border-border pb-3 text-md font-medium">Available</h3>
                   <div className="grid grid-cols-1 gap-x-7 gap-y-1 @min-[560px]:grid-cols-2">
                     {view.plugins
                       .filter((plugin) => !connected(plugin))
@@ -214,10 +214,8 @@ export function PluginSettingsSection({
                         >
                           <PluginLogo pluginId={plugin.id} />
                           <span className="min-w-0 flex-1">
-                            <span className="block text-[14px] font-medium">{plugin.name}</span>
-                            <span className="mt-1 block text-[12px] leading-relaxed text-dim">
-                              {plugin.description}
-                            </span>
+                            <span className="block text-base font-medium">{plugin.name}</span>
+                            <span className="mt-1 block text-sm leading-relaxed text-dim">{plugin.description}</span>
                             <PluginTags pluginId={plugin.id} />
                           </span>
                           <Plus className="size-5 shrink-0 text-dim group-hover:text-foreground" aria-hidden="true" />
@@ -227,7 +225,7 @@ export function PluginSettingsSection({
                 </section>
               ) : null}
               {onOpenMcpSettings ? (
-                <p className="text-[11.5px] text-dim">
+                <p className="text-xs text-dim">
                   Need a service that is not listed?{" "}
                   <Button variant="link" size="xs" type="button" className="h-auto p-0" onClick={onOpenMcpSettings}>
                     Add an MCP server
@@ -239,7 +237,7 @@ export function PluginSettingsSection({
         </div>
       ) : error ? (
         <div className="flex flex-col items-start gap-3">
-          <p role="alert" className="text-[11.5px] text-destructive">
+          <p role="alert" className="text-xs text-destructive">
             {error}
           </p>
           <Button type="button" onClick={() => setAttempt((current) => current + 1)}>
@@ -247,7 +245,7 @@ export function PluginSettingsSection({
           </Button>
         </div>
       ) : (
-        <p role="status" className="text-xs text-dim">
+        <p role="status" className="text-sm text-dim">
           Loading plugins…
         </p>
       )}
@@ -278,8 +276,8 @@ function ConnectedPluginCard({
       >
         <PluginLogo pluginId={plugin.id} />
         <span className="min-w-0 flex-1">
-          <span className="block text-[14px] font-medium">{plugin.name}</span>
-          <span className="mt-1 flex items-center gap-1.5 text-[11px] text-dim">
+          <span className="block text-base font-medium">{plugin.name}</span>
+          <span className="mt-1 flex items-center gap-1.5 text-xs text-dim">
             <StatusDot tone={plugin.enabled ? "success" : "muted"} />
             {plugin.enabled ? "Enabled" : "Disabled"}
             {wispCount !== undefined ? ` · ${wispCount === 1 ? "1 Wisp" : `${wispCount} Wisps`} with access` : ""}
@@ -367,7 +365,7 @@ function DefaultProviders({
         ))}
       </SettingsCard>
       {error ? (
-        <p role="alert" className="mt-2 text-[11.5px] text-destructive">
+        <p role="alert" className="mt-2 text-xs text-destructive">
           {error}
         </p>
       ) : null}
@@ -383,9 +381,9 @@ function PluginHeader({ plugin, busy, onBack }: { plugin: PluginSummary; busy: b
           <ChevronLeftIcon aria-hidden="true" />
         </Button>
         <PluginLogo pluginId={plugin.id} />
-        <h3 className="m-0 text-[15px] font-medium">{plugin.name}</h3>
+        <h3 className="m-0 text-md font-medium">{plugin.name}</h3>
       </div>
-      <p className="mb-1 mt-0 text-[11.5px] text-dim">{plugin.description}</p>
+      <p className="mb-1 mt-0 text-xs text-dim">{plugin.description}</p>
     </>
   );
 }
@@ -450,7 +448,7 @@ function PluginConnectForm({
     <section aria-label={plugin.name} className="flex flex-col gap-2">
       <PluginHeader plugin={plugin} busy={busy} onBack={onBack} />
       <form
-        className="flex flex-col gap-3 text-[11.5px]"
+        className="flex flex-col gap-3 text-xs"
         onSubmit={(event) => {
           event.preventDefault();
           if (key && secureStorageAvailable && !busy) void connect();
@@ -571,7 +569,7 @@ function PluginManageView({
   return (
     <section aria-label={plugin.name} className="flex flex-col gap-2">
       <PluginHeader plugin={plugin} busy={busy} onBack={onBack} />
-      <div className="flex flex-col gap-3 text-[11.5px]">
+      <div className="flex flex-col gap-3 text-xs">
         <p className="flex items-center gap-1.5">
           <StatusDot tone={status.tone} />
           {status.label}
@@ -626,7 +624,7 @@ function PluginManageView({
                 />
               </label>
               {key && plugin.configured ? (
-                <p className="text-amber-600 dark:text-amber-400">
+                <p className="text-warning">
                   Replacing the key removes {plugin.name} from every Wisp, because the new key may belong to a different
                   account.
                 </p>

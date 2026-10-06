@@ -13,10 +13,10 @@ export function ConnectionSettingsSection() {
       id="connection-settings-panel"
       aria-labelledby="connection-settings-title"
     >
-      <h2 id="connection-settings-title" className="mb-1 mt-0 text-[17px]">
+      <h2 id="connection-settings-title" className="mb-1 mt-0 text-lg font-semibold">
         Connections
       </h2>
-      <p className="mb-4 text-[11.5px] leading-relaxed text-dim" hidden={view?.canManage === false}>
+      <p className="mb-4 text-xs leading-relaxed text-dim" hidden={view?.canManage === false}>
         Choose where your Wisps run. On a Wisp server they keep working while this app is closed, and every paired
         device sees the same conversations. Settings, credentials, and approvals belong to the server you use.
       </p>
@@ -25,11 +25,11 @@ export function ConnectionSettingsSection() {
       ) : view ? (
         <ConnectionsPanel view={view} />
       ) : error ? (
-        <p role="alert" className="text-[11.5px] text-destructive">
+        <p role="alert" className="text-xs text-destructive">
           {error}
         </p>
       ) : (
-        <p role="status" className="text-xs text-dim">
+        <p role="status" className="text-sm text-dim">
           Loading connections…
         </p>
       )}
@@ -56,7 +56,7 @@ function ServerSession({ view }: { view: ConnectionsView }) {
   }
   return (
     <div className="animate-tab-forward">
-      <p className="mb-4 text-[11.5px] leading-relaxed text-dim">
+      <p className="mb-4 text-xs leading-relaxed text-dim">
         This browser uses the Wisps on {server?.name ?? "this server"}. Settings, credentials, and approvals belong to
         the server.
       </p>
@@ -69,7 +69,7 @@ function ServerSession({ view }: { view: ConnectionsView }) {
         onConfirm={() => void signOut()}
       />
       {error ? (
-        <p role="alert" className="mt-3 text-[11.5px] text-destructive">
+        <p role="alert" className="mt-3 text-xs text-destructive">
           {error}
         </p>
       ) : null}

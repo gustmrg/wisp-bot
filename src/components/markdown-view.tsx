@@ -17,10 +17,7 @@ const markdownComponents: Components = {
     />
   ),
   code: ({ node: _node, ...props }) => (
-    <code
-      className="rounded-[4px] bg-black/[0.05] px-[5px] py-px font-mono text-[12px] dark:bg-white/[0.08]"
-      {...props}
-    />
+    <code className="rounded-[4px] bg-black/[0.05] px-[5px] py-px font-mono text-sm dark:bg-white/[0.08]" {...props} />
   ),
   pre: ({ node: _node, ...props }) => (
     <pre
@@ -32,22 +29,22 @@ const markdownComponents: Components = {
     />
   ),
   h1: ({ node: _node, ...props }) => (
-    <h1 className="mb-1 mt-2.5 text-[14.5px] font-semibold first:mt-0 last:mb-0" {...props} />
+    <h1 className="mb-1 mt-2.5 text-md font-semibold first:mt-0 last:mb-0" {...props} />
   ),
   h2: ({ node: _node, ...props }) => (
-    <h2 className="mb-1 mt-2.5 text-[13.5px] font-semibold first:mt-0 last:mb-0" {...props} />
+    <h2 className="mb-1 mt-2.5 text-base font-semibold first:mt-0 last:mb-0" {...props} />
   ),
   h3: ({ node: _node, ...props }) => (
-    <h3 className="mb-1 mt-2 text-[13px] font-semibold first:mt-0 last:mb-0" {...props} />
+    <h3 className="mb-1 mt-2 text-base font-semibold first:mt-0 last:mb-0" {...props} />
   ),
   h4: ({ node: _node, ...props }) => (
-    <h4 className="mb-1 mt-2 text-[13px] font-semibold first:mt-0 last:mb-0" {...props} />
+    <h4 className="mb-1 mt-2 text-base font-semibold first:mt-0 last:mb-0" {...props} />
   ),
   h5: ({ node: _node, ...props }) => (
-    <h5 className="mb-1 mt-2 text-[13px] font-semibold first:mt-0 last:mb-0" {...props} />
+    <h5 className="mb-1 mt-2 text-base font-semibold first:mt-0 last:mb-0" {...props} />
   ),
   h6: ({ node: _node, ...props }) => (
-    <h6 className="mb-1 mt-2 text-[13px] font-semibold first:mt-0 last:mb-0" {...props} />
+    <h6 className="mb-1 mt-2 text-base font-semibold first:mt-0 last:mb-0" {...props} />
   ),
   img: ({ node: _node, ...props }) => <img className="max-w-full rounded-lg" {...props} />,
   ol: ({ node: _node, ...props }) => (
@@ -59,7 +56,7 @@ const markdownComponents: Components = {
   li: ({ node: _node, ...props }) => <li className="pl-1 [&>p]:my-0 [&>p:first-child]:inline" {...props} />,
   p: ({ node: _node, ...props }) => <p className="my-1.5 first:mt-0 last:mb-0" {...props} />,
   hr: ({ node: _node, ...props }) => <hr className="my-2.5 border-black/[0.08] dark:border-white/[0.08]" {...props} />,
-  strong: ({ node: _node, ...props }) => <strong className="font-[650]" {...props} />,
+  strong: ({ node: _node, ...props }) => <strong className="font-semibold" {...props} />,
   table: ({ node: _node, ...props }) => (
     <div className="my-2 overflow-x-auto first:mt-0 last:mb-0">
       <table className="w-full border-collapse text-left" {...props} />

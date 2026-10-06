@@ -124,7 +124,7 @@ function DetailsPanel({
         />
       ) : null}
       <header className="details-header grid h-11 flex-none grid-cols-[28px_1fr_28px] items-center border-b border-black/[0.04] px-[9px] dark:border-white/[0.04]">
-        <h2 ref={titleRef} tabIndex={-1} className="col-start-2 text-center text-[12.5px] font-semibold outline-none">
+        <h2 ref={titleRef} tabIndex={-1} className="col-start-2 text-center text-sm font-semibold outline-none">
           {mobile ? "Wisp settings" : "Settings"}
         </h2>
         <Button

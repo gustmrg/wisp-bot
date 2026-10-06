@@ -41,7 +41,7 @@ function OnboardingShell({ children, wide = false }: { children: ReactNode; wide
 
 function StepCount({ index, total }: { index: number; total: number }) {
   return total > 1 ? (
-    <p className="m-0 text-[11px] font-medium uppercase tracking-wide text-dim">
+    <p className="m-0 text-2xs font-medium uppercase tracking-wide text-dim">
       Step {index + 1} of {total}
     </p>
   ) : null;
@@ -62,7 +62,7 @@ function ProfileStep({ controller, onNext }: { controller: UserProfileController
 
   return (
     <form className="flex flex-col gap-4" onSubmit={(event) => void handleSubmit(event)}>
-      <label className="flex flex-col gap-2 text-sm font-medium" htmlFor="onboarding-name">
+      <label className="flex flex-col gap-2 text-base font-medium" htmlFor="onboarding-name">
         What should Wisps call you?
         <Input
           id="onboarding-name"
@@ -75,11 +75,11 @@ function ProfileStep({ controller, onNext }: { controller: UserProfileController
           onChange={(event) => setName(event.target.value)}
         />
       </label>
-      <p className="m-0 text-[11.5px] leading-relaxed text-dim">
+      <p className="m-0 text-xs leading-relaxed text-dim">
         Saved on this device and shared with your Wisps. You can add more about yourself later in Settings.
       </p>
       {controller.error ? (
-        <p role="alert" className="m-0 text-[11.5px] text-destructive">
+        <p role="alert" className="m-0 text-xs text-destructive">
           {controller.error}
         </p>
       ) : null}
@@ -105,7 +105,7 @@ function ServerChoice() {
         <ConnectionsPanel view={view} />
       ) : (
         <div className="flex items-center justify-between gap-3">
-          <p className="m-0 flex items-center gap-2 text-[12px] text-dim">
+          <p className="m-0 flex items-center gap-2 text-sm text-dim">
             {server ? (
               <ServerIcon aria-hidden="true" className="size-4" />
             ) : (
@@ -146,7 +146,7 @@ function Onboarding({
         <header className="flex flex-col gap-1 px-[30px] pt-6 max-[620px]:px-4 max-[620px]:pt-5">
           <StepCount index={index} total={steps.length} />
           <h1 className="m-0 text-lg font-semibold">Choose an AI model</h1>
-          <p className="m-0 text-sm leading-6 text-dim">
+          <p className="m-0 text-base leading-relaxed text-dim">
             Wisps need a default model and an API key for its provider before they can respond.
           </p>
         </header>
@@ -154,7 +154,7 @@ function Onboarding({
           <ModelSettingsSection active showHeading={false} onViewChange={setModelView} />
         </div>
         <footer className="flex items-center justify-between gap-3 border-t border-border px-[30px] py-4 max-[620px]:px-4">
-          <p className="m-0 text-[11.5px] text-dim" aria-live="polite">
+          <p className="m-0 text-xs text-dim" aria-live="polite">
             {modelReady ? "Model and API key saved." : "Save a model and API key to continue."}
           </p>
           <Button type="button" disabled={!modelReady} onClick={next}>
@@ -172,7 +172,7 @@ function Onboarding({
           <header className="flex flex-col gap-1">
             <StepCount index={index} total={steps.length} />
             <h1 className="m-0 text-lg font-semibold">Welcome to Wisp</h1>
-            <p className="m-0 text-sm leading-6 text-dim">Let’s set up the basics before your first Wisp.</p>
+            <p className="m-0 text-base leading-relaxed text-dim">Let’s set up the basics before your first Wisp.</p>
           </header>
           <ProfileStep controller={userProfile} onNext={next} />
         </div>
@@ -191,7 +191,7 @@ function Onboarding({
         <header className="flex flex-col gap-1">
           <StepCount index={index} total={steps.length} />
           <h1 className="m-0 text-lg font-semibold">{name ? `You’re all set, ${name}` : "You’re all set"}</h1>
-          <p className="m-0 text-sm leading-6 text-dim">
+          <p className="m-0 text-base leading-relaxed text-dim">
             Create your first Wisp to start a conversation. You can change these choices anytime in Settings.
           </p>
         </header>
@@ -209,7 +209,7 @@ function SetupStatus({ message, onRetry }: { message?: string; onRetry?: () => v
   return (
     <OnboardingShell>
       <div className="flex flex-col gap-4 p-6" role={message ? "alert" : "status"}>
-        <p className={message ? "m-0 text-sm text-destructive" : "m-0 text-sm text-dim"}>
+        <p className={message ? "m-0 text-base text-destructive" : "m-0 text-base text-dim"}>
           {message ?? "Loading Wisp…"}
         </p>
         {onRetry ? (

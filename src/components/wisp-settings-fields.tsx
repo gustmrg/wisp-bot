@@ -56,8 +56,8 @@ function WispBehaviorFields({ settings, onChange }: WispSettingsFieldsProps) {
       <SettingsCard className="mt-[15px]">
         <SettingsRow className="min-h-0 p-[11px]">
           <SettingsRowCopy>
-            <strong className="text-[12.5px]">Notifications</strong>
-            <small className="text-dim text-[11px] leading-[1.3]">
+            <strong className="text-sm">Notifications</strong>
+            <small className="text-dim text-xs leading-[1.3]">
               Get notified when this Wisp finishes or needs input
             </small>
           </SettingsRowCopy>

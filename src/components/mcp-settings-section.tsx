@@ -108,22 +108,22 @@ export function McpSettingsSection() {
       id="mcp-settings-panel"
       aria-labelledby="mcp-settings-title"
     >
-      <h2 id="mcp-settings-title" className="mb-1 mt-0 text-[17px]">
+      <h2 id="mcp-settings-title" className="mb-1 mt-0 text-lg font-semibold">
         MCP servers
       </h2>
-      <p className="mb-4 text-[11.5px] leading-relaxed text-dim">
+      <p className="mb-4 text-xs leading-relaxed text-dim">
         Connect remote MCP servers over HTTPS, then choose access in each Wisp's Access tab. Adding a server never gives
         any Wisp access automatically, and every tool call requires approval.
       </p>
       {view ? (
         <div className="animate-tab-forward">
           {!view.secureStorageAvailable ? (
-            <p role="alert" className="mb-3 text-[11.5px] text-destructive">
+            <p role="alert" className="mb-3 text-xs text-destructive">
               Secure credential storage is unavailable. New connections cannot be saved on this device.
             </p>
           ) : null}
           {view.credentialError ? (
-            <p role="alert" className="mb-3 text-[11.5px] text-destructive">
+            <p role="alert" className="mb-3 text-xs text-destructive">
               {view.credentialError}
             </p>
           ) : null}
@@ -138,7 +138,7 @@ export function McpSettingsSection() {
           ) : (
             <>
               {view.servers.length === 0 ? (
-                <p className="text-[11.5px] text-dim">No MCP servers connected yet.</p>
+                <p className="text-xs text-dim">No MCP servers connected yet.</p>
               ) : (
                 <div className="grid grid-cols-1 gap-x-7 gap-y-1 @min-[560px]:grid-cols-2">
                   {view.servers.map((server) => (
@@ -152,7 +152,7 @@ export function McpSettingsSection() {
         </div>
       ) : error ? (
         <div className="flex flex-col items-start gap-3">
-          <p role="alert" className="text-[11.5px] text-destructive">
+          <p role="alert" className="text-xs text-destructive">
             {error}
           </p>
           <Button type="button" onClick={() => setAttempt((current) => current + 1)}>
@@ -160,7 +160,7 @@ export function McpSettingsSection() {
           </Button>
         </div>
       ) : (
-        <p role="status" className="text-xs text-dim">
+        <p role="status" className="text-sm text-dim">
           Loading MCP connections…
         </p>
       )}
@@ -181,9 +181,9 @@ function McpServerCard({ server, onSelect }: { server?: McpServerSummary; onSele
       </span>
       {server ? (
         <span className="min-w-0 flex-1">
-          <span className="block text-[14px] font-medium">{server.name}</span>
-          <span className="mt-1 block truncate text-[12px] text-dim">{safeHost(server.endpoint)}</span>
-          <span className="mt-1.5 flex items-center gap-1.5 text-[10.5px] text-dim">
+          <span className="block text-base font-medium">{server.name}</span>
+          <span className="mt-1 block truncate text-sm text-dim">{safeHost(server.endpoint)}</span>
+          <span className="mt-1.5 flex items-center gap-1.5 text-2xs text-dim">
             <StatusDot tone={stateTone(server)} />
             {STATE_LABELS[server.state]} · {server.tools.length} tool{server.tools.length === 1 ? "" : "s"}
             {server.enabled ? "" : " · disabled"}
@@ -191,8 +191,8 @@ function McpServerCard({ server, onSelect }: { server?: McpServerSummary; onSele
         </span>
       ) : (
         <span className="min-w-0 flex-1">
-          <span className="block text-[14px] font-medium">Add MCP server</span>
-          <span className="mt-1 block text-[12px] text-dim">Connect a remote MCP server over HTTPS.</span>
+          <span className="block text-base font-medium">Add MCP server</span>
+          <span className="mt-1 block text-sm text-dim">Connect a remote MCP server over HTTPS.</span>
         </span>
       )}
       {server ? (
@@ -360,12 +360,12 @@ function McpServerForm({
         <span className="flex size-9 flex-none items-center justify-center rounded-lg bg-muted">
           <ServerIcon className="size-4 text-dim" aria-hidden="true" />
         </span>
-        <h3 className="m-0 text-[15px] font-medium">{server ? server.name : "Add MCP server"}</h3>
+        <h3 className="m-0 text-md font-medium">{server ? server.name : "Add MCP server"}</h3>
       </div>
-      <p className="mb-1 mt-0 text-[11.5px] text-dim">
+      <p className="mb-1 mt-0 text-xs text-dim">
         Remote servers only. Local stdio servers and command-based configuration are not supported.
       </p>
-      <div className="flex flex-col gap-3 text-[11.5px]">
+      <div className="flex flex-col gap-3 text-xs">
         {server ? (
           <p className="flex items-center gap-1.5">
             <StatusDot tone={stateTone(server)} />

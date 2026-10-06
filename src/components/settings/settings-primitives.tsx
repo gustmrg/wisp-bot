@@ -16,7 +16,7 @@ export function SettingsGroup({
   const headingId = useId();
   return (
     <section className={className} aria-labelledby={headingId}>
-      <h3 id={headingId} className="mx-0.5 mb-[7px] mt-[18px] text-[11px] font-normal text-dim">
+      <h3 id={headingId} className="mx-0.5 mb-[7px] mt-[18px] text-xs font-normal text-dim">
         {label}
       </h3>
       {children}
@@ -32,7 +32,7 @@ export function SettingsCard({
   return (
     <div
       className={cn(
-        "overflow-hidden rounded-[10px] bg-popover [&_small]:text-[11.5px] [&_small]:text-dim [&_strong]:text-[12.5px]",
+        "overflow-hidden rounded-[10px] bg-popover [&_small]:text-xs [&_small]:text-dim [&_strong]:text-sm",
         variant === "stacked" && "divide-y divide-border",
         className,
       )}
@@ -58,7 +58,7 @@ export function SettingsField({
   ...props
 }: Omit<ComponentPropsWithoutRef<"label">, "children"> & { label: ReactNode; children: ReactNode }) {
   return (
-    <label className={cn("mb-3 flex flex-col gap-[5px] text-[11px] text-dim", className)} {...props}>
+    <label className={cn("mb-3 flex flex-col gap-[5px] text-xs text-dim", className)} {...props}>
       <span>{label}</span>
       {children}
     </label>
@@ -70,7 +70,7 @@ export function SoonBadge({ className }: { className?: string }) {
   return (
     <span
       className={cn(
-        "inline-flex shrink-0 items-center rounded-full bg-muted px-1.5 py-px text-[10px] font-medium leading-4 text-dim",
+        "inline-flex shrink-0 items-center rounded-full bg-muted px-1.5 py-px text-2xs font-medium leading-4 text-dim",
         className,
       )}
     >
@@ -81,7 +81,7 @@ export function SoonBadge({ className }: { className?: string }) {
 
 const STATUS_TONES = {
   success: "bg-emerald-500",
-  warning: "bg-amber-500",
+  warning: "bg-warning-solid",
   danger: "bg-destructive",
   muted: "bg-muted-foreground/50",
 } as const;
@@ -133,7 +133,7 @@ export function ConfirmAction({
       aria-label={label}
       className="flex w-full flex-col gap-2.5 rounded-[10px] border border-destructive/30 bg-destructive/5 p-3"
     >
-      <p className="m-0 text-[11.5px] leading-relaxed">{description}</p>
+      <p className="m-0 text-xs leading-relaxed">{description}</p>
       <div className="flex flex-wrap gap-2">
         <Button
           variant="destructive"

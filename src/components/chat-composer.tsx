@@ -179,7 +179,7 @@ export function ChatComposer({
 
   return (
     <form className="chat-composer flex-none px-3 pb-3" onSubmit={handleSubmit}>
-      <div className="min-h-[22px] pl-2.5 text-[11px] text-dim" role="status">
+      <div className="min-h-[22px] pl-2.5 text-xs text-dim" role="status">
         {chat.kind === "circle" ? (
           "Circle conversations are not enabled yet"
         ) : needsConfiguration ? (
@@ -225,7 +225,7 @@ export function ChatComposer({
           {attachments.map((file) => (
             <li
               key={file.path}
-              className="flex max-w-[240px] items-center gap-1 rounded-md border border-border bg-muted py-0.5 pl-1.5 pr-0.5 text-[11px] [&_svg]:size-3"
+              className="flex max-w-[240px] items-center gap-1 rounded-md border border-border bg-muted py-0.5 pl-1.5 pr-0.5 text-xs [&_svg]:size-3"
             >
               <FileIcon aria-hidden="true" className="flex-none text-dim" />
               <span className="truncate" title={file.path}>
@@ -381,7 +381,7 @@ function RecordingMeter({ levels, elapsed }: { levels: ReadonlyArray<number>; el
           />
         ))}
       </span>
-      <span className="flex-none text-[11.5px] tabular-nums text-dim">{formatElapsed(elapsed)}</span>
+      <span className="flex-none text-xs tabular-nums text-dim">{formatElapsed(elapsed)}</span>
     </div>
   );
 }

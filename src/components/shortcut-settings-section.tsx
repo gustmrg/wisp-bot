@@ -34,7 +34,7 @@ function Keys({ keys }: { keys: ReadonlyArray<string> }) {
       {keys.map((key) => (
         <kbd
           key={key}
-          className="min-w-[22px] rounded-[5px] border border-border bg-muted px-1.5 py-px text-center font-sans text-[11px] text-foreground"
+          className="min-w-[22px] rounded-[5px] border border-border bg-muted px-1.5 py-px text-center font-sans text-xs text-foreground"
         >
           {key}
         </kbd>
@@ -84,7 +84,7 @@ function ShortcutSettingsSection({ active, preferences, onPreferencesChange }: S
       aria-labelledby="shortcut-settings-title"
       hidden={!active}
     >
-      <h2 id="shortcut-settings-title" className="mb-[22px] mt-0 text-[17px]">
+      <h2 id="shortcut-settings-title" className="mb-[22px] mt-0 text-lg font-semibold">
         Shortcuts
       </h2>
       <div className="animate-tab-forward">
@@ -136,7 +136,7 @@ function ShortcutSettingsSection({ active, preferences, onPreferencesChange }: S
             })}
           </SettingsCard>
         </SettingsGroup>
-        <p className="mx-0.5 mt-[7px] text-dim text-[11px] leading-[1.45]" role="status" aria-live="polite">
+        <p className="mx-0.5 mt-[7px] text-dim text-xs leading-[1.45]" role="status" aria-live="polite">
           {notice}
         </p>
         <SettingsGroup label="Built-in">

@@ -56,7 +56,7 @@ export function WispModelSettings({ conversationId }: { conversationId: string }
   const appliedProvider = applied ? catalog?.providers.find(({ id }) => id === applied.providerId) : undefined;
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col text-xs">
+    <div className="flex min-h-0 flex-1 flex-col text-sm">
       <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto p-3.5">
         {!catalog || !view ? (
           error ? (
@@ -72,19 +72,19 @@ export function WispModelSettings({ conversationId }: { conversationId: string }
         ) : (
           <>
             <section aria-label="Current model" className="rounded-lg border border-border bg-card p-3">
-              <h3 className="m-0 text-faint text-[10px] font-medium tracking-[0.08em] uppercase">Current model</h3>
+              <h3 className="m-0 text-2xs font-medium uppercase tracking-wide text-dim">Current model</h3>
               {applied ? (
                 <>
-                  <p className="m-0 mt-1.5 break-words text-[13px] leading-snug font-semibold">
+                  <p className="m-0 mt-1.5 break-words text-base leading-snug font-semibold">
                     {appliedProvider?.name ?? applied.providerId}
                   </p>
-                  <p className="m-0 break-all text-dim text-[12px] leading-snug">{applied.modelId}</p>
+                  <p className="m-0 break-all text-dim text-sm leading-snug">{applied.modelId}</p>
                 </>
               ) : (
                 <p className="m-0 mt-1.5 text-dim">Not configured</p>
               )}
               {view.pending ? (
-                <p className="m-0 mt-2.5 break-all border-t border-border pt-2 text-[11px] text-dim">
+                <p className="m-0 mt-2.5 break-all border-t border-border pt-2 text-xs text-dim">
                   Switches to {view.pending.modelId} after this turn
                 </p>
               ) : null}
@@ -94,7 +94,7 @@ export function WispModelSettings({ conversationId }: { conversationId: string }
               <span>The model is set when the Wisp is created and can't be changed for now.</span>
             </p>
             {!view.override ? (
-              <p className="m-0 text-[11px] text-dim">
+              <p className="m-0 text-xs text-dim">
                 This Wisp follows the global model — changes in Settings → AI Model also apply here.
               </p>
             ) : null}
