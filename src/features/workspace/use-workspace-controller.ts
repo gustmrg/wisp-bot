@@ -59,8 +59,8 @@ export function useWorkspaceController(): WorkspaceController {
   const conversations = useConversations();
   const persistedPreferences = usePersistedPreferences();
   const { preferences } = persistedPreferences;
-  useNotificationSounds({ enabled: preferences.notificationSounds, chats: conversations.chats });
   const [activeChatId, setActiveChatId] = useState<ChatId>("");
+  useNotificationSounds({ preferences, chats: conversations.chats, activeChatId });
   const [toolPolicyLoaded, setToolPolicyLoaded] = useState(false);
   const [createChatId] = useState(createChatIdFactory);
   const activeChat = conversations.chats[activeChatId];
