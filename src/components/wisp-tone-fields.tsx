@@ -64,8 +64,9 @@ export function WispToneFields({ tone = DEFAULT_WISP_TONE, onChange }: WispToneF
           />
         ) : null}
       </SettingsRow>
-      <SettingsRow className="min-h-0 p-[11px]">
-        <SettingsRowCopy>
+      {/* Wraps the control below the label when the panel is too narrow for both. */}
+      <SettingsRow className="min-h-0 flex-wrap gap-y-2 p-[11px]">
+        <SettingsRowCopy className="min-w-fit">
           <strong>Response length</strong>
         </SettingsRowCopy>
         <SegmentedControl<WispResponseLength>
