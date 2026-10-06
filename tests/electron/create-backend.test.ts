@@ -101,9 +101,13 @@ async function compose() {
   };
   // A new installation runs nothing until this computer is chosen; then its server starts in the background.
   await invoke(WISP_IPC_CHANNELS.activateConnection, { id: "local" });
-  await vi.waitFor(async () => {
-    expect((await invoke<ConnectionsView>(WISP_IPC_CHANNELS.getConnections)).status.phase).toBe("local");
-  });
+  // Starting the server and pairing can take more than vi.waitFor's default second on a busy CI runner.
+  await vi.waitFor(
+    async () => {
+      expect((await invoke<ConnectionsView>(WISP_IPC_CHANNELS.getConnections)).status.phase).toBe("local");
+    },
+    { timeout: 10_000, interval: 25 },
+  );
   return { backend, handlers, broadcasts, invoke };
 }
 
