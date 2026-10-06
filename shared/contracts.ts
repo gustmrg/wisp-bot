@@ -120,6 +120,7 @@ export const WISP_IPC_CHANNELS = {
   activateConnection: "wisp:connections:activate",
   retryConnection: "wisp:connections:retry",
   installServer: "wisp:connections:install-server",
+  cancelServerInstall: "wisp:connections:cancel-server-install",
   connectionsChanged: "wisp:connections:changed",
 } as const;
 
@@ -469,5 +470,7 @@ export interface WispApi {
    * Needs Node.js 22.19 or later there; resolves once the server is running.
    */
   installServer(request: ConnectionRequest): Promise<BackendResult<ConnectionsView>>;
+  /** Stops a server setup in progress; `installServer` then fails as cancelled. */
+  cancelServerInstall(): Promise<BackendResult<ConnectionsView>>;
   subscribeToConnections(listener: (view: ConnectionsView) => void): () => void;
 }

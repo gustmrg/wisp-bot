@@ -40,6 +40,7 @@ Options of setup:
   --package SPEC           npm package to install (default: this version)
   --no-service             Only install the files; do not set up the service
   --no-pair                Do not print a pairing code
+  --until-stdin-closes     Stop when stdin closes, before starting the service (for the desktop app)
 `;
 
 export async function runCli(args: readonly string[], write: (text: string) => void): Promise<void> {
@@ -61,11 +62,12 @@ export async function runCli(args: readonly string[], write: (text: string) => v
         "--package",
         "--no-service",
         "--no-pair",
+        "--until-stdin-closes",
       ].includes(flag)
     ) {
       throw new Error(`Unknown option ${flag}.`);
     }
-    if (flag === "--json" || flag === "--no-service" || flag === "--no-pair") {
+    if (["--json", "--no-service", "--no-pair", "--until-stdin-closes"].includes(flag)) {
       flags.set(flag, true);
       continue;
     }
@@ -86,18 +88,31 @@ export async function runCli(args: readonly string[], write: (text: string) => v
       write(HELP);
       return;
     case "setup": {
-      const outcome = await runSetup(
-        {
-          service: !flags.has("--no-service"),
-          pair: !flags.has("--no-pair"),
-          ...(flags.has("--package") ? { packageSpec: option("--package") } : {}),
-          ...(flags.has("--port") ? { port: Number(option("--port")) } : {}),
-          ...(flags.has("--public-origin") ? { publicOrigin: option("--public-origin") } : {}),
-          ...(flags.has("--data-dir") ? { dataDirectory: dataDirectory } : {}),
-        },
-        // Progress goes to stderr, so `--json` leaves stdout for the result alone.
-        systemHost(readAppVersion(), (message) => process.stderr.write(`${message}\n`)),
-      );
+      // The desktop app runs setup over SSH and cancels it by closing stdin.
+      const cancel = new AbortController();
+      const stopOnClose = (): void => cancel.abort();
+      if (flags.has("--until-stdin-closes")) {
+        process.stdin.once("end", stopOnClose).once("close", stopOnClose).resume();
+      }
+      let outcome: Awaited<ReturnType<typeof runSetup>>;
+      try {
+        outcome = await runSetup(
+          {
+            service: !flags.has("--no-service"),
+            pair: !flags.has("--no-pair"),
+            signal: cancel.signal,
+            ...(flags.has("--package") ? { packageSpec: option("--package") } : {}),
+            ...(flags.has("--port") ? { port: Number(option("--port")) } : {}),
+            ...(flags.has("--public-origin") ? { publicOrigin: option("--public-origin") } : {}),
+            ...(flags.has("--data-dir") ? { dataDirectory: dataDirectory } : {}),
+          },
+          // Progress goes to stderr, so `--json` leaves stdout for the result alone.
+          systemHost(readAppVersion(), (message) => process.stderr.write(`${message}\n`)),
+        );
+      } finally {
+        if (flags.has("--until-stdin-closes"))
+          process.stdin.off("end", stopOnClose).off("close", stopOnClose).destroy();
+      }
       if (!flags.has("--json")) {
         write(describeSetup(outcome));
         return;

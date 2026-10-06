@@ -23,7 +23,8 @@ export interface SshInstallOptions {
  * The command run on the server. The remote shell sees only the app's own
  * version and the profile's port, both validated; never text from the user.
  * ~/.local/bin is added because it is often missing from the PATH of
- * non-interactive SSH sessions.
+ * non-interactive SSH sessions. Without a terminal, ending ssh does not stop
+ * the remote command, so it stops itself when its stdin closes.
  */
 export function installCommand(version: string, serverPort: number): string {
   if (!SERVER_VERSION_PATTERN.test(version))
@@ -31,7 +32,7 @@ export function installCommand(version: string, serverPort: number): string {
   if (!Number.isInteger(serverPort) || serverPort < 1 || serverPort > 65535) {
     throw new FatalTransportError("The server port is invalid.");
   }
-  return `PATH="$HOME/.local/bin:$PATH" npx --yes ${WISP_SERVER_PACKAGE}@${version} setup --json --no-pair --port ${serverPort}`;
+  return `PATH="$HOME/.local/bin:$PATH" npx --yes ${WISP_SERVER_PACKAGE}@${version} setup --json --no-pair --until-stdin-closes --port ${serverPort}`;
 }
 
 /** Installs and starts the Wisp server on a machine reached over SSH, by running its `setup` there. */
@@ -39,8 +40,10 @@ export async function installRemoteServer(profile: SshConnectionProfile, options
   const child = spawn(
     options.sshPath ?? "ssh",
     ["-T", ...sshArguments(profile), "--", profile.host, installCommand(options.version, profile.serverPort)],
-    { stdio: ["ignore", "pipe", "pipe"], windowsHide: true },
+    // stdin stays open and silent: closing it is how the setup learns it was cancelled.
+    { stdio: ["pipe", "pipe", "pipe"], windowsHide: true },
   );
+  child.stdin?.on("error", () => undefined);
   let stdout = "";
   let stderr = "";
   let pending = "";
@@ -76,6 +79,7 @@ export async function installRemoteServer(profile: SshConnectionProfile, options
     });
   });
   clearTimeout(timer);
+  child.stdin?.destroy();
   options.signal?.removeEventListener("abort", stop);
   if (options.signal?.aborted) throw new FatalTransportError("Installing the server was cancelled.");
   if (code === 0 && /^\{.*\}$/m.test(stdout)) return;

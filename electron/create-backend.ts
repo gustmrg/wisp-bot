@@ -128,6 +128,7 @@ export async function createBackend(host: BackendHost): Promise<Backend> {
       ],
       [WISP_IPC_CHANNELS.retryConnection, () => manager.retry()],
       [WISP_IPC_CHANNELS.installServer, (payload) => manager.installServer(connectionId(payload))],
+      [WISP_IPC_CHANNELS.cancelServerInstall, () => manager.cancelInstall()],
     ]),
   ];
   try {

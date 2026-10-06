@@ -127,6 +127,7 @@ export function createWebWispApi(options: WebApiOptions): WispApi {
       return ok(view());
     },
     installServer: desktopOnly,
+    cancelServerInstall: desktopOnly,
     retryConnection: async () => {
       session.start();
       return ok(view());

@@ -48,6 +48,8 @@ export interface ConnectionStatus {
   profileId: string;
   phase: ConnectionPhase;
   message?: string;
+  /** Set while Wisp sets the server up over SSH; the setup can then be cancelled. */
+  installing?: boolean;
   /**
    * Changes whenever the renderer must reload everything from the backend:
    * after switching connections, connecting for the first time, or when a

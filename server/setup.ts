@@ -1,6 +1,7 @@
 import { execFile } from "node:child_process";
-import { chmod, mkdir, readFile, writeFile } from "node:fs/promises";
+import { chmod, mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import { request as httpRequest } from "node:http";
+import { connect } from "node:net";
 import os from "node:os";
 import path from "node:path";
 
@@ -23,6 +24,8 @@ export interface SetupOptions {
   service: boolean;
   /** Print a pairing code once the server answers. */
   pair: boolean;
+  /** Stops the setup before it starts the service; what was installed stays. */
+  signal?: AbortSignal;
 }
 
 export interface SetupResult {
@@ -58,8 +61,16 @@ export interface SetupHost {
   nodePath: string;
   /** The version of the package that is running. */
   version: string;
-  run(command: string, args: readonly string[], env: NodeJS.ProcessEnv, timeoutMs?: number): Promise<CommandResult>;
-  isHealthy(port: number): Promise<boolean>;
+  run(
+    command: string,
+    args: readonly string[],
+    env: NodeJS.ProcessEnv,
+    timeoutMs?: number,
+    signal?: AbortSignal,
+  ): Promise<CommandResult>;
+  isHealthy(address: string, port: number): Promise<boolean>;
+  /** Whether anything accepts connections on the port, Wisp or not. */
+  isPortInUse(address: string, port: number): Promise<boolean>;
   pairingCode(dataDirectory: string): Promise<string>;
   sleep(ms: number): Promise<void>;
   progress(message: string): void;
@@ -75,12 +86,12 @@ export function systemHost(version: string, progress: (message: string) => void)
     env: process.env,
     nodePath: process.execPath,
     version,
-    run: (command, args, env, timeoutMs = 60_000) =>
+    run: (command, args, env, timeoutMs = 60_000, signal) =>
       new Promise((resolve) => {
         execFile(
           command,
           [...args],
-          { env, timeout: timeoutMs, maxBuffer: 4 * 1024 * 1024 },
+          { env, timeout: timeoutMs, maxBuffer: 4 * 1024 * 1024, ...(signal ? { signal } : {}) },
           (error, stdout, stderr) => {
             const failure = error as (NodeJS.ErrnoException & { code?: number | string }) | null;
             if (!failure) return resolve({ code: 0, stdout, stderr });
@@ -95,15 +106,26 @@ export function systemHost(version: string, progress: (message: string) => void)
           },
         );
       }),
-    isHealthy: (port) =>
+    isHealthy: (address, port) =>
       new Promise((resolve) => {
-        const request = httpRequest({ host: "127.0.0.1", port, path: "/health", timeout: 2_000 }, (response) => {
+        const request = httpRequest({ host: address, port, path: "/health", timeout: 2_000 }, (response) => {
           response.resume();
           resolve(response.statusCode === 200);
         });
         request.on("error", () => resolve(false));
         request.on("timeout", () => request.destroy());
         request.end();
+      }),
+    isPortInUse: (address, port) =>
+      new Promise((resolve) => {
+        const socket = connect({ host: address, port, timeout: 2_000 });
+        const done = (inUse: boolean) => () => {
+          socket.destroy();
+          resolve(inUse);
+        };
+        socket.once("connect", done(true));
+        socket.once("error", done(false));
+        socket.once("timeout", done(false));
       }),
     pairingCode: async (dataDirectory) => {
       const value = (await adminRequest(dataDirectory, { command: "pair" })) as { code?: unknown };
@@ -144,6 +166,9 @@ export async function runSetup(options: SetupOptions, host: SetupHost): Promise<
   const paths = setupPaths(host.home);
   const warnings: string[] = [];
   let changed = false;
+  const stopIfCancelled = (): void => {
+    if (options.signal?.aborted) throw new Error("The setup was cancelled.");
+  };
 
   if (options.service && host.platform !== "linux") {
     throw new Error("Setting up the service works on Linux with systemd. Add --no-service to only install the files.");
@@ -154,7 +179,7 @@ export async function runSetup(options: SetupOptions, host: SetupHost): Promise<
   }
 
   // 1. The package, in a stable place: `npx` runs from a cache that may be cleared.
-  const installed = await installedVersion(paths.packageDir);
+  const installed = await installedVersion(paths);
   const spec = options.packageSpec ?? `${WISP_SERVER_PACKAGE}@${host.version}`;
   let version = installed ?? host.version;
   if (options.packageSpec !== undefined || installed !== host.version) {
@@ -165,9 +190,11 @@ export async function runSetup(options: SetupOptions, host: SetupHost): Promise<
       ["install", "--prefix", paths.installDir, "--no-audit", "--no-fund", "--loglevel=error", spec],
       { ...host.env, PATH: `${path.dirname(host.nodePath)}${path.delimiter}${host.env.PATH ?? ""}` },
       NPM_TIMEOUT_MS,
+      options.signal,
     );
+    stopIfCancelled();
     if (result.code !== 0) throw new Error(explainInstallFailure(spec, result));
-    version = (await installedVersion(paths.packageDir)) ?? host.version;
+    version = (await installedVersion(paths)) ?? host.version;
     changed = true;
   } else {
     host.progress(`${WISP_SERVER_PACKAGE} ${version} is already installed.`);
@@ -183,6 +210,7 @@ export async function runSetup(options: SetupOptions, host: SetupHost): Promise<
   const port = options.port ?? Number(current.get("WISP_PORT") ?? DEFAULT_PORT);
   if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error("The port must be between 1 and 65535.");
   const wantedOrigin = publicOrigin ?? current.get("WISP_PUBLIC_ORIGIN");
+  const address = probeAddress(current.get("WISP_HOST"));
 
   // 3. The master key. Never replaced: saved credentials could not be read without it.
   await mkdir(path.dirname(keyFile), { recursive: true, mode: 0o700 });
@@ -213,6 +241,12 @@ export async function runSetup(options: SetupOptions, host: SetupHost): Promise<
   if (!(host.env.PATH ?? "").split(path.delimiter).includes(path.dirname(paths.wispctl))) {
     warnings.push(`Add ${path.dirname(paths.wispctl)} to your PATH to run wispctl from a terminal.`);
   }
+  // nvm, fnm, and the like keep each Node.js version in its own directory under the home.
+  if (!path.relative(host.home, host.nodePath).startsWith("..")) {
+    warnings.push(
+      `The server runs ${host.nodePath}. After updating or removing that Node.js version, run \`npx ${WISP_SERVER_PACKAGE} setup\` again.`,
+    );
+  }
 
   const base = {
     version,
@@ -235,31 +269,53 @@ export async function runSetup(options: SetupOptions, host: SetupHost): Promise<
   }
 
   // 5. The service.
-  const unit = renderUnit(host.nodePath, paths.mainScript, paths.envFile);
-  await mkdir(path.dirname(paths.unitFile), { recursive: true });
-  changed = (await writeIfChanged(paths.unitFile, unit, 0o644)) || changed;
   const systemctlEnv = userBusEnvironment(host);
   const systemctl = async (...args: string[]): Promise<CommandResult> =>
     host.run("systemctl", ["--user", ...args], systemctlEnv);
-  host.progress("Starting the service…");
+  const wasActive = (await systemctl("is-active", "--quiet", SERVICE_NAME)).code === 0;
+  // Checked before anything is enabled: a service that cannot get its port
+  // would fail on every boot. A running Wisp holds its own port.
+  const ownPort = wasActive && Number(current.get("WISP_PORT") ?? DEFAULT_PORT) === port;
+  if (!ownPort && (await host.isPortInUse(address, port))) {
+    throw new Error(
+      `Another program already uses port ${port}. Choose a free port with --port (in the desktop app, the connection's server port), or stop that program, then run the setup again.`,
+    );
+  }
+  stopIfCancelled();
+  const unit = renderUnit(host.nodePath, paths.mainScript, paths.envFile);
+  await mkdir(path.dirname(paths.unitFile), { recursive: true });
+  changed = (await writeIfChanged(paths.unitFile, unit, 0o644)) || changed;
   const reload = await systemctl("daemon-reload");
   if (reload.code !== 0) throw new Error(explainSystemdFailure(reload));
   const enable = await systemctl("enable", SERVICE_NAME);
   if (enable.code !== 0) throw new Error(explainSystemdFailure(enable));
-  const wasActive = (await systemctl("is-active", "--quiet", SERVICE_NAME)).code === 0;
   let service: SetupResult["service"] = "unchanged";
-  if (!wasActive || changed) {
-    const restart = await systemctl("restart", SERVICE_NAME);
-    if (restart.code !== 0) throw new Error(explainSystemdFailure(restart));
-    service = wasActive ? "restarted" : "started";
-  }
-  await ensureLinger(host, systemctlEnv, warnings);
+  try {
+    if (!wasActive || changed) {
+      host.progress(wasActive ? "Restarting the service…" : "Starting the service…");
+      const restart = await systemctl("restart", SERVICE_NAME);
+      if (restart.code !== 0) throw new Error(explainSystemdFailure(restart));
+      service = wasActive ? "restarted" : "started";
+    } else {
+      host.progress("The service is already running.");
+    }
+    await ensureLinger(host, systemctlEnv, warnings);
 
-  host.progress(`Waiting for the server on port ${port}…`);
-  if (!(await waitUntilHealthy(host, port))) {
-    throw new Error(
-      `The server did not answer on port ${port} within ${HEALTH_TIMEOUT_MS / 1000} seconds. See why with: journalctl --user -u ${SERVICE_NAME} -n 50`,
-    );
+    host.progress(`Waiting for the server on port ${port}…`);
+    const journal = `See why with: journalctl --user -u ${SERVICE_NAME} -n 50`;
+    if (!(await waitUntilHealthy(host, address, port, stopIfCancelled))) {
+      throw new Error(
+        `The server did not answer on port ${port} within ${HEALTH_TIMEOUT_MS / 1000} seconds. ${journal}`,
+      );
+    }
+    // A crash-looping service answers now and then; it must still be running.
+    if ((await systemctl("is-active", "--quiet", SERVICE_NAME)).code !== 0) {
+      throw new Error(`The server stopped right after it started. ${journal}`);
+    }
+  } catch (error) {
+    // A server that never ran must not keep failing on every boot.
+    if (!wasActive) await systemctl("disable", "--now", SERVICE_NAME);
+    throw error;
   }
   const pairingCode = options.pair ? await host.pairingCode(dataDirectory) : undefined;
   return { ...base, service, ...(pairingCode ? { pairingCode } : {}) };
@@ -296,15 +352,36 @@ export function describeSetup(result: SetupResult): string {
   return `${lines.join("\n")}\n`;
 }
 
-async function installedVersion(packageDir: string): Promise<string | undefined> {
-  const text = await readIfExists(path.join(packageDir, "package.json"));
+/** The installed version, only when the install is complete: an interrupted `npm install` must be repeated. */
+async function installedVersion(paths: ReturnType<typeof setupPaths>): Promise<string | undefined> {
+  const text = await readIfExists(path.join(paths.packageDir, "package.json"));
   if (!text) return undefined;
+  let manifest: { version?: unknown; dependencies?: unknown };
   try {
-    const { version } = JSON.parse(text) as { version?: unknown };
-    return typeof version === "string" && SERVER_VERSION_PATTERN.test(version) ? version : undefined;
+    manifest = JSON.parse(text) as typeof manifest;
   } catch {
     return undefined;
   }
+  const { version, dependencies } = manifest;
+  if (typeof version !== "string" || !SERVER_VERSION_PATTERN.test(version)) return undefined;
+  if (!(await exists(paths.mainScript))) return undefined;
+  for (const name of Object.keys(typeof dependencies === "object" && dependencies ? dependencies : {})) {
+    // npm puts a dependency at the top, or next to the package when versions conflict.
+    const found = await Promise.all(
+      [paths.installDir, paths.packageDir].map((directory) =>
+        exists(path.join(directory, "node_modules", ...name.split("/"), "package.json")),
+      ),
+    );
+    if (!found.includes(true)) return undefined;
+  }
+  return version;
+}
+
+async function exists(file: string): Promise<boolean> {
+  return stat(file).then(
+    () => true,
+    () => false,
+  );
 }
 
 async function ensureLinger(host: SetupHost, env: NodeJS.ProcessEnv, warnings: string[]): Promise<void> {
@@ -318,12 +395,25 @@ async function ensureLinger(host: SetupHost, env: NodeJS.ProcessEnv, warnings: s
   }
 }
 
-async function waitUntilHealthy(host: SetupHost, port: number): Promise<boolean> {
+async function waitUntilHealthy(
+  host: SetupHost,
+  address: string,
+  port: number,
+  stopIfCancelled: () => void,
+): Promise<boolean> {
   for (let waited = 0; waited < HEALTH_TIMEOUT_MS; waited += 500) {
-    if (await host.isHealthy(port)) return true;
+    stopIfCancelled();
+    if (await host.isHealthy(address, port)) return true;
     await host.sleep(500);
   }
   return false;
+}
+
+/** Where the server can be reached on this machine, given its `WISP_HOST`. */
+export function probeAddress(bind: string | undefined): string {
+  if (!bind || bind === "0.0.0.0") return "127.0.0.1";
+  if (bind === "::" || bind === "[::]") return "::1";
+  return bind.replace(/^\[(.*)\]$/, "$1");
 }
 
 /** `systemctl --user` needs the user's runtime directory, which SSH commands do not always have. */

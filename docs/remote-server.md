@@ -94,6 +94,7 @@ npx @gustmrg/wisp-server@latest setup
 | `--no-service` | Only install the files, and print the command that starts the server |
 | `--no-pair` | Do not print a pairing code |
 | `--json` | Print the result as JSON; progress goes to stderr |
+| `--until-stdin-closes` | Stop, before starting the service, when stdin closes; the desktop app cancels this way |
 
 Options you pass are saved in `server.env`, so later runs keep them.
 
@@ -107,6 +108,8 @@ own version> setup` on the machine over SSH, and connects. The same button
 (**Install or update the server**) in the server's settings updates it when the
 app is newer than the server. This needs Node.js and npm in the PATH of
 non-interactive SSH commands, and a version of the app that is published on npm.
+**Cancel setup**, or choosing another connection, stops it, also on the machine;
+what was already installed stays, and a service not yet started is left alone.
 
 ### Settings
 

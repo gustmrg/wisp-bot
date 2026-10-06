@@ -8,6 +8,7 @@ import {
   describeSetup,
   normalizeOrigin,
   parseEnvFile,
+  probeAddress,
   renderEnvFile,
   renderUnit,
   runSetup,
@@ -34,6 +35,9 @@ async function machine(respond: (command: string, args: readonly string[]) => Pa
   const progress: string[] = [];
   let healthy = true;
   let active = false;
+  let foreign = false;
+  let listening = 0;
+  const probed: string[] = [];
   const host: SetupHost = {
     home,
     user: "wisp",
@@ -46,20 +50,41 @@ async function machine(respond: (command: string, args: readonly string[]) => Pa
       calls.push([command, ...args].join(" "));
       if (command === "npm") {
         // What `npm install --prefix` leaves behind.
-        await mkdir(paths.packageDir, { recursive: true });
+        await mkdir(path.dirname(paths.mainScript), { recursive: true });
         await writeFile(path.join(paths.packageDir, "package.json"), JSON.stringify({ version: "1.2.3" }));
-        expect(env.PATH).toMatch(/^\/usr\/bin:/);
+        await writeFile(paths.mainScript, "");
+        // The directory of the running Node.js comes first.
+        expect(env.PATH).toMatch(/\/bin:\/usr\/bin$/);
       }
-      if (command === "systemctl" && args.includes("restart")) active = true;
+      if (command === "systemctl" && args.includes("restart")) {
+        active = true;
+        listening = Number(parseEnvFile(await readFile(paths.envFile, "utf8")).get("WISP_PORT"));
+      }
       if (command === "systemctl" && args.includes("is-active")) return { ...ok, code: active ? 0 : 3 };
       return { ...ok, ...respond(command, args) };
     },
-    isHealthy: async () => healthy,
+    isHealthy: async (address) => {
+      probed.push(address);
+      return healthy && active;
+    },
+    isPortInUse: async (address, port) => {
+      probed.push(address);
+      return foreign || (active && port === listening);
+    },
     pairingCode: async () => "ABCDE-FGHJK",
     sleep: async () => undefined,
     progress: (message) => void progress.push(message),
   };
-  return { home, paths, host, calls, progress, setHealthy: (value: boolean) => void (healthy = value) };
+  return {
+    home,
+    paths,
+    host,
+    calls,
+    progress,
+    probed,
+    setHealthy: (value: boolean) => void (healthy = value),
+    setForeign: (value: boolean) => void (foreign = value),
+  };
 }
 
 describe("runSetup", () => {
@@ -71,10 +96,11 @@ describe("runSetup", () => {
       `npm install --prefix ${paths.installDir} --no-audit --no-fund --loglevel=error @gustmrg/wisp-server@1.2.3`,
     );
     expect(calls.filter((call) => call.startsWith("systemctl"))).toEqual([
+      "systemctl --user is-active --quiet wisp",
       "systemctl --user daemon-reload",
       "systemctl --user enable wisp",
-      "systemctl --user is-active --quiet wisp",
       "systemctl --user restart wisp",
+      "systemctl --user is-active --quiet wisp",
     ]);
     expect(result).toMatchObject({
       version: "1.2.3",
@@ -107,7 +133,10 @@ describe("runSetup", () => {
     const key = await readFile(paths.keyFile);
     calls.length = 0;
 
-    const result = await runSetup({ ...options, pair: false }, host);
+    const { host: quiet, progress } = await machine();
+    const result = await runSetup({ ...options, pair: false }, { ...host, progress: quiet.progress });
+    expect(progress).toContain("The service is already running.");
+    expect(progress).not.toContain("Starting the service…");
     expect(await readFile(paths.keyFile)).toEqual(key);
     expect(calls.some((call) => call.startsWith("npm"))).toBe(false);
     expect(calls.some((call) => call.includes("restart"))).toBe(false);
@@ -183,6 +212,111 @@ describe("runSetup", () => {
     const down = await machine();
     down.setHealthy(false);
     await expect(runSetup(options, down.host)).rejects.toThrow(/journalctl --user -u wisp/);
+    // A server that never ran is not left enabled to fail on every boot.
+    expect(down.calls.at(-1)).toBe("systemctl --user disable --now wisp");
+  });
+
+  it("reinstalls a package an interrupted install left incomplete", async () => {
+    const { host, paths, calls } = await machine();
+    await runSetup(options, host);
+    await writeFile(
+      path.join(paths.packageDir, "package.json"),
+      JSON.stringify({ version: "1.2.3", dependencies: { "@scope/dep": "1.0.0" } }),
+    );
+    calls.length = 0;
+    await runSetup({ ...options, pair: false }, host);
+    expect(calls.filter((call) => call.startsWith("npm"))).toHaveLength(1);
+
+    // npm hoists dependencies to the top of the install directory.
+    await writeFile(
+      path.join(paths.packageDir, "package.json"),
+      JSON.stringify({ version: "1.2.3", dependencies: { "@scope/dep": "1.0.0" } }),
+    );
+    await mkdir(path.join(paths.installDir, "node_modules/@scope/dep"), { recursive: true });
+    await writeFile(path.join(paths.installDir, "node_modules/@scope/dep/package.json"), "{}");
+    calls.length = 0;
+    await runSetup({ ...options, pair: false }, host);
+    expect(calls.some((call) => call.startsWith("npm"))).toBe(false);
+
+    await rm(paths.mainScript);
+    calls.length = 0;
+    await runSetup({ ...options, pair: false }, host);
+    expect(calls.filter((call) => call.startsWith("npm"))).toHaveLength(1);
+  });
+
+  it("stops before starting the service when cancelled", async () => {
+    const cancel = new AbortController();
+    const { host, calls } = await machine();
+    const run = host.run;
+    await expect(
+      runSetup(
+        { ...options, signal: cancel.signal },
+        {
+          ...host,
+          run: async (command, args, env, timeout, signal) => {
+            const result = await run(command, args, env, timeout, signal);
+            if (command === "npm") cancel.abort();
+            return result;
+          },
+        },
+      ),
+    ).rejects.toThrow(/cancelled/);
+    expect(calls.some((call) => call.startsWith("systemctl"))).toBe(false);
+  });
+
+  it("refuses a port another program uses, before it enables anything", async () => {
+    const { host, calls, paths, setForeign } = await machine();
+    setForeign(true);
+    await expect(runSetup(options, host)).rejects.toThrow(/Another program already uses port 8787/);
+    expect(calls.filter((call) => call.startsWith("systemctl"))).toEqual(["systemctl --user is-active --quiet wisp"]);
+    await expect(stat(paths.unitFile)).rejects.toThrow();
+  });
+
+  it("keeps its own port when it runs already, but checks a new one", async () => {
+    const { host, calls, setForeign } = await machine();
+    await runSetup({ ...options, pair: false }, host);
+    calls.length = 0;
+    // The running Wisp answers on its own port.
+    await expect(runSetup({ ...options, pair: false }, host)).resolves.toMatchObject({ service: "unchanged" });
+
+    setForeign(true);
+    await expect(runSetup({ ...options, pair: false, port: 9000 }, host)).rejects.toThrow(/uses port 9000/);
+    // The server that was running is not disabled.
+    expect(calls.some((call) => call.includes("disable"))).toBe(false);
+  });
+
+  it("fails when the service stops right after it answered", async () => {
+    const { host } = await machine();
+    let started = false;
+    await expect(
+      runSetup(options, {
+        ...host,
+        run: async (command, args) => {
+          if (args.includes("restart")) started = true;
+          // Crash-looping: never active for long.
+          return { ...ok, code: args.includes("is-active") ? 3 : 0 };
+        },
+        isHealthy: async () => started,
+        isPortInUse: async () => false,
+      }),
+    ).rejects.toThrow(/stopped right after it started/);
+  });
+
+  it("checks the server where WISP_HOST says it listens", async () => {
+    const { host, paths, probed } = await machine();
+    await mkdir(paths.configDir, { recursive: true });
+    await writeFile(paths.envFile, "WISP_HOST=100.64.0.7\n", { mode: 0o600 });
+    await runSetup(options, host);
+    expect(new Set(probed)).toEqual(new Set(["100.64.0.7"]));
+    expect([undefined, "0.0.0.0", "::", "[::1]"].map(probeAddress)).toEqual(["127.0.0.1", "127.0.0.1", "::1", "::1"]);
+  });
+
+  it("warns that a Node.js under the home ties the service to that version", async () => {
+    const { host } = await machine();
+    const nodePath = path.join(host.home, ".nvm/versions/node/v22.19.0/bin/node");
+    const result = await runSetup(options, { ...host, nodePath });
+    expect(result.warnings.join(" ")).toContain(`The server runs ${nodePath}`);
+    expect((await runSetup(options, host)).warnings.join(" ")).not.toContain("The server runs");
   });
 
   it("gives systemctl the user's runtime directory when SSH did not", async () => {

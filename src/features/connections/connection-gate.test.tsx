@@ -26,6 +26,7 @@ function bridge(initial: ConnectionsView) {
     activateConnection: vi.fn(ok),
     retryConnection: vi.fn(ok),
     installServer: vi.fn(ok),
+    cancelServerInstall: vi.fn(ok),
     subscribeToConnections: vi.fn((listener: (next: ConnectionsView) => void) => {
       push = listener;
       return () => undefined;
@@ -139,6 +140,17 @@ describe("ConnectionGate", () => {
     await userEvent.click(await screen.findByRole("button", { name: "Install the Wisp server" }));
     await userEvent.click(screen.getByRole("button", { name: "Install and connect" }));
     expect(await screen.findByText("Node.js is missing on raspberrypi.")).toBeVisible();
+  });
+
+  it("lets the person cancel a setup in progress", async () => {
+    const { api } = bridge(view({ phase: "connecting", message: "Installing…", installing: true }));
+    render(
+      <ConnectionGate>
+        <App onMount={() => undefined} />
+      </ConnectionGate>,
+    );
+    await userEvent.click(await screen.findByRole("button", { name: "Cancel setup" }));
+    expect(api.cancelServerInstall).toHaveBeenCalled();
   });
 
   it("does not offer a server setup for an address or this computer", async () => {

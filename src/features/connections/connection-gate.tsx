@@ -262,6 +262,16 @@ function ConnectionScreen({ view }: { view: ConnectionsView }) {
             </div>
           ) : null}
           <div className="mt-4 flex flex-wrap gap-2">
+            {status.installing ? (
+              <Button
+                type="button"
+                variant="outline"
+                disabled={busy}
+                onClick={() => void act(() => window.wisp.cancelServerInstall())}
+              >
+                Cancel setup
+              </Button>
+            ) : null}
             {status.phase === "error" ? (
               <Button type="button" disabled={busy} onClick={() => void act(() => window.wisp.retryConnection())}>
                 Retry

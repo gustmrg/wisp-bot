@@ -78,9 +78,14 @@ export function InstallServerAction({
         </div>
       )}
       {installing ? (
-        <p role="status" className="m-0 text-[11.5px] text-dim">
-          Setting up {host}. This can take a few minutes.
-        </p>
+        <div className="flex flex-wrap items-center gap-2">
+          <p role="status" className="m-0 text-[11.5px] text-dim">
+            Setting up {host}. This can take a few minutes.
+          </p>
+          <Button type="button" variant="ghost" size="sm" onClick={() => void window.wisp.cancelServerInstall()}>
+            Cancel setup
+          </Button>
+        </div>
       ) : null}
       {error ? (
         <p role="alert" className="m-0 text-[11.5px] text-destructive">

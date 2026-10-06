@@ -1,6 +1,10 @@
-import { readFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { readFileSync, writeFileSync } from "node:fs";
+import { mkdtemp, rm } from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 
+import { transform } from "esbuild";
 import { describe, expect, it } from "vitest";
 
 import { WISP_SERVER_PACKAGE } from "../../shared/server-package.js";
@@ -33,5 +37,33 @@ describe("isSupportedNode", () => {
     for (const version of ["22.19.0", "v22.19.1", "22.20.0", "24.1.0"])
       expect(isSupportedNode(version), version).toBe(true);
     for (const version of ["22.18.9", "20.19.0", "18.20.4"]) expect(isSupportedNode(version), version).toBe(false);
+  });
+});
+
+describe("node-version", () => {
+  it("hides only the SQLite experimental warning", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "wisp-node-version-"));
+    try {
+      const { code } = await transform(readFileSync(path.join(root, "server/node-version.ts"), "utf8"), {
+        loader: "ts",
+        format: "cjs",
+      });
+      const file = path.join(directory, "node-version.cjs");
+      writeFileSync(file, code);
+      const { stderr } = spawnSync(
+        process.execPath,
+        [
+          "-e",
+          `require(${JSON.stringify(file)});
+          process.emitWarning("SQLite is an experimental feature and might change at any time", "ExperimentalWarning");
+          process.emitWarning("Something else is experimental", "ExperimentalWarning");`,
+        ],
+        { encoding: "utf8" },
+      );
+      expect(stderr).not.toContain("SQLite");
+      expect(stderr).toContain("Something else is experimental");
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
   });
 });

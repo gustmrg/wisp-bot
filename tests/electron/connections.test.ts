@@ -382,7 +382,7 @@ describe("desktop connections", () => {
       .map((line) => JSON.parse(line) as string[]);
     expect(calls[0]?.slice(-2)).toEqual([
       "raspberrypi",
-      `PATH="$HOME/.local/bin:$PATH" npx --yes @gustmrg/wisp-server@1.0.0 setup --json --no-pair --port ${server.port}`,
+      `PATH="$HOME/.local/bin:$PATH" npx --yes @gustmrg/wisp-server@1.0.0 setup --json --no-pair --until-stdin-closes --port ${server.port}`,
     ]);
   });
 
@@ -411,5 +411,40 @@ describe("desktop connections", () => {
     expect((await app.view()).activeId).toBe("local");
     expect(await app.call(WISP_IPC_CHANNELS.installServer, { id: "local" })).toMatchObject({ ok: false });
     expect(await app.call(WISP_IPC_CHANNELS.installServer, { id: "nowhere" })).toMatchObject({ ok: false });
+  });
+
+  it("does not hold up other requests while setting a server up, and cancels it on request", async () => {
+    process.env.FAKE_SSH_INSTALL = "hang";
+    const app = await desktop();
+    const { profiles } = await app.invoke<ConnectionsView>(WISP_IPC_CHANNELS.saveConnection, {
+      kind: "ssh",
+      name: "Pi",
+      host: "raspberrypi",
+      serverPort: 8787,
+    });
+    const ssh = profiles.find((profile) => profile.kind === "ssh")!;
+    await app.invoke(WISP_IPC_CHANNELS.activateConnection, { id: ssh.id });
+
+    const installing = app.call(WISP_IPC_CHANNELS.installServer, { id: ssh.id });
+    await vi.waitFor(async () => expect((await app.view()).status).toMatchObject({ installing: true }));
+    expect(await app.call(WISP_IPC_CHANNELS.installServer, { id: ssh.id })).toMatchObject({
+      ok: false,
+      error: { message: expect.stringMatching(/already setting up/) },
+    });
+    // Editing a connection does not wait for the setup.
+    await app.invoke(WISP_IPC_CHANNELS.saveConnection, { kind: "url", name: "Tailnet", url: "https://x.ts.net" });
+
+    await app.invoke(WISP_IPC_CHANNELS.cancelServerInstall);
+    expect(await installing).toMatchObject({ ok: false, error: { message: expect.stringMatching(/cancelled/) } });
+    expect((await app.view()).status).toMatchObject({ profileId: ssh.id, phase: "error" });
+    expect((await app.view()).status.installing).toBeUndefined();
+
+    // Choosing another connection cancels a setup, too, and wins.
+    const again = app.call(WISP_IPC_CHANNELS.installServer, { id: ssh.id });
+    await vi.waitFor(async () => expect((await app.view()).status).toMatchObject({ installing: true }));
+    await app.invoke(WISP_IPC_CHANNELS.activateConnection, { id: "local" });
+    expect(await again).toMatchObject({ ok: false, error: { message: expect.stringMatching(/cancelled/) } });
+    expect((await app.view()).activeId).toBe("local");
+    await app.waitForPhase("local");
   });
 });
