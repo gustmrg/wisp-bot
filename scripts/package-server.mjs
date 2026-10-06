@@ -29,5 +29,7 @@ await cp(path.join(root, "deploy"), path.join(output, "deploy"), { recursive: tr
 // The browser app, served by the server on every path outside the API.
 await cp(path.join(root, "dist-web"), path.join(output, "web"), { recursive: true });
 await cp(path.join(root, "LICENSE"), path.join(output, "LICENSE"));
+// The package's page on npm.
+await cp(path.join(root, "server", "README.md"), path.join(output, "README.md"));
 await writeFile(path.join(output, "package.json"), `${JSON.stringify(manifest, null, 2)}\n`);
 console.log(`Packaged wisp-server ${manifest.version} in ${path.relative(root, output)}`);
