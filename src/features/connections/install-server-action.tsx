@@ -49,7 +49,7 @@ export function InstallServerAction({
           aria-label={label}
           className="flex flex-col gap-2.5 rounded-[10px] border border-border bg-muted/40 p-3"
         >
-          <p className="m-0 text-[11.5px] leading-relaxed">
+          <p className="m-0 text-xs leading-relaxed">
             Wisp will connect to {host} over SSH and run <code>npx {WISP_SERVER_PACKAGE} setup</code> there. It installs
             the server in <code>~/.local/lib/wisp-server</code>, creates a master key in <code>~/.config/wisp</code>,
             and starts a systemd user service. The machine needs Node.js 22.19 or later and internet access.
@@ -79,7 +79,7 @@ export function InstallServerAction({
       )}
       {installing ? (
         <div className="flex flex-wrap items-center gap-2">
-          <p role="status" className="m-0 text-[11.5px] text-dim">
+          <p role="status" className="m-0 text-xs text-dim">
             Setting up {host}. This can take a few minutes.
           </p>
           <Button type="button" variant="ghost" size="sm" onClick={() => void window.wisp.cancelServerInstall()}>
@@ -88,7 +88,7 @@ export function InstallServerAction({
         </div>
       ) : null}
       {error ? (
-        <p role="alert" className="m-0 text-[11.5px] text-destructive">
+        <p role="alert" className="m-0 text-xs text-destructive">
           {error}
         </p>
       ) : null}

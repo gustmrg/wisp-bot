@@ -36,22 +36,19 @@ function ToolApprovalCard({ request, wispName, allowAlwaysAvailable, onResolve }
   const blockLabel = integration ? "Block all integration calls" : "Always block";
   return (
     <section
-      className="tool-approval-card mt-2 w-[min(680px,90%)] rounded-xl border border-amber-500/25 bg-amber-500/[0.06] p-3"
+      className="tool-approval-card mt-2 w-[min(680px,90%)] rounded-xl border border-warning-solid/25 bg-warning-solid/[0.06] p-3"
       aria-label="Tool approval required"
     >
       <div className="flex items-start gap-2.5">
-        <ShieldAlertIcon aria-hidden="true" className="mt-0.5 size-4 flex-none text-amber-600 dark:text-amber-400" />
+        <ShieldAlertIcon aria-hidden="true" className="mt-0.5 size-4 flex-none text-warning" />
         <div className="min-w-0 flex-1">
           <div className="flex items-baseline gap-2">
-            <strong className="min-w-0 flex-1 text-xs">
+            <strong className="min-w-0 flex-1 text-sm">
               {skill ? "Approve skill?" : integration ? "Approve integration change?" : "Approve file change?"}
             </strong>
             {Number.isNaN(remaining) ? null : (
               <time
-                className={cn(
-                  "flex-none text-[11px] tabular-nums text-dim",
-                  expiresSoon && "font-medium text-destructive",
-                )}
+                className={cn("flex-none text-xs tabular-nums text-dim", expiresSoon && "font-medium text-destructive")}
                 dateTime={request.expiresAt}
                 title="The request is denied when the time runs out."
               >
@@ -59,10 +56,10 @@ function ToolApprovalCard({ request, wispName, allowAlwaysAvailable, onResolve }
               </time>
             )}
           </div>
-          <p className="my-1 break-words text-xs text-dim">{request.summary}</p>
+          <p className="my-1 break-words text-sm text-dim">{request.summary}</p>
           {skill && request.preview ? (
             <pre
-              className="my-2 max-h-64 overflow-y-auto whitespace-pre-wrap break-words rounded-md border border-border bg-background/60 p-2 font-mono text-[11px] text-foreground"
+              className="my-2 max-h-64 overflow-y-auto whitespace-pre-wrap break-words rounded-md border border-border bg-background/60 p-2 font-mono text-xs text-foreground"
               aria-label="Skill instructions"
             >
               {request.preview}
@@ -104,7 +101,7 @@ function ToolApprovalCard({ request, wispName, allowAlwaysAvailable, onResolve }
         </Button>
       </div>
       {fileCategory && allowAlwaysAvailable ? (
-        <p className="m-0 mt-2 text-right text-[11px] text-faint">
+        <p className="m-0 mt-2 text-right text-xs text-faint">
           Lasting rules can be changed in Settings → General → Auto-review.
         </p>
       ) : null}

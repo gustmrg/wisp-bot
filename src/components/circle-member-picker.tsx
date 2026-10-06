@@ -35,7 +35,7 @@ export function CircleMemberPicker({
 
   return (
     <div>
-      <span id={labelId} className="mb-2 block text-dim text-xs font-medium">
+      <span id={labelId} className="mb-2 block text-dim text-sm font-medium">
         {label}
       </span>
       <div className="overflow-hidden rounded-[11px] border border-border" role="group" aria-labelledby={labelId}>
@@ -62,7 +62,7 @@ export function CircleMemberPicker({
               </span>
             ))
           ) : (
-            <span className="p-2 text-dim text-[13px]">Select Wisps to add to this circle</span>
+            <span className="p-2 text-dim text-base">Select Wisps to add to this circle</span>
           )}
         </div>
         <div className="min-h-24 max-h-[260px] overflow-y-auto py-[3px]">
@@ -85,7 +85,7 @@ export function CircleMemberPicker({
             </label>
           ))}
           {!availableWisps.length ? (
-            <p className="p-2 text-dim text-[13px]">No Wisps yet. You can create an empty circle.</p>
+            <p className="p-2 text-dim text-base">No Wisps yet. You can create an empty circle.</p>
           ) : null}
         </div>
       </div>

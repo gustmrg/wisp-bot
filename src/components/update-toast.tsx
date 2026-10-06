@@ -41,8 +41,8 @@ export function UpdateToast({ displayName }: { displayName: string }) {
       <ToastFrame>
         <LoaderCircleIcon aria-hidden="true" className="mt-0.5 size-4 shrink-0 animate-spin text-blue" />
         <div className="grid gap-0.5">
-          <strong className="text-[12.5px]">Installing version {state.availableVersion ?? "new"}…</strong>
-          <span className="text-[11.5px] text-dim">{displayName} will close and reopen on its own.</span>
+          <strong className="text-sm">Installing version {state.availableVersion ?? "new"}…</strong>
+          <span className="text-xs text-dim">{displayName} will close and reopen on its own.</span>
         </div>
       </ToastFrame>
     );
@@ -52,13 +52,13 @@ export function UpdateToast({ displayName }: { displayName: string }) {
     <ToastFrame>
       <CircleCheckIcon aria-hidden="true" className="mt-0.5 size-4 shrink-0 text-blue" />
       <div className="grid gap-0.5">
-        <strong className="text-[12.5px]">
+        <strong className="text-sm">
           {displayName} updated to {state.currentVersion}
         </strong>
-        <span className="text-[11.5px] text-dim">Previously {state.updatedFrom}.</span>
+        <span className="text-xs text-dim">Previously {state.updatedFrom}.</span>
         <button
           type="button"
-          className="mt-1 justify-self-start text-[11.5px] text-blue hover:underline"
+          className="mt-1 justify-self-start text-xs text-blue hover:underline"
           onClick={() => void window.wisp.openReleasesPage()}
         >
           See what's new

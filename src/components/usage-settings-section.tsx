@@ -44,10 +44,10 @@ export function UsageSettingsSection() {
       aria-labelledby="usage-settings-title"
       className="min-w-0 overflow-y-auto px-[30px] py-6 max-[620px]:px-4 max-[620px]:py-5"
     >
-      <h2 id="usage-settings-title" className="mb-1 mt-0 text-[17px]">
+      <h2 id="usage-settings-title" className="mb-1 mt-0 text-lg font-semibold">
         Token usage
       </h2>
-      <p className="mb-4 text-[11.5px] leading-relaxed text-dim">
+      <p className="mb-4 text-xs leading-relaxed text-dim">
         Tokens and estimated cost per Wisp, from saved session history on this device.
       </p>
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -74,11 +74,11 @@ export function UsageSettingsSection() {
         </Button>
       </div>
       {state.error ? (
-        <p role="alert" className="mt-4 text-[11.5px] text-destructive">
+        <p role="alert" className="mt-4 text-xs text-destructive">
           {state.error}
         </p>
       ) : !report ? (
-        <p role="status" className="mt-4 text-[11.5px] text-dim">
+        <p role="status" className="mt-4 text-xs text-dim">
           Loading token usage…
         </p>
       ) : (
@@ -94,7 +94,7 @@ export function UsageSettingsSection() {
                   <strong>Total tokens</strong>
                   <small>Input, output and cache tokens.</small>
                 </SettingsRowCopy>
-                <span className="text-[15px] font-medium tabular-nums">
+                <span className="text-md font-medium tabular-nums">
                   {report.totals.totalTokens.toLocaleString("en-US")}
                 </span>
               </SettingsRow>
@@ -103,21 +103,21 @@ export function UsageSettingsSection() {
                   <strong>Estimated cost</strong>
                   <small>In USD, from the latest available model prices.</small>
                 </SettingsRowCopy>
-                <span className="text-[15px] font-medium tabular-nums">{cost(report.totals.costUsd)}</span>
+                <span className="text-md font-medium tabular-nums">{cost(report.totals.costUsd)}</span>
               </SettingsRow>
             </SettingsCard>
           </SettingsGroup>
           {report.incomplete ? (
-            <p role="alert" className="mx-0.5 mt-[7px] text-[11.5px] text-destructive">
+            <p role="alert" className="mx-0.5 mt-[7px] text-xs text-destructive">
               Some session history could not be read. Token totals are partial; cost is unknown.
             </p>
           ) : null}
           <SettingsGroup label="By Wisp">
             {report.wisps.length === 0 ? (
-              <p className="mx-0.5 text-[11.5px] text-dim">No Wisps yet. Usage will appear after you send messages.</p>
+              <p className="mx-0.5 text-xs text-dim">No Wisps yet. Usage will appear after you send messages.</p>
             ) : (
               <SettingsCard className="overflow-x-auto">
-                <table className="w-full text-left text-[11.5px] tabular-nums">
+                <table className="w-full text-left text-xs tabular-nums">
                   <caption className="sr-only">Token usage and estimated USD by Wisp</caption>
                   <thead>
                     <tr className="text-dim">
@@ -131,9 +131,9 @@ export function UsageSettingsSection() {
                   <tbody className="[&>tr:not(:last-child)>*]:border-b [&>tr>*]:border-border">
                     {report.wisps.map((wisp) => (
                       <tr key={wisp.conversationId}>
-                        <th scope="row" className="max-w-36 break-words px-3 py-2.5 text-[12.5px] font-medium">
+                        <th scope="row" className="max-w-36 break-words px-3 py-2.5 text-sm font-medium">
                           {wisp.name}
-                          <span className="block text-[11px] font-normal text-dim">{wisp.sessions} sessions</span>
+                          <span className="block text-xs font-normal text-dim">{wisp.sessions} sessions</span>
                         </th>
                         <td className="px-3">{wisp.totals.inputTokens.toLocaleString("en-US")}</td>
                         <td className="px-3">{wisp.totals.outputTokens.toLocaleString("en-US")}</td>
@@ -150,7 +150,7 @@ export function UsageSettingsSection() {
               </SettingsCard>
             )}
           </SettingsGroup>
-          <div className="mx-0.5 mt-4 flex flex-col gap-2 text-[11px] leading-[1.45] text-dim">
+          <div className="mx-0.5 mt-4 flex flex-col gap-2 text-xs leading-[1.45] text-dim">
             <p className="m-0">
               Estimates use the latest available OpenRouter model prices, including cache tokens, or the cost recorded
               with each turn for other providers. Provider routing and other charges may differ from your bill. Unknown

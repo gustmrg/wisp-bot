@@ -192,7 +192,7 @@ function ChatPanel({
         <div className="flex flex-none items-center gap-2">
           {chat.kind === "circle" ? (
             <button
-              className="rounded-md border-0 bg-transparent px-[7px] py-1 text-dim text-xs hover:bg-muted hover:text-foreground"
+              className="rounded-md border-0 bg-transparent px-[7px] py-1 text-dim text-sm hover:bg-muted hover:text-foreground"
               type="button"
               aria-label={`View circle participants (${members.length})`}
               title={members.map((member) => member.name).join(", ") || "No Wisps in this circle"}
@@ -262,7 +262,7 @@ function ChatPanel({
             {showActivity ? (
               <div
                 role="status"
-                className="mt-3 flex items-center gap-2 text-dim text-xs [&_svg]:animate-working-pulse"
+                className="mt-3 flex items-center gap-2 text-dim text-sm [&_svg]:animate-working-pulse"
               >
                 <ChatAvatar chat={chat} chats={chats} size="sm" />
                 <span>{activity || `${chat.name} is working…`}</span>

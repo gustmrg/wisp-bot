@@ -45,7 +45,7 @@ export function CircleDetails({ chat, chats, onChange }: CircleDetailsProps) {
         />
       </SettingsField>
       <section className="my-4" aria-labelledby="circle-participants-title">
-        <h3 id="circle-participants-title" className="mb-2 mt-0 text-dim text-xs font-medium">
+        <h3 id="circle-participants-title" className="mb-2 mt-0 text-dim text-sm font-medium">
           Participants ({members.length})
         </h3>
         {members.length ? (
@@ -58,7 +58,7 @@ export function CircleDetails({ chat, chats, onChange }: CircleDetailsProps) {
             ))}
           </ul>
         ) : (
-          <p className="text-dim text-xs">No Wisps in this circle.</p>
+          <p className="text-dim text-sm">No Wisps in this circle.</p>
         )}
       </section>
       <CircleMemberPicker
@@ -70,8 +70,8 @@ export function CircleDetails({ chat, chats, onChange }: CircleDetailsProps) {
       <SettingsCard className="mt-[15px]">
         <SettingsRow className="min-h-0 p-[11px]">
           <SettingsRowCopy>
-            <strong className="text-[12.5px]">Notifications</strong>
-            <small className="text-dim text-[11px] leading-[1.3]">Get notified about activity in this circle</small>
+            <strong className="text-sm">Notifications</strong>
+            <small className="text-dim text-xs leading-[1.3]">Get notified about activity in this circle</small>
           </SettingsRowCopy>
           <ToggleSwitch
             checked={chat.notifyOnUpdatesEnabled}

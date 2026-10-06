@@ -102,7 +102,7 @@ function SearchDialog({ chats, open, onOpenChange, onSelectChat, onSelectMessage
             value={query}
             onChange={(event) => setQuery(event.currentTarget.value)}
           />
-          <kbd className="rounded-[5px] border border-border px-1.5 py-0.5 text-[10px] text-dim [font-family:inherit]">
+          <kbd className="rounded-[5px] border border-border px-1.5 py-0.5 text-2xs text-dim [font-family:inherit]">
             esc
           </kbd>
         </div>
@@ -112,7 +112,7 @@ function SearchDialog({ chats, open, onOpenChange, onSelectChat, onSelectMessage
               type="button"
               key={id}
               data-selected={filter === id}
-              className="rounded-[7px] border-0 bg-transparent px-[9px] py-1 text-[11.5px] text-dim hover:not-data-[selected=true]:bg-muted hover:not-data-[selected=true]:text-foreground data-[selected=true]:bg-accent data-[selected=true]:text-accent-foreground"
+              className="rounded-[7px] border-0 bg-transparent px-[9px] py-1 text-xs text-dim hover:not-data-[selected=true]:bg-muted hover:not-data-[selected=true]:text-foreground data-[selected=true]:bg-accent data-[selected=true]:text-accent-foreground"
               aria-pressed={filter === id}
               onClick={() => setFilter(id)}
             >
@@ -136,7 +136,7 @@ function SearchDialog({ chats, open, onOpenChange, onSelectChat, onSelectMessage
                 <strong className="truncate">{chat.name}</strong>
                 <small className="truncate text-dim">{chat.preview}</small>
               </span>
-              <em className="text-[11px] not-italic text-dim">{chat.kind === "circle" ? "Circle" : "Wisp"}</em>
+              <em className="text-xs not-italic text-dim">{chat.kind === "circle" ? "Circle" : "Wisp"}</em>
             </button>
           ))}
           {messageMatches.map(({ hit, chat }) => {
@@ -157,7 +157,7 @@ function SearchDialog({ chats, open, onOpenChange, onSelectChat, onSelectMessage
                   <small className="truncate text-dim">{hit.snippet}</small>
                 </span>
                 {time ? (
-                  <time className="text-[11px] text-dim" dateTime={hit.createdAt}>
+                  <time className="text-xs text-dim" dateTime={hit.createdAt}>
                     {time}
                   </time>
                 ) : null}
@@ -165,7 +165,7 @@ function SearchDialog({ chats, open, onOpenChange, onSelectChat, onSelectMessage
             );
           })}
           {needsMoreCharacters ? (
-            <p className={empty ? "p-[35px] text-center text-dim" : "px-2 pt-2 pb-1 text-[11.5px] text-dim"}>
+            <p className={empty ? "p-[35px] text-center text-dim" : "px-2 pt-2 pb-1 text-xs text-dim"}>
               Type at least {MIN_MESSAGE_SEARCH_LENGTH} characters to search messages.
             </p>
           ) : empty ? (

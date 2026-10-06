@@ -60,8 +60,8 @@ function WorkspacePanel({ conversationId }: { conversationId: string }) {
 
   const percent = view ? Math.min(100, Math.round((view.usedBytes / view.quotaBytes) * 100)) : 0;
   return (
-    <div className="space-y-3 text-xs">
-      <p className="text-muted-foreground">
+    <div className="space-y-3 text-sm">
+      <p className="text-dim">
         A private folder only this Wisp can read and write. Attached files are copied to its inbox folder.
       </p>
       {view ? (

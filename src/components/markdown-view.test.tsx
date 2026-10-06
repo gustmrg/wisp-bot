@@ -29,7 +29,7 @@ describe("MarkdownView static render", () => {
     const html = renderToStaticMarkup(<MarkdownView text={sample} />);
     expect(html).toContain("<table");
     expect(html).toContain("<th");
-    expect((html.match(/<strong class="font-\[650\]">/g) ?? []).length).toBeGreaterThanOrEqual(3);
+    expect((html.match(/<strong class="font-semibold">/g) ?? []).length).toBeGreaterThanOrEqual(3);
     expect(html).toContain("<ul");
     expect(html).toContain("<pre");
     expect(html).toContain("<h3");

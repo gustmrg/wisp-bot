@@ -119,7 +119,7 @@ function AvatarEditor({ chat, onChange }: AvatarEditorProps) {
           >
             <UploadIcon />
           </span>
-          <span className="avatar-edit-tip pointer-events-none absolute top-[105px] left-1/2 z-[5] -translate-x-1/2 rounded-lg border border-border bg-secondary px-[9px] py-1 text-xs whitespace-nowrap text-secondary-foreground opacity-0 shadow-md transition-opacity duration-[120ms]">
+          <span className="avatar-edit-tip pointer-events-none absolute top-[105px] left-1/2 z-[5] -translate-x-1/2 rounded-lg border border-border bg-secondary px-[9px] py-1 text-sm whitespace-nowrap text-secondary-foreground opacity-0 shadow-md transition-opacity duration-[120ms]">
             Upload image
           </span>
         </Popover.Trigger>
@@ -136,7 +136,7 @@ function AvatarEditor({ chat, onChange }: AvatarEditorProps) {
               aria-label="Upload avatar image"
             >
               <header className="flex items-center justify-between gap-0.5 border-b border-black/[0.08] p-2 dark:border-white/[0.08]">
-                <strong className="pl-1.5 text-[13px] font-medium">Upload an avatar</strong>
+                <strong className="pl-1.5 text-base font-medium">Upload an avatar</strong>
                 <Popover.Close
                   className="inline-flex size-6 shrink-0 items-center justify-center rounded-md bg-transparent text-dim hover:bg-muted hover:text-foreground [&_svg]:size-3.5"
                   aria-label="Close avatar upload"
@@ -146,7 +146,7 @@ function AvatarEditor({ chat, onChange }: AvatarEditorProps) {
               </header>
               <div className="flex min-h-[250px] flex-col items-center justify-center gap-2.5 px-5 py-6 text-center">
                 <UploadIcon aria-hidden="true" className="mb-1 size-7 text-dim" />
-                <p className="m-0 text-dim text-xs leading-[1.5]">
+                <p className="m-0 text-dim text-sm leading-[1.5]">
                   PNG, JPG, or WebP, up to 5 MB. Images are cropped to a square and saved on this device.
                 </p>
                 <label
@@ -182,7 +182,7 @@ function AvatarEditor({ chat, onChange }: AvatarEditorProps) {
       </Popover.Root>
       <section className="px-1 pb-5" aria-label="Wisp appearance">
         <header className="mb-3.5 flex items-center justify-between gap-2">
-          <strong className="text-dim text-xs font-medium">Appearance</strong>
+          <strong className="text-dim text-sm font-medium">Appearance</strong>
         </header>
         <div
           className="mb-7 grid grid-cols-4 gap-x-2 gap-y-3.5"
@@ -242,7 +242,7 @@ function AvatarEditor({ chat, onChange }: AvatarEditorProps) {
           </button>
         </div>
         {chat.avatarImage ? (
-          <p className="m-0 mt-3.5 text-dim text-xs">
+          <p className="m-0 mt-3.5 text-dim text-sm">
             Choosing a shape, color, or random Wisp replaces the uploaded image.
           </p>
         ) : null}

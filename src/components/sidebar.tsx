@@ -40,7 +40,7 @@ interface SidebarProps {
 const unreadIndicator =
   "unread-dot absolute -top-1 -right-1 size-[10px] rounded-full border-2 border-sidebar bg-[#ff3b30]";
 const approvalIndicator =
-  "approval-indicator absolute -right-1 -bottom-1 flex size-[15px] items-center justify-center rounded-full border-2 border-sidebar bg-amber-500 text-white [&_svg]:size-[8px]";
+  "approval-indicator absolute -right-1 -bottom-1 flex size-[15px] items-center justify-center rounded-full border-2 border-sidebar bg-warning-solid text-white [&_svg]:size-[8px]";
 
 function Sidebar({
   activeChatId,
@@ -202,12 +202,12 @@ function Sidebar({
                 {collapsed ? null : (
                   <span className="flex min-w-0 flex-1 flex-col">
                     <span className="flex min-w-0 items-baseline gap-2">
-                      <strong className="min-w-0 flex-1 overflow-hidden text-[13px] leading-[17px] font-semibold text-ellipsis whitespace-nowrap">
+                      <strong className="min-w-0 flex-1 overflow-hidden text-base leading-[17px] font-semibold text-ellipsis whitespace-nowrap">
                         {chat.name}
                       </strong>
                       {activityDate ? (
                         <time
-                          className="flex-none text-faint text-[10.5px] leading-[17px]"
+                          className="flex-none text-faint text-2xs leading-[17px]"
                           dateTime={activityDate.toISOString()}
                         >
                           {chatActivityLabel(activityDate, now)}
@@ -216,8 +216,8 @@ function Sidebar({
                     </span>
                     <span
                       className={cn(
-                        "conversation-preview mt-px overflow-hidden text-faint text-[12.5px] leading-[17px] text-ellipsis whitespace-nowrap",
-                        pendingApproval && "font-medium text-[#855c17] dark:text-[#e6b765]",
+                        "conversation-preview mt-px overflow-hidden text-faint text-sm leading-[17px] text-ellipsis whitespace-nowrap",
+                        pendingApproval && "font-medium text-warning",
                       )}
                       data-activity={pendingApproval ? "approval" : mobile && working ? "working" : undefined}
                     >

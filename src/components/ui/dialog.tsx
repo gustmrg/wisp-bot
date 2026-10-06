@@ -62,7 +62,7 @@ function DialogContent({
           {showCloseButton ? (
             <DialogPrimitive.Close
               aria-label="Close"
-              className="dialog-close-button absolute top-3 right-3 inline-flex size-7 items-center justify-center rounded-md text-muted-foreground outline-none transition-colors hover:bg-muted hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50 [&_svg]:size-4"
+              className="dialog-close-button absolute top-3 right-3 inline-flex size-7 items-center justify-center rounded-md text-dim outline-none transition-colors hover:bg-muted hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50 [&_svg]:size-4"
             >
               <XIcon />
             </DialogPrimitive.Close>
@@ -91,7 +91,7 @@ function DialogTitle({ className, ...props }: DialogPrimitive.Title.Props) {
   return (
     <DialogPrimitive.Title
       data-slot="dialog-title"
-      className={cn("text-base leading-none font-semibold", className)}
+      className={cn("text-lg leading-none font-semibold", className)}
       {...props}
     />
   );
@@ -101,7 +101,7 @@ function DialogDescription({ className, ...props }: DialogPrimitive.Description.
   return (
     <DialogPrimitive.Description
       data-slot="dialog-description"
-      className={cn("text-sm text-muted-foreground", className)}
+      className={cn("text-base text-dim", className)}
       {...props}
     />
   );

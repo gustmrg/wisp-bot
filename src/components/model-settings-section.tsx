@@ -173,23 +173,23 @@ function ModelSettingsSection({ active, onViewChange, showHeading = true }: Mode
       aria-labelledby="model-settings-title"
       hidden={!active}
     >
-      <h2 id="model-settings-title" className={showHeading ? "mb-1 mt-0 text-[17px]" : "sr-only"}>
+      <h2 id="model-settings-title" className={showHeading ? "mb-1 mt-0 text-lg" : "sr-only"}>
         AI Model
       </h2>
       {showHeading ? (
-        <p className="mb-[22px] text-dim text-[11.5px] leading-relaxed">
+        <p className="mb-[22px] text-dim text-xs leading-relaxed">
           Default provider and model for Wisps without their own selection. Saved provider keys are shared with all
           Wisps.
         </p>
       ) : null}
 
       {view?.catalogError ? (
-        <p role="alert" className="mb-[18px] text-[11.5px] leading-relaxed text-destructive">
+        <p role="alert" className="mb-[18px] text-xs leading-relaxed text-destructive">
           Could not refresh the model catalog, so some providers or models may be missing. {view.catalogError}
         </p>
       ) : null}
 
-      {loading ? <p className="text-dim text-[12px]">Loading providers and models…</p> : null}
+      {loading ? <p className="text-dim text-sm">Loading providers and models…</p> : null}
       {!loading && view ? (
         <div className="animate-tab-forward">
           <SettingsGroup label="Provider">
@@ -227,7 +227,7 @@ function ModelSettingsSection({ active, onViewChange, showHeading = true }: Mode
                   id="ai-model"
                   value={modelId}
                   options={modelItems}
-                  className="h-8 w-[260px] max-w-[62%] text-sm"
+                  className="h-8 w-[260px] max-w-[62%] text-base"
                   searchLabel="Search models"
                   searchPlaceholder="Search model name or ID…"
                   emptyText="No models found."
@@ -292,7 +292,7 @@ function ModelSettingsSection({ active, onViewChange, showHeading = true }: Mode
                   }}
                 />
                 {!view.secureStorageAvailable ? (
-                  <p className="m-0 text-[11.5px] leading-relaxed text-destructive">
+                  <p className="m-0 text-xs leading-relaxed text-destructive">
                     Secure credential storage is unavailable. Wisp will not save an API key as plaintext.
                   </p>
                 ) : null}
@@ -302,8 +302,8 @@ function ModelSettingsSection({ active, onViewChange, showHeading = true }: Mode
 
           <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
             <div aria-live="polite">
-              {error ? <p className="m-0 text-[11.5px] text-destructive">{error}</p> : null}
-              {saved ? <p className="m-0 text-[11.5px] text-dim">AI model settings saved.</p> : null}
+              {error ? <p className="m-0 text-xs text-destructive">{error}</p> : null}
+              {saved ? <p className="m-0 text-xs text-dim">AI model settings saved.</p> : null}
             </div>
             <div className="flex flex-wrap justify-end gap-2">
               {provider?.credentialConfigured ? (
@@ -322,7 +322,7 @@ function ModelSettingsSection({ active, onViewChange, showHeading = true }: Mode
           </div>
         </div>
       ) : null}
-      {!loading && !view && error ? <p className="text-[12px] text-destructive">{error}</p> : null}
+      {!loading && !view && error ? <p className="text-sm text-destructive">{error}</p> : null}
     </section>
   );
 }

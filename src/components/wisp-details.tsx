@@ -112,7 +112,7 @@ export function WispDetails({ chat, onChange, onOpenSettings, generalActions }: 
         </div>
         <footer className="flex-none border-t border-border p-3.5">
           {error ? (
-            <p className="mb-3 text-sm text-destructive" role="alert">
+            <p className="mb-3 text-base text-destructive" role="alert">
               {error}
             </p>
           ) : null}

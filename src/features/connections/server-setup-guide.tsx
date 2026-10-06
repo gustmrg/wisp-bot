@@ -5,7 +5,7 @@ export const SERVER_GUIDE_URL = "https://github.com/gustmrg/wisp-bot/blob/main/d
 
 function Commands({ children }: { children: string }) {
   return (
-    <pre className="mt-1.5 overflow-x-auto rounded-lg bg-muted px-2.5 py-2 font-mono text-[11px] leading-relaxed">
+    <pre className="mt-1.5 overflow-x-auto rounded-lg bg-muted px-2.5 py-2 font-mono text-xs leading-relaxed">
       {children}
     </pre>
   );
@@ -26,8 +26,8 @@ function Step({ title, children }: { title: string; children: ReactNode }) {
  */
 export function ServerSetupGuide() {
   return (
-    <details className="mt-3 rounded-xl border border-border px-3 py-2.5 text-[12px] text-dim">
-      <summary className="cursor-pointer text-[13px] font-medium text-foreground">How to set up a Wisp server</summary>
+    <details className="mt-3 rounded-xl border border-border px-3 py-2.5 text-sm text-dim">
+      <summary className="cursor-pointer text-base font-medium text-foreground">How to set up a Wisp server</summary>
       <ol className="mt-3 flex list-decimal flex-col gap-3 pl-5 leading-relaxed">
         <Step title="Install it on a Linux machine">
           It needs Node.js 22.19 or later and systemd. One command installs the server, creates its master key, and

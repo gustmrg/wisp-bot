@@ -54,7 +54,7 @@ function SessionReportContent({ state, onRefresh }: { state: ReportState; onRefr
   if (state.status === "error") {
     return (
       <div className="">
-        <p className="text-sm text-destructive" role="alert">
+        <p className="text-base text-destructive" role="alert">
           {state.message}
         </p>
         <RefreshButton onRefresh={onRefresh} />
@@ -73,17 +73,17 @@ function SessionReportContent({ state, onRefresh }: { state: ReportState; onRefr
     <div className="flex flex-col gap-4">
       <div className="grid grid-cols-2 gap-2">
         <SettingsCard className="p-3">
-          <p className="text-[11px] text-dim">Total tokens</p>
+          <p className="text-xs text-dim">Total tokens</p>
           <p className="mt-1 text-xl font-medium tabular-nums">{formatTokenCount(report.totals.totalTokens)}</p>
         </SettingsCard>
         <SettingsCard className="p-3">
-          <p className="text-[11px] text-dim">Estimated USD</p>
+          <p className="text-xs text-dim">Estimated USD</p>
           <p className="mt-1 break-all text-xl font-medium tabular-nums">
             {report.totals.costUsd === null ? "Unknown" : formatCost(report.totals.costUsd)}
           </p>
         </SettingsCard>
       </div>
-      <dl className="flex flex-col gap-1.5 text-[11.5px]">
+      <dl className="flex flex-col gap-1.5 text-xs">
         <SummaryTerm label="Input" value={formatTokenCount(report.totals.inputTokens)} />
         <SummaryTerm label="Output" value={formatTokenCount(report.totals.outputTokens)} />
         <SummaryTerm
@@ -91,12 +91,12 @@ function SessionReportContent({ state, onRefresh }: { state: ReportState; onRefr
           value={`${formatTokenCount(report.totals.cacheReadTokens)} / ${formatTokenCount(report.totals.cacheWriteTokens)}`}
         />
       </dl>
-      <p className="text-[11px] leading-relaxed text-dim">
+      <p className="text-xs leading-relaxed text-dim">
         Usage for this session. Costs are estimates based on available model prices.
         {report.totals.costUsd === null ? " Pricing is unavailable for one or more models." : ""}
       </p>
       {report.compactionUsage?.totalTokens ? (
-        <p className="text-xs text-muted-foreground">
+        <p className="text-sm text-dim">
           Includes {report.compactionUsage.totalTokens.toLocaleString()} tokens used to summarize context. Summary costs
           use the runtime's recorded estimate.
         </p>
@@ -105,7 +105,7 @@ function SessionReportContent({ state, onRefresh }: { state: ReportState; onRefr
         <AccordionItem>
           <AccordionTrigger>Session details</AccordionTrigger>
           <AccordionContent>
-            <dl className="mb-3 flex flex-col gap-1.5 text-[11.5px]">
+            <dl className="mb-3 flex flex-col gap-1.5 text-xs">
               <SummaryTerm label="Session" value={report.sessionId} />
               {report.piVersion ? <SummaryTerm label="Pi version" value={report.piVersion} /> : null}
               <SummaryTerm label="Turns" value={String(report.turns)} />
@@ -125,12 +125,12 @@ function SessionReportContent({ state, onRefresh }: { state: ReportState; onRefr
             {report.events.length ? (
               <EventList report={report} />
             ) : (
-              <p className="text-xs text-dim">No events recorded.</p>
+              <p className="text-sm text-dim">No events recorded.</p>
             )}
           </AccordionContent>
         </AccordionItem>
       </Accordion>
-      <p className="text-[11px] text-dim">
+      <p className="text-xs text-dim">
         Argument text and provider error details are hidden for privacy. Latest 50 tool calls and events.
       </p>
       <RefreshButton onRefresh={onRefresh} />
@@ -142,8 +142,8 @@ function ModelList({ report }: { report: WispSessionReport }) {
   if (report.models.length === 0) return null;
   return (
     <div>
-      <h4 className="mb-1 text-[11px] text-dim">Models</h4>
-      <ul className="flex flex-col gap-1 text-[11.5px]">
+      <h4 className="mb-1 text-xs text-dim">Models</h4>
+      <ul className="flex flex-col gap-1 text-xs">
         {report.models.map((model) => (
           <li key={`${model.providerId}:${model.modelId}`} className="flex flex-wrap gap-1.5">
             <span className="min-w-0 break-all">
@@ -162,11 +162,11 @@ function ModelList({ report }: { report: WispSessionReport }) {
 function ToolCallList({ report }: { report: WispSessionReport }) {
   return (
     <div>
-      <h4 className="mb-1 text-[11px] text-dim">Tool calls</h4>
+      <h4 className="mb-1 text-xs text-dim">Tool calls</h4>
       {report.toolCalls.length === 0 ? (
-        <p className="text-[11.5px] text-dim">No tool calls recorded.</p>
+        <p className="text-xs text-dim">No tool calls recorded.</p>
       ) : (
-        <ul className="flex flex-col gap-1 text-[11.5px]">
+        <ul className="flex flex-col gap-1 text-xs">
           {report.toolCalls.map((toolCall) => (
             <li key={toolCall.toolCallId} className="flex min-w-0 flex-col gap-0.5">
               <span className="flex min-w-0 items-baseline gap-1.5">
@@ -199,8 +199,8 @@ function EventList({ report }: { report: WispSessionReport }) {
   if (report.events.length === 0) return null;
   return (
     <div>
-      <h4 className="mb-1 text-[11px] text-dim">Events</h4>
-      <ul className="flex flex-col gap-1 text-[11.5px]">
+      <h4 className="mb-1 text-xs text-dim">Events</h4>
+      <ul className="flex flex-col gap-1 text-xs">
         {report.events.map((event, index) => (
           <li key={`${event.kind}:${event.timestamp}:${index}`} className="flex min-w-0 flex-col gap-0.5">
             <span className="flex items-baseline gap-1.5">
@@ -219,14 +219,7 @@ function EventList({ report }: { report: WispSessionReport }) {
 
 function RefreshButton({ onRefresh }: { onRefresh: () => void }) {
   return (
-    <Button
-      className="self-start text-[11.5px]"
-      size="sm"
-      type="button"
-      variant="ghost"
-      onClick={onRefresh}
-      disabled={false}
-    >
+    <Button className="self-start text-xs" size="sm" type="button" variant="ghost" onClick={onRefresh} disabled={false}>
       <RefreshCwIcon data-icon="inline-start" />
       Refresh
     </Button>

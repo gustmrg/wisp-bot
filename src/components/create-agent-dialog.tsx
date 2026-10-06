@@ -148,7 +148,7 @@ function CreateAgentDialog({ onCreate, trigger }: CreateAgentDialogProps) {
         render={
           trigger ?? (
             <Button
-              className="w-full justify-center gap-2 px-3 text-sm group-data-[collapsed=true]/sidebar:w-9 group-data-[collapsed=true]/sidebar:px-0"
+              className="w-full justify-center gap-2 px-3 text-base group-data-[collapsed=true]/sidebar:w-9 group-data-[collapsed=true]/sidebar:px-0"
               variant="ghost"
               type="button"
               aria-label="Create Wisp"
@@ -190,12 +190,12 @@ function CreateAgentDialog({ onCreate, trigger }: CreateAgentDialogProps) {
             />
           </CreateWispForm>
           {step === "identity" && (modelLoadError || (modelView && modelInvalid)) ? (
-            <p className="text-[11.5px] text-dim" role="status">
+            <p className="text-xs text-dim" role="status">
               This Wisp needs a model before it can be created. Choose one in the next step.
             </p>
           ) : null}
           {error ? (
-            <p className="text-sm text-destructive" role="alert">
+            <p className="text-base text-destructive" role="alert">
               {error}
             </p>
           ) : null}

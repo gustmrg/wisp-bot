@@ -86,21 +86,21 @@ function SkillPanel({ conversationId }: { conversationId: string }) {
   }
 
   return (
-    <div className="space-y-3 text-xs">
-      <p className="text-muted-foreground">
+    <div className="space-y-3 text-sm">
+      <p className="text-dim">
         Reusable procedures this Wisp follows when a request matches. Ask the Wisp to save a workflow as a skill; you
         review it before it is saved.
       </p>
-      {skills?.length === 0 ? <p className="text-muted-foreground">No skills yet.</p> : null}
+      {skills?.length === 0 ? <p className="text-dim">No skills yet.</p> : null}
       {skills?.length ? (
         <ul className="space-y-2" aria-label="Saved skills">
           {skills.map((skill) => (
             <li key={skill.name} className="space-y-1.5 rounded-md border border-border p-2.5">
               <p className="font-medium">{skill.name}</p>
-              <p className="text-muted-foreground break-words">{skill.description}</p>
+              <p className="text-dim break-words">{skill.description}</p>
               <details>
                 <summary className="cursor-pointer">View instructions</summary>
-                <pre className="mt-2 max-h-64 overflow-y-auto whitespace-pre-wrap break-words font-mono text-[11px]">
+                <pre className="mt-2 max-h-64 overflow-y-auto whitespace-pre-wrap break-words font-mono text-xs">
                   {skill.instructions}
                 </pre>
               </details>
@@ -132,7 +132,7 @@ function SkillPanel({ conversationId }: { conversationId: string }) {
         <RefreshCwIcon aria-hidden="true" />
         Reload skills
       </Button>
-      <p className="text-muted-foreground">
+      <p className="text-dim">
         Skills live outside the workspace, so this Wisp's file tools cannot change them. Edits made in the folder apply
         from the next message.
       </p>

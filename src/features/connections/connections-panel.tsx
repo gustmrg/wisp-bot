@@ -80,7 +80,7 @@ export function ConnectionsPanel({ view, serversOnly = false }: { view: Connecti
   return (
     <div className="animate-tab-forward">
       {!view.secureStorageAvailable ? (
-        <p role="alert" className="mb-3 text-[11.5px] text-destructive">
+        <p role="alert" className="mb-3 text-xs text-destructive">
           Secure storage is unavailable, so this computer pairs with servers again after every restart.
         </p>
       ) : null}
@@ -99,15 +99,15 @@ export function ConnectionsPanel({ view, serversOnly = false }: { view: Connecti
                   )}
                 </span>
                 <span className="min-w-0 flex-1">
-                  <span className="block text-[14px] font-medium">{profile.name}</span>
-                  <span className="mt-1 block truncate text-[12px] text-dim">{describeProfile(profile)}</span>
+                  <span className="block text-base font-medium">{profile.name}</span>
+                  <span className="mt-1 block truncate text-sm text-dim">{describeProfile(profile)}</span>
                   {active ? (
-                    <span className="mt-1.5 flex items-center gap-1.5 text-[10.5px] text-dim">
+                    <span className="mt-1.5 flex items-center gap-1.5 text-2xs text-dim">
                       <StatusDot tone={phaseTone(view.status.phase)} />
                       {PHASE_LABELS[view.status.phase]}
                     </span>
                   ) : profile.kind !== "local" && !profile.paired ? (
-                    <span className="mt-1.5 block text-[10.5px] text-dim">Not paired yet</span>
+                    <span className="mt-1.5 block text-2xs text-dim">Not paired yet</span>
                   ) : null}
                 </span>
                 {active ? null : (
@@ -146,13 +146,13 @@ export function ConnectionsPanel({ view, serversOnly = false }: { view: Connecti
           <Plus className="size-4 text-dim group-hover:text-foreground" aria-hidden="true" />
         </span>
         <span className="min-w-0 flex-1">
-          <span className="block text-[14px] font-medium">Add a server</span>
-          <span className="mt-1 block text-[12px] text-dim">Use Wisps running on a Wisp server over SSH or HTTPS.</span>
+          <span className="block text-base font-medium">Add a server</span>
+          <span className="mt-1 block text-sm text-dim">Use Wisps running on a Wisp server over SSH or HTTPS.</span>
         </span>
       </button>
       <ServerSetupGuide />
       {error ? (
-        <p role="alert" className="mt-3 text-[11.5px] text-destructive">
+        <p role="alert" className="mt-3 text-xs text-destructive">
           {error}
         </p>
       ) : null}
@@ -252,7 +252,7 @@ function ConnectionForm({
         <ChevronLeftIcon aria-hidden="true" />
         Connections
       </Button>
-      <h3 id={`${formId}-title`} className="mb-3 mt-0 text-[14px] font-medium">
+      <h3 id={`${formId}-title`} className="mb-3 mt-0 text-md font-medium">
         {profile ? `Edit ${profile.name}` : "Add a server"}
       </h3>
       {profile ? null : (
@@ -305,7 +305,7 @@ function ConnectionForm({
               />
             </SettingsField>
           </div>
-          <p className="mb-3 text-[11.5px] leading-relaxed text-dim">
+          <p className="mb-3 text-xs leading-relaxed text-dim">
             Wisp uses this computer&apos;s OpenSSH, with your SSH agent, keys, and known hosts. Connect once with{" "}
             <code>ssh</code> in a terminal so the host key is trusted. Pairing runs <code>wispctl pair</code> on the
             server for you.
@@ -321,14 +321,14 @@ function ConnectionForm({
               onChange={(event) => update({ url: event.target.value })}
             />
           </SettingsField>
-          <p className="mb-3 text-[11.5px] leading-relaxed text-dim">
+          <p className="mb-3 text-xs leading-relaxed text-dim">
             A private HTTPS address for the server, such as Tailscale Serve. You will enter a code from{" "}
             <code>wispctl pair</code> to pair.
           </p>
         </>
       )}
       {error ? (
-        <p role="alert" className="mb-3 text-[11.5px] text-destructive">
+        <p role="alert" className="mb-3 text-xs text-destructive">
           {error}
         </p>
       ) : null}
@@ -350,8 +350,8 @@ function ConnectionForm({
       </div>
       {profile?.kind === "ssh" ? (
         <div className="mt-5 border-t border-border pt-4">
-          <h4 className="mb-1 mt-0 text-[13px] font-medium">Wisp server on {profile.host}</h4>
-          <p className="mb-3 mt-0 text-[11.5px] leading-relaxed text-dim">
+          <h4 className="mb-1 mt-0 text-base font-medium">Wisp server on {profile.host}</h4>
+          <p className="mb-3 mt-0 text-xs leading-relaxed text-dim">
             Installs the server on that machine, or updates it to this app&apos;s version, and connects to it.
           </p>
           <InstallServerAction

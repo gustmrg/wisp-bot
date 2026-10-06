@@ -105,7 +105,7 @@ function SegmentedControl<T extends string>({
             onClick={() => {
               if (!selected) onChange(option.value);
             }}
-            className="relative h-6 rounded-md px-2.5 text-[11.5px] font-medium whitespace-nowrap text-foreground/60 outline-none transition-colors hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:text-foreground/60 aria-checked:text-foreground dark:text-muted-foreground dark:hover:text-foreground dark:disabled:hover:text-muted-foreground dark:aria-checked:text-foreground"
+            className="relative h-6 rounded-md px-2.5 text-xs font-medium whitespace-nowrap text-dim outline-none transition-colors hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:text-dim aria-checked:text-foreground dark:text-dim dark:hover:text-foreground dark:disabled:hover:text-dim dark:aria-checked:text-foreground"
           >
             {option.label}
           </button>
