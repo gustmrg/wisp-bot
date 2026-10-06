@@ -1,4 +1,6 @@
 #!/usr/bin/env node
+import "./node-version.js";
+
 import path from "node:path";
 
 import { adminRequest, ServerNotRunningError } from "./admin.js";
@@ -7,10 +9,14 @@ import { createBackup, restoreBackup, verifyBackup } from "./backup.js";
 import { defaultDataDirectory } from "./config.js";
 import { InstanceLock } from "./instance-lock.js";
 import { MasterKeyEncryption, readPrivateKeyFile } from "./master-key.js";
+import { describeSetup, runSetup, systemHost } from "./setup.js";
 
 const HELP = `Usage: wispctl <command> [options]
 
 Commands:
+  setup                    Install and start a Wisp server for this account: the package,
+                           a master key, server.env, wispctl, and a systemd user service.
+                           Safe to run again; it keeps the key and settings.
   keygen --output FILE     Write a new private 32-byte key (never overwrites)
   pair                     Print a one-time pairing code for a new device
   devices                  List paired devices
@@ -27,6 +33,14 @@ Commands:
 Options:
   --data-dir DIR           Server data directory (default: $WISP_DATA_DIR or ~/.local/share/wisp)
   --json                   Print compact JSON
+
+Options of setup:
+  --port PORT              Port the server listens on (default 8787)
+  --public-origin URL      The https address of a private proxy such as Tailscale Serve
+  --package SPEC           npm package to install (default: this version)
+  --no-service             Only install the files; do not set up the service
+  --no-pair                Do not print a pairing code
+  --until-stdin-closes     Stop when stdin closes, before starting the service (for the desktop app)
 `;
 
 export async function runCli(args: readonly string[], write: (text: string) => void): Promise<void> {
@@ -34,10 +48,26 @@ export async function runCli(args: readonly string[], write: (text: string) => v
   const flags = new Map<string, string | true>();
   for (let index = 0; index < rest.length; index++) {
     const flag = rest[index]!;
-    if (!["--output", "--device-id", "--data-dir", "--json", "--key-file", "--input", "--target"].includes(flag)) {
+    if (
+      ![
+        "--output",
+        "--device-id",
+        "--data-dir",
+        "--json",
+        "--key-file",
+        "--input",
+        "--target",
+        "--port",
+        "--public-origin",
+        "--package",
+        "--no-service",
+        "--no-pair",
+        "--until-stdin-closes",
+      ].includes(flag)
+    ) {
       throw new Error(`Unknown option ${flag}.`);
     }
-    if (flag === "--json") {
+    if (["--json", "--no-service", "--no-pair", "--until-stdin-closes"].includes(flag)) {
       flags.set(flag, true);
       continue;
     }
@@ -57,6 +87,39 @@ export async function runCli(args: readonly string[], write: (text: string) => v
     case "--help":
       write(HELP);
       return;
+    case "setup": {
+      // The desktop app runs setup over SSH and cancels it by closing stdin.
+      const cancel = new AbortController();
+      const stopOnClose = (): void => cancel.abort();
+      if (flags.has("--until-stdin-closes")) {
+        process.stdin.once("end", stopOnClose).once("close", stopOnClose).resume();
+      }
+      let outcome: Awaited<ReturnType<typeof runSetup>>;
+      try {
+        outcome = await runSetup(
+          {
+            service: !flags.has("--no-service"),
+            pair: !flags.has("--no-pair"),
+            signal: cancel.signal,
+            ...(flags.has("--package") ? { packageSpec: option("--package") } : {}),
+            ...(flags.has("--port") ? { port: Number(option("--port")) } : {}),
+            ...(flags.has("--public-origin") ? { publicOrigin: option("--public-origin") } : {}),
+            ...(flags.has("--data-dir") ? { dataDirectory: dataDirectory } : {}),
+          },
+          // Progress goes to stderr, so `--json` leaves stdout for the result alone.
+          systemHost(readAppVersion(), (message) => process.stderr.write(`${message}\n`)),
+        );
+      } finally {
+        if (flags.has("--until-stdin-closes"))
+          process.stdin.off("end", stopOnClose).off("close", stopOnClose).destroy();
+      }
+      if (!flags.has("--json")) {
+        write(describeSetup(outcome));
+        return;
+      }
+      result = outcome;
+      break;
+    }
     case "keygen":
       MasterKeyEncryption.generate(path.resolve(option("--output")));
       result = { created: path.resolve(option("--output")) };

@@ -254,6 +254,7 @@ async function bootstrap(): Promise<void> {
     updateService: new UpdateService(autoUpdater, app.getVersion(), app.isPackaged, autoInstallSupported, logger),
     connectionsDirectory: userData,
     deviceName: `Wisp on ${hostname()}`,
+    appVersion: app.getVersion(),
   });
   let backendDisposed = false;
   let backendDisposing = false;

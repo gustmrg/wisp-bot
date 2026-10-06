@@ -33,6 +33,18 @@ Versions with a prerelease suffix (`-beta.1`) are published as GitHub prerelease
 
 To package locally, `npm run dist` builds installers for the current OS and `npm run dist:dir` builds an unpacked app. Both write to `release/` and never publish anything.
 
+## The server package on npm
+
+`@gustmrg/wisp-server` is the headless server that `npx @gustmrg/wisp-server setup` installs, and that the desktop app installs on a machine over SSH. The app always installs its own version, so every release publishes the matching one; a version missing from npm makes **Install the Wisp server** fail with "is not published on npm".
+
+The last job, **publish-server**, builds `npm run package:server` from the release tag and runs `npm publish --provenance`. Prereleases (`-beta.1`) get the `beta` dist-tag, so `npx @gustmrg/wisp-server` never runs one.
+
+One-time setup:
+
+1. Create or use the npm account that owns the `@gustmrg` scope (its username, or an organization with that name).
+2. Create a granular access token that can publish `@gustmrg/wisp-server` and store it as the repository secret `NPM_TOKEN`. Without it the job fails after the GitHub release is already out; add the secret and re-run only that job.
+3. Optional, once the first version is on npm: configure **Trusted publishing** for the package with the GitHub repository and the `release.yml` workflow, then delete the token. npm then authenticates the job with its OIDC identity.
+
 ## In-app updates
 
 Settings → About checks GitHub Releases only when asked and never downloads on its own.

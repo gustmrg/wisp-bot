@@ -150,6 +150,8 @@ function completeBridge(): WispApi {
     removeConnection: async () => ({ ok: true, value: connections }),
     activateConnection: async () => ({ ok: true, value: connections }),
     retryConnection: async () => ({ ok: true, value: connections }),
+    installServer: async () => ({ ok: true, value: connections }),
+    cancelServerInstall: async () => ({ ok: true, value: connections }),
     subscribeToConnections: () => () => undefined,
   };
 }

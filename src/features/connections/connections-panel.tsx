@@ -11,6 +11,7 @@ import type {
   ConnectionStatus,
   SaveConnectionRequest,
 } from "../../../shared/connections";
+import { InstallServerAction } from "./install-server-action";
 import { ServerSetupGuide } from "./server-setup-guide";
 
 const PHASE_LABELS: Record<ConnectionStatus["phase"], string> = {
@@ -347,6 +348,21 @@ function ConnectionForm({
           />
         ) : null}
       </div>
+      {profile?.kind === "ssh" ? (
+        <div className="mt-5 border-t border-border pt-4">
+          <h4 className="mb-1 mt-0 text-[13px] font-medium">Wisp server on {profile.host}</h4>
+          <p className="mb-3 mt-0 text-[11.5px] leading-relaxed text-dim">
+            Installs the server on that machine, or updates it to this app&apos;s version, and connects to it.
+          </p>
+          <InstallServerAction
+            profileId={profile.id}
+            host={profile.host}
+            label="Install or update the server"
+            disabled={busy !== null}
+            onInstalled={onDone}
+          />
+        </div>
+      ) : null}
       {profile ? null : <ServerSetupGuide />}
     </form>
   );

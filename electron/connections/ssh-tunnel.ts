@@ -180,7 +180,7 @@ export function explainPairingFailure(
     (exitCode === 127 && !/node/i.test(stderr))
   ) {
     return new FatalTransportError(
-      `wispctl is not installed on ${host}, or not in ~/.local/bin. Set up the Wisp server there first (see “How to set up a Wisp server”). ${manual}`,
+      `wispctl is not installed on ${host}, or not in ~/.local/bin. Choose “Install the Wisp server” to set it up, or run \`npx @gustmrg/wisp-server setup\` there. ${manual}`,
     );
   }
   if (/node: (command )?not found|env: .?node.?: No such file/i.test(stderr)) {
@@ -190,14 +190,15 @@ export function explainPairingFailure(
   }
   if (/Cannot find module/i.test(stderr)) {
     return new FatalTransportError(
-      `The Wisp server files are missing on ${host}. Copy the server package to ~/.local/lib/wisp, or set WISP_INSTALL_DIR, then retry.`,
+      `The Wisp server files are missing on ${host}. Choose “Install the Wisp server” to set it up again, or run \`npx @gustmrg/wisp-server setup\` there.`,
     );
   }
   const detail = stderr.trim().split("\n").pop();
   return new FatalTransportError(`Could not get a pairing code from ${host}. ${manual}${detail ? ` (${detail})` : ""}`);
 }
 
-function classify(stderr: string, host: string, spawnError: Error | undefined): Error {
+/** Turns what OpenSSH said about a failed connection into what to do about it. */
+export function classify(stderr: string, host: string, spawnError: Error | undefined): Error {
   if ((spawnError as NodeJS.ErrnoException | undefined)?.code === "ENOENT") {
     return new FatalTransportError("OpenSSH is not installed on this computer. Install the ssh client and retry.");
   }

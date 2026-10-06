@@ -224,6 +224,8 @@ function createApi(initialState: ConversationStateView): WispApi {
     removeConnection: async () => ({ ok: true as const, value: localConnections }),
     activateConnection: async () => ({ ok: true as const, value: localConnections }),
     retryConnection: async () => ({ ok: true as const, value: localConnections }),
+    installServer: async () => ({ ok: true as const, value: localConnections }),
+    cancelServerInstall: async () => ({ ok: true as const, value: localConnections }),
     subscribeToConnections: () => () => undefined,
   };
 }

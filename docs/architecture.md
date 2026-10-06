@@ -88,14 +88,14 @@ not the production transport.
 wisp-bot/
 ├── .github/workflows/
 │   ├── ci.yml                     # Repository quality gates
-│   └── release.yml                # Version bump, packaging, and GitHub release
+│   └── release.yml                # Version bump, packaging, GitHub release, npm publish
 ├── build/                         # Packaging icons
 ├── docs/                          # Guides and decision records
 ├── backend/                       # Persistence, services, agents, and authorization
 │   ├── handlers/                  # Operation handlers shared by IPC and HTTP
 │   └── runtime.ts                 # Host-independent backend composition and shutdown
 ├── client/                        # Remote client: protocol, events, reconnecting session
-├── deploy/                        # systemd, Docker, and wispctl for the server
+├── deploy/                        # Docker files for the server
 ├── electron/
 │   ├── backend/                   # Desktop-only services (safeStorage, updates, login)
 │   ├── connections/               # Connection profiles, SSH tunnels, backend routing

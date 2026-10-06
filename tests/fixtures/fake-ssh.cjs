@@ -2,7 +2,9 @@
 // Stands in for OpenSSH in tests. `-L 127.0.0.1:L:127.0.0.1:R` forwards a real
 // local port to R; a trailing remote command answers `wispctl pair` through the
 // server's admin socket. FAKE_SSH_FAIL makes it fail like OpenSSH does, and
-// FAKE_SSH_REMOTE=missing makes the remote shell lack wispctl.
+// FAKE_SSH_REMOTE=missing makes the remote shell lack wispctl, and
+// FAKE_SSH_INSTALL=no-node|not-published|systemd makes the server setup fail,
+// and FAKE_SSH_INSTALL=hang keeps it running until ssh is stopped.
 const http = require("node:http");
 const net = require("node:net");
 const fs = require("node:fs");
@@ -22,7 +24,29 @@ if (failures[process.env.FAKE_SSH_FAIL]) {
 }
 const separator = args.indexOf("--");
 const command = args.slice(separator + 2).join(" ");
-if (command) {
+if (command.includes("setup --json") && process.env.FAKE_SSH_INSTALL === "hang") {
+  process.stderr.write("Installing @gustmrg/wisp-server@1.0.0…\n");
+  // Runs until the test stops ssh.
+  setInterval(() => undefined, 60_000);
+} else if (command.includes("setup --json")) {
+  // `npx @gustmrg/wisp-server@VERSION setup`, run on the server.
+  const outcomes = {
+    "no-node": ["bash: line 1: npx: command not found", 127],
+    "not-published": [
+      "npm error code E404\nnpm error 404 Not Found - GET https://registry.npmjs.org/@gustmrg%2fwisp-server",
+      1,
+    ],
+    systemd: ["The systemd user session is not running (Failed to connect to bus).", 1],
+  };
+  const outcome = outcomes[process.env.FAKE_SSH_INSTALL];
+  if (outcome) {
+    process.stderr.write(`${outcome[0]}\n`);
+    process.exit(outcome[1]);
+  }
+  process.stderr.write("Installing @gustmrg/wisp-server@1.0.0…\nStarting the service…\n");
+  process.stdout.write(`${JSON.stringify({ version: "1.0.0", service: "started" })}\n`);
+  process.exit(0);
+} else if (command) {
   if (!command.includes("wispctl pair --json") || process.env.FAKE_SSH_REMOTE === "missing") {
     process.stderr.write("bash: line 1: wispctl: command not found\n");
     process.exit(127);

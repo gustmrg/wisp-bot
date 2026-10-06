@@ -1,15 +1,32 @@
 {
-  "name": "wisp-server",
+  "name": "@gustmrg/wisp-server",
   "version": "0.0.0",
-  "private": true,
   "description": "Headless Wisp server: the Wisp backend behind authenticated HTTP.",
   "license": "MIT",
+  "homepage": "https://github.com/gustmrg/wisp-bot/blob/main/docs/remote-server.md",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/gustmrg/wisp-bot.git",
+    "directory": "server"
+  },
+  "bugs": {
+    "url": "https://github.com/gustmrg/wisp-bot/issues"
+  },
   "type": "commonjs",
   "engines": {
     "node": ">=22.19.0"
   },
+  "os": [
+    "linux",
+    "darwin"
+  ],
   "bin": {
+    "wisp-server": "server/cli.js",
     "wispctl": "server/cli.js"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
   },
   "scripts": {
     "start": "node server/main.js"

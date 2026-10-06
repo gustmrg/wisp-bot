@@ -25,6 +25,8 @@ function bridge(initial: ConnectionsView) {
     removeConnection: vi.fn(ok),
     activateConnection: vi.fn(ok),
     retryConnection: vi.fn(ok),
+    installServer: vi.fn(ok),
+    cancelServerInstall: vi.fn(ok),
     subscribeToConnections: vi.fn((listener: (next: ConnectionsView) => void) => {
       push = listener;
       return () => undefined;
@@ -105,6 +107,65 @@ describe("ConnectionGate", () => {
     expect(api.retryConnection).toHaveBeenCalled();
     await userEvent.click(screen.getByRole("button", { name: "Use this computer instead" }));
     expect(api.activateConnection).toHaveBeenCalledWith({ id: "local" });
+  });
+
+  it("offers to set the server up over SSH, after asking, when the connection fails", async () => {
+    const { api } = bridge(view({ phase: "error", message: "wispctl is not installed on raspberrypi." }));
+    render(
+      <ConnectionGate>
+        <App onMount={() => undefined} />
+      </ConnectionGate>,
+    );
+    await userEvent.click(await screen.findByRole("button", { name: "Install the Wisp server" }));
+    // Nothing runs on the other computer until the person confirms.
+    expect(api.installServer).not.toHaveBeenCalled();
+    expect(screen.getByRole("group", { name: "Install the Wisp server" })).toHaveTextContent(
+      "npx @gustmrg/wisp-server setup",
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Install and connect" }));
+    expect(api.installServer).toHaveBeenCalledWith({ id: "pi" });
+  });
+
+  it("shows why the setup failed", async () => {
+    const { api } = bridge(view({ phase: "error", message: "Down." }));
+    api.installServer.mockResolvedValueOnce({
+      ok: false,
+      error: { code: "unavailable", message: "Node.js is missing on raspberrypi.", retryable: true },
+    } as never);
+    render(
+      <ConnectionGate>
+        <App onMount={() => undefined} />
+      </ConnectionGate>,
+    );
+    await userEvent.click(await screen.findByRole("button", { name: "Install the Wisp server" }));
+    await userEvent.click(screen.getByRole("button", { name: "Install and connect" }));
+    expect(await screen.findByText("Node.js is missing on raspberrypi.")).toBeVisible();
+  });
+
+  it("lets the person cancel a setup in progress", async () => {
+    const { api } = bridge(view({ phase: "connecting", message: "Installing…", installing: true }));
+    render(
+      <ConnectionGate>
+        <App onMount={() => undefined} />
+      </ConnectionGate>,
+    );
+    await userEvent.click(await screen.findByRole("button", { name: "Cancel setup" }));
+    expect(api.cancelServerInstall).toHaveBeenCalled();
+  });
+
+  it("does not offer a server setup for an address or this computer", async () => {
+    bridge({
+      ...view({ phase: "error", message: "Down." }),
+      activeId: "u",
+      profiles: [...profiles, { id: "u", kind: "url", name: "Tailnet", url: "https://x.ts.net", paired: false }],
+    });
+    render(
+      <ConnectionGate>
+        <App onMount={() => undefined} />
+      </ConnectionGate>,
+    );
+    await screen.findByRole("button", { name: "Retry" });
+    expect(screen.queryByRole("button", { name: "Install the Wisp server" })).toBeNull();
   });
 
   it("in the browser app, offers only pairing with the server that served it", async () => {

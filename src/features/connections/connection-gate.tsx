@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { LOCAL_CONNECTION_ID, type ConnectionsView } from "../../../shared/connections";
 import { ActiveConnectionContext } from "./active-connection";
 import { ConnectionsPanel } from "./connections-panel";
+import { InstallServerAction } from "./install-server-action";
 
 /** The active connection, kept current from the main process. */
 export function useConnections(): [ConnectionsView | null, string] {
@@ -252,7 +253,25 @@ function ConnectionScreen({ view }: { view: ConnectionsView }) {
               ) : null}
             </form>
           ) : null}
+          {status.phase === "error" && profile?.kind === "ssh" ? (
+            <div className="mt-4 border-t border-border pt-4">
+              <p className="mb-2 mt-0 text-[12px] leading-relaxed text-dim">
+                If Wisp is not installed on {profile.host} yet, Wisp can set it up for you.
+              </p>
+              <InstallServerAction profileId={profile.id} host={profile.host} disabled={busy} />
+            </div>
+          ) : null}
           <div className="mt-4 flex flex-wrap gap-2">
+            {status.installing ? (
+              <Button
+                type="button"
+                variant="outline"
+                disabled={busy}
+                onClick={() => void act(() => window.wisp.cancelServerInstall())}
+              >
+                Cancel setup
+              </Button>
+            ) : null}
             {status.phase === "error" ? (
               <Button type="button" disabled={busy} onClick={() => void act(() => window.wisp.retryConnection())}>
                 Retry

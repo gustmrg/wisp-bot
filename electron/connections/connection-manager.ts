@@ -23,6 +23,12 @@ export interface ConnectionManagerOptions {
   /** The Wisp server on this computer, started only while it is the chosen connection. */
   localServer: LocalServer;
   openSshTunnel(profile: SshConnectionProfile, signal: AbortSignal): Promise<RemoteTransport>;
+  /** Installs and starts the Wisp server on the machine behind an SSH profile; reports progress lines. */
+  installServer(
+    profile: SshConnectionProfile,
+    onProgress: (message: string) => void,
+    signal: AbortSignal,
+  ): Promise<void>;
   /** Does what the local server asks on this computer's screen. */
   onHostRequest(request: HostRequest): Promise<HostResponse>;
   /** Shows a native multi-file picker; resolves with absolute paths, empty when dismissed. */
@@ -51,6 +57,7 @@ export class ConnectionManager {
   private session: RemoteSession | undefined;
   private queue: Promise<unknown> = Promise.resolve();
   private disposed = false;
+  private installation: { profileId: string; controller: AbortController } | undefined;
 
   constructor(private readonly options: ConnectionManagerOptions) {}
 
@@ -117,6 +124,8 @@ export class ConnectionManager {
   }
 
   activate(id: string, pairingCode?: string): Promise<ConnectionsView> {
+    // Choosing a connection, even the same one, replaces a setup in progress.
+    this.installation?.controller.abort();
     return this.serialized(async () => {
       if (!this.options.store.get(id)) throw new WispBackendError("not_found", "That connection no longer exists.");
       if (id === this.status.profileId && this.session) this.session.start(pairingCode);
@@ -144,7 +153,76 @@ export class ConnectionManager {
     });
   }
 
+  /**
+   * Sets the server up on the machine behind an SSH connection, then connects
+   * to it. The setup can take minutes, so it does not hold up other requests:
+   * choosing a connection, removing this one, or `cancelInstall` cancels it.
+   */
+  async installServer(id: string): Promise<ConnectionsView> {
+    if (this.installation) {
+      throw new WispBackendError("invalid_request", "Wisp is already setting up a server. Wait for it, or cancel it.");
+    }
+    const installation = { profileId: id, controller: new AbortController() };
+    this.installation = installation;
+    const { signal } = installation.controller;
+    try {
+      const { profile, active } = await this.serialized(async () => {
+        const profile = this.options.store.get(id);
+        if (!profile) throw new WispBackendError("not_found", "That connection no longer exists.");
+        if (profile.kind !== "ssh") {
+          throw new WispBackendError("invalid_request", "Only a server reached over SSH can be set up from this app.");
+        }
+        if (signal.aborted) throw new WispBackendError("unavailable", "Setting up the server was cancelled.", true);
+        const active = profile.id === this.status.profileId;
+        // Reconnecting to a server that is being installed would only fail again.
+        if (active) {
+          await this.close();
+          this.setStatus({
+            profileId: id,
+            phase: "connecting",
+            message: `Setting up the Wisp server on ${profile.host}…`,
+            installing: true,
+          });
+        }
+        return { profile, active };
+      });
+      // Still the screen of this setup: nobody chose another connection meanwhile.
+      const showing = (): boolean => active && !this.disposed && this.status.profileId === id && !this.session;
+      try {
+        await this.options.installServer(
+          profile,
+          (message) => {
+            if (showing() && !signal.aborted) {
+              this.setStatus({ profileId: id, phase: "connecting", message, installing: true });
+            }
+          },
+          signal,
+        );
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "The server could not be set up.";
+        this.options.logger.warn("server_install_failed", { profileId: id, cancelled: signal.aborted });
+        if (showing()) this.setStatus({ profileId: id, phase: "error", message });
+        throw new WispBackendError("unavailable", message, true);
+      }
+      this.options.logger.info("server_installed", { profileId: id });
+      return await this.serialized(async () => {
+        if (signal.aborted) throw new WispBackendError("unavailable", "Setting up the server was cancelled.", true);
+        await this.open(id, undefined, true);
+        return this.view();
+      });
+    } finally {
+      if (this.installation === installation) this.installation = undefined;
+    }
+  }
+
+  /** Stops a server setup in progress; the machine keeps what was already installed. */
+  cancelInstall(): ConnectionsView {
+    this.installation?.controller.abort();
+    return this.view();
+  }
+
   remove(id: string): Promise<ConnectionsView> {
+    if (this.installation?.profileId === id) this.installation.controller.abort();
     return this.serialized(async () => {
       if (id === LOCAL_CONNECTION_ID) throw new WispBackendError("invalid_request", "This computer cannot be removed.");
       const active = id === this.status.profileId;
@@ -158,6 +236,7 @@ export class ConnectionManager {
   /** Disconnects and stops the local server; Wisps on other servers keep running. */
   dispose(): Promise<void> {
     this.disposed = true;
+    this.installation?.controller.abort();
     return this.serialized(async () => {
       await this.close();
       await this.options.localServer.stop();
