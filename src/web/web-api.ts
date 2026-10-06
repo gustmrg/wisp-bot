@@ -126,6 +126,7 @@ export function createWebWispApi(options: WebApiOptions): WispApi {
       session.start(request.pairingCode);
       return ok(view());
     },
+    installServer: desktopOnly,
     retryConnection: async () => {
       session.start();
       return ok(view());

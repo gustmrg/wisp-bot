@@ -73,6 +73,7 @@ const WISP_IPC_CHANNELS = {
   removeConnection: "wisp:connections:remove",
   activateConnection: "wisp:connections:activate",
   retryConnection: "wisp:connections:retry",
+  installServer: "wisp:connections:install-server",
   connectionsChanged: "wisp:connections:changed",
 } as const;
 
@@ -166,6 +167,7 @@ const wispApi: WispApi = {
   removeConnection: (request) => ipcRenderer.invoke(WISP_IPC_CHANNELS.removeConnection, request),
   activateConnection: (request) => ipcRenderer.invoke(WISP_IPC_CHANNELS.activateConnection, request),
   retryConnection: () => ipcRenderer.invoke(WISP_IPC_CHANNELS.retryConnection),
+  installServer: (request) => ipcRenderer.invoke(WISP_IPC_CHANNELS.installServer, request),
   subscribeToConnections: (listener) => {
     const handleView = (_event: Electron.IpcRendererEvent, view: Parameters<typeof listener>[0]): void =>
       listener(view);

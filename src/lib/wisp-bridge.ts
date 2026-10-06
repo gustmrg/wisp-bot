@@ -69,6 +69,7 @@ const REQUIRED_WISP_METHODS = [
   "removeConnection",
   "activateConnection",
   "retryConnection",
+  "installServer",
   "subscribeToConnections",
 ] as const satisfies ReadonlyArray<keyof WispApi>;
 

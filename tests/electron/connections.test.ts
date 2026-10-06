@@ -1,6 +1,6 @@
 import { randomBytes } from "node:crypto";
 import { EventEmitter } from "node:events";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
@@ -10,6 +10,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { StructuredLogger } from "../../backend/structured-logger.js";
 import { LaunchAtLoginService } from "../../electron/backend/launch-at-login-service.js";
 import { UpdateService } from "../../electron/backend/update-service.js";
+import { installRemoteServer } from "../../electron/connections/ssh-install.js";
 import { openSshTunnel } from "../../electron/connections/ssh-tunnel.js";
 import { createBackend, type Backend } from "../../electron/create-backend.js";
 import { InProcessLocalServer } from "../helpers/in-process-local-server.js";
@@ -107,7 +108,10 @@ async function desktop(userData?: string, key = randomBytes(32), { choose = true
     updateService: new UpdateService(updater as never, "0.1.0", false),
     connectionsDirectory: directory,
     deviceName: "Test computer",
+    appVersion: "1.0.0",
     openSshTunnel: (profile, signal) => openSshTunnel(profile, { sshPath: fakeSsh, signal }),
+    installServer: (profile, onProgress, signal) =>
+      installRemoteServer(profile, { sshPath: fakeSsh, version: "1.0.0", onProgress, signal }),
   });
   let disposed = false;
   const dispose = async (): Promise<void> => {
@@ -352,5 +356,60 @@ describe("desktop connections", () => {
     await app.waitForPhase("local");
     expect((await app.view()).activeId).toBe("local");
     expect(await app.call(WISP_IPC_CHANNELS.removeConnection, { id: "local" })).toMatchObject({ ok: false });
+  });
+
+  it("sets the server up over SSH, then connects and pairs", async () => {
+    const { server, directory: serverDirectory } = await startServer();
+    process.env.FAKE_WISP_DATA_DIR = serverDirectory;
+    const log = path.join(serverDirectory, "ssh.log");
+    process.env.FAKE_SSH_LOG = log;
+    const app = await desktop();
+    const { profiles } = await app.invoke<ConnectionsView>(WISP_IPC_CHANNELS.saveConnection, {
+      kind: "ssh",
+      name: "Pi",
+      host: "raspberrypi",
+      serverPort: server.port,
+    });
+    const ssh = profiles.find((profile) => profile.kind === "ssh")!;
+    const view = await app.invoke<ConnectionsView>(WISP_IPC_CHANNELS.installServer, { id: ssh.id });
+    expect(view.activeId).toBe(ssh.id);
+    await app.waitForPhase("connected");
+    expect(server.auth.devices()).toEqual([expect.objectContaining({ name: "Test computer" })]);
+
+    const calls = (await readFile(log, "utf8"))
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line) as string[]);
+    expect(calls[0]?.slice(-2)).toEqual([
+      "raspberrypi",
+      `PATH="$HOME/.local/bin:$PATH" npx --yes @gustmrg/wisp-server@1.0.0 setup --json --no-pair --port ${server.port}`,
+    ]);
+  });
+
+  it("explains why setting the server up failed and lets the person retry", async () => {
+    const app = await desktop();
+    const { profiles } = await app.invoke<ConnectionsView>(WISP_IPC_CHANNELS.saveConnection, {
+      kind: "ssh",
+      name: "Pi",
+      host: "raspberrypi",
+      serverPort: 8787,
+    });
+    const ssh = profiles.find((profile) => profile.kind === "ssh")!;
+    for (const [mode, message] of [
+      ["no-node", /Node\.js is missing on raspberrypi/],
+      ["not-published", /server 1\.0\.0 is not published on npm/],
+      ["systemd", /Could not set up the Wisp server on raspberrypi: The systemd user session/],
+    ] as const) {
+      process.env.FAKE_SSH_INSTALL = mode;
+      const result = await app.call(WISP_IPC_CHANNELS.installServer, { id: ssh.id });
+      expect(result).toMatchObject({
+        ok: false,
+        error: { code: "unavailable", message: expect.stringMatching(message) },
+      });
+    }
+    // Nothing changed for the connection that was in use.
+    expect((await app.view()).activeId).toBe("local");
+    expect(await app.call(WISP_IPC_CHANNELS.installServer, { id: "local" })).toMatchObject({ ok: false });
+    expect(await app.call(WISP_IPC_CHANNELS.installServer, { id: "nowhere" })).toMatchObject({ ok: false });
   });
 });

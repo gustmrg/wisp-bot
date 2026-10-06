@@ -21,6 +21,7 @@ import type { LaunchAtLoginService } from "./backend/launch-at-login-service.js"
 import type { UpdateService } from "./backend/update-service.js";
 import { ConnectionManager } from "./connections/connection-manager.js";
 import { ConnectionStore } from "./connections/connection-store.js";
+import { installRemoteServer } from "./connections/ssh-install.js";
 import { openSshTunnel } from "./connections/ssh-tunnel.js";
 import { registerLaunchAtLoginHandlers } from "./ipc/register-launch-at-login-handlers.js";
 import { registerUpdateHandlers } from "./ipc/register-update-handlers.js";
@@ -54,6 +55,14 @@ export interface BackendHost {
   connectionsDirectory: string;
   /** How this computer introduces itself when pairing with a server. */
   deviceName: string;
+  /** The version of this app; the server it installs on another machine is the same version. */
+  appVersion: string;
+  /** Installs the server over SSH; tests substitute a fake. */
+  installServer?: (
+    profile: SshConnectionProfile,
+    onProgress: (message: string) => void,
+    signal: AbortSignal,
+  ) => Promise<void>;
   /** Opens an SSH tunnel to a server; tests substitute a fake. */
   openSshTunnel?: (profile: SshConnectionProfile, signal: AbortSignal) => Promise<RemoteTransport>;
 }
@@ -79,6 +88,9 @@ export async function createBackend(host: BackendHost): Promise<Backend> {
     onHostRequest: (request) => runHostAction(host.hostActions, request),
     selectFiles: () => host.hostActions.selectFiles(),
     openSshTunnel: host.openSshTunnel ?? ((profile, signal) => openSshTunnel(profile, { signal })),
+    installServer:
+      host.installServer ??
+      ((profile, onProgress, signal) => installRemoteServer(profile, { version: host.appVersion, onProgress, signal })),
     deviceName: host.deviceName,
     broadcast,
     logger: host.logger,
@@ -115,6 +127,7 @@ export async function createBackend(host: BackendHost): Promise<Backend> {
         },
       ],
       [WISP_IPC_CHANNELS.retryConnection, () => manager.retry()],
+      [WISP_IPC_CHANNELS.installServer, (payload) => manager.installServer(connectionId(payload))],
     ]),
   ];
   try {

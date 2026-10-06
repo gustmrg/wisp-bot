@@ -119,6 +119,7 @@ export const WISP_IPC_CHANNELS = {
   removeConnection: "wisp:connections:remove",
   activateConnection: "wisp:connections:activate",
   retryConnection: "wisp:connections:retry",
+  installServer: "wisp:connections:install-server",
   connectionsChanged: "wisp:connections:changed",
 } as const;
 
@@ -463,5 +464,10 @@ export interface WispApi {
   /** Switches the backend; the renderer reloads its state when the status epoch changes. */
   activateConnection(request: ActivateConnectionRequest): Promise<BackendResult<ConnectionsView>>;
   retryConnection(): Promise<BackendResult<ConnectionsView>>;
+  /**
+   * Installs and starts the Wisp server on a machine reached over SSH, then connects to it.
+   * Needs Node.js 22.19 or later there; resolves once the server is running.
+   */
+  installServer(request: ConnectionRequest): Promise<BackendResult<ConnectionsView>>;
   subscribeToConnections(listener: (view: ConnectionsView) => void): () => void;
 }

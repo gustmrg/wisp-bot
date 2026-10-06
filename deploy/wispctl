@@ -1,4 +1,0 @@
-#!/bin/sh
-# Runs the Wisp administrative CLI of an installed server package.
-set -eu
-exec node "${WISP_INSTALL_DIR:-$HOME/.local/lib/wisp}/server/cli.js" "$@"

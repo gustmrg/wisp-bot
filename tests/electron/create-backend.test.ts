@@ -92,6 +92,7 @@ async function compose() {
     updateService: new UpdateService(updater as never, "0.1.0", false),
     connectionsDirectory: dataDirectory,
     deviceName: "Test computer",
+    appVersion: "1.0.0",
   });
   backends.push(backend);
   const invoke = async <T>(channel: string, payload?: unknown): Promise<T> => {

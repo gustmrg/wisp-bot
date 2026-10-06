@@ -5,8 +5,9 @@ tools. The desktop app is always its client. On **This computer**, the app
 starts the server as a child process and talks to it exactly as it talks to a
 server on another machine.
 
-Run the server by itself on a Linux machine and Wisps keep working when no
-client is connected: closing a client only closes its connection. The desktop
+Run the server by itself on a Linux machine (`npx @gustmrg/wisp-server setup`)
+and Wisps keep working when no client is connected: closing a client only
+closes its connection. The desktop
 app connects to such a server over SSH or a private HTTPS address; see
 [Connect the desktop app](#connect-the-desktop-app). The server also serves
 the app to browsers, which you can install on a phone; see
@@ -51,26 +52,24 @@ or quit. Disabling Electron's `RunAsNode` fuse would break this mode.
 
 ## Install
 
-Requires Node.js 22.19 or later on Linux.
-
-Build the package from a checkout:
-
-```sh
-npm ci
-npm run package:server     # writes release/server
-```
-
-Copy it to `~/.local/lib/wisp` on the server, for example with
-`scp -r release/server myserver:.local/lib/wisp` (create `~/.local/lib` first).
-Then, on the server:
+You need a Linux machine with systemd, Node.js 22.19 or later (with npm), and
+internet access. Run this on it, as the account that should own the Wisps:
 
 ```sh
-mkdir -p ~/.config/wisp ~/.local/bin
-cd ~/.local/lib/wisp && npm install --omit=dev
-chmod 700 ~/.config/wisp
-node ~/.local/lib/wisp/server/cli.js keygen --output ~/.config/wisp/master.key
-install -m 755 ~/.local/lib/wisp/deploy/wispctl ~/.local/bin/wispctl
+npx @gustmrg/wisp-server setup
 ```
+
+It installs the server, starts it, and prints what to do next, including a
+pairing code. In detail, it:
+
+1. installs `@gustmrg/wisp-server` in `~/.local/lib/wisp-server`;
+2. creates the master key `~/.config/wisp/master.key` (mode 0600) and
+   `~/.config/wisp/server.env`, which holds the settings below;
+3. writes `~/.local/bin/wispctl`, the administrative command;
+4. installs and starts the systemd user unit `wisp`, and enables lingering so
+   Wisps keep working after you log out (if that needs administrator rights,
+   it tells you the `sudo loginctl enable-linger` command to run);
+5. waits until the server answers, then prints a pairing code.
 
 The master key encrypts provider, plugin, MCP, and voice credentials. Keep a
 copy outside the server: without it, saved credentials cannot be read and must
@@ -78,16 +77,47 @@ be entered again. The server refuses a key file that other accounts can read.
 Without a key the server still starts, but every credential save fails with
 `secure_storage_unavailable`.
 
-## Run
+Run it again whenever you like: it keeps the key and your settings, skips
+what is already installed, and restarts the service only when something
+changed. To update, run the newest version, which installs itself:
 
 ```sh
-WISP_MASTER_KEY_FILE=~/.config/wisp/master.key node ~/.local/lib/wisp/server/main.js
+npx @gustmrg/wisp-server@latest setup
 ```
+
+| Option | Effect |
+| --- | --- |
+| `--port PORT` | The port the server listens on (default `8787`) |
+| `--public-origin URL` | The `https://` address of a private proxy; see [browser or phone](#use-wisp-in-a-browser-or-on-your-phone) |
+| `--data-dir DIR` | Where the server keeps its data (default `~/.local/share/wisp`) |
+| `--package SPEC` | Install this npm package, tarball, or folder instead of the matching version |
+| `--no-service` | Only install the files, and print the command that starts the server |
+| `--no-pair` | Do not print a pairing code |
+| `--json` | Print the result as JSON; progress goes to stderr |
+
+Options you pass are saved in `server.env`, so later runs keep them.
+
+### From the desktop app
+
+If the machine accepts SSH connections from your computer, the app can run the
+setup for you. Add the server under **Settings → Connections** with the SSH
+option, then choose **Install the Wisp server** (it also appears when a
+connection fails). The app asks first, then runs `npx @gustmrg/wisp-server@<its
+own version> setup` on the machine over SSH, and connects. The same button
+(**Install or update the server**) in the server's settings updates it when the
+app is newer than the server. This needs Node.js and npm in the PATH of
+non-interactive SSH commands, and a version of the app that is published on npm.
+
+### Settings
+
+`setup` writes `~/.config/wisp/server.env`, which the service reads. Edit it,
+then `systemctl --user restart wisp`; command-line options of `server/main.js`
+use the same names:
 
 | Option | Variable | Default |
 | --- | --- | --- |
 | `--data-dir` | `WISP_DATA_DIR` | `~/.local/share/wisp` |
-| `--key-file` | `WISP_MASTER_KEY_FILE` | none |
+| `--key-file` | `WISP_MASTER_KEY_FILE` | `~/.config/wisp/master.key` |
 | `--port` | `WISP_PORT` | `8787` |
 | `--host` | `WISP_HOST` | `127.0.0.1` |
 | `--allow-external-bind` | `WISP_ALLOW_EXTERNAL_BIND=1` | off |
@@ -106,27 +136,25 @@ One server owns a data directory at a time. A second one exits with "Another
 Wisp server is already using this data directory." On `SIGTERM` the server
 stops accepting requests and gives running Wisps ten seconds to settle.
 
-### systemd
-
-`deploy/systemd/wisp.service` is a user unit:
+Day to day, the service is an ordinary systemd user unit:
 
 ```sh
-cp ~/.local/lib/wisp/deploy/systemd/server.env.example ~/.config/wisp/server.env
-chmod 600 ~/.config/wisp/server.env      # then replace the example paths
-mkdir -p ~/.config/systemd/user
-cp ~/.local/lib/wisp/deploy/systemd/wisp.service ~/.config/systemd/user/
-systemctl --user daemon-reload
-systemctl --user enable --now wisp
+systemctl --user status wisp
 journalctl --user -u wisp -f
-# Keep it running without an open login session:
-sudo loginctl enable-linger "$USER"
+systemctl --user restart wisp
 ```
 
-The unit expects Node at `/usr/bin/node`; adjust `ExecStart` otherwise.
+To remove the server, run `systemctl --user disable --now wisp`, then delete
+`~/.config/systemd/user/wisp.service`, `~/.local/lib/wisp-server`, and
+`~/.local/bin/wispctl`. Your Wisps live in `~/.local/share/wisp`, and the key in
+`~/.config/wisp`; delete them only when you want everything gone.
+
+Without systemd, or to supervise the server yourself, run `setup --no-service`
+and use the command it prints.
 
 ### Docker
 
-From the repository root:
+Docker needs no Node.js on the host. From a checkout of the repository:
 
 ```sh
 head -c 32 /dev/urandom > deploy/docker/master.key
@@ -183,7 +211,7 @@ and are not available on a server on another machine.
 **Settings → Connections** has a short **How to set up a Wisp server** guide
 that summarizes this page. When pairing over SSH fails, the app says what is
 missing on the server: `wispctl`, Node.js, the server files, or a running
-server.
+server, and offers to install it (see [From the desktop app](#from-the-desktop-app)).
 
 ## Back up and restore
 

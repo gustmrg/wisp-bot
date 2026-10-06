@@ -23,6 +23,12 @@ export interface ConnectionManagerOptions {
   /** The Wisp server on this computer, started only while it is the chosen connection. */
   localServer: LocalServer;
   openSshTunnel(profile: SshConnectionProfile, signal: AbortSignal): Promise<RemoteTransport>;
+  /** Installs and starts the Wisp server on the machine behind an SSH profile; reports progress lines. */
+  installServer(
+    profile: SshConnectionProfile,
+    onProgress: (message: string) => void,
+    signal: AbortSignal,
+  ): Promise<void>;
   /** Does what the local server asks on this computer's screen. */
   onHostRequest(request: HostRequest): Promise<HostResponse>;
   /** Shows a native multi-file picker; resolves with absolute paths, empty when dismissed. */
@@ -51,6 +57,7 @@ export class ConnectionManager {
   private session: RemoteSession | undefined;
   private queue: Promise<unknown> = Promise.resolve();
   private disposed = false;
+  private installation: AbortController | undefined;
 
   constructor(private readonly options: ConnectionManagerOptions) {}
 
@@ -144,6 +151,48 @@ export class ConnectionManager {
     });
   }
 
+  /** Sets the server up on the machine behind an SSH connection, then connects to it. */
+  installServer(id: string): Promise<ConnectionsView> {
+    return this.serialized(async () => {
+      const profile = this.options.store.get(id);
+      if (!profile) throw new WispBackendError("not_found", "That connection no longer exists.");
+      if (profile.kind !== "ssh") {
+        throw new WispBackendError("invalid_request", "Only a server reached over SSH can be set up from this app.");
+      }
+      const active = profile.id === this.status.profileId;
+      // Reconnecting to a server that is being installed would only fail again.
+      if (active) {
+        await this.close();
+        this.setStatus({
+          profileId: id,
+          phase: "connecting",
+          message: `Setting up the Wisp server on ${profile.host}…`,
+        });
+      }
+      const installation = new AbortController();
+      this.installation = installation;
+      try {
+        await this.options.installServer(
+          profile,
+          (message) => {
+            if (active && this.status.profileId === id) this.setStatus({ profileId: id, phase: "connecting", message });
+          },
+          installation.signal,
+        );
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "The server could not be set up.";
+        this.options.logger.warn("server_install_failed", { profileId: id });
+        if (active && !this.disposed) this.setStatus({ profileId: id, phase: "error", message });
+        throw new WispBackendError("unavailable", message, true);
+      } finally {
+        if (this.installation === installation) this.installation = undefined;
+      }
+      this.options.logger.info("server_installed", { profileId: id });
+      await this.open(id, undefined, true);
+      return this.view();
+    });
+  }
+
   remove(id: string): Promise<ConnectionsView> {
     return this.serialized(async () => {
       if (id === LOCAL_CONNECTION_ID) throw new WispBackendError("invalid_request", "This computer cannot be removed.");
@@ -158,6 +207,7 @@ export class ConnectionManager {
   /** Disconnects and stops the local server; Wisps on other servers keep running. */
   dispose(): Promise<void> {
     this.disposed = true;
+    this.installation?.abort();
     return this.serialized(async () => {
       await this.close();
       await this.options.localServer.stop();
