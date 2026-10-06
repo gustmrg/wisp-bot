@@ -366,6 +366,7 @@ export type UpdatePhase =
   | "manual-download"
   | "downloading"
   | "downloaded"
+  | "installing"
   | "up-to-date"
   | "error";
 
@@ -375,6 +376,8 @@ export interface UpdateState {
   availableVersion?: string;
   progress?: number;
   message?: string;
+  /** The version that ran before this launch, set only on the first launch after an update. */
+  updatedFrom?: string;
 }
 
 export interface LaunchAtLoginState {

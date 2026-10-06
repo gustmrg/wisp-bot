@@ -43,8 +43,25 @@ describe("UpdateService", () => {
     adapter.emit("update-downloaded", { version: "1.1.0" });
     await downloading;
     expect(service.getState()).toMatchObject({ phase: "downloaded", progress: 100 });
-    service.install();
-    expect(adapter.quitAndInstall).toHaveBeenCalledWith(false, true);
+    vi.useFakeTimers();
+    try {
+      service.install();
+      // The renderer sees "installing" before the app starts shutting down.
+      expect(service.getState()).toMatchObject({ phase: "installing", availableVersion: "1.1.0" });
+      expect(adapter.quitAndInstall).not.toHaveBeenCalled();
+      vi.runAllTimers();
+      expect(adapter.quitAndInstall).toHaveBeenCalledWith(false, true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("reports the version this launch was updated from in every state", () => {
+    const adapter = updater();
+    const service = new UpdateService(adapter as never, "1.1.0", true, true, undefined, "1.0.0");
+    expect(service.getState()).toEqual({ phase: "idle", currentVersion: "1.1.0", updatedFrom: "1.0.0" });
+    adapter.emit("update-not-available");
+    expect(service.getState()).toEqual({ phase: "up-to-date", currentVersion: "1.1.0", updatedFrom: "1.0.0" });
   });
 
   it("reports offline errors safely and disables updates outside installed releases", async () => {

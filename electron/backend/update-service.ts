@@ -7,6 +7,9 @@ import type { StructuredLogger } from "../../backend/structured-logger.js";
 type UpdateListener = (state: UpdateState) => void;
 
 const MANUAL_UPDATE_MESSAGE = "This build cannot install updates automatically. Please update it manually.";
+// quitAndInstall starts shutting the app down at once, so the renderer gets
+// this long to receive and paint the "installing" state first.
+const INSTALL_PAINT_DELAY_MS = 300;
 
 export class UpdateService {
   private state: UpdateState;
@@ -18,6 +21,7 @@ export class UpdateService {
     private readonly enabled: boolean,
     private readonly autoInstallSupported = true,
     private readonly logger?: StructuredLogger,
+    private readonly updatedFrom?: string,
   ) {
     this.state = enabled
       ? { phase: "idle", currentVersion }
@@ -54,7 +58,7 @@ export class UpdateService {
   }
 
   getState(): UpdateState {
-    return { ...this.state };
+    return this.updatedFrom ? { ...this.state, updatedFrom: this.updatedFrom } : { ...this.state };
   }
 
   subscribe(listener: UpdateListener): () => void {
@@ -96,7 +100,8 @@ export class UpdateService {
     this.assertEnabled();
     if (this.state.phase !== "downloaded")
       throw new WispBackendError("invalid_request", "No update is ready to install.");
-    this.updater.quitAndInstall(false, true);
+    this.setState({ ...this.state, phase: "installing" });
+    setTimeout(() => this.updater.quitAndInstall(false, true), INSTALL_PAINT_DELAY_MS);
   }
 
   private assertEnabled(): void {

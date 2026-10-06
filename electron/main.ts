@@ -20,6 +20,7 @@ import { WispBackendError } from "../backend/backend-error.js";
 import { FileLogSink } from "../backend/file-log-sink.js";
 import { SafeStorageEncryption } from "./backend/safe-storage-encryption.js";
 import { CompositeLogSink, StructuredLogger } from "../backend/structured-logger.js";
+import { recordLaunchVersion } from "./backend/launch-version.js";
 import { resolveAutoInstallSupport } from "./backend/update-capability.js";
 import { UpdateService } from "./backend/update-service.js";
 import { disposeWithin } from "../backend/runtime.js";
@@ -204,6 +205,13 @@ async function bootstrap(): Promise<void> {
   const autoInstallSupported = app.isPackaged
     ? await resolveAutoInstallSupport(process.platform, process.execPath)
     : false;
+  // Only installed releases update, so dev builds never announce one.
+  const updatedFrom = app.isPackaged
+    ? await recordLaunchVersion(path.join(userData, "last-launch-version"), app.getVersion()).catch((error: Error) => {
+        logger.warn("launch_version_record_failed", { message: error.message });
+        return undefined;
+      })
+    : undefined;
   const keychain = new SafeStorageEncryption();
   const masterKey = await loadOrCreateLocalMasterKey(userData, keychain);
   if (masterKey) {
@@ -251,7 +259,14 @@ async function bootstrap(): Promise<void> {
     }),
     encryption: keychain,
     logger,
-    updateService: new UpdateService(autoUpdater, app.getVersion(), app.isPackaged, autoInstallSupported, logger),
+    updateService: new UpdateService(
+      autoUpdater,
+      app.getVersion(),
+      app.isPackaged,
+      autoInstallSupported,
+      logger,
+      updatedFrom,
+    ),
     connectionsDirectory: userData,
     deviceName: `Wisp on ${hostname()}`,
     appVersion: app.getVersion(),

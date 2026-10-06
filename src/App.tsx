@@ -8,6 +8,7 @@ import { DetailsPanel } from "@/components/details-panel";
 import { SearchDialog } from "@/components/search-dialog";
 import { Sidebar } from "@/components/sidebar";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { UpdateToast } from "@/components/update-toast";
 import { APP_METADATA } from "@/config/app-metadata";
 import { Onboarding, SetupStatus } from "@/components/onboarding";
 import { useSetupGate } from "@/hooks/use-setup-gate";
@@ -230,6 +231,7 @@ function Workspace({ userProfile }: { userProfile: UserProfileController }) {
         persistenceError={workspace.persistenceError}
         onPreferencesChange={workspace.updatePreferences}
       />
+      <UpdateToast displayName={APP_METADATA.displayName} />
     </TooltipProvider>
   );
 }

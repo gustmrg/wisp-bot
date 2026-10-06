@@ -240,5 +240,11 @@ describe("AppSettingsDialog metadata", () => {
     expect(install).toHaveClass("text-blue");
     await user.click(install);
     expect(installUpdate).toHaveBeenCalledOnce();
+
+    act(() => push({ phase: "installing", currentVersion: "9.8.7", availableVersion: "9.9.0", progress: 100 }));
+    const installing = screen.getByRole("button", { name: "Installing update" });
+    expect(installing).toBeDisabled();
+    expect(installing.querySelector("svg")).toHaveClass("animate-spin");
+    expect(screen.getByText(/Installing version 9\.9\.0…/)).toBeVisible();
   });
 });

@@ -3,7 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
 import type { ConnectionsView } from "../shared/connections";
-import type { AiSettingsView, WispApi } from "../shared/contracts";
+import type { AiSettingsView, UpdateState, WispApi } from "../shared/contracts";
 import { chatSummary, type Chat, type ConversationStateView } from "../shared/conversations";
 import App from "@/App";
 import { LEGACY_STORAGE_KEY } from "@/hooks/use-conversations";
@@ -378,6 +378,32 @@ describe("App", () => {
     expect(screen.getByText(/can't install updates automatically/)).toBeVisible();
     await user.click(screen.getByRole("button", { name: "Open the releases page to download the update" }));
     expect(api.openReleasesPage).toHaveBeenCalledOnce();
+  });
+
+  it("announces a completed update and the restart while one installs", async () => {
+    const user = userEvent.setup();
+    const api = createApi(conversationState(true, { atlas }));
+    vi.mocked(api.getUpdateState).mockResolvedValue({
+      ok: true as const,
+      value: { phase: "idle" as const, currentVersion: "1.1.0", updatedFrom: "1.0.0" },
+    });
+    let push: (state: UpdateState) => void = () => undefined;
+    vi.mocked(api.subscribeToUpdateState).mockImplementation((listener) => {
+      push = listener;
+      return () => undefined;
+    });
+    exposeApi(api);
+    render(<App />);
+    expect(await screen.findByText("Wisp Bot updated to 1.1.0")).toBeVisible();
+    expect(screen.getByText("Previously 1.0.0.")).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "See what's new" }));
+    expect(api.openReleasesPage).toHaveBeenCalledOnce();
+    await user.click(screen.getByRole("button", { name: "Dismiss" }));
+    expect(screen.queryByText("Wisp Bot updated to 1.1.0")).not.toBeInTheDocument();
+
+    act(() => push({ phase: "installing", currentVersion: "1.1.0", availableVersion: "1.2.0" }));
+    expect(screen.getByText("Installing version 1.2.0…")).toBeVisible();
+    expect(screen.getByText("Wisp Bot will close and reopen on its own.")).toBeVisible();
   });
 });
 

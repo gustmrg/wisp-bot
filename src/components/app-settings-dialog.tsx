@@ -431,7 +431,7 @@ export { AppSettingsDialog };
 export type { AppPreferences, AppSettingsDialogProps };
 
 function updateBusy(state: UpdateState): boolean {
-  return state.phase === "checking" || state.phase === "downloading";
+  return state.phase === "checking" || state.phase === "downloading" || state.phase === "installing";
 }
 
 /** A found or downloaded update waits on the user, so the button stands out. */
@@ -442,7 +442,8 @@ function updateNeedsAction(state: UpdateState): boolean {
 function UpdateActionIcon({ state }: { state: UpdateState }) {
   if (state.phase === "available") return <DownloadIcon aria-hidden="true" />;
   if (state.phase === "manual-download") return <ExternalLinkIcon aria-hidden="true" />;
-  if (state.phase === "downloading") return <LoaderCircleIcon aria-hidden="true" className="animate-spin" />;
+  if (state.phase === "downloading" || state.phase === "installing")
+    return <LoaderCircleIcon aria-hidden="true" className="animate-spin" />;
   if (state.phase === "downloaded") return <CircleFadingArrowUpIcon aria-hidden="true" />;
   return <RefreshCwIcon aria-hidden="true" className={cn(state.phase === "checking" && "animate-spin")} />;
 }
@@ -453,6 +454,7 @@ function updateActionLabel(state: UpdateState): string {
   if (state.phase === "available") return "Download update";
   if (state.phase === "manual-download") return "Open the releases page to download the update";
   if (state.phase === "downloaded") return "Restart and install update";
+  if (state.phase === "installing") return "Installing update";
   return "Check for updates";
 }
 
@@ -463,6 +465,8 @@ function updateStatusText(state: UpdateState): string {
     return `Version ${state.availableVersion ?? "new"} is available. This build can't install updates automatically — open the releases page and replace the app with the latest download.`;
   if (state.phase === "downloading") return `Downloading update… ${state.progress ?? 0}%`;
   if (state.phase === "downloaded") return `Version ${state.availableVersion ?? "new"} is ready to install.`;
+  if (state.phase === "installing")
+    return `Installing version ${state.availableVersion ?? "new"}… Wisp Bot will close and reopen on its own.`;
   if (state.phase === "up-to-date") return "Wisp Bot is up to date.";
   if (state.phase === "error") return state.message ?? "Could not check for updates.";
   return "Updates are checked only when you ask.";
