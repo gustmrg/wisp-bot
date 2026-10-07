@@ -34,15 +34,17 @@ export function ServerSetupGuide() {
           starts it as a service. Keep a copy of the key it reports.
           <Commands>{`npx @gustmrg/wisp-server setup`}</Commands>
           <p className="mt-1.5">
-            Or skip the terminal: add the machine here with the SSH option, then choose{" "}
-            <span className="text-foreground">Install the Wisp server</span>.
+            Or skip the terminal: run <code>ssh myserver</code> once so this computer trusts its host key, add the
+            machine here with the SSH option, and save. Then open it with its settings button and choose{" "}
+            <span className="text-foreground">Install or update the server</span>. Node.js and npm must be in the PATH
+            of non-interactive SSH commands, which a Node.js from nvm or fnm usually is not.
           </p>
         </Step>
         <Step title="Connect">
           <p>
             <span className="text-foreground">Over SSH:</span> run <code>ssh myserver</code> once in a terminal so this
-            computer trusts its host key, then add the server here with the SSH option. Wisp pairs by running{" "}
-            <code>wispctl pair</code> on the server for you.
+            computer trusts its host key, if you have not yet, then add the server here with the SSH option. Wisp pairs
+            by running <code>wispctl pair</code> on the server for you.
           </p>
           <p className="mt-1.5">
             <span className="text-foreground">Over HTTPS</span>, also from a phone: expose the server on your tailnet,
