@@ -14,8 +14,8 @@ const COMMAND_TIMEOUT_MS = 30_000;
 const READY_POLL_MS = 200;
 
 /**
- * Prints the version of the server the setup installed, or "none". A fixed
- * command: the remote shell sees no user input.
+ * Prints the version of the server the setup installed, or "none". Scripts
+ * run by `sh` from stdin, whatever the login shell is, and see no user input.
  */
 export const PROBE_COMMAND = `f="$HOME/.local/lib/wisp-server/node_modules/${WISP_SERVER_PACKAGE}/package.json"; if [ -f "$f" ]; then v=$(sed -n 's/^ *"version": *"\\([^"]*\\)".*/\\1/p' "$f" | head -n 1); echo "wisp-server \${v:-unknown}"; else echo "wisp-server none"; fi`;
 
@@ -117,7 +117,7 @@ export async function checkSshServer(profile: SshConnectionProfile, options: Ssh
       }
       await sleep(READY_POLL_MS);
     }
-    const probe = await run(ssh, ["-T", ...viaMaster, "--", profile.host, PROBE_COMMAND]);
+    const probe = await run(ssh, ["-T", ...viaMaster, "--", profile.host, "sh -s"], PROBE_COMMAND);
     if (options.signal?.aborted) throw cancelled();
     if (!probe.ok) throw new FatalTransportError(`Could not check ${profile.host}: ${lastLine(probe.stderr)}`);
     const version = /^wisp-server (\S+)$/m.exec(probe.stdout)?.[1];
@@ -128,7 +128,11 @@ export async function checkSshServer(profile: SshConnectionProfile, options: Ssh
     let batch = await run(ssh, batchArguments(profile, options.key.identityFile));
     if (!batch.ok && /Permission denied/i.test(batch.stderr)) {
       const publicKey = await options.key.publicKey(options.deviceName);
-      const authorized = await run(ssh, ["-T", ...viaMaster, "--", profile.host, authorizeKeyCommand(publicKey)]);
+      const authorized = await run(
+        ssh,
+        ["-T", ...viaMaster, "--", profile.host, "sh -s"],
+        authorizeKeyCommand(publicKey),
+      );
       if (!authorized.ok) {
         throw new FatalTransportError(
           `Could not add Wisp's key to ${profile.host}: ${lastLine(authorized.stderr) || "the command failed"}.`,
@@ -170,9 +174,12 @@ function batchArguments(profile: SshConnectionProfile, identityFile: string | un
   ];
 }
 
-function run(ssh: string, args: string[]): Promise<{ ok: boolean; stdout: string; stderr: string }> {
+/** Runs ssh, with a script for `sh -s` on stdin. */
+function run(ssh: string, args: string[], script?: string): Promise<{ ok: boolean; stdout: string; stderr: string }> {
   return new Promise((resolve) => {
-    const child = spawn(ssh, args, { stdio: ["ignore", "pipe", "pipe"], windowsHide: true });
+    const child = spawn(ssh, args, { stdio: [script ? "pipe" : "ignore", "pipe", "pipe"], windowsHide: true });
+    child.stdin?.on("error", () => undefined);
+    child.stdin?.end(script ? `${script}\n` : undefined);
     let stdout = "";
     let stderr = "";
     child.stdout?.setEncoding("utf8");

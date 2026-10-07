@@ -242,7 +242,10 @@ export async function runSetup(options: SetupOptions, host: SetupHost): Promise<
     warnings.push(`Add ${path.dirname(paths.wispctl)} to your PATH to run wispctl from a terminal.`);
   }
   // nvm, fnm, and the like keep each Node.js version in its own directory under the home.
-  if (!path.relative(host.home, host.nodePath).startsWith("..")) {
+  // The Node.js the desktop app downloads, beside the package, stays put.
+  const underHome = !path.relative(host.home, host.nodePath).startsWith("..");
+  const portable = !path.relative(path.join(paths.installDir, "node"), host.nodePath).startsWith("..");
+  if (underHome && !portable) {
     warnings.push(
       `The server runs ${host.nodePath}. After updating or removing that Node.js version, run \`npx ${WISP_SERVER_PACKAGE} setup\` again.`,
     );

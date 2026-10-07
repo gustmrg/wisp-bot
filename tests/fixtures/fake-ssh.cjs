@@ -93,70 +93,91 @@ if (args.includes("-M")) {
     if (!fs.existsSync(control)) process.exit(0);
   }, 50);
   process.on("SIGTERM", () => process.exit(0));
-} else if (command === "true") {
-  process.exit(0);
-} else if (command.includes("wisp-server none")) {
-  process.stdout.write(`wisp-server ${process.env.FAKE_SSH_SERVER_VERSION || "none"}\n`);
-  process.exit(0);
-} else if (command.includes("authorized_keys")) {
-  const line = /printf '%s\\n' '([^']+)'/.exec(command)[1];
-  fs.appendFileSync(stateFile("authorized_keys"), `${line}\n`);
-  process.exit(0);
-} else if (command.includes("setup --json") && process.env.FAKE_SSH_INSTALL === "hang") {
-  process.stderr.write("Installing @gustmrg/wisp-server@1.0.0…\n");
-  // Runs until the test stops ssh.
-  setInterval(() => undefined, 60_000);
-} else if (command.includes("setup --json")) {
-  // `npx @gustmrg/wisp-server@VERSION setup`, run on the server.
-  const outcomes = {
-    "no-node": ["bash: line 1: npx: command not found", 127],
-    "not-published": [
-      "npm error code E404\nnpm error 404 Not Found - GET https://registry.npmjs.org/@gustmrg%2fwisp-server",
-      1,
-    ],
-    systemd: ["The systemd user session is not running (Failed to connect to bus).", 1],
-  };
-  const outcome = outcomes[process.env.FAKE_SSH_INSTALL];
-  if (outcome) {
-    process.stderr.write(`${outcome[0]}\n`);
-    process.exit(outcome[1]);
-  }
-  process.stderr.write("Installing @gustmrg/wisp-server@1.0.0…\nStarting the service…\n");
-  process.stdout.write(`${JSON.stringify({ version: "1.0.0", service: "started" })}\n`);
-  process.exit(0);
-} else if (command) {
-  if (!command.includes("wispctl pair --json") || process.env.FAKE_SSH_REMOTE === "missing") {
-    process.stderr.write("bash: line 1: wispctl: command not found\n");
-    process.exit(127);
-  }
-  const request = http.request(
-    { socketPath: path.join(process.env.FAKE_WISP_DATA_DIR, "admin.sock"), path: "/admin", method: "POST" },
-    (response) => {
-      let text = "";
-      response.on("data", (chunk) => (text += chunk));
-      response.on("end", () => {
-        process.stdout.write(`${JSON.stringify(JSON.parse(text).value)}\n`);
-        process.exit(0);
-      });
-    },
-  );
-  request.on("error", () => {
-    process.stderr.write("wispctl: No Wisp server is running.\n");
-    process.exit(1);
+} else if (command === "sh -s") {
+  if (process.env.FAKE_SSH_SCRIPT_LOG) fs.writeFileSync(process.env.FAKE_SSH_SCRIPT_LOG, "");
+  let script = "";
+  process.stdin.setEncoding("utf8");
+  process.stdin.on("data", (chunk) => {
+    script += chunk;
+    if (process.env.FAKE_SSH_SCRIPT_LOG) fs.appendFileSync(process.env.FAKE_SSH_SCRIPT_LOG, chunk);
+    // The setup script keeps stdin open after it, to learn about a cancel.
+    if (script.includes("setup --json") && script.endsWith("\n")) run(script);
   });
-  request.end(JSON.stringify({ command: "pair" }));
-} else {
-  const spec = args[args.indexOf("-L") + 1].split(":");
-  const server = net.createServer((socket) => {
-    const upstream = net.connect(Number(spec[3]), "127.0.0.1");
-    socket.pipe(upstream).pipe(socket);
-    // OpenSSH reports a forward the server refused, then drops the local connection.
-    upstream.on("error", () => {
-      process.stderr.write("channel 2: open failed: connect failed: Connection refused\n");
-      socket.destroy();
+  process.stdin.on("end", () => run(script) || process.exit(0));
+} else if (!run(command)) {
+  if (command) {
+    if (!command.includes("wispctl pair --json") || process.env.FAKE_SSH_REMOTE === "missing") {
+      process.stderr.write("bash: line 1: wispctl: command not found\n");
+      process.exit(127);
+    }
+    const request = http.request(
+      { socketPath: path.join(process.env.FAKE_WISP_DATA_DIR, "admin.sock"), path: "/admin", method: "POST" },
+      (response) => {
+        let text = "";
+        response.on("data", (chunk) => (text += chunk));
+        response.on("end", () => {
+          process.stdout.write(`${JSON.stringify(JSON.parse(text).value)}\n`);
+          process.exit(0);
+        });
+      },
+    );
+    request.on("error", () => {
+      process.stderr.write("wispctl: No Wisp server is running.\n");
+      process.exit(1);
     });
-    socket.on("error", () => upstream.destroy());
-  });
-  server.listen(Number(spec[1]), spec[0]);
-  process.on("SIGTERM", () => process.exit(0));
+    request.end(JSON.stringify({ command: "pair" }));
+  } else {
+    const spec = args[args.indexOf("-L") + 1].split(":");
+    const server = net.createServer((socket) => {
+      const upstream = net.connect(Number(spec[3]), "127.0.0.1");
+      socket.pipe(upstream).pipe(socket);
+      // OpenSSH reports a forward the server refused, then drops the local connection.
+      upstream.on("error", () => {
+        process.stderr.write("channel 2: open failed: connect failed: Connection refused\n");
+        socket.destroy();
+      });
+      socket.on("error", () => upstream.destroy());
+    });
+    server.listen(Number(spec[1]), spec[0]);
+    process.on("SIGTERM", () => process.exit(0));
+  }
+}
+
+// A command, or a script that `sh -s` reads from stdin.
+function run(command) {
+  if (command === "true") {
+    process.exit(0);
+  } else if (command.includes("wisp-server none")) {
+    process.stdout.write(`wisp-server ${process.env.FAKE_SSH_SERVER_VERSION || "none"}\n`);
+    process.exit(0);
+  } else if (command.includes("authorized_keys")) {
+    const line = /printf '%s\\n' '([^']+)'/.exec(command)[1];
+    fs.appendFileSync(stateFile("authorized_keys"), `${line}\n`);
+    process.exit(0);
+  } else if (command.includes("setup --json") && process.env.FAKE_SSH_INSTALL === "hang") {
+    process.stderr.write("Installing @gustmrg/wisp-server@1.0.0…\n");
+    // Runs until the test stops ssh.
+    setInterval(() => undefined, 60_000);
+  } else if (command.includes("setup --json")) {
+    // `npx @gustmrg/wisp-server@VERSION setup`, run on the server.
+    const outcomes = {
+      "no-node": ["bash: line 1: npx: command not found", 127],
+      "not-published": [
+        "npm error code E404\nnpm error 404 Not Found - GET https://registry.npmjs.org/@gustmrg%2fwisp-server",
+        1,
+      ],
+      systemd: ["The systemd user session is not running (Failed to connect to bus).", 1],
+    };
+    const outcome = outcomes[process.env.FAKE_SSH_INSTALL];
+    if (outcome) {
+      process.stderr.write(`${outcome[0]}\n`);
+      process.exit(outcome[1]);
+    }
+    process.stderr.write("Installing @gustmrg/wisp-server@1.0.0…\nStarting the service…\n");
+    process.stdout.write(`${JSON.stringify({ version: "1.0.0", service: "started" })}\n`);
+    process.exit(0);
+  } else {
+    return false;
+  }
+  return true;
 }

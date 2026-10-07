@@ -21,37 +21,103 @@ export interface SshInstallOptions {
   onProgress?: (message: string) => void;
 }
 
+/** Where Wisp keeps a Node.js it downloaded, beside the server it installs. */
+export const PORTABLE_NODE_DIR = "$HOME/.local/lib/wisp-server/node";
+
 /**
- * The command run on the server. The remote shell sees only the app's own
- * version and the profile's port, both validated; never text from the user.
- * ~/.local/bin is added because it is often missing from the PATH of
- * non-interactive SSH sessions. Without a terminal, ending ssh does not stop
- * the remote command, so it stops itself when its stdin closes.
+ * The script run on the server, by `sh` from stdin, so it works whatever the
+ * account's login shell is. It sees only the app's own version and the
+ * profile's port, both validated; never text from the user.
+ *
+ * It finds a Node.js 22.19 or later with npx beside it: on the PATH (with
+ * ~/.local/bin, often missing from non-interactive SSH sessions), Wisp's own,
+ * or one from nvm, fnm, Volta, mise, or asdf. Without one, it downloads the
+ * latest Node.js 22 for Linux from nodejs.org, checks it against the release's
+ * SHASUMS256.txt, and keeps it in ~/.local/lib/wisp-server/node.
+ *
+ * Without a terminal, ending ssh does not stop the remote command, so the
+ * setup stops itself when its stdin, still this script's, closes.
  */
-export function installCommand(version: string, serverPort: number): string {
+export function installScript(version: string, serverPort: number): string {
   if (!SERVER_VERSION_PATTERN.test(version))
     throw new FatalTransportError(`${version} is not a version Wisp can install.`);
   if (!Number.isInteger(serverPort) || serverPort < 1 || serverPort > 65535) {
     throw new FatalTransportError("The server port is invalid.");
   }
-  return `PATH="$HOME/.local/bin:$PATH" npx --yes ${WISP_SERVER_PACKAGE}@${version} setup --json --no-pair --until-stdin-closes --port ${serverPort}`;
+  return `set -e
+PATH="$HOME/.local/bin:$PATH"
+wisp_node="${PORTABLE_NODE_DIR}"
+node_dist="\${WISP_NODE_DIST:-https://nodejs.org/dist/latest-v22.x}"
+# Node.js 22.19 or later, with npx beside it.
+usable() {
+  [ -x "$1" ] && [ -x "$(dirname "$1")/npx" ] || return 1
+  v=$("$1" -p process.versions.node 2>/dev/null) || return 1
+  major=\${v%%.*}; rest=\${v#*.}; minor=\${rest%%.*}
+  [ "$major" -gt 22 ] 2>/dev/null || { [ "$major" -eq 22 ] && [ "$minor" -ge 19 ]; } 2>/dev/null
+}
+find_node() {
+  for candidate in "$(command -v node 2>/dev/null || true)" "$wisp_node/bin/node" \\
+    "$HOME"/.nvm/versions/node/*/bin/node \\
+    "$HOME"/.local/share/fnm/node-versions/*/installation/bin/node \\
+    "$HOME"/.fnm/node-versions/*/installation/bin/node \\
+    "$HOME"/.volta/tools/image/node/*/bin/node \\
+    "$HOME"/.local/share/mise/installs/node/*/bin/node \\
+    "$HOME"/.asdf/installs/nodejs/*/bin/node; do
+    if usable "$candidate"; then echo "$candidate"; return 0; fi
+  done
+  return 1
+}
+fetch() {
+  if command -v curl >/dev/null 2>&1; then curl -fsSL "$1"
+  elif command -v wget >/dev/null 2>&1; then wget -qO- "$1"
+  else echo "Wisp needs curl or wget on this machine to download Node.js. Install one, or Node.js 22.19 or later, then retry." >&2; exit 1
+  fi
+}
+download_node() {
+  if [ "$(uname -s)" != Linux ]; then
+    echo "Wisp can download Node.js only on Linux. Install Node.js 22.19 or later there, then retry." >&2; exit 1
+  fi
+  case "$(uname -m)" in
+    x86_64|amd64) arch=x64 ;;
+    aarch64|arm64) arch=arm64 ;;
+    armv7l) arch=armv7l ;;
+    *) echo "Node.js has no build for $(uname -m). Install Node.js 22.19 or later there, then retry." >&2; exit 1 ;;
+  esac
+  line=$(fetch "$node_dist/SHASUMS256.txt" | grep " node-v22[.][0-9.]*-linux-$arch[.]tar[.]gz$" | head -n 1)
+  if [ -z "$line" ]; then echo "Could not find Node.js 22 for linux-$arch at $node_dist." >&2; exit 1; fi
+  file=\${line##* }; sum=\${line%% *}
+  tmp=$(mktemp -d)
+  trap 'rm -rf "$tmp"' EXIT
+  echo "Downloading \${file%.tar.gz}…" >&2
+  fetch "$node_dist/$file" > "$tmp/node.tar.gz"
+  if command -v sha256sum >/dev/null 2>&1; then actual=$(sha256sum "$tmp/node.tar.gz"); else actual=$(shasum -a 256 "$tmp/node.tar.gz"); fi
+  if [ "\${actual%% *}" != "$sum" ]; then echo "The Node.js download does not match its checksum. Retry later." >&2; exit 1; fi
+  mkdir "$tmp/node"
+  tar -xzf "$tmp/node.tar.gz" -C "$tmp/node" --strip-components=1
+  mkdir -p "$(dirname "$wisp_node")"
+  rm -rf "$wisp_node"
+  mv "$tmp/node" "$wisp_node"
+  rm -rf "$tmp"
+  trap - EXIT
+  echo "Installed \${file%.tar.gz} in $wisp_node." >&2
+}
+node=$(find_node) || { download_node; node="$wisp_node/bin/node"; }
+bin=$(dirname "$node")
+PATH="$bin:$PATH"
+exec "$bin/npx" --yes ${WISP_SERVER_PACKAGE}@${version} setup --json --no-pair --until-stdin-closes --port ${serverPort}
+`;
 }
 
 /** Installs and starts the Wisp server on a machine reached over SSH, by running its `setup` there. */
 export async function installRemoteServer(profile: SshConnectionProfile, options: SshInstallOptions): Promise<void> {
   const child = spawn(
     options.sshPath ?? "ssh",
-    [
-      "-T",
-      ...sshArguments(profile, { identityFile: options.identityFile }),
-      "--",
-      profile.host,
-      installCommand(options.version, profile.serverPort),
-    ],
-    // stdin stays open and silent: closing it is how the setup learns it was cancelled.
+    ["-T", ...sshArguments(profile, { identityFile: options.identityFile }), "--", profile.host, "sh -s"],
+    // After the script, stdin stays open and silent: closing it is how the setup learns it was cancelled.
     { stdio: ["pipe", "pipe", "pipe"], windowsHide: true },
   );
   child.stdin?.on("error", () => undefined);
+  child.stdin?.write(installScript(options.version, profile.serverPort));
   let stdout = "";
   let stderr = "";
   let pending = "";

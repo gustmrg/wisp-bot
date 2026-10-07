@@ -486,7 +486,9 @@ describe("desktop connections", () => {
     const { server, directory: serverDirectory } = await startServer();
     process.env.FAKE_WISP_DATA_DIR = serverDirectory;
     const log = path.join(serverDirectory, "ssh.log");
+    const script = path.join(serverDirectory, "script.sh");
     process.env.FAKE_SSH_LOG = log;
+    process.env.FAKE_SSH_SCRIPT_LOG = script;
     const app = await desktop();
     const { profiles } = await app.invoke<ConnectionsView>(WISP_IPC_CHANNELS.saveConnection, {
       kind: "ssh",
@@ -504,10 +506,11 @@ describe("desktop connections", () => {
       .trim()
       .split("\n")
       .map((line) => JSON.parse(line) as string[]);
-    expect(calls[0]?.slice(-2)).toEqual([
-      "raspberrypi",
-      `PATH="$HOME/.local/bin:$PATH" npx --yes @gustmrg/wisp-server@1.0.0 setup --json --no-pair --until-stdin-closes --port ${server.port}`,
-    ]);
+    // The setup runs as a script for `sh`, from stdin, whatever the login shell is.
+    expect(calls[0]?.slice(-2)).toEqual(["raspberrypi", "sh -s"]);
+    expect(await readFile(script, "utf8")).toContain(
+      `exec "$bin/npx" --yes @gustmrg/wisp-server@1.0.0 setup --json --no-pair --until-stdin-closes --port ${server.port}`,
+    );
   });
 
   it("explains why setting the server up failed and lets the person retry", async () => {

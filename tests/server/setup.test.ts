@@ -317,6 +317,11 @@ describe("runSetup", () => {
     const result = await runSetup(options, { ...host, nodePath });
     expect(result.warnings.join(" ")).toContain(`The server runs ${nodePath}`);
     expect((await runSetup(options, host)).warnings.join(" ")).not.toContain("The server runs");
+    // The Node.js the desktop app downloads beside the package stays where it is.
+    const portable = path.join(host.home, ".local/lib/wisp-server/node/bin/node");
+    expect((await runSetup(options, { ...host, nodePath: portable })).warnings.join(" ")).not.toContain(
+      "The server runs",
+    );
   });
 
   it("gives systemctl the user's runtime directory when SSH did not", async () => {

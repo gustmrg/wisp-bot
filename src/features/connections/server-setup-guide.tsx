@@ -33,7 +33,7 @@ export function ServerSetupGuide() {
           Choose <span className="text-foreground">Add a server</span>, pick the machine or enter its host, and choose{" "}
           <span className="text-foreground">Continue</span>. Wisp connects once: if the machine is new to this computer,
           or asks for a password, you answer here. It then offers to install the Wisp server, and pairs with it for you.
-          The machine needs Node.js 22.19 or later, with npm in the PATH of non-interactive SSH commands, and systemd.
+          The machine needs systemd and internet access; Wisp downloads Node.js there if it lacks one.
         </Step>
         <Step title="Or install it in a terminal there">
           One command installs the server, creates its master key, and starts it as a service. Keep a copy of the key it

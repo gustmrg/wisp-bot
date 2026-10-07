@@ -124,8 +124,15 @@ offers to install or update it (it asks first). It runs `npx
 @gustmrg/wisp-server@<its own version> setup` on the machine over SSH, and
 connects. **Install or update the server** in the server's settings, and
 **Install the Wisp server** when a connection fails, do the same. This needs
-Node.js and npm in the PATH of non-interactive SSH commands, and a version of
-the app that is published on npm. **Cancel setup**, or choosing another
+systemd, internet access, and a version of the app that is published on npm.
+
+The setup runs as a script for `sh`, whatever the account's login shell is. It
+uses a Node.js 22.19 or later with npx beside it: the one on the PATH (with
+`~/.local/bin`), one Wisp downloaded before, or one from nvm, fnm, Volta, mise,
+or asdf. Without one, it downloads the latest Node.js 22 for Linux (x64, arm64,
+or armv7l) from nodejs.org with `curl` or `wget`, checks it against the
+release's `SHASUMS256.txt`, and keeps it in `~/.local/lib/wisp-server/node`,
+which the service then runs. **Cancel setup**, or choosing another
 connection, stops it, also on the machine; what was already installed stays,
 and a service not yet started is left alone.
 
