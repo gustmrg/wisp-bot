@@ -44,7 +44,13 @@ export interface ConnectionManagerOptions {
 const OPERATIONS_BY_CHANNEL = new Map<string, string>(
   Object.entries(WISP_IPC_CHANNELS).map(([operation, channel]) => [channel, operation]),
 );
-const PUSHED = new Set(["agentEvent", "conversationChanged", "mcpSettingsChanged"]);
+const PUSHED = new Set([
+  "agentEvent",
+  "conversationChanged",
+  "mcpSettingsChanged",
+  "scheduledMessagesChanged",
+  "messageQueueChanged",
+]);
 
 /**
  * Owns where the backend runs. The app is always a client: "This computer"

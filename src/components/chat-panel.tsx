@@ -13,9 +13,15 @@ import { ChatAvatar } from "@/components/chat-avatar";
 import { ChatComposer, type VoiceInputSettings } from "@/components/chat-composer";
 import { Button } from "@/components/ui/button";
 import { MessageView } from "@/components/message-view";
+import { PendingMessagesBar } from "@/components/pending-messages-bar";
+import type { MessageQueueController } from "@/hooks/use-message-queue";
+import type { ScheduledMessagesController } from "@/hooks/use-scheduled-messages";
 import { ToolApprovalCard } from "@/components/tool-approval-card";
 
 const NO_MESSAGES: ReadonlyArray<Message> = [];
+const unavailable = async () => "This server cannot do that. Update it first.";
+const NO_QUEUE = { update: unavailable, cancel: unavailable };
+const NO_SCHEDULE = { update: unavailable, cancel: unavailable, sendNow: unavailable };
 /** How close to an end of the transcript, in pixels, the view gets before the next page loads. */
 const PAGE_EDGE_DISTANCE = 120;
 
@@ -66,6 +72,10 @@ interface ChatPanelProps {
   onRetry: (messageId: string | undefined) => void;
   onResolveApproval: (request: ToolApprovalRequest, decision: ToolApprovalDecision) => void;
   onSend: (text: string) => void;
+  /** Scheduled messages for every Wisp; absent when the backend cannot schedule them. */
+  scheduledMessages?: ScheduledMessagesController;
+  /** Messages waiting for every Wisp; absent when the backend has no queue. */
+  messageQueue?: MessageQueueController;
 }
 
 function ChatPanel({
@@ -92,6 +102,8 @@ function ChatPanel({
   onRetry,
   onResolveApproval,
   onSend,
+  scheduledMessages,
+  messageQueue,
 }: ChatPanelProps) {
   const transcriptRef = useRef<HTMLDivElement>(null);
   const titleRef = useRef<HTMLHeadingElement>(null);
@@ -284,6 +296,24 @@ function ChatPanel({
         )}
       </div>
 
+      {scheduledMessages?.available || messageQueue?.available ? (
+        <div className="flex-none px-3">
+          <PendingMessagesBar
+            queued={
+              messageQueue?.available
+                ? messageQueue.messages.filter(({ conversationId }) => conversationId === chat.id)
+                : []
+            }
+            scheduled={
+              scheduledMessages?.available
+                ? scheduledMessages.messages.filter(({ conversationId }) => conversationId === chat.id)
+                : []
+            }
+            queue={messageQueue ?? NO_QUEUE}
+            schedule={scheduledMessages ?? NO_SCHEDULE}
+          />
+        </div>
+      ) : null}
       <ChatComposer
         key={chat.id}
         chat={chat}
@@ -296,6 +326,9 @@ function ChatPanel({
         onConfigureVoice={onConfigureVoice}
         onAbort={onAbort}
         onSend={onSend}
+        onSchedule={
+          scheduledMessages?.available ? (text, at) => scheduledMessages.schedule(chat.id, text, at) : undefined
+        }
         autoFocus={!onBack && !hidden}
         enterToSend={!onBack}
       />

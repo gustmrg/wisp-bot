@@ -14,6 +14,8 @@ import { Onboarding, SetupStatus } from "@/components/onboarding";
 import { useSetupGate } from "@/hooks/use-setup-gate";
 import { useUserProfile, type UserProfileController } from "@/hooks/use-user-profile";
 import { useResizablePanel } from "@/hooks/use-resizable-panel";
+import { useMessageQueue } from "@/hooks/use-message-queue";
+import { useScheduledMessages } from "@/hooks/use-scheduled-messages";
 import { useMobileLayout } from "@/hooks/use-mobile-layout";
 import { useWorkspaceController } from "@/features/workspace/use-workspace-controller";
 import { DETAILS_LAYOUT, SIDEBAR_LAYOUT } from "@/lib/layout";
@@ -34,6 +36,8 @@ export default function App() {
 
 function Workspace({ userProfile }: { userProfile: UserProfileController }) {
   const workspace = useWorkspaceController();
+  const scheduledMessages = useScheduledMessages();
+  const messageQueue = useMessageQueue();
   const name = userProfile.profile.preferredName;
   const currentUser = {
     displayName: name || "Your profile",
@@ -185,6 +189,8 @@ function Workspace({ userProfile }: { userProfile: UserProfileController }) {
             onRetry={(messageId) => void workspace.retryMessage(messageId)}
             onResolveApproval={(request, decision) => void workspace.resolveApproval(request, decision)}
             onSend={(text) => void workspace.sendMessage(text)}
+            scheduledMessages={scheduledMessages}
+            messageQueue={messageQueue}
           />
         ) : (
           <main hidden={mobile} className={cn(mainPanel, "items-center justify-center text-dim", mobile && "hidden")}>

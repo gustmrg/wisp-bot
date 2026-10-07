@@ -32,6 +32,12 @@ import {
   type TranscribeAudioRequest,
   type VoiceAudioMimeType,
 } from "../shared/voice.js";
+import type { QueuedMessageRequest, QueueMessageRequest, UpdateQueuedMessageRequest } from "../shared/message-queue.js";
+import type {
+  ScheduledMessageRequest,
+  ScheduleMessageRequest,
+  UpdateScheduledMessageRequest,
+} from "../shared/scheduled-messages.js";
 import { WispBackendError } from "./backend-error.js";
 import {
   normalizeChatChanges,
@@ -39,6 +45,7 @@ import {
   normalizeChatCollection,
   normalizeMessage,
 } from "./conversation-normalizer.js";
+import { isTimeZone, normalizeMessageSchedule } from "./message-schedule.js";
 
 const ID_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9._:-]*$/;
 const MAX_ID_LENGTH = 128;
@@ -297,4 +304,58 @@ export function parseTranscribeAudioRequest(value: unknown): TranscribeAudioRequ
     throw new WispBackendError("invalid_request", "The recording is too long to transcribe. Try a shorter one.");
   }
   return { providerId, modelId, language, mimeType: mimeType as VoiceAudioMimeType, audio };
+}
+
+function parseMessageText(value: unknown): string {
+  if (typeof value !== "string" || !value.trim() || value.length > MAX_MESSAGE_LENGTH) throw invalidRequest();
+  return value;
+}
+
+function parseTimeZone(value: unknown): string {
+  if (!isTimeZone(value)) throw invalidRequest();
+  return value;
+}
+
+function parseMessageSchedule(value: unknown) {
+  const schedule = normalizeMessageSchedule(value);
+  if (!schedule) throw invalidRequest();
+  return schedule;
+}
+
+export function parseScheduleMessageRequest(value: unknown): ScheduleMessageRequest {
+  const request = asRecord(value);
+  return {
+    conversationId: parseId(request.conversationId),
+    text: parseMessageText(request.text),
+    schedule: parseMessageSchedule(request.schedule),
+    timeZone: parseTimeZone(request.timeZone),
+  };
+}
+
+export function parseUpdateScheduledMessageRequest(value: unknown): UpdateScheduledMessageRequest {
+  const request = asRecord(value);
+  return {
+    scheduledMessageId: parseId(request.scheduledMessageId),
+    ...(request.text === undefined ? {} : { text: parseMessageText(request.text) }),
+    ...(request.schedule === undefined ? {} : { schedule: parseMessageSchedule(request.schedule) }),
+    ...(request.timeZone === undefined ? {} : { timeZone: parseTimeZone(request.timeZone) }),
+  };
+}
+
+export function parseScheduledMessageRequest(value: unknown): ScheduledMessageRequest {
+  return { scheduledMessageId: parseId(asRecord(value).scheduledMessageId) };
+}
+
+export function parseQueueMessageRequest(value: unknown): QueueMessageRequest {
+  const request = asRecord(value);
+  return { conversationId: parseId(request.conversationId), text: parseMessageText(request.text) };
+}
+
+export function parseUpdateQueuedMessageRequest(value: unknown): UpdateQueuedMessageRequest {
+  const request = asRecord(value);
+  return { queuedMessageId: parseId(request.queuedMessageId), text: parseMessageText(request.text) };
+}
+
+export function parseQueuedMessageRequest(value: unknown): QueuedMessageRequest {
+  return { queuedMessageId: parseId(asRecord(value).queuedMessageId) };
 }

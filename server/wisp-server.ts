@@ -131,6 +131,8 @@ export async function createWispServer(options: WispServerOptions): Promise<Wisp
       onAgentEvent: (event) => hub.publish("agentEvent", event),
       onConversationChanged: (delta) => hub.publish("conversationChanged", delta),
       onMcpSettingsChanged: (view) => hub.publish("mcpSettingsChanged", view),
+      onScheduledMessagesChanged: (view) => hub.publish("scheduledMessagesChanged", view),
+      onMessageQueueChanged: (view) => hub.publish("messageQueueChanged", view),
     });
     cleanup.push(async () => {
       const settled = await disposeWithin(() => runtime.dispose(), SHUTDOWN_TIMEOUT_MS);

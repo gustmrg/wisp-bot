@@ -174,6 +174,17 @@ function createApi(initialState: ConversationStateView): WispApi {
       value: { messages: state.chats[conversationId]?.messages ?? [], olderCursor: null, newerCursor: null },
     })),
     searchMessages: vi.fn(async () => ({ ok: true as const, value: [] })),
+    getScheduledMessages: vi.fn(async () => ({ ok: true as const, value: { messages: [] } })),
+    scheduleMessage: vi.fn(async () => ({ ok: true as const, value: { messages: [] } })),
+    updateScheduledMessage: vi.fn(async () => ({ ok: true as const, value: { messages: [] } })),
+    cancelScheduledMessage: vi.fn(async () => ({ ok: true as const, value: { messages: [] } })),
+    sendScheduledMessageNow: vi.fn(async () => ({ ok: true as const, value: { messages: [] } })),
+    subscribeToScheduledMessages: vi.fn(() => () => undefined),
+    getMessageQueue: vi.fn(async () => ({ ok: true as const, value: { messages: [] } })),
+    queueMessage: vi.fn(async () => ({ ok: true as const, value: { messages: [] } })),
+    updateQueuedMessage: vi.fn(async () => ({ ok: true as const, value: { messages: [] } })),
+    cancelQueuedMessage: vi.fn(async () => ({ ok: true as const, value: { messages: [] } })),
+    subscribeToMessageQueue: vi.fn(() => () => undefined),
     getUsageReport: vi.fn(),
     getSessionReport: vi.fn(async () => ({ ok: true as const, value: null })),
     getToolPolicy: vi.fn(async () => ({ ok: true as const, value: { autoReview: true, rules: [] } })),
@@ -272,9 +283,31 @@ describe("App", () => {
     expect(window.localStorage.getItem(LEGACY_STORAGE_KEY)).toBe(legacy);
   });
 
-  it("persists and forwards an outgoing message through the backend bridge", async () => {
+  it("sends a message through the backend's message queue", async () => {
     const user = userEvent.setup();
     const api = createApi(conversationState(true, { atlas }));
+    exposeApi(api);
+
+    render(<App />);
+
+    const composer = await screen.findByRole("textbox", { name: "Message Atlas" });
+    await user.type(composer, "Prepare the launch brief");
+    await user.click(screen.getByRole("button", { name: "Send message" }));
+
+    await waitFor(() => {
+      expect(api.queueMessage).toHaveBeenCalledWith({ conversationId: "atlas", text: "Prepare the launch brief" });
+    });
+    expect(api.appendConversationMessage).not.toHaveBeenCalled();
+    expect(api.sendMessage).not.toHaveBeenCalled();
+  });
+
+  it("saves and sends the message itself when the server has no message queue", async () => {
+    const user = userEvent.setup();
+    const api = createApi(conversationState(true, { atlas }));
+    vi.mocked(api.queueMessage).mockResolvedValue({
+      ok: false,
+      error: { code: "unsupported", message: "Update the server.", retryable: false },
+    });
     exposeApi(api);
     vi.spyOn(crypto, "randomUUID").mockReturnValue("00000000-0000-4000-8000-000000000001");
 

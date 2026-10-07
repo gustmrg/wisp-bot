@@ -4,8 +4,10 @@ import type { HandlerRouter, SenderAuthorizer } from "./guarded-handlers.js";
 import { registerAgentHandlers } from "./register-agent-handlers.js";
 import { registerConversationHandlers } from "./register-conversation-handlers.js";
 import { registerMcpHandlers } from "./register-mcp-handlers.js";
+import { registerMessageQueueHandlers } from "./register-message-queue-handlers.js";
 import { registerModelSettingsHandlers } from "./register-model-settings-handlers.js";
 import { registerPluginHandlers } from "./register-plugin-handlers.js";
+import { registerScheduledMessageHandlers } from "./register-scheduled-message-handlers.js";
 import { registerSessionReportHandlers } from "./register-session-report-handlers.js";
 import { registerToolPolicyHandlers } from "./register-tool-policy-handlers.js";
 import { registerVoiceHandlers } from "./register-voice-handlers.js";
@@ -33,6 +35,8 @@ export function registerRuntimeHandlers(
     // A key added for voice input can make the saved chat model usable, so Wisps re-apply it.
     registerVoiceHandlers(router, runtime.transcription, authorizeSender, () => runtime.reapplySavedModel()),
     registerConversationHandlers(router, conversations, authorizeSender),
+    registerScheduledMessageHandlers(router, runtime.scheduledMessages, authorizeSender),
+    registerMessageQueueHandlers(router, runtime.messageQueue, authorizeSender),
     registerAgentHandlers(router, runtime.registry, authorizeSender, (id, model) =>
       runtime.applyConversationModel(id, model),
     ),

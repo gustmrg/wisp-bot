@@ -7,7 +7,7 @@ import type { ConversationRecord } from "./workspace-actions.js";
 // read and write a database it produced. Additive changes (new tables, indexes,
 // or triggers that older writers keep consistent) raise only STORE_VERSION, so
 // a downgrade keeps working. Record contents are validated by the repository.
-const STORE_VERSION = 2;
+const STORE_VERSION = 3;
 const MIN_READER_VERSION = 1;
 
 export const MESSAGE_PAGE_SIZE = 50;
@@ -51,6 +51,30 @@ const SEARCH_SCHEMA = `
   CREATE TRIGGER IF NOT EXISTS message_search_delete AFTER DELETE ON messages BEGIN
     DELETE FROM message_search WHERE rowid = old.seq;
   END;
+`;
+
+// Messages a Wisp is sent later. Deleting a conversation, from any build,
+// removes its scheduled messages through the foreign key.
+const SCHEDULED_MESSAGES_SCHEMA = `
+  CREATE TABLE IF NOT EXISTS scheduled_messages (
+    seq INTEGER PRIMARY KEY,
+    id TEXT NOT NULL UNIQUE,
+    conversation_id TEXT NOT NULL REFERENCES conversations (id) ON DELETE CASCADE,
+    next_run_at TEXT NOT NULL,
+    record TEXT NOT NULL
+  ) STRICT;
+  CREATE INDEX IF NOT EXISTS scheduled_messages_by_conversation ON scheduled_messages (conversation_id);
+`;
+
+// Messages waiting for their Wisp, in the order they were queued.
+const QUEUED_MESSAGES_SCHEMA = `
+  CREATE TABLE IF NOT EXISTS queued_messages (
+    seq INTEGER PRIMARY KEY,
+    id TEXT NOT NULL UNIQUE,
+    conversation_id TEXT NOT NULL REFERENCES conversations (id) ON DELETE CASCADE,
+    record TEXT NOT NULL
+  ) STRICT;
+  CREATE INDEX IF NOT EXISTS queued_messages_by_conversation ON queued_messages (conversation_id, seq);
 `;
 
 // Version 1 had no search index and no stored last activity.
@@ -115,6 +139,10 @@ export class ConversationStore {
   private readonly hasOlderStatement: StatementSync;
   private readonly hasNewerStatement: StatementSync;
   private readonly messageStatement: StatementSync;
+  private readonly putScheduledStatement: StatementSync;
+  private readonly deleteScheduledStatement: StatementSync;
+  private readonly putQueuedStatement: StatementSync;
+  private readonly deleteQueuedStatement: StatementSync;
 
   private constructor(private readonly db: DatabaseSync) {
     this.putConversationStatement = db.prepare(
@@ -147,6 +175,15 @@ export class ConversationStore {
       "SELECT EXISTS (SELECT 1 FROM messages WHERE conversation_id = ? AND seq > ?) AS found",
     );
     this.messageStatement = db.prepare(`${select} AND id = ?`);
+    this.putScheduledStatement = db.prepare(
+      "INSERT INTO scheduled_messages (id, conversation_id, next_run_at, record) VALUES (?, ?, ?, ?) ON CONFLICT (id) DO UPDATE SET next_run_at = excluded.next_run_at, record = excluded.record",
+    );
+    this.deleteScheduledStatement = db.prepare("DELETE FROM scheduled_messages WHERE id = ?");
+    // An edit keeps the message's place in line.
+    this.putQueuedStatement = db.prepare(
+      "INSERT INTO queued_messages (id, conversation_id, record) VALUES (?, ?, ?) ON CONFLICT (id) DO UPDATE SET record = excluded.record",
+    );
+    this.deleteQueuedStatement = db.prepare("DELETE FROM queued_messages WHERE id = ?");
   }
 
   /**
@@ -178,6 +215,8 @@ export class ConversationStore {
         ) STRICT;
         CREATE INDEX IF NOT EXISTS messages_by_conversation ON messages (conversation_id, seq);
         ${SEARCH_SCHEMA}
+        ${SCHEDULED_MESSAGES_SCHEMA}
+        ${QUEUED_MESSAGES_SCHEMA}
       `);
       const store = new ConversationStore(db);
       store.upgrade();
@@ -311,6 +350,38 @@ export class ConversationStore {
     this.deleteConversationStatement.run(conversationId);
   }
 
+  /** Raw scheduled message records, soonest first; validated by the repository. */
+  readScheduledMessages(): unknown[] {
+    return this.db
+      .prepare("SELECT record FROM scheduled_messages ORDER BY next_run_at, seq")
+      .all()
+      .map((row) => JSON.parse(String(row.record)));
+  }
+
+  putScheduledMessage(record: { id: string; conversationId: string; nextRunAt: string }): void {
+    this.putScheduledStatement.run(record.id, record.conversationId, record.nextRunAt, JSON.stringify(record));
+  }
+
+  deleteScheduledMessage(id: string): void {
+    this.deleteScheduledStatement.run(id);
+  }
+
+  /** Raw queued message records, oldest first; validated by the repository. */
+  readQueuedMessages(): unknown[] {
+    return this.db
+      .prepare("SELECT record FROM queued_messages ORDER BY seq")
+      .all()
+      .map((row) => JSON.parse(String(row.record)));
+  }
+
+  putQueuedMessage(record: { id: string; conversationId: string }): void {
+    this.putQueuedStatement.run(record.id, record.conversationId, JSON.stringify(record));
+  }
+
+  deleteQueuedMessage(id: string): void {
+    this.deleteQueuedStatement.run(id);
+  }
+
   setInitialized(initialized: boolean): void {
     this.setMetaStatement.run("initialized", initialized ? "1" : "0");
   }
@@ -320,8 +391,12 @@ export class ConversationStore {
   }
 
   private upgrade(): void {
-    if (!this.isEstablished() || Number(this.getMeta("store_version")) >= STORE_VERSION) return;
-    this.transaction(() => this.db.exec(UPGRADE_FROM_VERSION_1));
+    const version = Number(this.getMeta("store_version"));
+    if (!this.isEstablished() || version >= STORE_VERSION) return;
+    // Version 3 added only the scheduled and queued message tables, which `open` creates.
+    this.transaction(() => {
+      if (version < 2) this.db.exec(UPGRADE_FROM_VERSION_1);
+    });
   }
 
   private rows(statement: StatementSync, ...parameters: Array<string | number>): MessageRow[] {

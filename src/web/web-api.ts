@@ -34,6 +34,8 @@ export function createWebWispApi(options: WebApiOptions): WispApi {
     agentEvent: new Set<Listener<unknown>>(),
     conversationChanged: new Set<Listener<unknown>>(),
     mcpSettingsChanged: new Set<Listener<unknown>>(),
+    scheduledMessagesChanged: new Set<Listener<unknown>>(),
+    messageQueueChanged: new Set<Listener<unknown>>(),
     connections: new Set<Listener<ConnectionsView>>(),
   };
   let status: ConnectionStatus = { profileId: WEB_CONNECTION_ID, phase: "connecting", epoch: 0 };
@@ -105,6 +107,8 @@ export function createWebWispApi(options: WebApiOptions): WispApi {
     subscribeToAgentEvents: subscribe(listeners.agentEvent),
     subscribeToConversationChanges: subscribe(listeners.conversationChanged),
     subscribeToMcpSettings: subscribe(listeners.mcpSettingsChanged),
+    subscribeToScheduledMessages: subscribe(listeners.scheduledMessagesChanged),
+    subscribeToMessageQueue: subscribe(listeners.messageQueueChanged),
     subscribeToConnections: subscribe(listeners.connections),
     getLaunchAtLoginState: async () =>
       ok({ supported: false, enabled: false, reason: "Launch at login is part of the Wisp desktop app." }),

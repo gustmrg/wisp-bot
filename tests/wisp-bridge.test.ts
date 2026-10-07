@@ -109,6 +109,17 @@ function completeBridge(): WispApi {
     subscribeToConversationChanges: () => () => undefined,
     getConversationMessages: async () => ({ ok: true, value: { messages: [], olderCursor: null, newerCursor: null } }),
     searchMessages: async () => ({ ok: true, value: [] }),
+    getScheduledMessages: async () => ({ ok: true, value: { messages: [] } }),
+    scheduleMessage: async () => ({ ok: true, value: { messages: [] } }),
+    updateScheduledMessage: async () => ({ ok: true, value: { messages: [] } }),
+    cancelScheduledMessage: async () => ({ ok: true, value: { messages: [] } }),
+    sendScheduledMessageNow: async () => ({ ok: true, value: { messages: [] } }),
+    subscribeToScheduledMessages: () => () => undefined,
+    getMessageQueue: async () => ({ ok: true, value: { messages: [] } }),
+    queueMessage: async () => ({ ok: true, value: { messages: [] } }),
+    updateQueuedMessage: async () => ({ ok: true, value: { messages: [] } }),
+    cancelQueuedMessage: async () => ({ ok: true, value: { messages: [] } }),
+    subscribeToMessageQueue: () => () => undefined,
     getUsageReport: async () => {
       throw new Error("Not implemented in test");
     },

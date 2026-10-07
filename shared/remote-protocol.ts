@@ -1,6 +1,8 @@
 import type { SequencedConversationAgentEvent } from "./contracts.js";
 import type { ConversationDelta } from "./conversations.js";
 import type { McpSettingsView } from "./mcp.js";
+import type { MessageQueueView } from "./message-queue.js";
+import type { ScheduledMessagesView } from "./scheduled-messages.js";
 
 /**
  * The HTTP protocol a persistent Wisp server speaks. Operations reuse the
@@ -72,6 +74,8 @@ export interface RemoteEventPayloads {
   agentEvent: SequencedConversationAgentEvent;
   conversationChanged: ConversationDelta;
   mcpSettingsChanged: McpSettingsView;
+  scheduledMessagesChanged: ScheduledMessagesView;
+  messageQueueChanged: MessageQueueView;
   /** Sent only to the device that asked for the operation; never replayed. */
   hostRequest: HostRequest;
   /** The client's cursor is unknown (another boot, or older than the buffer): reload state. */

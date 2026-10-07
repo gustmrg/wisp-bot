@@ -11,6 +11,9 @@ export const DEFAULT_SHORTCUTS: ShortcutPreferences = { voiceInput: "Ctrl+Space"
 
 export const SHORTCUT_LABELS: Record<ShortcutId, string> = { voiceInput: "Start or stop voice input" };
 
+/** Opens the schedule menu from the composer: ⌘⇧Enter on Apple keyboards, Ctrl+Shift+Enter elsewhere. */
+export const SCHEDULE_SEND_SHORTCUT = isApplePlatform() ? "Meta+Shift+Enter" : "Ctrl+Shift+Enter";
+
 const MODIFIERS = ["Ctrl", "Alt", "Shift", "Meta"] as const;
 type Modifier = (typeof MODIFIERS)[number];
 
@@ -18,6 +21,8 @@ type Modifier = (typeof MODIFIERS)[number];
 const RESERVED_SHORTCUTS: ReadonlyArray<{ shortcut: string; label: string }> = [
   { shortcut: "Ctrl+KeyK", label: "Search" },
   { shortcut: "Meta+KeyK", label: "Search" },
+  { shortcut: "Ctrl+Shift+Enter", label: "Schedule message" },
+  { shortcut: "Meta+Shift+Enter", label: "Schedule message" },
 ];
 
 const MODIFIER_CODES = new Set([

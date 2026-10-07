@@ -31,6 +31,47 @@ const defaultProps = {
 };
 
 describe("ChatComposer", () => {
+  it("schedules the draft from the shortcut instead of sending it", async () => {
+    const user = userEvent.setup();
+    const onSend = vi.fn();
+    const onSchedule = vi.fn(async () => null);
+    render(<ChatComposer {...defaultProps} chat={wisp("one", "One")} onSend={onSend} onSchedule={onSchedule} />);
+    const input = screen.getByRole("textbox", { name: "Message One" });
+    await user.type(input, "Good morning");
+    await user.keyboard("{Control>}{Shift>}{Enter}{/Shift}{/Control}");
+    await user.click(await screen.findByRole("button", { name: /Tomorrow morning/ }));
+
+    expect(onSchedule).toHaveBeenCalledWith("Good morning", expect.any(Date));
+    const at = (onSchedule.mock.calls[0] as unknown as [string, Date])[1];
+    expect([at.getHours(), at.getMinutes()]).toEqual([9, 0]);
+    expect(onSend).not.toHaveBeenCalled();
+    await waitFor(() => expect(input).toHaveValue(""));
+  });
+
+  it("schedules at a custom time without submitting the message", async () => {
+    const user = userEvent.setup();
+    const onSend = vi.fn();
+    const onSchedule = vi.fn(async () => "This Wisp already has too many scheduled messages.");
+    render(<ChatComposer {...defaultProps} chat={wisp("one", "One")} onSend={onSend} onSchedule={onSchedule} />);
+    const input = screen.getByRole("textbox", { name: "Message One" });
+    await user.type(input, "Later");
+    await user.click(screen.getByRole("button", { name: "Schedule send" }));
+    await user.click(await screen.findByRole("button", { name: "Schedule" }));
+
+    expect(onSchedule).toHaveBeenCalledWith("Later", expect.any(Date));
+    expect(onSend).not.toHaveBeenCalled();
+    // A failure keeps the draft and says why.
+    expect(await screen.findAllByText("This Wisp already has too many scheduled messages.")).not.toHaveLength(0);
+    expect(input).toHaveValue("Later");
+  });
+
+  it("offers scheduling only with a draft and when the backend supports it", async () => {
+    const { rerender } = render(<ChatComposer {...defaultProps} chat={wisp("one", "One")} />);
+    expect(screen.queryByRole("button", { name: "Schedule send" })).toBeNull();
+    rerender(<ChatComposer {...defaultProps} chat={wisp("one", "One")} onSchedule={vi.fn(async () => null)} />);
+    expect(screen.getByRole("button", { name: "Schedule send" })).toBeDisabled();
+  });
+
   it("uses Enter for newlines on mobile and sends only through the send control", async () => {
     const user = userEvent.setup();
     const onSend = vi.fn();

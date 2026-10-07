@@ -16,6 +16,7 @@ import type {
   MessagePage,
   MessagePageRequest,
 } from "../../shared/conversations";
+import type { MessageQueueView } from "../../shared/message-queue";
 
 const PAGE_SIZE = 2;
 
@@ -106,6 +107,13 @@ function installBridge(
       },
     ),
     sendMessage: vi.fn(async () => ({ ok: true as const, value: {} })),
+    // Servers without a message queue; tests of the queue override this.
+    queueMessage: vi.fn(
+      async (): Promise<BackendResult<MessageQueueView>> => ({
+        ok: false,
+        error: { code: "unsupported", message: "Update the server.", retryable: false },
+      }),
+    ),
     subscribeToAgentEvents: vi.fn((listener: (event: SequencedConversationAgentEvent) => void) => {
       agentListeners.add(listener);
       return () => agentListeners.delete(listener);
@@ -169,6 +177,43 @@ async function startTurn(bridge: ReturnType<typeof installBridge>) {
 }
 
 describe("useConversations", () => {
+  it("queues a message on the backend, which adds it to the transcript when the Wisp takes it", async () => {
+    const bridge = installBridge({ atlas: [] });
+    bridge.api.queueMessage.mockResolvedValue({ ok: true, value: { messages: [] } });
+    const hook = await start("atlas");
+
+    let sent = false;
+    await act(async () => {
+      sent = await hook.result.current.sendMessage("atlas", "  Hello  ");
+    });
+
+    expect(sent).toBe(true);
+    expect(bridge.api.queueMessage).toHaveBeenCalledWith({ conversationId: "atlas", text: "Hello" });
+    expect(bridge.api.appendConversationMessage).not.toHaveBeenCalled();
+    expect(bridge.api.sendMessage).not.toHaveBeenCalled();
+    expect(hook.result.current.windows.atlas?.messages).toEqual([]);
+    bridge.push("atlas", { added: [{ id: "queued-1", type: "outgoing", text: "Hello", status: "queued" }] });
+    expect(idsOf(hook.result.current.windows.atlas?.messages)).toEqual(["queued-1"]);
+  });
+
+  it("shows why a message could not be queued", async () => {
+    const bridge = installBridge({ atlas: [] });
+    bridge.api.queueMessage.mockResolvedValue({
+      ok: false,
+      error: { code: "invalid_request", message: "This Wisp already has too many messages waiting.", retryable: false },
+    });
+    const hook = await start("atlas");
+
+    await act(async () => {
+      await hook.result.current.sendMessage("atlas", "Hello");
+    });
+
+    expect(hook.result.current.conversationErrors.atlas?.message).toBe(
+      "This Wisp already has too many messages waiting.",
+    );
+    expect(bridge.api.appendConversationMessage).not.toHaveBeenCalled();
+  });
+
   it("keeps summaries for every conversation and loads messages only for the ones opened", async () => {
     const bridge = installBridge({ atlas: history(5), beta: history(1) });
     const hook = await start();

@@ -24,6 +24,7 @@ import type {
   ConversationAgentListener,
 } from "./conversation-agent.js";
 import type { ModelRuntimeLike } from "./model-service.js";
+import { scheduledMessageNote } from "./message-schedule.js";
 import { SkillStore, validateSkillDraft } from "./skill-store.js";
 import { assertWorkspaceCapacity, SKILLS_DIRECTORY } from "./workspace-service.js";
 import { PiEventTranslator, type PiAgentEvent, sanitizeErrorMessage } from "./pi-event-translator.js";
@@ -406,7 +407,10 @@ export class PiConversationAgent implements ConversationAgent {
   private async promptSession(session: PiSessionLike, request: SendMessageRequest, signal: AbortSignal): Promise<void> {
     try {
       signal.throwIfAborted();
-      await session.prompt(request.text, { expandPromptTemplates: false, signal });
+      const text = request.scheduled
+        ? `${scheduledMessageNote(request.scheduled, new Date())}\n\n${request.text}`
+        : request.text;
+      await session.prompt(text, { expandPromptTemplates: false, signal });
       this.translator.finish();
     } catch (error) {
       if (signal.aborted) {

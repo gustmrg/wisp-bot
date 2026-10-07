@@ -77,6 +77,23 @@ export function stageOutgoingMessage(
   );
 }
 
+/** Shows an error in the conversation's composer until the next message or reply. */
+export function setConversationError(
+  state: ConversationRuntimeState,
+  conversationId: string,
+  error: BackendError,
+): ConversationRuntimeState {
+  return { ...state, errors: { ...state.errors, [conversationId]: error } };
+}
+
+export function clearConversationError(
+  state: ConversationRuntimeState,
+  conversationId: string,
+): ConversationRuntimeState {
+  if (!state.errors[conversationId]) return state;
+  return { ...state, errors: { ...state.errors, [conversationId]: undefined } };
+}
+
 export function markOutgoingFailed(
   state: ConversationRuntimeState,
   stored: StoredConversations,

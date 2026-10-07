@@ -3,6 +3,8 @@ import path from "node:path";
 import type { ModelSelection, SequencedConversationAgentEvent } from "../shared/contracts.js";
 import type { ConversationDelta } from "../shared/conversations.js";
 import type { McpSettingsView } from "../shared/mcp.js";
+import type { MessageQueueView } from "../shared/message-queue.js";
+import type { ScheduledMessagesView } from "../shared/scheduled-messages.js";
 import type { AgentMode } from "./agent-mode.js";
 import { AgentRegistry } from "./agent-registry.js";
 import { sanitizeBackendError } from "./backend-error.js";
@@ -13,6 +15,8 @@ import type { EncryptionService } from "./encrypted-credential-store.js";
 import { FakeConversationAgentFactory } from "./fake-conversation-agent.js";
 import { CompositeIntegrationToolSource } from "./integration-tool-source.js";
 import { McpService } from "./mcp-service.js";
+import { MessageQueue } from "./message-queue.js";
+import { MessageScheduler } from "./message-scheduler.js";
 import { ModelPricingService } from "./model-pricing-service.js";
 import { ModelService } from "./model-service.js";
 import { PiConversationAgentFactory, SdkPiSessionFactory } from "./pi-conversation-agent.js";
@@ -50,6 +54,10 @@ export interface BackendRuntimeOptions {
   onConversationChanged: (delta: ConversationDelta) => void;
   /** Receives the sanitized MCP view after health or settings changes; secrets never leave the backend. */
   onMcpSettingsChanged: (view: McpSettingsView) => void;
+  /** Receives every scheduled message after any change, including sends. */
+  onScheduledMessagesChanged: (view: ScheduledMessagesView) => void;
+  /** Receives every queued message after any change, including a Wisp taking one. */
+  onMessageQueueChanged: (view: MessageQueueView) => void;
 }
 
 /** The composed backend services, independent of any window or transport. */
@@ -60,6 +68,8 @@ export interface BackendRuntime {
   mcp: McpService;
   registry: AgentRegistry;
   conversations: ConversationService;
+  scheduledMessages: MessageScheduler;
+  messageQueue: MessageQueue;
   sessionReports: SessionReportService;
   workspace: WorkspaceService;
   transcription: TranscriptionService;
@@ -85,6 +95,8 @@ export async function createBackendRuntime(options: BackendRuntimeOptions): Prom
   // events, so the late-bound ones are captured by these closures.
   let conversationService: ConversationService | undefined;
   let agentRegistry: AgentRegistry | undefined;
+  let messageScheduler: MessageScheduler | undefined;
+  let messageQueue: MessageQueue | undefined;
   const publishAgentEvent = (event: SequencedConversationAgentEvent): void => {
     conversationService?.handleAgentEvent(event);
     if (event.type === "conversation_error") {
@@ -145,17 +157,46 @@ export async function createBackendRuntime(options: BackendRuntimeOptions): Prom
     agentFactory,
     publishAgentEvent,
     (conversationId) => toolAuthorizationBroker.cancelConversation(conversationId),
-    { validateModel: (selection) => modelService.validateConversationSelection(selection) },
+    {
+      validateModel: (selection) => modelService.validateConversationSelection(selection),
+      onAvailable: (conversationId) => messageQueue?.pump(conversationId),
+    },
   );
   agentRegistry = registry;
   const service = new ConversationService(
     conversationRepository,
     registry,
     () => toolAuthorizationBroker.listPending(),
-    { logger, onConversationChanged: options.onConversationChanged },
+    {
+      logger,
+      onConversationChanged: options.onConversationChanged,
+      onConversationsRemoved: () => {
+        messageScheduler?.refresh();
+        messageQueue?.refresh();
+      },
+    },
   );
   conversationService = service;
   await service.start(await modelService.getSelection());
+  const queue = new MessageQueue({
+    repository: conversationRepository,
+    isAvailable: (conversationId) => registry.isAvailable(conversationId),
+    deliverNext: (conversationId, onTaken) => service.deliverNextQueued(conversationId, onTaken),
+    onChanged: options.onMessageQueueChanged,
+    logger,
+  });
+  messageQueue = queue;
+  await queue.start();
+  const scheduler = new MessageScheduler({
+    repository: conversationRepository,
+    send: async (conversationId, text, scheduled) => {
+      await queue.enqueue(conversationId, text, { scheduled });
+    },
+    onChanged: options.onScheduledMessagesChanged,
+    logger,
+  });
+  messageScheduler = scheduler;
+  scheduler.start();
 
   const sessionReportService = new SessionReportService(
     conversationRepository,
@@ -183,6 +224,8 @@ export async function createBackendRuntime(options: BackendRuntimeOptions): Prom
     mcp: mcpService,
     registry,
     conversations: service,
+    scheduledMessages: scheduler,
+    messageQueue: queue,
     sessionReports: sessionReportService,
     workspace: workspaceService,
     transcription: transcriptionService,
@@ -193,6 +236,8 @@ export async function createBackendRuntime(options: BackendRuntimeOptions): Prom
     reapplySavedModel: async () => service.applyModel(await modelService.getSelection()),
     dispose: async () => {
       // Stop new work and integrations first, then the agents, which may still be settling their last turn.
+      await scheduler.dispose();
+      queue.dispose();
       modelService.dispose();
       transcriptionService.dispose();
       pluginService.dispose();

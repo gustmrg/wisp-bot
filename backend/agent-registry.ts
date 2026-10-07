@@ -36,6 +36,8 @@ const DEFAULT_EXECUTION_TIMEOUT_MS = 10 * 60 * 1_000;
 export interface AgentRegistryOptions {
   executionTimeoutMs?: number;
   validateModel?: (model: ModelSelection) => Promise<void>;
+  /** Called when a conversation becomes free to take a request: configured, with nothing running or queued. */
+  onAvailable?: (conversationId: string) => void;
 }
 
 type EventPublisher = (event: SequencedConversationAgentEvent) => void;
@@ -47,6 +49,7 @@ export class AgentRegistry {
   private readonly onConversationDisposed: (conversationId: string) => void;
   private readonly executionTimeoutMs: number;
   private readonly validateModel: (model: ModelSelection) => Promise<void>;
+  private readonly onAvailable: (conversationId: string) => void;
   private model: ModelSelection | null = null;
   private eventSequence = 0;
   private activeAgents = 0;
@@ -63,6 +66,7 @@ export class AgentRegistry {
     this.onConversationDisposed = onConversationDisposed;
     this.executionTimeoutMs = options.executionTimeoutMs ?? DEFAULT_EXECUTION_TIMEOUT_MS;
     this.validateModel = options.validateModel ?? (async () => undefined);
+    this.onAvailable = options.onAvailable ?? (() => undefined);
   }
 
   async restore(contexts: ReadonlyArray<ConversationAgentContext>, model: ModelSelection | null): Promise<void> {
@@ -132,6 +136,12 @@ export class AgentRegistry {
     return this.entries.has(conversationId);
   }
 
+  /** Whether the conversation is configured and has no request running or queued. */
+  isAvailable(conversationId: string): boolean {
+    const entry = this.entries.get(conversationId);
+    return Boolean(entry && entry.ready && !entry.disposed && entry.pendingCommands === 0);
+  }
+
   get(conversationId: string): ConversationAgent {
     return this.require(conversationId).agent;
   }
@@ -177,11 +187,15 @@ export class AgentRegistry {
           this.releaseActiveSlot();
         }
       })
-      .finally(() => {
-        entry.pendingCommands -= 1;
-      });
+      .finally(() => this.settleCommand(request.conversationId, entry));
     entry.commandQueue = operation.catch(() => undefined);
     return operation;
+  }
+
+  private settleCommand(conversationId: string, entry: AgentEntry): void {
+    entry.pendingCommands -= 1;
+    if (this.entries.get(conversationId) === entry && this.isAvailable(conversationId))
+      this.onAvailable(conversationId);
   }
 
   private async sendWithDeadline(entry: AgentEntry, request: SendMessageRequest): Promise<void> {
@@ -206,9 +220,10 @@ export class AgentRegistry {
     }
   }
 
-  dispatch(request: SendMessageRequest): void {
+  /** Sends without throwing: failures become error events. Resolves once the request has finished. */
+  dispatch(request: SendMessageRequest): Promise<void> {
     const entry = this.require(request.conversationId);
-    void this.send(request)
+    return this.send(request)
       .catch((error) => {
         if (this.entries.get(request.conversationId) !== entry) return;
         if (entry.reportedRequestErrors.has(request.requestId)) return;
@@ -266,9 +281,7 @@ export class AgentRegistry {
           }
         }
       })
-      .finally(() => {
-        entry.pendingCommands -= 1;
-      });
+      .finally(() => this.settleCommand(request.conversationId, entry));
     entry.commandQueue = operation.then(
       () => undefined,
       () => undefined,
@@ -326,6 +339,7 @@ export class AgentRegistry {
         });
       }
       this.publishEvent({ type: "conversation_status", conversationId, status: entry.status });
+      if (this.isAvailable(conversationId)) this.onAvailable(conversationId);
     });
     entry.modelQueue = operation.catch(() => undefined);
     return operation;
