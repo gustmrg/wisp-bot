@@ -14,6 +14,8 @@ export interface SshInstallOptions {
   version: string;
   /** The OpenSSH client; tests substitute a fake. */
   sshPath?: string;
+  /** Wisp's own key, once it added one to the server. */
+  identityFile?: string;
   signal?: AbortSignal;
   /** Called with each line the setup reports, such as "Installing…". */
   onProgress?: (message: string) => void;
@@ -39,7 +41,13 @@ export function installCommand(version: string, serverPort: number): string {
 export async function installRemoteServer(profile: SshConnectionProfile, options: SshInstallOptions): Promise<void> {
   const child = spawn(
     options.sshPath ?? "ssh",
-    ["-T", ...sshArguments(profile), "--", profile.host, installCommand(options.version, profile.serverPort)],
+    [
+      "-T",
+      ...sshArguments(profile, { identityFile: options.identityFile }),
+      "--",
+      profile.host,
+      installCommand(options.version, profile.serverPort),
+    ],
     // stdin stays open and silent: closing it is how the setup learns it was cancelled.
     { stdio: ["pipe", "pipe", "pipe"], windowsHide: true },
   );

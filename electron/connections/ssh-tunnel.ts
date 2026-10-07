@@ -15,20 +15,33 @@ const PAIR_COMMAND = 'PATH="$HOME/.local/bin:$PATH" wispctl pair --json';
 export interface SshTunnelOptions {
   /** The OpenSSH client; tests substitute a fake. */
   sshPath?: string;
+  /** Wisp's own key, once it added one to a server that only accepted a password. */
+  identityFile?: string;
   signal?: AbortSignal;
 }
 
-/** Options shared by the tunnel and the pairing command. Host keys are verified by OpenSSH's known_hosts. */
-export function sshArguments(profile: SshConnectionProfile): string[] {
+export interface SshArgumentOptions {
+  /** Let OpenSSH ask for host keys and passwords, through SSH_ASKPASS. */
+  interactive?: boolean;
+  identityFile?: string;
+}
+
+/**
+ * Options shared by every ssh Wisp runs. Host keys are verified by OpenSSH's
+ * known_hosts. Only a check the person started may ask questions; everything
+ * else runs in batch mode and fails rather than waiting for an answer.
+ */
+export function sshArguments(profile: SshConnectionProfile, options: SshArgumentOptions = {}): string[] {
   return [
     "-o",
-    "BatchMode=yes",
+    `BatchMode=${options.interactive ? "no" : "yes"}`,
     "-o",
     "ConnectTimeout=15",
     "-o",
     "ServerAliveInterval=15",
     "-o",
     "ServerAliveCountMax=3",
+    ...(options.identityFile ? ["-i", options.identityFile] : []),
     ...(profile.sshPort ? ["-p", String(profile.sshPort)] : []),
     ...(profile.user ? ["-l", profile.user] : []),
   ];
@@ -52,7 +65,7 @@ export async function openSshTunnel(
       "-T",
       "-o",
       "ExitOnForwardFailure=yes",
-      ...sshArguments(profile),
+      ...sshArguments(profile, { identityFile: options.identityFile }),
       "-L",
       `127.0.0.1:${localPort}:127.0.0.1:${profile.serverPort}`,
       "--",
@@ -107,7 +120,7 @@ export async function openSshTunnel(
     baseUrl: `http://127.0.0.1:${localPort}`,
     closed: exited,
     close: stop,
-    requestPairingCode: () => requestPairingCode(ssh, profile),
+    requestPairingCode: () => requestPairingCode(ssh, profile, options.identityFile),
     explainFailure: () => {
       // Only what OpenSSH reported since the last failure explains this one.
       const recent = stderr().slice(explained);
@@ -120,8 +133,12 @@ export async function openSshTunnel(
 }
 
 /** Runs `wispctl pair` on the server over SSH, so pairing needs no code typed by hand. */
-async function requestPairingCode(ssh: string, profile: SshConnectionProfile): Promise<string> {
-  const child = spawn(ssh, ["-T", ...sshArguments(profile), "--", profile.host, PAIR_COMMAND], {
+async function requestPairingCode(
+  ssh: string,
+  profile: SshConnectionProfile,
+  identityFile: string | undefined,
+): Promise<string> {
+  const child = spawn(ssh, ["-T", ...sshArguments(profile, { identityFile }), "--", profile.host, PAIR_COMMAND], {
     stdio: ["ignore", "pipe", "pipe"],
     windowsHide: true,
   });
@@ -202,10 +219,15 @@ export function classify(stderr: string, host: string, spawnError: Error | undef
   if ((spawnError as NodeJS.ErrnoException | undefined)?.code === "ENOENT") {
     return new FatalTransportError("OpenSSH is not installed on this computer. Install the ssh client and retry.");
   }
-  if (/Host key verification failed|REMOTE HOST IDENTIFICATION HAS CHANGED|host key .* not known/i.test(stderr)) {
+  if (/REMOTE HOST IDENTIFICATION HAS CHANGED|Host key for .* has changed/i.test(stderr)) {
+    // OpenSSH suggests the exact command, with the right file and port.
+    const removal = /^\s*(ssh-keygen -f .+ -R .+?)\s*$/m.exec(stderr)?.[1] ?? `ssh-keygen -R ${host}`;
     return new FatalTransportError(
-      `The SSH host key of ${host} is not trusted yet or has changed. Run \`ssh ${host}\` in a terminal to verify it, then retry.`,
+      `The SSH host key of ${host} has changed. If the machine was reinstalled, remove its old key with \`${removal}\`, then retry. Otherwise someone may be intercepting the connection.`,
     );
+  }
+  if (/Host key verification failed|host key .* not known/i.test(stderr)) {
+    return new FatalTransportError(`The SSH host key of ${host} is not trusted yet. Retry to check it and trust it.`);
   }
   if (/login\.tailscale\.com|tailscale.*(check|approval)/i.test(stderr)) {
     return new FatalTransportError(
@@ -214,7 +236,7 @@ export function classify(stderr: string, host: string, spawnError: Error | undef
   }
   if (/Permission denied/i.test(stderr)) {
     return new FatalTransportError(
-      `${host} rejected this computer's SSH key. Load the key into ssh-agent or set it in ~/.ssh/config, then retry.`,
+      `${host} rejected this computer's SSH keys. Retry to sign in with its password, or load your key into ssh-agent.`,
     );
   }
   if (/Could not resolve hostname/i.test(stderr)) {

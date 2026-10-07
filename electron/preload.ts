@@ -76,6 +76,9 @@ const WISP_IPC_CHANNELS = {
   installServer: "wisp:connections:install-server",
   cancelServerInstall: "wisp:connections:cancel-server-install",
   listSshHosts: "wisp:connections:ssh-hosts",
+  checkSshServer: "wisp:connections:check-ssh",
+  cancelSshCheck: "wisp:connections:cancel-ssh-check",
+  answerSshPrompt: "wisp:connections:answer-ssh-prompt",
   connectionsChanged: "wisp:connections:changed",
 } as const;
 
@@ -172,6 +175,9 @@ const wispApi: WispApi = {
   installServer: (request) => ipcRenderer.invoke(WISP_IPC_CHANNELS.installServer, request),
   cancelServerInstall: () => ipcRenderer.invoke(WISP_IPC_CHANNELS.cancelServerInstall),
   listSshHosts: () => ipcRenderer.invoke(WISP_IPC_CHANNELS.listSshHosts),
+  checkSshServer: (request) => ipcRenderer.invoke(WISP_IPC_CHANNELS.checkSshServer, request),
+  cancelSshCheck: () => ipcRenderer.invoke(WISP_IPC_CHANNELS.cancelSshCheck),
+  answerSshPrompt: (request) => ipcRenderer.invoke(WISP_IPC_CHANNELS.answerSshPrompt, request),
   subscribeToConnections: (listener) => {
     const handleView = (_event: Electron.IpcRendererEvent, view: Parameters<typeof listener>[0]): void =>
       listener(view);

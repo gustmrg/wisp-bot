@@ -7,6 +7,13 @@
 // and FAKE_SSH_INSTALL=hang keeps it running until ssh is stopped.
 // `-G alias` prints settings like OpenSSH does: the alias "port-2222" gets
 // that port, and "unresolvable" makes it fail.
+// With FAKE_SSH_STATE (a directory holding known_hosts and authorized_keys),
+// FAKE_SSH_HOSTKEY=unknown refuses hosts not in known_hosts unless SSH_ASKPASS
+// trusts them, and FAKE_SSH_PASSWORD refuses keys not in authorized_keys
+// unless SSH_ASKPASS answers that password. `-M -S path` is a control master
+// that asks those questions once; `-S path` reuses it and `-O check|exit`
+// controls it. FAKE_SSH_SERVER_VERSION is the server version a probe finds.
+const { execFileSync } = require("node:child_process");
 const http = require("node:http");
 const net = require("node:net");
 const fs = require("node:fs");
@@ -33,8 +40,69 @@ if (failures[process.env.FAKE_SSH_FAIL]) {
   process.exit(255);
 }
 const separator = args.indexOf("--");
+const host = args[separator + 1];
 const command = args.slice(separator + 2).join(" ");
-if (command.includes("setup --json") && process.env.FAKE_SSH_INSTALL === "hang") {
+const option = (flag) => (args.includes(flag) ? args[args.indexOf(flag) + 1] : undefined);
+const control = option("-S");
+const state = process.env.FAKE_SSH_STATE;
+const stateFile = (name) => path.join(state, name);
+const lines = (name) => (fs.existsSync(stateFile(name)) ? fs.readFileSync(stateFile(name), "utf8").split("\n") : []);
+const fail = (message) => {
+  process.stderr.write(`${message}\n`);
+  process.exit(255);
+};
+
+if (option("-O")) {
+  // The control master's socket stands in as a plain file.
+  if (!fs.existsSync(control)) fail(`Control socket connect(${control}): No such file or directory`);
+  if (option("-O") === "exit") fs.rmSync(control);
+  process.exit(0);
+}
+if (control && !args.includes("-M") && !fs.existsSync(control)) {
+  fail(`Control socket connect(${control}): No such file or directory`);
+}
+const interactive = args.includes("BatchMode=no") && process.env.SSH_ASKPASS;
+const ask = (prompt) => {
+  try {
+    return execFileSync(process.env.SSH_ASKPASS, [prompt], { encoding: "utf8" }).replace(/\n$/, "");
+  } catch {
+    return undefined;
+  }
+};
+// A connection through a master signs in no more.
+if (state && !(control && !args.includes("-M"))) {
+  if (process.env.FAKE_SSH_HOSTKEY === "unknown" && !lines("known_hosts").includes(host)) {
+    const prompt = `The authenticity of host '${host} (100.64.0.9)' can't be established.\nED25519 key fingerprint is SHA256:fakeFingerprint0123456789.\nAre you sure you want to continue connecting (yes/no/[fingerprint])? `;
+    if (!interactive || ask(prompt) !== "yes") fail("Host key verification failed.");
+    fs.appendFileSync(stateFile("known_hosts"), `${host}\n`);
+  }
+  if (process.env.FAKE_SSH_PASSWORD) {
+    const identity = option("-i");
+    const blob =
+      identity && fs.existsSync(`${identity}.pub`) && fs.readFileSync(`${identity}.pub`, "utf8").split(" ")[1];
+    const authorized = blob && lines("authorized_keys").some((line) => line.includes(blob));
+    if (!authorized && (!interactive || ask(`tester@${host}'s password: `) !== process.env.FAKE_SSH_PASSWORD)) {
+      fail(`tester@${host}: Permission denied (publickey,password).`);
+    }
+  }
+}
+if (args.includes("-M")) {
+  fs.writeFileSync(control, "");
+  // Runs until `-O exit` removes the socket, or ssh is stopped.
+  setInterval(() => {
+    if (!fs.existsSync(control)) process.exit(0);
+  }, 50);
+  process.on("SIGTERM", () => process.exit(0));
+} else if (command === "true") {
+  process.exit(0);
+} else if (command.includes("wisp-server none")) {
+  process.stdout.write(`wisp-server ${process.env.FAKE_SSH_SERVER_VERSION || "none"}\n`);
+  process.exit(0);
+} else if (command.includes("authorized_keys")) {
+  const line = /printf '%s\\n' '([^']+)'/.exec(command)[1];
+  fs.appendFileSync(stateFile("authorized_keys"), `${line}\n`);
+  process.exit(0);
+} else if (command.includes("setup --json") && process.env.FAKE_SSH_INSTALL === "hang") {
   process.stderr.write("Installing @gustmrg/wisp-server@1.0.0…\n");
   // Runs until the test stops ssh.
   setInterval(() => undefined, 60_000);

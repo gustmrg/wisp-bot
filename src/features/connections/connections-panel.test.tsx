@@ -19,6 +19,8 @@ function bridge(hosts: SshConfigHost[]) {
   const api = {
     listSshHosts: vi.fn(async () => ({ ok: true as const, value: hosts })),
     saveConnection: vi.fn(async () => ({ ok: true as const, value: view })),
+    checkSshServer: vi.fn(async () => ({ ok: true as const, value: { appVersion: "1.0.0", addedKey: false } })),
+    cancelSshCheck: vi.fn(async () => ({ ok: true as const, value: view })),
   };
   Object.defineProperty(window, "wisp", { configurable: true, value: api });
   return api;
@@ -47,7 +49,7 @@ describe("ConnectionsPanel", () => {
     await userEvent.click(screen.getByRole("button", { name: /^pi/ }));
     expect(screen.getByPlaceholderText("Home server")).toHaveValue("pi");
 
-    await userEvent.click(screen.getByRole("button", { name: "Save" }));
+    await userEvent.click(screen.getByRole("button", { name: "Continue" }));
     expect(api.saveConnection).toHaveBeenCalledWith({ kind: "ssh", name: "pi", host: "pi", serverPort: 8787 });
   });
 

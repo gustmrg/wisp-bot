@@ -10,10 +10,12 @@ import type {
   ConnectionsView,
   ConnectionStatus,
   SaveConnectionRequest,
+  SshConnectionProfile,
 } from "../../../shared/connections";
 import { InstallServerAction } from "./install-server-action";
 import { ServerSetupGuide } from "./server-setup-guide";
 import { SshConfigHosts } from "./ssh-config-hosts";
+import { SshServerSetup } from "./ssh-server-setup";
 
 const PHASE_LABELS: Record<ConnectionStatus["phase"], string> = {
   choosing: "Not in use",
@@ -72,8 +74,8 @@ export function ConnectionsPanel({ view, serversOnly = false }: { view: Connecti
     return (
       <ConnectionForm
         key={editing}
+        view={view}
         profile={editedProfile && editedProfile.kind !== "local" ? editedProfile : undefined}
-        addedHosts={new Set(view.profiles.flatMap((profile) => (profile.kind === "ssh" ? [profile.host] : [])))}
         onDone={() => setEditing(null)}
       />
     );
@@ -199,13 +201,12 @@ function requestFrom(draft: Draft, id?: string): SaveConnectionRequest {
 }
 
 function ConnectionForm({
+  view,
   profile,
-  addedHosts,
   onDone,
 }: {
+  view: ConnectionsView;
   profile?: Exclude<ConnectionProfileView, { kind: "local" }>;
-  /** Hosts that already have an SSH connection. */
-  addedHosts: ReadonlySet<string>;
   /** Returns to the list after saving, removing, or going back. */
   onDone: () => void;
 }) {
@@ -213,15 +214,36 @@ function ConnectionForm({
   const [draft, setDraft] = useState<Draft>(draftFrom(profile));
   const [busy, setBusy] = useState<"save" | "remove" | null>(null);
   const [error, setError] = useState("");
+  // A new SSH server is saved before it is checked; going back edits that one rather than adding another.
+  const [savedId, setSavedId] = useState<string | undefined>();
+  const [checking, setChecking] = useState<SshConnectionProfile | null>(null);
   const update = (changes: Partial<Draft>) => setDraft((current) => ({ ...current, ...changes }));
+  const guided = !profile && draft.kind === "ssh";
+  const addedHosts = new Set(
+    view.profiles.flatMap((candidate) =>
+      candidate.kind === "ssh" && candidate.id !== savedId ? [candidate.host] : [],
+    ),
+  );
 
   async function save() {
     setBusy("save");
     setError("");
     try {
-      const result = await window.wisp.saveConnection(requestFrom(draft, profile?.id));
-      if (result.ok) onDone();
-      else setError(result.error.message);
+      const id = profile?.id ?? savedId;
+      const result = await window.wisp.saveConnection(requestFrom(draft, id));
+      if (!result.ok) setError(result.error.message);
+      else if (!guided) onDone();
+      else {
+        const known = new Set(view.profiles.map((candidate) => candidate.id));
+        const saved = result.value.profiles.find((candidate) =>
+          id ? candidate.id === id : !known.has(candidate.id) && candidate.kind === "ssh",
+        );
+        if (saved?.kind !== "ssh") onDone();
+        else {
+          setSavedId(saved.id);
+          setChecking(saved);
+        }
+      }
     } catch {
       setError("The connection could not be saved.");
     } finally {
@@ -242,6 +264,10 @@ function ConnectionForm({
     } finally {
       setBusy(null);
     }
+  }
+
+  if (checking) {
+    return <SshServerSetup view={view} profile={checking} onBack={() => setChecking(null)} onDone={onDone} />;
   }
 
   return (
@@ -326,11 +352,14 @@ function ConnectionForm({
             </SettingsField>
           </div>
           <p className="mb-3 text-xs leading-relaxed text-dim">
-            Wisp uses this computer&apos;s OpenSSH, with your SSH agent, keys, and known hosts. Connect once with{" "}
-            <code>ssh</code> in a terminal so the host key is trusted. Pairing runs <code>wispctl pair</code> on the
-            server for you.
-            {profile ? null : (
-              <> If the Wisp server is not installed there yet, save, then open the server to install it.</>
+            Wisp uses this computer&apos;s OpenSSH, with your SSH agent, keys, and known hosts.
+            {profile ? (
+              <>
+                {" "}
+                Pairing runs <code>wispctl pair</code> on the server for you.
+              </>
+            ) : (
+              " Next, Wisp connects once. If the machine is new to this computer or asks for a password, you answer here, and Wisp offers to install the Wisp server if it is missing."
             )}
           </p>
         </>
@@ -357,7 +386,7 @@ function ConnectionForm({
       ) : null}
       <div className="flex flex-wrap items-center gap-2">
         <Button type="submit" disabled={busy !== null}>
-          {busy === "save" ? "Saving…" : "Save"}
+          {busy === "save" ? "Saving…" : guided ? "Continue" : "Save"}
         </Button>
         {profile ? (
           <ConfirmAction
@@ -378,6 +407,7 @@ function ConnectionForm({
             Installs the server on that machine, or updates it to this app&apos;s version, and connects to it.
           </p>
           <InstallServerAction
+            view={view}
             profileId={profile.id}
             host={profile.host}
             label="Install or update the server"

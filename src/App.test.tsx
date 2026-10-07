@@ -227,6 +227,9 @@ function createApi(initialState: ConversationStateView): WispApi {
     installServer: async () => ({ ok: true as const, value: localConnections }),
     cancelServerInstall: async () => ({ ok: true as const, value: localConnections }),
     listSshHosts: async () => ({ ok: true as const, value: [] }),
+    checkSshServer: async () => ({ ok: true as const, value: { appVersion: "1.0.0", addedKey: false } }),
+    cancelSshCheck: async () => ({ ok: true as const, value: localConnections }),
+    answerSshPrompt: async () => ({ ok: true as const, value: localConnections }),
     subscribeToConnections: () => () => undefined,
   };
 }

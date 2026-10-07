@@ -153,6 +153,9 @@ function completeBridge(): WispApi {
     installServer: async () => ({ ok: true, value: connections }),
     cancelServerInstall: async () => ({ ok: true, value: connections }),
     listSshHosts: async () => ({ ok: true, value: [] }),
+    checkSshServer: async () => ({ ok: true, value: { appVersion: "1.0.0", addedKey: false } }),
+    cancelSshCheck: async () => ({ ok: true, value: connections }),
+    answerSshPrompt: async () => ({ ok: true, value: connections }),
     subscribeToConnections: () => () => undefined,
   };
 }

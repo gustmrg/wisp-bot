@@ -21,35 +21,29 @@ function Step({ title, children }: { title: string; children: ReactNode }) {
 }
 
 /**
- * The short version of docs/remote-server.md: what to run on a Linux machine
- * so this app can connect to it. Collapsed until asked for.
+ * The short version of docs/remote-server.md: how this app sets up a Linux
+ * machine, and the commands for doing it by hand. Collapsed until asked for.
  */
 export function ServerSetupGuide() {
   return (
     <details className="mt-3 rounded-xl border border-border px-3 py-2.5 text-sm text-dim">
       <summary className="cursor-pointer text-base font-medium text-foreground">How to set up a Wisp server</summary>
       <ol className="mt-3 flex list-decimal flex-col gap-3 pl-5 leading-relaxed">
-        <Step title="Install it on a Linux machine">
-          It needs Node.js 22.19 or later and systemd. One command installs the server, creates its master key, and
-          starts it as a service. Keep a copy of the key it reports.
-          <Commands>{`npx @gustmrg/wisp-server setup`}</Commands>
-          <p className="mt-1.5">
-            Or skip the terminal: run <code>ssh myserver</code> once so this computer trusts its host key, add the
-            machine here with the SSH option, and save. Then open it with its settings button and choose{" "}
-            <span className="text-foreground">Install or update the server</span>. Node.js and npm must be in the PATH
-            of non-interactive SSH commands, which a Node.js from nvm or fnm usually is not.
-          </p>
+        <Step title="Add a Linux machine over SSH">
+          Choose <span className="text-foreground">Add a server</span>, pick the machine or enter its host, and choose{" "}
+          <span className="text-foreground">Continue</span>. Wisp connects once: if the machine is new to this computer,
+          or asks for a password, you answer here. It then offers to install the Wisp server, and pairs with it for you.
+          The machine needs Node.js 22.19 or later, with npm in the PATH of non-interactive SSH commands, and systemd.
         </Step>
-        <Step title="Connect">
+        <Step title="Or install it in a terminal there">
+          One command installs the server, creates its master key, and starts it as a service. Keep a copy of the key it
+          reports.
+          <Commands>{`npx @gustmrg/wisp-server setup`}</Commands>
+        </Step>
+        <Step title="Use it from a phone or browser">
           <p>
-            <span className="text-foreground">Over SSH:</span> run <code>ssh myserver</code> once in a terminal so this
-            computer trusts its host key, if you have not yet, then add the server here with the SSH option. Wisp pairs
-            by running <code>wispctl pair</code> on the server for you.
-          </p>
-          <p className="mt-1.5">
-            <span className="text-foreground">Over HTTPS</span>, also from a phone: expose the server on your tailnet,
-            then tell the server its address. Add the address here or open it in a browser, and enter a code from{" "}
-            <code>wispctl pair</code>.
+            Over HTTPS: expose the server on your tailnet, then tell the server its address. Add the address here or
+            open it in a browser, and enter a code from <code>wispctl pair</code>.
           </p>
           <Commands>{`tailscale serve --bg http://127.0.0.1:8787
 wispctl setup --public-origin https://machine.tailnet-name.ts.net`}</Commands>

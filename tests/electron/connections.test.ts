@@ -11,8 +11,6 @@ import { StructuredLogger } from "../../backend/structured-logger.js";
 import { LaunchAtLoginService } from "../../electron/backend/launch-at-login-service.js";
 import { UpdateService } from "../../electron/backend/update-service.js";
 import { listSshConfigHosts } from "../../electron/connections/ssh-config.js";
-import { installRemoteServer } from "../../electron/connections/ssh-install.js";
-import { openSshTunnel } from "../../electron/connections/ssh-tunnel.js";
 import { createBackend, type Backend } from "../../electron/create-backend.js";
 import { InProcessLocalServer } from "../helpers/in-process-local-server.js";
 import { adminRequest } from "../../server/admin.js";
@@ -110,10 +108,9 @@ async function desktop(userData?: string, key = randomBytes(32), { choose = true
     connectionsDirectory: directory,
     deviceName: "Test computer",
     appVersion: "1.0.0",
-    openSshTunnel: (profile, signal) => openSshTunnel(profile, { sshPath: fakeSsh, signal }),
-    installServer: (profile, onProgress, signal) =>
-      installRemoteServer(profile, { sshPath: fakeSsh, version: "1.0.0", onProgress, signal }),
     listSshHosts: () => listSshConfigHosts({ home: directory, sshPath: fakeSsh }),
+    // Every ssh the app runs: tunnels, pairing, setup, and checks.
+    sshPath: fakeSsh,
   });
   let disposed = false;
   const dispose = async (): Promise<void> => {
@@ -354,6 +351,116 @@ describe("desktop connections", () => {
         port: 22,
       },
     ]);
+  });
+
+  it("checks a new SSH server in the app: trusts its host key, signs in once, and adds Wisp's key", {
+    timeout: 20_000,
+  }, async () => {
+    const { server, directory: serverDirectory } = await startServer();
+    const state = await temporaryDirectory("wisp-ssh-state-");
+    Object.assign(process.env, {
+      FAKE_WISP_DATA_DIR: serverDirectory,
+      FAKE_SSH_STATE: state,
+      FAKE_SSH_HOSTKEY: "unknown",
+      FAKE_SSH_PASSWORD: "secret",
+      FAKE_SSH_SERVER_VERSION: "1.0.0",
+    });
+    const app = await desktop();
+    const { profiles } = await app.invoke<ConnectionsView>(WISP_IPC_CHANNELS.saveConnection, {
+      kind: "ssh",
+      name: "Box",
+      host: "test-host.invalid",
+      serverPort: server.port,
+    });
+    const ssh = profiles.find((profile) => profile.kind === "ssh")!;
+    // Before the check, Wisp cannot connect without asking.
+    await app.invoke(WISP_IPC_CHANNELS.activateConnection, { id: ssh.id });
+    await app.waitForPhase("error");
+    expect((await app.view()).status.message).toMatch(/host key of test-host\.invalid is not trusted yet/);
+
+    const checking = app.call(WISP_IPC_CHANNELS.checkSshServer, { id: ssh.id });
+    const prompt = async (kind: string) => {
+      let found: ConnectionsView["sshPrompt"];
+      await vi.waitFor(
+        async () => {
+          found = (await app.view()).sshPrompt;
+          expect(found?.kind).toBe(kind);
+        },
+        { timeout: 8_000, interval: 25 },
+      );
+      return found!;
+    };
+    const hostKey = await prompt("hostKey");
+    expect(hostKey).toMatchObject({
+      host: "test-host.invalid (100.64.0.9)",
+      keyType: "ED25519",
+      fingerprint: "SHA256:fakeFingerprint0123456789",
+    });
+    await app.invoke(WISP_IPC_CHANNELS.answerSshPrompt, { id: hostKey.id, answer: "yes" });
+    const password = await prompt("secret");
+    expect(password.message).toBe("tester@test-host.invalid's password:");
+    await app.invoke(WISP_IPC_CHANNELS.answerSshPrompt, { id: password.id, answer: "secret" });
+    expect(await checking).toEqual({
+      ok: true,
+      value: { installedVersion: "1.0.0", appVersion: "1.0.0", addedKey: true },
+    });
+    expect((await app.view()).sshPrompt).toBeUndefined();
+    expect(await readFile(path.join(state, "authorized_keys"), "utf8")).toMatch(
+      /^restrict,port-forwarding ssh-ed25519 \S+ wisp@Test-computer\n$/,
+    );
+
+    // Wisp's key now connects and pairs in the background, without questions.
+    await app.invoke(WISP_IPC_CHANNELS.retryConnection);
+    await app.waitForPhase("connected");
+    expect(server.auth.devices()).toEqual([expect.objectContaining({ name: "Test computer" })]);
+    expect(await app.invoke(WISP_IPC_CHANNELS.checkSshServer, { id: ssh.id })).toEqual({
+      installedVersion: "1.0.0",
+      appVersion: "1.0.0",
+      addedKey: false,
+    });
+  });
+
+  it("reports a refused host key, a wrong password, and a cancelled check", async () => {
+    const state = await temporaryDirectory("wisp-ssh-state-");
+    Object.assign(process.env, { FAKE_SSH_STATE: state, FAKE_SSH_HOSTKEY: "unknown", FAKE_SSH_PASSWORD: "secret" });
+    const app = await desktop();
+    const { profiles } = await app.invoke<ConnectionsView>(WISP_IPC_CHANNELS.saveConnection, {
+      kind: "ssh",
+      name: "Box",
+      host: "test-host.invalid",
+      serverPort: 8787,
+    });
+    const ssh = profiles.find((profile) => profile.kind === "ssh")!;
+    const answer = async (kind: string, value: string | undefined) => {
+      await vi.waitFor(async () => expect((await app.view()).sshPrompt?.kind).toBe(kind), { timeout: 8_000 });
+      const { id } = (await app.view()).sshPrompt!;
+      await app.invoke(WISP_IPC_CHANNELS.answerSshPrompt, value === undefined ? { id } : { id, answer: value });
+    };
+
+    let checking = app.call(WISP_IPC_CHANNELS.checkSshServer, { id: ssh.id });
+    // Refusing a question stops the check, rather than letting OpenSSH ask again.
+    await answer("hostKey", undefined);
+    expect(await checking).toMatchObject({ ok: false, error: { message: expect.stringMatching(/cancelled/) } });
+    expect((await app.view()).sshPrompt).toBeUndefined();
+
+    checking = app.call(WISP_IPC_CHANNELS.checkSshServer, { id: ssh.id });
+    await answer("hostKey", "yes");
+    await answer("secret", "wrong");
+    expect(await checking).toMatchObject({
+      ok: false,
+      error: { message: "test-host.invalid did not accept the password." },
+    });
+
+    checking = app.call(WISP_IPC_CHANNELS.checkSshServer, { id: ssh.id });
+    await vi.waitFor(async () => expect((await app.view()).sshPrompt?.kind).toBe("secret"), { timeout: 8_000 });
+    expect(await app.call(WISP_IPC_CHANNELS.checkSshServer, { id: ssh.id })).toMatchObject({
+      ok: false,
+      error: { message: expect.stringMatching(/already checking/) },
+    });
+    await app.invoke(WISP_IPC_CHANNELS.cancelSshCheck);
+    expect(await checking).toMatchObject({ ok: false, error: { message: expect.stringMatching(/cancelled/) } });
+    expect((await app.view()).sshPrompt).toBeUndefined();
+    expect(await app.call(WISP_IPC_CHANNELS.answerSshPrompt, { id: "x" })).toMatchObject({ ok: false });
   });
 
   it("explains an SSH failure and goes back to this computer when the connection is removed", async () => {

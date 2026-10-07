@@ -48,7 +48,9 @@ import type {
   ConnectionRequest,
   ConnectionsView,
   SaveConnectionRequest,
+  AnswerSshPromptRequest,
   SshConfigHost,
+  SshServerCheck,
 } from "./connections.js";
 
 export const WISP_IPC_CHANNELS = {
@@ -123,6 +125,9 @@ export const WISP_IPC_CHANNELS = {
   installServer: "wisp:connections:install-server",
   cancelServerInstall: "wisp:connections:cancel-server-install",
   listSshHosts: "wisp:connections:ssh-hosts",
+  checkSshServer: "wisp:connections:check-ssh",
+  cancelSshCheck: "wisp:connections:cancel-ssh-check",
+  answerSshPrompt: "wisp:connections:answer-ssh-prompt",
   connectionsChanged: "wisp:connections:changed",
 } as const;
 
@@ -479,5 +484,14 @@ export interface WispApi {
   cancelServerInstall(): Promise<BackendResult<ConnectionsView>>;
   /** The machines in this computer's ~/.ssh/config, to choose from when adding a server. */
   listSshHosts(): Promise<BackendResult<ReadonlyArray<SshConfigHost>>>;
+  /**
+   * Connects to an SSH server once, asking in the app (`sshPrompt` in the
+   * connections view) about an unknown host key or a password, so later
+   * connections need none, and reports which Wisp server is installed there.
+   */
+  checkSshServer(request: ConnectionRequest): Promise<BackendResult<SshServerCheck>>;
+  /** Stops a check in progress; `checkSshServer` then fails as cancelled. */
+  cancelSshCheck(): Promise<BackendResult<ConnectionsView>>;
+  answerSshPrompt(request: AnswerSshPromptRequest): Promise<BackendResult<ConnectionsView>>;
   subscribeToConnections(listener: (view: ConnectionsView) => void): () => void;
 }

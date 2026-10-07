@@ -21,8 +21,11 @@ import type { LaunchAtLoginService } from "./backend/launch-at-login-service.js"
 import type { UpdateService } from "./backend/update-service.js";
 import { ConnectionManager } from "./connections/connection-manager.js";
 import { ConnectionStore } from "./connections/connection-store.js";
+import { AskpassBroker } from "./connections/ssh-askpass.js";
+import { checkSshServer } from "./connections/ssh-check.js";
 import { listSshConfigHosts } from "./connections/ssh-config.js";
 import { installRemoteServer } from "./connections/ssh-install.js";
+import { WispSshKey } from "./connections/ssh-key.js";
 import { openSshTunnel } from "./connections/ssh-tunnel.js";
 import { registerLaunchAtLoginHandlers } from "./ipc/register-launch-at-login-handlers.js";
 import { registerUpdateHandlers } from "./ipc/register-update-handlers.js";
@@ -58,6 +61,10 @@ export interface BackendHost {
   deviceName: string;
   /** The version of this app; the server it installs on another machine is the same version. */
   appVersion: string;
+  /** The OpenSSH client for every ssh Wisp runs; tests substitute a fake. */
+  sshPath?: string;
+  /** The Node.js that answers OpenSSH's questions; Electron's own by default. */
+  askpassExecPath?: string;
   /** Installs the server over SSH; tests substitute a fake. */
   installServer?: (
     profile: SshConnectionProfile,
@@ -85,15 +92,37 @@ export async function createBackend(host: BackendHost): Promise<Backend> {
   const { ipcMain, authorizeSender, broadcast } = host;
   const store = new ConnectionStore(host.connectionsDirectory, host.encryption);
   await store.load();
-  const manager = new ConnectionManager({
+  const { sshPath } = host;
+  // Wisp's own key, for servers that only accepted a password.
+  const key = new WispSshKey(path.join(host.connectionsDirectory, "ssh", "wisp_ed25519"));
+  const askpass = new AskpassBroker((prompt) => manager.askSsh(prompt), host.askpassExecPath);
+  const manager: ConnectionManager = new ConnectionManager({
     store,
     localServer: host.localServer,
     onHostRequest: (request) => runHostAction(host.hostActions, request),
     selectFiles: () => host.hostActions.selectFiles(),
-    openSshTunnel: host.openSshTunnel ?? ((profile, signal) => openSshTunnel(profile, { signal })),
+    openSshTunnel:
+      host.openSshTunnel ??
+      ((profile, signal) => openSshTunnel(profile, { sshPath, identityFile: key.identityFile, signal })),
     installServer:
       host.installServer ??
-      ((profile, onProgress, signal) => installRemoteServer(profile, { version: host.appVersion, onProgress, signal })),
+      ((profile, onProgress, signal) =>
+        installRemoteServer(profile, {
+          sshPath,
+          identityFile: key.identityFile,
+          version: host.appVersion,
+          onProgress,
+          signal,
+        })),
+    checkSshServer: async (profile, signal) =>
+      checkSshServer(profile, {
+        sshPath,
+        askpassEnv: await askpass.env(),
+        key,
+        deviceName: host.deviceName,
+        signal,
+      }),
+    appVersion: host.appVersion,
     deviceName: host.deviceName,
     broadcast,
     logger: host.logger,
@@ -132,7 +161,22 @@ export async function createBackend(host: BackendHost): Promise<Backend> {
       [WISP_IPC_CHANNELS.retryConnection, () => manager.retry()],
       [WISP_IPC_CHANNELS.installServer, (payload) => manager.installServer(connectionId(payload))],
       [WISP_IPC_CHANNELS.cancelServerInstall, () => manager.cancelInstall()],
-      [WISP_IPC_CHANNELS.listSshHosts, () => (host.listSshHosts ?? listSshConfigHosts)()],
+      [WISP_IPC_CHANNELS.listSshHosts, () => (host.listSshHosts ?? (() => listSshConfigHosts({ sshPath })))()],
+      [WISP_IPC_CHANNELS.checkSshServer, (payload) => manager.checkSsh(connectionId(payload))],
+      [WISP_IPC_CHANNELS.cancelSshCheck, () => manager.cancelSshCheck()],
+      [
+        WISP_IPC_CHANNELS.answerSshPrompt,
+        (payload) => {
+          const { id, answer } = (payload ?? {}) as { id?: unknown; answer?: unknown };
+          if (
+            !Number.isSafeInteger(id) ||
+            (answer !== undefined && (typeof answer !== "string" || answer.length > 1024))
+          ) {
+            throw new WispBackendError("invalid_request", "The answer is invalid.");
+          }
+          return manager.answerSshPrompt(id as number, answer as string | undefined);
+        },
+      ],
     ]),
   ];
   try {
@@ -149,6 +193,7 @@ export async function createBackend(host: BackendHost): Promise<Backend> {
       for (const registration of handlers) registration.dispose();
       unsubscribeUpdateState();
       await manager.dispose();
+      await askpass.dispose();
     },
   };
 }

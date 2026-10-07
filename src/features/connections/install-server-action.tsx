@@ -2,42 +2,60 @@ import { useState } from "react";
 import { LoaderCircleIcon } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import type { ConnectionsView } from "../../../shared/connections";
 import { WISP_SERVER_PACKAGE } from "../../../shared/server-package";
+import { SshPromptCard } from "./ssh-prompt-card";
 
 /**
  * Sets the Wisp server up on the machine behind an SSH connection, by running
  * its setup there, and then connects to it. Asks first: it changes another
- * computer.
+ * computer. Unless the connection was just checked, it checks it first, so
+ * an unknown host key or a password is answered here rather than in a
+ * terminal.
  */
 export function InstallServerAction({
+  view,
   profileId,
   host,
   label = "Install the Wisp server",
   disabled = false,
+  checked = false,
   onInstalled,
 }: {
+  view: ConnectionsView;
   profileId: string;
   host: string;
   label?: string;
   disabled?: boolean;
+  /** The connection was checked moments ago; skip checking it again. */
+  checked?: boolean;
   onInstalled?: () => void;
 }) {
   const [confirming, setConfirming] = useState(false);
-  const [installing, setInstalling] = useState(false);
+  const [step, setStep] = useState<"checking" | "installing" | null>(null);
   const [error, setError] = useState("");
+  const progress = view.installation?.profileId === profileId ? view.installation.message : undefined;
 
   async function install() {
     setConfirming(false);
-    setInstalling(true);
     setError("");
     try {
+      if (!checked) {
+        setStep("checking");
+        const check = await window.wisp.checkSshServer({ id: profileId });
+        if (!check.ok) {
+          setError(check.error.message);
+          return;
+        }
+      }
+      setStep("installing");
       const result = await window.wisp.installServer({ id: profileId });
       if (result.ok) onInstalled?.();
       else setError(result.error.message);
     } catch {
       setError("The server could not be set up.");
     } finally {
-      setInstalling(false);
+      setStep(null);
     }
   }
 
@@ -66,11 +84,16 @@ export function InstallServerAction({
         </div>
       ) : (
         <div>
-          <Button type="button" variant="outline" disabled={disabled || installing} onClick={() => setConfirming(true)}>
-            {installing ? (
+          <Button
+            type="button"
+            variant="outline"
+            disabled={disabled || step !== null}
+            onClick={() => setConfirming(true)}
+          >
+            {step ? (
               <>
                 <LoaderCircleIcon className="animate-spin" aria-hidden="true" />
-                Installing…
+                {step === "checking" ? "Connecting…" : "Installing…"}
               </>
             ) : (
               label
@@ -78,10 +101,25 @@ export function InstallServerAction({
           </Button>
         </div>
       )}
-      {installing ? (
+      {step === "checking" ? (
+        <>
+          {view.sshPrompt ? <SshPromptCard prompt={view.sshPrompt} /> : null}
+          <div className="flex flex-wrap items-center gap-2">
+            <p role="status" className="m-0 text-xs text-dim">
+              Connecting to {host} over SSH…
+            </p>
+            {view.sshPrompt ? null : (
+              <Button type="button" variant="ghost" size="sm" onClick={() => void window.wisp.cancelSshCheck()}>
+                Cancel
+              </Button>
+            )}
+          </div>
+        </>
+      ) : null}
+      {step === "installing" ? (
         <div className="flex flex-wrap items-center gap-2">
           <p role="status" className="m-0 text-xs text-dim">
-            Setting up {host}. This can take a few minutes.
+            {progress ?? `Setting up ${host}. This can take a few minutes.`}
           </p>
           <Button type="button" variant="ghost" size="sm" onClick={() => void window.wisp.cancelServerInstall()}>
             Cancel setup

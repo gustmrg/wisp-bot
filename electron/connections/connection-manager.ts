@@ -12,6 +12,9 @@ import {
   type ConnectionStatus,
   type ConnectionsView,
   type SshConnectionProfile,
+  type SshPrompt,
+  type SshQuestion,
+  type SshServerCheck,
 } from "../../shared/connections.js";
 import { WISP_IPC_CHANNELS, type BackendResult } from "../../shared/contracts.js";
 import type { DeviceCredentials, HostRequest, HostResponse } from "../../shared/remote-protocol.js";
@@ -29,6 +32,16 @@ export interface ConnectionManagerOptions {
     onProgress: (message: string) => void,
     signal: AbortSignal,
   ): Promise<void>;
+  /**
+   * Connects to an SSH server once, asking through `askSsh` about an unknown
+   * host key or a password, so later connections need no questions.
+   */
+  checkSshServer(
+    profile: SshConnectionProfile,
+    signal: AbortSignal,
+  ): Promise<{ installedVersion?: string; addedKey: boolean }>;
+  /** This app's version; installing sets up the same server version. */
+  appVersion: string;
   /** Does what the local server asks on this computer's screen. */
   onHostRequest(request: HostRequest): Promise<HostResponse>;
   /** Shows a native multi-file picker; resolves with absolute paths, empty when dismissed. */
@@ -39,6 +52,13 @@ export interface ConnectionManagerOptions {
   logger: Pick<StructuredLogger, "info" | "warn">;
   /** Whether this computer already has Wisps from a version that had no connection choice. */
   hasLocalData(): Promise<boolean>;
+}
+
+/** A server setup in progress, with its latest progress line. */
+interface Installation {
+  profileId: string;
+  controller: AbortController;
+  message?: string;
 }
 
 const OPERATIONS_BY_CHANNEL = new Map<string, string>(
@@ -57,7 +77,10 @@ export class ConnectionManager {
   private session: RemoteSession | undefined;
   private queue: Promise<unknown> = Promise.resolve();
   private disposed = false;
-  private installation: { profileId: string; controller: AbortController } | undefined;
+  private installation: Installation | undefined;
+  private sshCheck: { profileId: string; controller: AbortController } | undefined;
+  private prompt: { view: SshPrompt; resolve: (answer: string | undefined) => void } | undefined;
+  private promptId = 0;
 
   constructor(private readonly options: ConnectionManagerOptions) {}
 
@@ -87,6 +110,15 @@ export class ConnectionManager {
       })),
       status: { ...this.status },
       secureStorageAvailable: store.secureStorageAvailable,
+      ...(this.prompt ? { sshPrompt: this.prompt.view } : {}),
+      ...(this.installation
+        ? {
+            installation: {
+              profileId: this.installation.profileId,
+              ...(this.installation.message ? { message: this.installation.message } : {}),
+            },
+          }
+        : {}),
     };
   }
 
@@ -162,7 +194,7 @@ export class ConnectionManager {
     if (this.installation) {
       throw new WispBackendError("invalid_request", "Wisp is already setting up a server. Wait for it, or cancel it.");
     }
-    const installation = { profileId: id, controller: new AbortController() };
+    const installation: Installation = { profileId: id, controller: new AbortController() };
     this.installation = installation;
     const { signal } = installation.controller;
     try {
@@ -192,6 +224,10 @@ export class ConnectionManager {
         await this.options.installServer(
           profile,
           (message) => {
+            if (this.installation === installation && !signal.aborted) {
+              installation.message = message;
+              if (!showing()) this.publish();
+            }
             if (showing() && !signal.aborted) {
               this.setStatus({ profileId: id, phase: "connecting", message, installing: true });
             }
@@ -211,8 +247,82 @@ export class ConnectionManager {
         return this.view();
       });
     } finally {
-      if (this.installation === installation) this.installation = undefined;
+      if (this.installation === installation) {
+        this.installation = undefined;
+        this.publish();
+      }
     }
+  }
+
+  /**
+   * Connects to an SSH server as the person, answering OpenSSH's questions
+   * in the app, and makes sure later connections need none. Like a setup, it
+   * runs beside other requests; `cancelSshCheck` or removing the connection
+   * stops it.
+   */
+  async checkSsh(id: string): Promise<SshServerCheck> {
+    const profile = this.options.store.get(id);
+    if (!profile) throw new WispBackendError("not_found", "That connection no longer exists.");
+    if (profile.kind !== "ssh") throw new WispBackendError("invalid_request", "Only an SSH connection can be checked.");
+    if (this.sshCheck) {
+      throw new WispBackendError(
+        "invalid_request",
+        "Wisp is already checking a connection. Wait for it, or cancel it.",
+      );
+    }
+    const check = { profileId: id, controller: new AbortController() };
+    this.sshCheck = check;
+    try {
+      const result = await this.options.checkSshServer(profile, check.controller.signal);
+      this.options.logger.info("ssh_checked", { profileId: id, addedKey: result.addedKey });
+      return { ...result, appVersion: this.options.appVersion };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "The connection could not be checked.";
+      this.options.logger.warn("ssh_check_failed", { profileId: id, cancelled: check.controller.signal.aborted });
+      throw new WispBackendError("unavailable", message, true);
+    } finally {
+      if (this.sshCheck === check) this.sshCheck = undefined;
+      this.dismissPrompt();
+    }
+  }
+
+  cancelSshCheck(): ConnectionsView {
+    this.sshCheck?.controller.abort();
+    this.dismissPrompt();
+    return this.view();
+  }
+
+  /** Shows a question from OpenSSH until the person answers it. Only a check the person started may ask. */
+  askSsh(prompt: SshQuestion): Promise<string | undefined> {
+    if (!this.sshCheck || this.disposed) return Promise.resolve(undefined);
+    this.dismissPrompt();
+    return new Promise((resolve) => {
+      this.prompt = { view: { ...prompt, id: ++this.promptId } as SshPrompt, resolve };
+      this.publish();
+    });
+  }
+
+  /**
+   * Answers the question shown now; an answer to an older one is ignored.
+   * No answer cancels the check: OpenSSH would only ask the same again.
+   */
+  answerSshPrompt(id: number, answer: string | undefined): ConnectionsView {
+    const prompt = this.prompt;
+    if (prompt?.view.id !== id) return this.view();
+    if (answer === undefined) return this.cancelSshCheck();
+    this.prompt = undefined;
+    // OpenSSH wants "yes" to trust a host key; a confirmation is accepted by any answer.
+    prompt.resolve(prompt.view.kind === "confirm" ? "" : answer);
+    this.publish();
+    return this.view();
+  }
+
+  private dismissPrompt(): void {
+    const prompt = this.prompt;
+    if (!prompt) return;
+    this.prompt = undefined;
+    prompt.resolve(undefined);
+    this.publish();
   }
 
   /** Stops a server setup in progress; the machine keeps what was already installed. */
@@ -223,6 +333,7 @@ export class ConnectionManager {
 
   remove(id: string): Promise<ConnectionsView> {
     if (this.installation?.profileId === id) this.installation.controller.abort();
+    if (this.sshCheck?.profileId === id) this.cancelSshCheck();
     return this.serialized(async () => {
       if (id === LOCAL_CONNECTION_ID) throw new WispBackendError("invalid_request", "This computer cannot be removed.");
       const active = id === this.status.profileId;
@@ -237,6 +348,7 @@ export class ConnectionManager {
   dispose(): Promise<void> {
     this.disposed = true;
     this.installation?.controller.abort();
+    this.cancelSshCheck();
     return this.serialized(async () => {
       await this.close();
       await this.options.localServer.stop();

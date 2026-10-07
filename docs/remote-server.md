@@ -100,16 +100,36 @@ Options you pass are saved in `server.env`, so later runs keep them.
 
 ### From the desktop app
 
-If the machine accepts SSH connections from your computer, the app can run the
-setup for you. Add the server under **Settings → Connections** with the SSH
-option, then choose **Install the Wisp server** (it also appears when a
-connection fails). The app asks first, then runs `npx @gustmrg/wisp-server@<its
-own version> setup` on the machine over SSH, and connects. The same button
-(**Install or update the server**) in the server's settings updates it when the
-app is newer than the server. This needs Node.js and npm in the PATH of
-non-interactive SSH commands, and a version of the app that is published on npm.
-**Cancel setup**, or choosing another connection, stops it, also on the machine;
-what was already installed stays, and a service not yet started is left alone.
+If the machine accepts SSH connections from your computer, the app sets it up
+for you, with no terminal. Under **Settings → Connections**, choose **Add a
+server**, pick the machine or enter its host, and choose **Continue**. The app
+then connects once, as you:
+
+- If this computer has not connected to the machine before, the app shows the
+  host key's fingerprint and asks whether to trust it. Trusting it adds the
+  key to your `known_hosts`, as answering "yes" to `ssh` does. A changed host
+  key is always refused.
+- If the machine asks for a password, a key passphrase, or a one-time code, you
+  type it in the app. OpenSSH asks through `SSH_ASKPASS`, a small helper that
+  passes the question to the app; the answer is never stored.
+- If later connections, which run in the background, could not sign in by
+  themselves (only a password worked), the app creates its own ed25519 key in
+  its data directory (`ssh/wisp_ed25519`) and adds it to the machine's
+  `~/.ssh/authorized_keys` with `restrict,port-forwarding`: it can run commands
+  and forward ports, but gets no terminal or agent forwarding. Remove that line
+  to revoke it.
+
+When the Wisp server is not installed there, or is older than the app, the app
+offers to install or update it (it asks first). It runs `npx
+@gustmrg/wisp-server@<its own version> setup` on the machine over SSH, and
+connects. **Install or update the server** in the server's settings, and
+**Install the Wisp server** when a connection fails, do the same. This needs
+Node.js and npm in the PATH of non-interactive SSH commands, and a version of
+the app that is published on npm. **Cancel setup**, or choosing another
+connection, stops it, also on the machine; what was already installed stays,
+and a service not yet started is left alone.
+
+This needs OpenSSH 8.4 or later on this computer, for `SSH_ASKPASS_REQUIRE`.
 
 ### Settings
 
@@ -187,11 +207,12 @@ server:
   pick a machine from **From your SSH config**: the `Host` entries of
   `~/.ssh/config` and the files it includes, as `ssh -G` resolves them. A
   machine picked there is saved by its alias, so later changes to the config
-  apply. Wisp
-  forwards a free local port to the server's loopback port; it never stores SSH
-  keys or passwords. Connect once with `ssh` in a terminal first, so the host
-  key is verified; Wisp refuses unknown or changed host keys rather than
-  accepting them. MagicDNS names and Tailscale SSH work like any other host; if
+  apply. Wisp forwards a free local port to the server's loopback port. It never
+  stores passwords; the only key it keeps is its own, added to a server only
+  when a password was the sole way in (see [From the desktop app](#from-the-desktop-app)).
+  An unknown host key is confirmed in the app when you add the server or choose
+  **Retry**; background reconnects refuse unknown and changed host keys rather
+  than asking. MagicDNS names and Tailscale SSH work like any other host; if
   Tailscale SSH asks for a browser check, run `ssh` in a terminal once.
 - **HTTPS address** connects directly, for example to a Tailscale Serve
   address. Plain HTTP is accepted only for `127.0.0.1` and `localhost`.

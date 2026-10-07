@@ -7,6 +7,7 @@ import { LOCAL_CONNECTION_ID, type ConnectionsView } from "../../../shared/conne
 import { ActiveConnectionContext } from "./active-connection";
 import { ConnectionsPanel } from "./connections-panel";
 import { InstallServerAction } from "./install-server-action";
+import { SshPromptCard } from "./ssh-prompt-card";
 
 /** The active connection, kept current from the main process. */
 export function useConnections(): [ConnectionsView | null, string] {
@@ -182,6 +183,7 @@ function ConnectionScreen({ view }: { view: ConnectionsView }) {
   const profile = view.profiles.find((candidate) => candidate.id === view.activeId);
   const [code, setCode] = useState("");
   const [busy, setBusy] = useState(false);
+  const [checking, setChecking] = useState(false);
   const [actionError, setActionError] = useState("");
 
   async function act(action: () => Promise<{ ok: true } | { ok: false; error: { message: string } }>) {
@@ -195,6 +197,20 @@ function ConnectionScreen({ view }: { view: ConnectionsView }) {
     } finally {
       setBusy(false);
     }
+  }
+
+  /** Over SSH, connects once as the person first: an unknown host key or a password is answered here. */
+  async function retry() {
+    if (profile?.kind === "ssh") {
+      setChecking(true);
+      try {
+        const check = await window.wisp.checkSshServer({ id: profile.id });
+        if (!check.ok) return check;
+      } finally {
+        setChecking(false);
+      }
+    }
+    return window.wisp.retryConnection();
   }
 
   const title =
@@ -258,10 +274,23 @@ function ConnectionScreen({ view }: { view: ConnectionsView }) {
               <p className="mb-2 mt-0 text-sm leading-relaxed text-dim">
                 If Wisp is not installed on {profile.host} yet, Wisp can set it up for you.
               </p>
-              <InstallServerAction profileId={profile.id} host={profile.host} disabled={busy} />
+              <InstallServerAction view={view} profileId={profile.id} host={profile.host} disabled={busy} />
             </div>
           ) : null}
+          {checking ? (
+            <>
+              {view.sshPrompt ? <SshPromptCard prompt={view.sshPrompt} /> : null}
+              <p role="status" className="mt-4 mb-0 text-sm text-dim">
+                Connecting to {profile?.kind === "ssh" ? profile.host : activeName(view)} over SSH…
+              </p>
+            </>
+          ) : null}
           <div className="mt-4 flex flex-wrap gap-2">
+            {checking && !view.sshPrompt ? (
+              <Button type="button" variant="outline" onClick={() => void window.wisp.cancelSshCheck()}>
+                Cancel
+              </Button>
+            ) : null}
             {status.installing ? (
               <Button
                 type="button"
@@ -273,7 +302,7 @@ function ConnectionScreen({ view }: { view: ConnectionsView }) {
               </Button>
             ) : null}
             {status.phase === "error" ? (
-              <Button type="button" disabled={busy} onClick={() => void act(() => window.wisp.retryConnection())}>
+              <Button type="button" disabled={busy} onClick={() => void act(retry)}>
                 Retry
               </Button>
             ) : null}

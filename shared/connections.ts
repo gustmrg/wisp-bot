@@ -58,6 +58,51 @@ export interface ConnectionStatus {
   epoch: number;
 }
 
+/** A question OpenSSH asks while Wisp checks an SSH server, answered in the app instead of a terminal. */
+export type SshPrompt =
+  | {
+      id: number;
+      kind: "hostKey";
+      /** The host as OpenSSH names it, such as "raspberrypi (100.64.0.1)". */
+      host: string;
+      keyType?: string;
+      fingerprint?: string;
+      message: string;
+    }
+  | {
+      id: number;
+      /** A password, key passphrase, or one-time code; never kept. */
+      kind: "secret";
+      message: string;
+    }
+  | {
+      id: number;
+      /** A yes or no question, such as allowing the use of an agent key. */
+      kind: "confirm";
+      message: string;
+    };
+
+/** A question from OpenSSH before the app numbers it. */
+export type SshQuestion = {
+  [Kind in SshPrompt["kind"]]: Omit<Extract<SshPrompt, { kind: Kind }>, "id">;
+}[SshPrompt["kind"]];
+
+export interface AnswerSshPromptRequest {
+  id: number;
+  /** "yes" or the secret; absent to refuse or cancel. */
+  answer?: string;
+}
+
+/** What checking an SSH connection found on the server. */
+export interface SshServerCheck {
+  /** The Wisp server version installed there by its setup; absent when none is. */
+  installedVersion?: string;
+  /** This app's version, which an install or update would set up. */
+  appVersion: string;
+  /** Whether Wisp added its own key to the server, because only a password worked. */
+  addedKey: boolean;
+}
+
 export interface ConnectionsView {
   activeId: string;
   profiles: ConnectionProfileView[];
@@ -69,6 +114,10 @@ export interface ConnectionsView {
    * browser app, which always talks to the server that served it.
    */
   canManage?: boolean;
+  /** What OpenSSH asks right now while Wisp checks a server. */
+  sshPrompt?: SshPrompt;
+  /** A server setup in progress, with its latest progress line. */
+  installation?: { profileId: string; message?: string };
 }
 
 export type SaveConnectionRequest =

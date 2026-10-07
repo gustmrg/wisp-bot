@@ -7,7 +7,7 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import { StructuredLogger } from "../../backend/structured-logger.js";
 import { FatalTransportError } from "../../client/remote-session.js";
-import { explainPairingFailure, openSshTunnel, sshArguments } from "../../electron/connections/ssh-tunnel.js";
+import { classify, explainPairingFailure, openSshTunnel, sshArguments } from "../../electron/connections/ssh-tunnel.js";
 import { MasterKeyEncryption } from "../../server/master-key.js";
 import { createWispServer } from "../../server/wisp-server.js";
 import type { SshConnectionProfile } from "../../shared/connections.js";
@@ -152,5 +152,21 @@ describe("openSshTunnel", () => {
       "-o",
       "ServerAliveCountMax=3",
     ]);
+  });
+
+  it("tells a changed host key from an unknown one, with OpenSSH's own removal command", () => {
+    const changed = [
+      "@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@",
+      "@    WARNING: REMOTE HOST IDENTIFICATION HAS CHANGED!     @",
+      "Offending ED25519 key in /home/me/.ssh/known_hosts:4",
+      "  remove with:",
+      "  ssh-keygen -f '/home/me/.ssh/known_hosts' -R '[box]:2222'",
+      "Host key for [box]:2222 has changed and you have requested strict checking.",
+      "Host key verification failed.",
+    ].join("\n");
+    expect(classify(changed, "box", undefined).message).toBe(
+      "The SSH host key of box has changed. If the machine was reinstalled, remove its old key with `ssh-keygen -f '/home/me/.ssh/known_hosts' -R '[box]:2222'`, then retry. Otherwise someone may be intercepting the connection.",
+    );
+    expect(classify("Host key verification failed.", "box", undefined).message).toMatch(/not trusted yet/);
   });
 });
