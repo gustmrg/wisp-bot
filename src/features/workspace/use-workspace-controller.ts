@@ -4,11 +4,13 @@ import {
   requestIdOfAssistantMessage,
   type ChatChanges,
   type ChatId,
-  type ChatSummary,
-  type ChatSummaryCollection,
   type ManagedConversationStatus,
-  type NewChat,
+  type NewCircle,
+  type NewWisp,
+  type WispChanges,
+  type WispCollection,
 } from "../../../shared/conversations";
+import type { ChatView, ChatViewCollection } from "@/chat-data";
 import type { ToolApprovalDecision, ToolApprovalRequest } from "../../../shared/tool-policy";
 import type { BackendError, ModelSelection } from "../../../shared/contracts";
 import { usePersistedPreferences } from "@/features/persistence/use-persisted-preferences";
@@ -22,9 +24,10 @@ import type { MessageWindow } from "@/lib/message-windows";
 import { applyTheme } from "@/lib/theme";
 
 export interface WorkspaceController {
-  chats: ChatSummaryCollection;
+  wisps: WispCollection;
+  chats: ChatViewCollection;
   activeChatId: ChatId;
-  activeChat: ChatSummary | undefined;
+  activeChat: ChatView | undefined;
   /** The loaded part of the active chat's transcript; undefined until its first page arrives. */
   activeTranscript: MessageWindow | undefined;
   statuses: Record<string, ManagedConversationStatus>;
@@ -44,8 +47,15 @@ export interface WorkspaceController {
   loadOlderMessages: () => void;
   loadNewerMessages: () => void;
   showLatestMessages: () => void;
-  createChat: (chat: NewChat, model?: ModelSelection | null) => Promise<boolean>;
+  /** Creates a Wisp with its own conversation and opens it. */
+  createWisp: (
+    wisp: NewWisp,
+    options: { notifyOnUpdatesEnabled: boolean; model?: ModelSelection | null },
+  ) => Promise<boolean>;
+  createCircle: (circle: NewCircle) => Promise<boolean>;
+  updateWisp: (wispId: string, changes: WispChanges) => Promise<boolean>;
   updateActiveChat: (changes: ChatChanges) => Promise<boolean>;
+  /** Deletes the active circle, or the active conversation's Wisp with it. */
   deleteActiveChat: () => Promise<boolean>;
   sendMessage: (text: string) => Promise<boolean>;
   answerPrompt: (messageId: string | undefined, answer: string) => Promise<boolean>;
@@ -141,41 +151,28 @@ export function useWorkspaceController(): WorkspaceController {
     [activeChatId, conversations.openConversation],
   );
 
-  const createChat = useCallback(
-    async (chat: NewChat, model?: ModelSelection | null): Promise<boolean> => {
+  const createWisp = useCallback(
+    async (
+      wisp: NewWisp,
+      options: { notifyOnUpdatesEnabled: boolean; model?: ModelSelection | null },
+    ): Promise<boolean> => {
+      // A Wisp's own conversation shares its ID.
       const id = createChatId(conversations.chats);
-      const timestamp = new Date().toISOString();
-      const created = await conversations.create(
-        chat.kind === "circle"
-          ? {
-              ...chat,
-              id,
-              isActive: false,
-              preview: "This is the beginning of the circle.",
-              timestamp,
-              messages: [
-                {
-                  id: crypto.randomUUID(),
-                  status: "complete",
-                  type: "time",
-                  text: "This is the beginning of the circle",
-                },
-              ],
-            }
-          : {
-              ...chat,
-              id,
-              isActive: true,
-              preview: "Ready for the first task.",
-              timestamp,
-              messages: [],
-            },
-        chat.kind === "wisp" ? model : undefined,
-      );
+      const created = await conversations.createWisp({ ...wisp, id }, options);
       if (created) setActiveChatId(id);
       return created;
     },
-    [conversations.chats, conversations.create, createChatId],
+    [conversations.chats, conversations.createWisp, createChatId],
+  );
+
+  const createCircle = useCallback(
+    async (circle: NewCircle): Promise<boolean> => {
+      const id = createChatId(conversations.chats);
+      const created = await conversations.createCircle(id, circle);
+      if (created) setActiveChatId(id);
+      return created;
+    },
+    [conversations.chats, conversations.createCircle, createChatId],
   );
 
   const updateActiveChat = useCallback(
@@ -184,10 +181,12 @@ export function useWorkspaceController(): WorkspaceController {
     [activeChatId, conversations.update],
   );
 
-  const deleteActiveChat = useCallback(
-    (): Promise<boolean> => (activeChatId ? conversations.delete(activeChatId) : Promise.resolve(false)),
-    [activeChatId, conversations.delete],
-  );
+  const deleteActiveChat = useCallback((): Promise<boolean> => {
+    if (!activeChat) return Promise.resolve(false);
+    return activeChat.kind === "wisp"
+      ? conversations.deleteWisp(activeChat.wispId)
+      : conversations.delete(activeChat.id);
+  }, [activeChat, conversations.delete, conversations.deleteWisp]);
 
   const sendMessage = useCallback(
     (text: string): Promise<boolean> =>
@@ -238,6 +237,7 @@ export function useWorkspaceController(): WorkspaceController {
   );
 
   return {
+    wisps: conversations.wisps,
     chats: conversations.chats,
     activeChatId,
     activeChat,
@@ -258,7 +258,9 @@ export function useWorkspaceController(): WorkspaceController {
     loadOlderMessages,
     loadNewerMessages,
     showLatestMessages,
-    createChat,
+    createWisp,
+    createCircle,
+    updateWisp: conversations.updateWisp,
     updateActiveChat,
     deleteActiveChat,
     sendMessage,

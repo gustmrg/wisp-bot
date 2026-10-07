@@ -24,19 +24,14 @@ function record(id: string, messages: Message[] = []): ConversationRecord {
     chat: {
       id,
       kind: "wisp",
-      shape: "circle",
-      name: id,
-      label: "",
-      description: "",
+      wispId: id,
       notifyOnUpdatesEnabled: true,
       preview: "",
-      timestamp: "2026-09-01T00:00:00.000Z",
+      lastActivityAt: "2026-09-01T00:00:00.000Z",
       messages,
     },
-    sessionId: `${id}-session`,
-    modelOverride: null,
-    piSessionId: null,
-    piSessionFile: null,
+    storageId: `${id}-workspace`,
+    sessions: { [id]: { sessionId: `${id}-session`, piSessionId: null, piSessionFile: null } },
     createdAt: "2026-09-01T00:00:00.000Z",
     updatedAt: "2026-09-01T00:00:00.000Z",
   };
@@ -49,7 +44,7 @@ function numbered(count: number): Message[] {
 async function storeWith(messageCount: number): Promise<ConversationStore> {
   const store = ConversationStore.open(await databasePath());
   store.transaction(() =>
-    store.replaceAll({ initialized: true, conversations: { one: record("one", numbered(messageCount)) } }),
+    store.replaceAll({ initialized: true, wisps: {}, conversations: { one: record("one", numbered(messageCount)) } }),
   );
   return store;
 }
@@ -108,7 +103,7 @@ describe("ConversationStore pages", () => {
 
   it("returns empty pages for empty conversations and missing targets", async () => {
     const store = ConversationStore.open(await databasePath());
-    store.transaction(() => store.replaceAll({ initialized: true, conversations: { one: record("one") } }));
+    store.transaction(() => store.replaceAll({ initialized: true, wisps: {}, conversations: { one: record("one") } }));
 
     expect(store.readPage("one", { page: "latest" })).toEqual({ messages: [], olderCursor: null, newerCursor: null });
     expect(store.readPage("one", { page: "around", messageId: "missing" }).messages).toEqual([]);
@@ -182,8 +177,9 @@ describe("ConversationStore versions", () => {
         id TEXT NOT NULL, body TEXT NOT NULL, UNIQUE (conversation_id, id)) STRICT;
       INSERT INTO meta VALUES ('store_version', '1'), ('initialized', '1');
     `);
+    // Version 1 records predate stored last activity and Wisps stored apart.
     const put = (id: string, timestamp: string) => {
-      const { messages: _messages, ...chat } = { ...record(id).chat, timestamp };
+      const { messages: _messages, lastActivityAt: _lastActivityAt, ...chat } = { ...record(id).chat, timestamp };
       v1.prepare("INSERT INTO conversations (id, record) VALUES (?, ?)").run(
         id,
         JSON.stringify({ ...record(id), chat }),
@@ -208,12 +204,31 @@ describe("ConversationStore versions", () => {
     expect(chats.created?.chat.lastActivityAt).toBe("2026-09-02T00:00:00.000Z");
     expect(chats.legacy?.chat).not.toHaveProperty("lastActivityAt");
     store.close();
-    expect(meta(file)).toMatchObject({ store_version: "3", min_reader_version: "1" });
+    expect(meta(file)).toMatchObject({ store_version: "4", min_reader_version: "4" });
     const db = new DatabaseSync(file, { readOnly: true });
     expect(db.prepare("SELECT rowid FROM message_search WHERE message_search MATCH ?").all('"orcamento"')).toHaveLength(
       1,
     );
     db.close();
+  });
+
+  it("stores Wisps apart from conversations", async () => {
+    const store = ConversationStore.open(await databasePath());
+    const wisp = {
+      wisp: { id: "one", name: "One", role: "", soul: "", shape: "circle" as const },
+      storageId: "one-settings",
+      modelOverride: null,
+      createdAt: "2026-09-01T00:00:00.000Z",
+      updatedAt: "2026-09-01T00:00:00.000Z",
+    };
+    store.transaction(() =>
+      store.replaceAll({ initialized: true, wisps: { one: wisp }, conversations: { one: record("one") } }),
+    );
+    expect(store.read().wisps).toEqual({ one: wisp });
+    store.transaction(() => store.deleteWisp("one"));
+    expect(store.read().wisps).toEqual({});
+    expect(Object.keys(store.read().conversations)).toEqual(["one"]);
+    store.close();
   });
 
   it("reads a newer store that older readers may still use, and refuses one they may not", async () => {
@@ -228,15 +243,15 @@ describe("ConversationStore versions", () => {
       db.close();
     };
 
-    raise(readable, "4", "3");
+    raise(readable, "5", "4");
     const newer = ConversationStore.open(readable);
     expect(newer.read().initialized).toBe(true);
     // Writing here must not lower the markers the newer build set.
     newer.transaction(() => newer.setInitialized(true));
     newer.close();
-    expect(meta(readable)).toMatchObject({ store_version: "4", min_reader_version: "3" });
+    expect(meta(readable)).toMatchObject({ store_version: "5", min_reader_version: "4" });
 
-    raise(readable, "5", "4");
+    raise(readable, "6", "5");
     const incompatible = ConversationStore.open(readable);
     expect(() => incompatible.read()).toThrow("Unsupported conversation store version.");
     incompatible.close();

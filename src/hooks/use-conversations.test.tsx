@@ -17,20 +17,18 @@ import type {
   MessagePageRequest,
 } from "../../shared/conversations";
 import type { MessageQueueView } from "../../shared/message-queue";
+import { testWisp } from "@/test/chat-fixtures";
 
 const PAGE_SIZE = 2;
 
 function wisp(id: string): ChatSummary {
   return {
     id,
-    name: id,
-    label: "Research",
-    description: "",
     kind: "wisp",
-    shape: "circle",
+    wispId: id,
     notifyOnUpdatesEnabled: true,
     preview: "Ready",
-    timestamp: "2026-09-29T12:00:00.000Z",
+    lastActivityAt: "2026-09-29T12:00:00.000Z",
   };
 }
 
@@ -76,6 +74,7 @@ function installBridge(
   const chats = Object.fromEntries(Object.keys(transcripts).map((id) => [id, wisp(id)]));
   const state: ConversationStateView = {
     initialized: true,
+    wisps: Object.fromEntries(Object.keys(transcripts).map((id) => [id, testWisp(id)])),
     // The full state still carries transcripts; the hook must not depend on them.
     chats: Object.fromEntries(Object.entries(chats).map(([id, chat]) => [id, { ...chat, messages: [] }])),
     statuses: Object.fromEntries(Object.keys(chats).map((id) => [id, "idle"])),

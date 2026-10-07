@@ -84,7 +84,7 @@ describe("message search", () => {
     });
 
     await repository.appendMessage("two", { id: "x", type: "incoming", text: "rewritten" });
-    await repository.delete("one");
+    await repository.deleteWisp("one");
     expect(await repository.searchMessages("status")).toEqual([]);
     expect((await repository.searchMessages("rewritten")).map(({ messageId }) => messageId)).toEqual(["x"]);
   });

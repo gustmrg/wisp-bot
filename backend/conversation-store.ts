@@ -1,14 +1,16 @@
 import { DatabaseSync, type StatementSync } from "node:sqlite";
 
 import type { Message } from "../shared/conversations.js";
-import type { ConversationRecord } from "./workspace-actions.js";
+import type { ConversationRecord, WispRecord } from "./workspace-actions.js";
 
 // The layout this build writes, and the oldest layout reader that can still
 // read and write a database it produced. Additive changes (new tables, indexes,
 // or triggers that older writers keep consistent) raise only STORE_VERSION, so
 // a downgrade keeps working. Record contents are validated by the repository.
-const STORE_VERSION = 3;
-const MIN_READER_VERSION = 1;
+// Version 4 stores Wisps apart from conversations, which earlier readers
+// cannot understand.
+const STORE_VERSION = 4;
+const MIN_READER_VERSION = 4;
 
 export const MESSAGE_PAGE_SIZE = 50;
 /** Messages on each side of the target in an "around" page. */
@@ -77,6 +79,16 @@ const QUEUED_MESSAGES_SCHEMA = `
   CREATE INDEX IF NOT EXISTS queued_messages_by_conversation ON queued_messages (conversation_id, seq);
 `;
 
+// Wisps, apart from the conversations they take part in. Each Wisp's own
+// conversation shares its ID.
+const WISPS_SCHEMA = `
+  CREATE TABLE IF NOT EXISTS wisps (
+    seq INTEGER PRIMARY KEY,
+    id TEXT NOT NULL UNIQUE,
+    record TEXT NOT NULL
+  ) STRICT;
+`;
+
 // Version 1 had no search index and no stored last activity.
 const UPGRADE_FROM_VERSION_1 = `
   INSERT INTO message_search (message_search) VALUES ('delete-all');
@@ -96,6 +108,7 @@ const UPGRADE_FROM_VERSION_1 = `
 /** Raw persisted state, validated by the repository before use. */
 export interface StoredConversationState {
   initialized: boolean;
+  wisps: Record<string, unknown>;
   conversations: Record<string, unknown>;
 }
 
@@ -125,6 +138,8 @@ interface MessageRow {
  * in sync by triggers. All writes run inside `transaction`.
  */
 export class ConversationStore {
+  private readonly putWispStatement: StatementSync;
+  private readonly deleteWispStatement: StatementSync;
   private readonly putConversationStatement: StatementSync;
   private readonly putMessageStatement: StatementSync;
   private readonly deleteOldestMessagesStatement: StatementSync;
@@ -145,6 +160,10 @@ export class ConversationStore {
   private readonly deleteQueuedStatement: StatementSync;
 
   private constructor(private readonly db: DatabaseSync) {
+    this.putWispStatement = db.prepare(
+      "INSERT INTO wisps (id, record) VALUES (?, ?) ON CONFLICT (id) DO UPDATE SET record = excluded.record",
+    );
+    this.deleteWispStatement = db.prepare("DELETE FROM wisps WHERE id = ?");
     this.putConversationStatement = db.prepare(
       "INSERT INTO conversations (id, record) VALUES (?, ?) ON CONFLICT (id) DO UPDATE SET record = excluded.record",
     );
@@ -217,6 +236,7 @@ export class ConversationStore {
         ${SEARCH_SCHEMA}
         ${SCHEDULED_MESSAGES_SCHEMA}
         ${QUEUED_MESSAGES_SCHEMA}
+        ${WISPS_SCHEMA}
       `);
       const store = new ConversationStore(db);
       store.upgrade();
@@ -243,6 +263,10 @@ export class ConversationStore {
     if (!Number.isInteger(minReader) || minReader > STORE_VERSION) {
       throw new Error("Unsupported conversation store version.");
     }
+    const wisps: Record<string, unknown> = {};
+    for (const row of this.db.prepare("SELECT id, record FROM wisps ORDER BY seq").iterate()) {
+      wisps[String(row.id)] = JSON.parse(String(row.record));
+    }
     const conversations: Record<string, { chat: { messages: unknown[] } }> = {};
     for (const row of this.db.prepare("SELECT id, record FROM conversations ORDER BY seq").iterate()) {
       const record = JSON.parse(String(row.record)) as { chat: Record<string, unknown> };
@@ -251,7 +275,7 @@ export class ConversationStore {
     for (const row of this.db.prepare("SELECT conversation_id, body FROM messages ORDER BY seq").iterate()) {
       conversations[String(row.conversation_id)]?.chat.messages.push(JSON.parse(String(row.body)));
     }
-    return { initialized: this.getMeta("initialized") === "1", conversations };
+    return { initialized: this.getMeta("initialized") === "1", wisps, conversations };
   }
 
   /** One page of a conversation's messages; see `MessagePageRequest`. */
@@ -319,13 +343,27 @@ export class ConversationStore {
     }
   }
 
-  replaceAll(state: { initialized: boolean; conversations: Readonly<Record<string, ConversationRecord>> }): void {
+  replaceAll(state: {
+    initialized: boolean;
+    wisps: Readonly<Record<string, WispRecord>>;
+    conversations: Readonly<Record<string, ConversationRecord>>;
+  }): void {
     this.db.exec("DELETE FROM conversations");
+    this.db.exec("DELETE FROM wisps");
+    for (const record of Object.values(state.wisps)) this.putWisp(record);
     for (const record of Object.values(state.conversations)) {
       this.putConversation(record);
       this.putMessages(record.chat.id, record.chat.messages);
     }
     this.setInitialized(state.initialized);
+  }
+
+  putWisp(record: WispRecord): void {
+    this.putWispStatement.run(record.wisp.id, JSON.stringify(record));
+  }
+
+  deleteWisp(wispId: string): void {
+    this.deleteWispStatement.run(wispId);
   }
 
   /** Writes the conversation's metadata; its messages are stored separately. */
@@ -393,7 +431,9 @@ export class ConversationStore {
   private upgrade(): void {
     const version = Number(this.getMeta("store_version"));
     if (!this.isEstablished() || version >= STORE_VERSION) return;
-    // Version 3 added only the scheduled and queued message tables, which `open` creates.
+    // Version 3 added only the scheduled and queued message tables, and version
+    // 4 the Wisps table, which `open` creates. The repository rewrites the
+    // records version 4 changed.
     this.transaction(() => {
       if (version < 2) this.db.exec(UPGRADE_FROM_VERSION_1);
     });

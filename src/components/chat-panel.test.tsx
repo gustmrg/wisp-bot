@@ -2,24 +2,15 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { ChatSummary, Message } from "@/chat-data";
+import type { Message } from "@/chat-data";
 import { ChatPanel, type ChatPanelProps } from "@/components/chat-panel";
 import type { MessageWindow } from "@/lib/message-windows";
+import { wispChatView } from "@/test/chat-fixtures";
 
 const ROW_HEIGHT = 40;
 const VIEWPORT_HEIGHT = 200;
 
-const atlas: ChatSummary = {
-  id: "atlas",
-  name: "Atlas",
-  label: "Research",
-  description: "",
-  kind: "wisp",
-  shape: "circle",
-  notifyOnUpdatesEnabled: true,
-  preview: "Ready",
-  timestamp: "Now",
-};
+const atlas = wispChatView("atlas", { wisp: { name: "Atlas", role: "Research", soul: "" } });
 
 function messages(from: number, to: number): Message[] {
   return Array.from({ length: to - from }, (_, index) => ({
@@ -64,7 +55,6 @@ beforeEach(() => {
 function renderPanel(held: MessageWindow | undefined, overrides: Partial<ChatPanelProps> = {}) {
   const props: ChatPanelProps = {
     chat: atlas,
-    chats: { atlas },
     transcript: held,
     status: "idle",
     acknowledging: false,

@@ -1,25 +1,28 @@
 import { describe, expect, it } from "vitest";
 
-import type { Chat } from "../shared/conversations.js";
-import { applyWorkspaceAction, type ConversationRecord, type WorkspaceRecords } from "../backend/workspace-actions.js";
+import type { Chat, CircleChat, WispChat } from "../shared/conversations.js";
+import {
+  applyWorkspaceAction,
+  type ConversationRecord,
+  type WispRecord,
+  type WorkspaceRecords,
+} from "../backend/workspace-actions.js";
 
-function wisp(id: string, overrides: Partial<Chat> = {}): Chat {
+function wispRecord(id: string): WispRecord {
   return {
-    id,
-    kind: "wisp",
-    name: "Same display name",
-    label: "Test",
-    description: "Test",
-    shape: "circle",
-    notifyOnUpdatesEnabled: true,
-    preview: "Ready",
-    timestamp: "Now",
-    messages: [],
-    ...overrides,
-  } as Chat;
+    wisp: { id, name: "Same display name", role: "Test", soul: "Test", shape: "circle" },
+    storageId: `storage-${id}`,
+    modelOverride: null,
+    createdAt: "created",
+    updatedAt: "before",
+  };
 }
 
-function circle(id: string, memberIds: string[]): Chat {
+function wispChat(id: string, overrides: Partial<WispChat> = {}): WispChat {
+  return { id, kind: "wisp", wispId: id, notifyOnUpdatesEnabled: true, preview: "Ready", messages: [], ...overrides };
+}
+
+function circle(id: string, memberIds: string[]): CircleChat {
   return {
     id,
     kind: "circle",
@@ -29,7 +32,6 @@ function circle(id: string, memberIds: string[]): Chat {
     memberIds,
     notifyOnUpdatesEnabled: true,
     preview: "Ready",
-    timestamp: "Now",
     messages: [],
   };
 }
@@ -37,32 +39,77 @@ function circle(id: string, memberIds: string[]): Chat {
 function record(chat: Chat): ConversationRecord {
   return {
     chat,
-    sessionId: chat.kind === "wisp" ? `session-${chat.id}` : null,
-    piSessionId: null,
-    piSessionFile: null,
+    storageId: `workspace-${chat.id}`,
+    sessions:
+      chat.kind === "wisp"
+        ? { [chat.wispId]: { sessionId: `session-${chat.id}`, piSessionId: null, piSessionFile: null } }
+        : {},
     createdAt: "created",
     updatedAt: "before",
   };
 }
 
+/** Wisps with their own conversations, and the given circles. */
+function graph(wispIds: string[], circles: CircleChat[] = []): WorkspaceRecords {
+  return {
+    wisps: Object.fromEntries(wispIds.map((id) => [id, wispRecord(id)])),
+    conversations: Object.fromEntries([
+      ...wispIds.map((id) => [id, record(wispChat(id))] as const),
+      ...circles.map((chat) => [chat.id, record(chat)] as const),
+    ]),
+  };
+}
+
 describe("workspace actions", () => {
-  it("creates and updates records without mutating the prior graph", () => {
-    const before: WorkspaceRecords = { first: record(wisp("first")) };
-    const created = applyWorkspaceAction(before, { type: "create", record: record(wisp("second")) });
+  it("creates a Wisp with its own conversation without mutating the prior graph", () => {
+    const before = graph(["first"]);
+    const created = applyWorkspaceAction(before, {
+      type: "create-wisp",
+      wisp: wispRecord("second"),
+      conversation: record(wispChat("second")),
+    });
     expect(created.status).toBe("applied");
-    expect(before).not.toHaveProperty("second");
-    const updated = applyWorkspaceAction(created.records, {
-      type: "update",
-      conversationId: "second",
-      changes: { kind: "wisp", name: "Renamed" },
+    expect(created.records.wisps.second?.wisp.id).toBe("second");
+    expect(created.records.conversations.second?.chat).toMatchObject({ kind: "wisp", wispId: "second" });
+    expect(before.wisps).not.toHaveProperty("second");
+    expect(before.conversations).not.toHaveProperty("second");
+  });
+
+  it("updates the Wisp itself and clears an optional field set to undefined", () => {
+    const records = graph(["first"]);
+    const colored = applyWorkspaceAction(records, {
+      type: "update-wisp",
+      wispId: "first",
+      changes: { name: "Renamed", soul: "# Identity\nCareful", color: "#fff" },
       updatedAt: "after",
     });
-    expect(updated.records.second).toMatchObject({ chat: { name: "Renamed" }, updatedAt: "after" });
+    expect(colored.records.wisps.first).toMatchObject({
+      wisp: { name: "Renamed", soul: "# Identity\nCareful", color: "#fff" },
+      updatedAt: "after",
+    });
+    expect(colored.records.conversations).toBe(records.conversations);
+    const cleared = applyWorkspaceAction(colored.records, {
+      type: "update-wisp",
+      wispId: "first",
+      changes: { color: undefined },
+      updatedAt: "later",
+    });
+    expect(cleared.records.wisps.first?.wisp).not.toHaveProperty("color");
+    expect(
+      applyWorkspaceAction(records, { type: "update-wisp", wispId: "missing", changes: {}, updatedAt: "x" }).status,
+    ).toBe("not_found");
   });
 
   it("rejects duplicate creation and cross-kind updates", () => {
-    const records = { first: record(wisp("first")) };
-    expect(applyWorkspaceAction(records, { type: "create", record: record(wisp("first")) }).status).toBe(
+    const records = graph(["first"]);
+    expect(
+      applyWorkspaceAction(records, {
+        type: "create-wisp",
+        wisp: wispRecord("first"),
+        conversation: record(wispChat("first")),
+      }).status,
+    ).toBe("already_exists");
+    expect(applyWorkspaceAction(records, { type: "create", record: record(circle("first", [])) }).status).toBe(
       "already_exists",
     );
     expect(
@@ -75,25 +122,26 @@ describe("workspace actions", () => {
     ).toBe("kind_mismatch");
   });
 
-  it("deletes a member and prunes every duplicate reference without changing order", () => {
-    const records = {
-      first: record(wisp("first")),
-      second: record(wisp("second")),
-      crew: record(circle("crew", ["second", "first", "first", "second"])),
-    };
-    const result = applyWorkspaceAction(records, { type: "delete", conversationId: "first", updatedAt: "after" });
+  it("deletes a Wisp with its conversation and prunes every duplicate reference without changing order", () => {
+    const records = graph(["first", "second"], [circle("crew", ["second", "first", "first", "second"])]);
+    const result = applyWorkspaceAction(records, { type: "delete-wisp", wispId: "first", updatedAt: "after" });
     expect(result.status).toBe("applied");
-    expect(result.records).not.toHaveProperty("first");
-    expect(result.records.crew?.chat).toMatchObject({ memberIds: ["second", "second"] });
-    expect(records.crew?.chat).toMatchObject({ memberIds: ["second", "first", "first", "second"] });
+    expect(result.records.wisps).not.toHaveProperty("first");
+    expect(result.records.conversations).not.toHaveProperty("first");
+    expect(result.deleted).toEqual({ wisp: records.wisps.first, conversation: records.conversations.first });
+    expect(result.records.conversations.crew?.chat).toMatchObject({ memberIds: ["second", "second"] });
+    expect(records.conversations.crew?.chat).toMatchObject({ memberIds: ["second", "first", "first", "second"] });
+  });
+
+  it("deletes a Wisp's conversation only with the Wisp", () => {
+    const records = graph(["first"]);
+    expect(applyWorkspaceAction(records, { type: "delete", conversationId: "first", updatedAt: "after" }).status).toBe(
+      "kind_mismatch",
+    );
   });
 
   it("replaces circle membership atomically, deduplicates IDs, and preserves selected order", () => {
-    const records = {
-      first: record(wisp("first")),
-      second: record(wisp("second")),
-      crew: record(circle("crew", ["first"])),
-    };
+    const records = graph(["first", "second"], [circle("crew", ["first"])]);
     const result = applyWorkspaceAction(records, {
       type: "replace-circle-members",
       conversationId: "crew",
@@ -102,12 +150,12 @@ describe("workspace actions", () => {
     });
 
     expect(result.status).toBe("applied");
-    expect(result.records.crew?.chat).toMatchObject({ memberIds: ["second", "first"] });
-    expect(records.crew?.chat).toMatchObject({ memberIds: ["first"] });
+    expect(result.records.conversations.crew?.chat).toMatchObject({ memberIds: ["second", "first"] });
+    expect(records.conversations.crew?.chat).toMatchObject({ memberIds: ["first"] });
   });
 
   it("rejects missing, circle, and non-circle membership targets", () => {
-    const records = { first: record(wisp("first")), crew: record(circle("crew", [])) };
+    const records = graph(["first"], [circle("crew", [])]);
     for (const memberIds of [["missing"], ["crew"]]) {
       const result = applyWorkspaceAction(records, {
         type: "replace-circle-members",
@@ -128,35 +176,27 @@ describe("workspace actions", () => {
   });
 
   it("deletes circles and supports an empty result", () => {
-    const onlyCircle = { crew: record(circle("crew", [])) };
+    const onlyCircle = graph([], [circle("crew", [])]);
     const result = applyWorkspaceAction(onlyCircle, {
       type: "delete",
       conversationId: "crew",
       updatedAt: "after",
     });
     expect(result.status).toBe("applied");
-    expect(result.records).toEqual({});
-  });
-
-  it("rejects deletion of metadata-protected records", () => {
-    const records = { leader: record(wisp("leader", { systemRole: "chief" })) };
-    const result = applyWorkspaceAction(records, {
-      type: "delete",
-      conversationId: "leader",
-      updatedAt: "after",
-    });
-    expect(result.status).toBe("protected");
-    expect(result.records).toBe(records);
+    expect(result.records).toEqual({ wisps: {}, conversations: {} });
   });
 
   it("marks unread records and leaves already-read or missing targets unchanged", () => {
-    const records = { first: record(wisp("first", { unread: true })) };
+    const records: WorkspaceRecords = {
+      ...graph(["first"]),
+      conversations: { first: record(wispChat("first", { unread: true })) },
+    };
     const marked = applyWorkspaceAction(records, {
       type: "mark-read",
       conversationId: "first",
       updatedAt: "after",
     });
-    expect(marked.records.first?.chat.unread).toBe(false);
+    expect(marked.records.conversations.first?.chat.unread).toBe(false);
     expect(
       applyWorkspaceAction(marked.records, {
         type: "mark-read",
@@ -170,21 +210,21 @@ describe("workspace actions", () => {
   });
 
   it("upserts messages and treats a missing target as a no-op", () => {
-    const records = { first: record(wisp("first")) };
+    const records = graph(["first"]);
     const appended = applyWorkspaceAction(records, {
       type: "append-message",
       conversationId: "first",
-      message: { id: "message-1", type: "incoming", text: "Hello" },
+      message: { id: "message-1", type: "incoming", text: "Hello", authorId: "first" },
       updatedAt: "after",
     });
     const replaced = applyWorkspaceAction(appended.records, {
       type: "append-message",
       conversationId: "first",
-      message: { id: "message-1", type: "incoming", text: "Complete" },
+      message: { id: "message-1", type: "incoming", text: "Complete", authorId: "first" },
       updatedAt: "later",
     });
-    expect(replaced.records.first?.chat.messages).toEqual([
-      expect.objectContaining({ id: "message-1", text: "Complete" }),
+    expect(replaced.records.conversations.first?.chat.messages).toEqual([
+      expect.objectContaining({ id: "message-1", text: "Complete", authorId: "first" }),
     ]);
     const missing = applyWorkspaceAction(records, {
       type: "append-message",
@@ -196,12 +236,13 @@ describe("workspace actions", () => {
   });
 
   it("answers an existing prompt and reports a missing prompt", () => {
-    const records = {
-      first: record(
-        wisp("first", {
-          messages: [{ id: "prompt-1", type: "prompt", question: "Continue?", options: [] }],
-        }),
-      ),
+    const records: WorkspaceRecords = {
+      ...graph(["first"]),
+      conversations: {
+        first: record(
+          wispChat("first", { messages: [{ id: "prompt-1", type: "prompt", question: "Continue?", options: [] }] }),
+        ),
+      },
     };
     const answered = applyWorkspaceAction(records, {
       type: "answer-prompt",
@@ -210,7 +251,7 @@ describe("workspace actions", () => {
       answer: "yes",
       updatedAt: "after",
     });
-    expect(answered.records.first?.chat.messages[0]).toMatchObject({ answer: "yes" });
+    expect(answered.records.conversations.first?.chat.messages[0]).toMatchObject({ answer: "yes" });
     expect(
       applyWorkspaceAction(records, {
         type: "answer-prompt",
@@ -223,18 +264,18 @@ describe("workspace actions", () => {
   });
 
   it("does not link a replacement Wisp with the same display name to an old circle", () => {
-    const old = record(wisp("opaque-old"));
-    const initial = { "opaque-old": old, crew: record(circle("crew", ["opaque-old"])) };
+    const initial = graph(["opaque-old"], [circle("crew", ["opaque-old"])]);
     const deleted = applyWorkspaceAction(initial, {
-      type: "delete",
-      conversationId: "opaque-old",
+      type: "delete-wisp",
+      wispId: "opaque-old",
       updatedAt: "after-delete",
     });
     const recreated = applyWorkspaceAction(deleted.records, {
-      type: "create",
-      record: record(wisp("opaque-new")),
+      type: "create-wisp",
+      wisp: wispRecord("opaque-new"),
+      conversation: record(wispChat("opaque-new")),
     });
-    expect(recreated.records["opaque-new"]?.chat.name).toBe(old.chat.name);
-    expect(recreated.records.crew?.chat).toMatchObject({ memberIds: [] });
+    expect(recreated.records.wisps["opaque-new"]?.wisp.name).toBe(initial.wisps["opaque-old"]?.wisp.name);
+    expect(recreated.records.conversations.crew?.chat).toMatchObject({ memberIds: [] });
   });
 });

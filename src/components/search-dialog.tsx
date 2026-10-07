@@ -1,7 +1,8 @@
 import { useDeferredValue, useState } from "react";
 import { ChevronLeftIcon, SearchIcon } from "lucide-react";
 
-import type { ChatId, ChatSummary, ChatSummaryCollection } from "@/chat-data";
+import type { ChatId, ChatView, ChatViewCollection } from "@/chat-data";
+import { chatName } from "@/lib/chat-schema";
 import { ChatAvatar } from "@/components/chat-avatar";
 import {
   Dialog,
@@ -27,8 +28,10 @@ const SEARCH_FILTERS: ReadonlyArray<{ id: SearchFilter; label: string }> = [
 const resultRow =
   "flex w-full items-center gap-2.5 rounded-lg border-0 bg-transparent p-2 text-left hover:bg-secondary";
 
-function chatMetadata(chat: ChatSummary): string {
-  return `${chat.name} ${chat.label} ${chat.description}`.toLocaleLowerCase();
+function chatMetadata(chat: ChatView): string {
+  const fields =
+    chat.kind === "wisp" ? [chat.wisp.name, chat.wisp.role] : [chatName(chat), chat.label, chat.description];
+  return fields.join(" ").toLocaleLowerCase();
 }
 
 function hitTime(createdAt: string | undefined): string | null {
@@ -38,7 +41,7 @@ function hitTime(createdAt: string | undefined): string | null {
 }
 
 interface SearchDialogProps {
-  chats: ChatSummaryCollection;
+  chats: ChatViewCollection;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onSelectChat: (chatId: ChatId) => void;
@@ -131,9 +134,9 @@ function SearchDialog({ chats, open, onOpenChange, onSelectChat, onSelectMessage
                 onOpenChange(false);
               }}
             >
-              <ChatAvatar chat={chat} chats={chats} />
+              <ChatAvatar chat={chat} />
               <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-                <strong className="truncate">{chat.name}</strong>
+                <strong className="truncate">{chatName(chat)}</strong>
                 <small className="truncate text-dim">{chat.preview}</small>
               </span>
               <em className="text-xs not-italic text-dim">{chat.kind === "circle" ? "Circle" : "Wisp"}</em>
@@ -151,9 +154,9 @@ function SearchDialog({ chats, open, onOpenChange, onSelectChat, onSelectMessage
                   onOpenChange(false);
                 }}
               >
-                <ChatAvatar chat={chat} chats={chats} />
+                <ChatAvatar chat={chat} />
                 <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-                  <strong className="truncate">{chat.name}</strong>
+                  <strong className="truncate">{chatName(chat)}</strong>
                   <small className="truncate text-dim">{hit.snippet}</small>
                 </span>
                 {time ? (

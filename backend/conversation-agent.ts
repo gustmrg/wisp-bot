@@ -23,18 +23,24 @@ export interface ConversationAgent {
   subscribe(listener: ConversationAgentListener): () => void;
 }
 
+/** One Wisp's agent in one conversation: who the Wisp is, and where its files and session live. */
 export interface ConversationAgentContext {
   conversationId: string;
+  wispId: string;
+  /** Names the directory of the Wisp's session in this conversation. */
   sessionId: string;
   name: string;
-  label: string;
-  description: string;
-  tone?: import("../shared/wisp-tone.js").WispTone;
+  role: string;
+  /** Markdown that defines the Wisp's identity, personality, and behavior. */
+  soul: string;
   userName?: string;
   userProfile?: import("../shared/user-profile.js").UserProfile;
   modelOverride?: ModelSelection | null;
+  /** The conversation's workspace. */
   workspaceDirectory: string;
+  /** The Wisp's session in this conversation. */
   sessionDirectory: string;
+  /** The Wisp's own settings, skills, and saved memory, the same in every conversation. */
   configDirectory: string;
   piSessionId: string | null;
   piSessionFile: string | null;

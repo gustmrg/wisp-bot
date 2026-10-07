@@ -10,7 +10,7 @@ import { adminRequest } from "../../server/admin.js";
 import { MasterKeyEncryption } from "../../server/master-key.js";
 import { createWispServer } from "../../server/wisp-server.js";
 import type { ConnectionsView } from "../../shared/connections.js";
-import type { Chat } from "../../shared/conversations.js";
+import type { Wisp } from "../../shared/conversations.js";
 import { isWispBridgeAvailable } from "../../src/lib/wisp-bridge.js";
 import { browserDeviceName, createWebWispApi } from "../../src/web/web-api.js";
 
@@ -57,18 +57,7 @@ async function until(probe: () => Promise<boolean> | boolean, what: string): Pro
   }
 }
 
-const atlas: Chat = {
-  id: "atlas",
-  name: "Atlas",
-  label: "",
-  description: "",
-  kind: "wisp",
-  shape: "circle",
-  notifyOnUpdatesEnabled: true,
-  preview: "",
-  timestamp: "2026-10-05T12:00:00.000Z",
-  messages: [],
-};
+const atlas: Wisp = { id: "atlas", name: "Atlas", role: "", soul: "", shape: "circle" };
 
 describe("browser WispApi", () => {
   it("pairs with a code, runs Wisps on the server, streams events, and signs out", async () => {
@@ -114,7 +103,7 @@ describe("browser WispApi", () => {
     const events: string[] = [];
     api.subscribeToAgentEvents((event) => events.push(event.type));
     await api.saveAiSettings({ selection: { providerId: "openrouter", modelId: "openai/gpt-oss-120b" }, apiKey: "sk" });
-    expect(await api.createConversation({ conversation: atlas })).toMatchObject({ ok: true });
+    expect(await api.createWisp({ wisp: atlas, notifyOnUpdatesEnabled: true })).toMatchObject({ ok: true });
     await api.sendMessage({ conversationId: "atlas", requestId: "r1", text: "Hi" });
     await until(() => events.includes("assistant_message_completed"), "the reply");
 

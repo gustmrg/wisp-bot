@@ -125,7 +125,7 @@ export async function createBackendRuntime(options: BackendRuntimeOptions): Prom
     },
   );
   const conversationRepository = new ConversationRepository({ dataDirectory, userName: options.userName });
-  const resolveWisp = (id: string): string => conversationRepository.getAgentContext(id).sessionId;
+  const resolveWisp = (id: string): string => conversationRepository.getWispStorageId(id);
   const pluginService = new PluginService({
     dataDirectory,
     encryption,

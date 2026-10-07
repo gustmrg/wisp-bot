@@ -88,6 +88,15 @@ function completeBridge(): WispApi {
     initializeConversations: async () => {
       throw new Error("not called");
     },
+    createWisp: async () => {
+      throw new Error("not called");
+    },
+    updateWisp: async () => {
+      throw new Error("not called");
+    },
+    deleteWisp: async () => {
+      throw new Error("not called");
+    },
     createConversation: async () => {
       throw new Error("not called");
     },

@@ -1,8 +1,8 @@
 import type { ModelSelection } from "./contracts.js";
 import type { ToolApprovalRequest } from "./tool-policy.js";
-import type { WispTone } from "./wisp-tone.js";
 
 export type ChatId = string;
+export type WispId = string;
 
 export const WISP_SHAPE_IDS = [
   "circle",
@@ -17,6 +17,33 @@ export const WISP_SHAPE_IDS = [
 
 export type WispShape = (typeof WISP_SHAPE_IDS)[number];
 
+export const WISP_NAME_MAX_LENGTH = 64;
+export const WISP_ROLE_MAX_LENGTH = 40;
+export const WISP_SOUL_MAX_LENGTH = 10_000;
+
+/**
+ * A Wisp: who it is, independent of the conversations it takes part in. The
+ * same Wisp talks with the person in its own conversation and can join
+ * circles with other Wisps.
+ */
+export interface Wisp {
+  id: WispId;
+  name: string;
+  /** A short role or profession shown under the name, such as "Research". */
+  role: string;
+  /** Markdown that defines the Wisp's identity, personality, and behavior. */
+  soul: string;
+  shape: WispShape;
+  color?: string;
+  avatarImage?: string;
+}
+
+export type WispCollection = Record<WispId, Wisp>;
+
+export type NewWisp = Omit<Wisp, "id">;
+/** Fields to change; `color` and `avatarImage` set to undefined are cleared. */
+export type WispChanges = Partial<NewWisp>;
+
 export type MessageStatus = "queued" | "streaming" | "complete" | "failed" | "cancelled";
 
 interface MessageMetadata {
@@ -28,32 +55,27 @@ interface MessageMetadata {
 
 export interface ChatBase {
   id: ChatId;
-  name: string;
-  label: string;
-  description: string;
   notifyOnUpdatesEnabled: boolean;
   preview: string;
-  timestamp: string;
   messages: ReadonlyArray<Message>;
-  systemRole?: "chief";
-  isActive?: boolean;
   unread?: boolean;
   /** Time of the newest message (ISO 8601), maintained by the backend. */
   lastActivityAt?: string;
 }
 
+/** The conversation between the person and one Wisp. It shares the Wisp's ID. */
 export interface WispChat extends ChatBase {
   kind: "wisp";
-  color?: string;
-  avatarImage?: string;
-  shape: WispShape;
-  /** Absent when the Wisp uses the default tone. */
-  tone?: WispTone;
+  wispId: WispId;
 }
 
+/** A conversation between the person and several Wisps. */
 export interface CircleChat extends ChatBase {
   kind: "circle";
-  memberIds: ReadonlyArray<ChatId>;
+  name: string;
+  label: string;
+  description: string;
+  memberIds: ReadonlyArray<WispId>;
 }
 
 /** Where a message the backend sent on the person's behalf came from. */
@@ -70,6 +92,12 @@ export interface TextMessage extends MessageMetadata {
   text: string;
   time?: string;
   reactions?: ReadonlyArray<string>;
+  /**
+   * The Wisp that wrote an incoming message. Absent on messages written
+   * before Wisps were stored apart from conversations, which in a Wisp's own
+   * conversation are its own.
+   */
+  authorId?: WispId;
   /** Set on an outgoing message sent from a scheduled message rather than typed then. */
   scheduled?: ScheduledOrigin;
 }
@@ -100,19 +128,15 @@ export type WispSummary = Omit<WispChat, "messages">;
 export type CircleSummary = Omit<CircleChat, "messages">;
 export type ChatSummary = WispSummary | CircleSummary;
 
-type NewChatBase = Pick<ChatBase, "name" | "label" | "description" | "notifyOnUpdatesEnabled">;
+export type NewCircle = Pick<CircleChat, "name" | "label" | "description" | "notifyOnUpdatesEnabled" | "memberIds"> & {
+  kind: "circle";
+};
 
-export type NewWisp = NewChatBase & Pick<WispChat, "color" | "avatarImage" | "shape" | "tone"> & { kind: "wisp" };
-export type NewCircle = NewChatBase & Pick<CircleChat, "memberIds"> & { kind: "circle" };
-export type NewChat = NewWisp | NewCircle;
+type SharedChatChanges = Partial<Pick<ChatBase, "notifyOnUpdatesEnabled" | "unread">>;
 
-type SharedChatChanges = Partial<
-  Pick<ChatBase, "name" | "label" | "description" | "notifyOnUpdatesEnabled" | "isActive" | "unread">
->;
-
-export type WispChatChanges = SharedChatChanges &
-  Partial<Pick<WispChat, "color" | "avatarImage" | "shape" | "tone">> & { kind: "wisp" };
-export type CircleChatChanges = SharedChatChanges & Partial<Pick<CircleChat, "memberIds">> & { kind: "circle" };
+export type WispChatChanges = SharedChatChanges & { kind: "wisp" };
+export type CircleChatChanges = SharedChatChanges &
+  Partial<Pick<CircleChat, "name" | "label" | "description" | "memberIds">> & { kind: "circle" };
 export type ChatChanges = WispChatChanges | CircleChatChanges;
 
 export type ChatCollection = Record<ChatId, Chat>;
@@ -141,6 +165,7 @@ export type ManagedConversationStatus = "configuration_required" | "idle" | "wor
 
 export interface ConversationStateView {
   initialized: boolean;
+  wisps: WispCollection;
   chats: ChatCollection;
   statuses: Record<ChatId, ManagedConversationStatus>;
   /**
@@ -169,9 +194,26 @@ export interface InitializeConversationsRequest {
   chats: unknown;
 }
 
+/** Creates a circle; a Wisp's own conversation is created with the Wisp. */
 export interface CreateConversationRequest {
-  conversation: Chat;
+  conversation: CircleChat;
+}
+
+/** Creates a Wisp and its conversation, which shares the Wisp's ID. */
+export interface CreateWispRequest {
+  wisp: Wisp;
+  notifyOnUpdatesEnabled: boolean;
   model?: ModelSelection | null;
+}
+
+export interface UpdateWispRequest {
+  wispId: WispId;
+  changes: WispChanges;
+}
+
+/** Deletes a Wisp with its conversation, and removes it from every circle. */
+export interface DeleteWispRequest {
+  wispId: WispId;
 }
 
 export interface UpdateConversationRequest {

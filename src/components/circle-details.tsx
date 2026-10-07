@@ -1,25 +1,24 @@
-import type { ChatSummaryCollection, CircleChatChanges, CircleSummary } from "@/chat-data";
-import { ChatAvatar } from "@/components/chat-avatar";
+import type { CircleChatChanges, CircleChatView, WispCollection } from "@/chat-data";
+import { ChatAvatar, WispAvatar } from "@/components/chat-avatar";
 import { CircleMemberPicker } from "@/components/circle-member-picker";
 import { SettingsCard, SettingsField, SettingsRow, SettingsRowCopy } from "@/components/settings/settings-primitives";
 import { ToggleSwitch } from "@/components/ui/toggle-switch";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { getCircleMembers } from "@/lib/circle-members";
 
 interface CircleDetailsProps {
-  chat: CircleSummary;
-  chats: ChatSummaryCollection;
+  chat: CircleChatView;
+  wisps: WispCollection;
   onChange: (changes: CircleChatChanges) => void;
 }
 
-export function CircleDetails({ chat, chats, onChange }: CircleDetailsProps) {
-  const members = getCircleMembers(chat, chats);
-  const availableWisps = Object.values(chats).filter((candidate) => candidate.kind === "wisp");
+export function CircleDetails({ chat, wisps, onChange }: CircleDetailsProps) {
+  const members = chat.members;
+  const availableWisps = Object.values(wisps);
   return (
     <>
       <div className="flex justify-center pt-5 pb-[30px]">
-        <ChatAvatar chat={chat} chats={chats} size="xl" />
+        <ChatAvatar chat={chat} size="xl" />
       </div>
       <SettingsField label="Name">
         <Input
@@ -52,7 +51,7 @@ export function CircleDetails({ chat, chats, onChange }: CircleDetailsProps) {
           <ul className="m-0 flex list-none flex-col gap-2 p-0">
             {members.map((member) => (
               <li key={member.id} className="flex items-center gap-2">
-                <ChatAvatar chat={member} size="sm" />
+                <WispAvatar wisp={member} size="sm" />
                 <span className="min-w-0 [overflow-wrap:anywhere]">{member.name}</span>
               </li>
             ))}

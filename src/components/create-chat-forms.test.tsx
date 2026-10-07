@@ -1,21 +1,10 @@
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
-import type { WispChat } from "@/chat-data";
 import { CreateWispForm } from "@/components/create-wisp-form";
+import type { WispSettingsDraft } from "@/components/wisp-settings-fields";
 
-const wisp: WispChat = {
-  id: "new-wisp",
-  kind: "wisp",
-  name: "",
-  label: "",
-  description: "",
-  shape: "hexagon",
-  notifyOnUpdatesEnabled: true,
-  preview: "",
-  timestamp: "",
-  messages: [],
-};
+const wisp: WispSettingsDraft = { name: "", role: "", soul: "", shape: "hexagon", notifyOnUpdatesEnabled: true };
 
 describe("create chat forms", () => {
   it("renders the Wisp-only appearance fields", () => {

@@ -1,20 +1,47 @@
 import type { ModelSelection } from "../shared/contracts.js";
-import type { Chat, ChatChanges, Message } from "../shared/conversations.js";
-import { normalizeChat, upsertNormalizedMessage } from "./conversation-normalizer.js";
+import type { Chat, ChatChanges, ChatId, Message, Wisp, WispChanges, WispId } from "../shared/conversations.js";
+import { applyWispChanges, normalizeChat, upsertNormalizedMessage } from "./conversation-normalizer.js";
 
-export interface ConversationRecord {
-  chat: Chat;
-  sessionId: string | null;
-  piSessionId: string | null;
-  modelOverride?: ModelSelection | null;
-  piSessionFile: string | null;
+export interface WispRecord {
+  wisp: Wisp;
+  /**
+   * Names the Wisp's own directory (skills, saved memory, agent settings) and
+   * keys its integration grants. It is not the Wisp's ID, so a deleted Wisp's
+   * archived files never collide with a new Wisp that reuses the ID.
+   */
+  storageId: string;
+  modelOverride: ModelSelection | null;
   createdAt: string;
   updatedAt: string;
 }
 
-export type WorkspaceRecords = Record<string, ConversationRecord>;
+/** A Wisp's agent session in one conversation. */
+export interface ParticipantSession {
+  /** Names the session's directory. */
+  sessionId: string;
+  piSessionId: string | null;
+  piSessionFile: string | null;
+}
+
+export interface ConversationRecord {
+  chat: Chat;
+  /** Names the conversation's workspace directory, shared by the Wisps in it. */
+  storageId: string;
+  /** The agent session of each Wisp in this conversation that has one. */
+  sessions: Readonly<Record<WispId, ParticipantSession>>;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface WorkspaceRecords {
+  wisps: Readonly<Record<WispId, WispRecord>>;
+  conversations: Readonly<Record<ChatId, ConversationRecord>>;
+}
 
 export type WorkspaceAction =
+  | { type: "create-wisp"; wisp: WispRecord; conversation: ConversationRecord }
+  | { type: "update-wisp"; wispId: WispId; changes: WispChanges; updatedAt: string }
+  | { type: "delete-wisp"; wispId: WispId; updatedAt: string }
   | { type: "create"; record: ConversationRecord }
   | { type: "update"; conversationId: string; changes: ChatChanges; updatedAt: string }
   | { type: "replace-circle-members"; conversationId: string; memberIds: ReadonlyArray<string>; updatedAt: string }
@@ -30,36 +57,30 @@ export type WorkspaceActionStatus =
   | "already_exists"
   | "kind_mismatch"
   | "invalid_member"
-  | "protected"
   | "prompt_not_found";
 
 export interface WorkspaceActionResult {
   records: WorkspaceRecords;
   status: WorkspaceActionStatus;
-  deletedRecord?: ConversationRecord;
+  /** What a delete removed: the conversation, and for a Wisp also the Wisp. */
+  deleted?: { conversation: ConversationRecord; wisp?: WispRecord };
   /** Oldest messages an append dropped to stay within the per-conversation limit. */
   droppedOldestMessages?: number;
 }
 
-const ISO_TIMESTAMP_PATTERN = /^\d{4}-\d{2}-\d{2}T/;
-
-/**
- * The chat's last activity: its newest timestamped message, else its own ISO
- * timestamp, else unknown. Mirrors the migration backfill in
- * `conversation-store.ts`.
- */
-export function lastActivityOf(chat: Pick<Chat, "messages" | "timestamp">): string | undefined {
+/** The chat's last activity: its newest timestamped message, else what it already had. */
+export function lastActivityOf(chat: Pick<Chat, "messages" | "lastActivityAt">): string | undefined {
   for (let index = chat.messages.length - 1; index >= 0; index -= 1) {
     const createdAt = chat.messages[index]?.createdAt;
     if (createdAt) return createdAt;
   }
-  return ISO_TIMESTAMP_PATTERN.test(chat.timestamp) ? chat.timestamp : undefined;
+  return chat.lastActivityAt;
 }
 
-/** A chat with its derived last activity, replacing any value it arrived with. */
+/** A new chat with its last activity derived from its messages, replacing any value it arrived with. */
 export function withLastActivity<T extends Chat>(chat: T): T {
   const { lastActivityAt: _ignored, ...rest } = chat;
-  const lastActivityAt = lastActivityOf(chat);
+  const lastActivityAt = lastActivityOf({ messages: chat.messages });
   return (lastActivityAt ? { ...rest, lastActivityAt } : rest) as T;
 }
 
@@ -71,81 +92,100 @@ function laterOf(current: string | undefined, candidate: string): string {
 
 export function applyWorkspaceAction(records: WorkspaceRecords, action: WorkspaceAction): WorkspaceActionResult {
   switch (action.type) {
+    case "create-wisp": {
+      const id = action.wisp.wisp.id;
+      if (records.wisps[id] || records.conversations[id]) return { records, status: "already_exists" };
+      return {
+        records: {
+          wisps: { ...records.wisps, [id]: action.wisp },
+          conversations: { ...records.conversations, [id]: action.conversation },
+        },
+        status: "applied",
+      };
+    }
+    case "update-wisp": {
+      const record = records.wisps[action.wispId];
+      if (!record) return { records, status: "not_found" };
+      return {
+        records: {
+          ...records,
+          wisps: {
+            ...records.wisps,
+            [action.wispId]: {
+              ...record,
+              wisp: applyWispChanges(record.wisp, action.changes),
+              updatedAt: action.updatedAt,
+            },
+          },
+        },
+        status: "applied",
+      };
+    }
+    case "delete-wisp": {
+      const wisp = records.wisps[action.wispId];
+      const conversation = records.conversations[action.wispId];
+      if (!wisp || !conversation) return { records, status: "not_found" };
+      const { [action.wispId]: _wisp, ...wisps } = records.wisps;
+      const conversations: Record<ChatId, ConversationRecord> = {};
+      for (const [id, record] of Object.entries(records.conversations)) {
+        if (id === action.wispId) continue;
+        conversations[id] = withoutMember(record, action.wispId, action.updatedAt);
+      }
+      return { records: { wisps, conversations }, status: "applied", deleted: { conversation, wisp } };
+    }
     case "create": {
       const id = action.record.chat.id;
-      if (records[id]) return { records, status: "already_exists" };
-      return { records: { ...records, [id]: action.record }, status: "applied" };
+      if (records.conversations[id] || records.wisps[id]) return { records, status: "already_exists" };
+      return withConversation(records, id, action.record);
     }
     case "update": {
-      const record = records[action.conversationId];
+      const record = records.conversations[action.conversationId];
       if (!record) return { records, status: "not_found" };
       const { kind, ...fields } = action.changes;
       if (record.chat.kind !== kind) return { records, status: "kind_mismatch" };
       const chat = normalizeChat({ ...record.chat, ...fields });
-      return replaceRecord(records, action.conversationId, { ...record, chat, updatedAt: action.updatedAt });
+      return withConversation(records, action.conversationId, { ...record, chat, updatedAt: action.updatedAt });
     }
     case "replace-circle-members": {
-      const record = records[action.conversationId];
+      const record = records.conversations[action.conversationId];
       if (!record) return { records, status: "not_found" };
       if (record.chat.kind !== "circle") return { records, status: "kind_mismatch" };
       const memberIds = [...new Set(action.memberIds)];
-      if (memberIds.some((memberId) => records[memberId]?.chat.kind !== "wisp")) {
-        return { records, status: "invalid_member" };
-      }
-      return replaceRecord(records, action.conversationId, {
+      if (memberIds.some((memberId) => !records.wisps[memberId])) return { records, status: "invalid_member" };
+      return withConversation(records, action.conversationId, {
         ...record,
         chat: { ...record.chat, memberIds },
         updatedAt: action.updatedAt,
       });
     }
     case "delete": {
-      const deletedRecord = records[action.conversationId];
-      if (!deletedRecord) return { records, status: "not_found" };
-      if (deletedRecord.chat.systemRole) return { records, status: "protected" };
-      const next = Object.fromEntries(
-        Object.entries(records).flatMap(([id, record]) => {
-          if (id === action.conversationId) return [];
-          if (record.chat.kind !== "circle" || !record.chat.memberIds.includes(action.conversationId)) {
-            return [[id, record]];
-          }
-          return [
-            [
-              id,
-              {
-                ...record,
-                chat: {
-                  ...record.chat,
-                  memberIds: record.chat.memberIds.filter((memberId) => memberId !== action.conversationId),
-                },
-                updatedAt: action.updatedAt,
-              },
-            ],
-          ];
-        }),
-      );
-      return { records: next, status: "applied", deletedRecord };
+      const conversation = records.conversations[action.conversationId];
+      if (!conversation) return { records, status: "not_found" };
+      // A Wisp's own conversation goes only with the Wisp.
+      if (conversation.chat.kind !== "circle") return { records, status: "kind_mismatch" };
+      const { [action.conversationId]: _deleted, ...conversations } = records.conversations;
+      return { records: { ...records, conversations }, status: "applied", deleted: { conversation } };
     }
     case "mark-read": {
-      const record = records[action.conversationId];
+      const record = records.conversations[action.conversationId];
       if (!record) return { records, status: "not_found" };
       if (!record.chat.unread) return { records, status: "unchanged" };
-      return replaceRecord(records, action.conversationId, {
+      return withConversation(records, action.conversationId, {
         ...record,
         chat: { ...record.chat, unread: false },
         updatedAt: action.updatedAt,
       });
     }
     case "append-message": {
-      const record = records[action.conversationId];
+      const record = records.conversations[action.conversationId];
       if (!record) return { records, status: "not_found" };
       const { chat, message, droppedOldest } = upsertNormalizedMessage(record.chat, action.message);
       return {
-        ...replaceRecord(records, action.conversationId, {
+        ...withConversation(records, action.conversationId, {
           ...record,
           chat: {
             ...chat,
             preview: "text" in message ? message.text : chat.preview,
-            timestamp: action.updatedAt,
             lastActivityAt: laterOf(chat.lastActivityAt, message.createdAt ?? action.updatedAt),
           },
           updatedAt: action.updatedAt,
@@ -154,7 +194,7 @@ export function applyWorkspaceAction(records: WorkspaceRecords, action: Workspac
       };
     }
     case "answer-prompt": {
-      const record = records[action.conversationId];
+      const record = records.conversations[action.conversationId];
       if (!record) return { records, status: "not_found" };
       let found = false;
       const messages = record.chat.messages.map((message) => {
@@ -163,7 +203,7 @@ export function applyWorkspaceAction(records: WorkspaceRecords, action: Workspac
         return { ...message, answer: action.answer };
       });
       if (!found) return { records, status: "prompt_not_found" };
-      return replaceRecord(records, action.conversationId, {
+      return withConversation(records, action.conversationId, {
         ...record,
         chat: { ...record.chat, messages },
         updatedAt: action.updatedAt,
@@ -174,12 +214,26 @@ export function applyWorkspaceAction(records: WorkspaceRecords, action: Workspac
   }
 }
 
-function replaceRecord(
+function withoutMember(record: ConversationRecord, wispId: WispId, updatedAt: string): ConversationRecord {
+  if (record.chat.kind !== "circle" || !record.chat.memberIds.includes(wispId)) return record;
+  const { [wispId]: _session, ...sessions } = record.sessions;
+  return {
+    ...record,
+    chat: { ...record.chat, memberIds: record.chat.memberIds.filter((memberId) => memberId !== wispId) },
+    sessions,
+    updatedAt,
+  };
+}
+
+function withConversation(
   records: WorkspaceRecords,
   conversationId: string,
   record: ConversationRecord,
 ): WorkspaceActionResult {
-  return { records: { ...records, [conversationId]: record }, status: "applied" };
+  return {
+    records: { ...records, conversations: { ...records.conversations, [conversationId]: record } },
+    status: "applied",
+  };
 }
 
 function assertNever(value: never): never {

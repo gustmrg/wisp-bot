@@ -9,7 +9,6 @@ import type {
 } from "../../shared/contracts";
 import {
   chatSummary,
-  type Chat,
   type ChatChanges,
   type ChatSummaryCollection,
   type ConversationDelta,
@@ -19,7 +18,13 @@ import {
   type MessagePage,
   type MessagePageRequest,
   type OutgoingMessage,
+  type NewCircle,
+  type Wisp,
+  type WispChanges,
+  type WispCollection,
 } from "../../shared/conversations";
+import type { ChatViewCollection } from "@/chat-data";
+import { chatViews } from "@/lib/chat-schema";
 import type { ToolApprovalDecision, ToolApprovalRequest } from "../../shared/tool-policy";
 import { LEGACY_CONVERSATIONS_STORAGE_KEY, MAX_LEGACY_BLOB_BYTES } from "@/features/persistence/storage-policy";
 import {
@@ -96,7 +101,9 @@ export async function bootstrapConversationState(
 }
 
 export interface ConversationsController {
-  chats: ChatSummaryCollection;
+  wisps: WispCollection;
+  /** Every conversation, with the Wisps it involves. */
+  chats: ChatViewCollection;
   /** Transcript windows of the conversations opened most recently, with messages still in flight overlaid. */
   windows: Record<string, MessageWindow>;
   statuses: Record<string, ManagedConversationStatus>;
@@ -107,7 +114,14 @@ export interface ConversationsController {
   toolActivities: Record<string, ReadonlyArray<ToolActivityView>>;
   loading: boolean;
   error: string | null;
-  create: (conversation: Chat, model?: ModelSelection | null) => Promise<boolean>;
+  createWisp: (
+    wisp: Wisp,
+    options: { notifyOnUpdatesEnabled: boolean; model?: ModelSelection | null },
+  ) => Promise<boolean>;
+  updateWisp: (wispId: string, changes: WispChanges) => Promise<boolean>;
+  deleteWisp: (wispId: string) => Promise<boolean>;
+  /** Creates a circle with a new ID; a Wisp's own conversation is created with the Wisp. */
+  createCircle: (id: string, circle: NewCircle) => Promise<boolean>;
   update: (conversationId: string, changes: ChatChanges) => Promise<boolean>;
   delete: (conversationId: string) => Promise<boolean>;
   appendMessage: (conversationId: string, message: OutgoingMessage) => Promise<boolean>;
@@ -127,6 +141,7 @@ export interface ConversationsController {
 
 export function useConversations(): ConversationsController {
   const [chats, setChats] = useState<ChatSummaryCollection>({});
+  const [wisps, setWisps] = useState<WispCollection>({});
   const [windows, setWindows] = useState<Record<string, MessageWindow>>({});
   const [runtime, setRuntime] = useState<ConversationRuntimeState>(() => createConversationRuntime(0, {}));
   const [pendingAcknowledgements, setPendingAcknowledgements] = useState<Record<string, ReadonlyArray<string>>>({});
@@ -186,6 +201,7 @@ export function useConversations(): ConversationsController {
       // The full state still carries transcripts; the renderer keeps only summaries and loads pages on demand.
       const summaries = Object.fromEntries(Object.entries(next.chats).map(([id, chat]) => [id, chatSummary(chat)]));
       replaceChats(summaries);
+      setWisps(next.wisps);
       dropWindows(
         [...Object.keys(windowsRef.current), ...loadsRef.current.keys()].filter(
           (conversationId) => !summaries[conversationId],
@@ -535,8 +551,11 @@ export function useConversations(): ConversationsController {
     [pendingAcknowledgements],
   );
 
+  const views = useMemo(() => chatViews(chats, wisps), [chats, wisps]);
+
   return {
-    chats,
+    wisps,
+    chats: views,
     windows: visibleWindows,
     statuses: runtime.statuses,
     activity: runtime.activity,
@@ -546,9 +565,41 @@ export function useConversations(): ConversationsController {
     toolActivities: runtime.toolActivities,
     loading,
     error,
-    create: useCallback(
-      (conversation: Chat, model?: ModelSelection | null) =>
-        enqueue(() => window.wisp.createConversation({ conversation, model: model ?? null })),
+    createWisp: useCallback(
+      (wisp: Wisp, options: { notifyOnUpdatesEnabled: boolean; model?: ModelSelection | null }) =>
+        enqueue(() =>
+          window.wisp.createWisp({
+            wisp,
+            notifyOnUpdatesEnabled: options.notifyOnUpdatesEnabled,
+            model: options.model ?? null,
+          }),
+        ),
+      [enqueue],
+    ),
+    updateWisp: useCallback(
+      (wispId: string, changes: WispChanges) => enqueue(() => window.wisp.updateWisp({ wispId, changes })),
+      [enqueue],
+    ),
+    deleteWisp: useCallback((wispId: string) => enqueue(() => window.wisp.deleteWisp({ wispId })), [enqueue]),
+    createCircle: useCallback(
+      (id: string, circle: NewCircle) =>
+        enqueue(() =>
+          window.wisp.createConversation({
+            conversation: {
+              ...circle,
+              id,
+              preview: "This is the beginning of the circle.",
+              messages: [
+                {
+                  id: crypto.randomUUID(),
+                  status: "complete",
+                  type: "time",
+                  text: "This is the beginning of the circle",
+                },
+              ],
+            },
+          }),
+        ),
       [enqueue],
     ),
     update: useCallback(

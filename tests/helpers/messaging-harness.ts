@@ -11,14 +11,20 @@ import { FakeConversationAgentFactory } from "../../backend/fake-conversation-ag
 import { MessageQueue } from "../../backend/message-queue.js";
 import { MessageScheduler } from "../../backend/message-scheduler.js";
 import type { ModelSelection } from "../../shared/contracts.js";
-import type { Chat, Message } from "../../shared/conversations.js";
+import type { Message, Wisp } from "../../shared/conversations.js";
 import type { MessageQueueView } from "../../shared/message-queue.js";
 import type { ScheduledMessagesView } from "../../shared/scheduled-messages.js";
 
 export const MODEL: ModelSelection = { providerId: "openai", modelId: "gpt-test" };
 export const START = new Date("2026-10-06T12:00:00.000Z");
 
-export function wisp(id: string): Chat {
+/** A Wisp to create with `createWisp`. */
+export function newWisp(id: string): Wisp {
+  return { id, name: id, role: "Test", soul: "Test", shape: "circle" };
+}
+
+/** A Wisp's conversation in the app's old local-storage format, which `initialize` reads. */
+export function wisp(id: string): Record<string, unknown> {
   return {
     id,
     kind: "wisp",

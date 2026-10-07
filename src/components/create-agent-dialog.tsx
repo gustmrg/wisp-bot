@@ -3,7 +3,7 @@ import type { FormEvent, ReactElement } from "react";
 import { PlusIcon } from "lucide-react";
 
 import type { AiSettingsView, ModelSelection } from "../../shared/contracts";
-import type { NewWisp, WispChat } from "@/chat-data";
+import type { NewWisp } from "@/chat-data";
 import {
   CreateWispModelSection,
   createDefaultWispModelDraft,
@@ -12,6 +12,7 @@ import {
   type WispModelDraft,
 } from "@/components/create-wisp-model-section";
 import { CreateWispForm, type CreateWispStep } from "@/components/create-wisp-form";
+import type { WispSettingsDraft } from "@/components/wisp-settings-fields";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -24,27 +25,22 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { AVATAR_COLORS } from "@/lib/wisp-appearance";
-import { storedWispTone } from "../../shared/wisp-tone";
-
-type NewAgent = NewWisp;
 
 interface CreateAgentDialogProps {
-  onCreate: (agent: NewAgent, model: ModelSelection | null) => Promise<boolean> | void;
+  onCreate: (
+    wisp: NewWisp,
+    options: { notifyOnUpdatesEnabled: boolean; model: ModelSelection | null },
+  ) => Promise<boolean> | void;
   trigger?: ReactElement;
 }
 
-const DEFAULT_WISP: WispChat = {
-  id: "new-wisp",
+const DEFAULT_WISP: WispSettingsDraft = {
   name: "",
-  label: "",
-  description: "",
+  role: "",
+  soul: "",
   color: AVATAR_COLORS.find((color) => color.id === "violet")?.value,
   shape: "hexagon",
-  kind: "wisp",
   notifyOnUpdatesEnabled: true,
-  preview: "",
-  timestamp: "",
-  messages: [],
 };
 
 function CreateAgentDialog({ onCreate, trigger }: CreateAgentDialogProps) {
@@ -52,13 +48,13 @@ function CreateAgentDialog({ onCreate, trigger }: CreateAgentDialogProps) {
   const [step, setStep] = useState<CreateWispStep>("identity");
   const stepRef = useRef<HTMLDivElement>(null);
   const focusStep = useRef<CreateWispStep | null>(null);
-  const [settings, setSettings] = useState<WispChat>(DEFAULT_WISP);
+  const [settings, setSettings] = useState<WispSettingsDraft>(DEFAULT_WISP);
   const [modelDraft, setModelDraft] = useState<WispModelDraft>(createDefaultWispModelDraft);
   const [modelView, setModelView] = useState<AiSettingsView | null>(null);
   const [modelLoadError, setModelLoadError] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
-  const { name, description, color } = settings;
+  const { name, soul, color } = settings;
   const modelInvalid = isWispModelDraftInvalid(modelDraft, modelView);
 
   // Moving between steps unmounts the button that had focus, so hand it to the new step's first field.
@@ -110,17 +106,14 @@ function CreateAgentDialog({ onCreate, trigger }: CreateAgentDialogProps) {
     try {
       const created = await onCreate(
         {
-          kind: "wisp",
           name: trimmedName,
-          label: settings.label.trim(),
-          description: description.trim(),
-          color,
+          role: settings.role.trim(),
+          soul: soul.trim(),
           shape: settings.shape,
-          avatarImage: settings.avatarImage,
-          notifyOnUpdatesEnabled: settings.notifyOnUpdatesEnabled,
-          tone: storedWispTone(settings.tone),
+          ...(color === undefined ? {} : { color }),
+          ...(settings.avatarImage === undefined ? {} : { avatarImage: settings.avatarImage }),
         },
-        resolveWispModelSelection(modelDraft),
+        { notifyOnUpdatesEnabled: settings.notifyOnUpdatesEnabled, model: resolveWispModelSelection(modelDraft) },
       );
       if (created === false) {
         setError("Could not create this Wisp. Your draft is still here; try again.");
@@ -171,7 +164,7 @@ function CreateAgentDialog({ onCreate, trigger }: CreateAgentDialogProps) {
         <DialogHeader className="flex-none">
           <DialogTitle>Create new Wisp</DialogTitle>
           <DialogDescription>
-            {step === "identity" ? "Step 1 of 2 · Appearance and name" : "Step 2 of 2 · Personality and behavior"}
+            {step === "identity" ? "Step 1 of 2 · Appearance and name" : "Step 2 of 2 · Soul and behavior"}
           </DialogDescription>
         </DialogHeader>
 
@@ -228,4 +221,3 @@ function CreateAgentDialog({ onCreate, trigger }: CreateAgentDialogProps) {
 }
 
 export { CreateAgentDialog };
-export type { NewAgent };

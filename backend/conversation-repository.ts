@@ -16,19 +16,25 @@ import type {
   MessageSearchHit,
   MessageStatus,
   OutgoingMessage,
+  Wisp,
+  WispChanges,
+  WispCollection,
+  WispId,
 } from "../shared/conversations.js";
 import type { QueuedMessage } from "../shared/message-queue.js";
 import type { ScheduledMessage } from "../shared/scheduled-messages.js";
 import { WispBackendError } from "./backend-error.js";
 import { normalizeUserName, type ConversationAgentContext } from "./conversation-agent.js";
 import {
+  asRecord,
   normalizeChat,
-  normalizeChatCollection,
   normalizeConversationId,
   normalizeMessage,
+  normalizeWisp,
   validateConversationGraph,
 } from "./conversation-normalizer.js";
 import { ConversationStore, type StoredPageRequest } from "./conversation-store.js";
+import { splitLegacyChat } from "./legacy-conversations.js";
 import { normalizeQueuedMessage } from "./message-queue.js";
 import { normalizeScheduledMessage } from "./message-schedule.js";
 import { buildSnippet, MessageSearchWorker } from "./message-search.js";
@@ -37,38 +43,58 @@ import {
   applyWorkspaceAction,
   withLastActivity,
   type ConversationRecord,
+  type ParticipantSession,
+  type WispRecord,
+  type WorkspaceActionResult,
   type WorkspaceActionStatus,
+  type WorkspaceRecords,
 } from "./workspace-actions.js";
 
-// Version of the conversation record format. The legacy JSON store also wrote
-// versions 1–3, which are upgraded when that store is migrated to SQLite.
-const SCHEMA_VERSION = 4;
+// Version of the conversation record format. The legacy JSON store wrote
+// versions 1–3; SQLite stored version 4 until Wisps were stored apart from
+// conversations. Older records are upgraded when they are read.
+const SCHEMA_VERSION = 5;
 const REMOVED_DEMO_CONVERSATION_IDS = new Set(["chief", "sales", "inbox", "account", "talent", "expense", "offsite"]);
+const NEW_WISP_PREVIEW = "Ready for the first task.";
 
-export type { ConversationRecord } from "./workspace-actions.js";
+export type { ConversationRecord, WispRecord } from "./workspace-actions.js";
 
-interface PersistedConversationState {
+interface PersistedConversationState extends WorkspaceRecords {
   schemaVersion: typeof SCHEMA_VERSION;
   initialized: boolean;
+  wisps: Record<string, WispRecord>;
   conversations: Record<string, ConversationRecord>;
 }
 
 function emptyState(): PersistedConversationState {
-  return { schemaVersion: SCHEMA_VERSION, initialized: false, conversations: {} };
+  return { schemaVersion: SCHEMA_VERSION, initialized: false, wisps: {}, conversations: {} };
 }
 
 function chatsOf(records: Readonly<Record<string, ConversationRecord>>): ChatCollection {
   return Object.fromEntries(Object.values(records).map(({ chat }) => [chat.id, chat]));
 }
 
-/** Rewrites the metadata row of every record that an action replaced. */
-function putChangedConversations(
-  store: ConversationStore,
-  previous: Readonly<Record<string, ConversationRecord>>,
-  next: Readonly<Record<string, ConversationRecord>>,
-): void {
-  for (const [id, record] of Object.entries(next)) {
-    if (previous[id] !== record) store.putConversation(record);
+function wispsOf(records: Readonly<Record<string, WispRecord>>): WispCollection {
+  return Object.fromEntries(Object.values(records).map(({ wisp }) => [wisp.id, wisp]));
+}
+
+function validateRecords(records: WorkspaceRecords): void {
+  validateConversationGraph(chatsOf(records.conversations), wispsOf(records.wisps));
+}
+
+/** Writes every Wisp and conversation record an action replaced, and deletes the ones it removed. */
+function putChangedRecords(store: ConversationStore, previous: WorkspaceRecords, next: WorkspaceRecords): void {
+  for (const id of Object.keys(previous.conversations)) {
+    if (!next.conversations[id]) store.deleteConversation(id);
+  }
+  for (const id of Object.keys(previous.wisps)) {
+    if (!next.wisps[id]) store.deleteWisp(id);
+  }
+  for (const [id, record] of Object.entries(next.wisps)) {
+    if (previous.wisps[id] !== record) store.putWisp(record);
+  }
+  for (const [id, record] of Object.entries(next.conversations)) {
+    if (previous.conversations[id] !== record) store.putConversation(record);
   }
 }
 
@@ -138,10 +164,10 @@ export class ConversationRepository {
       }
     }
     let store: ConversationStore;
-    let stored: PersistedConversationState | undefined;
+    let stored: { state: PersistedConversationState; upgraded: boolean } | undefined;
     try {
       store = await this.openStore();
-      if (store.isEstablished()) stored = this.parsePersistedState({ schemaVersion: SCHEMA_VERSION, ...store.read() });
+      if (store.isEstablished()) stored = this.parsePersistedState(store.read());
     } catch {
       // Unreadable, invalid, or written by a newer app version: keep the file
       // for inspection and start with an empty store.
@@ -150,8 +176,13 @@ export class ConversationRepository {
       return;
     }
     if (stored) {
-      this.state = stored;
+      this.state = stored.state;
       await this.ensureAllDirectories();
+      if (stored.upgraded) {
+        // Records from before Wisps were stored apart: rewrite them all at once.
+        const state = this.state;
+        store.transaction(() => putChangedRecords(store, { wisps: {}, conversations: {} }, state));
+      }
       return;
     }
     await this.migrateLegacyState(store);
@@ -202,55 +233,52 @@ export class ConversationRepository {
    * Use this on hot paths that copy anyway (IPC serialization, validation).
    */
   readChats(): Readonly<ChatCollection> {
-    return Object.fromEntries(Object.values(this.state.conversations).map(({ chat }) => [chat.id, chat]));
+    return chatsOf(this.state.conversations);
+  }
+
+  /** Uncloned view of the stored Wisps; see `readChats`. */
+  readWisps(): Readonly<WispCollection> {
+    return wispsOf(this.state.wisps);
+  }
+
+  /** The Wisp whose own conversation this is, or undefined for a circle or an unknown conversation. */
+  readConversationWisp(conversationId: string): Readonly<Wisp> | undefined {
+    const chat = this.state.conversations[conversationId]?.chat;
+    return chat?.kind === "wisp" ? this.state.wisps[chat.wispId]?.wisp : undefined;
   }
 
   listAgentContexts(): ReadonlyArray<ConversationAgentContext> {
-    return this.list().flatMap(({ chat, sessionId }) =>
-      sessionId
-        ? [
-            {
-              conversationId: chat.id,
-              sessionId,
-              modelOverride: this.state.conversations[chat.id]?.modelOverride ?? null,
-              name: chat.name,
-              label: chat.label,
-              description: chat.description,
-              ...(chat.kind === "wisp" && chat.tone ? { tone: chat.tone } : {}),
-              userName: this.profile.preferredName || undefined,
-              userProfile: this.getUserProfile(),
-              workspaceDirectory: path.join(this.workspaceRoot, sessionId),
-              sessionDirectory: path.join(this.sessionRoot, sessionId),
-              configDirectory: path.join(this.configRoot, sessionId),
-              piSessionId: this.state.conversations[chat.id]?.piSessionId ?? null,
-              piSessionFile: this.state.conversations[chat.id]?.piSessionFile ?? null,
-              savePiSessionIdentity: (identity) => this.savePiSessionIdentity(chat.id, identity),
-            },
-          ]
-        : [],
+    return Object.values(this.state.conversations).flatMap(({ chat }) =>
+      chat.kind === "wisp" ? [this.getAgentContext(chat.id)] : [],
     );
   }
 
+  /** The agent context of a Wisp's own conversation. */
   getAgentContext(conversationId: string): ConversationAgentContext {
-    const record = this.require(conversationId);
-    if (!record.sessionId) throw new WispBackendError("invalid_request", "Circles do not own agent sessions.");
+    const { record, wispRecord, session } = this.requireWispConversation(conversationId);
+    const { wisp } = wispRecord;
     return {
       conversationId,
-      sessionId: record.sessionId,
-      modelOverride: record.modelOverride ?? null,
-      name: record.chat.name,
-      label: record.chat.label,
-      description: record.chat.description,
-      ...(record.chat.kind === "wisp" && record.chat.tone ? { tone: record.chat.tone } : {}),
+      wispId: wisp.id,
+      sessionId: session.sessionId,
+      modelOverride: wispRecord.modelOverride,
+      name: wisp.name,
+      role: wisp.role,
+      soul: wisp.soul,
       userName: this.profile.preferredName || undefined,
       userProfile: this.getUserProfile(),
-      workspaceDirectory: path.join(this.workspaceRoot, record.sessionId),
-      sessionDirectory: path.join(this.sessionRoot, record.sessionId),
-      configDirectory: path.join(this.configRoot, record.sessionId),
-      piSessionId: record.piSessionId,
-      piSessionFile: record.piSessionFile,
+      workspaceDirectory: path.join(this.workspaceRoot, record.storageId),
+      sessionDirectory: path.join(this.sessionRoot, session.sessionId),
+      configDirectory: path.join(this.configRoot, wispRecord.storageId),
+      piSessionId: session.piSessionId,
+      piSessionFile: session.piSessionFile,
       savePiSessionIdentity: (identity) => this.savePiSessionIdentity(conversationId, identity),
     };
+  }
+
+  /** What keys the integration grants of the Wisp whose own conversation this is. */
+  getWispStorageId(conversationId: string): string {
+    return this.requireWispConversation(conversationId).wispRecord.storageId;
   }
 
   getPiSessionContext(conversationId: string): {
@@ -260,74 +288,117 @@ export class ConversationRepository {
     workspaceDirectory: string;
   } | null {
     const record = this.require(conversationId);
-    if (!record.sessionId) return null;
+    if (record.chat.kind !== "wisp") return null;
+    const session = record.sessions[record.chat.wispId];
+    if (!session) return null;
     return {
-      sessionId: record.sessionId,
-      piSessionId: record.piSessionId,
-      piSessionFile: record.piSessionFile,
-      workspaceDirectory: path.join(this.workspaceRoot, record.sessionId),
+      sessionId: session.sessionId,
+      piSessionId: session.piSessionId,
+      piSessionFile: session.piSessionFile,
+      workspaceDirectory: path.join(this.workspaceRoot, record.storageId),
     };
   }
 
+  /** First run: adopts the conversations the app kept in local storage before the backend stored them. */
   async initialize(chats: unknown): Promise<void> {
     await this.enqueue(async () => {
       if (this.state.initialized) return;
-      const normalized = normalizeChatCollection(chats);
+      const raw = asRecord(chats);
+      if (Object.keys(raw).length > CONVERSATION_STORAGE_POLICY.maxConversations) {
+        throw new WispBackendError("invalid_request", "The conversation data is invalid.");
+      }
       const timestamp = this.now().toISOString();
-      const next: PersistedConversationState = {
-        schemaVersion: SCHEMA_VERSION,
-        initialized: true,
-        conversations: Object.fromEntries(
-          Object.values(normalized).map((chat) => [
-            chat.id,
-            {
-              chat: withLastActivity(chat),
-              sessionId: chat.kind === "circle" ? null : normalizeConversationId(this.createId()),
-              modelOverride: null,
-              piSessionId: null,
-              piSessionFile: null,
-              createdAt: timestamp,
-              updatedAt: timestamp,
-            },
-          ]),
-        ),
-      };
-      validateConversationGraph(chatsOf(next.conversations));
-      await this.ensureAllDirectories(next.conversations);
+      const next: PersistedConversationState = { ...emptyState(), initialized: true };
+      for (const [key, value] of Object.entries(raw)) {
+        const { chat, wisp } = splitLegacyChat(value);
+        if (chat.id !== normalizeConversationId(key)) {
+          throw new WispBackendError("invalid_request", "The conversation data is invalid.");
+        }
+        if (wisp) {
+          next.wisps[wisp.id] = this.newWispRecord(wisp, null, timestamp);
+          next.conversations[chat.id] = this.newConversationRecord(chat, timestamp, [wisp.id]);
+        } else {
+          next.conversations[chat.id] = this.newConversationRecord(chat, timestamp);
+        }
+      }
+      validateRecords(next);
+      await this.ensureAllDirectories(next);
       await this.commit(next, (store) => store.replaceAll(next));
     });
   }
 
-  async create(chatValue: unknown, modelOverride?: ModelSelection | null): Promise<void> {
+  /** Creates a Wisp and its own conversation, which shares its ID. */
+  async createWisp(
+    wispValue: unknown,
+    options: { notifyOnUpdatesEnabled: boolean; modelOverride?: ModelSelection | null },
+  ): Promise<void> {
     await this.enqueue(async () => {
-      const chat = withLastActivity(normalizeChat(chatValue));
-      const normalizedOverride = normalizeSelection(modelOverride);
-      if (chat.kind === "circle" && modelOverride) {
-        throw new WispBackendError("invalid_request", "Circles do not own agent sessions.");
-      }
-      if (modelOverride && !normalizedOverride) {
+      const wisp = normalizeWisp(wispValue);
+      const modelOverride = normalizeSelection(options.modelOverride);
+      if (options.modelOverride && !modelOverride) {
         throw new WispBackendError("invalid_request", "The model selection is invalid.");
       }
       const timestamp = this.now().toISOString();
-      const record: ConversationRecord = {
-        chat,
-        sessionId: chat.kind === "circle" ? null : normalizeConversationId(this.createId()),
-        piSessionId: null,
-        piSessionFile: null,
-        // Always present so a new record has the same shape as one read back from disk.
-        modelOverride: normalizedOverride,
-        createdAt: timestamp,
-        updatedAt: timestamp,
-      };
-      const result = applyWorkspaceAction(this.state.conversations, { type: "create", record });
-      this.throwForActionStatus(result.status);
-      validateConversationGraph(chatsOf(result.records));
-      await this.ensureDirectories(record);
-      await this.commit({ ...this.state, conversations: result.records, initialized: true }, (store) => {
-        store.putConversation(record);
-        store.putMessages(chat.id, record.chat.messages);
-        store.setInitialized(true);
+      const wispRecord = this.newWispRecord(wisp, modelOverride, timestamp);
+      const conversation = this.newConversationRecord(
+        normalizeChat({
+          id: wisp.id,
+          kind: "wisp",
+          wispId: wisp.id,
+          notifyOnUpdatesEnabled: options.notifyOnUpdatesEnabled,
+          preview: NEW_WISP_PREVIEW,
+          messages: [],
+        }),
+        timestamp,
+        [wisp.id],
+      );
+      const result = applyWorkspaceAction(this.state, { type: "create-wisp", wisp: wispRecord, conversation });
+      await this.adopt(result, { ensure: { wisps: [wispRecord], conversations: [conversation] } });
+    });
+  }
+
+  async updateWisp(wispId: string, changes: WispChanges): Promise<void> {
+    await this.enqueue(async () => {
+      const result = applyWorkspaceAction(this.state, {
+        type: "update-wisp",
+        wispId,
+        changes,
+        updatedAt: this.now().toISOString(),
       });
+      await this.adopt(result);
+    });
+  }
+
+  /** Deletes a Wisp with its own conversation, removes it from circles, and archives their folders. */
+  async deleteWisp(wispId: string): Promise<{ wisp: WispRecord; conversation: ConversationRecord }> {
+    return this.enqueue(async () => {
+      const previous = this.state;
+      const result = applyWorkspaceAction(previous, {
+        type: "delete-wisp",
+        wispId,
+        updatedAt: this.now().toISOString(),
+      });
+      await this.adopt(result);
+      const { conversation, wisp } = result.deleted!;
+      // The Wisp's sessions in circles go with it.
+      const circleSessions = Object.values(previous.conversations).flatMap((record) =>
+        record.chat.kind === "circle" && record.sessions[wispId] ? [record.sessions[wispId]] : [],
+      );
+      await this.archiveDeleted({ conversation, wisp }, circleSessions).catch(() => undefined);
+      return structuredClone({ wisp: wisp!, conversation });
+    });
+  }
+
+  /** Creates a circle. A Wisp's own conversation is created with the Wisp. */
+  async create(chatValue: unknown): Promise<void> {
+    await this.enqueue(async () => {
+      const chat = withLastActivity(normalizeChat(chatValue));
+      if (chat.kind !== "circle") {
+        throw new WispBackendError("invalid_request", "A Wisp's conversation is created with the Wisp.");
+      }
+      const record = this.newConversationRecord(chat, this.now().toISOString());
+      const result = applyWorkspaceAction(this.state, { type: "create", record });
+      await this.adopt(result, { ensure: { conversations: [record] } });
     });
   }
 
@@ -336,13 +407,13 @@ export class ConversationRepository {
       const updatedAt = this.now().toISOString();
       let result =
         changes.kind === "circle" && changes.memberIds !== undefined
-          ? applyWorkspaceAction(this.state.conversations, {
+          ? applyWorkspaceAction(this.state, {
               type: "replace-circle-members",
               conversationId,
               memberIds: changes.memberIds,
               updatedAt,
             })
-          : applyWorkspaceAction(this.state.conversations, {
+          : applyWorkspaceAction(this.state, {
               type: "update",
               conversationId,
               changes,
@@ -358,14 +429,9 @@ export class ConversationRepository {
             changes: remainingChanges,
             updatedAt,
           });
-          this.throwForActionStatus(result.status);
         }
       }
-      validateConversationGraph(chatsOf(result.records));
-      const previous = this.state.conversations;
-      await this.commit({ ...this.state, conversations: result.records }, (store) =>
-        putChangedConversations(store, previous, result.records),
-      );
+      await this.adopt(result);
     });
   }
 
@@ -449,7 +515,7 @@ export class ConversationRepository {
   /** Records the answer and resolves the stored prompt. */
   async answerPrompt(conversationId: string, messageId: string, answer: string): Promise<Message> {
     return this.enqueue(async () => {
-      const result = applyWorkspaceAction(this.state.conversations, {
+      const result = applyWorkspaceAction(this.state, {
         type: "answer-prompt",
         conversationId,
         messageId,
@@ -457,9 +523,9 @@ export class ConversationRepository {
         updatedAt: this.now().toISOString(),
       });
       this.throwForActionStatus(result.status);
-      const record = result.records[conversationId]!;
+      const record = result.records.conversations[conversationId]!;
       const prompt = record.chat.messages.find(({ id }) => id === messageId)!;
-      await this.commit({ ...this.state, conversations: result.records }, (store) => {
+      await this.commit({ ...this.state, ...result.records }, (store) => {
         store.putConversation(record);
         store.putMessages(conversationId, [prompt]);
       });
@@ -469,26 +535,29 @@ export class ConversationRepository {
 
   async markRead(conversationId: string): Promise<void> {
     await this.enqueue(async () => {
-      const result = applyWorkspaceAction(this.state.conversations, {
+      const result = applyWorkspaceAction(this.state, {
         type: "mark-read",
         conversationId,
         updatedAt: this.now().toISOString(),
       });
       this.throwForActionStatus(result.status);
       if (result.status === "unchanged") return;
-      const record = result.records[conversationId]!;
-      await this.commit({ ...this.state, conversations: result.records }, (store) => store.putConversation(record));
+      const record = result.records.conversations[conversationId]!;
+      await this.commit({ ...this.state, ...result.records }, (store) => store.putConversation(record));
     });
   }
 
+  /** Sets the model of the Wisp whose own conversation this is. */
   async setModelOverride(conversationId: string, model: ModelSelection | null): Promise<void> {
     await this.enqueue(async () => {
-      const record = this.require(conversationId);
-      if (!record.sessionId) throw new WispBackendError("invalid_request", "Circles do not own agent sessions.");
+      const { wispRecord } = this.requireWispConversation(conversationId);
       const normalized = normalizeSelection(model);
       if (model !== null && !normalized)
         throw new WispBackendError("invalid_request", "The model selection is invalid.");
-      await this.commitRecord({ ...record, modelOverride: normalized, updatedAt: this.now().toISOString() });
+      const record: WispRecord = { ...wispRecord, modelOverride: normalized, updatedAt: this.now().toISOString() };
+      await this.commit({ ...this.state, wisps: { ...this.state.wisps, [record.wisp.id]: record } }, (store) =>
+        store.putWisp(record),
+      );
     });
   }
 
@@ -497,35 +566,35 @@ export class ConversationRepository {
     identity: { sessionId: string; sessionFile: string | null },
   ): Promise<void> {
     await this.enqueue(async () => {
-      const record = this.require(conversationId);
-      if (record.sessionId === null)
-        throw new WispBackendError("invalid_request", "Circles do not own agent sessions.");
+      const { record, wispRecord, session } = this.requireWispConversation(conversationId);
       const piSessionId = normalizeConversationId(identity.sessionId);
       const piSessionFile =
-        identity.sessionFile === null ? null : this.normalizePiSessionFile(record.sessionId, identity.sessionFile);
-      if (record.piSessionId === piSessionId && record.piSessionFile === piSessionFile) return;
-      await this.commitRecord({ ...record, piSessionId, piSessionFile, updatedAt: this.now().toISOString() });
+        identity.sessionFile === null ? null : this.normalizePiSessionFile(session.sessionId, identity.sessionFile);
+      if (session.piSessionId === piSessionId && session.piSessionFile === piSessionFile) return;
+      const next: ConversationRecord = {
+        ...record,
+        sessions: { ...record.sessions, [wispRecord.wisp.id]: { ...session, piSessionId, piSessionFile } },
+        updatedAt: this.now().toISOString(),
+      };
+      await this.commit(
+        { ...this.state, conversations: { ...this.state.conversations, [conversationId]: next } },
+        (store) => store.putConversation(next),
+      );
     });
   }
 
+  /** Deletes a circle and archives its folders. A Wisp's own conversation goes only with the Wisp. */
   async delete(conversationId: string): Promise<ConversationRecord> {
     return this.enqueue(async () => {
-      const result = applyWorkspaceAction(this.state.conversations, {
+      const result = applyWorkspaceAction(this.state, {
         type: "delete",
         conversationId,
         updatedAt: this.now().toISOString(),
       });
-      this.throwForActionStatus(result.status);
-      const record = result.deletedRecord;
-      if (!record) throw new WispBackendError("not_found", "The conversation was not found.");
-      const previous = this.state.conversations;
-      await this.commit({ ...this.state, conversations: result.records }, (store) => {
-        store.deleteConversation(conversationId);
-        // Circles that listed the deleted Wisp lose it as a member.
-        putChangedConversations(store, previous, result.records);
-      });
-      if (record.sessionId) await this.archiveDirectories(record.sessionId).catch(() => undefined);
-      return structuredClone(record);
+      await this.adopt(result);
+      const { conversation } = result.deleted!;
+      await this.archiveDeleted({ conversation }).catch(() => undefined);
+      return structuredClone(conversation);
     });
   }
 
@@ -660,16 +729,16 @@ export class ConversationRepository {
   ): Promise<MessageChange> {
     const messageId = message.id ?? this.createId();
     const added = (await this.openStore()).getMessage(conversationId, messageId) === undefined;
-    const result = applyWorkspaceAction(this.state.conversations, {
+    const result = applyWorkspaceAction(this.state, {
       type: "append-message",
       conversationId,
       message: { ...message, id: messageId },
       updatedAt: this.now().toISOString(),
     });
     this.throwForActionStatus(result.status);
-    const record = result.records[conversationId]!;
+    const record = result.records.conversations[conversationId]!;
     const stored = record.chat.messages.find(({ id }) => id === messageId)!;
-    await this.commit({ ...this.state, conversations: result.records }, (store) => {
+    await this.commit({ ...this.state, ...result.records }, (store) => {
       store.putConversation(record);
       store.deleteOldestMessages(conversationId, result.droppedOldestMessages ?? 0);
       store.putMessages(conversationId, [stored]);
@@ -697,11 +766,59 @@ export class ConversationRepository {
     return body === undefined ? undefined : normalizeMessage(body);
   }
 
-  private commitRecord(record: ConversationRecord): Promise<void> {
-    return this.commit(
-      { ...this.state, conversations: { ...this.state.conversations, [record.chat.id]: record } },
-      (store) => store.putConversation(record),
-    );
+  /**
+   * Commits an action's result: creates the folders of new records first,
+   * then writes every record the action changed and adopts the new state.
+   */
+  private async adopt(
+    result: WorkspaceActionResult,
+    options: { ensure?: { wisps?: ReadonlyArray<WispRecord>; conversations?: ReadonlyArray<ConversationRecord> } } = {},
+  ): Promise<void> {
+    this.throwForActionStatus(result.status);
+    if (result.status === "unchanged") return;
+    validateRecords(result.records);
+    await this.ensureAllDirectories({
+      wisps: Object.fromEntries((options.ensure?.wisps ?? []).map((record) => [record.wisp.id, record])),
+      conversations: Object.fromEntries(
+        (options.ensure?.conversations ?? []).map((record) => [record.chat.id, record]),
+      ),
+    });
+    const previous = this.state;
+    await this.commit({ ...this.state, ...result.records, initialized: true }, (store) => {
+      putChangedRecords(store, previous, result.records);
+      for (const record of options.ensure?.conversations ?? []) store.putMessages(record.chat.id, record.chat.messages);
+      if (!previous.initialized) store.setInitialized(true);
+    });
+  }
+
+  private newWispRecord(wisp: Wisp, modelOverride: ModelSelection | null, timestamp: string): WispRecord {
+    return {
+      wisp,
+      storageId: normalizeConversationId(this.createId()),
+      modelOverride,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    };
+  }
+
+  /** A new conversation record; each listed Wisp gets a new agent session in it. */
+  private newConversationRecord(
+    chat: Chat,
+    timestamp: string,
+    participantIds: ReadonlyArray<WispId> = [],
+  ): ConversationRecord {
+    return {
+      chat,
+      storageId: normalizeConversationId(this.createId()),
+      sessions: Object.fromEntries(
+        participantIds.map((wispId) => [
+          wispId,
+          { sessionId: normalizeConversationId(this.createId()), piSessionId: null, piSessionFile: null },
+        ]),
+      ),
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    };
   }
 
   private async commit(next: PersistedConversationState, write: (store: ConversationStore) => void): Promise<void> {
@@ -724,19 +841,32 @@ export class ConversationRepository {
     return record;
   }
 
+  /** A Wisp's own conversation, with the Wisp and its session there; circles have no single agent. */
+  private requireWispConversation(conversationId: string): {
+    record: ConversationRecord;
+    wispRecord: WispRecord;
+    session: ParticipantSession;
+  } {
+    const record = this.require(conversationId);
+    if (record.chat.kind !== "wisp") {
+      throw new WispBackendError("invalid_request", "Circles do not own agent sessions.");
+    }
+    const wispRecord = this.state.wisps[record.chat.wispId];
+    const session = record.sessions[record.chat.wispId];
+    if (!wispRecord || !session) throw new WispBackendError("not_found", "The Wisp was not found.");
+    return { record, wispRecord, session };
+  }
+
   private throwForActionStatus(status: WorkspaceActionStatus): void {
     if (status === "applied" || status === "unchanged") return;
     if (status === "already_exists") {
       throw new WispBackendError("already_exists", "A conversation with this ID already exists.");
     }
     if (status === "kind_mismatch") {
-      throw new WispBackendError("invalid_request", "The conversation kind cannot be changed.");
+      throw new WispBackendError("invalid_request", "This change does not apply to this kind of conversation.");
     }
     if (status === "invalid_member") {
       throw new WispBackendError("invalid_request", "Circle members must reference existing Wisps.");
-    }
-    if (status === "protected") {
-      throw new WispBackendError("invalid_request", "This conversation is protected and cannot be deleted.");
     }
     if (status === "prompt_not_found") {
       throw new WispBackendError("not_found", "The prompt is no longer available.");
@@ -767,30 +897,22 @@ export class ConversationRepository {
       if ((error as NodeJS.ErrnoException).code === "ENOENT") return;
       throw error;
     }
-    let parsed: unknown;
+    let persistedSchemaVersion: number;
     try {
       if (Buffer.byteLength(contents, "utf8") > CONVERSATION_STORAGE_POLICY.maxLegacyStateBytes) {
         throw new Error("Conversation state exceeds the local storage limit.");
       }
-      parsed = JSON.parse(contents);
-      this.state = this.parsePersistedState(parsed);
+      const parsed: unknown = JSON.parse(contents);
+      persistedSchemaVersion = this.schemaVersionOf(parsed);
+      if (![1, 2, 3, 4].includes(persistedSchemaVersion)) throw new Error("Invalid state");
+      this.state = this.parsePersistedState(parsed).state;
     } catch {
       await rename(this.legacyStatePath, `${this.legacyStatePath}.corrupt-${this.fileSuffix()}`);
       this.recoveredCorruptState = true;
       this.state = emptyState();
       return;
     }
-    const persistedSchemaVersion = this.schemaVersionOf(parsed);
     if (persistedSchemaVersion === 1 || persistedSchemaVersion === 2) await this.removeBundledDemoConversations();
-    this.state = {
-      ...this.state,
-      conversations: Object.fromEntries(
-        Object.entries(this.state.conversations).map(([id, record]) => [
-          id,
-          { ...record, chat: withLastActivity(record.chat) },
-        ]),
-      ),
-    };
     await this.ensureAllDirectories();
     const state = this.state;
     store.transaction(() => store.replaceAll(state));
@@ -813,58 +935,135 @@ export class ConversationRepository {
     return this.now().toISOString().replaceAll(":", "-");
   }
 
-  private parsePersistedState(value: unknown): PersistedConversationState {
-    if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Invalid state");
-    const raw = value as Record<string, unknown>;
-    if (![1, 2, 3, SCHEMA_VERSION].includes(raw.schemaVersion as number) || typeof raw.initialized !== "boolean")
-      throw new Error("Invalid state");
-    if (!raw.conversations || typeof raw.conversations !== "object" || Array.isArray(raw.conversations))
-      throw new Error("Invalid state");
-    const conversations: Record<string, ConversationRecord> = {};
-    for (const [id, value] of Object.entries(raw.conversations as Record<string, unknown>)) {
-      if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Invalid state");
-      const record = value as Record<string, unknown>;
-      const chat = normalizeChat(record.chat);
-      if (chat.id !== id || !this.isTimestamp(record.createdAt) || !this.isTimestamp(record.updatedAt))
-        throw new Error("Invalid state");
-      if (chat.kind === "circle" ? record.sessionId !== null : typeof record.sessionId !== "string")
-        throw new Error("Invalid state");
-      const sessionId = record.sessionId === null ? null : normalizeConversationId(record.sessionId);
-      conversations[id] = {
-        chat,
-        sessionId,
+  /**
+   * Validates stored state. Records saved before Wisps were stored apart from
+   * conversations are split into a Wisp and its conversation; `upgraded` says
+   * some were, so the caller can write them back.
+   */
+  private parsePersistedState(value: unknown): { state: PersistedConversationState; upgraded: boolean } {
+    const raw = this.stateRecord(value);
+    if (typeof raw.initialized !== "boolean") throw new Error("Invalid state");
+    const state: PersistedConversationState = { ...emptyState(), initialized: raw.initialized };
+    for (const [id, value] of Object.entries(raw.wisps === undefined ? {} : this.stateRecord(raw.wisps))) {
+      const record = this.stateRecord(value);
+      const wisp = normalizeWisp(record.wisp);
+      if (wisp.id !== id) throw new Error("Invalid state");
+      state.wisps[id] = {
+        wisp,
+        storageId: normalizeConversationId(record.storageId),
         modelOverride: normalizeSelection(record.modelOverride),
-        piSessionId: typeof record.piSessionId === "string" ? normalizeConversationId(record.piSessionId) : null,
-        piSessionFile:
-          typeof record.piSessionFile === "string" && sessionId
-            ? this.relocatedPiSessionFile(sessionId, record.piSessionFile)
-            : null,
-        createdAt: record.createdAt,
-        updatedAt: record.updatedAt,
+        createdAt: this.timestampOf(record.createdAt),
+        updatedAt: this.timestampOf(record.updatedAt),
       };
     }
-    const state = { schemaVersion: SCHEMA_VERSION, initialized: raw.initialized, conversations } as const;
-    validateConversationGraph(
-      Object.fromEntries(Object.entries(conversations).map(([id, record]) => [id, record.chat])),
-    );
-    return state;
+    let upgraded = false;
+    for (const [id, value] of Object.entries(this.stateRecord(raw.conversations))) {
+      const record = this.stateRecord(value);
+      if (record.storageId === undefined) {
+        this.upgradeLegacyRecord(state, id, record);
+        upgraded = true;
+        continue;
+      }
+      const chat = normalizeChat(record.chat);
+      if (chat.id !== id) throw new Error("Invalid state");
+      state.conversations[id] = {
+        chat,
+        storageId: normalizeConversationId(record.storageId),
+        sessions: this.parseSessions(record.sessions),
+        createdAt: this.timestampOf(record.createdAt),
+        updatedAt: this.timestampOf(record.updatedAt),
+      };
+    }
+    validateRecords(state);
+    return { state, upgraded };
+  }
+
+  /**
+   * Splits a record from before Wisps were stored apart. One ID named all of
+   * a Wisp's folders, so it keeps naming them: the Wisp's settings, its
+   * conversation's workspace, and its session there.
+   */
+  private upgradeLegacyRecord(state: PersistedConversationState, id: string, record: Record<string, unknown>): void {
+    const { chat, wisp } = splitLegacyChat(record.chat);
+    if (chat.id !== id) throw new Error("Invalid state");
+    const createdAt = this.timestampOf(record.createdAt);
+    const updatedAt = this.timestampOf(record.updatedAt);
+    if (!wisp) {
+      if (record.sessionId !== null) throw new Error("Invalid state");
+      state.conversations[id] = {
+        chat,
+        storageId: normalizeConversationId(this.createId()),
+        sessions: {},
+        createdAt,
+        updatedAt,
+      };
+      return;
+    }
+    const storageId = normalizeConversationId(record.sessionId);
+    state.wisps[id] = {
+      wisp,
+      storageId,
+      modelOverride: normalizeSelection(record.modelOverride),
+      createdAt,
+      updatedAt,
+    };
+    state.conversations[id] = {
+      chat,
+      storageId,
+      sessions: {
+        [id]: {
+          sessionId: storageId,
+          piSessionId: typeof record.piSessionId === "string" ? normalizeConversationId(record.piSessionId) : null,
+          piSessionFile:
+            typeof record.piSessionFile === "string"
+              ? this.relocatedPiSessionFile(storageId, record.piSessionFile)
+              : null,
+        },
+      },
+      createdAt,
+      updatedAt,
+    };
+  }
+
+  private parseSessions(value: unknown): Record<WispId, ParticipantSession> {
+    const sessions: Record<WispId, ParticipantSession> = {};
+    for (const [wispId, entry] of Object.entries(this.stateRecord(value))) {
+      const session = this.stateRecord(entry);
+      const sessionId = normalizeConversationId(session.sessionId);
+      sessions[normalizeConversationId(wispId)] = {
+        sessionId,
+        piSessionId: typeof session.piSessionId === "string" ? normalizeConversationId(session.piSessionId) : null,
+        piSessionFile:
+          typeof session.piSessionFile === "string"
+            ? this.relocatedPiSessionFile(sessionId, session.piSessionFile)
+            : null,
+      };
+    }
+    return sessions;
+  }
+
+  private stateRecord(value: unknown): Record<string, unknown> {
+    if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Invalid state");
+    return value as Record<string, unknown>;
   }
 
   private schemaVersionOf(value: unknown): number {
-    if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Invalid state");
-    const version = (value as Record<string, unknown>).schemaVersion;
+    const version = this.stateRecord(value).schemaVersion;
     if (typeof version !== "number") throw new Error("Invalid state");
     return version;
   }
 
-  private isTimestamp(value: unknown): value is string {
-    return typeof value === "string" && value.length <= 100 && !Number.isNaN(Date.parse(value));
+  private timestampOf(value: unknown): string {
+    if (typeof value !== "string" || value.length > 100 || Number.isNaN(Date.parse(value))) {
+      throw new Error("Invalid state");
+    }
+    return value;
   }
 
   /**
    * Reads a stored session path. The data directory may have moved since it
    * was saved (a restored backup, another machine), so a path under another
-   * root is re-anchored in this conversation's session directory by file name.
+   * root is re-anchored in this session's directory by file name.
    */
   private relocatedPiSessionFile(sessionId: string, filePath: string): string {
     const sessionDirectory = path.resolve(this.sessionRoot, sessionId);
@@ -885,41 +1084,61 @@ export class ConversationRepository {
     return resolved;
   }
 
-  private async ensureAllDirectories(
-    records: Readonly<Record<string, ConversationRecord>> = this.state.conversations,
-  ): Promise<void> {
-    await Promise.all(Object.values(records).map((record) => this.ensureDirectories(record)));
-  }
-
-  private async removeBundledDemoConversations(): Promise<void> {
-    const removed = Object.entries(this.state.conversations).filter(([id]) => REMOVED_DEMO_CONVERSATION_IDS.has(id));
-    this.state = {
-      ...this.state,
-      conversations: Object.fromEntries(
-        Object.entries(this.state.conversations).filter(([id]) => !REMOVED_DEMO_CONVERSATION_IDS.has(id)),
-      ),
-    };
-    await Promise.allSettled(
-      removed.flatMap(([, record]) => (record.sessionId ? [this.archiveDirectories(record.sessionId)] : [])),
-    );
-  }
-
-  private async ensureDirectories(record: ConversationRecord): Promise<void> {
-    if (!record.sessionId) return;
+  /** The folders each record names: a Wisp's settings, a conversation's workspace, and each session there. */
+  private async ensureAllDirectories(records: WorkspaceRecords = this.state): Promise<void> {
     await Promise.all([
-      mkdir(path.join(this.workspaceRoot, record.sessionId), { recursive: true }),
-      mkdir(path.join(this.sessionRoot, record.sessionId), { recursive: true }),
-      mkdir(path.join(this.configRoot, record.sessionId), { recursive: true }),
+      ...Object.values(records.wisps).map(({ storageId }) =>
+        mkdir(path.join(this.configRoot, storageId), { recursive: true }),
+      ),
+      ...Object.values(records.conversations).flatMap(({ storageId, sessions }) => [
+        mkdir(path.join(this.workspaceRoot, storageId), { recursive: true }),
+        ...Object.values(sessions).map(({ sessionId }) =>
+          mkdir(path.join(this.sessionRoot, sessionId), { recursive: true }),
+        ),
+      ]),
     ]);
   }
 
-  private async archiveDirectories(sessionId: string): Promise<void> {
-    const archive = path.join(this.deletedRoot, `${sessionId}-${this.fileSuffix()}`);
+  private async removeBundledDemoConversations(): Promise<void> {
+    let records: WorkspaceRecords = this.state;
+    const removed: Array<NonNullable<WorkspaceActionResult["deleted"]>> = [];
+    const updatedAt = this.now().toISOString();
+    for (const id of REMOVED_DEMO_CONVERSATION_IDS) {
+      const chat = records.conversations[id]?.chat;
+      if (!chat) continue;
+      const result = applyWorkspaceAction(
+        records,
+        chat.kind === "wisp"
+          ? { type: "delete-wisp", wispId: id, updatedAt }
+          : { type: "delete", conversationId: id, updatedAt },
+      );
+      if (result.deleted) removed.push(result.deleted);
+      records = result.records;
+    }
+    this.state = { ...this.state, wisps: { ...records.wisps }, conversations: { ...records.conversations } };
+    await Promise.allSettled(removed.map((deleted) => this.archiveDeleted(deleted)));
+  }
+
+  /**
+   * Moves a deleted Wisp's or circle's folders into the archive: the
+   * conversation's workspace, its sessions and any `otherSessions`, and the
+   * Wisp's own settings.
+   */
+  private async archiveDeleted(
+    deleted: NonNullable<WorkspaceActionResult["deleted"]>,
+    otherSessions: ReadonlyArray<ParticipantSession> = [],
+  ): Promise<void> {
+    const { conversation, wisp } = deleted;
+    const archive = path.join(this.deletedRoot, `${wisp?.storageId ?? conversation.storageId}-${this.fileSuffix()}`);
     await mkdir(archive, { recursive: true });
+    const move = (from: string, to: string) => rename(from, path.join(archive, to)).catch(() => undefined);
+    const sessions = [...Object.values(conversation.sessions), ...otherSessions];
     await Promise.all([
-      rename(path.join(this.workspaceRoot, sessionId), path.join(archive, "workspace")).catch(() => undefined),
-      rename(path.join(this.sessionRoot, sessionId), path.join(archive, "pi-session")).catch(() => undefined),
-      rename(path.join(this.configRoot, sessionId), path.join(archive, "pi-config")).catch(() => undefined),
+      move(path.join(this.workspaceRoot, conversation.storageId), "workspace"),
+      ...sessions.map(({ sessionId }, index) =>
+        move(path.join(this.sessionRoot, sessionId), index === 0 ? "pi-session" : `pi-session-${sessionId}`),
+      ),
+      ...(wisp ? [move(path.join(this.configRoot, wisp.storageId), "pi-config")] : []),
     ]);
   }
 }

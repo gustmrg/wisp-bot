@@ -1,14 +1,18 @@
 import type { ReactNode, Ref } from "react";
-import type { WispChatChanges, WispSummary } from "@/chat-data";
-import { WispBehaviorFields, WispIdentityFields } from "@/components/wisp-settings-fields";
+import {
+  WispBehaviorFields,
+  WispIdentityFields,
+  type WispSettingsChanges,
+  type WispSettingsDraft,
+} from "@/components/wisp-settings-fields";
 
 /** Creation is split so neither step needs scrolling: how the Wisp looks, then how it works. */
 export type CreateWispStep = "identity" | "behavior";
 
 interface CreateWispFormProps {
-  settings: WispSummary;
+  settings: WispSettingsDraft;
   step?: CreateWispStep;
-  onChange: (changes: Omit<WispChatChanges, "kind">) => void;
+  onChange: (changes: WispSettingsChanges) => void;
   ref?: Ref<HTMLDivElement>;
   /** Extra fields shown with the behavior step. */
   children?: ReactNode;

@@ -10,7 +10,7 @@ import { ConversationRepository } from "../backend/conversation-repository.js";
 import { ConversationService } from "../backend/conversation-service.js";
 import { FakeConversationAgent, FakeConversationAgentFactory } from "../backend/fake-conversation-agent.js";
 import type { SequencedConversationAgentEvent } from "../shared/contracts.js";
-import type { Chat, ConversationDelta } from "../shared/conversations.js";
+import type { Chat, ConversationDelta, Wisp } from "../shared/conversations.js";
 
 function chat(id: string, circle = false): Chat {
   const base = {
@@ -24,6 +24,10 @@ function chat(id: string, circle = false): Chat {
     messages: [],
   };
   return circle ? { ...base, kind: "circle", memberIds: [] } : { ...base, kind: "wisp", shape: "circle" };
+}
+
+function newWisp(id: string): Wisp {
+  return { id, name: id, role: "Test", soul: "Test", shape: "circle" };
 }
 
 describe("ConversationService", () => {
@@ -51,9 +55,13 @@ describe("ConversationService", () => {
     expect(registry.list()).toEqual(["one"]);
     expect(initialized.statuses).toEqual({ one: "configuration_required" });
 
-    await service.create(chat("two"));
+    const created = await service.createWisp(newWisp("two"), { notifyOnUpdatesEnabled: true });
+    expect(created.wisps.two).toEqual(newWisp("two"));
+    expect(created.chats.two).toMatchObject({ kind: "wisp", wispId: "two" });
     expect(registry.list().sort()).toEqual(["one", "two"]);
-    await service.delete("two");
+    const deleted = await service.deleteWisp("two");
+    expect(deleted.wisps).not.toHaveProperty("two");
+    expect(deleted.chats).not.toHaveProperty("two");
 
     expect(disposedWithWorkspace).toContain("two");
     expect(registry.list()).toEqual(["one"]);
@@ -76,9 +84,15 @@ describe("ConversationService", () => {
     await service.start(null);
     await service.initialize({ one: chat("one") });
 
-    await service.update("one", { kind: "wisp", description: "Financial advisor" });
+    const state = await service.updateWisp("one", { soul: "# Identity\nFinancial advisor" });
 
-    expect(updateContext).toHaveBeenCalledWith(expect.objectContaining({ description: "Financial advisor" }));
+    expect(state.wisps.one?.soul).toBe("# Identity\nFinancial advisor");
+    expect(updateContext).toHaveBeenCalledWith(expect.objectContaining({ soul: "# Identity\nFinancial advisor" }));
+    updateContext.mockClear();
+    await service.updateWisp("one", { color: "#123456" });
+    await service.update("one", { kind: "wisp", notifyOnUpdatesEnabled: false });
+    // Appearance and notifications do not change what the agent is told.
+    expect(updateContext).not.toHaveBeenCalled();
     await service.dispose();
   });
 
@@ -120,7 +134,7 @@ describe("ConversationService", () => {
     await service.initialize({ follower: chat("follower") });
 
     const override = { providerId: "other", modelId: "other-model", maxOutputTokens: 2048 };
-    await service.create(chat("custom"), override);
+    await service.createWisp(newWisp("custom"), { notifyOnUpdatesEnabled: true, model: override });
 
     expect(service.getConversationModel("custom")).toEqual(
       expect.objectContaining({ override, effective: override, applied: override, status: "idle" }),
@@ -183,6 +197,7 @@ describe("ConversationService", () => {
           id: "one-a:assistant",
           text: "Reply:A",
           status: "complete",
+          authorId: "one",
           createdAt: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/),
         }),
         expect.objectContaining({
@@ -363,7 +378,7 @@ describe("ConversationService", () => {
     registry.dispatch({ conversationId: "one", requestId: "request-1", text: "Wait" });
     await vi.waitFor(() => expect(service.getState().statuses.one).toBe("working"));
 
-    await service.delete("one");
+    await service.deleteWisp("one");
 
     expect(registry.has("one")).toBe(false);
     expect(service.getState().chats.one).toBeUndefined();

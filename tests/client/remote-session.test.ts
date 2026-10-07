@@ -137,19 +137,9 @@ describe("RemoteSession", () => {
       selection: { providerId: "openrouter", modelId: "openai/gpt-oss-120b" },
       apiKey: "test-key",
     });
-    await client.instance.call("createConversation", {
-      conversation: {
-        id: "atlas",
-        name: "Atlas",
-        label: "",
-        description: "",
-        kind: "wisp",
-        shape: "circle",
-        notifyOnUpdatesEnabled: true,
-        preview: "",
-        timestamp: new Date().toISOString(),
-        messages: [],
-      },
+    await client.instance.call("createWisp", {
+      wisp: { id: "atlas", name: "Atlas", role: "", soul: "", shape: "circle" },
+      notifyOnUpdatesEnabled: true,
     });
     await client.instance.call("sendMessage", { conversationId: "atlas", requestId: "r1", text: "Hi" });
     await waitUntil(

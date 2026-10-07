@@ -11,7 +11,9 @@ vi.mock("@/lib/notification-sounds", async (importOriginal) => ({
 import { DEFAULT_PREFERENCES } from "@/lib/app-preferences";
 import { useNotificationSounds } from "@/hooks/use-notification-sounds";
 import type { SequencedConversationAgentEvent, WispApi } from "../../shared/contracts";
-import type { Chat, ManagedConversationStatus } from "../../shared/conversations";
+import type { ManagedConversationStatus } from "../../shared/conversations";
+import type { ChatView } from "@/chat-data";
+import { circleChatView, wispChatView } from "@/test/chat-fixtures";
 import type { ToolApprovalRequest } from "../../shared/tool-policy";
 
 type AgentEventListener = (event: SequencedConversationAgentEvent) => void;
@@ -31,34 +33,12 @@ function installBridge() {
   };
 }
 
-function wispChat(id: string, notifyOnUpdatesEnabled = true): Chat {
-  return {
-    id,
-    name: id,
-    label: "Research",
-    description: "",
-    kind: "wisp",
-    shape: "circle",
-    notifyOnUpdatesEnabled,
-    preview: "Ready",
-    timestamp: "Now",
-    messages: [],
-  };
+function wispChat(id: string, notifyOnUpdatesEnabled = true): ChatView {
+  return wispChatView(id, { chat: { notifyOnUpdatesEnabled } });
 }
 
-function circleChat(id: string): Chat {
-  return {
-    id,
-    name: id,
-    label: "Team",
-    description: "",
-    kind: "circle",
-    notifyOnUpdatesEnabled: true,
-    memberIds: [],
-    preview: "",
-    timestamp: "Now",
-    messages: [],
-  };
+function circleChat(id: string): ChatView {
+  return circleChatView(id, []);
 }
 
 function statusEvent(

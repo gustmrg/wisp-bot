@@ -19,7 +19,9 @@ import { useVoiceInput } from "@/hooks/use-voice-input";
 import { DEFAULT_PREFERENCES } from "@/lib/app-preferences";
 import { formatShortcut, matchesShortcut, SCHEDULE_SEND_SHORTCUT } from "@/lib/shortcuts";
 import { cn } from "@/lib/utils";
-import type { ChatSummary, ManagedConversationStatus } from "../../shared/conversations";
+import type { ManagedConversationStatus } from "../../shared/conversations";
+import type { ChatView } from "@/chat-data";
+import { chatName } from "@/lib/chat-schema";
 import type { VoiceLanguage, VoiceProviderId } from "../../shared/voice";
 import { messageWithAttachments, type WorkspaceAttachment } from "../../shared/workspace";
 
@@ -44,7 +46,7 @@ const DEFAULT_VOICE_SETTINGS: VoiceInputSettings = {
 export interface ChatComposerProps {
   autoFocus?: boolean;
   enterToSend?: boolean;
-  chat: ChatSummary;
+  chat: ChatView;
   status: ManagedConversationStatus;
   error?: string;
   acknowledging: boolean;
@@ -343,8 +345,8 @@ export function ChatComposer({
           autoFocus={autoFocus}
           rows={1}
           className="max-h-[120px] min-h-[26px] flex-1 resize-none overflow-y-auto border-0 bg-transparent py-1 pl-0 pr-0 text-foreground outline-none leading-[18px] placeholder:text-dim field-sizing-content"
-          aria-label={`Message ${chat.name}`}
-          placeholder={transcribing ? "Transcribing…" : `Message ${chat.name}`}
+          aria-label={`Message ${chatName(chat)}`}
+          placeholder={transcribing ? "Transcribing…" : `Message ${chatName(chat)}`}
           value={draft}
           disabled={chat.kind === "circle"}
           readOnly={transcribing}

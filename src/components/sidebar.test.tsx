@@ -2,9 +2,10 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { ChatSummaryCollection } from "@/chat-data";
+import type { ChatViewCollection } from "@/chat-data";
 import type { CurrentUser } from "@/config/app-metadata";
 import { Sidebar } from "@/components/sidebar";
+import { wispChatView } from "@/test/chat-fixtures";
 
 const currentUser: CurrentUser = {
   displayName: "Ada Lovelace",
@@ -78,18 +79,8 @@ describe("Sidebar current user", () => {
 });
 
 describe("Sidebar approvals", () => {
-  const chats: ChatSummaryCollection = {
-    atlas: {
-      id: "atlas",
-      name: "Atlas",
-      label: "Research",
-      description: "Finds relevant information",
-      kind: "wisp",
-      shape: "circle",
-      notifyOnUpdatesEnabled: true,
-      preview: "Latest research",
-      timestamp: "Now",
-    },
+  const chats: ChatViewCollection = {
+    atlas: wispChatView("atlas", { wisp: { name: "Atlas" }, chat: { preview: "Latest research" } }),
   };
   const approvals = {
     atlas: [

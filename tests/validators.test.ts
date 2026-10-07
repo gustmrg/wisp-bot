@@ -8,6 +8,8 @@ import {
   parseApplyModelRequest,
   parseConversationRequest,
   parseCreateConversationRequest,
+  parseCreateWispRequest,
+  parseDeleteWispRequest,
   parseRemoveProviderCredentialRequest,
   parseResolveToolApprovalRequest,
   parseSaveAiSettingsRequest,
@@ -15,6 +17,7 @@ import {
   parseSendMessageRequest,
   parseTranscribeAudioRequest,
   parseUpdateConversationRequest,
+  parseUpdateWispRequest,
 } from "../backend/validators.js";
 import { MAX_VOICE_AUDIO_BYTES } from "../shared/voice.js";
 
@@ -232,58 +235,98 @@ describe("IPC request validators", () => {
     ).toThrow(WispBackendError);
   });
 
+  it("rejects Wisp fields on a Wisp's conversation, which only carries notifications and read state", () => {
+    expect(
+      parseUpdateConversationRequest({ conversationId: "wisp-1", changes: { kind: "wisp", unread: false } }).changes,
+    ).toEqual({ kind: "wisp", unread: false });
+    for (const field of ["name", "soul", "shape", "tone"]) {
+      expect(() =>
+        parseUpdateConversationRequest({ conversationId: "wisp-1", changes: { kind: "wisp", [field]: "x" } }),
+      ).toThrow(WispBackendError);
+    }
+  });
+
+  it("creates only circles as conversations", () => {
+    const circle = {
+      id: "crew",
+      kind: "circle",
+      name: "Crew",
+      label: "",
+      description: "",
+      memberIds: [],
+      notifyOnUpdatesEnabled: true,
+      preview: "Ready",
+      messages: [],
+    };
+    expect(parseCreateConversationRequest({ conversation: circle }).conversation).toMatchObject({ id: "crew" });
+    expect(() =>
+      parseCreateConversationRequest({
+        conversation: {
+          id: "atlas",
+          kind: "wisp",
+          wispId: "atlas",
+          notifyOnUpdatesEnabled: true,
+          preview: "",
+          messages: [],
+        },
+      }),
+    ).toThrow(WispBackendError);
+  });
+
   it("migrates the removed legacy pill shape without dropping the Wisp", () => {
-    const request = parseCreateConversationRequest({
-      conversation: {
-        id: "legacy-pill",
-        kind: "wisp",
-        name: "Legacy",
-        label: "",
-        description: "",
-        shape: "pill",
-        notifyOnUpdatesEnabled: true,
-        preview: "Ready",
-        timestamp: "Now",
-        messages: [],
-      },
+    const request = parseCreateWispRequest({
+      wisp: { id: "legacy-pill", name: "Legacy", role: "", soul: "", shape: "pill" },
+      notifyOnUpdatesEnabled: true,
     });
 
-    expect(request.conversation).toEqual(expect.objectContaining({ id: "legacy-pill", shape: "pebble" }));
+    expect(request.wisp).toEqual({ id: "legacy-pill", name: "Legacy", role: "", soul: "", shape: "pebble" });
     expect(request.model).toBeNull();
   });
 
+  it("parses a Wisp's soul and changes, and rejects tone and unknown fields", () => {
+    const wisp = { id: "wisp-1", name: "Atlas", role: "Research", soul: "# Identity\nCareful", shape: "hexagon" };
+    expect(parseCreateWispRequest({ wisp, notifyOnUpdatesEnabled: false })).toEqual({
+      wisp,
+      notifyOnUpdatesEnabled: false,
+      model: null,
+    });
+    expect(() => parseCreateWispRequest({ wisp })).toThrow(WispBackendError);
+    expect(() => parseCreateWispRequest({ wisp: { ...wisp, name: " " }, notifyOnUpdatesEnabled: true })).toThrow(
+      WispBackendError,
+    );
+    expect(parseUpdateWispRequest({ wispId: "wisp-1", changes: { soul: "Direct", color: undefined } })).toEqual({
+      wispId: "wisp-1",
+      changes: { soul: "Direct", color: undefined },
+    });
+    for (const changes of [{ tone: { style: "direct", length: "short", custom: "" } }, { description: "x" }]) {
+      expect(() => parseUpdateWispRequest({ wispId: "wisp-1", changes })).toThrow(WispBackendError);
+    }
+    expect(() =>
+      parseUpdateWispRequest({ wispId: "wisp-1", changes: { avatarImage: "data:image/png;base64,AAAA" } }),
+    ).toThrow(WispBackendError);
+    expect(parseDeleteWispRequest({ wispId: "wisp-1" })).toEqual({ wispId: "wisp-1" });
+  });
+
   it("parses a creation-time model selection and rejects invalid ones", () => {
-    const conversation = {
-      id: "wisp-1",
-      kind: "wisp",
-      name: "Atlas",
-      label: "",
-      description: "",
-      shape: "hexagon",
-      notifyOnUpdatesEnabled: true,
-      preview: "Ready",
-      timestamp: "Now",
-      messages: [],
-    };
+    const wisp = { id: "wisp-1", name: "Atlas", role: "", soul: "", shape: "hexagon" };
 
     expect(
-      parseCreateConversationRequest({
-        conversation,
+      parseCreateWispRequest({
+        wisp,
+        notifyOnUpdatesEnabled: true,
         model: { providerId: "anthropic", modelId: "claude-sonnet-4-5", maxOutputTokens: 2048 },
       }).model,
     ).toEqual({ providerId: "anthropic", modelId: "claude-sonnet-4-5", maxOutputTokens: 2048 });
-    expect(parseCreateConversationRequest({ conversation, model: null }).model).toBeNull();
+    expect(parseCreateWispRequest({ wisp, notifyOnUpdatesEnabled: true, model: null }).model).toBeNull();
     expect(() =>
-      parseCreateConversationRequest({
-        conversation,
+      parseCreateWispRequest({
+        wisp,
+        notifyOnUpdatesEnabled: true,
         model: { providerId: "anthropic", modelId: "claude-sonnet-4-5", maxOutputTokens: 0 },
       }),
     ).toThrow(WispBackendError);
     expect(() =>
-      parseCreateConversationRequest({
-        conversation,
-        model: { providerId: "anthropic" },
-      }),
+      parseCreateWispRequest({ wisp, notifyOnUpdatesEnabled: true, model: { providerId: "anthropic" } }),
     ).toThrow(WispBackendError);
   });
 });

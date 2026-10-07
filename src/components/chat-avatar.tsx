@@ -1,20 +1,26 @@
 import { HashIcon } from "lucide-react";
 import { Wisp } from "@/components/wisp";
-import type { ChatSummary, ChatSummaryCollection } from "@/chat-data";
-import { getCircleMembers } from "@/lib/circle-members";
+import type { ChatView, Wisp as WispEntity } from "@/chat-data";
 import { cn } from "@/lib/utils";
 
+type AvatarSize = "default" | "sm" | "lg" | "xl";
+
 interface ChatAvatarProps {
-  chat: ChatSummary;
-  chats?: ChatSummaryCollection;
-  size?: "default" | "sm" | "lg" | "xl";
+  chat: ChatView;
+  size?: AvatarSize;
+}
+
+interface WispAvatarProps {
+  wisp: Pick<WispEntity, "name" | "shape" | "color" | "avatarImage">;
+  size?: AvatarSize;
 }
 
 const CLUSTER_SLOTS = ["left-[30%] top-[4%]", "left-[5%] top-[38%]", "left-[41%] top-[40%]"];
 
-function ChatAvatar({ chat, chats, size = "default" }: ChatAvatarProps) {
+/** A conversation's picture: its Wisp's, or a circle's members together. */
+function ChatAvatar({ chat, size = "default" }: ChatAvatarProps) {
   if (chat.kind === "circle") {
-    const members = chats ? getCircleMembers(chat, chats) : [];
+    const members = chat.members;
     const tileSize =
       size === "sm"
         ? "size-6 rounded-md"
@@ -51,7 +57,7 @@ function ChatAvatar({ chat, chats, size = "default" }: ChatAvatarProps) {
                 className="flex aspect-square w-full items-center justify-center [&>img]:size-full! [&>svg]:size-full!"
                 key={member.id}
               >
-                <ChatAvatar chat={member} size="sm" />
+                <WispAvatar wisp={member} size="sm" />
               </span>
             ))
           ) : (
@@ -92,21 +98,26 @@ function ChatAvatar({ chat, chats, size = "default" }: ChatAvatarProps) {
     );
   }
 
-  if (chat.avatarImage) {
+  return <WispAvatar wisp={chat.wisp} size={size} />;
+}
+
+/** A Wisp's uploaded picture, or its shape in its color. */
+function WispAvatar({ wisp, size = "default" }: WispAvatarProps) {
+  if (wisp.avatarImage) {
     return (
       <img
         className={cn(
           "flex-none rounded-[28%] object-cover",
           size === "sm" ? "size-6" : size === "lg" ? "size-9" : size === "xl" ? "size-14" : "size-8",
         )}
-        src={chat.avatarImage}
+        src={wisp.avatarImage}
         alt=""
       />
     );
   }
 
-  return <Wisp aria-hidden="true" color={chat.color} name={chat.name} shape={chat.shape} size={size} />;
+  return <Wisp aria-hidden="true" color={wisp.color} name={wisp.name} shape={wisp.shape} size={size} />;
 }
 
-export { ChatAvatar };
-export type { ChatAvatarProps };
+export { ChatAvatar, WispAvatar };
+export type { ChatAvatarProps, WispAvatarProps };

@@ -4,23 +4,27 @@ import { describe, expect, it, vi } from "vitest";
 
 import type { ConnectionsView } from "../shared/connections";
 import type { AiSettingsView, UpdateState, WispApi } from "../shared/contracts";
-import { chatSummary, type Chat, type ConversationStateView } from "../shared/conversations";
+import { chatSummary, type Chat, type ConversationStateView, type Wisp } from "../shared/conversations";
 import App from "@/App";
 import { LEGACY_STORAGE_KEY } from "@/hooks/use-conversations";
 import { MOBILE_LAYOUT_QUERY } from "@/hooks/use-mobile-layout";
 
-const atlas: Chat = {
-  id: "atlas",
-  name: "Atlas",
-  label: "Research",
-  description: "Finds relevant information",
-  kind: "wisp",
-  shape: "circle",
-  notifyOnUpdatesEnabled: true,
-  preview: "Ready",
-  timestamp: "Now",
-  messages: [],
-};
+/** A Wisp's own conversation; `wispNamed` gives the Wisp itself. */
+function wispChat(id: string): Chat {
+  return { id, kind: "wisp", wispId: id, notifyOnUpdatesEnabled: true, preview: "Ready", messages: [] };
+}
+
+function wispNamed(id: string): Wisp {
+  return {
+    id,
+    name: id.charAt(0).toUpperCase() + id.slice(1),
+    role: "Research",
+    soul: "Finds relevant information",
+    shape: "circle",
+  };
+}
+
+const atlas = wispChat("atlas");
 
 const UNCONFIGURED_AI: AiSettingsView = {
   selection: null,
@@ -54,6 +58,9 @@ const CONFIGURED_AI: AiSettingsView = {
 function conversationState(initialized: boolean, chats: Record<string, Chat> = {}): ConversationStateView {
   return {
     initialized,
+    wisps: Object.fromEntries(
+      Object.values(chats).flatMap((chat) => (chat.kind === "wisp" ? [[chat.wispId, wispNamed(chat.wispId)]] : [])),
+    ),
     chats,
     statuses: Object.fromEntries(Object.keys(chats).map((id) => [id, "idle"])),
     liveMessages: {},
@@ -144,12 +151,20 @@ function createApi(initialState: ConversationStateView): WispApi {
       state = conversationState(true, chats);
       return current();
     }),
-    createConversation: vi.fn(async ({ conversation: chat }) => {
+    createWisp: vi.fn(async ({ wisp, notifyOnUpdatesEnabled }) => {
+      const chat: Chat = { ...wispChat(wisp.id), notifyOnUpdatesEnabled };
       state = {
         ...state,
+        wisps: { ...state.wisps, [wisp.id]: wisp },
         chats: { ...state.chats, [chat.id]: chat },
         statuses: { ...state.statuses, [chat.id]: "idle" },
       };
+      return current();
+    }),
+    updateWisp: vi.fn(async () => current()),
+    deleteWisp: vi.fn(async () => current()),
+    createConversation: vi.fn(async ({ conversation: chat }) => {
+      state = { ...state, chats: { ...state.chats, [chat.id]: chat } };
       return current();
     }),
     updateConversation: vi.fn(async () => current()),
@@ -268,7 +283,9 @@ describe("App", () => {
   });
 
   it("retains legacy conversations when backend initialization fails", async () => {
-    const legacy = JSON.stringify({ chats: { atlas } });
+    const legacy = JSON.stringify({
+      chats: { atlas: { ...atlas, kind: "wisp", name: "Atlas", label: "", description: "", shape: "circle" } },
+    });
     window.localStorage.setItem(LEGACY_STORAGE_KEY, legacy);
     const api = createApi(conversationState(false));
     vi.mocked(api.initializeConversations).mockResolvedValueOnce({
@@ -372,7 +389,7 @@ describe("App", () => {
 
   it("keeps desktop settings drafts when reselecting a conversation", async () => {
     const user = userEvent.setup();
-    const beta: Chat = { ...atlas, id: "beta", name: "Beta" };
+    const beta = wispChat("beta");
     exposeApi(createApi(conversationState(true, { atlas, beta })));
     render(<App />);
     await screen.findByRole("textbox", { name: "Message Atlas" });
@@ -505,7 +522,7 @@ describe("Mobile workspace", () => {
   it("filters real statuses and unread flags, and opens search results as conversations", async () => {
     setMobileViewport();
     const user = userEvent.setup();
-    const beta: Chat = { ...atlas, id: "beta", name: "Beta" };
+    const beta = wispChat("beta");
     const state = conversationState(true, {
       atlas: { ...atlas, unread: true },
       beta,
@@ -555,17 +572,20 @@ describe("Mobile workspace", () => {
       }),
     );
     expect(await screen.findByRole("textbox", { name: "Message Travel Planner" })).toBeVisible();
-    expect(api.createConversation).toHaveBeenCalledOnce();
+    expect(api.createWisp).toHaveBeenCalledOnce();
+    expect(api.createWisp).toHaveBeenCalledWith(
+      expect.objectContaining({ wisp: expect.objectContaining({ name: "Travel Planner", role: "", soul: "" }) }),
+    );
   });
 });
 
 it.each([false, true])("preserves later navigation when deletion completes (mobile: %s)", async (mobile) => {
   setMobileViewport()(mobile);
   const user = userEvent.setup();
-  const beta: Chat = { ...atlas, id: "beta", name: "Beta" };
+  const beta = wispChat("beta");
   const api = createApi(conversationState(true, { atlas, beta }));
   let finishDelete = () => {};
-  vi.mocked(api.deleteConversation).mockImplementation(
+  vi.mocked(api.deleteWisp).mockImplementation(
     () =>
       new Promise((resolve) => {
         finishDelete = () => resolve({ ok: true, value: conversationState(true, { beta }) });
@@ -580,7 +600,7 @@ it.each([false, true])("preserves later navigation when deletion completes (mobi
   await user.click(screen.getByRole("button", { name: "Open Wisp settings" }));
   await user.click(screen.getByRole("button", { name: "Delete Wisp" }));
   await user.click(screen.getByRole("button", { name: "Confirm deletion" }));
-  await waitFor(() => expect(api.deleteConversation).toHaveBeenCalledOnce());
+  await waitFor(() => expect(api.deleteWisp).toHaveBeenCalledOnce());
   if (mobile) {
     await user.click(screen.getByRole("button", { name: "Back to conversation" }));
     await user.click(screen.getByRole("button", { name: "Back to conversations" }));
