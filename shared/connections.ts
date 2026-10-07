@@ -75,6 +75,15 @@ export type SaveConnectionRequest =
   | (Omit<SshConnectionProfile, "id"> & { id?: string })
   | (Omit<UrlConnectionProfile, "id"> & { id?: string });
 
+/** A machine named by a `Host` line of the user's ~/.ssh/config, as OpenSSH resolves it. */
+export interface SshConfigHost {
+  /** The name to connect to; OpenSSH applies the config's settings for it. */
+  alias: string;
+  hostname?: string;
+  user?: string;
+  port?: number;
+}
+
 export interface ConnectionRequest {
   id: string;
 }

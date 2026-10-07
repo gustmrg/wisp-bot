@@ -10,6 +10,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { StructuredLogger } from "../../backend/structured-logger.js";
 import { LaunchAtLoginService } from "../../electron/backend/launch-at-login-service.js";
 import { UpdateService } from "../../electron/backend/update-service.js";
+import { listSshConfigHosts } from "../../electron/connections/ssh-config.js";
 import { installRemoteServer } from "../../electron/connections/ssh-install.js";
 import { openSshTunnel } from "../../electron/connections/ssh-tunnel.js";
 import { createBackend, type Backend } from "../../electron/create-backend.js";
@@ -112,6 +113,7 @@ async function desktop(userData?: string, key = randomBytes(32), { choose = true
     openSshTunnel: (profile, signal) => openSshTunnel(profile, { sshPath: fakeSsh, signal }),
     installServer: (profile, onProgress, signal) =>
       installRemoteServer(profile, { sshPath: fakeSsh, version: "1.0.0", onProgress, signal }),
+    listSshHosts: () => listSshConfigHosts({ home: directory, sshPath: fakeSsh }),
   });
   let disposed = false;
   const dispose = async (): Promise<void> => {
@@ -337,6 +339,21 @@ describe("desktop connections", () => {
     await app.waitForPhase("connected");
     expect(server.auth.devices()).toEqual([expect.objectContaining({ name: "Test computer" })]);
     expect(await app.chats()).toEqual([]);
+  });
+
+  it("lists the machines of the SSH config to choose from", async () => {
+    const app = await desktop();
+    expect(await app.invoke(WISP_IPC_CHANNELS.listSshHosts)).toEqual([]);
+    await mkdir(path.join(app.directory, ".ssh"));
+    await writeFile(path.join(app.directory, ".ssh", "config"), "Host home-box.test.invalid *.corp\n");
+    expect(await app.invoke(WISP_IPC_CHANNELS.listSshHosts)).toEqual([
+      {
+        alias: "home-box.test.invalid",
+        hostname: "home-box.test.invalid.test.invalid",
+        user: "tester",
+        port: 22,
+      },
+    ]);
   });
 
   it("explains an SSH failure and goes back to this computer when the connection is removed", async () => {

@@ -5,6 +5,8 @@
 // FAKE_SSH_REMOTE=missing makes the remote shell lack wispctl, and
 // FAKE_SSH_INSTALL=no-node|not-published|systemd makes the server setup fail,
 // and FAKE_SSH_INSTALL=hang keeps it running until ssh is stopped.
+// `-G alias` prints settings like OpenSSH does: the alias "port-2222" gets
+// that port, and "unresolvable" makes it fail.
 const http = require("node:http");
 const net = require("node:net");
 const fs = require("node:fs");
@@ -12,6 +14,14 @@ const path = require("node:path");
 
 const args = process.argv.slice(2);
 if (process.env.FAKE_SSH_LOG) fs.appendFileSync(process.env.FAKE_SSH_LOG, `${JSON.stringify(args)}\n`);
+if (args[0] === "-G") {
+  const alias = args[args.length - 1];
+  if (alias === "unresolvable") process.exit(255);
+  process.stdout.write(
+    `host ${alias}\nhostname ${alias}.test.invalid\nuser tester\nport ${alias === "port-2222" ? 2222 : 22}\n`,
+  );
+  process.exit(0);
+}
 const failures = {
   hostkey: "Host key verification failed.",
   denied: "user@host: Permission denied (publickey).",

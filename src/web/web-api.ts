@@ -128,6 +128,7 @@ export function createWebWispApi(options: WebApiOptions): WispApi {
     },
     installServer: desktopOnly,
     cancelServerInstall: desktopOnly,
+    listSshHosts: desktopOnly,
     retryConnection: async () => {
       session.start();
       return ok(view());

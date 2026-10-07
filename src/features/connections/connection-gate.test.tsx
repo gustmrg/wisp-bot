@@ -27,6 +27,7 @@ function bridge(initial: ConnectionsView) {
     retryConnection: vi.fn(ok),
     installServer: vi.fn(ok),
     cancelServerInstall: vi.fn(ok),
+    listSshHosts: vi.fn(async () => ({ ok: true as const, value: [] })),
     subscribeToConnections: vi.fn((listener: (next: ConnectionsView) => void) => {
       push = listener;
       return () => undefined;

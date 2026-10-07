@@ -48,6 +48,7 @@ import type {
   ConnectionRequest,
   ConnectionsView,
   SaveConnectionRequest,
+  SshConfigHost,
 } from "./connections.js";
 
 export const WISP_IPC_CHANNELS = {
@@ -121,6 +122,7 @@ export const WISP_IPC_CHANNELS = {
   retryConnection: "wisp:connections:retry",
   installServer: "wisp:connections:install-server",
   cancelServerInstall: "wisp:connections:cancel-server-install",
+  listSshHosts: "wisp:connections:ssh-hosts",
   connectionsChanged: "wisp:connections:changed",
 } as const;
 
@@ -475,5 +477,7 @@ export interface WispApi {
   installServer(request: ConnectionRequest): Promise<BackendResult<ConnectionsView>>;
   /** Stops a server setup in progress; `installServer` then fails as cancelled. */
   cancelServerInstall(): Promise<BackendResult<ConnectionsView>>;
+  /** The machines in this computer's ~/.ssh/config, to choose from when adding a server. */
+  listSshHosts(): Promise<BackendResult<ReadonlyArray<SshConfigHost>>>;
   subscribeToConnections(listener: (view: ConnectionsView) => void): () => void;
 }

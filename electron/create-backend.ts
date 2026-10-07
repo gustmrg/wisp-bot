@@ -15,12 +15,13 @@ import {
 import { RUNTIME_OPERATIONS } from "../backend/handlers/register-runtime-handlers.js";
 import type { StructuredLogger } from "../backend/structured-logger.js";
 import type { RemoteTransport } from "../client/remote-session.js";
-import type { SshConnectionProfile } from "../shared/connections.js";
+import type { SshConfigHost, SshConnectionProfile } from "../shared/connections.js";
 import type { HostRequest, HostResponse } from "../shared/remote-protocol.js";
 import type { LaunchAtLoginService } from "./backend/launch-at-login-service.js";
 import type { UpdateService } from "./backend/update-service.js";
 import { ConnectionManager } from "./connections/connection-manager.js";
 import { ConnectionStore } from "./connections/connection-store.js";
+import { listSshConfigHosts } from "./connections/ssh-config.js";
 import { installRemoteServer } from "./connections/ssh-install.js";
 import { openSshTunnel } from "./connections/ssh-tunnel.js";
 import { registerLaunchAtLoginHandlers } from "./ipc/register-launch-at-login-handlers.js";
@@ -65,6 +66,8 @@ export interface BackendHost {
   ) => Promise<void>;
   /** Opens an SSH tunnel to a server; tests substitute a fake. */
   openSshTunnel?: (profile: SshConnectionProfile, signal: AbortSignal) => Promise<RemoteTransport>;
+  /** Lists the machines in ~/.ssh/config; tests substitute a fake ssh and home. */
+  listSshHosts?: () => Promise<SshConfigHost[]>;
 }
 
 export interface Backend {
@@ -129,6 +132,7 @@ export async function createBackend(host: BackendHost): Promise<Backend> {
       [WISP_IPC_CHANNELS.retryConnection, () => manager.retry()],
       [WISP_IPC_CHANNELS.installServer, (payload) => manager.installServer(connectionId(payload))],
       [WISP_IPC_CHANNELS.cancelServerInstall, () => manager.cancelInstall()],
+      [WISP_IPC_CHANNELS.listSshHosts, () => (host.listSshHosts ?? listSshConfigHosts)()],
     ]),
   ];
   try {

@@ -13,6 +13,7 @@ import type {
 } from "../../../shared/connections";
 import { InstallServerAction } from "./install-server-action";
 import { ServerSetupGuide } from "./server-setup-guide";
+import { SshConfigHosts } from "./ssh-config-hosts";
 
 const PHASE_LABELS: Record<ConnectionStatus["phase"], string> = {
   choosing: "Not in use",
@@ -72,6 +73,7 @@ export function ConnectionsPanel({ view, serversOnly = false }: { view: Connecti
       <ConnectionForm
         key={editing}
         profile={editedProfile && editedProfile.kind !== "local" ? editedProfile : undefined}
+        addedHosts={new Set(view.profiles.flatMap((profile) => (profile.kind === "ssh" ? [profile.host] : [])))}
         onDone={() => setEditing(null)}
       />
     );
@@ -198,9 +200,12 @@ function requestFrom(draft: Draft, id?: string): SaveConnectionRequest {
 
 function ConnectionForm({
   profile,
+  addedHosts,
   onDone,
 }: {
   profile?: Exclude<ConnectionProfileView, { kind: "local" }>;
+  /** Hosts that already have an SSH connection. */
+  addedHosts: ReadonlySet<string>;
   /** Returns to the list after saving, removing, or going back. */
   onDone: () => void;
 }) {
@@ -265,6 +270,21 @@ function ConnectionForm({
             { value: "url", label: "HTTPS address" },
           ]}
           onChange={(kind) => update({ kind })}
+        />
+      )}
+      {profile || draft.kind !== "ssh" ? null : (
+        <SshConfigHosts
+          selected={draft.host.trim()}
+          added={addedHosts}
+          onChoose={({ alias }) =>
+            // The config supplies the user and port, so the alias alone connects like `ssh alias`.
+            update({
+              host: alias,
+              user: "",
+              sshPort: "",
+              ...(!draft.name.trim() || draft.name.trim() === draft.host.trim() ? { name: alias } : {}),
+            })
+          }
         />
       )}
       <SettingsField label="Name">

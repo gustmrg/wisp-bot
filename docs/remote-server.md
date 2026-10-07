@@ -183,7 +183,11 @@ server:
 
 - **SSH** uses this computer's OpenSSH client with your agent, keys,
   `~/.ssh/config`, and known hosts. Enter a host name, IP address, or alias,
-  an optional user and SSH port, and the server's port (8787 by default). Wisp
+  an optional user and SSH port, and the server's port (8787 by default), or
+  pick a machine from **From your SSH config**: the `Host` entries of
+  `~/.ssh/config` and the files it includes, as `ssh -G` resolves them. A
+  machine picked there is saved by its alias, so later changes to the config
+  apply. Wisp
   forwards a free local port to the server's loopback port; it never stores SSH
   keys or passwords. Connect once with `ssh` in a terminal first, so the host
   key is verified; Wisp refuses unknown or changed host keys rather than
