@@ -52,7 +52,8 @@ export function InstallServerAction({
           <p className="m-0 text-xs leading-relaxed">
             Wisp will connect to {host} over SSH and run <code>npx {WISP_SERVER_PACKAGE} setup</code> there. It installs
             the server in <code>~/.local/lib/wisp-server</code>, creates a master key in <code>~/.config/wisp</code>,
-            and starts a systemd user service. The machine needs Node.js 22.19 or later and internet access.
+            and starts a systemd user service. The machine needs Node.js 22.19 or later and npm in the PATH of
+            non-interactive SSH commands, and internet access.
           </p>
           <div className="flex flex-wrap gap-2">
             <Button type="button" onClick={() => void install()}>

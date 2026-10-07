@@ -309,6 +309,9 @@ function ConnectionForm({
             Wisp uses this computer&apos;s OpenSSH, with your SSH agent, keys, and known hosts. Connect once with{" "}
             <code>ssh</code> in a terminal so the host key is trusted. Pairing runs <code>wispctl pair</code> on the
             server for you.
+            {profile ? null : (
+              <> If the Wisp server is not installed there yet, save, then open the server to install it.</>
+            )}
           </p>
         </>
       ) : (
