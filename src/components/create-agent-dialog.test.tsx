@@ -60,7 +60,10 @@ describe("CreateAgentDialog persistence", () => {
     await screen.findByText("Global default · Provider a model-a");
     await user.click(screen.getByRole("button", { name: "Create Wisp" }));
     await waitFor(() =>
-      expect(onCreate).toHaveBeenCalledWith(expect.objectContaining({ name: "Atlas", kind: "wisp" }), null),
+      expect(onCreate).toHaveBeenCalledWith(expect.objectContaining({ name: "Atlas", role: "", soul: "" }), {
+        notifyOnUpdatesEnabled: true,
+        model: null,
+      }),
     );
   });
 
@@ -78,9 +81,8 @@ describe("CreateAgentDialog persistence", () => {
     await user.click(screen.getByRole("button", { name: "Create Wisp" }));
     await waitFor(() =>
       expect(onCreate).toHaveBeenCalledWith(expect.objectContaining({ name: "Atlas" }), {
-        providerId: "provider-a",
-        modelId: "model-a",
-        maxOutputTokens: 512,
+        notifyOnUpdatesEnabled: true,
+        model: { providerId: "provider-a", modelId: "model-a", maxOutputTokens: 512 },
       }),
     );
   });
@@ -122,13 +124,13 @@ describe("CreateAgentDialog persistence", () => {
     render(<CreateAgentDialog onCreate={onCreate} />);
     await user.click(screen.getByRole("button", { name: "Create Wisp" }));
     expect(screen.getByText("Step 1 of 2 · Appearance and name")).toBeVisible();
-    expect(screen.queryByRole("textbox", { name: "Identity & personality" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("textbox", { name: "Soul" })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Next" })).toBeDisabled();
 
     await user.type(screen.getByRole("textbox", { name: "Name" }), "Atlas");
     await user.click(screen.getByRole("button", { name: "Next" }));
-    expect(screen.getByText("Step 2 of 2 · Personality and behavior")).toBeVisible();
-    const personality = screen.getByRole("textbox", { name: "Identity & personality" });
+    expect(screen.getByText("Step 2 of 2 · Soul and behavior")).toBeVisible();
+    const personality = screen.getByRole("textbox", { name: "Soul" });
     expect(personality).toHaveFocus();
     expect(screen.queryByRole("textbox", { name: "Name" })).not.toBeInTheDocument();
     await user.type(personality, "Careful researcher");
@@ -136,14 +138,14 @@ describe("CreateAgentDialog persistence", () => {
     await user.click(screen.getByRole("button", { name: "Back" }));
     expect(screen.getByRole("textbox", { name: "Name" })).toHaveValue("Atlas");
     await user.click(screen.getByRole("button", { name: "Next" }));
-    expect(screen.getByRole("textbox", { name: "Identity & personality" })).toHaveValue("Careful researcher");
+    expect(screen.getByRole("textbox", { name: "Soul" })).toHaveValue("Careful researcher");
 
     await user.click(screen.getByRole("button", { name: "Create Wisp" }));
     await waitFor(() =>
-      expect(onCreate).toHaveBeenCalledWith(
-        expect.objectContaining({ name: "Atlas", description: "Careful researcher" }),
-        null,
-      ),
+      expect(onCreate).toHaveBeenCalledWith(expect.objectContaining({ name: "Atlas", soul: "Careful researcher" }), {
+        notifyOnUpdatesEnabled: true,
+        model: null,
+      }),
     );
   });
 });

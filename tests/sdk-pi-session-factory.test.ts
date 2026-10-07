@@ -134,9 +134,9 @@ describe("SdkPiSessionFactory", () => {
       conversationId: "one",
       sessionId: "app-session",
       name: "Research Wisp",
-      label: "Finance",
-      description: "You are a financial advisor who explains markets clearly.",
-      tone: { style: "direct", length: "short", custom: "" },
+      wispId: "one",
+      role: "Finance",
+      soul: "# Identity\nYou are a financial advisor who explains markets clearly.",
       userName: "John",
       userProfile: { preferredName: "John", aboutYou: "Backend developer", responsePreferences: "Be concise" },
       workspaceDirectory: path.join(directory, "workspace"),
@@ -223,10 +223,11 @@ describe("SdkPiSessionFactory", () => {
     expect(prompt).toContain("Apart from that sentence, return only the final answer");
     expect(prompt).toContain("## Response style");
     expect(prompt).toContain("1. Explicit instructions in the user's current message.");
-    expect(prompt).toContain("2. This Wisp's configured tone, below.");
+    expect(prompt).toContain("Configured role: Finance.");
+    expect(prompt).toContain("2. Your identity and purpose, above.");
     expect(prompt).toContain("3. The user's general response preferences from the user profile.");
-    expect(prompt).toContain("Tone: Straight to the point.");
-    expect(prompt).toContain("Length: Keep responses brief");
+    expect(prompt).not.toContain("Tone:");
+    expect(prompt).not.toContain("configured tone");
     expect(prompt).not.toContain("Be concise, factual");
     expect(savePiSessionIdentity).toHaveBeenCalledWith({
       sessionId: "pi-session-id",
@@ -303,8 +304,9 @@ describe("SdkPiSessionFactory", () => {
       conversationId: "one",
       sessionId: "app-session",
       name: "Atlas",
-      label: "Research",
-      description: "",
+      wispId: "one",
+      role: "Research",
+      soul: "",
       workspaceDirectory: path.join(directory, "workspace"),
       sessionDirectory: directory,
       configDirectory: path.join(directory, "config"),
@@ -379,8 +381,9 @@ describe("SdkPiSessionFactory", () => {
       conversationId: "researcher",
       sessionId: "stopped-session",
       name: "Researcher",
-      label: "Research",
-      description: "Search sources.",
+      wispId: "researcher",
+      role: "Research",
+      soul: "Search sources.",
       workspaceDirectory: directory,
       sessionDirectory: directory,
       configDirectory: path.join(directory, "config"),
@@ -414,8 +417,9 @@ describe("SdkPiSessionFactory", () => {
       conversationId: "researcher",
       sessionId: "plugin-session",
       name: "Researcher",
-      label: "Research",
-      description: "Search sources.",
+      wispId: "researcher",
+      role: "Research",
+      soul: "Search sources.",
       workspaceDirectory: directory,
       sessionDirectory: directory,
       configDirectory: path.join(directory, "config"),

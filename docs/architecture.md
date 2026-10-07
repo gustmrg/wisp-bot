@@ -69,7 +69,11 @@ boundary in depth.
 
 ## Runtime
 
-Each Wisp (never a circle) owns one persistent, application-managed Pi session.
+A Wisp is stored apart from the conversations it takes part in: its name,
+role, soul, and appearance, plus its own settings folder (skills, saved
+memory). Each Wisp has one conversation of its own, sharing its ID, and circles
+list Wisps; see [ADR 010](decisions/010-wisp-entity.md). In its own
+conversation each Wisp owns one persistent, application-managed Pi session.
 Applying a model validates it immediately, but the session itself (which loads
 the Wisp's full history) opens on first use — a message or a context request —
 so startup time does not grow with every Wisp's transcript. Requests stream
@@ -133,8 +137,8 @@ redirect that directory to `wisp-bot-dev` (override with the `WISP_DATA_DIR`
 environment variable) so testing never touches the installed app's data.
 
 Conversations live in `backend/conversations.sqlite` (Node's built-in
-`node:sqlite`, write-ahead logging), with one row per conversation and one per
-message, so a change writes only its own rows. The main process keeps the
+`node:sqlite`, write-ahead logging), with one row per Wisp, one per
+conversation, and one per message, so a change writes only its own rows. The main process keeps the
 stores in memory as its read model and adopts a change only after its
 transaction commits. Each conversation keeps its newest 10,000 messages; older
 ones leave the displayed transcript, while the Wisp's Pi session keeps its own

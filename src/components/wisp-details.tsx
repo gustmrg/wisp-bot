@@ -1,68 +1,83 @@
 import { WispContextSettings } from "@/components/wisp-context-settings";
 import { useState, type ReactNode } from "react";
 
-import type { WispChatChanges, WispSummary } from "@/chat-data";
+import type { WispChanges, WispChatView } from "@/chat-data";
 import { WispModelSettings } from "@/components/wisp-model-settings";
 import { WispPluginSettings } from "@/components/wisp-plugin-settings";
-import { WispSettingsFields } from "@/components/wisp-settings-fields";
+import { WispSettingsFields, type WispSettingsDraft } from "@/components/wisp-settings-fields";
 import { WispSessionReportSection } from "@/components/wisp-session-report";
 import { WispSkillSettings } from "@/components/wisp-skill-settings";
 import { WispWorkspaceSettings } from "@/components/wisp-workspace-settings";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { sameWispTone, storedWispTone } from "../../shared/wisp-tone";
 import type { IntegrationSettingsTarget } from "@/lib/plugin-access";
 
 const TAB_ORDER = ["general", "model", "access", "usage"] as const;
 
 interface WispDetailsProps {
-  chat: WispSummary;
+  chat: WispChatView;
   generalActions?: ReactNode;
-  onChange: (changes: WispChatChanges) => Promise<boolean> | void;
+  /** Saves the Wisp's own settings. */
+  onChangeWisp: (changes: WispChanges) => Promise<boolean> | void;
+  /** Saves its conversation's notification setting. */
+  onChangeNotifications: (notifyOnUpdatesEnabled: boolean) => Promise<boolean> | void;
   onOpenSettings?: (target: IntegrationSettingsTarget) => void;
 }
 
-export function WispDetails({ chat, onChange, onOpenSettings, generalActions }: WispDetailsProps) {
+function draftOf(chat: WispChatView): WispSettingsDraft {
+  const { id: _id, ...wisp } = chat.wisp;
+  return { ...wisp, notifyOnUpdatesEnabled: chat.notifyOnUpdatesEnabled };
+}
+
+export function WispDetails({
+  chat,
+  onChangeWisp,
+  onChangeNotifications,
+  onOpenSettings,
+  generalActions,
+}: WispDetailsProps) {
   const [tab, setTab] = useState("general");
   const [slideDirection, setSlideDirection] = useState<"forward" | "back">("forward");
   const [visited, setVisited] = useState(() => new Set(["general"]));
-  const [draft, setDraft] = useState(chat);
+  const [draft, setDraft] = useState(() => draftOf(chat));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const slideClass = slideDirection === "forward" ? "animate-tab-forward" : "animate-tab-back";
-  const dirty =
-    draft.name !== chat.name ||
-    draft.label !== chat.label ||
-    draft.description !== chat.description ||
-    draft.color !== chat.color ||
-    draft.avatarImage !== chat.avatarImage ||
-    draft.shape !== chat.shape ||
-    draft.notifyOnUpdatesEnabled !== chat.notifyOnUpdatesEnabled ||
-    !sameWispTone(storedWispTone(draft.tone), chat.tone);
+  const { wisp } = chat;
+  const wispChanged =
+    draft.name !== wisp.name ||
+    draft.role !== wisp.role ||
+    draft.soul !== wisp.soul ||
+    draft.color !== wisp.color ||
+    draft.avatarImage !== wisp.avatarImage ||
+    draft.shape !== wisp.shape;
+  const notificationsChanged = draft.notifyOnUpdatesEnabled !== chat.notifyOnUpdatesEnabled;
 
   async function save() {
     const name = draft.name.trim() || "Untitled";
-    const tone = storedWispTone(draft.tone);
     setSaving(true);
     setError("");
     try {
-      const saved = await onChange({
-        kind: "wisp",
-        name,
-        label: draft.label,
-        description: draft.description,
-        color: draft.color,
-        avatarImage: draft.avatarImage,
-        shape: draft.shape,
-        notifyOnUpdatesEnabled: draft.notifyOnUpdatesEnabled,
-        tone,
-      });
-      if (saved === false) {
+      if (wispChanged) {
+        const saved = await onChangeWisp({
+          name,
+          role: draft.role,
+          soul: draft.soul,
+          color: draft.color,
+          avatarImage: draft.avatarImage,
+          shape: draft.shape,
+        });
+        if (saved === false) {
+          setError("Could not save Wisp settings.");
+          return;
+        }
+      }
+      if (notificationsChanged && (await onChangeNotifications(draft.notifyOnUpdatesEnabled)) === false) {
         setError("Could not save Wisp settings.");
         return;
       }
-      setDraft((current) => ({ ...current, name, tone }));
+      setDraft((current) => ({ ...current, name }));
     } catch {
       setError("Could not save Wisp settings.");
     } finally {
@@ -116,7 +131,12 @@ export function WispDetails({ chat, onChange, onOpenSettings, generalActions }: 
               {error}
             </p>
           ) : null}
-          <Button className="w-full" type="button" disabled={!dirty || saving} onClick={() => void save()}>
+          <Button
+            className="w-full"
+            type="button"
+            disabled={!(wispChanged || notificationsChanged) || saving}
+            onClick={() => void save()}
+          >
             {saving ? "Saving…" : "Save changes"}
           </Button>
         </footer>

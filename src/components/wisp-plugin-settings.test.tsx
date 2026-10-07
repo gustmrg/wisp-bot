@@ -13,6 +13,7 @@ import {
 } from "../../shared/plugins";
 import { WispPluginSettings } from "./wisp-plugin-settings";
 import { WispDetails } from "./wisp-details";
+import { wispChatView } from "@/test/chat-fixtures";
 
 const NO_PROVIDERS: WebProviders = { search: null, read: null };
 
@@ -269,18 +270,9 @@ describe("WispPluginSettings", () => {
     const user = userEvent.setup();
     render(
       <WispDetails
-        chat={{
-          id: "researcher",
-          kind: "wisp",
-          name: "Researcher",
-          label: "Research",
-          description: "",
-          shape: "circle",
-          notifyOnUpdatesEnabled: true,
-          preview: "Ready",
-          timestamp: "Now",
-        }}
-        onChange={vi.fn()}
+        chat={wispChatView("researcher", { wisp: { name: "Researcher", role: "Research", soul: "" } })}
+        onChangeWisp={vi.fn()}
+        onChangeNotifications={vi.fn()}
       />,
     );
     expect(api.getPluginSettings).not.toHaveBeenCalled();

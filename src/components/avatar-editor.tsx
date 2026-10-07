@@ -2,8 +2,8 @@ import { useEffect, useRef, useState } from "react";
 import { Popover } from "@base-ui/react/popover";
 import { ShuffleIcon, UploadIcon, XIcon } from "lucide-react";
 
-import type { WispChatChanges, WispSummary } from "@/chat-data";
-import { ChatAvatar } from "@/components/chat-avatar";
+import type { NewWisp, WispChanges } from "@/chat-data";
+import { WispAvatar } from "@/components/chat-avatar";
 import { Wisp } from "@/components/wisp";
 import { cn } from "@/lib/utils";
 import { AVATAR_COLORS, WISP_SHAPES } from "@/lib/wisp-appearance";
@@ -48,11 +48,11 @@ async function readAvatar(file: File): Promise<string> {
 }
 
 interface AvatarEditorProps {
-  chat: WispSummary;
-  onChange: (changes: Omit<WispChatChanges, "kind">) => void;
+  wisp: Pick<NewWisp, "name" | "shape" | "color" | "avatarImage">;
+  onChange: (changes: WispChanges) => void;
 }
 
-function AvatarEditor({ chat, onChange }: AvatarEditorProps) {
+function AvatarEditor({ wisp, onChange }: AvatarEditorProps) {
   const [open, setOpen] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState("");
@@ -65,7 +65,7 @@ function AvatarEditor({ chat, onChange }: AvatarEditorProps) {
     [],
   );
 
-  function selectWisp(changes: Omit<WispChatChanges, "kind">) {
+  function selectWisp(changes: WispChanges) {
     uploadVersion.current += 1;
     setUploading(false);
     setError("");
@@ -89,8 +89,8 @@ function AvatarEditor({ chat, onChange }: AvatarEditorProps) {
   }
 
   function generateWisp() {
-    const shapes = WISP_SHAPES.filter((shape) => shape.id !== chat.shape);
-    const colors = AVATAR_COLORS.filter((color) => color.value !== chat.color);
+    const shapes = WISP_SHAPES.filter((shape) => shape.id !== wisp.shape);
+    const colors = AVATAR_COLORS.filter((color) => color.value !== wisp.color);
     const shape = shapes[Math.floor(Math.random() * shapes.length)];
     const color = colors[Math.floor(Math.random() * colors.length)];
     if (!shape || !color) return;
@@ -111,7 +111,7 @@ function AvatarEditor({ chat, onChange }: AvatarEditorProps) {
           aria-label="Upload avatar image"
         >
           <span className="flex transition-[filter] duration-[120ms] [&>img]:size-20! [&>img]:overflow-visible [&>svg]:size-20! [&>svg]:overflow-visible">
-            <ChatAvatar chat={chat} size="xl" />
+            <WispAvatar wisp={wisp} size="xl" />
           </span>
           <span
             className="avatar-edit-overlay pointer-events-none absolute top-5 left-1/2 flex size-20 -translate-x-1/2 items-center justify-center opacity-0 transition-opacity duration-[120ms] [&_svg]:size-[23px] [&_svg]:text-white"
@@ -191,7 +191,7 @@ function AvatarEditor({ chat, onChange }: AvatarEditorProps) {
           aria-label="Wisp shape"
         >
           {WISP_SHAPES.map((shape) => {
-            const selected = !chat.avatarImage && chat.shape === shape.id;
+            const selected = !wisp.avatarImage && wisp.shape === shape.id;
             return (
               <button
                 type="button"
@@ -203,7 +203,7 @@ function AvatarEditor({ chat, onChange }: AvatarEditorProps) {
                 key={shape.id}
                 onClick={() => selectWisp({ shape: shape.id })}
               >
-                <Wisp color={chat.color} name={chat.name} shape={shape.id} outlined={selected} aria-hidden="true" />
+                <Wisp color={wisp.color} name={wisp.name} shape={shape.id} outlined={selected} aria-hidden="true" />
               </button>
             );
           })}
@@ -215,7 +215,7 @@ function AvatarEditor({ chat, onChange }: AvatarEditorProps) {
           aria-label="Wisp color"
         >
           {AVATAR_COLORS.map((color) => {
-            const selected = !chat.avatarImage && chat.color?.toLowerCase() === color.value.toLowerCase();
+            const selected = !wisp.avatarImage && wisp.color?.toLowerCase() === color.value.toLowerCase();
             return (
               <button
                 type="button"
@@ -241,7 +241,7 @@ function AvatarEditor({ chat, onChange }: AvatarEditorProps) {
             Random Wisp
           </button>
         </div>
-        {chat.avatarImage ? (
+        {wisp.avatarImage ? (
           <p className="m-0 mt-3.5 text-dim text-sm">
             Choosing a shape, color, or random Wisp replaces the uploaded image.
           </p>

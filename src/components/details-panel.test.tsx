@@ -2,29 +2,21 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import type { Chat } from "@/chat-data";
 import { DetailsPanel } from "@/components/details-panel";
+import { wispChatView } from "@/test/chat-fixtures";
 
-const chat: Chat = {
-  id: "atlas",
-  name: "Atlas",
-  label: "Research",
-  description: "Finds relevant information",
-  kind: "wisp",
-  shape: "circle",
-  notifyOnUpdatesEnabled: true,
-  preview: "Ready",
-  timestamp: "Now",
-  messages: [],
-};
+const chat = wispChatView("atlas", {
+  wisp: { name: "Atlas", role: "Research", soul: "Finds relevant information" },
+});
 
 function renderDetails(onDelete = vi.fn()): void {
   render(
     <DetailsPanel
       chat={chat}
-      chats={{ atlas: chat }}
+      wisps={{ atlas: chat.wisp }}
       width={318}
       onChange={vi.fn()}
+      onChangeWisp={vi.fn()}
       onClose={vi.fn()}
       onDelete={onDelete}
       onResizeStart={vi.fn()}

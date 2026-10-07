@@ -59,9 +59,9 @@ function Workspace({ userProfile }: { userProfile: UserProfileController }) {
   const navigationVersion = useRef(0);
   const wisps = useMemo(
     () =>
-      Object.values(workspace.chats)
-        .filter((chat) => chat.kind === "wisp")
-        .map(({ id, name }) => ({ id, name })),
+      Object.values(workspace.chats).flatMap((chat) =>
+        chat.kind === "wisp" ? [{ id: chat.id, name: chat.wisp.name }] : [],
+      ),
     [workspace.chats],
   );
   const sidebarPanel = useResizablePanel({
@@ -143,8 +143,8 @@ function Workspace({ userProfile }: { userProfile: UserProfileController }) {
           loading={workspace.loading}
           error={workspace.error}
           onCollapsedChange={setSidebarCollapsed}
-          onCreate={async (chat, model) => {
-            const created = await workspace.createChat(chat, model);
+          onCreate={async (wisp, options) => {
+            const created = await workspace.createWisp(wisp, options);
             if (created) {
               navigationVersion.current += 1;
               if (mobile) setDetailsOpen(false);
@@ -162,7 +162,6 @@ function Workspace({ userProfile }: { userProfile: UserProfileController }) {
             hidden={mobile && (mobilePage === "list" || detailsOpen)}
             onBack={mobile ? showConversations : undefined}
             chat={workspace.activeChat}
-            chats={workspace.chats}
             transcript={workspace.activeTranscript}
             status={workspace.statuses[workspace.activeChat.id] ?? "configuration_required"}
             activity={workspace.activity[workspace.activeChat.id]}
@@ -201,9 +200,10 @@ function Workspace({ userProfile }: { userProfile: UserProfileController }) {
           <DetailsPanel
             mobile={mobile}
             chat={workspace.activeChat}
-            chats={workspace.chats}
+            wisps={workspace.wisps}
             width={detailsPanel.width}
             onChange={workspace.updateActiveChat}
+            onChangeWisp={workspace.updateWisp}
             onOpenSettings={(target) =>
               showSettings(target.section, target.section === "plugins" ? target.pluginId : undefined)
             }

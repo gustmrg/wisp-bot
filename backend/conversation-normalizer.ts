@@ -6,42 +6,42 @@ import {
   type Message,
   type MessageStatus,
   type ScheduledOrigin,
+  type Wisp,
+  type WispChanges,
+  type WispCollection,
   type WispShape,
 } from "../shared/conversations.js";
-import { normalizeWispTone, type WispTone } from "../shared/wisp-tone.js";
 import { WispBackendError } from "./backend-error.js";
 import { CONVERSATION_STORAGE_POLICY, WEBP_DATA_URL_PREFIX } from "./storage-policy.js";
 
 const ID_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9._:-]*$/;
 const SHAPES = new Set<WispShape>(WISP_SHAPE_IDS);
 const MESSAGE_STATUSES = new Set<MessageStatus>(["queued", "streaming", "complete", "failed", "cancelled"]);
+// Stored limits. They are looser than the app's form limits because Wisps
+// saved by earlier versions were allowed longer names and roles, and a soul
+// carries over the tone those versions stored separately.
+const MAX_WISP_NAME_LENGTH = 500;
+const MAX_WISP_ROLE_LENGTH = 500;
+export const MAX_WISP_SOUL_LENGTH = 12_000;
 const BASE64_PATTERN = /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/;
 
-function wispShape(value: unknown): WispShape {
+export function wispShape(value: unknown): WispShape {
   // Pill was removed from the product, but existing conversations should remain readable.
   if (value === "pill") return "pebble";
   if (typeof value !== "string" || !SHAPES.has(value as WispShape)) throw invalidRequest();
   return value as WispShape;
 }
 
-function wispTone(value: unknown): WispTone | undefined {
-  try {
-    return normalizeWispTone(value);
-  } catch {
-    throw invalidRequest();
-  }
-}
-
-function invalidRequest(): WispBackendError {
+export function invalidRequest(): WispBackendError {
   return new WispBackendError("invalid_request", "The conversation data is invalid.");
 }
 
-function asRecord(value: unknown): Record<string, unknown> {
+export function asRecord(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw invalidRequest();
   return value as Record<string, unknown>;
 }
 
-function string(
+export function string(
   value: unknown,
   maxLength: number = CONVERSATION_STORAGE_POLICY.maxTextLength,
   allowEmpty = true,
@@ -52,7 +52,7 @@ function string(
   return value;
 }
 
-function timestamp(value: unknown): string {
+export function timestamp(value: unknown): string {
   const normalized = string(value, 100, false);
   if (Number.isNaN(Date.parse(normalized))) throw invalidRequest();
   return normalized;
@@ -65,7 +65,7 @@ export function normalizeConversationId(value: unknown): string {
   return value;
 }
 
-function avatarDataUrl(value: unknown): string {
+export function avatarDataUrl(value: unknown): string {
   const normalized = string(value, CONVERSATION_STORAGE_POLICY.maxAvatarDataUrlLength, false);
   if (!normalized.startsWith(WEBP_DATA_URL_PREFIX)) throw invalidRequest();
   const payload = normalized.slice(WEBP_DATA_URL_PREFIX.length);
@@ -108,6 +108,9 @@ export function normalizeMessage(value: unknown, fallbackId?: string): Message {
       text: string(raw.text),
       ...(raw.time === undefined ? {} : { time: string(raw.time, 100) }),
       ...(reactions === undefined ? {} : { reactions: reactions.map((item) => string(item, 100)) }),
+      ...(raw.authorId === undefined || raw.type !== "incoming"
+        ? {}
+        : { authorId: normalizeConversationId(raw.authorId) }),
       ...(raw.scheduled === undefined || raw.type !== "outgoing"
         ? {}
         : { scheduled: normalizeScheduledOrigin(raw.scheduled) }),
@@ -183,83 +186,94 @@ function withUniqueMessageIds(messages: ReadonlyArray<Message>): ReadonlyArray<M
   });
 }
 
+export function normalizeWisp(value: unknown): Wisp {
+  const raw = asRecord(value);
+  return {
+    id: normalizeConversationId(raw.id),
+    name: string(raw.name, MAX_WISP_NAME_LENGTH, false),
+    role: string(raw.role, MAX_WISP_ROLE_LENGTH),
+    soul: string(raw.soul, MAX_WISP_SOUL_LENGTH),
+    shape: wispShape(raw.shape),
+    ...(raw.color === undefined ? {} : { color: string(raw.color, 100) }),
+    ...(raw.avatarImage === undefined ? {} : { avatarImage: avatarDataUrl(raw.avatarImage) }),
+  };
+}
+
+export function normalizeWispChanges(value: unknown): WispChanges {
+  const raw = asRecord(value);
+  const allowed = new Set(["name", "role", "soul", "shape", "color", "avatarImage"]);
+  if (Object.keys(raw).some((key) => !allowed.has(key))) throw invalidRequest();
+  const result: WispChanges = {};
+  if (raw.name !== undefined) result.name = string(raw.name, MAX_WISP_NAME_LENGTH, false);
+  if (raw.role !== undefined) result.role = string(raw.role, MAX_WISP_ROLE_LENGTH);
+  if (raw.soul !== undefined) result.soul = string(raw.soul, MAX_WISP_SOUL_LENGTH);
+  if (raw.shape !== undefined) result.shape = wispShape(raw.shape);
+  // Present but undefined clears the color or picture.
+  if (Object.hasOwn(raw, "color")) result.color = raw.color === undefined ? undefined : string(raw.color, 100);
+  if (Object.hasOwn(raw, "avatarImage")) {
+    result.avatarImage = raw.avatarImage === undefined ? undefined : avatarDataUrl(raw.avatarImage);
+  }
+  return result;
+}
+
+/** Applies validated changes; cleared optional fields are left out rather than kept as undefined. */
+export function applyWispChanges(wisp: Wisp, changes: WispChanges): Wisp {
+  const next: Wisp = { ...wisp, ...changes };
+  if (next.color === undefined) delete next.color;
+  if (next.avatarImage === undefined) delete next.avatarImage;
+  return next;
+}
+
 export function normalizeChat(value: unknown): Chat {
   const raw = asRecord(value);
   const id = normalizeConversationId(raw.id);
-  const legacyKind = raw.isCircle === true || raw.isGroup === true ? "circle" : "wisp";
-  const kind = raw.kind === undefined ? legacyKind : raw.kind;
-  if (kind !== "wisp" && kind !== "circle") throw invalidRequest();
-  if (raw.systemRole !== undefined && raw.systemRole !== "chief") throw invalidRequest();
   if (typeof raw.notifyOnUpdatesEnabled !== "boolean") throw invalidRequest();
   if (!Array.isArray(raw.messages) || raw.messages.length > CONVERSATION_STORAGE_POLICY.maxMessagesPerConversation)
     throw invalidRequest();
   const base = {
     id,
-    name: string(raw.name, 500, false),
-    label: string(raw.label, 500),
-    description: string(raw.description, 10_000),
     notifyOnUpdatesEnabled: raw.notifyOnUpdatesEnabled,
     preview: string(raw.preview),
-    timestamp: string(raw.timestamp, 500),
     messages: withUniqueMessageIds(
       raw.messages.map((message, index) => normalizeMessage(message, `${id}:message:${index}`)),
     ),
-    ...(raw.systemRole === "chief" || (raw.kind === undefined && id === "chief")
-      ? { systemRole: "chief" as const }
-      : {}),
-    ...(typeof raw.isActive === "boolean" ? { isActive: raw.isActive } : {}),
     ...(typeof raw.unread === "boolean" ? { unread: raw.unread } : {}),
     ...(raw.lastActivityAt === undefined ? {} : { lastActivityAt: timestamp(raw.lastActivityAt) }),
   };
-  if (kind === "circle") {
-    if (
-      raw.kind !== undefined &&
-      (raw.shape !== undefined || raw.color !== undefined || raw.avatarImage !== undefined || raw.tone !== undefined)
-    ) {
-      throw invalidRequest();
-    }
-    if (raw.memberIds !== undefined && (!Array.isArray(raw.memberIds) || raw.memberIds.length > 1_000)) {
-      throw invalidRequest();
-    }
-    return {
-      ...base,
-      kind,
-      memberIds: raw.memberIds === undefined ? [] : raw.memberIds.map(normalizeConversationId),
-    };
+  if (raw.kind === "wisp") {
+    const wispId = normalizeConversationId(raw.wispId);
+    // A Wisp's conversation shares its ID, which keys the Wisp's grants and queues.
+    if (wispId !== id) throw invalidRequest();
+    return { ...base, kind: "wisp", wispId };
   }
-  if (raw.kind !== undefined && raw.memberIds !== undefined) throw invalidRequest();
-  const shape = wispShape(raw.shape);
-  const tone = raw.tone === undefined ? undefined : wispTone(raw.tone);
+  if (raw.kind !== "circle") throw invalidRequest();
+  if (!Array.isArray(raw.memberIds) || raw.memberIds.length > 1_000) throw invalidRequest();
   return {
     ...base,
-    kind,
-    shape,
-    ...(raw.color === undefined ? {} : { color: string(raw.color, 100) }),
-    ...(raw.avatarImage === undefined ? {} : { avatarImage: avatarDataUrl(raw.avatarImage) }),
-    ...(tone ? { tone } : {}),
+    kind: "circle",
+    name: string(raw.name, 500, false),
+    label: string(raw.label, 500),
+    description: string(raw.description, 10_000),
+    memberIds: raw.memberIds.map(normalizeConversationId),
   };
 }
 
-export function normalizeChatCollection(value: unknown): ChatCollection {
-  const raw = asRecord(value);
-  if (Object.keys(raw).length > CONVERSATION_STORAGE_POLICY.maxConversations) throw invalidRequest();
-  const chats: ChatCollection = {};
-  for (const [key, value] of Object.entries(raw)) {
-    const id = normalizeConversationId(key);
-    const chat = normalizeChat(value);
-    if (chat.id !== id) throw invalidRequest();
-    chats[id] = chat;
+/**
+ * Every Wisp has exactly one conversation of its own, and circles list only
+ * existing Wisps, each once.
+ */
+export function validateConversationGraph(chats: Readonly<ChatCollection>, wisps: Readonly<WispCollection>): void {
+  for (const wisp of Object.values(wisps)) {
+    if (chats[wisp.id]?.kind !== "wisp") throw invalidRequest();
   }
-  validateConversationGraph(chats);
-  return chats;
-}
-
-export function validateConversationGraph(chats: Readonly<ChatCollection>): void {
   for (const chat of Object.values(chats)) {
-    if (chat.kind !== "circle") continue;
+    if (chat.kind === "wisp") {
+      if (!wisps[chat.wispId]) throw invalidRequest();
+      continue;
+    }
     const members = new Set<string>();
     for (const memberId of chat.memberIds) {
-      if (members.has(memberId) || chats[memberId]?.kind !== "wisp") throw invalidRequest();
+      if (members.has(memberId) || !wisps[memberId]) throw invalidRequest();
       members.add(memberId);
     }
   }
@@ -268,31 +282,22 @@ export function validateConversationGraph(chats: Readonly<ChatCollection>): void
 export function normalizeChatChanges(value: unknown): ChatChanges {
   const raw = asRecord(value);
   if (raw.kind !== "wisp" && raw.kind !== "circle") throw invalidRequest();
-  const shared = ["name", "label", "description", "notifyOnUpdatesEnabled", "isActive", "unread"];
+  const shared = ["notifyOnUpdatesEnabled", "unread"];
   const allowed = new Set([
     "kind",
     ...shared,
-    ...(raw.kind === "wisp" ? ["color", "avatarImage", "shape", "tone"] : ["memberIds"]),
+    ...(raw.kind === "circle" ? ["name", "label", "description", "memberIds"] : []),
   ]);
   if (Object.keys(raw).some((key) => !allowed.has(key))) throw invalidRequest();
   const result: Record<string, unknown> = { kind: raw.kind };
   if (raw.name !== undefined) result.name = string(raw.name, 500, false);
   if (raw.label !== undefined) result.label = string(raw.label, 500);
   if (raw.description !== undefined) result.description = string(raw.description, 10_000);
-  if (Object.hasOwn(raw, "color")) result.color = raw.color === undefined ? undefined : string(raw.color, 100);
-  if (Object.hasOwn(raw, "avatarImage")) {
-    result.avatarImage = raw.avatarImage === undefined ? undefined : avatarDataUrl(raw.avatarImage);
-  }
-  if (raw.shape !== undefined) {
-    result.shape = wispShape(raw.shape);
-  }
-  // An absent or default tone clears the stored one.
-  if (Object.hasOwn(raw, "tone")) result.tone = raw.tone === undefined ? undefined : wispTone(raw.tone);
   if (raw.memberIds !== undefined) {
     if (!Array.isArray(raw.memberIds) || raw.memberIds.length > 1_000) throw invalidRequest();
     result.memberIds = raw.memberIds.map(normalizeConversationId);
   }
-  for (const key of ["notifyOnUpdatesEnabled", "isActive", "unread"] as const) {
+  for (const key of ["notifyOnUpdatesEnabled", "unread"] as const) {
     if (raw[key] !== undefined) {
       if (typeof raw[key] !== "boolean") throw invalidRequest();
       result[key] = raw[key];

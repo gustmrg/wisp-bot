@@ -2,7 +2,6 @@ import type { ChatSummary, Message } from "../../shared/conversations";
 
 const DAY_MS = 86_400_000;
 const MINUTE_MS = 60_000;
-const ISO_TIMESTAMP_PATTERN = /^\d{4}-\d{2}-\d{2}T/;
 
 function startOfDay(date: Date): number {
   return new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
@@ -42,13 +41,10 @@ export function withDateDividers(messages: ReadonlyArray<Message>, now: Date = n
   return result;
 }
 
-// The chat's last activity as the backend records it, falling back to the chat's own ISO
-// timestamp. Older stores saved display strings such as "Now" there; those carry no date and
-// are ignored.
-export function chatActivityDate(chat: Pick<ChatSummary, "lastActivityAt" | "timestamp">): Date | null {
-  const value = chat.lastActivityAt ?? (ISO_TIMESTAMP_PATTERN.test(chat.timestamp) ? chat.timestamp : undefined);
-  if (!value) return null;
-  const date = new Date(value);
+// The chat's last activity as the backend records it.
+export function chatActivityDate(chat: Pick<ChatSummary, "lastActivityAt">): Date | null {
+  if (!chat.lastActivityAt) return null;
+  const date = new Date(chat.lastActivityAt);
   return Number.isNaN(date.getTime()) ? null : date;
 }
 

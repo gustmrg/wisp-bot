@@ -1,7 +1,7 @@
 import { useEffect, useRef, type PointerEvent as ReactPointerEvent } from "react";
 import { CheckIcon, ChevronLeftIcon, Share2Icon, XIcon } from "lucide-react";
 
-import type { ChatChanges, ChatSummary, ChatSummaryCollection } from "@/chat-data";
+import type { ChatChanges, ChatView, WispChanges, WispCollection } from "@/chat-data";
 import { CircleDetails } from "@/components/circle-details";
 import { WispDetails } from "@/components/wisp-details";
 import { Button } from "@/components/ui/button";
@@ -16,7 +16,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { useCopyFeedback } from "@/hooks/use-copy-feedback";
-import { canDeleteChat } from "@/lib/chat-schema";
+import { chatName } from "@/lib/chat-schema";
 import { detailsLayoutStyle } from "@/lib/layout";
 import { panelResizer } from "@/lib/ui-classes";
 import { cn } from "@/lib/utils";
@@ -24,10 +24,11 @@ import type { IntegrationSettingsTarget } from "@/lib/plugin-access";
 
 interface DetailsPanelProps {
   mobile?: boolean;
-  chat: ChatSummary;
-  chats: ChatSummaryCollection;
+  chat: ChatView;
+  wisps: WispCollection;
   width: number;
   onChange: (changes: ChatChanges) => Promise<boolean> | void;
+  onChangeWisp: (wispId: string, changes: WispChanges) => Promise<boolean> | void;
   onOpenSettings?: (target: IntegrationSettingsTarget) => void;
   onClose: () => void;
   onDelete: () => void;
@@ -36,9 +37,10 @@ interface DetailsPanelProps {
 
 function DetailsPanel({
   chat,
-  chats,
+  wisps,
   width,
   onChange,
+  onChangeWisp,
   onOpenSettings,
   onClose,
   onDelete,
@@ -56,31 +58,28 @@ function DetailsPanel({
     void copyFeedback.copy(`wisp://template/${chat.id}`);
   }
 
+  const name = chatName(chat);
   const deleteControl = (
-    <>
-      {canDeleteChat(chat) ? (
-        <Dialog>
-          <DialogTrigger render={<Button className="w-full" variant="destructive" type="button" />}>
-            Delete {chat.kind === "circle" ? "circle" : "Wisp"}
-          </DialogTrigger>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Delete {chat.name}?</DialogTitle>
-              <DialogDescription>
-                This permanently deletes this {chat.kind === "circle" ? "circle" : "Wisp"}, including its conversation
-                history and settings. This action cannot be undone.
-              </DialogDescription>
-            </DialogHeader>
-            <DialogFooter>
-              <DialogClose render={<Button variant="outline" type="button" />}>Cancel</DialogClose>
-              <DialogClose render={<Button variant="destructive" type="button" onClick={onDelete} />}>
-                Confirm deletion
-              </DialogClose>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
-      ) : null}
-    </>
+    <Dialog>
+      <DialogTrigger render={<Button className="w-full" variant="destructive" type="button" />}>
+        Delete {chat.kind === "circle" ? "circle" : "Wisp"}
+      </DialogTrigger>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Delete {name}?</DialogTitle>
+          <DialogDescription>
+            This permanently deletes this {chat.kind === "circle" ? "circle" : "Wisp"}, including its conversation
+            history and settings. This action cannot be undone.
+          </DialogDescription>
+        </DialogHeader>
+        <DialogFooter>
+          <DialogClose render={<Button variant="outline" type="button" />}>Cancel</DialogClose>
+          <DialogClose render={<Button variant="destructive" type="button" onClick={onDelete} />}>
+            Confirm deletion
+          </DialogClose>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
   const shareControl = (
     <>
@@ -113,7 +112,7 @@ function DetailsPanel({
           : "min-w-(--details-min-width) w-(--details-width) border-l border-black/[0.055] max-[900px]:absolute max-[900px]:inset-y-0 max-[900px]:right-0 max-[900px]:z-[8] max-[900px]:shadow-[-20px_0_50px_rgba(0,0,0,0.114)] dark:border-white/[0.055] dark:max-[900px]:shadow-[-20px_0_50px_rgba(0,0,0,0.38)]",
       )}
       style={detailsLayoutStyle(width)}
-      aria-label={`${chat.name} settings`}
+      aria-label={`${name} settings`}
     >
       {!mobile ? (
         <div
@@ -143,7 +142,8 @@ function DetailsPanel({
         <WispDetails
           key={chat.id}
           chat={chat}
-          onChange={onChange}
+          onChangeWisp={(changes) => onChangeWisp(chat.wispId, changes)}
+          onChangeNotifications={(notifyOnUpdatesEnabled) => onChange({ kind: "wisp", notifyOnUpdatesEnabled })}
           onOpenSettings={onOpenSettings}
           generalActions={
             <>
@@ -155,7 +155,7 @@ function DetailsPanel({
       ) : (
         <div className="relative flex min-h-0 flex-1 flex-col">
           <div className="min-h-0 flex-1 overflow-y-auto p-3.5">
-            <CircleDetails chat={chat} chats={chats} onChange={onChange} />
+            <CircleDetails chat={chat} wisps={wisps} onChange={onChange} />
             <div className="mt-[18px]">{deleteControl}</div>
           </div>
           <footer className="flex-none px-3.5 pt-2.5 pb-3">{shareControl}</footer>

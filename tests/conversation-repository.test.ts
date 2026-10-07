@@ -7,7 +7,7 @@ import { describe, expect, it } from "vitest";
 
 import { ConversationRepository } from "../backend/conversation-repository.js";
 import { CONVERSATION_STORAGE_POLICY } from "../backend/storage-policy.js";
-import type { Chat, Message } from "../shared/conversations.js";
+import type { Chat, CircleChat, Message, Wisp } from "../shared/conversations.js";
 
 async function reload(directory: string): Promise<ConversationRepository> {
   const repository = new ConversationRepository({ dataDirectory: directory });
@@ -40,6 +40,38 @@ function chat(id: string, circle = false): Chat {
   return circle ? { ...base, kind: "circle", memberIds: [] } : { ...base, kind: "wisp", shape: "circle" };
 }
 
+function newWisp(id: string): Wisp {
+  return { id, name: id, role: "Test", soul: "A test Wisp", shape: "circle" };
+}
+
+function circle(id: string, memberIds: string[] = []): CircleChat {
+  return {
+    id,
+    kind: "circle",
+    name: id,
+    label: "Circle",
+    description: "",
+    memberIds,
+    notifyOnUpdatesEnabled: true,
+    preview: "Ready",
+    messages: [],
+  };
+}
+
+/** A conversation record as stores before Wisps were stored apart wrote it. */
+function legacyRecord(id: string, overrides: Record<string, unknown> = {}) {
+  const { messages: _messages, ...legacyChat } = chat(id) as Chat & Record<string, unknown>;
+  return {
+    chat: { ...legacyChat, ...overrides },
+    sessionId: `${id}-session`,
+    modelOverride: null,
+    piSessionId: null,
+    piSessionFile: null,
+    createdAt: "2026-08-30T12:00:00.000Z",
+    updatedAt: "2026-08-30T12:00:00.000Z",
+  };
+}
+
 describe("ConversationRepository", () => {
   it("imports legacy conversations once and keeps stable message and session IDs", async () => {
     const directory = await mkdtemp(path.join(os.tmpdir(), "wisp-repository-"));
@@ -56,7 +88,14 @@ describe("ConversationRepository", () => {
 
     expect(repository.getChats()).toHaveProperty("first");
     expect(repository.getChats()).not.toHaveProperty("second");
-    expect(repository.list()[0]?.sessionId).toBe(firstRecord?.sessionId);
+    expect(repository.list()[0]?.storageId).toBe(firstRecord?.storageId);
+    expect(repository.readWisps().first).toEqual({
+      id: "first",
+      name: "first",
+      role: "Test",
+      soul: "A test conversation",
+      shape: "circle",
+    });
     expect(repository.getChats().first?.messages[0]?.id).toBe("first:message:0");
     const context = repository.getAgentContext("first");
     await expect(readdir(context.workspaceDirectory)).resolves.toEqual([]);
@@ -143,9 +182,9 @@ describe("ConversationRepository", () => {
     const directory = await mkdtemp(path.join(os.tmpdir(), "wisp-create-override-"));
     const repository = new ConversationRepository({ dataDirectory: directory });
     await repository.load();
-    await repository.create(chat("plain"), null);
+    await repository.createWisp(newWisp("plain"), { notifyOnUpdatesEnabled: true, modelOverride: null });
     const override = { providerId: "anthropic", modelId: "claude-sonnet-4-5", maxOutputTokens: 2048 };
-    await repository.create(chat("custom"), override);
+    await repository.createWisp(newWisp("custom"), { notifyOnUpdatesEnabled: true, modelOverride: override });
 
     expect(repository.getAgentContext("plain").modelOverride).toBeNull();
     expect(repository.getAgentContext("custom").modelOverride).toEqual(override);
@@ -156,20 +195,139 @@ describe("ConversationRepository", () => {
     expect(restored.getAgentContext("plain").modelOverride).toBeNull();
   });
 
-  it("rejects creation-time model overrides that are invalid or belong to circles", async () => {
+  it("rejects invalid model overrides and a Wisp's conversation created without its Wisp", async () => {
     const directory = await mkdtemp(path.join(os.tmpdir(), "wisp-create-override-invalid-"));
     const repository = new ConversationRepository({ dataDirectory: directory });
     await repository.load();
 
     await expect(
-      repository.create(chat("bad"), { providerId: "", modelId: "claude-sonnet-4-5" }),
+      repository.createWisp(newWisp("bad"), {
+        notifyOnUpdatesEnabled: true,
+        modelOverride: { providerId: "", modelId: "claude-sonnet-4-5" },
+      }),
     ).rejects.toMatchObject({ code: "invalid_request" });
     await expect(
-      repository.create(chat("circle", true), { providerId: "anthropic", modelId: "m" }),
+      repository.create({
+        id: "orphan",
+        kind: "wisp",
+        wispId: "orphan",
+        notifyOnUpdatesEnabled: true,
+        preview: "",
+        messages: [],
+      }),
     ).rejects.toMatchObject({ code: "invalid_request" });
 
-    expect(repository.getChats()).not.toHaveProperty("bad");
-    expect(repository.getChats()).not.toHaveProperty("circle");
+    expect(repository.getChats()).toEqual({});
+    expect(repository.readWisps()).toEqual({});
+  });
+
+  it("creates a Wisp with its own conversation, folders, and session, and changes it apart from them", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "wisp-create-"));
+    let nextId = 0;
+    const repository = new ConversationRepository({ dataDirectory: directory, createId: () => `id-${++nextId}` });
+    await repository.load();
+    await repository.createWisp(newWisp("atlas"), { notifyOnUpdatesEnabled: false });
+
+    expect(repository.readWisps().atlas).toEqual(newWisp("atlas"));
+    expect(repository.getChats().atlas).toMatchObject({
+      kind: "wisp",
+      wispId: "atlas",
+      notifyOnUpdatesEnabled: false,
+      preview: "Ready for the first task.",
+    });
+    const context = repository.getAgentContext("atlas");
+    // The Wisp's settings, the conversation's workspace, and the session each have their own folder.
+    expect(context).toMatchObject({
+      wispId: "atlas",
+      role: "Test",
+      soul: "A test Wisp",
+      configDirectory: path.join(directory, "pi-config", "id-1"),
+      workspaceDirectory: path.join(directory, "workspaces", "id-2"),
+      sessionDirectory: path.join(directory, "pi-sessions", "id-3"),
+    });
+    expect(repository.getWispStorageId("atlas")).toBe("id-1");
+
+    await repository.updateWisp("atlas", { soul: "# Identity\nA careful researcher", color: "#123456" });
+    await repository.updateWisp("atlas", { color: undefined });
+    const restored = await reload(directory);
+    expect(restored.readWisps().atlas).toEqual({ ...newWisp("atlas"), soul: "# Identity\nA careful researcher" });
+    expect(restored.getAgentContext("atlas").soul).toBe("# Identity\nA careful researcher");
+    await expect(restored.updateWisp("missing", { name: "Ghost" })).rejects.toMatchObject({ code: "not_found" });
+  });
+
+  it("splits records saved before Wisps were stored apart, keeping their folders and tone", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "wisp-split-"));
+    const repository = await reload(directory);
+    await repository.initialize({});
+    await repository.close();
+    const db = new DatabaseSync(path.join(directory, "conversations.sqlite"));
+    const sessionFile = path.join(directory, "pi-sessions", "first-session", "history.jsonl");
+    db.prepare("INSERT INTO conversations (id, record) VALUES (?, ?)").run(
+      "first",
+      JSON.stringify({
+        ...legacyRecord("first", {
+          lastActivityAt: "2026-09-01T00:00:00.000Z",
+          tone: { style: "formal", length: "short", custom: "" },
+        }),
+        modelOverride: { providerId: "anthropic", modelId: "claude-sonnet-5" },
+        piSessionId: "pi-first",
+        piSessionFile: sessionFile,
+      }),
+    );
+    db.prepare("INSERT INTO conversations (id, record) VALUES (?, ?)").run(
+      "crew",
+      JSON.stringify({
+        ...legacyRecord("crew", { kind: "circle", memberIds: ["first"] }),
+        sessionId: null,
+      }),
+    );
+    db.prepare("INSERT INTO messages (conversation_id, id, body) VALUES (?, ?, ?)").run(
+      "first",
+      "m1",
+      JSON.stringify({ id: "m1", type: "incoming", text: "Hello", createdAt: "2026-08-31T00:00:00.000Z" }),
+    );
+    db.prepare("UPDATE meta SET value = '3' WHERE key IN ('store_version', 'min_reader_version')").run();
+    db.close();
+
+    const upgraded = await reload(directory);
+
+    expect(upgraded.readWisps().first).toEqual({
+      id: "first",
+      name: "first",
+      role: "Test",
+      soul: [
+        "A test conversation",
+        "## Tone\nProfessional and polished. Use complete sentences and avoid slang, jokes, and emoji.",
+        "## Response length\nKeep responses brief: a few sentences or a short list. Expand only when asked.",
+      ].join("\n\n"),
+      shape: "circle",
+    });
+    expect(upgraded.getChats().first).toMatchObject({
+      kind: "wisp",
+      wispId: "first",
+      lastActivityAt: "2026-09-01T00:00:00.000Z",
+      messages: [expect.objectContaining({ id: "m1" })],
+    });
+    expect(upgraded.getChats().crew).toMatchObject({ kind: "circle", memberIds: ["first"] });
+    // One ID named all of the Wisp's folders, so it still does.
+    expect(upgraded.getAgentContext("first")).toMatchObject({
+      sessionId: "first-session",
+      modelOverride: { providerId: "anthropic", modelId: "claude-sonnet-5" },
+      piSessionId: "pi-first",
+      piSessionFile: sessionFile,
+      configDirectory: path.join(directory, "pi-config", "first-session"),
+      workspaceDirectory: path.join(directory, "workspaces", "first-session"),
+      sessionDirectory: path.join(directory, "pi-sessions", "first-session"),
+    });
+    expect(upgraded.getWispStorageId("first")).toBe("first-session");
+    // The records were rewritten in the new layout.
+    expect(storedRecord(directory, "first")).toMatchObject({
+      storageId: "first-session",
+      chat: { kind: "wisp", wispId: "first" },
+    });
+    expect(storedRecord(directory, "first")).not.toHaveProperty("sessionId");
+    await upgraded.close();
+    expect((await reload(directory)).readWisps()).toEqual(upgraded.readWisps());
   });
 
   it("upgrades Phase 3 records without losing their stable application session", async () => {
@@ -349,9 +507,12 @@ describe("ConversationRepository", () => {
 
     await repository.load();
 
-    expect(repository.getChats().chief).toMatchObject({ kind: "wisp", systemRole: "chief" });
+    expect(repository.getChats().chief).toEqual(expect.objectContaining({ kind: "wisp", wispId: "chief" }));
+    expect(repository.getChats().chief).not.toHaveProperty("systemRole");
+    expect(repository.readWisps().chief).toMatchObject({ name: "chief", role: "Test" });
     const stored = storedRecord(directory, "chief") as { chat: Record<string, unknown> };
     expect(stored.chat).not.toHaveProperty("isCircle");
+    expect(stored.chat).not.toHaveProperty("name");
     expect(stored.chat).toHaveProperty("kind", "wisp");
     // Messages live in their own rows, not inside the conversation record.
     expect(stored.chat).not.toHaveProperty("messages");
@@ -366,23 +527,38 @@ describe("ConversationRepository", () => {
     });
     await repository.initialize({ first: chat("first") });
 
-    await repository.delete("first");
+    await repository.deleteWisp("first");
 
     expect(repository.getChats()).toEqual({});
+    expect(repository.readWisps()).toEqual({});
     const archives = await readdir(path.join(directory, "deleted-conversations"));
     expect(archives).toHaveLength(1);
     const contents = await readdir(path.join(directory, "deleted-conversations", archives[0]!));
     expect(contents.sort()).toEqual(["pi-config", "pi-session", "workspace"]);
   });
 
-  it("enforces protected deletion and preserves the stored graph", async () => {
-    const directory = await mkdtemp(path.join(os.tmpdir(), "wisp-protected-delete-"));
+  it("deletes a Wisp's conversation only with the Wisp", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "wisp-conversation-delete-"));
     const repository = new ConversationRepository({ dataDirectory: directory });
-    await repository.initialize({ leader: { ...chat("leader"), systemRole: "chief" } });
+    await repository.initialize({ first: chat("first") });
 
-    await expect(repository.delete("leader")).rejects.toMatchObject({ code: "invalid_request" });
+    await expect(repository.delete("first")).rejects.toMatchObject({ code: "invalid_request" });
 
-    expect(repository.getChats().leader).toMatchObject({ id: "leader", systemRole: "chief" });
+    expect(repository.getChats().first).toMatchObject({ id: "first" });
+    expect(repository.readWisps()).toHaveProperty("first");
+  });
+
+  it("archives a circle's workspace when it is deleted", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "wisp-circle-delete-"));
+    const repository = new ConversationRepository({ dataDirectory: directory });
+    await repository.initialize({ first: chat("first") });
+    await repository.create(circle("crew", ["first"]));
+
+    await repository.delete("crew");
+
+    expect(Object.keys(repository.getChats())).toEqual(["first"]);
+    const [archive] = await readdir(path.join(directory, "deleted-conversations"));
+    expect(await readdir(path.join(directory, "deleted-conversations", archive!))).toEqual(["workspace"]);
   });
 
   it("persists member pruning in the same deletion transaction", async () => {
@@ -394,7 +570,7 @@ describe("ConversationRepository", () => {
       crew: { ...chat("crew", true), memberIds: ["second", "first"] },
     });
 
-    await repository.delete("first");
+    await repository.deleteWisp("first");
 
     expect(repository.getChats().crew).toMatchObject({ memberIds: ["second"] });
     const restored = new ConversationRepository({ dataDirectory: directory });
@@ -467,6 +643,7 @@ describe("ConversationRepository", () => {
     await repository.load();
     await repository.initialize({ first: chat("first") });
     const before = repository.list();
+    const wispsBefore = structuredClone(repository.readWisps());
     const { sessionDirectory } = repository.getAgentContext("first");
     // Every write to either table now aborts, as a full disk or I/O error would.
     const saboteur = new DatabaseSync(path.join(directory, "conversations.sqlite"));
@@ -474,6 +651,7 @@ describe("ConversationRepository", () => {
       CREATE TRIGGER fail_message_insert BEFORE INSERT ON messages BEGIN SELECT RAISE(ABORT, 'disk full'); END;
       CREATE TRIGGER fail_message_update BEFORE UPDATE ON messages BEGIN SELECT RAISE(ABORT, 'disk full'); END;
       CREATE TRIGGER fail_conversation_update BEFORE UPDATE ON conversations BEGIN SELECT RAISE(ABORT, 'disk full'); END;
+      CREATE TRIGGER fail_wisp_update BEFORE UPDATE ON wisps BEGIN SELECT RAISE(ABORT, 'disk full'); END;
     `);
     saboteur.close();
 
@@ -489,11 +667,16 @@ describe("ConversationRepository", () => {
         sessionFile: path.join(sessionDirectory, "history.jsonl"),
       }),
     ).rejects.toBeDefined();
-    await expect(repository.update("first", { kind: "wisp", name: "Renamed" })).rejects.toBeDefined();
+    await expect(repository.updateWisp("first", { name: "Renamed" })).rejects.toBeDefined();
+    await expect(repository.update("first", { kind: "wisp", unread: true })).rejects.toBeDefined();
 
     expect(repository.list()).toEqual(before);
+    expect(repository.readWisps()).toEqual(wispsBefore);
+    expect(repository.getAgentContext("first").modelOverride).toBeNull();
     // Nothing partial reached the disk either.
-    expect((await reload(directory)).list()).toEqual(before);
+    const restored = await reload(directory);
+    expect(restored.list()).toEqual(before);
+    expect(restored.readWisps()).toEqual(wispsBefore);
   });
 
   it("restores every kind of change after a restart", async () => {
@@ -501,7 +684,7 @@ describe("ConversationRepository", () => {
     const repository = new ConversationRepository({ dataDirectory: directory });
     await repository.load();
     await repository.initialize({ first: chat("first"), second: chat("second") });
-    await repository.create({ ...chat("circle", true), memberIds: ["first", "second"] });
+    await repository.create(circle("circle", ["first", "second"]));
     await repository.appendMessage("first", { id: "reply", type: "incoming", text: "Streaming", status: "streaming" });
     await repository.appendMessage("first", { id: "reply", type: "incoming", text: "Done", status: "complete" });
     await repository.appendMessage("first", {
@@ -511,7 +694,8 @@ describe("ConversationRepository", () => {
       options: [{ key: "yes", label: "Yes" }],
     });
     await repository.answerPrompt("first", "question", "yes");
-    await repository.update("first", { kind: "wisp", name: "Renamed", unread: true });
+    await repository.updateWisp("first", { name: "Renamed" });
+    await repository.update("first", { kind: "wisp", unread: true });
     await repository.markRead("first");
     await repository.setModelOverride("first", { providerId: "openrouter", modelId: "openai/gpt-oss-120b" });
     const { sessionDirectory } = repository.getAgentContext("first");
@@ -519,12 +703,18 @@ describe("ConversationRepository", () => {
       sessionId: "pi-first",
       sessionFile: path.join(sessionDirectory, "history.jsonl"),
     });
-    await repository.delete("second");
+    await repository.deleteWisp("second");
     await repository.close();
 
     const restarted = await reload(directory);
 
     expect(restarted.list()).toEqual(repository.list());
+    expect(restarted.readWisps()).toEqual(repository.readWisps());
+    expect(restarted.readWisps().first?.name).toBe("Renamed");
+    expect(restarted.getAgentContext("first").modelOverride).toEqual({
+      providerId: "openrouter",
+      modelId: "openai/gpt-oss-120b",
+    });
     expect(restarted.getChats().circle).toMatchObject({ memberIds: ["first"] });
     expect(restarted.getChats().first?.messages.map(({ id }) => id)).toEqual(["first:message:0", "reply", "question"]);
   });

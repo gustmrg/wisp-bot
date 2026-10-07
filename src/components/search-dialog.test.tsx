@@ -2,34 +2,21 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { ChatSummaryCollection } from "@/chat-data";
+import type { ChatViewCollection } from "@/chat-data";
 import { SearchDialog } from "@/components/search-dialog";
 import type { WispApi } from "../../shared/contracts";
 import type { MessageSearchHit } from "../../shared/conversations";
+import { wispChatView } from "@/test/chat-fixtures";
 
-const chats: ChatSummaryCollection = {
-  atlas: {
-    id: "atlas",
-    name: "Atlas",
-    label: "Research",
-    description: "Finds relevant information",
-    kind: "wisp",
-    shape: "circle",
-    notifyOnUpdatesEnabled: true,
-    preview: "Latest research",
-    timestamp: "Now",
-  },
-  pixel: {
-    id: "pixel",
-    name: "Pixel",
-    label: "Design",
-    description: "Creates interfaces",
-    kind: "wisp",
-    shape: "square",
-    notifyOnUpdatesEnabled: true,
-    preview: "Designing",
-    timestamp: "Now",
-  },
+const chats: ChatViewCollection = {
+  atlas: wispChatView("atlas", {
+    wisp: { name: "Atlas", role: "Research", soul: "Finds relevant information" },
+    chat: { preview: "Latest research" },
+  }),
+  pixel: wispChatView("pixel", {
+    wisp: { name: "Pixel", role: "Design", soul: "Creates interfaces", shape: "square" },
+    chat: { preview: "Designing" },
+  }),
 };
 
 const hits: MessageSearchHit[] = [
@@ -82,13 +69,13 @@ describe("SearchDialog", () => {
     expect(handlers.onSelectChat).not.toHaveBeenCalled();
   });
 
-  it("matches names, labels, and descriptions without the backend", async () => {
+  it("matches Wisp names and roles without the backend", async () => {
     const user = userEvent.setup();
     searchMessages.mockResolvedValue({ ok: true, value: [] });
     const handlers = renderDialog();
 
     await user.click(screen.getByRole("button", { name: "Wisps" }));
-    await user.type(screen.getByRole("textbox", { name: "Search" }), "interfaces");
+    await user.type(screen.getByRole("textbox", { name: "Search" }), "design");
 
     expect(screen.queryByRole("button", { name: /Atlas/ })).not.toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: /Pixel/ }));

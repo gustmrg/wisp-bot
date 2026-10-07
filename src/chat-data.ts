@@ -1,3 +1,5 @@
+import type { ChatId, CircleSummary, Wisp, WispSummary } from "../shared/conversations";
+
 export type {
   Chat,
   ChatBase,
@@ -11,11 +13,22 @@ export type {
   CircleSummary,
   Message,
   MessageStatus,
-  NewChat,
   NewCircle,
   NewWisp,
+  Wisp,
+  WispChanges,
   WispChat,
   WispChatChanges,
+  WispCollection,
+  WispId,
   WispShape,
   WispSummary,
 } from "../shared/conversations";
+
+/** A Wisp's own conversation, shown with the Wisp. */
+export type WispChatView = WispSummary & { wisp: Wisp };
+/** A circle, shown with the Wisps in it. */
+export type CircleChatView = CircleSummary & { members: ReadonlyArray<Wisp> };
+/** A conversation as the app shows it: its summary with the Wisps it involves. */
+export type ChatView = WispChatView | CircleChatView;
+export type ChatViewCollection = Record<ChatId, ChatView>;

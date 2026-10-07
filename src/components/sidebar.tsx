@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { PanelLeftCloseIcon, PlusIcon, SearchIcon, ShieldAlertIcon, UserIcon } from "lucide-react";
 
-import type { ChatId, ChatSummaryCollection } from "@/chat-data";
+import type { ChatId, ChatViewCollection, NewWisp } from "@/chat-data";
 import { ChatAvatar } from "@/components/chat-avatar";
-import { CreateAgentDialog, type NewAgent } from "@/components/create-agent-dialog";
+import { CreateAgentDialog } from "@/components/create-agent-dialog";
 import { MobileNavigation } from "@/components/mobile-navigation";
 import { Button } from "@/components/ui/button";
 import type { ManagedConversationStatus } from "../../shared/conversations";
@@ -11,6 +11,7 @@ import type { ModelSelection } from "../../shared/contracts";
 import type { ToolApprovalRequest } from "../../shared/tool-policy";
 import type { CurrentUser } from "@/config/app-metadata";
 import { useClock } from "@/hooks/use-clock";
+import { chatName } from "@/lib/chat-schema";
 import { chatActivityDate, chatActivityLabel } from "@/lib/date-dividers";
 import { sidebarLayoutStyle } from "@/lib/layout";
 import { panelResizer, profileAvatar } from "@/lib/ui-classes";
@@ -18,7 +19,7 @@ import { cn } from "@/lib/utils";
 
 interface SidebarProps {
   activeChatId: ChatId;
-  chats: ChatSummaryCollection;
+  chats: ChatViewCollection;
   collapsed: boolean;
   currentUser: CurrentUser;
   width: number;
@@ -29,7 +30,10 @@ interface SidebarProps {
   loading?: boolean;
   error?: string | null;
   onCollapsedChange: (collapsed: boolean) => void;
-  onCreate: (agent: NewAgent, model: ModelSelection | null) => Promise<boolean> | void;
+  onCreate: (
+    wisp: NewWisp,
+    options: { notifyOnUpdatesEnabled: boolean; model: ModelSelection | null },
+  ) => Promise<boolean> | void;
   onOpenSearch: () => void;
   onOpenSettings: () => void;
   onResizeStart: (event: ReactPointerEvent<HTMLDivElement>) => void;
@@ -182,16 +186,24 @@ function Sidebar({
                 type="button"
                 aria-current={selected ? "page" : undefined}
                 aria-label={
-                  collapsed ? (pendingApproval ? `${chat.name}, waiting for your approval` : chat.name) : undefined
+                  collapsed
+                    ? pendingApproval
+                      ? `${chatName(chat)}, waiting for your approval`
+                      : chatName(chat)
+                    : undefined
                 }
                 title={
-                  collapsed ? (pendingApproval ? `${chat.name} — waiting for your approval` : chat.name) : undefined
+                  collapsed
+                    ? pendingApproval
+                      ? `${chatName(chat)} — waiting for your approval`
+                      : chatName(chat)
+                    : undefined
                 }
                 key={chatId}
                 onClick={() => onSelectChat(chatId)}
               >
                 <span className="conversation-avatar relative inline-flex flex-none">
-                  <ChatAvatar chat={chat} chats={chats} />
+                  <ChatAvatar chat={chat} />
                   {chat.unread ? <span className={unreadIndicator} aria-label="Unread activity" /> : null}
                   {pendingApproval ? (
                     <span className={approvalIndicator} aria-hidden="true">
@@ -203,7 +215,7 @@ function Sidebar({
                   <span className="flex min-w-0 flex-1 flex-col">
                     <span className="flex min-w-0 items-baseline gap-2">
                       <strong className="min-w-0 flex-1 overflow-hidden text-base leading-[17px] font-semibold text-ellipsis whitespace-nowrap">
-                        {chat.name}
+                        {chatName(chat)}
                       </strong>
                       {activityDate ? (
                         <time

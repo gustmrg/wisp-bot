@@ -13,7 +13,7 @@ import { runCli } from "../../server/cli.js";
 import { MasterKeyEncryption } from "../../server/master-key.js";
 import { createWispServer, type WispServer } from "../../server/wisp-server.js";
 import type { BackendResult } from "../../shared/contracts.js";
-import type { Chat } from "../../shared/conversations.js";
+import type { Chat, Wisp } from "../../shared/conversations.js";
 import { decodeRemoteJson, encodeRemoteJson } from "../../shared/remote-codec.js";
 import type { DeviceCredentials, ServerDescriptor } from "../../shared/remote-protocol.js";
 
@@ -28,18 +28,7 @@ afterEach(async () => {
   await Promise.all(directories.splice(0).map((directory) => rm(directory, { recursive: true, force: true })));
 });
 
-const atlas: Chat = {
-  id: "atlas",
-  name: "Atlas",
-  label: "Research",
-  description: "",
-  kind: "wisp",
-  shape: "circle",
-  notifyOnUpdatesEnabled: true,
-  preview: "Ready",
-  timestamp: "2026-10-05T12:00:00.000Z",
-  messages: [],
-};
+const atlas: Wisp = { id: "atlas", name: "Atlas", role: "Research", soul: "", shape: "circle" };
 
 interface Harness {
   server: WispServer;
@@ -188,7 +177,9 @@ async function setUpWisp(server: WispServer, credentials: DeviceCredentials): Pr
       apiKey: "test-key",
     }),
   ).toMatchObject({ ok: true });
-  expect(await rpc(server, credentials, "createConversation", { conversation: atlas })).toMatchObject({ ok: true });
+  expect(await rpc(server, credentials, "createWisp", { wisp: atlas, notifyOnUpdatesEnabled: true })).toMatchObject({
+    ok: true,
+  });
 }
 
 describe("Wisp server", () => {
@@ -241,9 +232,16 @@ describe("Wisp server", () => {
       headers: { Authorization: `Bearer ${credentials.accessToken}` },
     });
     const descriptor = ((await response.json()) as { value: ServerDescriptor }).value;
-    expect(descriptor).toMatchObject({ protocolVersion: 1, serverId: harness.server.serverId, version: "1.2.3" });
+    expect(descriptor).toMatchObject({ protocolVersion: 2, serverId: harness.server.serverId, version: "1.2.3" });
     expect(descriptor.operations).toEqual(
-      expect.arrayContaining(["createConversation", "sendMessage", "getMcpSettings", "transcribeAudio", "listSkills"]),
+      expect.arrayContaining([
+        "createWisp",
+        "createConversation",
+        "sendMessage",
+        "getMcpSettings",
+        "transcribeAudio",
+        "listSkills",
+      ]),
     );
     for (const desktopOnly of ["checkForUpdates", "getLaunchAtLoginState", "openReleasesPage", "agentEvent"]) {
       expect(descriptor.operations).not.toContain(desktopOnly);
@@ -293,7 +291,7 @@ describe("Wisp server", () => {
     const credentials = await pair(harness);
     await setUpWisp(harness.server, credentials);
     const first = await openEvents(harness.server, credentials);
-    await rpc(harness.server, credentials, "updateConversation", { conversationId: "atlas", changes: { name: "A" } });
+    await rpc(harness.server, credentials, "updateWisp", { wispId: "atlas", changes: { name: "A" } });
     await rpc(harness.server, credentials, "markConversationRead", { conversationId: "atlas" });
     await rpc(harness.server, credentials, "sendMessage", { conversationId: "atlas", requestId: "r1", text: "Hi" });
     const seen = await first.waitFor((event) => event.type === "agentEvent");

@@ -5,12 +5,15 @@ import {
   parseAnswerConversationPromptRequest,
   parseAppendConversationMessageRequest,
   parseCreateConversationRequest,
+  parseCreateWispRequest,
   parseDeleteConversationRequest,
+  parseDeleteWispRequest,
   parseInitializeConversationsRequest,
   parseMarkConversationReadRequest,
   parseMessagePageRequest,
   parseSearchMessagesRequest,
   parseUpdateConversationRequest,
+  parseUpdateWispRequest,
 } from "../validators.js";
 
 export function registerConversationHandlers(
@@ -27,11 +30,26 @@ export function registerConversationHandlers(
       (payload) => service.initialize(parseInitializeConversationsRequest(payload).chats),
     ],
     [
-      WISP_IPC_CHANNELS.createConversation,
+      WISP_IPC_CHANNELS.createWisp,
       (payload) => {
-        const request = parseCreateConversationRequest(payload);
-        return service.create(request.conversation, request.model);
+        const request = parseCreateWispRequest(payload);
+        return service.createWisp(request.wisp, {
+          notifyOnUpdatesEnabled: request.notifyOnUpdatesEnabled,
+          model: request.model,
+        });
       },
+    ],
+    [
+      WISP_IPC_CHANNELS.updateWisp,
+      (payload) => {
+        const request = parseUpdateWispRequest(payload);
+        return service.updateWisp(request.wispId, request.changes);
+      },
+    ],
+    [WISP_IPC_CHANNELS.deleteWisp, (payload) => service.deleteWisp(parseDeleteWispRequest(payload).wispId)],
+    [
+      WISP_IPC_CHANNELS.createConversation,
+      (payload) => service.create(parseCreateConversationRequest(payload).conversation),
     ],
     [
       WISP_IPC_CHANNELS.updateConversation,

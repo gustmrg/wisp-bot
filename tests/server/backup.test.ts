@@ -13,7 +13,7 @@ import { runCli } from "../../server/cli.js";
 import { MasterKeyEncryption } from "../../server/master-key.js";
 import { createWispServer, type WispServer } from "../../server/wisp-server.js";
 import type { BackendResult } from "../../shared/contracts.js";
-import type { Chat } from "../../shared/conversations.js";
+import type { Wisp } from "../../shared/conversations.js";
 import type { DeviceCredentials } from "../../shared/remote-protocol.js";
 
 const silent = new StructuredLogger({ info: () => undefined, warn: () => undefined });
@@ -29,18 +29,7 @@ async function temporary(prefix: string): Promise<string> {
   return directory;
 }
 
-const atlas: Chat = {
-  id: "atlas",
-  name: "Atlas",
-  label: "",
-  description: "",
-  kind: "wisp",
-  shape: "circle",
-  notifyOnUpdatesEnabled: true,
-  preview: "",
-  timestamp: "2026-10-05T12:00:00.000Z",
-  messages: [],
-};
+const atlas: Wisp = { id: "atlas", name: "Atlas", role: "", soul: "", shape: "circle" };
 
 async function start(dataDirectory: string, masterKey: Buffer, options: { adminSocket?: boolean } = {}) {
   const server = await createWispServer({
@@ -96,7 +85,7 @@ async function populated() {
     selection: { providerId: "openrouter", modelId: "openai/gpt-oss-120b" },
     apiKey: "sk-saved",
   });
-  await rpc("createConversation", { conversation: atlas });
+  await rpc("createWisp", { wisp: atlas, notifyOnUpdatesEnabled: true });
   const workspaces = path.join(dataDirectory, "backend", "workspaces");
   const [wispWorkspace] = await readdir(workspaces);
   await writeFile(path.join(workspaces, wispWorkspace!, "notes.md"), "# Notes\n");

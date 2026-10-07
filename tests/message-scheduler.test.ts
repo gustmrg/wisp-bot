@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { nextOccurrence, normalizeScheduledMessage } from "../backend/message-schedule.js";
 import { parseScheduleMessageRequest, parseUpdateScheduledMessageRequest } from "../backend/validators.js";
-import { setupMessaging, START, wisp } from "./helpers/messaging-harness.js";
+import { newWisp, setupMessaging, START } from "./helpers/messaging-harness.js";
 
 async function setup(options: Parameters<typeof setupMessaging>[0] = {}) {
   const harness = await setupMessaging(options);
@@ -152,14 +152,14 @@ describe("MessageScheduler", () => {
 
   it("removes a Wisp's scheduled messages with the Wisp", async () => {
     const harness = await setup();
-    await harness.service.create(wisp("two"));
+    await harness.service.createWisp(newWisp("two"), { notifyOnUpdatesEnabled: true });
     await harness.scheduler.schedule({
       conversationId: "two",
       text: "Never sent",
       schedule: { kind: "once", at: inMinutes(5) },
       timeZone: "UTC",
     });
-    await harness.service.delete("two");
+    await harness.service.deleteWisp("two");
 
     expect(harness.removed).toHaveBeenCalled();
     await vi.waitFor(() => expect(harness.views.at(-1)).toEqual({ messages: [] }));

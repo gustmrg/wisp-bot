@@ -28,10 +28,13 @@ import type {
   MessageSearchHit,
   SearchMessagesRequest,
   CreateConversationRequest,
+  CreateWispRequest,
   DeleteConversationRequest,
+  DeleteWispRequest,
   InitializeConversationsRequest,
   MarkConversationReadRequest,
   UpdateConversationRequest,
+  UpdateWispRequest,
 } from "./conversations.js";
 import type {
   MessageQueueView,
@@ -93,6 +96,9 @@ export const WISP_IPC_CHANNELS = {
   removeProviderCredential: "wisp:settings:ai:remove-credential",
   getConversationState: "wisp:conversations:get",
   initializeConversations: "wisp:conversations:initialize",
+  createWisp: "wisp:wisps:create",
+  updateWisp: "wisp:wisps:update",
+  deleteWisp: "wisp:wisps:delete",
   createConversation: "wisp:conversations:create",
   updateConversation: "wisp:conversations:update",
   deleteConversation: "wisp:conversations:delete",
@@ -444,6 +450,9 @@ export interface WispApi {
   removeProviderCredential(request: RemoveProviderCredentialRequest): Promise<BackendResult<AiSettingsView>>;
   getConversationState(): Promise<BackendResult<ConversationStateView>>;
   initializeConversations(request: InitializeConversationsRequest): Promise<BackendResult<ConversationStateView>>;
+  createWisp(request: CreateWispRequest): Promise<BackendResult<ConversationStateView>>;
+  updateWisp(request: UpdateWispRequest): Promise<BackendResult<ConversationStateView>>;
+  deleteWisp(request: DeleteWispRequest): Promise<BackendResult<ConversationStateView>>;
   createConversation(request: CreateConversationRequest): Promise<BackendResult<ConversationStateView>>;
   updateConversation(request: UpdateConversationRequest): Promise<BackendResult<ConversationStateView>>;
   deleteConversation(request: DeleteConversationRequest): Promise<BackendResult<ConversationStateView>>;

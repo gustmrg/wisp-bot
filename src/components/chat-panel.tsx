@@ -1,10 +1,10 @@
 import { useEffect, useLayoutEffect, useRef } from "react";
 import { ArrowDownIcon, ChevronLeftIcon, SettingsIcon } from "lucide-react";
 
-import type { ChatSummary, ChatSummaryCollection, Message } from "@/chat-data";
+import type { ChatView, Message } from "@/chat-data";
 import type { ManagedConversationStatus } from "../../shared/conversations";
 import type { ToolApprovalDecision, ToolApprovalRequest } from "../../shared/tool-policy";
-import { getCircleMembers } from "@/lib/circle-members";
+import { chatName } from "@/lib/chat-schema";
 import { withDateDividers } from "@/lib/date-dividers";
 import { isAttached, type MessageWindow } from "@/lib/message-windows";
 import { mainPanel } from "@/lib/ui-classes";
@@ -49,8 +49,7 @@ function messageElement(transcript: HTMLElement, messageId: string | undefined):
 interface ChatPanelProps {
   hidden?: boolean;
   onBack?: () => void;
-  chat: ChatSummary;
-  chats: ChatSummaryCollection;
+  chat: ChatView;
   /** The loaded part of the transcript; undefined until its first page arrives. */
   transcript: MessageWindow | undefined;
   status: ManagedConversationStatus;
@@ -82,7 +81,6 @@ function ChatPanel({
   hidden = false,
   onBack,
   chat,
-  chats,
   transcript,
   status,
   activity,
@@ -110,7 +108,8 @@ function ChatPanel({
   const shown = useRef<TranscriptView | null>(null);
   const mobile = Boolean(onBack);
   const focusChatId = mobile && !hidden ? chat.id : null;
-  const members = getCircleMembers(chat, chats);
+  const members = chat.kind === "circle" ? chat.members : [];
+  const name = chatName(chat);
   const messages = transcript?.messages ?? NO_MESSAGES;
   const transcriptMessages = withDateDividers(messages);
   const working = status === "working";
@@ -194,10 +193,10 @@ function ChatPanel({
           </Button>
         ) : null}
         <div className="chat-heading inline-flex min-w-0 items-center gap-2 rounded-lg p-1">
-          <ChatAvatar chat={chat} chats={chats} size="sm" />
+          <ChatAvatar chat={chat} size="sm" />
           <div className="min-w-0">
             <h1 ref={titleRef} tabIndex={-1} className="block truncate font-semibold outline-none">
-              {chat.name}
+              {name}
             </h1>
           </div>
         </div>
@@ -232,7 +231,7 @@ function ChatPanel({
           className="chat-transcript relative min-h-0 flex-1 overflow-x-hidden overflow-y-auto outline-none [overflow-anchor:none]"
           ref={transcriptRef}
           tabIndex={0}
-          aria-label={`${chat.name} conversation`}
+          aria-label={`${name} conversation`}
           onScroll={loadPageAtEdge}
         >
           <div
@@ -265,7 +264,7 @@ function ChatPanel({
                   <ToolApprovalCard
                     key={request.approvalId}
                     request={request}
-                    wispName={chat.name}
+                    wispName={name}
                     allowAlwaysAvailable={allowAlwaysAvailable}
                     onResolve={(decision) => onResolveApproval(request, decision)}
                   />
@@ -276,8 +275,8 @@ function ChatPanel({
                 role="status"
                 className="mt-3 flex items-center gap-2 text-dim text-sm [&_svg]:animate-working-pulse"
               >
-                <ChatAvatar chat={chat} chats={chats} size="sm" />
-                <span>{activity || `${chat.name} is working…`}</span>
+                <ChatAvatar chat={chat} size="sm" />
+                <span>{activity || `${name} is working…`}</span>
               </div>
             ) : null}
           </div>

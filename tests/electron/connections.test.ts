@@ -19,7 +19,7 @@ import { MasterKeyEncryption } from "../../server/master-key.js";
 import { createWispServer, type WispServer } from "../../server/wisp-server.js";
 import type { ConnectionsView } from "../../shared/connections.js";
 import { WISP_IPC_CHANNELS, type BackendResult } from "../../shared/contracts.js";
-import type { Chat, ConversationStateView } from "../../shared/conversations.js";
+import type { ConversationStateView } from "../../shared/conversations.js";
 
 type Handler = (event: IpcMainInvokeEvent, payload?: unknown) => Promise<BackendResult<unknown>>;
 
@@ -33,7 +33,8 @@ afterEach(async () => {
   process.env = { ...environment };
 });
 
-const wisp = (id: string, name: string): Chat => ({
+/** A Wisp's conversation in the app's old local-storage format, which `initializeConversations` reads. */
+const wisp = (id: string, name: string): Record<string, unknown> => ({
   id,
   name,
   label: "",
@@ -253,7 +254,10 @@ describe("desktop connections", () => {
       selection: { providerId: "openrouter", modelId: "openai/gpt-oss-120b" },
       apiKey: "test-key",
     });
-    await app.invoke(WISP_IPC_CHANNELS.createConversation, { conversation: wisp("remote", "Remote") });
+    await app.invoke(WISP_IPC_CHANNELS.createWisp, {
+      wisp: { id: "remote", name: "Remote", role: "", soul: "", shape: "circle" },
+      notifyOnUpdatesEnabled: true,
+    });
     await app.invoke(WISP_IPC_CHANNELS.sendMessage, { conversationId: "remote", requestId: "r1", text: "Hi" });
     await vi.waitFor(
       () => {

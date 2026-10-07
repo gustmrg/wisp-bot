@@ -80,8 +80,9 @@ function context(conversationId: string): ConversationAgentContext {
     conversationId,
     sessionId: `${conversationId}-session`,
     name: conversationId,
-    label: "Test",
-    description: "Test Wisp",
+    wispId: conversationId,
+    role: "Test",
+    soul: "Test Wisp",
     userName: "John",
     workspaceDirectory: `/workspaces/${conversationId}`,
     sessionDirectory: `/sessions/${conversationId}`,
@@ -195,12 +196,12 @@ describe("PiConversationAgent", () => {
 
     await agent.updateContext({
       ...initialContext,
-      description: "Financial advisor",
+      soul: "Financial advisor",
       userName: "Jane",
       userProfile: { preferredName: "Jane", aboutYou: "Developer", responsePreferences: "Be concise" },
     });
 
-    expect(initialContext.description).toBe("Financial advisor");
+    expect(initialContext.soul).toBe("Financial advisor");
     expect(initialContext.userName).toBe("Jane");
     expect(initialContext.userProfile?.aboutYou).toBe("Developer");
     expect(sessions.get("one")?.reloadCount).toBe(1);
@@ -216,7 +217,7 @@ describe("PiConversationAgent", () => {
     await agent.start();
 
     await agent.applyModel(selection());
-    await agent.updateContext({ ...initialContext, description: "Financial advisor" });
+    await agent.updateContext({ ...initialContext, soul: "Financial advisor" });
 
     // Ready without loading history: startup cost no longer scales with every Wisp's transcript.
     expect(sessions.size).toBe(0);

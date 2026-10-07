@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { normalizeQueuedMessage } from "../backend/message-queue.js";
 import { MAX_QUEUED_MESSAGES_PER_WISP } from "../shared/message-queue.js";
-import { MODEL, setupMessaging, wisp } from "./helpers/messaging-harness.js";
+import { MODEL, newWisp, setupMessaging } from "./helpers/messaging-harness.js";
 
 function summary(messages: ReadonlyArray<{ type: string; text?: string; status?: string }>) {
   return messages.map((message) => `${message.type}:${message.text ?? ""}:${message.status ?? ""}`);
@@ -129,9 +129,9 @@ describe("MessageQueue", () => {
 
   it("removes a Wisp's waiting messages with the Wisp", async () => {
     const harness = await setupMessaging({ model: null });
-    await harness.service.create(wisp("two"));
+    await harness.service.createWisp(newWisp("two"), { notifyOnUpdatesEnabled: true });
     await harness.queue.enqueue("two", "Never sent");
-    await harness.service.delete("two");
+    await harness.service.deleteWisp("two");
 
     expect(harness.removed).toHaveBeenCalled();
     await vi.waitFor(() => expect(harness.queueViews.at(-1)).toEqual({ messages: [] }));

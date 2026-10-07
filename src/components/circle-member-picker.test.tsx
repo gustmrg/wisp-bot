@@ -2,22 +2,11 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
-import type { WispChat } from "@/chat-data";
 import { CircleMemberPicker } from "@/components/circle-member-picker";
+import { testWisp } from "@/test/chat-fixtures";
 
-function wisp(id: string, name: string): WispChat {
-  return {
-    id,
-    kind: "wisp",
-    name,
-    label: "Test",
-    description: "Test",
-    shape: "circle",
-    notifyOnUpdatesEnabled: true,
-    preview: "Ready",
-    timestamp: "Now",
-    messages: [],
-  };
+function wisp(id: string, name: string) {
+  return testWisp(id, { name });
 }
 
 const atlas = wisp("atlas", "Atlas");

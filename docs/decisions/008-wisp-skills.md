@@ -22,7 +22,7 @@ edits, including auto-approved ones, rewrite standing instructions.
 
 ## Storage
 
-Skills live in `pi-config/<sessionId>/skills/`, beside the Wisp's other
+Skills live in `pi-config/<Wisp storage ID>/skills/`, beside the Wisp's other
 configuration and outside its workspace. File tools cannot reach them. Writes
 go through the backend `SkillStore`, which validates names (lowercase letters,
 numbers, single hyphens, up to 64 characters), descriptions (up to 1,024

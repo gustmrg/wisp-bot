@@ -11,13 +11,17 @@ import type {
 import type {
   AnswerConversationPromptRequest,
   AppendConversationMessageRequest,
+  CircleChat,
   CreateConversationRequest,
+  CreateWispRequest,
   DeleteConversationRequest,
+  DeleteWispRequest,
   InitializeConversationsRequest,
   MarkConversationReadRequest,
   MessagePageRequest,
   SearchMessagesRequest,
   UpdateConversationRequest,
+  UpdateWispRequest,
 } from "../shared/conversations.js";
 import { MAX_MESSAGE_SEARCH_LENGTH, MIN_MESSAGE_SEARCH_LENGTH } from "../shared/message-search.js";
 import { isValidSkillName, type SkillRequest } from "../shared/skills.js";
@@ -42,8 +46,9 @@ import { WispBackendError } from "./backend-error.js";
 import {
   normalizeChatChanges,
   normalizeChat,
-  normalizeChatCollection,
   normalizeMessage,
+  normalizeWisp,
+  normalizeWispChanges,
 } from "./conversation-normalizer.js";
 import { isTimeZone, normalizeMessageSchedule } from "./message-schedule.js";
 
@@ -143,18 +148,38 @@ export function parseApplyModelRequest(value: unknown): ApplyModelRequest {
   };
 }
 
+/** The chats arrive in the app's old local-storage format; the repository reads them. */
 export function parseInitializeConversationsRequest(value: unknown): InitializeConversationsRequest {
   const request = asRecord(value);
-  return { chats: normalizeChatCollection(request.chats) };
+  return { chats: asRecord(request.chats) };
 }
 
 export function parseCreateConversationRequest(value: unknown): CreateConversationRequest {
   const request = asRecord(value);
+  const conversation = normalizeChat(request.conversation);
+  if (conversation.kind !== "circle") throw invalidRequest();
+  return { conversation: conversation satisfies CircleChat };
+}
+
+export function parseCreateWispRequest(value: unknown): CreateWispRequest {
+  const request = asRecord(value);
   const model = request.model;
+  if (typeof request.notifyOnUpdatesEnabled !== "boolean") throw invalidRequest();
   return {
-    conversation: normalizeChat(request.conversation),
+    wisp: normalizeWisp(request.wisp),
+    notifyOnUpdatesEnabled: request.notifyOnUpdatesEnabled,
     ...(model === undefined || model === null ? { model: null } : { model: parseModelSelection(model) }),
   };
+}
+
+export function parseUpdateWispRequest(value: unknown): UpdateWispRequest {
+  const request = asRecord(value);
+  return { wispId: parseId(request.wispId), changes: normalizeWispChanges(request.changes) };
+}
+
+export function parseDeleteWispRequest(value: unknown): DeleteWispRequest {
+  const request = asRecord(value);
+  return { wispId: parseId(request.wispId) };
 }
 
 export function parseUpdateConversationRequest(value: unknown): UpdateConversationRequest {

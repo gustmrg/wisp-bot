@@ -9,6 +9,7 @@ import {
   chatSummary,
   type Chat,
   type ChatChanges,
+  type CircleChat,
   type ChatCollection,
   type ConversationDelta,
   type ConversationStateView,
@@ -17,6 +18,8 @@ import {
   type MessagePageRequest,
   type MessageSearchHit,
   type OutgoingMessage,
+  type Wisp,
+  type WispChanges,
 } from "../shared/conversations.js";
 import type { QueuedMessage } from "../shared/message-queue.js";
 import type { ToolApprovalRequest } from "../shared/tool-policy.js";
@@ -82,6 +85,7 @@ export class ConversationService {
   getState(): ConversationStateView {
     return {
       initialized: this.repository.isInitialized(),
+      wisps: this.repository.readWisps(),
       chats: this.withLiveMessages(this.repository.readChats()),
       statuses: this.registry.statuses(),
       liveMessages: Object.fromEntries(
@@ -111,6 +115,7 @@ export class ConversationService {
         text: "",
         status: "streaming",
         createdAt: event.createdAt,
+        ...this.authorOf(event.conversationId),
       });
       return;
     }
@@ -122,6 +127,7 @@ export class ConversationService {
         text: `${current?.type === "incoming" ? current.text : ""}${event.delta}`,
         status: "streaming",
         ...(current?.createdAt ? { createdAt: current.createdAt } : {}),
+        ...this.authorOf(event.conversationId),
       });
       return;
     }
@@ -133,6 +139,7 @@ export class ConversationService {
         text: current?.type === "incoming" ? current.text : "",
         status: event.type === "assistant_message_completed" ? "complete" : "cancelled",
         ...(current?.createdAt ? { createdAt: current.createdAt } : {}),
+        ...this.authorOf(event.conversationId),
       };
       this.persistLiveMessage(event.conversationId, message);
       return;
@@ -173,7 +180,14 @@ export class ConversationService {
       status: "failed",
       retryable: error.retryable,
       createdAt: current?.createdAt ?? createdAt,
+      ...this.authorOf(conversationId),
     });
+  }
+
+  /** Replies in a Wisp's own conversation are the Wisp's. */
+  private authorOf(conversationId: string): { authorId?: string } {
+    const chat = this.repository.readChat(conversationId);
+    return chat?.kind === "wisp" ? { authorId: chat.wispId } : {};
   }
 
   async initialize(chats: unknown): Promise<ConversationStateView> {
@@ -183,30 +197,56 @@ export class ConversationService {
     return this.getState();
   }
 
-  async create(conversation: Chat, model?: ModelSelection | null): Promise<ConversationStateView> {
-    await this.repository.create(conversation, model ?? null);
-    if (conversation.kind === "wisp") {
-      try {
-        await this.registry.create(this.repository.getAgentContext(conversation.id));
-      } catch (error) {
-        await this.repository.delete(conversation.id).catch(() => undefined);
-        throw error;
-      }
+  /** Creates a Wisp with its own conversation and starts its agent there. */
+  async createWisp(
+    wisp: Wisp,
+    options: { notifyOnUpdatesEnabled: boolean; model?: ModelSelection | null },
+  ): Promise<ConversationStateView> {
+    await this.repository.createWisp(wisp, {
+      notifyOnUpdatesEnabled: options.notifyOnUpdatesEnabled,
+      modelOverride: options.model ?? null,
+    });
+    try {
+      await this.registry.create(this.repository.getAgentContext(wisp.id));
+    } catch (error) {
+      await this.repository.deleteWisp(wisp.id).catch(() => undefined);
+      throw error;
     }
+    return this.getState();
+  }
+
+  async updateWisp(wispId: string, changes: WispChanges): Promise<ConversationStateView> {
+    await this.repository.updateWisp(wispId, changes);
+    if (changes.name !== undefined || changes.role !== undefined || changes.soul !== undefined) {
+      await this.registry.updateContext(this.repository.getAgentContext(wispId));
+    }
+    return this.getState();
+  }
+
+  /** Deletes a Wisp, its own conversation, and its place in circles. */
+  async deleteWisp(wispId: string): Promise<ConversationStateView> {
+    const context = this.repository.readConversationWisp(wispId) ? this.repository.getAgentContext(wispId) : null;
+    if (!context) throw new WispBackendError("not_found", "The Wisp was not found.");
+    await this.registry.delete(wispId);
+    try {
+      await this.repository.deleteWisp(wispId);
+      this.liveMessages.delete(wispId);
+    } catch (error) {
+      await this.registry.create(context).catch(() => undefined);
+      throw error;
+    }
+    this.onConversationsRemoved();
+    return this.getState();
+  }
+
+  /** Creates a circle; a Wisp's own conversation is created with the Wisp. */
+  async create(conversation: CircleChat): Promise<ConversationStateView> {
+    await this.repository.create(conversation);
     return this.getState();
   }
 
   async update(conversationId: string, changes: ChatChanges): Promise<ConversationStateView> {
     await this.repository.update(conversationId, changes);
-    if (
-      changes.kind === "wisp" &&
-      (changes.name !== undefined ||
-        changes.label !== undefined ||
-        changes.description !== undefined ||
-        Object.hasOwn(changes, "tone"))
-    ) {
-      await this.registry.updateContext(this.repository.getAgentContext(conversationId));
-    }
     return this.getState();
   }
 
@@ -283,17 +323,10 @@ export class ConversationService {
     return this.requireDelta(conversationId, {});
   }
 
+  /** Deletes a circle; a Wisp's own conversation goes only with the Wisp. */
   async delete(conversationId: string): Promise<ConversationStateView> {
-    const conversation = this.repository.readChats()[conversationId];
-    const context = conversation?.kind === "wisp" ? this.repository.getAgentContext(conversationId) : null;
-    if (context) await this.registry.delete(conversationId);
-    try {
-      await this.repository.delete(conversationId);
-      this.liveMessages.delete(conversationId);
-    } catch (error) {
-      if (context) await this.registry.create(context).catch(() => undefined);
-      throw error;
-    }
+    await this.repository.delete(conversationId);
+    this.liveMessages.delete(conversationId);
     this.onConversationsRemoved();
     return this.getState();
   }

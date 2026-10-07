@@ -4,23 +4,13 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { ConnectionsView } from "../../shared/connections";
 import type { WispApi } from "../../shared/contracts";
-import type { Chat } from "../../shared/conversations";
+import type { ChatView } from "@/chat-data";
+import { circleChatView, wispChatView } from "@/test/chat-fixtures";
 import { ChatComposer } from "@/components/chat-composer";
 import { ActiveConnectionContext } from "@/features/connections/active-connection";
 
-function wisp(id: string, name = id): Chat {
-  return {
-    id,
-    name,
-    label: "Test",
-    description: "Test",
-    kind: "wisp",
-    shape: "circle",
-    notifyOnUpdatesEnabled: true,
-    preview: "Ready",
-    timestamp: "Now",
-    messages: [],
-  };
+function wisp(id: string, name = id): ChatView {
+  return wispChatView(id, { wisp: { name } });
 }
 
 const defaultProps = {
@@ -175,7 +165,7 @@ describe("ChatComposer", () => {
 
   it("disables circles and exposes the active stop control", () => {
     const onAbort = vi.fn();
-    const circle: Chat = { ...wisp("crew", "Crew"), kind: "circle", memberIds: [] };
+    const circle = circleChatView("crew", [], { name: "Crew" });
     const { rerender } = render(<ChatComposer {...defaultProps} chat={circle} />);
     expect(screen.getByRole("textbox", { name: "Message Crew" })).toBeDisabled();
 
