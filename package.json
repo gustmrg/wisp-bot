@@ -1,6 +1,6 @@
 {
   "name": "wisp-bot",
-  "version": "0.8.0",
+  "version": "0.9.0",
   "description": "Wisp Bot gives you a squad of AI agents that work around the clock and actually get things done.",
   "homepage": "https://github.com/gustmrg/wisp-bot#readme",
   "bugs": {
