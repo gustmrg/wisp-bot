@@ -33,6 +33,18 @@ import type {
   MarkConversationReadRequest,
   UpdateConversationRequest,
 } from "./conversations.js";
+import type {
+  MessageQueueView,
+  QueuedMessageRequest,
+  QueueMessageRequest,
+  UpdateQueuedMessageRequest,
+} from "./message-queue.js";
+import type {
+  ScheduledMessageRequest,
+  ScheduledMessagesView,
+  ScheduleMessageRequest,
+  UpdateScheduledMessageRequest,
+} from "./scheduled-messages.js";
 import type { AttachWorkspaceFilesResult, WorkspaceView } from "./workspace.js";
 import type { SkillRequest, SkillView } from "./skills.js";
 import type { ResolveToolApprovalRequest, ToolApprovalRequest, ToolPolicySettings } from "./tool-policy.js";
@@ -90,6 +102,17 @@ export const WISP_IPC_CHANNELS = {
   conversationChanged: "wisp:conversations:changed",
   getConversationMessages: "wisp:conversations:get-messages",
   searchMessages: "wisp:conversations:search",
+  getScheduledMessages: "wisp:scheduled-messages:get",
+  scheduleMessage: "wisp:scheduled-messages:create",
+  updateScheduledMessage: "wisp:scheduled-messages:update",
+  cancelScheduledMessage: "wisp:scheduled-messages:cancel",
+  sendScheduledMessageNow: "wisp:scheduled-messages:send-now",
+  scheduledMessagesChanged: "wisp:scheduled-messages:changed",
+  getMessageQueue: "wisp:message-queue:get",
+  queueMessage: "wisp:message-queue:add",
+  updateQueuedMessage: "wisp:message-queue:update",
+  cancelQueuedMessage: "wisp:message-queue:cancel",
+  messageQueueChanged: "wisp:message-queue:changed",
   getSessionReport: "wisp:conversations:get-session-report",
   getUsageReport: "wisp:usage:get",
   getToolPolicy: "wisp:tool-policy:get",
@@ -133,6 +156,8 @@ export interface ConversationRequest {
 export interface SendMessageRequest extends ConversationRequest {
   requestId: string;
   text: string;
+  /** Set by the backend when it sends a scheduled message; never accepted from a client. */
+  scheduled?: import("./conversations.js").ScheduledOrigin;
 }
 
 export interface ModelSelection {
@@ -432,6 +457,27 @@ export interface WispApi {
   searchMessages(request: SearchMessagesRequest): Promise<BackendResult<ReadonlyArray<MessageSearchHit>>>;
   /** Pushes what changed after the backend persists agent-driven changes (replies, statuses, context notices). */
   subscribeToConversationChanges(listener: (delta: ConversationDelta) => void): () => void;
+  /** Every scheduled message, soonest first. */
+  getScheduledMessages(): Promise<BackendResult<ScheduledMessagesView>>;
+  /** Schedules a message the backend sends to a Wisp later, even with no app open. */
+  scheduleMessage(request: ScheduleMessageRequest): Promise<BackendResult<ScheduledMessagesView>>;
+  updateScheduledMessage(request: UpdateScheduledMessageRequest): Promise<BackendResult<ScheduledMessagesView>>;
+  cancelScheduledMessage(request: ScheduledMessageRequest): Promise<BackendResult<ScheduledMessagesView>>;
+  /** Sends a scheduled message's next occurrence now; a one-off message is then done. */
+  sendScheduledMessageNow(request: ScheduledMessageRequest): Promise<BackendResult<ScheduledMessagesView>>;
+  /** Pushes every scheduled message after any change, including sends. */
+  subscribeToScheduledMessages(listener: (view: ScheduledMessagesView) => void): () => void;
+  /** Every message waiting for its Wisp, oldest first. */
+  getMessageQueue(): Promise<BackendResult<MessageQueueView>>;
+  /**
+   * Sends a message: it waits in the queue until the Wisp is free, then joins
+   * the transcript right before the reply to it.
+   */
+  queueMessage(request: QueueMessageRequest): Promise<BackendResult<MessageQueueView>>;
+  updateQueuedMessage(request: UpdateQueuedMessageRequest): Promise<BackendResult<MessageQueueView>>;
+  cancelQueuedMessage(request: QueuedMessageRequest): Promise<BackendResult<MessageQueueView>>;
+  /** Pushes every queued message after any change, including a Wisp taking one. */
+  subscribeToMessageQueue(listener: (view: MessageQueueView) => void): () => void;
   getSessionReport(request: ConversationRequest): Promise<BackendResult<WispSessionReport | null>>;
   getUsageReport(request: UsageReportRequest): Promise<BackendResult<UsageReport>>;
   getToolPolicy(): Promise<BackendResult<ToolPolicySettings>>;

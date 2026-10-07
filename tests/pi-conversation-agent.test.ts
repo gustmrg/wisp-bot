@@ -422,3 +422,32 @@ it("stops a context renewal that runs before the prompt and reports a cancellati
   expect(events).not.toHaveBeenCalledWith(expect.objectContaining({ type: "conversation_error", requestId: "r1" }));
   await agent.dispose();
 });
+
+it("tells the model when a message was scheduled, without changing what the user wrote", async () => {
+  vi.useFakeTimers({ toFake: ["Date"], now: new Date("2026-10-07T12:00:00.000Z") });
+  try {
+    const sessions = new Map<string, MockPiSession>();
+    const agent = new PiConversationAgent(context("one"), factoryFor(sessions), { flushDelayMs: 0 });
+    await agent.start();
+    await agent.applyModel(selection());
+    const send = agent.send({
+      conversationId: "one",
+      requestId: "r1",
+      text: "Summarize the news",
+      scheduled: {
+        scheduledMessageId: "scheduled-1",
+        scheduledAt: "2026-10-06T21:00:00.000Z",
+        timeZone: "America/Sao_Paulo",
+      },
+    });
+    await vi.waitFor(() => expect(sessions.get("one")?.prompts).toHaveLength(1));
+    sessions.get("one")?.finishPrompt();
+    await send;
+
+    expect(sessions.get("one")?.prompts).toEqual([
+      "[Sent automatically: the user wrote this message on Tue, Oct 6, 2026, 6:00 PM and scheduled it; it was sent on Wed, Oct 7, 2026, 9:00 AM (America/Sao_Paulo). They may not be present, so do what you can without waiting for their reply.]\n\nSummarize the news",
+    ]);
+  } finally {
+    vi.useRealTimers();
+  }
+});

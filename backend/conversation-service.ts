@@ -1,4 +1,9 @@
-import type { ConversationModelView, ModelSelection, SequencedConversationAgentEvent } from "../shared/contracts.js";
+import type {
+  BackendError,
+  ConversationModelView,
+  ModelSelection,
+  SequencedConversationAgentEvent,
+} from "../shared/contracts.js";
 import {
   assistantMessageId,
   chatSummary,
@@ -13,6 +18,7 @@ import {
   type MessageSearchHit,
   type OutgoingMessage,
 } from "../shared/conversations.js";
+import type { QueuedMessage } from "../shared/message-queue.js";
 import type { ToolApprovalRequest } from "../shared/tool-policy.js";
 import type { AgentRegistry } from "./agent-registry.js";
 import { sanitizeBackendError, WispBackendError } from "./backend-error.js";
@@ -23,6 +29,8 @@ export interface ConversationServiceOptions {
   /** Receives what changed after agent-driven changes are persisted, so the renderer never re-fetches anything. */
   onConversationChanged?: (delta: ConversationDelta) => void;
   logger?: Pick<StructuredLogger, "warn">;
+  /** Called after conversations were deleted or replaced, which also removes their scheduled messages. */
+  onConversationsRemoved?: () => void;
 }
 
 /**
@@ -38,6 +46,7 @@ export class ConversationService {
   private readonly pendingApprovals: () => ReadonlyArray<ToolApprovalRequest>;
   private readonly onConversationChanged: (delta: ConversationDelta) => void;
   private readonly logger: Pick<StructuredLogger, "warn"> | undefined;
+  private readonly onConversationsRemoved: () => void;
 
   constructor(
     repository: ConversationRepository,
@@ -50,11 +59,13 @@ export class ConversationService {
     this.pendingApprovals = pendingApprovals;
     this.onConversationChanged = options.onConversationChanged ?? (() => undefined);
     this.logger = options.logger;
+    this.onConversationsRemoved = options.onConversationsRemoved ?? (() => undefined);
   }
 
   async start(model: ModelSelection | null): Promise<void> {
     this.model = model;
     await this.repository.load();
+    this.failUnansweredRequests();
     await this.registry.restore(this.repository.listAgentContexts(), model);
   }
 
@@ -127,22 +138,47 @@ export class ConversationService {
       return;
     }
     if (event.type === "conversation_error" && event.requestId) {
-      this.persistOutgoingStatus(event.conversationId, event.requestId, "failed");
-      const messageId = event.messageId ?? assistantMessageId(event.requestId);
-      const current = this.getLiveMessage(event.conversationId, messageId);
-      this.persistLiveMessage(event.conversationId, {
-        id: messageId,
-        type: "incoming",
-        text: current?.type === "incoming" && current.text ? current.text : event.error.message,
-        status: "failed",
-        retryable: event.error.retryable,
-        createdAt: current?.createdAt ?? event.createdAt,
+      this.persistRequestFailure(event.conversationId, event.requestId, event.error, event.messageId, event.createdAt);
+    }
+  }
+
+  /**
+   * Requests left without a reply when Wisp last stopped would show as queued
+   * forever; they failed, and the person can retry them.
+   */
+  private failUnansweredRequests(): void {
+    for (const { conversationId, messageId } of this.repository.listUnansweredRequests()) {
+      this.persistRequestFailure(conversationId, messageId, {
+        code: "aborted",
+        message: "Wisp stopped before answering this message.",
+        retryable: true,
       });
     }
   }
 
+  /** Marks the person's message failed and adds the reply saying why. */
+  private persistRequestFailure(
+    conversationId: string,
+    requestId: string,
+    error: BackendError,
+    replyId = assistantMessageId(requestId),
+    createdAt = new Date().toISOString(),
+  ): void {
+    this.persistOutgoingStatus(conversationId, requestId, "failed");
+    const current = this.getLiveMessage(conversationId, replyId);
+    this.persistLiveMessage(conversationId, {
+      id: replyId,
+      type: "incoming",
+      text: current?.type === "incoming" && current.text ? current.text : error.message,
+      status: "failed",
+      retryable: error.retryable,
+      createdAt: current?.createdAt ?? createdAt,
+    });
+  }
+
   async initialize(chats: unknown): Promise<ConversationStateView> {
     await this.repository.initialize(chats);
+    this.onConversationsRemoved();
     await this.registry.restore(this.repository.listAgentContexts(), this.model);
     return this.getState();
   }
@@ -178,6 +214,40 @@ export class ConversationService {
   async appendMessage(conversationId: string, message: OutgoingMessage): Promise<ConversationDelta> {
     const change = await this.repository.appendOutgoingMessage(conversationId, message);
     return this.requireDelta(conversationId, changesOf(change));
+  }
+
+  /**
+   * Hands a Wisp its oldest queued message: moved into the transcript (with
+   * status queued until the reply starts), then sent. Calls `onTaken` once it
+   * has left the queue, and resolves with it after the request has finished,
+   * or with undefined when nothing was waiting. A Wisp that cannot take it
+   * marks it failed, so it can be retried from the transcript.
+   */
+  async deliverNextQueued(conversationId: string, onTaken: () => void): Promise<QueuedMessage | undefined> {
+    const taken = await this.repository.takeQueuedMessage(conversationId, (queued) => ({
+      id: queued.id,
+      type: "outgoing",
+      text: queued.text,
+      createdAt: new Date().toISOString(),
+      status: "queued",
+      ...(queued.scheduled ? { scheduled: queued.scheduled } : {}),
+    }));
+    if (!taken) return undefined;
+    const { queued } = taken;
+    this.publish(conversationId, changesOf(taken.change));
+    onTaken();
+    const request = {
+      conversationId,
+      requestId: queued.id,
+      text: queued.text,
+      ...(queued.scheduled ? { scheduled: queued.scheduled } : {}),
+    };
+    try {
+      await this.registry.dispatch(request);
+    } catch (error) {
+      this.persistRequestFailure(conversationId, queued.id, sanitizeBackendError(error));
+    }
+    return queued;
   }
 
   /**
@@ -224,6 +294,7 @@ export class ConversationService {
       if (context) await this.registry.create(context).catch(() => undefined);
       throw error;
     }
+    this.onConversationsRemoved();
     return this.getState();
   }
 

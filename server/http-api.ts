@@ -39,7 +39,14 @@ const HEARTBEAT_MS = 20_000;
 // A client this far behind is dropped; it reconnects and replays or resyncs.
 const MAX_STREAM_BACKLOG_BYTES = 8 * 1024 * 1024;
 
-const PUSH_OPERATIONS = new Set(["agentEvent", "conversationChanged", "mcpSettingsChanged", "updateState"]);
+const PUSH_OPERATIONS = new Set([
+  "agentEvent",
+  "conversationChanged",
+  "mcpSettingsChanged",
+  "scheduledMessagesChanged",
+  "messageQueueChanged",
+  "updateState",
+]);
 
 export type OperationListener = (event: HandlerEvent, payload: unknown) => Promise<BackendResult<unknown>>;
 

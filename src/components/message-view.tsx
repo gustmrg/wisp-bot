@@ -1,10 +1,11 @@
 import { useState } from "react";
-import { CheckIcon, CircleAlertIcon, CircleStopIcon, CopyIcon } from "lucide-react";
+import { CalendarClockIcon, CheckIcon, CircleAlertIcon, CircleStopIcon, CopyIcon } from "lucide-react";
 
 import type { Message } from "@/chat-data";
 import { copyText } from "@/lib/clipboard";
 import { cn } from "@/lib/utils";
 import { MarkdownView } from "@/components/markdown-view";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 
 interface MessageViewProps {
   message: Message;
@@ -187,9 +188,17 @@ function MessageView({ message, dense = false, onAnswer, onRetry }: MessageViewP
           ))}
         </div>
       ) : null}
-      {message.status === "queued" || message.status === "cancelled" || message.status === "failed" ? (
+      {message.status === "queued" ||
+      message.status === "cancelled" ||
+      message.status === "failed" ||
+      message.scheduled ? (
         <div className={cn("mt-1 flex items-center gap-2 text-2xs text-faint", outgoing && "mr-1")}>
-          <span>{message.status === "queued" ? "Queued" : message.status === "cancelled" ? "Stopped" : "Failed"}</span>
+          {message.scheduled ? <ScheduledBadge scheduledAt={message.scheduled.scheduledAt} /> : null}
+          {message.status === "queued" || message.status === "cancelled" || message.status === "failed" ? (
+            <span>
+              {message.status === "queued" ? "Queued" : message.status === "cancelled" ? "Stopped" : "Failed"}
+            </span>
+          ) : null}
           {!outgoing && message.status === "failed" && message.retryable ? (
             <button
               type="button"
@@ -202,6 +211,25 @@ function MessageView({ message, dense = false, onAnswer, onRetry }: MessageViewP
         </div>
       ) : null}
     </div>
+  );
+}
+
+/** Marks a message the backend sent from a scheduled message rather than one typed then. */
+function ScheduledBadge({ scheduledAt }: { scheduledAt: string }) {
+  const when = new Date(scheduledAt).toLocaleString([], {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+  return (
+    <Tooltip>
+      <TooltipTrigger render={<span />} className="inline-flex items-center gap-1" delay={300}>
+        <CalendarClockIcon aria-hidden="true" className="size-3 flex-none" />
+        Scheduled
+      </TooltipTrigger>
+      <TooltipContent>{`Sent automatically · scheduled ${when}`}</TooltipContent>
+    </Tooltip>
   );
 }
 

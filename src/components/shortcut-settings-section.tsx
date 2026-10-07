@@ -8,6 +8,7 @@ import {
   DEFAULT_SHORTCUTS,
   formatShortcut,
   reservedShortcutLabel,
+  SCHEDULE_SEND_SHORTCUT,
   SHORTCUT_LABELS,
   shortcutFromEvent,
   shortcutKeys,
@@ -25,6 +26,7 @@ const FIXED_SHORTCUTS: ReadonlyArray<{ label: string; keys: ReadonlyArray<string
   { label: "Search conversations", keys: shortcutKeys("Ctrl+KeyK") },
   { label: "Send message", keys: ["Enter"] },
   { label: "New line", keys: ["Shift", "Enter"] },
+  { label: "Schedule message", keys: shortcutKeys(SCHEDULE_SEND_SHORTCUT) },
   { label: "Cancel voice recording", keys: ["Esc"] },
 ];
 

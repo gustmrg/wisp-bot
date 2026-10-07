@@ -208,7 +208,7 @@ describe("ConversationStore versions", () => {
     expect(chats.created?.chat.lastActivityAt).toBe("2026-09-02T00:00:00.000Z");
     expect(chats.legacy?.chat).not.toHaveProperty("lastActivityAt");
     store.close();
-    expect(meta(file)).toMatchObject({ store_version: "2", min_reader_version: "1" });
+    expect(meta(file)).toMatchObject({ store_version: "3", min_reader_version: "1" });
     const db = new DatabaseSync(file, { readOnly: true });
     expect(db.prepare("SELECT rowid FROM message_search WHERE message_search MATCH ?").all('"orcamento"')).toHaveLength(
       1,
@@ -228,15 +228,15 @@ describe("ConversationStore versions", () => {
       db.close();
     };
 
-    raise(readable, "3", "2");
+    raise(readable, "4", "3");
     const newer = ConversationStore.open(readable);
     expect(newer.read().initialized).toBe(true);
     // Writing here must not lower the markers the newer build set.
     newer.transaction(() => newer.setInitialized(true));
     newer.close();
-    expect(meta(readable)).toMatchObject({ store_version: "3", min_reader_version: "2" });
+    expect(meta(readable)).toMatchObject({ store_version: "4", min_reader_version: "3" });
 
-    raise(readable, "4", "3");
+    raise(readable, "5", "4");
     const incompatible = ConversationStore.open(readable);
     expect(() => incompatible.read()).toThrow("Unsupported conversation store version.");
     incompatible.close();

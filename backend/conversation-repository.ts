@@ -15,7 +15,10 @@ import type {
   MessagePageRequest,
   MessageSearchHit,
   MessageStatus,
+  OutgoingMessage,
 } from "../shared/conversations.js";
+import type { QueuedMessage } from "../shared/message-queue.js";
+import type { ScheduledMessage } from "../shared/scheduled-messages.js";
 import { WispBackendError } from "./backend-error.js";
 import { normalizeUserName, type ConversationAgentContext } from "./conversation-agent.js";
 import {
@@ -26,6 +29,8 @@ import {
   validateConversationGraph,
 } from "./conversation-normalizer.js";
 import { ConversationStore, type StoredPageRequest } from "./conversation-store.js";
+import { normalizeQueuedMessage } from "./message-queue.js";
+import { normalizeScheduledMessage } from "./message-schedule.js";
 import { buildSnippet, MessageSearchWorker } from "./message-search.js";
 import { CONVERSATION_STORAGE_POLICY } from "./storage-policy.js";
 import {
@@ -524,6 +529,121 @@ export class ConversationRepository {
     });
   }
 
+  /** Every scheduled message, soonest first. Malformed records are skipped. */
+  async listScheduledMessages(): Promise<ScheduledMessage[]> {
+    return this.enqueue(() => this.readScheduledMessages());
+  }
+
+  /** Saves a new scheduled message for an existing Wisp that holds fewer than `limit`. */
+  async addScheduledMessage(message: ScheduledMessage, limit: number): Promise<void> {
+    await this.enqueue(async () => {
+      if (this.state.conversations[message.conversationId]?.chat.kind !== "wisp") {
+        throw new WispBackendError("not_found", "The Wisp was not found.");
+      }
+      const scheduled = await this.readScheduledMessages();
+      if (scheduled.some(({ id }) => id === message.id)) {
+        throw new WispBackendError("already_exists", "This scheduled message already exists.");
+      }
+      if (scheduled.filter(({ conversationId }) => conversationId === message.conversationId).length >= limit) {
+        throw new WispBackendError("invalid_request", "This Wisp already has too many scheduled messages.");
+      }
+      const store = await this.openStore();
+      store.transaction(() => store.putScheduledMessage(message));
+    });
+  }
+
+  /**
+   * Replaces a scheduled message with what `change` returns: a new version, or
+   * null to remove it. Returning undefined leaves it as it is. Resolves with
+   * the message as it was before a change, or undefined when nothing changed.
+   */
+  async changeScheduledMessage(
+    id: string,
+    change: (current: ScheduledMessage) => ScheduledMessage | null | undefined,
+  ): Promise<ScheduledMessage | undefined> {
+    return this.enqueue(async () => {
+      const current = (await this.readScheduledMessages()).find((message) => message.id === id);
+      if (!current) return undefined;
+      const next = change(current);
+      if (next === undefined) return undefined;
+      const store = await this.openStore();
+      store.transaction(() => {
+        if (next) store.putScheduledMessage({ ...next, id, conversationId: current.conversationId });
+        else store.deleteScheduledMessage(id);
+      });
+      return current;
+    });
+  }
+
+  /** Every queued message, oldest first. Malformed records are skipped. */
+  async listQueuedMessages(): Promise<QueuedMessage[]> {
+    return this.enqueue(() => this.readQueuedMessages());
+  }
+
+  /** Queues a message for an existing Wisp; with a `limit`, only while it has fewer waiting. */
+  async addQueuedMessage(message: QueuedMessage, limit?: number): Promise<void> {
+    await this.enqueue(async () => {
+      if (this.state.conversations[message.conversationId]?.chat.kind !== "wisp") {
+        throw new WispBackendError("not_found", "The Wisp was not found.");
+      }
+      const waiting = (await this.readQueuedMessages()).filter(
+        ({ conversationId }) => conversationId === message.conversationId,
+      );
+      if (limit !== undefined && waiting.length >= limit) {
+        throw new WispBackendError("invalid_request", "This Wisp already has too many messages waiting.");
+      }
+      const store = await this.openStore();
+      store.transaction(() => store.putQueuedMessage(message));
+    });
+  }
+
+  /** Like `changeScheduledMessage`, for a message still waiting in the queue. */
+  async changeQueuedMessage(
+    id: string,
+    change: (current: QueuedMessage) => QueuedMessage | null,
+  ): Promise<QueuedMessage | undefined> {
+    return this.enqueue(async () => {
+      const current = (await this.readQueuedMessages()).find((message) => message.id === id);
+      if (!current) return undefined;
+      const next = change(current);
+      const store = await this.openStore();
+      store.transaction(() => {
+        if (next) store.putQueuedMessage({ ...next, id, conversationId: current.conversationId });
+        else store.deleteQueuedMessage(id);
+      });
+      return current;
+    });
+  }
+
+  /**
+   * Moves a Wisp's oldest queued message into its transcript, as `toMessage`
+   * writes it, in one transaction: it is never in both places, nor in neither.
+   */
+  async takeQueuedMessage(
+    conversationId: string,
+    toMessage: (queued: QueuedMessage) => OutgoingMessage & { id: string },
+  ): Promise<{ queued: QueuedMessage; change: MessageChange } | undefined> {
+    return this.enqueue(async () => {
+      const queued = (await this.readQueuedMessages()).find((message) => message.conversationId === conversationId);
+      if (!queued) return undefined;
+      const change = await this.applyAppend(conversationId, toMessage(queued), (store) =>
+        store.deleteQueuedMessage(queued.id),
+      );
+      return { queued, change };
+    });
+  }
+
+  /** Messages the person sent that were handed to a Wisp but never answered, e.g. when Wisp stopped mid-turn. */
+  listUnansweredRequests(): Array<{ conversationId: string; messageId: string }> {
+    return Object.values(this.state.conversations).flatMap(({ chat }) =>
+      chat.messages.flatMap((message) =>
+        message.type === "outgoing" && message.status === "queued" && message.id
+          ? [{ conversationId: chat.id, messageId: message.id }]
+          : [],
+      ),
+    );
+  }
+
   /** Waits for pending writes, then closes the database. A later write reopens it. */
   async close(): Promise<void> {
     await this.mutation;
@@ -533,7 +653,11 @@ export class ConversationRepository {
     this.store = undefined;
   }
 
-  private async applyAppend(conversationId: string, message: Message): Promise<MessageChange> {
+  private async applyAppend(
+    conversationId: string,
+    message: Message,
+    alsoWrite?: (store: ConversationStore) => void,
+  ): Promise<MessageChange> {
     const messageId = message.id ?? this.createId();
     const added = (await this.openStore()).getMessage(conversationId, messageId) === undefined;
     const result = applyWorkspaceAction(this.state.conversations, {
@@ -549,8 +673,23 @@ export class ConversationRepository {
       store.putConversation(record);
       store.deleteOldestMessages(conversationId, result.droppedOldestMessages ?? 0);
       store.putMessages(conversationId, [stored]);
+      alsoWrite?.(store);
     });
     return { message: stored, added };
+  }
+
+  private async readQueuedMessages(): Promise<QueuedMessage[]> {
+    return (await this.openStore()).readQueuedMessages().flatMap((value) => {
+      const message = normalizeQueuedMessage(value);
+      return message ? [message] : [];
+    });
+  }
+
+  private async readScheduledMessages(): Promise<ScheduledMessage[]> {
+    return (await this.openStore()).readScheduledMessages().flatMap((value) => {
+      const message = normalizeScheduledMessage(value);
+      return message ? [message] : [];
+    });
   }
 
   private async lookupMessage(conversationId: string, messageId: string): Promise<Message | undefined> {

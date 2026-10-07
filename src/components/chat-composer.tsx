@@ -1,5 +1,6 @@
 import {
   ArrowUpIcon,
+  ChevronDownIcon,
   CircleAlertIcon,
   FileIcon,
   LoaderCircleIcon,
@@ -11,10 +12,12 @@ import {
 import type { FormEvent, KeyboardEvent, ReactNode } from "react";
 import { useEffect, useRef, useState } from "react";
 
+import { ScheduleSendPicker } from "@/components/schedule-send-picker";
+import { Popover, PopoverContent, PopoverTitle, PopoverTrigger } from "@/components/ui/popover";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useVoiceInput } from "@/hooks/use-voice-input";
 import { DEFAULT_PREFERENCES } from "@/lib/app-preferences";
-import { formatShortcut, matchesShortcut } from "@/lib/shortcuts";
+import { formatShortcut, matchesShortcut, SCHEDULE_SEND_SHORTCUT } from "@/lib/shortcuts";
 import { cn } from "@/lib/utils";
 import type { ChatSummary, ManagedConversationStatus } from "../../shared/conversations";
 import type { VoiceLanguage, VoiceProviderId } from "../../shared/voice";
@@ -52,6 +55,8 @@ export interface ChatComposerProps {
   onConfigureVoice?: () => void;
   onAbort: () => void;
   onSend: (text: string) => void;
+  /** Schedules the draft instead of sending it; resolves with an error message, or null. Absent when unavailable. */
+  onSchedule?: (text: string, at: Date) => Promise<string | null>;
 }
 
 export function ChatComposer({
@@ -67,11 +72,15 @@ export function ChatComposer({
   onConfigureVoice,
   onAbort,
   onSend,
+  onSchedule,
 }: ChatComposerProps) {
   const [draft, setDraft] = useState("");
   const [attachments, setAttachments] = useState<ReadonlyArray<WorkspaceAttachment>>([]);
   const [attaching, setAttaching] = useState(false);
   const [attachError, setAttachError] = useState("");
+  const [scheduleOpen, setScheduleOpen] = useState(false);
+  const [scheduling, setScheduling] = useState(false);
+  const [scheduleError, setScheduleError] = useState("");
   // Attaching picks files on this computer, so a server elsewhere cannot use them.
   const working = status === "working";
   const needsConfiguration = status === "configuration_required";
@@ -107,6 +116,29 @@ export function ChatComposer({
     setAttachments([]);
     setAttachError("");
     onSend(messageWithAttachments(text, files));
+  }
+
+  const hasDraft = Boolean(draft.trim() || attachments.length);
+  // Scheduling only stores the message, so a busy or unconfigured Wisp can still take one.
+  const canSchedule = Boolean(onSchedule) && chat.kind === "wisp" && hasDraft && !voiceBusy && !scheduling;
+  const scheduleShortcutLabel = formatShortcut(SCHEDULE_SEND_SHORTCUT);
+
+  async function schedule(at: Date): Promise<void> {
+    if (!onSchedule || !canSchedule) return;
+    const text = messageWithAttachments(draft.trim(), attachments);
+    setScheduling(true);
+    setScheduleError("");
+    const failure = await onSchedule(text, at);
+    setScheduling(false);
+    if (failure) {
+      setScheduleError(failure);
+      return;
+    }
+    setScheduleOpen(false);
+    setDraft("");
+    setAttachments([]);
+    setAttachError("");
+    textareaRef.current?.focus();
   }
 
   function handleSubmit(event: FormEvent<HTMLFormElement>): void {
@@ -190,6 +222,11 @@ export function ChatComposer({
   }
 
   function handleKeyDown(event: KeyboardEvent<HTMLTextAreaElement>): void {
+    if (matchesShortcut(event, SCHEDULE_SEND_SHORTCUT)) {
+      event.preventDefault();
+      if (canSchedule) setScheduleOpen(true);
+      return;
+    }
     if (enterToSend && event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
       event.preventDefault();
       event.currentTarget.form?.requestSubmit();
@@ -236,8 +273,8 @@ export function ChatComposer({
           "Transcribing…"
         ) : voiceInput.phase === "starting" ? (
           "Starting the microphone…"
-        ) : attachError || error ? (
-          <ComposerError message={attachError || error || ""} />
+        ) : scheduleError || attachError || error ? (
+          <ComposerError message={scheduleError || attachError || error || ""} />
         ) : attaching ? (
           "Copying files to the workspace…"
         ) : acknowledging ? (
@@ -351,16 +388,50 @@ export function ChatComposer({
             </button>
           </ComposerTooltip>
         ) : null}
-        <ComposerTooltip message={`${working ? "Queue message" : "Send message"}${enterToSend ? " (Enter)" : ""}`}>
-          <button
-            type="submit"
-            className="flex size-[27px] flex-none items-center justify-center rounded-full border-0 bg-primary text-primary-foreground enabled:hover:opacity-[0.85] disabled:opacity-[0.35] [&_svg]:size-3.5"
-            aria-label={working ? "Queue message" : "Send message"}
-            disabled={(!draft.trim() && !attachments.length) || !canSend || voiceBusy}
-          >
-            <ArrowUpIcon aria-hidden="true" />
-          </button>
-        </ComposerTooltip>
+        <div className="flex flex-none items-center">
+          <ComposerTooltip message={`${working ? "Queue message" : "Send message"}${enterToSend ? " (Enter)" : ""}`}>
+            <button
+              type="submit"
+              className={cn(
+                "flex size-[27px] flex-none items-center justify-center rounded-full border-0 bg-primary text-primary-foreground enabled:hover:opacity-[0.85] disabled:opacity-[0.35] [&_svg]:size-3.5",
+                onSchedule && chat.kind === "wisp" && "w-[25px] rounded-r-none pl-0.5",
+              )}
+              aria-label={working ? "Queue message" : "Send message"}
+              disabled={!hasDraft || !canSend || voiceBusy}
+            >
+              <ArrowUpIcon aria-hidden="true" />
+            </button>
+          </ComposerTooltip>
+          {onSchedule && chat.kind === "wisp" ? (
+            <Popover
+              open={scheduleOpen}
+              onOpenChange={(open) => {
+                setScheduleOpen(open && canSchedule);
+                if (!open) setScheduleError("");
+              }}
+            >
+              <ComposerTooltip message={`Schedule send (${scheduleShortcutLabel})`}>
+                <PopoverTrigger
+                  type="button"
+                  className="flex h-[27px] w-[17px] flex-none items-center justify-center rounded-r-full border-0 border-l border-primary-foreground/25 bg-primary pr-0.5 text-primary-foreground enabled:hover:opacity-[0.85] disabled:opacity-[0.35] [&_svg]:size-3"
+                  aria-label="Schedule send"
+                  disabled={!canSchedule}
+                >
+                  <ChevronDownIcon aria-hidden="true" />
+                </PopoverTrigger>
+              </ComposerTooltip>
+              <PopoverContent>
+                <PopoverTitle>Schedule send</PopoverTitle>
+                <ScheduleSendPicker busy={scheduling} onPick={(at) => void schedule(at)} />
+                {scheduleError ? (
+                  <p role="alert" className="px-2 pt-1.5 text-xs text-destructive">
+                    {scheduleError}
+                  </p>
+                ) : null}
+              </PopoverContent>
+            </Popover>
+          ) : null}
+        </div>
       </div>
     </form>
   );

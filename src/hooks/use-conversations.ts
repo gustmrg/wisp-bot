@@ -34,6 +34,8 @@ import {
   removeRuntimeMessage,
   removePendingRequest,
   retainPendingConversations,
+  setConversationError,
+  clearConversationError,
   stageOutgoingMessage,
   type ConversationRuntimeState,
   type StoredConversations,
@@ -402,12 +404,9 @@ export function useConversations(): ConversationsController {
     };
   }, [applyDelta, replaceRuntime, replaceState]);
 
-  const sendMessage = useCallback(
-    async (conversationId: string, textValue: string): Promise<boolean> => {
-      const text = textValue.trim();
-      if (!text || chatsRef.current[conversationId]?.kind !== "wisp") return false;
-      const status = runtimeRef.current.statuses[conversationId];
-      if (status !== "idle" && status !== "working") return false;
+  /** Sends the way servers without a message queue expect: saved to the transcript, then sent. */
+  const sendDirectly = useCallback(
+    async (conversationId: string, text: string): Promise<boolean> => {
       const requestId = crypto.randomUUID();
       const message: OutgoingMessage & { id: string } = {
         id: requestId,
@@ -439,6 +438,42 @@ export function useConversations(): ConversationsController {
       return false;
     },
     [enqueueDelta, openConversation, replaceRuntime, stored],
+  );
+
+  /**
+   * Puts the message in the Wisp's queue. It joins the transcript when the
+   * Wisp takes it, which the backend pushes as a change.
+   */
+  const sendMessage = useCallback(
+    async (conversationId: string, textValue: string): Promise<boolean> => {
+      const text = textValue.trim();
+      if (!text || chatsRef.current[conversationId]?.kind !== "wisp") return false;
+      const status = runtimeRef.current.statuses[conversationId];
+      if (status !== "idle" && status !== "working") return false;
+      // The reply belongs at the end, so a window opened elsewhere in the transcript returns there.
+      openConversation(conversationId);
+      const acknowledgement = crypto.randomUUID();
+      setPendingAcknowledgements((current) => addPendingRequest(current, conversationId, acknowledgement));
+      let result: BackendResult<unknown>;
+      try {
+        result = await window.wisp.queueMessage({ conversationId, text });
+      } catch {
+        result = {
+          ok: false,
+          error: { code: "internal_error", message: "The message could not be sent.", retryable: true },
+        };
+      } finally {
+        setPendingAcknowledgements((current) => removePendingRequest(current, conversationId, acknowledgement));
+      }
+      if (result.ok) {
+        replaceRuntime(clearConversationError(runtimeRef.current, conversationId));
+        return true;
+      }
+      if (result.error.code === "unsupported") return sendDirectly(conversationId, text);
+      replaceRuntime(setConversationError(runtimeRef.current, conversationId, result.error));
+      return false;
+    },
+    [openConversation, replaceRuntime, sendDirectly],
   );
 
   const retryMessage = useCallback(

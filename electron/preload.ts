@@ -44,6 +44,17 @@ const WISP_IPC_CHANNELS = {
   conversationChanged: "wisp:conversations:changed",
   getConversationMessages: "wisp:conversations:get-messages",
   searchMessages: "wisp:conversations:search",
+  getScheduledMessages: "wisp:scheduled-messages:get",
+  scheduleMessage: "wisp:scheduled-messages:create",
+  updateScheduledMessage: "wisp:scheduled-messages:update",
+  cancelScheduledMessage: "wisp:scheduled-messages:cancel",
+  sendScheduledMessageNow: "wisp:scheduled-messages:send-now",
+  scheduledMessagesChanged: "wisp:scheduled-messages:changed",
+  getMessageQueue: "wisp:message-queue:get",
+  queueMessage: "wisp:message-queue:add",
+  updateQueuedMessage: "wisp:message-queue:update",
+  cancelQueuedMessage: "wisp:message-queue:cancel",
+  messageQueueChanged: "wisp:message-queue:changed",
   getUsageReport: "wisp:usage:get",
   getToolPolicy: "wisp:tool-policy:get",
   getUserProfile: "wisp:profile:get",
@@ -135,6 +146,27 @@ const wispApi: WispApi = {
       listener(delta);
     ipcRenderer.on(WISP_IPC_CHANNELS.conversationChanged, handleDelta);
     return () => ipcRenderer.removeListener(WISP_IPC_CHANNELS.conversationChanged, handleDelta);
+  },
+  getScheduledMessages: () => ipcRenderer.invoke(WISP_IPC_CHANNELS.getScheduledMessages),
+  scheduleMessage: (request) => ipcRenderer.invoke(WISP_IPC_CHANNELS.scheduleMessage, request),
+  updateScheduledMessage: (request) => ipcRenderer.invoke(WISP_IPC_CHANNELS.updateScheduledMessage, request),
+  cancelScheduledMessage: (request) => ipcRenderer.invoke(WISP_IPC_CHANNELS.cancelScheduledMessage, request),
+  sendScheduledMessageNow: (request) => ipcRenderer.invoke(WISP_IPC_CHANNELS.sendScheduledMessageNow, request),
+  subscribeToScheduledMessages: (listener) => {
+    const handleView = (_event: Electron.IpcRendererEvent, view: Parameters<typeof listener>[0]): void =>
+      listener(view);
+    ipcRenderer.on(WISP_IPC_CHANNELS.scheduledMessagesChanged, handleView);
+    return () => ipcRenderer.removeListener(WISP_IPC_CHANNELS.scheduledMessagesChanged, handleView);
+  },
+  getMessageQueue: () => ipcRenderer.invoke(WISP_IPC_CHANNELS.getMessageQueue),
+  queueMessage: (request) => ipcRenderer.invoke(WISP_IPC_CHANNELS.queueMessage, request),
+  updateQueuedMessage: (request) => ipcRenderer.invoke(WISP_IPC_CHANNELS.updateQueuedMessage, request),
+  cancelQueuedMessage: (request) => ipcRenderer.invoke(WISP_IPC_CHANNELS.cancelQueuedMessage, request),
+  subscribeToMessageQueue: (listener) => {
+    const handleView = (_event: Electron.IpcRendererEvent, view: Parameters<typeof listener>[0]): void =>
+      listener(view);
+    ipcRenderer.on(WISP_IPC_CHANNELS.messageQueueChanged, handleView);
+    return () => ipcRenderer.removeListener(WISP_IPC_CHANNELS.messageQueueChanged, handleView);
   },
   getSessionReport: (request) => ipcRenderer.invoke(WISP_IPC_CHANNELS.getSessionReport, request),
   getUsageReport: (request) => ipcRenderer.invoke(WISP_IPC_CHANNELS.getUsageReport, request),

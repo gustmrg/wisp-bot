@@ -56,11 +56,22 @@ export interface CircleChat extends ChatBase {
   memberIds: ReadonlyArray<ChatId>;
 }
 
+/** Where a message the backend sent on the person's behalf came from. */
+export interface ScheduledOrigin {
+  scheduledMessageId: string;
+  /** When the person scheduled it (ISO 8601). */
+  scheduledAt: string;
+  /** The IANA time zone they scheduled it in. */
+  timeZone: string;
+}
+
 export interface TextMessage extends MessageMetadata {
   type: "incoming" | "outgoing";
   text: string;
   time?: string;
   reactions?: ReadonlyArray<string>;
+  /** Set on an outgoing message sent from a scheduled message rather than typed then. */
+  scheduled?: ScheduledOrigin;
 }
 
 export interface TimeMessage extends MessageMetadata {

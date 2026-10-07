@@ -5,6 +5,7 @@ import {
   type ChatCollection,
   type Message,
   type MessageStatus,
+  type ScheduledOrigin,
   type WispShape,
 } from "../shared/conversations.js";
 import { normalizeWispTone, type WispTone } from "../shared/wisp-tone.js";
@@ -72,6 +73,15 @@ function avatarDataUrl(value: unknown): string {
   return normalized;
 }
 
+export function normalizeScheduledOrigin(value: unknown): ScheduledOrigin {
+  const raw = asRecord(value);
+  return {
+    scheduledMessageId: normalizeConversationId(raw.scheduledMessageId),
+    scheduledAt: timestamp(raw.scheduledAt),
+    timeZone: string(raw.timeZone, 64),
+  };
+}
+
 export function normalizeMessage(value: unknown, fallbackId?: string): Message {
   const raw = asRecord(value);
   const id = raw.id === undefined ? fallbackId : normalizeConversationId(raw.id);
@@ -98,6 +108,9 @@ export function normalizeMessage(value: unknown, fallbackId?: string): Message {
       text: string(raw.text),
       ...(raw.time === undefined ? {} : { time: string(raw.time, 100) }),
       ...(reactions === undefined ? {} : { reactions: reactions.map((item) => string(item, 100)) }),
+      ...(raw.scheduled === undefined || raw.type !== "outgoing"
+        ? {}
+        : { scheduled: normalizeScheduledOrigin(raw.scheduled) }),
     };
   }
   if (raw.type === "time") {
