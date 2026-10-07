@@ -156,6 +156,8 @@ function completeBridge(): WispApi {
     checkSshServer: async () => ({ ok: true, value: { appVersion: "1.0.0", addedKey: false } }),
     cancelSshCheck: async () => ({ ok: true, value: connections }),
     answerSshPrompt: async () => ({ ok: true, value: connections }),
+    listTailnetMachines: async () => ({ ok: true, value: [] }),
+    enableLinger: async () => ({ ok: true, value: connections }),
     subscribeToConnections: () => () => undefined,
   };
 }

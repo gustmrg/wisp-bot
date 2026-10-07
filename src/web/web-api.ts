@@ -132,6 +132,8 @@ export function createWebWispApi(options: WebApiOptions): WispApi {
     checkSshServer: desktopOnly,
     cancelSshCheck: desktopOnly,
     answerSshPrompt: desktopOnly,
+    listTailnetMachines: desktopOnly,
+    enableLinger: desktopOnly,
     retryConnection: async () => {
       session.start();
       return ok(view());

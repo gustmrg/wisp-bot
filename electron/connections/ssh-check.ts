@@ -42,6 +42,8 @@ export interface SshCheckOptions {
   key: WispSshKey;
   /** Names this computer in the comment of Wisp's key. */
   deviceName: string;
+  /** Tailscale SSH waits until the person approves the connection on this page. */
+  onBrowserCheck?: (url: string) => void;
   signal?: AbortSignal;
 }
 
@@ -85,8 +87,14 @@ export async function checkSshServer(profile: SshConnectionProfile, options: Ssh
   );
   let masterError = "";
   master.stderr?.setEncoding("utf8");
+  let browserUrl: string | undefined;
   master.stderr?.on("data", (chunk: string) => {
     masterError = (masterError + chunk).slice(-MAX_OUTPUT);
+    const url = browserCheckUrl(masterError);
+    if (url && url !== browserUrl) {
+      browserUrl = url;
+      options.onBrowserCheck?.(url);
+    }
   });
   let spawnError: Error | undefined;
   let masterExited = false;
@@ -159,6 +167,12 @@ export async function checkSshServer(profile: SshConnectionProfile, options: Ssh
   }
 }
 
+/** The page Tailscale SSH asks to visit before it lets a connection in ("check" mode). */
+export function browserCheckUrl(stderr: string): string | undefined {
+  const url = /To authenticate, visit:\s*(https:\/\/[^\s"'<>]+)/i.exec(stderr)?.[1];
+  return url && url.length <= 512 ? url : undefined;
+}
+
 /** A fresh connection that may not ask anything, like the ones Wisp makes later. */
 function batchArguments(profile: SshConnectionProfile, identityFile: string | undefined): string[] {
   return [
@@ -174,8 +188,12 @@ function batchArguments(profile: SshConnectionProfile, identityFile: string | un
   ];
 }
 
-/** Runs ssh, with a script for `sh -s` on stdin. */
-function run(ssh: string, args: string[], script?: string): Promise<{ ok: boolean; stdout: string; stderr: string }> {
+/** Runs ssh to completion, with a script for `sh -s`, or other input, on stdin. */
+export function run(
+  ssh: string,
+  args: string[],
+  script?: string,
+): Promise<{ ok: boolean; code: number | null; stdout: string; stderr: string }> {
   return new Promise((resolve) => {
     const child = spawn(ssh, args, { stdio: [script ? "pipe" : "ignore", "pipe", "pipe"], windowsHide: true });
     child.stdin?.on("error", () => undefined);
@@ -193,11 +211,11 @@ function run(ssh: string, args: string[], script?: string): Promise<{ ok: boolea
     const timer = setTimeout(() => child.kill("SIGTERM"), COMMAND_TIMEOUT_MS);
     child.once("error", () => {
       clearTimeout(timer);
-      resolve({ ok: false, stdout, stderr });
+      resolve({ ok: false, code: null, stdout, stderr });
     });
     child.once("exit", (code) => {
       clearTimeout(timer);
-      resolve({ ok: code === 0, stdout, stderr });
+      resolve({ ok: code === 0, code, stdout, stderr });
     });
   });
 }

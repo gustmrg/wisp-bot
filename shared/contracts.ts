@@ -51,6 +51,7 @@ import type {
   AnswerSshPromptRequest,
   SshConfigHost,
   SshServerCheck,
+  TailnetMachine,
 } from "./connections.js";
 
 export const WISP_IPC_CHANNELS = {
@@ -128,6 +129,8 @@ export const WISP_IPC_CHANNELS = {
   checkSshServer: "wisp:connections:check-ssh",
   cancelSshCheck: "wisp:connections:cancel-ssh-check",
   answerSshPrompt: "wisp:connections:answer-ssh-prompt",
+  listTailnetMachines: "wisp:connections:tailnet-machines",
+  enableLinger: "wisp:connections:enable-linger",
   connectionsChanged: "wisp:connections:changed",
 } as const;
 
@@ -493,5 +496,9 @@ export interface WispApi {
   /** Stops a check in progress; `checkSshServer` then fails as cancelled. */
   cancelSshCheck(): Promise<BackendResult<ConnectionsView>>;
   answerSshPrompt(request: AnswerSshPromptRequest): Promise<BackendResult<ConnectionsView>>;
+  /** The Linux machines on this computer's tailnet, when Tailscale runs here. */
+  listTailnetMachines(): Promise<BackendResult<ReadonlyArray<TailnetMachine>>>;
+  /** Keeps a server's Wisps running after logout there; may ask for a sudo password through `sshPrompt`. */
+  enableLinger(request: ConnectionRequest): Promise<BackendResult<ConnectionsView>>;
   subscribeToConnections(listener: (view: ConnectionsView) => void): () => void;
 }

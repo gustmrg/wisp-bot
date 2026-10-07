@@ -14,7 +14,8 @@ import type {
 } from "../../../shared/connections";
 import { InstallServerAction } from "./install-server-action";
 import { ServerSetupGuide } from "./server-setup-guide";
-import { SshConfigHosts } from "./ssh-config-hosts";
+import { LingerNotice } from "./linger-notice";
+import { MachinePicker } from "./machine-picker";
 import { SshServerSetup } from "./ssh-server-setup";
 
 const PHASE_LABELS: Record<ConnectionStatus["phase"], string> = {
@@ -94,49 +95,54 @@ export function ConnectionsPanel({ view, serversOnly = false }: { view: Connecti
           .map((profile) => {
             const active = profile.id === view.activeId;
             return (
-              <li key={profile.id} className="flex items-center gap-3 rounded-xl px-2 py-3">
-                <span className="flex size-9 flex-none items-center justify-center rounded-lg bg-muted">
-                  {profile.kind === "local" ? (
-                    <LaptopIcon className="size-4 text-dim" aria-hidden="true" />
-                  ) : (
-                    <ServerIcon className="size-4 text-dim" aria-hidden="true" />
+              <li key={profile.id}>
+                <div className="flex items-center gap-3 rounded-xl px-2 py-3">
+                  <span className="flex size-9 flex-none items-center justify-center rounded-lg bg-muted">
+                    {profile.kind === "local" ? (
+                      <LaptopIcon className="size-4 text-dim" aria-hidden="true" />
+                    ) : (
+                      <ServerIcon className="size-4 text-dim" aria-hidden="true" />
+                    )}
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-base font-medium">{profile.name}</span>
+                    <span className="mt-1 block truncate text-sm text-dim">{describeProfile(profile)}</span>
+                    {active ? (
+                      <span className="mt-1.5 flex items-center gap-1.5 text-2xs text-dim">
+                        <StatusDot tone={phaseTone(view.status.phase)} />
+                        {PHASE_LABELS[view.status.phase]}
+                      </span>
+                    ) : profile.kind !== "local" && !profile.paired ? (
+                      <span className="mt-1.5 block text-2xs text-dim">Not paired yet</span>
+                    ) : null}
+                  </span>
+                  {active ? null : (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      disabled={busy !== null}
+                      onClick={() => void run(profile.id, () => window.wisp.activateConnection({ id: profile.id }))}
+                    >
+                      {busy === profile.id ? "Switching…" : "Use"}
+                    </Button>
                   )}
-                </span>
-                <span className="min-w-0 flex-1">
-                  <span className="block text-base font-medium">{profile.name}</span>
-                  <span className="mt-1 block truncate text-sm text-dim">{describeProfile(profile)}</span>
-                  {active ? (
-                    <span className="mt-1.5 flex items-center gap-1.5 text-2xs text-dim">
-                      <StatusDot tone={phaseTone(view.status.phase)} />
-                      {PHASE_LABELS[view.status.phase]}
-                    </span>
-                  ) : profile.kind !== "local" && !profile.paired ? (
-                    <span className="mt-1.5 block text-2xs text-dim">Not paired yet</span>
-                  ) : null}
-                </span>
-                {active ? null : (
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    disabled={busy !== null}
-                    onClick={() => void run(profile.id, () => window.wisp.activateConnection({ id: profile.id }))}
-                  >
-                    {busy === profile.id ? "Switching…" : "Use"}
-                  </Button>
-                )}
-                {profile.kind === "local" ? null : (
-                  <Button
-                    type="button"
-                    size="icon-sm"
-                    variant="ghost"
-                    aria-label={`Edit ${profile.name}`}
-                    disabled={busy !== null}
-                    onClick={() => setEditing(profile.id)}
-                  >
-                    <Settings2 aria-hidden="true" />
-                  </Button>
-                )}
+                  {profile.kind === "local" ? null : (
+                    <Button
+                      type="button"
+                      size="icon-sm"
+                      variant="ghost"
+                      aria-label={`Edit ${profile.name}`}
+                      disabled={busy !== null}
+                      onClick={() => setEditing(profile.id)}
+                    >
+                      <Settings2 aria-hidden="true" />
+                    </Button>
+                  )}
+                </div>
+                {profile.kind === "ssh" && view.lingerNeeded?.includes(profile.id) ? (
+                  <LingerNotice view={view} profile={profile} />
+                ) : null}
               </li>
             );
           })}
@@ -217,6 +223,7 @@ function ConnectionForm({
   // A new SSH server is saved before it is checked; going back edits that one rather than adding another.
   const [savedId, setSavedId] = useState<string | undefined>();
   const [checking, setChecking] = useState<SshConnectionProfile | null>(null);
+  const [pickedName, setPickedName] = useState("");
   const update = (changes: Partial<Draft>) => setDraft((current) => ({ ...current, ...changes }));
   const guided = !profile && draft.kind === "ssh";
   const addedHosts = new Set(
@@ -299,18 +306,20 @@ function ConnectionForm({
         />
       )}
       {profile || draft.kind !== "ssh" ? null : (
-        <SshConfigHosts
+        <MachinePicker
           selected={draft.host.trim()}
           added={addedHosts}
-          onChoose={({ alias }) =>
+          onChoose={({ host, name }) => {
             // The config supplies the user and port, so the alias alone connects like `ssh alias`.
+            // A name the person typed stays; one picked with the last machine follows the new one.
             update({
-              host: alias,
+              host,
               user: "",
               sshPort: "",
-              ...(!draft.name.trim() || draft.name.trim() === draft.host.trim() ? { name: alias } : {}),
-            })
-          }
+              ...(!draft.name.trim() || draft.name === pickedName ? { name } : {}),
+            });
+            setPickedName(name);
+          }}
         />
       )}
       <SettingsField label="Name">

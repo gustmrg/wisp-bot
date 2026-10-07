@@ -108,8 +108,17 @@ exec "$bin/npx" --yes ${WISP_SERVER_PACKAGE}@${version} setup --json --no-pair -
 `;
 }
 
+/** What the setup reported once it finished. */
+export interface RemoteSetupResult {
+  /** Things to do by hand, such as turning on linger. */
+  warnings: string[];
+}
+
 /** Installs and starts the Wisp server on a machine reached over SSH, by running its `setup` there. */
-export async function installRemoteServer(profile: SshConnectionProfile, options: SshInstallOptions): Promise<void> {
+export async function installRemoteServer(
+  profile: SshConnectionProfile,
+  options: SshInstallOptions,
+): Promise<RemoteSetupResult> {
   const child = spawn(
     options.sshPath ?? "ssh",
     ["-T", ...sshArguments(profile, { identityFile: options.identityFile }), "--", profile.host, "sh -s"],
@@ -156,7 +165,17 @@ export async function installRemoteServer(profile: SshConnectionProfile, options
   child.stdin?.destroy();
   options.signal?.removeEventListener("abort", stop);
   if (options.signal?.aborted) throw new FatalTransportError("Installing the server was cancelled.");
-  if (code === 0 && /^\{.*\}$/m.test(stdout)) return;
+  const result = code === 0 ? /^\{.*\}$/m.exec(stdout)?.[0] : undefined;
+  if (result) {
+    try {
+      const { warnings } = JSON.parse(result) as { warnings?: unknown };
+      return {
+        warnings: Array.isArray(warnings) ? warnings.filter((value): value is string => typeof value === "string") : [],
+      };
+    } catch {
+      return { warnings: [] };
+    }
+  }
   throw explainInstallFailure(profile.host, options.version, code, stderr, timedOut, spawnError);
 }
 

@@ -13,6 +13,11 @@
 // unless SSH_ASKPASS answers that password. `-M -S path` is a control master
 // that asks those questions once; `-S path` reuses it and `-O check|exit`
 // controls it. FAKE_SSH_SERVER_VERSION is the server version a probe finds.
+// FAKE_SSH_TAILSCALE=check makes a master wait for an "approved" file in the
+// state directory, as Tailscale SSH waits for a browser approval.
+// FAKE_SSH_LINGER=sudo|nosudo makes turning on linger need sudo, whose
+// password is FAKE_SSH_SUDO_PASSWORD, or find no sudo; FAKE_SSH_INSTALL=no-linger
+// makes the setup report that linger is off.
 const { execFileSync } = require("node:child_process");
 const http = require("node:http");
 const net = require("node:net");
@@ -87,12 +92,30 @@ if (state && !(control && !args.includes("-M"))) {
   }
 }
 if (args.includes("-M")) {
+  if (process.env.FAKE_SSH_TAILSCALE === "check" && !fs.existsSync(stateFile("approved"))) {
+    process.stderr.write(
+      "# Tailscale SSH requires an additional check.\n# To authenticate, visit: https://login.tailscale.com/a/fake123\n",
+    );
+    while (!fs.existsSync(stateFile("approved"))) execFileSync("sleep", ["0.05"]);
+  }
   fs.writeFileSync(control, "");
   // Runs until `-O exit` removes the socket, or ssh is stopped.
   setInterval(() => {
     if (!fs.existsSync(control)) process.exit(0);
   }, 50);
   process.on("SIGTERM", () => process.exit(0));
+} else if (command.includes("sudo -S")) {
+  let password = "";
+  process.stdin.setEncoding("utf8");
+  process.stdin.on("data", (chunk) => (password += chunk));
+  process.stdin.on("end", () => {
+    if (password.split("\n")[0] !== process.env.FAKE_SSH_SUDO_PASSWORD) {
+      process.stderr.write("Sorry, try again.\nsudo: 1 incorrect password attempt\n");
+      process.exit(1);
+    }
+    fs.writeFileSync(stateFile("linger"), "");
+    process.exit(0);
+  });
 } else if (command === "sh -s") {
   if (process.env.FAKE_SSH_SCRIPT_LOG) fs.writeFileSync(process.env.FAKE_SSH_SCRIPT_LOG, "");
   let script = "";
@@ -154,6 +177,9 @@ function run(command) {
     const line = /printf '%s\\n' '([^']+)'/.exec(command)[1];
     fs.appendFileSync(stateFile("authorized_keys"), `${line}\n`);
     process.exit(0);
+  } else if (command.includes("loginctl show-user")) {
+    const linger = process.env.FAKE_SSH_LINGER;
+    process.exit(fs.existsSync(stateFile("linger")) || !linger ? 0 : linger === "nosudo" ? 4 : 3);
   } else if (command.includes("setup --json") && process.env.FAKE_SSH_INSTALL === "hang") {
     process.stderr.write("Installing @gustmrg/wisp-server@1.0.0…\n");
     // Runs until the test stops ssh.
@@ -174,7 +200,11 @@ function run(command) {
       process.exit(outcome[1]);
     }
     process.stderr.write("Installing @gustmrg/wisp-server@1.0.0…\nStarting the service…\n");
-    process.stdout.write(`${JSON.stringify({ version: "1.0.0", service: "started" })}\n`);
+    const warnings =
+      process.env.FAKE_SSH_INSTALL === "no-linger"
+        ? ["Wisps stop when you log out. Run `sudo loginctl enable-linger tester` to keep the server running."]
+        : [];
+    process.stdout.write(`${JSON.stringify({ version: "1.0.0", service: "started", warnings })}\n`);
     process.exit(0);
   } else {
     return false;

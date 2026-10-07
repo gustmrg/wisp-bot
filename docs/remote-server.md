@@ -68,7 +68,10 @@ pairing code. In detail, it:
 3. writes `~/.local/bin/wispctl`, the administrative command;
 4. installs and starts the systemd user unit `wisp`, and enables lingering so
    Wisps keep working after you log out (if that needs administrator rights,
-   it tells you the `sudo loginctl enable-linger` command to run);
+   it tells you the `sudo loginctl enable-linger` command to run; when the
+   desktop app ran the setup, the server's entry under **Settings →
+   Connections** offers **Keep them running** instead, which runs it over SSH
+   and asks for your sudo password only if the machine needs it);
 5. waits until the server answers, then prints a pairing code.
 
 The master key encrypts provider, plugin, MCP, and voice credentials. Keep a
@@ -214,13 +217,16 @@ server:
   pick a machine from **From your SSH config**: the `Host` entries of
   `~/.ssh/config` and the files it includes, as `ssh -G` resolves them. A
   machine picked there is saved by its alias, so later changes to the config
-  apply. Wisp forwards a free local port to the server's loopback port. It never
+  apply. When Tailscale runs on this computer, **On your tailnet** also lists
+  its Linux machines that the config does not name, by MagicDNS name. Wisp forwards a free local port to the server's loopback port. It never
   stores passwords; the only key it keeps is its own, added to a server only
   when a password was the sole way in (see [From the desktop app](#from-the-desktop-app)).
   An unknown host key is confirmed in the app when you add the server or choose
   **Retry**; background reconnects refuse unknown and changed host keys rather
-  than asking. MagicDNS names and Tailscale SSH work like any other host; if
-  Tailscale SSH asks for a browser check, run `ssh` in a terminal once.
+  than asking. MagicDNS names and Tailscale SSH work like any other host. When
+  Tailscale SSH asks to approve a connection in the browser ("check" mode), the
+  app shows a link to the approval page and goes on once you approve; a
+  background reconnect that needs approval asks you to choose **Retry**.
 - **HTTPS address** connects directly, for example to a Tailscale Serve
   address. Plain HTTP is accepted only for `127.0.0.1` and `localhost`.
 

@@ -111,6 +111,7 @@ async function desktop(userData?: string, key = randomBytes(32), { choose = true
     listSshHosts: () => listSshConfigHosts({ home: directory, sshPath: fakeSsh }),
     // Every ssh the app runs: tunnels, pairing, setup, and checks.
     sshPath: fakeSsh,
+    listTailnetMachines: async () => [],
   });
   let disposed = false;
   const dispose = async (): Promise<void> => {
@@ -461,6 +462,77 @@ describe("desktop connections", () => {
     expect(await checking).toMatchObject({ ok: false, error: { message: expect.stringMatching(/cancelled/) } });
     expect((await app.view()).sshPrompt).toBeUndefined();
     expect(await app.call(WISP_IPC_CHANNELS.answerSshPrompt, { id: "x" })).toMatchObject({ ok: false });
+  });
+
+  it("shows Tailscale's approval page while the check waits for it", async () => {
+    const state = await temporaryDirectory("wisp-ssh-state-");
+    Object.assign(process.env, { FAKE_SSH_STATE: state, FAKE_SSH_TAILSCALE: "check" });
+    const app = await desktop();
+    const { profiles } = await app.invoke<ConnectionsView>(WISP_IPC_CHANNELS.saveConnection, {
+      kind: "ssh",
+      name: "Box",
+      host: "box.tail1234.ts.net",
+      serverPort: 8787,
+    });
+    const ssh = profiles.find((profile) => profile.kind === "ssh")!;
+    const checking = app.call(WISP_IPC_CHANNELS.checkSshServer, { id: ssh.id });
+    await vi.waitFor(async () => expect((await app.view()).sshPrompt?.kind).toBe("browser"), { timeout: 8_000 });
+    expect((await app.view()).sshPrompt).toMatchObject({
+      url: "https://login.tailscale.com/a/fake123",
+      message: expect.stringContaining("box.tail1234.ts.net"),
+    });
+    await writeFile(path.join(state, "approved"), "");
+    expect(await checking).toMatchObject({ ok: true });
+    expect((await app.view()).sshPrompt).toBeUndefined();
+  });
+
+  it("turns linger on when the setup could not, asking for the sudo password", async () => {
+    const { server, directory: serverDirectory } = await startServer();
+    const state = await temporaryDirectory("wisp-ssh-state-");
+    Object.assign(process.env, {
+      FAKE_WISP_DATA_DIR: serverDirectory,
+      FAKE_SSH_STATE: state,
+      FAKE_SSH_INSTALL: "no-linger",
+      FAKE_SSH_LINGER: "sudo",
+      FAKE_SSH_SUDO_PASSWORD: "sudo-pass",
+    });
+    const app = await desktop();
+    const { profiles } = await app.invoke<ConnectionsView>(WISP_IPC_CHANNELS.saveConnection, {
+      kind: "ssh",
+      name: "Box",
+      host: "test-host.invalid",
+      serverPort: server.port,
+    });
+    const ssh = profiles.find((profile) => profile.kind === "ssh")!;
+    expect((await app.invoke<ConnectionsView>(WISP_IPC_CHANNELS.installServer, { id: ssh.id })).lingerNeeded).toEqual([
+      ssh.id,
+    ]);
+    const answer = async (value: string | undefined) => {
+      await vi.waitFor(async () => expect((await app.view()).sshPrompt?.kind).toBe("secret"), { timeout: 8_000 });
+      const { id, message } = (await app.view()).sshPrompt!;
+      expect(message).toBe("Password for sudo on test-host.invalid:");
+      await app.invoke(WISP_IPC_CHANNELS.answerSshPrompt, value === undefined ? { id } : { id, answer: value });
+    };
+
+    let enabling = app.call(WISP_IPC_CHANNELS.enableLinger, { id: ssh.id });
+    await answer("wrong");
+    expect(await enabling).toMatchObject({
+      ok: false,
+      error: { message: "sudo on test-host.invalid did not accept the password." },
+    });
+    enabling = app.call(WISP_IPC_CHANNELS.enableLinger, { id: ssh.id });
+    await answer("sudo-pass");
+    expect(await enabling).toMatchObject({ ok: true });
+    expect((await app.view()).lingerNeeded).toBeUndefined();
+    // Once on, it needs no password.
+    expect(await app.call(WISP_IPC_CHANNELS.enableLinger, { id: ssh.id })).toMatchObject({ ok: true });
+
+    process.env.FAKE_SSH_LINGER = "nosudo";
+    await rm(path.join(state, "linger"));
+    expect(await app.call(WISP_IPC_CHANNELS.enableLinger, { id: ssh.id })).toMatchObject({
+      ok: false,
+      error: { message: expect.stringMatching(/has no sudo/) },
+    });
   });
 
   it("explains an SSH failure and goes back to this computer when the connection is removed", async () => {

@@ -100,7 +100,13 @@ export async function openSshTunnel(
         else resolve();
       };
       const timer = setTimeout(
-        () => finish(new Error(`SSH to ${profile.host} did not connect within ${READY_TIMEOUT_MS / 1000} seconds.`)),
+        () =>
+          finish(
+            // Tailscale SSH holds a connection while it waits for an approval nobody sees here.
+            TAILSCALE_CHECK.test(stderr())
+              ? new FatalTransportError(tailscaleCheckMessage(profile.host))
+              : new Error(`SSH to ${profile.host} did not connect within ${READY_TIMEOUT_MS / 1000} seconds.`),
+          ),
         READY_TIMEOUT_MS,
       );
       void exited.then(() => finish(classify(stderr(), profile.host, spawnError)));
@@ -214,6 +220,12 @@ export function explainPairingFailure(
   return new FatalTransportError(`Could not get a pairing code from ${host}. ${manual}${detail ? ` (${detail})` : ""}`);
 }
 
+const TAILSCALE_CHECK = /login\.tailscale\.com|tailscale.*(check|approval)|To authenticate, visit:/i;
+
+function tailscaleCheckMessage(host: string): string {
+  return `Tailscale SSH asks you to approve connections to ${host} in your browser. Retry to approve it.`;
+}
+
 /** Turns what OpenSSH said about a failed connection into what to do about it. */
 export function classify(stderr: string, host: string, spawnError: Error | undefined): Error {
   if ((spawnError as NodeJS.ErrnoException | undefined)?.code === "ENOENT") {
@@ -229,11 +241,7 @@ export function classify(stderr: string, host: string, spawnError: Error | undef
   if (/Host key verification failed|host key .* not known/i.test(stderr)) {
     return new FatalTransportError(`The SSH host key of ${host} is not trusted yet. Retry to check it and trust it.`);
   }
-  if (/login\.tailscale\.com|tailscale.*(check|approval)/i.test(stderr)) {
-    return new FatalTransportError(
-      `Tailscale SSH asks for a browser check. Run \`ssh ${host}\` in a terminal to approve it, then retry.`,
-    );
-  }
+  if (TAILSCALE_CHECK.test(stderr)) return new FatalTransportError(tailscaleCheckMessage(host));
   if (/Permission denied/i.test(stderr)) {
     return new FatalTransportError(
       `${host} rejected this computer's SSH keys. Retry to sign in with its password, or load your key into ssh-agent.`,

@@ -79,6 +79,8 @@ const WISP_IPC_CHANNELS = {
   checkSshServer: "wisp:connections:check-ssh",
   cancelSshCheck: "wisp:connections:cancel-ssh-check",
   answerSshPrompt: "wisp:connections:answer-ssh-prompt",
+  listTailnetMachines: "wisp:connections:tailnet-machines",
+  enableLinger: "wisp:connections:enable-linger",
   connectionsChanged: "wisp:connections:changed",
 } as const;
 
@@ -178,6 +180,8 @@ const wispApi: WispApi = {
   checkSshServer: (request) => ipcRenderer.invoke(WISP_IPC_CHANNELS.checkSshServer, request),
   cancelSshCheck: () => ipcRenderer.invoke(WISP_IPC_CHANNELS.cancelSshCheck),
   answerSshPrompt: (request) => ipcRenderer.invoke(WISP_IPC_CHANNELS.answerSshPrompt, request),
+  listTailnetMachines: () => ipcRenderer.invoke(WISP_IPC_CHANNELS.listTailnetMachines),
+  enableLinger: (request) => ipcRenderer.invoke(WISP_IPC_CHANNELS.enableLinger, request),
   subscribeToConnections: (listener) => {
     const handleView = (_event: Electron.IpcRendererEvent, view: Parameters<typeof listener>[0]): void =>
       listener(view);

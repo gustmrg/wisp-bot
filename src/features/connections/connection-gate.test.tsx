@@ -36,6 +36,8 @@ function bridge(initial: ConnectionsView) {
     ),
     cancelSshCheck: vi.fn(ok),
     answerSshPrompt: vi.fn(ok),
+    listTailnetMachines: vi.fn(async () => ({ ok: true as const, value: [] })),
+    enableLinger: vi.fn(ok),
     subscribeToConnections: vi.fn((listener: (next: ConnectionsView) => void) => {
       push = listener;
       return () => undefined;

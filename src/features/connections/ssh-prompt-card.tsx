@@ -1,7 +1,7 @@
 import { useState } from "react";
-import { KeyRoundIcon, ShieldQuestionIcon } from "lucide-react";
+import { ExternalLinkIcon, KeyRoundIcon, ShieldQuestionIcon } from "lucide-react";
 
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import type { SshPrompt } from "../../../shared/connections";
 
@@ -66,6 +66,26 @@ function PromptCard({ prompt }: { prompt: SshPrompt }) {
             Cancel
           </Button>
         </div>
+      </div>
+    );
+  }
+
+  if (prompt.kind === "browser") {
+    // The page comes from the server's SSH banner: shown in full, and opened only when the person asks.
+    return (
+      <div role="group" aria-label="Approve in the browser" className={frame}>
+        <p className="m-0 text-foreground">{prompt.message}</p>
+        <p className="m-0 break-all text-dim">{prompt.url}</p>
+        <div className="flex flex-wrap gap-2">
+          <a href={prompt.url} target="_blank" rel="noreferrer" className={buttonVariants()}>
+            Open the approval page
+            <ExternalLinkIcon aria-hidden="true" />
+          </a>
+          <Button type="button" variant="ghost" disabled={busy} onClick={() => void answer(undefined)}>
+            Cancel
+          </Button>
+        </div>
+        <p className="m-0 text-dim">Wisp goes on by itself once you approve.</p>
       </div>
     );
   }

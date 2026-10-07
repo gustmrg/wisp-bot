@@ -31,6 +31,12 @@ export interface ConnectionManagerOptions {
     profile: SshConnectionProfile,
     onProgress: (message: string) => void,
     signal: AbortSignal,
+  ): Promise<{ warnings: string[] } | void>;
+  /** Keeps a server's Wisps running after logout there, asking for a sudo password through `askSsh` if needed. */
+  enableLinger(
+    profile: SshConnectionProfile,
+    askPassword: () => Promise<string | undefined>,
+    signal: AbortSignal,
   ): Promise<void>;
   /**
    * Connects to an SSH server once, asking through `askSsh` about an unknown
@@ -39,6 +45,7 @@ export interface ConnectionManagerOptions {
   checkSshServer(
     profile: SshConnectionProfile,
     signal: AbortSignal,
+    onBrowserCheck: (url: string) => void,
   ): Promise<{ installedVersion?: string; addedKey: boolean }>;
   /** This app's version; installing sets up the same server version. */
   appVersion: string;
@@ -81,6 +88,8 @@ export class ConnectionManager {
   private sshCheck: { profileId: string; controller: AbortController } | undefined;
   private prompt: { view: SshPrompt; resolve: (answer: string | undefined) => void } | undefined;
   private promptId = 0;
+  /** Servers whose setup could not turn on linger, until it is turned on from here. */
+  private lingerNeeded = new Set<string>();
 
   constructor(private readonly options: ConnectionManagerOptions) {}
 
@@ -111,6 +120,7 @@ export class ConnectionManager {
       status: { ...this.status },
       secureStorageAvailable: store.secureStorageAvailable,
       ...(this.prompt ? { sshPrompt: this.prompt.view } : {}),
+      ...(this.lingerNeeded.size > 0 ? { lingerNeeded: [...this.lingerNeeded] } : {}),
       ...(this.installation
         ? {
             installation: {
@@ -220,8 +230,9 @@ export class ConnectionManager {
       });
       // Still the screen of this setup: nobody chose another connection meanwhile.
       const showing = (): boolean => active && !this.disposed && this.status.profileId === id && !this.session;
+      let warnings: string[] = [];
       try {
-        await this.options.installServer(
+        const result = await this.options.installServer(
           profile,
           (message) => {
             if (this.installation === installation && !signal.aborted) {
@@ -234,6 +245,7 @@ export class ConnectionManager {
           },
           signal,
         );
+        warnings = result?.warnings ?? [];
       } catch (error) {
         const message = error instanceof Error ? error.message : "The server could not be set up.";
         this.options.logger.warn("server_install_failed", { profileId: id, cancelled: signal.aborted });
@@ -241,6 +253,8 @@ export class ConnectionManager {
         throw new WispBackendError("unavailable", message, true);
       }
       this.options.logger.info("server_installed", { profileId: id });
+      if (warnings.some((warning) => /enable-linger/.test(warning))) this.lingerNeeded.add(id);
+      else this.lingerNeeded.delete(id);
       return await this.serialized(async () => {
         if (signal.aborted) throw new WispBackendError("unavailable", "Setting up the server was cancelled.", true);
         await this.open(id, undefined, true);
@@ -273,7 +287,9 @@ export class ConnectionManager {
     const check = { profileId: id, controller: new AbortController() };
     this.sshCheck = check;
     try {
-      const result = await this.options.checkSshServer(profile, check.controller.signal);
+      const result = await this.options.checkSshServer(profile, check.controller.signal, (url) =>
+        this.showBrowserCheck(url, profile.host),
+      );
       this.options.logger.info("ssh_checked", { profileId: id, addedKey: result.addedKey });
       return { ...result, appVersion: this.options.appVersion };
     } catch (error) {
@@ -284,6 +300,57 @@ export class ConnectionManager {
       if (this.sshCheck === check) this.sshCheck = undefined;
       this.dismissPrompt();
     }
+  }
+
+  /**
+   * Turns on linger on a server, so its Wisps keep running after the person
+   * logs out there. Runs like a check: one at a time, cancellable, and may
+   * ask for a sudo password.
+   */
+  async enableLinger(id: string): Promise<ConnectionsView> {
+    const profile = this.options.store.get(id);
+    if (!profile) throw new WispBackendError("not_found", "That connection no longer exists.");
+    if (profile.kind !== "ssh") throw new WispBackendError("invalid_request", "Only an SSH connection can be changed.");
+    if (this.sshCheck) {
+      throw new WispBackendError(
+        "invalid_request",
+        "Wisp is already checking a connection. Wait for it, or cancel it.",
+      );
+    }
+    const check = { profileId: id, controller: new AbortController() };
+    this.sshCheck = check;
+    try {
+      await this.options.enableLinger(
+        profile,
+        () => this.askSsh({ kind: "secret", message: `Password for sudo on ${profile.host}:` }),
+        check.controller.signal,
+      );
+      this.lingerNeeded.delete(id);
+      this.options.logger.info("linger_enabled", { profileId: id });
+      return this.view();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Linger could not be turned on.";
+      throw new WispBackendError("unavailable", message, true);
+    } finally {
+      if (this.sshCheck === check) this.sshCheck = undefined;
+      this.dismissPrompt();
+    }
+  }
+
+  /** Tailscale SSH waits for an approval in the browser; the page is shown until the check goes on. */
+  private showBrowserCheck(url: string, host: string): void {
+    if (!this.sshCheck || this.disposed || !/^https:\/\//.test(url)) return;
+    this.dismissPrompt();
+    this.prompt = {
+      view: {
+        id: ++this.promptId,
+        kind: "browser",
+        url,
+        message: `Tailscale asks you to approve this connection to ${host} in your browser.`,
+      },
+      resolve: () => undefined,
+    };
+    this.publish();
   }
 
   cancelSshCheck(): ConnectionsView {
@@ -334,6 +401,7 @@ export class ConnectionManager {
   remove(id: string): Promise<ConnectionsView> {
     if (this.installation?.profileId === id) this.installation.controller.abort();
     if (this.sshCheck?.profileId === id) this.cancelSshCheck();
+    this.lingerNeeded.delete(id);
     return this.serialized(async () => {
       if (id === LOCAL_CONNECTION_ID) throw new WispBackendError("invalid_request", "This computer cannot be removed.");
       const active = id === this.status.profileId;

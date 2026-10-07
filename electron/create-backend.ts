@@ -15,7 +15,7 @@ import {
 import { RUNTIME_OPERATIONS } from "../backend/handlers/register-runtime-handlers.js";
 import type { StructuredLogger } from "../backend/structured-logger.js";
 import type { RemoteTransport } from "../client/remote-session.js";
-import type { SshConfigHost, SshConnectionProfile } from "../shared/connections.js";
+import type { SshConfigHost, SshConnectionProfile, TailnetMachine } from "../shared/connections.js";
 import type { HostRequest, HostResponse } from "../shared/remote-protocol.js";
 import type { LaunchAtLoginService } from "./backend/launch-at-login-service.js";
 import type { UpdateService } from "./backend/update-service.js";
@@ -26,6 +26,8 @@ import { checkSshServer } from "./connections/ssh-check.js";
 import { listSshConfigHosts } from "./connections/ssh-config.js";
 import { installRemoteServer } from "./connections/ssh-install.js";
 import { WispSshKey } from "./connections/ssh-key.js";
+import { enableLinger } from "./connections/ssh-linger.js";
+import { listTailnetMachines } from "./connections/tailnet.js";
 import { openSshTunnel } from "./connections/ssh-tunnel.js";
 import { registerLaunchAtLoginHandlers } from "./ipc/register-launch-at-login-handlers.js";
 import { registerUpdateHandlers } from "./ipc/register-update-handlers.js";
@@ -75,6 +77,8 @@ export interface BackendHost {
   openSshTunnel?: (profile: SshConnectionProfile, signal: AbortSignal) => Promise<RemoteTransport>;
   /** Lists the machines in ~/.ssh/config; tests substitute a fake ssh and home. */
   listSshHosts?: () => Promise<SshConfigHost[]>;
+  /** Lists the machines on the tailnet; tests substitute a fake. */
+  listTailnetMachines?: () => Promise<TailnetMachine[]>;
 }
 
 export interface Backend {
@@ -114,14 +118,17 @@ export async function createBackend(host: BackendHost): Promise<Backend> {
           onProgress,
           signal,
         })),
-    checkSshServer: async (profile, signal) =>
+    checkSshServer: async (profile, signal, onBrowserCheck) =>
       checkSshServer(profile, {
         sshPath,
         askpassEnv: await askpass.env(),
         key,
         deviceName: host.deviceName,
+        onBrowserCheck,
         signal,
       }),
+    enableLinger: (profile, askPassword, signal) =>
+      enableLinger(profile, { sshPath, identityFile: key.identityFile, askPassword, signal }),
     appVersion: host.appVersion,
     deviceName: host.deviceName,
     broadcast,
@@ -163,6 +170,8 @@ export async function createBackend(host: BackendHost): Promise<Backend> {
       [WISP_IPC_CHANNELS.cancelServerInstall, () => manager.cancelInstall()],
       [WISP_IPC_CHANNELS.listSshHosts, () => (host.listSshHosts ?? (() => listSshConfigHosts({ sshPath })))()],
       [WISP_IPC_CHANNELS.checkSshServer, (payload) => manager.checkSsh(connectionId(payload))],
+      [WISP_IPC_CHANNELS.listTailnetMachines, () => (host.listTailnetMachines ?? listTailnetMachines)()],
+      [WISP_IPC_CHANNELS.enableLinger, (payload) => manager.enableLinger(connectionId(payload))],
       [WISP_IPC_CHANNELS.cancelSshCheck, () => manager.cancelSshCheck()],
       [
         WISP_IPC_CHANNELS.answerSshPrompt,

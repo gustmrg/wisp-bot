@@ -80,6 +80,13 @@ export type SshPrompt =
       /** A yes or no question, such as allowing the use of an agent key. */
       kind: "confirm";
       message: string;
+    }
+  | {
+      id: number;
+      /** Tailscale SSH waits until the person approves the connection on this page; nothing to answer. */
+      kind: "browser";
+      url: string;
+      message: string;
     };
 
 /** A question from OpenSSH before the app numbers it. */
@@ -118,11 +125,23 @@ export interface ConnectionsView {
   sshPrompt?: SshPrompt;
   /** A server setup in progress, with its latest progress line. */
   installation?: { profileId: string; message?: string };
+  /** Servers whose Wisps stop when nobody is logged in there: the setup could not turn on linger. */
+  lingerNeeded?: string[];
 }
 
 export type SaveConnectionRequest =
   | (Omit<SshConnectionProfile, "id"> & { id?: string })
   | (Omit<UrlConnectionProfile, "id"> & { id?: string });
+
+/** A machine on this computer's tailnet, from `tailscale status`. */
+export interface TailnetMachine {
+  /** The machine's name, such as "raspberrypi". */
+  name: string;
+  /** Its MagicDNS name, such as "raspberrypi.tail1234.ts.net"; connects whether or not short names resolve. */
+  dnsName: string;
+  ip?: string;
+  online: boolean;
+}
 
 /** A machine named by a `Host` line of the user's ~/.ssh/config, as OpenSSH resolves it. */
 export interface SshConfigHost {

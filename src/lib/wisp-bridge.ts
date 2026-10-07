@@ -75,6 +75,8 @@ const REQUIRED_WISP_METHODS = [
   "checkSshServer",
   "cancelSshCheck",
   "answerSshPrompt",
+  "listTailnetMachines",
+  "enableLinger",
   "subscribeToConnections",
 ] as const satisfies ReadonlyArray<keyof WispApi>;
 
