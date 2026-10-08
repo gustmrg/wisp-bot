@@ -9,6 +9,7 @@ import { McpOAuthProvider } from "../backend/mcp-oauth.js";
 import { McpSecretStore } from "../backend/mcp-secret-store.js";
 import { McpService } from "../backend/mcp-service.js";
 import type { McpConnection, McpConnectionAuth, McpConnectionOptions } from "../backend/mcp-bridge.js";
+import type { McpSettingsView } from "../shared/mcp.js";
 import type { EncryptionService } from "../backend/encrypted-credential-store.js";
 import type { ToolAuthorizationBroker } from "../backend/tool-authorization-broker.js";
 
@@ -64,6 +65,7 @@ interface ServiceOverrides {
   authorizationBroker?: Pick<ToolAuthorizationBroker, "authorize">;
   /** Fixtures handed to createOAuthProvider in creation order. */
   oauthProviders?: ReadonlyArray<Record<string, unknown>>;
+  onSettingsChanged?: (view: McpSettingsView) => void;
 }
 
 /** Minimal provider surface used by sign-in flows; tests assert on counters. */
@@ -102,7 +104,7 @@ const TOOL = {
 let serverCounter = 0;
 
 async function createService(
-  { authorizationBroker, oauthProviders }: ServiceOverrides = {},
+  { authorizationBroker, oauthProviders, onSettingsChanged }: ServiceOverrides = {},
   connections: ReadonlyArray<ConnectionFixture> = [],
 ) {
   const dataDirectory = await mkdtemp(path.join(os.tmpdir(), "wisp-mcp-"));
@@ -115,6 +117,7 @@ async function createService(
     authorizationBroker: broker,
     resolveWisp: (conversationId) => `session-${conversationId}`,
     openExternal: vi.fn(async () => undefined),
+    ...(onSettingsChanged ? { onSettingsChanged } : {}),
     createConnection: (_options: McpConnectionOptions): McpConnection => {
       const fixture = connections[created.length] ?? { outcome: new Error("no fixture"), tools: [] };
       const connection = new FakeConnection(fixture);
@@ -330,8 +333,6 @@ describe("McpService", () => {
     const { service } = await createService({}, connections);
     const first = await addServer(service);
     const second = await addServer(service);
-    await service.refreshTools({ serverId: first.serverId });
-    await service.refreshTools({ serverId: second.serverId });
 
     const none = await service.getSnapshot("wisp-a");
     expect(none.definitions).toEqual([]);
@@ -366,7 +367,6 @@ describe("McpService", () => {
     ];
     const { service } = await createService({}, connections);
     const { serverId } = await addServer(service);
-    await service.refreshTools({ serverId });
     await grantAccess(service, "wisp-a", serverId);
 
     const snapshot = await service.getSnapshot("wisp-a");
@@ -417,7 +417,6 @@ describe("McpService", () => {
       ],
     );
     const { serverId } = await addServer(service);
-    await service.refreshTools({ serverId });
     await grantAccess(service, "wisp-a", serverId);
     // The wrapper was created from the original snapshot; the refresh during
     // approval replaces the fingerprint for the same tool name.
@@ -436,7 +435,6 @@ describe("McpService", () => {
     const connections = [{ outcome: "connected" as const, tools: [TOOL] }];
     const { service } = await createService({}, connections);
     const { serverId, server } = await addServer(service);
-    await service.refreshTools({ serverId });
     await grantAccess(service, "wisp-a", serverId);
     const alias = (await service.getSnapshot("wisp-a")).activeNames[0]!;
     expect(getToolMetadata(alias)).toBeDefined();
@@ -459,7 +457,6 @@ describe("McpService", () => {
     const authorize = vi.fn(async () => undefined);
     const { service, created } = await createService({ authorizationBroker: { authorize } }, connections);
     const { serverId, server } = await addServer(service);
-    await service.refreshTools({ serverId });
     await grantAccess(service, "wisp-a", serverId);
 
     const snapshot = await service.getSnapshot("wisp-a");
@@ -500,7 +497,6 @@ describe("McpService", () => {
       connections,
     );
     const { serverId } = await addServer(service);
-    await service.refreshTools({ serverId });
     await grantAccess(service, "wisp-a", serverId);
     const redactDefinition = await firstDefinition(service);
     await redactDefinition.execute("call-1", { query: "x", apiToken: "super-secret" });
@@ -520,7 +516,6 @@ describe("McpService", () => {
     ];
     const { service, created } = await createService({}, connections);
     const { serverId } = await addServer(service);
-    await service.refreshTools({ serverId });
     await grantAccess(service, "wisp-a", serverId);
     const errorDefinition = await firstDefinition(service);
     await expect(errorDefinition.execute("call-1", { query: "x" })).rejects.toMatchObject({
@@ -601,18 +596,89 @@ describe("McpService", () => {
     expect(view.servers[0]?.state).toBe("needs_sign_in");
   });
 
-  it("tests draft connections without granting access or persisting snapshots", async () => {
+  it("discovers tools when a connection is saved so granted Wisps can use it without a refresh", async () => {
     const { service, created } = await createService({}, [{ outcome: "connected" as const, tools: [TOOL] }]);
-    const { server, serverId } = await addServer(service, { enabled: false });
-    const result = await service.testConnection({
+    const { server, serverId } = await addServer(service);
+
+    expect(server.state).toBe("connected");
+    expect(server.tools.map(({ name }) => name)).toEqual(["search"]);
+    expect(created[0]?.closed).toBe(1);
+    // Discovery never grants access by itself.
+    expect((await service.getSnapshot("wisp-a")).definitions).toEqual([]);
+    await grantAccess(service, "wisp-a", serverId);
+    expect((await service.getSnapshot("wisp-a")).definitions).toHaveLength(1);
+  });
+
+  it("keeps a saved connection when discovery fails and reports it as unavailable", async () => {
+    const { service } = await createService({}, [{ outcome: new Error("offline"), tools: [] }]);
+    const { server } = await addServer(service);
+
+    expect(server.state).toBe("unavailable");
+    expect(server.tools).toEqual([]);
+    expect((await service.getView()).servers).toHaveLength(1);
+  });
+
+  it("rediscovers on save only when the connection has no tools", async () => {
+    const connections = [
+      { outcome: "connected" as const, tools: [TOOL] },
+      { outcome: "connected" as const, tools: [{ ...TOOL, name: "lookup" }] },
+    ];
+    const { service, created } = await createService({}, connections);
+    const { server, serverId } = await addServer(service);
+
+    // A rename keeps the reviewed tools and does not reconnect.
+    await service.save({ serverId, name: "Renamed", endpoint: server.endpoint, authMode: "none", enabled: true });
+    expect(created).toHaveLength(1);
+
+    // A new endpoint is a new identity: its tools are discovered again.
+    const view = await service.save({
       serverId,
-      endpoint: server.endpoint,
+      name: "Renamed",
+      endpoint: "https://moved.example.com/mcp",
+      authMode: "none",
+      enabled: true,
+    });
+    expect(created).toHaveLength(2);
+    expect(view.servers[0]?.tools.map(({ name }) => name)).toEqual(["lookup"]);
+  });
+
+  it("leaves discovery for OAuth connections to sign-in", async () => {
+    const { service, created } = await createService({}, [{ outcome: "connected" as const, tools: [TOOL] }]);
+    const { server } = await addServer(service, { authMode: "oauth" });
+    expect(created).toHaveLength(0);
+    expect(server.tools).toEqual([]);
+  });
+
+  it("stores tools when a saved connection tests successfully, but never for a differing draft", async () => {
+    const connections = [
+      { outcome: new Error("offline"), tools: [] },
+      { outcome: "connected" as const, tools: [TOOL] },
+      { outcome: "connected" as const, tools: [TOOL] },
+    ];
+    const settings: McpSettingsView[] = [];
+    const { service, created } = await createService({ onSettingsChanged: (view) => settings.push(view) }, connections);
+    const { server, serverId } = await addServer(service, { enabled: false });
+    expect(server.tools).toHaveLength(0);
+
+    const draft = await service.testConnection({
+      serverId,
+      endpoint: "https://draft.example.com/mcp",
       authMode: "none",
     });
-    expect(result.message).toContain("1 tool");
+    expect(draft.message).toContain("1 tool");
+    expect((await service.getView()).servers[0]?.tools).toHaveLength(0);
+    expect(created[1]?.closed).toBe(1);
+
+    settings.length = 0;
+    const saved = await service.testConnection({ serverId, endpoint: server.endpoint, authMode: "none" });
+    expect(saved.message).toContain("1 tool");
     const view = await service.getView();
-    expect(view.servers[0]?.tools).toHaveLength(0);
-    expect(created[0]?.closed).toBe(1);
+    expect(view.servers[0]?.state).toBe("connected");
+    expect(view.servers[0]?.tools.map(({ name }) => name)).toEqual(["search"]);
+    // Open settings windows learn about the stored tools.
+    expect(settings.at(-1)?.servers[0]?.tools).toHaveLength(1);
+    // Testing never grants access.
+    expect(service.getAccess({ conversationId: "wisp-a" }).grants).toEqual([{ serverId, access: "none" }]);
   });
 
   it("blocks secret saves when secure storage is unavailable but allows unauthenticated servers", async () => {

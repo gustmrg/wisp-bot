@@ -24,6 +24,12 @@ embedded credentials) with three authentication modes:
 Local stdio servers are rejected at every boundary, along with resources,
 prompts, embedded MCP UI, server-requested sampling, and long-running tasks;
 unsupported interaction requests fail clearly instead of lying dormant.
+A Wisp only sees a server's tools after they are discovered and stored.
+Saving a connection without stored tools discovers them right away; a failed
+discovery keeps the saved connection and marks it **Unavailable**. A successful
+**Test connection** on a saved connection, with its saved settings, also stores
+the tools. Testing unsaved changes stores nothing. OAuth connections discover
+their tools at sign-in, and **Refresh tools** discovers them again on request.
 Discovery accepts at most 128 tools per server and fails clearly beyond that.
 That is a per-server bound, not a per-Wisp one: a Wisp's built-in, plugin, and
 granted MCP tools are all sent to the model together, and some models accept
