@@ -11,7 +11,7 @@ import {
   MESSAGE_PAGE_SIZE,
   type StoredMessagePage,
 } from "../backend/conversation-store.js";
-import type { ConversationRecord } from "../backend/workspace-actions.js";
+import type { ConversationRecord, WispRecord } from "../backend/workspace-actions.js";
 import type { Message } from "../shared/conversations.js";
 import { messageSearchText } from "../shared/message-search.js";
 
@@ -37,6 +37,37 @@ function record(id: string, messages: Message[] = []): ConversationRecord {
   };
 }
 
+function wispRecord(id: string): WispRecord {
+  return {
+    wisp: { id, name: id, role: "", soul: "", shape: "circle" },
+    storageId: `${id}-settings`,
+    modelOverride: null,
+    createdAt: "2026-09-01T00:00:00.000Z",
+    updatedAt: "2026-09-01T00:00:00.000Z",
+  };
+}
+
+function circleRecord(id: string, memberIds: string[]): ConversationRecord {
+  return {
+    chat: {
+      id,
+      kind: "circle",
+      name: id,
+      label: "",
+      description: "",
+      memberIds,
+      notifyOnUpdatesEnabled: false,
+      preview: "",
+      unread: true,
+      messages: [],
+    },
+    storageId: `${id}-workspace`,
+    sessions: {},
+    createdAt: "2026-09-01T00:00:00.000Z",
+    updatedAt: "2026-09-01T00:00:00.000Z",
+  };
+}
+
 function numbered(count: number): Message[] {
   return Array.from({ length: count }, (_, index) => ({ id: `m${index}`, type: "incoming", text: `Message ${index}` }));
 }
@@ -44,7 +75,11 @@ function numbered(count: number): Message[] {
 async function storeWith(messageCount: number): Promise<ConversationStore> {
   const store = ConversationStore.open(await databasePath());
   store.transaction(() =>
-    store.replaceAll({ initialized: true, wisps: {}, conversations: { one: record("one", numbered(messageCount)) } }),
+    store.replaceAll({
+      initialized: true,
+      wisps: { one: wispRecord("one") },
+      conversations: { one: record("one", numbered(messageCount)) },
+    }),
   );
   return store;
 }
@@ -103,7 +138,9 @@ describe("ConversationStore pages", () => {
 
   it("returns empty pages for empty conversations and missing targets", async () => {
     const store = ConversationStore.open(await databasePath());
-    store.transaction(() => store.replaceAll({ initialized: true, wisps: {}, conversations: { one: record("one") } }));
+    store.transaction(() =>
+      store.replaceAll({ initialized: true, wisps: { one: wispRecord("one") }, conversations: { one: record("one") } }),
+    );
 
     expect(store.readPage("one", { page: "latest" })).toEqual({ messages: [], olderCursor: null, newerCursor: null });
     expect(store.readPage("one", { page: "around", messageId: "missing" }).messages).toEqual([]);
@@ -203,8 +240,10 @@ describe("ConversationStore versions", () => {
     expect(chats.talked?.chat.lastActivityAt).toBe("2026-09-10T10:00:00.000Z");
     expect(chats.created?.chat.lastActivityAt).toBe("2026-09-02T00:00:00.000Z");
     expect(chats.legacy?.chat).not.toHaveProperty("lastActivityAt");
+    expect(store.hasJsonRecords()).toBe(true);
     store.close();
-    expect(meta(file)).toMatchObject({ store_version: "4", min_reader_version: "4" });
+    // The records stay JSON until the repository rebuilds the store.
+    expect(meta(file)).toMatchObject({ store_version: "2" });
     const db = new DatabaseSync(file, { readOnly: true });
     expect(db.prepare("SELECT rowid FROM message_search WHERE message_search MATCH ?").all('"orcamento"')).toHaveLength(
       1,
@@ -212,23 +251,93 @@ describe("ConversationStore versions", () => {
     db.close();
   });
 
-  it("stores Wisps apart from conversations", async () => {
+  it("stores Wisps and conversations as columns, related by foreign keys", async () => {
     const store = ConversationStore.open(await databasePath());
-    const wisp = {
-      wisp: { id: "one", name: "One", role: "", soul: "", shape: "circle" as const },
-      storageId: "one-settings",
-      modelOverride: null,
-      createdAt: "2026-09-01T00:00:00.000Z",
-      updatedAt: "2026-09-01T00:00:00.000Z",
+    const one: WispRecord = {
+      ...wispRecord("one"),
+      wisp: { id: "one", name: "One", role: "Research", soul: "# Soul", shape: "circle", color: "#123456" },
+      modelOverride: { providerId: "anthropic", modelId: "claude-sonnet-5", maxOutputTokens: 4096 },
     };
-    store.transaction(() =>
-      store.replaceAll({ initialized: true, wisps: { one: wisp }, conversations: { one: record("one") } }),
-    );
-    expect(store.read().wisps).toEqual({ one: wisp });
+    const records = {
+      wisps: { one, two: wispRecord("two") },
+      conversations: {
+        one: record("one", numbered(2)),
+        two: { ...record("two"), sessions: {} },
+        crew: circleRecord("crew", ["two", "one"]),
+      },
+    };
+    store.transaction(() => store.replaceAll({ initialized: true, ...records }));
+
+    const stored = store.read();
+    expect(stored.wisps).toEqual(records.wisps);
+    expect(stored.conversations).toEqual({
+      one: { ...records.conversations.one, chat: { ...records.conversations.one.chat, messages: numbered(2) } },
+      two: records.conversations.two,
+      crew: records.conversations.crew,
+    });
+
+    // A deleted Wisp takes its own conversation and leaves every circle.
     store.transaction(() => store.deleteWisp("one"));
-    expect(store.read().wisps).toEqual({});
-    expect(Object.keys(store.read().conversations)).toEqual(["one"]);
+    const after = store.read().conversations as Record<string, { chat: { memberIds?: string[] } }>;
+    expect(Object.keys(after)).toEqual(["two", "crew"]);
+    expect(after.crew?.chat.memberIds).toEqual(["two"]);
+    expect(store.getMessage("one", "m0")).toBeUndefined();
+    // A Wisp's own conversation needs its Wisp.
+    expect(() => store.transaction(() => store.putConversation(record("ghost")))).toThrow(/FOREIGN KEY/);
     store.close();
+  });
+
+  it("rebuilds a store of JSON records as columns", async () => {
+    const file = await databasePath();
+    const v4 = new DatabaseSync(file);
+    v4.exec(`
+      CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL) STRICT;
+      CREATE TABLE conversations (seq INTEGER PRIMARY KEY, id TEXT NOT NULL UNIQUE, record TEXT NOT NULL) STRICT;
+      CREATE TABLE wisps (seq INTEGER PRIMARY KEY, id TEXT NOT NULL UNIQUE, record TEXT NOT NULL) STRICT;
+      CREATE TABLE messages (
+        seq INTEGER PRIMARY KEY,
+        conversation_id TEXT NOT NULL REFERENCES conversations (id) ON DELETE CASCADE,
+        id TEXT NOT NULL, body TEXT NOT NULL, UNIQUE (conversation_id, id)) STRICT;
+      INSERT INTO meta VALUES ('store_version', '4'), ('min_reader_version', '4'), ('initialized', '1');
+    `);
+    const one = wispRecord("one");
+    const conversation = record("one");
+    v4.prepare("INSERT INTO wisps (id, record) VALUES (?, ?)").run("one", JSON.stringify(one));
+    for (const id of ["one", "dropped"]) {
+      const { messages: _messages, ...chat } = { ...conversation.chat, id, wispId: id };
+      v4.prepare("INSERT INTO conversations (id, record) VALUES (?, ?)").run(
+        id,
+        JSON.stringify({ ...conversation, chat }),
+      );
+      v4.prepare("INSERT INTO messages (conversation_id, id, body) VALUES (?, ?, ?)").run(
+        id,
+        "m0",
+        JSON.stringify({ id: "m0", type: "incoming", text: "Kept", authorId: "one" }),
+      );
+    }
+    v4.close();
+
+    const store = ConversationStore.open(file);
+    expect(store.hasJsonRecords()).toBe(true);
+    expect(store.read().wisps).toEqual({ one });
+    // The repository drops a record it cannot keep; its messages go with it.
+    store.rebuild({ wisps: { one }, conversations: { one: conversation } }, { scheduled: [], queued: [] });
+
+    expect(store.hasJsonRecords()).toBe(false);
+    expect(store.read()).toEqual({
+      initialized: true,
+      wisps: { one },
+      conversations: {
+        one: { ...conversation, chat: { ...conversation.chat, messages: [expect.objectContaining({ text: "Kept" })] } },
+      },
+    });
+    store.close();
+    expect(meta(file)).toMatchObject({ store_version: "5", min_reader_version: "5" });
+    const db = new DatabaseSync(file, { readOnly: true });
+    expect(db.prepare("SELECT conversation_id, type, author_id FROM messages").all()).toEqual([
+      { conversation_id: "one", type: "incoming", author_id: "one" },
+    ]);
+    db.close();
   });
 
   it("reads a newer store that older readers may still use, and refuses one they may not", async () => {
@@ -243,15 +352,15 @@ describe("ConversationStore versions", () => {
       db.close();
     };
 
-    raise(readable, "5", "4");
+    raise(readable, "6", "5");
     const newer = ConversationStore.open(readable);
     expect(newer.read().initialized).toBe(true);
     // Writing here must not lower the markers the newer build set.
     newer.transaction(() => newer.setInitialized(true));
     newer.close();
-    expect(meta(readable)).toMatchObject({ store_version: "5", min_reader_version: "4" });
+    expect(meta(readable)).toMatchObject({ store_version: "6", min_reader_version: "5" });
 
-    raise(readable, "6", "5");
+    raise(readable, "7", "6");
     const incompatible = ConversationStore.open(readable);
     expect(() => incompatible.read()).toThrow("Unsupported conversation store version.");
     incompatible.close();

@@ -1,16 +1,18 @@
 import { DatabaseSync, type StatementSync } from "node:sqlite";
 
 import type { Message } from "../shared/conversations.js";
-import type { ConversationRecord, WispRecord } from "./workspace-actions.js";
+import type { QueuedMessage } from "../shared/message-queue.js";
+import type { ScheduledMessage } from "../shared/scheduled-messages.js";
+import type { ConversationRecord, WispRecord, WorkspaceRecords } from "./workspace-actions.js";
 
 // The layout this build writes, and the oldest layout reader that can still
 // read and write a database it produced. Additive changes (new tables, indexes,
 // or triggers that older writers keep consistent) raise only STORE_VERSION, so
 // a downgrade keeps working. Record contents are validated by the repository.
-// Version 4 stores Wisps apart from conversations, which earlier readers
-// cannot understand.
-const STORE_VERSION = 4;
-const MIN_READER_VERSION = 4;
+// Version 4 stored Wisps apart from conversations, and version 5 stores records
+// as columns instead of JSON; earlier readers understand neither.
+const STORE_VERSION = 5;
+const MIN_READER_VERSION = 5;
 
 export const MESSAGE_PAGE_SIZE = 50;
 /** Messages on each side of the target in an "around" page. */
@@ -55,39 +57,123 @@ const SEARCH_SCHEMA = `
   END;
 `;
 
-// Messages a Wisp is sent later. Deleting a conversation, from any build,
-// removes its scheduled messages through the foreign key.
-const SCHEDULED_MESSAGES_SCHEMA = `
+// Messages carry their fields in the JSON body, since their shape depends on
+// their type. The fields queries may need are derived from it, so they can
+// never disagree with the body.
+const MESSAGE_COLUMNS = [
+  "type TEXT GENERATED ALWAYS AS (json_extract(body, '$.type')) VIRTUAL",
+  "created_at TEXT GENERATED ALWAYS AS (json_extract(body, '$.createdAt')) VIRTUAL",
+  "author_id TEXT GENERATED ALWAYS AS (json_extract(body, '$.authorId')) VIRTUAL",
+];
+
+const MESSAGES_SCHEMA = `
+  CREATE TABLE IF NOT EXISTS messages (
+    seq INTEGER PRIMARY KEY,
+    conversation_id TEXT NOT NULL REFERENCES conversations (id) ON DELETE CASCADE,
+    id TEXT NOT NULL,
+    body TEXT NOT NULL,
+    ${MESSAGE_COLUMNS.join(",\n    ")},
+    UNIQUE (conversation_id, id)
+  ) STRICT;
+  CREATE INDEX IF NOT EXISTS messages_by_conversation ON messages (conversation_id, seq);
+`;
+
+// Wisps and conversations, with what relates them as foreign keys: a Wisp's
+// own conversation shares its ID and goes with it, and a deleted Wisp leaves
+// every circle and session.
+const RECORD_SCHEMA = `
+  CREATE TABLE IF NOT EXISTS wisps (
+    seq INTEGER PRIMARY KEY,
+    id TEXT NOT NULL UNIQUE,
+    name TEXT NOT NULL,
+    role TEXT NOT NULL,
+    soul TEXT NOT NULL,
+    shape TEXT NOT NULL,
+    color TEXT,
+    avatar_image TEXT,
+    storage_id TEXT NOT NULL,
+    model_provider_id TEXT,
+    model_id TEXT,
+    model_max_output_tokens INTEGER,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    CHECK ((model_provider_id IS NULL) = (model_id IS NULL)),
+    CHECK (model_max_output_tokens IS NULL OR model_id IS NOT NULL)
+  ) STRICT;
+  CREATE TABLE IF NOT EXISTS conversations (
+    seq INTEGER PRIMARY KEY,
+    id TEXT NOT NULL UNIQUE,
+    kind TEXT NOT NULL CHECK (kind IN ('wisp', 'circle')),
+    wisp_id TEXT UNIQUE REFERENCES wisps (id) ON DELETE CASCADE,
+    name TEXT,
+    label TEXT,
+    description TEXT,
+    notify_on_updates_enabled INTEGER NOT NULL CHECK (notify_on_updates_enabled IN (0, 1)),
+    preview TEXT NOT NULL,
+    unread INTEGER CHECK (unread IN (0, 1)),
+    last_activity_at TEXT,
+    storage_id TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    CHECK (CASE kind
+      WHEN 'wisp' THEN wisp_id = id AND name IS NULL AND label IS NULL AND description IS NULL
+      ELSE wisp_id IS NULL AND name IS NOT NULL AND label IS NOT NULL AND description IS NOT NULL
+    END)
+  ) STRICT;
+  CREATE TABLE IF NOT EXISTS circle_members (
+    conversation_id TEXT NOT NULL REFERENCES conversations (id) ON DELETE CASCADE,
+    wisp_id TEXT NOT NULL REFERENCES wisps (id) ON DELETE CASCADE,
+    position INTEGER NOT NULL,
+    PRIMARY KEY (conversation_id, wisp_id),
+    UNIQUE (conversation_id, position)
+  ) STRICT;
+  CREATE INDEX IF NOT EXISTS circle_members_by_wisp ON circle_members (wisp_id);
+  CREATE TABLE IF NOT EXISTS participant_sessions (
+    conversation_id TEXT NOT NULL REFERENCES conversations (id) ON DELETE CASCADE,
+    wisp_id TEXT NOT NULL REFERENCES wisps (id) ON DELETE CASCADE,
+    session_id TEXT NOT NULL,
+    pi_session_id TEXT,
+    pi_session_file TEXT,
+    PRIMARY KEY (conversation_id, wisp_id)
+  ) STRICT;
+  CREATE INDEX IF NOT EXISTS participant_sessions_by_wisp ON participant_sessions (wisp_id);
+`;
+
+// Messages a Wisp is sent later, and messages waiting for their Wisp in the
+// order they were queued. Deleting a conversation removes both. A schedule
+// stays JSON: new kinds of schedule join it without changing the table.
+const PENDING_MESSAGES_SCHEMA = `
   CREATE TABLE IF NOT EXISTS scheduled_messages (
     seq INTEGER PRIMARY KEY,
     id TEXT NOT NULL UNIQUE,
     conversation_id TEXT NOT NULL REFERENCES conversations (id) ON DELETE CASCADE,
+    text TEXT NOT NULL,
+    schedule TEXT NOT NULL CHECK (json_valid(schedule)),
+    time_zone TEXT NOT NULL,
     next_run_at TEXT NOT NULL,
-    record TEXT NOT NULL
+    sent_count INTEGER NOT NULL,
+    last_sent_at TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
   ) STRICT;
   CREATE INDEX IF NOT EXISTS scheduled_messages_by_conversation ON scheduled_messages (conversation_id);
-`;
-
-// Messages waiting for their Wisp, in the order they were queued.
-const QUEUED_MESSAGES_SCHEMA = `
   CREATE TABLE IF NOT EXISTS queued_messages (
     seq INTEGER PRIMARY KEY,
     id TEXT NOT NULL UNIQUE,
     conversation_id TEXT NOT NULL REFERENCES conversations (id) ON DELETE CASCADE,
-    record TEXT NOT NULL
+    text TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    scheduled_message_id TEXT,
+    scheduled_at TEXT,
+    scheduled_time_zone TEXT,
+    CHECK ((scheduled_message_id IS NULL) = (scheduled_at IS NULL)
+      AND (scheduled_message_id IS NULL) = (scheduled_time_zone IS NULL))
   ) STRICT;
   CREATE INDEX IF NOT EXISTS queued_messages_by_conversation ON queued_messages (conversation_id, seq);
 `;
 
-// Wisps, apart from the conversations they take part in. Each Wisp's own
-// conversation shares its ID.
-const WISPS_SCHEMA = `
-  CREATE TABLE IF NOT EXISTS wisps (
-    seq INTEGER PRIMARY KEY,
-    id TEXT NOT NULL UNIQUE,
-    record TEXT NOT NULL
-  ) STRICT;
-`;
+/** Tables layout 5 replaced; their rows held whole records as JSON. */
+const JSON_RECORD_TABLES = ["wisps", "conversations", "scheduled_messages", "queued_messages"];
 
 // Version 1 had no search index and no stored last activity.
 const UPGRADE_FROM_VERSION_1 = `
@@ -130,84 +216,116 @@ interface MessageRow {
   body: unknown;
 }
 
+type Row = Record<string, unknown>;
+
+const optional = (value: unknown) => (value === null || value === undefined ? undefined : value);
+
+/** A stored Wisp row as the record the repository validates. */
+function wispRecordOf(row: Row): unknown {
+  const color = optional(row.color);
+  const avatarImage = optional(row.avatar_image);
+  const maxOutputTokens = optional(row.model_max_output_tokens);
+  return {
+    wisp: {
+      id: row.id,
+      name: row.name,
+      role: row.role,
+      soul: row.soul,
+      shape: row.shape,
+      ...(color === undefined ? {} : { color }),
+      ...(avatarImage === undefined ? {} : { avatarImage }),
+    },
+    storageId: row.storage_id,
+    modelOverride:
+      row.model_id === null
+        ? null
+        : {
+            providerId: row.model_provider_id,
+            modelId: row.model_id,
+            ...(maxOutputTokens === undefined ? {} : { maxOutputTokens: Number(maxOutputTokens) }),
+          },
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+/** A stored conversation row, without its members and sessions, as the record the repository validates. */
+function conversationRecordOf(row: Row): { chat: Row & { messages: unknown[] }; sessions: Row } & Row {
+  const lastActivityAt = optional(row.last_activity_at);
+  const base = {
+    id: row.id,
+    kind: row.kind,
+    notifyOnUpdatesEnabled: row.notify_on_updates_enabled === 1,
+    preview: row.preview,
+    messages: [] as unknown[],
+    ...(row.unread === null ? {} : { unread: row.unread === 1 }),
+    ...(lastActivityAt === undefined ? {} : { lastActivityAt }),
+  };
+  const chat =
+    row.kind === "wisp"
+      ? { ...base, wispId: row.wisp_id }
+      : { ...base, name: row.name, label: row.label, description: row.description, memberIds: [] };
+  return { chat, storageId: row.storage_id, sessions: {}, createdAt: row.created_at, updatedAt: row.updated_at };
+}
+
+function scheduledMessageOf(row: Row): unknown {
+  const lastSentAt = optional(row.last_sent_at);
+  return {
+    id: row.id,
+    conversationId: row.conversation_id,
+    text: row.text,
+    schedule: JSON.parse(String(row.schedule)),
+    timeZone: row.time_zone,
+    nextRunAt: row.next_run_at,
+    sentCount: Number(row.sent_count),
+    ...(lastSentAt === undefined ? {} : { lastSentAt }),
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+function queuedMessageOf(row: Row): unknown {
+  return {
+    id: row.id,
+    conversationId: row.conversation_id,
+    text: row.text,
+    createdAt: row.created_at,
+    ...(row.scheduled_message_id === null
+      ? {}
+      : {
+          scheduled: {
+            scheduledMessageId: row.scheduled_message_id,
+            scheduledAt: row.scheduled_at,
+            timeZone: row.scheduled_time_zone,
+          },
+        }),
+  };
+}
+
 /**
- * SQLite persistence for conversations: one row per conversation and one row
- * per message, so a change writes only the rows it touches instead of the whole
- * store. Rowids preserve insertion order for both conversations and messages,
- * and upserts keep a row's position. A full-text index over messages is kept
- * in sync by triggers. All writes run inside `transaction`.
+ * SQLite persistence for Wisps and conversations: a row per Wisp, conversation,
+ * circle member, session, and message, so a change writes only the rows it
+ * touches instead of the whole store. Records are stored as columns, and what
+ * relates them as foreign keys; messages keep their body as JSON. Rowids
+ * preserve insertion order, and upserts keep a row's position. A full-text
+ * index over messages is kept in sync by triggers. All writes run inside
+ * `transaction`.
+ *
+ * A store from before layout 5 held whole records as JSON. It is read as such
+ * until `rebuild` rewrites it in this layout.
  */
 export class ConversationStore {
-  private readonly putWispStatement: StatementSync;
-  private readonly deleteWispStatement: StatementSync;
-  private readonly putConversationStatement: StatementSync;
-  private readonly putMessageStatement: StatementSync;
-  private readonly deleteOldestMessagesStatement: StatementSync;
-  private readonly deleteConversationStatement: StatementSync;
-  private readonly setMetaStatement: StatementSync;
-  private readonly raiseVersionStatement: StatementSync;
-  private readonly getMetaStatement: StatementSync;
-  private readonly newestStatement: StatementSync;
-  private readonly olderStatement: StatementSync;
-  private readonly newerStatement: StatementSync;
-  private readonly fromStatement: StatementSync;
-  private readonly hasOlderStatement: StatementSync;
-  private readonly hasNewerStatement: StatementSync;
-  private readonly messageStatement: StatementSync;
-  private readonly putScheduledStatement: StatementSync;
-  private readonly deleteScheduledStatement: StatementSync;
-  private readonly putQueuedStatement: StatementSync;
-  private readonly deleteQueuedStatement: StatementSync;
+  private readonly statements = new Map<string, StatementSync>();
 
-  private constructor(private readonly db: DatabaseSync) {
-    this.putWispStatement = db.prepare(
-      "INSERT INTO wisps (id, record) VALUES (?, ?) ON CONFLICT (id) DO UPDATE SET record = excluded.record",
-    );
-    this.deleteWispStatement = db.prepare("DELETE FROM wisps WHERE id = ?");
-    this.putConversationStatement = db.prepare(
-      "INSERT INTO conversations (id, record) VALUES (?, ?) ON CONFLICT (id) DO UPDATE SET record = excluded.record",
-    );
-    this.putMessageStatement = db.prepare(
-      "INSERT INTO messages (conversation_id, id, body) VALUES (?, ?, ?) ON CONFLICT (conversation_id, id) DO UPDATE SET body = excluded.body",
-    );
-    this.deleteOldestMessagesStatement = db.prepare(
-      "DELETE FROM messages WHERE seq IN (SELECT seq FROM messages WHERE conversation_id = ? ORDER BY seq LIMIT ?)",
-    );
-    this.deleteConversationStatement = db.prepare("DELETE FROM conversations WHERE id = ?");
-    this.setMetaStatement = db.prepare(
-      "INSERT INTO meta (key, value) VALUES (?, ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value",
-    );
-    // Version markers only rise: an older build writing here must not lower them.
-    this.raiseVersionStatement = db.prepare(
-      "INSERT INTO meta (key, value) VALUES (?, ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value WHERE CAST(value AS INTEGER) < CAST(excluded.value AS INTEGER)",
-    );
-    this.getMetaStatement = db.prepare("SELECT value FROM meta WHERE key = ?");
-    const select = "SELECT seq, body FROM messages WHERE conversation_id = ?";
-    this.newestStatement = db.prepare(`${select} ORDER BY seq DESC LIMIT ?`);
-    this.olderStatement = db.prepare(`${select} AND seq < ? ORDER BY seq DESC LIMIT ?`);
-    this.newerStatement = db.prepare(`${select} AND seq > ? ORDER BY seq ASC LIMIT ?`);
-    this.fromStatement = db.prepare(`${select} AND seq >= ? ORDER BY seq ASC LIMIT ?`);
-    this.hasOlderStatement = db.prepare(
-      "SELECT EXISTS (SELECT 1 FROM messages WHERE conversation_id = ? AND seq < ?) AS found",
-    );
-    this.hasNewerStatement = db.prepare(
-      "SELECT EXISTS (SELECT 1 FROM messages WHERE conversation_id = ? AND seq > ?) AS found",
-    );
-    this.messageStatement = db.prepare(`${select} AND id = ?`);
-    this.putScheduledStatement = db.prepare(
-      "INSERT INTO scheduled_messages (id, conversation_id, next_run_at, record) VALUES (?, ?, ?, ?) ON CONFLICT (id) DO UPDATE SET next_run_at = excluded.next_run_at, record = excluded.record",
-    );
-    this.deleteScheduledStatement = db.prepare("DELETE FROM scheduled_messages WHERE id = ?");
-    // An edit keeps the message's place in line.
-    this.putQueuedStatement = db.prepare(
-      "INSERT INTO queued_messages (id, conversation_id, record) VALUES (?, ?, ?) ON CONFLICT (id) DO UPDATE SET record = excluded.record",
-    );
-    this.deleteQueuedStatement = db.prepare("DELETE FROM queued_messages WHERE id = ?");
-  }
+  private constructor(
+    private readonly db: DatabaseSync,
+    private jsonRecords: boolean,
+  ) {}
 
   /**
-   * Opens or creates the database and upgrades an older layout in place.
-   * Throws if the file is not a usable SQLite database.
+   * Opens or creates the database. An older layout is upgraded in place as
+   * far as SQL alone can take it; `hasJsonRecords` then says it still needs
+   * `rebuild`. Throws if the file is not a usable SQLite database.
    */
   static open(filePath: string): ConversationStore {
     const db = new DatabaseSync(filePath);
@@ -220,26 +338,22 @@ export class ConversationStore {
         PRAGMA foreign_keys = ON;
         PRAGMA busy_timeout = 5000;
         CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL) STRICT;
-        CREATE TABLE IF NOT EXISTS conversations (
-          seq INTEGER PRIMARY KEY,
-          id TEXT NOT NULL UNIQUE,
-          record TEXT NOT NULL
-        ) STRICT;
-        CREATE TABLE IF NOT EXISTS messages (
-          seq INTEGER PRIMARY KEY,
-          conversation_id TEXT NOT NULL REFERENCES conversations (id) ON DELETE CASCADE,
-          id TEXT NOT NULL,
-          body TEXT NOT NULL,
-          UNIQUE (conversation_id, id)
-        ) STRICT;
-        CREATE INDEX IF NOT EXISTS messages_by_conversation ON messages (conversation_id, seq);
-        ${SEARCH_SCHEMA}
-        ${SCHEDULED_MESSAGES_SCHEMA}
-        ${QUEUED_MESSAGES_SCHEMA}
-        ${WISPS_SCHEMA}
       `);
-      const store = new ConversationStore(db);
-      store.upgrade();
+      const version = db.prepare("SELECT value FROM meta WHERE key = 'store_version'").get()?.value;
+      if (version === undefined) {
+        // Nothing was ever committed here, so any tables are empty leftovers
+        // of an interrupted first run, possibly in an older layout.
+        db.exec(
+          [...JSON_RECORD_TABLES, "circle_members", "participant_sessions", "messages"]
+            .map((table) => `DROP TABLE IF EXISTS ${table};`)
+            .join("\n"),
+        );
+      }
+      const jsonRecords = version !== undefined && Number(version) < STORE_VERSION;
+      if (!jsonRecords) db.exec(`${RECORD_SCHEMA}${PENDING_MESSAGES_SCHEMA}`);
+      db.exec(`${MESSAGES_SCHEMA}${SEARCH_SCHEMA}`);
+      const store = new ConversationStore(db, jsonRecords);
+      if (Number(version) < 2) store.upgradeFromVersion1();
       return store;
     } catch (error) {
       db.close();
@@ -256,6 +370,11 @@ export class ConversationStore {
     return this.getMeta("store_version") !== undefined;
   }
 
+  /** True while the store holds records in the JSON layout from before version 5. */
+  hasJsonRecords(): boolean {
+    return this.jsonRecords;
+  }
+
   read(): StoredConversationState {
     // A newer app version may have changed the layout in a way this build
     // cannot read or write safely; never guess at it.
@@ -263,15 +382,7 @@ export class ConversationStore {
     if (!Number.isInteger(minReader) || minReader > STORE_VERSION) {
       throw new Error("Unsupported conversation store version.");
     }
-    const wisps: Record<string, unknown> = {};
-    for (const row of this.db.prepare("SELECT id, record FROM wisps ORDER BY seq").iterate()) {
-      wisps[String(row.id)] = JSON.parse(String(row.record));
-    }
-    const conversations: Record<string, { chat: { messages: unknown[] } }> = {};
-    for (const row of this.db.prepare("SELECT id, record FROM conversations ORDER BY seq").iterate()) {
-      const record = JSON.parse(String(row.record)) as { chat: Record<string, unknown> };
-      conversations[String(row.id)] = { ...record, chat: { ...record.chat, messages: [] } };
-    }
+    const { wisps, conversations } = this.jsonRecords ? this.readJsonRecords() : this.readRecords();
     for (const row of this.db.prepare("SELECT conversation_id, body FROM messages ORDER BY seq").iterate()) {
       conversations[String(row.conversation_id)]?.chat.messages.push(JSON.parse(String(row.body)));
     }
@@ -282,12 +393,12 @@ export class ConversationStore {
   readPage(conversationId: string, request: StoredPageRequest): StoredMessagePage {
     switch (request.page) {
       case "latest": {
-        const rows = this.rows(this.newestStatement, conversationId, MESSAGE_PAGE_SIZE + 1);
+        const rows = this.rows(this.messagesSelect("ORDER BY seq DESC LIMIT ?"), conversationId, MESSAGE_PAGE_SIZE + 1);
         const page = rows.slice(0, MESSAGE_PAGE_SIZE).reverse();
         return this.page(page, rows.length > MESSAGE_PAGE_SIZE, false);
       }
       case "older": {
-        const rows = this.rows(this.olderStatement, conversationId, request.before, MESSAGE_PAGE_SIZE + 1);
+        const rows = this.rows(this.olderStatement(), conversationId, request.before, MESSAGE_PAGE_SIZE + 1);
         const page = rows.slice(0, MESSAGE_PAGE_SIZE).reverse();
         const newestSeq = page.at(-1)?.seq ?? request.before - 1;
         return this.page(page, rows.length > MESSAGE_PAGE_SIZE, this.hasNewer(conversationId, newestSeq), {
@@ -296,7 +407,12 @@ export class ConversationStore {
         });
       }
       case "newer": {
-        const rows = this.rows(this.newerStatement, conversationId, request.after, MESSAGE_PAGE_SIZE + 1);
+        const rows = this.rows(
+          this.messagesSelect("AND seq > ? ORDER BY seq ASC LIMIT ?"),
+          conversationId,
+          request.after,
+          MESSAGE_PAGE_SIZE + 1,
+        );
         const page = rows.slice(0, MESSAGE_PAGE_SIZE);
         const oldestSeq = page[0]?.seq ?? request.after + 1;
         return this.page(page, this.hasOlder(conversationId, oldestSeq), rows.length > MESSAGE_PAGE_SIZE, {
@@ -305,10 +421,15 @@ export class ConversationStore {
         });
       }
       case "around": {
-        const target = this.rows(this.messageStatement, conversationId, request.messageId)[0];
+        const target = this.rows(this.messageStatement(), conversationId, request.messageId)[0];
         if (!target) return { messages: [], olderCursor: null, newerCursor: null };
-        const before = this.rows(this.olderStatement, conversationId, target.seq, MESSAGE_PAGE_RADIUS + 1);
-        const after = this.rows(this.fromStatement, conversationId, target.seq, MESSAGE_PAGE_RADIUS + 2);
+        const before = this.rows(this.olderStatement(), conversationId, target.seq, MESSAGE_PAGE_RADIUS + 1);
+        const after = this.rows(
+          this.messagesSelect("AND seq >= ? ORDER BY seq ASC LIMIT ?"),
+          conversationId,
+          target.seq,
+          MESSAGE_PAGE_RADIUS + 2,
+        );
         const page = [...before.slice(0, MESSAGE_PAGE_RADIUS).reverse(), ...after.slice(0, MESSAGE_PAGE_RADIUS + 1)];
         return this.page(page, before.length > MESSAGE_PAGE_RADIUS, after.length > MESSAGE_PAGE_RADIUS + 1);
       }
@@ -317,7 +438,7 @@ export class ConversationStore {
 
   /** A stored message body by ID, through the (conversation, message ID) index. */
   getMessage(conversationId: string, messageId: string): unknown {
-    return this.rows(this.messageStatement, conversationId, messageId)[0]?.body;
+    return this.rows(this.messageStatement(), conversationId, messageId)[0]?.body;
   }
 
   /** The text the search index holds for a message; used to keep SQL and TypeScript in agreement. */
@@ -333,14 +454,59 @@ export class ConversationStore {
   transaction(write: () => void): void {
     this.db.exec("BEGIN IMMEDIATE");
     try {
-      this.raiseVersionStatement.run("store_version", String(STORE_VERSION));
-      this.raiseVersionStatement.run("min_reader_version", String(MIN_READER_VERSION));
+      // Version markers only rise: an older build writing here must not lower them.
+      const raise = this.statement(
+        "INSERT INTO meta (key, value) VALUES (?, ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value WHERE CAST(value AS INTEGER) < CAST(excluded.value AS INTEGER)",
+      );
+      raise.run("store_version", String(STORE_VERSION));
+      raise.run("min_reader_version", String(MIN_READER_VERSION));
       write();
       this.db.exec("COMMIT");
     } catch (error) {
       this.db.exec("ROLLBACK");
       throw error;
     }
+  }
+
+  /**
+   * Rewrites a store with JSON records in this layout, in one transaction:
+   * Wisps and conversations from `records` (messages stay where they are),
+   * and the pending messages given. Messages left without a conversation are
+   * removed.
+   */
+  rebuild(
+    records: Pick<WorkspaceRecords, "wisps" | "conversations">,
+    pending: { scheduled: ReadonlyArray<ScheduledMessage>; queued: ReadonlyArray<QueuedMessage> },
+  ): void {
+    // Dropping a parent table with foreign keys on would delete every message.
+    // The pragma has no effect inside a transaction, so it wraps it.
+    this.db.exec("PRAGMA foreign_keys = OFF");
+    try {
+      this.transaction(() => {
+        this.statements.clear();
+        this.db.exec(JSON_RECORD_TABLES.map((table) => `DROP TABLE IF EXISTS ${table};`).join("\n"));
+        this.db.exec(`${RECORD_SCHEMA}${PENDING_MESSAGES_SCHEMA}`);
+        for (const column of MESSAGE_COLUMNS) this.db.exec(`ALTER TABLE messages ADD COLUMN ${column}`);
+        for (const record of Object.values(records.wisps)) this.putWisp(record);
+        for (const record of Object.values(records.conversations)) this.putConversation(record);
+        this.db.exec("DELETE FROM messages WHERE conversation_id NOT IN (SELECT id FROM conversations)");
+        for (const message of pending.scheduled) {
+          if (records.conversations[message.conversationId]) this.putScheduledMessage(message);
+        }
+        for (const message of pending.queued) {
+          if (records.conversations[message.conversationId]) this.putQueuedMessage(message);
+        }
+        if (this.db.prepare("PRAGMA foreign_key_check").all().length > 0) {
+          throw new Error("The rebuilt conversation store has broken references.");
+        }
+      });
+    } catch (error) {
+      this.statements.clear();
+      throw error;
+    } finally {
+      this.db.exec("PRAGMA foreign_keys = ON");
+    }
+    this.jsonRecords = false;
   }
 
   replaceAll(state: {
@@ -359,84 +525,262 @@ export class ConversationStore {
   }
 
   putWisp(record: WispRecord): void {
-    this.putWispStatement.run(record.wisp.id, JSON.stringify(record));
+    const { wisp, modelOverride } = record;
+    this.statement(
+      `INSERT INTO wisps (id, name, role, soul, shape, color, avatar_image, storage_id,
+        model_provider_id, model_id, model_max_output_tokens, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT (id) DO UPDATE SET
+        name = excluded.name, role = excluded.role, soul = excluded.soul, shape = excluded.shape,
+        color = excluded.color, avatar_image = excluded.avatar_image, storage_id = excluded.storage_id,
+        model_provider_id = excluded.model_provider_id, model_id = excluded.model_id,
+        model_max_output_tokens = excluded.model_max_output_tokens,
+        created_at = excluded.created_at, updated_at = excluded.updated_at`,
+    ).run(
+      wisp.id,
+      wisp.name,
+      wisp.role,
+      wisp.soul,
+      wisp.shape,
+      wisp.color ?? null,
+      wisp.avatarImage ?? null,
+      record.storageId,
+      modelOverride?.providerId ?? null,
+      modelOverride?.modelId ?? null,
+      modelOverride?.maxOutputTokens ?? null,
+      record.createdAt,
+      record.updatedAt,
+    );
   }
 
+  /** Deletes the Wisp and, through foreign keys, its own conversation and its places in circles. */
   deleteWisp(wispId: string): void {
-    this.deleteWispStatement.run(wispId);
+    this.statement("DELETE FROM wisps WHERE id = ?").run(wispId);
   }
 
-  /** Writes the conversation's metadata; its messages are stored separately. */
+  /** Writes the conversation with its members and sessions; its messages are stored separately. */
   putConversation(record: ConversationRecord): void {
-    const { messages: _messages, ...chat } = record.chat;
-    this.putConversationStatement.run(record.chat.id, JSON.stringify({ ...record, chat }));
+    const { chat } = record;
+    const circle = chat.kind === "circle" ? chat : undefined;
+    this.statement(
+      `INSERT INTO conversations (id, kind, wisp_id, name, label, description, notify_on_updates_enabled,
+        preview, unread, last_activity_at, storage_id, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT (id) DO UPDATE SET
+        kind = excluded.kind, wisp_id = excluded.wisp_id, name = excluded.name, label = excluded.label,
+        description = excluded.description, notify_on_updates_enabled = excluded.notify_on_updates_enabled,
+        preview = excluded.preview, unread = excluded.unread, last_activity_at = excluded.last_activity_at,
+        storage_id = excluded.storage_id, created_at = excluded.created_at, updated_at = excluded.updated_at`,
+    ).run(
+      chat.id,
+      chat.kind,
+      chat.kind === "wisp" ? chat.wispId : null,
+      circle?.name ?? null,
+      circle?.label ?? null,
+      circle?.description ?? null,
+      chat.notifyOnUpdatesEnabled ? 1 : 0,
+      chat.preview,
+      chat.unread === undefined ? null : chat.unread ? 1 : 0,
+      chat.lastActivityAt ?? null,
+      record.storageId,
+      record.createdAt,
+      record.updatedAt,
+    );
+    this.statement("DELETE FROM circle_members WHERE conversation_id = ?").run(chat.id);
+    const member = this.statement("INSERT INTO circle_members (conversation_id, wisp_id, position) VALUES (?, ?, ?)");
+    circle?.memberIds.forEach((wispId, position) => member.run(chat.id, wispId, position));
+    this.statement("DELETE FROM participant_sessions WHERE conversation_id = ?").run(chat.id);
+    const session = this.statement(
+      "INSERT INTO participant_sessions (conversation_id, wisp_id, session_id, pi_session_id, pi_session_file) VALUES (?, ?, ?, ?, ?)",
+    );
+    for (const [wispId, { sessionId, piSessionId, piSessionFile }] of Object.entries(record.sessions)) {
+      session.run(chat.id, wispId, sessionId, piSessionId, piSessionFile);
+    }
   }
 
   putMessages(conversationId: string, messages: ReadonlyArray<Message>): void {
+    const put = this.statement(
+      "INSERT INTO messages (conversation_id, id, body) VALUES (?, ?, ?) ON CONFLICT (conversation_id, id) DO UPDATE SET body = excluded.body",
+    );
     for (const message of messages) {
       if (!message.id) throw new Error("Stored messages require an ID.");
-      this.putMessageStatement.run(conversationId, message.id, JSON.stringify(message));
+      put.run(conversationId, message.id, JSON.stringify(message));
     }
   }
 
   deleteOldestMessages(conversationId: string, count: number): void {
-    if (count > 0) this.deleteOldestMessagesStatement.run(conversationId, count);
+    if (count <= 0) return;
+    this.statement(
+      "DELETE FROM messages WHERE seq IN (SELECT seq FROM messages WHERE conversation_id = ? ORDER BY seq LIMIT ?)",
+    ).run(conversationId, count);
   }
 
-  /** Deletes the conversation and, through the foreign key, all of its messages. */
+  /** Deletes the conversation and, through foreign keys, everything in it. */
   deleteConversation(conversationId: string): void {
-    this.deleteConversationStatement.run(conversationId);
+    this.statement("DELETE FROM conversations WHERE id = ?").run(conversationId);
   }
 
   /** Raw scheduled message records, soonest first; validated by the repository. */
   readScheduledMessages(): unknown[] {
-    return this.db
-      .prepare("SELECT record FROM scheduled_messages ORDER BY next_run_at, seq")
-      .all()
-      .map((row) => JSON.parse(String(row.record)));
+    const order = "ORDER BY next_run_at, seq";
+    if (this.jsonRecords) return this.readJsonRows("scheduled_messages", order);
+    return this.db.prepare(`SELECT * FROM scheduled_messages ${order}`).all().map(scheduledMessageOf);
   }
 
-  putScheduledMessage(record: { id: string; conversationId: string; nextRunAt: string }): void {
-    this.putScheduledStatement.run(record.id, record.conversationId, record.nextRunAt, JSON.stringify(record));
+  putScheduledMessage(message: ScheduledMessage): void {
+    this.statement(
+      `INSERT INTO scheduled_messages (id, conversation_id, text, schedule, time_zone, next_run_at,
+        sent_count, last_sent_at, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT (id) DO UPDATE SET
+        text = excluded.text, schedule = excluded.schedule, time_zone = excluded.time_zone,
+        next_run_at = excluded.next_run_at, sent_count = excluded.sent_count,
+        last_sent_at = excluded.last_sent_at, created_at = excluded.created_at, updated_at = excluded.updated_at`,
+    ).run(
+      message.id,
+      message.conversationId,
+      message.text,
+      JSON.stringify(message.schedule),
+      message.timeZone,
+      message.nextRunAt,
+      message.sentCount,
+      message.lastSentAt ?? null,
+      message.createdAt,
+      message.updatedAt,
+    );
   }
 
   deleteScheduledMessage(id: string): void {
-    this.deleteScheduledStatement.run(id);
+    this.statement("DELETE FROM scheduled_messages WHERE id = ?").run(id);
   }
 
   /** Raw queued message records, oldest first; validated by the repository. */
   readQueuedMessages(): unknown[] {
-    return this.db
-      .prepare("SELECT record FROM queued_messages ORDER BY seq")
-      .all()
-      .map((row) => JSON.parse(String(row.record)));
+    if (this.jsonRecords) return this.readJsonRows("queued_messages", "ORDER BY seq");
+    return this.db.prepare("SELECT * FROM queued_messages ORDER BY seq").all().map(queuedMessageOf);
   }
 
-  putQueuedMessage(record: { id: string; conversationId: string }): void {
-    this.putQueuedStatement.run(record.id, record.conversationId, JSON.stringify(record));
+  putQueuedMessage(message: QueuedMessage): void {
+    // An edit keeps the message's place in line.
+    this.statement(
+      `INSERT INTO queued_messages (id, conversation_id, text, created_at, scheduled_message_id, scheduled_at, scheduled_time_zone)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT (id) DO UPDATE SET
+        text = excluded.text, created_at = excluded.created_at, scheduled_message_id = excluded.scheduled_message_id,
+        scheduled_at = excluded.scheduled_at, scheduled_time_zone = excluded.scheduled_time_zone`,
+    ).run(
+      message.id,
+      message.conversationId,
+      message.text,
+      message.createdAt,
+      message.scheduled?.scheduledMessageId ?? null,
+      message.scheduled?.scheduledAt ?? null,
+      message.scheduled?.timeZone ?? null,
+    );
   }
 
   deleteQueuedMessage(id: string): void {
-    this.deleteQueuedStatement.run(id);
+    this.statement("DELETE FROM queued_messages WHERE id = ?").run(id);
   }
 
   setInitialized(initialized: boolean): void {
-    this.setMetaStatement.run("initialized", initialized ? "1" : "0");
+    this.statement(
+      "INSERT INTO meta (key, value) VALUES (?, ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value",
+    ).run("initialized", initialized ? "1" : "0");
   }
 
   close(): void {
     if (this.db.isOpen) this.db.close();
   }
 
-  private upgrade(): void {
-    const version = Number(this.getMeta("store_version"));
-    if (!this.isEstablished() || version >= STORE_VERSION) return;
-    // Version 3 added only the scheduled and queued message tables, and version
-    // 4 the Wisps table, which `open` creates. The repository rewrites the
-    // records version 4 changed.
-    this.transaction(() => {
-      if (version < 2) this.db.exec(UPGRADE_FROM_VERSION_1);
-    });
+  private readRecords() {
+    const wisps: Record<string, unknown> = {};
+    for (const row of this.db.prepare("SELECT * FROM wisps ORDER BY seq").iterate()) {
+      wisps[String(row.id)] = wispRecordOf(row);
+    }
+    const conversations: Record<string, ReturnType<typeof conversationRecordOf>> = {};
+    for (const row of this.db.prepare("SELECT * FROM conversations ORDER BY seq").iterate()) {
+      conversations[String(row.id)] = conversationRecordOf(row);
+    }
+    const members = "SELECT conversation_id, wisp_id FROM circle_members ORDER BY conversation_id, position";
+    for (const row of this.db.prepare(members).iterate()) {
+      (conversations[String(row.conversation_id)]?.chat.memberIds as unknown[] | undefined)?.push(row.wisp_id);
+    }
+    for (const row of this.db.prepare("SELECT * FROM participant_sessions ORDER BY rowid").iterate()) {
+      const record = conversations[String(row.conversation_id)];
+      if (!record) continue;
+      record.sessions[String(row.wisp_id)] = {
+        sessionId: row.session_id,
+        piSessionId: row.pi_session_id,
+        piSessionFile: row.pi_session_file,
+      };
+    }
+    return { wisps, conversations };
+  }
+
+  /** Records as layouts 1 to 4 stored them, for the repository to upgrade. */
+  private readJsonRecords() {
+    const wisps: Record<string, unknown> = {};
+    if (this.hasTable("wisps")) {
+      for (const row of this.db.prepare("SELECT id, record FROM wisps ORDER BY seq").iterate()) {
+        wisps[String(row.id)] = JSON.parse(String(row.record));
+      }
+    }
+    const conversations: Record<string, { chat: { messages: unknown[] } }> = {};
+    for (const row of this.db.prepare("SELECT id, record FROM conversations ORDER BY seq").iterate()) {
+      const record = JSON.parse(String(row.record)) as { chat: Record<string, unknown> };
+      conversations[String(row.id)] = { ...record, chat: { ...record.chat, messages: [] } };
+    }
+    return { wisps, conversations };
+  }
+
+  private readJsonRows(table: string, order: string): unknown[] {
+    if (!this.hasTable(table)) return [];
+    return this.db
+      .prepare(`SELECT record FROM ${table} ${order}`)
+      .all()
+      .map((row) => JSON.parse(String(row.record)));
+  }
+
+  private hasTable(name: string): boolean {
+    return this.db.prepare("SELECT 1 FROM sqlite_schema WHERE type = 'table' AND name = ?").get(name) !== undefined;
+  }
+
+  // Version 1 had no search index and no stored last activity. Its records
+  // stay JSON until the repository rebuilds the store.
+  private upgradeFromVersion1(): void {
+    if (!this.isEstablished()) return;
+    this.db.exec("BEGIN IMMEDIATE");
+    try {
+      this.db.exec(UPGRADE_FROM_VERSION_1);
+      this.db.prepare("UPDATE meta SET value = '2' WHERE key = 'store_version'").run();
+      this.db.exec("COMMIT");
+    } catch (error) {
+      this.db.exec("ROLLBACK");
+      throw error;
+    }
+  }
+
+  /** Prepares a statement once; `rebuild` drops the cache with the tables it replaces. */
+  private statement(sql: string): StatementSync {
+    let statement = this.statements.get(sql);
+    if (!statement) {
+      statement = this.db.prepare(sql);
+      this.statements.set(sql, statement);
+    }
+    return statement;
+  }
+
+  private messagesSelect(clause: string): StatementSync {
+    return this.statement(`SELECT seq, body FROM messages WHERE conversation_id = ? ${clause}`);
+  }
+
+  private olderStatement(): StatementSync {
+    return this.messagesSelect("AND seq < ? ORDER BY seq DESC LIMIT ?");
+  }
+
+  private messageStatement(): StatementSync {
+    return this.messagesSelect("AND id = ?");
   }
 
   private rows(statement: StatementSync, ...parameters: Array<string | number>): MessageRow[] {
@@ -463,15 +807,21 @@ export class ConversationStore {
   }
 
   private hasOlder(conversationId: string, seq: number): boolean {
-    return Number(this.hasOlderStatement.get(conversationId, seq)?.found) === 1;
+    const found = this.statement(
+      "SELECT EXISTS (SELECT 1 FROM messages WHERE conversation_id = ? AND seq < ?) AS found",
+    ).get(conversationId, seq)?.found;
+    return Number(found) === 1;
   }
 
   private hasNewer(conversationId: string, seq: number): boolean {
-    return Number(this.hasNewerStatement.get(conversationId, seq)?.found) === 1;
+    const found = this.statement(
+      "SELECT EXISTS (SELECT 1 FROM messages WHERE conversation_id = ? AND seq > ?) AS found",
+    ).get(conversationId, seq)?.found;
+    return Number(found) === 1;
   }
 
   private getMeta(key: string): string | undefined {
-    const row = this.getMetaStatement.get(key);
+    const row = this.statement("SELECT value FROM meta WHERE key = ?").get(key);
     return row ? String(row.value) : undefined;
   }
 }

@@ -164,10 +164,17 @@ export class ConversationRepository {
       }
     }
     let store: ConversationStore;
-    let stored: { state: PersistedConversationState; upgraded: boolean } | undefined;
+    let stored: PersistedConversationState | undefined;
     try {
       store = await this.openStore();
       if (store.isEstablished()) stored = this.parsePersistedState(store.read());
+      if (stored && store.hasJsonRecords()) {
+        // Records from before they were stored as columns: rewrite them all at once.
+        store.rebuild(stored, {
+          scheduled: await this.readScheduledMessages(),
+          queued: await this.readQueuedMessages(),
+        });
+      }
     } catch {
       // Unreadable, invalid, or written by a newer app version: keep the file
       // for inspection and start with an empty store.
@@ -176,13 +183,8 @@ export class ConversationRepository {
       return;
     }
     if (stored) {
-      this.state = stored.state;
+      this.state = stored;
       await this.ensureAllDirectories();
-      if (stored.upgraded) {
-        // Records from before Wisps were stored apart: rewrite them all at once.
-        const state = this.state;
-        store.transaction(() => putChangedRecords(store, { wisps: {}, conversations: {} }, state));
-      }
       return;
     }
     await this.migrateLegacyState(store);
@@ -905,7 +907,7 @@ export class ConversationRepository {
       const parsed: unknown = JSON.parse(contents);
       persistedSchemaVersion = this.schemaVersionOf(parsed);
       if (![1, 2, 3, 4].includes(persistedSchemaVersion)) throw new Error("Invalid state");
-      this.state = this.parsePersistedState(parsed).state;
+      this.state = this.parsePersistedState(parsed);
     } catch {
       await rename(this.legacyStatePath, `${this.legacyStatePath}.corrupt-${this.fileSuffix()}`);
       this.recoveredCorruptState = true;
@@ -937,10 +939,9 @@ export class ConversationRepository {
 
   /**
    * Validates stored state. Records saved before Wisps were stored apart from
-   * conversations are split into a Wisp and its conversation; `upgraded` says
-   * some were, so the caller can write them back.
+   * conversations are split into a Wisp and its conversation.
    */
-  private parsePersistedState(value: unknown): { state: PersistedConversationState; upgraded: boolean } {
+  private parsePersistedState(value: unknown): PersistedConversationState {
     const raw = this.stateRecord(value);
     if (typeof raw.initialized !== "boolean") throw new Error("Invalid state");
     const state: PersistedConversationState = { ...emptyState(), initialized: raw.initialized };
@@ -956,12 +957,10 @@ export class ConversationRepository {
         updatedAt: this.timestampOf(record.updatedAt),
       };
     }
-    let upgraded = false;
     for (const [id, value] of Object.entries(this.stateRecord(raw.conversations))) {
       const record = this.stateRecord(value);
       if (record.storageId === undefined) {
         this.upgradeLegacyRecord(state, id, record);
-        upgraded = true;
         continue;
       }
       const chat = normalizeChat(record.chat);
@@ -975,7 +974,7 @@ export class ConversationRepository {
       };
     }
     validateRecords(state);
-    return { state, upgraded };
+    return state;
   }
 
   /**
