@@ -18,17 +18,26 @@ function view(configured: ReadonlyArray<string>): VoiceSettingsView {
 }
 
 function renderSection(preferences: AppPreferences = DEFAULT_PREFERENCES, configured: ReadonlyArray<string> = []) {
-  const saveVoiceCredential = vi.fn(async () => ({ ok: true as const, value: view([...configured, "groq"]) }));
+  let saved = [...configured];
+  const saveVoiceCredential = vi.fn(async () => {
+    saved = [...saved, "groq"];
+    return { ok: true as const, value: view(saved) };
+  });
+  const removeProviderCredential = vi.fn(async ({ providerId }: { providerId: string }) => {
+    saved = saved.filter((id) => id !== providerId);
+    return { ok: true as const, value: {} };
+  });
   Object.defineProperty(window, "wisp", {
     configurable: true,
     value: {
-      getVoiceSettings: vi.fn(async () => ({ ok: true as const, value: view(configured) })),
+      getVoiceSettings: vi.fn(async () => ({ ok: true as const, value: view(saved) })),
       saveVoiceCredential,
+      removeProviderCredential,
     },
   });
   const onPreferencesChange = vi.fn();
   render(<VoiceSettingsSection active preferences={preferences} onPreferencesChange={onPreferencesChange} />);
-  return { onPreferencesChange, saveVoiceCredential };
+  return { onPreferencesChange, saveVoiceCredential, removeProviderCredential };
 }
 
 describe("VoiceSettingsSection", () => {
@@ -55,13 +64,28 @@ describe("VoiceSettingsSection", () => {
     expect(saveVoiceCredential).toHaveBeenCalledWith({ providerId: "groq", apiKey: "gsk-secret" });
     expect(await screen.findByText("Groq key saved.")).toBeInTheDocument();
     expect(screen.getByLabelText("Groq API key")).toHaveValue("");
-    expect(screen.getByText(/Using the saved Groq key/)).toBeInTheDocument();
+    expect(screen.getByText(/An encrypted key is saved for Groq/)).toBeInTheDocument();
   });
 
   it("reuses a key saved for chat models of the same provider", async () => {
     renderSection({ ...DEFAULT_PREFERENCES, voiceProvider: "openai", voiceModel: "whisper-1" }, ["openai"]);
 
-    expect(await screen.findByText(/Using the saved OpenAI key/)).toBeInTheDocument();
+    expect(
+      await screen.findByText(/An encrypted key is saved for OpenAI and shared with AI Model/),
+    ).toBeInTheDocument();
     expect(screen.getByLabelText("OpenAI API key")).toHaveAttribute("placeholder", "Saved — enter a replacement");
+  });
+
+  it("removes the saved key after confirmation", async () => {
+    const user = userEvent.setup();
+    const { removeProviderCredential } = renderSection(DEFAULT_PREFERENCES, ["groq"]);
+
+    await user.click(await screen.findByRole("button", { name: "Remove key" }));
+    expect(screen.getByText(/Voice input and Wisps using Groq stop working/)).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Remove key" }));
+
+    expect(removeProviderCredential).toHaveBeenCalledWith({ providerId: "groq" });
+    expect(await screen.findByText(/Add a Groq key to use voice input/)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Remove key" })).not.toBeInTheDocument();
   });
 });

@@ -12,6 +12,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { voiceProvider } from "../../shared/voice";
 
 interface ModelSettingsSectionProps {
   active: boolean;
@@ -274,7 +275,7 @@ function ModelSettingsSection({ active, onViewChange, showHeading = true }: Mode
                   </label>
                   <small>
                     {provider?.credentialConfigured
-                      ? `An encrypted key is saved for ${provider.name}. Enter a new key to replace it.`
+                      ? `An encrypted key is saved for ${provider.name}${voiceProvider(provider.id) ? " and shared with Voice Input settings" : ""}. Enter a new key to replace it.`
                       : "The key is encrypted using your operating system's credential storage."}
                   </small>
                 </SettingsRowCopy>
@@ -311,7 +312,7 @@ function ModelSettingsSection({ active, onViewChange, showHeading = true }: Mode
                   label="Remove key"
                   confirmLabel="Remove key"
                   disabled={saving}
-                  description={`Wisps using ${provider.name} stop working until you enter a new key.`}
+                  description={`${voiceProvider(provider.id) ? "Voice input and Wisps" : "Wisps"} using ${provider.name} stop working until you enter a new key.`}
                   onConfirm={() => void handleRemoveCredential()}
                 />
               ) : null}
