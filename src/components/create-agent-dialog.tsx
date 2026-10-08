@@ -112,7 +112,6 @@ function CreateAgentDialog({ onCreate, trigger }: CreateAgentDialogProps) {
           soul: soul.trim(),
           appearance: settings.appearance,
           ...(color === undefined ? {} : { color }),
-          ...(settings.avatarImage === undefined ? {} : { avatarImage: settings.avatarImage }),
         },
         { notifyOnUpdatesEnabled: settings.notifyOnUpdatesEnabled, model: resolveWispModelSelection(modelDraft) },
       );

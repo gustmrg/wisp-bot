@@ -33,7 +33,6 @@ describe("create chat forms", () => {
     await user.click(screen.getByRole("radio", { name: "Outline" }));
     expect(onChange).toHaveBeenLastCalledWith({
       appearance: { ...DEFAULT_WISP_APPEARANCE, finish: "line" },
-      avatarImage: undefined,
     });
   });
 });

@@ -10,9 +10,12 @@ import type { ConversationRecord, WispRecord, WorkspaceRecords } from "./workspa
 // or triggers that older writers keep consistent) raise only STORE_VERSION, so
 // a downgrade keeps working. Record contents are validated by the repository.
 // Version 4 stored Wisps apart from conversations, and version 5 stores records
-// as columns instead of JSON; earlier readers understand neither.
-const STORE_VERSION = 5;
-const MIN_READER_VERSION = 5;
+// as columns instead of JSON; earlier readers understand neither. Version 6
+// drops the Wisp picture column, which version 5 writers still name.
+const STORE_VERSION = 6;
+const MIN_READER_VERSION = 6;
+/** The first layout that stores records as columns rather than JSON. */
+const COLUMN_RECORDS_VERSION = 5;
 
 export const MESSAGE_PAGE_SIZE = 50;
 /** Messages on each side of the target in an "around" page. */
@@ -98,7 +101,6 @@ const RECORD_SCHEMA = `
     finish TEXT NOT NULL,
     mark TEXT NOT NULL,
     color TEXT,
-    avatar_image TEXT,
     storage_id TEXT NOT NULL,
     model_provider_id TEXT,
     model_id TEXT,
@@ -200,6 +202,10 @@ const UPGRADE_SHAPE_TO_APPEARANCE = `
   ALTER TABLE wisps DROP COLUMN shape;
 `;
 
+// Version 5 stored an uploaded picture for each Wisp. Wisps are only drawn now,
+// so the pictures go.
+const DROP_WISP_PICTURES = "ALTER TABLE wisps DROP COLUMN avatar_image;";
+
 /** Tables layout 5 replaced; their rows held whole records as JSON. */
 const JSON_RECORD_TABLES = ["wisps", "conversations", "scheduled_messages", "queued_messages"];
 
@@ -251,7 +257,6 @@ const optional = (value: unknown) => (value === null || value === undefined ? un
 /** A stored Wisp row as the record the repository validates. */
 function wispRecordOf(row: Row): unknown {
   const color = optional(row.color);
-  const avatarImage = optional(row.avatar_image);
   const maxOutputTokens = optional(row.model_max_output_tokens);
   return {
     wisp: {
@@ -269,7 +274,6 @@ function wispRecordOf(row: Row): unknown {
         mark: row.mark,
       },
       ...(color === undefined ? {} : { color }),
-      ...(avatarImage === undefined ? {} : { avatarImage }),
     },
     storageId: row.storage_id,
     modelOverride:
@@ -385,12 +389,15 @@ export class ConversationStore {
             .join("\n"),
         );
       }
-      const jsonRecords = version !== undefined && Number(version) < STORE_VERSION;
+      const jsonRecords = version !== undefined && Number(version) < COLUMN_RECORDS_VERSION;
       if (!jsonRecords) db.exec(`${RECORD_SCHEMA}${PENDING_MESSAGES_SCHEMA}`);
       db.exec(`${MESSAGES_SCHEMA}${SEARCH_SCHEMA}`);
       const store = new ConversationStore(db, jsonRecords);
       if (Number(version) < 2) store.upgradeFromVersion1();
-      if (!jsonRecords) store.upgradeShapeToAppearance();
+      if (!jsonRecords) {
+        store.upgradeShapeToAppearance();
+        store.dropWispPictures();
+      }
       return store;
     } catch (error) {
       db.close();
@@ -491,12 +498,7 @@ export class ConversationStore {
   transaction(write: () => void): void {
     this.db.exec("BEGIN IMMEDIATE");
     try {
-      // Version markers only rise: an older build writing here must not lower them.
-      const raise = this.statement(
-        "INSERT INTO meta (key, value) VALUES (?, ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value WHERE CAST(value AS INTEGER) < CAST(excluded.value AS INTEGER)",
-      );
-      raise.run("store_version", String(STORE_VERSION));
-      raise.run("min_reader_version", String(MIN_READER_VERSION));
+      this.raiseVersions();
       write();
       this.db.exec("COMMIT");
     } catch (error) {
@@ -566,13 +568,13 @@ export class ConversationStore {
     const { appearance } = wisp;
     this.statement(
       `INSERT INTO wisps (id, name, role, soul, body, trail, tone, eyes, eye_ink, finish, mark, color,
-        avatar_image, storage_id, model_provider_id, model_id, model_max_output_tokens, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        storage_id, model_provider_id, model_id, model_max_output_tokens, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT (id) DO UPDATE SET
         name = excluded.name, role = excluded.role, soul = excluded.soul,
         body = excluded.body, trail = excluded.trail, tone = excluded.tone, eyes = excluded.eyes,
         eye_ink = excluded.eye_ink, finish = excluded.finish, mark = excluded.mark,
-        color = excluded.color, avatar_image = excluded.avatar_image, storage_id = excluded.storage_id,
+        color = excluded.color, storage_id = excluded.storage_id,
         model_provider_id = excluded.model_provider_id, model_id = excluded.model_id,
         model_max_output_tokens = excluded.model_max_output_tokens,
         created_at = excluded.created_at, updated_at = excluded.updated_at`,
@@ -589,7 +591,6 @@ export class ConversationStore {
       appearance.finish,
       appearance.mark,
       wisp.color ?? null,
-      wisp.avatarImage ?? null,
       record.storageId,
       modelOverride?.providerId ?? null,
       modelOverride?.modelId ?? null,
@@ -818,6 +819,31 @@ export class ConversationStore {
       this.db.exec("ROLLBACK");
       throw error;
     }
+  }
+
+  // Raises the version markers in the same transaction, so a version 5 build
+  // never writes to the table without the column.
+  private dropWispPictures(): void {
+    const columns = this.db.prepare("SELECT name FROM pragma_table_info('wisps')").all();
+    if (!columns.some((column) => column.name === "avatar_image")) return;
+    this.db.exec("BEGIN IMMEDIATE");
+    try {
+      this.db.exec(DROP_WISP_PICTURES);
+      this.raiseVersions();
+      this.db.exec("COMMIT");
+    } catch (error) {
+      this.db.exec("ROLLBACK");
+      throw error;
+    }
+  }
+
+  // Version markers only rise: an older build writing here must not lower them.
+  private raiseVersions(): void {
+    const raise = this.statement(
+      "INSERT INTO meta (key, value) VALUES (?, ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value WHERE CAST(value AS INTEGER) < CAST(excluded.value AS INTEGER)",
+    );
+    raise.run("store_version", String(STORE_VERSION));
+    raise.run("min_reader_version", String(MIN_READER_VERSION));
   }
 
   /** Prepares a statement once; `rebuild` drops the cache with the tables it replaces. */

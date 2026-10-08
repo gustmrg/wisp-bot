@@ -13,7 +13,7 @@ interface ChatAvatarProps {
 }
 
 interface WispAvatarProps {
-  wisp: Pick<WispEntity, "name" | "appearance" | "color" | "avatarImage">;
+  wisp: Pick<WispEntity, "name" | "appearance" | "color">;
   size?: AvatarSize;
   state?: WispState;
 }
@@ -78,18 +78,14 @@ function ChatAvatar({ chat, size = "default", state }: ChatAvatarProps) {
             className={cn("absolute size-[54%] overflow-hidden rounded-full ring-2", ring, CLUSTER_SLOTS[index])}
             key={member.id}
           >
-            {member.avatarImage ? (
-              <img className="size-full object-cover" src={member.avatarImage} alt="" />
-            ) : (
-              // A round body with no trail fits the round slot.
-              <Wisp
-                className="size-full"
-                appearance={{ ...member.appearance, body: "round", trail: "none" }}
-                color={member.color}
-                name={member.name}
-                size="sm"
-              />
-            )}
+            {/* A round body with no trail fits the round slot. */}
+            <Wisp
+              className="size-full"
+              appearance={{ ...member.appearance, body: "round", trail: "none" }}
+              color={member.color}
+              name={member.name}
+              size="sm"
+            />
           </span>
         ))}
         {members.length > 3 ? (
@@ -111,21 +107,8 @@ function ChatAvatar({ chat, size = "default", state }: ChatAvatarProps) {
   return <WispAvatar wisp={chat.wisp} size={size} state={state} />;
 }
 
-/** A Wisp's uploaded picture, or its drawn appearance. */
+/** A Wisp drawn from its appearance. */
 function WispAvatar({ wisp, size = "default", state }: WispAvatarProps) {
-  if (wisp.avatarImage) {
-    return (
-      <img
-        className={cn(
-          "flex-none rounded-[28%] object-cover",
-          size === "sm" ? "size-6" : size === "lg" ? "size-9" : size === "xl" ? "size-14" : "size-8",
-        )}
-        src={wisp.avatarImage}
-        alt=""
-      />
-    );
-  }
-
   return (
     <Wisp
       aria-hidden="true"

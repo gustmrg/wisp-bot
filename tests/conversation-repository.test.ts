@@ -382,8 +382,8 @@ describe("ConversationRepository", () => {
     expect(await upgraded.listQueuedMessages()).toEqual([queued]);
     expect(storedRows(directory, "SELECT key, value FROM meta WHERE key LIKE '%version'")).toEqual(
       expect.arrayContaining([
-        { key: "store_version", value: "5" },
-        { key: "min_reader_version", value: "5" },
+        { key: "store_version", value: "6" },
+        { key: "min_reader_version", value: "6" },
       ]),
     );
     await upgraded.close();
@@ -663,13 +663,10 @@ describe("ConversationRepository", () => {
     expect(repository.getChats().crew).toMatchObject({ memberIds: ["first"] });
   });
 
-  it("rejects unsafe avatars and invalid circle membership as one graph", async () => {
+  it("rejects invalid circle membership as one graph", async () => {
     const directory = await mkdtemp(path.join(os.tmpdir(), "wisp-invalid-graph-"));
     const repository = new ConversationRepository({ dataDirectory: directory });
 
-    await expect(
-      repository.initialize({ first: { ...chat("first"), avatarImage: "data:image/png;base64,AAAA" } }),
-    ).rejects.toMatchObject({ code: "invalid_request" });
     await expect(
       repository.initialize({
         first: chat("first"),

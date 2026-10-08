@@ -25,7 +25,7 @@ it.
 ### The Wisp is its own entity
 
 ```text
-Wisp            id, name, role, soul, appearance, color?, avatarImage?
+Wisp            id, name, role, soul, appearance, color?
 Conversation    a Wisp's own conversation (kind "wisp", wispId) or a circle
                 (kind "circle", name, label, description, memberIds)
 Message         as before; incoming messages carry the authorId of the Wisp
@@ -90,7 +90,7 @@ value, and only TypeScript kept them consistent.
 
 | Table | Holds | Relations |
 |---|---|---|
-| `wisps` | Name, role, soul, appearance (one column per axis), color, picture, storage ID, model override | — |
+| `wisps` | Name, role, soul, appearance (one column per axis), color, storage ID, model override | — |
 | `conversations` | Kind, a circle's name, label, and description, notification and read state, preview, last activity, storage ID | `wisp_id` names the Wisp a Wisp's conversation belongs to (it shares the Wisp's ID) and is deleted with it |
 | `circle_members` | A circle's members in order (`position`) | Conversation and Wisp; a deleted Wisp leaves every circle |
 | `participant_sessions` | Each Wisp's agent session in a conversation | Conversation and Wisp |
@@ -120,7 +120,7 @@ reads every Wisp and conversation at startup and queries them in memory.
 
 ### How a Wisp looks
 
-A Wisp without a picture is drawn from its **appearance**: a body (`round`,
+A Wisp is drawn from its **appearance**: a body (`round`,
 `drop`, `pebble`, `crystal`, `block`) and a **trail** (`hook`, `flame`,
 `curl`, or `none`), plus the tone, eyes, eye color, finish, and mark. The
 trail is the family trait: at 24 px bodies blur together, but trails stay
