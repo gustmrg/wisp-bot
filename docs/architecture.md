@@ -137,8 +137,11 @@ redirect that directory to `wisp-bot-dev` (override with the `WISP_DATA_DIR`
 environment variable) so testing never touches the installed app's data.
 
 Conversations live in `backend/conversations.sqlite` (Node's built-in
-`node:sqlite`, write-ahead logging), with one row per Wisp, one per
-conversation, and one per message, so a change writes only its own rows. The main process keeps the
+`node:sqlite`, write-ahead logging), with one row per Wisp, conversation,
+circle member, agent session, and message, so a change writes only its own
+rows. Records are stored as columns, and foreign keys relate them: deleting a
+Wisp deletes its own conversation and removes it from every circle. Message
+bodies stay JSON (see [ADR 010](decisions/010-wisp-entity.md#storage-layout)). The main process keeps the
 stores in memory as its read model and adopts a change only after its
 transaction commits. Each conversation keeps its newest 10,000 messages; older
 ones leave the displayed transcript, while the Wisp's Pi session keeps its own

@@ -16,14 +16,36 @@ async function reload(directory: string): Promise<ConversationRepository> {
 }
 
 /** Raw rows as stored, bypassing the repository. */
-function storedRecord(directory: string, id: string): Record<string, unknown> {
+function storedRows(directory: string, sql: string, ...parameters: string[]): Array<Record<string, unknown>> {
   const db = new DatabaseSync(path.join(directory, "conversations.sqlite"));
   try {
-    const row = db.prepare("SELECT record FROM conversations WHERE id = ?").get(id);
-    return JSON.parse(String(row?.record)) as Record<string, unknown>;
+    return db.prepare(sql).all(...parameters);
   } finally {
     db.close();
   }
+}
+
+/** A store as layout 3 wrote it: whole records as JSON. */
+function createJsonStore(directory: string): DatabaseSync {
+  const db = new DatabaseSync(path.join(directory, "conversations.sqlite"));
+  db.exec(`
+    CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL) STRICT;
+    CREATE TABLE conversations (seq INTEGER PRIMARY KEY, id TEXT NOT NULL UNIQUE, record TEXT NOT NULL) STRICT;
+    CREATE TABLE messages (
+      seq INTEGER PRIMARY KEY,
+      conversation_id TEXT NOT NULL REFERENCES conversations (id) ON DELETE CASCADE,
+      id TEXT NOT NULL, body TEXT NOT NULL, UNIQUE (conversation_id, id)) STRICT;
+    CREATE TABLE scheduled_messages (
+      seq INTEGER PRIMARY KEY, id TEXT NOT NULL UNIQUE,
+      conversation_id TEXT NOT NULL REFERENCES conversations (id) ON DELETE CASCADE,
+      next_run_at TEXT NOT NULL, record TEXT NOT NULL) STRICT;
+    CREATE TABLE queued_messages (
+      seq INTEGER PRIMARY KEY, id TEXT NOT NULL UNIQUE,
+      conversation_id TEXT NOT NULL REFERENCES conversations (id) ON DELETE CASCADE,
+      record TEXT NOT NULL) STRICT;
+    INSERT INTO meta VALUES ('store_version', '3'), ('min_reader_version', '1'), ('initialized', '1');
+  `);
+  return db;
 }
 
 function chat(id: string, circle = false): Chat {
@@ -257,10 +279,7 @@ describe("ConversationRepository", () => {
 
   it("splits records saved before Wisps were stored apart, keeping their folders and tone", async () => {
     const directory = await mkdtemp(path.join(os.tmpdir(), "wisp-split-"));
-    const repository = await reload(directory);
-    await repository.initialize({});
-    await repository.close();
-    const db = new DatabaseSync(path.join(directory, "conversations.sqlite"));
+    const db = createJsonStore(directory);
     const sessionFile = path.join(directory, "pi-sessions", "first-session", "history.jsonl");
     db.prepare("INSERT INTO conversations (id, record) VALUES (?, ?)").run(
       "first",
@@ -286,7 +305,35 @@ describe("ConversationRepository", () => {
       "m1",
       JSON.stringify({ id: "m1", type: "incoming", text: "Hello", createdAt: "2026-08-31T00:00:00.000Z" }),
     );
-    db.prepare("UPDATE meta SET value = '3' WHERE key IN ('store_version', 'min_reader_version')").run();
+    const scheduled = {
+      id: "s1",
+      conversationId: "first",
+      text: "Later",
+      schedule: { kind: "once", at: "2026-12-01T09:00:00.000Z" },
+      timeZone: "America/Sao_Paulo",
+      nextRunAt: "2026-12-01T09:00:00.000Z",
+      sentCount: 0,
+      createdAt: "2026-08-31T00:00:00.000Z",
+      updatedAt: "2026-08-31T00:00:00.000Z",
+    };
+    db.prepare("INSERT INTO scheduled_messages (id, conversation_id, next_run_at, record) VALUES (?, ?, ?, ?)").run(
+      scheduled.id,
+      scheduled.conversationId,
+      scheduled.nextRunAt,
+      JSON.stringify(scheduled),
+    );
+    const queued = {
+      id: "q1",
+      conversationId: "first",
+      text: "Waiting",
+      createdAt: "2026-08-31T00:00:00.000Z",
+      scheduled: { scheduledMessageId: "s0", scheduledAt: "2026-08-30T00:00:00.000Z", timeZone: "UTC" },
+    };
+    db.prepare("INSERT INTO queued_messages (id, conversation_id, record) VALUES (?, ?, ?)").run(
+      queued.id,
+      queued.conversationId,
+      JSON.stringify(queued),
+    );
     db.close();
 
     const upgraded = await reload(directory);
@@ -320,12 +367,24 @@ describe("ConversationRepository", () => {
       sessionDirectory: path.join(directory, "pi-sessions", "first-session"),
     });
     expect(upgraded.getWispStorageId("first")).toBe("first-session");
-    // The records were rewritten in the new layout.
-    expect(storedRecord(directory, "first")).toMatchObject({
-      storageId: "first-session",
-      chat: { kind: "wisp", wispId: "first" },
-    });
-    expect(storedRecord(directory, "first")).not.toHaveProperty("sessionId");
+    // The records were rewritten as columns, and the pending messages kept.
+    expect(storedRows(directory, "SELECT * FROM conversations WHERE id = ?", "first")).toEqual([
+      expect.objectContaining({ kind: "wisp", wisp_id: "first", storage_id: "first-session" }),
+    ]);
+    expect(storedRows(directory, "SELECT conversation_id, wisp_id, position FROM circle_members")).toEqual([
+      { conversation_id: "crew", wisp_id: "first", position: 0 },
+    ]);
+    expect(storedRows(directory, "SELECT type, created_at FROM messages")).toEqual([
+      { type: "incoming", created_at: "2026-08-31T00:00:00.000Z" },
+    ]);
+    expect(await upgraded.listScheduledMessages()).toEqual([scheduled]);
+    expect(await upgraded.listQueuedMessages()).toEqual([queued]);
+    expect(storedRows(directory, "SELECT key, value FROM meta WHERE key LIKE '%version'")).toEqual(
+      expect.arrayContaining([
+        { key: "store_version", value: "5" },
+        { key: "min_reader_version", value: "5" },
+      ]),
+    );
     await upgraded.close();
     expect((await reload(directory)).readWisps()).toEqual(upgraded.readWisps());
   });
@@ -510,12 +569,9 @@ describe("ConversationRepository", () => {
     expect(repository.getChats().chief).toEqual(expect.objectContaining({ kind: "wisp", wispId: "chief" }));
     expect(repository.getChats().chief).not.toHaveProperty("systemRole");
     expect(repository.readWisps().chief).toMatchObject({ name: "chief", role: "Test" });
-    const stored = storedRecord(directory, "chief") as { chat: Record<string, unknown> };
-    expect(stored.chat).not.toHaveProperty("isCircle");
-    expect(stored.chat).not.toHaveProperty("name");
-    expect(stored.chat).toHaveProperty("kind", "wisp");
-    // Messages live in their own rows, not inside the conversation record.
-    expect(stored.chat).not.toHaveProperty("messages");
+    expect(storedRows(directory, "SELECT kind, wisp_id, name FROM conversations WHERE id = ?", "chief")).toEqual([
+      { kind: "wisp", wisp_id: "chief", name: null },
+    ]);
   });
 
   it("archives workspace and session data on explicit deletion", async () => {

@@ -79,17 +79,53 @@ folders never collide with a new one that reuses an ID.
 Context settings (renewal policy) still live with the Wisp. They belong with
 each Wisp's session in a conversation once circles run agents.
 
+### Storage layout
+
+Records are stored as columns, and the relations between them as foreign keys.
+Until now each table held a whole record as JSON beside its ID, a pattern
+carried over from the JSON file store. The database could then not check what
+relates Wisps and conversations: a circle's members, a Wisp's own
+conversation, and the sessions in a conversation all lived inside a JSON
+value, and only TypeScript kept them consistent.
+
+| Table | Holds | Relations |
+|---|---|---|
+| `wisps` | Name, role, soul, shape, appearance, storage ID, model override | — |
+| `conversations` | Kind, a circle's name, label, and description, notification and read state, preview, last activity, storage ID | `wisp_id` names the Wisp a Wisp's conversation belongs to (it shares the Wisp's ID) and is deleted with it |
+| `circle_members` | A circle's members in order (`position`) | Conversation and Wisp; a deleted Wisp leaves every circle |
+| `participant_sessions` | Each Wisp's agent session in a conversation | Conversation and Wisp |
+| `messages` | The message `body` as JSON, with `type`, `created_at`, and `author_id` derived from it as generated columns | Conversation |
+| `scheduled_messages` | Text, time zone, next send, send count, dates; the `schedule` as JSON | Conversation |
+| `queued_messages` | Text, date, and where a scheduled message came from | Conversation |
+
+The rule is to give a field its own column unless its shape varies:
+
+- **Message bodies stay JSON.** A message is a union of types (text, time,
+  card, prompt) with nested lists (card items, prompt options, reactions).
+  Columns for them would mean several tables or many empty columns, and the
+  search index already reads the body through `json_extract`. The fields a
+  query may need are generated columns, so they can never disagree with the
+  body.
+- **A schedule stays JSON.** New kinds of schedule (recurring ones) join the
+  `MessageSchedule` union without changing the table.
+
+The gain is integrity and a readable schema, not speed: the main process still
+reads every Wisp and conversation at startup and queries them in memory.
+
 ## Migration
 
-- The SQLite store gains a `wisps` table and raises its layout to version 4.
-  Earlier builds cannot read the new records, so the oldest supported reader is
-  also version 4; an earlier build sets the database aside rather than misread
-  it.
-- Records saved before this change (store layouts 1 to 3, the legacy JSON
-  store, and the renderer's old local storage) are split when read: the Wisp
-  keeps the conversation's ID, and the single old folder ID keeps naming all
-  three folders, so no file moves. The records are written back in the new
-  layout in one transaction.
+- The SQLite store moved to layout 4 (a `wisps` table of JSON records) and
+  then to layout 5 (records as columns). Earlier builds cannot read either, so
+  the oldest supported reader is also version 5; an earlier build sets the
+  database aside rather than misread it.
+- A store with JSON records (layouts 1 to 4) is read as it is. Records saved
+  before this change (store layouts 1 to 3, the legacy JSON store, and the
+  renderer's old local storage) are split when read: the Wisp keeps the
+  conversation's ID, and the single old folder ID keeps naming all three
+  folders, so no file moves. Then, in one transaction with foreign keys off,
+  the record tables are replaced by the new ones, every record is written
+  back, messages gain their generated columns, messages left without a
+  conversation are removed, and the foreign keys are checked before commit.
 - A stored tone is appended to the soul as `## Tone` and `## Response length`
   sections with the instructions it used to add, so the Wisp keeps sounding the
   same.
