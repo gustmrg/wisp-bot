@@ -269,6 +269,7 @@ export class ConnectionManager {
       phase: "connecting",
       message: local ? "Starting Wisps on this computer…" : `Connecting to ${profile.name}…`,
     });
+    let serverVersion: string | undefined;
     const session = new RemoteSession({
       serverName: local ? "Wisp on this computer" : profile.name,
       deviceName: this.options.deviceName,
@@ -294,7 +295,15 @@ export class ConnectionManager {
       },
       onStatus: (phase, message) => {
         if (this.session !== session) return;
-        this.setStatus({ profileId: profile.id, phase: phaseOf(phase, local), ...(message ? { message } : {}) });
+        this.setStatus({
+          profileId: profile.id,
+          phase: phaseOf(phase, local),
+          ...(message ? { message } : {}),
+          ...(serverVersion ? { serverVersion } : {}),
+        });
+      },
+      onServer: (server) => {
+        if (!local) serverVersion = server.version;
       },
       onEvent: (type, payload) => {
         if (this.session === session && PUSHED.has(type)) {

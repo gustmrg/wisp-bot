@@ -215,6 +215,32 @@ describe("RemoteSession", () => {
     expect(await client.instance.call("getConversationState", {})).toMatchObject({ ok: false });
   });
 
+  it.each([
+    [1, /older Wisp server \(1\.0\.0\).*Update the server/],
+    [99, /newer Wisp server \(1\.0\.0\).*Update this app/],
+  ])("refuses a server that speaks protocol %i", async (protocolVersion, message) => {
+    const { server, directory } = await setup();
+    const other: typeof fetch = async (input, init) => {
+      const response = await fetch(input, init);
+      if (!String(input).endsWith("/api/v1/server")) return response;
+      const body = (await response.json()) as { value: { protocolVersion: number } };
+      body.value.protocolVersion = protocolVersion;
+      return new Response(JSON.stringify(body), { status: response.status, headers: response.headers });
+    };
+    const client = session("", {
+      openTransport: async () => ({
+        baseUrl: server.url,
+        fetch: other,
+        closed: new Promise(() => undefined),
+        close: () => undefined,
+      }),
+    });
+    client.instance.start(await pairCode(directory));
+    await waitUntil(() => client.phase() === "error", "the protocol mismatch");
+    expect(client.phases.at(-1)?.[1]).toMatch(message);
+    expect(client.phases.some(([phase]) => phase === "connected")).toBe(false);
+  });
+
   it("stops cleanly when stopped while its transport is still opening", async () => {
     const { server } = await setup();
     let close = 0;

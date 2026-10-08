@@ -105,8 +105,10 @@ setup for you. Add the server under **Settings → Connections** with the SSH
 option, then choose **Install the Wisp server** (it also appears when a
 connection fails). The app asks first, then runs `npx @gustmrg/wisp-server@<its
 own version> setup` on the machine over SSH, and connects. The same button
-(**Install or update the server**) in the server's settings updates it when the
-app is newer than the server. This needs Node.js and npm in the PATH of
+(**Install or update the server**) in the server's settings updates it to the
+app's version. The app shows the server's version next to the connection and
+warns when it differs from its own; when the two no longer speak the same
+protocol, it refuses to connect and says which one to update. This needs Node.js and npm in the PATH of
 non-interactive SSH commands, and a version of the app that is published on npm.
 **Cancel setup**, or choosing another connection, stops it, also on the machine;
 what was already installed stays, and a service not yet started is left alone.

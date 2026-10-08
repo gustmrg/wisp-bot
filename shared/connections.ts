@@ -48,6 +48,8 @@ export interface ConnectionStatus {
   profileId: string;
   phase: ConnectionPhase;
   message?: string;
+  /** The version of the server last reached; not set for this computer, which always matches the app. */
+  serverVersion?: string;
   /** Set while Wisp sets the server up over SSH; the setup can then be cancelled. */
   installing?: boolean;
   /**

@@ -79,6 +79,24 @@ describe("ConnectionGate", () => {
     expect(mounted).toHaveBeenCalledTimes(1);
   });
 
+  it("warns, until dismissed, when the server runs another version than this app", async () => {
+    const { push } = bridge(view({ phase: "connected", serverVersion: "0.0.1" }));
+    render(
+      <ConnectionGate>
+        <App onMount={() => undefined} />
+      </ConnectionGate>,
+    );
+    expect(await screen.findByRole("status")).toHaveTextContent(
+      /Home server runs Wisp server 0\.0\.1, older than this app.*Settings → Connections/,
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Dismiss" }));
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+    await push(view({ phase: "connected", serverVersion: "999.0.0" }));
+    expect(screen.getByRole("status")).toHaveTextContent(/newer than this app.*Update this app/);
+    await push(view({ phase: "connected", serverVersion: __APP_VERSION__ }));
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+  });
+
   it("asks for a pairing code, or pairing over SSH, before showing the app", async () => {
     const { api } = bridge(view({ phase: "pairing_required", message: "Enter a pairing code." }));
     render(

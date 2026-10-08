@@ -17,7 +17,8 @@ export const REMOTE_API_PREFIX = "/api/v1";
 
 /** Returned to paired devices only. */
 export interface ServerDescriptor {
-  protocolVersion: typeof REMOTE_PROTOCOL_VERSION;
+  /** Clients refuse a server whose protocol differs from their own `REMOTE_PROTOCOL_VERSION`. */
+  protocolVersion: number;
   /** Stable for the lifetime of the data directory; clients pin it after pairing. */
   serverId: string;
   /** Changes on every start; event cursors from another boot require a resync. */
