@@ -15,6 +15,7 @@ import { createWispServer, type WispServer } from "../../server/wisp-server.js";
 import type { BackendResult } from "../../shared/contracts.js";
 import type { Wisp } from "../../shared/conversations.js";
 import type { DeviceCredentials } from "../../shared/remote-protocol.js";
+import { DEFAULT_WISP_APPEARANCE } from "../../shared/wisp-appearance.js";
 
 const silent = new StructuredLogger({ info: () => undefined, warn: () => undefined });
 const cleanups: Array<() => Promise<void> | void> = [];
@@ -29,7 +30,7 @@ async function temporary(prefix: string): Promise<string> {
   return directory;
 }
 
-const atlas: Wisp = { id: "atlas", name: "Atlas", role: "", soul: "", shape: "circle" };
+const atlas: Wisp = { id: "atlas", name: "Atlas", role: "", soul: "", appearance: DEFAULT_WISP_APPEARANCE };
 
 async function start(dataDirectory: string, masterKey: Buffer, options: { adminSocket?: boolean } = {}) {
   const server = await createWispServer({

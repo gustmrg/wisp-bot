@@ -1,5 +1,5 @@
 import { HashIcon } from "lucide-react";
-import { Wisp } from "@/components/wisp";
+import { Wisp, type WispState } from "@/components/wisp";
 import type { ChatView, Wisp as WispEntity } from "@/chat-data";
 import { cn } from "@/lib/utils";
 
@@ -8,17 +8,20 @@ type AvatarSize = "default" | "sm" | "lg" | "xl";
 interface ChatAvatarProps {
   chat: ChatView;
   size?: AvatarSize;
+  /** What a Wisp's conversation is doing; circles do not show it. */
+  state?: WispState;
 }
 
 interface WispAvatarProps {
-  wisp: Pick<WispEntity, "name" | "shape" | "color" | "avatarImage">;
+  wisp: Pick<WispEntity, "name" | "appearance" | "color" | "avatarImage">;
   size?: AvatarSize;
+  state?: WispState;
 }
 
 const CLUSTER_SLOTS = ["left-[30%] top-[4%]", "left-[5%] top-[38%]", "left-[41%] top-[40%]"];
 
 /** A conversation's picture: its Wisp's, or a circle's members together. */
-function ChatAvatar({ chat, size = "default" }: ChatAvatarProps) {
+function ChatAvatar({ chat, size = "default", state }: ChatAvatarProps) {
   if (chat.kind === "circle") {
     const members = chat.members;
     const tileSize =
@@ -78,7 +81,14 @@ function ChatAvatar({ chat, size = "default" }: ChatAvatarProps) {
             {member.avatarImage ? (
               <img className="size-full object-cover" src={member.avatarImage} alt="" />
             ) : (
-              <Wisp className="size-full" color={member.color} name={member.name} shape="circle" />
+              // A round body with no trail fits the round slot.
+              <Wisp
+                className="size-full"
+                appearance={{ ...member.appearance, body: "round", trail: "none" }}
+                color={member.color}
+                name={member.name}
+                size="sm"
+              />
             )}
           </span>
         ))}
@@ -98,11 +108,11 @@ function ChatAvatar({ chat, size = "default" }: ChatAvatarProps) {
     );
   }
 
-  return <WispAvatar wisp={chat.wisp} size={size} />;
+  return <WispAvatar wisp={chat.wisp} size={size} state={state} />;
 }
 
-/** A Wisp's uploaded picture, or its shape in its color. */
-function WispAvatar({ wisp, size = "default" }: WispAvatarProps) {
+/** A Wisp's uploaded picture, or its drawn appearance. */
+function WispAvatar({ wisp, size = "default", state }: WispAvatarProps) {
   if (wisp.avatarImage) {
     return (
       <img
@@ -116,7 +126,16 @@ function WispAvatar({ wisp, size = "default" }: WispAvatarProps) {
     );
   }
 
-  return <Wisp aria-hidden="true" color={wisp.color} name={wisp.name} shape={wisp.shape} size={size} />;
+  return (
+    <Wisp
+      aria-hidden="true"
+      appearance={wisp.appearance}
+      color={wisp.color}
+      name={wisp.name}
+      size={size}
+      state={state}
+    />
+  );
 }
 
 export { ChatAvatar, WispAvatar };

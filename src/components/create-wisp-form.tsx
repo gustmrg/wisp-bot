@@ -22,7 +22,7 @@ export function CreateWispForm({ settings, step = "identity", onChange, ref, chi
   return (
     <div
       ref={ref}
-      className="min-h-0 overflow-y-auto px-1 pb-1 [&_[data-slot=color-grid]]:max-w-none [&_[data-slot=color-grid]]:gap-3 [&_[data-slot=color-grid]_button]:w-[26px] [&_[data-slot=shape-grid]]:mb-[18px] [&_[data-slot=shape-grid]]:grid-cols-8 [&_[data-slot=shape-grid]]:gap-1.5 [&_[data-slot=shape-grid]_button]:h-11 max-[540px]:[&_[data-slot=shape-grid]]:grid-cols-4"
+      className="min-h-0 overflow-y-auto px-1 pb-1 [&_[data-slot=color-grid]]:max-w-none [&_[data-slot=color-grid]]:gap-3 [&_[data-slot=color-grid]_button]:w-[26px] [&_[data-slot=appearance-grid]_button]:h-11"
     >
       {step === "identity" ? (
         <WispIdentityFields settings={settings} onChange={onChange} />

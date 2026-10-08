@@ -25,7 +25,7 @@ it.
 ### The Wisp is its own entity
 
 ```text
-Wisp            id, name, role, soul, shape, color?, avatarImage?
+Wisp            id, name, role, soul, appearance, color?, avatarImage?
 Conversation    a Wisp's own conversation (kind "wisp", wispId) or a circle
                 (kind "circle", name, label, description, memberIds)
 Message         as before; incoming messages carry the authorId of the Wisp
@@ -90,7 +90,7 @@ value, and only TypeScript kept them consistent.
 
 | Table | Holds | Relations |
 |---|---|---|
-| `wisps` | Name, role, soul, shape, appearance, storage ID, model override | — |
+| `wisps` | Name, role, soul, appearance (one column per axis), color, picture, storage ID, model override | — |
 | `conversations` | Kind, a circle's name, label, and description, notification and read state, preview, last activity, storage ID | `wisp_id` names the Wisp a Wisp's conversation belongs to (it shares the Wisp's ID) and is deleted with it |
 | `circle_members` | A circle's members in order (`position`) | Conversation and Wisp; a deleted Wisp leaves every circle |
 | `participant_sessions` | Each Wisp's agent session in a conversation | Conversation and Wisp |
@@ -109,8 +109,32 @@ The rule is to give a field its own column unless its shape varies:
 - **A schedule stays JSON.** New kinds of schedule (recurring ones) join the
   `MessageSchedule` union without changing the table.
 
+- **A Wisp's appearance columns have no `CHECK`.** Their values are display
+  choices that grow often, and SQLite cannot change a `CHECK` without
+  rebuilding the table, which now has foreign keys pointing at it. The
+  repository validates them on read, and an unknown value falls back to the
+  default, so an older build still shows a Wisp a newer one changed.
+
 The gain is integrity and a readable schema, not speed: the main process still
 reads every Wisp and conversation at startup and queries them in memory.
+
+### How a Wisp looks
+
+A Wisp without a picture is drawn from its **appearance**: a body (`round`,
+`drop`, `pebble`, `crystal`, `block`) and a **trail** (`hook`, `flame`,
+`curl`, or `none`), plus the tone, eyes, eye color, finish, and mark. The
+trail is the family trait: at 24 px bodies blur together, but trails stay
+apart, and the app icon has one. The color is one of the ten palette colors;
+a tone of `soft` is the same color, lighter. The backend stores and checks the
+IDs (`shared/wisp-appearance.ts`); the renderer owns the geometry.
+
+Small sizes keep only what survives them: below 32 px the mark goes and the
+eyes grow, and below 28 px an outline fills in. In the sidebar the Wisp shows
+what its conversation is doing: the trail sways while it works, the eyes grow
+while it waits for approval, and it fades with its trail down after a reply
+failed. Approval and failure also put a dot in the avatar's bottom corner
+(amber and red); the failure dot clears when the conversation is opened.
+`docs/design/wisp-trail-study.html` is the study these choices came from.
 
 ## Migration
 
@@ -126,6 +150,12 @@ reads every Wisp and conversation at startup and queries them in memory.
   the record tables are replaced by the new ones, every record is written
   back, messages gain their generated columns, messages left without a
   conversation are removed, and the foreign keys are checked before commit.
+- A Wisp saved with a shape gets the closest body (`circle` → round,
+  `square` → block, `triangle`, `diamond`, and `hexagon` → crystal, `drop` →
+  drop, `pebble`, `pill`, and `cloud` → pebble), no trail, and the flat look it
+  had. A color outside the palette moves to the closest palette color. Stores
+  written by earlier layout 5 builds, with a `shape` column, get the appearance
+  columns in place when opened.
 - A stored tone is appended to the soul as `## Tone` and `## Response length`
   sections with the instructions it used to add, so the Wisp keeps sounding the
   same.

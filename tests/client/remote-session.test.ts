@@ -17,6 +17,7 @@ import { adminRequest } from "../../server/admin.js";
 import { MasterKeyEncryption } from "../../server/master-key.js";
 import { createWispServer, type WispServer } from "../../server/wisp-server.js";
 import type { DeviceCredentials } from "../../shared/remote-protocol.js";
+import { DEFAULT_WISP_APPEARANCE } from "../../shared/wisp-appearance.js";
 
 const silent = new StructuredLogger({ info: () => undefined, warn: () => undefined });
 const cleanups: Array<() => Promise<void>> = [];
@@ -138,7 +139,7 @@ describe("RemoteSession", () => {
       apiKey: "test-key",
     });
     await client.instance.call("createWisp", {
-      wisp: { id: "atlas", name: "Atlas", role: "", soul: "", shape: "circle" },
+      wisp: { id: "atlas", name: "Atlas", role: "", soul: "", appearance: DEFAULT_WISP_APPEARANCE },
       notifyOnUpdatesEnabled: true,
     });
     await client.instance.call("sendMessage", { conversationId: "atlas", requestId: "r1", text: "Hi" });

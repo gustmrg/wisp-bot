@@ -7,10 +7,11 @@ import {
   type WispRecord,
   type WorkspaceRecords,
 } from "../backend/workspace-actions.js";
+import { DEFAULT_WISP_APPEARANCE } from "../shared/wisp-appearance.js";
 
 function wispRecord(id: string): WispRecord {
   return {
-    wisp: { id, name: "Same display name", role: "Test", soul: "Test", shape: "circle" },
+    wisp: { id, name: "Same display name", role: "Test", soul: "Test", appearance: DEFAULT_WISP_APPEARANCE },
     storageId: `storage-${id}`,
     modelOverride: null,
     createdAt: "created",

@@ -7,6 +7,7 @@ import { SearchDialog } from "@/components/search-dialog";
 import type { WispApi } from "../../shared/contracts";
 import type { MessageSearchHit } from "../../shared/conversations";
 import { wispChatView } from "@/test/chat-fixtures";
+import { DEFAULT_WISP_APPEARANCE } from "../../shared/wisp-appearance";
 
 const chats: ChatViewCollection = {
   atlas: wispChatView("atlas", {
@@ -14,7 +15,7 @@ const chats: ChatViewCollection = {
     chat: { preview: "Latest research" },
   }),
   pixel: wispChatView("pixel", {
-    wisp: { name: "Pixel", role: "Design", soul: "Creates interfaces", shape: "square" },
+    wisp: { name: "Pixel", role: "Design", soul: "Creates interfaces", appearance: DEFAULT_WISP_APPEARANCE },
     chat: { preview: "Designing" },
   }),
 };

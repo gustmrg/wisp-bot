@@ -8,6 +8,7 @@ import { chatSummary, type Chat, type ConversationStateView, type Wisp } from ".
 import App from "@/App";
 import { LEGACY_STORAGE_KEY } from "@/hooks/use-conversations";
 import { MOBILE_LAYOUT_QUERY } from "@/hooks/use-mobile-layout";
+import { DEFAULT_WISP_APPEARANCE } from "../shared/wisp-appearance";
 
 /** A Wisp's own conversation; `wispNamed` gives the Wisp itself. */
 function wispChat(id: string): Chat {
@@ -20,7 +21,7 @@ function wispNamed(id: string): Wisp {
     name: id.charAt(0).toUpperCase() + id.slice(1),
     role: "Research",
     soul: "Finds relevant information",
-    shape: "circle",
+    appearance: DEFAULT_WISP_APPEARANCE,
   };
 }
 

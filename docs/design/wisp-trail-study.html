@@ -1,0 +1,460 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Wisp — trail study</title>
+<style>
+*{box-sizing:border-box}
+:root{color-scheme:dark;font-family:Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;background:#111513;color:#edf1e8}
+body{margin:0}
+button,input{font:inherit}
+.lab{max-width:1360px;margin:auto;padding:32px 40px 48px}
+.topbar{display:flex;justify-content:space-between;align-items:center;padding-bottom:22px;border-bottom:1px solid #2c332d}
+.brand{font-size:20px;font-weight:700;letter-spacing:-1px}.brand span{font-weight:400;color:#9aaa94}
+.mono,.tag,.panel h2 small{font-family:ui-monospace,monospace;font-size:10px;letter-spacing:1.6px;text-transform:uppercase}
+.tag{color:#a1afa3;border:1px solid #374238;padding:8px 11px;border-radius:30px}
+h1{font-size:clamp(28px,4vw,44px);letter-spacing:-2px;line-height:1.1;margin:30px 0 10px}
+p{color:#a4b0a7;font-size:13px;line-height:1.65;margin:0}
+.intro p{max-width:720px}
+.workspace{display:grid;grid-template-columns:minmax(0,1fr) 330px;gap:20px;margin-top:28px;align-items:start}
+.visuals{display:grid;gap:14px;min-width:0}
+.panel{background:#171c19;border:1px solid #2f3a31;border-radius:16px;padding:18px 20px}
+.panel h2{font-size:14px;margin:0 0 4px;display:flex;justify-content:space-between;align-items:baseline;gap:12px}
+.panel h2 small{color:#7f927f;font-weight:400}
+.panel>p{font-size:12px;margin-bottom:14px}
+.stage{position:relative;min-height:380px;border:1px solid #333f34;border-radius:20px;display:flex;align-items:center;justify-content:center;background:radial-gradient(ellipse at 50% 45%,#30413580,transparent 64%),radial-gradient(#81977d22 .8px,transparent .8px);background-size:auto,20px 20px}
+.stage .mono{position:absolute;top:20px;left:22px;color:#a9b8a9}
+.stage .code{position:absolute;bottom:18px;left:22px;right:22px;display:flex;justify-content:space-between;gap:10px;align-items:center;font-family:ui-monospace,monospace;font-size:11px;color:#9fb29d}
+.stage .code button{border:1px solid #3a463b;background:none;color:#cfe3c1;border-radius:6px;padding:5px 9px;cursor:pointer;font-size:11px}
+.row{display:flex;gap:18px;align-items:flex-end;flex-wrap:wrap}
+.cell{display:flex;flex-direction:column;align-items:center;gap:6px}
+.cell small{font-family:ui-monospace,monospace;font-size:9px;opacity:.6}
+.scales{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.surface{border-radius:12px;padding:14px 16px;background:#111513;border:1px solid #2a332c}
+.surface.light{background:#f4f4f0;color:#2a332c;border-color:#e2e3dc}
+.cluster{position:relative;width:32px;height:32px;border-radius:8px;background:#262d28;overflow:hidden}
+.light .cluster{background:#e3e4dd}
+.cluster>span{position:absolute;width:54%;height:54%;border-radius:50%;overflow:hidden;box-shadow:0 0 0 2px #262d28;background:#262d28}
+.light .cluster>span{box-shadow:0 0 0 2px #e3e4dd;background:#e3e4dd}
+.cluster>span svg{width:100%;height:100%}
+.matrix{display:grid;gap:4px;align-items:center;justify-items:center}
+.matrix .head{font-size:10px;color:#8fa18d;font-family:ui-monospace,monospace}
+.matrix button{border:1px solid transparent;background:#111513;border-radius:10px;padding:8px;cursor:pointer;line-height:0}
+.matrix button:hover{border-color:#3b473c}
+.matrix button[aria-pressed=true]{border-color:#bbda9b;background:#1d251f}
+.matrix.light button{background:#f4f4f0}
+.toolbar{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px}
+.chip{border:1px solid #364136;background:none;color:#b6c0b3;border-radius:20px;padding:4px 10px;font-size:11px;cursor:pointer}
+.chip[aria-pressed=true]{border-color:#bbda9b;color:#d5eac3;background:#c4e5a612}
+.sidebars{display:grid;grid-template-columns:64px minmax(0,1fr);gap:12px}
+.sb{border-radius:12px;padding:8px;background:#151917;border:1px solid #2a332c}
+.sb.light{background:#fafaf7;color:#1f2721;border-color:#e2e3dc}
+.sb-item{display:flex;align-items:center;gap:9px;padding:8px;border-radius:10px;min-width:0}
+.sb-item.sel{background:#232a25}.sb.light .sb-item.sel{background:#ecede6}
+.sb-av{position:relative;flex:none;line-height:0}
+.sb-text{display:flex;flex-direction:column;min-width:0;flex:1}
+.sb-top{display:flex;gap:8px;align-items:baseline}
+.sb-top strong{font-size:13px;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sb-top time{font-size:10px;opacity:.5}
+.sb-prev{font-size:12px;opacity:.6;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:1px}
+.sb-prev.approval{color:#e0a43a;opacity:1;font-weight:500}.sb-prev.error{color:#e5675b;opacity:1}.sb-prev.working{opacity:.8}
+.sb-item.unread strong{font-weight:700}.sb-item.unread .sb-prev{opacity:.9}
+.dot{position:absolute;right:-1px;top:-1px;width:9px;height:9px;border-radius:50%;background:#3c82f6;box-shadow:0 0 0 2px #151917}
+.sb.light .dot{box-shadow:0 0 0 2px #fafaf7}
+.rail .sb-item{justify-content:center;padding:7px 0}
+.legend{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-top:12px}
+.legend div{font-size:11px;color:#9aaa98;line-height:1.5}.legend b{display:block;color:#d4e2cb;font-weight:600;margin-bottom:2px}
+.palette{display:grid;grid-template-columns:70px repeat(10,1fr);gap:6px;align-items:center;justify-items:center;font-size:10px;color:#8fa18d}
+.palette .lbl{justify-self:start;font-family:ui-monospace,monospace}
+.controls{background:#1a201c;border:1px solid #303b32;border-radius:20px;padding:22px;position:sticky;top:16px;max-height:calc(100vh - 32px);overflow:auto}
+.controls h2{font-size:15px;margin:0 0 18px;display:flex;justify-content:space-between}
+.controls fieldset{border:0;padding:0;margin:0 0 18px;min-width:0}
+legend{font-size:12px;font-weight:600;margin-bottom:9px}
+.opts{display:flex;flex-wrap:wrap;gap:6px}
+.opt{position:relative}
+.opt input{position:absolute;opacity:0;width:1px;height:1px}
+.opt span{display:flex;align-items:center;gap:6px;padding:6px 10px;border:1px solid #364136;border-radius:8px;font-size:11px;color:#b6c0b3;cursor:pointer}
+.opt input:checked+span{background:#c4e5a612;border-color:#bbda9b;color:#d5eac3}
+.opt input:focus-visible+span,button:focus-visible{outline:2px solid #e0f1bd;outline-offset:3px}
+.sw{width:13px;height:13px;border-radius:50%;display:inline-block}
+.hint{font-size:10px;line-height:1.6;color:#889c87;border-top:1px solid #354030;padding-top:12px;margin-top:4px}
+
+/* Wisp */
+.w{display:inline-block;vertical-align:middle;overflow:visible}
+.tailg,.look,.blink,.art{transform-box:view-box}
+.blink{transform-box:fill-box;transform-origin:center;animation:blink 6s infinite}
+.st-working .tailg{animation:sway 1.5s ease-in-out infinite}
+.st-working .look{animation:look 3s ease-in-out infinite}
+.st-working .art{animation:bob 1.5s ease-in-out infinite}
+.st-error .art{filter:saturate(.12) brightness(.92)}
+.st-error .tailg{rotate:18deg}
+.st-error .look{translate:0 3px}
+@keyframes blink{0%,46%,50%,100%{scale:1 1}48%{scale:1 .1}}
+@keyframes sway{0%,100%{rotate:-7deg}50%{rotate:8deg}}
+@keyframes look{0%,100%{translate:0 0}35%,65%{translate:3px -3px}}
+@keyframes bob{0%,100%{translate:0 0}50%{translate:0 -2px}}
+@media(prefers-reduced-motion:reduce){.blink,.tailg,.look,.art{animation:none!important}}
+.still .blink,.still .tailg,.still .look,.still .art{animation:none!important}
+
+@media(max-width:980px){.workspace{grid-template-columns:1fr}.controls{position:static;max-height:none}.scales{grid-template-columns:1fr}.legend{grid-template-columns:1fr 1fr}}
+</style>
+</head>
+<body>
+<div class="lab" id="lab">
+  <header class="topbar"><div class="brand">✳ wisp <span>/ design / trails</span></div><span class="tag">Identity study · 002</span></header>
+  <section class="intro">
+    <h1>Trails: the tail as a family trait.</h1>
+    <p>Every Wisp is a body and a trail. The trail is what sets a Wisp apart from a ball with eyes, and it stays readable at 24 px. The agent's state moves the trail and the eyes, so the conversation list shows what each Wisp is doing. The app implements this study; see ADR 010.</p>
+  </section>
+
+  <div class="workspace">
+    <section class="visuals" aria-label="Previews">
+      <div class="stage" id="hero-stage"><span class="mono" id="hero-label">Specimen</span><div id="hero"></div>
+        <div class="code"><span id="code"></span><button type="button" id="copy">Copy recipe link</button></div></div>
+
+      <div class="panel">
+        <h2>Real sizes <small>16 · 20 · 24 · 32 · 48 · cluster</small></h2>
+        <p>24 px is the compact avatar, 32 px the sidebar row, and a circle's cluster draws each member at about 17 px. Below 32 px the mark goes and the eyes grow a little; below 28 px an outline fills in.</p>
+        <div class="scales"><div class="surface" id="scale-dark"></div><div class="surface light" id="scale-light"></div></div>
+      </div>
+
+      <div class="panel">
+        <h2>Body × trail <small>click to choose</small></h2>
+        <p>Can Wisps be told apart at this size? “Silhouette only” removes color and eyes to check that the shape holds up alone.</p>
+        <div class="toolbar" id="matrix-tools"></div>
+        <div class="matrix" id="matrix"></div>
+      </div>
+
+      <div class="panel">
+        <h2>Sidebar states <small>32 px · collapsed on the left</small></h2>
+        <p>The first row uses the chosen recipe and state. The others show a varied family, each in a state.</p>
+        <div class="toolbar" id="sidebar-tools"></div>
+        <div class="sidebars" id="sidebar"></div>
+        <div class="legend">
+          <div><b>Working</b>The trail sways, the eyes look around, and the body floats.</div>
+          <div><b>Waiting for approval</b>An amber dot in the bottom corner, like the failure one, and the eyes grow.</div>
+          <div><b>Failed</b>A red dot, faded color, the trail down, and eyes looking down. Clears when the conversation is opened.</div>
+          <div><b>Unread</b>Still the dot in the top corner. The Wisp looks as usual.</div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <h2>Palette: vivid × soft <small>24 px · dark and light</small></h2>
+        <p>Each palette color has a soft tone derived from it: the same color, lighter, not a second palette.</p>
+        <div id="palette"></div>
+      </div>
+    </section>
+
+    <aside class="controls" aria-label="Customize Wisp">
+      <h2>Wisp recipe <button type="button" class="chip" id="random">Random Wisp</button></h2>
+      <div id="controls"></div>
+      <p class="hint">The recipe lives in the page address (#…), so it can be saved or shared. States are not part of the recipe: in the app, the runtime sets them.</p>
+    </aside>
+  </div>
+</div>
+
+<script>
+const COLORS = [
+  ["charcoal", "Charcoal", "#262626"], ["red", "Red", "#ff3b30"], ["orange", "Orange", "#ed712e"],
+  ["amber", "Amber", "#f19d38"], ["teal", "Teal", "#54b9a6"], ["blue", "Blue", "#3c82f6"],
+  ["indigo", "Indigo", "#6464ef"], ["violet", "Violet", "#885cf5"], ["magenta", "Magenta", "#e5498f"],
+  ["gray", "Gray", "#8e8e8e"],
+];
+
+const AXES = {
+  body: ["Body", [["round", "Round"], ["drop", "Drop"], ["pebble", "Pebble"], ["crystal", "Crystal"], ["block", "Block"]]],
+  tail: ["Trail", [["hook", "Hook"], ["flame", "Flame"], ["curl", "Curl"], ["none", "None"]]],
+  color: ["Color", COLORS.map(([id, label]) => [id, label])],
+  tone: ["Tone", [["vivid", "Vivid"], ["soft", "Soft"]]],
+  eyes: ["Eyes", [["oval", "Oval"], ["dot", "Dots"], ["wisp", "Wisp"], ["slit", "Slits"], ["arc", "Arcs"]]],
+  ink: ["Eye color", [["auto", "Auto"], ["dark", "Dark"], ["light", "Light"]]],
+  finish: ["Finish", [["solid", "Solid"], ["glow", "Glow"], ["line", "Outline"]]],
+  mark: ["Mark", [["none", "None"], ["spark", "Spark"], ["motes", "Motes"]]],
+};
+const RECIPE_KEYS = Object.keys(AXES);
+const STATES = [["idle", "Idle"], ["working", "Working"], ["approval", "Waiting for approval"], ["error", "Failed"]];
+const DEFAULT = { body: "round", tail: "hook", color: "blue", tone: "vivid", eyes: "wisp", ink: "auto", finish: "glow", mark: "motes" };
+
+// ---------- color ----------
+const rgb = (h) => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16));
+const hex = (c) => "#" + c.map((v) => Math.round(v).toString(16).padStart(2, "0")).join("");
+const mix = (a, b, t) => hex(rgb(a).map((v, i) => v + (rgb(b)[i] - v) * t));
+const lum = (h) => {
+  const [r, g, b] = rgb(h).map((v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; });
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+};
+function palette(r, theme) {
+  const source = COLORS.find((c) => c[0] === r.color)[2];
+  const base = r.tone === "soft" ? mix(source, "#ffffff", 0.55) : source;
+  const p = { base, light: mix(base, "#ffffff", 0.45), deep: mix(base, "#000000", r.tone === "soft" ? 0.3 : 0.32) };
+  p.dark = mix(source, "#000000", 0.74);
+  p.bright = "#f7fbff";
+  p.line = theme === "light" && lum(base) > 0.45 ? p.deep : theme === "dark" && lum(base) < 0.04 ? p.light : base;
+  return p;
+}
+
+// ---------- geometry (viewBox 0 0 100 100) ----------
+const BODIES = {
+  round: { el: "ellipse", a: 'cx="46" cy="64" rx="37" ry="32"', face: [46, 65] },
+  drop: { el: "path", a: 'd="M72 30C80 44 85 54 85 67C85 85 67 96 47 96C27 96 10 85 10 66C10 46 30 34 72 30Z"', face: [46, 67] },
+  pebble: { el: "path", a: 'd="M40 32C60 26 82 36 86 56C90 76 76 94 52 95C28 96 10 86 9 66C8 48 22 37 40 32Z"', face: [47, 65] },
+  crystal: { el: "path", a: 'd="M42 34L73 38L84 62L67 89L29 89L13 63L23 41Z"', face: [48, 64], round: 10 },
+  block: { el: "rect", a: 'x="10" y="33" width="76" height="61" rx="24"', face: [48, 64] },
+};
+// Each trail stroke is a center curve whose radius thins toward the tip.
+const TAILS = {
+  hook: { origin: [64, 46], strokes: [{ segs: [[64, 50, 80, 42, 85, 24, 75, 14], [75, 14, 68, 7, 57, 9, 50, 4]], r: [15, 1.6] }] },
+  flame: { origin: [58, 44], strokes: [{ segs: [[56, 48, 60, 32, 68, 22, 73, 5]], r: [16, 1.4] }] },
+  curl: { origin: [62, 46], strokes: [{ segs: [[60, 50, 79, 42, 86, 18, 71, 11], [71, 11, 60, 6, 54, 18, 63, 21]], r: [14, 1.7] }] },
+  none: { origin: [50, 50], strokes: [] },
+};
+
+function bezier(s, t) {
+  const u = 1 - t;
+  const f = (a, b, c, d) => u * u * u * a + 3 * u * u * t * b + 3 * u * t * t * c + t * t * t * d;
+  return [f(s[0], s[2], s[4], s[6]), f(s[1], s[3], s[5], s[7])];
+}
+const tailCache = {};
+function tailPaths(key) {
+  if (tailCache[key]) return tailCache[key];
+  tailCache[key] = TAILS[key].strokes.map(({ segs, r: [r0, r1] }) => {
+    const pts = [];
+    segs.forEach((s, i) => { for (let k = i ? 1 : 0; k <= 40; k++) pts.push(bezier(s, k / 40)); });
+    const n = pts.length - 1;
+    const left = [], right = [];
+    pts.forEach((p, i) => {
+      const a = pts[Math.max(0, i - 1)], b = pts[Math.min(n, i + 1)];
+      const dx = b[0] - a[0], dy = b[1] - a[1], len = Math.hypot(dx, dy) || 1;
+      const r = r1 + (r0 - r1) * (1 - i / n) ** 1.15;
+      left.push([p[0] - (dy / len) * r, p[1] + (dx / len) * r]);
+      right.push([p[0] + (dy / len) * r, p[1] - (dx / len) * r]);
+    });
+    const poly = left.concat(right.reverse()).map((p, i) => (i ? "L" : "M") + p[0].toFixed(2) + " " + p[1].toFixed(2)).join("") + "Z";
+    const tip = pts[n], base = pts[0];
+    return `<path d="${poly}"/><circle cx="${tip[0].toFixed(2)}" cy="${tip[1].toFixed(2)}" r="${r1}"/><circle cx="${base[0]}" cy="${base[1]}" r="${r0}"/>`;
+  }).join("");
+  return tailCache[key];
+}
+
+function shapes(r, extra) {
+  const b = BODIES[r.body];
+  const sw = (b.round || 0) + extra;
+  const body = `<${b.el} ${b.a} stroke-width="${sw}"/>`;
+  const t = TAILS[r.tail];
+  const tail = t.strokes.length
+    ? `<g class="tailg" style="transform-origin:${t.origin[0]}px ${t.origin[1]}px" stroke-width="${extra}">${tailPaths(r.tail)}</g>` : "";
+  return body + tail;
+}
+
+function eyes(kind, ink, k) {
+  const g = (inner) => `<g transform="scale(${k}) rotate(-8)" fill="${ink}">${inner}</g>`;
+  switch (kind) {
+    case "oval": return g('<ellipse cx="-9" rx="4.6" ry="7.6"/><ellipse cx="9" rx="4.6" ry="7.6"/>');
+    case "dot": return g('<circle cx="-9" r="5.2"/><circle cx="9" r="5.2"/>');
+    case "wisp": return g('<ellipse cx="-10" cy="-3" rx="6" ry="8.5" transform="rotate(14 -10 -3)"/><ellipse cx="9" cy="7" rx="7.2" ry="5.2" transform="rotate(-12 9 7)"/>');
+    case "slit": return g('<rect x="-16" y="-2.5" width="12" height="5" rx="2.5"/><rect x="4" y="-2.5" width="12" height="5" rx="2.5"/>');
+    case "arc": return g(`<path d="M-15 3Q-9.5-6-4 3M4 3Q9.5-6 15 3" fill="none" stroke="${ink}" stroke-width="4.8" stroke-linecap="round"/>`);
+  }
+}
+
+let uid = 0;
+function wisp(r, size, { theme = "dark", state = "idle", mono = false } = {}) {
+  const id = "w" + ++uid;
+  const p = palette(r, theme);
+  const small = size < 32;
+  const finish = r.finish === "line" && size < 28 ? "solid" : r.finish;
+  const px = 100 / size; // view box units per pixel
+  const lineW = Math.max(3, 1.4 * px);
+  const shift = r.tail === "none" ? "translate(2 -12)" : "";
+  const [fx, fy] = BODIES[r.body].face;
+  let defs = "", art = "";
+
+  if (mono) {
+    const c = theme === "light" ? "#3b443d" : "#c9d2c6";
+    art = `<g fill="${c}" stroke="${c}" stroke-linejoin="round">${shapes(r, 0)}</g>`;
+  } else if (finish === "line") {
+    defs += `<mask id="${id}m" maskUnits="userSpaceOnUse" x="-20" y="-20" width="140" height="140">
+      <g fill="#fff" stroke="#fff" stroke-linejoin="round">${shapes(r, lineW * 2)}</g>
+      <g fill="#000" stroke="#000" stroke-linejoin="round">${shapes(r, 0)}</g></mask>`;
+    art = `<rect x="-20" y="-20" width="140" height="140" fill="${p.line}" mask="url(#${id}m)"/>`;
+  } else {
+    let paint = p.base;
+    if (finish === "glow") {
+      defs += `<radialGradient id="${id}g" gradientUnits="userSpaceOnUse" cx="36" cy="52" r="62">
+        <stop offset="0" stop-color="${p.light}"/><stop offset=".55" stop-color="${p.base}"/><stop offset="1" stop-color="${p.deep}"/></radialGradient>`;
+      paint = `url(#${id}g)`;
+      if (size >= 48) {
+        defs += `<filter id="${id}f" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="6"/></filter>`;
+        art += `<g fill="${p.base}" stroke="${p.base}" opacity=".45" filter="url(#${id}f)">${shapes(r, 0)}</g>`;
+      }
+    }
+    // Near-black colors vanish on a dark background: a thin light outline sets the Wisp apart.
+    if (theme === "dark" && lum(p.base) < 0.04) {
+      const ring = Math.max(2.5, 1.2 * px);
+      defs += `<mask id="${id}r" maskUnits="userSpaceOnUse" x="-20" y="-20" width="140" height="140">
+        <g fill="#fff" stroke="#fff" stroke-linejoin="round">${shapes(r, ring * 2)}</g>
+        <g fill="#000" stroke="#000" stroke-linejoin="round">${shapes(r, 0)}</g></mask>`;
+      art += `<rect x="-20" y="-20" width="140" height="140" fill="${mix(p.base, "#ffffff", 0.32)}" mask="url(#${id}r)"/>`;
+    }
+    art += `<g fill="${paint}" stroke="${paint}" stroke-linejoin="round">${shapes(r, 0)}</g>`;
+    if (finish === "glow" && size >= 48) {
+      art += `<g transform="translate(${fx} ${fy}) scale(.72) translate(${-fx} ${-fy})" fill="${p.light}" stroke="${p.light}" opacity=".3">${shapes({ ...r, tail: "none" }, 0)}</g>`;
+    }
+  }
+
+  if (!mono) {
+    const autoInk = finish === "line" ? p.line : lum(p.base) > 0.4 ? p.dark : p.bright;
+    const ink = r.ink === "auto" || finish === "line" ? autoInk : r.ink === "dark" ? p.dark : p.bright;
+    const kind = r.eyes;
+    const k = (small ? 1.22 : 1) * (state === "approval" ? 1.12 : 1);
+    art += `<g transform="translate(${fx} ${fy})"><g class="look"><g class="blink">${eyes(kind, ink, k)}</g></g></g>`;
+    if (!small && r.mark === "spark") {
+      art += `<path fill="${finish === "line" ? p.line : p.light}" transform="translate(${r.tail === "none" ? 78 : 22} 22) scale(.9)" d="M0-10L2.6-2.6L10 0L2.6 2.6L0 10L-2.6 2.6L-10 0L-2.6-2.6Z"/>`;
+    }
+    if (!small && r.mark === "motes") {
+      const c = finish === "line" ? p.line : p.base;
+      art += `<g fill="${c}"><circle cx="16" cy="28" r="3.2"/><circle cx="24" cy="20" r="2"/><circle cx="92" cy="46" r="3"/><circle cx="91" cy="78" r="2.3"/></g>`;
+    }
+  }
+
+  // Approval and failure share a dot in the bottom corner; only the color differs.
+  const BADGES = { approval: "#f0a83a", error: "#e5594d" };
+  let extra = "";
+  if (BADGES[state]) {
+    const d = Math.max(16, 7 * px);
+    extra = `<circle cx="${100 - d / 2}" cy="${100 - d / 2}" r="${d / 2}" fill="${BADGES[state]}" stroke="${theme === "light" ? "#fafaf7" : "#151917"}" stroke-width="${2 * px}"/>`;
+  }
+
+  return `<svg class="w st-${state}" width="${size}" height="${size}" viewBox="0 0 100 100" aria-hidden="true">
+    <defs>${defs}</defs><g class="art"><g transform="${shift}">${art}</g></g>${extra}</svg>`;
+}
+
+// ---------- page state ----------
+const view = { state: "idle", matrixSize: 24, mono: false, matrixTheme: "dark", sidebarTheme: "dark", motion: true };
+let recipe = { ...DEFAULT };
+const code = (r) => RECIPE_KEYS.map((k) => r[k]).join(".");
+function fromHash() {
+  const parts = decodeURIComponent(location.hash.slice(1)).split(".");
+  if (parts.length !== RECIPE_KEYS.length) return;
+  const next = {};
+  for (const [i, k] of RECIPE_KEYS.entries()) {
+    if (!AXES[k][1].some(([id]) => id === parts[i])) return;
+    next[k] = parts[i];
+  }
+  recipe = next;
+}
+
+const $ = (id) => document.getElementById(id);
+function radios(name, label, options, value, swatches) {
+  return `<fieldset><legend>${label}</legend><div class="opts">${options.map(([id, text]) =>
+    `<label class="opt"><input type="radio" name="${name}" value="${id}" ${id === value ? "checked" : ""}><span>${
+      swatches ? `<i class="sw" style="background:${COLORS.find((c) => c[0] === id)[2]}"></i>` : ""}${text}</span></label>`).join("")}</div></fieldset>`;
+}
+function chips(group, items, current) {
+  return items.map(([value, text]) => `<button type="button" class="chip" data-group="${group}" data-value="${value}" aria-pressed="${String(value) === String(current)}">${text}</button>`).join("");
+}
+
+function renderControls() {
+  $("controls").innerHTML =
+    RECIPE_KEYS.map((k) => radios(k, AXES[k][0], AXES[k][1], recipe[k], k === "color")).join("") +
+    radios("state", "State (preview)", STATES, view.state);
+}
+
+const ROSTER = [
+  { name: "Atlas", r: { body: "pebble", tail: "flame", color: "teal", tone: "vivid", eyes: "oval", ink: "auto", finish: "glow", mark: "none" }, state: "working", time: "now" },
+  { name: "Juno", r: { body: "drop", tail: "curl", color: "magenta", tone: "soft", eyes: "dot", ink: "auto", finish: "solid", mark: "none" }, state: "approval", time: "2 min" },
+  { name: "Pixel", r: { body: "crystal", tail: "flame", color: "amber", tone: "vivid", eyes: "slit", ink: "auto", finish: "solid", mark: "none" }, state: "idle", unread: true, time: "14:20", preview: "Done, the report is attached." },
+  { name: "Orla", r: { body: "round", tail: "hook", color: "violet", tone: "soft", eyes: "wisp", ink: "auto", finish: "glow", mark: "none" }, state: "error", time: "yesterday" },
+  { name: "Sumi", r: { body: "block", tail: "none", color: "charcoal", tone: "vivid", eyes: "arc", ink: "auto", finish: "solid", mark: "none" }, state: "idle", time: "Mon", preview: "Sounds good, talk tomorrow." },
+];
+const PREVIEW = { working: "Working…", approval: "Waiting for your approval", error: "The last reply failed" };
+
+function renderSidebar() {
+  const theme = view.sidebarTheme;
+  const rows = [{ name: "Your Wisp", r: recipe, state: view.state, time: "now", preview: "Hi! How can I help?" }, ...ROSTER];
+  const item = (x, i, full) => `<div class="sb-item ${i === 0 ? "sel" : ""} ${x.unread ? "unread" : ""}">
+      <span class="sb-av">${wisp(x.r, 32, { theme, state: x.state })}${x.unread ? '<i class="dot"></i>' : ""}</span>
+      ${full ? `<span class="sb-text"><span class="sb-top"><strong>${x.name}</strong><time>${x.time}</time></span>
+      <span class="sb-prev ${x.state}">${PREVIEW[x.state] || x.preview}</span></span>` : ""}</div>`;
+  $("sidebar").innerHTML = `<div class="sb rail ${theme}">${rows.map((x, i) => item(x, i, false)).join("")}</div>
+    <div class="sb ${theme}">${rows.map((x, i) => item(x, i, true)).join("")}</div>`;
+}
+
+function renderScales() {
+  for (const theme of ["dark", "light"]) {
+    const sizes = [16, 20, 24, 32, 48].map((s) => `<div class="cell">${wisp(recipe, s, { theme, state: view.state })}<small>${s}</small></div>`).join("");
+    const others = [ROSTER[0].r, ROSTER[3].r];
+    const slots = [["30%", "4%"], ["5%", "38%"], ["41%", "40%"]];
+    const cluster = `<div class="cell"><div class="cluster">${[recipe, ...others].map((r, i) =>
+      `<span style="left:${slots[i][0]};top:${slots[i][1]}">${wisp(r, 17, { theme })}</span>`).join("")}</div><small>cluster</small></div>`;
+    $("scale-" + theme).innerHTML = `<div class="row">${sizes}${cluster}</div>`;
+  }
+}
+
+function renderMatrix() {
+  $("matrix-tools").innerHTML =
+    chips("matrixSize", [[24, "24 px"], [32, "32 px"], [48, "48 px"]], view.matrixSize) +
+    chips("mono", [[false, "Color"], [true, "Silhouette only"]], view.mono) +
+    chips("matrixTheme", [["dark", "Dark"], ["light", "Light"]], view.matrixTheme);
+  const tails = AXES.tail[1], bodies = AXES.body[1];
+  const m = $("matrix");
+  m.className = "matrix " + view.matrixTheme;
+  m.style.gridTemplateColumns = `70px repeat(${tails.length}, auto)`;
+  m.innerHTML = '<span></span>' + tails.map(([, t]) => `<span class="head">${t}</span>`).join("") +
+    bodies.map(([b, bl]) => `<span class="head">${bl}</span>` + tails.map(([t]) => {
+      const r = { ...recipe, body: b, tail: t };
+      const on = b === recipe.body && t === recipe.tail;
+      return `<button type="button" data-body="${b}" data-tail="${t}" aria-pressed="${on}" aria-label="${bl} with ${t} trail">${wisp(r, view.matrixSize, { theme: view.matrixTheme, mono: view.mono })}</button>`;
+    }).join("")).join("");
+}
+
+function renderPalette() {
+  const head = '<span></span>' + COLORS.map(([, l]) => `<span>${l}</span>`).join("");
+  const row = (tone, theme, label) => `<span class="lbl">${label}</span>` + COLORS.map(([id]) =>
+    `<span class="surface ${theme}" style="padding:6px;line-height:0">${wisp({ ...recipe, color: id, tone }, 24, { theme })}</span>`).join("");
+  $("palette").innerHTML = `<div class="palette">${head}${row("vivid", "dark", "vivid")}${row("soft", "dark", "soft")}${row("vivid", "light", "vivid")}${row("soft", "light", "soft")}</div>`;
+}
+
+function render() {
+  uid = 0;
+  $("hero").innerHTML = wisp(recipe, 260, { state: view.state });
+  $("hero-label").textContent = "Specimen · " + STATES.find((s) => s[0] === view.state)[1];
+  $("code").textContent = "#" + code(recipe);
+  history.replaceState(null, "", "#" + code(recipe));
+  renderScales(); renderMatrix(); renderSidebar(); renderPalette();
+  $("sidebar-tools").innerHTML = chips("sidebarTheme", [["dark", "Dark theme"], ["light", "Light theme"]], view.sidebarTheme) +
+    chips("motion", [[true, "Motion"], [false, "Still"]], view.motion);
+  $("lab").classList.toggle("still", !view.motion);
+}
+
+$("controls").addEventListener("change", (e) => {
+  const { name, value } = e.target;
+  if (name === "state") view.state = value; else recipe[name] = value;
+  render();
+});
+document.addEventListener("click", (e) => {
+  const chip = e.target.closest("[data-group]");
+  if (chip) {
+    const v = chip.dataset.value;
+    view[chip.dataset.group] = v === "true" ? true : v === "false" ? false : /^\d+$/.test(v) ? Number(v) : v;
+    render();
+    return;
+  }
+  const cell = e.target.closest("[data-body]");
+  if (cell) { recipe.body = cell.dataset.body; recipe.tail = cell.dataset.tail; renderControls(); render(); }
+});
+$("random").addEventListener("click", () => {
+  for (const k of RECIPE_KEYS) { const o = AXES[k][1]; recipe[k] = o[Math.floor(Math.random() * o.length)][0]; }
+  recipe.ink = "auto";
+  renderControls(); render();
+});
+$("copy").addEventListener("click", () => navigator.clipboard?.writeText(location.href));
+addEventListener("hashchange", () => { fromHash(); renderControls(); render(); });
+
+fromHash();
+renderControls();
+render();
+</script>
+</body>
+</html>

@@ -80,7 +80,9 @@ const MESSAGES_SCHEMA = `
 
 // Wisps and conversations, with what relates them as foreign keys: a Wisp's
 // own conversation shares its ID and goes with it, and a deleted Wisp leaves
-// every circle and session.
+// every circle and session. A Wisp's appearance columns have no CHECK: their
+// values are display choices that grow often, and SQLite cannot change a CHECK
+// without rebuilding the table. The repository validates them on read.
 const RECORD_SCHEMA = `
   CREATE TABLE IF NOT EXISTS wisps (
     seq INTEGER PRIMARY KEY,
@@ -88,7 +90,13 @@ const RECORD_SCHEMA = `
     name TEXT NOT NULL,
     role TEXT NOT NULL,
     soul TEXT NOT NULL,
-    shape TEXT NOT NULL,
+    body TEXT NOT NULL,
+    trail TEXT NOT NULL,
+    tone TEXT NOT NULL,
+    eyes TEXT NOT NULL,
+    eye_ink TEXT NOT NULL,
+    finish TEXT NOT NULL,
+    mark TEXT NOT NULL,
     color TEXT,
     avatar_image TEXT,
     storage_id TEXT NOT NULL,
@@ -172,6 +180,26 @@ const PENDING_MESSAGES_SCHEMA = `
   CREATE INDEX IF NOT EXISTS queued_messages_by_conversation ON queued_messages (conversation_id, seq);
 `;
 
+// Builds of layout 5 made before Wisp appearances stored a single shape. Each
+// Wisp keeps the closest body and the flat look it had, with no trail; this
+// matches `appearanceFromLegacyShape`.
+const UPGRADE_SHAPE_TO_APPEARANCE = `
+  ALTER TABLE wisps ADD COLUMN body TEXT NOT NULL DEFAULT 'round';
+  ALTER TABLE wisps ADD COLUMN trail TEXT NOT NULL DEFAULT 'none';
+  ALTER TABLE wisps ADD COLUMN tone TEXT NOT NULL DEFAULT 'vivid';
+  ALTER TABLE wisps ADD COLUMN eyes TEXT NOT NULL DEFAULT 'oval';
+  ALTER TABLE wisps ADD COLUMN eye_ink TEXT NOT NULL DEFAULT 'auto';
+  ALTER TABLE wisps ADD COLUMN finish TEXT NOT NULL DEFAULT 'solid';
+  ALTER TABLE wisps ADD COLUMN mark TEXT NOT NULL DEFAULT 'none';
+  UPDATE wisps SET body = CASE shape
+    WHEN 'pill' THEN 'pebble' WHEN 'pebble' THEN 'pebble' WHEN 'cloud' THEN 'pebble'
+    WHEN 'square' THEN 'block'
+    WHEN 'triangle' THEN 'crystal' WHEN 'diamond' THEN 'crystal' WHEN 'hexagon' THEN 'crystal'
+    WHEN 'drop' THEN 'drop'
+    ELSE 'round' END;
+  ALTER TABLE wisps DROP COLUMN shape;
+`;
+
 /** Tables layout 5 replaced; their rows held whole records as JSON. */
 const JSON_RECORD_TABLES = ["wisps", "conversations", "scheduled_messages", "queued_messages"];
 
@@ -231,7 +259,15 @@ function wispRecordOf(row: Row): unknown {
       name: row.name,
       role: row.role,
       soul: row.soul,
-      shape: row.shape,
+      appearance: {
+        body: row.body,
+        trail: row.trail,
+        tone: row.tone,
+        eyes: row.eyes,
+        eyeInk: row.eye_ink,
+        finish: row.finish,
+        mark: row.mark,
+      },
       ...(color === undefined ? {} : { color }),
       ...(avatarImage === undefined ? {} : { avatarImage }),
     },
@@ -354,6 +390,7 @@ export class ConversationStore {
       db.exec(`${MESSAGES_SCHEMA}${SEARCH_SCHEMA}`);
       const store = new ConversationStore(db, jsonRecords);
       if (Number(version) < 2) store.upgradeFromVersion1();
+      if (!jsonRecords) store.upgradeShapeToAppearance();
       return store;
     } catch (error) {
       db.close();
@@ -526,12 +563,15 @@ export class ConversationStore {
 
   putWisp(record: WispRecord): void {
     const { wisp, modelOverride } = record;
+    const { appearance } = wisp;
     this.statement(
-      `INSERT INTO wisps (id, name, role, soul, shape, color, avatar_image, storage_id,
-        model_provider_id, model_id, model_max_output_tokens, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `INSERT INTO wisps (id, name, role, soul, body, trail, tone, eyes, eye_ink, finish, mark, color,
+        avatar_image, storage_id, model_provider_id, model_id, model_max_output_tokens, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT (id) DO UPDATE SET
-        name = excluded.name, role = excluded.role, soul = excluded.soul, shape = excluded.shape,
+        name = excluded.name, role = excluded.role, soul = excluded.soul,
+        body = excluded.body, trail = excluded.trail, tone = excluded.tone, eyes = excluded.eyes,
+        eye_ink = excluded.eye_ink, finish = excluded.finish, mark = excluded.mark,
         color = excluded.color, avatar_image = excluded.avatar_image, storage_id = excluded.storage_id,
         model_provider_id = excluded.model_provider_id, model_id = excluded.model_id,
         model_max_output_tokens = excluded.model_max_output_tokens,
@@ -541,7 +581,13 @@ export class ConversationStore {
       wisp.name,
       wisp.role,
       wisp.soul,
-      wisp.shape,
+      appearance.body,
+      appearance.trail,
+      appearance.tone,
+      appearance.eyes,
+      appearance.eyeInk,
+      appearance.finish,
+      appearance.mark,
       wisp.color ?? null,
       wisp.avatarImage ?? null,
       record.storageId,
@@ -754,6 +800,19 @@ export class ConversationStore {
     try {
       this.db.exec(UPGRADE_FROM_VERSION_1);
       this.db.prepare("UPDATE meta SET value = '2' WHERE key = 'store_version'").run();
+      this.db.exec("COMMIT");
+    } catch (error) {
+      this.db.exec("ROLLBACK");
+      throw error;
+    }
+  }
+
+  private upgradeShapeToAppearance(): void {
+    const columns = this.db.prepare("SELECT name FROM pragma_table_info('wisps')").all();
+    if (!columns.some((column) => column.name === "shape")) return;
+    this.db.exec("BEGIN IMMEDIATE");
+    try {
+      this.db.exec(UPGRADE_SHAPE_TO_APPEARANCE);
       this.db.exec("COMMIT");
     } catch (error) {
       this.db.exec("ROLLBACK");

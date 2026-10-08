@@ -14,13 +14,14 @@ import type { ModelSelection } from "../../shared/contracts.js";
 import type { Message, Wisp } from "../../shared/conversations.js";
 import type { MessageQueueView } from "../../shared/message-queue.js";
 import type { ScheduledMessagesView } from "../../shared/scheduled-messages.js";
+import { DEFAULT_WISP_APPEARANCE } from "../../shared/wisp-appearance.js";
 
 export const MODEL: ModelSelection = { providerId: "openai", modelId: "gpt-test" };
 export const START = new Date("2026-10-06T12:00:00.000Z");
 
 /** A Wisp to create with `createWisp`. */
 export function newWisp(id: string): Wisp {
-  return { id, name: id, role: "Test", soul: "Test", shape: "circle" };
+  return { id, name: id, role: "Test", soul: "Test", appearance: DEFAULT_WISP_APPEARANCE };
 }
 
 /** A Wisp's conversation in the app's old local-storage format, which `initialize` reads. */

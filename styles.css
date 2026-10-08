@@ -111,36 +111,71 @@
 
 @layer base {
   :root {
-    color-scheme: light dark;
-    --background: light-dark(#ffffff, #0a0a0a);
-    --foreground: light-dark(#202020, #ededed);
-    --card: light-dark(#ffffff, #1d1d1d);
-    --card-foreground: light-dark(#202020, #ededed);
-    --popover: light-dark(#f4f4f4, #202020);
-    --popover-foreground: light-dark(#202020, #ededed);
-    --primary: light-dark(#202020, #eeeeee);
-    --primary-foreground: light-dark(#fafafa, #151515);
-    --secondary: light-dark(#e9e9e9, #292929);
-    --secondary-foreground: light-dark(#202020, #ededed);
-    --muted: light-dark(#eeeeee, #252525);
+    color-scheme: light;
+    --background: #ffffff;
+    --foreground: #202020;
+    --card: #ffffff;
+    --card-foreground: #202020;
+    --popover: #f4f4f4;
+    --popover-foreground: #202020;
+    --primary: #202020;
+    --primary-foreground: #fafafa;
+    --secondary: #e9e9e9;
+    --secondary-foreground: #202020;
+    --muted: #eeeeee;
     --muted-foreground: var(--text-dim);
-    --accent: light-dark(#e4e4e4, #303030);
-    --accent-foreground: light-dark(#1c1c1c, #f4f4f4);
-    --destructive: light-dark(#cc343b, #e5484d);
-    --border: light-dark(rgba(0, 0, 0, 0.08), rgba(255, 255, 255, 0.08));
-    --input: light-dark(rgba(0, 0, 0, 0.1), rgba(255, 255, 255, 0.1));
-    --ring: light-dark(#666666, #777777);
+    --accent: #e4e4e4;
+    --accent-foreground: #1c1c1c;
+    --destructive: #cc343b;
+    --border: rgba(0, 0, 0, 0.08);
+    --input: rgba(0, 0, 0, 0.1);
+    --ring: #666666;
     --radius: 0.625rem;
-    --sidebar-background: light-dark(#f5f5f5, #151514);
-    --panel-background: light-dark(#fafafa, #101010);
-    --bubble-incoming: light-dark(#eeeeee, #252525);
-    --bubble-outgoing: light-dark(#126fd6, #2563eb);
-    --text-dim: light-dark(#656565, #9a9a9a);
-    --text-faint: light-dark(#727272, #6f6f6f);
-    --blue: light-dark(#126fd6, #4a9eff);
-    --green: light-dark(#16844e, #32d583);
-    --warning: light-dark(#855c17, #e6b765);
+    --sidebar-background: #f5f5f5;
+    --panel-background: #fafafa;
+    --bubble-incoming: #eeeeee;
+    --bubble-outgoing: #126fd6;
+    --text-dim: #656565;
+    --text-faint: #727272;
+    --blue: #126fd6;
+    --green: #16844e;
+    --warning: #855c17;
     --warning-solid: #f59e0b;
+    --focus-outline: rgba(0, 0, 0, 0.45);
+    --scrollbar-thumb: rgba(0, 0, 0, 0.16);
+  }
+
+  /* Keep colors tied to applyTheme(), including after CSS optimization. */
+  :root.dark {
+    color-scheme: dark;
+    --background: #0a0a0a;
+    --foreground: #ededed;
+    --card: #1d1d1d;
+    --card-foreground: #ededed;
+    --popover: #202020;
+    --popover-foreground: #ededed;
+    --primary: #eeeeee;
+    --primary-foreground: #151515;
+    --secondary: #292929;
+    --secondary-foreground: #ededed;
+    --muted: #252525;
+    --accent: #303030;
+    --accent-foreground: #f4f4f4;
+    --destructive: #e5484d;
+    --border: rgba(255, 255, 255, 0.08);
+    --input: rgba(255, 255, 255, 0.1);
+    --ring: #777777;
+    --sidebar-background: #151514;
+    --panel-background: #101010;
+    --bubble-incoming: #252525;
+    --bubble-outgoing: #2563eb;
+    --text-dim: #9a9a9a;
+    --text-faint: #6f6f6f;
+    --blue: #4a9eff;
+    --green: #32d583;
+    --warning: #e6b765;
+    --focus-outline: rgba(255, 255, 255, 0.45);
+    --scrollbar-thumb: rgba(255, 255, 255, 0.16);
   }
 
   html,
@@ -177,7 +212,7 @@
   input:focus-visible,
   textarea:focus-visible,
   select:focus-visible {
-    outline: 2px solid light-dark(rgba(0, 0, 0, 0.45), rgba(255, 255, 255, 0.45));
+    outline: 2px solid var(--focus-outline);
     outline-offset: 2px;
   }
   ::selection {
@@ -190,7 +225,7 @@
   ::-webkit-scrollbar-thumb {
     border: 2px solid transparent;
     border-radius: 8px;
-    background: light-dark(rgba(0, 0, 0, 0.16), rgba(255, 255, 255, 0.16));
+    background: var(--scrollbar-thumb);
     background-clip: padding-box;
   }
   body.resizing {
@@ -207,5 +242,74 @@
       animation-iteration-count: 1 !important;
       transition-duration: 0.01ms !important;
     }
+  }
+}
+
+/* A Wisp's state shows in how it moves: the trail sways while it works, and
+   droops after an error. Transforms are in the 100 × 100 view box. */
+[data-slot="wisp"] :is(.wisp-art, .wisp-trail, .wisp-look) {
+  transform-box: view-box;
+}
+[data-slot="wisp"] .wisp-blink {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: wisp-blink 6s infinite;
+}
+[data-slot="wisp"][data-state="working"] .wisp-trail {
+  animation: wisp-sway 1.5s ease-in-out infinite;
+}
+[data-slot="wisp"][data-state="working"] .wisp-look {
+  animation: wisp-look 3s ease-in-out infinite;
+}
+[data-slot="wisp"][data-state="working"] .wisp-art {
+  animation: wisp-bob 1.5s ease-in-out infinite;
+}
+[data-slot="wisp"][data-state="error"] .wisp-art {
+  filter: saturate(0.12) brightness(0.92);
+}
+[data-slot="wisp"][data-state="error"] .wisp-trail {
+  rotate: 18deg;
+}
+[data-slot="wisp"][data-state="error"] .wisp-look {
+  translate: 0 3px;
+}
+
+@keyframes wisp-blink {
+  0%,
+  46%,
+  50%,
+  100% {
+    scale: 1 1;
+  }
+  48% {
+    scale: 1 0.1;
+  }
+}
+@keyframes wisp-sway {
+  0%,
+  100% {
+    rotate: -7deg;
+  }
+  50% {
+    rotate: 8deg;
+  }
+}
+@keyframes wisp-look {
+  0%,
+  100% {
+    translate: 0 0;
+  }
+  35%,
+  65% {
+    translate: 3px -3px;
+  }
+}
+@keyframes wisp-bob {
+  0%,
+  100% {
+    translate: 0 0;
+  }
+  50% {
+    translate: 0 -2px;
   }
 }

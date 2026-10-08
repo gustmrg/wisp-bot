@@ -11,6 +11,7 @@ import { ConversationService } from "../backend/conversation-service.js";
 import { FakeConversationAgent, FakeConversationAgentFactory } from "../backend/fake-conversation-agent.js";
 import type { SequencedConversationAgentEvent } from "../shared/contracts.js";
 import type { Chat, ConversationDelta, Wisp } from "../shared/conversations.js";
+import { DEFAULT_WISP_APPEARANCE } from "../shared/wisp-appearance.js";
 
 function chat(id: string, circle = false): Chat {
   const base = {
@@ -27,7 +28,7 @@ function chat(id: string, circle = false): Chat {
 }
 
 function newWisp(id: string): Wisp {
-  return { id, name: id, role: "Test", soul: "Test", shape: "circle" };
+  return { id, name: id, role: "Test", soul: "Test", appearance: DEFAULT_WISP_APPEARANCE };
 }
 
 describe("ConversationService", () => {

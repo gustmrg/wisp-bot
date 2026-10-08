@@ -21,9 +21,9 @@ export type {
   WispChatChanges,
   WispCollection,
   WispId,
-  WispShape,
   WispSummary,
 } from "../shared/conversations";
+export type { WispAppearance } from "../shared/wisp-appearance";
 
 /** A Wisp's own conversation, shown with the Wisp. */
 export type WispChatView = WispSummary & { wisp: Wisp };

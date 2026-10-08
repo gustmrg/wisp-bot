@@ -13,6 +13,7 @@ import type { ConnectionsView } from "../../shared/connections.js";
 import type { Wisp } from "../../shared/conversations.js";
 import { isWispBridgeAvailable } from "../../src/lib/wisp-bridge.js";
 import { browserDeviceName, createWebWispApi } from "../../src/web/web-api.js";
+import { DEFAULT_WISP_APPEARANCE } from "../../shared/wisp-appearance.js";
 
 const silent = new StructuredLogger({ info: () => undefined, warn: () => undefined });
 const cleanups: Array<() => Promise<void> | void> = [];
@@ -57,7 +58,7 @@ async function until(probe: () => Promise<boolean> | boolean, what: string): Pro
   }
 }
 
-const atlas: Wisp = { id: "atlas", name: "Atlas", role: "", soul: "", shape: "circle" };
+const atlas: Wisp = { id: "atlas", name: "Atlas", role: "", soul: "", appearance: DEFAULT_WISP_APPEARANCE };
 
 describe("browser WispApi", () => {
   it("pairs with a code, runs Wisps on the server, streams events, and signs out", async () => {

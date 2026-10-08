@@ -127,4 +127,77 @@ describe("Sidebar approvals", () => {
     );
     expect(screen.getByRole("button", { name: "Atlas, waiting for your approval" })).toBeVisible();
   });
+
+  it("marks waiting for approval with a dot instead of the shield, and the Wisp's eyes grow", () => {
+    const { container } = render(
+      <Sidebar
+        activeChatId=""
+        chats={chats}
+        approvals={approvals}
+        failedChats={{ atlas: true }}
+        collapsed={false}
+        currentUser={currentUser}
+        width={280}
+        {...callbacks}
+      />,
+    );
+    expect(container.querySelector(".approval-indicator")).not.toBeNull();
+    // Approval needs the person, so it wins over a failure.
+    expect(container.querySelector(".error-indicator")).toBeNull();
+    expect(container.querySelector("[data-slot=wisp]")).toHaveAttribute("data-state", "approval");
+  });
+});
+
+describe("Sidebar states", () => {
+  const chats: ChatViewCollection = {
+    atlas: wispChatView("atlas", { wisp: { name: "Atlas" }, chat: { preview: "Latest research" } }),
+  };
+
+  it("marks a conversation whose last reply failed", () => {
+    const { container } = render(
+      <Sidebar
+        activeChatId=""
+        chats={chats}
+        failedChats={{ atlas: true }}
+        collapsed={false}
+        currentUser={currentUser}
+        width={280}
+        {...callbacks}
+      />,
+    );
+    expect(screen.getByText("The last reply failed")).toBeVisible();
+    expect(container.querySelector(".error-indicator")).not.toBeNull();
+    expect(container.querySelector("[data-slot=wisp]")).toHaveAttribute("data-state", "error");
+  });
+
+  it("names a failed reply in the collapsed sidebar", () => {
+    render(
+      <Sidebar
+        activeChatId=""
+        chats={chats}
+        failedChats={{ atlas: true }}
+        collapsed
+        currentUser={currentUser}
+        width={280}
+        {...callbacks}
+      />,
+    );
+    expect(screen.getByRole("button", { name: "Atlas, the last reply failed" })).toBeVisible();
+  });
+
+  it("animates a Wisp while it works", () => {
+    const { container } = render(
+      <Sidebar
+        activeChatId=""
+        chats={chats}
+        statuses={{ atlas: "working" }}
+        collapsed={false}
+        currentUser={currentUser}
+        width={280}
+        {...callbacks}
+      />,
+    );
+    expect(container.querySelector("[data-slot=wisp]")).toHaveAttribute("data-state", "working");
+    expect(screen.getByText("Latest research")).toBeVisible();
+  });
 });

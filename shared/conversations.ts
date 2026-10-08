@@ -1,21 +1,9 @@
 import type { ModelSelection } from "./contracts.js";
 import type { ToolApprovalRequest } from "./tool-policy.js";
+import type { WispAppearance } from "./wisp-appearance.js";
 
 export type ChatId = string;
 export type WispId = string;
-
-export const WISP_SHAPE_IDS = [
-  "circle",
-  "pebble",
-  "square",
-  "triangle",
-  "diamond",
-  "hexagon",
-  "cloud",
-  "drop",
-] as const;
-
-export type WispShape = (typeof WISP_SHAPE_IDS)[number];
 
 export const WISP_NAME_MAX_LENGTH = 64;
 export const WISP_ROLE_MAX_LENGTH = 40;
@@ -33,7 +21,9 @@ export interface Wisp {
   role: string;
   /** Markdown that defines the Wisp's identity, personality, and behavior. */
   soul: string;
-  shape: WispShape;
+  /** How the Wisp is drawn when it has no picture. */
+  appearance: WispAppearance;
+  /** One of `WISP_COLORS`; without one, the color is derived from the name. */
   color?: string;
   avatarImage?: string;
 }

@@ -140,6 +140,7 @@ function Workspace({ userProfile }: { userProfile: UserProfileController }) {
           hidden={mobile && (mobilePage === "chat" || detailsOpen)}
           statuses={workspace.statuses}
           approvals={workspace.approvals}
+          failedChats={workspace.failedChats}
           loading={workspace.loading}
           error={workspace.error}
           onCollapsedChange={setSidebarCollapsed}

@@ -20,6 +20,7 @@ import { createWispServer, type WispServer } from "../../server/wisp-server.js";
 import type { ConnectionsView } from "../../shared/connections.js";
 import { WISP_IPC_CHANNELS, type BackendResult } from "../../shared/contracts.js";
 import type { ConversationStateView } from "../../shared/conversations.js";
+import { DEFAULT_WISP_APPEARANCE } from "../../shared/wisp-appearance.js";
 
 type Handler = (event: IpcMainInvokeEvent, payload?: unknown) => Promise<BackendResult<unknown>>;
 
@@ -255,7 +256,7 @@ describe("desktop connections", () => {
       apiKey: "test-key",
     });
     await app.invoke(WISP_IPC_CHANNELS.createWisp, {
-      wisp: { id: "remote", name: "Remote", role: "", soul: "", shape: "circle" },
+      wisp: { id: "remote", name: "Remote", role: "", soul: "", appearance: DEFAULT_WISP_APPEARANCE },
       notifyOnUpdatesEnabled: true,
     });
     await app.invoke(WISP_IPC_CHANNELS.sendMessage, { conversationId: "remote", requestId: "r1", text: "Hi" });

@@ -1,7 +1,8 @@
+import { DEFAULT_WISP_APPEARANCE } from "../../shared/wisp-appearance";
 import type { ChatSummary, CircleChatView, Wisp, WispChatView, WispSummary } from "@/chat-data";
 
 export function testWisp(id: string, overrides: Partial<Wisp> = {}): Wisp {
-  return { id, name: id, role: "Test", soul: "Test", shape: "circle", ...overrides };
+  return { id, name: id, role: "Test", soul: "Test", appearance: DEFAULT_WISP_APPEARANCE, ...overrides };
 }
 
 /** A Wisp's own conversation as the app shows it. */

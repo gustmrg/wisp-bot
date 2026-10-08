@@ -11,6 +11,7 @@ import { WispWorkspaceSettings } from "@/components/wisp-workspace-settings";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { sameWispAppearance } from "../../shared/wisp-appearance";
 import type { IntegrationSettingsTarget } from "@/lib/plugin-access";
 
 const TAB_ORDER = ["general", "model", "access", "usage"] as const;
@@ -51,7 +52,7 @@ export function WispDetails({
     draft.soul !== wisp.soul ||
     draft.color !== wisp.color ||
     draft.avatarImage !== wisp.avatarImage ||
-    draft.shape !== wisp.shape;
+    !sameWispAppearance(draft.appearance, wisp.appearance);
   const notificationsChanged = draft.notifyOnUpdatesEnabled !== chat.notifyOnUpdatesEnabled;
 
   async function save() {
@@ -66,7 +67,7 @@ export function WispDetails({
           soul: draft.soul,
           color: draft.color,
           avatarImage: draft.avatarImage,
-          shape: draft.shape,
+          appearance: draft.appearance,
         });
         if (saved === false) {
           setError("Could not save Wisp settings.");
