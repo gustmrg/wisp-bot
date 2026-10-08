@@ -51,16 +51,16 @@ export function useCopyFeedback(scopeId: string, resetDelayMs = 1_400): CopyFeed
         return false;
       }
 
-      setFeedback({ scopeId, status: "copying", message: "Copying template link" });
+      setFeedback({ scopeId, status: "copying", message: "Copying template" });
       try {
         await writeText(text);
         if (requestVersion.current !== version) return false;
-        setFeedback({ scopeId, status: "success", message: "Template link copied" });
+        setFeedback({ scopeId, status: "success", message: "Template copied" });
         scheduleReset(scopeId, version);
         return true;
       } catch {
         if (requestVersion.current !== version) return false;
-        setFeedback({ scopeId, status: "error", message: "Could not copy template link" });
+        setFeedback({ scopeId, status: "error", message: "Could not copy template" });
         scheduleReset(scopeId, version);
         return false;
       }

@@ -26,6 +26,34 @@ export function resolveWispModelSelection(draft: WispModelDraft): ModelSelection
   };
 }
 
+/**
+ * Selects a template's model when this app knows it. A provider without a saved key stays selected,
+ * so the person is asked to add one; a model this app does not offer falls back to the global default.
+ */
+export function wispModelDraftFromTemplate(
+  model: ModelSelection | undefined,
+  view: AiSettingsView | null,
+): { draft: WispModelDraft; notice: string } {
+  const fallback = createDefaultWispModelDraft();
+  if (!model) return { draft: fallback, notice: "" };
+  const provider = view?.providers.find(({ id }) => id === model.providerId);
+  const known = provider?.models.find(({ id }) => id === model.modelId);
+  if (!provider || !known) {
+    return {
+      draft: fallback,
+      notice: `This template uses ${model.modelId} from ${provider?.name ?? model.providerId}, which isn't available here. The global model is selected instead; you can choose another.`,
+    };
+  }
+  const maxOutputTokens =
+    model.maxOutputTokens !== undefined && model.maxOutputTokens <= (known.maxOutputTokens ?? 1_000_000)
+      ? String(model.maxOutputTokens)
+      : "";
+  return {
+    draft: { useGlobal: false, providerId: provider.id, modelId: known.id, maxOutputTokens },
+    notice: "",
+  };
+}
+
 function invalidMaxOutputTokens(draft: WispModelDraft, modelMax: number | undefined): boolean {
   const value = draft.maxOutputTokens.trim();
   if (!value) return false;
@@ -56,9 +84,11 @@ interface CreateWispModelSectionProps {
   loadError: string;
   draft: WispModelDraft;
   onChange: (draft: WispModelDraft) => void;
+  /** Why an imported template's model was not selected. */
+  notice?: string;
 }
 
-function CreateWispModelSection({ view, loadError, draft, onChange }: CreateWispModelSectionProps) {
+function CreateWispModelSection({ view, loadError, draft, onChange, notice }: CreateWispModelSectionProps) {
   const catalog = view?.providers ?? [];
   const provider = catalog.find(({ id }) => id === draft.providerId);
   const model = provider?.models.find(({ id }) => id === draft.modelId);
@@ -110,6 +140,11 @@ function CreateWispModelSection({ view, loadError, draft, onChange }: CreateWisp
           onChange={() => (canCustomize ? switchMode(!draft.useGlobal) : undefined)}
         />
       </SettingsRow>
+      {notice ? (
+        <p role="status" className="m-0 px-3.5 pb-3 text-xs text-dim">
+          {notice}
+        </p>
+      ) : null}
       {draft.useGlobal && !canCustomize && loadError ? (
         <p role="alert" className="m-0 px-3.5 pb-3 text-xs text-destructive">
           {loadError}

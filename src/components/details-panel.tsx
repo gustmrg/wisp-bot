@@ -20,6 +20,7 @@ import { chatName } from "@/lib/chat-schema";
 import { detailsLayoutStyle } from "@/lib/layout";
 import { panelResizer } from "@/lib/ui-classes";
 import { cn } from "@/lib/utils";
+import { serializeWispTemplate } from "@/lib/wisp-template";
 import type { IntegrationSettingsTarget } from "@/lib/plugin-access";
 
 interface DetailsPanelProps {
@@ -54,8 +55,11 @@ function DetailsPanel({
     if (focusChatId) titleRef.current?.focus();
   }, [focusChatId]);
 
-  function shareTemplate() {
-    void copyFeedback.copy(`wisp://template/${chat.id}`);
+  /** Copies the Wisp's soul and the model it runs on, so it can be pasted when creating a Wisp. */
+  async function shareTemplate(): Promise<void> {
+    if (chat.kind !== "wisp") return;
+    const model = await window.wisp.getConversationModel({ conversationId: chat.id }).catch(() => null);
+    await copyFeedback.copy(serializeWispTemplate(chat.wisp, model?.ok ? model.value.effective : null));
   }
 
   const name = chatName(chat);
@@ -90,14 +94,14 @@ function DetailsPanel({
       >
         {copyFeedback.message}
       </span>
-      <Button className="w-full" variant="secondary" type="button" onClick={shareTemplate}>
+      <Button className="w-full" variant="secondary" type="button" onClick={() => void shareTemplate()}>
         {copyFeedback.status === "success" ? <CheckIcon /> : <Share2Icon />}
         {copyFeedback.status === "copying"
-          ? "Copying template link…"
+          ? "Copying template…"
           : copyFeedback.status === "success"
-            ? "Template link copied"
+            ? "Template copied"
             : copyFeedback.status === "error"
-              ? "Could not copy template link"
+              ? "Could not copy template"
               : "Share as template"}
       </Button>
     </>
@@ -158,7 +162,6 @@ function DetailsPanel({
             <CircleDetails chat={chat} wisps={wisps} onChange={onChange} />
             <div className="mt-[18px]">{deleteControl}</div>
           </div>
-          <footer className="flex-none px-3.5 pt-2.5 pb-3">{shareControl}</footer>
         </div>
       )}
     </aside>
