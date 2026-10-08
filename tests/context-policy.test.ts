@@ -24,6 +24,14 @@ describe("context renewal policy", () => {
       shouldRenewContext({ ...policy, mode: "both", idleHours: 1 }, new Date(2026, 8, 5, 5).toISOString(), 20000, now),
     ).toBe(true);
   });
+  it("reads the daily hour in the user's time zone", () => {
+    const policy = { ...DEFAULT_CONTEXT_POLICY, mode: "daily" as const };
+    // 19:00 in Tokyo, so today's 04:00 there was 2026-09-04T19:00Z; in UTC it was 2026-09-05T04:00Z.
+    const at = new Date("2026-09-05T10:00:00Z");
+    expect(shouldRenewContext(policy, "2026-09-04T18:00:00Z", 20000, at, "Asia/Tokyo")).toBe(true);
+    expect(shouldRenewContext(policy, "2026-09-04T20:00:00Z", 20000, at, "Asia/Tokyo")).toBe(false);
+    expect(shouldRenewContext(policy, "2026-09-04T20:00:00Z", 20000, at, "UTC")).toBe(true);
+  });
   it("rejects malformed IPC actions, oversized memory and invalid policies", () => {
     for (const command of [
       { action: "delete" },

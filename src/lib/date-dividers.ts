@@ -1,10 +1,12 @@
 import type { ChatSummary, Message } from "../../shared/conversations";
+import { systemTimeZone, zonedDayNumber, zonedParts } from "../../shared/time-zone";
 
-const DAY_MS = 86_400_000;
 const MINUTE_MS = 60_000;
 
-function startOfDay(date: Date): number {
-  return new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
+function shortDate(date: Date, timeZone: string, withYear = true): string {
+  const { year, month, day } = zonedParts(date, timeZone);
+  const dayMonth = `${String(day).padStart(2, "0")}/${String(month).padStart(2, "0")}`;
+  return withYear ? `${dayMonth}/${year}` : dayMonth;
 }
 
 function messageDate(message: Message): Date | null {
@@ -13,27 +15,29 @@ function messageDate(message: Message): Date | null {
   return Number.isNaN(date.getTime()) ? null : date;
 }
 
-export function dateDividerLabel(date: Date, now: Date = new Date()): string {
-  const dayDiff = Math.round((startOfDay(date) - startOfDay(now)) / DAY_MS);
+export function dateDividerLabel(date: Date, now: Date = new Date(), timeZone: string = systemTimeZone()): string {
+  const dayDiff = zonedDayNumber(date, timeZone) - zonedDayNumber(now, timeZone);
   if (dayDiff === 0) return "Today";
   if (dayDiff === -1) return "Yesterday";
-  const day = String(date.getDate()).padStart(2, "0");
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  return `${day}/${month}/${date.getFullYear()}`;
+  return shortDate(date, timeZone);
 }
 
 // Groups a transcript into calendar days the way mainstream chat apps do: a divider before the
-// first timestamped message and before every day change, using local-time day boundaries.
-export function withDateDividers(messages: ReadonlyArray<Message>, now: Date = new Date()): Array<Message> {
+// first timestamped message and before every day change, using day boundaries in `timeZone`.
+export function withDateDividers(
+  messages: ReadonlyArray<Message>,
+  now: Date = new Date(),
+  timeZone: string = systemTimeZone(),
+): Array<Message> {
   const result: Array<Message> = [];
   let currentDay: number | null = null;
   for (const message of messages) {
     const date = messageDate(message);
     if (date) {
-      const day = startOfDay(date);
+      const day = zonedDayNumber(date, timeZone);
       if (day !== currentDay) {
         currentDay = day;
-        result.push({ id: `date:${day}`, type: "time", text: dateDividerLabel(date, now) });
+        result.push({ id: `date:${day}`, type: "time", text: dateDividerLabel(date, now, timeZone) });
       }
     }
     result.push(message);
@@ -49,15 +53,13 @@ export function chatActivityDate(chat: Pick<ChatSummary, "lastActivityAt">): Dat
 }
 
 // Compact recency label for conversation lists, computed at render time so it never goes stale.
-export function chatActivityLabel(date: Date, now: Date = new Date()): string {
+export function chatActivityLabel(date: Date, now: Date = new Date(), timeZone: string = systemTimeZone()): string {
   const elapsed = now.getTime() - date.getTime();
   if (elapsed < MINUTE_MS) return "Now";
   if (elapsed < 60 * MINUTE_MS) return `${Math.floor(elapsed / MINUTE_MS)}m`;
-  const dayDiff = Math.round((startOfDay(now) - startOfDay(date)) / DAY_MS);
-  if (dayDiff === 0) return date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+  const dayDiff = zonedDayNumber(now, timeZone) - zonedDayNumber(date, timeZone);
+  if (dayDiff === 0) return date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit", timeZone });
   if (dayDiff === 1) return "Yesterday";
-  if (dayDiff < 7) return date.toLocaleDateString([], { weekday: "short" });
-  const day = String(date.getDate()).padStart(2, "0");
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  return date.getFullYear() === now.getFullYear() ? `${day}/${month}` : `${day}/${month}/${date.getFullYear()}`;
+  if (dayDiff < 7) return date.toLocaleDateString([], { weekday: "short", timeZone });
+  return shortDate(date, timeZone, zonedParts(date, timeZone).year !== zonedParts(now, timeZone).year);
 }

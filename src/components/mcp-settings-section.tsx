@@ -27,6 +27,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ToggleSwitch } from "@/components/ui/toggle-switch";
+import { useTimeZone } from "@/hooks/use-time-zone";
 import type { WispOption } from "@/lib/plugin-access";
 
 const NO_WISPS: ReadonlyArray<WispOption> = [];
@@ -274,6 +275,7 @@ function McpServerForm({
 }) {
   const formId = useId();
   const [draft, setDraft] = useState<McpDraft>(server ? draftFrom(server) : emptyDraft());
+  const timeZone = useTimeZone();
   const [operation, setOperation] = useState<"save" | "test" | "remove" | "refresh" | "signin" | null>(null);
   const [error, setError] = useState("");
   const [message, setMessage] = useState(initialMessage);
@@ -423,7 +425,7 @@ function McpServerForm({
           <p className="flex items-center gap-1.5">
             <StatusDot tone={stateTone(server)} />
             {STATE_LABELS[server.state]}
-            {server.lastDiscoveredAt ? ` · tools discovered ${formatDate(server.lastDiscoveredAt)}` : ""}
+            {server.lastDiscoveredAt ? ` · tools discovered ${formatDate(server.lastDiscoveredAt, timeZone)}` : ""}
             {server.tools.length ? ` · ${server.tools.length} tool${server.tools.length === 1 ? "" : "s"}` : ""}
           </p>
         ) : null}
@@ -635,7 +637,7 @@ function safeHost(endpoint: string): string {
   }
 }
 
-function formatDate(value: string): string {
+function formatDate(value: string, timeZone: string): string {
   const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? value : date.toLocaleDateString();
+  return Number.isNaN(date.getTime()) ? value : date.toLocaleDateString([], { timeZone });
 }

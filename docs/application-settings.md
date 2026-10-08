@@ -30,9 +30,17 @@ saved key.
   Wisp, listed in that Wisp's **Access** tab instead. Integration blocks added from approval prompts are listed below them
   (see [security](security.md) for how rules are applied).
 
+**Timezone** defaults to auto-detect, which follows this device. Every date
+and time in the app is shown in it: message times, day dividers, the
+conversation list, search results, scheduled messages and reports. Times are
+stored in UTC, so changing it never alters history. The app also reports the
+zone to the server it is connected to, which saves it in
+`user-time-zone.json`. Wisps then see the user's local date and time with
+each message, and daily context renewal and new scheduled messages use the
+same zone. Until the app reports a zone, a server uses its own.
+
 Settings that are saved but not wired to the desktop yet (microphone,
-hardware acceleration, timezone) are shown disabled with a
-**Soon** badge.
+hardware acceleration) are shown disabled with a **Soon** badge.
 
 **Plugins** and **MCP servers** open each connection in place, inside the
 settings dialog. Removing a connection or a provider API key asks for an
@@ -99,8 +107,7 @@ in an installed release").
 
 - Microphone capture and voice input.
 - Launch at login on macOS.
-- Hardware acceleration and timezone (saved, but not read by the desktop or by
-  Wisps).
+- Hardware acceleration (saved, but not read by the desktop).
 - The Shortcuts settings panel (the `Cmd/Ctrl+K` search dialog itself works).
 - **Circles** cannot run their own model sessions, and the create dialog only
   creates Wisps.

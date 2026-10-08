@@ -7,6 +7,7 @@ import type {
   RemoveProviderCredentialRequest,
   SaveAiSettingsRequest,
   SendMessageRequest,
+  SetUserTimeZoneRequest,
 } from "../shared/contracts.js";
 import type {
   AnswerConversationPromptRequest,
@@ -50,7 +51,8 @@ import {
   normalizeWisp,
   normalizeWispChanges,
 } from "./conversation-normalizer.js";
-import { isTimeZone, normalizeMessageSchedule } from "./message-schedule.js";
+import { normalizeMessageSchedule } from "./message-schedule.js";
+import { isTimeZone } from "../shared/time-zone.js";
 
 const ID_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9._:-]*$/;
 const MAX_ID_LENGTH = 128;
@@ -345,6 +347,10 @@ function parseMessageSchedule(value: unknown) {
   const schedule = normalizeMessageSchedule(value);
   if (!schedule) throw invalidRequest();
   return schedule;
+}
+
+export function parseSetUserTimeZoneRequest(value: unknown): SetUserTimeZoneRequest {
+  return { timeZone: parseTimeZone(asRecord(value).timeZone) };
 }
 
 export function parseScheduleMessageRequest(value: unknown): ScheduleMessageRequest {

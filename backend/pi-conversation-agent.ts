@@ -23,7 +23,8 @@ import type {
   ConversationAgentListener,
 } from "./conversation-agent.js";
 import type { ModelRuntimeLike } from "./model-service.js";
-import { scheduledMessageNote } from "./message-schedule.js";
+import { currentTimeNote, scheduledMessageNote } from "./message-schedule.js";
+import { systemTimeZone } from "../shared/time-zone.js";
 import { SkillStore, validateSkillDraft } from "./skill-store.js";
 import { assertWorkspaceCapacity, SKILLS_DIRECTORY } from "./workspace-service.js";
 import { PiEventTranslator, type PiAgentEvent, sanitizeErrorMessage } from "./pi-event-translator.js";
@@ -249,6 +250,8 @@ export class SdkPiSessionFactory implements PiSessionFactory {
       session,
       path.join(context.configDirectory, "context-settings.json"),
       (kind, createdAt) => context.onContextRenewed?.(kind, createdAt),
+      undefined,
+      () => context.userTimeZone?.() ?? systemTimeZone(),
     );
     try {
       await continuity.load();
@@ -406,9 +409,12 @@ export class PiConversationAgent implements ConversationAgent {
   private async promptSession(session: PiSessionLike, request: SendMessageRequest, signal: AbortSignal): Promise<void> {
     try {
       signal.throwIfAborted();
+      const timeZone = this.context.userTimeZone?.();
       const text = request.scheduled
         ? `${scheduledMessageNote(request.scheduled, new Date())}\n\n${request.text}`
-        : request.text;
+        : timeZone
+          ? `${currentTimeNote(new Date(), timeZone)}\n\n${request.text}`
+          : request.text;
       await session.prompt(text, { expandPromptTemplates: false, signal });
       this.translator.finish();
     } catch (error) {
@@ -479,6 +485,7 @@ export class PiConversationAgent implements ConversationAgent {
       this.context.soul = context.soul;
       this.context.userName = context.userName;
       this.context.userProfile = context.userProfile;
+      this.context.userTimeZone = context.userTimeZone;
       if (!this.session) return;
       if (!this.session.isIdle) await this.session.waitForIdle();
       await this.session.reload();
@@ -744,6 +751,13 @@ function buildSystemPrompt(context: ConversationAgentContext): string {
             aboutYou: context.userProfile.aboutYou,
             responsePreferences: context.userProfile.responsePreferences,
           }),
+          "",
+        ]
+      : []),
+    ...(context.userTimeZone
+      ? [
+          "## Date and time",
+          "Each message from the user starts with a bracketed note of when they sent it, in their time zone. Use it for today's date, the time of day, and relative dates such as tomorrow. Do not mention the note itself.",
           "",
         ]
       : []),

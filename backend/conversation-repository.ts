@@ -1,3 +1,4 @@
+import { isTimeZone, systemTimeZone } from "../shared/time-zone.js";
 import { EMPTY_USER_PROFILE, normalizeUserProfile, type UserProfile } from "../shared/user-profile.js";
 import { writeFileAtomically } from "./atomic-file.js";
 import { randomUUID } from "node:crypto";
@@ -126,6 +127,8 @@ export class ConversationRepository {
   private readonly configRoot: string;
   private readonly deletedRoot: string;
   private profile: UserProfile = { ...EMPTY_USER_PROFILE };
+  /** The person's time zone as the app last reported it; this computer's until then. */
+  private timeZone = systemTimeZone();
   private readonly now: () => Date;
   private readonly createId: () => string;
   private state: PersistedConversationState = emptyState();
@@ -162,6 +165,12 @@ export class ConversationRepository {
         );
         this.profile = { ...EMPTY_USER_PROFILE };
       }
+    }
+    try {
+      const saved = JSON.parse(await readFile(path.join(this.dataDirectory, "user-time-zone.json"), "utf8"));
+      if (isTimeZone(saved?.timeZone)) this.timeZone = saved.timeZone;
+    } catch {
+      // Missing or unreadable: keep this computer's time zone until the app reports one.
     }
     let store: ConversationStore;
     let stored: PersistedConversationState | undefined;
@@ -205,6 +214,19 @@ export class ConversationRepository {
       await writeFileAtomically(path.join(this.dataDirectory, "user-profile.json"), JSON.stringify(profile));
       this.profile = profile;
       return this.getUserProfile();
+    });
+  }
+
+  getUserTimeZone(): string {
+    return this.timeZone;
+  }
+
+  async saveUserTimeZone(timeZone: string): Promise<void> {
+    if (!isTimeZone(timeZone)) throw new WispBackendError("invalid_request", "The time zone is invalid.");
+    if (timeZone === this.timeZone) return;
+    await this.enqueue(async () => {
+      await writeFileAtomically(path.join(this.dataDirectory, "user-time-zone.json"), JSON.stringify({ timeZone }));
+      this.timeZone = timeZone;
     });
   }
 
@@ -269,6 +291,7 @@ export class ConversationRepository {
       soul: wisp.soul,
       userName: this.profile.preferredName || undefined,
       userProfile: this.getUserProfile(),
+      userTimeZone: () => this.timeZone,
       workspaceDirectory: path.join(this.workspaceRoot, record.storageId),
       sessionDirectory: path.join(this.sessionRoot, session.sessionId),
       configDirectory: path.join(this.configRoot, wispRecord.storageId),

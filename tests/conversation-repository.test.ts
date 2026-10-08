@@ -197,6 +197,19 @@ describe("ConversationRepository", () => {
     expect(restored.getAgentContext("second").userProfile).toEqual(empty);
   });
 
+  it("keeps the reported time zone across restarts and gives every Wisp the current one", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "wisp-time-zone-"));
+    const repository = await reload(directory);
+    await repository.initialize({ first: chat("first") });
+    const context = repository.getAgentContext("first");
+    await repository.saveUserTimeZone("Asia/Tokyo");
+    expect(context.userTimeZone?.()).toBe("Asia/Tokyo");
+    await expect(repository.saveUserTimeZone("Mars/Olympus")).rejects.toMatchObject({ code: "invalid_request" });
+    const restored = await reload(directory);
+    expect(restored.getUserTimeZone()).toBe("Asia/Tokyo");
+    expect(restored.getAgentContext("first").userTimeZone?.()).toBe("Asia/Tokyo");
+  });
+
   it("includes the configured user name in every agent context", async () => {
     const directory = await mkdtemp(path.join(os.tmpdir(), "wisp-user-context-"));
     const repository = new ConversationRepository({ dataDirectory: directory, userName: "  John\nDoe  " });

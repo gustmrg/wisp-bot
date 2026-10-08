@@ -57,6 +57,7 @@ export const RUNTIME_OPERATIONS = [
   "getUsageReport",
   "getUserProfile",
   "saveUserProfile",
+  "setUserTimeZone",
   "getToolPolicy",
   "saveToolPolicy",
   "resolveToolApproval",

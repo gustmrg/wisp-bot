@@ -124,6 +124,7 @@ export const WISP_IPC_CHANNELS = {
   getToolPolicy: "wisp:tool-policy:get",
   getUserProfile: "wisp:profile:get",
   saveUserProfile: "wisp:profile:save",
+  setUserTimeZone: "wisp:time-zone:set",
   saveToolPolicy: "wisp:tool-policy:save",
   resolveToolApproval: "wisp:tool-policy:resolve-approval",
   getLaunchAtLoginState: "wisp:login:get",
@@ -164,6 +165,11 @@ export interface SendMessageRequest extends ConversationRequest {
   text: string;
   /** Set by the backend when it sends a scheduled message; never accepted from a client. */
   scheduled?: import("./conversations.js").ScheduledOrigin;
+}
+
+export interface SetUserTimeZoneRequest {
+  /** An IANA time zone such as "America/Sao_Paulo". */
+  timeZone: string;
 }
 
 export interface ModelSelection {
@@ -494,6 +500,8 @@ export interface WispApi {
   saveUserProfile(
     profile: import("./user-profile.js").UserProfile,
   ): Promise<BackendResult<import("./user-profile.js").UserProfile>>;
+  /** Tells the server which time zone the person is in, so Wisps know their local time. */
+  setUserTimeZone(request: SetUserTimeZoneRequest): Promise<EmptyResult>;
   saveToolPolicy(settings: ToolPolicySettings): Promise<BackendResult<ToolPolicySettings>>;
   resolveToolApproval(request: ResolveToolApprovalRequest): Promise<EmptyResult>;
   getUpdateState(): Promise<BackendResult<UpdateState>>;

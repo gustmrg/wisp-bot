@@ -3,6 +3,7 @@ import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { useTimeZone } from "@/hooks/use-time-zone";
 import {
   formatScheduledTime,
   fromDateTimeLocalValue,
@@ -25,16 +26,19 @@ export function ScheduleSendPicker({
   busy = false,
   onPick,
 }: ScheduleSendPickerProps) {
+  const timeZone = useTimeZone();
   const [now] = useState(() => new Date());
-  const [custom, setCustom] = useState(() => toDateTimeLocalValue(initial ?? new Date(now.getTime() + 60 * 60_000)));
-  const customAt = fromDateTimeLocalValue(custom);
+  const [custom, setCustom] = useState(() =>
+    toDateTimeLocalValue(initial ?? new Date(now.getTime() + 60 * 60_000), timeZone),
+  );
+  const customAt = fromDateTimeLocalValue(custom, timeZone);
   const customInPast = customAt !== null && customAt.getTime() <= Date.now();
 
   return (
     <div className="flex flex-col gap-0.5">
       {initial
         ? null
-        : schedulePresets(now).map((preset) => (
+        : schedulePresets(now, timeZone).map((preset) => (
             <button
               key={preset.label}
               type="button"
@@ -43,7 +47,7 @@ export function ScheduleSendPicker({
               onClick={() => onPick(preset.at)}
             >
               <span>{preset.label}</span>
-              <span className="text-xs text-dim">{formatScheduledTime(preset.at, now)}</span>
+              <span className="text-xs text-dim">{formatScheduledTime(preset.at, now, timeZone)}</span>
             </button>
           ))}
       <form
@@ -60,7 +64,7 @@ export function ScheduleSendPicker({
           <Input
             type="datetime-local"
             value={custom}
-            min={toDateTimeLocalValue(now)}
+            min={toDateTimeLocalValue(now, timeZone)}
             aria-invalid={customInPast || undefined}
             onChange={(event) => setCustom(event.currentTarget.value)}
           />
