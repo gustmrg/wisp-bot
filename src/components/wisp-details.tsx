@@ -51,7 +51,6 @@ export function WispDetails({
     draft.role !== wisp.role ||
     draft.soul !== wisp.soul ||
     draft.color !== wisp.color ||
-    draft.avatarImage !== wisp.avatarImage ||
     !sameWispAppearance(draft.appearance, wisp.appearance);
   const notificationsChanged = draft.notifyOnUpdatesEnabled !== chat.notifyOnUpdatesEnabled;
 
@@ -66,7 +65,6 @@ export function WispDetails({
           role: draft.role,
           soul: draft.soul,
           color: draft.color,
-          avatarImage: draft.avatarImage,
           appearance: draft.appearance,
         });
         if (saved === false) {

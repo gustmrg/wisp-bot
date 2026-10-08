@@ -21,17 +21,16 @@ export interface Wisp {
   role: string;
   /** Markdown that defines the Wisp's identity, personality, and behavior. */
   soul: string;
-  /** How the Wisp is drawn when it has no picture. */
+  /** How the Wisp is drawn. */
   appearance: WispAppearance;
   /** One of `WISP_COLORS`; without one, the color is derived from the name. */
   color?: string;
-  avatarImage?: string;
 }
 
 export type WispCollection = Record<WispId, Wisp>;
 
 export type NewWisp = Omit<Wisp, "id">;
-/** Fields to change; `color` and `avatarImage` set to undefined are cleared. */
+/** Fields to change; `color` set to undefined is cleared. */
 export type WispChanges = Partial<NewWisp>;
 
 export type MessageStatus = "queued" | "streaming" | "complete" | "failed" | "cancelled";

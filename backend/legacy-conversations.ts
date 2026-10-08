@@ -74,7 +74,6 @@ export function splitLegacyChat(value: unknown): LegacyChat {
     soul: soulOf(raw.description, raw.tone),
     shape: raw.shape,
     ...(raw.color === undefined ? {} : { color: raw.color }),
-    ...(raw.avatarImage === undefined ? {} : { avatarImage: raw.avatarImage }),
   });
   return { wisp, chat: normalizeChat({ ...common, kind, wispId: id }) };
 }

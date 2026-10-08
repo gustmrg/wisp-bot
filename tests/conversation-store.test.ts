@@ -287,6 +287,34 @@ describe("ConversationStore versions", () => {
     columns.close();
   });
 
+  it("drops the pictures version 5 stored for Wisps, and keeps version 5 builds out", async () => {
+    const file = await databasePath();
+    const store = ConversationStore.open(file);
+    store.transaction(() => store.putWisp(wispRecord("one")));
+    store.close();
+    // Recreate the layout version 5 wrote: a picture column, and markers that let version 5 write.
+    const db = new DatabaseSync(file);
+    db.exec(`
+      ALTER TABLE wisps ADD COLUMN avatar_image TEXT;
+      UPDATE wisps SET avatar_image = 'data:image/webp;base64,AAAA';
+      UPDATE meta SET value = '5' WHERE key IN ('store_version', 'min_reader_version');
+    `);
+    db.close();
+
+    const upgraded = ConversationStore.open(file);
+    expect(upgraded.read().wisps.one).toEqual(wispRecord("one"));
+    upgraded.close();
+    const columns = new DatabaseSync(file, { readOnly: true });
+    expect(
+      columns
+        .prepare("SELECT name FROM pragma_table_info('wisps')")
+        .all()
+        .map(({ name }) => name),
+    ).not.toContain("avatar_image");
+    columns.close();
+    expect(meta(file)).toMatchObject({ store_version: "6", min_reader_version: "6" });
+  });
+
   it("stores Wisps and conversations as columns, related by foreign keys", async () => {
     const store = ConversationStore.open(await databasePath());
     const one: WispRecord = {
@@ -375,7 +403,7 @@ describe("ConversationStore versions", () => {
       },
     });
     store.close();
-    expect(meta(file)).toMatchObject({ store_version: "5", min_reader_version: "5" });
+    expect(meta(file)).toMatchObject({ store_version: "6", min_reader_version: "6" });
     const db = new DatabaseSync(file, { readOnly: true });
     expect(db.prepare("SELECT conversation_id, type, author_id FROM messages").all()).toEqual([
       { conversation_id: "one", type: "incoming", author_id: "one" },
@@ -395,15 +423,15 @@ describe("ConversationStore versions", () => {
       db.close();
     };
 
-    raise(readable, "6", "5");
+    raise(readable, "7", "6");
     const newer = ConversationStore.open(readable);
     expect(newer.read().initialized).toBe(true);
     // Writing here must not lower the markers the newer build set.
     newer.transaction(() => newer.setInitialized(true));
     newer.close();
-    expect(meta(readable)).toMatchObject({ store_version: "6", min_reader_version: "5" });
+    expect(meta(readable)).toMatchObject({ store_version: "7", min_reader_version: "6" });
 
-    raise(readable, "7", "6");
+    raise(readable, "8", "7");
     const incompatible = ConversationStore.open(readable);
     expect(() => incompatible.read()).toThrow("Unsupported conversation store version.");
     incompatible.close();

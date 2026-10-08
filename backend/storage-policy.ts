@@ -6,7 +6,4 @@ export const CONVERSATION_STORAGE_POLICY = {
   maxConversations: 1_000,
   maxMessagesPerConversation: 10_000,
   maxTextLength: 100_000,
-  maxAvatarDataUrlLength: 6_000_000,
 } as const;
-
-export const WEBP_DATA_URL_PREFIX = "data:image/webp;base64,";

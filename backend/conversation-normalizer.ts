@@ -19,7 +19,7 @@ import {
   type WispAppearance,
 } from "../shared/wisp-appearance.js";
 import { WispBackendError } from "./backend-error.js";
-import { CONVERSATION_STORAGE_POLICY, WEBP_DATA_URL_PREFIX } from "./storage-policy.js";
+import { CONVERSATION_STORAGE_POLICY } from "./storage-policy.js";
 
 const ID_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9._:-]*$/;
 const MESSAGE_STATUSES = new Set<MessageStatus>(["queued", "streaming", "complete", "failed", "cancelled"]);
@@ -29,7 +29,6 @@ const MESSAGE_STATUSES = new Set<MessageStatus>(["queued", "streaming", "complet
 const MAX_WISP_NAME_LENGTH = 500;
 const MAX_WISP_ROLE_LENGTH = 500;
 export const MAX_WISP_SOUL_LENGTH = 12_000;
-const BASE64_PATTERN = /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/;
 
 const APPEARANCE_KEYS = Object.keys(WISP_APPEARANCE_AXES) as Array<keyof WispAppearance>;
 
@@ -107,14 +106,6 @@ export function normalizeConversationId(value: unknown): string {
     throw invalidRequest();
   }
   return value;
-}
-
-export function avatarDataUrl(value: unknown): string {
-  const normalized = string(value, CONVERSATION_STORAGE_POLICY.maxAvatarDataUrlLength, false);
-  if (!normalized.startsWith(WEBP_DATA_URL_PREFIX)) throw invalidRequest();
-  const payload = normalized.slice(WEBP_DATA_URL_PREFIX.length);
-  if (!payload || !BASE64_PATTERN.test(payload)) throw invalidRequest();
-  return normalized;
 }
 
 export function normalizeScheduledOrigin(value: unknown): ScheduledOrigin {
@@ -240,24 +231,20 @@ export function normalizeWisp(value: unknown): Wisp {
     soul: string(raw.soul, MAX_WISP_SOUL_LENGTH),
     appearance: storedAppearance(raw),
     ...(color === undefined ? {} : { color }),
-    ...(raw.avatarImage === undefined ? {} : { avatarImage: avatarDataUrl(raw.avatarImage) }),
   };
 }
 
 export function normalizeWispChanges(value: unknown): WispChanges {
   const raw = asRecord(value);
-  const allowed = new Set(["name", "role", "soul", "appearance", "color", "avatarImage"]);
+  const allowed = new Set(["name", "role", "soul", "appearance", "color"]);
   if (Object.keys(raw).some((key) => !allowed.has(key))) throw invalidRequest();
   const result: WispChanges = {};
   if (raw.name !== undefined) result.name = string(raw.name, MAX_WISP_NAME_LENGTH, false);
   if (raw.role !== undefined) result.role = string(raw.role, MAX_WISP_ROLE_LENGTH);
   if (raw.soul !== undefined) result.soul = string(raw.soul, MAX_WISP_SOUL_LENGTH);
   if (raw.appearance !== undefined) result.appearance = appearanceChange(raw.appearance);
-  // Present but undefined clears the color or picture.
+  // Present but undefined clears the color.
   if (Object.hasOwn(raw, "color")) result.color = raw.color === undefined ? undefined : colorChange(raw.color);
-  if (Object.hasOwn(raw, "avatarImage")) {
-    result.avatarImage = raw.avatarImage === undefined ? undefined : avatarDataUrl(raw.avatarImage);
-  }
   return result;
 }
 
@@ -265,7 +252,6 @@ export function normalizeWispChanges(value: unknown): WispChanges {
 export function applyWispChanges(wisp: Wisp, changes: WispChanges): Wisp {
   const next: Wisp = { ...wisp, ...changes };
   if (next.color === undefined) delete next.color;
-  if (next.avatarImage === undefined) delete next.avatarImage;
   return next;
 }
 
