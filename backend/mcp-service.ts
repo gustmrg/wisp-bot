@@ -181,8 +181,9 @@ export class McpService {
 
   save(value: unknown): Promise<McpSettingsView> {
     const request = parseSaveMcpServer(value);
-    return this.enqueue(async () => {
+    return this.enqueue(async (): Promise<string> => {
       const next = structuredClone(this.state);
+      const serverId = request.serverId ?? randomUUID();
       if (request.serverId) {
         const existing = next.servers[request.serverId];
         if (!existing) throw new WispBackendError("not_found", "This MCP connection no longer exists.");
@@ -215,7 +216,6 @@ export class McpService {
           await this.secrets.setHeader(request.serverId, request.headerName, request.headerValue);
         }
       } else {
-        const serverId = randomUUID();
         if (request.authMode === "header") {
           await this.assertSecureStorage();
           await this.secrets.setHeader(serverId, request.headerName!, request.headerValue!);
@@ -231,6 +231,11 @@ export class McpService {
         };
       }
       await this.commit(next);
+      return serverId;
+    }).then(async (serverId) => {
+      // Discovery runs outside the mutation queue so a slow server never
+      // blocks other saves; the save itself already succeeded.
+      await this.discoverSavedTools(serverId);
       return this.publishAndView();
     });
   }
@@ -253,10 +258,24 @@ export class McpService {
     });
   }
 
-  /** Initializes and discovers capabilities without invoking any tool or granting access. */
+  /**
+   * Initializes and discovers capabilities without invoking any tool or
+   * granting access. Testing a saved connection exactly as saved also stores
+   * the discovered tools, so a successful test leaves them available to
+   * granted Wisps; a draft that differs from the saved configuration stores
+   * nothing.
+   */
   async testConnection(value: unknown): Promise<McpConnectionResult> {
     const request = parseTestMcpConnection(value);
     this.assertLive();
+    const saved = request.serverId ? this.state.servers[request.serverId] : undefined;
+    const testsSavedConfiguration =
+      saved !== undefined &&
+      saved.endpoint === request.endpoint &&
+      saved.authMode === request.authMode &&
+      request.headerValue === undefined &&
+      (request.headerName === undefined || request.headerName === saved.headerName);
+    const savedGeneration = saved?.configGeneration;
     const controller = new AbortController();
     this.running.set(controller, { conversationId: "", sessionId: "", serverId: request.serverId ?? "" });
     let connection: McpConnection | null = null;
@@ -272,6 +291,13 @@ export class McpService {
         return { message: "The server requires sign-in. Save the connection and use Sign in." };
       }
       const tools = await connection.listTools(controller.signal);
+      if (testsSavedConfiguration && savedGeneration !== undefined) {
+        await this.storeDiscoveredTools(request.serverId!, savedGeneration, tools).catch((error: unknown) => {
+          // A server without usable tools still tested successfully.
+          if (!(error instanceof WispBackendError && error.code === "invalid_configuration")) throw error;
+        });
+        await this.publishAndView();
+      }
       return { message: `Connected. ${tools.length} tool${tools.length === 1 ? "" : "s"} available.` };
     } catch (error) {
       throw safeMcpError(error, controller.signal);
@@ -302,13 +328,7 @@ export class McpService {
           throw new WispBackendError("configuration_required", "Sign in to this connection before refreshing tools.");
         }
         const tools = await connection.listTools(controller.signal);
-        const snapshot = this.buildSnapshot(tools, serverId);
-        server.snapshot = { discoveredAt: new Date().toISOString(), tools: snapshot };
-        server.lastConnection = { state: "connected", at: new Date().toISOString() };
-        await this.commit(this.state);
-        this.registerSnapshotMetadata();
-        // A changed tool set replaces the reviewed definitions for granted Wisps.
-        await this.closeServerClients(serverId);
+        await this.applySnapshot(server, tools);
       } catch (error) {
         if (!(error instanceof WispBackendError) || error.code !== "configuration_required") {
           await this.noteConnection(server, "unavailable");
@@ -709,6 +729,62 @@ export class McpService {
     // during discovery/registration, before any redirect happens.
     await provider.ensureCallbackServer();
     return { mode: "oauth", provider };
+  }
+
+  /** Stores a discovered tool set; callers hold the mutation queue. */
+  private async applySnapshot(server: McpServerRecord, tools: ReadonlyArray<McpSdkTool>): Promise<void> {
+    const snapshot = this.buildSnapshot(tools, server.serverId);
+    server.snapshot = { discoveredAt: new Date().toISOString(), tools: snapshot };
+    server.lastConnection = { state: "connected", at: new Date().toISOString() };
+    await this.commit(this.state);
+    this.registerSnapshotMetadata();
+    // A changed tool set replaces the reviewed definitions for granted Wisps.
+    await this.closeServerClients(server.serverId);
+  }
+
+  /**
+   * Stores tools discovered outside the mutation queue, unless the connection
+   * was removed or re-identified while discovery was in flight.
+   */
+  private storeDiscoveredTools(serverId: string, generation: number, tools: ReadonlyArray<McpSdkTool>): Promise<void> {
+    return this.enqueue(async () => {
+      const server = this.state.servers[serverId];
+      if (!server || server.configGeneration !== generation) return;
+      await this.applySnapshot(server, tools);
+    });
+  }
+
+  /**
+   * Discovers tools for a just-saved connection that has none yet, so granted
+   * Wisps can use it without a separate refresh. OAuth connections discover
+   * during sign-in instead. Failures never undo the save; they surface as the
+   * connection's health.
+   */
+  private async discoverSavedTools(serverId: string): Promise<void> {
+    const server = this.state.servers[serverId];
+    if (!server || server.snapshot || server.authMode === "oauth" || this.disposed) return;
+    const generation = server.configGeneration;
+    const controller = new AbortController();
+    this.running.set(controller, { conversationId: "", sessionId: "", serverId });
+    let connection: McpConnection | null = null;
+    try {
+      const auth = await this.serverAuth(server);
+      connection = this.createConnection();
+      const outcome = await connection.connect(server.endpoint, auth, { signal: controller.signal });
+      if (outcome === "needs_sign_in") {
+        throw new WispBackendError("configuration_required", "The server requires sign-in.");
+      }
+      const tools = await connection.listTools(controller.signal);
+      await this.storeDiscoveredTools(serverId, generation, tools);
+    } catch (error) {
+      const current = this.state.servers[serverId];
+      if (!this.disposed && !controller.signal.aborted && current?.configGeneration === generation) {
+        await this.noteConnection(current, "unavailable", safeMcpError(error).message).catch(() => undefined);
+      }
+    } finally {
+      this.running.delete(controller);
+      await connection?.close();
+    }
   }
 
   private async noteConnection(
