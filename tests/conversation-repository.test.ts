@@ -8,6 +8,7 @@ import { describe, expect, it } from "vitest";
 import { ConversationRepository } from "../backend/conversation-repository.js";
 import { CONVERSATION_STORAGE_POLICY } from "../backend/storage-policy.js";
 import type { Chat, CircleChat, Message, Wisp } from "../shared/conversations.js";
+import { DEFAULT_WISP_APPEARANCE, appearanceFromLegacyShape } from "../shared/wisp-appearance.js";
 
 async function reload(directory: string): Promise<ConversationRepository> {
   const repository = new ConversationRepository({ dataDirectory: directory });
@@ -63,7 +64,7 @@ function chat(id: string, circle = false): Chat {
 }
 
 function newWisp(id: string): Wisp {
-  return { id, name: id, role: "Test", soul: "A test Wisp", shape: "circle" };
+  return { id, name: id, role: "Test", soul: "A test Wisp", appearance: DEFAULT_WISP_APPEARANCE };
 }
 
 function circle(id: string, memberIds: string[] = []): CircleChat {
@@ -116,7 +117,7 @@ describe("ConversationRepository", () => {
       name: "first",
       role: "Test",
       soul: "A test conversation",
-      shape: "circle",
+      appearance: appearanceFromLegacyShape("circle"),
     });
     expect(repository.getChats().first?.messages[0]?.id).toBe("first:message:0");
     const context = repository.getAgentContext("first");
@@ -347,7 +348,7 @@ describe("ConversationRepository", () => {
         "## Tone\nProfessional and polished. Use complete sentences and avoid slang, jokes, and emoji.",
         "## Response length\nKeep responses brief: a few sentences or a short list. Expand only when asked.",
       ].join("\n\n"),
-      shape: "circle",
+      appearance: appearanceFromLegacyShape("circle"),
     });
     expect(upgraded.getChats().first).toMatchObject({
       kind: "wisp",

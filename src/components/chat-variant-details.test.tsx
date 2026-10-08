@@ -12,7 +12,9 @@ const circle = circleChatView("crew", [wisp.wisp], { name: "Crew", description: 
 describe("variant details", () => {
   it("renders Wisp-only appearance editing and the soul", () => {
     render(<WispDetails chat={wisp} onChangeWisp={vi.fn()} onChangeNotifications={vi.fn()} />);
-    expect(screen.getByRole("group", { name: "Wisp shape" })).toBeVisible();
+    for (const axis of ["Wisp trail", "Wisp body", "Wisp eyes"]) {
+      expect(screen.getByRole("group", { name: axis })).toBeVisible();
+    }
     expect(screen.getByRole("textbox", { name: "Role (optional)" })).toHaveValue("Research");
     const soul = screen.getByRole("textbox", { name: "Soul" });
     expect(soul).toHaveValue("Researches");

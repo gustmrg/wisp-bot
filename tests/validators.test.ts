@@ -20,6 +20,7 @@ import {
   parseUpdateWispRequest,
 } from "../backend/validators.js";
 import { MAX_VOICE_AUDIO_BYTES } from "../shared/voice.js";
+import { DEFAULT_WISP_APPEARANCE } from "../shared/wisp-appearance.js";
 
 describe("voice request validators", () => {
   const audio = new Uint8Array([1, 2, 3]);
@@ -273,18 +274,79 @@ describe("IPC request validators", () => {
     ).toThrow(WispBackendError);
   });
 
-  it("migrates the removed legacy pill shape without dropping the Wisp", () => {
+  it("gives a Wisp saved with a shape the closest body, no trail, and its flat look", () => {
+    for (const [shape, body] of [
+      ["circle", "round"],
+      ["pill", "pebble"],
+      ["square", "block"],
+      ["hexagon", "crystal"],
+      ["drop", "drop"],
+    ] as const) {
+      const request = parseCreateWispRequest({
+        wisp: { id: "legacy", name: "Legacy", role: "", soul: "", shape },
+        notifyOnUpdatesEnabled: true,
+      });
+      expect(request.wisp.appearance).toEqual({
+        body,
+        trail: "none",
+        tone: "vivid",
+        eyes: "oval",
+        eyeInk: "auto",
+        finish: "solid",
+        mark: "none",
+      });
+    }
+    expect(() =>
+      parseCreateWispRequest({
+        wisp: { id: "legacy", name: "Legacy", role: "", soul: "", shape: "star" },
+        notifyOnUpdatesEnabled: true,
+      }),
+    ).toThrow(WispBackendError);
+  });
+
+  it("keeps a stored Wisp whose appearance has values this build does not know", () => {
     const request = parseCreateWispRequest({
-      wisp: { id: "legacy-pill", name: "Legacy", role: "", soul: "", shape: "pill" },
+      wisp: {
+        id: "newer",
+        name: "Newer",
+        role: "",
+        soul: "",
+        appearance: { ...DEFAULT_WISP_APPEARANCE, trail: "twin", eyes: "stars", sparkle: true },
+        color: "#3c82f7",
+      },
       notifyOnUpdatesEnabled: true,
     });
 
-    expect(request.wisp).toEqual({ id: "legacy-pill", name: "Legacy", role: "", soul: "", shape: "pebble" });
-    expect(request.model).toBeNull();
+    expect(request.wisp.appearance).toEqual(DEFAULT_WISP_APPEARANCE);
+    // A color outside the palette moves to the closest palette color.
+    expect(request.wisp.color).toBe("#3c82f6");
+  });
+
+  it("accepts only complete appearances and palette colors as changes", () => {
+    const appearance = { ...DEFAULT_WISP_APPEARANCE, trail: "curl", finish: "line" };
+    expect(parseUpdateWispRequest({ wispId: "wisp-1", changes: { appearance, color: "#E5498F" } }).changes).toEqual({
+      appearance,
+      color: "#e5498f",
+    });
+    for (const changes of [
+      { appearance: { trail: "curl" } },
+      { appearance: { ...appearance, trail: "twin" } },
+      { appearance: { ...appearance, extra: "x" } },
+      { color: "#123456" },
+      { shape: "circle" },
+    ]) {
+      expect(() => parseUpdateWispRequest({ wispId: "wisp-1", changes })).toThrow(WispBackendError);
+    }
   });
 
   it("parses a Wisp's soul and changes, and rejects tone and unknown fields", () => {
-    const wisp = { id: "wisp-1", name: "Atlas", role: "Research", soul: "# Identity\nCareful", shape: "hexagon" };
+    const wisp = {
+      id: "wisp-1",
+      name: "Atlas",
+      role: "Research",
+      soul: "# Identity\nCareful",
+      appearance: DEFAULT_WISP_APPEARANCE,
+    };
     expect(parseCreateWispRequest({ wisp, notifyOnUpdatesEnabled: false })).toEqual({
       wisp,
       notifyOnUpdatesEnabled: false,
@@ -308,7 +370,7 @@ describe("IPC request validators", () => {
   });
 
   it("parses a creation-time model selection and rejects invalid ones", () => {
-    const wisp = { id: "wisp-1", name: "Atlas", role: "", soul: "", shape: "hexagon" };
+    const wisp = { id: "wisp-1", name: "Atlas", role: "", soul: "", appearance: DEFAULT_WISP_APPEARANCE };
 
     expect(
       parseCreateWispRequest({

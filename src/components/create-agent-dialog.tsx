@@ -3,6 +3,7 @@ import type { FormEvent, ReactElement } from "react";
 import { PlusIcon } from "lucide-react";
 
 import type { AiSettingsView, ModelSelection } from "../../shared/contracts";
+import { DEFAULT_WISP_APPEARANCE } from "../../shared/wisp-appearance";
 import type { NewWisp } from "@/chat-data";
 import {
   CreateWispModelSection,
@@ -39,7 +40,7 @@ const DEFAULT_WISP: WispSettingsDraft = {
   role: "",
   soul: "",
   color: AVATAR_COLORS.find((color) => color.id === "violet")?.value,
-  shape: "hexagon",
+  appearance: DEFAULT_WISP_APPEARANCE,
   notifyOnUpdatesEnabled: true,
 };
 
@@ -109,7 +110,7 @@ function CreateAgentDialog({ onCreate, trigger }: CreateAgentDialogProps) {
           name: trimmedName,
           role: settings.role.trim(),
           soul: soul.trim(),
-          shape: settings.shape,
+          appearance: settings.appearance,
           ...(color === undefined ? {} : { color }),
           ...(settings.avatarImage === undefined ? {} : { avatarImage: settings.avatarImage }),
         },

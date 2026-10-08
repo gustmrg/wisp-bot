@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useState } from "react";
 
 import {
   requestIdOfAssistantMessage,
@@ -15,7 +15,7 @@ import type { ToolApprovalDecision, ToolApprovalRequest } from "../../../shared/
 import type { BackendError, ModelSelection } from "../../../shared/contracts";
 import { usePersistedPreferences } from "@/features/persistence/use-persisted-preferences";
 import type { PersistenceStatus } from "@/features/persistence/storage-policy";
-import { createChatIdFactory, selectActiveChatId } from "@/features/workspace/workspace-actions";
+import { createChatIdFactory, selectActiveChatId, unseenFailures } from "@/features/workspace/workspace-actions";
 import { useConversations } from "@/hooks/use-conversations";
 import { useNotificationSounds } from "@/hooks/use-notification-sounds";
 import type { AppPreferences } from "@/lib/app-preferences";
@@ -33,6 +33,8 @@ export interface WorkspaceController {
   statuses: Record<string, ManagedConversationStatus>;
   activity: Record<string, string | undefined>;
   conversationErrors: Record<string, BackendError | undefined>;
+  /** Conversations whose last reply failed while they were not open; opening one clears it. */
+  failedChats: Record<string, boolean>;
   acknowledging: Record<string, boolean | undefined>;
   approvals: Record<string, ReadonlyArray<ToolApprovalRequest>>;
   toolActivities: Record<string, ReadonlyArray<ToolActivityView>>;
@@ -77,6 +79,21 @@ export function useWorkspaceController(): WorkspaceController {
   const activeTranscript = conversations.windows[activeChatId];
 
   useLayoutEffect(() => applyTheme(preferences.theme), [preferences.theme]);
+
+  // The error last seen in each conversation. A newer one marks the
+  // conversation in the sidebar until it is opened.
+  const [seenErrors, setSeenErrors] = useState<Record<string, BackendError | undefined>>({});
+  const { conversationErrors } = conversations;
+  const activeError = conversationErrors[activeChatId];
+  useEffect(() => {
+    if (activeError && seenErrors[activeChatId] !== activeError) {
+      setSeenErrors((current) => ({ ...current, [activeChatId]: activeError }));
+    }
+  }, [activeChatId, activeError, seenErrors]);
+  const failedChats = useMemo(
+    () => unseenFailures(conversationErrors, seenErrors, activeChatId),
+    [activeChatId, conversationErrors, seenErrors],
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -245,6 +262,7 @@ export function useWorkspaceController(): WorkspaceController {
     statuses: conversations.statuses,
     activity: conversations.activity,
     conversationErrors: conversations.conversationErrors,
+    failedChats,
     acknowledging: conversations.acknowledging,
     approvals: conversations.approvals,
     toolActivities: conversations.toolActivities,

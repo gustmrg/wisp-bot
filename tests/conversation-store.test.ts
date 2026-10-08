@@ -14,6 +14,7 @@ import {
 import type { ConversationRecord, WispRecord } from "../backend/workspace-actions.js";
 import type { Message } from "../shared/conversations.js";
 import { messageSearchText } from "../shared/message-search.js";
+import { DEFAULT_WISP_APPEARANCE } from "../shared/wisp-appearance.js";
 
 async function databasePath(): Promise<string> {
   return path.join(await mkdtemp(path.join(os.tmpdir(), "wisp-store-")), "conversations.sqlite");
@@ -39,7 +40,7 @@ function record(id: string, messages: Message[] = []): ConversationRecord {
 
 function wispRecord(id: string): WispRecord {
   return {
-    wisp: { id, name: id, role: "", soul: "", shape: "circle" },
+    wisp: { id, name: id, role: "", soul: "", appearance: DEFAULT_WISP_APPEARANCE },
     storageId: `${id}-settings`,
     modelOverride: null,
     createdAt: "2026-09-01T00:00:00.000Z",
@@ -251,11 +252,53 @@ describe("ConversationStore versions", () => {
     db.close();
   });
 
+  it("gives Wisps stored with a shape by earlier layout 5 builds an appearance", async () => {
+    const file = await databasePath();
+    const store = ConversationStore.open(file);
+    store.transaction(() => {
+      store.putWisp(wispRecord("one"));
+      store.putWisp(wispRecord("two"));
+      store.putConversation(record("one"));
+    });
+    store.close();
+    // Recreate the layout those builds wrote: one shape column instead of the appearance columns.
+    const db = new DatabaseSync(file);
+    db.exec(`
+      ALTER TABLE wisps ADD COLUMN shape TEXT NOT NULL DEFAULT 'circle';
+      ${["body", "trail", "tone", "eyes", "eye_ink", "finish", "mark"].map((column) => `ALTER TABLE wisps DROP COLUMN ${column};`).join("\n")}
+      UPDATE wisps SET shape = 'hexagon' WHERE id = 'two';
+    `);
+    db.close();
+
+    const upgraded = ConversationStore.open(file);
+    const { wisps } = upgraded.read();
+    const legacy = { trail: "none", tone: "vivid", eyes: "oval", eyeInk: "auto", finish: "solid", mark: "none" };
+    expect(wisps.one).toMatchObject({ wisp: { appearance: { body: "round", ...legacy } } });
+    expect(wisps.two).toMatchObject({ wisp: { appearance: { body: "crystal", ...legacy } } });
+    upgraded.transaction(() => upgraded.putWisp({ ...wispRecord("three") }));
+    upgraded.close();
+    const columns = new DatabaseSync(file, { readOnly: true });
+    expect(
+      columns
+        .prepare("SELECT name FROM pragma_table_info('wisps')")
+        .all()
+        .map(({ name }) => name),
+    ).not.toContain("shape");
+    columns.close();
+  });
+
   it("stores Wisps and conversations as columns, related by foreign keys", async () => {
     const store = ConversationStore.open(await databasePath());
     const one: WispRecord = {
       ...wispRecord("one"),
-      wisp: { id: "one", name: "One", role: "Research", soul: "# Soul", shape: "circle", color: "#123456" },
+      wisp: {
+        id: "one",
+        name: "One",
+        role: "Research",
+        soul: "# Soul",
+        appearance: DEFAULT_WISP_APPEARANCE,
+        color: "#123456",
+      },
       modelOverride: { providerId: "anthropic", modelId: "claude-sonnet-5", maxOutputTokens: 4096 },
     };
     const records = {

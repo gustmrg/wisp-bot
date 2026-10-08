@@ -16,6 +16,7 @@ import type { BackendResult } from "../../shared/contracts.js";
 import type { Chat, Wisp } from "../../shared/conversations.js";
 import { decodeRemoteJson, encodeRemoteJson } from "../../shared/remote-codec.js";
 import type { DeviceCredentials, ServerDescriptor } from "../../shared/remote-protocol.js";
+import { DEFAULT_WISP_APPEARANCE } from "../../shared/wisp-appearance.js";
 
 const silent = new StructuredLogger({ info: () => undefined, warn: () => undefined });
 const directories: string[] = [];
@@ -28,7 +29,7 @@ afterEach(async () => {
   await Promise.all(directories.splice(0).map((directory) => rm(directory, { recursive: true, force: true })));
 });
 
-const atlas: Wisp = { id: "atlas", name: "Atlas", role: "Research", soul: "", shape: "circle" };
+const atlas: Wisp = { id: "atlas", name: "Atlas", role: "Research", soul: "", appearance: DEFAULT_WISP_APPEARANCE };
 
 interface Harness {
   server: WispServer;

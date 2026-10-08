@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
-import { PanelLeftCloseIcon, PlusIcon, SearchIcon, ShieldAlertIcon, UserIcon } from "lucide-react";
+import { PanelLeftCloseIcon, PlusIcon, SearchIcon, UserIcon } from "lucide-react";
 
 import type { ChatId, ChatViewCollection, NewWisp } from "@/chat-data";
 import { ChatAvatar } from "@/components/chat-avatar";
@@ -27,6 +27,8 @@ interface SidebarProps {
   hidden?: boolean;
   statuses?: Record<string, ManagedConversationStatus>;
   approvals?: Record<string, ReadonlyArray<ToolApprovalRequest>>;
+  /** Conversations whose last reply failed while they were not open. */
+  failedChats?: Record<string, boolean>;
   loading?: boolean;
   error?: string | null;
   onCollapsedChange: (collapsed: boolean) => void;
@@ -43,8 +45,10 @@ interface SidebarProps {
 // Product notification color intentionally remains explicit rather than a neutral surface token.
 const unreadIndicator =
   "unread-dot absolute -top-1 -right-1 size-[10px] rounded-full border-2 border-sidebar bg-[#ff3b30]";
-const approvalIndicator =
-  "approval-indicator absolute -right-1 -bottom-1 flex size-[15px] items-center justify-center rounded-full border-2 border-sidebar bg-warning-solid text-white [&_svg]:size-[8px]";
+// Waiting for approval and a failed reply share a dot in the bottom corner; only the color differs.
+const stateIndicator = "absolute -right-1 -bottom-1 size-[10px] rounded-full border-2 border-sidebar";
+const approvalIndicator = cn("approval-indicator", stateIndicator, "bg-[#f0a83a]");
+const errorIndicator = cn("error-indicator", stateIndicator, "bg-[#e5594d]");
 
 function Sidebar({
   activeChatId,
@@ -56,6 +60,7 @@ function Sidebar({
   hidden = false,
   statuses = {},
   approvals = {},
+  failedChats = {},
   loading = false,
   error,
   onCollapsedChange,
@@ -173,8 +178,10 @@ function Sidebar({
             if (!chat) return null;
             const selected = chatId === activeChatId;
             const pendingApproval = Boolean(approvals[chatId]?.length);
+            const failed = !pendingApproval && Boolean(failedChats[chatId]);
             const working = statuses[chatId] === "working";
             const activityDate = chatActivityDate(chat);
+            const attention = pendingApproval ? "waiting for your approval" : failed ? "the last reply failed" : null;
 
             return (
               <button
@@ -185,31 +192,19 @@ function Sidebar({
                 data-selected={selected}
                 type="button"
                 aria-current={selected ? "page" : undefined}
-                aria-label={
-                  collapsed
-                    ? pendingApproval
-                      ? `${chatName(chat)}, waiting for your approval`
-                      : chatName(chat)
-                    : undefined
-                }
-                title={
-                  collapsed
-                    ? pendingApproval
-                      ? `${chatName(chat)} — waiting for your approval`
-                      : chatName(chat)
-                    : undefined
-                }
+                aria-label={collapsed ? (attention ? `${chatName(chat)}, ${attention}` : chatName(chat)) : undefined}
+                title={collapsed ? (attention ? `${chatName(chat)} — ${attention}` : chatName(chat)) : undefined}
                 key={chatId}
                 onClick={() => onSelectChat(chatId)}
               >
                 <span className="conversation-avatar relative inline-flex flex-none">
-                  <ChatAvatar chat={chat} />
+                  <ChatAvatar
+                    chat={chat}
+                    state={pendingApproval ? "approval" : failed ? "error" : working ? "working" : "idle"}
+                  />
                   {chat.unread ? <span className={unreadIndicator} aria-label="Unread activity" /> : null}
-                  {pendingApproval ? (
-                    <span className={approvalIndicator} aria-hidden="true">
-                      <ShieldAlertIcon strokeWidth={3} />
-                    </span>
-                  ) : null}
+                  {pendingApproval ? <span className={approvalIndicator} aria-hidden="true" /> : null}
+                  {failed ? <span className={errorIndicator} aria-hidden="true" /> : null}
                 </span>
                 {collapsed ? null : (
                   <span className="flex min-w-0 flex-1 flex-col">
@@ -230,10 +225,19 @@ function Sidebar({
                       className={cn(
                         "conversation-preview mt-px overflow-hidden text-faint text-sm leading-[17px] text-ellipsis whitespace-nowrap",
                         pendingApproval && "font-medium text-warning",
+                        failed && "text-destructive",
                       )}
-                      data-activity={pendingApproval ? "approval" : mobile && working ? "working" : undefined}
+                      data-activity={
+                        pendingApproval ? "approval" : failed ? "failed" : mobile && working ? "working" : undefined
+                      }
                     >
-                      {pendingApproval ? "Waiting for your approval" : mobile && working ? "Working…" : chat.preview}
+                      {pendingApproval
+                        ? "Waiting for your approval"
+                        : failed
+                          ? "The last reply failed"
+                          : mobile && working
+                            ? "Working…"
+                            : chat.preview}
                     </span>
                   </span>
                 )}
