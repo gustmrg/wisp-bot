@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { bootstrapConversationState, LEGACY_STORAGE_KEY } from "../src/hooks/use-conversations.js";
+import type { ConnectionsView } from "../shared/connections.js";
 import type { ConversationStateView } from "../shared/conversations.js";
 
 const emptyState: ConversationStateView = {
@@ -12,6 +13,18 @@ const emptyState: ConversationStateView = {
   recoveredCorruptState: false,
 };
 
+function connections(activeId: string): () => Promise<{ ok: true; value: ConnectionsView }> {
+  return async () => ({
+    ok: true,
+    value: {
+      activeId,
+      profiles: [],
+      status: { profileId: activeId, phase: activeId === "local" ? "local" : "connected", epoch: 1 },
+      secureStorageAvailable: true,
+    },
+  });
+}
+
 describe("conversation migration", () => {
   it("initializes a new installation without demo conversations", async () => {
     const initializeConversations = vi.fn(async () => ({
@@ -22,6 +35,7 @@ describe("conversation migration", () => {
     await bootstrapConversationState(
       {
         getConversationState: async () => ({ ok: true, value: emptyState }),
+        getConnections: connections("local"),
         initializeConversations,
       },
       { getItem: () => null, removeItem: vi.fn() },
@@ -61,6 +75,7 @@ describe("conversation migration", () => {
     await bootstrapConversationState(
       {
         getConversationState: async () => ({ ok: true, value: emptyState }),
+        getConnections: connections("local"),
         initializeConversations,
       },
       storage,
@@ -80,6 +95,7 @@ describe("conversation migration", () => {
       bootstrapConversationState(
         {
           getConversationState: async () => ({ ok: true, value: emptyState }),
+          getConnections: connections("local"),
           initializeConversations: async () => ({
             ok: false,
             error: { code: "internal_error", message: "Write failed", retryable: false },
@@ -89,6 +105,28 @@ describe("conversation migration", () => {
       ),
     ).rejects.toThrow("Write failed");
 
+    expect(removeItem).not.toHaveBeenCalled();
+  });
+
+  it("leaves the legacy renderer state out of a server's first run", async () => {
+    const removeItem = vi.fn();
+    const getItem = vi.fn(() => JSON.stringify({ chats: { imported: { id: "imported" } } }));
+    const initializeConversations = vi.fn(async () => ({
+      ok: true as const,
+      value: { ...emptyState, initialized: true },
+    }));
+
+    await bootstrapConversationState(
+      {
+        getConversationState: async () => ({ ok: true, value: emptyState }),
+        getConnections: connections("server"),
+        initializeConversations,
+      },
+      { getItem, removeItem },
+    );
+
+    expect(initializeConversations).toHaveBeenCalledWith({ chats: {} });
+    expect(getItem).not.toHaveBeenCalled();
     expect(removeItem).not.toHaveBeenCalled();
   });
 });

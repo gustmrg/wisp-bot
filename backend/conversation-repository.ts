@@ -312,6 +312,8 @@ export class ConversationRepository {
       const timestamp = this.now().toISOString();
       const next: PersistedConversationState = { ...emptyState(), initialized: true };
       for (const [key, value] of Object.entries(raw)) {
+        // Early versions kept their bundled demo conversations in local storage too.
+        if (REMOVED_DEMO_CONVERSATION_IDS.has(key)) continue;
         const { chat, wisp } = splitLegacyChat(value);
         if (chat.id !== normalizeConversationId(key)) {
           throw new WispBackendError("invalid_request", "The conversation data is invalid.");

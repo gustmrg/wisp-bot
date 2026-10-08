@@ -283,6 +283,44 @@ describe("App", () => {
     expect(api.initializeConversations).toHaveBeenCalledWith({ chats: {} });
   });
 
+  it("starts a server empty and leaves this computer's legacy conversations in local storage", async () => {
+    const legacy = JSON.stringify({
+      chats: { atlas: { ...atlas, kind: "wisp", name: "Atlas", label: "", description: "", shape: "circle" } },
+    });
+    window.localStorage.setItem(LEGACY_STORAGE_KEY, legacy);
+    const api: WispApi = {
+      ...createApi(conversationState(false)),
+      getConnections: async () => ({
+        ok: true as const,
+        value: {
+          ...localConnections,
+          activeId: "server",
+          profiles: [{ id: "server", kind: "url", name: "Server", url: "https://wisp.example.ts.net", paired: true }],
+          status: { profileId: "server", phase: "connected", epoch: 1 },
+        },
+      }),
+    };
+    exposeApi(api);
+
+    render(<App />);
+
+    expect(await screen.findByText("Create a Wisp to get started.")).toBeVisible();
+    expect(api.initializeConversations).toHaveBeenCalledWith({ chats: {} });
+    expect(window.localStorage.getItem(LEGACY_STORAGE_KEY)).toBe(legacy);
+  });
+
+  it("clears legacy conversations once this computer's backend is initialized", async () => {
+    window.localStorage.setItem(LEGACY_STORAGE_KEY, JSON.stringify({ chats: {} }));
+    const api = createApi(conversationState(true, { atlas }));
+    exposeApi(api);
+
+    render(<App />);
+
+    expect(await screen.findByRole("textbox", { name: "Message Atlas" })).toBeVisible();
+    expect(api.initializeConversations).not.toHaveBeenCalled();
+    expect(window.localStorage.getItem(LEGACY_STORAGE_KEY)).toBeNull();
+  });
+
   it("retains legacy conversations when backend initialization fails", async () => {
     const legacy = JSON.stringify({
       chats: { atlas: { ...atlas, kind: "wisp", name: "Atlas", label: "", description: "", shape: "circle" } },
