@@ -2,6 +2,7 @@ import { useState } from "react";
 import { CalendarClockIcon, CheckIcon, CircleAlertIcon, CircleStopIcon, CopyIcon } from "lucide-react";
 
 import type { Message } from "@/chat-data";
+import { useTimeZone } from "@/hooks/use-time-zone";
 import { copyText } from "@/lib/clipboard";
 import { cn } from "@/lib/utils";
 import { MarkdownView } from "@/components/markdown-view";
@@ -26,8 +27,9 @@ function MessageTools({
   outgoing: boolean;
 }) {
   const [copied, setCopied] = useState(false);
+  const timeZone = useTimeZone();
   const time = createdAt
-    ? new Date(createdAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })
+    ? new Date(createdAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit", timeZone })
     : legacyTime;
   if (!time && !text) return null;
 
@@ -216,7 +218,9 @@ function MessageView({ message, dense = false, onAnswer, onRetry }: MessageViewP
 
 /** Marks a message the backend sent from a scheduled message rather than one typed then. */
 function ScheduledBadge({ scheduledAt }: { scheduledAt: string }) {
+  const timeZone = useTimeZone();
   const when = new Date(scheduledAt).toLocaleString([], {
+    timeZone,
     month: "short",
     day: "numeric",
     hour: "numeric",

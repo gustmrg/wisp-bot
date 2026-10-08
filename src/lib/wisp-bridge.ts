@@ -58,6 +58,7 @@ const REQUIRED_WISP_METHODS = [
   "getUsageReport",
   "getUserProfile",
   "saveUserProfile",
+  "setUserTimeZone",
   "getToolPolicy",
   "saveToolPolicy",
   "resolveToolApproval",

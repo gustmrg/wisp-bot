@@ -2,7 +2,6 @@ import { useCallback, useEffect, useState } from "react";
 
 import type { BackendResult } from "../../shared/contracts";
 import type { ScheduledMessage, ScheduledMessagesView } from "../../shared/scheduled-messages";
-import { localTimeZone } from "@/lib/scheduled-time";
 
 export interface ScheduledMessagesController {
   /** False until the backend answers, and when it cannot schedule messages (an older server). */
@@ -16,8 +15,8 @@ export interface ScheduledMessagesController {
   sendNow: (scheduledMessageId: string) => Promise<string | null>;
 }
 
-/** The backend's scheduled messages, kept current by its change events. */
-export function useScheduledMessages(): ScheduledMessagesController {
+/** The backend's scheduled messages, kept current by its change events; new times follow `timeZone`. */
+export function useScheduledMessages(timeZone: string): ScheduledMessagesController {
   const [available, setAvailable] = useState(false);
   const [messages, setMessages] = useState<ReadonlyArray<ScheduledMessage>>([]);
 
@@ -61,10 +60,10 @@ export function useScheduledMessages(): ScheduledMessagesController {
           conversationId,
           text,
           schedule: { kind: "once", at: at.toISOString() },
-          timeZone: localTimeZone(),
+          timeZone,
         }),
       ),
-    [run],
+    [run, timeZone],
   );
   const update = useCallback(
     (scheduledMessageId: string, changes: { text?: string; at?: Date }) =>
@@ -72,12 +71,10 @@ export function useScheduledMessages(): ScheduledMessagesController {
         window.wisp.updateScheduledMessage({
           scheduledMessageId,
           ...(changes.text === undefined ? {} : { text: changes.text }),
-          ...(changes.at
-            ? { schedule: { kind: "once", at: changes.at.toISOString() }, timeZone: localTimeZone() }
-            : {}),
+          ...(changes.at ? { schedule: { kind: "once", at: changes.at.toISOString() }, timeZone } : {}),
         }),
       ),
-    [run],
+    [run, timeZone],
   );
   const cancel = useCallback(
     (scheduledMessageId: string) => run(() => window.wisp.cancelScheduledMessage({ scheduledMessageId })),

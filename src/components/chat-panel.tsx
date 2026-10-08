@@ -16,6 +16,7 @@ import { MessageView } from "@/components/message-view";
 import { PendingMessagesBar } from "@/components/pending-messages-bar";
 import type { MessageQueueController } from "@/hooks/use-message-queue";
 import type { ScheduledMessagesController } from "@/hooks/use-scheduled-messages";
+import { useTimeZone } from "@/hooks/use-time-zone";
 import { ToolApprovalCard } from "@/components/tool-approval-card";
 
 const NO_MESSAGES: ReadonlyArray<Message> = [];
@@ -111,7 +112,8 @@ function ChatPanel({
   const members = chat.kind === "circle" ? chat.members : [];
   const name = chatName(chat);
   const messages = transcript?.messages ?? NO_MESSAGES;
-  const transcriptMessages = withDateDividers(messages);
+  const timeZone = useTimeZone();
+  const transcriptMessages = withDateDividers(messages, new Date(), timeZone);
   const working = status === "working";
   const attached = !transcript || isAttached(transcript);
   const targetMessageId = transcript?.targetMessageId;

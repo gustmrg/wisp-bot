@@ -1,3 +1,5 @@
+import { systemTimeZone, zonedParts, zonedTime } from "./time-zone.js";
+
 export interface ContextPolicy {
   mode: "idle" | "daily" | "both" | "none";
   idleHours: number;
@@ -55,14 +57,17 @@ export function shouldRenewContext(
   lastActivity: string | null,
   tokens: number,
   now: Date,
+  timeZone: string = systemTimeZone(),
 ): boolean {
   if (!lastActivity || tokens < policy.minimumTokens || policy.mode === "none") return false;
   const last = Date.parse(lastActivity);
   if (!Number.isFinite(last) || last >= now.getTime()) return false;
   const idle = now.getTime() - last >= policy.idleHours * 3600000;
-  const boundary = new Date(now);
-  boundary.setHours(policy.dailyHour, 0, 0, 0);
-  if (boundary > now) boundary.setDate(boundary.getDate() - 1);
+  // The most recent time the clock showed `dailyHour` in the user's time zone.
+  const today = zonedParts(now, timeZone);
+  let boundary = zonedTime({ ...today, hour: policy.dailyHour, minute: 0 }, timeZone);
+  if (boundary > now)
+    boundary = zonedTime({ ...today, day: today.day - 1, hour: policy.dailyHour, minute: 0 }, timeZone);
   const daily = last < boundary.getTime();
   return policy.mode === "idle" ? idle : policy.mode === "daily" ? daily : idle || daily;
 }

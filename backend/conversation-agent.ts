@@ -35,6 +35,8 @@ export interface ConversationAgentContext {
   soul: string;
   userName?: string;
   userProfile?: import("../shared/user-profile.js").UserProfile;
+  /** The person's current time zone, read on every message; without it the Wisp is not told the time. */
+  userTimeZone?: () => string;
   modelOverride?: ModelSelection | null;
   /** The conversation's workspace. */
   workspaceDirectory: string;

@@ -452,3 +452,32 @@ it("tells the model when a message was scheduled, without changing what the user
     vi.useRealTimers();
   }
 });
+
+it("tells the model the user's local time before each message they send", async () => {
+  vi.useFakeTimers({ toFake: ["Date"], now: new Date("2026-10-07T12:00:00.000Z") });
+  try {
+    const sessions = new Map<string, MockPiSession>();
+    let timeZone = "America/Sao_Paulo";
+    const agent = new PiConversationAgent({ ...context("one"), userTimeZone: () => timeZone }, factoryFor(sessions), {
+      flushDelayMs: 0,
+    });
+    await agent.start();
+    await agent.applyModel(selection());
+    const first = agent.send({ conversationId: "one", requestId: "r1", text: "What day is it?" });
+    await vi.waitFor(() => expect(sessions.get("one")?.prompts).toHaveLength(1));
+    sessions.get("one")?.finishPrompt();
+    await first;
+    timeZone = "Asia/Tokyo";
+    const second = agent.send({ conversationId: "one", requestId: "r2", text: "And now?" });
+    await vi.waitFor(() => expect(sessions.get("one")?.prompts).toHaveLength(2));
+    sessions.get("one")?.finishPrompt();
+    await second;
+
+    expect(sessions.get("one")?.prompts).toEqual([
+      "[Sent on Wed, Oct 7, 2026, 9:00 AM (America/Sao_Paulo)]\n\nWhat day is it?",
+      "[Sent on Wed, Oct 7, 2026, 9:00 PM (Asia/Tokyo)]\n\nAnd now?",
+    ]);
+  } finally {
+    vi.useRealTimers();
+  }
+});

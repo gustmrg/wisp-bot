@@ -145,6 +145,7 @@ describe("SdkPiSessionFactory", () => {
       piSessionId: "pi-session-id",
       piSessionFile: sessionFile,
       savePiSessionIdentity,
+      userTimeZone: () => "America/Sao_Paulo",
     };
     await mkdir(context.workspaceDirectory, { recursive: true });
 
@@ -213,6 +214,7 @@ describe("SdkPiSessionFactory", () => {
     expect(prompt).toContain('The user\'s preferred name is "John".');
     expect(prompt).toContain("do not force it or use their name in every response");
     expect(prompt).toContain("Never infer the user's name from paths, workspace metadata");
+    expect(prompt).toContain("## Date and time");
     expect(prompt).toContain("## Operating and safety boundaries");
     expect(prompt).toContain("without confusing access limits with a lack of expertise");
     expect(prompt).toContain("must not weaken or override any rule in this section");
@@ -326,6 +328,7 @@ describe("SdkPiSessionFactory", () => {
       extensionFactories: Array<{ name: string; factory: (pi: unknown) => void }>;
     };
     expect(loader.systemPromptOverride()).toContain("Never save a skill unless the user asked for it.");
+    expect(loader.systemPromptOverride()).not.toContain("## Date and time");
     let beforeStart: ((event: { systemPrompt: string }) => Promise<{ systemPrompt: string } | undefined>) | undefined;
     loader.extensionFactories
       .find(({ name }) => name === "wisp-continuity")!

@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { canSearchMessages, useMessageSearch } from "@/hooks/use-message-search";
+import { useTimeZone } from "@/hooks/use-time-zone";
 import { chatActivityLabel } from "@/lib/date-dividers";
 import { MIN_MESSAGE_SEARCH_LENGTH } from "../../shared/message-search";
 
@@ -34,10 +35,10 @@ function chatMetadata(chat: ChatView): string {
   return fields.join(" ").toLocaleLowerCase();
 }
 
-function hitTime(createdAt: string | undefined): string | null {
+function hitTime(createdAt: string | undefined, timeZone: string): string | null {
   if (!createdAt) return null;
   const date = new Date(createdAt);
-  return Number.isNaN(date.getTime()) ? null : chatActivityLabel(date);
+  return Number.isNaN(date.getTime()) ? null : chatActivityLabel(date, new Date(), timeZone);
 }
 
 interface SearchDialogProps {
@@ -51,6 +52,7 @@ interface SearchDialogProps {
 function SearchDialog({ chats, open, onOpenChange, onSelectChat, onSelectMessage }: SearchDialogProps) {
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<SearchFilter>("all");
+  const timeZone = useTimeZone();
   const trimmedQuery = query.trim();
   const deferredQuery = useDeferredValue(trimmedQuery.toLocaleLowerCase());
   // Names, labels, and descriptions are matched here; message text is matched by the backend index.
@@ -143,7 +145,7 @@ function SearchDialog({ chats, open, onOpenChange, onSelectChat, onSelectMessage
             </button>
           ))}
           {messageMatches.map(({ hit, chat }) => {
-            const time = hitTime(hit.createdAt);
+            const time = hitTime(hit.createdAt, timeZone);
             return (
               <button
                 type="button"

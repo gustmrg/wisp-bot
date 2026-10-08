@@ -82,6 +82,12 @@ export class ConversationService {
     return profile;
   }
 
+  /** Wisps read the time zone on every message, so a change needs no context refresh. */
+  async saveUserTimeZone(timeZone: string): Promise<Record<string, never>> {
+    await this.repository.saveUserTimeZone(timeZone);
+    return {};
+  }
+
   getState(): ConversationStateView {
     return {
       initialized: this.repository.isInitialized(),
