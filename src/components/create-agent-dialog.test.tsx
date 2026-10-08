@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import type { AiSettingsView } from "../../shared/contracts";
 import { CreateAgentDialog } from "@/components/create-agent-dialog";
+import { serializeWispTemplate } from "@/lib/wisp-template";
 
 const providers: AiSettingsView["providers"] = ["a", "b"].map((id) => ({
   id: `provider-${id}`,
@@ -147,5 +148,73 @@ describe("CreateAgentDialog persistence", () => {
         model: null,
       }),
     );
+  });
+});
+
+describe("CreateAgentDialog template import", () => {
+  const wisp = { name: "Atlas", role: "Research", soul: "Careful researcher" };
+
+  async function importTemplate(text: string, onCreate = vi.fn().mockResolvedValue(true)) {
+    const user = userEvent.setup();
+    render(<CreateAgentDialog onCreate={onCreate} />);
+    await user.click(screen.getByRole("button", { name: "Create Wisp" }));
+    await user.click(screen.getByRole("button", { name: "Import template" }));
+    await user.click(screen.getByRole("textbox", { name: "Template" }));
+    await user.paste(text);
+    await waitFor(() => expect(screen.getByRole("button", { name: "Apply template" })).toBeEnabled());
+    await user.click(screen.getByRole("button", { name: "Apply template" }));
+    return { user, onCreate };
+  }
+
+  it("fills the form and selects the template's model for review", async () => {
+    mockAiSettings();
+    const { user, onCreate } = await importTemplate(
+      serializeWispTemplate(wisp, { providerId: "provider-a", modelId: "model-a", maxOutputTokens: 512 }),
+    );
+    expect(screen.getByText(/Template applied/)).toBeVisible();
+    expect(screen.getByRole("textbox", { name: "Name" })).toHaveValue("Atlas");
+    await user.click(screen.getByRole("button", { name: "Next" }));
+    expect(screen.getByRole("textbox", { name: "Soul" })).toHaveValue("Careful researcher");
+    expect(screen.getByRole("spinbutton", { name: "Maximum output tokens" })).toHaveValue(512);
+    await user.click(screen.getByRole("button", { name: "Create Wisp" }));
+    await waitFor(() =>
+      expect(onCreate).toHaveBeenCalledWith(expect.objectContaining(wisp), {
+        notifyOnUpdatesEnabled: true,
+        model: { providerId: "provider-a", modelId: "model-a", maxOutputTokens: 512 },
+      }),
+    );
+  });
+
+  it("asks for a key when the template's provider has none saved", async () => {
+    mockAiSettings();
+    const { user } = await importTemplate(
+      serializeWispTemplate(wisp, { providerId: "provider-b", modelId: "model-b" }),
+    );
+    await user.click(screen.getByRole("button", { name: "Next" }));
+    expect(await screen.findByText(/No API key saved for Provider b/)).toBeVisible();
+    expect(screen.getByRole("button", { name: "Create Wisp" })).toBeDisabled();
+  });
+
+  it("falls back to the global model when the template's model is unavailable", async () => {
+    mockAiSettings();
+    const { user, onCreate } = await importTemplate(
+      serializeWispTemplate(wisp, { providerId: "provider-z", modelId: "model-z", maxOutputTokens: 512 }),
+    );
+    await user.click(screen.getByRole("button", { name: "Next" }));
+    expect(screen.getByText(/uses model-z from provider-z, which isn't available here/)).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "Create Wisp" }));
+    await waitFor(() =>
+      expect(onCreate).toHaveBeenCalledWith(expect.objectContaining(wisp), {
+        notifyOnUpdatesEnabled: true,
+        model: null,
+      }),
+    );
+  });
+
+  it("rejects text that is not a template and keeps the form unchanged", async () => {
+    mockAiSettings();
+    await importTemplate("wisp://template/atlas");
+    expect(screen.getByRole("alert")).toHaveTextContent("not a valid Wisp template");
+    expect(screen.getByRole("textbox", { name: "Name" })).toHaveValue("");
   });
 });

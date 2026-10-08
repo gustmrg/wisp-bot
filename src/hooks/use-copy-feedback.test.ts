@@ -81,7 +81,7 @@ describe("useCopyFeedback", () => {
 
     expect(result.current).toMatchObject({
       status: "error",
-      message: "Could not copy template link",
+      message: "Could not copy template",
     });
   });
 

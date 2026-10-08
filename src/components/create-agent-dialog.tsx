@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { FormEvent, ReactElement } from "react";
-import { PlusIcon } from "lucide-react";
+import { ClipboardPasteIcon, PlusIcon } from "lucide-react";
 
 import type { AiSettingsView, ModelSelection } from "../../shared/contracts";
 import { DEFAULT_WISP_APPEARANCE } from "../../shared/wisp-appearance";
@@ -10,6 +10,7 @@ import {
   createDefaultWispModelDraft,
   isWispModelDraftInvalid,
   resolveWispModelSelection,
+  wispModelDraftFromTemplate,
   type WispModelDraft,
 } from "@/components/create-wisp-model-section";
 import { CreateWispForm, type CreateWispStep } from "@/components/create-wisp-form";
@@ -25,7 +26,9 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
+import { Textarea } from "@/components/ui/textarea";
 import { AVATAR_COLORS } from "@/lib/wisp-appearance";
+import { parseWispTemplate } from "@/lib/wisp-template";
 
 interface CreateAgentDialogProps {
   onCreate: (
@@ -53,6 +56,11 @@ function CreateAgentDialog({ onCreate, trigger }: CreateAgentDialogProps) {
   const [modelDraft, setModelDraft] = useState<WispModelDraft>(createDefaultWispModelDraft);
   const [modelView, setModelView] = useState<AiSettingsView | null>(null);
   const [modelLoadError, setModelLoadError] = useState("");
+  const [modelNotice, setModelNotice] = useState("");
+  const [importOpen, setImportOpen] = useState(false);
+  const [templateText, setTemplateText] = useState("");
+  const [importError, setImportError] = useState("");
+  const [imported, setImported] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const { name, soul, color } = settings;
@@ -94,7 +102,32 @@ function CreateAgentDialog({ onCreate, trigger }: CreateAgentDialogProps) {
     setModelDraft(createDefaultWispModelDraft());
     setModelView(null);
     setModelLoadError("");
+    setModelNotice("");
+    closeImport();
+    setImported(false);
     setError("");
+  }
+
+  function closeImport() {
+    setImportOpen(false);
+    setTemplateText("");
+    setImportError("");
+  }
+
+  /** Fills the form from a template; the appearance stays the person's choice. */
+  function applyTemplate() {
+    const result = parseWispTemplate(templateText);
+    if (!result.ok) {
+      setImportError(result.error);
+      return;
+    }
+    const { template } = result;
+    setSettings((current) => ({ ...current, name: template.name, role: template.role, soul: template.soul }));
+    const model = wispModelDraftFromTemplate(template.model, modelView);
+    setModelDraft(model.draft);
+    setModelNotice(model.notice);
+    closeImport();
+    setImported(true);
   }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -169,6 +202,52 @@ function CreateAgentDialog({ onCreate, trigger }: CreateAgentDialogProps) {
         </DialogHeader>
 
         <form className="flex min-h-0 flex-col gap-5" onSubmit={(event) => void handleSubmit(event)}>
+          {step === "identity" && importOpen ? (
+            <div className="flex flex-none flex-col gap-2 px-1">
+              <label htmlFor="create-wisp-template" className="text-sm font-medium">
+                Template
+              </label>
+              <Textarea
+                id="create-wisp-template"
+                rows={5}
+                className="max-h-40 font-mono text-xs"
+                placeholder="Paste a template copied with Share as template"
+                value={templateText}
+                onChange={(event) => {
+                  setTemplateText(event.currentTarget.value);
+                  setImportError("");
+                }}
+              />
+              {importError ? (
+                <p className="text-xs text-destructive" role="alert">
+                  {importError}
+                </p>
+              ) : null}
+              <div className="flex justify-end gap-2">
+                <Button variant="outline" size="sm" type="button" onClick={closeImport}>
+                  Cancel
+                </Button>
+                <Button
+                  size="sm"
+                  type="button"
+                  disabled={!templateText.trim() || (!modelView && !modelLoadError)}
+                  onClick={applyTemplate}
+                >
+                  Apply template
+                </Button>
+              </div>
+            </div>
+          ) : step === "identity" ? (
+            <div className="flex flex-none items-center justify-between gap-3 px-1">
+              <p className="text-xs text-dim" role="status">
+                {imported ? "Template applied. Choose an appearance, then review the soul and model." : ""}
+              </p>
+              <Button variant="ghost" size="sm" type="button" onClick={() => setImportOpen(true)}>
+                <ClipboardPasteIcon />
+                Import template
+              </Button>
+            </div>
+          ) : null}
           <CreateWispForm
             ref={stepRef}
             step={step}
@@ -179,7 +258,11 @@ function CreateAgentDialog({ onCreate, trigger }: CreateAgentDialogProps) {
               view={modelView}
               loadError={modelLoadError}
               draft={modelDraft}
-              onChange={setModelDraft}
+              notice={modelNotice}
+              onChange={(draft) => {
+                setModelDraft(draft);
+                setModelNotice("");
+              }}
             />
           </CreateWispForm>
           {step === "identity" && (modelLoadError || (modelView && modelInvalid)) ? (
