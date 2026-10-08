@@ -372,6 +372,96 @@ describe("tool policy", () => {
     expect(store.get().rules).toEqual([]);
   });
 
+  it("remembers an always-allowed MCP tool through its integration and never over a Block rule", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "wisp-approval-mcp-always-"));
+    const store = new ToolPolicyStore(path.join(directory, "policy.json"));
+    const events: ConversationAgentEvent[] = [];
+    let nextId = 0;
+    const broker = new ToolAuthorizationBroker(store, (event) => events.push(event), {
+      createId: () => `id-${++nextId}`,
+      selectWindowId: () => 1,
+    });
+    const rememberApproval = vi.fn(async () => undefined);
+    const call = {
+      conversationId: "one",
+      toolCallId: "tool-mcp",
+      toolName: "mcp_test_search",
+      category: "integration_call" as const,
+      scope: { kind: "integration" as const, value: "Docs" },
+      summary: "search — query: wisp",
+    };
+
+    const asked = broker.authorize({ ...call, rememberApproval });
+    expect(events[0]).toMatchObject({ type: "tool_approval_requested", request: { alwaysAllowTool: true } });
+    await broker.resolve(
+      { approvalId: "id-1", conversationId: "one", toolCallId: "tool-mcp", decision: "allow_always" },
+      1,
+    );
+    await expect(asked).resolves.toBeUndefined();
+    expect(rememberApproval).toHaveBeenCalledTimes(1);
+    // The decision belongs to the integration: no policy rule is written.
+    expect(store.get().rules).toEqual([]);
+
+    // A remembered tool runs without a card.
+    events.length = 0;
+    await expect(broker.authorize({ ...call, alwaysAllowed: true })).resolves.toBeUndefined();
+    expect(events).toEqual([]);
+
+    // A Block rule still wins over a remembered tool.
+    await store.blockCategory("integration_call", () => "rule-1");
+    await expect(broker.authorize({ ...call, alwaysAllowed: true })).rejects.toMatchObject({ code: "tool_blocked" });
+
+    // Other categories cannot use the integration's remembered approval.
+    await store.save({ autoReview: true, rules: [] });
+    events.length = 0;
+    const write = broker.authorize({
+      ...call,
+      toolCallId: "tool-write",
+      category: "external_write",
+      alwaysAllowed: true,
+      rememberApproval,
+    });
+    expect(events[0]).toMatchObject({ type: "tool_approval_requested" });
+    expect((events[0] as { request: { alwaysAllowTool?: boolean } }).request.alwaysAllowTool).toBeUndefined();
+    const writeId = (events[0] as { request: { approvalId: string } }).request.approvalId;
+    await expect(
+      broker.resolve(
+        { approvalId: writeId, conversationId: "one", toolCallId: "tool-write", decision: "allow_always" },
+        1,
+      ),
+    ).rejects.toMatchObject({ code: "invalid_request" });
+    await broker.resolve({ approvalId: writeId, conversationId: "one", toolCallId: "tool-write", decision: "deny" }, 1);
+    await expect(write).rejects.toMatchObject({ code: "tool_blocked" });
+    expect(rememberApproval).toHaveBeenCalledTimes(1);
+  });
+
+  it("allows the call even when the integration cannot remember it", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "wisp-approval-mcp-always-failed-"));
+    const store = new ToolPolicyStore(path.join(directory, "policy.json"));
+    const broker = new ToolAuthorizationBroker(store, () => undefined, {
+      createId: () => "id-1",
+      selectWindowId: () => 1,
+    });
+    const asked = broker.authorize({
+      conversationId: "one",
+      toolCallId: "tool-mcp",
+      toolName: "mcp_test_search",
+      category: "integration_call",
+      scope: { kind: "integration", value: "Docs" },
+      summary: "search",
+      rememberApproval: async () => {
+        throw new Error("changed");
+      },
+    });
+    await expect(
+      broker.resolve(
+        { approvalId: "id-1", conversationId: "one", toolCallId: "tool-mcp", decision: "allow_always" },
+        1,
+      ),
+    ).rejects.toThrow("changed");
+    await expect(asked).resolves.toBeUndefined();
+  });
+
   it("stores a blocked MCP tool call as an integration rule", async () => {
     const directory = await mkdtemp(path.join(os.tmpdir(), "wisp-approval-mcp-block-"));
     const store = new ToolPolicyStore(path.join(directory, "policy.json"));

@@ -34,6 +34,37 @@ describe("ToolApprovalCard", () => {
     expect(onResolve).toHaveBeenCalledWith("deny");
   });
 
+  it("offers to always allow an MCP tool for this Wisp only when the request allows it", async () => {
+    const user = userEvent.setup();
+    const onResolve = vi.fn();
+    const request = {
+      approvalId: "approval-4",
+      conversationId: "atlas",
+      toolCallId: "tool-4",
+      toolName: "mcp_docs_search",
+      category: "integration_call" as const,
+      scope: { kind: "integration" as const, display: "Docs" },
+      summary: "search — query: wisp",
+      expiresAt: "2026-09-07T12:01:00.000Z",
+    };
+    const { rerender } = render(
+      <ToolApprovalCard request={request} wispName="Atlas" allowAlwaysAvailable={false} onResolve={onResolve} />,
+    );
+    expect(screen.queryByRole("button", { name: /Always allow/ })).not.toBeInTheDocument();
+
+    rerender(
+      <ToolApprovalCard
+        request={{ ...request, alwaysAllowTool: true }}
+        wispName="Atlas"
+        allowAlwaysAvailable={false}
+        onResolve={onResolve}
+      />,
+    );
+    expect(screen.getByText(/Always allow applies to Atlas only and asks again if the tool changes/)).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "Always allow this tool" }));
+    expect(onResolve).toHaveBeenCalledWith("allow_always");
+  });
+
   it("shows the exact skill instructions and offers only allow once or deny", async () => {
     const user = userEvent.setup();
     const onResolve = vi.fn();

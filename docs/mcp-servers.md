@@ -49,6 +49,15 @@ untrusted, so policy rules may block these calls but never auto-allow them.
 Approvals identify the Wisp, connection, tool, and a bounded argument preview
 with secret-like keys redacted.
 
+An approval card also offers **Always allow this tool**. It applies to that one
+tool, for that one Wisp, and to the definition (name, description, and input
+schema) the card was shown for: when the server changes the tool, it asks
+again. Removing the Wisp's access, changing the connection's endpoint,
+mechanism, or credential, and removing the server drop the permission too. A
+**Block all integration calls** rule still wins. The Wisp's **Access** tab
+lists always-allowed tools under each server; removing one there makes the
+tool ask again. Forms can only remove always-allowed tools, never add them.
+
 Tools get deterministic aliases derived from the immutable server ID plus the
 original tool name, so server-side renames preserve identity and two servers
 cannot shadow each other, the built-in tools, or bundled plugin tools.

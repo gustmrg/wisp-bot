@@ -8,7 +8,10 @@ export type McpAuthMode = (typeof MCP_AUTH_MODES)[number];
 /** Distinguishes configured, connected, needs sign-in, and unavailable connections. */
 export type McpConnectionState = "configured" | "connected" | "needs_sign_in" | "unavailable";
 
-/** First-release Wisp grant for an MCP server. Every call still requires approval. */
+/**
+ * Wisp grant for an MCP server. Every call asks for approval, except tools the
+ * user chose to always allow for that Wisp (see McpGrant.alwaysAllowedTools).
+ */
 export type McpAccess = "none" | "use_with_approval";
 
 export interface McpToolSummary {
@@ -79,6 +82,12 @@ export interface McpConnectionResult {
 export interface McpGrant {
   serverId: string;
   access: McpAccess;
+  /**
+   * Original names of tools this Wisp runs without asking. Only an approval
+   * card can add one, and only for the reviewed definition: a changed tool asks
+   * again. When saving, omit to keep the current list; a list can only remove.
+   */
+  alwaysAllowedTools?: ReadonlyArray<string>;
 }
 
 export interface WispMcpAccessView {

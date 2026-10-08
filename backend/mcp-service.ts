@@ -11,6 +11,7 @@ import {
   type McpAuthMode,
   type McpConnectionResult,
   type McpConnectionState,
+  type McpGrant,
   type McpSettingsView,
   type WispMcpAccessView,
 } from "../shared/mcp.js";
@@ -39,6 +40,7 @@ import {
   parseSaveWispMcpAccess,
   parseTestMcpConnection,
   parseMcpServerRequest,
+  TOOL_NAME_PATTERN,
 } from "./mcp-validation.js";
 import type { ToolAuthorizationBroker } from "./tool-authorization-broker.js";
 
@@ -68,11 +70,16 @@ interface McpServerRecord {
   lastConnection?: { state: "connected" | "unavailable"; at: string; message?: string };
 }
 
+/** Tool name → fingerprint of the definition the user always allowed. */
+type AlwaysAllowedTools = Record<string, string>;
+
 interface McpState {
-  schemaVersion: 1;
+  schemaVersion: 2;
   revision: string;
   servers: Record<string, McpServerRecord>;
   grants: Record<string, Record<string, McpAccess>>;
+  /** Per Wisp and server; pruned on every commit to granted, unchanged tools. */
+  alwaysAllowed: Record<string, Record<string, AlwaysAllowedTools>>;
 }
 
 export interface McpServiceOptions {
@@ -452,7 +459,14 @@ export class McpService {
       revision: this.accessRevision(sessionId),
       grants: Object.values(this.state.servers)
         .sort((a, b) => a.name.localeCompare(b.name))
-        .map((server) => ({ serverId: server.serverId, access: this.access(sessionId, server.serverId) })),
+        .map((server): McpGrant => {
+          const alwaysAllowedTools = Object.keys(this.state.alwaysAllowed[sessionId]?.[server.serverId] ?? {}).sort();
+          return {
+            serverId: server.serverId,
+            access: this.access(sessionId, server.serverId),
+            ...(alwaysAllowedTools.length ? { alwaysAllowedTools } : {}),
+          };
+        }),
     };
   }
 
@@ -481,6 +495,17 @@ export class McpService {
       );
       const next = structuredClone(this.state);
       next.grants[sessionId] = grants;
+      // A saved form can only remove always-allowed tools; adding one takes an approval card.
+      const current = this.state.alwaysAllowed[sessionId] ?? {};
+      const alwaysAllowed: Record<string, AlwaysAllowedTools> = {};
+      for (const { serverId, alwaysAllowedTools } of request.grants) {
+        const tools = current[serverId];
+        if (!tools) continue;
+        alwaysAllowed[serverId] = alwaysAllowedTools
+          ? Object.fromEntries(Object.entries(tools).filter(([name]) => alwaysAllowedTools.includes(name)))
+          : tools;
+      }
+      next.alwaysAllowed[sessionId] = alwaysAllowed;
       await this.commit(next);
       for (const [controller, running] of this.running) {
         if (running.sessionId === sessionId && changedServers.includes(running.serverId)) controller.abort();
@@ -603,6 +628,16 @@ export class McpService {
           category: "integration_call",
           scope: { kind: "integration", value: serverName },
           summary: `${tool.label} — ${summarizeArguments(args)}`,
+          alwaysAllowed: this.isAlwaysAllowed(sessionId, serverId, tool),
+          rememberApproval: () =>
+            this.alwaysAllowTool(
+              conversationId,
+              sessionId,
+              serverId,
+              tool.name,
+              reviewedGeneration,
+              reviewedFingerprint,
+            ),
         },
         combinedSignal,
       );
@@ -634,6 +669,32 @@ export class McpService {
     } finally {
       this.running.delete(controller);
     }
+  }
+
+  private isAlwaysAllowed(sessionId: string, serverId: string, tool: McpToolRecord): boolean {
+    return this.state.alwaysAllowed[sessionId]?.[serverId]?.[tool.name] === tool.fingerprint;
+  }
+
+  /**
+   * Remembers the reviewed definition of one tool for one Wisp. Refused when
+   * access, the connection, or the tool changed since the approval card showed it.
+   */
+  private alwaysAllowTool(
+    conversationId: string,
+    sessionId: string,
+    serverId: string,
+    toolName: string,
+    generation: number | undefined,
+    fingerprint: string,
+  ): Promise<void> {
+    return this.enqueue(async () => {
+      this.assertToolAccess(conversationId, sessionId, serverId);
+      this.assertToolUnchanged(serverId, generation, fingerprint);
+      const next = structuredClone(this.state);
+      const wisp = (next.alwaysAllowed[sessionId] ??= {});
+      wisp[serverId] = { ...wisp[serverId], [toolName]: fingerprint };
+      await this.commit(next);
+    });
   }
 
   private pooledConnection(sessionId: string, serverId: string): Promise<McpConnection> {
@@ -815,7 +876,7 @@ export class McpService {
     const seenNames = new Set<string>();
     const usedAliases = new Set<string>();
     for (const tool of tools) {
-      if (!tool || typeof tool.name !== "string" || !/^[a-zA-Z0-9_.-]{1,128}$/.test(tool.name)) continue;
+      if (!tool || typeof tool.name !== "string" || !TOOL_NAME_PATTERN.test(tool.name)) continue;
       if (seenNames.has(tool.name)) continue;
       const schema = boundedSchema(tool.inputSchema);
       if (schema === undefined) continue;
@@ -891,6 +952,7 @@ export class McpService {
    */
   private accessRevision(sessionId: string): string {
     const grants = this.state.grants[sessionId] ?? {};
+    const alwaysAllowed = this.state.alwaysAllowed[sessionId] ?? {};
     const entries = Object.entries(grants)
       .filter(([, access]) => access !== "none")
       .map(([serverId]) => {
@@ -901,6 +963,7 @@ export class McpService {
           server?.configGeneration ?? null,
           server?.authMode ?? null,
           (server?.snapshot?.tools ?? []).map(({ fingerprint }) => fingerprint).sort(),
+          Object.keys(alwaysAllowed[serverId] ?? {}).sort(),
         ];
       })
       .sort(([a], [b]) => String(a).localeCompare(String(b)));
@@ -1004,7 +1067,7 @@ export class McpService {
   }
 
   private async commit(next: McpState): Promise<void> {
-    const committed = { ...next, revision: randomUUID() };
+    const committed = { ...next, alwaysAllowed: prunedAlwaysAllowed(next), revision: randomUUID() };
     const json = JSON.stringify(committed);
     if (Buffer.byteLength(json) > 2_000_000) throw invalidMcpRequest();
     await writeFileAtomically(this.filePath, `${json}\n`);
@@ -1038,12 +1101,33 @@ export class McpService {
 }
 
 function defaultState(): McpState {
-  return { schemaVersion: 1, revision: randomUUID(), servers: {}, grants: {} };
+  return { schemaVersion: 2, revision: randomUUID(), servers: {}, grants: {}, alwaysAllowed: {} };
+}
+
+/**
+ * Keeps only tools still granted and unchanged: a removed or re-identified
+ * connection, revoked access, or a new tool definition drops the permission,
+ * so a changed tool always asks again.
+ */
+function prunedAlwaysAllowed(state: McpState): McpState["alwaysAllowed"] {
+  const pruned: McpState["alwaysAllowed"] = {};
+  for (const [sessionId, servers] of Object.entries(state.alwaysAllowed)) {
+    for (const [serverId, tools] of Object.entries(servers)) {
+      const server = state.servers[serverId];
+      if (!server || (state.grants[sessionId]?.[serverId] ?? "none") === "none") continue;
+      const kept = Object.entries(tools).filter(([name, fingerprint]) =>
+        server.snapshot?.tools.some((tool) => tool.name === name && tool.fingerprint === fingerprint),
+      );
+      if (kept.length) (pruned[sessionId] ??= {})[serverId] = Object.fromEntries(kept);
+    }
+  }
+  return pruned;
 }
 
 function normalizeState(value: unknown): McpState {
-  const raw = mcpRecord(value, ["schemaVersion", "revision", "servers", "grants"]);
-  if (raw.schemaVersion !== 1) throw invalidMcpRequest();
+  // Version 1 predates always-allowed tools and migrates with none.
+  const raw = mcpRecord(value, ["schemaVersion", "revision", "servers", "grants", "alwaysAllowed"]);
+  if (raw.schemaVersion !== 1 && raw.schemaVersion !== 2) throw invalidMcpRequest();
   const normalized = defaultState();
   if (typeof raw.revision === "string" && /^[a-f0-9-]{36}$/.test(raw.revision)) normalized.revision = raw.revision;
   const servers = mcpRecord(raw.servers);
@@ -1126,6 +1210,18 @@ function normalizeState(value: unknown): McpState {
     }
     normalized.grants[sessionId] = normalizedGrants;
   }
+  if (raw.schemaVersion === 2) {
+    for (const [sessionId, value] of Object.entries(mcpRecord(raw.alwaysAllowed))) {
+      if (!/^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$/.test(sessionId)) throw invalidMcpRequest();
+      for (const [serverId, tools] of Object.entries(mcpRecord(value))) {
+        for (const [name, fingerprint] of Object.entries(mcpRecord(tools))) {
+          if (typeof fingerprint !== "string") throw invalidMcpRequest();
+          ((normalized.alwaysAllowed[sessionId] ??= {})[serverId] ??= {})[name] = fingerprint;
+        }
+      }
+    }
+  }
+  normalized.alwaysAllowed = prunedAlwaysAllowed(normalized);
   return normalized;
 }
 

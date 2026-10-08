@@ -29,6 +29,7 @@ function ToolApprovalCard({ request, wispName, allowAlwaysAvailable, onResolve }
   const integration = request.scope.kind === "integration";
   const skill = request.category === "save_skill" && request.scope.kind === "skill";
   const fileCategory = !integration && isWorkspaceFileCategory(request.category) ? request.category : null;
+  const alwaysAllowTool = integration && request.alwaysAllowTool === true;
   const remaining = Math.max(0, Math.ceil((new Date(request.expiresAt).getTime() - now.getTime()) / 1_000));
   const expiresSoon = remaining <= 10;
   // The block action persists a global integration-scope rule; label it so the
@@ -96,6 +97,11 @@ function ToolApprovalCard({ request, wispName, allowAlwaysAvailable, onResolve }
             {ALWAYS_ALLOW_LABELS[fileCategory]}
           </Button>
         ) : null}
+        {alwaysAllowTool ? (
+          <Button type="button" size="sm" variant="secondary" onClick={() => onResolve("allow_always")}>
+            Always allow this tool
+          </Button>
+        ) : null}
         <Button type="button" size="sm" onClick={() => onResolve("allow_once")}>
           Allow once
         </Button>
@@ -103,6 +109,12 @@ function ToolApprovalCard({ request, wispName, allowAlwaysAvailable, onResolve }
       {fileCategory && allowAlwaysAvailable ? (
         <p className="m-0 mt-2 text-right text-xs text-faint">
           Lasting rules can be changed in Settings → General → Auto-review.
+        </p>
+      ) : null}
+      {alwaysAllowTool ? (
+        <p className="m-0 mt-2 text-right text-xs text-faint">
+          Always allow applies to {wispName} only and asks again if the tool changes. Remove it in Wisp settings →
+          Access.
         </p>
       ) : null}
     </section>

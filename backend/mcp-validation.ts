@@ -18,6 +18,8 @@ export const MCP_TOOL_TIMEOUT_MS = 120_000;
 const FORBIDDEN_LAUNCH_KEYS = ["command", "args", "arguments", "env", "environment", "cwd", "workingDirectory"];
 const SERVER_ID_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$/;
 const HEADER_NAME_PATTERN = /^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/;
+/** Original MCP tool names accepted from servers. */
+export const TOOL_NAME_PATTERN = /^[a-zA-Z0-9_.-]{1,128}$/;
 
 export function mcpRecord(value: unknown, keys?: readonly string[]): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw invalidMcpRequest();
@@ -160,13 +162,25 @@ export function parseMcpGrants(value: unknown): McpGrant[] {
   if (!Array.isArray(value) || value.length > MAX_TOOL_SNAPSHOT_TOOLS) throw invalidMcpRequest();
   const seen = new Set<string>();
   return value.map((entry) => {
-    const raw = mcpRecord(entry, ["serverId", "access"]);
+    const raw = mcpRecord(entry, ["serverId", "access", "alwaysAllowedTools"]);
     const serverId = parseMcpServerId(raw.serverId);
     if (seen.has(serverId) || typeof raw.access !== "string" || !["none", "use_with_approval"].includes(raw.access))
       throw invalidMcpRequest();
     seen.add(serverId);
-    return { serverId, access: raw.access as McpAccess };
+    const alwaysAllowedTools = parseAlwaysAllowedTools(raw.alwaysAllowedTools);
+    return { serverId, access: raw.access as McpAccess, ...(alwaysAllowedTools ? { alwaysAllowedTools } : {}) };
   });
+}
+
+function parseAlwaysAllowedTools(value: unknown): string[] | undefined {
+  if (value === undefined) return undefined;
+  if (
+    !Array.isArray(value) ||
+    value.length > MAX_TOOL_SNAPSHOT_TOOLS ||
+    value.some((name) => typeof name !== "string" || !TOOL_NAME_PATTERN.test(name))
+  )
+    throw invalidMcpRequest();
+  return [...new Set(value as string[])];
 }
 
 export function parseSaveWispMcpAccess(value: unknown): {

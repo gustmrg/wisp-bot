@@ -75,6 +75,29 @@ after the approval wait, immediately before dispatch, and dispatch is never
 replayed automatically after an interruption: uncertain outcomes are reported as
 such.
 
+### Amendment (2026-10-08): always allow one tool for one Wisp
+
+Asking before every call proved too disruptive: Wisps that use MCP make many
+calls per turn, and each one stopped the flow. As anticipated by the
+[MCP integration analysis](../mcp-integration-analysis.md), the approval card
+now offers **Always allow this tool**. The decision stays narrow so it does not
+reintroduce trust in server-supplied annotations:
+
+- It is stored by `McpService` per Wisp, server, and original tool name, bound
+  to the fingerprint of the reviewed definition (name, description, input
+  schema). It is not a policy rule, and policy rules still cannot allow
+  `integration_call`.
+- A changed definition asks again; every commit prunes permissions whose tool
+  changed or disappeared, whose Wisp lost access, or whose server was removed
+  or re-identified.
+- The broker honors it only for `integration_call` with integration scope and
+  only after policy evaluation, so a Block rule still wins. Remembered calls are
+  audited as `allow_always` by the user.
+- Saving is refused if access, the connection, or the tool changed while the
+  card was open; the call itself is still allowed once.
+- Access forms list always-allowed tools and can remove them but never add
+  them, and the list is part of the access revision.
+
 Endpoint URLs must be HTTPS without embedded credentials. Authentication
 secrets stay in the main process and never appear in IPC responses, activity
 events, reports, or model context. Safe tool identity is persisted with session
