@@ -147,6 +147,14 @@ describe("ConversationRepository", () => {
     expect(restored.getAgentContext("first").piSessionId).toBe("pi-history-id");
   });
 
+  it("leaves out the bundled demo conversations early versions kept in local storage", async () => {
+    const repository = await reload(await mkdtemp(path.join(os.tmpdir(), "wisp-demo-")));
+    await repository.initialize({ chief: chat("chief"), first: chat("first") });
+
+    expect(Object.keys(repository.readWisps())).toEqual(["first"]);
+    expect(Object.keys(repository.getChats())).toEqual(["first"]);
+  });
+
   it("finds Pi sessions after its data directory moves, such as a restored backup", async () => {
     const original = await mkdtemp(path.join(os.tmpdir(), "wisp-original-"));
     const repository = await reload(original);

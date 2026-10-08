@@ -88,6 +88,7 @@ function installBridge(
   const api = {
     getConversationState: vi.fn(async () => ({ ok: true as const, value: state })),
     initializeConversations: vi.fn(),
+    getConnections: vi.fn(async () => ({ ok: true as const, value: { activeId: "local" } })),
     getConversationMessages: vi.fn(async (request: MessagePageRequest) =>
       pageOf(transcripts[request.conversationId] ?? [], request),
     ),

@@ -27,6 +27,7 @@ import type { ChatViewCollection } from "@/chat-data";
 import { chatViews } from "@/lib/chat-schema";
 import type { ToolApprovalDecision, ToolApprovalRequest } from "../../shared/tool-policy";
 import { LEGACY_CONVERSATIONS_STORAGE_KEY, MAX_LEGACY_BLOB_BYTES } from "@/features/persistence/storage-policy";
+import { LOCAL_CONNECTION_ID } from "../../shared/connections";
 import {
   createConversationRuntime,
   addPendingRequest,
@@ -87,16 +88,28 @@ function resultError(result: { ok: false; error: BackendError }): Error {
   return new Error(result.error.message);
 }
 
+/**
+ * Loads the backend's conversations, initializing it on first run. Local
+ * storage holds this computer's conversations from before the backend stored
+ * them, so only this computer's own backend adopts them; a server starts empty.
+ */
 export async function bootstrapConversationState(
-  api: Pick<WispApi, "getConversationState" | "initializeConversations">,
+  api: Pick<WispApi, "getConversationState" | "initializeConversations" | "getConnections">,
   storage: Pick<Storage, "getItem" | "removeItem">,
 ): Promise<ConversationStateView> {
+  const connections = await api.getConnections();
+  if (!connections.ok) throw resultError(connections);
+  const local = connections.value.activeId === LOCAL_CONNECTION_ID;
   const current = await api.getConversationState();
   if (!current.ok) throw resultError(current);
-  if (current.value.initialized) return current.value;
-  const initialized = await api.initializeConversations({ chats: legacyChats(storage) });
+  if (current.value.initialized) {
+    // The local backend may have adopted them from its own legacy file instead.
+    if (local) storage.removeItem(LEGACY_STORAGE_KEY);
+    return current.value;
+  }
+  const initialized = await api.initializeConversations({ chats: local ? legacyChats(storage) : {} });
   if (!initialized.ok) throw resultError(initialized);
-  storage.removeItem(LEGACY_STORAGE_KEY);
+  if (local) storage.removeItem(LEGACY_STORAGE_KEY);
   return initialized.value;
 }
 
