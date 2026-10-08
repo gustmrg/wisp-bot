@@ -9,6 +9,13 @@ import type {
 } from "../../shared/mcp";
 import { ChevronLeftIcon, Plus, RefreshCw, ServerIcon, Settings2 } from "lucide-react";
 import {
+  McpWispAccessPanel,
+  countWispsWithMcpAccess,
+  mcpServersKey,
+  useMcpAccessIndex,
+  type McpAccessIndex,
+} from "@/components/mcp-wisp-access";
+import {
   ConfirmAction,
   SettingsCard,
   SettingsRow,
@@ -20,6 +27,9 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ToggleSwitch } from "@/components/ui/toggle-switch";
+import type { WispOption } from "@/lib/plugin-access";
+
+const NO_WISPS: ReadonlyArray<WispOption> = [];
 
 const AUTH_MODE_OPTIONS: ReadonlyArray<{ value: McpAuthMode; label: string }> = [
   { value: "none", label: "No authentication" },
@@ -66,12 +76,15 @@ function draftFrom(server: McpServerSummary): McpDraft {
   };
 }
 
-export function McpSettingsSection() {
+export function McpSettingsSection({ wisps = NO_WISPS }: { wisps?: ReadonlyArray<WispOption> }) {
   const [view, setView] = useState<McpSettingsView | null>(null);
   const [error, setError] = useState("");
   const [attempt, setAttempt] = useState(0);
   /** Drill-in editor: "new", a server ID, or null for the server list. */
   const [editing, setEditing] = useState<"new" | string | null>(null);
+  /** Server added in this visit; its form prompts for Wisp access. */
+  const [justAdded, setJustAdded] = useState<string | null>(null);
+  const index = useMcpAccessIndex(wisps, view ? mcpServersKey(view.servers) : "");
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: attempt explicitly retries a failed load.
   useEffect(() => {
@@ -112,8 +125,8 @@ export function McpSettingsSection() {
         MCP servers
       </h2>
       <p className="mb-4 text-xs leading-relaxed text-dim">
-        Connect remote MCP servers over HTTPS, then choose access in each Wisp's Access tab. Adding a server never gives
-        any Wisp access automatically, and every tool call requires approval.
+        Connect remote MCP servers over HTTPS, then choose which Wisps can use them, here or in each Wisp's Access tab.
+        Adding a server never gives any Wisp access automatically, and every tool call requires approval.
       </p>
       {view ? (
         <div className="animate-tab-forward">
@@ -132,7 +145,24 @@ export function McpSettingsSection() {
               key={editing === "new" ? "new" : editing}
               server={editing === "new" ? undefined : view.servers.find((candidate) => candidate.serverId === editing)}
               secureStorageAvailable={view.secureStorageAvailable}
+              wisps={wisps}
+              index={index}
+              initialMessage={
+                justAdded === editing
+                  ? wisps.length
+                    ? "Connection saved. Choose which Wisps can use it."
+                    : "Connection saved."
+                  : ""
+              }
               onSaved={setView}
+              onCreated={(next) => {
+                const created = next.servers.find(
+                  (candidate) => !view.servers.some(({ serverId }) => serverId === candidate.serverId),
+                );
+                setView(next);
+                setJustAdded(created?.serverId ?? null);
+                setEditing(created?.serverId ?? null);
+              }}
               onBack={() => setEditing(null)}
             />
           ) : (
@@ -142,7 +172,12 @@ export function McpSettingsSection() {
               ) : (
                 <div className="grid grid-cols-1 gap-x-7 gap-y-1 @min-[560px]:grid-cols-2">
                   {view.servers.map((server) => (
-                    <McpServerCard key={server.serverId} server={server} onSelect={() => setEditing(server.serverId)} />
+                    <McpServerCard
+                      key={server.serverId}
+                      server={server}
+                      wispCount={wisps.length ? countWispsWithMcpAccess(index, server.serverId) : undefined}
+                      onSelect={() => setEditing(server.serverId)}
+                    />
                   ))}
                 </div>
               )}
@@ -168,7 +203,15 @@ export function McpSettingsSection() {
   );
 }
 
-function McpServerCard({ server, onSelect }: { server?: McpServerSummary; onSelect: () => void }) {
+function McpServerCard({
+  server,
+  wispCount,
+  onSelect,
+}: {
+  server?: McpServerSummary;
+  wispCount?: number;
+  onSelect: () => void;
+}) {
   return (
     <button
       type="button"
@@ -187,6 +230,7 @@ function McpServerCard({ server, onSelect }: { server?: McpServerSummary; onSele
             <StatusDot tone={stateTone(server)} />
             {STATE_LABELS[server.state]} · {server.tools.length} tool{server.tools.length === 1 ? "" : "s"}
             {server.enabled ? "" : " · disabled"}
+            {wispCount !== undefined ? ` · ${wispCount === 1 ? "1 Wisp" : `${wispCount} Wisps`} with access` : ""}
           </span>
         </span>
       ) : (
@@ -211,19 +255,28 @@ function McpServerCard({ server, onSelect }: { server?: McpServerSummary; onSele
 function McpServerForm({
   server,
   secureStorageAvailable,
+  wisps,
+  index,
+  initialMessage,
   onSaved,
+  onCreated,
   onBack,
 }: {
   server?: McpServerSummary;
   secureStorageAvailable: boolean;
+  wisps: ReadonlyArray<WispOption>;
+  index: McpAccessIndex;
+  initialMessage: string;
   onSaved: (view: McpSettingsView) => void;
+  /** Receives the view after an add; the section opens the new server to choose Wisp access. */
+  onCreated: (view: McpSettingsView) => void;
   onBack: () => void;
 }) {
   const formId = useId();
   const [draft, setDraft] = useState<McpDraft>(server ? draftFrom(server) : emptyDraft());
   const [operation, setOperation] = useState<"save" | "test" | "remove" | "refresh" | "signin" | null>(null);
   const [error, setError] = useState("");
-  const [message, setMessage] = useState("");
+  const [message, setMessage] = useState(initialMessage);
   const [cancellingSignIn, setCancellingSignIn] = useState(false);
   // The backend reports a waiting sign-in with the server, so it stays visible
   // and cancellable after this form was left and reopened, or from another window.
@@ -296,13 +349,13 @@ function McpServerForm({
           setError(result.error.message);
           return;
         }
-        onSaved(result.value);
         if (isNew) {
-          // The card stays in add mode; go back so a second save cannot
-          // create a duplicate. The new server appears as its own card.
-          close();
+          // Leave add mode so a second save cannot create a duplicate: the
+          // section reopens the form on the new server to choose Wisp access.
+          onCreated(result.value);
           return;
         }
+        onSaved(result.value);
         setDraft((current) => ({ ...current, headerValue: "" }));
         setMessage("Connection saved.");
         return;
@@ -568,6 +621,7 @@ function McpServerForm({
             />
           ) : null}
         </div>
+        {server ? <McpWispAccessPanel server={server} wisps={wisps} index={index} /> : null}
       </div>
     </div>
   );
