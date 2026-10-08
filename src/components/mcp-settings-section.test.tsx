@@ -2,7 +2,7 @@ import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
-import type { McpSettingsView } from "../../shared/mcp";
+import type { McpServerSummary, McpSettingsView, WispMcpAccessView } from "../../shared/mcp";
 import { McpSettingsSection } from "./mcp-settings-section";
 
 function setup(initial: McpSettingsView) {
@@ -65,7 +65,7 @@ describe("McpSettingsSection", () => {
     expect(await screen.findByText("Connected. 3 tools available.")).toBeInTheDocument();
   });
 
-  it("returns to the server list after creating a server so it cannot be duplicated", async () => {
+  it("opens the created server after saving so it cannot be duplicated", async () => {
     const user = userEvent.setup();
     const { saveMcpServer } = setup({ secureStorageAvailable: true, servers: [] });
     render(<McpSettingsSection />);
@@ -76,11 +76,15 @@ describe("McpSettingsSection", () => {
     await user.click(screen.getByRole("button", { name: "Save connection" }));
 
     await waitFor(() => expect(saveMcpServer).toHaveBeenCalledTimes(1));
-    // The dialog returned to its empty add state instead of keeping the
-    // submitted draft, and the saved server appears as its own card.
-    await waitFor(() => expect(screen.queryByLabelText("Name")).not.toBeInTheDocument());
+    // The form left add mode: it now manages the saved server, so saving
+    // again updates it instead of creating a second one.
+    expect(await screen.findByRole("heading", { name: "Test Server" })).toBeInTheDocument();
+    expect(screen.getByText("Connection saved.")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Save connection" }));
+    await waitFor(() => expect(saveMcpServer).toHaveBeenCalledTimes(2));
+    expect(saveMcpServer.mock.calls[1]?.[0]).toMatchObject({ serverId: "server-1" });
+    await user.click(screen.getByRole("button", { name: "Back to MCP servers" }));
     expect(await screen.findByRole("button", { name: "Manage Test Server" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Add MCP server" })).toBeInTheDocument();
   });
 });
 
@@ -186,5 +190,131 @@ describe("McpSettingsSection drill-in", () => {
     await waitFor(() => expect(cancelMcpSignIn).toHaveBeenCalledWith({ serverId: "server-1" }));
     // The cancel result no longer reports a waiting sign-in.
     expect(await screen.findByRole("button", { name: "Sign in" })).toBeEnabled();
+  });
+});
+
+describe("McpSettingsSection Wisp access", () => {
+  const WISPS = [
+    { id: "researcher", name: "Researcher" },
+    { id: "writer", name: "Writer" },
+  ];
+
+  function server(overrides: Partial<McpServerSummary> = {}): McpServerSummary {
+    return {
+      serverId: "bitfinance",
+      name: "BitFinance",
+      endpoint: "https://vps.example.ts.net/mcp",
+      authMode: "header",
+      headerName: "Authorization",
+      enabled: true,
+      state: "connected",
+      headerConfigured: true,
+      lastDiscoveredAt: "2026-10-08T12:00:00.000Z",
+      tools: [
+        { name: "list_bills", alias: "mcp_x_list_bills", label: "list_bills", description: "", fingerprint: "f1" },
+      ],
+      ...overrides,
+    };
+  }
+
+  function setupAccess(servers: McpServerSummary[]) {
+    const views: Record<string, WispMcpAccessView> = {
+      researcher: {
+        conversationId: "researcher",
+        revision: "researcher-revision",
+        grants: [
+          { serverId: "bitfinance", access: "use_with_approval" },
+          { serverId: "other", access: "use_with_approval" },
+        ],
+      },
+      writer: {
+        conversationId: "writer",
+        revision: "writer-revision",
+        grants: [
+          { serverId: "bitfinance", access: "none" },
+          { serverId: "other", access: "use_with_approval" },
+        ],
+      },
+    };
+    const getWispMcpAccess = vi.fn(async ({ conversationId }: { conversationId: string }) => ({
+      ok: true,
+      value: views[conversationId]!,
+    }));
+    const saveWispMcpAccess = vi.fn(async (request: WispMcpAccessView) => ({
+      ok: true,
+      value: { ...request, revision: `${request.conversationId}-saved` },
+    }));
+    const view: McpSettingsView = { secureStorageAvailable: true, servers };
+    Object.defineProperty(window, "wisp", {
+      configurable: true,
+      value: {
+        getMcpSettings: vi.fn(async () => ({ ok: true, value: view })),
+        saveMcpServer: vi.fn(),
+        testMcpConnection: vi.fn(),
+        removeMcpServer: vi.fn(),
+        refreshMcpTools: vi.fn(),
+        startMcpSignIn: vi.fn(),
+        cancelMcpSignIn: vi.fn(),
+        subscribeToMcpSettings: vi.fn(() => () => undefined),
+        getWispMcpAccess,
+        saveWispMcpAccess,
+      },
+    });
+    return { getWispMcpAccess, saveWispMcpAccess };
+  }
+
+  async function openSelect(user: ReturnType<typeof userEvent.setup>, trigger: HTMLElement) {
+    act(() => trigger.focus());
+    await user.keyboard("{Enter}");
+  }
+
+  it("counts Wisps with access and grants a Wisp access from the server, keeping its other servers", async () => {
+    const { saveWispMcpAccess } = setupAccess([server()]);
+    const user = userEvent.setup();
+    render(<McpSettingsSection wisps={WISPS} />);
+
+    expect(await screen.findByRole("button", { name: "Manage BitFinance" })).toHaveTextContent("1 Wisp with access");
+    await user.click(screen.getByRole("button", { name: "Manage BitFinance" }));
+    const writer = await screen.findByRole("combobox", { name: "Writer access" });
+    expect(writer).toHaveTextContent("No access");
+    expect(screen.getByRole("combobox", { name: "Researcher access" })).toHaveTextContent("Use with approval");
+    expect(screen.getByRole("button", { name: "Save Wisp access" })).toBeDisabled();
+
+    await openSelect(user, writer);
+    await user.click(screen.getByRole("option", { name: "Use with approval" }));
+    await user.click(screen.getByRole("button", { name: "Save Wisp access" }));
+
+    expect(saveWispMcpAccess).toHaveBeenCalledTimes(1);
+    expect(saveWispMcpAccess).toHaveBeenCalledWith({
+      conversationId: "writer",
+      revision: "writer-revision",
+      grants: [
+        { serverId: "other", access: "use_with_approval" },
+        { serverId: "bitfinance", access: "use_with_approval" },
+      ],
+    });
+    expect(await screen.findByText("Wisp access saved.")).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "Back to MCP servers" }));
+    expect(await screen.findByRole("button", { name: "Manage BitFinance" })).toHaveTextContent("2 Wisps with access");
+  });
+
+  it("only offers revoking access while the connection cannot be granted", async () => {
+    setupAccess([server({ enabled: false })]);
+    const user = userEvent.setup();
+    render(<McpSettingsSection wisps={WISPS} />);
+
+    await user.click(await screen.findByRole("button", { name: "Manage BitFinance" }));
+    expect(await screen.findByText(/Enable this connection before giving Wisps access/)).toBeVisible();
+    await openSelect(user, screen.getByRole("combobox", { name: "Writer access" }));
+    expect(screen.getByRole("option", { name: "Use with approval" })).toHaveAttribute("aria-disabled", "true");
+  });
+
+  it("asks to refresh tools when a connection has none yet", async () => {
+    setupAccess([server({ state: "configured", tools: [], lastDiscoveredAt: null })]);
+    const user = userEvent.setup();
+    render(<McpSettingsSection wisps={WISPS} />);
+
+    await user.click(await screen.findByRole("button", { name: "Manage BitFinance" }));
+    expect(await screen.findByText(/No tools discovered yet/)).toBeVisible();
   });
 });

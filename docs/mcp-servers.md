@@ -32,8 +32,12 @@ for that reason, the chat says so and points to the Access tab.
 
 ## Per-Wisp access
 
-Adding a server never grants any Wisp access. Grants are per-Wisp in each
-**Access** tab, with a single first-release level, **Use with approval**. Every
+Adding a server never grants any Wisp access. Grants are per-Wisp, with a
+single first-release level, **Use with approval**. They can be chosen in each
+Wisp's **Access** tab, or for every Wisp at once in the server's **Wisp access**
+section under **Settings → MCP servers**, which opens right after a server is
+added. Both edit the same grants. Granting requires an enabled connection, and
+a completed sign-in for OAuth. Every
 MCP tool call asks before execution: server-supplied tool annotations are
 untrusted, so policy rules may block these calls but never auto-allow them.
 Approvals identify the Wisp, connection, tool, and a bounded argument preview

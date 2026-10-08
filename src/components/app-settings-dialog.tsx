@@ -284,7 +284,7 @@ function AppSettingsDialog({
             onOpenMcpSettings={() => openSection("mcp")}
           />
         ) : null}
-        {section === "mcp" && open && !showOverview ? <McpSettingsSection /> : null}
+        {section === "mcp" && open && !showOverview ? <McpSettingsSection wisps={wisps} /> : null}
         {section === "connections" && open && !showOverview ? <ConnectionSettingsSection /> : null}
         <section
           className="overflow-y-auto px-[30px] py-6 max-[620px]:px-4 max-[620px]:py-5 [&>*]:max-w-[760px]"
