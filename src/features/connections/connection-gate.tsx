@@ -1,8 +1,9 @@
 import { Fragment, useEffect, useState, type ReactNode } from "react";
-import { LaptopIcon, LoaderCircleIcon, ServerIcon } from "lucide-react";
+import { LaptopIcon, LoaderCircleIcon, ServerIcon, XIcon } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { APP_METADATA } from "@/config/app-metadata";
 import { LOCAL_CONNECTION_ID, type ConnectionsView } from "../../../shared/connections";
 import { ActiveConnectionContext } from "./active-connection";
 import { ConnectionsPanel } from "./connections-panel";
@@ -43,6 +44,7 @@ export function useConnections(): [ConnectionsView | null, string] {
  */
 export function ConnectionGate({ children }: { children: ReactNode }) {
   const [view, error] = useConnections();
+  const [dismissedVersion, setDismissedVersion] = useState("");
   if (!view) {
     return error ? <ConnectionMessage title="Wisp could not start" message={error} /> : null;
   }
@@ -53,6 +55,16 @@ export function ConnectionGate({ children }: { children: ReactNode }) {
     return (
       <div className="flex h-full min-h-0 flex-col">
         {status.phase === "reconnecting" ? <ReconnectingBanner view={view} /> : null}
+        {status.phase === "connected" &&
+        status.serverVersion &&
+        status.serverVersion !== APP_METADATA.version &&
+        dismissedVersion !== `${view.activeId}:${status.serverVersion}` ? (
+          <VersionMismatchBanner
+            view={view}
+            serverVersion={status.serverVersion}
+            onDismiss={() => setDismissedVersion(`${view.activeId}:${status.serverVersion}`)}
+          />
+        ) : null}
         <div className="min-h-0 flex-1">
           <ActiveConnectionContext.Provider value={view}>
             <Fragment key={`${view.activeId}:${status.epoch}`}>{children}</Fragment>
@@ -165,6 +177,51 @@ function ReconnectingBanner({ view }: { view: ConnectionsView }) {
   );
 }
 
+/** The server speaks this app's protocol, but some features may differ until both run the same version. */
+function VersionMismatchBanner({
+  view,
+  serverVersion,
+  onDismiss,
+}: {
+  view: ConnectionsView;
+  serverVersion: string;
+  onDismiss: () => void;
+}) {
+  const appVersion = APP_METADATA.version;
+  const serverIsOlder = compareVersions(serverVersion, appVersion) < 0;
+  const profile = view.profiles.find(({ id }) => id === view.activeId);
+  const advice = !serverIsOlder
+    ? "Update this app so every feature works."
+    : profile?.kind === "ssh"
+      ? "Update it in Settings → Connections so every feature works."
+      : "Update the server so every feature works.";
+  return (
+    <div
+      role="status"
+      className="flex flex-none items-center justify-center gap-3 bg-warning-solid/15 px-4 py-1.5 text-sm text-foreground"
+    >
+      <span>
+        {activeName(view)} runs Wisp server {serverVersion}, {serverIsOlder ? "older" : "newer"} than this app (
+        {appVersion}). {advice}
+      </span>
+      <Button type="button" size="icon-xs" variant="ghost" aria-label="Dismiss" onClick={onDismiss}>
+        <XIcon aria-hidden="true" />
+      </Button>
+    </div>
+  );
+}
+
+/** Compares dotted version numbers; anything after a `-` is ignored. */
+function compareVersions(left: string, right: string): number {
+  const parts = (version: string) => (version.split("-")[0] ?? "").split(".").map((part) => Number(part) || 0);
+  const [a, b] = [parts(left), parts(right)];
+  for (let index = 0; index < Math.max(a.length, b.length); index++) {
+    const difference = (a[index] ?? 0) - (b[index] ?? 0);
+    if (difference) return difference;
+  }
+  return 0;
+}
+
 function ConnectionMessage({ title, message }: { title: string; message: string }) {
   return (
     <main className="flex h-full min-h-0 items-center justify-center bg-background p-6 text-foreground">
@@ -256,7 +313,7 @@ function ConnectionScreen({ view }: { view: ConnectionsView }) {
           {status.phase === "error" && profile?.kind === "ssh" ? (
             <div className="mt-4 border-t border-border pt-4">
               <p className="mb-2 mt-0 text-sm leading-relaxed text-dim">
-                If Wisp is not installed on {profile.host} yet, Wisp can set it up for you.
+                If Wisp is not installed on {profile.host} yet, or is out of date, Wisp can set it up for you.
               </p>
               <InstallServerAction profileId={profile.id} host={profile.host} disabled={busy} />
             </div>

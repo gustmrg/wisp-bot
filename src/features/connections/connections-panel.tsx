@@ -105,6 +105,7 @@ export function ConnectionsPanel({ view, serversOnly = false }: { view: Connecti
                     <span className="mt-1.5 flex items-center gap-1.5 text-2xs text-dim">
                       <StatusDot tone={phaseTone(view.status.phase)} />
                       {PHASE_LABELS[view.status.phase]}
+                      {view.status.serverVersion ? ` · Server ${view.status.serverVersion}` : null}
                     </span>
                   ) : profile.kind !== "local" && !profile.paired ? (
                     <span className="mt-1.5 block text-2xs text-dim">Not paired yet</span>

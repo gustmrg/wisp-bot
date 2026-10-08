@@ -1,5 +1,11 @@
 import type { BackendResult } from "../shared/contracts.js";
-import type { HostRequest, HostResponse, RemoteEventType } from "../shared/remote-protocol.js";
+import {
+  REMOTE_PROTOCOL_VERSION,
+  type HostRequest,
+  type HostResponse,
+  type RemoteEventType,
+  type ServerDescriptor,
+} from "../shared/remote-protocol.js";
 import {
   MAX_ATTACHMENTS_PER_REQUEST,
   formatBytes,
@@ -38,6 +44,8 @@ export interface RemoteSessionOptions {
   /** Authenticate with HttpOnly cookies, as the browser app does. */
   cookies?: boolean;
   onStatus(phase: RemoteSessionPhase, message?: string): void;
+  /** Called with the server's description on every connection, before its status. */
+  onServer?(server: ServerDescriptor): void;
   onEvent(type: Exclude<RemoteEventType, "resync" | "hostRequest">, payload: unknown): void;
   /** Does what the server asked on this computer's screen; without it, every request is refused. */
   onHostRequest?(request: HostRequest): Promise<HostResponse>;
@@ -243,6 +251,9 @@ export class RemoteSession {
               "This is not the server this device paired with. Remove the connection and add it again.",
             );
           }
+          this.options.onServer?.(server);
+          const mismatch = protocolMismatch(this.options.serverName, server);
+          if (mismatch) throw new FatalTransportError(mismatch);
           await client.streamEvents(
             this.cursor,
             {
@@ -321,6 +332,15 @@ export class RemoteSession {
       this.wake = undefined;
     });
   }
+}
+
+/** Why this app cannot talk to the server, when their protocols differ. */
+function protocolMismatch(serverName: string, server: ServerDescriptor): string | undefined {
+  if (server.protocolVersion === REMOTE_PROTOCOL_VERSION) return undefined;
+  // Servers too old to report a protocol are older still.
+  return !(server.protocolVersion > REMOTE_PROTOCOL_VERSION)
+    ? `${serverName} runs an older Wisp server (${server.version}) that this app cannot use. Update the server to connect.`
+    : `${serverName} runs a newer Wisp server (${server.version}) than this app understands. Update this app to connect.`;
 }
 
 function invalid(message: string): BackendResult<never> {

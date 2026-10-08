@@ -1,7 +1,13 @@
 import { useEffect, useState } from "react";
 
 import { PreferenceSwitch, SettingsSelect, type SettingsOption } from "@/components/general-settings-sections";
-import { SettingsCard, SettingsGroup, SettingsRow, SettingsRowCopy } from "@/components/settings/settings-primitives";
+import {
+  ConfirmAction,
+  SettingsCard,
+  SettingsGroup,
+  SettingsRow,
+  SettingsRowCopy,
+} from "@/components/settings/settings-primitives";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import type { AppPreferences } from "@/lib/app-preferences";
@@ -109,6 +115,27 @@ function VoiceSettingsSection({ active, preferences, onPreferencesChange }: Voic
       }
     } catch {
       setError("Could not save the API key.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  /** The key is the one AI Model settings use, so removing it here removes it there too. */
+  async function handleRemoveKey(): Promise<void> {
+    setSaving(true);
+    setError(null);
+    setSaved(false);
+    try {
+      const removed = await window.wisp.removeProviderCredential({ providerId: provider.id });
+      if (!removed.ok) {
+        setError(removed.error.message);
+        return;
+      }
+      const result = await window.wisp.getVoiceSettings();
+      if (result.ok) setView(result.value);
+      else setError(result.error.message);
+    } catch {
+      setError("Could not remove the API key.");
     } finally {
       setSaving(false);
     }
@@ -226,7 +253,7 @@ function VoiceSettingsSection({ active, preferences, onPreferencesChange }: Voic
                 </label>
                 <small>
                   {providerStatus?.credentialConfigured
-                    ? `Using the saved ${provider.name} key, which AI Model settings share. Enter a new key to replace it.`
+                    ? `An encrypted key is saved for ${provider.name} and shared with AI Model settings. Enter a new key to replace it.`
                     : `Add a ${provider.name} key to use voice input. It is encrypted using your operating system's credential storage.`}
                 </small>
               </SettingsRowCopy>
@@ -256,9 +283,20 @@ function VoiceSettingsSection({ active, preferences, onPreferencesChange }: Voic
             </div>
           </SettingsCard>
         </SettingsGroup>
-        <div aria-live="polite" className="mt-3">
-          {error ? <p className="m-0 text-xs text-destructive">{error}</p> : null}
-          {saved ? <p className="m-0 text-xs text-dim">{provider.name} key saved.</p> : null}
+        <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
+          <div aria-live="polite">
+            {error ? <p className="m-0 text-xs text-destructive">{error}</p> : null}
+            {saved ? <p className="m-0 text-xs text-dim">{provider.name} key saved.</p> : null}
+          </div>
+          {providerStatus?.credentialConfigured ? (
+            <ConfirmAction
+              label="Remove key"
+              confirmLabel="Remove key"
+              disabled={saving}
+              description={`Voice input and Wisps using ${provider.name} stop working until you enter a new key.`}
+              onConfirm={() => void handleRemoveKey()}
+            />
+          ) : null}
         </div>
       </div>
     </section>
