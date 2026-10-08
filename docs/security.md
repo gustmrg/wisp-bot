@@ -71,19 +71,22 @@ An approval request expires after 60 seconds and is then denied; the card
 shows the remaining time. For a workspace file change, while auto-review is on,
 the card also offers **Always allow creating files** or **Always allow editing
 files**. It saves an Allow rule for that category only, visible and reversible
-in Settings → General → Auto-review. The broker refuses this decision for
-integration calls and while auto-review is off. **Always block** saves a Block
-rule the same way; blocking an MCP call stores an integration-scope rule.
+in Settings → General → Auto-review. The broker refuses this decision while
+auto-review is off and for integration calls, except an MCP tool card's
+**Always allow this tool** (see below). **Always block** saves a Block rule the
+same way; blocking an MCP call stores an integration-scope rule.
 
 Integration access is granted per Wisp (see [plugins](plugins.md) and
 [remote MCP servers](mcp-servers.md)) and rechecked in the backend on every
 call. Linear writes require `write` access plus an expiring, single-use
 **Allow once** approval through the authorization broker; workspace auto-review
 rules cannot allow integration writes. MCP calls run under a generic
-`integration_call` category that always asks and can only be blocked, never
-auto-allowed. Approval cards show a bounded operation description with
-secret-like values redacted, and access is rechecked after the approval wait
-and again immediately before dispatch.
+`integration_call` category that asks and can only be blocked, never allowed,
+by policy rules. The user can always allow one MCP tool for one Wisp from its
+approval card; that permission is bound to the reviewed tool definition, so a
+changed tool asks again, and a Block rule still wins. Approval cards show a
+bounded operation description with secret-like values redacted, and access is
+rechecked after the approval wait and again immediately before dispatch.
 
 Cancellation cannot roll back a mutation already accepted remotely; uncertain
 write outcomes instruct the agent to check the external system before retrying.

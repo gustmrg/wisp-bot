@@ -1,5 +1,5 @@
 import { useEffect, useId, useState, type ReactNode } from "react";
-import { GlobeIcon } from "lucide-react";
+import { GlobeIcon, XIcon } from "lucide-react";
 
 import {
   PLUGIN_CATALOG,
@@ -49,10 +49,24 @@ function completeGrants(grants: ReadonlyArray<PluginGrant>): PluginGrant[] {
 }
 
 function completeMcpGrants(view: McpSettingsView, grants: ReadonlyArray<McpGrant>): McpGrant[] {
-  return view.servers.map((server) => ({
-    serverId: server.serverId,
-    access: grants.find((grant) => grant.serverId === server.serverId)?.access ?? "none",
-  }));
+  return view.servers.map((server) => {
+    const grant = grants.find(({ serverId }) => serverId === server.serverId);
+    return {
+      serverId: server.serverId,
+      access: grant?.access ?? "none",
+      alwaysAllowedTools: grant?.alwaysAllowedTools ?? [],
+    };
+  });
+}
+
+function sameMcpGrant(left: McpGrant, right: McpGrant | undefined): boolean {
+  const leftTools = left.alwaysAllowedTools ?? [];
+  const rightTools = right?.alwaysAllowedTools ?? [];
+  return (
+    left.access === right?.access &&
+    leftTools.length === rightTools.length &&
+    leftTools.every((name) => rightTools.includes(name))
+  );
 }
 
 function sameProviders(left: WebProviders, right: WebProviders): boolean {
@@ -166,7 +180,11 @@ function WispAccessForm({
         grant.access !== savedGrants.find((savedGrant) => savedGrant.pluginId === grant.pluginId)?.access,
     );
   const mcpDirty = mcpGrants.some(
-    (grant) => grant.access !== savedMcpGrants.find((savedGrant) => savedGrant.serverId === grant.serverId)?.access,
+    (grant) =>
+      !sameMcpGrant(
+        grant,
+        savedMcpGrants.find((savedGrant) => savedGrant.serverId === grant.serverId),
+      ),
   );
 
   function changed() {
@@ -364,7 +382,9 @@ function WispAccessForm({
               <AccessSection label="MCP servers">
                 {mcpView.servers.map((server) => {
                   const serverAvailable = server.enabled && server.state !== "needs_sign_in";
-                  const access = mcpGrants.find((grant) => grant.serverId === server.serverId)?.access ?? "none";
+                  const grant = mcpGrants.find(({ serverId }) => serverId === server.serverId);
+                  const access = grant?.access ?? "none";
+                  const alwaysAllowed = access === "none" ? [] : (grant?.alwaysAllowedTools ?? []);
                   return (
                     <AccessRow
                       key={server.serverId}
@@ -412,6 +432,43 @@ function WispAccessForm({
                               You can still remove existing access.
                             </>
                           ) : null}
+                          {alwaysAllowed.length ? (
+                            <span className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                              Always allowed:
+                              {alwaysAllowed.map((name) => {
+                                const label = server.tools.find((tool) => tool.name === name)?.label ?? name;
+                                return (
+                                  <Button
+                                    key={name}
+                                    type="button"
+                                    size="xs"
+                                    variant="secondary"
+                                    disabled={saving}
+                                    aria-label={`Ask again before ${label}`}
+                                    title="Ask again before every call"
+                                    onClick={() => {
+                                      setMcpGrants((current) =>
+                                        current.map((entry) =>
+                                          entry.serverId === server.serverId
+                                            ? {
+                                                ...entry,
+                                                alwaysAllowedTools: (entry.alwaysAllowedTools ?? []).filter(
+                                                  (tool) => tool !== name,
+                                                ),
+                                              }
+                                            : entry,
+                                        ),
+                                      );
+                                      changed();
+                                    }}
+                                  >
+                                    {label}
+                                    <XIcon aria-hidden="true" />
+                                  </Button>
+                                );
+                              })}
+                            </span>
+                          ) : null}
                         </>
                       }
                     />
@@ -420,8 +477,9 @@ function WispAccessForm({
               </AccessSection>
             )}
             <p className="leading-relaxed text-dim">
-              MCP tool calls always require approval, with a preview of the arguments. Revoking access blocks new calls
-              immediately; calls already in progress may finish.
+              MCP tool calls require approval, with a preview of the arguments, unless you chose Always allow for that
+              tool on an approval card. A tool that changes asks again. Revoking access blocks new calls immediately;
+              calls already in progress may finish.
             </p>
           </>
         ) : error ? (

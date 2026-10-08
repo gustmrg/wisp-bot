@@ -29,6 +29,13 @@ export interface ToolAuthorizationRequest {
   scope: { kind: "workspace_path" | "integration" | "skill"; value: string };
   /** Content the user must see to decide; only sent for skill changes. */
   preview?: string;
+  /**
+   * The user already always allowed this exact integration tool for this Wisp.
+   * Honored for integration calls only, and never over a Block rule.
+   */
+  alwaysAllowed?: boolean;
+  /** Remembers this integration tool for this Wisp; offering it adds "Always allow" to the card. */
+  rememberApproval?: () => Promise<void>;
 }
 
 interface PendingApproval {
@@ -37,6 +44,7 @@ interface PendingApproval {
   timer: ReturnType<typeof setTimeout>;
   resolve: () => void;
   reject: (error: unknown) => void;
+  rememberApproval?: () => Promise<void>;
   signal?: AbortSignal;
   abortListener?: () => void;
 }
@@ -100,6 +108,13 @@ export class ToolAuthorizationBroker {
       this.auditDecision(actionId, action, behavior, "block", "policy", "blocked");
       return Promise.reject(new WispBackendError("tool_blocked", "This tool action is blocked by policy."));
     }
+    const integrationTool = action.category === "integration_call" && action.scope.kind === "integration";
+    if (integrationTool && action.alwaysAllowed) {
+      // The user's earlier "Always allow" for this tool and Wisp answers the prompt.
+      this.auditDecision(actionId, action, behavior, "allow_always", "user", "allowed");
+      return Promise.resolve();
+    }
+    const rememberApproval = integrationTool ? action.rememberApproval : undefined;
     const windowId = this.selectWindowId();
     if (windowId === null) {
       this.auditDecision(actionId, action, behavior, "block", "system", "blocked");
@@ -117,6 +132,7 @@ export class ToolAuthorizationBroker {
       scope: { kind: action.scope.kind, display: sanitizeSummary(action.scope.value) },
       summary: sanitizeSummary(action.summary),
       ...(action.preview ? { preview: sanitizePreview(action.preview) } : {}),
+      ...(rememberApproval ? { alwaysAllowTool: true } : {}),
       expiresAt,
     };
     this.auditDecision(actionId, action, behavior, "ask", "policy", "pending");
@@ -124,7 +140,16 @@ export class ToolAuthorizationBroker {
       const timer = setTimeout(() => this.expire(approvalId), this.approvalTtlMs);
       const abortListener = signal ? () => this.cancel(approvalId) : undefined;
       signal?.addEventListener("abort", abortListener!, { once: true });
-      this.pending.set(approvalId, { request, windowId, timer, resolve, reject, signal, abortListener });
+      this.pending.set(approvalId, {
+        request,
+        windowId,
+        timer,
+        resolve,
+        reject,
+        signal,
+        abortListener,
+        ...(rememberApproval ? { rememberApproval } : {}),
+      });
       this.publish({ type: "tool_approval_requested", conversationId: action.conversationId, request });
     });
   }
@@ -140,17 +165,14 @@ export class ToolAuthorizationBroker {
       throw new WispBackendError("invalid_request", "The approval response does not match the pending action.");
     }
     const { category } = pending.request;
-    if (
-      request.decision === "allow_always" &&
-      !(
-        isWorkspaceFileCategory(category) &&
-        pending.request.scope.kind === "workspace_path" &&
-        this.store.get().autoReview
-      )
-    ) {
+    const alwaysAllowFiles =
+      isWorkspaceFileCategory(category) &&
+      pending.request.scope.kind === "workspace_path" &&
+      this.store.get().autoReview;
+    if (request.decision === "allow_always" && !alwaysAllowFiles && !pending.rememberApproval) {
       throw new WispBackendError(
         "invalid_request",
-        "Always allow is available only for workspace file changes while auto-review is on.",
+        "Always allow is available only for workspace file changes while auto-review is on, or for an integration tool that offers it.",
       );
     }
     if (request.decision === "block" && category === "save_skill") {
@@ -168,6 +190,11 @@ export class ToolAuthorizationBroker {
     }
     if (request.decision === "allow_always" && isWorkspaceFileCategory(category)) {
       await this.store.allowFileCategory(category, this.createId).catch((error: unknown) => {
+        policyError = error;
+      });
+    }
+    if (request.decision === "allow_always" && pending.rememberApproval) {
+      await pending.rememberApproval().catch((error: unknown) => {
         policyError = error;
       });
     }
@@ -255,8 +282,8 @@ export class ToolAuthorizationBroker {
     actionId: string,
     action: ToolAuthorizationRequest,
     matchedPolicy: ToolPolicyBehavior,
-    decision: "allow" | "ask" | "block" | "cancelled",
-    actor: "policy" | "system",
+    decision: "allow" | "ask" | "block" | "allow_always" | "cancelled",
+    actor: "policy" | "user" | "system",
     outcome: "pending" | "allowed" | "blocked" | "cancelled",
   ): void {
     this.audit.append({
@@ -314,7 +341,8 @@ export function evaluateToolPolicy(
   if (category === "integration_call") {
     // Dynamically discovered MCP tools are unclassified: server annotations are
     // untrusted, so these calls ask by default and can only be blocked, never
-    // allowed, by policy rules.
+    // allowed, by policy rules. A tool the user always allowed for one Wisp is
+    // answered in authorize(), after this check, so a Block rule still wins.
     if (scopeKind !== "integration") return "block";
     return settings.rules.some(
       (rule) => rule.scope === "integration" && ruleMatchesCategory(rule.action, category) && rule.behavior === "block",

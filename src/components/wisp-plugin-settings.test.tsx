@@ -11,6 +11,7 @@ import {
   type WebProviders,
   type WispPluginAccessView,
 } from "../../shared/plugins";
+import type { McpGrant, McpServerSummary } from "../../shared/mcp";
 import { WispPluginSettings } from "./wisp-plugin-settings";
 import { WispDetails } from "./wisp-details";
 import { wispChatView } from "@/test/chat-fixtures";
@@ -23,12 +24,16 @@ function setup({
   grants = [],
   webProviders = NO_PROVIDERS,
   defaultProviders = { search: "web-search", read: "firecrawl" },
+  mcpServers = [],
+  mcpGrants = [],
 }: {
   available?: ReadonlyArray<PluginId>;
   disabled?: ReadonlyArray<PluginId>;
   grants?: ReadonlyArray<PluginGrant>;
   webProviders?: WebProviders;
   defaultProviders?: WebProviders;
+  mcpServers?: ReadonlyArray<McpServerSummary>;
+  mcpGrants?: ReadonlyArray<McpGrant>;
 } = {}) {
   const getPluginSettings = vi.fn(async () => ({
     ok: true,
@@ -54,10 +59,13 @@ function setup({
       value: { ...request, webProviders: request.webProviders ?? NO_PROVIDERS },
     }),
   );
-  const getMcpSettings = vi.fn(async () => ({ ok: true, value: { secureStorageAvailable: true, servers: [] } }));
+  const getMcpSettings = vi.fn(async () => ({
+    ok: true,
+    value: { secureStorageAvailable: true, servers: mcpServers },
+  }));
   const getWispMcpAccess = vi.fn(async ({ conversationId }: { conversationId: string }) => ({
     ok: true,
-    value: { conversationId, grants: [], revision: "mcp-original-revision" },
+    value: { conversationId, grants: mcpGrants, revision: "mcp-original-revision" },
   }));
   const saveWispMcpAccess = vi.fn(
     async (request: { conversationId: string; grants: ReadonlyArray<unknown>; revision: string }) => ({
@@ -76,7 +84,7 @@ function setup({
       saveWispMcpAccess,
     },
   });
-  return { getPluginSettings, getWispPluginAccess, saveWispPluginAccess };
+  return { getPluginSettings, getWispPluginAccess, saveWispPluginAccess, saveWispMcpAccess };
 }
 
 function grantsFor(access: Partial<Record<PluginId, PluginGrant["access"]>>): PluginGrant[] {
@@ -116,6 +124,37 @@ describe("WispPluginSettings", () => {
       webProviders: { search: "tavily", read: "exa" },
     });
     expect(await screen.findByRole("status")).toHaveTextContent("Access settings saved for this Wisp.");
+  });
+
+  it("lists always-allowed MCP tools and saves their removal", async () => {
+    const server: McpServerSummary = {
+      serverId: "docs",
+      name: "Docs",
+      endpoint: "https://docs.example.com/mcp",
+      authMode: "none",
+      enabled: true,
+      state: "connected",
+      headerConfigured: false,
+      lastDiscoveredAt: "2026-10-08T12:00:00.000Z",
+      tools: [
+        { name: "search", alias: "mcp_docs_search", label: "search", description: "", fingerprint: "a" },
+        { name: "fetch", alias: "mcp_docs_fetch", label: "fetch", description: "", fingerprint: "b" },
+      ],
+    };
+    const api = setup({
+      mcpServers: [server],
+      mcpGrants: [{ serverId: "docs", access: "use_with_approval", alwaysAllowedTools: ["fetch", "search"] }],
+    });
+    const user = userEvent.setup();
+    render(<WispPluginSettings conversationId="researcher" />);
+    await user.click(await screen.findByRole("button", { name: "Ask again before search" }));
+    expect(screen.queryByRole("button", { name: "Ask again before search" })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Save access" }));
+    expect(api.saveWispMcpAccess).toHaveBeenCalledWith({
+      conversationId: "researcher",
+      revision: "mcp-original-revision",
+      grants: [{ serverId: "docs", access: "use_with_approval", alwaysAllowedTools: ["fetch"] }],
+    });
   });
 
   it("saves read and write access for apps alongside web choices", async () => {

@@ -431,6 +431,110 @@ describe("McpService", () => {
     expect(created).toHaveLength(2);
   });
 
+  it("always allows a reviewed tool for one Wisp until it changes or access is removed", async () => {
+    const changedTool = { ...TOOL, description: "Search things, differently" };
+    // Discovery, a pooled connection per Wisp, the refresh, and the reopened pool.
+    const connections = [
+      { outcome: "connected" as const, tools: [TOOL] },
+      { outcome: "connected" as const, tools: [TOOL] },
+      { outcome: "connected" as const, tools: [TOOL] },
+      { outcome: "connected" as const, tools: [changedTool] },
+      { outcome: "connected" as const, tools: [changedTool] },
+    ];
+    const asked: string[] = [];
+    const authorize = vi.fn(
+      async (action: { toolCallId: string; alwaysAllowed?: boolean; rememberApproval?: () => Promise<void> }) => {
+        if (action.alwaysAllowed) return;
+        asked.push(action.toolCallId);
+        // The user picks "Always allow this tool" on the first card.
+        if (action.toolCallId === "call-1") await action.rememberApproval?.();
+      },
+    );
+    const { service, dataDirectory } = await createService({ authorizationBroker: { authorize } }, connections);
+    const { serverId } = await addServer(service);
+    await grantAccess(service, "wisp-a", serverId);
+    await grantAccess(service, "wisp-b", serverId);
+
+    const definition = await firstDefinition(service);
+    await definition.execute("call-1", { query: "one" });
+    await definition.execute("call-2", { query: "two" });
+    expect(asked).toEqual(["call-1"]);
+    expect(service.getAccess({ conversationId: "wisp-a" }).grants).toEqual([
+      { serverId, access: "use_with_approval", alwaysAllowedTools: ["search"] },
+    ]);
+    // Another Wisp with the same server still asks.
+    expect(service.getAccess({ conversationId: "wisp-b" }).grants).toEqual([{ serverId, access: "use_with_approval" }]);
+    await (await firstDefinition(service, "wisp-b")).execute("call-b", { query: "b" });
+    expect(asked).toEqual(["call-1", "call-b"]);
+
+    // The permission survives a restart.
+    const reloaded = new McpService({
+      dataDirectory,
+      encryption,
+      authorizationBroker: { authorize: vi.fn() },
+      resolveWisp: (conversationId) => `session-${conversationId}`,
+      openExternal: vi.fn(async () => undefined),
+    });
+    await reloaded.load();
+    expect(reloaded.getAccess({ conversationId: "wisp-a" }).grants[0]?.alwaysAllowedTools).toEqual(["search"]);
+    reloaded.dispose();
+
+    // A changed definition asks again and drops the permission.
+    await service.refreshTools({ serverId });
+    await (await firstDefinition(service)).execute("call-3", { query: "three" });
+    expect(asked).toEqual(["call-1", "call-b", "call-3"]);
+    expect(service.getAccess({ conversationId: "wisp-a" }).grants).toEqual([{ serverId, access: "use_with_approval" }]);
+  });
+
+  it("lets an access form keep or remove always-allowed tools but never add them", async () => {
+    const authorize = vi.fn(async (action: { rememberApproval?: () => Promise<void> }) => {
+      await action.rememberApproval?.();
+    });
+    const { service } = await createService({ authorizationBroker: { authorize } }, [
+      { outcome: "connected" as const, tools: [TOOL] },
+      { outcome: "connected" as const, tools: [TOOL] },
+    ]);
+    const { serverId } = await addServer(service);
+    await grantAccess(service, "wisp-a", serverId);
+    await (await firstDefinition(service)).execute("call-1", { query: "one" });
+
+    // Omitting the list keeps it.
+    let access = service.getAccess({ conversationId: "wisp-a" });
+    await service.saveAccess({
+      conversationId: "wisp-a",
+      revision: access.revision,
+      grants: [{ serverId, access: "use_with_approval" }],
+    });
+    expect(service.getAccess({ conversationId: "wisp-a" }).grants[0]?.alwaysAllowedTools).toEqual(["search"]);
+
+    // An empty list removes it, and a form cannot add it back.
+    access = service.getAccess({ conversationId: "wisp-a" });
+    await service.saveAccess({
+      conversationId: "wisp-a",
+      revision: access.revision,
+      grants: [{ serverId, access: "use_with_approval", alwaysAllowedTools: [] }],
+    });
+    access = service.getAccess({ conversationId: "wisp-a" });
+    expect(access.grants).toEqual([{ serverId, access: "use_with_approval" }]);
+    await service.saveAccess({
+      conversationId: "wisp-a",
+      revision: access.revision,
+      grants: [{ serverId, access: "use_with_approval", alwaysAllowedTools: ["search"] }],
+    });
+    expect(service.getAccess({ conversationId: "wisp-a" }).grants).toEqual([{ serverId, access: "use_with_approval" }]);
+
+    // Removing access drops the permission, so granting again asks again.
+    await (await firstDefinition(service)).execute("call-2", { query: "two" });
+    access = service.getAccess({ conversationId: "wisp-a" });
+    await service.saveAccess({
+      conversationId: "wisp-a",
+      revision: access.revision,
+      grants: [{ serverId, access: "none" }],
+    });
+    await grantAccess(service, "wisp-a", serverId);
+    expect(service.getAccess({ conversationId: "wisp-a" }).grants).toEqual([{ serverId, access: "use_with_approval" }]);
+  });
+
   it("drops tools from the snapshot when the server is disabled and unregisters labels on removal", async () => {
     const connections = [{ outcome: "connected" as const, tools: [TOOL] }];
     const { service } = await createService({}, connections);

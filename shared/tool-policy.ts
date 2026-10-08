@@ -1,7 +1,8 @@
 /**
  * "integration_call" is the generic category for dynamically discovered MCP
  * tools. Server-supplied annotations are untrusted, so these calls never map to
- * "read" or "write"; the initial behavior is always to ask.
+ * "read" or "write". They ask unless the user always allowed that exact tool
+ * for that Wisp; policy rules can block them but never allow them.
  *
  * "save_skill" creates or updates one of the Wisp's own skills. It always asks:
  * policy rules can neither allow nor block it.
@@ -106,10 +107,16 @@ export interface ToolApprovalRequest {
   summary: string;
   /** Exact content to review, shown for skill changes; bounded and stripped of control characters. */
   preview?: string;
+  /** The integration can remember this tool for this Wisp, so the card offers "Always allow". */
+  alwaysAllowTool?: boolean;
   expiresAt: string;
 }
 
-/** "allow_always" saves an Allow rule and is offered only for workspace file changes while auto-review is on. */
+/**
+ * "allow_always" saves an Allow rule for workspace file changes while
+ * auto-review is on, or always allows one integration tool for one Wisp when
+ * the request offers it (alwaysAllowTool).
+ */
 export type ToolApprovalDecision = "allow_once" | "allow_always" | "deny" | "block";
 
 export interface ResolveToolApprovalRequest {
