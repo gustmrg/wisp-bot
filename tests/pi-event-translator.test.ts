@@ -85,6 +85,29 @@ describe("PiEventTranslator", () => {
     expect(JSON.stringify(events)).not.toContain("bash-1");
   });
 
+  it("passes a tool's own progress text through, bounded and without control characters", () => {
+    const events: ConversationAgentEvent[] = [];
+    const translator = new PiEventTranslator("wisp-1", (event) => events.push(event), 0);
+    translator.begin({ conversationId: "wisp-1", requestId: "request-1", text: "Read" });
+
+    translator.handle({
+      type: "tool_execution_update",
+      toolCallId: "read-1",
+      toolName: "read",
+      partialResult: { content: [], details: { activityLabel: "Reading with\nVision, page 1 of 2…" } },
+    });
+    translator.handle({
+      type: "tool_execution_update",
+      toolCallId: "read-1",
+      toolName: "read",
+      partialResult: { details: { activityLabel: "x".repeat(500) } },
+    });
+    translator.handle({ type: "tool_execution_update", toolCallId: "read-1", toolName: "read", partialResult: {} });
+
+    const labels = events.filter((event) => event.type === "tool_activity").map((event) => event.label);
+    expect(labels).toEqual(["Reading with Vision, page 1 of 2…", "x".repeat(160), undefined]);
+  });
+
   it("splits a reply at tool calls so text written before a tool is its own message", () => {
     const events: ConversationAgentEvent[] = [];
     const translator = new PiEventTranslator("wisp-1", (event) => events.push(event), 0);

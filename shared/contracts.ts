@@ -331,6 +331,8 @@ export type ConversationAgentEvent =
       toolName: string;
       phase: "started" | "updated" | "completed";
       isError?: boolean;
+      /** The tool's own progress text, such as which model reads a page; replaces the generic activity. */
+      label?: string;
     }
   | {
       type: "conversation_notice";
@@ -377,6 +379,8 @@ export interface SessionReportToolCall {
   argumentSummary: string;
   status: "completed" | "error" | "pending";
   timestamp: string;
+  /** The image model that read images or scanned pages for this call; `fromCache` when nothing was sent again. */
+  imageModel?: { name: string; fromCache: boolean };
 }
 
 export interface SessionReportEvent {

@@ -126,6 +126,21 @@ describe("conversation stream reducer", () => {
         phase: "started",
       }),
     );
+    const progress = reduceConversationAgentEvent(
+      state,
+      {
+        sequence: 2,
+        type: "tool_activity",
+        conversationId: "one",
+        requestId: "request-1",
+        toolCallId: "read-1",
+        toolName: "read",
+        phase: "updated",
+        label: "Reading with Vision (OpenAI), page 2 of 5…",
+      },
+      chats,
+    );
+    expect(progress.activity.one).toBe("Reading with Vision (OpenAI), page 2 of 5…");
 
     state = reduceConversationAgentEvent(
       state,

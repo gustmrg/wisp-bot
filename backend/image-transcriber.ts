@@ -58,8 +58,13 @@ export interface TranscriptionRun {
   /**
    * Transcribes in order of the requests, a few at a time, within one deadline
    * shared by the whole read. Throws only when `signal` aborts the turn.
+   * `onProgress` hears how many requests finished, at the start and after each one.
    */
-  transcribe(requests: ReadonlyArray<TranscriptionRequest>, signal?: AbortSignal): Promise<TranscriptionOutcome[]>;
+  transcribe(
+    requests: ReadonlyArray<TranscriptionRequest>,
+    signal?: AbortSignal,
+    onProgress?: (done: number, total: number) => void,
+  ): Promise<TranscriptionOutcome[]>;
 }
 
 export interface ImageTranscriberOptions {
@@ -94,7 +99,7 @@ export class ImageTranscriber {
     const label = `${model.name} (${providerName})`;
     return {
       label,
-      transcribe: (requests, signal) => this.transcribe(model, requests, signal),
+      transcribe: (requests, signal, onProgress) => this.transcribe(model, requests, signal, onProgress),
     };
   }
 
@@ -102,8 +107,18 @@ export class ImageTranscriber {
     model: NonNullable<ReturnType<TranscriptionRuntime["getModel"]>>,
     requests: ReadonlyArray<TranscriptionRequest>,
     signal: AbortSignal | undefined,
+    onProgress: ((done: number, total: number) => void) | undefined,
   ): Promise<TranscriptionOutcome[]> {
     throwIfAborted(signal);
+    let done = 0;
+    const report = () => {
+      try {
+        onProgress?.(done, requests.length);
+      } catch {
+        // Progress is display only.
+      }
+    };
+    report();
     const deadline = new AbortController();
     const timer = setTimeout(() => deadline.abort(), this.options.deadlineMs ?? TRANSCRIPTION_DEADLINE_MS);
     const abort = () => deadline.abort();
@@ -114,6 +129,8 @@ export class ImageTranscriber {
       while (next < requests.length && !deadline.signal.aborted) {
         const index = next++;
         outcomes[index] = await this.transcribeOne(model, requests[index]!, deadline.signal);
+        done += 1;
+        report();
       }
     };
     try {

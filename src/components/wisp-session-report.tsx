@@ -201,6 +201,13 @@ function ToolCallList({ report }: { report: WispSessionReport }) {
               {toolCall.argumentSummary ? (
                 <span className="ml-4 break-all text-dim">{toolCall.argumentSummary}</span>
               ) : null}
+              {toolCall.imageModel ? (
+                <span className="ml-4 break-all text-dim">
+                  {toolCall.imageModel.fromCache
+                    ? `From ${toolCall.imageModel.name}'s saved transcription`
+                    : `Read with ${toolCall.imageModel.name}`}
+                </span>
+              ) : null}
             </li>
           ))}
         </ul>

@@ -83,6 +83,14 @@ describe("WispSessionReportSection", () => {
         value: {
           ...report,
           auxiliaryUsage: usage,
+          toolCalls: [
+            { ...report.toolCalls[0]!, imageModel: { name: "Vision (OpenAI)", fromCache: false } },
+            {
+              ...report.toolCalls[0]!,
+              toolCallId: "call-2",
+              imageModel: { name: "Vision (OpenAI)", fromCache: true },
+            },
+          ],
           models: [
             ...report.models,
             {
@@ -102,6 +110,9 @@ describe("WispSessionReportSection", () => {
     expect(await screen.findByText(/Includes 1,000 tokens used by the image model/)).toBeVisible();
     await user.click(screen.getByRole("button", { name: "Session details" }));
     expect(await screen.findByText("vision · image model · 2 calls")).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "Tool calls (2)" }));
+    expect(await screen.findByText("Read with Vision (OpenAI)")).toBeVisible();
+    expect(screen.getByText("From Vision (OpenAI)'s saved transcription")).toBeVisible();
   });
 
   it("refreshes on demand and when returning to Usage", async () => {

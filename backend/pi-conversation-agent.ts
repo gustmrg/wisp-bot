@@ -1027,13 +1027,15 @@ function withDocumentReading<TDefinition extends ToolDefinition<any, any, any>>(
     ...definition,
     description: `${definition.description} PDFs return their text page by page, and pages without text (such as scans) are attached as images when the model supports images. For PDFs, offset is the first page and limit the number of pages.`,
     execute: async (...args: Parameters<TDefinition["execute"]>) => {
-      const [, parameters, signal, , ctx] = args;
+      const [, parameters, signal, onUpdate, ctx] = args;
       const input = parameters as { path: string; offset?: number; limit?: number };
       const model = (ctx as { model?: { input?: ReadonlyArray<string> } } | undefined)?.model;
       const supportsImages = model?.input?.includes("image") ?? false;
       // Looked up per read, so a settings change applies from the next one; a failed lookup counts as off.
-      const startTranscription = async () =>
-        supportsImages || !transcriber ? null : await transcriber.start().catch(() => null);
+      const startTranscription = async () => {
+        const run = supportsImages || !transcriber ? null : await transcriber.start().catch(() => null);
+        return run && reportingProgress(run, onUpdate as ToolUpdate | undefined);
+      };
       if (await isPdfFile(input.path)) {
         const transcription = await startTranscription();
         return readPdf(input.path, {
@@ -1050,6 +1052,29 @@ function withDocumentReading<TDefinition extends ToolDefinition<any, any, any>>(
       return transcription ? transcribeImageResult(result, input.path, transcription, signal) : result;
     },
   } as TDefinition;
+}
+
+type ToolUpdate = (partialResult: { content: []; details: { activityLabel: string } }) => void;
+
+/** Shows the image model and progress as the read tool's activity while it transcribes. */
+function reportingProgress(run: TranscriptionRun, onUpdate: ToolUpdate | undefined): TranscriptionRun {
+  if (!onUpdate) return run;
+  return {
+    label: run.label,
+    transcribe: (requests, signal, onProgress) =>
+      run.transcribe(requests, signal, (done, total) => {
+        onProgress?.(done, total);
+        onUpdate({
+          content: [],
+          details: {
+            activityLabel:
+              total > 1
+                ? `Reading with ${run.label}, page ${Math.min(done + 1, total)} of ${total}…`
+                : `Reading with ${run.label}…`,
+          },
+        });
+      }),
+  };
 }
 
 function hasImageBlock(result: unknown): boolean {

@@ -3,6 +3,7 @@ import { InfoIcon } from "lucide-react";
 
 import type { AiSettingsView, ConversationModelView } from "../../shared/contracts";
 import { NoImageInputNote } from "@/components/no-image-input-note";
+import { imageModelName } from "@/hooks/use-model-image-input";
 import { Button } from "@/components/ui/button";
 
 export function WispModelSettings({ conversationId }: { conversationId: string }) {
@@ -82,7 +83,7 @@ export function WispModelSettings({ conversationId }: { conversationId: string }
                   </p>
                   <p className="m-0 break-all text-dim text-sm leading-snug">{applied.modelId}</p>
                   {appliedModel && !appliedModel.input.includes("image") ? (
-                    <NoImageInputNote className="mt-1.5" />
+                    <NoImageInputNote className="mt-1.5" imageModel={imageModelName(catalog)} />
                   ) : null}
                 </>
               ) : (

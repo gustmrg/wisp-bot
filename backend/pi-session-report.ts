@@ -172,7 +172,12 @@ export function buildSessionReport(
       const index = toolCallIndexById.get(safeId(toolResult.toolCallId));
       const existing = index === undefined ? undefined : toolCalls[index];
       if (existing && index !== undefined) {
-        toolCalls[index] = { ...existing, status: toolResult.isError ? "error" : "completed" };
+        const imageModel = imageModelOf(toolResult.details);
+        toolCalls[index] = {
+          ...existing,
+          status: toolResult.isError ? "error" : "completed",
+          ...(imageModel ? { imageModel } : {}),
+        };
       }
     }
   }
@@ -247,6 +252,31 @@ function accumulateModelUsage(message: AssistantSessionMessage, usageByModel: Ma
   bucket.recordedCostUsd =
     bucket.recordedCostUsd === null || recorded === null ? null : bucket.recordedCostUsd + recorded;
   usageByModel.set(key, bucket);
+}
+
+const MAX_MODEL_NAME_CHARACTERS = 200;
+
+/**
+ * The image model a read used, from its result details: `transcription` for
+ * an image, `pdf.transcription` for scanned pages. Only the model's name is
+ * kept; nothing read from the file is.
+ */
+function imageModelOf(details: unknown): SessionReportToolCall["imageModel"] | undefined {
+  if (!details || typeof details !== "object") return undefined;
+  const record = details as { transcription?: unknown; pdf?: { transcription?: unknown } };
+  const image = record.transcription as { model?: unknown; status?: unknown; cached?: unknown } | undefined;
+  const pages = record.pdf?.transcription as { model?: unknown; pages?: unknown; cachedPages?: unknown } | undefined;
+  const transcription = image ?? pages;
+  if (!transcription || typeof transcription.model !== "string") return undefined;
+  const name = transcription.model.replace(/[\u0000-\u001f\u007f]/gu, " ").trim();
+  if (!name) return undefined;
+  const fromCache = image
+    ? image.status === "done" && image.cached === true
+    : Array.isArray(pages?.pages) &&
+      pages.pages.length > 0 &&
+      Array.isArray(pages.cachedPages) &&
+      pages.cachedPages.length === pages.pages.length;
+  return { name: truncate(name, MAX_MODEL_NAME_CHARACTERS), fromCache };
 }
 
 interface AuxiliaryEntryUsage {

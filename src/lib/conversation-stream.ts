@@ -213,7 +213,8 @@ export function reduceConversationAgentEvent(
         ...next,
         activity: {
           ...next.activity,
-          [event.conversationId]: event.phase === "completed" ? undefined : toolActivityLabel(event.toolName),
+          [event.conversationId]:
+            event.phase === "completed" ? undefined : (event.label ?? toolActivityLabel(event.toolName)),
         },
         toolActivities: {
           ...next.toolActivities,
