@@ -102,6 +102,12 @@ function SessionReportContent({ state, onRefresh }: { state: ReportState; onRefr
           use the runtime's recorded estimate.
         </p>
       ) : null}
+      {report.auxiliaryUsage?.totalTokens ? (
+        <p className="text-sm text-dim">
+          Includes {report.auxiliaryUsage.totalTokens.toLocaleString()} tokens used by the image model to read images
+          for this Wisp. Their costs use the runtime's recorded estimate.
+        </p>
+      ) : null}
       <Accordion>
         <AccordionItem>
           <AccordionTrigger>Session details</AccordionTrigger>
@@ -146,9 +152,15 @@ function ModelList({ report }: { report: WispSessionReport }) {
       <h4 className="mb-1 text-xs text-dim">Models</h4>
       <ul className="flex flex-col gap-1 text-xs">
         {report.models.map((model) => (
-          <li key={`${model.providerId}:${model.modelId}`} className="flex flex-wrap gap-1.5">
+          <li
+            key={`${model.auxiliary ? `${model.auxiliary.task}:` : ""}${model.providerId}:${model.modelId}`}
+            className="flex flex-wrap gap-1.5"
+          >
             <span className="min-w-0 break-all">
-              {model.modelId} · {model.turns} {model.turns === 1 ? "turn" : "turns"}
+              {model.modelId} ·{" "}
+              {model.auxiliary
+                ? `image model · ${model.auxiliary.calls} ${model.auxiliary.calls === 1 ? "call" : "calls"}`
+                : `${model.turns} ${model.turns === 1 ? "turn" : "turns"}`}
             </span>
             <span className="text-dim">
               {model.costUsd === null ? "cost unknown" : `${formatCost(model.costUsd)} est.`}

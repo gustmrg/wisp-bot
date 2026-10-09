@@ -74,6 +74,36 @@ describe("WispSessionReportSection", () => {
     expect(getSessionReport).toHaveBeenCalledWith({ conversationId: "wisp-1" });
   });
 
+  it("lists image model calls apart from turns and says they are in the totals", async () => {
+    const user = userEvent.setup();
+    const usage = { inputTokens: 900, outputTokens: 100, cacheReadTokens: 0, cacheWriteTokens: 0, totalTokens: 1_000 };
+    exposeApi(
+      vi.fn(async () => ({
+        ok: true as const,
+        value: {
+          ...report,
+          auxiliaryUsage: usage,
+          models: [
+            ...report.models,
+            {
+              providerId: "openai",
+              modelId: "vision",
+              turns: 0,
+              usage,
+              costUsd: 0.001,
+              auxiliary: { task: "imageUnderstanding" as const, calls: 2 },
+            },
+          ],
+        },
+      })),
+    );
+    render(<WispSessionReportSection chatId="wisp-1" active />);
+
+    expect(await screen.findByText(/Includes 1,000 tokens used by the image model/)).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "Session details" }));
+    expect(await screen.findByText("vision · image model · 2 calls")).toBeVisible();
+  });
+
   it("refreshes on demand and when returning to Usage", async () => {
     const user = userEvent.setup();
     const getSessionReport = exposeApi(vi.fn(async () => ({ ok: true as const, value: report })));

@@ -367,6 +367,8 @@ export interface SessionReportModelUsage {
   turns: number;
   usage: SessionReportUsage;
   costUsd: number | null;
+  /** Set on a row for an auxiliary model, which runs calls for the Wisp rather than turns. */
+  auxiliary?: { task: AuxiliaryTask; calls: number };
 }
 
 export interface SessionReportToolCall {
@@ -385,6 +387,8 @@ export interface SessionReportEvent {
 
 export interface WispSessionReport {
   compactionUsage?: SessionReportUsage;
+  /** Tokens used by auxiliary models, such as the image model; included in the totals. */
+  auxiliaryUsage?: SessionReportUsage;
   sessionId: string;
   generatedAt: string;
   piVersion?: string;

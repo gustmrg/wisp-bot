@@ -328,3 +328,52 @@ it("falls back to the cost Pi recorded when no current price is available", () =
   expect(report.models.find((model) => model.modelId === "openai/gpt-oss-120b")?.costUsd).toBeCloseTo(0.0015);
   expect(report.totals.costUsd).toBeCloseTo(0.0016);
 });
+
+it("counts image model calls in their own row and in the totals, priced with the recorded cost", () => {
+  const auxiliary = (usage: Record<string, unknown>, outcome = "ok") =>
+    ({
+      type: "custom",
+      id: `aux-${Math.random()}`,
+      parentId: null,
+      timestamp: "2026-09-05T00:00:00Z",
+      customType: "wisp:auxiliary-usage",
+      data: {
+        version: 1,
+        task: "imageUnderstanding",
+        providerId: "openrouter",
+        modelId: "openai/gpt-oss-120b",
+        outcome,
+        usage,
+      },
+    }) as unknown as SessionEntry;
+  const priced = { input: 1_000, output: 100, cacheRead: 0, cacheWrite: 0, totalTokens: 1_100, cost: { total: 0.02 } };
+  const entries = [
+    messageEntry(assistantMessage()),
+    auxiliary(priced),
+    auxiliary({ ...priced, cost: { total: 0.01 } }, "error"),
+    { ...auxiliary(priced), data: { task: "titles" } } as unknown as SessionEntry,
+  ];
+
+  const report = buildSessionReport("session", entries, { workspaceDirectory: WORKSPACE, getPricing });
+
+  expect(report.turns).toBe(1);
+  expect(report.totals.totalTokens).toBe(1_300 + 2_200);
+  expect(report.auxiliaryUsage?.totalTokens).toBe(2_200);
+  // The same model's conversation turn keeps its OpenRouter price; its image calls use Pi's recorded cost.
+  expect(report.models).toEqual([
+    expect.objectContaining({ modelId: "openai/gpt-oss-120b", turns: 1, costUsd: expect.closeTo(0.002115, 9) }),
+    expect.objectContaining({
+      modelId: "openai/gpt-oss-120b",
+      turns: 0,
+      auxiliary: { task: "imageUnderstanding", calls: 2 },
+      costUsd: expect.closeTo(0.03, 9),
+    }),
+  ]);
+  expect(report.totals.costUsd).toBeCloseTo(0.032115, 9);
+
+  const unpriced = buildSessionReport("session", [auxiliary({ ...priced, cost: { total: 0 } })], {
+    workspaceDirectory: WORKSPACE,
+    getPricing,
+  });
+  expect(unpriced.totals.costUsd).toBeNull();
+});
