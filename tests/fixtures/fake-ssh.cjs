@@ -24,7 +24,13 @@ if (failures[process.env.FAKE_SSH_FAIL]) {
 }
 const separator = args.indexOf("--");
 const command = args.slice(separator + 2).join(" ");
-if (command.includes("setup --json") && process.env.FAKE_SSH_INSTALL === "hang") {
+if (command === "true") {
+  if (process.env.FAKE_SSH_TEST === "hang") setInterval(() => undefined, 60_000);
+  else if (process.env.FAKE_SSH_TEST === "secret") {
+    process.stderr.write("private-token-secret /home/private/key unexpected failure");
+    process.exit(255);
+  } else process.exit(0);
+} else if (command.includes("setup --json") && process.env.FAKE_SSH_INSTALL === "hang") {
   process.stderr.write("Installing @gustmrg/wisp-server@1.0.0…\n");
   // Runs until the test stops ssh.
   setInterval(() => undefined, 60_000);

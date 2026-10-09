@@ -11,6 +11,7 @@ import { StructuredLogger } from "../../backend/structured-logger.js";
 import { LaunchAtLoginService } from "../../electron/backend/launch-at-login-service.js";
 import { UpdateService } from "../../electron/backend/update-service.js";
 import { installRemoteServer } from "../../electron/connections/ssh-install.js";
+import { testSshConnection } from "../../electron/connections/ssh-test.js";
 import { openSshTunnel } from "../../electron/connections/ssh-tunnel.js";
 import { createBackend, type Backend } from "../../electron/create-backend.js";
 import { InProcessLocalServer } from "../helpers/in-process-local-server.js";
@@ -111,6 +112,7 @@ async function desktop(userData?: string, key = randomBytes(32), { choose = true
     connectionsDirectory: directory,
     deviceName: "Test computer",
     appVersion: "1.0.0",
+    testSshConnection: (profile, options) => testSshConnection(profile, { ...options, sshPath: fakeSsh }),
     openSshTunnel: (profile, signal) => openSshTunnel(profile, { sshPath: fakeSsh, signal }),
     installServer: (profile, onProgress, signal) =>
       installRemoteServer(profile, { sshPath: fakeSsh, version: "1.0.0", onProgress, signal }),
@@ -451,5 +453,24 @@ describe("desktop connections", () => {
     expect(await again).toMatchObject({ ok: false, error: { message: expect.stringMatching(/cancelled/) } });
     expect((await app.view()).activeId).toBe("local");
     await app.waitForPhase("local");
+  });
+});
+
+it("tests an unsaved SSH profile without changing the active connection or saving it", async () => {
+  const app = await desktop(undefined, undefined, { choose: false });
+  const before = await app.invoke<ConnectionsView>(WISP_IPC_CHANNELS.getConnections);
+  const draft = { kind: "ssh", name: "Unsaved", host: "example", user: "me", sshPort: 2222, serverPort: 8787 };
+  expect(await app.invoke(WISP_IPC_CHANNELS.testSshConnection, draft)).toMatchObject({
+    message: expect.stringContaining("successful"),
+  });
+  expect(await app.invoke(WISP_IPC_CHANNELS.getConnections)).toEqual(before);
+  process.env.FAKE_SSH_FAIL = "denied";
+  expect(await app.call(WISP_IPC_CHANNELS.testSshConnection, draft)).toMatchObject({
+    ok: false,
+    error: { message: expect.stringContaining("authentication failed") },
+  });
+  expect(await app.call(WISP_IPC_CHANNELS.testSshConnection, { ...draft, host: "-oProxyCommand=bad" })).toMatchObject({
+    ok: false,
+    error: { code: "invalid_request" },
   });
 });
