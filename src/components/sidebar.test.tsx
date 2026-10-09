@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -199,5 +199,49 @@ describe("Sidebar states", () => {
     );
     expect(container.querySelector("[data-slot=wisp]")).toHaveAttribute("data-state", "working");
     expect(screen.getByText("Latest research")).toBeVisible();
+  });
+});
+
+describe("Sidebar on mobile", () => {
+  const chats: ChatViewCollection = {
+    atlas: wispChatView("atlas", {
+      wisp: { name: "Atlas" },
+      chat: { preview: "Older note", lastActivityAt: "2026-10-01T10:00:00.000Z" },
+    }),
+    beta: wispChatView("beta", {
+      wisp: { name: "Beta" },
+      chat: { preview: "Fresh reply", unread: true, lastActivityAt: "2026-10-09T10:00:00.000Z" },
+    }),
+    gamma: wispChatView("gamma", { wisp: { name: "Gamma" }, chat: { preview: "Nothing yet" } }),
+  };
+
+  it("lists the latest activity first, with an unread badge beside the preview", async () => {
+    const user = userEvent.setup();
+    render(
+      <Sidebar
+        mobile
+        activeChatId=""
+        chats={chats}
+        collapsed={false}
+        currentUser={currentUser}
+        width={280}
+        {...callbacks}
+      />,
+    );
+    const list = screen.getByRole("navigation", { name: "Wisps and circles" });
+
+    expect(
+      within(list)
+        .getAllByRole("button")
+        .map((item) => item.querySelector("strong")?.textContent),
+    ).toEqual(["Beta", "Atlas", "Gamma"]);
+    const beta = within(list).getByRole("button", { name: /Beta/ });
+    expect(beta).toHaveAttribute("data-unread", "true");
+    expect(within(beta).getByText("Unread")).toHaveClass("sr-only");
+    expect(within(list).getByRole("button", { name: /Atlas/ })).not.toHaveAttribute("data-unread");
+    expect(screen.queryByLabelText("Unread activity")).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Unread 1" }));
+    expect(within(list).getAllByRole("button")).toHaveLength(1);
   });
 });

@@ -92,10 +92,36 @@
     overscroll-behavior: contain;
   }
   .conversation-list-item {
-    min-height: 83px;
-    gap: 10px;
-    padding: 12px 9px;
+    min-height: 72px;
+    gap: 12px;
+    margin-bottom: 0;
+    padding: 10px 9px;
     border-radius: 13px;
+  }
+  /* A hairline between rows, starting after the avatar. */
+  .conversation-list-item + .conversation-list-item::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    right: 9px;
+    left: 69px;
+    border-top: 1px solid var(--border);
+  }
+  .conversation-list-item[data-selected="true"]::before,
+  .conversation-list-item[data-selected="true"] + .conversation-list-item::before {
+    border-color: transparent;
+  }
+  .conversation-list-item[data-unread="true"] time {
+    color: var(--foreground);
+    font-weight: 600;
+  }
+  .conversation-unread-badge {
+    flex: none;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    /* The product's unread color, as on the desktop avatar dot. */
+    background: #ff3b30;
   }
   .conversation-list-item[data-selected="true"] {
     background: color-mix(in srgb, var(--foreground) 3%, transparent);
@@ -112,7 +138,7 @@
     letter-spacing: -0.02em;
   }
   .conversation-list-item time {
-    font-size: 10px;
+    font-size: 12px;
   }
   .conversation-preview {
     margin-top: 3px;
