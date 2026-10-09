@@ -175,6 +175,10 @@ const THEME_OPTIONS = [
 interface AppSettingsDialogProps {
   mobile?: boolean;
   onOpenConversations?: () => void;
+  /** Opens the mobile Approvals tab; without it the bar leaves the tab out. */
+  onOpenApprovals?: () => void;
+  /** Counts for the mobile bar's badges. */
+  navigationCounts?: { unread: number; approvals: number };
   appMetadata: AppMetadata;
   currentUser: CurrentUser;
   userProfile: UserProfileController;
@@ -204,6 +208,8 @@ function AppSettingsDialog({
   wisps,
   mobile = false,
   onOpenConversations,
+  onOpenApprovals,
+  navigationCounts,
   currentUser,
   userProfile,
   open,
@@ -573,7 +579,10 @@ function AppSettingsDialog({
           <MobileNavigation
             current="settings"
             onConversations={onOpenConversations ?? (() => onOpenChange(false))}
+            onApprovals={onOpenApprovals}
             onSettings={() => setMobileSectionOpen(false)}
+            unreadCount={navigationCounts?.unread}
+            approvalCount={navigationCounts?.approvals}
           />
         ) : null}
       </DialogContent>

@@ -23,7 +23,7 @@ type AppSettingsDialogHostProps = Omit<
  * there would re-render Sidebar and ChatPanel on every open).
  */
 export const AppSettingsDialogHost = forwardRef<AppSettingsDialogHandle, AppSettingsDialogHostProps>(
-  function AppSettingsDialogHost({ onOpenConversations, ...dialogProps }, ref) {
+  function AppSettingsDialogHost({ onOpenConversations, onOpenApprovals, ...dialogProps }, ref) {
     const [section, setSection] = useState<SettingsEntrySection | null>(null);
     const [pluginId, setPluginId] = useState<PluginId | undefined>();
     const [storageConversationId, setStorageConversationId] = useState<string | undefined>();
@@ -54,6 +54,14 @@ export const AppSettingsDialogHost = forwardRef<AppSettingsDialogHandle, AppSett
           setSection(null);
           onOpenConversations?.();
         }}
+        onOpenApprovals={
+          onOpenApprovals
+            ? () => {
+                setSection(null);
+                onOpenApprovals();
+              }
+            : undefined
+        }
       />
     );
   },
