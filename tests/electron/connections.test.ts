@@ -10,6 +10,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { StructuredLogger } from "../../backend/structured-logger.js";
 import { LaunchAtLoginService } from "../../electron/backend/launch-at-login-service.js";
 import { UpdateService } from "../../electron/backend/update-service.js";
+import { SshAskpass } from "../../electron/connections/ssh-askpass.js";
 import { installRemoteServer } from "../../electron/connections/ssh-install.js";
 import { openSshTunnel } from "../../electron/connections/ssh-tunnel.js";
 import { createBackend, type Backend } from "../../electron/create-backend.js";
@@ -26,6 +27,7 @@ type Handler = (event: IpcMainInvokeEvent, payload?: unknown) => Promise<Backend
 
 const silent = new StructuredLogger({ info: () => undefined, warn: () => undefined });
 const fakeSsh = path.join(__dirname, "../fixtures/fake-ssh.cjs");
+const TEST_KEY = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIHRlc3R0ZXN0dGVzdHRlc3R0ZXN0dGVzdHRlc3Q= wisp@laptop";
 const cleanups: Array<() => Promise<void> | void> = [];
 const environment = { ...process.env };
 
@@ -71,8 +73,12 @@ async function startServer(): Promise<{ server: WispServer; directory: string }>
 }
 
 /** The desktop backend with fake IPC; reopening the same directory simulates a restart. */
-/** Pass `choose: false` to stay at the first-run choice. */
-async function desktop(userData?: string, key = randomBytes(32), { choose = true }: { choose?: boolean } = {}) {
+/** Pass `choose: false` to stay at the first-run choice, and `askpass: true` to let SSH ask questions. */
+async function desktop(
+  userData?: string,
+  key = randomBytes(32),
+  { choose = true, askpass = false }: { choose?: boolean; askpass?: boolean } = {},
+) {
   const directory = userData ?? (await temporaryDirectory("wisp-desktop-"));
   const handlers = new Map<string, Handler>();
   const broadcasts: Array<[string, unknown]> = [];
@@ -111,9 +117,21 @@ async function desktop(userData?: string, key = randomBytes(32), { choose = true
     connectionsDirectory: directory,
     deviceName: "Test computer",
     appVersion: "1.0.0",
-    openSshTunnel: (profile, signal) => openSshTunnel(profile, { sshPath: fakeSsh, signal }),
-    installServer: (profile, onProgress, signal) =>
-      installRemoteServer(profile, { sshPath: fakeSsh, version: "1.0.0", onProgress, signal }),
+    ...(askpass ? { startSshAskpass: () => SshAskpass.start() } : {}),
+    openSshTunnel: (profile, signal, interaction) =>
+      openSshTunnel(profile, {
+        sshPath: fakeSsh,
+        signal,
+        ...(interaction ? { interaction: { ...interaction, publicKeys: async () => [TEST_KEY] } } : {}),
+      }),
+    installServer: (profile, onProgress, signal, interaction) =>
+      installRemoteServer(profile, {
+        sshPath: fakeSsh,
+        version: "1.0.0",
+        onProgress,
+        signal,
+        ...(interaction ? { interaction } : {}),
+      }),
   });
   let disposed = false;
   const dispose = async (): Promise<void> => {
@@ -361,6 +379,68 @@ describe("desktop connections", () => {
     await app.waitForPhase("local");
     expect((await app.view()).activeId).toBe("local");
     expect(await app.call(WISP_IPC_CHANNELS.removeConnection, { id: "local" })).toMatchObject({ ok: false });
+  });
+
+  it("asks to trust a new host key and for a password, then connects with this computer's key", async () => {
+    const { server, directory: serverDirectory } = await startServer();
+    process.env.FAKE_WISP_DATA_DIR = serverDirectory;
+    process.env.FAKE_SSH_ASK = "hostkey,password";
+    process.env.FAKE_SSH_KNOWN = path.join(serverDirectory, "known_hosts");
+    process.env.FAKE_SSH_AUTHORIZED = path.join(serverDirectory, "authorized_keys");
+    const app = await desktop(undefined, undefined, { askpass: true });
+    const { profiles } = await app.invoke<ConnectionsView>(WISP_IPC_CHANNELS.saveConnection, {
+      kind: "ssh",
+      name: "Home",
+      host: "home-server",
+      serverPort: server.port,
+    });
+    const ssh = profiles.find((profile) => profile.kind === "ssh")!;
+    await app.invoke(WISP_IPC_CHANNELS.activateConnection, { id: ssh.id });
+    const prompt = async (kind: string) => {
+      let found: ConnectionsView["sshPrompt"];
+      await vi.waitFor(
+        async () => {
+          found = (await app.view()).sshPrompt;
+          expect(found?.kind).toBe(kind);
+        },
+        { timeout: 8_000, interval: 25 },
+      );
+      return found!;
+    };
+    const hostKey = await prompt("host_key");
+    expect(hostKey).toMatchObject({ host: "home-server", message: expect.stringMatching(/SHA256:fakefakefake/) });
+    await app.invoke(WISP_IPC_CHANNELS.answerSshPrompt, { id: hostKey.id, answer: "yes" });
+    const password = await prompt("password");
+    expect(password.keys).toEqual([expect.stringMatching(/^wisp@laptop \(SHA256:/)]);
+    await app.invoke(WISP_IPC_CHANNELS.answerSshPrompt, { id: password.id, answer: "hunter2" });
+    await app.waitForPhase("connected");
+    expect((await app.view()).sshPrompt).toBeUndefined();
+    expect(await readFile(process.env.FAKE_SSH_AUTHORIZED, "utf8")).toBe(`${TEST_KEY}\n`);
+    // Pairing over SSH already used the key, and so does the next connection.
+    await app.invoke(WISP_IPC_CHANNELS.retryConnection);
+    await app.waitForPhase("connected");
+    expect((await app.view()).sshPrompt).toBeUndefined();
+  });
+
+  it("stops connecting when an SSH question is declined", async () => {
+    const directory = await temporaryDirectory("wisp-ssh-");
+    process.env.FAKE_SSH_ASK = "hostkey";
+    process.env.FAKE_SSH_KNOWN = path.join(directory, "known_hosts");
+    const app = await desktop(undefined, undefined, { askpass: true });
+    const { profiles } = await app.invoke<ConnectionsView>(WISP_IPC_CHANNELS.saveConnection, {
+      kind: "ssh",
+      name: "Home",
+      host: "home-server",
+      serverPort: 8787,
+    });
+    const ssh = profiles.find((profile) => profile.kind === "ssh")!;
+    await app.invoke(WISP_IPC_CHANNELS.activateConnection, { id: ssh.id });
+    await vi.waitFor(async () => expect((await app.view()).sshPrompt).toBeDefined(), { timeout: 8_000 });
+    const { id } = (await app.view()).sshPrompt!;
+    expect(await app.call(WISP_IPC_CHANNELS.answerSshPrompt, { id, answer: 7 })).toMatchObject({ ok: false });
+    await app.invoke(WISP_IPC_CHANNELS.answerSshPrompt, { id });
+    await app.waitForPhase("error");
+    expect((await app.view()).status.message).toMatch(/did not connect to home-server, because its SSH host key/);
   });
 
   it("sets the server up over SSH, then connects and pairs", async () => {

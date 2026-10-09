@@ -38,10 +38,14 @@ pickers, or sign-in pages. When the app uses a server on another machine, that
 server holds every provider key, encrypted with its own master key file, and
 runs every tool on its own files. The desktop keeps only the device's pairing credentials, encrypted with
 `safeStorage` like other keys; they stay in the main process and never reach
-the renderer. SSH tunnels use the system OpenSSH client with BatchMode, so
-OpenSSH verifies host keys against `known_hosts` and Wisp never sees SSH keys
-or passwords; profile fields are validated so they cannot become OpenSSH
-options. Direct connections require HTTPS, except to this computer. Revoking a
+the renderer. SSH tunnels use the system OpenSSH client, so OpenSSH verifies
+host keys against `known_hosts` and Wisp never sees SSH keys. When OpenSSH
+asks to trust a new host key, for a password, or for a key passphrase, it
+asks through an askpass helper that reaches the main process over a private
+socket with a per-process token; answers go back to OpenSSH and are never
+stored or logged. A password is only used to add this computer's public key
+to the server ([ADR 013](decisions/013-ssh-questions.md)). Profile fields are
+validated so they cannot become OpenSSH options. Direct connections require HTTPS, except to this computer. Revoking a
 device on the server ends its sessions, and the app does not pair again
 without a user's request. The browser app served by a server keeps its
 session in `HttpOnly`, `SameSite=Strict` cookies, never in page storage, and

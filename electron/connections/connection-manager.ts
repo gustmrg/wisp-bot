@@ -12,6 +12,7 @@ import {
   type ConnectionStatus,
   type ConnectionsView,
   type SshConnectionProfile,
+  type SshPromptView,
 } from "../../shared/connections.js";
 import { WISP_IPC_CHANNELS, type BackendResult } from "../../shared/contracts.js";
 import type { DeviceCredentials, HostRequest, HostResponse } from "../../shared/remote-protocol.js";
@@ -41,6 +42,10 @@ export interface ConnectionManagerOptions {
   hasLocalData(): Promise<boolean>;
 }
 
+// sshd gives up on a login after two minutes by default.
+const SSH_PROMPT_TIMEOUT_MS = 120_000;
+const MAX_SSH_ANSWER = 1024;
+
 const OPERATIONS_BY_CHANNEL = new Map<string, string>(
   Object.entries(WISP_IPC_CHANNELS).map(([operation, channel]) => [channel, operation]),
 );
@@ -64,6 +69,9 @@ export class ConnectionManager {
   private queue: Promise<unknown> = Promise.resolve();
   private disposed = false;
   private installation: { profileId: string; controller: AbortController } | undefined;
+  /** Questions OpenSSH is waiting on, oldest first; the renderer shows one at a time. */
+  private sshPrompts: Array<{ view: SshPromptView; finish: (answer: string | undefined) => void }> = [];
+  private sshPromptCount = 0;
 
   constructor(private readonly options: ConnectionManagerOptions) {}
 
@@ -93,7 +101,47 @@ export class ConnectionManager {
       })),
       status: { ...this.status },
       secureStorageAvailable: store.secureStorageAvailable,
+      ...(this.sshPrompts[0] ? { sshPrompt: this.sshPrompts[0].view } : {}),
     };
+  }
+
+  /**
+   * Asks the person a question OpenSSH has while connecting. Resolves
+   * undefined when they decline it, leave it unanswered too long, or the
+   * connection that asked stops.
+   */
+  askSsh(prompt: Omit<SshPromptView, "id">, signal?: AbortSignal): Promise<string | undefined> {
+    if (this.disposed || signal?.aborted) return Promise.resolve(undefined);
+    return new Promise((resolve) => {
+      const id = `ssh-${++this.sshPromptCount}`;
+      const finish = (answer: string | undefined): void => {
+        const index = this.sshPrompts.findIndex((pending) => pending.view.id === id);
+        if (index < 0) return;
+        this.sshPrompts.splice(index, 1);
+        clearTimeout(timer);
+        signal?.removeEventListener("abort", decline);
+        this.publish();
+        resolve(answer);
+      };
+      const decline = (): void => finish(undefined);
+      const timer = setTimeout(decline, SSH_PROMPT_TIMEOUT_MS);
+      signal?.addEventListener("abort", decline, { once: true });
+      this.sshPrompts.push({ view: { id, ...prompt }, finish });
+      this.publish();
+    });
+  }
+
+  /** Answers a question from `askSsh`; no answer declines it. */
+  answerSshPrompt(request: unknown): ConnectionsView {
+    const { id, answer } = (request ?? {}) as { id?: unknown; answer?: unknown };
+    if (typeof id !== "string" || id.length === 0 || id.length > 64) {
+      throw new WispBackendError("invalid_request", "The question is invalid.");
+    }
+    if (answer !== undefined && (typeof answer !== "string" || answer.length > MAX_SSH_ANSWER)) {
+      throw new WispBackendError("invalid_request", "The answer is invalid.");
+    }
+    this.sshPrompts.find((pending) => pending.view.id === id)?.finish(answer);
+    return this.view();
   }
 
   /** Runs a renderer request on the active server. */
@@ -243,6 +291,7 @@ export class ConnectionManager {
   dispose(): Promise<void> {
     this.disposed = true;
     this.installation?.controller.abort();
+    for (const pending of [...this.sshPrompts]) pending.finish(undefined);
     return this.serialized(async () => {
       await this.close();
       await this.options.localServer.stop();

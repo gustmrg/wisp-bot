@@ -177,6 +177,7 @@ function completeBridge(): WispApi {
     retryConnection: async () => ({ ok: true, value: connections }),
     installServer: async () => ({ ok: true, value: connections }),
     cancelServerInstall: async () => ({ ok: true, value: connections }),
+    answerSshPrompt: async () => ({ ok: true, value: connections }),
     subscribeToConnections: () => () => undefined,
   };
 }
