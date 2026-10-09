@@ -302,18 +302,35 @@ wispctl status
 ```
 
 In a terminal, `wispctl pair` prints the code, how long it lasts in local time,
-and where to enter it, with the server's `--public-origin` address when it has
-one:
+and where to enter it. When the server has a `--public-origin`, it also draws a
+QR code of a pairing link, `<public origin>/#pair=<code>`; scanning it opens
+the browser app, which asks only for a name for the device and pairs:
 
 ```text
 Pairing code: KD7QX-M2PZR
 Valid for 10 minutes (until 17:28).
 
-Open https://<machine>.<tailnet>.ts.net on your phone or browser and enter the code to pair.
+Scan this with your phone to pair:
+
+█████████████████████████████
+██ ▄▄▄▄▄ █▀█ █▄ █ ▄ ▄▄▄▄▄ ██
+…
+
+Or open https://<machine>.<tailnet>.ts.net/#pair=KD7QX-M2PZR on your phone or browser to pair,
+or open https://<machine>.<tailnet>.ts.net and enter the code.
+
+Anyone with this QR code, link, or code can pair: do not share it or leave it on screen.
 ```
 
+The QR code and the link are the code itself: they are single-use, expire with
+it, and count toward the same limit on failed attempts. The code rides in the
+link's fragment, which browsers never send, so it stays out of proxy and access
+logs; the app removes it from the address and history as soon as it opens. A
+code that expired or was already used is refused with a message, and the app
+asks for a code by hand. `--no-qr` leaves the QR code out.
+
 When stdout is not a terminal, or with `--json`, `pair` and `devices` print
-JSON instead, so scripts can read them; the desktop app pairs over SSH with
+JSON instead, with no QR code, so scripts can read them; the desktop app pairs over SSH with
 `wispctl pair --json`:
 
 ```json
@@ -349,7 +366,8 @@ On a phone:
 
 1. Install the Tailscale app and sign in to the same tailnet.
 2. Open the server's address in Safari (iPhone) or Chrome (Android).
-3. Run `wispctl pair` on the server and enter the code.
+3. Run `wispctl pair` on the server and scan its QR code with the camera, or
+   enter the code.
 4. Install it: **Share → Add to Home Screen** in Safari, or **Install app** in
    Chrome. It then opens full screen, like an app, with no account or app
    store.

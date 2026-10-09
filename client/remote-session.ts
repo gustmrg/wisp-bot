@@ -71,6 +71,7 @@ export class RemoteSession {
   private connected = false;
   private everConnected = false;
   private pairingCode: string | undefined;
+  private deviceName: string | undefined;
   // Pairing over SSH happens only on a user's request: never silently after this device was revoked.
   private autoPair = false;
   private running: Promise<void> | undefined;
@@ -82,8 +83,9 @@ export class RemoteSession {
    * Starts, or retries now. `autoPair` lets it ask the transport for a pairing
    * code when the device has none: pass true only for a user's request.
    */
-  start(pairingCode?: string, autoPair = true): void {
+  start(pairingCode?: string, autoPair = true, deviceName?: string): void {
     if (pairingCode !== undefined) this.pairingCode = pairingCode.trim();
+    if (deviceName?.trim()) this.deviceName = deviceName.trim();
     this.autoPair = autoPair;
     if (this.controller.signal.aborted) return;
     if (this.running) {
@@ -239,7 +241,7 @@ export class RemoteSession {
             this.requirePairing("Enter a pairing code from `wispctl pair` on the server.");
             waitForUser = true;
           } else {
-            await client.pair(code, this.options.deviceName);
+            await client.pair(code, this.deviceName ?? this.options.deviceName);
             // Paired again: nothing from before can be replayed.
             this.cursor = undefined;
           }
@@ -289,7 +291,7 @@ export class RemoteSession {
           this.requirePairing(
             this.everConnected
               ? undefined
-              : "The pairing code was not accepted. Generate a new one with `wispctl pair`.",
+              : "The pairing code has expired, was already used, or is wrong. Get a new one with `wispctl pair`.",
           );
           waitForUser = true;
         } else {

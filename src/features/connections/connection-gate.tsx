@@ -275,6 +275,8 @@ function ConnectionScreen({ view }: { view: ConnectionsView }) {
   const { status } = view;
   const profile = view.profiles.find((candidate) => candidate.id === view.activeId);
   const [code, setCode] = useState("");
+  // Unset until edited: the suggested name arrives once the screen leaves "connecting".
+  const [editedName, setEditedName] = useState<string>();
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState("");
 
@@ -291,12 +293,18 @@ function ConnectionScreen({ view }: { view: ConnectionsView }) {
     }
   }
 
+  // Opened from a pairing link: the code is already here, only a name is missing.
+  const pairingLink = status.phase === "pairing_required" ? view.pairingLink : undefined;
   const title =
     status.phase === "connecting"
       ? `Connecting to ${activeName(view)}`
       : status.phase === "pairing_required"
         ? `Pair with ${activeName(view)}`
         : `Cannot use ${activeName(view)}`;
+  const deviceName = editedName ?? pairingLink?.deviceName ?? "";
+  const message = pairingLink
+    ? "Name this device to finish pairing. The name appears in `wispctl devices`."
+    : status.message;
 
   return (
     <main className="flex h-full min-h-0 items-start justify-center overflow-y-auto bg-background p-6 text-foreground">
@@ -312,12 +320,31 @@ function ConnectionScreen({ view }: { view: ConnectionsView }) {
           <h1 id="connection-title" className="text-lg font-semibold">
             {title}
           </h1>
-          {status.message ? (
+          {message ? (
             <p role={status.phase === "error" ? "alert" : "status"} className="mt-2 text-base leading-relaxed text-dim">
-              {status.message}
+              {message}
             </p>
           ) : null}
-          {status.phase === "pairing_required" ? (
+          {pairingLink ? (
+            <form
+              className="mt-4 flex items-center gap-2"
+              onSubmit={(event) => {
+                event.preventDefault();
+                void act(() => window.wisp.activateConnection({ id: view.activeId, deviceName: deviceName.trim() }));
+              }}
+            >
+              <Input
+                aria-label="Device name"
+                className="min-w-0 flex-1"
+                maxLength={128}
+                value={deviceName}
+                onChange={(event) => setEditedName(event.target.value)}
+              />
+              <Button type="submit" disabled={busy || deviceName.trim().length === 0}>
+                Pair
+              </Button>
+            </form>
+          ) : status.phase === "pairing_required" ? (
             <form
               className="mt-4 flex flex-wrap items-center gap-2"
               onSubmit={(event) => {

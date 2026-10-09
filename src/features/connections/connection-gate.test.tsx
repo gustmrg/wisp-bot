@@ -296,6 +296,32 @@ describe("ConnectionGate", () => {
     expect(screen.queryByRole("button", { name: /Add a server/ })).toBeNull();
   });
 
+  it("in the browser app, asks only for a device name when opened from a pairing link", async () => {
+    const web: ConnectionsView = {
+      activeId: "server",
+      profiles: [
+        { id: "server", kind: "url", name: "wisp.example.ts.net", url: "https://wisp.example.ts.net", paired: false },
+      ],
+      status: { profileId: "server", phase: "pairing_required", epoch: 0, message: "Enter a pairing code." },
+      secureStorageAvailable: true,
+      canManage: false,
+      pairingLink: { deviceName: "Safari on iPhone" },
+    };
+    const { api } = bridge(web);
+    render(
+      <ConnectionGate>
+        <App onMount={() => undefined} />
+      </ConnectionGate>,
+    );
+    const name = await screen.findByRole("textbox", { name: "Device name" });
+    expect(name).toHaveValue("Safari on iPhone");
+    expect(screen.queryByRole("textbox", { name: "Pairing code" })).toBeNull();
+    await userEvent.clear(name);
+    await userEvent.type(name, "Ana's phone ");
+    await userEvent.click(screen.getByRole("button", { name: "Pair" }));
+    expect(api.activateConnection).toHaveBeenCalledWith({ id: "server", deviceName: "Ana's phone" });
+  });
+
   it("hides actions that need this computer's screen when Wisps run elsewhere", async () => {
     const { push } = bridge(view({ phase: "local" }, "local"));
     render(

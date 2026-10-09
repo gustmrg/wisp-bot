@@ -73,6 +73,11 @@ export interface ConnectionsView {
   canManage?: boolean;
   /** A question OpenSSH asks while connecting, waiting for the person to answer. */
   sshPrompt?: SshPromptView;
+  /**
+   * Set in the browser app while a pairing code from a scanned link waits for
+   * the person to name this device. The code itself never leaves the bridge.
+   */
+  pairingLink?: { deviceName: string };
 }
 
 /**
@@ -113,4 +118,6 @@ export interface ActivateConnectionRequest {
   id: string;
   /** A code from `wispctl pair`, for servers that cannot provide one over SSH. */
   pairingCode?: string;
+  /** The name to pair under, shown in `wispctl devices`; the browser app asks for it when pairing from a link. */
+  deviceName?: string;
 }

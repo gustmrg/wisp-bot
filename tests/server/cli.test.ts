@@ -1,22 +1,44 @@
 import { describe, expect, it } from "vitest";
 
-import { describeDevices, describePairing } from "../../server/cli.js";
+import { renderUnicodeCompact } from "uqr";
+
+import { describeDevices, describePairing, pairingLink } from "../../server/cli.js";
 
 describe("wispctl output for people", () => {
   const now = new Date("2026-10-09T20:18:37.435Z");
   const pairing = { code: "ZJ5GJ-4WD6T", expiresAt: "2026-10-09T20:28:37.435Z" };
   const until = new Date(pairing.expiresAt).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
 
-  it("shows the pairing code, how long it lasts, and where to enter it", () => {
+  it("puts the code in the link's fragment, which browsers never send", () => {
+    expect(pairingLink("https://box.tailnet.ts.net", "ZJ5GJ-4WD6T")).toBe(
+      "https://box.tailnet.ts.net/#pair=ZJ5GJ-4WD6T",
+    );
+  });
+
+  it("shows a QR code of the pairing link, the link, the code, and how long it lasts", () => {
+    const link = "https://box.tailnet.ts.net/#pair=ZJ5GJ-4WD6T";
     expect(describePairing(pairing, "https://box.tailnet.ts.net", now)).toBe(
       [
         "Pairing code: ZJ5GJ-4WD6T",
         `Valid for 10 minutes (until ${until}).`,
         "",
-        "Open https://box.tailnet.ts.net on your phone or browser and enter the code to pair.",
+        "Scan this with your phone to pair:",
+        "",
+        renderUnicodeCompact(link, { border: 2 }),
+        "",
+        `Or open ${link} on your phone or browser to pair,`,
+        "or open https://box.tailnet.ts.net and enter the code.",
+        "",
+        "Anyone with this QR code, link, or code can pair: do not share it or leave it on screen.",
         "",
       ].join("\n"),
     );
+  });
+
+  it("leaves the QR code out with --no-qr", () => {
+    const text = describePairing(pairing, "https://box.tailnet.ts.net", now, { qr: false });
+    expect(text).not.toContain("▄");
+    expect(text).toContain("Open https://box.tailnet.ts.net/#pair=ZJ5GJ-4WD6T on your phone or browser to pair,");
   });
 
   it("points to --public-origin when the server has no public address", () => {

@@ -12,7 +12,7 @@ import { createWispServer } from "../../server/wisp-server.js";
 import type { ConnectionsView } from "../../shared/connections.js";
 import type { Wisp } from "../../shared/conversations.js";
 import { isWispBridgeAvailable } from "../../src/lib/wisp-bridge.js";
-import { browserDeviceName, createWebWispApi } from "../../src/web/web-api.js";
+import { browserDeviceName, createWebWispApi, takePairingCode } from "../../src/web/web-api.js";
 import { DEFAULT_WISP_APPEARANCE } from "../../shared/wisp-appearance.js";
 
 const silent = new StructuredLogger({ info: () => undefined, warn: () => undefined });
@@ -143,6 +143,77 @@ describe("browser WispApi", () => {
     await until(async () => (await phase()) === "pairing_required", "signing out");
     expect(server.auth.devices()).toEqual([]);
     expect(storage.values.size).toBe(0);
+  });
+
+  it("pairs from a scanned link under the name the person gives, and falls back to a code", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "wisp-web-api-"));
+    cleanups.push(() => rm(directory, { recursive: true, force: true }));
+    const server = await createWispServer({
+      dataDirectory: directory,
+      host: "127.0.0.1",
+      port: 0,
+      encryption: new MasterKeyEncryption(randomBytes(32)),
+      logger: silent,
+      agentMode: "fake",
+      appVersion: "1.0.0",
+      allowModelNetwork: false,
+    });
+    cleanups.push(() => server.close());
+    const requested: string[] = [];
+    const open = (pairingCode: string) => {
+      const browser = browserFetch(server.url);
+      const api = createWebWispApi({
+        origin: server.url,
+        storage: memoryStorage(),
+        deviceName: "Safari on iPhone",
+        appVersion: "1.0.0",
+        pairingCode,
+        fetch: (input, init) => {
+          requested.push(String(input));
+          return browser.fetch(input, init);
+        },
+      });
+      const current = async () => ((await api.getConnections()) as { ok: true; value: ConnectionsView }).value;
+      return { api, current };
+    };
+
+    const { code } = (await adminRequest(directory, { command: "pair" })) as { code: string };
+    const first = open(code);
+    await until(async () => (await first.current()).status.phase === "pairing_required", "pairing to be required");
+    expect((await first.current()).pairingLink).toEqual({ deviceName: "Safari on iPhone" });
+    await first.api.activateConnection({ id: "server", deviceName: "Ana's phone" });
+    await until(async () => (await first.current()).status.phase === "connected", "the connection");
+    expect(server.auth.devices()).toEqual([expect.objectContaining({ name: "Ana's phone" })]);
+    expect((await first.current()).pairingLink).toBeUndefined();
+    expect(requested.join()).not.toContain(code);
+
+    // The same link again: the code was used, so the person is asked for a new one.
+    const second = open(code);
+    await until(async () => (await second.current()).pairingLink !== undefined, "the pairing link");
+    await second.api.activateConnection({ id: "server", deviceName: "Again" });
+    await until(
+      async () => /expired, was already used/.test((await second.current()).status.message ?? ""),
+      "the refusal",
+    );
+    expect(await second.current()).toMatchObject({ status: { phase: "pairing_required" } });
+    expect((await second.current()).pairingLink).toBeUndefined();
+    expect(server.auth.devices()).toHaveLength(1);
+  });
+
+  it("takes the pairing code from the link and removes it from history", () => {
+    const replaced: string[] = [];
+    const history = {
+      state: null,
+      replaceState: (_: unknown, __: string, url?: string | URL | null) => void replaced.push(String(url)),
+    };
+    expect(takePairingCode({ hash: "#pair=KD7QX-M2PZR", pathname: "/", search: "" }, history)).toBe("KD7QX-M2PZR");
+    expect(replaced).toEqual(["/"]);
+    expect(
+      takePairingCode({ hash: "#pair=bad%20code&tab=x", pathname: "/a", search: "?q=1" }, history),
+    ).toBeUndefined();
+    expect(replaced.at(-1)).toBe("/a?q=1#tab=x");
+    expect(takePairingCode({ hash: "#tab=x", pathname: "/", search: "" }, history)).toBeUndefined();
+    expect(replaced).toHaveLength(2);
   });
 
   it("names browsers by their user agent", () => {

@@ -427,11 +427,14 @@ describe("Wisp server", () => {
     await cli("pair");
     const text = output.pop()!;
     expect(text).toMatch(/^Pairing code: [A-Z0-9]{5}-[A-Z0-9]{5}\nValid for 10 minutes \(until .+\)\.\n\n/);
-    expect(text).toContain("Open https://wisp.example.ts.net on your phone or browser and enter the code to pair.");
     const code = /Pairing code: (\S+)/.exec(text)![1]!;
+    expect(text).toContain("Scan this with your phone to pair:");
+    expect(text).toContain(`Or open https://wisp.example.ts.net/#pair=${code} on your phone or browser to pair,`);
     await post(harness.server, "/api/v1/auth/pair", { code, deviceName: "Phone" });
     await cli("devices");
     expect(output.pop()).toMatch(/^1 paired device:\n\nPhone\n {2}ID: \S+\n {2}Paired .+, last seen /);
+    await cli("pair", "--no-qr");
+    expect(output.pop()).not.toContain("Scan this");
     await cli("pair", "--json");
     expect(JSON.parse(output.pop()!)).toEqual({ code: expect.any(String), expiresAt: expect.any(String) });
   });
