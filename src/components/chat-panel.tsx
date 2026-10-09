@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { ArrowDownIcon, ChevronLeftIcon, SettingsIcon } from "lucide-react";
 
 import type { ChatView, Message } from "@/chat-data";
@@ -25,6 +25,8 @@ const NO_QUEUE = { update: unavailable, cancel: unavailable };
 const NO_SCHEDULE = { update: unavailable, cancel: unavailable, sendNow: unavailable };
 /** How close to an end of the transcript, in pixels, the view gets before the next page loads. */
 const PAGE_EDGE_DISTANCE = 120;
+/** How close to the bottom, in pixels, the view still counts as following the newest messages. */
+const FOLLOW_DISTANCE = 24;
 
 // The flash is drawn over the row, centered on the message rather than on the margin above it.
 const messageRow =
@@ -34,6 +36,7 @@ const messageRow =
 interface TranscriptView {
   openKey: string;
   endKey: string;
+  lastMessageId: string | undefined;
   attached: boolean;
   firstMessageId: string | undefined;
   firstMessageTop: number;
@@ -45,6 +48,10 @@ function messageElement(transcript: HTMLElement, messageId: string | undefined):
     if (element.dataset.messageId === messageId) return element;
   }
   return null;
+}
+
+function atBottom(element: HTMLElement): boolean {
+  return element.scrollHeight - element.scrollTop - element.clientHeight <= FOLLOW_DISTANCE;
 }
 
 interface ChatPanelProps {
@@ -105,6 +112,11 @@ function ChatPanel({
   messageQueue,
 }: ChatPanelProps) {
   const transcriptRef = useRef<HTMLDivElement>(null);
+  const messagesRef = useRef<HTMLDivElement>(null);
+  // Whether the view is at the newest messages, so it keeps them in view as the transcript changes size.
+  const following = useRef(true);
+  // Something new arrived at the end while the person was reading further up.
+  const [unseen, setUnseen] = useState(false);
   const titleRef = useRef<HTMLHeadingElement>(null);
   const shown = useRef<TranscriptView | null>(null);
   const mobile = Boolean(onBack);
@@ -132,6 +144,25 @@ function ChatPanel({
   const canLoadOlder = Boolean(transcript?.olderCursor) && !transcript?.loading;
   const canLoadNewer = Boolean(transcript?.newerCursor) && !transcript?.loading;
 
+  function handleScroll(): void {
+    const element = transcriptRef.current;
+    if (!element) return;
+    following.current = atBottom(element);
+    if (following.current) setUnseen(false);
+    loadPageAtEdge();
+  }
+
+  function showLatest(): void {
+    const element = transcriptRef.current;
+    if (!attached || !element) {
+      onShowLatest();
+      return;
+    }
+    element.scrollTop = element.scrollHeight;
+    following.current = true;
+    setUnseen(false);
+  }
+
   function loadPageAtEdge(): void {
     const element = transcriptRef.current;
     if (!element || !openKey) return;
@@ -157,23 +188,46 @@ function ChatPanel({
       element.scrollTop = target
         ? target.offsetTop - (element.clientHeight - target.offsetHeight) / 2
         : element.scrollHeight;
+      setUnseen(false);
     } else {
       // An older page arrived above: keep the message that was first where it is.
       const anchor =
         previous.firstMessageId !== firstMessageId ? messageElement(element, previous.firstMessageId) : null;
       if (anchor) element.scrollTop += anchor.offsetTop - previous.firstMessageTop;
       // Only a change at the end of an attached window is a new message; a newer page is not.
-      if (attached && previous.attached && previous.endKey !== endKey) element.scrollTop = element.scrollHeight;
+      if (attached && previous.attached && previous.endKey !== endKey) {
+        // The person's own message always shows; anything else only while they follow along.
+        const sent = lastMessage?.id !== previous.lastMessageId && lastMessage?.type === "outgoing";
+        if (following.current || sent) element.scrollTop = element.scrollHeight;
+        else setUnseen(true);
+      }
     }
+    following.current = atBottom(element);
     shown.current = {
       openKey,
       endKey,
+      lastMessageId: lastMessage?.id,
       attached,
       firstMessageId,
       firstMessageTop: messageElement(element, firstMessageId)?.offsetTop ?? 0,
     };
     loadPageAtEdge();
   }, [openKey, endKey, attached, firstMessageId]);
+
+  // Content can grow without a new message (approvals, activity, images), and the
+  // view can shrink (the composer, the pending bar, a mobile keyboard): either way,
+  // a view that was at the newest messages stays there.
+  useEffect(() => {
+    const element = transcriptRef.current;
+    const content = messagesRef.current;
+    if (!element || !content || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(() => {
+      if (shown.current?.attached && following.current) element.scrollTop = element.scrollHeight;
+    });
+    observer.observe(element);
+    observer.observe(content);
+    return () => observer.disconnect();
+  }, []);
 
   useEffect(() => {
     if (focusChatId) titleRef.current?.focus();
@@ -234,9 +288,10 @@ function ChatPanel({
           ref={transcriptRef}
           tabIndex={0}
           aria-label={`${name} conversation`}
-          onScroll={loadPageAtEdge}
+          onScroll={handleScroll}
         >
           <div
+            ref={messagesRef}
             className="chat-messages mx-auto flex w-full max-w-[1400px] flex-col px-3.5 pt-1.5 pb-[22px]"
             role="log"
             aria-live="polite"
@@ -283,13 +338,13 @@ function ChatPanel({
             ) : null}
           </div>
         </div>
-        {attached ? null : (
+        {attached && !unseen ? null : (
           <Button
             className="absolute bottom-3 left-1/2 -translate-x-1/2 shadow-sm"
             variant="outline"
             size="sm"
             type="button"
-            onClick={onShowLatest}
+            onClick={showLatest}
           >
             <ArrowDownIcon aria-hidden="true" />
             Jump to latest
