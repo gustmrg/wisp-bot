@@ -604,6 +604,20 @@ export class ConversationRepository {
     });
   }
 
+  async markUnread(conversationId: string): Promise<void> {
+    await this.enqueue(async () => {
+      const result = applyWorkspaceAction(this.state, {
+        type: "mark-unread",
+        conversationId,
+        updatedAt: this.now().toISOString(),
+      });
+      this.throwForActionStatus(result.status);
+      if (result.status === "unchanged") return;
+      const record = result.records.conversations[conversationId]!;
+      await this.commit({ ...this.state, ...result.records }, (store) => store.putConversation(record));
+    });
+  }
+
   /** Sets the model of the Wisp whose own conversation this is. */
   async setModelOverride(conversationId: string, model: ModelSelection | null): Promise<void> {
     await this.enqueue(async () => {

@@ -45,6 +45,7 @@ const WISP_IPC_CHANNELS = {
   appendConversationMessage: "wisp:conversations:append-message",
   answerConversationPrompt: "wisp:conversations:answer-prompt",
   markConversationRead: "wisp:conversations:mark-read",
+  markConversationUnread: "wisp:conversations:mark-unread",
   conversationChanged: "wisp:conversations:changed",
   getConversationMessages: "wisp:conversations:get-messages",
   searchMessages: "wisp:conversations:search",
@@ -156,6 +157,7 @@ const wispApi: WispApi = {
   appendConversationMessage: (request) => ipcRenderer.invoke(WISP_IPC_CHANNELS.appendConversationMessage, request),
   answerConversationPrompt: (request) => ipcRenderer.invoke(WISP_IPC_CHANNELS.answerConversationPrompt, request),
   markConversationRead: (request) => ipcRenderer.invoke(WISP_IPC_CHANNELS.markConversationRead, request),
+  markConversationUnread: (request) => ipcRenderer.invoke(WISP_IPC_CHANNELS.markConversationUnread, request),
   getConversationMessages: (request) => ipcRenderer.invoke(WISP_IPC_CHANNELS.getConversationMessages, request),
   searchMessages: (request) => ipcRenderer.invoke(WISP_IPC_CHANNELS.searchMessages, request),
   subscribeToConversationChanges: (listener) => {

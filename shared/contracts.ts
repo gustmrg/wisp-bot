@@ -33,6 +33,7 @@ import type {
   DeleteWispRequest,
   InitializeConversationsRequest,
   MarkConversationReadRequest,
+  MarkConversationUnreadRequest,
   UpdateConversationRequest,
   UpdateWispRequest,
 } from "./conversations.js";
@@ -119,6 +120,7 @@ export const WISP_IPC_CHANNELS = {
   appendConversationMessage: "wisp:conversations:append-message",
   answerConversationPrompt: "wisp:conversations:answer-prompt",
   markConversationRead: "wisp:conversations:mark-read",
+  markConversationUnread: "wisp:conversations:mark-unread",
   conversationChanged: "wisp:conversations:changed",
   getConversationMessages: "wisp:conversations:get-messages",
   searchMessages: "wisp:conversations:search",
@@ -519,6 +521,7 @@ export interface WispApi {
   appendConversationMessage(request: AppendConversationMessageRequest): Promise<BackendResult<ConversationDelta>>;
   answerConversationPrompt(request: AnswerConversationPromptRequest): Promise<BackendResult<ConversationDelta>>;
   markConversationRead(request: MarkConversationReadRequest): Promise<BackendResult<ConversationDelta>>;
+  markConversationUnread(request: MarkConversationUnreadRequest): Promise<BackendResult<ConversationDelta>>;
   /** One page of a transcript, read from the backend store. */
   getConversationMessages(request: MessagePageRequest): Promise<BackendResult<MessagePage>>;
   /** Newest matching messages first. The query must have at least 3 characters. */

@@ -269,6 +269,7 @@ export function normalizeChat(value: unknown): Chat {
       raw.messages.map((message, index) => normalizeMessage(message, `${id}:message:${index}`)),
     ),
     ...(typeof raw.unread === "boolean" ? { unread: raw.unread } : {}),
+    ...(raw.pinned === true ? { pinned: true } : {}),
     ...(raw.lastActivityAt === undefined ? {} : { lastActivityAt: timestamp(raw.lastActivityAt) }),
   };
   if (raw.kind === "wisp") {
@@ -313,7 +314,7 @@ export function validateConversationGraph(chats: Readonly<ChatCollection>, wisps
 export function normalizeChatChanges(value: unknown): ChatChanges {
   const raw = asRecord(value);
   if (raw.kind !== "wisp" && raw.kind !== "circle") throw invalidRequest();
-  const shared = ["notifyOnUpdatesEnabled", "unread"];
+  const shared = ["notifyOnUpdatesEnabled", "unread", "pinned"];
   const allowed = new Set([
     "kind",
     ...shared,
@@ -328,7 +329,7 @@ export function normalizeChatChanges(value: unknown): ChatChanges {
     if (!Array.isArray(raw.memberIds) || raw.memberIds.length > 1_000) throw invalidRequest();
     result.memberIds = raw.memberIds.map(normalizeConversationId);
   }
-  for (const key of ["notifyOnUpdatesEnabled", "unread"] as const) {
+  for (const key of ["notifyOnUpdatesEnabled", "unread", "pinned"] as const) {
     if (raw[key] !== undefined) {
       if (typeof raw[key] !== "boolean") throw invalidRequest();
       result[key] = raw[key];

@@ -47,6 +47,7 @@ export type WorkspaceAction =
   | { type: "replace-circle-members"; conversationId: string; memberIds: ReadonlyArray<string>; updatedAt: string }
   | { type: "delete"; conversationId: string; updatedAt: string }
   | { type: "mark-read"; conversationId: string; updatedAt: string }
+  | { type: "mark-unread"; conversationId: string; updatedAt: string }
   | { type: "append-message"; conversationId: string; message: Message & { id: string }; updatedAt: string }
   | { type: "answer-prompt"; conversationId: string; messageId: string; answer: string; updatedAt: string };
 
@@ -180,6 +181,16 @@ export function applyWorkspaceAction(records: WorkspaceRecords, action: Workspac
       return withConversation(records, action.conversationId, {
         ...record,
         chat: { ...record.chat, unread: false },
+        updatedAt: action.updatedAt,
+      });
+    }
+    case "mark-unread": {
+      const record = records.conversations[action.conversationId];
+      if (!record) return { records, status: "not_found" };
+      if (record.chat.unread) return { records, status: "unchanged" };
+      return withConversation(records, action.conversationId, {
+        ...record,
+        chat: { ...record.chat, unread: true },
         updatedAt: action.updatedAt,
       });
     }

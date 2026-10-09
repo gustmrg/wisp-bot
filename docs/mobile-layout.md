@@ -29,6 +29,14 @@ a question, and turns read when someone opens it, or when the reply arrives
 while it is on screen. A hairline
 separates the rows, starting after the avatar.
 
+Pinned conversations come first, each marked with a pin, and keep that place
+on every device. A long press on a row opens its menu: Pin or Unpin, Mute
+notifications or Turn on notifications, and Mark as read or Mark as unread.
+The same menu opens with a right click on the desktop and with the keyboard's
+menu key or Shift+F10 on a focused row; the arrow keys move through it and
+Escape closes it. A conversation marked unread while it is open stays unread
+until it is chosen again.
+
 ## Settings
 
 The Settings overview starts with a profile card (see

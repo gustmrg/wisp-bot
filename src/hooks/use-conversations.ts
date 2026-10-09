@@ -140,6 +140,7 @@ export interface ConversationsController {
   appendMessage: (conversationId: string, message: OutgoingMessage) => Promise<boolean>;
   answerPrompt: (conversationId: string, messageId: string, answer: string) => Promise<boolean>;
   markRead: (conversationId: string) => Promise<boolean>;
+  markUnread: (conversationId: string) => Promise<boolean>;
   /** Shows a conversation at its newest messages, loading them unless its window already reaches them. */
   openConversation: (conversationId: string) => void;
   /** Shows a conversation around one message, such as a search result. */
@@ -635,6 +636,10 @@ export function useConversations(): ConversationsController {
     ),
     markRead: useCallback(
       (conversationId) => enqueueDelta(() => window.wisp.markConversationRead({ conversationId })),
+      [enqueueDelta],
+    ),
+    markUnread: useCallback(
+      (conversationId) => enqueueDelta(() => window.wisp.markConversationUnread({ conversationId })),
       [enqueueDelta],
     ),
     openConversation,

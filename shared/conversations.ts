@@ -48,6 +48,8 @@ export interface ChatBase {
   preview: string;
   messages: ReadonlyArray<Message>;
   unread?: boolean;
+  /** Pinned conversations come first in the list, on every device. */
+  pinned?: boolean;
   /** Time of the newest message (ISO 8601), maintained by the backend. */
   lastActivityAt?: string;
 }
@@ -121,7 +123,7 @@ export type NewCircle = Pick<CircleChat, "name" | "label" | "description" | "not
   kind: "circle";
 };
 
-type SharedChatChanges = Partial<Pick<ChatBase, "notifyOnUpdatesEnabled" | "unread">>;
+type SharedChatChanges = Partial<Pick<ChatBase, "notifyOnUpdatesEnabled" | "unread" | "pinned">>;
 
 export type WispChatChanges = SharedChatChanges & { kind: "wisp" };
 export type CircleChatChanges = SharedChatChanges &
@@ -231,6 +233,8 @@ export interface AnswerConversationPromptRequest {
 export interface MarkConversationReadRequest {
   conversationId: ChatId;
 }
+
+export type MarkConversationUnreadRequest = MarkConversationReadRequest;
 
 /**
  * Which slice of a transcript to read. Cursors are opaque; they come from a

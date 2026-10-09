@@ -1,4 +1,4 @@
-import { render, screen, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -261,3 +261,129 @@ describe("Sidebar on mobile", () => {
     expect(within(list).getAllByRole("button")).toHaveLength(1);
   });
 });
+
+describe("Sidebar conversation menu", () => {
+  const chats: ChatViewCollection = {
+    atlas: wispChatView("atlas", {
+      wisp: { name: "Atlas" },
+      chat: { preview: "Older note", lastActivityAt: "2026-10-01T10:00:00.000Z", notifyOnUpdatesEnabled: true },
+    }),
+    beta: wispChatView("beta", {
+      wisp: { name: "Beta" },
+      chat: { preview: "Fresh reply", unread: true, lastActivityAt: "2026-10-09T10:00:00.000Z" },
+    }),
+    gamma: wispChatView("gamma", {
+      wisp: { name: "Gamma" },
+      chat: {
+        preview: "Pinned note",
+        pinned: true,
+        notifyOnUpdatesEnabled: false,
+        lastActivityAt: "2026-09-01T10:00:00.000Z",
+      },
+    }),
+  };
+
+  beforeEach(() => callbacks.onSelectChat.mockClear());
+
+  function renderList(onChatAction = vi.fn(), mobile = true) {
+    render(
+      <Sidebar
+        mobile={mobile}
+        activeChatId=""
+        chats={chats}
+        collapsed={false}
+        currentUser={currentUser}
+        width={280}
+        {...callbacks}
+        onChatAction={onChatAction}
+      />,
+    );
+    return within(screen.getByRole("navigation", { name: "Wisps and circles" }));
+  }
+
+  const names = (list: ReturnType<typeof renderList>) =>
+    list.getAllByRole("button").map((item) => item.querySelector("strong")?.textContent);
+
+  it("puts pinned conversations first, on mobile and on the desktop", () => {
+    const mobile = renderList();
+    expect(names(mobile)).toEqual(["Gamma", "Beta", "Atlas"]);
+    expect(within(mobile.getByRole("button", { name: /Gamma/ })).getByText("Pinned")).toHaveClass("sr-only");
+    document.body.innerHTML = "";
+
+    expect(names(renderList(vi.fn(), false))).toEqual(["Gamma", "Atlas", "Beta"]);
+  });
+
+  it("offers each action for what the conversation is now", async () => {
+    const user = userEvent.setup();
+    const onChatAction = vi.fn();
+    const list = renderList(onChatAction);
+
+    fireEvent.contextMenu(list.getByRole("button", { name: /Atlas/ }));
+    const atlasMenu = await screen.findByRole("menu");
+    expect(
+      within(atlasMenu)
+        .getAllByRole("menuitem")
+        .map((item) => item.textContent),
+    ).toEqual(["Pin", "Mute notifications", "Mark as unread"]);
+    await user.click(within(atlasMenu).getByRole("menuitem", { name: "Mark as unread" }));
+    expect(onChatAction).toHaveBeenCalledWith("atlas", "unread");
+    await waitForMenuToClose();
+
+    fireEvent.contextMenu(list.getByRole("button", { name: /Gamma/ }));
+    expect(
+      within(await screen.findByRole("menu"))
+        .getAllByRole("menuitem")
+        .map((item) => item.textContent),
+    ).toEqual(["Unpin", "Turn on notifications", "Mark as unread"]);
+    await user.keyboard("{Escape}");
+    await waitForMenuToClose();
+
+    fireEvent.contextMenu(list.getByRole("button", { name: /Beta/ }));
+    await user.click(await screen.findByRole("menuitem", { name: "Mark as read" }));
+    expect(onChatAction).toHaveBeenCalledWith("beta", "read");
+    expect(callbacks.onSelectChat).not.toHaveBeenCalled();
+  });
+
+  it("works from the keyboard and returns focus to the conversation", async () => {
+    const user = userEvent.setup();
+    const onChatAction = vi.fn();
+    const list = renderList(onChatAction);
+    const gamma = list.getByRole("button", { name: /Gamma/ });
+    gamma.focus();
+
+    // Browsers fire contextmenu on the focused element for the menu key and Shift+F10.
+    fireEvent.contextMenu(gamma);
+    await screen.findByRole("menu");
+    await user.keyboard("{ArrowDown}{ArrowDown}");
+    expect(screen.getByRole("menuitem", { name: "Turn on notifications" })).toHaveFocus();
+    await user.keyboard("{Enter}");
+
+    expect(onChatAction).toHaveBeenCalledWith("gamma", "unmute");
+    await waitForMenuToClose();
+    expect(gamma).toHaveFocus();
+  });
+
+  it("opens the menu on a long press without opening the conversation", async () => {
+    vi.useFakeTimers();
+    try {
+      const list = renderList();
+      const beta = list.getByRole("button", { name: /Beta/ });
+
+      fireEvent.touchStart(beta, { touches: [{ clientX: 20, clientY: 20 }] });
+      await act(async () => {
+        vi.advanceTimersByTime(600);
+      });
+      fireEvent.touchEnd(beta);
+      fireEvent.click(beta);
+
+      expect(screen.getByRole("menu")).toBeInTheDocument();
+      expect(callbacks.onSelectChat).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
+async function waitForMenuToClose() {
+  await waitFor(() => expect(screen.queryByRole("menu")).not.toBeInTheDocument());
+}

@@ -210,6 +210,41 @@ describe("workspace actions", () => {
     ).toBe("not_found");
   });
 
+  it("marks a read conversation unread, and leaves an unread or missing one unchanged", () => {
+    const records = graph(["first"]);
+    const marked = applyWorkspaceAction(records, {
+      type: "mark-unread",
+      conversationId: "first",
+      updatedAt: "after",
+    });
+    expect(marked.status).toBe("applied");
+    expect(marked.records.conversations.first?.chat.unread).toBe(true);
+    expect(
+      applyWorkspaceAction(marked.records, { type: "mark-unread", conversationId: "first", updatedAt: "later" }).status,
+    ).toBe("unchanged");
+    expect(
+      applyWorkspaceAction(records, { type: "mark-unread", conversationId: "missing", updatedAt: "after" }).status,
+    ).toBe("not_found");
+  });
+
+  it("pins and unpins a conversation through its shared fields", () => {
+    const records = graph(["first"]);
+    const pinned = applyWorkspaceAction(records, {
+      type: "update",
+      conversationId: "first",
+      changes: { kind: "wisp", pinned: true },
+      updatedAt: "after",
+    });
+    expect(pinned.records.conversations.first?.chat.pinned).toBe(true);
+    const unpinned = applyWorkspaceAction(pinned.records, {
+      type: "update",
+      conversationId: "first",
+      changes: { kind: "wisp", pinned: false },
+      updatedAt: "later",
+    });
+    expect(unpinned.records.conversations.first?.chat).not.toHaveProperty("pinned");
+  });
+
   it("marks a conversation unread when a Wisp's reply or question arrives, not for the person's own messages", () => {
     const records = graph(["first"]);
     const append = (message: Message & { id: string }) =>

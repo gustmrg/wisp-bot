@@ -258,6 +258,12 @@ describe("IPC request validators", () => {
     expect(
       parseUpdateConversationRequest({ conversationId: "wisp-1", changes: { kind: "wisp", unread: false } }).changes,
     ).toEqual({ kind: "wisp", unread: false });
+    expect(
+      parseUpdateConversationRequest({ conversationId: "wisp-1", changes: { kind: "wisp", pinned: true } }).changes,
+    ).toEqual({ kind: "wisp", pinned: true });
+    expect(() =>
+      parseUpdateConversationRequest({ conversationId: "wisp-1", changes: { kind: "wisp", pinned: "yes" } }),
+    ).toThrow(WispBackendError);
     for (const field of ["name", "soul", "shape", "tone"]) {
       expect(() =>
         parseUpdateConversationRequest({ conversationId: "wisp-1", changes: { kind: "wisp", [field]: "x" } }),

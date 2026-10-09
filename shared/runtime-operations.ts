@@ -43,6 +43,7 @@ export const RUNTIME_OPERATIONS = [
   "appendConversationMessage",
   "answerConversationPrompt",
   "markConversationRead",
+  "markConversationUnread",
   "getConversationMessages",
   "searchMessages",
   "getScheduledMessages",
