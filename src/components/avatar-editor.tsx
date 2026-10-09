@@ -51,13 +51,8 @@ function AvatarEditor({ wisp, onChange }: AvatarEditorProps) {
         <WispAvatar wisp={wisp} size="xl" />
       </div>
       <section className="px-1 pb-3" aria-label="Wisp appearance">
-        <header className="mb-2 flex items-center justify-between gap-2">
+        <header className="mb-2">
           <strong className="text-dim text-sm font-medium">Appearance</strong>
-          {/* The sizes the sidebar and lists use, where a Wisp has to stay recognizable. */}
-          <span className="flex items-end gap-2" aria-hidden="true">
-            <WispAvatar wisp={wisp} size="sm" />
-            <WispAvatar wisp={wisp} />
-          </span>
         </header>
         {PICTURE_AXES.map(({ key, label }) => (
           <div className={axisRow} key={key}>

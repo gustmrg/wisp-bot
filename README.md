@@ -143,7 +143,7 @@ locally.
 ## Desktop releases
 
 [GitHub Releases](https://github.com/gustmrg/wisp-bot/releases) has macOS
-(arm64 and x64 DMG/ZIP) and Linux (x64 AppImage and `.deb`) builds. Windows is
+(Apple Silicon arm64 DMG/ZIP, macOS 14 Sonoma or later) and Linux (x64 AppImage and `.deb`) builds. Windows is
 not built yet.
 
 macOS builds are ad-hoc signed and not notarized, so you have to remove the

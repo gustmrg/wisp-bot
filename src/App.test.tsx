@@ -257,6 +257,7 @@ function createApi(initialState: ConversationStateView): WispApi {
     })),
     transcribeAudio: vi.fn(async () => ({ ok: true as const, value: { text: "" } })),
     getConnections: async () => ({ ok: true as const, value: localConnections }),
+    testSshConnection: async () => ({ ok: true as const, value: { message: "SSH connection successful." } }),
     saveConnection: async () => ({ ok: true as const, value: localConnections }),
     removeConnection: async () => ({ ok: true as const, value: localConnections }),
     activateConnection: async () => ({ ok: true as const, value: localConnections }),

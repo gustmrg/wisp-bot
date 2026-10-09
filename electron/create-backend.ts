@@ -20,10 +20,11 @@ import type { HostRequest, HostResponse } from "../shared/remote-protocol.js";
 import type { LaunchAtLoginService } from "./backend/launch-at-login-service.js";
 import type { UpdateService } from "./backend/update-service.js";
 import { ConnectionManager } from "./connections/connection-manager.js";
-import { ConnectionStore } from "./connections/connection-store.js";
+import { ConnectionStore, parseRemoteProfile } from "./connections/connection-store.js";
 import type { SshAskpass } from "./connections/ssh-askpass.js";
 import type { SshInteraction } from "./connections/ssh-auth.js";
 import { installRemoteServer } from "./connections/ssh-install.js";
+import { testSshConnection } from "./connections/ssh-test.js";
 import { openSshTunnel } from "./connections/ssh-tunnel.js";
 import { registerLaunchAtLoginHandlers } from "./ipc/register-launch-at-login-handlers.js";
 import { registerUpdateHandlers } from "./ipc/register-update-handlers.js";
@@ -71,6 +72,7 @@ export interface BackendHost {
     signal: AbortSignal,
     interaction: SshInteraction | undefined,
   ) => Promise<void>;
+  testSshConnection?: typeof testSshConnection;
   /** Opens an SSH tunnel to a server; tests substitute a fake. */
   openSshTunnel?: (
     profile: SshConnectionProfile,
@@ -125,6 +127,8 @@ export async function createBackend(host: BackendHost): Promise<Backend> {
   );
   // Handlers registered on ipcMain only ever receive Electron invoke events.
   const authorize = (event: HandlerEvent): boolean => authorizeSender(event as IpcMainInvokeEvent);
+  const sshTestController = new AbortController();
+  let testingSsh = false;
   const handlers = [
     registerLaunchAtLoginHandlers(ipcMain, host.launchAtLoginService, authorize),
     registerUpdateHandlers(ipcMain, host.updateService, authorize, host.openReleasesPage),
@@ -138,6 +142,21 @@ export async function createBackend(host: BackendHost): Promise<Backend> {
     ),
     registerGuardedHandlers(ipcMain, authorize, [
       [WISP_IPC_CHANNELS.getConnections, () => manager.view()],
+      [
+        WISP_IPC_CHANNELS.testSshConnection,
+        async (payload) => {
+          const profile = parseRemoteProfile(payload, "test");
+          if (profile.kind !== "ssh")
+            throw new WispBackendError("invalid_request", "Choose an SSH connection to test.");
+          if (testingSsh) throw new WispBackendError("invalid_request", "An SSH test is already running.");
+          testingSsh = true;
+          try {
+            return await (host.testSshConnection ?? testSshConnection)(profile, { signal: sshTestController.signal });
+          } finally {
+            testingSsh = false;
+          }
+        },
+      ],
       [WISP_IPC_CHANNELS.saveConnection, (payload) => manager.save(payload)],
       [WISP_IPC_CHANNELS.removeConnection, (payload) => manager.remove(connectionId(payload))],
       [
@@ -170,6 +189,7 @@ export async function createBackend(host: BackendHost): Promise<Backend> {
       // Stop accepting renderer requests before the backend winds down.
       for (const registration of handlers) registration.dispose();
       unsubscribeUpdateState();
+      sshTestController.abort();
       await manager.dispose();
       await askpass?.close();
     },

@@ -149,6 +149,7 @@ export const WISP_IPC_CHANNELS = {
   transcribeAudio: "wisp:voice:transcribe",
   getConnections: "wisp:connections:get",
   saveConnection: "wisp:connections:save",
+  testSshConnection: "wisp:connections:test-ssh",
   removeConnection: "wisp:connections:remove",
   activateConnection: "wisp:connections:activate",
   retryConnection: "wisp:connections:retry",
@@ -563,6 +564,7 @@ export interface WispApi {
   /** Sends a recording to the chosen speech-to-text provider and returns its text. */
   transcribeAudio(request: TranscribeAudioRequest): Promise<BackendResult<TranscriptionResult>>;
   getConnections(): Promise<BackendResult<ConnectionsView>>;
+  testSshConnection(request: SaveConnectionRequest): Promise<BackendResult<{ message: string }>>;
   saveConnection(request: SaveConnectionRequest): Promise<BackendResult<ConnectionsView>>;
   removeConnection(request: ConnectionRequest): Promise<BackendResult<ConnectionsView>>;
   /** Switches the backend; the renderer reloads its state when the status epoch changes. */
