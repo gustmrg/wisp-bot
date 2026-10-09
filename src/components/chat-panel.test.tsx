@@ -1,6 +1,6 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { Message } from "@/chat-data";
 import { ChatPanel, type ChatPanelProps } from "@/components/chat-panel";
@@ -9,6 +9,7 @@ import { wispChatView } from "@/test/chat-fixtures";
 
 const ROW_HEIGHT = 40;
 const VIEWPORT_HEIGHT = 200;
+let viewportHeight = VIEWPORT_HEIGHT;
 
 const atlas = wispChatView("atlas", { wisp: { name: "Atlas", role: "Research", soul: "" } });
 
@@ -31,10 +32,22 @@ function rowsOf(element: Element | null): Element[] {
 }
 
 function bottomOf(rows: number): number {
-  return Math.max(0, rows * ROW_HEIGHT - VIEWPORT_HEIGHT);
+  return Math.max(0, rows * ROW_HEIGHT - viewportHeight);
+}
+
+// jsdom has no ResizeObserver; the tests report resizes themselves.
+let resized: () => void = () => {};
+class FakeResizeObserver {
+  constructor(callback: ResizeObserverCallback) {
+    resized = () => callback([], this as unknown as ResizeObserver);
+  }
+  observe() {}
+  disconnect() {}
 }
 
 beforeEach(() => {
+  viewportHeight = VIEWPORT_HEIGHT;
+  vi.stubGlobal("ResizeObserver", FakeResizeObserver);
   vi.spyOn(HTMLElement.prototype, "offsetTop", "get").mockImplementation(function (this: HTMLElement) {
     return rowsOf(this.parentElement).indexOf(this) * ROW_HEIGHT;
   });
@@ -42,7 +55,7 @@ beforeEach(() => {
   vi.spyOn(Element.prototype, "scrollHeight", "get").mockImplementation(function (this: Element) {
     return rowsOf(this).length * ROW_HEIGHT;
   });
-  vi.spyOn(Element.prototype, "clientHeight", "get").mockReturnValue(VIEWPORT_HEIGHT);
+  vi.spyOn(Element.prototype, "clientHeight", "get").mockImplementation(() => viewportHeight);
   const positions = new WeakMap<Element, number>();
   vi.spyOn(Element.prototype, "scrollTop", "get").mockImplementation(function (this: Element) {
     return Math.min(positions.get(this) ?? 0, bottomOf(rowsOf(this).length));
@@ -50,6 +63,10 @@ beforeEach(() => {
   vi.spyOn(Element.prototype, "scrollTop", "set").mockImplementation(function (this: Element, value: number) {
     positions.set(this, Math.max(0, value));
   });
+});
+
+afterEach(() => {
+  vi.unstubAllGlobals();
 });
 
 function renderPanel(held: MessageWindow | undefined, overrides: Partial<ChatPanelProps> = {}) {
@@ -182,6 +199,48 @@ describe("ChatPanel transcript", () => {
     scroller.scrollTop = 100;
     show(transcript([...messages(0, 10), { id: "reply", type: "incoming", text: "Hi there", status: "streaming" }]));
     expect(scroller.scrollTop).toBe(bottomOf(11));
+  });
+
+  it("keeps a reader's place when a reply arrives, and offers a way to it", async () => {
+    const user = userEvent.setup();
+    const { scroller, show, props } = renderPanel(transcript(messages(0, 10)));
+    scroller.scrollTop = 40;
+    fireEvent.scroll(scroller);
+    expect(screen.queryByRole("button", { name: "Jump to latest" })).not.toBeInTheDocument();
+
+    show(transcript([...messages(0, 10), { id: "reply", type: "incoming", text: "Hi", status: "streaming" }]));
+    expect(scroller.scrollTop).toBe(40);
+
+    await user.click(screen.getByRole("button", { name: "Jump to latest" }));
+    // The window already holds the newest messages, so nothing is loaded.
+    expect(props.onShowLatest).not.toHaveBeenCalled();
+    expect(scroller.scrollTop).toBe(bottomOf(11));
+    expect(screen.queryByRole("button", { name: "Jump to latest" })).not.toBeInTheDocument();
+  });
+
+  it("always shows the person's own message", () => {
+    const { scroller, show } = renderPanel(transcript(messages(0, 10)));
+    scroller.scrollTop = 40;
+    fireEvent.scroll(scroller);
+
+    show(transcript([...messages(0, 10), { id: "sent", type: "outgoing", text: "And then?", status: "queued" }]));
+    expect(scroller.scrollTop).toBe(bottomOf(11));
+  });
+
+  it("stays at the newest messages when the view shrinks, as when a keyboard opens", () => {
+    const { scroller } = renderPanel(transcript(messages(0, 10)));
+    expect(scroller.scrollTop).toBe(bottomOf(10));
+
+    viewportHeight = 120;
+    resized();
+    expect(scroller.scrollTop).toBe(bottomOf(10));
+
+    // A reader further up is left where they are.
+    scroller.scrollTop = 40;
+    fireEvent.scroll(scroller);
+    viewportHeight = 80;
+    resized();
+    expect(scroller.scrollTop).toBe(40);
   });
 
   it("centers and highlights the message a window was opened on", () => {
