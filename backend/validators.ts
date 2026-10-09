@@ -26,6 +26,15 @@ import type {
   UpdateWispRequest,
 } from "../shared/conversations.js";
 import { MAX_MESSAGE_SEARCH_LENGTH, MIN_MESSAGE_SEARCH_LENGTH } from "../shared/message-search.js";
+import {
+  MAX_ARCHIVE_DELETIONS,
+  MAX_CLEANUP_PATHS,
+  type StorageArchiveDeletionRequest,
+  type StorageCleanupConfirmation,
+  type StorageCleanupRequest,
+  type StorageDirectoryRequest,
+  type StorageSummaryRequest,
+} from "../shared/storage.js";
 import { isValidSkillName, type ImportSkillRequest, type SkillRequest } from "../shared/skills.js";
 import type { ResolveToolApprovalRequest } from "../shared/tool-policy.js";
 import {
@@ -411,4 +420,44 @@ export function parseUpdateQueuedMessageRequest(value: unknown): UpdateQueuedMes
 
 export function parseQueuedMessageRequest(value: unknown): QueuedMessageRequest {
   return { queuedMessageId: parseId(asRecord(value).queuedMessageId) };
+}
+
+export function parseStorageSummaryRequest(value: unknown): StorageSummaryRequest {
+  if (value === undefined || value === null) return {};
+  const request = asRecord(value);
+  if (request.refresh !== undefined && typeof request.refresh !== "boolean") throw invalidRequest();
+  return request.refresh ? { refresh: true } : {};
+}
+
+export function parseStorageDirectoryRequest(value: unknown): StorageDirectoryRequest {
+  const request = asRecord(value);
+  if (typeof request.path !== "string") throw invalidRequest();
+  if (request.cursor !== undefined && typeof request.cursor !== "string") throw invalidRequest();
+  return {
+    conversationId: parseId(request.conversationId),
+    path: request.path,
+    ...(request.cursor === undefined ? {} : { cursor: request.cursor }),
+  };
+}
+
+function parseStringList(value: unknown, max: number): string[] {
+  if (!Array.isArray(value) || value.length > max || value.some((item) => typeof item !== "string")) {
+    throw invalidRequest();
+  }
+  return value as string[];
+}
+
+export function parseStorageCleanupRequest(value: unknown): StorageCleanupRequest {
+  const request = asRecord(value);
+  return { conversationId: parseId(request.conversationId), paths: parseStringList(request.paths, MAX_CLEANUP_PATHS) };
+}
+
+export function parseStorageCleanupConfirmation(value: unknown): StorageCleanupConfirmation {
+  const request = asRecord(value);
+  if (typeof request.fingerprint !== "string" || request.fingerprint.length > 128) throw invalidRequest();
+  return { ...parseStorageCleanupRequest(value), fingerprint: request.fingerprint };
+}
+
+export function parseStorageArchiveDeletionRequest(value: unknown): StorageArchiveDeletionRequest {
+  return { ids: parseStringList(asRecord(value).ids, MAX_ARCHIVE_DELETIONS) };
 }

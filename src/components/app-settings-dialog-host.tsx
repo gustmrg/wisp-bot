@@ -9,12 +9,12 @@ import {
 } from "@/components/app-settings-dialog";
 
 export interface AppSettingsDialogHandle {
-  open(section: SettingsEntrySection, pluginId?: PluginId): void;
+  open(section: SettingsEntrySection, pluginId?: PluginId, storageConversationId?: string): void;
 }
 
 type AppSettingsDialogHostProps = Omit<
   AppSettingsDialogProps,
-  "open" | "initialSection" | "initialPluginId" | "onOpenChange"
+  "open" | "initialSection" | "initialPluginId" | "initialStorageConversationId" | "onOpenChange"
 >;
 
 /**
@@ -26,12 +26,14 @@ export const AppSettingsDialogHost = forwardRef<AppSettingsDialogHandle, AppSett
   function AppSettingsDialogHost({ onOpenConversations, ...dialogProps }, ref) {
     const [section, setSection] = useState<SettingsEntrySection | null>(null);
     const [pluginId, setPluginId] = useState<PluginId | undefined>();
+    const [storageConversationId, setStorageConversationId] = useState<string | undefined>();
     useImperativeHandle(
       ref,
       () => ({
-        open: (next, nextPluginId) => {
+        open: (next, nextPluginId, nextStorageConversationId) => {
           setSection(next);
           setPluginId(nextPluginId);
+          setStorageConversationId(nextStorageConversationId);
         },
       }),
       [],
@@ -42,9 +44,11 @@ export const AppSettingsDialogHost = forwardRef<AppSettingsDialogHandle, AppSett
         open={section !== null}
         initialSection={section ?? "general"}
         initialPluginId={pluginId}
+        initialStorageConversationId={storageConversationId}
         onOpenChange={(nextOpen) => {
           setSection(nextOpen ? "general" : null);
           setPluginId(undefined);
+          setStorageConversationId(undefined);
         }}
         onOpenConversations={() => {
           setSection(null);

@@ -307,6 +307,34 @@ export class ConversationRepository {
     return this.requireWispConversation(conversationId).wispRecord.storageId;
   }
 
+  /**
+   * Each conversation's workspace folder once, whatever its kind: the folder
+   * belongs to the conversation, so a circle's members share one entry.
+   */
+  listWorkspaceFolders(): ReadonlyArray<{
+    conversationId: string;
+    name: string;
+    kind: "wisp" | "circle";
+    directory: string;
+  }> {
+    return Object.values(this.state.conversations).map(({ chat, storageId }) => ({
+      conversationId: chat.id,
+      name: chat.kind === "circle" ? chat.name : (this.state.wisps[chat.wispId]?.wisp.name ?? "Wisp"),
+      kind: chat.kind,
+      directory: path.join(this.workspaceRoot, storageId),
+    }));
+  }
+
+  /** The workspace folder of any conversation; throws for an unknown one. */
+  getWorkspaceDirectory(conversationId: string): string {
+    return path.join(this.workspaceRoot, this.require(conversationId).storageId);
+  }
+
+  /** Where deleted Wisps and circles are kept until the person removes them for good. */
+  getArchiveDirectory(): string {
+    return this.deletedRoot;
+  }
+
   getPiSessionContext(conversationId: string): {
     sessionId: string;
     piSessionId: string | null;

@@ -80,6 +80,8 @@ export interface WorkspaceServiceOptions {
   /** Asks the user to pick files; resolves with absolute paths, empty when dismissed. */
   selectFiles: () => Promise<ReadonlyArray<string>>;
   quotaBytes?: number;
+  /** Held while files are written into a conversation's workspace; throws while it is being cleaned. */
+  acquireWrite?: (conversationId: string) => () => void;
 }
 
 /**
@@ -149,6 +151,19 @@ export class WorkspaceService {
     const { workspaceDirectory } = this.options.resolveDirectories(conversationId);
     const selected = await this.options.selectFiles();
     if (!selected.length) return { files: [], workspace: await this.getView(conversationId) };
+    const release = this.options.acquireWrite?.(conversationId);
+    try {
+      return await this.copyIntoInbox(conversationId, workspaceDirectory, selected);
+    } finally {
+      release?.();
+    }
+  }
+
+  private async copyIntoInbox(
+    conversationId: string,
+    workspaceDirectory: string,
+    selected: ReadonlyArray<string>,
+  ): Promise<AttachWorkspaceFilesResult> {
     if (selected.length > MAX_ATTACHMENTS_PER_REQUEST) {
       throw new WispBackendError("invalid_request", `Attach at most ${MAX_ATTACHMENTS_PER_REQUEST} files at a time.`);
     }
@@ -186,6 +201,19 @@ export class WorkspaceService {
     content: AsyncIterable<Uint8Array>,
   ): Promise<WorkspaceAttachment> {
     const { workspaceDirectory } = this.options.resolveDirectories(conversationId);
+    const release = this.options.acquireWrite?.(conversationId);
+    try {
+      return await this.writeUpload(workspaceDirectory, file, content);
+    } finally {
+      release?.();
+    }
+  }
+
+  private async writeUpload(
+    workspaceDirectory: string,
+    file: { name: string; size: number },
+    content: AsyncIterable<Uint8Array>,
+  ): Promise<WorkspaceAttachment> {
     await assertWorkspaceCapacity(workspaceDirectory, file.size, this.quotaBytes);
     const inbox = await prepareInbox(workspaceDirectory);
     const partial = path.join(inbox, `.upload-${randomUUID()}.partial`);

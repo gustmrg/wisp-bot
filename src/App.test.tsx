@@ -238,6 +238,20 @@ function createApi(initialState: ConversationStateView): WispApi {
     openReleasesPage: vi.fn(async () => ({ ok: true as const, value: {} })),
     subscribeToUpdateState: vi.fn(() => () => undefined),
     getWorkspace: vi.fn(async () => ({ ok: true as const, value: { usedBytes: 0, quotaBytes: 1024 } })),
+    getStorageSummary: vi.fn(async () => ({
+      ok: true as const,
+      value: { measuredAt: "", workspaces: [], workspaceBytes: 0, archives: [], archiveBytes: 0, partial: false },
+    })),
+    listStorageDirectory: vi.fn(async () => ({
+      ok: true as const,
+      value: { path: "", entries: [], nextCursor: null },
+    })),
+    prepareStorageCleanup: vi.fn(async () => ({
+      ok: true as const,
+      value: { items: [], totalBytes: 0, fileCount: 0, fingerprint: "", includesInbox: false },
+    })),
+    cleanStorage: vi.fn(async () => ({ ok: true as const, value: { removed: [], failed: [], removedBytes: 0 } })),
+    deleteArchivedStorage: vi.fn(async () => ({ ok: true as const, value: { removed: [], failed: [] } })),
     openWorkspaceFolder: vi.fn(async () => ({ ok: true as const, value: {} })),
     openSkillsFolder: vi.fn(async () => ({ ok: true as const, value: {} })),
     attachWorkspaceFiles: vi.fn(async () => ({

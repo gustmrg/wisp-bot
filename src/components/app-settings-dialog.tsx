@@ -11,6 +11,7 @@ import {
   ChevronLeftIcon,
   CircleFadingArrowUpIcon,
   DownloadIcon,
+  HardDriveIcon,
   ExternalLinkIcon,
   InfoIcon,
   KeyboardIcon,
@@ -26,6 +27,7 @@ import {
 
 import { GeneralSettingsSections } from "@/components/general-settings-sections";
 import { NotificationSettingsSection } from "@/components/notification-settings-section";
+import { StorageSettingsSection } from "@/components/storage-settings-section";
 import { UsageSettingsSection } from "@/components/usage-settings-section";
 import { ModelSettingsSection } from "@/components/model-settings-section";
 import { PluginSettingsSection } from "@/components/plugin-settings-section";
@@ -64,9 +66,10 @@ type SettingsSection =
   | "mcp"
   | "shortcuts"
   | "about"
-  | "usage";
+  | "usage"
+  | "storage";
 /** Sections other parts of the app can open the dialog at. */
-export type SettingsEntrySection = "general" | "model" | "voice" | "plugins" | "mcp";
+export type SettingsEntrySection = "general" | "model" | "voice" | "plugins" | "mcp" | "storage";
 
 /** Navigation order; entries without a section are announced but not available yet. */
 const NAV_ITEMS: ReadonlyArray<
@@ -79,6 +82,7 @@ const NAV_ITEMS: ReadonlyArray<
   { section: "plugins", panelId: "plugin-settings-panel", label: "Plugins", icon: PlugIcon },
   { section: "mcp", panelId: "mcp-settings-panel", label: "MCP servers", icon: ServerIcon },
   { section: "usage", panelId: "usage-settings-panel", label: "Token usage", icon: BarChart3Icon },
+  { section: "storage", panelId: "storage-settings-panel", label: "Storage", icon: HardDriveIcon },
   { section: "notifications", panelId: "notification-settings-panel", label: "Notifications", icon: BellIcon },
   { section: "shortcuts", panelId: "shortcut-settings-panel", label: "Shortcuts", icon: KeyboardIcon },
   { section: "about", panelId: "about-settings-panel", label: "About", icon: InfoIcon },
@@ -100,6 +104,8 @@ interface AppSettingsDialogProps {
   initialSection?: SettingsEntrySection;
   /** Plugin to open directly when the dialog starts at Plugins. */
   initialPluginId?: PluginId;
+  /** Workspace to show when the dialog starts at Storage. */
+  initialStorageConversationId?: string;
   /** Wisps that Plugins can give access to. */
   wisps?: ReadonlyArray<WispOption>;
   preferences: AppPreferences;
@@ -116,6 +122,7 @@ function AppSettingsDialog({
   appMetadata,
   initialSection = "general",
   initialPluginId,
+  initialStorageConversationId,
   wisps,
   mobile = false,
   onOpenConversations,
@@ -149,6 +156,7 @@ function AppSettingsDialog({
     mcp: "MCP servers",
     about: "About",
     usage: "Token usage",
+    storage: "Storage",
   };
   function openSection(nextSection: typeof section) {
     setSection(nextSection);
@@ -277,6 +285,12 @@ function AppSettingsDialog({
           )}
         </nav>
         {section === "usage" && open && !showOverview ? <UsageSettingsSection wisps={wisps} /> : null}
+        {section === "storage" && open && !showOverview ? (
+          <StorageSettingsSection
+            key={initialStorageConversationId ?? "all"}
+            initialConversationId={initialStorageConversationId}
+          />
+        ) : null}
         {section === "plugins" && open && !showOverview ? (
           <PluginSettingsSection
             wisps={wisps}
