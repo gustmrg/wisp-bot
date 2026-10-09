@@ -99,17 +99,20 @@ export function ConnectionsPanel({ view, serversOnly = false }: { view: Connecti
                   )}
                 </span>
                 <span className="min-w-0 flex-1">
-                  <span className="block text-base font-medium">{profile.name}</span>
+                  {/* Status sits beside the name so every row keeps two lines. */}
+                  <span className="flex min-w-0 items-center gap-2">
+                    <span className="truncate text-base font-medium">{profile.name}</span>
+                    {active ? (
+                      <span className="flex flex-none items-center gap-1.5 text-2xs text-dim">
+                        <StatusDot tone={phaseTone(view.status.phase)} />
+                        {PHASE_LABELS[view.status.phase]}
+                        {view.status.serverVersion ? ` · Server ${view.status.serverVersion}` : null}
+                      </span>
+                    ) : profile.kind !== "local" && !profile.paired ? (
+                      <span className="flex-none text-2xs text-dim">Not paired yet</span>
+                    ) : null}
+                  </span>
                   <span className="mt-1 block truncate text-sm text-dim">{describeProfile(profile)}</span>
-                  {active ? (
-                    <span className="mt-1.5 flex items-center gap-1.5 text-2xs text-dim">
-                      <StatusDot tone={phaseTone(view.status.phase)} />
-                      {PHASE_LABELS[view.status.phase]}
-                      {view.status.serverVersion ? ` · Server ${view.status.serverVersion}` : null}
-                    </span>
-                  ) : profile.kind !== "local" && !profile.paired ? (
-                    <span className="mt-1.5 block text-2xs text-dim">Not paired yet</span>
-                  ) : null}
                 </span>
                 {active ? null : (
                   <Button
@@ -123,10 +126,7 @@ export function ConnectionsPanel({ view, serversOnly = false }: { view: Connecti
                     {busy === profile.id ? "Switching…" : "Switch"}
                   </Button>
                 )}
-                {profile.kind === "local" ? (
-                  // Keeps Switch in the same column on rows without an edit button.
-                  <span aria-hidden="true" className="size-7 flex-none" />
-                ) : (
+                {profile.kind === "local" ? null : (
                   <Button
                     type="button"
                     size="icon-sm"
