@@ -119,14 +119,16 @@ unknown, not zero.
 
 ## User-facing hints
 
-- While a read uses the auxiliary model, the tool's activity names the provider
-  and model and shows progress, for example "Reading with OpenAI GPT-5 mini,
-  page 2 of 5…". This needs a label carried on the tool's update event; the
-  activity labels in the tool catalog are fixed per tool.
-- The finished tool card stays in the conversation history and says the content
-  was read with that provider and model, or taken from its saved transcription
-  on a cache hit. A failure adds nothing to the card; the tool result explains
-  it to the Wisp.
+- While a read uses the auxiliary model, the tool's activity names the model
+  and its provider and shows progress, for example "Reading with GPT-5 mini
+  (OpenAI), page 2 of 5…". This needs a label carried on the tool's update
+  event; the activity labels in the tool catalog are fixed per tool.
+- The chat has no tool cards: tool activity is a transient indicator. A
+  finished read records which model read for the Wisp in the session report
+  instead. The Usage tab's tool calls say the content was read with that model,
+  or taken from its saved transcription on a cache hit. Only the model's name
+  is kept. A failure adds nothing there; the tool result explains it to the
+  Wisp.
 - With the slot configured, the composer says that attached images will be
   read by the auxiliary model, instead of saying they cannot be read.
 - The Wisp's Model tab names the auxiliary model next to the no-image-input
@@ -152,4 +154,7 @@ unknown, not zero.
   web-page summaries on a cheaper model.
 - A per-Wisp image model, and using the auxiliary model even when the Wisp's
   model can see images (to save cost).
+- Tool cards in the chat that keep each finished tool call in the history,
+  including the image model that read for it. The read result's details
+  already record the model and whether it came from the cache.
 - Audio and video input.
