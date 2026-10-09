@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import type { ManagedConversationStatus } from "../../shared/conversations";
 import type { ModelSelection } from "../../shared/contracts";
 import type { ToolApprovalRequest } from "../../shared/tool-policy";
+import { messagePreview } from "../../shared/workspace";
 import type { CurrentUser } from "@/config/app-metadata";
 import { useClock } from "@/hooks/use-clock";
 import { useTimeZone } from "@/hooks/use-time-zone";
@@ -250,7 +251,7 @@ function Sidebar({
                             ? "The last reply failed"
                             : mobile && working
                               ? "Working…"
-                              : chat.preview}
+                              : messagePreview(chat.preview)}
                       </span>
                       {chat.unread && mobile ? (
                         <span className="conversation-unread-badge">

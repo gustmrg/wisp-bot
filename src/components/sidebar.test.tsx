@@ -202,6 +202,22 @@ describe("Sidebar states", () => {
   });
 });
 
+describe("Sidebar previews", () => {
+  it("previews a message with attachments by its files, without the list the Wisp reads", () => {
+    const chats: ChatViewCollection = {
+      atlas: wispChatView("atlas", {
+        wisp: { name: "Atlas" },
+        chat: { preview: "Attached to the workspace:\n- `inbox/boleto.pdf`" },
+      }),
+    };
+    render(
+      <Sidebar activeChatId="" chats={chats} collapsed={false} currentUser={currentUser} width={280} {...callbacks} />,
+    );
+    expect(screen.getByText("boleto.pdf")).toBeVisible();
+    expect(screen.queryByText(/Attached to the workspace/)).toBeNull();
+  });
+});
+
 describe("Sidebar on mobile", () => {
   const chats: ChatViewCollection = {
     atlas: wispChatView("atlas", {

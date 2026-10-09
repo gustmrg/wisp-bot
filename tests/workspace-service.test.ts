@@ -5,7 +5,7 @@ import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { measureDirectory, safeFileName, WorkspaceService } from "../backend/workspace-service.js";
-import { messageWithAttachments } from "../shared/workspace.js";
+import { messagePreview, messageWithAttachments, splitMessageAttachments } from "../shared/workspace.js";
 
 const directories: string[] = [];
 
@@ -235,5 +235,42 @@ describe("attachment helpers", () => {
     );
     expect(messageWithAttachments("", [file])).toBe("Attached to the workspace:\n- `inbox/a.txt`");
     expect(messageWithAttachments("Hi", [])).toBe("Hi");
+  });
+
+  it("splits a sent message back into the typed text and its attachments", () => {
+    const files = [
+      { name: "boleto.pdf", path: "inbox/boleto.pdf", size: 1 },
+      { name: "nota (2).png", path: "inbox/nota (2).png", size: 2 },
+    ];
+    expect(splitMessageAttachments(messageWithAttachments("Anexe estes\n\nobrigado", files))).toEqual({
+      text: "Anexe estes\n\nobrigado",
+      attachments: [
+        { name: "boleto.pdf", path: "inbox/boleto.pdf" },
+        { name: "nota (2).png", path: "inbox/nota (2).png" },
+      ],
+    });
+    expect(splitMessageAttachments(messageWithAttachments("", files.slice(0, 1)))).toEqual({
+      text: "",
+      attachments: [{ name: "boleto.pdf", path: "inbox/boleto.pdf" }],
+    });
+  });
+
+  it("previews a message by its typed text, or its files when nothing was typed", () => {
+    const file = { name: "boleto.pdf", path: "inbox/boleto.pdf", size: 1 };
+    const other = { name: "luz.pdf", path: "inbox/luz.pdf", size: 1 };
+    expect(messagePreview(messageWithAttachments("Anexe", [file]))).toBe("Anexe");
+    expect(messagePreview(messageWithAttachments("", [file, other]))).toBe("boleto.pdf, luz.pdf");
+    expect(messagePreview("Hi")).toBe("Hi");
+  });
+
+  it("leaves messages that only mention the attachment heading whole", () => {
+    for (const message of [
+      "Hi",
+      "Attached to the workspace:",
+      "Attached to the workspace:\n- `inbox/a.txt`\nand more",
+      "Quoted: Attached to the workspace:\n- `inbox/a.txt`",
+    ]) {
+      expect(splitMessageAttachments(message)).toEqual({ text: message, attachments: [] });
+    }
   });
 });

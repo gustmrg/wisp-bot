@@ -24,10 +24,42 @@ export interface AttachWorkspaceFilesResult {
 }
 
 /** The message text sent to a Wisp: what the user typed, followed by where its attachments landed. */
-export function messageWithAttachments(text: string, attachments: ReadonlyArray<WorkspaceAttachment>): string {
+export function messageWithAttachments(
+  text: string,
+  attachments: ReadonlyArray<Pick<WorkspaceAttachment, "path">>,
+): string {
   if (!attachments.length) return text;
   const list = attachments.map((file) => `- \`${file.path}\``).join("\n");
   return `${text ? `${text}\n\n` : ""}Attached to the workspace:\n${list}`;
+}
+
+/** A message as people read it: what was typed, or the attached files' names when nothing was. */
+export function messagePreview(message: string): string {
+  const { text, attachments } = splitMessageAttachments(message);
+  return text || attachments.map(({ name }) => name).join(", ");
+}
+
+const ATTACHMENT_HEADING = "Attached to the workspace:";
+const ATTACHMENT_LINE = /^- `(.+)`$/;
+
+/**
+ * Splits a sent message back into what the user typed and the files listed by
+ * `messageWithAttachments`, so the list can be shown as files again. A message
+ * that does not end with such a list comes back whole, with no files.
+ */
+export function splitMessageAttachments(message: string): {
+  text: string;
+  attachments: ReadonlyArray<Pick<WorkspaceAttachment, "name" | "path">>;
+} {
+  const start = message.endsWith(ATTACHMENT_HEADING) ? -1 : message.lastIndexOf(`${ATTACHMENT_HEADING}\n`);
+  if (start < 0 || (start > 0 && !message.slice(0, start).endsWith("\n\n"))) return { text: message, attachments: [] };
+  const attachments: Array<Pick<WorkspaceAttachment, "name" | "path">> = [];
+  for (const line of message.slice(start + ATTACHMENT_HEADING.length + 1).split("\n")) {
+    const path = ATTACHMENT_LINE.exec(line)?.[1];
+    if (!path) return { text: message, attachments: [] };
+    attachments.push({ name: path.slice(path.lastIndexOf("/") + 1), path });
+  }
+  return { text: message.slice(0, Math.max(0, start - 2)), attachments };
 }
 
 /** Image types the read tool sends to models that accept images. */

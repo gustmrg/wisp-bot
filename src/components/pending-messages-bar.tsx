@@ -1,7 +1,8 @@
-import { CalendarClockIcon, HourglassIcon, PencilIcon, SendIcon, XIcon } from "lucide-react";
+import { CalendarClockIcon, HourglassIcon, PaperclipIcon, PencilIcon, SendIcon, XIcon } from "lucide-react";
 import type { ReactNode } from "react";
 import { useState } from "react";
 
+import { AttachmentChips } from "@/components/attachment-chips";
 import { ScheduleSendPicker } from "@/components/schedule-send-picker";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -13,6 +14,7 @@ import { useTimeZone } from "@/hooks/use-time-zone";
 import { formatScheduledTime } from "@/lib/scheduled-time";
 import type { QueuedMessage } from "../../shared/message-queue";
 import type { ScheduledMessage } from "../../shared/scheduled-messages";
+import { messagePreview, messageWithAttachments, splitMessageAttachments } from "../../shared/workspace";
 
 interface PendingMessagesBarProps {
   /** Messages waiting for the Wisp to be free, next first. */
@@ -144,14 +146,23 @@ function PendingRow({
   text: string;
   children: ReactNode;
 }) {
+  const { text: typed, attachments } = splitMessageAttachments(text);
+  const files = attachments.map(({ name }) => name).join(", ");
   return (
     <li className="flex min-w-0 items-center gap-2 rounded-lg border border-border bg-muted/60 py-1 pr-1 pl-2 text-xs">
       <span className="flex-none text-dim [&_svg]:size-3.5">{icon}</span>
       <span className="flex-none font-medium">{label}</span>
       {note ? <span className="flex-none text-faint">{note}</span> : null}
-      <span className="min-w-0 flex-1 truncate text-dim" title={text}>
-        {text}
+      <span className="min-w-0 flex-1 truncate text-dim" title={messagePreview(text)}>
+        {messagePreview(text)}
       </span>
+      {typed && attachments.length ? (
+        <span className="flex flex-none items-center gap-0.5 text-faint [&_svg]:size-3" title={files}>
+          <PaperclipIcon aria-hidden="true" />
+          {attachments.length}
+          <span className="sr-only">{attachments.length === 1 ? " attached file" : " attached files"}</span>
+        </span>
+      ) : null}
       {children}
     </li>
   );
@@ -206,15 +217,18 @@ function EditMessageDialog({
   onClose: () => void;
   onSave: (text: string, at: Date) => Promise<string | null>;
 }) {
-  const [text, setText] = useState(initialText);
+  // Only the typed text is edited; the attached files are kept as they were.
+  const [{ text: typed, attachments }] = useState(() => splitMessageAttachments(initialText));
+  const [text, setText] = useState(typed);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const empty = !text.trim() && !attachments.length;
 
   async function save(time: Date): Promise<void> {
-    if (!text.trim()) return;
+    if (empty) return;
     setSaving(true);
     setError("");
-    const failure = await onSave(text.trim(), time);
+    const failure = await onSave(messageWithAttachments(text.trim(), attachments), time);
     setSaving(false);
     if (failure) setError(failure);
     else onClose();
@@ -233,15 +247,16 @@ function EditMessageDialog({
           value={text}
           onChange={(event) => setText(event.currentTarget.value)}
         />
+        <AttachmentChips attachments={attachments} />
         {at ? (
           <ScheduleSendPicker
             initial={at}
             submitLabel={saving ? "Saving…" : "Save"}
-            busy={saving || !text.trim()}
+            busy={saving || empty}
             onPick={(time) => void save(time)}
           />
         ) : (
-          <Button size="sm" disabled={saving || !text.trim()} onClick={() => void save(new Date())}>
+          <Button size="sm" disabled={saving || empty} onClick={() => void save(new Date())}>
             {saving ? "Saving…" : "Save"}
           </Button>
         )}
