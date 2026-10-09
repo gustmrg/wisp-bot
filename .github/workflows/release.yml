@@ -66,7 +66,7 @@ jobs:
         include:
           - os: macos-14
             name: macos
-            builder-args: --mac dmg zip --x64 --arm64
+            builder-args: --mac dmg zip --arm64
           - os: ubuntu-latest
             name: linux
             builder-args: --linux AppImage deb --x64

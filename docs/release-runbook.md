@@ -4,7 +4,7 @@ Wisp Bot ships these artifacts from GitHub Releases, which also hosts the update
 
 | Platform | Architecture | Artifacts | Update feed |
 | --- | --- | --- | --- |
-| macOS 14+ | arm64, x64 | DMG, ZIP | `latest-mac.yml` |
+| macOS 14+ | arm64 | DMG, ZIP | `latest-mac.yml` |
 | Linux | x64 | AppImage, `.deb` | `latest-linux.yml` |
 
 Windows is not built yet. [ADR 007](decisions/007-release-automation.md) records the platform matrix and release flow.
