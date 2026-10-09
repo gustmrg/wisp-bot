@@ -139,7 +139,7 @@ describe("ConnectionGate", () => {
       </ConnectionGate>,
     );
     expect(await screen.findByRole("status")).toHaveTextContent(
-      /Home server runs Wisp server 0\.0\.1, older than this app.*Settings → Connections/,
+      /Home server runs Wisp server 0\.0\.1, older than this app.*Update it so every feature works/,
     );
     await userEvent.click(screen.getByRole("button", { name: "Dismiss" }));
     expect(screen.queryByRole("status")).not.toBeInTheDocument();
@@ -147,6 +147,20 @@ describe("ConnectionGate", () => {
     expect(screen.getByRole("status")).toHaveTextContent(/newer than this app.*Update this app/);
     await push(view({ phase: "connected", serverVersion: __APP_VERSION__ }));
     expect(screen.queryByRole("status")).not.toBeInTheDocument();
+  });
+
+  it("offers to update an older SSH server from the banner, after confirming", async () => {
+    const { api } = bridge(view({ phase: "connected", serverVersion: "0.0.1" }));
+    render(
+      <ConnectionGate>
+        <App onMount={() => undefined} />
+      </ConnectionGate>,
+    );
+    await userEvent.click(await screen.findByRole("button", { name: "Update server" }));
+    // Nothing runs on the server until the person confirms.
+    expect(api.installServer).not.toHaveBeenCalled();
+    await userEvent.click(screen.getByRole("button", { name: "Install and connect" }));
+    expect(api.installServer).toHaveBeenCalledWith({ id: "pi" });
   });
 
   it("asks for a pairing code, or pairing over SSH, before showing the app", async () => {
