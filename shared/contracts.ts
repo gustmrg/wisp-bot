@@ -48,6 +48,18 @@ import type {
   ScheduleMessageRequest,
   UpdateScheduledMessageRequest,
 } from "./scheduled-messages.js";
+import type {
+  StorageArchiveDeletionRequest,
+  StorageArchiveDeletionResult,
+  StorageCleanupConfirmation,
+  StorageCleanupPreview,
+  StorageCleanupRequest,
+  StorageCleanupResult,
+  StorageDirectoryPage,
+  StorageDirectoryRequest,
+  StorageSummary,
+  StorageSummaryRequest,
+} from "./storage.js";
 import type { AttachWorkspaceFilesResult, WorkspaceView } from "./workspace.js";
 import type { ImportSkillRequest, SkillRequest, SkillView } from "./skills.js";
 import type { ResolveToolApprovalRequest, ToolApprovalRequest, ToolPolicySettings } from "./tool-policy.js";
@@ -141,6 +153,11 @@ export const WISP_IPC_CHANNELS = {
   openWorkspaceFolder: "wisp:workspace:open",
   openSkillsFolder: "wisp:workspace:open-skills",
   attachWorkspaceFiles: "wisp:workspace:attach",
+  getStorageSummary: "wisp:storage:summary",
+  listStorageDirectory: "wisp:storage:list",
+  prepareStorageCleanup: "wisp:storage:prepare-cleanup",
+  cleanStorage: "wisp:storage:clean",
+  deleteArchivedStorage: "wisp:storage:delete-archives",
   listSkills: "wisp:skills:list",
   deleteSkill: "wisp:skills:delete",
   importSkill: "wisp:skills:import",
@@ -552,6 +569,16 @@ export interface WispApi {
   openSkillsFolder(request: ConversationRequest): Promise<EmptyResult>;
   /** Shows a native file picker and copies the chosen files into the Wisp's workspace inbox. */
   attachWorkspaceFiles(request: ConversationRequest): Promise<BackendResult<AttachWorkspaceFilesResult>>;
+  /** Space used by every workspace and archived conversation on the active connection. */
+  getStorageSummary(request: StorageSummaryRequest): Promise<BackendResult<StorageSummary>>;
+  /** One page of a workspace folder's entries, largest first. */
+  listStorageDirectory(request: StorageDirectoryRequest): Promise<BackendResult<StorageDirectoryPage>>;
+  /** Measures what removing the paths would delete, without deleting anything. */
+  prepareStorageCleanup(request: StorageCleanupRequest): Promise<BackendResult<StorageCleanupPreview>>;
+  /** Permanently deletes previewed paths; refused when they changed since the preview. */
+  cleanStorage(request: StorageCleanupConfirmation): Promise<BackendResult<StorageCleanupResult>>;
+  /** Permanently deletes archived conversations, including their workspace, sessions and settings. */
+  deleteArchivedStorage(request: StorageArchiveDeletionRequest): Promise<BackendResult<StorageArchiveDeletionResult>>;
   /** The Wisp's saved skills, alphabetically; malformed skill files are left out. */
   listSkills(request: ConversationRequest): Promise<BackendResult<ReadonlyArray<SkillView>>>;
   deleteSkill(request: SkillRequest): Promise<BackendResult<ReadonlyArray<SkillView>>>;

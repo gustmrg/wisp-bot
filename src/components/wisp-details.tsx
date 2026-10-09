@@ -118,7 +118,7 @@ export function WispDetails({
             onChange={(changes) => setDraft((current) => ({ ...current, ...changes }))}
           />
           <WispContextSettings conversationId={chat.id} />
-          <WispWorkspaceSettings conversationId={chat.id} />
+          <WispWorkspaceSettings conversationId={chat.id} onOpenSettings={onOpenSettings} />
           <WispSkillSettings conversationId={chat.id} />
           {generalActions ? (
             <div className="mt-5 flex flex-col gap-2 border-t border-border pt-4">{generalActions}</div>

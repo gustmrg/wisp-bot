@@ -158,6 +158,17 @@ function completeBridge(): WispApi {
     openReleasesPage: async () => ({ ok: true, value: {} }),
     subscribeToUpdateState: () => () => undefined,
     getWorkspace: async () => ({ ok: true, value: { usedBytes: 0, quotaBytes: 1024 } }),
+    getStorageSummary: async () => ({
+      ok: true,
+      value: { measuredAt: "", workspaces: [], workspaceBytes: 0, archives: [], archiveBytes: 0, partial: false },
+    }),
+    listStorageDirectory: async () => ({ ok: true, value: { path: "", entries: [], nextCursor: null } }),
+    prepareStorageCleanup: async () => ({
+      ok: true,
+      value: { items: [], totalBytes: 0, fileCount: 0, fingerprint: "", includesInbox: false },
+    }),
+    cleanStorage: async () => ({ ok: true, value: { removed: [], failed: [], removedBytes: 0 } }),
+    deleteArchivedStorage: async () => ({ ok: true, value: { removed: [], failed: [] } }),
     openWorkspaceFolder: async () => ({ ok: true, value: {} }),
     openSkillsFolder: async () => ({ ok: true, value: {} }),
     attachWorkspaceFiles: async () => ({

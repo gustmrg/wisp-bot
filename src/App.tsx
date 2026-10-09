@@ -111,9 +111,9 @@ function Workspace({ userProfile }: { userProfile: UserProfileController }) {
     setDetailsOpen(open);
   }
 
-  function showSettings(section: SettingsEntrySection, pluginId?: PluginId) {
+  function showSettings(section: SettingsEntrySection, pluginId?: PluginId, storageConversationId?: string) {
     navigationVersion.current += 1;
-    settingsDialog.current?.open(section, pluginId);
+    settingsDialog.current?.open(section, pluginId, storageConversationId);
   }
 
   function showSearch(open: boolean) {
@@ -213,7 +213,11 @@ function Workspace({ userProfile }: { userProfile: UserProfileController }) {
               onChange={workspace.updateActiveChat}
               onChangeWisp={workspace.updateWisp}
               onOpenSettings={(target) =>
-                showSettings(target.section, target.section === "plugins" ? target.pluginId : undefined)
+                showSettings(
+                  target.section,
+                  target.section === "plugins" ? target.pluginId : undefined,
+                  target.section === "storage" ? target.conversationId : undefined,
+                )
               }
               onClose={() => showDetails(false)}
               onDelete={async () => {

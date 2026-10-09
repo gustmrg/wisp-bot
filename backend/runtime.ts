@@ -27,6 +27,7 @@ import { ToolAuditStore } from "./tool-audit-store.js";
 import { ToolAuthorizationBroker } from "./tool-authorization-broker.js";
 import { ToolPolicyStore } from "./tool-policy-store.js";
 import { fakeTranscriptionFetch, TranscriptionService } from "./transcription-service.js";
+import { StorageService } from "./storage-service.js";
 import { WorkspaceService } from "./workspace-service.js";
 
 /** Host capabilities the runtime needs, injected so any host (desktop or server) can compose it. */
@@ -72,6 +73,7 @@ export interface BackendRuntime {
   messageQueue: MessageQueue;
   sessionReports: SessionReportService;
   workspace: WorkspaceService;
+  storage: StorageService;
   transcription: TranscriptionService;
   /** Validates and saves a single Wisp's model override; null clears it. */
   applyConversationModel(conversationId: string, model: ModelSelection | null): Promise<void>;
@@ -203,7 +205,14 @@ export async function createBackendRuntime(options: BackendRuntimeOptions): Prom
     conversationRepository,
     new ModelPricingService({ cacheFilePath: path.join(dataDirectory, "model-pricing.json") }),
   );
+  const storageService = new StorageService({
+    listWorkspaces: () => conversationRepository.listWorkspaceFolders(),
+    resolveWorkspace: (id) => conversationRepository.getWorkspaceDirectory(id),
+    archiveDirectory: conversationRepository.getArchiveDirectory(),
+    isBusy: (id) => registry.isBusy(id),
+  });
   const workspaceService = new WorkspaceService({
+    acquireWrite: (id) => storageService.acquireWrite(id),
     resolveDirectories: (id) => conversationRepository.getAgentContext(id),
     openPath: options.openPath,
     selectFiles: options.selectFiles,
@@ -229,6 +238,7 @@ export async function createBackendRuntime(options: BackendRuntimeOptions): Prom
     messageQueue: queue,
     sessionReports: sessionReportService,
     workspace: workspaceService,
+    storage: storageService,
     transcription: transcriptionService,
     applyConversationModel: async (conversationId, model) => {
       if (model) await modelService.validateConversationSelection(model);

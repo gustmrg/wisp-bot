@@ -1,12 +1,19 @@
 import { useScreenActions } from "@/features/connections/active-connection";
 import { useEffect, useState } from "react";
-import { FolderOpenIcon } from "lucide-react";
+import { FolderOpenIcon, HardDriveIcon } from "lucide-react";
 
+import type { IntegrationSettingsTarget } from "@/lib/plugin-access";
 import { formatBytes, type WorkspaceView } from "../../shared/workspace";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Button } from "@/components/ui/button";
 
-export function WispWorkspaceSettings({ conversationId }: { conversationId: string }) {
+export function WispWorkspaceSettings({
+  conversationId,
+  onOpenSettings,
+}: {
+  conversationId: string;
+  onOpenSettings?: (target: IntegrationSettingsTarget) => void;
+}) {
   const [visited, setVisited] = useState(false);
   return (
     <Accordion
@@ -18,14 +25,22 @@ export function WispWorkspaceSettings({ conversationId }: { conversationId: stri
       <AccordionItem value="workspace">
         <AccordionTrigger>Workspace</AccordionTrigger>
         <AccordionContent keepMounted>
-          {visited ? <WorkspacePanel key={conversationId} conversationId={conversationId} /> : null}
+          {visited ? (
+            <WorkspacePanel key={conversationId} conversationId={conversationId} onOpenSettings={onOpenSettings} />
+          ) : null}
         </AccordionContent>
       </AccordionItem>
     </Accordion>
   );
 }
 
-function WorkspacePanel({ conversationId }: { conversationId: string }) {
+function WorkspacePanel({
+  conversationId,
+  onOpenSettings,
+}: {
+  conversationId: string;
+  onOpenSettings?: (target: IntegrationSettingsTarget) => void;
+}) {
   // Opening a folder needs this computer's file manager and the Wisp's files on this computer.
   const screenActions = useScreenActions();
   const [view, setView] = useState<WorkspaceView | null>(null);
@@ -83,6 +98,16 @@ function WorkspacePanel({ conversationId }: { conversationId: string }) {
             />
           </div>
         </div>
+      ) : null}
+      {onOpenSettings ? (
+        <Button
+          className="w-full"
+          variant={percent >= 90 ? "default" : "outline"}
+          onClick={() => onOpenSettings({ section: "storage", conversationId })}
+        >
+          <HardDriveIcon aria-hidden="true" />
+          {percent >= 90 ? "Free up space" : "Inspect and clean up"}
+        </Button>
       ) : null}
       {screenActions ? (
         <Button className="w-full" variant="outline" onClick={() => void openFolder()}>

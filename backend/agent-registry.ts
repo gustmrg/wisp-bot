@@ -142,6 +142,12 @@ export class AgentRegistry {
     return Boolean(entry && entry.ready && !entry.disposed && entry.pendingCommands === 0);
   }
 
+  /** Whether a request is running or queued for the conversation. */
+  isBusy(conversationId: string): boolean {
+    const entry = this.entries.get(conversationId);
+    return Boolean(entry && !entry.disposed && entry.pendingCommands > 0);
+  }
+
   get(conversationId: string): ConversationAgent {
     return this.require(conversationId).agent;
   }

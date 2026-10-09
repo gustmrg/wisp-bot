@@ -24,7 +24,10 @@ export interface WispOption {
 }
 
 /** Where the Access tab sends the user to connect or fix a service. */
-export type IntegrationSettingsTarget = { section: "plugins"; pluginId?: PluginId } | { section: "mcp" };
+export type IntegrationSettingsTarget =
+  | { section: "plugins"; pluginId?: PluginId }
+  | { section: "mcp" }
+  | { section: "storage"; conversationId: string };
 
 export function isPluginAvailable(plugin: PluginSummary | undefined): boolean {
   return Boolean(plugin?.configured && plugin.enabled);
