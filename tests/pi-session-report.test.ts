@@ -377,3 +377,33 @@ it("counts image model calls in their own row and in the totals, priced with the
   });
   expect(unpriced.totals.costUsd).toBeNull();
 });
+
+it("names the image model a read used, and whether it came from saved transcriptions", () => {
+  const call = (id: string) =>
+    messageEntry(
+      assistantMessage({
+        content: [{ type: "toolCall", id, name: "read", arguments: { path: `${WORKSPACE}/a.png` } }],
+      }),
+    );
+  const result = (id: string, details: unknown) =>
+    messageEntry({ role: "toolResult", toolCallId: id, toolName: "read", content: [], details, isError: false });
+  const entries = [
+    call("image"),
+    result("image", { transcription: { model: "Vision\n(OpenAI)", status: "done", cached: false } }),
+    call("cached"),
+    result("cached", { transcription: { model: "Vision (OpenAI)", status: "done", cached: true } }),
+    call("pdf"),
+    result("pdf", { pdf: { transcription: { model: "Vision (OpenAI)", pages: [2, 3], cachedPages: [2] } } }),
+    call("plain"),
+    result("plain", { pdf: { pageCount: 1 } }),
+  ];
+
+  const { toolCalls } = buildSessionReport("session", entries, { workspaceDirectory: WORKSPACE, getPricing });
+
+  expect(toolCalls.map(({ imageModel }) => imageModel)).toEqual([
+    { name: "Vision (OpenAI)", fromCache: false },
+    { name: "Vision (OpenAI)", fromCache: true },
+    { name: "Vision (OpenAI)", fromCache: false },
+    undefined,
+  ]);
+});

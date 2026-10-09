@@ -379,6 +379,8 @@ export interface SessionReportToolCall {
   argumentSummary: string;
   status: "completed" | "error" | "pending";
   timestamp: string;
+  /** The image model that read images or scanned pages for this call; `fromCache` when nothing was sent again. */
+  imageModel?: { name: string; fromCache: boolean };
 }
 
 export interface SessionReportEvent {

@@ -41,4 +41,7 @@ the same model's conversation turns, with its number of calls instead of
 turns. Their cost is the one Pi recorded with each call, not the cached
 OpenRouter price, and stays unknown when Pi recorded none. Failed calls that
 the provider still reported usage for are included.
+In the session report's tool calls, a read that used the image model names
+it, or says it came from that model's saved transcription when nothing was
+sent again.
 
