@@ -156,7 +156,8 @@ export const WISP_IPC_CHANNELS = {
   connectionsChanged: "wisp:connections:changed",
 } as const;
 
-export const WISP_RELEASES_URL = "https://github.com/gustmrg/wisp-bot/releases/latest";
+export const WISP_REPOSITORY_URL = "https://github.com/gustmrg/wisp-bot";
+export const WISP_RELEASES_URL = `${WISP_REPOSITORY_URL}/releases/latest`;
 
 export interface ConversationRequest {
   conversationId: string;

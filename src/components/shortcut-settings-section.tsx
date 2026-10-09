@@ -36,7 +36,7 @@ function Keys({ keys }: { keys: ReadonlyArray<string> }) {
       {keys.map((key) => (
         <kbd
           key={key}
-          className="min-w-[22px] rounded-[5px] border border-border bg-muted px-1.5 py-px text-center font-sans text-xs text-foreground"
+          className="min-w-[22px] rounded-[4px] bg-muted px-1.5 py-px text-center font-mono text-2xs leading-5 text-dim shadow-[inset_0_-1px_0_var(--border)]"
         >
           {key}
         </kbd>

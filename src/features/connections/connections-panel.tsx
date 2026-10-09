@@ -90,7 +90,7 @@ export function ConnectionsPanel({ view, serversOnly = false }: { view: Connecti
           .map((profile) => {
             const active = profile.id === view.activeId;
             return (
-              <li key={profile.id} className="flex items-center gap-3 rounded-xl px-2 py-3">
+              <li key={profile.id} className="flex items-center gap-3 rounded-xl px-4 py-4">
                 <span className="flex size-9 flex-none items-center justify-center rounded-lg bg-muted">
                   {profile.kind === "local" ? (
                     <LaptopIcon className="size-4 text-dim" aria-hidden="true" />
@@ -116,17 +116,21 @@ export function ConnectionsPanel({ view, serversOnly = false }: { view: Connecti
                     type="button"
                     size="sm"
                     variant="outline"
+                    aria-label={`Switch to ${profile.name}`}
                     disabled={busy !== null}
                     onClick={() => void run(profile.id, () => window.wisp.activateConnection({ id: profile.id }))}
                   >
-                    {busy === profile.id ? "Switching…" : "Use"}
+                    {busy === profile.id ? "Switching…" : "Switch"}
                   </Button>
                 )}
-                {profile.kind === "local" ? null : (
+                {profile.kind === "local" ? (
+                  // Keeps Switch in the same column on rows without an edit button.
+                  <span aria-hidden="true" className="size-7 flex-none" />
+                ) : (
                   <Button
                     type="button"
                     size="icon-sm"
-                    variant="ghost"
+                    variant="outline"
                     aria-label={`Edit ${profile.name}`}
                     disabled={busy !== null}
                     onClick={() => setEditing(profile.id)}
@@ -141,7 +145,7 @@ export function ConnectionsPanel({ view, serversOnly = false }: { view: Connecti
       <button
         type="button"
         onClick={() => setEditing("new")}
-        className="group mt-1 flex w-full min-w-0 items-center gap-3 rounded-xl px-2 py-3 text-left outline-none transition-colors hover:bg-popover focus-visible:ring-2 focus-visible:ring-ring"
+        className="group mt-1 flex w-full min-w-0 items-center gap-3 rounded-xl px-4 py-4 text-left outline-none transition-colors hover:bg-popover focus-visible:ring-2 focus-visible:ring-ring"
       >
         <span className="flex size-9 flex-none items-center justify-center rounded-lg bg-muted">
           <Plus className="size-4 text-dim group-hover:text-foreground" aria-hidden="true" />

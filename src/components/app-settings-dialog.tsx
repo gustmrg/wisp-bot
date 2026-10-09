@@ -50,7 +50,7 @@ import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectVa
 import { normalizeTheme } from "@/lib/theme";
 import { profileAvatar } from "@/lib/ui-classes";
 import { cn } from "@/lib/utils";
-import type { UpdateState } from "../../shared/contracts";
+import { WISP_RELEASES_URL, WISP_REPOSITORY_URL, type UpdateState } from "../../shared/contracts";
 import type { PluginId } from "../../shared/plugins";
 import type { WispOption } from "@/lib/plugin-access";
 
@@ -276,7 +276,7 @@ function AppSettingsDialog({
             ),
           )}
         </nav>
-        {section === "usage" && open && !showOverview ? <UsageSettingsSection /> : null}
+        {section === "usage" && open && !showOverview ? <UsageSettingsSection wisps={wisps} /> : null}
         {section === "plugins" && open && !showOverview ? (
           <PluginSettingsSection
             wisps={wisps}
@@ -374,6 +374,10 @@ function AppSettingsDialog({
             About
           </h2>
           <div className="animate-tab-forward">
+            <p className="m-0 text-xs leading-relaxed text-dim">
+              {appMetadata.displayName} is an open-source app for a squad of AI agents, your Wisps, that keep their
+              memory, tools, and workspace across conversations. You bring your own model provider keys.
+            </p>
             <SettingsGroup label="Version">
               <SettingsCard>
                 <SettingsRow>
@@ -406,9 +410,43 @@ function AppSettingsDialog({
                 <p className="mt-3 text-xs text-dim" role={updateState.phase === "error" ? "alert" : "status"}>
                   {updateStatusText(updateState)}
                 </p>
-                <p className="mt-2 text-xs text-faint">Manual recovery: github.com/gustmrg/wisp-bot/releases/latest</p>
+                <p className="mt-2 text-xs text-faint">
+                  Manual recovery:{" "}
+                  <a
+                    href={WISP_RELEASES_URL}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="underline-offset-4 hover:underline"
+                  >
+                    github.com/gustmrg/wisp-bot/releases/latest
+                  </a>
+                </p>
               </>
             )}
+            <SettingsGroup label="Project">
+              <SettingsCard variant="stacked">
+                <AboutLink
+                  href={WISP_REPOSITORY_URL}
+                  label="Source code"
+                  description="Browse the code and documentation on GitHub."
+                />
+                <AboutLink
+                  href={`${WISP_REPOSITORY_URL}/releases/tag/v${appMetadata.version}`}
+                  label="Release notes"
+                  description={`What changed in version ${appMetadata.version}.`}
+                />
+                <AboutLink
+                  href={`${WISP_REPOSITORY_URL}/issues/new`}
+                  label="Report an issue"
+                  description="Tell us about a bug or suggest an improvement."
+                />
+                <AboutLink
+                  href={`${WISP_REPOSITORY_URL}/blob/main/LICENSE`}
+                  label="License"
+                  description="Released under the MIT License."
+                />
+              </SettingsCard>
+            </SettingsGroup>
           </div>
         </section>
         {mobile ? (
@@ -433,6 +471,24 @@ function updateBusy(state: UpdateState): boolean {
 /** A found or downloaded update waits on the user, so the button stands out. */
 function updateNeedsAction(state: UpdateState): boolean {
   return state.phase === "available" || state.phase === "manual-download" || state.phase === "downloaded";
+}
+
+/** A row in About that opens a project page in the browser. */
+function AboutLink({ href, label, description }: { href: string; label: string; description: string }) {
+  return (
+    <a
+      href={href}
+      target="_blank"
+      rel="noreferrer"
+      className="settings-row flex min-h-[58px] items-center gap-3 px-3.5 py-[11px] text-foreground no-underline outline-none transition-colors hover:bg-muted/50 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+    >
+      <SettingsRowCopy>
+        <strong>{label}</strong>
+        <small>{description}</small>
+      </SettingsRowCopy>
+      <ExternalLinkIcon className="size-4 shrink-0 text-dim" aria-hidden="true" />
+    </a>
+  );
 }
 
 function UpdateActionIcon({ state }: { state: UpdateState }) {

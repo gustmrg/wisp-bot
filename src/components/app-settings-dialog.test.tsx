@@ -178,6 +178,14 @@ describe("AppSettingsDialog metadata", () => {
 
     expect(screen.getByText("Example Desktop")).toBeVisible();
     expect(screen.getByText("Version 9.8.7")).toBeVisible();
+    expect(screen.getByRole("link", { name: /Release notes/ })).toHaveAttribute(
+      "href",
+      "https://github.com/gustmrg/wisp-bot/releases/tag/v9.8.7",
+    );
+    expect(screen.getByRole("link", { name: /Report an issue/ })).toHaveAttribute(
+      "href",
+      "https://github.com/gustmrg/wisp-bot/issues/new",
+    );
   });
 
   it("gives every update phase its own button state", async () => {

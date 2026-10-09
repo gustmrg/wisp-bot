@@ -210,7 +210,7 @@ export function PluginSettingsSection({
                           type="button"
                           onClick={() => setEditing(plugin.id)}
                           aria-label={`Connect ${plugin.name}`}
-                          className="group flex w-full min-w-0 items-center gap-3 rounded-xl px-2 py-4 text-left outline-none transition-colors hover:bg-popover focus-visible:ring-2 focus-visible:ring-ring"
+                          className="group flex w-full min-w-0 items-center gap-3 rounded-xl px-4 py-4 text-left outline-none transition-colors hover:bg-popover focus-visible:ring-2 focus-visible:ring-ring"
                         >
                           <PluginLogo pluginId={plugin.id} />
                           <span className="min-w-0 flex-1">
@@ -267,7 +267,7 @@ function ConnectedPluginCard({
   onSelect: () => void;
 }) {
   return (
-    <div className="flex min-w-0 items-center gap-3 rounded-xl px-2 py-4 transition-colors hover:bg-popover">
+    <div className="flex min-w-0 items-center gap-3 rounded-xl px-4 py-4 transition-colors hover:bg-popover">
       <button
         type="button"
         onClick={onSelect}
