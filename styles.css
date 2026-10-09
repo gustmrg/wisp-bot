@@ -243,7 +243,8 @@
 [data-slot="wisp"] :is(.wisp-art, .wisp-trail, .wisp-look) {
   transform-box: view-box;
 }
-[data-slot="wisp"] .wisp-blink {
+[data-slot="wisp"][data-size="xl"] .wisp-blink,
+.conversation-avatar [data-slot="wisp"] .wisp-blink {
   transform-box: fill-box;
   transform-origin: center;
   animation: wisp-blink 6s infinite;

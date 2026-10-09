@@ -239,7 +239,7 @@ function Wisp({
           )}
           <g transform={`translate(${faceX} ${faceY})`}>
             <g className="wisp-look">
-              <g className={large ? "wisp-blink" : undefined}>
+              <g className="wisp-blink" style={{ animationDelay: `${-(hashSeed(name) % 6000)}ms` }}>
                 <WispEyes kind={appearance.eyes} ink={ink} scale={eyeScale} />
               </g>
             </g>
