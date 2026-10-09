@@ -75,6 +75,7 @@ const REQUIRED_WISP_METHODS = [
   "attachWorkspaceFiles",
   "listSkills",
   "deleteSkill",
+  "importSkill",
   "getVoiceSettings",
   "saveVoiceCredential",
   "transcribeAudio",

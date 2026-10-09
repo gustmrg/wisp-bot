@@ -66,6 +66,7 @@ export const RUNTIME_OPERATIONS = [
   "attachWorkspaceFiles",
   "listSkills",
   "deleteSkill",
+  "importSkill",
   "getVoiceSettings",
   "saveVoiceCredential",
   "transcribeAudio",

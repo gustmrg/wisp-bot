@@ -49,7 +49,7 @@ import type {
   UpdateScheduledMessageRequest,
 } from "./scheduled-messages.js";
 import type { AttachWorkspaceFilesResult, WorkspaceView } from "./workspace.js";
-import type { SkillRequest, SkillView } from "./skills.js";
+import type { ImportSkillRequest, SkillRequest, SkillView } from "./skills.js";
 import type { ResolveToolApprovalRequest, ToolApprovalRequest, ToolPolicySettings } from "./tool-policy.js";
 import type {
   SaveVoiceCredentialRequest,
@@ -140,6 +140,7 @@ export const WISP_IPC_CHANNELS = {
   attachWorkspaceFiles: "wisp:workspace:attach",
   listSkills: "wisp:skills:list",
   deleteSkill: "wisp:skills:delete",
+  importSkill: "wisp:skills:import",
   getVoiceSettings: "wisp:voice:get",
   saveVoiceCredential: "wisp:voice:save-credential",
   transcribeAudio: "wisp:voice:transcribe",
@@ -511,6 +512,8 @@ export interface WispApi {
   /** The Wisp's saved skills, alphabetically; malformed skill files are left out. */
   listSkills(request: ConversationRequest): Promise<BackendResult<ReadonlyArray<SkillView>>>;
   deleteSkill(request: SkillRequest): Promise<BackendResult<ReadonlyArray<SkillView>>>;
+  /** Saves a SKILL.md the user picked, without going through the Wisp, and returns the updated list. */
+  importSkill(request: ImportSkillRequest): Promise<BackendResult<ReadonlyArray<SkillView>>>;
   /** Which voice providers have a saved key; keys themselves never leave the backend. */
   getVoiceSettings(): Promise<BackendResult<VoiceSettingsView>>;
   /** Saves a provider key for voice input; chat models of the same provider can use it too. */
