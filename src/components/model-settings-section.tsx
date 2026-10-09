@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import type { AiSettingsView, ProviderSummary } from "../../shared/contracts";
+import { AuxiliaryModelSettings } from "@/components/auxiliary-model-settings";
 import { NoImageInputNote } from "@/components/no-image-input-note";
 import { SearchableCombobox } from "@/components/searchable-combobox";
 import {
@@ -21,6 +22,8 @@ interface ModelSettingsSectionProps {
   onViewChange?: (view: AiSettingsView) => void;
   /** Hide the panel title when a surrounding screen already provides one. */
   showHeading?: boolean;
+  /** Show the auxiliary model pickers; first-run setup hides them. */
+  showAuxiliaryModels?: boolean;
 }
 
 function initialProvider(view: AiSettingsView): ProviderSummary | undefined {
@@ -31,7 +34,12 @@ function initialProvider(view: AiSettingsView): ProviderSummary | undefined {
   );
 }
 
-function ModelSettingsSection({ active, onViewChange, showHeading = true }: ModelSettingsSectionProps) {
+function ModelSettingsSection({
+  active,
+  onViewChange,
+  showHeading = true,
+  showAuxiliaryModels = true,
+}: ModelSettingsSectionProps) {
   const [view, setView] = useState<AiSettingsView | null>(null);
   const [providerId, setProviderId] = useState("");
   const [modelId, setModelId] = useState("");
@@ -64,6 +72,12 @@ function ModelSettingsSection({ active, onViewChange, showHeading = true }: Mode
         : "",
     );
     setApiKey("");
+  }, []);
+
+  /** Takes a view saved by the auxiliary picker without resetting unsaved edits to the main model. */
+  const applyAuxiliaryView = useCallback((nextView: AiSettingsView): void => {
+    setView(nextView);
+    onViewChangeRef.current?.(nextView);
   }, []);
 
   useEffect(() => {
@@ -323,6 +337,12 @@ function ModelSettingsSection({ active, onViewChange, showHeading = true }: Mode
               </Button>
             </div>
           </div>
+
+          {showAuxiliaryModels ? (
+            <div className="mt-6">
+              <AuxiliaryModelSettings view={view} onViewChange={applyAuxiliaryView} />
+            </div>
+          ) : null}
         </div>
       ) : null}
       {!loading && !view && error ? <p className="text-sm text-destructive">{error}</p> : null}

@@ -6,6 +6,7 @@ import type {
   ModelSelection,
   RemoveProviderCredentialRequest,
   SaveAiSettingsRequest,
+  SaveAuxiliaryModelRequest,
   SendMessageRequest,
   SetUserTimeZoneRequest,
 } from "../shared/contracts.js";
@@ -135,6 +136,14 @@ export function parseSaveAiSettingsRequest(value: unknown): SaveAiSettingsReques
     selection: parseModelSelection(request.selection),
     ...(apiKey === undefined ? {} : { apiKey }),
   };
+}
+
+export function parseSaveAuxiliaryModelRequest(value: unknown): SaveAuxiliaryModelRequest {
+  const request = asRecord(value);
+  if (request.task !== "imageUnderstanding") throw invalidRequest();
+  if (request.selection === null) return { task: request.task, selection: null };
+  const { providerId, modelId } = parseModelSelection(request.selection);
+  return { task: request.task, selection: { providerId, modelId } };
 }
 
 export function parseRemoveProviderCredentialRequest(value: unknown): RemoveProviderCredentialRequest {

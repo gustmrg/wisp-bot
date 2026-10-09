@@ -93,6 +93,7 @@ export const WISP_IPC_CHANNELS = {
   getWispMcpAccess: "wisp:mcp:access:get",
   saveWispMcpAccess: "wisp:mcp:access:save",
   saveAiSettings: "wisp:settings:ai:save",
+  saveAuxiliaryModel: "wisp:settings:ai:save-auxiliary",
   removeProviderCredential: "wisp:settings:ai:remove-credential",
   getConversationState: "wisp:conversations:get",
   initializeConversations: "wisp:conversations:initialize",
@@ -194,8 +195,23 @@ export interface ProviderSummary {
   models: ReadonlyArray<ModelSummary>;
 }
 
+/** Tasks a separately chosen model does for Wisps whose own model cannot. */
+export type AuxiliaryTask = "imageUnderstanding";
+
+export type AuxiliaryModelSelections = Record<AuxiliaryTask, ModelSelection | null>;
+
+/** Why a saved auxiliary model is not used. The selection is kept so the person can see and fix it. */
+export type AuxiliaryModelUnavailableReason = "missing_key" | "model_unavailable" | "no_image_input";
+
+export interface AuxiliaryModelView {
+  selection: ModelSelection | null;
+  /** Set when a saved selection cannot be used; the task is then off. */
+  unavailable: AuxiliaryModelUnavailableReason | null;
+}
+
 export interface AiSettingsView {
   selection: ModelSelection | null;
+  auxiliary: Record<AuxiliaryTask, AuxiliaryModelView>;
   secureStorageAvailable: boolean;
   providers: ReadonlyArray<ProviderSummary>;
   /** Set when the model catalog could not be fully loaded or refreshed and the built-in list is shown. */
@@ -205,6 +221,12 @@ export interface AiSettingsView {
 export interface SaveAiSettingsRequest {
   selection: ModelSelection;
   apiKey?: string;
+}
+
+export interface SaveAuxiliaryModelRequest {
+  task: AuxiliaryTask;
+  /** Null turns the task off. */
+  selection: ModelSelection | null;
 }
 
 export interface RemoveProviderCredentialRequest {
@@ -453,6 +475,7 @@ export interface WispApi {
   subscribeToAgentEvents(listener: (event: SequencedConversationAgentEvent) => void): () => void;
   getAiSettings(): Promise<BackendResult<AiSettingsView>>;
   saveAiSettings(request: SaveAiSettingsRequest): Promise<BackendResult<AiSettingsView>>;
+  saveAuxiliaryModel(request: SaveAuxiliaryModelRequest): Promise<BackendResult<AiSettingsView>>;
   removeProviderCredential(request: RemoveProviderCredentialRequest): Promise<BackendResult<AiSettingsView>>;
   getConversationState(): Promise<BackendResult<ConversationStateView>>;
   initializeConversations(request: InitializeConversationsRequest): Promise<BackendResult<ConversationStateView>>;

@@ -7,6 +7,7 @@ import { EMPTY_USER_PROFILE } from "../shared/user-profile.js";
 function view(selection: AiSettingsView["selection"], credentialConfigured: boolean): AiSettingsView {
   return {
     selection,
+    auxiliary: { imageUnderstanding: { selection: null, unavailable: null } },
     secureStorageAvailable: true,
     providers: [{ id: "openrouter", name: "OpenRouter", credentialConfigured, models: [] }],
     catalogError: null,
