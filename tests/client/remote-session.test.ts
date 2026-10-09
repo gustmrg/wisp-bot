@@ -154,6 +154,29 @@ describe("RemoteSession", () => {
     expect(client.events.some(([type]) => type === "conversationChanged")).toBe(true);
   });
 
+  it("stops at once while the server does not answer", async () => {
+    let requests = 0;
+    // A link that accepts requests and never answers them, like a dying tunnel.
+    const silentFetch: typeof fetch = (_input, init) =>
+      new Promise((_resolve, reject) => {
+        requests++;
+        init?.signal?.addEventListener("abort", () => reject(init.signal?.reason), { once: true });
+      });
+    const client = session("http://127.0.0.1:9", {
+      openTransport: async () => ({
+        baseUrl: "http://127.0.0.1:9",
+        fetch: silentFetch,
+        closed: new Promise(() => undefined),
+        close: () => undefined,
+      }),
+    });
+    client.instance.start("ABCDE-FGHJK");
+    await waitUntil(() => requests > 0, "the pairing request");
+    const started = Date.now();
+    await client.instance.stop();
+    expect(Date.now() - started).toBeLessThan(1_000);
+  });
+
   it("reconnects after the server restarts and asks for a reload", async () => {
     const { server, directory, port, key } = await setup();
     const client = session(server.url, { requestPairingCode: () => pairCode(directory) });

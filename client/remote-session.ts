@@ -227,6 +227,7 @@ export class RemoteSession {
         const client = new RemoteClient({
           baseUrl: transport.baseUrl,
           credentials: this.options.credentials,
+          signal,
           ...(this.options.cookies ? { cookies: true } : {}),
           ...(transport.fetch ? { fetch: transport.fetch } : {}),
         });
