@@ -5,7 +5,7 @@ import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { measureDirectory, safeFileName, WorkspaceService } from "../backend/workspace-service.js";
-import { messageWithAttachments, splitMessageAttachments } from "../shared/workspace.js";
+import { messagePreview, messageWithAttachments, splitMessageAttachments } from "../shared/workspace.js";
 
 const directories: string[] = [];
 
@@ -253,6 +253,14 @@ describe("attachment helpers", () => {
       text: "",
       attachments: [{ name: "boleto.pdf", path: "inbox/boleto.pdf" }],
     });
+  });
+
+  it("previews a message by its typed text, or its files when nothing was typed", () => {
+    const file = { name: "boleto.pdf", path: "inbox/boleto.pdf", size: 1 };
+    const other = { name: "luz.pdf", path: "inbox/luz.pdf", size: 1 };
+    expect(messagePreview(messageWithAttachments("Anexe", [file]))).toBe("Anexe");
+    expect(messagePreview(messageWithAttachments("", [file, other]))).toBe("boleto.pdf, luz.pdf");
+    expect(messagePreview("Hi")).toBe("Hi");
   });
 
   it("leaves messages that only mention the attachment heading whole", () => {

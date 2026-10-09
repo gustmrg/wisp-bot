@@ -100,6 +100,44 @@ describe("PendingMessagesBar", () => {
     });
   });
 
+  it("shows attached files without the list the Wisp reads, and keeps them when the text is edited", async () => {
+    const user = userEvent.setup();
+    const actions = queueActions();
+    const withFiles: QueuedMessage[] = [
+      {
+        id: "queued-files",
+        conversationId: "one",
+        text: "Anexe os boletos\n\nAttached to the workspace:\n- `inbox/boleto.pdf`\n- `inbox/luz.pdf`",
+        createdAt: "2026-10-06T12:00:00.000Z",
+      },
+      {
+        id: "queued-only-files",
+        conversationId: "one",
+        text: "Attached to the workspace:\n- `inbox/nota.png`",
+        createdAt: "2026-10-06T12:01:00.000Z",
+      },
+    ];
+    render(<PendingMessagesBar queued={withFiles} scheduled={[]} queue={actions} schedule={controller()} />);
+
+    const region = screen.getByRole("region", { name: "Pending messages" });
+    expect(region).not.toHaveTextContent("Attached to the workspace");
+    const rows = screen.getAllByRole("listitem");
+    expect(rows[0]).toHaveTextContent("Anexe os boletos2 attached files");
+    expect(rows[1]).toHaveTextContent("nota.png");
+
+    await user.click(screen.getAllByRole("button", { name: "Edit queued message" })[0]!);
+    const text = await screen.findByRole("textbox", { name: "Message" });
+    expect(text).toHaveValue("Anexe os boletos");
+    expect(screen.getByRole("list", { name: "Attached files" })).toHaveTextContent("boleto.pdfluz.pdf");
+    await user.clear(text);
+    await user.click(screen.getByRole("button", { name: "Save" }));
+    // With the typed text cleared, the files alone still make a message.
+    expect(actions.update).toHaveBeenCalledWith(
+      "queued-files",
+      "Attached to the workspace:\n- `inbox/boleto.pdf`\n- `inbox/luz.pdf`",
+    );
+  });
+
   it("shows nothing without scheduled messages", () => {
     const { container } = render(
       <PendingMessagesBar queued={[]} scheduled={[]} queue={queueActions()} schedule={controller()} />,

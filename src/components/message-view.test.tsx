@@ -1,5 +1,6 @@
 import { render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import userEvent from "@testing-library/user-event";
+import { describe, expect, it, vi } from "vitest";
 
 import { MessageView } from "@/components/message-view";
 
@@ -41,5 +42,25 @@ describe("MessageView", () => {
     expect(Array.from(list.querySelectorAll("li"), (item) => item.textContent)).toEqual(["boleto.pdf", "luz.pdf"]);
     expect(screen.getByTitle("inbox/boleto.pdf")).toBeTruthy();
     expect(screen.queryByText(/Attached to the workspace/)).toBeNull();
+  });
+
+  it("copies only the typed text of a message with attachments", async () => {
+    // userEvent installs its own clipboard, so the stub goes in after it.
+    const user = userEvent.setup();
+    const writeText = vi.fn(async () => undefined);
+    Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText } });
+    render(
+      <MessageView
+        message={{
+          id: "attached",
+          type: "outgoing",
+          text: "Anexe os boletos\n\nAttached to the workspace:\n- `inbox/boleto.pdf`",
+          status: "complete",
+          createdAt: "2026-10-07T12:00:00.000Z",
+        }}
+      />,
+    );
+    await user.click(screen.getByRole("button", { name: "Copy message" }));
+    expect(writeText).toHaveBeenCalledWith("Anexe os boletos");
   });
 });

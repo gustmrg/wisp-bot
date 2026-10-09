@@ -1,11 +1,12 @@
 import { useState } from "react";
-import { CalendarClockIcon, CheckIcon, CircleAlertIcon, CircleStopIcon, CopyIcon, FileIcon } from "lucide-react";
+import { CalendarClockIcon, CheckIcon, CircleAlertIcon, CircleStopIcon, CopyIcon } from "lucide-react";
 
 import type { Message } from "@/chat-data";
 import { splitMessageAttachments } from "../../shared/workspace";
 import { useTimeZone } from "@/hooks/use-time-zone";
 import { copyText } from "@/lib/clipboard";
 import { cn } from "@/lib/utils";
+import { AttachmentChips } from "@/components/attachment-chips";
 import { MarkdownView } from "@/components/markdown-view";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 
@@ -176,7 +177,12 @@ function MessageView({ message, dense = false, onAnswer, onRetry }: MessageViewP
         >
           {outgoing ? <OutgoingText text={message.text} /> : <MarkdownView text={message.text} />}
         </div>
-        <MessageTools text={message.text} createdAt={message.createdAt} legacyTime={message.time} outgoing={outgoing} />
+        <MessageTools
+          text={outgoing ? splitMessageAttachments(message.text).text : message.text}
+          createdAt={message.createdAt}
+          legacyTime={message.time}
+          outgoing={outgoing}
+        />
       </div>
       {message.reactions?.length ? (
         <div className="mt-[3px] flex gap-1">
@@ -224,22 +230,11 @@ function OutgoingText({ text }: { text: string }) {
   return (
     <>
       {typed}
-      <ul
-        className={cn("m-0 flex list-none flex-wrap gap-1.5 p-0 whitespace-normal", typed && "mt-1.5")}
-        aria-label="Attached files"
-      >
-        {attachments.map((file) => (
-          <li
-            key={file.path}
-            className="flex max-w-[240px] items-center gap-1 rounded-md border border-white/25 bg-white/15 px-1.5 py-0.5 text-xs [&_svg]:size-3"
-          >
-            <FileIcon aria-hidden="true" className="flex-none" />
-            <span className="truncate" title={file.path}>
-              {file.name}
-            </span>
-          </li>
-        ))}
-      </ul>
+      <AttachmentChips
+        attachments={attachments}
+        className={cn("whitespace-normal", typed && "mt-1.5")}
+        chipClassName="border-white/25 bg-white/15"
+      />
     </>
   );
 }
