@@ -1,5 +1,7 @@
 # Installing on macOS (unsigned builds)
 
+New releases require **macOS 14 Sonoma or later** and an **Apple Silicon (arm64)** Mac. Intel Macs are not supported by new releases.
+
 Current macOS artifacts are **ad-hoc signed, not notarized** — the release
 pipeline packages them without a Developer ID certificate
 (`CSC_IDENTITY_AUTO_DISCOVERY: false`) because there is no Apple Developer

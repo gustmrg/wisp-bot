@@ -14,8 +14,10 @@ ADR 002 planned signed Windows and notarized macOS betas, staged rollouts, and a
 
 | Platform | Architecture | Artifacts | Signing |
 | --- | --- | --- | --- |
-| macOS 14+ | arm64, x64 | DMG, ZIP | ad-hoc, not notarized |
+| macOS 14+ | arm64 | DMG, ZIP | ad-hoc, not notarized |
 | Linux | x64 | AppImage, `.deb` | unsigned; updates verified by SHA-512 |
+
+As of 2026-10-09, new macOS releases target Apple Silicon (arm64) only, with an explicit minimum of macOS 14.0.0. Intel Macs no longer receive new desktop builds. Linux remains x64.
 
 Windows is deferred, and its electron-builder and Azure Trusted Signing configuration has been removed. A Windows build will need it added back.
 
