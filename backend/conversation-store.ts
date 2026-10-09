@@ -12,8 +12,9 @@ import type { ConversationRecord, WispRecord, WorkspaceRecords } from "./workspa
 // Version 4 stored Wisps apart from conversations, and version 5 stores records
 // as columns instead of JSON; earlier readers understand neither. Version 6
 // drops the Wisp picture column, which version 5 writers still name. Version 7
-// adds pinned conversations; older writers leave the column alone.
-const STORE_VERSION = 7;
+// adds unread counts; older writers keep `unread` right, and reads trust it.
+// Version 8 adds pinned conversations; older writers leave the column alone.
+const STORE_VERSION = 8;
 const MIN_READER_VERSION = 6;
 /** The first layout that stores records as columns rather than JSON. */
 const COLUMN_RECORDS_VERSION = 5;
@@ -122,6 +123,7 @@ const RECORD_SCHEMA = `
     notify_on_updates_enabled INTEGER NOT NULL CHECK (notify_on_updates_enabled IN (0, 1)),
     preview TEXT NOT NULL,
     unread INTEGER CHECK (unread IN (0, 1)),
+    unread_count INTEGER CHECK (unread_count >= 0),
     pinned INTEGER NOT NULL DEFAULT 0 CHECK (pinned IN (0, 1)),
     last_activity_at TEXT,
     storage_id TEXT NOT NULL,
@@ -208,7 +210,11 @@ const UPGRADE_SHAPE_TO_APPEARANCE = `
 // so the pictures go.
 const DROP_WISP_PICTURES = "ALTER TABLE wisps DROP COLUMN avatar_image;";
 
-// Builds before version 7 could not pin conversations.
+// Builds before version 7 stored only whether a conversation was unread; reads
+// count one unread message for those.
+const ADD_UNREAD_COUNTS = "ALTER TABLE conversations ADD COLUMN unread_count INTEGER CHECK (unread_count >= 0);";
+
+// Builds before version 8 could not pin conversations.
 const ADD_PINNED_CONVERSATIONS =
   "ALTER TABLE conversations ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0 CHECK (pinned IN (0, 1));";
 
@@ -304,7 +310,7 @@ function conversationRecordOf(row: Row): { chat: Row & { messages: unknown[] }; 
     notifyOnUpdatesEnabled: row.notify_on_updates_enabled === 1,
     preview: row.preview,
     messages: [] as unknown[],
-    ...(row.unread === null ? {} : { unread: row.unread === 1 }),
+    ...unreadOf(row),
     ...(row.pinned === 1 ? { pinned: true } : {}),
     ...(lastActivityAt === undefined ? {} : { lastActivityAt }),
   };
@@ -313,6 +319,17 @@ function conversationRecordOf(row: Row): { chat: Row & { messages: unknown[] }; 
       ? { ...base, wispId: row.wisp_id }
       : { ...base, name: row.name, label: row.label, description: row.description, memberIds: [] };
   return { chat, storageId: row.storage_id, sessions: {}, createdAt: row.created_at, updatedAt: row.updated_at };
+}
+
+/**
+ * `unread` decides whether a conversation has unread messages, since builds
+ * before version 7 write it without the count: a count they left behind on a
+ * read conversation is stale, and one they marked unread has at least one.
+ */
+function unreadOf(row: Row): { unread?: boolean; unreadCount?: number } {
+  if (row.unread === null) return {};
+  if (row.unread !== 1) return { unread: false, unreadCount: 0 };
+  return { unread: true, unreadCount: Math.max(1, Number(row.unread_count ?? 1)) };
 }
 
 function scheduledMessageOf(row: Row): unknown {
@@ -404,6 +421,7 @@ export class ConversationStore {
       if (!jsonRecords) {
         store.upgradeShapeToAppearance();
         store.dropWispPictures();
+        store.addUnreadCounts();
         store.addPinnedConversations();
       }
       return store;
@@ -619,13 +637,13 @@ export class ConversationStore {
     const circle = chat.kind === "circle" ? chat : undefined;
     this.statement(
       `INSERT INTO conversations (id, kind, wisp_id, name, label, description, notify_on_updates_enabled,
-        preview, unread, pinned, last_activity_at, storage_id, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        preview, unread, unread_count, pinned, last_activity_at, storage_id, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT (id) DO UPDATE SET
         kind = excluded.kind, wisp_id = excluded.wisp_id, name = excluded.name, label = excluded.label,
         description = excluded.description, notify_on_updates_enabled = excluded.notify_on_updates_enabled,
-        preview = excluded.preview, unread = excluded.unread, pinned = excluded.pinned,
-        last_activity_at = excluded.last_activity_at,
+        preview = excluded.preview, unread = excluded.unread, unread_count = excluded.unread_count,
+        pinned = excluded.pinned, last_activity_at = excluded.last_activity_at,
         storage_id = excluded.storage_id, created_at = excluded.created_at, updated_at = excluded.updated_at`,
     ).run(
       chat.id,
@@ -637,6 +655,7 @@ export class ConversationStore {
       chat.notifyOnUpdatesEnabled ? 1 : 0,
       chat.preview,
       chat.unread === undefined ? null : chat.unread ? 1 : 0,
+      chat.unreadCount ?? null,
       chat.pinned ? 1 : 0,
       chat.lastActivityAt ?? null,
       record.storageId,
@@ -839,6 +858,20 @@ export class ConversationStore {
     this.db.exec("BEGIN IMMEDIATE");
     try {
       this.db.exec(DROP_WISP_PICTURES);
+      this.raiseVersions();
+      this.db.exec("COMMIT");
+    } catch (error) {
+      this.db.exec("ROLLBACK");
+      throw error;
+    }
+  }
+
+  private addUnreadCounts(): void {
+    const columns = this.db.prepare("SELECT name FROM pragma_table_info('conversations')").all();
+    if (columns.some((column) => column.name === "unread_count")) return;
+    this.db.exec("BEGIN IMMEDIATE");
+    try {
+      this.db.exec(ADD_UNREAD_COUNTS);
       this.raiseVersions();
       this.db.exec("COMMIT");
     } catch (error) {

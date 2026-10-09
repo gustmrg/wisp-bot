@@ -177,10 +177,10 @@ export function applyWorkspaceAction(records: WorkspaceRecords, action: Workspac
     case "mark-read": {
       const record = records.conversations[action.conversationId];
       if (!record) return { records, status: "not_found" };
-      if (!record.chat.unread) return { records, status: "unchanged" };
+      if (!record.chat.unread && !record.chat.unreadCount) return { records, status: "unchanged" };
       return withConversation(records, action.conversationId, {
         ...record,
-        chat: { ...record.chat, unread: false },
+        chat: { ...record.chat, unread: false, unreadCount: 0 },
         updatedAt: action.updatedAt,
       });
     }
@@ -188,9 +188,10 @@ export function applyWorkspaceAction(records: WorkspaceRecords, action: Workspac
       const record = records.conversations[action.conversationId];
       if (!record) return { records, status: "not_found" };
       if (record.chat.unread) return { records, status: "unchanged" };
+      // Like an unread reply, so a count shows one.
       return withConversation(records, action.conversationId, {
         ...record,
-        chat: { ...record.chat, unread: true },
+        chat: { ...record.chat, unread: true, unreadCount: 1 },
         updatedAt: action.updatedAt,
       });
     }
@@ -198,13 +199,17 @@ export function applyWorkspaceAction(records: WorkspaceRecords, action: Workspac
       const record = records.conversations[action.conversationId];
       if (!record) return { records, status: "not_found" };
       const { chat, message, droppedOldest } = upsertNormalizedMessage(record.chat, action.message);
+      // A message counts once: saving it again, say with its usage, adds nothing.
+      const earlier = record.chat.messages.find(({ id }) => id === message.id);
+      const counts = marksUnread(message) && !(earlier && marksUnread(earlier));
+      const unreadCount = (record.chat.unreadCount ?? (record.chat.unread ? 1 : 0)) + 1;
       return {
         ...withConversation(records, action.conversationId, {
           ...record,
           chat: {
             ...chat,
             preview: "text" in message ? message.text : chat.preview,
-            ...(marksUnread(message) ? { unread: true } : {}),
+            ...(counts ? { unread: true, unreadCount } : {}),
             lastActivityAt: laterOf(chat.lastActivityAt, message.createdAt ?? action.updatedAt),
           },
           updatedAt: action.updatedAt,

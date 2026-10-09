@@ -47,7 +47,10 @@ export interface ChatBase {
   notifyOnUpdatesEnabled: boolean;
   preview: string;
   messages: ReadonlyArray<Message>;
+  /** Whether any messages are unread; kept beside `unreadCount` for older clients. */
   unread?: boolean;
+  /** Replies and questions from Wisps since the person last read the conversation. */
+  unreadCount?: number;
   /** Pinned conversations come first in the list, on every device. */
   pinned?: boolean;
   /** Time of the newest message (ISO 8601), maintained by the backend. */

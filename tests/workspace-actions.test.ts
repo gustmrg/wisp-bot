@@ -218,7 +218,7 @@ describe("workspace actions", () => {
       updatedAt: "after",
     });
     expect(marked.status).toBe("applied");
-    expect(marked.records.conversations.first?.chat.unread).toBe(true);
+    expect(marked.records.conversations.first?.chat).toMatchObject({ unread: true, unreadCount: 1 });
     expect(
       applyWorkspaceAction(marked.records, { type: "mark-unread", conversationId: "first", updatedAt: "later" }).status,
     ).toBe("unchanged");
@@ -257,6 +257,48 @@ describe("workspace actions", () => {
     expect(append({ id: "sent", type: "outgoing", text: "Hi", status: "complete" })).toBeUndefined();
     expect(append({ id: "stopped", type: "incoming", text: "Partial", status: "cancelled" })).toBeUndefined();
     expect(append({ id: "notice", type: "time", text: "New topic · History preserved" })).toBeUndefined();
+  });
+
+  it("counts each reply and question once, and clears the count when read", () => {
+    let records = graph(["first"]);
+    const append = (message: Message & { id: string }) => {
+      records = applyWorkspaceAction(records, {
+        type: "append-message",
+        conversationId: "first",
+        message,
+        updatedAt: "after",
+      }).records;
+      return records.conversations.first?.chat;
+    };
+
+    append({ id: "one", type: "incoming", text: "Wor", status: "streaming" });
+    expect(append({ id: "one", type: "incoming", text: "Working", status: "complete" })).toMatchObject({
+      unread: true,
+      unreadCount: 1,
+    });
+    // Saving the finished reply again does not count it twice.
+    expect(append({ id: "one", type: "incoming", text: "Working", status: "complete" })?.unreadCount).toBe(1);
+    append({ id: "sent", type: "outgoing", text: "And?", status: "complete" });
+    append({ id: "two", type: "incoming", text: "Failed", status: "failed" });
+    expect(append({ id: "three", type: "prompt", question: "Continue?", options: [] })?.unreadCount).toBe(3);
+
+    records = applyWorkspaceAction(records, { type: "mark-read", conversationId: "first", updatedAt: "later" }).records;
+    expect(records.conversations.first?.chat).toMatchObject({ unread: false, unreadCount: 0 });
+    expect(append({ id: "four", type: "incoming", text: "More", status: "complete" })?.unreadCount).toBe(1);
+  });
+
+  it("starts counting from one for a conversation marked unread before counts existed", () => {
+    const records: WorkspaceRecords = {
+      ...graph(["first"]),
+      conversations: { first: record(wispChat("first", { unread: true })) },
+    };
+    const appended = applyWorkspaceAction(records, {
+      type: "append-message",
+      conversationId: "first",
+      message: { id: "reply", type: "incoming", text: "Done", status: "complete" },
+      updatedAt: "after",
+    });
+    expect(appended.records.conversations.first?.chat.unreadCount).toBe(2);
   });
 
   it("upserts messages and treats a missing target as a no-op", () => {

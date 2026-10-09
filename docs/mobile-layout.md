@@ -23,10 +23,11 @@ the desktop sidebar keeps the creation order. Each row shows the Wisp's
 avatar with its state, the name, the time of the last activity, and one line
 that is either the last message or what needs attention: "Working…",
 "Waiting for your approval", or "The last reply failed". An unread
-conversation has a badge beside that line and a stronger time. A conversation
-turns unread on every device when a Wisp finishes a reply, fails one, or asks
-a question, and turns read when someone opens it, or when the reply arrives
-while it is on screen. A hairline
+conversation has a badge beside that line and a stronger time. The badge counts
+the unread replies and questions, up to "99+". A conversation turns unread on
+every device when a Wisp finishes a reply, fails one, or asks a question, each
+adding one to the count, and turns read when someone opens it, or when the
+reply arrives while it is on screen. A hairline
 separates the rows, starting after the avatar.
 
 Pinned conversations come first, each marked with a pin, and keep that place
@@ -56,8 +57,20 @@ composer merely because a conversation was opened.
 
 ## Scope
 
-This implements the mobile **renderer layout**. The app still requires the Electron bridge: opening the Vite
-URL in a standalone mobile browser continues to show the bridge-required
-screen. Remote access, web authentication, a PWA manifest, and offline support
-require a separate web transport implementation; no desktop security checks are
-bypassed.
+The mobile layout applies wherever the renderer runs in a narrow viewport:
+
+- **Desktop app.** The Electron window switches to it below 761px wide.
+- **Browser app.** A Wisp server serves the same app to browsers through a web
+  transport instead of the Electron bridge. A browser pairs once with a
+  one-time code from `wispctl pair` and then uses the Wisps on that server.
+  On a phone it can be installed to the home screen and opens full screen.
+  See [Use Wisp in a browser or on your phone](remote-server.md#use-wisp-in-a-browser-or-on-your-phone)
+  and [Pair devices](remote-server.md#pair-devices).
+
+Opening the Vite dev server URL in a browser without either still shows the
+bridge-required screen.
+
+The browser app's service worker caches only the app's files, so it opens
+without a network and reconnects when it can. Conversations, settings, and
+API responses are never cached: reading or sending messages offline is not
+supported.

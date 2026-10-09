@@ -281,8 +281,16 @@ function Sidebar({
                               : messagePreview(chat.preview)}
                       </span>
                       {chat.unread && mobile ? (
-                        <span className="conversation-unread-badge">
-                          <span className="sr-only">Unread</span>
+                        // A server that predates counts sends only `unread`: a dot then.
+                        <span className="conversation-unread-badge" data-counted={chat.unreadCount ? true : undefined}>
+                          {chat.unreadCount ? (
+                            <>
+                              <span aria-hidden="true">{chat.unreadCount > 99 ? "99+" : chat.unreadCount}</span>
+                              <span className="sr-only">{`${chat.unreadCount} unread`}</span>
+                            </>
+                          ) : (
+                            <span className="sr-only">Unread</span>
+                          )}
                         </span>
                       ) : null}
                     </span>
