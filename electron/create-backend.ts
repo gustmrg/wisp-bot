@@ -21,6 +21,8 @@ import type { LaunchAtLoginService } from "./backend/launch-at-login-service.js"
 import type { UpdateService } from "./backend/update-service.js";
 import { ConnectionManager } from "./connections/connection-manager.js";
 import { ConnectionStore, parseRemoteProfile } from "./connections/connection-store.js";
+import type { SshAskpass } from "./connections/ssh-askpass.js";
+import type { SshInteraction } from "./connections/ssh-auth.js";
 import { installRemoteServer } from "./connections/ssh-install.js";
 import { testSshConnection } from "./connections/ssh-test.js";
 import { openSshTunnel } from "./connections/ssh-tunnel.js";
@@ -58,15 +60,25 @@ export interface BackendHost {
   deviceName: string;
   /** The version of this app; the server it installs on another machine is the same version. */
   appVersion: string;
+  /**
+   * Starts the helper that lets OpenSSH ask the person for a password, a key
+   * passphrase, or to trust a host key. Without one, SSH runs in BatchMode.
+   */
+  startSshAskpass?: () => Promise<SshAskpass | undefined>;
   /** Installs the server over SSH; tests substitute a fake. */
   installServer?: (
     profile: SshConnectionProfile,
     onProgress: (message: string) => void,
     signal: AbortSignal,
+    interaction: SshInteraction | undefined,
   ) => Promise<void>;
   testSshConnection?: typeof testSshConnection;
   /** Opens an SSH tunnel to a server; tests substitute a fake. */
-  openSshTunnel?: (profile: SshConnectionProfile, signal: AbortSignal) => Promise<RemoteTransport>;
+  openSshTunnel?: (
+    profile: SshConnectionProfile,
+    signal: AbortSignal,
+    interaction: SshInteraction | undefined,
+  ) => Promise<RemoteTransport>;
 }
 
 export interface Backend {
@@ -84,15 +96,27 @@ export async function createBackend(host: BackendHost): Promise<Backend> {
   const { ipcMain, authorizeSender, broadcast } = host;
   const store = new ConnectionStore(host.connectionsDirectory, host.encryption);
   await store.load();
+  const askpass = await host.startSshAskpass?.().catch((error: Error) => {
+    host.logger.warn("ssh_askpass_unavailable", { message: error.message });
+    return undefined;
+  });
+  const interaction: SshInteraction | undefined = askpass && {
+    askpass,
+    ask: (prompt, signal) => manager.askSsh(prompt, signal),
+    logger: host.logger,
+  };
+  const openTunnel = host.openSshTunnel ?? ((profile, signal) => openSshTunnel(profile, { signal, interaction }));
+  const install =
+    host.installServer ??
+    ((profile, onProgress, signal) =>
+      installRemoteServer(profile, { version: host.appVersion, onProgress, signal, interaction }));
   const manager = new ConnectionManager({
     store,
     localServer: host.localServer,
     onHostRequest: (request) => runHostAction(host.hostActions, request),
     selectFiles: () => host.hostActions.selectFiles(),
-    openSshTunnel: host.openSshTunnel ?? ((profile, signal) => openSshTunnel(profile, { signal })),
-    installServer:
-      host.installServer ??
-      ((profile, onProgress, signal) => installRemoteServer(profile, { version: host.appVersion, onProgress, signal })),
+    openSshTunnel: (profile, signal) => openTunnel(profile, signal, interaction),
+    installServer: (profile, onProgress, signal) => install(profile, onProgress, signal, interaction),
     deviceName: host.deviceName,
     broadcast,
     logger: host.logger,
@@ -148,6 +172,7 @@ export async function createBackend(host: BackendHost): Promise<Backend> {
       [WISP_IPC_CHANNELS.retryConnection, () => manager.retry()],
       [WISP_IPC_CHANNELS.installServer, (payload) => manager.installServer(connectionId(payload))],
       [WISP_IPC_CHANNELS.cancelServerInstall, () => manager.cancelInstall()],
+      [WISP_IPC_CHANNELS.answerSshPrompt, (payload) => manager.answerSshPrompt(payload)],
     ]),
   ];
   try {
@@ -155,6 +180,7 @@ export async function createBackend(host: BackendHost): Promise<Backend> {
   } catch (error) {
     for (const registration of handlers) registration.dispose();
     unsubscribeUpdateState();
+    await askpass?.close();
     throw error;
   }
 
@@ -165,6 +191,7 @@ export async function createBackend(host: BackendHost): Promise<Backend> {
       unsubscribeUpdateState();
       sshTestController.abort();
       await manager.dispose();
+      await askpass?.close();
     },
   };
 }

@@ -44,7 +44,9 @@ describe("SSH connection test", () => {
   });
   it.each([
     ["Permission denied (publickey)", "authentication failed"],
-    ["Host key verification failed", "host key"],
+    ["Host key verification failed", "host key is not trusted yet"],
+    ["WARNING: REMOTE HOST IDENTIFICATION HAS CHANGED!", "host key has changed"],
+    ["Permission denied (publickey,password)", "takes a password"],
     ["Could not resolve hostname", "could not be resolved"],
     ["Connection refused", "connection was refused"],
     ["Network is unreachable", "could not be reached"],

@@ -7,14 +7,21 @@ import { sshArguments } from "./ssh-tunnel.js";
 /** Only fixed diagnostics leave this process: SSH output may contain secrets. */
 export function sshTestFailure(stderr: string, missingClient = false): string {
   if (missingClient) return "OpenSSH is not installed on this computer. Install the ssh client and retry.";
-  if (/Host key verification failed|REMOTE HOST IDENTIFICATION HAS CHANGED|host key .* not known/i.test(stderr)) {
-    return "The SSH host key is unknown or has changed. Verify the host key in a terminal before retrying.";
+  if (/REMOTE HOST IDENTIFICATION HAS CHANGED|Host key for .* has changed/i.test(stderr)) {
+    return "The SSH host key has changed. If you expected it, remove the old key with `ssh-keygen -R` and the host name, then retry.";
+  }
+  if (/Host key verification failed|host key .* not known/i.test(stderr)) {
+    return "The SSH host key is not trusted yet. Connecting shows its fingerprint and asks whether to trust it.";
   }
   if (/login\.tailscale\.com|tailscale.*(check|approval)/i.test(stderr)) {
     return "Tailscale SSH requires approval. Connect with SSH in a terminal to approve it, then retry.";
   }
   if (/Permission denied|Authentication failed|Too many authentication failures/i.test(stderr)) {
-    return "SSH authentication failed. Check the user and load the correct key into ssh-agent or configure it in ~/.ssh/config.";
+    // Only which methods the server takes is read, never echoed.
+    const methods = /Permission denied \(([^)]*)\)/i.exec(stderr)?.[1]?.split(",") ?? [];
+    return methods.includes("password") || methods.includes("keyboard-interactive")
+      ? "SSH authentication failed: the server accepted no key from this computer, but takes a password. Connecting asks for it once and adds this computer's key to the server."
+      : "SSH authentication failed: the server accepted no key from this computer. Check the user, and add this computer's public key to ~/.ssh/authorized_keys on the server (for example with ssh-copy-id).";
   }
   if (/Could not resolve hostname/i.test(stderr))
     return "The SSH host could not be resolved. Check the host name and your network or tailnet connection.";

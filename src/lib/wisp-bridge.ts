@@ -89,6 +89,7 @@ const REQUIRED_WISP_METHODS = [
   "retryConnection",
   "installServer",
   "cancelServerInstall",
+  "answerSshPrompt",
   "subscribeToConnections",
 ] as const satisfies ReadonlyArray<keyof WispApi>;
 

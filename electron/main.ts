@@ -24,6 +24,7 @@ import { recordLaunchVersion } from "./backend/launch-version.js";
 import { resolveAutoInstallSupport } from "./backend/update-capability.js";
 import { UpdateService } from "./backend/update-service.js";
 import { disposeWithin } from "../backend/runtime.js";
+import { SshAskpass } from "./connections/ssh-askpass.js";
 import { createBackend } from "./create-backend.js";
 import { loadOrCreateLocalMasterKey, migrateKeychainCredentials } from "./local-server/local-credentials.js";
 import { ChildProcessLocalServer } from "./local-server/local-server.js";
@@ -270,6 +271,8 @@ async function bootstrap(): Promise<void> {
     connectionsDirectory: userData,
     deviceName: `Wisp on ${hostname()}`,
     appVersion: app.getVersion(),
+    // The helper is a shell script; on Windows, SSH keeps running in BatchMode.
+    startSshAskpass: async () => (process.platform === "win32" ? undefined : SshAskpass.start()),
   });
   let backendDisposed = false;
   let backendDisposing = false;

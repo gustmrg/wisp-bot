@@ -3,7 +3,8 @@ import { spawn } from "node:child_process";
 import { FatalTransportError } from "../../client/remote-session.js";
 import type { SshConnectionProfile } from "../../shared/connections.js";
 import { SERVER_VERSION_PATTERN, WISP_SERVER_PACKAGE } from "../../shared/server-package.js";
-import { classify, sshArguments } from "./ssh-tunnel.js";
+import { SshQuestions, type SshInteraction } from "./ssh-auth.js";
+import { sshArguments, sshFailure } from "./ssh-tunnel.js";
 
 // Downloading the package and its dependencies can take a while on a small machine.
 const INSTALL_TIMEOUT_MS = 10 * 60_000;
@@ -17,6 +18,8 @@ export interface SshInstallOptions {
   signal?: AbortSignal;
   /** Called with each line the setup reports, such as "Installing…". */
   onProgress?: (message: string) => void;
+  /** Lets OpenSSH ask the person questions; without it, SSH runs in BatchMode. */
+  interaction?: SshInteraction;
 }
 
 /**
@@ -37,11 +40,14 @@ export function installCommand(version: string, serverPort: number): string {
 
 /** Installs and starts the Wisp server on a machine reached over SSH, by running its `setup` there. */
 export async function installRemoteServer(profile: SshConnectionProfile, options: SshInstallOptions): Promise<void> {
+  const command = installCommand(options.version, profile.serverPort);
+  const ssh = options.sshPath ?? "ssh";
+  const questions = new SshQuestions(options.interaction, ssh, profile, options.signal);
   const child = spawn(
-    options.sshPath ?? "ssh",
-    ["-T", ...sshArguments(profile), "--", profile.host, installCommand(options.version, profile.serverPort)],
+    ssh,
+    ["-T", ...sshArguments(profile, questions.interactive), "--", profile.host, command],
     // stdin stays open and silent: closing it is how the setup learns it was cancelled.
-    { stdio: ["pipe", "pipe", "pipe"], windowsHide: true },
+    { stdio: ["pipe", "pipe", "pipe"], windowsHide: true, ...(questions.env ? { env: questions.env } : {}) },
   );
   child.stdin?.on("error", () => undefined);
   let stdout = "";
@@ -79,29 +85,34 @@ export async function installRemoteServer(profile: SshConnectionProfile, options
     });
   });
   clearTimeout(timer);
+  questions.close();
   child.stdin?.destroy();
   options.signal?.removeEventListener("abort", stop);
   if (options.signal?.aborted) throw new FatalTransportError("Installing the server was cancelled.");
   if (code === 0 && /^\{.*\}$/m.test(stdout)) return;
-  throw explainInstallFailure(profile.host, options.version, code, stderr, timedOut, spawnError);
+  throw explainInstallFailure(profile, options.version, code, stderr, timedOut, spawnError, questions);
 }
 
 /** Why the setup over SSH failed, in terms of what to do on the server. */
 export function explainInstallFailure(
-  host: string,
+  profile: SshConnectionProfile,
   version: string,
   exitCode: number | null,
   stderr: string,
   timedOut: boolean,
   spawnError?: Error,
+  questions?: SshQuestions,
 ): FatalTransportError {
+  const { host } = profile;
   if (timedOut) {
     return new FatalTransportError(
       `Installing on ${host} took more than ${INSTALL_TIMEOUT_MS / 60_000} minutes. Check its internet connection, or run \`npx ${WISP_SERVER_PACKAGE} setup\` there.`,
     );
   }
   // OpenSSH exits with 255 when the connection itself failed.
-  if (spawnError || exitCode === 255) return new FatalTransportError(classify(stderr, host, spawnError).message);
+  if (spawnError || exitCode === 255) {
+    return new FatalTransportError(sshFailure(stderr, profile, spawnError, questions).message);
+  }
   if (
     /npx: (command )?not found|npx: No such file|env: .?(node|npx).?: No such file/i.test(stderr) ||
     exitCode === 127

@@ -187,15 +187,25 @@ server:
   `~/.ssh/config`, and known hosts. Enter a host name, IP address, or alias,
   an optional user and SSH port, and the server's port (8787 by default). Wisp
   forwards a free local port to the server's loopback port; it never stores SSH
-  keys or passwords. Connect once with `ssh` in a terminal first, so the host
-  key is verified; Wisp refuses unknown or changed host keys rather than
-  accepting them. MagicDNS names and Tailscale SSH work like any other host; if
-  Tailscale SSH asks for a browser check, run `ssh` in a terminal once.
+  keys or passwords. The first time, the app shows the server's host key
+  fingerprint and asks whether to trust it; a host key that changed is refused.
+  Wisp signs in with SSH keys. If the server asks for a password, Wisp uses it
+  once to add this computer's public key to `~/.ssh/authorized_keys` there,
+  like `ssh-copy-id`, and connects with the key from then on: the key OpenSSH
+  would use for that host, or else the first key in ssh-agent. Passphrases of
+  keys that are not in ssh-agent are asked each time; `ssh-add` stops that. To
+  check what Wisp will see, run `ssh -o BatchMode=yes user@host true`. On
+  Windows, connect once with `ssh` in a terminal first and use a key: the app
+  cannot ask there yet. MagicDNS names and Tailscale SSH work like any other
+  host; if Tailscale SSH asks for a browser check, run `ssh` in a terminal
+  once. See [ADR 013](decisions/013-ssh-questions.md).
   Use **Test connection** in the connection form to check the current host, user,
   and SSH port before saving. It reports authentication and network failures
   without showing raw SSH output, and times out after 20 seconds. You can edit
   the fields and test again. Success verifies SSH authentication only; it does
-  not check the Wisp server port, pair, or switch your active connection.
+  not check the Wisp server port, pair, or switch your active connection. The
+  test asks nothing, so a new host key or a server that only takes a password
+  fails it; connecting asks for those.
 - **HTTPS address** connects directly, for example to a Tailscale Serve
   address. Plain HTTP is accepted only for `127.0.0.1` and `localhost`.
 

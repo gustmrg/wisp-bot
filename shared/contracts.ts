@@ -60,6 +60,7 @@ import type {
 
 import type {
   ActivateConnectionRequest,
+  AnswerSshPromptRequest,
   ConnectionRequest,
   ConnectionsView,
   SaveConnectionRequest,
@@ -154,6 +155,7 @@ export const WISP_IPC_CHANNELS = {
   retryConnection: "wisp:connections:retry",
   installServer: "wisp:connections:install-server",
   cancelServerInstall: "wisp:connections:cancel-server-install",
+  answerSshPrompt: "wisp:connections:answer-ssh-prompt",
   connectionsChanged: "wisp:connections:changed",
 } as const;
 
@@ -575,5 +577,7 @@ export interface WispApi {
   installServer(request: ConnectionRequest): Promise<BackendResult<ConnectionsView>>;
   /** Stops a server setup in progress; `installServer` then fails as cancelled. */
   cancelServerInstall(): Promise<BackendResult<ConnectionsView>>;
+  /** Answers the question OpenSSH asks while connecting, shown in `ConnectionsView.sshPrompt`. */
+  answerSshPrompt(request: AnswerSshPromptRequest): Promise<BackendResult<ConnectionsView>>;
   subscribeToConnections(listener: (view: ConnectionsView) => void): () => void;
 }

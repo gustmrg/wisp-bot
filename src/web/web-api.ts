@@ -133,6 +133,7 @@ export function createWebWispApi(options: WebApiOptions): WispApi {
     },
     installServer: desktopOnly,
     cancelServerInstall: desktopOnly,
+    answerSshPrompt: desktopOnly,
     retryConnection: async () => {
       session.start();
       return ok(view());

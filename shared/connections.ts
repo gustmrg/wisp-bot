@@ -71,6 +71,34 @@ export interface ConnectionsView {
    * browser app, which always talks to the server that served it.
    */
   canManage?: boolean;
+  /** A question OpenSSH asks while connecting, waiting for the person to answer. */
+  sshPrompt?: SshPromptView;
+}
+
+/**
+ * What OpenSSH asks: to trust an unknown host key, for a password, for the
+ * passphrase of a key, to confirm the use of a key, or anything else the
+ * server asks (such as a one-time code).
+ */
+export type SshPromptKind = "host_key" | "password" | "passphrase" | "confirm" | "secret";
+
+export interface SshPromptView {
+  id: string;
+  kind: SshPromptKind;
+  /** The SSH host the question is about, as written in the connection. */
+  host: string;
+  /** OpenSSH's own text, such as the host key fingerprint or the password prompt. */
+  message: string;
+  /** For a password: the public keys of this computer the password authorizes on the server. */
+  keys?: string[];
+  /** Set when the same question is asked again, because the last answer was not accepted. */
+  retry?: boolean;
+}
+
+/** Answers an SSH question; no answer declines it. */
+export interface AnswerSshPromptRequest {
+  id: string;
+  answer?: string;
 }
 
 export type SaveConnectionRequest =

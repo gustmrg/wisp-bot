@@ -27,6 +27,7 @@ function bridge(initial: ConnectionsView) {
     retryConnection: vi.fn(ok),
     installServer: vi.fn(ok),
     cancelServerInstall: vi.fn(ok),
+    answerSshPrompt: vi.fn(ok),
     subscribeToConnections: vi.fn((listener: (next: ConnectionsView) => void) => {
       push = listener;
       return () => undefined;
@@ -60,6 +61,54 @@ describe("ConnectionGate", () => {
     await push(view({ phase: "connected", epoch: 2 }));
     expect(screen.getByText("Workspace")).toBeVisible();
     expect(mounted).toHaveBeenCalledTimes(2);
+  });
+
+  it("asks what SSH needs to know, without remounting the app", async () => {
+    const mounted = vi.fn();
+    const { api, push } = bridge(view({ phase: "reconnecting" }));
+    render(
+      <ConnectionGate>
+        <App onMount={mounted} />
+      </ConnectionGate>,
+    );
+    await screen.findByText("Workspace");
+    const hostKey = "ED25519 key fingerprint is SHA256:abc123.\nAre you sure you want to continue connecting?";
+    await push({
+      ...view({ phase: "reconnecting" }),
+      sshPrompt: { id: "ssh-1", kind: "host_key", host: "raspberrypi", message: hostKey },
+    });
+    expect(await screen.findByRole("dialog", { name: "Trust raspberrypi?" })).toHaveTextContent("SHA256:abc123");
+    await userEvent.click(screen.getByRole("button", { name: "Trust and connect" }));
+    expect(api.answerSshPrompt).toHaveBeenCalledWith({ id: "ssh-1", answer: "yes" });
+
+    await push({
+      ...view({ phase: "reconnecting" }),
+      sshPrompt: {
+        id: "ssh-2",
+        kind: "password",
+        host: "raspberrypi",
+        message: "me@raspberrypi's password:",
+        keys: ["me@laptop (SHA256:xyz)"],
+        retry: true,
+      },
+    });
+    const dialog = await screen.findByRole("dialog", { name: "Sign in to raspberrypi" });
+    expect(dialog).toHaveTextContent("me@laptop (SHA256:xyz)");
+    expect(screen.getByRole("alert")).toHaveTextContent("That was not accepted");
+    await userEvent.type(screen.getByLabelText("me@raspberrypi's password:"), "hunter2");
+    await userEvent.click(screen.getByRole("button", { name: "Add key and connect" }));
+    expect(api.answerSshPrompt).toHaveBeenLastCalledWith({ id: "ssh-2", answer: "hunter2" });
+
+    await push({
+      ...view({ phase: "reconnecting" }),
+      sshPrompt: { id: "ssh-3", kind: "passphrase", host: "raspberrypi", message: "Enter passphrase for key:" },
+    });
+    await screen.findByRole("dialog", { name: "Unlock your SSH key" });
+    await userEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(api.answerSshPrompt).toHaveBeenLastCalledWith({ id: "ssh-3" });
+    await push(view({ phase: "reconnecting" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    expect(mounted).toHaveBeenCalledTimes(1);
   });
 
   it("keeps the app during a reconnect and offers to retry", async () => {

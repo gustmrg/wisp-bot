@@ -8,6 +8,7 @@ import { LOCAL_CONNECTION_ID, type ConnectionsView } from "../../../shared/conne
 import { ActiveConnectionContext } from "./active-connection";
 import { ConnectionsPanel } from "./connections-panel";
 import { InstallServerAction } from "./install-server-action";
+import { SshPromptDialog } from "./ssh-prompt-dialog";
 
 /** The active connection, kept current from the main process. */
 export function useConnections(): [ConnectionsView | null, string] {
@@ -44,6 +45,18 @@ export function useConnections(): [ConnectionsView | null, string] {
  */
 export function ConnectionGate({ children }: { children: ReactNode }) {
   const [view, error] = useConnections();
+  // OpenSSH can ask while connecting, reconnecting, or setting a server up.
+  return (
+    <>
+      <GateContent view={view} error={error}>
+        {children}
+      </GateContent>
+      {view?.sshPrompt ? <SshPromptDialog prompt={view.sshPrompt} /> : null}
+    </>
+  );
+}
+
+function GateContent({ view, error, children }: { view: ConnectionsView | null; error: string; children: ReactNode }) {
   const [dismissedVersion, setDismissedVersion] = useState("");
   if (!view) {
     return error ? <ConnectionMessage title="Wisp could not start" message={error} /> : null;
