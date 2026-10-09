@@ -246,6 +246,7 @@ function createApi(initialState: ConversationStateView): WispApi {
     })),
     listSkills: vi.fn(async () => ({ ok: true as const, value: [] })),
     deleteSkill: vi.fn(async () => ({ ok: true as const, value: [] })),
+    importSkill: vi.fn(async () => ({ ok: true as const, value: [] })),
     getVoiceSettings: vi.fn(async () => ({
       ok: true as const,
       value: { secureStorageAvailable: true, providers: [] },

@@ -1,7 +1,7 @@
 import { WISP_IPC_CHANNELS } from "../../shared/contracts.js";
 import type { WorkspaceService } from "../workspace-service.js";
 import { registerGuardedHandlers, type HandlerRouter, type SenderAuthorizer } from "./guarded-handlers.js";
-import { parseConversationRequest, parseSkillRequest } from "../validators.js";
+import { parseConversationRequest, parseImportSkillRequest, parseSkillRequest } from "../validators.js";
 
 export function registerWorkspaceHandlers(
   router: HandlerRouter,
@@ -36,5 +36,6 @@ export function registerWorkspaceHandlers(
         return service.deleteSkill(conversationId, name);
       },
     ],
+    [WISP_IPC_CHANNELS.importSkill, (payload) => service.importSkill(parseImportSkillRequest(payload))],
   ]);
 }

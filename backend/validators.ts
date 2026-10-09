@@ -26,7 +26,7 @@ import type {
   UpdateWispRequest,
 } from "../shared/conversations.js";
 import { MAX_MESSAGE_SEARCH_LENGTH, MIN_MESSAGE_SEARCH_LENGTH } from "../shared/message-search.js";
-import { isValidSkillName, type SkillRequest } from "../shared/skills.js";
+import { isValidSkillName, type ImportSkillRequest, type SkillRequest } from "../shared/skills.js";
 import type { ResolveToolApprovalRequest } from "../shared/tool-policy.js";
 import {
   isVoiceLanguage,
@@ -45,6 +45,7 @@ import type {
   UpdateScheduledMessageRequest,
 } from "../shared/scheduled-messages.js";
 import { WispBackendError } from "./backend-error.js";
+import { MAX_SKILL_FILE_BYTES } from "./skill-store.js";
 import {
   normalizeChatChanges,
   normalizeChat,
@@ -88,6 +89,18 @@ export function parseSkillRequest(value: unknown): SkillRequest {
   const request = asRecord(value);
   if (!isValidSkillName(request.name)) throw invalidRequest();
   return { conversationId: parseId(request.conversationId), name: request.name };
+}
+
+/** Contents are checked as a skill by `parseSkillDocument`; this only bounds the request. */
+export function parseImportSkillRequest(value: unknown): ImportSkillRequest {
+  const request = asRecord(value);
+  if (typeof request.contents !== "string" || request.contents.length > MAX_SKILL_FILE_BYTES) throw invalidRequest();
+  if (request.replace !== undefined && typeof request.replace !== "boolean") throw invalidRequest();
+  return {
+    conversationId: parseId(request.conversationId),
+    contents: request.contents,
+    ...(request.replace ? { replace: true } : {}),
+  };
 }
 
 export function parseConversationRequest(value: unknown): ConversationRequest {

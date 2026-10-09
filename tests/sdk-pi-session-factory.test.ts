@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, symlink, truncate, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, symlink, truncate, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
@@ -468,6 +468,7 @@ describe("SdkPiSessionFactory", () => {
     };
     expect(loader.systemPromptOverride()).toContain("Never save a skill unless the user asked for it.");
     expect(loader.systemPromptOverride()).not.toContain("## Date and time");
+    expect(loader.systemPromptOverride()).toContain("do not repeat the skill's content in your reply");
     let beforeStart: ((event: { systemPrompt: string }) => Promise<{ systemPrompt: string } | undefined>) | undefined;
     loader.extensionFactories
       .find(({ name }) => name === "wisp-continuity")!
@@ -515,6 +516,33 @@ describe("SdkPiSessionFactory", () => {
       expect.objectContaining({ summary: `Replace skill weekly-report: ${draft.description}` }),
       undefined,
     );
+
+    // A SKILL.md the user attached is saved as written, from its workspace path alone.
+    const file = "---\nname: gh-flow\ndescription: Opens pull requests.\nlicense: MIT\n---\n\n1. Branch.\n";
+    await mkdir(path.join(context.workspaceDirectory, "inbox"));
+    await writeFile(path.join(context.workspaceDirectory, "inbox", "SKILL.md"), file);
+    await expect(tool("save_skill").execute("tool-7", { path: "inbox/SKILL.md" }, undefined)).resolves.toMatchObject({
+      content: [{ text: expect.stringContaining("Saved skill gh-flow") }],
+    });
+    expect(authorize).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        scope: { kind: "skill", value: "gh-flow" },
+        summary: "Create skill gh-flow: Opens pull requests.",
+        preview: file,
+      }),
+      undefined,
+    );
+    expect(await readFile(path.join(context.configDirectory, "skills", "gh-flow", "SKILL.md"), "utf8")).toBe(file);
+    await expect(
+      tool("save_skill").execute("tool-8", { path: "inbox/SKILL.md", name: "other" }, undefined),
+    ).rejects.toMatchObject({ code: "invalid_request" });
+    await writeFile(path.join(directory, "outside.md"), file);
+    await expect(tool("save_skill").execute("tool-9", { path: "../outside.md" }, undefined)).rejects.toMatchObject({
+      message: expect.stringContaining("outside this Wisp's workspace"),
+    });
+    await expect(tool("save_skill").execute("tool-10", { path: "missing.md" }, undefined)).rejects.toMatchObject({
+      code: "invalid_request",
+    });
   });
 
   it("does not start the model run once the send was stopped during preparation", async () => {

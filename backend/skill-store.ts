@@ -14,7 +14,7 @@ import { WispBackendError } from "./backend-error.js";
 
 const SKILL_FILE = "SKILL.md";
 /** Frontmatter and instructions together; larger files are skipped rather than truncated. */
-const MAX_SKILL_FILE_BYTES = 64 * 1024;
+export const MAX_SKILL_FILE_BYTES = 64 * 1024;
 
 export interface SkillDraft {
   name: string;
@@ -69,14 +69,27 @@ export class SkillStore {
 
   async save(draft: SkillDraft): Promise<SkillView> {
     const skill = validateSkillDraft(draft);
-    if (!(await this.exists(skill.name)) && (await this.list()).length >= MAX_SKILLS_PER_WISP) {
+    return this.write(skill.name, formatSkillFile(skill));
+  }
+
+  /**
+   * Saves a complete SKILL.md exactly as written, keeping frontmatter fields
+   * Wisp does not use. The file must pass `parseSkillDocument`.
+   */
+  async import(contents: string): Promise<SkillView> {
+    const document = parseSkillDocument(contents);
+    return this.write(document.draft.name, document.contents);
+  }
+
+  private async write(name: string, contents: string): Promise<SkillView> {
+    if (!(await this.exists(name)) && (await this.list()).length >= MAX_SKILLS_PER_WISP) {
       throw new WispBackendError(
         "invalid_request",
         `This Wisp already has ${MAX_SKILLS_PER_WISP} skills. Delete one before adding another.`,
       );
     }
-    await writeFileAtomically(path.join(this.directory, skill.name, SKILL_FILE), formatSkillFile(skill));
-    const saved = await this.load(skill.name);
+    await writeFileAtomically(path.join(this.directory, name, SKILL_FILE), contents);
+    const saved = await this.load(name);
     if (!saved) throw new WispBackendError("internal_error", "The skill could not be saved.");
     return saved;
   }
@@ -140,29 +153,56 @@ export function formatSkillFile(skill: SkillDraft): string {
 }
 
 /**
- * Reads the frontmatter fields Wisp uses (`description`) and the body. Accepts
- * plain or double-quoted single-line values; other YAML forms are ignored.
+ * Reads the frontmatter fields Wisp uses (`name`, `description`) and the body.
+ * Accepts plain or double-quoted single-line values; other YAML forms are ignored.
  */
-export function parseSkillFile(contents: string): { description: string; instructions: string } | null {
+export function parseSkillFile(contents: string): { name: string; description: string; instructions: string } | null {
   const match = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/.exec(contents.replace(/^﻿/, ""));
   if (!match) return null;
-  let description = "";
+  const fields: Record<string, string> = { name: "", description: "" };
   for (const line of match[1]!.split(/\r?\n/)) {
-    const field = /^description:\s*(.*)$/.exec(line);
-    if (!field) continue;
-    const raw = field[1]!.trim();
-    if (raw.startsWith('"')) {
-      try {
-        const value: unknown = JSON.parse(raw);
-        description = typeof value === "string" ? value : "";
-      } catch {
-        description = "";
-      }
-    } else {
-      description = raw.replace(/^'(.*)'$/, "$1");
-    }
+    const field = /^(name|description):\s*(.*)$/.exec(line);
+    if (field) fields[field[1]!] = scalarValue(field[2]!.trim());
   }
-  return { description: singleLine(description), instructions: match[2]!.trim() };
+  return { name: fields.name!.trim(), description: singleLine(fields.description!), instructions: match[2]!.trim() };
+}
+
+/**
+ * Checks a complete SKILL.md sent by the user, from a picked file or the
+ * Wisp's workspace, and returns it ready to store as is.
+ */
+export function parseSkillDocument(value: unknown): { draft: SkillDraft; contents: string } {
+  if (typeof value !== "string" || !value.trim()) {
+    throw new WispBackendError("invalid_request", "The skill file is empty.");
+  }
+  if (Buffer.byteLength(value, "utf8") > MAX_SKILL_FILE_BYTES) {
+    throw new WispBackendError("invalid_request", `A skill file can be at most ${MAX_SKILL_FILE_BYTES / 1024} KB.`);
+  }
+  const parsed = parseSkillFile(value);
+  if (!parsed) {
+    throw new WispBackendError(
+      "invalid_request",
+      "A skill file starts with frontmatter between --- lines holding its name and description.",
+    );
+  }
+  if (!parsed.name) {
+    throw new WispBackendError("invalid_request", "The skill file needs a name field in its frontmatter.");
+  }
+  const draft = validateSkillDraft(parsed);
+  const contents = value.replace(/^﻿/, "");
+  return { draft, contents: contents.endsWith("\n") ? contents : `${contents}\n` };
+}
+
+function scalarValue(raw: string): string {
+  // Multi-line YAML values (`>` or `|` blocks) are not read.
+  if (/^[|>][-+0-9]*$/.test(raw)) return "";
+  if (!raw.startsWith('"')) return raw.replace(/^'(.*)'$/, "$1");
+  try {
+    const value: unknown = JSON.parse(raw);
+    return typeof value === "string" ? value : "";
+  } catch {
+    return "";
+  }
 }
 
 function singleLine(value: string): string {

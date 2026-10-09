@@ -1,8 +1,11 @@
 import { useScreenActions } from "@/features/connections/active-connection";
-import { useCallback, useEffect, useState } from "react";
-import { FolderOpenIcon, RefreshCwIcon } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { FileUpIcon, FolderOpenIcon, RefreshCwIcon } from "lucide-react";
 
 import type { SkillView } from "../../shared/skills";
+
+/** Same bound the backend applies to a whole SKILL.md. */
+const MAX_SKILL_FILE_BYTES = 64 * 1024;
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Button } from "@/components/ui/button";
 
@@ -32,6 +35,9 @@ function SkillPanel({ conversationId }: { conversationId: string }) {
   const [confirming, setConfirming] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  // A picked file whose skill name is already taken, waiting for the user to confirm the replacement.
+  const [pendingImport, setPendingImport] = useState<{ contents: string; message: string } | null>(null);
+  const fileInput = useRef<HTMLInputElement>(null);
 
   const load = useCallback(async () => {
     try {
@@ -75,6 +81,44 @@ function SkillPanel({ conversationId }: { conversationId: string }) {
     }
   }
 
+  async function importFile(file: File) {
+    setPendingImport(null);
+    setError("");
+    if (file.size > MAX_SKILL_FILE_BYTES) {
+      setError(`A skill file can be at most ${MAX_SKILL_FILE_BYTES / 1024} KB.`);
+      return;
+    }
+    let contents: string;
+    try {
+      contents = await file.text();
+    } catch {
+      setError("Could not read the file.");
+      return;
+    }
+    await saveImport(contents, false);
+  }
+
+  async function saveImport(contents: string, replace: boolean) {
+    setBusy(true);
+    setError("");
+    try {
+      const result = await window.wisp.importSkill({ conversationId, contents, ...(replace ? { replace } : {}) });
+      if (result.ok) {
+        setSkills(result.value);
+        setPendingImport(null);
+      } else if (result.error.code === "already_exists") {
+        setPendingImport({ contents, message: result.error.message });
+      } else {
+        setPendingImport(null);
+        setError(result.error.message);
+      }
+    } catch {
+      setError("Could not import the skill.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function openFolder() {
     setError("");
     try {
@@ -89,7 +133,7 @@ function SkillPanel({ conversationId }: { conversationId: string }) {
     <div className="space-y-3 text-sm">
       <p className="text-dim">
         Reusable procedures this Wisp follows when a request matches. Ask the Wisp to save a workflow as a skill; you
-        review it before it is saved.
+        review it before it is saved. You can also import a SKILL.md file you already have.
       </p>
       {skills?.length === 0 ? <p className="text-dim">No skills yet.</p> : null}
       {skills?.length ? (
@@ -122,6 +166,41 @@ function SkillPanel({ conversationId }: { conversationId: string }) {
           ))}
         </ul>
       ) : null}
+      <input
+        ref={fileInput}
+        type="file"
+        accept=".md,text/markdown"
+        className="hidden"
+        aria-label="SKILL.md file"
+        onChange={(event) => {
+          const file = event.currentTarget.files?.[0];
+          // Cleared so picking the same file again still fires a change.
+          event.currentTarget.value = "";
+          if (file) void importFile(file);
+        }}
+      />
+      {pendingImport ? (
+        <div role="alert" className="space-y-2 rounded-md border border-border p-2.5">
+          <p>{pendingImport.message} Replace it with the file you picked?</p>
+          <div className="flex gap-2">
+            <Button
+              size="sm"
+              variant="destructive"
+              disabled={busy}
+              onClick={() => void saveImport(pendingImport.contents, true)}
+            >
+              Replace skill
+            </Button>
+            <Button size="sm" variant="ghost" onClick={() => setPendingImport(null)}>
+              Cancel
+            </Button>
+          </div>
+        </div>
+      ) : null}
+      <Button className="w-full" variant="outline" disabled={busy} onClick={() => fileInput.current?.click()}>
+        <FileUpIcon aria-hidden="true" />
+        Import SKILL.md
+      </Button>
       {screenActions ? (
         <Button className="w-full" variant="outline" onClick={() => void openFolder()}>
           <FolderOpenIcon aria-hidden="true" />

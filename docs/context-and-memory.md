@@ -37,8 +37,10 @@ from summaries into permanent memory.
 Ask a Wisp to save a workflow as a skill and it drafts reusable instructions
 for you to approve; the approval card shows exactly what will be saved. Each
 Wisp sees the names and descriptions of its own skills and loads one when a
-request matches. **Wisp settings → General → Skills** lists, deletes, and opens
-the folder holding them. See [ADR 008](decisions/008-wisp-skills.md).
+request matches. Attach a SKILL.md and ask the Wisp to save it, and it saves
+the file as written after your approval. **Wisp settings → General → Skills**
+lists, imports, deletes, and opens the folder holding them. See
+[ADR 008](decisions/008-wisp-skills.md).
 
 ## History search
 

@@ -166,6 +166,7 @@ function completeBridge(): WispApi {
     }),
     listSkills: async () => ({ ok: true, value: [] }),
     deleteSkill: async () => ({ ok: true, value: [] }),
+    importSkill: async () => ({ ok: true, value: [] }),
     getVoiceSettings: async () => ({ ok: true, value: { secureStorageAvailable: true, providers: [] } }),
     saveVoiceCredential: async () => ({ ok: true, value: { secureStorageAvailable: true, providers: [] } }),
     transcribeAudio: async () => ({ ok: true, value: { text: "" } }),

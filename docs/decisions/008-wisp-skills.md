@@ -44,11 +44,22 @@ oversized, or symlinked skills are skipped.
   It always asks: policy rules and auto-review cannot allow it, and the approval
   card offers only **Allow once** or **Deny**. The card shows the exact
   instructions that will be saved.
+- `save_skill` also takes a workspace `path` instead of name, description, and
+  instructions. The backend reads that SKILL.md (an attached file, for
+  example), checks it like any skill, shows the whole file on the approval
+  card, and saves the approved content as written, keeping frontmatter fields
+  Wisp does not use. The Wisp does not retype a file the user already has.
+- Because the card is the review, the system prompt tells the Wisp not to
+  repeat a skill's content in the chat or ask for confirmation there.
 
 ## User controls
 
 **Wisp settings → General → Skills** lists the skills with their instructions,
 deletes them after confirmation, and opens the skills folder for hand editing.
+**Import SKILL.md** saves a file the user picks without involving the Wisp:
+the user chose the file, so no approval card is shown, but a name that is
+already taken is replaced only after the user confirms. The file is read on the
+device and sent as text, so import works with a server on another computer.
 
 ## Deferred
 

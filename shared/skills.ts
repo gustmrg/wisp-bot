@@ -20,6 +20,14 @@ export interface SkillRequest {
   name: string;
 }
 
+/** A complete SKILL.md the user picked, saved as written. */
+export interface ImportSkillRequest {
+  conversationId: string;
+  contents: string;
+  /** Replaces a skill with the same name; without it, an existing name fails with `already_exists`. */
+  replace?: boolean;
+}
+
 export function isValidSkillName(value: unknown): value is string {
   return typeof value === "string" && value.length <= MAX_SKILL_NAME_LENGTH && SKILL_NAME_PATTERN.test(value);
 }

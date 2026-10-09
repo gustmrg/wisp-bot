@@ -4,7 +4,7 @@ import path from "node:path";
 
 import { afterEach, describe, expect, it } from "vitest";
 
-import { parseSkillFile, SkillStore } from "../backend/skill-store.js";
+import { parseSkillDocument, parseSkillFile, SkillStore } from "../backend/skill-store.js";
 import { MAX_SKILLS_PER_WISP } from "../shared/skills.js";
 
 const directories: string[] = [];
@@ -96,12 +96,51 @@ describe("SkillStore", () => {
 });
 
 describe("parseSkillFile", () => {
-  it("accepts quoted descriptions and rejects files without frontmatter", () => {
-    expect(parseSkillFile('---\ndescription: "A \\"quoted\\" value"\n---\nBody')).toEqual({
+  it("accepts quoted values and rejects files without frontmatter", () => {
+    expect(parseSkillFile('---\nname: "quoted"\ndescription: "A \\"quoted\\" value"\n---\nBody')).toEqual({
+      name: "quoted",
       description: 'A "quoted" value',
       instructions: "Body",
     });
-    expect(parseSkillFile("---\ndescription: 'single'\n---\n")).toEqual({ description: "single", instructions: "" });
+    expect(parseSkillFile("---\ndescription: 'single'\n---\n")).toEqual({
+      name: "",
+      description: "single",
+      instructions: "",
+    });
+    expect(parseSkillFile("---\ndescription: >\n  folded\n---\nBody")).toMatchObject({ description: "" });
     expect(parseSkillFile("No frontmatter")).toBeNull();
+  });
+});
+
+describe("importing a SKILL.md", () => {
+  const file = "\ufeff---\nname: gh-flow\ndescription: Opens pull requests.\nlicense: MIT\n---\n\n1. Branch.\n2. Push.";
+
+  it("saves the file as written, keeping fields Wisp does not use", async () => {
+    const { directory, store } = await createStore();
+
+    await expect(store.import(file)).resolves.toMatchObject({
+      name: "gh-flow",
+      description: "Opens pull requests.",
+      instructions: "1. Branch.\n2. Push.",
+    });
+    expect(await readFile(path.join(directory, "gh-flow", "SKILL.md"), "utf8")).toBe(`${file.slice(1)}\n`);
+  });
+
+  it("explains what is wrong with files that are not skills", () => {
+    const message = (contents: unknown) => {
+      try {
+        parseSkillDocument(contents);
+        return "";
+      } catch (error) {
+        return (error as Error).message;
+      }
+    };
+    expect(message("  ")).toContain("empty");
+    expect(message("# Just markdown")).toContain("frontmatter");
+    expect(message("---\ndescription: d\n---\nBody")).toContain("name field");
+    expect(message("---\nname: Bad Name\ndescription: d\n---\nBody")).toContain("Skill names");
+    expect(message("---\nname: ok\ndescription: >\n  folded\n---\nBody")).toContain("description");
+    expect(message("---\nname: ok\ndescription: d\n---\n")).toContain("instructions");
+    expect(message(`---\nname: ok\ndescription: d\n---\n${"x".repeat(64 * 1024)}`)).toContain("64 KB");
   });
 });

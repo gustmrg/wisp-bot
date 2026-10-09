@@ -12,9 +12,9 @@ import {
   type WorkspaceAttachment,
   type WorkspaceView,
 } from "../shared/workspace.js";
-import type { SkillView } from "../shared/skills.js";
+import type { ImportSkillRequest, SkillView } from "../shared/skills.js";
 import { WispBackendError } from "./backend-error.js";
-import { SkillStore } from "./skill-store.js";
+import { parseSkillDocument, SkillStore } from "./skill-store.js";
 
 /** Folder inside a Wisp's config directory that holds its skills. */
 export const SKILLS_DIRECTORY = "skills";
@@ -122,6 +122,21 @@ export class WorkspaceService {
   async deleteSkill(conversationId: string, name: string): Promise<ReadonlyArray<SkillView>> {
     const skills = this.skills(conversationId);
     await skills.delete(name);
+    return skills.list();
+  }
+
+  /**
+   * Saves a SKILL.md the user picked in settings. The user chose this file
+   * themselves, so no approval card is shown, but replacing an existing skill
+   * needs an explicit `replace`.
+   */
+  async importSkill(request: ImportSkillRequest): Promise<ReadonlyArray<SkillView>> {
+    const skills = this.skills(request.conversationId);
+    const { draft, contents } = parseSkillDocument(request.contents);
+    if (!request.replace && (await skills.exists(draft.name))) {
+      throw new WispBackendError("already_exists", `A skill named ${draft.name} already exists.`);
+    }
+    await skills.import(contents);
     return skills.list();
   }
 

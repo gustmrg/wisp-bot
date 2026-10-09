@@ -50,6 +50,28 @@ describe("WorkspaceService", () => {
     await expect(service.openSkills("other")).rejects.toThrow();
   });
 
+  it("imports a picked SKILL.md and replaces an existing skill only when asked", async () => {
+    const { service, configDirectory } = await setup();
+    const contents = "---\nname: gh-flow\ndescription: Opens pull requests.\n---\n1. Branch.\n";
+
+    await expect(service.importSkill({ conversationId: "atlas", contents })).resolves.toEqual([
+      expect.objectContaining({ name: "gh-flow", instructions: "1. Branch." }),
+    ]);
+    expect(await readFile(path.join(configDirectory, "skills", "gh-flow", "SKILL.md"), "utf8")).toBe(contents);
+
+    const updated = contents.replace("1. Branch.", "1. Fork.");
+    await expect(service.importSkill({ conversationId: "atlas", contents: updated })).rejects.toMatchObject({
+      code: "already_exists",
+      message: "A skill named gh-flow already exists.",
+    });
+    await expect(service.importSkill({ conversationId: "atlas", contents: updated, replace: true })).resolves.toEqual([
+      expect.objectContaining({ instructions: "1. Fork." }),
+    ]);
+    await expect(service.importSkill({ conversationId: "atlas", contents: "# no frontmatter" })).rejects.toMatchObject({
+      code: "invalid_request",
+    });
+  });
+
   it("copies picked files into the inbox without replacing existing ones", async () => {
     const { service, picks, workspaceDirectory } = await setup(["notes.txt", "data.csv"]);
     await writeFile(path.join(picks, "notes.txt"), "hello", "utf8");
