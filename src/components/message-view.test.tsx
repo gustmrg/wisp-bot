@@ -24,4 +24,22 @@ describe("MessageView", () => {
     render(<MessageView message={{ id: "typed", type: "outgoing", text: "Hello", status: "complete" }} />);
     expect(screen.queryByText("Scheduled")).toBeNull();
   });
+
+  it("shows the files attached to a sent message as files", () => {
+    render(
+      <MessageView
+        message={{
+          id: "attached",
+          type: "outgoing",
+          text: "Anexe os boletos\n\nAttached to the workspace:\n- `inbox/boleto.pdf`\n- `inbox/luz.pdf`",
+          status: "complete",
+        }}
+      />,
+    );
+    expect(screen.getByText("Anexe os boletos")).toBeTruthy();
+    const list = screen.getByRole("list", { name: "Attached files" });
+    expect(Array.from(list.querySelectorAll("li"), (item) => item.textContent)).toEqual(["boleto.pdf", "luz.pdf"]);
+    expect(screen.getByTitle("inbox/boleto.pdf")).toBeTruthy();
+    expect(screen.queryByText(/Attached to the workspace/)).toBeNull();
+  });
 });

@@ -30,6 +30,29 @@ export function messageWithAttachments(text: string, attachments: ReadonlyArray<
   return `${text ? `${text}\n\n` : ""}Attached to the workspace:\n${list}`;
 }
 
+const ATTACHMENT_HEADING = "Attached to the workspace:";
+const ATTACHMENT_LINE = /^- `(.+)`$/;
+
+/**
+ * Splits a sent message back into what the user typed and the files listed by
+ * `messageWithAttachments`, so the list can be shown as files again. A message
+ * that does not end with such a list comes back whole, with no files.
+ */
+export function splitMessageAttachments(message: string): {
+  text: string;
+  attachments: ReadonlyArray<Pick<WorkspaceAttachment, "name" | "path">>;
+} {
+  const start = message.endsWith(ATTACHMENT_HEADING) ? -1 : message.lastIndexOf(`${ATTACHMENT_HEADING}\n`);
+  if (start < 0 || (start > 0 && !message.slice(0, start).endsWith("\n\n"))) return { text: message, attachments: [] };
+  const attachments: Array<Pick<WorkspaceAttachment, "name" | "path">> = [];
+  for (const line of message.slice(start + ATTACHMENT_HEADING.length + 1).split("\n")) {
+    const path = ATTACHMENT_LINE.exec(line)?.[1];
+    if (!path) return { text: message, attachments: [] };
+    attachments.push({ name: path.slice(path.lastIndexOf("/") + 1), path });
+  }
+  return { text: message.slice(0, Math.max(0, start - 2)), attachments };
+}
+
 /** Image types the read tool sends to models that accept images. */
 const IMAGE_ATTACHMENT_EXTENSIONS = new Set([".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp"]);
 

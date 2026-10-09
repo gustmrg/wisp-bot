@@ -1,7 +1,8 @@
 import { useState } from "react";
-import { CalendarClockIcon, CheckIcon, CircleAlertIcon, CircleStopIcon, CopyIcon } from "lucide-react";
+import { CalendarClockIcon, CheckIcon, CircleAlertIcon, CircleStopIcon, CopyIcon, FileIcon } from "lucide-react";
 
 import type { Message } from "@/chat-data";
+import { splitMessageAttachments } from "../../shared/workspace";
 import { useTimeZone } from "@/hooks/use-time-zone";
 import { copyText } from "@/lib/clipboard";
 import { cn } from "@/lib/utils";
@@ -173,7 +174,7 @@ function MessageView({ message, dense = false, onAnswer, onRetry }: MessageViewP
               : "border border-border bg-bubble-in text-foreground",
           )}
         >
-          {outgoing ? message.text : <MarkdownView text={message.text} />}
+          {outgoing ? <OutgoingText text={message.text} /> : <MarkdownView text={message.text} />}
         </div>
         <MessageTools text={message.text} createdAt={message.createdAt} legacyTime={message.time} outgoing={outgoing} />
       </div>
@@ -213,6 +214,33 @@ function MessageView({ message, dense = false, onAnswer, onRetry }: MessageViewP
         </div>
       ) : null}
     </div>
+  );
+}
+
+/** What the user typed, with the files attached to it shown as files rather than as the list the Wisp reads. */
+function OutgoingText({ text }: { text: string }) {
+  const { text: typed, attachments } = splitMessageAttachments(text);
+  if (!attachments.length) return text;
+  return (
+    <>
+      {typed}
+      <ul
+        className={cn("m-0 flex list-none flex-wrap gap-1.5 p-0 whitespace-normal", typed && "mt-1.5")}
+        aria-label="Attached files"
+      >
+        {attachments.map((file) => (
+          <li
+            key={file.path}
+            className="flex max-w-[240px] items-center gap-1 rounded-md border border-white/25 bg-white/15 px-1.5 py-0.5 text-xs [&_svg]:size-3"
+          >
+            <FileIcon aria-hidden="true" className="flex-none" />
+            <span className="truncate" title={file.path}>
+              {file.name}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </>
   );
 }
 
