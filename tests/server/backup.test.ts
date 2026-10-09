@@ -94,7 +94,19 @@ async function populated() {
   await symlink("/etc/passwd", path.join(workspaces, wispWorkspace!, "outside"));
   await mkdir(path.join(dataDirectory, "backend", "logs"), { recursive: true });
   await writeFile(path.join(dataDirectory, "backend", "logs", "backend.log"), "log line\n");
-  return { dataDirectory, masterKey, server, close, credentials, wispWorkspace: wispWorkspace! };
+  const [wispConfig] = await readdir(path.join(dataDirectory, "backend", "pi-config"));
+  const transcriptions = path.join(dataDirectory, "backend", "pi-config", wispConfig!, "transcription-cache");
+  await mkdir(transcriptions, { recursive: true });
+  await writeFile(path.join(transcriptions, "entry.json"), JSON.stringify({ text: "Scanned contract" }));
+  return {
+    dataDirectory,
+    masterKey,
+    server,
+    close,
+    credentials,
+    wispWorkspace: wispWorkspace!,
+    wispConfig: wispConfig!,
+  };
 }
 
 describe("backups", () => {
@@ -125,6 +137,9 @@ describe("backups", () => {
     expect((await readFile(path.join(workspace, "big.bin"))).length).toBe(3 * 1024 * 1024);
     await expect(lstat(path.join(workspace, "outside"))).rejects.toThrow();
     await expect(lstat(path.join(target, "backend", "logs"))).rejects.toThrow();
+    await expect(
+      lstat(path.join(target, "backend", "pi-config", source.wispConfig, "transcription-cache")),
+    ).rejects.toThrow();
 
     // Same identity, devices, conversations, and credentials, in a different directory.
     const { server } = await start(target, source.masterKey);

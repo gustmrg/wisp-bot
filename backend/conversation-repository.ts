@@ -2,7 +2,7 @@ import { isTimeZone, systemTimeZone } from "../shared/time-zone.js";
 import { EMPTY_USER_PROFILE, normalizeUserProfile, type UserProfile } from "../shared/user-profile.js";
 import { writeFileAtomically } from "./atomic-file.js";
 import { randomUUID } from "node:crypto";
-import { mkdir, readFile, rename } from "node:fs/promises";
+import { mkdir, readFile, rename, rm } from "node:fs/promises";
 import path from "node:path";
 
 import type { ModelSelection } from "../shared/contracts.js";
@@ -25,6 +25,7 @@ import type {
 import type { QueuedMessage } from "../shared/message-queue.js";
 import type { ScheduledMessage } from "../shared/scheduled-messages.js";
 import { WispBackendError } from "./backend-error.js";
+import { TRANSCRIPTION_CACHE_DIRECTORY } from "./transcription-cache.js";
 import { normalizeUserName, type ConversationAgentContext } from "./conversation-agent.js";
 import {
   asRecord,
@@ -1156,6 +1157,13 @@ export class ConversationRepository {
     const archive = path.join(this.deletedRoot, `${wisp?.storageId ?? conversation.storageId}-${this.fileSuffix()}`);
     await mkdir(archive, { recursive: true });
     const move = (from: string, to: string) => rename(from, path.join(archive, to)).catch(() => undefined);
+    // Transcriptions are a cache of the user's documents, so they are deleted, not archived.
+    if (wisp) {
+      await rm(path.join(this.configRoot, wisp.storageId, TRANSCRIPTION_CACHE_DIRECTORY), {
+        recursive: true,
+        force: true,
+      }).catch(() => undefined);
+    }
     const sessions = [...Object.values(conversation.sessions), ...otherSessions];
     await Promise.all([
       move(path.join(this.workspaceRoot, conversation.storageId), "workspace"),

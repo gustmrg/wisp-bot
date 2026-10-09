@@ -14,6 +14,16 @@ export interface PiAssistantMessageSnapshot {
   errorMessage?: string;
 }
 
+const MAX_ACTIVITY_LABEL_CHARACTERS = 160;
+
+/** A tool's own progress text from its partial result, bounded and stripped of control characters. */
+function activityLabelOf(partialResult: unknown): string | undefined {
+  const label = (partialResult as { details?: { activityLabel?: unknown } } | undefined)?.details?.activityLabel;
+  if (typeof label !== "string") return undefined;
+  const clean = label.replace(/[\u0000-\u001f\u007f]/gu, " ").trim();
+  return clean ? clean.slice(0, MAX_ACTIVITY_LABEL_CHARACTERS) : undefined;
+}
+
 export function sanitizeErrorMessage(value: string | undefined | null): string {
   if (!value) return "";
   const trimmed = value.trim();
@@ -36,7 +46,7 @@ export type PiAgentEvent =
     }
   | { type: "message_end"; message?: PiAssistantMessageSnapshot }
   | { type: "tool_execution_start"; toolCallId: string; toolName: string }
-  | { type: "tool_execution_update"; toolCallId: string; toolName: string }
+  | { type: "tool_execution_update"; toolCallId: string; toolName: string; partialResult?: unknown }
   | { type: "tool_execution_end"; toolCallId: string; toolName: string; isError: boolean }
   | { type: "auto_retry_start"; errorMessage?: string }
   | { type: "auto_retry_end"; success?: boolean; finalError?: string }
@@ -114,7 +124,7 @@ export class PiEventTranslator {
         this.publishTool(event, "started");
         break;
       case "tool_execution_update":
-        this.publishTool(event, "updated");
+        this.publishTool(event, "updated", undefined, activityLabelOf(event.partialResult));
         break;
       case "tool_execution_end":
         this.publishTool(event, "completed", event.isError);
@@ -298,6 +308,7 @@ export class PiEventTranslator {
     event: { toolCallId: string; toolName: string },
     phase: "started" | "updated" | "completed",
     isError?: boolean,
+    label?: string,
   ): void {
     if (!this.request || !getToolMetadata(event.toolName)) return;
     this.flush();
@@ -309,6 +320,7 @@ export class PiEventTranslator {
       toolName: event.toolName,
       phase,
       ...(phase === "completed" ? { isError: Boolean(isError) } : {}),
+      ...(label ? { label } : {}),
     });
   }
 

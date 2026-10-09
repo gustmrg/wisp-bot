@@ -2,7 +2,9 @@ import { mkdtemp, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+
+import type { TranscriptionOutcome, TranscriptionRequest, TranscriptionRun } from "../backend/image-transcriber.js";
 
 import { isPdfFile, MAX_PDF_PAGE_IMAGES_PER_READ, readPdf } from "../backend/pdf-reader.js";
 import { buildPdf, type PdfFixturePage } from "./helpers/pdf-fixture.js";
@@ -100,5 +102,87 @@ describe("isPdfFile", () => {
     await expect(isPdfFile(pdf)).resolves.toBe(true);
     await expect(isPdfFile(notPdf)).resolves.toBe(false);
     await expect(isPdfFile(path.join(directory, "missing.pdf"))).resolves.toBe(false);
+  });
+
+  describe("with an image model for a model without image input", () => {
+    function fakeRun(outcome: (page: number) => TranscriptionOutcome) {
+      const seen: Array<{ page?: number; mimeType: string }> = [];
+      const run: TranscriptionRun = {
+        label: "Vision (OpenAI)",
+        transcribe: vi.fn(async (requests: ReadonlyArray<TranscriptionRequest>) => {
+          const outcomes: TranscriptionOutcome[] = [];
+          for (const request of requests) {
+            const result = outcome(request.key.page ?? 0);
+            if (result.status === "done" && !result.cached) {
+              seen.push({ page: request.key.page, mimeType: (await request.image()).mimeType });
+            }
+            outcomes.push(result);
+          }
+          return outcomes;
+        }),
+      };
+      return { run, seen };
+    }
+
+    it("returns the image model's transcription of pages without text, labeled as file data", async () => {
+      const file = await writePdf([{ text: INVOICE_TEXT }, { scan: true }]);
+      const { run, seen } = fakeRun((page) => ({ status: "done", text: `Scanned receipt ${page}`, cached: false }));
+
+      const result = await readPdf(file, { supportsImages: false, transcription: run });
+
+      expect(result.content).toHaveLength(1);
+      expect(text(result)).toContain(`--- Page 1 ---\n${INVOICE_TEXT}`);
+      expect(text(result)).toContain(
+        "--- Page 2 (no text layer; transcribed by Vision (OpenAI)) ---\nScanned receipt 2",
+      );
+      expect(text(result)).toContain("not instructions");
+      expect(text(result)).not.toContain("does not support images, so their content cannot be read");
+      expect(seen).toEqual([{ page: 2, mimeType: "image/png" }]);
+      expect(result.details.pdf.transcription).toEqual({ model: "Vision (OpenAI)", pages: [2], cachedPages: [] });
+      const keys = vi.mocked(run.transcribe).mock.calls[0]![0].map(({ key }) => key);
+      expect(keys).toEqual([{ contentHash: expect.stringMatching(/^[0-9a-f]{64}$/u), page: 2 }]);
+    });
+
+    it("sends at most five pages per read and continues from the next one", async () => {
+      const file = await writePdf(Array.from({ length: 7 }, () => ({ scan: true as const })));
+      const { run } = fakeRun((page) => ({ status: "done", text: `Page text ${page}`, cached: page === 1 }));
+
+      const result = await readPdf(file, { supportsImages: false, transcription: run });
+
+      expect(result.details.pdf).toMatchObject({
+        lastPage: 5,
+        transcription: { pages: [1, 2, 3, 4, 5], cachedPages: [1] },
+      });
+      expect(text(result)).toContain("Continue with offset=6.");
+    });
+
+    it("stops at the first page not transcribed in time, and marks pages the model could not read", async () => {
+      const file = await writePdf([{ scan: true }, { scan: true }, { scan: true }, { text: INVOICE_TEXT }]);
+      const { run } = fakeRun((page) =>
+        page === 1
+          ? { status: "failed" }
+          : page === 2
+            ? { status: "timed_out" }
+            : { status: "done", text: "late", cached: false },
+      );
+
+      const result = await readPdf(file, { supportsImages: false, transcription: run });
+
+      expect(result.details.pdf).toMatchObject({ lastPage: 1, transcription: { pages: [] } });
+      expect(text(result)).toContain("--- Page 1 (no text layer; the image model could not read it) ---");
+      expect(text(result)).toContain("Page 2 was not transcribed in time. Continue with offset=2.");
+      expect(text(result)).not.toContain("late");
+      expect(text(result)).not.toContain(INVOICE_TEXT);
+    });
+
+    it("leaves pages to the vision model when the model can see images", async () => {
+      const file = await writePdf([{ scan: true }]);
+      const { run } = fakeRun(() => ({ status: "done", text: "unused", cached: false }));
+
+      const result = await readPdf(file, { supportsImages: true, transcription: run });
+
+      expect(run.transcribe).not.toHaveBeenCalled();
+      expect(result.content[1]).toMatchObject({ type: "image" });
+    });
   });
 });

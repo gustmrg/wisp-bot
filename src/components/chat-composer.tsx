@@ -16,7 +16,7 @@ import { useEffect, useRef, useState } from "react";
 import { ScheduleSendPicker } from "@/components/schedule-send-picker";
 import { Popover, PopoverContent, PopoverTitle, PopoverTrigger } from "@/components/ui/popover";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { useModelImageInput } from "@/hooks/use-model-image-input";
+import { useModelVision } from "@/hooks/use-model-image-input";
 import { useVoiceInput } from "@/hooks/use-voice-input";
 import { DEFAULT_PREFERENCES } from "@/lib/app-preferences";
 import { formatShortcut, matchesShortcut, SCHEDULE_SEND_SHORTCUT } from "@/lib/shortcuts";
@@ -89,8 +89,8 @@ export function ChatComposer({
   const working = status === "working";
   const needsConfiguration = status === "configuration_required";
   const canSend = (status === "idle" || working) && !acknowledging && chat.kind === "wisp";
-  const imageInput = useModelImageInput(chat.kind === "wisp" ? chat.id : null);
-  const visionHint = imageInput === false ? missingVisionHint(attachments) : null;
+  const vision = useModelVision(chat.kind === "wisp" ? chat.id : null);
+  const visionHint = vision.imageInput === false ? missingVisionHint(attachments, vision.imageModel) : null;
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   // Where the transcript goes: the text selected when recording started.
   const insertAt = useRef<readonly [number, number] | null>(null);
@@ -521,9 +521,18 @@ function RecordingMeter({ levels, elapsed }: { levels: ReadonlyArray<number>; el
   );
 }
 
-/** Why some of these attachments will not reach a Wisp whose model cannot see images, or null. */
-function missingVisionHint(attachments: ReadonlyArray<WorkspaceAttachment>): string | null {
+/**
+ * For a Wisp whose model cannot see images: which image model reads these
+ * attachments for it, or why some will not reach it. Null when nothing needs vision.
+ */
+function missingVisionHint(attachments: ReadonlyArray<WorkspaceAttachment>, imageModel: string | null): string | null {
   const { images, pdfs } = attachmentsNeedingVision(attachments);
+  if (imageModel && images > 0) {
+    return `This Wisp's model can't see images, so ${imageModel} will read the attached ${images === 1 ? "image" : "images"} for it.`;
+  }
+  if (imageModel && pdfs > 0) {
+    return `This Wisp's model can't see images. It reads the text of PDFs, and ${imageModel} reads any scanned pages for it.`;
+  }
   if (images > 0) {
     return `This Wisp's model can't see images, so it won't be able to read the attached ${images === 1 ? "image" : "images"}.`;
   }

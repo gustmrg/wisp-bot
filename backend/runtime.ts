@@ -151,6 +151,7 @@ export async function createBackendRuntime(options: BackendRuntimeOptions): Prom
             modelService.getModelRuntime(),
             toolAuthorizationBroker,
             new CompositeIntegrationToolSource([pluginService, mcpService]),
+            () => modelService.getAuxiliaryModel("imageUnderstanding"),
           ),
         );
   const registry = new AgentRegistry(

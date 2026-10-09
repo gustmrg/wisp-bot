@@ -1,4 +1,4 @@
-import { cp, mkdtemp, readFile, readdir, writeFile } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, readFile, readdir, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
@@ -604,6 +604,10 @@ describe("ConversationRepository", () => {
       now: () => new Date("2026-08-30T12:00:00.000Z"),
     });
     await repository.initialize({ first: chat("first") });
+    const [storageId] = await readdir(path.join(directory, "pi-config"));
+    const cache = path.join(directory, "pi-config", storageId!, "transcription-cache");
+    await mkdir(cache, { recursive: true });
+    await writeFile(path.join(cache, "entry.json"), JSON.stringify({ text: "Scanned contract" }));
 
     await repository.deleteWisp("first");
 
@@ -613,6 +617,10 @@ describe("ConversationRepository", () => {
     expect(archives).toHaveLength(1);
     const contents = await readdir(path.join(directory, "deleted-conversations", archives[0]!));
     expect(contents.sort()).toEqual(["pi-config", "pi-session", "workspace"]);
+    // Image transcriptions are deleted outright rather than archived.
+    expect(await readdir(path.join(directory, "deleted-conversations", archives[0]!, "pi-config"))).not.toContain(
+      "transcription-cache",
+    );
   });
 
   it("deletes a Wisp's conversation only with the Wisp", async () => {
