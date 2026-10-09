@@ -12,11 +12,15 @@ import {
   type WebProviders,
   type WispPluginAccessView,
 } from "../../shared/plugins";
+import type { WispAppearance } from "../../shared/wisp-appearance";
 
 /** A Wisp that can receive plugin access from Settings. */
 export interface WispOption {
   id: string;
   name: string;
+  /** How the Wisp is drawn, for lists that show its picture. */
+  appearance?: WispAppearance;
+  color?: string;
 }
 
 /** Where the Access tab sends the user to connect or fix a service. */

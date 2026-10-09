@@ -168,21 +168,18 @@ export function McpSettingsSection({ wisps = NO_WISPS }: { wisps?: ReadonlyArray
             />
           ) : (
             <>
-              {view.servers.length === 0 ? (
-                <p className="text-xs text-dim">No MCP servers connected yet.</p>
-              ) : (
-                <div className="grid grid-cols-1 gap-x-7 gap-y-1 @min-[560px]:grid-cols-2">
-                  {view.servers.map((server) => (
-                    <McpServerCard
-                      key={server.serverId}
-                      server={server}
-                      wispCount={wisps.length ? countWispsWithMcpAccess(index, server.serverId) : undefined}
-                      onSelect={() => setEditing(server.serverId)}
-                    />
-                  ))}
-                </div>
-              )}
-              <McpServerCard onSelect={() => setEditing("new")} />
+              {view.servers.length === 0 ? <p className="text-xs text-dim">No MCP servers connected yet.</p> : null}
+              <div className="grid grid-cols-1 gap-x-7 gap-y-1 @min-[560px]:grid-cols-2">
+                {view.servers.map((server) => (
+                  <McpServerCard
+                    key={server.serverId}
+                    server={server}
+                    wispCount={wisps.length ? countWispsWithMcpAccess(index, server.serverId) : undefined}
+                    onSelect={() => setEditing(server.serverId)}
+                  />
+                ))}
+                <McpServerCard onSelect={() => setEditing("new")} />
+              </div>
             </>
           )}
         </div>
@@ -218,7 +215,7 @@ function McpServerCard({
       type="button"
       onClick={onSelect}
       aria-label={server ? `Manage ${server.name}` : "Add MCP server"}
-      className="group flex w-full min-w-0 items-center gap-3 rounded-xl px-2 py-4 text-left outline-none transition-colors hover:bg-popover focus-visible:ring-2 focus-visible:ring-ring"
+      className="group flex w-full min-w-0 items-center gap-3 rounded-xl px-4 py-4 text-left outline-none transition-colors hover:bg-popover focus-visible:ring-2 focus-visible:ring-ring"
     >
       <span className="flex size-9 flex-none items-center justify-center rounded-lg bg-muted">
         <ServerIcon className="size-4 text-dim" aria-hidden="true" />

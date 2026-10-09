@@ -276,7 +276,7 @@ function AppSettingsDialog({
             ),
           )}
         </nav>
-        {section === "usage" && open && !showOverview ? <UsageSettingsSection /> : null}
+        {section === "usage" && open && !showOverview ? <UsageSettingsSection wisps={wisps} /> : null}
         {section === "plugins" && open && !showOverview ? (
           <PluginSettingsSection
             wisps={wisps}

@@ -64,7 +64,9 @@ function Workspace({ userProfile }: { userProfile: UserProfileController }) {
   const wisps = useMemo(
     () =>
       Object.values(workspace.chats).flatMap((chat) =>
-        chat.kind === "wisp" ? [{ id: chat.id, name: chat.wisp.name }] : [],
+        chat.kind === "wisp"
+          ? [{ id: chat.id, name: chat.wisp.name, appearance: chat.wisp.appearance, color: chat.wisp.color }]
+          : [],
       ),
     [workspace.chats],
   );

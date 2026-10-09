@@ -1,10 +1,12 @@
 import { useEffect, useState } from "react";
 import { RefreshCwIcon } from "lucide-react";
 
+import { Wisp } from "@/components/wisp";
 import { SettingsCard, SettingsGroup, SettingsRow, SettingsRowCopy } from "@/components/settings/settings-primitives";
 import { Button } from "@/components/ui/button";
 import { SegmentedControl } from "@/components/ui/segmented-control";
 import { useTimeZone } from "@/hooks/use-time-zone";
+import type { WispOption } from "@/lib/plugin-access";
 import { cn } from "@/lib/utils";
 import type { UsagePeriod, UsageReport } from "../../shared/contracts";
 
@@ -14,7 +16,7 @@ const PERIOD_OPTIONS: ReadonlyArray<{ value: UsagePeriod; label: string }> = [
   { value: "all", label: "All history" },
 ];
 
-export function UsageSettingsSection() {
+export function UsageSettingsSection({ wisps = [] }: { wisps?: ReadonlyArray<WispOption> }) {
   const [request, setRequest] = useState<{ period: UsagePeriod }>({ period: "30d" });
   const timeZone = useTimeZone();
   // The previous report stays visible (dimmed) while the next one loads, so
@@ -40,6 +42,7 @@ export function UsageSettingsSection() {
     };
   }, [request]);
   const report = state.report;
+  const wispsById = new Map(wisps.map((wisp) => [wisp.id, wisp]));
   return (
     <section
       id="usage-settings-panel"
@@ -131,22 +134,37 @@ export function UsageSettingsSection() {
                     </tr>
                   </thead>
                   <tbody className="[&>tr:not(:last-child)>*]:border-b [&>tr>*]:border-border">
-                    {report.wisps.map((wisp) => (
-                      <tr key={wisp.conversationId}>
-                        <th scope="row" className="max-w-36 break-words px-3 py-2.5 text-sm font-medium">
-                          {wisp.name}
-                          <span className="block text-xs font-normal text-dim">{wisp.sessions} sessions</span>
-                        </th>
-                        <td className="px-3">{wisp.totals.inputTokens.toLocaleString("en-US")}</td>
-                        <td className="px-3">{wisp.totals.outputTokens.toLocaleString("en-US")}</td>
-                        <td className="px-3">
-                          {wisp.totals.cacheReadTokens.toLocaleString("en-US")} /{" "}
-                          {wisp.totals.cacheWriteTokens.toLocaleString("en-US")}
-                        </td>
-                        <td className="px-3">{wisp.totals.totalTokens.toLocaleString("en-US")}</td>
-                        <td className="whitespace-nowrap px-3">{cost(wisp.totals.costUsd)}</td>
-                      </tr>
-                    ))}
+                    {report.wisps.map((wisp) => {
+                      const option = wispsById.get(wisp.conversationId);
+                      return (
+                        <tr key={wisp.conversationId}>
+                          <th scope="row" className="max-w-44 px-3 py-2.5 text-sm font-medium">
+                            <span className="flex items-center gap-2">
+                              <Wisp
+                                aria-hidden="true"
+                                className="flex-none"
+                                appearance={option?.appearance}
+                                color={option?.color}
+                                name={wisp.name}
+                                size="sm"
+                              />
+                              <span className="min-w-0 break-words">
+                                {wisp.name}
+                                <span className="block text-xs font-normal text-dim">{wisp.sessions} sessions</span>
+                              </span>
+                            </span>
+                          </th>
+                          <td className="px-3">{wisp.totals.inputTokens.toLocaleString("en-US")}</td>
+                          <td className="px-3">{wisp.totals.outputTokens.toLocaleString("en-US")}</td>
+                          <td className="px-3">
+                            {wisp.totals.cacheReadTokens.toLocaleString("en-US")} /{" "}
+                            {wisp.totals.cacheWriteTokens.toLocaleString("en-US")}
+                          </td>
+                          <td className="px-3">{wisp.totals.totalTokens.toLocaleString("en-US")}</td>
+                          <td className="whitespace-nowrap px-3">{cost(wisp.totals.costUsd)}</td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </SettingsCard>

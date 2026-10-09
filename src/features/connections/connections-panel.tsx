@@ -116,17 +116,21 @@ export function ConnectionsPanel({ view, serversOnly = false }: { view: Connecti
                     type="button"
                     size="sm"
                     variant="outline"
+                    aria-label={`Switch to ${profile.name}`}
                     disabled={busy !== null}
                     onClick={() => void run(profile.id, () => window.wisp.activateConnection({ id: profile.id }))}
                   >
-                    {busy === profile.id ? "Switching…" : "Use"}
+                    {busy === profile.id ? "Switching…" : "Switch"}
                   </Button>
                 )}
-                {profile.kind === "local" ? null : (
+                {profile.kind === "local" ? (
+                  // Keeps Switch in the same column on rows without an edit button.
+                  <span aria-hidden="true" className="size-7 flex-none" />
+                ) : (
                   <Button
                     type="button"
                     size="icon-sm"
-                    variant="ghost"
+                    variant="outline"
                     aria-label={`Edit ${profile.name}`}
                     disabled={busy !== null}
                     onClick={() => setEditing(profile.id)}
