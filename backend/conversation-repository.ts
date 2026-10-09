@@ -41,6 +41,7 @@ import { normalizeQueuedMessage } from "./message-queue.js";
 import { normalizeScheduledMessage } from "./message-schedule.js";
 import { buildSnippet, MessageSearchWorker } from "./message-search.js";
 import { CONVERSATION_STORAGE_POLICY } from "./storage-policy.js";
+import { ARCHIVE_MANIFEST_FILE, type ArchiveManifest } from "../shared/storage.js";
 import {
   applyWorkspaceAction,
   withLastActivity,
@@ -308,7 +309,7 @@ export class ConversationRepository {
   }
 
   /**
-   * Each conversation's workspace folder once, whatever its kind: the folder
+   * Each conversation's workspace folder, whatever its kind: the folder
    * belongs to the conversation, so a circle's members share one entry.
    */
   listWorkspaceFolders(): ReadonlyArray<{
@@ -1184,6 +1185,15 @@ export class ConversationRepository {
     const { conversation, wisp } = deleted;
     const archive = path.join(this.deletedRoot, `${wisp?.storageId ?? conversation.storageId}-${this.fileSuffix()}`);
     await mkdir(archive, { recursive: true });
+    // Names the archive in Storage; the folder name is only an ID.
+    const manifest: ArchiveManifest = {
+      name: conversation.chat.kind === "circle" ? conversation.chat.name : (wisp?.wisp.name ?? "Wisp"),
+      kind: conversation.chat.kind,
+      archivedAt: this.now().toISOString(),
+    };
+    await writeFileAtomically(path.join(archive, ARCHIVE_MANIFEST_FILE), JSON.stringify(manifest)).catch(
+      () => undefined,
+    );
     const move = (from: string, to: string) => rename(from, path.join(archive, to)).catch(() => undefined);
     // Transcriptions are a cache of the user's documents, so they are deleted, not archived.
     if (wisp) {

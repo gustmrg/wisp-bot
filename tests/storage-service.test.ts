@@ -2,7 +2,7 @@ import { mkdir, mkdtemp, readdir, rm, stat, symlink, writeFile } from "node:fs/p
 import os from "node:os";
 import path from "node:path";
 
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { StorageService } from "../backend/storage-service.js";
 import { WorkspaceService } from "../backend/workspace-service.js";
@@ -13,7 +13,9 @@ afterEach(async () => {
   await Promise.all(directories.splice(0).map((directory) => rm(directory, { recursive: true, force: true })));
 });
 
-async function setup(options: { busy?: Set<string>; quotaBytes?: number } = {}) {
+async function setup(
+  options: { busy?: Set<string>; quotaBytes?: number; onCleanupFinished?: (id: string) => void } = {},
+) {
   const root = await mkdtemp(path.join(os.tmpdir(), "wisp-storage-"));
   directories.push(root);
   const atlas = path.join(root, "workspaces", "atlas");
@@ -37,6 +39,7 @@ async function setup(options: { busy?: Set<string>; quotaBytes?: number } = {}) 
     },
     archiveDirectory: archive,
     isBusy: (id) => options.busy?.has(id) ?? false,
+    ...(options.onCleanupFinished ? { onCleanupFinished: options.onCleanupFinished } : {}),
     ...(options.quotaBytes === undefined ? {} : { quotaBytes: options.quotaBytes }),
   });
   return { root, atlas, circle, archive, service };
@@ -63,6 +66,25 @@ describe("StorageService summary", () => {
     expect(summary.archives).toMatchObject([{ id: "old-1", usedBytes: 7, fileCount: 1, partial: false }]);
     expect(summary.archiveBytes).toBe(7);
     expect(summary.partial).toBe(false);
+  });
+
+  it("names archives from their manifest, and falls back to the folder for older ones", async () => {
+    const { archive, service } = await setup();
+    await mkdir(path.join(archive, "named-1"), { recursive: true });
+    await writeFile(
+      path.join(archive, "named-1", "archive.json"),
+      JSON.stringify({ name: "Atlas", kind: "wisp", archivedAt: "2026-10-01T10:00:00.000Z" }),
+    );
+    await mkdir(path.join(archive, "old-1"), { recursive: true });
+    await mkdir(path.join(archive, "broken-1"), { recursive: true });
+    await writeFile(path.join(archive, "broken-1", "archive.json"), "{not json");
+
+    const { archives } = await service.getSummary();
+    const byId = Object.fromEntries(archives.map((entry) => [entry.id, entry]));
+    expect(byId["named-1"]).toMatchObject({ name: "Atlas", kind: "wisp", archivedAt: "2026-10-01T10:00:00.000Z" });
+    expect(byId["old-1"]).toMatchObject({ name: null, kind: null });
+    expect(byId["old-1"]?.archivedAt).toEqual(expect.any(String));
+    expect(byId["broken-1"]).toMatchObject({ name: null, kind: null });
   });
 
   it("reuses a recent measurement until refreshed", async () => {
@@ -230,6 +252,22 @@ describe("StorageService cleanup", () => {
     await expect(service.cleanup({ ...request, fingerprint })).rejects.toMatchObject({ code: "unavailable" });
     release();
     await expect(service.cleanup({ ...request, fingerprint })).resolves.toMatchObject({ removed: ["cache.bin"] });
+  });
+
+  it("reports the cleanup while it runs, and signals when it ends", async () => {
+    const finished = vi.fn();
+    const { atlas, service } = await setup({ onCleanupFinished: finished });
+    await writeFile(path.join(atlas, "cache.bin"), Buffer.alloc(5));
+    const request = { conversationId: "atlas", paths: ["cache.bin"] };
+    const { fingerprint } = await service.prepareCleanup(request);
+
+    const running = service.cleanup({ ...request, fingerprint });
+    // Agents check this before running: the lock is taken before the first await.
+    expect(service.isCleaning("atlas")).toBe(true);
+    expect(service.isCleaning("circle")).toBe(false);
+    await running;
+    expect(service.isCleaning("atlas")).toBe(false);
+    expect(finished).toHaveBeenCalledWith("atlas");
   });
 
   it("blocks uploads during a cleanup and frees quota afterwards", async () => {

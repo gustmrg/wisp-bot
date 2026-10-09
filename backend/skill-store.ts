@@ -176,7 +176,7 @@ export function parseSkillDocument(value: unknown): { draft: SkillDraft; content
     throw new WispBackendError("invalid_request", "The skill file is empty.");
   }
   if (Buffer.byteLength(value, "utf8") > MAX_SKILL_FILE_BYTES) {
-    throw new WispBackendError("invalid_request", `A skill file can be at most ${MAX_SKILL_FILE_BYTES / 1024} KB.`);
+    throw new WispBackendError("invalid_request", `A skill file can be at most ${MAX_SKILL_FILE_BYTES / 1024} KiB.`);
   }
   const parsed = parseSkillFile(value);
   if (!parsed) {

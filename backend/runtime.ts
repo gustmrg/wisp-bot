@@ -99,6 +99,7 @@ export async function createBackendRuntime(options: BackendRuntimeOptions): Prom
   let agentRegistry: AgentRegistry | undefined;
   let messageScheduler: MessageScheduler | undefined;
   let messageQueue: MessageQueue | undefined;
+  let storageService: StorageService | undefined;
   const publishAgentEvent = (event: SequencedConversationAgentEvent): void => {
     conversationService?.handleAgentEvent(event);
     if (event.type === "conversation_error") {
@@ -163,6 +164,7 @@ export async function createBackendRuntime(options: BackendRuntimeOptions): Prom
     {
       validateModel: (selection) => modelService.validateConversationSelection(selection),
       onAvailable: (conversationId) => messageQueue?.pump(conversationId),
+      isWorkspaceLocked: (conversationId) => storageService?.isCleaning(conversationId) ?? false,
     },
   );
   agentRegistry = registry;
@@ -205,15 +207,19 @@ export async function createBackendRuntime(options: BackendRuntimeOptions): Prom
     conversationRepository,
     new ModelPricingService({ cacheFilePath: path.join(dataDirectory, "model-pricing.json") }),
   );
-  const storageService = new StorageService({
+  const storage = new StorageService({
     listWorkspaces: () => conversationRepository.listWorkspaceFolders(),
     resolveWorkspace: (id) => conversationRepository.getWorkspaceDirectory(id),
     archiveDirectory: conversationRepository.getArchiveDirectory(),
     isBusy: (id) => registry.isBusy(id),
+    // Messages queued during the cleanup are delivered once it ends.
+    onCleanupFinished: (id) => queue.pump(id),
   });
+  storageService = storage;
   const workspaceService = new WorkspaceService({
-    acquireWrite: (id) => storageService.acquireWrite(id),
+    acquireWrite: (id) => storage.acquireWrite(id),
     resolveDirectories: (id) => conversationRepository.getAgentContext(id),
+    resolveWorkspace: (id) => conversationRepository.getWorkspaceDirectory(id),
     openPath: options.openPath,
     selectFiles: options.selectFiles,
   });
@@ -238,7 +244,7 @@ export async function createBackendRuntime(options: BackendRuntimeOptions): Prom
     messageQueue: queue,
     sessionReports: sessionReportService,
     workspace: workspaceService,
-    storage: storageService,
+    storage,
     transcription: transcriptionService,
     applyConversationModel: async (conversationId, model) => {
       if (model) await modelService.validateConversationSelection(model);

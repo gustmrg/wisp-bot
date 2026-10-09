@@ -616,7 +616,11 @@ describe("ConversationRepository", () => {
     const archives = await readdir(path.join(directory, "deleted-conversations"));
     expect(archives).toHaveLength(1);
     const contents = await readdir(path.join(directory, "deleted-conversations", archives[0]!));
-    expect(contents.sort()).toEqual(["pi-config", "pi-session", "workspace"]);
+    expect(contents.sort()).toEqual(["archive.json", "pi-config", "pi-session", "workspace"]);
+    // Storage names the archive from its manifest; the folder name is only an ID.
+    expect(
+      JSON.parse(await readFile(path.join(directory, "deleted-conversations", archives[0]!, "archive.json"), "utf8")),
+    ).toEqual({ name: "first", kind: "wisp", archivedAt: "2026-08-30T12:00:00.000Z" });
     // Image transcriptions are deleted outright rather than archived.
     expect(await readdir(path.join(directory, "deleted-conversations", archives[0]!, "pi-config"))).not.toContain(
       "transcription-cache",
@@ -644,7 +648,13 @@ describe("ConversationRepository", () => {
 
     expect(Object.keys(repository.getChats())).toEqual(["first"]);
     const [archive] = await readdir(path.join(directory, "deleted-conversations"));
-    expect(await readdir(path.join(directory, "deleted-conversations", archive!))).toEqual(["workspace"]);
+    expect((await readdir(path.join(directory, "deleted-conversations", archive!))).sort()).toEqual([
+      "archive.json",
+      "workspace",
+    ]);
+    expect(
+      JSON.parse(await readFile(path.join(directory, "deleted-conversations", archive!, "archive.json"), "utf8")),
+    ).toMatchObject({ name: "crew", kind: "circle" });
   });
 
   it("persists member pruning in the same deletion transaction", async () => {
