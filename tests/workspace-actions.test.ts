@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import type { Chat, CircleChat, WispChat } from "../shared/conversations.js";
+import type { Chat, CircleChat, Message, WispChat } from "../shared/conversations.js";
 import {
   applyWorkspaceAction,
   type ConversationRecord,
@@ -208,6 +208,20 @@ describe("workspace actions", () => {
     expect(
       applyWorkspaceAction(records, { type: "mark-read", conversationId: "missing", updatedAt: "after" }).status,
     ).toBe("not_found");
+  });
+
+  it("marks a conversation unread when a Wisp's reply or question arrives, not for the person's own messages", () => {
+    const records = graph(["first"]);
+    const append = (message: Message & { id: string }) =>
+      applyWorkspaceAction(records, { type: "append-message", conversationId: "first", message, updatedAt: "after" })
+        .records.conversations.first?.chat.unread;
+
+    expect(append({ id: "reply", type: "incoming", text: "Done", status: "complete" })).toBe(true);
+    expect(append({ id: "failed", type: "incoming", text: "Rate limited", status: "failed" })).toBe(true);
+    expect(append({ id: "question", type: "prompt", question: "Continue?", options: [] })).toBe(true);
+    expect(append({ id: "sent", type: "outgoing", text: "Hi", status: "complete" })).toBeUndefined();
+    expect(append({ id: "stopped", type: "incoming", text: "Partial", status: "cancelled" })).toBeUndefined();
+    expect(append({ id: "notice", type: "time", text: "New topic · History preserved" })).toBeUndefined();
   });
 
   it("upserts messages and treats a missing target as a no-op", () => {

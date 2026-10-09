@@ -4,7 +4,13 @@ import { describe, expect, it, vi } from "vitest";
 
 import type { ConnectionsView } from "../shared/connections";
 import type { AiSettingsView, UpdateState, WispApi } from "../shared/contracts";
-import { chatSummary, type Chat, type ConversationStateView, type Wisp } from "../shared/conversations";
+import {
+  chatSummary,
+  type Chat,
+  type ConversationDelta,
+  type ConversationStateView,
+  type Wisp,
+} from "../shared/conversations";
 import App from "@/App";
 import { LEGACY_STORAGE_KEY } from "@/hooks/use-conversations";
 import { MOBILE_LAYOUT_QUERY } from "@/hooks/use-mobile-layout";
@@ -392,6 +398,30 @@ describe("App", () => {
     expect(api.sendMessage).not.toHaveBeenCalled();
   });
 
+  it("marks a reply read when it arrives in the chat on screen, and not while the page is hidden", async () => {
+    const api = createApi(conversationState(true, { atlas }));
+    let emit: (delta: ConversationDelta) => void = () => undefined;
+    api.subscribeToConversationChanges = vi.fn((listener) => {
+      emit = listener;
+      return () => undefined;
+    });
+    exposeApi(api);
+    render(<App />);
+    await screen.findByRole("textbox", { name: "Message Atlas" });
+    const reply = { id: "reply-1", type: "incoming" as const, text: "Done", status: "complete" as const };
+    const visibility = vi.spyOn(document, "visibilityState", "get").mockReturnValue("hidden");
+    act(() => {
+      document.dispatchEvent(new Event("visibilitychange"));
+      emit({ chat: chatSummary({ ...atlas, unread: true }), added: [reply], updated: [] });
+    });
+    expect(api.markConversationRead).not.toHaveBeenCalled();
+
+    visibility.mockReturnValue("visible");
+    act(() => document.dispatchEvent(new Event("visibilitychange")));
+    await waitFor(() => expect(api.markConversationRead).toHaveBeenCalledWith({ conversationId: "atlas" }));
+    visibility.mockRestore();
+  });
+
   it("saves and sends the message itself when the server has no message queue", async () => {
     const user = userEvent.setup();
     const api = createApi(conversationState(true, { atlas }));
@@ -591,6 +621,33 @@ describe("Mobile workspace", () => {
     resize(true);
     expect(list).not.toBeVisible();
     expect(composer).toBeVisible();
+  });
+
+  it("leaves a reply unread while the list is on screen, and marks it read once the chat opens", async () => {
+    setMobileViewport();
+    const user = userEvent.setup();
+    const api = createApi(conversationState(true, { atlas }));
+    let emit: (delta: ConversationDelta) => void = () => undefined;
+    api.subscribeToConversationChanges = vi.fn((listener) => {
+      emit = listener;
+      return () => undefined;
+    });
+    exposeApi(api);
+    render(<App />);
+    const list = await screen.findByRole("navigation", { name: "Wisps and circles" });
+    await waitFor(() => expect(within(list).getByRole("button", { name: /Atlas/ })).toBeVisible());
+    act(() =>
+      emit({
+        chat: chatSummary({ ...atlas, unread: true }),
+        added: [{ id: "reply-1", type: "incoming", text: "Done", status: "complete" }],
+        updated: [],
+      }),
+    );
+    expect(await within(list).findByText("Unread")).toBeInTheDocument();
+    expect(api.markConversationRead).not.toHaveBeenCalled();
+
+    await user.click(within(list).getByRole("button", { name: /Atlas/ }));
+    expect(api.markConversationRead).toHaveBeenCalledWith({ conversationId: "atlas" });
   });
 
   it("filters real statuses and unread flags, and opens search results as conversations", async () => {

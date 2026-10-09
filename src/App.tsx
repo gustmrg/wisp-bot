@@ -17,6 +17,7 @@ import { useResizablePanel } from "@/hooks/use-resizable-panel";
 import { useMessageQueue } from "@/hooks/use-message-queue";
 import { useScheduledMessages } from "@/hooks/use-scheduled-messages";
 import { useMobileLayout } from "@/hooks/use-mobile-layout";
+import { usePageVisible } from "@/hooks/use-page-visible";
 import { TimeZoneProvider, useReportedTimeZone } from "@/hooks/use-time-zone";
 import { useWorkspaceController } from "@/features/workspace/use-workspace-controller";
 import { effectiveTimeZone } from "@/lib/app-preferences";
@@ -85,6 +86,15 @@ function Workspace({ userProfile }: { userProfile: UserProfileController }) {
       setMobilePage("list");
     }
   }, [workspace.activeChat]);
+
+  // A reply that arrives while its chat is on screen has been seen.
+  const pageVisible = usePageVisible();
+  const activeChatShown = pageVisible && (!mobile || (mobilePage === "chat" && !detailsOpen));
+  const activeChatUnread = Boolean(workspace.activeChat?.unread);
+  const { markActiveChatRead } = workspace;
+  useEffect(() => {
+    if (activeChatShown && activeChatUnread) markActiveChatRead();
+  }, [activeChatShown, activeChatUnread, markActiveChatRead]);
 
   function selectChat(chatId: string) {
     navigationVersion.current += 1;
