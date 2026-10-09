@@ -53,6 +53,7 @@ export function createWebWispApi(options: WebApiOptions): WispApi {
     status: { ...status },
     secureStorageAvailable: true,
     canManage: false,
+    deviceName: options.deviceName,
   });
   const publish = (): void => {
     const current = view();

@@ -9,6 +9,7 @@ import {
   BotIcon,
   CableIcon,
   ChevronLeftIcon,
+  ChevronRightIcon,
   CircleFadingArrowUpIcon,
   DownloadIcon,
   HardDriveIcon,
@@ -21,7 +22,6 @@ import {
   RefreshCwIcon,
   ServerIcon,
   SettingsIcon,
-  UserIcon,
   type LucideIcon,
 } from "lucide-react";
 
@@ -36,6 +36,7 @@ import { ShortcutSettingsSection } from "@/components/shortcut-settings-section"
 import { VoiceSettingsSection } from "@/components/voice-settings-section";
 import { ConnectionSettingsSection } from "@/components/connection-settings-section";
 import { MobileNavigation } from "@/components/mobile-navigation";
+import { MobileSettingsProfile } from "@/components/mobile-settings-profile";
 import {
   SettingsCard,
   SettingsGroup,
@@ -50,7 +51,6 @@ import type { PersistenceStatus } from "@/features/persistence/storage-policy";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { normalizeTheme } from "@/lib/theme";
-import { profileAvatar } from "@/lib/ui-classes";
 import { cn } from "@/lib/utils";
 import { WISP_RELEASES_URL, WISP_REPOSITORY_URL, type UpdateState } from "../../shared/contracts";
 import type { PluginId } from "../../shared/plugins";
@@ -73,19 +73,97 @@ export type SettingsEntrySection = "general" | "model" | "voice" | "plugins" | "
 
 /** Navigation order; entries without a section are announced but not available yet. */
 const NAV_ITEMS: ReadonlyArray<
-  { label: string; icon: LucideIcon } & ({ section: SettingsSection; panelId: string } | { soon: true })
+  { label: string; description: string; icon: LucideIcon } & (
+    | { section: SettingsSection; panelId: string }
+    | { soon: true }
+  )
 > = [
-  { section: "general", panelId: "general-settings-panel", label: "General", icon: SettingsIcon },
-  { section: "connections", panelId: "connection-settings-panel", label: "Connections", icon: CableIcon },
-  { section: "model", panelId: "model-settings-panel", label: "AI Model", icon: BotIcon },
-  { section: "voice", panelId: "voice-settings-panel", label: "Voice input", icon: MicIcon },
-  { section: "plugins", panelId: "plugin-settings-panel", label: "Plugins", icon: PlugIcon },
-  { section: "mcp", panelId: "mcp-settings-panel", label: "MCP servers", icon: ServerIcon },
-  { section: "usage", panelId: "usage-settings-panel", label: "Token usage", icon: BarChart3Icon },
-  { section: "storage", panelId: "storage-settings-panel", label: "Storage", icon: HardDriveIcon },
-  { section: "notifications", panelId: "notification-settings-panel", label: "Notifications", icon: BellIcon },
-  { section: "shortcuts", panelId: "shortcut-settings-panel", label: "Shortcuts", icon: KeyboardIcon },
-  { section: "about", panelId: "about-settings-panel", label: "About", icon: InfoIcon },
+  {
+    section: "general",
+    panelId: "general-settings-panel",
+    label: "General",
+    description: "Your profile and how Wisp looks",
+    icon: SettingsIcon,
+  },
+  {
+    section: "connections",
+    panelId: "connection-settings-panel",
+    label: "Connections",
+    description: "Where your Wisps run",
+    icon: CableIcon,
+  },
+  {
+    section: "model",
+    panelId: "model-settings-panel",
+    label: "AI Model",
+    description: "The provider and model your Wisps use",
+    icon: BotIcon,
+  },
+  {
+    section: "voice",
+    panelId: "voice-settings-panel",
+    label: "Voice input",
+    description: "Dictate messages and transcribe them",
+    icon: MicIcon,
+  },
+  {
+    section: "plugins",
+    panelId: "plugin-settings-panel",
+    label: "Plugins",
+    description: "Extra tools and which Wisps can use them",
+    icon: PlugIcon,
+  },
+  {
+    section: "mcp",
+    panelId: "mcp-settings-panel",
+    label: "MCP servers",
+    description: "Connect outside tools over MCP",
+    icon: ServerIcon,
+  },
+  {
+    section: "usage",
+    panelId: "usage-settings-panel",
+    label: "Token usage",
+    description: "How many tokens each Wisp used",
+    icon: BarChart3Icon,
+  },
+  {
+    section: "storage",
+    panelId: "storage-settings-panel",
+    label: "Storage",
+    description: "See the space used and clean up Wisp files",
+    icon: HardDriveIcon,
+  },
+  {
+    section: "notifications",
+    panelId: "notification-settings-panel",
+    label: "Notifications",
+    description: "Sounds and alerts for new messages",
+    icon: BellIcon,
+  },
+  {
+    section: "shortcuts",
+    panelId: "shortcut-settings-panel",
+    label: "Shortcuts",
+    description: "Keyboard shortcuts for common actions",
+    icon: KeyboardIcon,
+  },
+  {
+    section: "about",
+    panelId: "about-settings-panel",
+    label: "About",
+    description: "Version, release notes, and support",
+    icon: InfoIcon,
+  },
+];
+
+/** How the mobile overview groups the sections, under the profile card. */
+const MOBILE_NAV_GROUPS: ReadonlyArray<{ label: string; sections: ReadonlyArray<SettingsSection> }> = [
+  { label: "Account and server", sections: ["general", "connections"] },
+  { label: "Wisps", sections: ["model", "voice", "plugins", "mcp"] },
+  { label: "Notifications and input", sections: ["notifications", "shortcuts"] },
+  { label: "Storage and data", sections: ["storage", "usage"] },
+  { label: "App", sections: ["about"] },
 ];
 
 const THEME_OPTIONS = [
@@ -167,6 +245,47 @@ function AppSettingsDialog({
     if (focusSection) mobileHeadingRef.current?.focus();
   }, [focusSection]);
   const selected = "bg-accent text-accent-foreground";
+  function renderNavItem(item: (typeof NAV_ITEMS)[number]) {
+    // On mobile each section is a card that says what it controls.
+    const descriptionId = mobile ? `${"section" in item ? item.panelId : item.label}-description` : undefined;
+    const copy = mobile ? (
+      <span className="mobile-settings-copy">
+        <strong>{item.label}</strong>
+        <small id={descriptionId}>{item.description}</small>
+      </span>
+    ) : (
+      <span>{item.label}</span>
+    );
+    return "section" in item ? (
+      <button
+        key={item.section}
+        className={cn(navButton, section === item.section && !mobile && selected)}
+        type="button"
+        aria-label={item.label}
+        aria-describedby={descriptionId}
+        aria-current={section === item.section ? "page" : undefined}
+        aria-controls={item.panelId}
+        onClick={() => openSection(item.section)}
+      >
+        <item.icon aria-hidden="true" />
+        {copy}
+        {mobile ? <ChevronRightIcon aria-hidden="true" className="mobile-settings-chevron" /> : null}
+      </button>
+    ) : (
+      <button
+        key={item.label}
+        className={cn(navButton, "cursor-not-allowed hover:bg-transparent hover:text-dim")}
+        type="button"
+        aria-label={`${item.label} (coming soon)`}
+        aria-describedby={descriptionId}
+        disabled
+      >
+        <item.icon aria-hidden="true" className="opacity-60" />
+        <span className="opacity-60">{copy}</span>
+        <SoonBadge className="ml-auto" />
+      </button>
+    );
+  }
   // Updates and launch at login belong to the desktop app.
   const browserApp = isBrowserApp();
   const [updateState, setUpdateState] = useState<UpdateState>({
@@ -243,45 +362,32 @@ function AppSettingsDialog({
           aria-label="Settings sections"
         >
           {mobile ? (
-            <div className="mobile-settings-profile">
-              <span className={profileAvatar}>
-                {currentUser.initials || <UserIcon aria-hidden="true" className="size-3.5" />}
-              </span>
-              <div>
-                <strong>{currentUser.displayName}</strong>
-                <small>Your workspace</small>
-              </div>
-            </div>
+            <>
+              <MobileSettingsProfile
+                currentUser={currentUser}
+                appVersion={appMetadata.version}
+                onOpenProfile={() => openSection("general")}
+                onOpenConnection={() => openSection("connections")}
+              />
+              {MOBILE_NAV_GROUPS.map((group) => (
+                <div
+                  key={group.label}
+                  className="mobile-settings-group"
+                  role="group"
+                  aria-labelledby={`settings-group-${group.sections[0]}`}
+                >
+                  <h3 id={`settings-group-${group.sections[0]}`}>{group.label}</h3>
+                  {NAV_ITEMS.filter((item) => "section" in item && group.sections.includes(item.section)).map(
+                    renderNavItem,
+                  )}
+                </div>
+              ))}
+            </>
           ) : (
-            <strong className="mx-2 mb-[15px] mt-0 text-lg">Settings</strong>
-          )}
-          {NAV_ITEMS.map((item) =>
-            "section" in item ? (
-              <button
-                key={item.section}
-                className={cn(navButton, section === item.section && selected)}
-                type="button"
-                aria-label={item.label}
-                aria-current={section === item.section ? "page" : undefined}
-                aria-controls={item.panelId}
-                onClick={() => openSection(item.section)}
-              >
-                <item.icon aria-hidden="true" />
-                <span>{item.label}</span>
-              </button>
-            ) : (
-              <button
-                key={item.label}
-                className={cn(navButton, "cursor-not-allowed hover:bg-transparent hover:text-dim")}
-                type="button"
-                aria-label={`${item.label} (coming soon)`}
-                disabled
-              >
-                <item.icon aria-hidden="true" className="opacity-60" />
-                <span className="opacity-60">{item.label}</span>
-                <SoonBadge className="ml-auto" />
-              </button>
-            ),
+            <>
+              <strong className="mx-2 mb-[15px] mt-0 text-lg">Settings</strong>
+              {NAV_ITEMS.map(renderNavItem)}
+            </>
           )}
         </nav>
         {section === "usage" && open && !showOverview ? <UsageSettingsSection wisps={wisps} /> : null}
