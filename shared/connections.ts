@@ -71,6 +71,8 @@ export interface ConnectionsView {
    * browser app, which always talks to the server that served it.
    */
   canManage?: boolean;
+  /** The name this device paired under, such as "Chrome on iPhone". Set in the browser app only. */
+  deviceName?: string;
   /** A question OpenSSH asks while connecting, waiting for the person to answer. */
   sshPrompt?: SshPromptView;
 }

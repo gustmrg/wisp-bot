@@ -446,7 +446,8 @@
     flex: none;
     min-height: 60px;
     gap: 12px;
-    padding: 14px;
+    padding: 12px 14px;
+    border: 1px solid var(--border);
     border-radius: 12px;
     background: var(--card);
     font-size: 14px;
@@ -455,28 +456,107 @@
     width: 20px;
     height: 20px;
   }
+  .mobile-settings-group {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin-top: 14px;
+  }
+  .mobile-settings-group h3 {
+    margin: 0 4px 2px;
+    color: var(--text-dim);
+    font-size: 12px;
+    font-weight: 600;
+  }
+  .mobile-settings-copy {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+  }
+  .mobile-settings-copy strong {
+    overflow: hidden;
+    color: var(--foreground);
+    font-weight: 500;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .mobile-settings-copy small {
+    overflow: hidden;
+    color: var(--text-dim);
+    font-size: 12px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .settings-nav-button svg.mobile-settings-chevron,
+  .mobile-settings-profile .mobile-settings-chevron {
+    flex: none;
+    width: 16px;
+    height: 16px;
+    color: var(--text-dim);
+  }
   .mobile-settings-profile {
+    display: flex;
+    flex: none;
+    flex-direction: column;
+    overflow: hidden;
+    border: 1px solid var(--border);
+    border-radius: 13px;
+    background: var(--card);
+  }
+  .mobile-settings-profile > button {
     display: flex;
     align-items: center;
     gap: 13px;
-    margin-bottom: 20px;
-    padding: 16px;
-    border: 1px solid var(--border);
-    border-radius: 13px;
+    min-height: 60px;
+    padding: 12px 14px;
+    border: 0;
+    background: transparent;
+    color: inherit;
+    font-size: 14px;
+    text-align: left;
   }
-  .mobile-settings-profile > span {
+  .mobile-settings-profile > button + button {
+    border-top: 1px solid var(--border);
+  }
+  .mobile-settings-profile > button:hover {
+    background: var(--muted);
+  }
+  .mobile-settings-profile > button > [aria-hidden="true"]:first-child:not(.mobile-connection-dot) {
     width: 45px;
     height: 45px;
     font-size: 13px;
   }
   .mobile-settings-profile strong {
-    display: block;
     font-weight: 600;
   }
-  .mobile-settings-profile small {
-    display: block;
-    margin-top: 3px;
-    color: var(--text-dim);
+  .mobile-connection-dot {
+    display: inline-flex;
+    flex: none;
+    align-items: center;
+    justify-content: center;
+    width: 45px;
+  }
+  .mobile-connection-dot > span {
+    width: 10px;
+    height: 10px;
+  }
+  .mobile-settings-badge {
+    display: inline-flex;
+    flex: none;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 8px;
+    border-radius: 999px;
+    background: color-mix(in oklab, var(--warning-solid) 18%, transparent);
+    color: var(--warning);
+    font-size: 11px;
+    font-weight: 600;
+  }
+  .mobile-settings-badge svg {
+    width: 12px;
+    height: 12px;
   }
   .app-settings-dialog > section {
     flex: 1;

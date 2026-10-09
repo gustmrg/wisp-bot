@@ -1,4 +1,4 @@
-import { act, render, screen } from "@testing-library/react";
+import { act, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
@@ -259,5 +259,54 @@ describe("AppSettingsDialog metadata", () => {
     expect(installing).toBeDisabled();
     expect(installing.querySelector("svg")).toHaveClass("animate-spin");
     expect(screen.getByText(/Installing version 9\.9\.0…/)).toBeVisible();
+  });
+});
+
+describe("AppSettingsDialog on mobile", () => {
+  it("shows the profile card and each section as a described card in its group", async () => {
+    const user = userEvent.setup();
+    Object.defineProperty(window, "wisp", {
+      configurable: true,
+      value: {
+        subscribeToUpdateState: vi.fn(() => () => undefined),
+        getUpdateState: vi.fn(async () => ({ ok: true, value: { phase: "idle", currentVersion: "9.8.7" } })),
+      },
+    });
+    render(
+      <AppSettingsDialog
+        mobile
+        appMetadata={appMetadata}
+        currentUser={currentUser}
+        userProfile={{
+          profile: { preferredName: "Ada", aboutYou: "", responsePreferences: "" },
+          loading: false,
+          error: null,
+          save: vi.fn(),
+        }}
+        open
+        preferences={DEFAULT_PREFERENCES}
+        persistenceStatus="saved"
+        persistenceError={null}
+        onOpenChange={vi.fn()}
+        onPreferencesChange={vi.fn()}
+      />,
+    );
+
+    const wisps = screen.getByRole("group", { name: "Wisps" });
+    expect(
+      within(wisps)
+        .getAllByRole("button")
+        .map((button) => button.getAttribute("aria-label")),
+    ).toEqual(["AI Model", "Voice input", "Plugins", "MCP servers"]);
+    expect(screen.getByRole("button", { name: "Storage" })).toHaveAccessibleDescription(
+      "See the space used and clean up Wisp files",
+    );
+    for (const group of ["Account and server", "Notifications and input", "Storage and data", "App"]) {
+      expect(screen.getByRole("group", { name: group })).toBeVisible();
+    }
+    expect(screen.queryByText("Your workspace")).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Ada Lovelace" }));
+    expect(screen.getByLabelText("Preferred name")).toHaveValue("Ada");
   });
 });

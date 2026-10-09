@@ -7,6 +7,15 @@ and application settings use full-screen dialogs with their existing backend
 actions and focus management. Wider windows keep the desktop panels. The
 Electron window can be resized down to 360px wide to use this layout locally.
 
+## Settings
+
+The Settings overview starts with a profile card (see
+[ADR 014](decisions/014-mobile-identity.md)). One row shows the person's name
+and opens General. The other shows where the Wisps run, the connection state,
+and, in the browser app, this device's name, and opens Connections. Below the
+card, each section is a card with an icon, a title, and a one-line
+description, grouped by theme.
+
 ## Draft and input behavior
 
 Returning to the list, opening settings, or resizing the window retains the

@@ -93,6 +93,7 @@ describe("browser WispApi", () => {
 
     await until(async () => (await phase()) === "pairing_required", "pairing to be required");
     expect((await api.getConnections()).ok && views.at(-1)?.canManage).toBe(false);
+    expect(views.at(-1)?.deviceName).toBe("Safari on iPhone");
     const { code } = (await adminRequest(directory, { command: "pair" })) as { code: string };
     await api.activateConnection({ id: "server", pairingCode: code });
     await until(async () => (await phase()) === "connected", "the connection");
