@@ -46,6 +46,8 @@ export interface WorkspaceController {
   selectChat: (chatId: ChatId) => void;
   /** Opens a chat at one message, such as a search result. */
   selectMessage: (chatId: ChatId, messageId: string) => void;
+  /** Marks the active chat read, for a reply that arrives while it is on screen. */
+  markActiveChatRead: () => void;
   loadOlderMessages: () => void;
   loadNewerMessages: () => void;
   showLatestMessages: () => void;
@@ -152,6 +154,10 @@ export function useWorkspaceController(): WorkspaceController {
     },
     [conversations.chats, conversations.markRead, conversations.openMessage],
   );
+
+  const markActiveChatRead = useCallback((): void => {
+    if (conversations.chats[activeChatId]?.unread) void conversations.markRead(activeChatId);
+  }, [activeChatId, conversations.chats, conversations.markRead]);
 
   const loadOlderMessages = useCallback(
     (): void => conversations.loadOlderMessages(activeChatId),
@@ -273,6 +279,7 @@ export function useWorkspaceController(): WorkspaceController {
     persistenceError: persistedPreferences.error ?? conversations.error,
     selectChat,
     selectMessage,
+    markActiveChatRead,
     loadOlderMessages,
     loadNewerMessages,
     showLatestMessages,

@@ -90,6 +90,13 @@ function laterOf(current: string | undefined, candidate: string): string {
   return current && Date.parse(current) >= Date.parse(candidate) ? current : candidate;
 }
 
+// A finished reply (or one that failed) and a question from a Wisp are news
+// for the person; their own messages, notices, and replies they stopped are not.
+function marksUnread(message: Message): boolean {
+  if (message.type === "prompt") return true;
+  return message.type === "incoming" && message.status !== "streaming" && message.status !== "cancelled";
+}
+
 export function applyWorkspaceAction(records: WorkspaceRecords, action: WorkspaceAction): WorkspaceActionResult {
   switch (action.type) {
     case "create-wisp": {
@@ -186,6 +193,7 @@ export function applyWorkspaceAction(records: WorkspaceRecords, action: Workspac
           chat: {
             ...chat,
             preview: "text" in message ? message.text : chat.preview,
+            ...(marksUnread(message) ? { unread: true } : {}),
             lastActivityAt: laterOf(chat.lastActivityAt, message.createdAt ?? action.updatedAt),
           },
           updatedAt: action.updatedAt,
