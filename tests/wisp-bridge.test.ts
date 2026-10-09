@@ -79,6 +79,9 @@ function completeBridge(): WispApi {
     saveAiSettings: async () => {
       throw new Error("not called");
     },
+    saveAuxiliaryModel: async () => {
+      throw new Error("not called");
+    },
     removeProviderCredential: async () => {
       throw new Error("not called");
     },

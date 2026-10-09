@@ -29,6 +29,8 @@ const ROOTS = ["backend", "server.sqlite", "local-server-key.json"];
 /** SQLite databases, copied through SQLite's backup API so a running server's copy is consistent. */
 const DATABASES = new Set(["server.sqlite", "backend/conversations.sqlite"]);
 const SKIPPED_DIRECTORIES = new Set(["backend/logs"]);
+/** Each Wisp's cache of image transcriptions: text from the user's documents that can be rebuilt. */
+const SKIPPED_DIRECTORY_PATTERNS = [/^backend\/pi-config\/[^/]+\/transcription-cache$/u];
 const SKIPPED_SUFFIXES = ["-wal", "-shm", "-journal", ".tmp", ".keychain-backup", ".partial"];
 
 export interface BackupManifest {
@@ -333,7 +335,13 @@ async function collectFiles(dataDirectory: string): Promise<{ paths: string[]; s
   const paths: string[] = [];
   const skipped: string[] = [];
   async function visit(relative: string): Promise<void> {
-    if (SKIPPED_DIRECTORIES.has(relative) || SKIPPED_SUFFIXES.some((suffix) => relative.endsWith(suffix))) return;
+    if (
+      SKIPPED_DIRECTORIES.has(relative) ||
+      SKIPPED_DIRECTORY_PATTERNS.some((pattern) => pattern.test(relative)) ||
+      SKIPPED_SUFFIXES.some((suffix) => relative.endsWith(suffix))
+    ) {
+      return;
+    }
     let info: Awaited<ReturnType<typeof lstat>>;
     try {
       info = await lstat(path.join(dataDirectory, relative));

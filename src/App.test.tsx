@@ -29,6 +29,7 @@ const atlas = wispChat("atlas");
 
 const UNCONFIGURED_AI: AiSettingsView = {
   selection: null,
+  auxiliary: { imageUnderstanding: { selection: null, unavailable: null } },
   secureStorageAvailable: true,
   providers: [
     {
@@ -143,9 +144,16 @@ function createApi(initialState: ConversationStateView): WispApi {
     subscribeToAgentEvents: vi.fn(() => () => undefined),
     getAiSettings: vi.fn(async () => ({ ok: true as const, value: CONFIGURED_AI })),
     saveAiSettings: vi.fn(async () => ({ ok: true as const, value: CONFIGURED_AI })),
+    saveAuxiliaryModel: vi.fn(async () => ({ ok: true as const, value: CONFIGURED_AI })),
     removeProviderCredential: vi.fn(async () => ({
       ok: true as const,
-      value: { selection: null, secureStorageAvailable: true, providers: [], catalogError: null },
+      value: {
+        selection: null,
+        auxiliary: { imageUnderstanding: { selection: null, unavailable: null } },
+        secureStorageAvailable: true,
+        providers: [],
+        catalogError: null,
+      },
     })),
     getConversationState: vi.fn(async () => current()),
     initializeConversations: vi.fn(async ({ chats }) => {

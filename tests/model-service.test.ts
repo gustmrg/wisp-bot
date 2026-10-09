@@ -45,6 +45,18 @@ function createRuntime() {
       maxTokens: 10_000,
     },
     {
+      id: "vision-b",
+      name: "Vision B",
+      api: "test",
+      provider: "provider-b",
+      baseUrl: "https://example.test",
+      reasoning: false,
+      input: ["text", "image"],
+      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+      contextWindow: 100_000,
+      maxTokens: 10_000,
+    },
+    {
       id: "model-b",
       name: "Model B",
       api: "test",
@@ -307,5 +319,63 @@ it("validates per-Wisp selections against both the catalog and the shared encryp
   await service.removeCredential("provider-b");
   await expect(service.validateConversationSelection(selection)).rejects.toMatchObject({
     code: "configuration_required",
+  });
+});
+
+describe("ModelService auxiliary models", () => {
+  const vision = { providerId: "provider-b", modelId: "vision-b" };
+
+  it("saves an image model whose provider has a key, and turns it off", async () => {
+    const { service } = await createService();
+    await service.setApiKey("provider-b", "secret-key");
+
+    const view = await service.saveAuxiliary("imageUnderstanding", { ...vision, maxOutputTokens: 50 });
+
+    expect(view.auxiliary.imageUnderstanding).toEqual({ selection: vision, unavailable: null });
+    await expect(service.getAuxiliaryModel("imageUnderstanding")).resolves.toEqual(vision);
+    const off = await service.saveAuxiliary("imageUnderstanding", null);
+    expect(off.auxiliary.imageUnderstanding).toEqual({ selection: null, unavailable: null });
+    await expect(service.getAuxiliaryModel("imageUnderstanding")).resolves.toBeNull();
+  });
+
+  it("refuses models without image input, without a saved key, or outside the catalog", async () => {
+    const { service } = await createService();
+    await expect(service.saveAuxiliary("imageUnderstanding", vision)).rejects.toMatchObject({
+      code: "invalid_configuration",
+      message: expect.stringContaining("API key"),
+    });
+    await service.setApiKey("provider-b", "secret-key");
+    await expect(
+      service.saveAuxiliary("imageUnderstanding", { providerId: "provider-b", modelId: "model-b" }),
+    ).rejects.toMatchObject({ code: "invalid_configuration", message: "This model does not accept images." });
+    await expect(
+      service.saveAuxiliary("imageUnderstanding", { providerId: "provider-b", modelId: "missing" }),
+    ).rejects.toMatchObject({ code: "invalid_configuration" });
+    expect((await service.getView()).auxiliary.imageUnderstanding.selection).toBeNull();
+  });
+
+  it("keeps the selection but treats it as off when its provider loses the key", async () => {
+    const { service } = await createService();
+    await service.save({ selection: { providerId: "openrouter", modelId: "model-a" }, apiKey: "main-key" });
+    await service.setApiKey("provider-b", "secret-key");
+    await service.saveAuxiliary("imageUnderstanding", vision);
+
+    const view = await service.removeCredential("provider-b");
+
+    expect(view.selection).toEqual({ providerId: "openrouter", modelId: "model-a" });
+    expect(view.auxiliary.imageUnderstanding).toEqual({ selection: vision, unavailable: "missing_key" });
+    await expect(service.getAuxiliaryModel("imageUnderstanding")).resolves.toBeNull();
+  });
+
+  it("reports a saved model that left the catalog as unavailable instead of replacing it", async () => {
+    const { service, settings } = await createService();
+    await service.setApiKey("provider-b", "secret-key");
+    await settings.setAuxiliary("imageUnderstanding", { providerId: "provider-b", modelId: "retired" });
+
+    expect((await service.getView()).auxiliary.imageUnderstanding).toEqual({
+      selection: { providerId: "provider-b", modelId: "retired" },
+      unavailable: "model_unavailable",
+    });
+    await expect(service.getAuxiliaryModel("imageUnderstanding")).resolves.toBeNull();
   });
 });

@@ -9,6 +9,7 @@ import type {
   SessionReportUsage,
   WispSessionReport,
 } from "../shared/contracts.js";
+import { AUXILIARY_USAGE_ENTRY } from "./image-transcriber.js";
 import type { ModelPricing } from "./model-pricing-service.js";
 import { safeId } from "./pi-event-translator.js";
 import { getToolMetadata } from "../shared/tool-catalog.js";
@@ -47,6 +48,8 @@ interface ModelUsageBucket {
   providerId: string;
   modelId: string;
   turns: number;
+  /** Auxiliary rows count calls, and are priced only with the cost Pi recorded. */
+  auxiliary?: { task: "imageUnderstanding"; calls: number };
   usage: SessionReportUsage;
   /** Cost Pi recorded with each turn, used when no current price is available. */
   recordedCostUsd: number | null;
@@ -78,6 +81,7 @@ export function buildSessionReport(
   let turns = 0;
   let compactionUsage = emptyUsage();
   let compactionCost: number | null = 0;
+  let auxiliaryUsage = emptyUsage();
   let piVersion: string | undefined;
 
   for (const entry of entries) {
@@ -103,6 +107,14 @@ export function buildSessionReport(
             timestamp: entry.timestamp,
             detail: phase === "started" ? "Retry started" : "Retry finished",
           });
+      }
+      if (entry.type === "custom" && entry.customType === AUXILIARY_USAGE_ENTRY) {
+        const usage = auxiliaryEntryUsage(entry.data);
+        if (usage) {
+          totals = addUsage(totals, usage.usage);
+          auxiliaryUsage = addUsage(auxiliaryUsage, usage.usage);
+          accumulateAuxiliaryUsage(usage, usageByModel);
+        }
       }
       if (entry.type === "compaction") {
         if (entry.usage) {
@@ -160,7 +172,12 @@ export function buildSessionReport(
       const index = toolCallIndexById.get(safeId(toolResult.toolCallId));
       const existing = index === undefined ? undefined : toolCalls[index];
       if (existing && index !== undefined) {
-        toolCalls[index] = { ...existing, status: toolResult.isError ? "error" : "completed" };
+        const imageModel = imageModelOf(toolResult.details);
+        toolCalls[index] = {
+          ...existing,
+          status: toolResult.isError ? "error" : "completed",
+          ...(imageModel ? { imageModel } : {}),
+        };
       }
     }
   }
@@ -173,6 +190,7 @@ export function buildSessionReport(
     turns,
     totals: { ...totals, costUsd: normalCost === null || compactionCost === null ? null : normalCost + compactionCost },
     compactionUsage,
+    ...(auxiliaryUsage.totalTokens > 0 ? { auxiliaryUsage } : {}),
     models: summarizeModelUsage(usageByModel, options.getPricing),
     toolCalls: toolCalls.slice(-MAX_TOOL_CALLS),
     events: events.slice(-MAX_EVENTS),
@@ -236,6 +254,73 @@ function accumulateModelUsage(message: AssistantSessionMessage, usageByModel: Ma
   usageByModel.set(key, bucket);
 }
 
+const MAX_MODEL_NAME_CHARACTERS = 200;
+
+/**
+ * The image model a read used, from its result details: `transcription` for
+ * an image, `pdf.transcription` for scanned pages. Only the model's name is
+ * kept; nothing read from the file is.
+ */
+function imageModelOf(details: unknown): SessionReportToolCall["imageModel"] | undefined {
+  if (!details || typeof details !== "object") return undefined;
+  const record = details as { transcription?: unknown; pdf?: { transcription?: unknown } };
+  const image = record.transcription as { model?: unknown; status?: unknown; cached?: unknown } | undefined;
+  const pages = record.pdf?.transcription as { model?: unknown; pages?: unknown; cachedPages?: unknown } | undefined;
+  const transcription = image ?? pages;
+  if (!transcription || typeof transcription.model !== "string") return undefined;
+  const name = transcription.model.replace(/[\u0000-\u001f\u007f]/gu, " ").trim();
+  if (!name) return undefined;
+  const fromCache = image
+    ? image.status === "done" && image.cached === true
+    : Array.isArray(pages?.pages) &&
+      pages.pages.length > 0 &&
+      Array.isArray(pages.cachedPages) &&
+      pages.cachedPages.length === pages.pages.length;
+  return { name: truncate(name, MAX_MODEL_NAME_CHARACTERS), fromCache };
+}
+
+interface AuxiliaryEntryUsage {
+  task: "imageUnderstanding";
+  providerId: string;
+  modelId: string;
+  usage: SessionUsage;
+}
+
+/** Reads a `wisp:auxiliary-usage` entry, ignoring malformed ones rather than failing the report. */
+function auxiliaryEntryUsage(data: unknown): AuxiliaryEntryUsage | null {
+  if (!data || typeof data !== "object") return null;
+  const record = data as { task?: unknown; providerId?: unknown; modelId?: unknown; usage?: unknown };
+  if (record.task !== "imageUnderstanding") return null;
+  if (typeof record.providerId !== "string" || !record.providerId || record.providerId.length > 256) return null;
+  if (typeof record.modelId !== "string" || !record.modelId || record.modelId.length > 256) return null;
+  if (!record.usage || typeof record.usage !== "object") return null;
+  return {
+    task: record.task,
+    providerId: record.providerId,
+    modelId: record.modelId,
+    usage: record.usage as SessionUsage,
+  };
+}
+
+/** Auxiliary calls get their own row, apart from the same model's conversation turns. */
+function accumulateAuxiliaryUsage(entry: AuxiliaryEntryUsage, usageByModel: Map<string, ModelUsageBucket>): void {
+  const key = `auxiliary:${entry.task}:${entry.providerId}:${entry.modelId}`;
+  const bucket = usageByModel.get(key) ?? {
+    providerId: entry.providerId,
+    modelId: entry.modelId,
+    turns: 0,
+    auxiliary: { task: entry.task, calls: 0 },
+    usage: emptyUsage(),
+    recordedCostUsd: 0,
+  };
+  bucket.auxiliary!.calls += 1;
+  bucket.usage = addUsage(bucket.usage, entry.usage);
+  const recorded = recordedCost(entry.usage);
+  bucket.recordedCostUsd =
+    bucket.recordedCostUsd === null || recorded === null ? null : bucket.recordedCostUsd + recorded;
+  usageByModel.set(key, bucket);
+}
+
 function summarizeModelUsage(
   usageByModel: Map<string, ModelUsageBucket>,
   getPricing: SessionPricingLookup,
@@ -246,6 +331,7 @@ function summarizeModelUsage(
     turns: bucket.turns,
     usage: bucket.usage,
     costUsd: costForBucket(bucket, getPricing),
+    ...(bucket.auxiliary ? { auxiliary: { ...bucket.auxiliary } } : {}),
   }));
 }
 
@@ -262,6 +348,7 @@ function estimateCost(usageByModel: Map<string, ModelUsageBucket>, getPricing: S
 // Current OpenRouter prices win; otherwise fall back to the cost Pi recorded
 // from its own model catalog (e.g. direct providers such as Z.AI or Anthropic).
 function costForBucket(bucket: ModelUsageBucket, getPricing: SessionPricingLookup): number | null {
+  if (bucket.auxiliary) return bucket.recordedCostUsd;
   return costForUsage(bucket.usage, getPricing(bucket.providerId, bucket.modelId)) ?? bucket.recordedCostUsd;
 }
 

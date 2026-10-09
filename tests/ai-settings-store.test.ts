@@ -46,4 +46,41 @@ describe("AiSettingsStore", () => {
     );
     await expect(new AiSettingsStore(filePath).getSelection()).resolves.toBeNull();
   });
+
+  it("keeps auxiliary models in version 1 next to the main selection", async () => {
+    const { filePath, store } = await createStore();
+    const selection = { providerId: "anthropic", modelId: "claude-example" };
+    const image = { providerId: "openai", modelId: "vision-example" };
+
+    await store.setSelection(selection);
+    await store.setAuxiliary("imageUnderstanding", { ...image, maxOutputTokens: 100 });
+    await store.setSelection(selection);
+
+    const reloaded = new AiSettingsStore(filePath);
+    await expect(reloaded.getSelection()).resolves.toEqual(selection);
+    await expect(reloaded.getAuxiliary()).resolves.toEqual({ imageUnderstanding: image });
+    expect(JSON.parse(await readFile(filePath, "utf8"))).toEqual({
+      schemaVersion: 1,
+      selection,
+      auxiliary: { imageUnderstanding: image },
+    });
+
+    await store.setAuxiliary("imageUnderstanding", null);
+    expect(JSON.parse(await readFile(filePath, "utf8"))).toEqual({ schemaVersion: 1, selection });
+  });
+
+  it("reads files without auxiliary models, or with malformed ones, as off", async () => {
+    const { filePath } = await createStore();
+    const selection = { providerId: "anthropic", modelId: "claude-example" };
+    await writeFile(filePath, JSON.stringify({ schemaVersion: 1, selection }));
+    await expect(new AiSettingsStore(filePath).getAuxiliary()).resolves.toEqual({ imageUnderstanding: null });
+
+    await writeFile(
+      filePath,
+      JSON.stringify({ schemaVersion: 1, selection, auxiliary: { imageUnderstanding: { providerId: "" } } }),
+    );
+    const store = new AiSettingsStore(filePath);
+    await expect(store.getAuxiliary()).resolves.toEqual({ imageUnderstanding: null });
+    await expect(store.getSelection()).resolves.toEqual(selection);
+  });
 });

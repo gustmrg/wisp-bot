@@ -13,6 +13,7 @@ import {
   parseRemoveProviderCredentialRequest,
   parseResolveToolApprovalRequest,
   parseSaveAiSettingsRequest,
+  parseSaveAuxiliaryModelRequest,
   parseSaveVoiceCredentialRequest,
   parseSendMessageRequest,
   parseTranscribeAudioRequest,
@@ -186,6 +187,23 @@ describe("IPC request validators", () => {
       parseSaveAiSettingsRequest({
         selection: { providerId: "openrouter", modelId: "anthropic/claude-example", maxOutputTokens: 0 },
       }),
+    ).toThrow(WispBackendError);
+  });
+
+  it("accepts an auxiliary model or off for a known task, without an output limit", () => {
+    expect(
+      parseSaveAuxiliaryModelRequest({
+        task: "imageUnderstanding",
+        selection: { providerId: "openrouter", modelId: "openai/vision", maxOutputTokens: 100 },
+      }),
+    ).toEqual({ task: "imageUnderstanding", selection: { providerId: "openrouter", modelId: "openai/vision" } });
+    expect(parseSaveAuxiliaryModelRequest({ task: "imageUnderstanding", selection: null })).toEqual({
+      task: "imageUnderstanding",
+      selection: null,
+    });
+    expect(() => parseSaveAuxiliaryModelRequest({ task: "titles", selection: null })).toThrow(WispBackendError);
+    expect(() =>
+      parseSaveAuxiliaryModelRequest({ task: "imageUnderstanding", selection: { providerId: "openrouter" } }),
     ).toThrow(WispBackendError);
   });
 

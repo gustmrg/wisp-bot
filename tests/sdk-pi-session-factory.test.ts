@@ -297,6 +297,93 @@ describe("SdkPiSessionFactory", () => {
     expect(sdk.toolExecute).toHaveBeenCalledTimes(2);
   });
 
+  it("turns images into text with the image model when the Wisp's model cannot see them", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "wisp-pi-vision-"));
+    const usage = { input: 900, output: 120, cacheRead: 0, cacheWrite: 0, totalTokens: 1_020, cost: { total: 0.001 } };
+    const completeSimple = vi.fn(async () => ({
+      role: "assistant",
+      content: [{ type: "text", text: "Receipt total: 12.50" }],
+      stopReason: "stop",
+      usage,
+    }));
+    const runtime = {
+      hasConfiguredAuth: vi.fn(() => true),
+      getModel: vi.fn((providerId: string, modelId: string) => ({ provider: providerId, id: modelId, name: "Vision" })),
+      getProvider: vi.fn(() => ({ name: "OpenAI" })),
+      completeSimple,
+    } as unknown as ModelRuntimeLike;
+    const context: ConversationAgentContext = {
+      conversationId: "one",
+      sessionId: "app-session",
+      name: "Atlas",
+      wispId: "one",
+      role: "Research",
+      soul: "",
+      workspaceDirectory: path.join(directory, "workspace"),
+      sessionDirectory: directory,
+      configDirectory: path.join(directory, "config"),
+      piSessionId: null,
+      piSessionFile: null,
+    };
+    await mkdir(context.workspaceDirectory, { recursive: true });
+    await writeFile(path.join(context.workspaceDirectory, "receipt.png"), "png bytes");
+    const imageResult = {
+      content: [
+        {
+          type: "text",
+          text: "Read image file [image/png]\n[Current model does not support images. The image will be omitted from this request.]",
+        },
+        { type: "image", data: "cG5n", mimeType: "image/png" },
+      ],
+      details: {},
+    } as never;
+    for (let read = 0; read < 4; read += 1) sdk.toolExecute.mockResolvedValueOnce(imageResult);
+    let imageModel: { providerId: string; modelId: string } | null = { providerId: "openai", modelId: "vision" };
+    await new SdkPiSessionFactory(
+      runtime,
+      { authorize: vi.fn(async () => undefined) },
+      undefined,
+      async () => imageModel,
+    ).create(context, { providerId: "provider", modelId: "model" });
+    const options = sdk.createAgentSession.mock.calls[0]?.[0] as {
+      customTools: Array<{ name: string; execute: (...args: unknown[]) => Promise<unknown> }>;
+    };
+    const read = options.customTools.find(({ name }) => name === "read")!;
+    const session = sdk.createSession.mock.results[0]?.value as { appendCustomEntry: ReturnType<typeof vi.fn> };
+
+    const onUpdate = vi.fn();
+    const result = (await read.execute("image-1", { path: "receipt.png" }, undefined, onUpdate, {
+      model: { input: ["text"] },
+    })) as { content: Array<{ type: string; text?: string }>; details: { transcription?: unknown } };
+
+    expect(result.content.map(({ type }) => type)).toEqual(["text", "text"]);
+    expect(result.content[0]?.text).toBe("Read image file [image/png]");
+    expect(result.content[1]?.text).toContain("Image transcribed by the image model Vision (OpenAI)");
+    expect(result.content[1]?.text).toContain("Receipt total: 12.50");
+    expect(result.details.transcription).toEqual({ model: "Vision (OpenAI)", status: "done", cached: false });
+    expect(onUpdate).toHaveBeenCalledWith({ content: [], details: { activityLabel: "Reading with Vision (OpenAI)…" } });
+    expect(session.appendCustomEntry).toHaveBeenCalledWith("wisp:auxiliary-usage", {
+      version: 1,
+      task: "imageUnderstanding",
+      providerId: "openai",
+      modelId: "vision",
+      outcome: "ok",
+      usage,
+    });
+
+    // A second read of the same file comes from the cache; a vision model or an off task skip the image model.
+    await read.execute("image-2", { path: "receipt.png" }, undefined, undefined, { model: { input: ["text"] } });
+    await read.execute("image-3", { path: "receipt.png" }, undefined, undefined, {
+      model: { input: ["text", "image"] },
+    });
+    imageModel = null;
+    const off = (await read.execute("image-4", { path: "receipt.png" }, undefined, undefined, {
+      model: { input: ["text"] },
+    })) as { content: Array<{ type: string }> };
+    expect(completeSimple).toHaveBeenCalledTimes(1);
+    expect(off.content.map(({ type }) => type)).toEqual(["text", "image"]);
+  });
+
   it("reads workspace PDFs page by page and leaves other files to Pi's read tool", async () => {
     const directory = await mkdtemp(path.join(os.tmpdir(), "wisp-pi-pdf-"));
     const runtime = {

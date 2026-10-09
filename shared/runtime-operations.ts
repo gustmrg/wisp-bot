@@ -14,6 +14,7 @@ export const RUNTIME_OPERATIONS = [
   "disposeConversation",
   "getAiSettings",
   "saveAiSettings",
+  "saveAuxiliaryModel",
   "removeProviderCredential",
   "getPluginSettings",
   "savePluginSettings",

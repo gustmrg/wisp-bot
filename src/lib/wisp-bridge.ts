@@ -28,6 +28,7 @@ const REQUIRED_WISP_METHODS = [
   "subscribeToAgentEvents",
   "getAiSettings",
   "saveAiSettings",
+  "saveAuxiliaryModel",
   "removeProviderCredential",
   "getConversationState",
   "initializeConversations",

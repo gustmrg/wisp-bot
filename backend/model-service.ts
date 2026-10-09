@@ -4,6 +4,9 @@ import type { ModelRuntime } from "@earendil-works/pi-coding-agent" with { "reso
 
 import type {
   AiSettingsView,
+  AuxiliaryModelUnavailableReason,
+  AuxiliaryModelView,
+  AuxiliaryTask,
   ModelSelection,
   ModelSummary,
   ProviderSummary,
@@ -157,8 +160,12 @@ export class ModelService {
     const errors = [this.catalogRefreshError, this.networkRefreshError, this.runtime.getError()].filter(
       (error): error is string => Boolean(error),
     );
+    const auxiliary = await this.settings.getAuxiliary();
     return {
       selection,
+      auxiliary: {
+        imageUnderstanding: this.auxiliaryView(auxiliary.imageUnderstanding, credentialProviders),
+      },
       secureStorageAvailable: this.credentials.isSecureStorageAvailable(),
       providers,
       catalogError: errors.length > 0 ? errors.join("\n") : null,
@@ -182,6 +189,39 @@ export class ModelService {
     if (apiKey) await this.storeApiKey(selection.providerId, apiKey);
     await this.settings.setSelection(selection);
     return this.getView();
+  }
+
+  /**
+   * Chooses the model for an auxiliary task, or turns the task off with null.
+   * The model must accept what the task sends it and its provider needs a
+   * saved key; auxiliary tasks never take a key of their own.
+   */
+  async saveAuxiliary(task: AuxiliaryTask, selection: ModelSelection | null): Promise<AiSettingsView> {
+    if (selection) {
+      const reason = this.auxiliaryUnavailableReason(selection, await this.listCredentialProviders());
+      if (reason) {
+        throw new WispBackendError(
+          "invalid_configuration",
+          reason === "missing_key"
+            ? "Add an API key for this provider before choosing one of its models."
+            : reason === "no_image_input"
+              ? "This model does not accept images."
+              : "The selected provider and model are not available.",
+        );
+      }
+    }
+    await this.settings.setAuxiliary(
+      task,
+      selection && { providerId: selection.providerId, modelId: selection.modelId },
+    );
+    return this.getView();
+  }
+
+  /** The model for an auxiliary task, or null when the task is off or its saved model cannot be used. */
+  async getAuxiliaryModel(task: AuxiliaryTask): Promise<ModelSelection | null> {
+    const selection = (await this.settings.getAuxiliary())[task];
+    if (!selection) return null;
+    return this.auxiliaryUnavailableReason(selection, await this.listCredentialProviders()) ? null : selection;
   }
 
   /**
@@ -237,6 +277,7 @@ export class ModelService {
     await this.credentials.delete(providerId);
     const selection = await this.settings.getSelection();
     if (selection?.providerId === providerId) await this.settings.setSelection(null);
+    // Auxiliary selections stay saved and show as unavailable until a key returns.
     return this.getView();
   }
 
@@ -260,6 +301,28 @@ export class ModelService {
         "Configure an API key for this provider in AI Model settings.",
       );
     }
+  }
+
+  private auxiliaryView(
+    selection: ModelSelection | null,
+    credentialProviders: ReadonlySet<string>,
+  ): AuxiliaryModelView {
+    return {
+      selection,
+      unavailable: selection ? this.auxiliaryUnavailableReason(selection, credentialProviders) : null,
+    };
+  }
+
+  private auxiliaryUnavailableReason(
+    selection: ModelSelection,
+    credentialProviders: ReadonlySet<string>,
+  ): AuxiliaryModelUnavailableReason | null {
+    const model = this.runtime.getProvider(selection.providerId)?.auth.apiKey
+      ? this.runtime.getModel(selection.providerId, selection.modelId)
+      : undefined;
+    if (!model) return "model_unavailable";
+    if (!model.input.includes("image")) return "no_image_input";
+    return credentialProviders.has(selection.providerId) ? null : "missing_key";
   }
 
   private isValidSelection(selection: ModelSelection): boolean {

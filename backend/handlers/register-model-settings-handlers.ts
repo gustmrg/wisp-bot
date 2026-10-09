@@ -1,7 +1,11 @@
 import { WISP_IPC_CHANNELS, type ModelSelection } from "../../shared/contracts.js";
 import type { ModelService } from "../model-service.js";
 import { registerGuardedHandlers, type HandlerRouter, type SenderAuthorizer } from "./guarded-handlers.js";
-import { parseRemoveProviderCredentialRequest, parseSaveAiSettingsRequest } from "../validators.js";
+import {
+  parseRemoveProviderCredentialRequest,
+  parseSaveAiSettingsRequest,
+  parseSaveAuxiliaryModelRequest,
+} from "../validators.js";
 
 export function registerModelSettingsHandlers(
   router: HandlerRouter,
@@ -17,6 +21,13 @@ export function registerModelSettingsHandlers(
         const view = await modelService.save(parseSaveAiSettingsRequest(payload));
         await onSelectionChange?.(view.selection);
         return view;
+      },
+    ],
+    [
+      WISP_IPC_CHANNELS.saveAuxiliaryModel,
+      (payload) => {
+        const { task, selection } = parseSaveAuxiliaryModelRequest(payload);
+        return modelService.saveAuxiliary(task, selection);
       },
     ],
     [
