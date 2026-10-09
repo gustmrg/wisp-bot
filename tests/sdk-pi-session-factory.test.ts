@@ -351,7 +351,8 @@ describe("SdkPiSessionFactory", () => {
     const read = options.customTools.find(({ name }) => name === "read")!;
     const session = sdk.createSession.mock.results[0]?.value as { appendCustomEntry: ReturnType<typeof vi.fn> };
 
-    const result = (await read.execute("image-1", { path: "receipt.png" }, undefined, undefined, {
+    const onUpdate = vi.fn();
+    const result = (await read.execute("image-1", { path: "receipt.png" }, undefined, onUpdate, {
       model: { input: ["text"] },
     })) as { content: Array<{ type: string; text?: string }>; details: { transcription?: unknown } };
 
@@ -360,6 +361,7 @@ describe("SdkPiSessionFactory", () => {
     expect(result.content[1]?.text).toContain("Image transcribed by the image model Vision (OpenAI)");
     expect(result.content[1]?.text).toContain("Receipt total: 12.50");
     expect(result.details.transcription).toEqual({ model: "Vision (OpenAI)", status: "done", cached: false });
+    expect(onUpdate).toHaveBeenCalledWith({ content: [], details: { activityLabel: "Reading with Vision (OpenAI)…" } });
     expect(session.appendCustomEntry).toHaveBeenCalledWith("wisp:auxiliary-usage", {
       version: 1,
       task: "imageUnderstanding",

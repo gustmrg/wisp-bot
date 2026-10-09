@@ -331,6 +331,8 @@ export type ConversationAgentEvent =
       toolName: string;
       phase: "started" | "updated" | "completed";
       isError?: boolean;
+      /** The tool's own progress text, such as which model reads a page; replaces the generic activity. */
+      label?: string;
     }
   | {
       type: "conversation_notice";
@@ -367,6 +369,8 @@ export interface SessionReportModelUsage {
   turns: number;
   usage: SessionReportUsage;
   costUsd: number | null;
+  /** Set on a row for an auxiliary model, which runs calls for the Wisp rather than turns. */
+  auxiliary?: { task: AuxiliaryTask; calls: number };
 }
 
 export interface SessionReportToolCall {
@@ -375,6 +379,8 @@ export interface SessionReportToolCall {
   argumentSummary: string;
   status: "completed" | "error" | "pending";
   timestamp: string;
+  /** The image model that read images or scanned pages for this call; `fromCache` when nothing was sent again. */
+  imageModel?: { name: string; fromCache: boolean };
 }
 
 export interface SessionReportEvent {
@@ -385,6 +391,8 @@ export interface SessionReportEvent {
 
 export interface WispSessionReport {
   compactionUsage?: SessionReportUsage;
+  /** Tokens used by auxiliary models, such as the image model; included in the totals. */
+  auxiliaryUsage?: SessionReportUsage;
   sessionId: string;
   generatedAt: string;
   piVersion?: string;
