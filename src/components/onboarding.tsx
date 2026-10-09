@@ -151,7 +151,7 @@ function Onboarding({
           </p>
         </header>
         <div className="flex min-h-0 flex-1 flex-col">
-          <ModelSettingsSection active showHeading={false} onViewChange={setModelView} />
+          <ModelSettingsSection active showHeading={false} showAuxiliaryModels={false} onViewChange={setModelView} />
         </div>
         <footer className="flex items-center justify-between gap-3 border-t border-border px-[30px] py-4 max-[620px]:px-4">
           <p className="m-0 text-xs text-dim" aria-live="polite">

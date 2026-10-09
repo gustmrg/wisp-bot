@@ -11,6 +11,7 @@ import type { ModelSelection } from "../../shared/contracts";
 import type { ToolApprovalRequest } from "../../shared/tool-policy";
 import type { CurrentUser } from "@/config/app-metadata";
 import { useClock } from "@/hooks/use-clock";
+import { useTimeZone } from "@/hooks/use-time-zone";
 import { chatName } from "@/lib/chat-schema";
 import { chatActivityDate, chatActivityLabel } from "@/lib/date-dividers";
 import { sidebarLayoutStyle } from "@/lib/layout";
@@ -74,6 +75,7 @@ function Sidebar({
   const [filter, setFilter] = useState<"all" | "unread" | "active">("all");
   const titleRef = useRef<HTMLHeadingElement>(null);
   const now = useClock(30_000);
+  const timeZone = useTimeZone();
   const allChatIds = Object.keys(chats);
   const unreadCount = allChatIds.filter((id) => chats[id]?.unread).length;
   const chatIds = allChatIds.filter(
@@ -217,7 +219,7 @@ function Sidebar({
                           className="flex-none text-faint text-2xs leading-[17px]"
                           dateTime={activityDate.toISOString()}
                         >
-                          {chatActivityLabel(activityDate, now)}
+                          {chatActivityLabel(activityDate, now, timeZone)}
                         </time>
                       ) : null}
                     </span>

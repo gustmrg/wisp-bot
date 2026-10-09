@@ -31,6 +31,26 @@ describe("dateDividerLabel", () => {
   });
 });
 
+describe("time zones", () => {
+  const at = new Date("2026-09-11T02:00:00Z");
+  const later = new Date("2026-09-11T15:00:00Z");
+
+  it("reads calendar days in the given time zone", () => {
+    expect(dateDividerLabel(at, later, "UTC")).toBe("Today");
+    expect(dateDividerLabel(at, later, "America/Sao_Paulo")).toBe("Yesterday");
+    expect(chatActivityLabel(at, later, "America/Sao_Paulo")).toBe("Yesterday");
+  });
+
+  it("splits a transcript at midnight in the given time zone", () => {
+    const transcript: Message[] = [
+      { type: "incoming", text: "Late", createdAt: "2026-09-11T02:00:00Z" },
+      { type: "outgoing", text: "Early", createdAt: "2026-09-11T04:00:00Z" },
+    ];
+    expect(dividerTexts(withDateDividers(transcript, later, "UTC"))).toEqual(["Today"]);
+    expect(dividerTexts(withDateDividers(transcript, later, "America/Sao_Paulo"))).toEqual(["Yesterday", "Today"]);
+  });
+});
+
 describe("withDateDividers", () => {
   it("opens the transcript with a divider and splits on day changes", () => {
     const result = withDateDividers(

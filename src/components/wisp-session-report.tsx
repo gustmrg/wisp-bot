@@ -5,6 +5,7 @@ import type { WispSessionReport } from "../../shared/contracts";
 import { SettingsCard } from "@/components/settings/settings-primitives";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Button } from "@/components/ui/button";
+import { useTimeZone } from "@/hooks/use-time-zone";
 
 interface WispSessionReportSectionProps {
   chatId: string;
@@ -101,6 +102,12 @@ function SessionReportContent({ state, onRefresh }: { state: ReportState; onRefr
           use the runtime's recorded estimate.
         </p>
       ) : null}
+      {report.auxiliaryUsage?.totalTokens ? (
+        <p className="text-sm text-dim">
+          Includes {report.auxiliaryUsage.totalTokens.toLocaleString()} tokens used by the image model to read images
+          for this Wisp. Their costs use the runtime's recorded estimate.
+        </p>
+      ) : null}
       <Accordion>
         <AccordionItem>
           <AccordionTrigger>Session details</AccordionTrigger>
@@ -145,9 +152,15 @@ function ModelList({ report }: { report: WispSessionReport }) {
       <h4 className="mb-1 text-xs text-dim">Models</h4>
       <ul className="flex flex-col gap-1 text-xs">
         {report.models.map((model) => (
-          <li key={`${model.providerId}:${model.modelId}`} className="flex flex-wrap gap-1.5">
+          <li
+            key={`${model.auxiliary ? `${model.auxiliary.task}:` : ""}${model.providerId}:${model.modelId}`}
+            className="flex flex-wrap gap-1.5"
+          >
             <span className="min-w-0 break-all">
-              {model.modelId} · {model.turns} {model.turns === 1 ? "turn" : "turns"}
+              {model.modelId} ·{" "}
+              {model.auxiliary
+                ? `image model · ${model.auxiliary.calls} ${model.auxiliary.calls === 1 ? "call" : "calls"}`
+                : `${model.turns} ${model.turns === 1 ? "turn" : "turns"}`}
             </span>
             <span className="text-dim">
               {model.costUsd === null ? "cost unknown" : `${formatCost(model.costUsd)} est.`}
@@ -160,6 +173,7 @@ function ModelList({ report }: { report: WispSessionReport }) {
 }
 
 function ToolCallList({ report }: { report: WispSessionReport }) {
+  const timeZone = useTimeZone();
   return (
     <div>
       <h4 className="mb-1 text-xs text-dim">Tool calls</h4>
@@ -182,10 +196,17 @@ function ToolCallList({ report }: { report: WispSessionReport }) {
                   {toolCall.status === "error" ? "✗" : toolCall.status === "pending" ? "…" : "✓"}
                 </span>
                 <span className="min-w-0 break-all">{toolCall.toolName}</span>
-                <span className="ml-auto shrink-0 text-dim">{formatTimestamp(toolCall.timestamp)}</span>
+                <span className="ml-auto shrink-0 text-dim">{formatTimestamp(toolCall.timestamp, timeZone)}</span>
               </span>
               {toolCall.argumentSummary ? (
                 <span className="ml-4 break-all text-dim">{toolCall.argumentSummary}</span>
+              ) : null}
+              {toolCall.imageModel ? (
+                <span className="ml-4 break-all text-dim">
+                  {toolCall.imageModel.fromCache
+                    ? `From ${toolCall.imageModel.name}'s saved transcription`
+                    : `Read with ${toolCall.imageModel.name}`}
+                </span>
               ) : null}
             </li>
           ))}
@@ -196,6 +217,7 @@ function ToolCallList({ report }: { report: WispSessionReport }) {
 }
 
 function EventList({ report }: { report: WispSessionReport }) {
+  const timeZone = useTimeZone();
   if (report.events.length === 0) return null;
   return (
     <div>
@@ -207,7 +229,7 @@ function EventList({ report }: { report: WispSessionReport }) {
               <span className={event.kind === "error" ? "text-destructive" : "text-foreground"}>
                 {event.kind === "error" ? "Error" : event.kind === "compaction" ? "Compaction" : "Retry"}
               </span>
-              <span className="ml-auto shrink-0 text-dim">{formatTimestamp(event.timestamp)}</span>
+              <span className="ml-auto shrink-0 text-dim">{formatTimestamp(event.timestamp, timeZone)}</span>
             </span>
             <span className="break-all text-dim">{event.detail}</span>
           </li>
@@ -248,8 +270,8 @@ function formatCost(value: number): string {
   }).format(value);
 }
 
-function formatTimestamp(value: string): string {
+function formatTimestamp(value: string, timeZone: string): string {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "";
-  return date.toLocaleString("en-US", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+  return date.toLocaleString("en-US", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", timeZone });
 }

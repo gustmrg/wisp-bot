@@ -167,7 +167,7 @@ function ContextForm({ conversationId }: { conversationId: string }) {
       ) : null}
       {policy.mode === "daily" || policy.mode === "both" ? (
         <label className="block">
-          Daily hour (local time, 0–23)
+          Daily hour (your timezone, 0–23)
           <Input
             type="number"
             min={0}

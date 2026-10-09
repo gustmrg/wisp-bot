@@ -12,6 +12,7 @@ import {
   parseMarkConversationReadRequest,
   parseMessagePageRequest,
   parseSearchMessagesRequest,
+  parseSetUserTimeZoneRequest,
   parseUpdateConversationRequest,
   parseUpdateWispRequest,
 } from "../validators.js";
@@ -24,6 +25,10 @@ export function registerConversationHandlers(
   return registerGuardedHandlers(router, authorizeSender, [
     [WISP_IPC_CHANNELS.getUserProfile, () => service.getUserProfile()],
     [WISP_IPC_CHANNELS.saveUserProfile, (payload) => service.saveUserProfile(payload)],
+    [
+      WISP_IPC_CHANNELS.setUserTimeZone,
+      (payload) => service.saveUserTimeZone(parseSetUserTimeZoneRequest(payload).timeZone),
+    ],
     [WISP_IPC_CHANNELS.getConversationState, () => service.getState()],
     [
       WISP_IPC_CHANNELS.initializeConversations,

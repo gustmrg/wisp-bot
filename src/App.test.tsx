@@ -29,6 +29,7 @@ const atlas = wispChat("atlas");
 
 const UNCONFIGURED_AI: AiSettingsView = {
   selection: null,
+  auxiliary: { imageUnderstanding: { selection: null, unavailable: null } },
   secureStorageAvailable: true,
   providers: [
     {
@@ -143,9 +144,16 @@ function createApi(initialState: ConversationStateView): WispApi {
     subscribeToAgentEvents: vi.fn(() => () => undefined),
     getAiSettings: vi.fn(async () => ({ ok: true as const, value: CONFIGURED_AI })),
     saveAiSettings: vi.fn(async () => ({ ok: true as const, value: CONFIGURED_AI })),
+    saveAuxiliaryModel: vi.fn(async () => ({ ok: true as const, value: CONFIGURED_AI })),
     removeProviderCredential: vi.fn(async () => ({
       ok: true as const,
-      value: { selection: null, secureStorageAvailable: true, providers: [], catalogError: null },
+      value: {
+        selection: null,
+        auxiliary: { imageUnderstanding: { selection: null, unavailable: null } },
+        secureStorageAvailable: true,
+        providers: [],
+        catalogError: null,
+      },
     })),
     getConversationState: vi.fn(async () => current()),
     initializeConversations: vi.fn(async ({ chats }) => {
@@ -209,6 +217,7 @@ function createApi(initialState: ConversationStateView): WispApi {
       value: { preferredName: "Ada Lovelace", aboutYou: "", responsePreferences: "" },
     }),
     saveUserProfile: vi.fn(async (profile) => ({ ok: true as const, value: profile })),
+    setUserTimeZone: vi.fn(async () => ({ ok: true as const, value: {} })),
     saveToolPolicy: vi.fn(async (settings) => ({ ok: true as const, value: settings })),
     resolveToolApproval: vi.fn(async () => ({ ok: true as const, value: {} })),
     getLaunchAtLoginState: async () => ({ ok: true, value: { supported: false, enabled: false } }),
@@ -338,6 +347,15 @@ describe("App", () => {
 
     expect(await screen.findByText("Could not save conversations.")).toBeVisible();
     expect(window.localStorage.getItem(LEGACY_STORAGE_KEY)).toBe(legacy);
+  });
+
+  it("tells the backend which time zone the person is in", async () => {
+    const api = createApi(conversationState(true, { atlas }));
+    exposeApi(api);
+    render(<App />);
+    await waitFor(() =>
+      expect(api.setUserTimeZone).toHaveBeenCalledWith({ timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone }),
+    );
   });
 
   it("sends a message through the backend's message queue", async () => {

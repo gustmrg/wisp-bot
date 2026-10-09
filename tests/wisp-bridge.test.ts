@@ -79,6 +79,9 @@ function completeBridge(): WispApi {
     saveAiSettings: async () => {
       throw new Error("not called");
     },
+    saveAuxiliaryModel: async () => {
+      throw new Error("not called");
+    },
     removeProviderCredential: async () => {
       throw new Error("not called");
     },
@@ -143,6 +146,7 @@ function completeBridge(): WispApi {
       value: { preferredName: "", aboutYou: "", responsePreferences: "" },
     }),
     saveUserProfile: async (profile) => ({ ok: true as const, value: profile }),
+    setUserTimeZone: async () => ({ ok: true as const, value: {} }),
     saveToolPolicy: async () => {
       throw new Error("not called");
     },

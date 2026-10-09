@@ -17,6 +17,7 @@ import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectVa
 import type { AppPreferences, AutoReviewRule, RuleBehavior } from "@/lib/app-preferences";
 import { settingsSelect } from "@/lib/ui-classes";
 import { withWorkspaceFileBehavior, workspaceFileBehavior, type WorkspaceFileCategory } from "../../shared/tool-policy";
+import { systemTimeZone } from "../../shared/time-zone";
 
 const RULE_BEHAVIORS: ReadonlyArray<{ value: RuleBehavior; label: string }> = [
   { value: "allow", label: "Allow" },
@@ -114,7 +115,7 @@ interface GeneralSettingsSectionsProps {
 }
 
 function GeneralSettingsSections({ preferences, onPreferencesChange }: GeneralSettingsSectionsProps) {
-  const [detectedTimezone] = useState(() => Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC");
+  const [detectedTimezone] = useState(systemTimeZone);
   const [ruleNotice, setRuleNotice] = useState("");
 
   const timezoneOptions = [
@@ -162,14 +163,15 @@ function GeneralSettingsSections({ preferences, onPreferencesChange }: GeneralSe
         <SettingsCard variant="stacked">
           <SettingsRow>
             <SettingsRowCopy>
-              <SoonTitle htmlFor="app-timezone">Timezone</SoonTitle>
-              <small>Wisps don't use this timezone yet.</small>
+              <label htmlFor="app-timezone">
+                <strong>Timezone</strong>
+              </label>
+              <small>Dates and times in Wisp, and the local time Wisps work with.</small>
             </SettingsRowCopy>
             <SearchableCombobox
               id="app-timezone"
               value={preferences.timezone}
               options={timezoneOptions}
-              disabled
               searchLabel="Search timezones"
               searchPlaceholder="Search city or timezone…"
               emptyText="No timezones found."

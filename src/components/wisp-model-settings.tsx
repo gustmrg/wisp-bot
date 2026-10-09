@@ -2,6 +2,8 @@ import { useEffect, useState } from "react";
 import { InfoIcon } from "lucide-react";
 
 import type { AiSettingsView, ConversationModelView } from "../../shared/contracts";
+import { NoImageInputNote } from "@/components/no-image-input-note";
+import { imageModelName } from "@/hooks/use-model-image-input";
 import { Button } from "@/components/ui/button";
 
 export function WispModelSettings({ conversationId }: { conversationId: string }) {
@@ -54,6 +56,7 @@ export function WispModelSettings({ conversationId }: { conversationId: string }
 
   const applied = view?.applied ?? null;
   const appliedProvider = applied ? catalog?.providers.find(({ id }) => id === applied.providerId) : undefined;
+  const appliedModel = applied ? appliedProvider?.models.find(({ id }) => id === applied.modelId) : undefined;
 
   return (
     <div className="flex min-h-0 flex-1 flex-col text-sm">
@@ -79,6 +82,9 @@ export function WispModelSettings({ conversationId }: { conversationId: string }
                     {appliedProvider?.name ?? applied.providerId}
                   </p>
                   <p className="m-0 break-all text-dim text-sm leading-snug">{applied.modelId}</p>
+                  {appliedModel && !appliedModel.input.includes("image") ? (
+                    <NoImageInputNote className="mt-1.5" imageModel={imageModelName(catalog)} />
+                  ) : null}
                 </>
               ) : (
                 <p className="m-0 mt-1.5 text-dim">Not configured</p>

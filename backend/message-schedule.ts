@@ -1,16 +1,6 @@
 import type { ScheduledOrigin } from "../shared/conversations.js";
 import type { MessageSchedule, ScheduledMessage } from "../shared/scheduled-messages.js";
-
-/** Whether `value` names a time zone this runtime knows, such as "America/Sao_Paulo". */
-export function isTimeZone(value: unknown): value is string {
-  if (typeof value !== "string" || !value || value.length > 64) return false;
-  try {
-    new Intl.DateTimeFormat("en-US", { timeZone: value });
-    return true;
-  } catch {
-    return false;
-  }
-}
+import { isTimeZone } from "../shared/time-zone.js";
 
 /** A valid schedule with its times in canonical UTC form, or undefined. */
 export function normalizeMessageSchedule(value: unknown): MessageSchedule | undefined {
@@ -93,15 +83,27 @@ function isoTime(value: unknown): string | undefined {
  */
 export function scheduledMessageNote(origin: ScheduledOrigin, sentAt: Date): string {
   const timeZone = isTimeZone(origin.timeZone) ? origin.timeZone : "UTC";
-  const format = (time: Date) =>
-    time.toLocaleString("en-US", {
-      timeZone,
-      weekday: "short",
-      year: "numeric",
-      month: "short",
-      day: "numeric",
-      hour: "numeric",
-      minute: "2-digit",
-    });
+  const format = (time: Date) => formatNoteTime(time, timeZone);
   return `[Sent automatically: the user wrote this message on ${format(new Date(origin.scheduledAt))} and scheduled it; it was sent on ${format(sentAt)} (${timeZone}). They may not be present, so do what you can without waiting for their reply.]`;
+}
+
+/**
+ * What the model reads before a message the person sends, so it knows their
+ * local date and time. Never shown in the transcript.
+ */
+export function currentTimeNote(sentAt: Date, timeZone: string): string {
+  const zone = isTimeZone(timeZone) ? timeZone : "UTC";
+  return `[Sent on ${formatNoteTime(sentAt, zone)} (${zone})]`;
+}
+
+function formatNoteTime(time: Date, timeZone: string): string {
+  return time.toLocaleString("en-US", {
+    timeZone,
+    weekday: "short",
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
 }

@@ -4,6 +4,7 @@ import { RefreshCwIcon } from "lucide-react";
 import { SettingsCard, SettingsGroup, SettingsRow, SettingsRowCopy } from "@/components/settings/settings-primitives";
 import { Button } from "@/components/ui/button";
 import { SegmentedControl } from "@/components/ui/segmented-control";
+import { useTimeZone } from "@/hooks/use-time-zone";
 import { cn } from "@/lib/utils";
 import type { UsagePeriod, UsageReport } from "../../shared/contracts";
 
@@ -15,6 +16,7 @@ const PERIOD_OPTIONS: ReadonlyArray<{ value: UsagePeriod; label: string }> = [
 
 export function UsageSettingsSection() {
   const [request, setRequest] = useState<{ period: UsagePeriod }>({ period: "30d" });
+  const timeZone = useTimeZone();
   // The previous report stays visible (dimmed) while the next one loads, so
   // switching periods or refreshing does not collapse the page.
   const [state, setState] = useState<{ report?: UsageReport; error?: string; loading: boolean }>({ loading: true });
@@ -158,12 +160,14 @@ export function UsageSettingsSection() {
             </p>
             <p className="m-0">
               Prices updated:{" "}
-              {report.pricingUpdatedAt ? new Date(report.pricingUpdatedAt).toLocaleString() : "Unavailable"}. History
-              includes saved sessions for existing Wisps, across app restarts.
+              {report.pricingUpdatedAt
+                ? new Date(report.pricingUpdatedAt).toLocaleString([], { timeZone })
+                : "Unavailable"}
+              . History includes saved sessions for existing Wisps, across app restarts.
             </p>
             <p className="m-0">
-              {report.from ? `${new Date(report.from).toLocaleString()} – ` : "All history through "}
-              {new Date(report.generatedAt).toLocaleString()}
+              {report.from ? `${new Date(report.from).toLocaleString([], { timeZone })} – ` : "All history through "}
+              {new Date(report.generatedAt).toLocaleString([], { timeZone })}
             </p>
           </div>
         </div>

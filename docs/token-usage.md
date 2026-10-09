@@ -34,3 +34,14 @@ routing, conditional prices and non-token fees can differ from the estimate.
 
 Summarization tokens from [context renewal](context-and-memory.md) appear as
 their own subtotal.
+
+Calls to the [image model](models.md#auxiliary-models) count in the Wisp's
+totals. The session report lists each image model on its own row, apart from
+the same model's conversation turns, with its number of calls instead of
+turns. Their cost is the one Pi recorded with each call, not the cached
+OpenRouter price, and stays unknown when Pi recorded none. Failed calls that
+the provider still reported usage for are included.
+In the session report's tool calls, a read that used the image model names
+it, or says it came from that model's saved transcription when nothing was
+sent again.
+

@@ -95,7 +95,7 @@ it("loads model and usage data lazily and keeps model details across tabs", asyn
           id: "test",
           name: "Test",
           credentialConfigured: true,
-          models: [{ id: "model", name: "Model", maxOutputTokens: 1000 }],
+          models: [{ id: "model", name: "Model", input: ["text", "image"], maxOutputTokens: 1000 }],
         },
       ],
     },

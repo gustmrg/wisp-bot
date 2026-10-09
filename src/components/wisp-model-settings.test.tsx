@@ -28,7 +28,7 @@ const baseView: ConversationModelView = {
   status: "idle",
 };
 
-function api(view: ConversationModelView, configured = true) {
+function api(view: ConversationModelView, configured = true, auxiliary?: AiSettingsView["auxiliary"]) {
   Object.defineProperty(window, "wisp", {
     configurable: true,
     value: {
@@ -38,6 +38,7 @@ function api(view: ConversationModelView, configured = true) {
           selection: globalModel,
           secureStorageAvailable: true,
           providers: providers.map((provider) => ({ ...provider, credentialConfigured: configured })),
+          ...(auxiliary ? { auxiliary } : {}),
         },
       })),
       getConversationModel: vi.fn(async () => ({ ok: true, value: view })),
@@ -68,6 +69,30 @@ describe("WispModelSettings", () => {
     expect(await screen.findByText("Provider b")).toBeVisible();
     expect(screen.getByText("model-b")).toBeVisible();
     expect(screen.queryByText(/follows the global model/)).not.toBeInTheDocument();
+  });
+
+  it("says when the applied model cannot see images", async () => {
+    api(baseView);
+    render(<WispModelSettings conversationId="wisp-one" />);
+
+    expect(await screen.findByText("This model can't see images or scanned PDF pages.")).toBeVisible();
+  });
+
+  it("names the image model that reads images for it, unless that model is unavailable", async () => {
+    const selection = { providerId: "provider-b", modelId: "model-b" };
+    api(baseView, true, { imageUnderstanding: { selection, unavailable: null } });
+    const { unmount } = render(<WispModelSettings conversationId="wisp-one" />);
+
+    expect(
+      await screen.findByText(
+        "This model can't see images. Model b (Provider b) reads images and scanned PDF pages for it.",
+      ),
+    ).toBeVisible();
+    unmount();
+
+    api(baseView, true, { imageUnderstanding: { selection, unavailable: "missing_key" } });
+    render(<WispModelSettings conversationId="wisp-one" />);
+    expect(await screen.findByText("This model can't see images or scanned PDF pages.")).toBeVisible();
   });
 
   it("warns when the applied provider has no shared API key", async () => {

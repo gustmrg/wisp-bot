@@ -9,6 +9,7 @@ import {
   type VoiceLanguage,
   type VoiceProviderId,
 } from "../../shared/voice";
+import { systemTimeZone } from "../../shared/time-zone";
 
 export type RuleBehavior = "allow" | "ask" | "block";
 
@@ -82,6 +83,11 @@ function isAutoReviewRule(value: unknown): value is AutoReviewRule {
 
 function preferenceRecord(value: unknown): Record<string, unknown> | undefined {
   return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : undefined;
+}
+
+/** The time zone the person chose, or this device's when they left it on auto-detect. */
+export function effectiveTimeZone(preferences: Pick<AppPreferences, "timezone">): string {
+  return preferences.timezone === "auto" ? systemTimeZone() : preferences.timezone;
 }
 
 export function normalizePreferences(value: unknown): AppPreferences {

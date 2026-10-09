@@ -8,6 +8,7 @@ import {
   type ContextCommand,
   type ContextView,
 } from "../shared/context-policy.js";
+import { systemTimeZone } from "../shared/time-zone.js";
 import { WispBackendError } from "./backend-error.js";
 
 const CONTINUITY_INSTRUCTIONS =
@@ -20,6 +21,8 @@ export class ContextSession {
     private readonly settingsPath: string,
     private readonly onRenewed: (kind: "compacted" | "new_topic", at: string) => void,
     private readonly now = () => new Date(),
+    /** The person's time zone, where the daily renewal hour is read. */
+    private readonly timeZone = systemTimeZone,
   ) {}
 
   async load(): Promise<void> {
@@ -60,7 +63,7 @@ export class ContextSession {
 
   async beforePrompt(): Promise<void> {
     const view = this.view();
-    if (shouldRenewContext(view.policy, view.lastActivityAt, view.tokens, this.now()))
+    if (shouldRenewContext(view.policy, view.lastActivityAt, view.tokens, this.now(), this.timeZone()))
       await this.command({ action: "compact" });
   }
 
