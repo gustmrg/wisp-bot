@@ -255,10 +255,12 @@
   .chat-composer {
     padding: 8px 14px max(12px, env(safe-area-inset-bottom, 0px));
   }
+  .composer-box {
+    border-radius: 20px;
+  }
   .composer-input {
     min-height: 58px;
     padding: 6px;
-    border-radius: 20px;
   }
   .composer-input textarea {
     min-height: 44px;

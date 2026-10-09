@@ -137,6 +137,48 @@ describe("ChatComposer", () => {
     expect(await screen.findByText("This Wisp's workspace is full.")).toBeInTheDocument();
   });
 
+  it.each([
+    [["text"], "photo.png", /won't be able to read the attached image/],
+    [["text"], "scan.pdf", /can read the text of PDFs, but not scanned pages/],
+    [["text", "image"], "photo.png", null],
+    [["text"], "notes.txt", null],
+  ] as const)("with %j input, says what the model misses in %s", async (input, name, hint) => {
+    const user = userEvent.setup();
+    const selection = { providerId: "provider", modelId: "model" };
+    Object.defineProperty(window, "wisp", {
+      configurable: true,
+      value: {
+        attachWorkspaceFiles: vi.fn(async () => ({
+          ok: true as const,
+          value: { files: [{ name, path: `inbox/${name}`, size: 1 }], workspace: { usedBytes: 1, quotaBytes: 1024 } },
+        })),
+        getConversationModel: vi.fn(async () => ({
+          ok: true,
+          value: { override: null, effective: selection, applied: selection, pending: null, status: "idle" },
+        })),
+        getAiSettings: vi.fn(async () => ({
+          ok: true,
+          value: {
+            providers: [
+              {
+                id: "provider",
+                models: [{ id: "model", name: "Model", input, reasoning: false, contextWindow: 1, maxOutputTokens: 1 }],
+              },
+            ],
+          },
+        })),
+        subscribeToAgentEvents: vi.fn(() => () => undefined),
+      },
+    });
+    render(<ChatComposer {...defaultProps} chat={wisp("one", "One")} />);
+
+    await user.click(screen.getByRole("button", { name: "Attach files" }));
+    await screen.findByRole("button", { name: `Remove ${name} from this message` });
+
+    if (hint) expect(await screen.findByText(hint)).toBeVisible();
+    else expect(screen.queryByText(/can't see images/)).not.toBeInTheDocument();
+  });
+
   it("submits Enter, preserves Shift+Enter, and clears a submitted draft", async () => {
     const user = userEvent.setup();
     const onSend = vi.fn();

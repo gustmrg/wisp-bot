@@ -70,6 +70,13 @@ describe("WispModelSettings", () => {
     expect(screen.queryByText(/follows the global model/)).not.toBeInTheDocument();
   });
 
+  it("says when the applied model cannot see images", async () => {
+    api(baseView);
+    render(<WispModelSettings conversationId="wisp-one" />);
+
+    expect(await screen.findByText("This model can't see images or scanned PDF pages.")).toBeVisible();
+  });
+
   it("warns when the applied provider has no shared API key", async () => {
     api(baseView, false);
     render(<WispModelSettings conversationId="wisp-one" />);

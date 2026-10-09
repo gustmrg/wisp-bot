@@ -2,6 +2,7 @@ import {
   ArrowUpIcon,
   ChevronDownIcon,
   CircleAlertIcon,
+  EyeOffIcon,
   FileIcon,
   LoaderCircleIcon,
   MicIcon,
@@ -15,6 +16,7 @@ import { useEffect, useRef, useState } from "react";
 import { ScheduleSendPicker } from "@/components/schedule-send-picker";
 import { Popover, PopoverContent, PopoverTitle, PopoverTrigger } from "@/components/ui/popover";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { useModelImageInput } from "@/hooks/use-model-image-input";
 import { useVoiceInput } from "@/hooks/use-voice-input";
 import { DEFAULT_PREFERENCES } from "@/lib/app-preferences";
 import { formatShortcut, matchesShortcut, SCHEDULE_SEND_SHORTCUT } from "@/lib/shortcuts";
@@ -23,7 +25,7 @@ import type { ManagedConversationStatus } from "../../shared/conversations";
 import type { ChatView } from "@/chat-data";
 import { chatName } from "@/lib/chat-schema";
 import type { VoiceLanguage, VoiceProviderId } from "../../shared/voice";
-import { messageWithAttachments, type WorkspaceAttachment } from "../../shared/workspace";
+import { attachmentsNeedingVision, messageWithAttachments, type WorkspaceAttachment } from "../../shared/workspace";
 
 export interface VoiceInputSettings {
   deviceId: string;
@@ -87,6 +89,8 @@ export function ChatComposer({
   const working = status === "working";
   const needsConfiguration = status === "configuration_required";
   const canSend = (status === "idle" || working) && !acknowledging && chat.kind === "wisp";
+  const imageInput = useModelImageInput(chat.kind === "wisp" ? chat.id : null);
+  const visionHint = imageInput === false ? missingVisionHint(attachments) : null;
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   // Where the transcript goes: the text selected when recording started.
   const insertAt = useRef<readonly [number, number] | null>(null);
@@ -279,160 +283,167 @@ export function ChatComposer({
           <ComposerError message={scheduleError || attachError || error || ""} />
         ) : attaching ? (
           "Copying files to the workspace…"
+        ) : visionHint ? (
+          <span className="mb-2 flex items-start gap-1.5 text-warning">
+            <EyeOffIcon aria-hidden="true" className="mt-px size-3.5 flex-none" />
+            <span>{visionHint}</span>
+          </span>
         ) : acknowledging ? (
           "Queueing your message…"
         ) : null}
       </div>
-      {attachments.length ? (
-        <ul className="mx-auto mb-1.5 flex w-full max-w-[1400px] flex-wrap gap-1.5" aria-label="Attached files">
-          {attachments.map((file) => (
-            <li
-              key={file.path}
-              className="flex max-w-[240px] items-center gap-1 rounded-md border border-border bg-muted py-0.5 pl-1.5 pr-0.5 text-xs [&_svg]:size-3"
-            >
-              <FileIcon aria-hidden="true" className="flex-none text-dim" />
-              <span className="truncate" title={file.path}>
-                {file.name}
-              </span>
-              <ComposerTooltip message={`Remove ${file.name} from this message`}>
-                <button
-                  type="button"
-                  className="flex size-4 flex-none items-center justify-center rounded text-dim hover:bg-accent hover:text-foreground"
-                  aria-label={`Remove ${file.name} from this message`}
-                  onClick={() => setAttachments((current) => current.filter((item) => item.path !== file.path))}
-                >
-                  <XIcon aria-hidden="true" />
-                </button>
-              </ComposerTooltip>
-            </li>
-          ))}
-        </ul>
-      ) : null}
       <div
         className={cn(
-          "composer-input mx-auto flex min-h-[42px] w-full max-w-[1400px] items-end gap-2 rounded-[13px] border border-border bg-muted px-2 py-[7px] transition-[border-color] duration-[120ms] focus-within:border-ring",
+          "composer-box mx-auto w-full max-w-[1400px] rounded-[13px] border border-border bg-muted transition-[border-color] duration-[120ms] focus-within:border-ring",
           recording && "border-destructive/60 focus-within:border-destructive/60",
         )}
       >
-        {recording ? (
-          <ComposerTooltip message="Cancel recording (Esc)">
-            <button
-              type="button"
-              className="flex size-[27px] flex-none items-center justify-center rounded-full border-0 bg-transparent text-dim hover:bg-accent hover:text-foreground [&_svg]:size-3.5"
-              aria-label="Cancel recording"
-              onClick={cancelVoiceInput}
-            >
-              <XIcon aria-hidden="true" />
-            </button>
-          </ComposerTooltip>
-        ) : chat.kind === "wisp" ? (
-          <ComposerTooltip message={attaching ? "Copying files to the workspace…" : "Attach files"}>
-            <button
-              type="button"
-              className="flex size-[27px] flex-none items-center justify-center rounded-full border-0 bg-transparent text-dim enabled:hover:bg-accent enabled:hover:text-foreground disabled:opacity-[0.35] [&_svg]:size-3.5"
-              aria-label="Attach files"
-              disabled={attaching}
-              onClick={() => void attachFiles()}
-            >
-              <PaperclipIcon aria-hidden="true" />
-            </button>
-          </ComposerTooltip>
+        {attachments.length ? (
+          <ul className="m-0 flex list-none flex-wrap gap-1.5 px-2 pt-2 pb-0" aria-label="Attached files">
+            {attachments.map((file) => (
+              <li
+                key={file.path}
+                className="flex max-w-[240px] items-center gap-1 rounded-md border border-border bg-background py-0.5 pl-1.5 pr-0.5 text-xs [&_svg]:size-3"
+              >
+                <FileIcon aria-hidden="true" className="flex-none text-dim" />
+                <span className="truncate" title={file.path}>
+                  {file.name}
+                </span>
+                <ComposerTooltip message={`Remove ${file.name} from this message`}>
+                  <button
+                    type="button"
+                    className="flex size-4 flex-none items-center justify-center rounded text-dim hover:bg-accent hover:text-foreground"
+                    aria-label={`Remove ${file.name} from this message`}
+                    onClick={() => setAttachments((current) => current.filter((item) => item.path !== file.path))}
+                  >
+                    <XIcon aria-hidden="true" />
+                  </button>
+                </ComposerTooltip>
+              </li>
+            ))}
+          </ul>
         ) : null}
-        {recording ? <RecordingMeter levels={voiceInput.levels} elapsed={voiceInput.elapsed} /> : null}
-        <textarea
-          ref={textareaRef}
-          hidden={recording}
-          autoFocus={autoFocus}
-          rows={1}
-          className="max-h-[120px] min-h-[26px] flex-1 resize-none overflow-y-auto border-0 bg-transparent py-1 pl-0 pr-0 text-foreground outline-none leading-[18px] placeholder:text-dim field-sizing-content"
-          aria-label={`Message ${chatName(chat)}`}
-          placeholder={transcribing ? "Transcribing…" : `Message ${chatName(chat)}`}
-          value={draft}
-          disabled={chat.kind === "circle"}
-          readOnly={transcribing}
-          onChange={(event) => setDraft(event.currentTarget.value)}
-          onKeyDown={handleKeyDown}
-        />
-        <ComposerTooltip message={voiceHint}>
-          <button
-            type="button"
-            className={cn(
-              "flex size-[27px] flex-none items-center justify-center rounded-full border-0 [&_svg]:size-3.5 disabled:opacity-[0.35]",
-              recording
-                ? "bg-destructive text-white hover:opacity-[0.85] [&_svg]:size-3"
-                : "bg-secondary text-dim enabled:hover:bg-accent enabled:hover:text-foreground",
-            )}
-            aria-label={
-              recording ? "Stop recording and transcribe" : transcribing ? "Transcribing" : "Start voice input"
-            }
-            aria-keyshortcuts={voice.shortcut.replaceAll("Ctrl", "Control").replace(/Key([A-Z])$/, "$1")}
-            disabled={voiceDisabled}
-            onClick={toggleVoiceInput}
-          >
-            {recording ? (
-              <SquareIcon aria-hidden="true" fill="currentColor" />
-            ) : transcribing ? (
-              <LoaderCircleIcon aria-hidden="true" className="animate-spin" />
-            ) : (
-              <MicIcon aria-hidden="true" />
-            )}
-          </button>
-        </ComposerTooltip>
-        {working ? (
-          <ComposerTooltip message="Stop response">
-            <button
-              type="button"
-              className="flex size-[27px] flex-none items-center justify-center rounded-full border-0 bg-primary text-primary-foreground hover:opacity-[0.85] [&_svg]:size-3"
-              aria-label="Stop response"
-              onClick={onAbort}
-            >
-              <SquareIcon aria-hidden="true" fill="currentColor" />
-            </button>
-          </ComposerTooltip>
-        ) : null}
-        <div className="flex flex-none items-center">
-          <ComposerTooltip message={`${working ? "Queue message" : "Send message"}${enterToSend ? " (Enter)" : ""}`}>
-            <button
-              type="submit"
-              className={cn(
-                "flex size-[27px] flex-none items-center justify-center rounded-full border-0 bg-primary text-primary-foreground enabled:hover:opacity-[0.85] disabled:opacity-[0.35] [&_svg]:size-3.5",
-                onSchedule && chat.kind === "wisp" && "w-[25px] rounded-r-none pl-0.5",
-              )}
-              aria-label={working ? "Queue message" : "Send message"}
-              disabled={!hasDraft || !canSend || voiceBusy}
-            >
-              <ArrowUpIcon aria-hidden="true" />
-            </button>
-          </ComposerTooltip>
-          {onSchedule && chat.kind === "wisp" ? (
-            <Popover
-              open={scheduleOpen}
-              onOpenChange={(open) => {
-                setScheduleOpen(open && canSchedule);
-                if (!open) setScheduleError("");
-              }}
-            >
-              <ComposerTooltip message={`Schedule send (${scheduleShortcutLabel})`}>
-                <PopoverTrigger
-                  type="button"
-                  className="flex h-[27px] w-[17px] flex-none items-center justify-center rounded-r-full border-0 border-l border-primary-foreground/25 bg-primary pr-0.5 text-primary-foreground enabled:hover:opacity-[0.85] disabled:opacity-[0.35] [&_svg]:size-3"
-                  aria-label="Schedule send"
-                  disabled={!canSchedule}
-                >
-                  <ChevronDownIcon aria-hidden="true" />
-                </PopoverTrigger>
-              </ComposerTooltip>
-              <PopoverContent>
-                <PopoverTitle>Schedule send</PopoverTitle>
-                <ScheduleSendPicker busy={scheduling} onPick={(at) => void schedule(at)} />
-                {scheduleError ? (
-                  <p role="alert" className="px-2 pt-1.5 text-xs text-destructive">
-                    {scheduleError}
-                  </p>
-                ) : null}
-              </PopoverContent>
-            </Popover>
+        <div className="composer-input flex min-h-[42px] items-end gap-2 px-2 py-[7px]">
+          {recording ? (
+            <ComposerTooltip message="Cancel recording (Esc)">
+              <button
+                type="button"
+                className="flex size-[27px] flex-none items-center justify-center rounded-full border-0 bg-transparent text-dim hover:bg-accent hover:text-foreground [&_svg]:size-3.5"
+                aria-label="Cancel recording"
+                onClick={cancelVoiceInput}
+              >
+                <XIcon aria-hidden="true" />
+              </button>
+            </ComposerTooltip>
+          ) : chat.kind === "wisp" ? (
+            <ComposerTooltip message={attaching ? "Copying files to the workspace…" : "Attach files"}>
+              <button
+                type="button"
+                className="flex size-[27px] flex-none items-center justify-center rounded-full border-0 bg-transparent text-dim enabled:hover:bg-accent enabled:hover:text-foreground disabled:opacity-[0.35] [&_svg]:size-3.5"
+                aria-label="Attach files"
+                disabled={attaching}
+                onClick={() => void attachFiles()}
+              >
+                <PaperclipIcon aria-hidden="true" />
+              </button>
+            </ComposerTooltip>
           ) : null}
+          {recording ? <RecordingMeter levels={voiceInput.levels} elapsed={voiceInput.elapsed} /> : null}
+          <textarea
+            ref={textareaRef}
+            hidden={recording}
+            autoFocus={autoFocus}
+            rows={1}
+            className="max-h-[120px] min-h-[26px] flex-1 resize-none overflow-y-auto border-0 bg-transparent py-1 pl-0 pr-0 text-foreground outline-none leading-[18px] placeholder:text-dim field-sizing-content"
+            aria-label={`Message ${chatName(chat)}`}
+            placeholder={transcribing ? "Transcribing…" : `Message ${chatName(chat)}`}
+            value={draft}
+            disabled={chat.kind === "circle"}
+            readOnly={transcribing}
+            onChange={(event) => setDraft(event.currentTarget.value)}
+            onKeyDown={handleKeyDown}
+          />
+          <ComposerTooltip message={voiceHint}>
+            <button
+              type="button"
+              className={cn(
+                "flex size-[27px] flex-none items-center justify-center rounded-full border-0 [&_svg]:size-3.5 disabled:opacity-[0.35]",
+                recording
+                  ? "bg-destructive text-white hover:opacity-[0.85] [&_svg]:size-3"
+                  : "bg-secondary text-dim enabled:hover:bg-accent enabled:hover:text-foreground",
+              )}
+              aria-label={
+                recording ? "Stop recording and transcribe" : transcribing ? "Transcribing" : "Start voice input"
+              }
+              aria-keyshortcuts={voice.shortcut.replaceAll("Ctrl", "Control").replace(/Key([A-Z])$/, "$1")}
+              disabled={voiceDisabled}
+              onClick={toggleVoiceInput}
+            >
+              {recording ? (
+                <SquareIcon aria-hidden="true" fill="currentColor" />
+              ) : transcribing ? (
+                <LoaderCircleIcon aria-hidden="true" className="animate-spin" />
+              ) : (
+                <MicIcon aria-hidden="true" />
+              )}
+            </button>
+          </ComposerTooltip>
+          {working ? (
+            <ComposerTooltip message="Stop response">
+              <button
+                type="button"
+                className="flex size-[27px] flex-none items-center justify-center rounded-full border-0 bg-primary text-primary-foreground hover:opacity-[0.85] [&_svg]:size-3"
+                aria-label="Stop response"
+                onClick={onAbort}
+              >
+                <SquareIcon aria-hidden="true" fill="currentColor" />
+              </button>
+            </ComposerTooltip>
+          ) : null}
+          <div className="flex flex-none items-center">
+            <ComposerTooltip message={`${working ? "Queue message" : "Send message"}${enterToSend ? " (Enter)" : ""}`}>
+              <button
+                type="submit"
+                className={cn(
+                  "flex size-[27px] flex-none items-center justify-center rounded-full border-0 bg-primary text-primary-foreground enabled:hover:opacity-[0.85] disabled:opacity-[0.35] [&_svg]:size-3.5",
+                  onSchedule && chat.kind === "wisp" && "w-[25px] rounded-r-none pl-0.5",
+                )}
+                aria-label={working ? "Queue message" : "Send message"}
+                disabled={!hasDraft || !canSend || voiceBusy}
+              >
+                <ArrowUpIcon aria-hidden="true" />
+              </button>
+            </ComposerTooltip>
+            {onSchedule && chat.kind === "wisp" ? (
+              <Popover
+                open={scheduleOpen}
+                onOpenChange={(open) => {
+                  setScheduleOpen(open && canSchedule);
+                  if (!open) setScheduleError("");
+                }}
+              >
+                <ComposerTooltip message={`Schedule send (${scheduleShortcutLabel})`}>
+                  <PopoverTrigger
+                    type="button"
+                    className="flex h-[27px] w-[17px] flex-none items-center justify-center rounded-r-full border-0 border-l border-primary-foreground/25 bg-primary pr-0.5 text-primary-foreground enabled:hover:opacity-[0.85] disabled:opacity-[0.35] [&_svg]:size-3"
+                    aria-label="Schedule send"
+                    disabled={!canSchedule}
+                  >
+                    <ChevronDownIcon aria-hidden="true" />
+                  </PopoverTrigger>
+                </ComposerTooltip>
+                <PopoverContent>
+                  <PopoverTitle>Schedule send</PopoverTitle>
+                  <ScheduleSendPicker busy={scheduling} onPick={(at) => void schedule(at)} />
+                  {scheduleError ? (
+                    <p role="alert" className="px-2 pt-1.5 text-xs text-destructive">
+                      {scheduleError}
+                    </p>
+                  ) : null}
+                </PopoverContent>
+              </Popover>
+            ) : null}
+          </div>
         </div>
       </div>
     </form>
@@ -508,6 +519,18 @@ function RecordingMeter({ levels, elapsed }: { levels: ReadonlyArray<number>; el
       <span className="flex-none text-xs tabular-nums text-dim">{formatElapsed(elapsed)}</span>
     </div>
   );
+}
+
+/** Why some of these attachments will not reach a Wisp whose model cannot see images, or null. */
+function missingVisionHint(attachments: ReadonlyArray<WorkspaceAttachment>): string | null {
+  const { images, pdfs } = attachmentsNeedingVision(attachments);
+  if (images > 0) {
+    return `This Wisp's model can't see images, so it won't be able to read the attached ${images === 1 ? "image" : "images"}.`;
+  }
+  if (pdfs > 0) {
+    return "This Wisp's model can't see images. It can read the text of PDFs, but not scanned pages.";
+  }
+  return null;
 }
 
 function ComposerError({ message, children }: { message: string; children?: ReactNode }) {

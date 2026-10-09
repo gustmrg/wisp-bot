@@ -30,6 +30,27 @@ export function messageWithAttachments(text: string, attachments: ReadonlyArray<
   return `${text ? `${text}\n\n` : ""}Attached to the workspace:\n${list}`;
 }
 
+/** Image types the read tool sends to models that accept images. */
+const IMAGE_ATTACHMENT_EXTENSIONS = new Set([".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp"]);
+
+/**
+ * What a model without image input misses in these attachments: images
+ * entirely, and the scanned pages of PDFs (their text layer is still read).
+ */
+export function attachmentsNeedingVision(attachments: ReadonlyArray<Pick<WorkspaceAttachment, "name">>): {
+  images: number;
+  pdfs: number;
+} {
+  let images = 0;
+  let pdfs = 0;
+  for (const { name } of attachments) {
+    const extension = name.slice(name.lastIndexOf(".")).toLowerCase();
+    if (IMAGE_ATTACHMENT_EXTENSIONS.has(extension)) images += 1;
+    else if (extension === ".pdf") pdfs += 1;
+  }
+  return { images, pdfs };
+}
+
 export function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   const units = ["KB", "MB", "GB"];

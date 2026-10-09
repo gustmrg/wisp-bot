@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import type { AiSettingsView, ProviderSummary } from "../../shared/contracts";
+import { NoImageInputNote } from "@/components/no-image-input-note";
 import { SearchableCombobox } from "@/components/searchable-combobox";
 import {
   ConfirmAction,
@@ -223,6 +224,7 @@ function ModelSettingsSection({ active, onViewChange, showHeading = true }: Mode
                     <strong>Model</strong>
                   </label>
                   <small>{provider?.models.length ?? 0} models available. Search by name or ID.</small>
+                  {model && !model.input.includes("image") ? <NoImageInputNote /> : null}
                 </SettingsRowCopy>
                 <SearchableCombobox
                   id="ai-model"
