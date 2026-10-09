@@ -26,6 +26,12 @@ import {
   type McpConnectionOptions,
   type McpSdkTool,
 } from "./mcp-bridge.js";
+import {
+  describeFileArguments,
+  expandFileArguments,
+  planFileArguments,
+  withFileReferenceHints,
+} from "./mcp-file-arguments.js";
 import { McpOAuthProvider } from "./mcp-oauth.js";
 import { McpSecretStore } from "./mcp-secret-store.js";
 import type { IntegrationToolSnapshot, SnapshotToolMetadata } from "./integration-tool-source.js";
@@ -87,6 +93,8 @@ export interface McpServiceOptions {
   encryption: EncryptionService;
   authorizationBroker: Pick<ToolAuthorizationBroker, "authorize">;
   resolveWisp: (conversationId: string) => string;
+  /** The conversation's workspace, where file references are resolved; without it no file can be sent. */
+  resolveWorkspaceDirectory?: (conversationId: string) => string;
   openExternal: (url: string) => Promise<void>;
   /** The application version advertised to MCP servers. */
   clientVersion?: string;
@@ -574,7 +582,7 @@ export class McpService {
       name: tool.alias,
       label: tool.label,
       description: tool.description,
-      parameters: toolInputSchema(tool.inputSchema),
+      parameters: withFileReferenceHints(toolInputSchema(tool.inputSchema)),
       execute: async (toolCallId: string, params: unknown, signal?: AbortSignal) => ({
         content: [
           {
@@ -619,6 +627,9 @@ export class McpService {
       combinedSignal.throwIfAborted();
       this.assertToolAccess(conversationId, sessionId, serverId);
       const args = validateToolArguments(tool, structuredClone(input));
+      const workspaceDirectory = this.options.resolveWorkspaceDirectory?.(conversationId);
+      const files = await planFileArguments(tool.inputSchema, args, workspaceDirectory);
+      const fileSummary = files.length ? `${describeFileArguments(files)} — ` : "";
       // Host-generated labels and the immutable snapshot define what is approved.
       await this.options.authorizationBroker.authorize(
         {
@@ -627,17 +638,22 @@ export class McpService {
           toolName: tool.alias,
           category: "integration_call",
           scope: { kind: "integration", value: serverName },
-          summary: `${tool.label} — ${summarizeArguments(args)}`,
-          alwaysAllowed: this.isAlwaysAllowed(sessionId, serverId, tool),
-          rememberApproval: () =>
-            this.alwaysAllowTool(
-              conversationId,
-              sessionId,
-              serverId,
-              tool.name,
-              reviewedGeneration,
-              reviewedFingerprint,
-            ),
+          summary: `${tool.label} — ${fileSummary}${summarizeArguments(args)}`,
+          // A call that sends workspace files is always shown to the user.
+          ...(files.length
+            ? {}
+            : {
+                alwaysAllowed: this.isAlwaysAllowed(sessionId, serverId, tool),
+                rememberApproval: () =>
+                  this.alwaysAllowTool(
+                    conversationId,
+                    sessionId,
+                    serverId,
+                    tool.name,
+                    reviewedGeneration,
+                    reviewedFingerprint,
+                  ),
+              }),
         },
         combinedSignal,
       );
@@ -648,6 +664,7 @@ export class McpService {
       // A tool that was replaced, changed, or removed while the approval was
       // pending must never receive the approved dispatch.
       this.assertToolUnchanged(serverId, reviewedGeneration, reviewedFingerprint);
+      if (files.length) await expandFileArguments(files, workspaceDirectory!);
       const connection = await this.pooledConnection(sessionId, serverId);
       dispatched = true;
       const result = await connection.callTool(tool.name, args, { signal: combinedSignal });

@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, readdir, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, truncate, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
@@ -66,6 +66,8 @@ interface ServiceOverrides {
   /** Fixtures handed to createOAuthProvider in creation order. */
   oauthProviders?: ReadonlyArray<Record<string, unknown>>;
   onSettingsChanged?: (view: McpSettingsView) => void;
+  /** Every conversation's workspace; omitted, file references are refused. */
+  workspaceDirectory?: string;
 }
 
 /** Minimal provider surface used by sign-in flows; tests assert on counters. */
@@ -104,7 +106,7 @@ const TOOL = {
 let serverCounter = 0;
 
 async function createService(
-  { authorizationBroker, oauthProviders, onSettingsChanged }: ServiceOverrides = {},
+  { authorizationBroker, oauthProviders, onSettingsChanged, workspaceDirectory }: ServiceOverrides = {},
   connections: ReadonlyArray<ConnectionFixture> = [],
 ) {
   const dataDirectory = await mkdtemp(path.join(os.tmpdir(), "wisp-mcp-"));
@@ -118,6 +120,7 @@ async function createService(
     resolveWisp: (conversationId) => `session-${conversationId}`,
     openExternal: vi.fn(async () => undefined),
     ...(onSettingsChanged ? { onSettingsChanged } : {}),
+    ...(workspaceDirectory ? { resolveWorkspaceDirectory: () => workspaceDirectory } : {}),
     createConnection: (_options: McpConnectionOptions): McpConnection => {
       const fixture = connections[created.length] ?? { outcome: new Error("no fixture"), tools: [] };
       const connection = new FakeConnection(fixture);
@@ -1070,5 +1073,142 @@ describe("McpService interactive sign-in lifecycle", () => {
     // Tokens issued for the old endpoint must never be sent to the new one.
     expect(await secrets.oauthTokens(serverId)).toBeUndefined();
     expect((await service.getView()).servers[0]?.tools).toHaveLength(0);
+  });
+});
+
+describe("McpService workspace files", () => {
+  const UPLOAD_TOOL = {
+    name: "upload_bill_document",
+    description: "Uploads a document to a bill.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        fileName: { type: "string", description: "Original file name, including extension." },
+        base64Content: {
+          type: "string",
+          description: "Base64-encoded file content. Data URLs are accepted.",
+          pattern: "^[A-Za-z0-9+/=]+$",
+        },
+        attachments: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: { name: { type: "string" }, content: { type: "string", format: "data-url" } },
+          },
+        },
+      },
+      required: ["fileName"],
+    },
+  };
+  const PDF = Buffer.from("%PDF-1.7\nboleto\n%%EOF\n");
+
+  type FileDefinition = ExecutableDefinition & { parameters: { properties: Record<string, any> } };
+
+  async function setup(authorize = vi.fn(async (_action: Record<string, unknown>) => undefined)) {
+    const workspaceDirectory = await mkdtemp(path.join(os.tmpdir(), "wisp-mcp-workspace-"));
+    await mkdir(path.join(workspaceDirectory, "inbox"));
+    await writeFile(path.join(workspaceDirectory, "inbox", "boleto.pdf"), PDF);
+    const connections = [
+      { outcome: "connected" as const, tools: [UPLOAD_TOOL] },
+      { outcome: "connected" as const, tools: [UPLOAD_TOOL] },
+    ];
+    const { service, created } = await createService(
+      { authorizationBroker: { authorize }, workspaceDirectory },
+      connections,
+    );
+    const { serverId } = await addServer(service);
+    await grantAccess(service, "wisp-a", serverId);
+    const definition = (await firstDefinition(service)) as FileDefinition;
+    return { definition, created, authorize, workspaceDirectory };
+  }
+
+  it("tells the model which fields take a workspace file", async () => {
+    const { definition } = await setup();
+    const { properties } = definition.parameters;
+    expect(properties.base64Content.description).toContain('"wisp-file:<path>"');
+    expect(properties.base64Content.description).toContain("base64-encoded");
+    // A reference cannot match the encoded content's pattern, so Pi must not enforce it.
+    expect(properties.base64Content.pattern).toBeUndefined();
+    expect(properties.attachments.items.properties.content.description).toContain("as a data URL");
+    expect(properties.attachments.items.properties.content.format).toBeUndefined();
+    expect(properties.fileName.description).toBe("Original file name, including extension.");
+  });
+
+  it("sends the file's bytes in place of the reference and names it in the approval", async () => {
+    const { definition, created, authorize } = await setup();
+    await definition.execute("call-1", { fileName: "boleto.pdf", base64Content: "wisp-file:inbox/boleto.pdf" });
+
+    expect(created.at(-1)!.calls).toEqual([
+      { name: "upload_bill_document", args: { fileName: "boleto.pdf", base64Content: PDF.toString("base64") } },
+    ]);
+    const action = authorize.mock.calls[0]![0];
+    expect(action.summary).toContain(`sends file inbox/boleto.pdf (${PDF.byteLength} B)`);
+    expect(action.summary).not.toContain(PDF.toString("base64"));
+    // Sending files is always shown to the user, whatever was always allowed before.
+    expect(action).not.toHaveProperty("alwaysAllowed");
+    expect(action).not.toHaveProperty("rememberApproval");
+  });
+
+  it("encodes data URL fields inside arrays with the file's media type", async () => {
+    const { definition, created } = await setup();
+    await definition.execute("call-1", {
+      fileName: "two.pdf",
+      attachments: [{ name: "boleto", content: "wisp-file:inbox/boleto.pdf" }],
+    });
+
+    const args = created.at(-1)!.calls[0]!.args as { attachments: Array<{ content: string }> };
+    expect(args.attachments[0]!.content).toBe(`data:application/pdf;base64,${PDF.toString("base64")}`);
+  });
+
+  it.each([
+    ["a path outside the workspace", { base64Content: "wisp-file:../outside.pdf" }, "outside this Wisp's workspace"],
+    ["a missing file", { base64Content: "wisp-file:inbox/missing.pdf" }, "does not exist"],
+    ["a folder", { base64Content: "wisp-file:inbox" }, "is not a file"],
+    ["a field that takes no file", { fileName: "wisp-file:inbox/boleto.pdf" }, "does not take file content"],
+  ])("refuses %s before asking", async (_label, extra, message) => {
+    const { definition, created, authorize } = await setup();
+    await expect(definition.execute("call-1", { fileName: "boleto.pdf", ...extra })).rejects.toMatchObject({
+      message: expect.stringContaining(message),
+    });
+    expect(authorize).not.toHaveBeenCalled();
+    expect(created.at(-1)!.calls).toEqual([]);
+  });
+
+  it("refuses files larger than one call may carry", async () => {
+    const { definition, created, workspaceDirectory } = await setup();
+    const large = path.join(workspaceDirectory, "inbox", "large.pdf");
+    await writeFile(large, "");
+    await truncate(large, 10 * 1024 * 1024 + 1);
+    await expect(
+      definition.execute("call-1", { fileName: "large.pdf", base64Content: "wisp-file:inbox/large.pdf" }),
+    ).rejects.toMatchObject({ message: expect.stringContaining("at most 10.0 MB") });
+    expect(created.at(-1)!.calls).toEqual([]);
+  });
+
+  it("refuses a file that changed while the approval was pending", async () => {
+    let workspace = "";
+    const authorize = vi.fn(async () => {
+      await writeFile(path.join(workspace, "inbox", "boleto.pdf"), "replaced with something longer");
+    });
+    const { definition, created, workspaceDirectory } = await setup(authorize);
+    workspace = workspaceDirectory;
+    await expect(
+      definition.execute("call-1", { fileName: "boleto.pdf", base64Content: "wisp-file:inbox/boleto.pdf" }),
+    ).rejects.toMatchObject({ code: "tool_blocked" });
+    expect(created.at(-1)!.calls).toEqual([]);
+  });
+
+  it("refuses file references when the conversation has no workspace", async () => {
+    const connections = [
+      { outcome: "connected" as const, tools: [UPLOAD_TOOL] },
+      { outcome: "connected" as const, tools: [UPLOAD_TOOL] },
+    ];
+    const { service } = await createService({}, connections);
+    const { serverId } = await addServer(service);
+    await grantAccess(service, "wisp-a", serverId);
+    const definition = await firstDefinition(service);
+    await expect(
+      definition.execute("call-1", { fileName: "boleto.pdf", base64Content: "wisp-file:inbox/boleto.pdf" }),
+    ).rejects.toMatchObject({ message: expect.stringContaining("cannot be sent") });
   });
 });
