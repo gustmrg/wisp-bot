@@ -121,6 +121,7 @@ export function createWebWispApi(options: WebApiOptions): WispApi {
     subscribeToUpdateState: () => () => undefined,
     getConnections: async () => ok(view()),
     saveConnection: desktopOnly,
+    testSshConnection: desktopOnly,
     // Removing the only connection signs this browser out.
     removeConnection: async () => {
       await session.signOut();

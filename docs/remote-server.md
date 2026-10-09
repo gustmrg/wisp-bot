@@ -191,6 +191,11 @@ server:
   key is verified; Wisp refuses unknown or changed host keys rather than
   accepting them. MagicDNS names and Tailscale SSH work like any other host; if
   Tailscale SSH asks for a browser check, run `ssh` in a terminal once.
+  Use **Test connection** in the connection form to check the current host, user,
+  and SSH port before saving. It reports authentication and network failures
+  without showing raw SSH output, and times out after 20 seconds. You can edit
+  the fields and test again. Success verifies SSH authentication only; it does
+  not check the Wisp server port, pair, or switch your active connection.
 - **HTTPS address** connects directly, for example to a Tailscale Serve
   address. Plain HTTP is accepted only for `127.0.0.1` and `localhost`.
 

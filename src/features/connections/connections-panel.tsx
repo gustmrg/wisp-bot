@@ -1,4 +1,4 @@
-import { useId, useState } from "react";
+import { useId, useRef, useState } from "react";
 import { ChevronLeftIcon, LaptopIcon, Plus, ServerIcon, Settings2 } from "lucide-react";
 
 import { ConfirmAction, SettingsField, StatusDot, type StatusTone } from "@/components/settings/settings-primitives";
@@ -211,9 +211,33 @@ function ConnectionForm({
 }) {
   const formId = useId();
   const [draft, setDraft] = useState<Draft>(draftFrom(profile));
-  const [busy, setBusy] = useState<"save" | "remove" | null>(null);
+  const [busy, setBusy] = useState<"save" | "remove" | "test" | null>(null);
   const [error, setError] = useState("");
-  const update = (changes: Partial<Draft>) => setDraft((current) => ({ ...current, ...changes }));
+  const [testResult, setTestResult] = useState<{ ok: boolean; message: string } | null>(null);
+  const revision = useRef(0);
+  const update = (changes: Partial<Draft>) => {
+    revision.current += 1;
+    setTestResult(null);
+    setDraft((current) => ({ ...current, ...changes }));
+  };
+
+  async function testConnection() {
+    const testedRevision = revision.current;
+    setBusy("test");
+    setError("");
+    setTestResult(null);
+    try {
+      const result = await window.wisp.testSshConnection(requestFrom(draft));
+      if (testedRevision === revision.current) {
+        setTestResult({ ok: result.ok, message: result.ok ? result.value.message : result.error.message });
+      }
+    } catch {
+      if (testedRevision === revision.current)
+        setTestResult({ ok: false, message: "The SSH test could not be completed. Try again." });
+    } finally {
+      setBusy(null);
+    }
+  }
 
   async function save() {
     setBusy("save");
@@ -250,7 +274,7 @@ function ConnectionForm({
       aria-labelledby={`${formId}-title`}
       onSubmit={(event) => {
         event.preventDefault();
-        void save();
+        if (busy === null) void save();
       }}
     >
       <Button type="button" variant="ghost" size="sm" className="mb-3 -ml-2" onClick={onDone}>
@@ -340,7 +364,25 @@ function ConnectionForm({
           {error}
         </p>
       ) : null}
+      {testResult ? (
+        <p
+          role={testResult.ok ? "status" : "alert"}
+          className={testResult.ok ? "mb-3 text-xs text-dim" : "mb-3 text-xs text-destructive"}
+        >
+          {testResult.message}
+        </p>
+      ) : null}
       <div className="flex flex-wrap items-center gap-2">
+        {draft.kind === "ssh" ? (
+          <Button
+            type="button"
+            variant="outline"
+            disabled={busy !== null || !draft.host.trim()}
+            onClick={() => void testConnection()}
+          >
+            {busy === "test" ? "Testing connection…" : "Test connection"}
+          </Button>
+        ) : null}
         <Button type="submit" disabled={busy !== null}>
           {busy === "save" ? "Saving…" : "Save"}
         </Button>

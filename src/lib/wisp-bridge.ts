@@ -83,6 +83,7 @@ const REQUIRED_WISP_METHODS = [
   "transcribeAudio",
   "getConnections",
   "saveConnection",
+  "testSshConnection",
   "removeConnection",
   "activateConnection",
   "retryConnection",
