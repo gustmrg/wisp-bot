@@ -77,6 +77,9 @@ describe("ConnectionGate", () => {
     await userEvent.click(screen.getByRole("button", { name: "Retry now" }));
     expect(api.retryConnection).toHaveBeenCalled();
     expect(mounted).toHaveBeenCalledTimes(1);
+    // A server that stays away must not keep the person from the Wisps on this computer.
+    await userEvent.click(screen.getByRole("button", { name: "Use this computer instead" }));
+    expect(api.activateConnection).toHaveBeenCalledWith({ id: "local" });
   });
 
   it("warns, until dismissed, when the server runs another version than this app", async () => {

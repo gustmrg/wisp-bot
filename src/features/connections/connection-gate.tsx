@@ -162,17 +162,36 @@ function activeName(view: ConnectionsView): string {
   return view.profiles.find((profile) => profile.id === view.activeId)?.name ?? "the server";
 }
 
+/** Whether this client can leave the active server for the Wisps on this computer. */
+function canUseThisComputer(view: ConnectionsView): boolean {
+  return (
+    view.canManage !== false &&
+    view.activeId !== LOCAL_CONNECTION_ID &&
+    view.profiles.some(({ kind }) => kind === "local")
+  );
+}
+
 function ReconnectingBanner({ view }: { view: ConnectionsView }) {
   return (
     <div
       role="status"
-      className="flex flex-none items-center justify-center gap-3 bg-warning-solid/15 px-4 py-1.5 text-sm text-foreground"
+      className="flex flex-none flex-wrap items-center justify-center gap-3 bg-warning-solid/15 px-4 py-1.5 text-sm text-foreground"
     >
       <LoaderCircleIcon className="size-3.5 animate-spin" aria-hidden="true" />
       <span>Reconnecting to {activeName(view)}. Wisps on it keep working.</span>
       <Button type="button" size="xs" variant="outline" onClick={() => void window.wisp.retryConnection()}>
         Retry now
       </Button>
+      {canUseThisComputer(view) ? (
+        <Button
+          type="button"
+          size="xs"
+          variant="ghost"
+          onClick={() => void window.wisp.activateConnection({ id: LOCAL_CONNECTION_ID }).catch(() => undefined)}
+        >
+          Use this computer instead
+        </Button>
+      ) : null}
     </div>
   );
 }
@@ -334,7 +353,7 @@ function ConnectionScreen({ view }: { view: ConnectionsView }) {
                 Retry
               </Button>
             ) : null}
-            {view.activeId === LOCAL_CONNECTION_ID || !view.profiles.some(({ kind }) => kind === "local") ? null : (
+            {!canUseThisComputer(view) ? null : (
               <Button
                 type="button"
                 variant="outline"

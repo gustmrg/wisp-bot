@@ -52,6 +52,8 @@ export interface RemoteClientOptions {
   cookies?: boolean;
   fetch?: typeof fetch;
   now?: () => number;
+  /** Cancels every request in flight, so a session can stop at once even over a link that stopped answering. */
+  signal?: AbortSignal;
 }
 
 /** Marks a cookie-authenticated request as the app's own; cross-site forms cannot set it. */
@@ -94,7 +96,7 @@ export class RemoteClient {
   }
 
   async describe(): Promise<ServerDescriptor> {
-    return valueOf(await this.authorized("GET", "/server")) as ServerDescriptor;
+    return valueOf(await this.authorized("GET", "/server", undefined, true)) as ServerDescriptor;
   }
 
   /** Runs one operation; transport failures throw `RemoteError`, operation failures return their result. */
@@ -236,20 +238,19 @@ export class RemoteClient {
   }
 
   private async send(path: string, init: RequestInit): Promise<Response> {
+    const signals = [init.signal, this.options.signal].filter((signal): signal is AbortSignal => Boolean(signal));
+    const signal = signals.length > 1 ? AbortSignal.any(signals) : signals[0];
     try {
       return await this.fetch(new URL(path, this.options.baseUrl), {
         ...init,
+        ...(signal ? { signal } : {}),
         ...(this.options.cookies ? { credentials: "same-origin" as const } : {}),
       });
     } catch (error) {
-      if (
-        init.signal?.aborted &&
-        init.signal.reason instanceof DOMException &&
-        init.signal.reason.name === "TimeoutError"
-      ) {
+      if (signal?.aborted && signal.reason instanceof DOMException && signal.reason.name === "TimeoutError") {
         throw new RemoteError("network", "The server did not answer in time.");
       }
-      if (init.signal?.aborted) throw error;
+      if (signal?.aborted) throw error;
       throw new RemoteError("network", "The server cannot be reached.");
     }
   }
