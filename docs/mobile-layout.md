@@ -48,8 +48,20 @@ composer merely because a conversation was opened.
 
 ## Scope
 
-This implements the mobile **renderer layout**. The app still requires the Electron bridge: opening the Vite
-URL in a standalone mobile browser continues to show the bridge-required
-screen. Remote access, web authentication, a PWA manifest, and offline support
-require a separate web transport implementation; no desktop security checks are
-bypassed.
+The mobile layout applies wherever the renderer runs in a narrow viewport:
+
+- **Desktop app.** The Electron window switches to it below 761px wide.
+- **Browser app.** A Wisp server serves the same app to browsers through a web
+  transport instead of the Electron bridge. A browser pairs once with a
+  one-time code from `wispctl pair` and then uses the Wisps on that server.
+  On a phone it can be installed to the home screen and opens full screen.
+  See [Use Wisp in a browser or on your phone](remote-server.md#use-wisp-in-a-browser-or-on-your-phone)
+  and [Pair devices](remote-server.md#pair-devices).
+
+Opening the Vite dev server URL in a browser without either still shows the
+bridge-required screen.
+
+The browser app's service worker caches only the app's files, so it opens
+without a network and reconnects when it can. Conversations, settings, and
+API responses are never cached: reading or sending messages offline is not
+supported.
