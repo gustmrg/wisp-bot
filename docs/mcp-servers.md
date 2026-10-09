@@ -69,6 +69,28 @@ rebuild, which preserves conversation identity, model selection, and context
 settings — no new topic starts. Grant reductions take effect immediately in the
 backend, independent of the definitions the model still sees.
 
+## Sending workspace files
+
+Some tools take a file as base64 or a data URL, such as an upload tool. The
+model cannot produce those bytes itself, so Wisp sends them on its behalf. A
+string field is a file field when its schema marks it as base64
+(`contentEncoding: "base64"`) or a data URL (`format: "data-url"`), or when its
+name or description mentions base64 or a data URL. The model sees a note on
+each file field and passes a reference to a file in the Wisp's workspace,
+such as `wisp-file:inbox/bill.pdf`; constraints on the encoded content
+(`pattern`, `format`, `minLength`, `maxLength`) are dropped from the schema the
+model sees so the reference passes validation.
+
+Wisp resolves each reference inside the workspace before asking, and refuses a
+path outside it, a missing file, a folder, a reference in a field that takes no
+file, more than 5 files, or more than 10 MB in one call. The approval card
+names every file and its size. A call that sends files always asks, even for a
+tool marked **Always allow**, and does not offer that option. After approval
+the file is read again and refused if it moved or changed size; only then is
+the reference replaced with the encoded contents. The model, the approval
+card, and the session history only ever hold the reference. See
+[ADR 016](decisions/016-mcp-file-arguments.md).
+
 ## Lifecycle and revocation
 
 Connections are established lazily with bounded deadlines. A failed server

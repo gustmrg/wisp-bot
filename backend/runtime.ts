@@ -141,6 +141,7 @@ export async function createBackendRuntime(options: BackendRuntimeOptions): Prom
     encryption,
     authorizationBroker: toolAuthorizationBroker,
     resolveWisp,
+    resolveWorkspaceDirectory: (id) => conversationRepository.getWorkspaceDirectory(id),
     openExternal: options.openExternal,
     clientVersion: options.appVersion,
     onSettingsChanged: options.onMcpSettingsChanged,
