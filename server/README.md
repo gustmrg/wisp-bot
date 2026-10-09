@@ -87,6 +87,9 @@ wispctl backup --output FILE --key-file KEY
 wispctl help                     Show every command and option
 ```
 
+In a terminal, `pair` and `devices` print text to read; piped, or with
+`--json`, they print JSON.
+
 The service is a regular systemd user unit:
 
 ```sh
