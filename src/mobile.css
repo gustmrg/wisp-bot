@@ -184,6 +184,83 @@
     width: 21px;
     height: 21px;
   }
+  .mobile-navigation-icon {
+    position: relative;
+    display: inline-flex;
+  }
+  .mobile-navigation-badge {
+    position: absolute;
+    top: -5px;
+    left: 13px;
+    min-width: 18px;
+    height: 18px;
+    padding: 0 5px;
+    border: 2px solid var(--sidebar-background);
+    border-radius: 999px;
+    /* The product's unread color, as on the list's badge. */
+    background: #ff3b30;
+    color: #fff;
+    font-size: 10px;
+    font-weight: 700;
+    line-height: 14px;
+    text-align: center;
+  }
+  .mobile-navigation-badge[data-tone="warning"] {
+    background: var(--warning-solid);
+    color: #1a1204;
+  }
+
+  .mobile-approvals {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    min-width: 0;
+    min-height: 0;
+    background: var(--sidebar-background);
+  }
+  .mobile-approvals .mobile-list-header {
+    padding-right: 21px;
+  }
+  .mobile-approvals-list {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    gap: 18px;
+    min-height: 0;
+    padding: 8px 16px 20px;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+  .mobile-approval .tool-approval-card {
+    width: 100%;
+    margin-top: 6px;
+  }
+  .mobile-approval-chat {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    width: 100%;
+    min-height: 44px;
+    padding: 4px 2px;
+    border: 0;
+    background: transparent;
+    color: var(--foreground);
+    font-size: 14px;
+    text-align: left;
+  }
+  .mobile-approval-chat strong {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    font-weight: 600;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .mobile-approval-chat > svg:last-child {
+    width: 16px;
+    height: 16px;
+    color: var(--text-dim);
+  }
 
   .chat-header {
     height: 70px;

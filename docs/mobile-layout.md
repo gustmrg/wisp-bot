@@ -1,11 +1,20 @@
 # Responsive mobile layout
 
 At viewport widths up to 760px the renderer shows one screen at a time: the
-conversation list, an active chat, or Wisp settings. The list includes live
+conversation list, an active chat, Wisp settings, or pending approvals. The list includes live
 Unread and Active filters and a bottom navigation bar. Search, Wisp creation,
 and application settings use full-screen dialogs with their existing backend
 actions and focus management. Wider windows keep the desktop panels. The
 Electron window can be resized down to 360px wide to use this layout locally.
+
+## Bottom bar and Approvals
+
+The bottom bar has Wisps, Approvals, and Settings (see
+[ADR 015](decisions/015-mobile-bottom-bar.md)). Wisps shows how many
+conversations are unread and Approvals how many tool approvals are pending.
+The Approvals screen lists every pending approval, the latest first, each with
+the conversation it came from. An approval answered there or in the chat
+leaves both.
 
 ## Conversation list
 

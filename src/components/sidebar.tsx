@@ -39,6 +39,8 @@ interface SidebarProps {
   ) => Promise<boolean> | void;
   onOpenSearch: () => void;
   onOpenSettings: () => void;
+  /** Opens the mobile Approvals tab. */
+  onOpenApprovals?: () => void;
   onResizeStart: (event: ReactPointerEvent<HTMLDivElement>) => void;
   onSelectChat: (chatId: ChatId) => void;
 }
@@ -72,6 +74,7 @@ function Sidebar({
   onCreate,
   onOpenSearch,
   onOpenSettings,
+  onOpenApprovals,
   onResizeStart,
   onSelectChat,
 }: SidebarProps) {
@@ -293,7 +296,14 @@ function Sidebar({
         </div>
 
         {mobile ? (
-          <MobileNavigation current="wisps" onConversations={() => setFilter("all")} onSettings={onOpenSettings} />
+          <MobileNavigation
+            current="wisps"
+            onConversations={() => setFilter("all")}
+            onApprovals={onOpenApprovals}
+            onSettings={onOpenSettings}
+            unreadCount={unreadCount}
+            approvalCount={allChatIds.reduce((count, id) => count + (approvals[id]?.length ?? 0), 0)}
+          />
         ) : (
           <button
             className={cn(

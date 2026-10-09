@@ -650,6 +650,43 @@ describe("Mobile workspace", () => {
     expect(api.markConversationRead).toHaveBeenCalledWith({ conversationId: "atlas" });
   });
 
+  it("answers a pending approval from the Approvals tab and opens its conversation", async () => {
+    setMobileViewport();
+    const user = userEvent.setup();
+    const state = conversationState(true, { atlas });
+    state.pendingToolApprovals = [
+      {
+        approvalId: "approval-1",
+        conversationId: "atlas",
+        toolCallId: "tool-1",
+        toolName: "write",
+        category: "create_file",
+        scope: { kind: "workspace_path", display: "notes.txt" },
+        summary: "Create notes.txt",
+        expiresAt: new Date(Date.now() + 60_000).toISOString(),
+      },
+    ];
+    const api = createApi(state);
+    exposeApi(api);
+    render(<App />);
+    const bar = await screen.findByRole("navigation", { name: "Main navigation" });
+    await user.click(await within(bar).findByRole("button", { name: "Approvals, 1 pending" }));
+
+    expect(screen.getByRole("heading", { name: "Approvals" })).toHaveFocus();
+    expect(screen.queryByRole("navigation", { name: "Wisps and circles" })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Allow once" }));
+    expect(api.resolveToolApproval).toHaveBeenCalledWith({
+      approvalId: "approval-1",
+      conversationId: "atlas",
+      toolCallId: "tool-1",
+      decision: "allow_once",
+    });
+
+    await user.click(screen.getByRole("button", { name: "Open the conversation with Atlas" }));
+    expect(screen.getByRole("textbox", { name: "Message Atlas" })).toBeVisible();
+    expect(screen.queryByRole("heading", { name: "Approvals" })).not.toBeInTheDocument();
+  });
+
   it("filters real statuses and unread flags, and opens search results as conversations", async () => {
     setMobileViewport();
     const user = userEvent.setup();

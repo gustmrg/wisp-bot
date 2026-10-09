@@ -6,6 +6,7 @@ import type { SettingsEntrySection } from "@/components/app-settings-dialog";
 import { ChatPanel } from "@/components/chat-panel";
 import { DetailsPanel } from "@/components/details-panel";
 import { SearchDialog } from "@/components/search-dialog";
+import { MobileApprovals } from "@/components/mobile-approvals";
 import { Sidebar } from "@/components/sidebar";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { UpdateToast } from "@/components/update-toast";
@@ -56,7 +57,7 @@ function Workspace({ userProfile }: { userProfile: UserProfileController }) {
       .toUpperCase(),
   };
   const mobile = useMobileLayout();
-  const [mobilePage, setMobilePage] = useState<"list" | "chat">("list");
+  const [mobilePage, setMobilePage] = useState<"list" | "chat" | "approvals">("list");
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
@@ -83,9 +84,15 @@ function Workspace({ userProfile }: { userProfile: UserProfileController }) {
   useEffect(() => {
     if (!workspace.activeChat) {
       setDetailsOpen(false);
-      setMobilePage("list");
+      setMobilePage((page) => (page === "chat" ? "list" : page));
     }
   }, [workspace.activeChat]);
+
+  const unreadCount = Object.values(workspace.chats).filter((chat) => chat.unread).length;
+  const approvalCount = Object.entries(workspace.approvals).reduce(
+    (count, [chatId, requests]) => count + (workspace.chats[chatId] ? requests.length : 0),
+    0,
+  );
 
   // A reply that arrives while its chat is on screen has been seen.
   const pageVisible = usePageVisible();
@@ -114,6 +121,12 @@ function Workspace({ userProfile }: { userProfile: UserProfileController }) {
     navigationVersion.current += 1;
     setDetailsOpen(false);
     setMobilePage("list");
+  }
+
+  function showApprovals() {
+    navigationVersion.current += 1;
+    setDetailsOpen(false);
+    setMobilePage("approvals");
   }
 
   function showDetails(open: boolean) {
@@ -154,7 +167,7 @@ function Workspace({ userProfile }: { userProfile: UserProfileController }) {
             currentUser={currentUser}
             width={sidebarPanel.width}
             mobile={mobile}
-            hidden={mobile && (mobilePage === "chat" || detailsOpen)}
+            hidden={mobile && (mobilePage !== "list" || detailsOpen)}
             statuses={workspace.statuses}
             approvals={workspace.approvals}
             failedChats={workspace.failedChats}
@@ -172,12 +185,13 @@ function Workspace({ userProfile }: { userProfile: UserProfileController }) {
             }}
             onOpenSearch={() => showSearch(true)}
             onOpenSettings={() => showSettings("general")}
+            onOpenApprovals={showApprovals}
             onResizeStart={sidebarPanel.onResizeStart}
             onSelectChat={selectChat}
           />
           {workspace.activeChat ? (
             <ChatPanel
-              hidden={mobile && (mobilePage === "list" || detailsOpen)}
+              hidden={mobile && (mobilePage !== "chat" || detailsOpen)}
               onBack={mobile ? showConversations : undefined}
               chat={workspace.activeChat}
               transcript={workspace.activeTranscript}
@@ -238,6 +252,18 @@ function Workspace({ userProfile }: { userProfile: UserProfileController }) {
               onResizeStart={detailsPanel.onResizeStart}
             />
           ) : null}
+          {mobile && mobilePage === "approvals" ? (
+            <MobileApprovals
+              chats={workspace.chats}
+              approvals={workspace.approvals}
+              allowAlwaysAvailable={workspace.preferences.autoReview}
+              unreadCount={unreadCount}
+              onResolve={(request, decision) => void workspace.resolveApproval(request, decision)}
+              onOpenChat={selectChat}
+              onConversations={showConversations}
+              onSettings={() => showSettings("general")}
+            />
+          ) : null}
         </div>
         <SearchDialog
           chats={workspace.chats}
@@ -252,6 +278,8 @@ function Workspace({ userProfile }: { userProfile: UserProfileController }) {
           currentUser={currentUser}
           mobile={mobile}
           onOpenConversations={showConversations}
+          onOpenApprovals={showApprovals}
+          navigationCounts={{ unread: unreadCount, approvals: approvalCount }}
           wisps={wisps}
           userProfile={userProfile}
           preferences={workspace.preferences}
