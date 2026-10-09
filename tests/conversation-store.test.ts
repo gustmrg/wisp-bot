@@ -60,6 +60,7 @@ function circleRecord(id: string, memberIds: string[]): ConversationRecord {
       notifyOnUpdatesEnabled: false,
       preview: "",
       unread: true,
+      unreadCount: 1,
       messages: [],
     },
     storageId: `${id}-workspace`,
@@ -312,7 +313,56 @@ describe("ConversationStore versions", () => {
         .map(({ name }) => name),
     ).not.toContain("avatar_image");
     columns.close();
-    expect(meta(file)).toMatchObject({ store_version: "6", min_reader_version: "6" });
+    expect(meta(file)).toMatchObject({ store_version: "7", min_reader_version: "6" });
+  });
+
+  it("adds unread counts to a version 6 store, keeping which conversations are unread", async () => {
+    const file = await databasePath();
+    const store = ConversationStore.open(file);
+    store.transaction(() =>
+      store.replaceAll({
+        initialized: true,
+        wisps: { one: wispRecord("one"), two: wispRecord("two") },
+        conversations: {
+          one: { ...record("one"), chat: { ...record("one").chat, unread: true } },
+          two: { ...record("two"), chat: { ...record("two").chat, unread: false } },
+        },
+      }),
+    );
+    store.close();
+    // Recreate the layout version 6 wrote: no count column.
+    const db = new DatabaseSync(file);
+    db.exec(`
+      ALTER TABLE conversations DROP COLUMN unread_count;
+      UPDATE meta SET value = '6' WHERE key IN ('store_version', 'min_reader_version');
+    `);
+    db.close();
+
+    const upgraded = ConversationStore.open(file);
+    const { conversations } = upgraded.read();
+    expect(conversations.one).toMatchObject({ chat: { unread: true, unreadCount: 1 } });
+    expect(conversations.two).toMatchObject({ chat: { unread: false, unreadCount: 0 } });
+    upgraded.close();
+    expect(meta(file)).toMatchObject({ store_version: "7", min_reader_version: "6" });
+  });
+
+  it("trusts unread over a count that a version 6 build left behind", async () => {
+    const file = await databasePath();
+    const store = ConversationStore.open(file);
+    const counted = { ...record("one"), chat: { ...record("one").chat, unread: true, unreadCount: 4 } };
+    store.transaction(() =>
+      store.replaceAll({ initialized: true, wisps: { one: wispRecord("one") }, conversations: { one: counted } }),
+    );
+    expect(store.read().conversations.one).toMatchObject({ chat: { unread: true, unreadCount: 4 } });
+    store.close();
+    // A version 6 build marks it read without knowing about the count.
+    const db = new DatabaseSync(file);
+    db.exec("UPDATE conversations SET unread = 0");
+    db.close();
+
+    const reopened = ConversationStore.open(file);
+    expect(reopened.read().conversations.one).toMatchObject({ chat: { unread: false, unreadCount: 0 } });
+    reopened.close();
   });
 
   it("stores Wisps and conversations as columns, related by foreign keys", async () => {
@@ -403,7 +453,7 @@ describe("ConversationStore versions", () => {
       },
     });
     store.close();
-    expect(meta(file)).toMatchObject({ store_version: "6", min_reader_version: "6" });
+    expect(meta(file)).toMatchObject({ store_version: "7", min_reader_version: "6" });
     const db = new DatabaseSync(file, { readOnly: true });
     expect(db.prepare("SELECT conversation_id, type, author_id FROM messages").all()).toEqual([
       { conversation_id: "one", type: "incoming", author_id: "one" },
@@ -423,15 +473,15 @@ describe("ConversationStore versions", () => {
       db.close();
     };
 
-    raise(readable, "7", "6");
+    raise(readable, "8", "6");
     const newer = ConversationStore.open(readable);
     expect(newer.read().initialized).toBe(true);
     // Writing here must not lower the markers the newer build set.
     newer.transaction(() => newer.setInitialized(true));
     newer.close();
-    expect(meta(readable)).toMatchObject({ store_version: "7", min_reader_version: "6" });
+    expect(meta(readable)).toMatchObject({ store_version: "8", min_reader_version: "6" });
 
-    raise(readable, "8", "7");
+    raise(readable, "9", "8");
     const incompatible = ConversationStore.open(readable);
     expect(() => incompatible.read()).toThrow("Unsupported conversation store version.");
     incompatible.close();
