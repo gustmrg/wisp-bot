@@ -222,20 +222,25 @@ function VersionMismatchBanner({
   const appVersion = APP_METADATA.version;
   const serverIsOlder = compareVersions(serverVersion, appVersion) < 0;
   const profile = view.profiles.find(({ id }) => id === view.activeId);
+  // An SSH server can be updated right here, after the person confirms.
+  const canUpdate = serverIsOlder && profile?.kind === "ssh";
   const advice = !serverIsOlder
     ? "Update this app so every feature works."
-    : profile?.kind === "ssh"
-      ? "Update it in Settings → Connections so every feature works."
+    : canUpdate
+      ? "Update it so every feature works."
       : "Update the server so every feature works.";
   return (
     <div
       role="status"
-      className="flex flex-none items-center justify-center gap-3 bg-warning-solid/15 px-4 py-1.5 text-sm text-foreground"
+      className="flex flex-none flex-wrap items-center justify-center gap-x-3 gap-y-2 bg-warning-solid/15 px-4 py-1.5 text-sm text-foreground"
     >
       <span>
         {activeName(view)} runs Wisp server {serverVersion}, {serverIsOlder ? "older" : "newer"} than this app (
         {appVersion}). {advice}
       </span>
+      {canUpdate && profile ? (
+        <InstallServerAction profileId={profile.id} host={profile.host} label="Update server" />
+      ) : null}
       <Button type="button" size="icon-xs" variant="ghost" aria-label="Dismiss" onClick={onDismiss}>
         <XIcon aria-hidden="true" />
       </Button>
