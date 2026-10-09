@@ -159,8 +159,31 @@ describe("ConnectionGate", () => {
     await userEvent.click(await screen.findByRole("button", { name: "Update server" }));
     // Nothing runs on the server until the person confirms.
     expect(api.installServer).not.toHaveBeenCalled();
-    await userEvent.click(screen.getByRole("button", { name: "Install and connect" }));
+    // An update keeps the server's data and says so, instead of describing a first install.
+    expect(screen.getByRole("group", { name: "Update server" })).toHaveTextContent(/are kept.*interrupted/);
+    expect(screen.queryByRole("button", { name: "Install and connect" })).toBeNull();
+    await userEvent.click(screen.getByRole("button", { name: "Update and reconnect" }));
     expect(api.installServer).toHaveBeenCalledWith({ id: "pi" });
+  });
+
+  it("offers no server update when the server is newer, or not reached over SSH", async () => {
+    const { push } = bridge(view({ phase: "connected", serverVersion: "999.0.0" }));
+    render(
+      <ConnectionGate>
+        <App onMount={() => undefined} />
+      </ConnectionGate>,
+    );
+    expect(await screen.findByRole("status")).toHaveTextContent(/newer than this app/);
+    expect(screen.queryByRole("button", { name: "Update server" })).toBeNull();
+
+    await push({
+      ...view({ phase: "connected", serverVersion: "0.0.1" }),
+      activeId: "u",
+      profiles: [...profiles, { id: "u", kind: "url", name: "Tailnet", url: "https://x.ts.net", paired: true }],
+      status: { profileId: "u", phase: "connected", epoch: 1, serverVersion: "0.0.1" },
+    });
+    expect(screen.getByRole("status")).toHaveTextContent(/Tailnet runs Wisp server 0\.0\.1.*Update the server/);
+    expect(screen.queryByRole("button", { name: "Update server" })).toBeNull();
   });
 
   it("asks for a pairing code, or pairing over SSH, before showing the app", async () => {

@@ -99,6 +99,6 @@ it("imports a picked SKILL.md and asks before replacing a skill with the same na
   await waitFor(() => expect(screen.queryByRole("button", { name: "Replace skill" })).not.toBeInTheDocument());
 
   await user.upload(input, new File(["x".repeat(64 * 1024 + 1)], "SKILL.md", { type: "text/markdown" }));
-  expect(await screen.findByText("A skill file can be at most 64 KB.")).toBeInTheDocument();
+  expect(await screen.findByText("A skill file can be at most 64 KiB.")).toBeInTheDocument();
   expect(importSkill).toHaveBeenCalledTimes(3);
 });

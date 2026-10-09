@@ -945,7 +945,7 @@ async function readWorkspaceSkill(
   const info = await stat(canonicalPath);
   if (!info.isFile()) throw new WispBackendError("invalid_request", "The skill path is not a file.");
   if (info.size > MAX_SKILL_FILE_BYTES) {
-    throw new WispBackendError("invalid_request", `A skill file can be at most ${MAX_SKILL_FILE_BYTES / 1024} KB.`);
+    throw new WispBackendError("invalid_request", `A skill file can be at most ${MAX_SKILL_FILE_BYTES / 1024} KiB.`);
   }
   return parseSkillDocument(await readFile(canonicalPath, "utf8"));
 }

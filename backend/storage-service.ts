@@ -1,11 +1,13 @@
 import { createHash } from "node:crypto";
-import { lstat, readdir, realpath, rm } from "node:fs/promises";
+import { lstat, readFile, readdir, realpath, rm } from "node:fs/promises";
 import path from "node:path";
 
 import {
+  ARCHIVE_MANIFEST_FILE,
   MAX_ARCHIVE_DELETIONS,
   MAX_CLEANUP_PATHS,
   STORAGE_PAGE_SIZE,
+  type ArchiveManifest,
   type StorageArchive,
   type StorageArchiveDeletionRequest,
   type StorageArchiveDeletionResult,
@@ -23,51 +25,11 @@ import {
 } from "../shared/storage.js";
 import { WORKSPACE_INBOX_DIRECTORY, WORKSPACE_QUOTA_BYTES } from "../shared/workspace.js";
 import { WispBackendError } from "./backend-error.js";
+import { measureTree } from "./workspace-service.js";
 
 /** How long a measurement is reused before the next summary measures again. */
 const SUMMARY_TTL_MS = 30_000;
 const MEASURE_CONCURRENCY = 4;
-
-export interface TreeMeasurement {
-  bytes: number;
-  files: number;
-  /** Something under the folder could not be read, so the numbers are a lower bound. */
-  partial: boolean;
-}
-
-/**
- * Logical size and file count under a folder. Symlinks are neither followed
- * nor counted; a missing folder is empty, but unreadable ones mark the result
- * partial instead of reading as zero.
- */
-export async function measureTree(directory: string): Promise<TreeMeasurement> {
-  const total: TreeMeasurement = { bytes: 0, files: 0, partial: false };
-  const pending = [directory];
-  while (pending.length) {
-    const current = pending.pop()!;
-    let entries;
-    try {
-      entries = await readdir(current, { withFileTypes: true });
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== "ENOENT") total.partial = true;
-      continue;
-    }
-    for (const entry of entries) {
-      const entryPath = path.join(current, entry.name);
-      if (entry.isDirectory()) pending.push(entryPath);
-      else if (entry.isFile()) {
-        try {
-          total.bytes += (await lstat(entryPath)).size;
-          total.files += 1;
-        } catch (error) {
-          // A file removed during the scan is gone, not unreadable.
-          if ((error as NodeJS.ErrnoException).code !== "ENOENT") total.partial = true;
-        }
-      }
-    }
-  }
-  return total;
-}
 
 async function mapLimited<T, R>(items: ReadonlyArray<T>, limit: number, task: (item: T) => Promise<R>): Promise<R[]> {
   const results = new Array<R>(items.length);
@@ -95,6 +57,8 @@ export interface StorageServiceOptions {
   archiveDirectory: string;
   /** Whether an agent is running or has work queued for the conversation. */
   isBusy: (conversationId: string) => boolean;
+  /** Called after a cleanup ends, so requests held back meanwhile can run. */
+  onCleanupFinished?: (conversationId: string) => void;
   quotaBytes?: number;
   now?: () => Date;
 }
@@ -142,6 +106,11 @@ export class StorageService {
     };
   }
 
+  /** Whether files are being removed from the conversation's workspace; agents must not run meanwhile. */
+  isCleaning(conversationId: string): boolean {
+    return this.cleaning.has(conversationId);
+  }
+
   async getSummary(request: StorageSummaryRequest = {}): Promise<StorageSummary> {
     const now = this.now();
     if (!request.refresh && this.cache && now.getTime() - this.cache.at < SUMMARY_TTL_MS) return this.cache.summary;
@@ -159,7 +128,8 @@ export class StorageService {
   }
 
   private async measureWorkspaces(): Promise<StorageWorkspace[]> {
-    // Conversations that share a folder are measured and listed once.
+    // Each conversation has its own folder; should two records ever point at
+    // the same one, it is measured and listed once rather than counted twice.
     const seen = new Set<string>();
     const unique = this.options.listWorkspaces().filter(({ directory }) => !seen.has(directory) && seen.add(directory));
     const measured = await mapLimited(unique, MEASURE_CONCURRENCY, async (workspace) => {
@@ -191,11 +161,15 @@ export class StorageService {
       const directory = path.join(this.options.archiveDirectory, id);
       const tree = await measureTree(directory);
       const info = await lstat(directory).catch(() => null);
+      const manifest = await readArchiveManifest(directory);
       return {
         id,
+        name: manifest?.name ?? null,
+        kind: manifest?.kind ?? null,
         usedBytes: tree.bytes,
         fileCount: tree.files,
-        archivedAt: info ? info.mtime.toISOString() : null,
+        // Archives made before the manifest fall back to the folder's own timestamp.
+        archivedAt: manifest?.archivedAt || (info ? info.mtime.toISOString() : null),
         partial: tree.partial || !info,
       } satisfies StorageArchive;
     });
@@ -272,6 +246,7 @@ export class StorageService {
     } finally {
       this.cleaning.delete(conversationId);
       this.cache = undefined;
+      this.options.onCleanupFinished?.(conversationId);
     }
   }
 
@@ -316,6 +291,20 @@ function describeFailure(error: unknown): string {
       return "Permission denied.";
     default:
       return "It could not be removed.";
+  }
+}
+
+/** The archive's name and kind, or null when it has no readable manifest. */
+async function readArchiveManifest(directory: string): Promise<ArchiveManifest | null> {
+  try {
+    const value: unknown = JSON.parse(await readFile(path.join(directory, ARCHIVE_MANIFEST_FILE), "utf8"));
+    if (typeof value !== "object" || value === null) return null;
+    const { name, kind, archivedAt } = value as Record<string, unknown>;
+    if (typeof name !== "string" || !name.trim() || (kind !== "wisp" && kind !== "circle")) return null;
+    const time = typeof archivedAt === "string" && !Number.isNaN(Date.parse(archivedAt)) ? archivedAt : "";
+    return { name: name.slice(0, 200), kind, archivedAt: time };
+  } catch {
+    return null;
   }
 }
 

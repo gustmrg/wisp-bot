@@ -28,7 +28,18 @@ const summary = {
     },
   ],
   workspaceBytes: 462 * MIB,
-  archives: [{ id: "old-1", usedBytes: 3 * MIB, fileCount: 4, archivedAt: null, partial: false }],
+  archives: [
+    { id: "old-1", name: null, kind: null, usedBytes: 3 * MIB, fileCount: 4, archivedAt: null, partial: false },
+    {
+      id: "atlas-1",
+      name: "Old Atlas",
+      kind: "wisp" as const,
+      usedBytes: 1 * MIB,
+      fileCount: 2,
+      archivedAt: "2026-10-01T10:00:00.000Z",
+      partial: false,
+    },
+  ],
   archiveBytes: 3 * MIB,
   partial: false,
 };
@@ -136,6 +147,8 @@ it("deletes archives with a warning about what they contain", async () => {
   const user = userEvent.setup();
   const wisp = install();
   render(<StorageSettingsSection />);
+  // Archives are named after what was deleted; older ones fall back to their ID.
+  expect(await screen.findByRole("checkbox", { name: "Select archive Old Atlas" })).toBeInTheDocument();
   await user.click(await screen.findByRole("checkbox", { name: "Select archive old-1" }));
   await user.click(screen.getByRole("button", { name: "Delete 1 permanently" }));
   expect(screen.getByText(/workspace, saved sessions and the Wisp's settings/)).toBeInTheDocument();

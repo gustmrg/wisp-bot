@@ -98,6 +98,31 @@ describe("AgentRegistry", () => {
     await registry.disposeAll();
   });
 
+  it("holds requests back while the Wisp's workspace is being cleaned up", async () => {
+    const locked = new Set<string>();
+    const factory: ConversationAgentFactory = {
+      create: (agentContext) => new FakeConversationAgent(agentContext.conversationId),
+    };
+    const registry = new AgentRegistry(factory, () => undefined, undefined, {
+      isWorkspaceLocked: (conversationId) => locked.has(conversationId),
+    });
+    await registry.restore([context("one"), context("two")], { providerId: "test", modelId: "test" });
+
+    locked.add("one");
+    expect(registry.isAvailable("one")).toBe(false);
+    expect(registry.isAvailable("two")).toBe(true);
+    // Refused up front, like the other checks in send, so nothing is queued.
+    expect(() => registry.send({ conversationId: "one", requestId: "one-a", text: "A" })).toThrow(
+      expect.objectContaining({ code: "unavailable" }),
+    );
+    expect(registry.isBusy("one")).toBe(false);
+
+    locked.clear();
+    expect(registry.isAvailable("one")).toBe(true);
+    await expect(registry.send({ conversationId: "one", requestId: "one-b", text: "B" })).resolves.toBeUndefined();
+    await registry.disposeAll();
+  });
+
   it("limits per-Wisp queue depth and simultaneous active agents", async () => {
     let active = 0;
     let maximumActive = 0;

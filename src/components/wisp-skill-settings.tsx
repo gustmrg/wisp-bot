@@ -85,7 +85,7 @@ function SkillPanel({ conversationId }: { conversationId: string }) {
     setPendingImport(null);
     setError("");
     if (file.size > MAX_SKILL_FILE_BYTES) {
-      setError(`A skill file can be at most ${MAX_SKILL_FILE_BYTES / 1024} KB.`);
+      setError(`A skill file can be at most ${MAX_SKILL_FILE_BYTES / 1024} KiB.`);
       return;
     }
     let contents: string;

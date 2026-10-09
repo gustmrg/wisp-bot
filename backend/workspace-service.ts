@@ -20,12 +20,20 @@ import { parseSkillDocument, SkillStore } from "./skill-store.js";
 export const SKILLS_DIRECTORY = "skills";
 const MAX_NAME_ATTEMPTS = 100;
 
+export interface TreeMeasurement {
+  bytes: number;
+  files: number;
+  /** Something under the folder could not be read, so the numbers are a lower bound. */
+  partial: boolean;
+}
+
 /**
- * Total size of the regular files under a directory. Symlinks are neither
- * followed nor counted; a missing directory is empty.
+ * Logical size and file count under a folder. Symlinks are neither followed
+ * nor counted; a missing folder is empty, but unreadable ones mark the result
+ * partial instead of reading as zero.
  */
-export async function measureDirectory(directory: string): Promise<number> {
-  let total = 0;
+export async function measureTree(directory: string): Promise<TreeMeasurement> {
+  const total: TreeMeasurement = { bytes: 0, files: 0, partial: false };
   const pending = [directory];
   while (pending.length) {
     const current = pending.pop()!;
@@ -33,22 +41,35 @@ export async function measureDirectory(directory: string): Promise<number> {
     try {
       entries = await readdir(current, { withFileTypes: true });
     } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === "ENOENT") continue;
-      throw error;
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") total.partial = true;
+      continue;
     }
     for (const entry of entries) {
       const entryPath = path.join(current, entry.name);
       if (entry.isDirectory()) pending.push(entryPath);
       else if (entry.isFile()) {
         try {
-          total += (await lstat(entryPath)).size;
+          total.bytes += (await lstat(entryPath)).size;
+          total.files += 1;
         } catch (error) {
-          if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+          // A file removed during the scan is gone, not unreadable.
+          if ((error as NodeJS.ErrnoException).code !== "ENOENT") total.partial = true;
         }
       }
     }
   }
   return total;
+}
+
+/**
+ * Total size of the regular files under a directory, measured like Storage
+ * does. Throws when part of it cannot be read, so a quota is never checked
+ * against a lower bound.
+ */
+export async function measureDirectory(directory: string): Promise<number> {
+  const { bytes, partial } = await measureTree(directory);
+  if (partial) throw new WispBackendError("internal_error", "The workspace could not be fully read.", true);
+  return bytes;
 }
 
 /** Throws when adding `incomingBytes` would take the workspace past its quota. */
@@ -79,6 +100,8 @@ export interface WorkspaceServiceOptions {
   openPath: (directory: string) => Promise<void>;
   /** Asks the user to pick files; resolves with absolute paths, empty when dismissed. */
   selectFiles: () => Promise<ReadonlyArray<string>>;
+  /** Any conversation's workspace folder, circles included; throws for unknown conversations. */
+  resolveWorkspace?: (conversationId: string) => string;
   quotaBytes?: number;
   /** Held while files are written into a conversation's workspace; throws while it is being cleaned. */
   acquireWrite?: (conversationId: string) => () => void;
@@ -105,7 +128,9 @@ export class WorkspaceService {
   }
 
   async openWorkspace(conversationId: string): Promise<void> {
-    const { workspaceDirectory } = this.options.resolveDirectories(conversationId);
+    const workspaceDirectory =
+      this.options.resolveWorkspace?.(conversationId) ??
+      this.options.resolveDirectories(conversationId).workspaceDirectory;
     await mkdir(workspaceDirectory, { recursive: true });
     await this.options.openPath(workspaceDirectory);
   }

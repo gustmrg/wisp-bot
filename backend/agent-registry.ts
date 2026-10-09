@@ -38,6 +38,8 @@ export interface AgentRegistryOptions {
   validateModel?: (model: ModelSelection) => Promise<void>;
   /** Called when a conversation becomes free to take a request: configured, with nothing running or queued. */
   onAvailable?: (conversationId: string) => void;
+  /** Whether files are being removed from the conversation's workspace; nothing runs there meanwhile. */
+  isWorkspaceLocked?: (conversationId: string) => boolean;
 }
 
 type EventPublisher = (event: SequencedConversationAgentEvent) => void;
@@ -50,6 +52,7 @@ export class AgentRegistry {
   private readonly executionTimeoutMs: number;
   private readonly validateModel: (model: ModelSelection) => Promise<void>;
   private readonly onAvailable: (conversationId: string) => void;
+  private readonly isWorkspaceLocked: (conversationId: string) => boolean;
   private model: ModelSelection | null = null;
   private eventSequence = 0;
   private activeAgents = 0;
@@ -67,6 +70,7 @@ export class AgentRegistry {
     this.executionTimeoutMs = options.executionTimeoutMs ?? DEFAULT_EXECUTION_TIMEOUT_MS;
     this.validateModel = options.validateModel ?? (async () => undefined);
     this.onAvailable = options.onAvailable ?? (() => undefined);
+    this.isWorkspaceLocked = options.isWorkspaceLocked ?? (() => false);
   }
 
   async restore(contexts: ReadonlyArray<ConversationAgentContext>, model: ModelSelection | null): Promise<void> {
@@ -136,10 +140,12 @@ export class AgentRegistry {
     return this.entries.has(conversationId);
   }
 
-  /** Whether the conversation is configured and has no request running or queued. */
+  /** Whether the conversation is configured, has no request running or queued, and its workspace is not locked. */
   isAvailable(conversationId: string): boolean {
     const entry = this.entries.get(conversationId);
-    return Boolean(entry && entry.ready && !entry.disposed && entry.pendingCommands === 0);
+    return Boolean(
+      entry && entry.ready && !entry.disposed && entry.pendingCommands === 0 && !this.isWorkspaceLocked(conversationId),
+    );
   }
 
   /** Whether a request is running or queued for the conversation. */
@@ -176,6 +182,7 @@ export class AgentRegistry {
     if (entry.acceptedRequestIds.has(request.requestId)) {
       throw new WispBackendError("invalid_request", "This request ID has already been accepted.");
     }
+    this.assertWorkspaceUnlocked(request.conversationId);
     if (entry.pendingCommands >= MAX_PENDING_COMMANDS_PER_CONVERSATION) {
       throw new WispBackendError("invalid_request", "This conversation already has too many queued requests.");
     }
@@ -196,6 +203,16 @@ export class AgentRegistry {
       .finally(() => this.settleCommand(request.conversationId, entry));
     entry.commandQueue = operation.catch(() => undefined);
     return operation;
+  }
+
+  private assertWorkspaceUnlocked(conversationId: string): void {
+    if (this.isWorkspaceLocked(conversationId)) {
+      throw new WispBackendError(
+        "unavailable",
+        "This Wisp's workspace is being cleaned up. Try again in a moment.",
+        true,
+      );
+    }
   }
 
   private settleCommand(conversationId: string, entry: AgentEntry): void {
@@ -259,6 +276,7 @@ export class AgentRegistry {
     if (request.command.action === "get") return entry.agent.manageContext(request.command);
     if (entry.pendingCommands || entry.status === "working")
       throw new WispBackendError("invalid_request", "Wait for the Wisp to finish before changing its context.");
+    this.assertWorkspaceUnlocked(request.conversationId);
     entry.pendingCommands += 1;
     const operation = entry.commandQueue
       .then(async () => {

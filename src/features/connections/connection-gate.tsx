@@ -239,7 +239,7 @@ function VersionMismatchBanner({
         {appVersion}). {advice}
       </span>
       {canUpdate && profile ? (
-        <InstallServerAction profileId={profile.id} host={profile.host} label="Update server" />
+        <InstallServerAction profileId={profile.id} host={profile.host} label="Update server" mode="update" />
       ) : null}
       <Button type="button" size="icon-xs" variant="ghost" aria-label="Dismiss" onClick={onDismiss}>
         <XIcon aria-hidden="true" />

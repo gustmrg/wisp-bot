@@ -141,6 +141,6 @@ describe("importing a SKILL.md", () => {
     expect(message("---\nname: Bad Name\ndescription: d\n---\nBody")).toContain("Skill names");
     expect(message("---\nname: ok\ndescription: >\n  folded\n---\nBody")).toContain("description");
     expect(message("---\nname: ok\ndescription: d\n---\n")).toContain("instructions");
-    expect(message(`---\nname: ok\ndescription: d\n---\n${"x".repeat(64 * 1024)}`)).toContain("64 KB");
+    expect(message(`---\nname: ok\ndescription: d\n---\n${"x".repeat(64 * 1024)}`)).toContain("64 KiB");
   });
 });

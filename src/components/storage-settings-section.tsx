@@ -265,7 +265,7 @@ function ArchiveList({ archives, onDeleted }: { archives: ReadonlyArray<StorageA
               <SettingsRow key={archive.id}>
                 <input
                   type="checkbox"
-                  aria-label={`Select archive ${archive.id}`}
+                  aria-label={`Select archive ${archive.name ?? archive.id}`}
                   checked={selected.has(archive.id)}
                   onChange={(event) => {
                     const next = new Set(selected);
@@ -275,8 +275,9 @@ function ArchiveList({ archives, onDeleted }: { archives: ReadonlyArray<StorageA
                   }}
                 />
                 <SettingsRowCopy>
-                  <strong className="truncate">{archive.id}</strong>
+                  <strong className="truncate">{archive.name ?? archive.id}</strong>
                   <small>
+                    {archive.kind === "circle" ? "Circle · " : archive.kind === "wisp" ? "Wisp · " : ""}
                     {archive.archivedAt ? `Archived ${formatMeasuredAt(archive.archivedAt)}` : "Archive date unknown"} ·{" "}
                     {archive.fileCount.toLocaleString("en-US")} files{archive.partial ? " · partial" : ""}
                   </small>

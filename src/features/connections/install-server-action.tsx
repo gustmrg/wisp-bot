@@ -7,18 +7,21 @@ import { WISP_SERVER_PACKAGE } from "../../../shared/server-package";
 /**
  * Sets the Wisp server up on the machine behind an SSH connection, by running
  * its setup there, and then connects to it. Asks first: it changes another
- * computer.
+ * computer. In `update` mode the server is already there, so the copy says
+ * what is kept and what is interrupted instead of describing a first install.
  */
 export function InstallServerAction({
   profileId,
   host,
   label = "Install the Wisp server",
+  mode = "install",
   disabled = false,
   onInstalled,
 }: {
   profileId: string;
   host: string;
   label?: string;
+  mode?: "install" | "update";
   disabled?: boolean;
   onInstalled?: () => void;
 }) {
@@ -49,15 +52,24 @@ export function InstallServerAction({
           aria-label={label}
           className="flex flex-col gap-2.5 rounded-[10px] border border-border bg-muted/40 p-3"
         >
-          <p className="m-0 text-xs leading-relaxed">
-            Wisp will connect to {host} over SSH and run <code>npx {WISP_SERVER_PACKAGE} setup</code> there. It installs
-            the server in <code>~/.local/lib/wisp-server</code>, creates a master key in <code>~/.config/wisp</code>,
-            and starts a systemd user service. The machine needs Node.js 22.19 or later and npm in the PATH of
-            non-interactive SSH commands, and internet access.
-          </p>
+          {mode === "update" ? (
+            <p className="m-0 text-xs leading-relaxed">
+              Wisp will connect to {host} over SSH and run <code>npx {WISP_SERVER_PACKAGE} setup</code> there to update
+              the server in <code>~/.local/lib/wisp-server</code> to this app&apos;s version, then reconnect. Wisps,
+              conversations and the master key in <code>~/.config/wisp</code> are kept. Anything a Wisp is doing on the
+              server right now is interrupted.
+            </p>
+          ) : (
+            <p className="m-0 text-xs leading-relaxed">
+              Wisp will connect to {host} over SSH and run <code>npx {WISP_SERVER_PACKAGE} setup</code> there. It
+              installs the server in <code>~/.local/lib/wisp-server</code>, creates a master key in{" "}
+              <code>~/.config/wisp</code>, and starts a systemd user service. The machine needs Node.js 22.19 or later
+              and npm in the PATH of non-interactive SSH commands, and internet access.
+            </p>
+          )}
           <div className="flex flex-wrap gap-2">
             <Button type="button" onClick={() => void install()}>
-              Install and connect
+              {mode === "update" ? "Update and reconnect" : "Install and connect"}
             </Button>
             <Button type="button" variant="ghost" onClick={() => setConfirming(false)}>
               Cancel
@@ -70,7 +82,7 @@ export function InstallServerAction({
             {installing ? (
               <>
                 <LoaderCircleIcon className="animate-spin" aria-hidden="true" />
-                Installing…
+                {mode === "update" ? "Updating…" : "Installing…"}
               </>
             ) : (
               label
@@ -81,7 +93,7 @@ export function InstallServerAction({
       {installing ? (
         <div className="flex flex-wrap items-center gap-2">
           <p role="status" className="m-0 text-xs text-dim">
-            Setting up {host}. This can take a few minutes.
+            {mode === "update" ? "Updating" : "Setting up"} {host}. This can take a few minutes.
           </p>
           <Button type="button" variant="ghost" size="sm" onClick={() => void window.wisp.cancelServerInstall()}>
             Cancel setup

@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readdir, readFile, rm, stat, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
@@ -48,6 +48,28 @@ describe("WorkspaceService", () => {
       "EISDIR",
     );
     await expect(service.openSkills("other")).rejects.toThrow();
+  });
+
+  it("opens any conversation's workspace, circles included, when it can resolve one", async () => {
+    const { root, openPath } = await setup();
+    const circleWorkspace = path.join(root, "workspaces", "crew");
+    const service = new WorkspaceService({
+      // Circles have no agent context, so the Wisp-only resolver throws for them.
+      resolveDirectories: () => {
+        throw new Error("not a Wisp");
+      },
+      resolveWorkspace: (id) => {
+        if (id !== "crew") throw new Error("unknown");
+        return circleWorkspace;
+      },
+      openPath,
+      selectFiles: async () => [],
+    });
+
+    await service.openWorkspace("crew");
+
+    expect(openPath).toHaveBeenCalledWith(circleWorkspace);
+    expect((await stat(circleWorkspace)).isDirectory()).toBe(true);
   });
 
   it("imports a picked SKILL.md and replaces an existing skill only when asked", async () => {
@@ -180,6 +202,21 @@ describe("measureDirectory", () => {
 
     expect(await measureDirectory(workspace)).toBe(3);
     expect(await measureDirectory(path.join(root, "missing"))).toBe(0);
+  });
+
+  it("refuses to report a lower bound when part of the folder cannot be read", async () => {
+    if (process.getuid?.() === 0) return;
+    const root = await mkdtemp(path.join(os.tmpdir(), "wisp-measure-"));
+    directories.push(root);
+    const locked = path.join(root, "locked");
+    await mkdir(locked);
+    await writeFile(path.join(locked, "f"), "x");
+    await chmod(locked, 0o000);
+    try {
+      await expect(measureDirectory(root)).rejects.toMatchObject({ code: "internal_error" });
+    } finally {
+      await chmod(locked, 0o700);
+    }
   });
 });
 
