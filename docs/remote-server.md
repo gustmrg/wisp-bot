@@ -295,10 +295,29 @@ Every client pairs once with a one-time code. The desktop app does this over
 SSH by itself; other clients use:
 
 ```sh
-wispctl pair        # prints a code such as KD7QX-M2PZR, valid for 10 minutes
-wispctl devices     # lists paired devices
+wispctl pair        # prints a one-time code, valid for 10 minutes
+wispctl devices     # lists paired devices and their IDs
 wispctl revoke --device-id ID
 wispctl status
+```
+
+In a terminal, `wispctl pair` prints the code, how long it lasts in local time,
+and where to enter it, with the server's `--public-origin` address when it has
+one:
+
+```text
+Pairing code: KD7QX-M2PZR
+Valid for 10 minutes (until 17:28).
+
+Open https://<machine>.<tailnet>.ts.net on your phone or browser and enter the code to pair.
+```
+
+When stdout is not a terminal, or with `--json`, `pair` and `devices` print
+JSON instead, so scripts can read them; the desktop app pairs over SSH with
+`wispctl pair --json`:
+
+```json
+{ "code": "KD7QX-M2PZR", "expiresAt": "2026-10-09T20:28:37.435Z" }
 ```
 
 `wispctl` talks to the running server through `admin.sock`, so it works only

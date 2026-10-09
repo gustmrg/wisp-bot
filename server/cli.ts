@@ -7,6 +7,7 @@ import { adminRequest, ServerNotRunningError } from "./admin.js";
 import { readAppVersion } from "./app-version.js";
 import { createBackup, restoreBackup, verifyBackup } from "./backup.js";
 import { defaultDataDirectory } from "./config.js";
+import type { DeviceView, PairingCode } from "./device-auth.js";
 import { InstanceLock } from "./instance-lock.js";
 import { MasterKeyEncryption, readPrivateKeyFile } from "./master-key.js";
 import { describeSetup, runSetup, systemHost } from "./setup.js";
@@ -32,7 +33,8 @@ Commands:
 
 Options:
   --data-dir DIR           Server data directory (default: $WISP_DATA_DIR or ~/.local/share/wisp)
-  --json                   Print compact JSON
+  --json                   Print compact JSON. pair and devices print JSON whenever
+                           stdout is not a terminal, so scripts can read them.
 
 Options of setup:
   --port PORT              Port the server listens on (default 8787)
@@ -43,7 +45,17 @@ Options of setup:
   --until-stdin-closes     Stop when stdin closes, before starting the service (for the desktop app)
 `;
 
-export async function runCli(args: readonly string[], write: (text: string) => void): Promise<void> {
+export interface CliOutput {
+  /** Whether stdout is a terminal, where pair and devices print text for people instead of JSON. */
+  terminal?: boolean;
+  now?: () => Date;
+}
+
+export async function runCli(
+  args: readonly string[],
+  write: (text: string) => void,
+  output: CliOutput = {},
+): Promise<void> {
   const [command = "help", ...rest] = args;
   const flags = new Map<string, string | true>();
   for (let index = 0; index < rest.length; index++) {
@@ -125,7 +137,20 @@ export async function runCli(args: readonly string[], write: (text: string) => v
       result = { created: path.resolve(option("--output")) };
       break;
     case "pair":
-    case "devices":
+    case "devices": {
+      result = await adminRequest(dataDirectory, { command });
+      if (!output.terminal || flags.has("--json")) break;
+      if (command === "devices") {
+        write(describeDevices(result as DeviceView[]));
+        return;
+      }
+      // Only for the address to open; an older server leaves it out.
+      const { publicOrigin } = (await adminRequest(dataDirectory, { command: "status" })) as {
+        publicOrigin?: string;
+      };
+      write(describePairing(result as PairingCode, publicOrigin, output.now?.() ?? new Date()));
+      return;
+    }
     case "status":
       result = await adminRequest(dataDirectory, { command });
       break;
@@ -162,6 +187,44 @@ export async function runCli(args: readonly string[], write: (text: string) => v
   write(`${JSON.stringify(result, null, flags.has("--json") ? undefined : 2)}\n`);
 }
 
+/** A pairing code as a person reads it: the code, how long it lasts, and where to enter it. */
+export function describePairing(pairing: PairingCode, publicOrigin: string | undefined, now: Date): string {
+  const expiresAt = new Date(pairing.expiresAt);
+  const minutes = Math.max(1, Math.round((expiresAt.getTime() - now.getTime()) / 60_000));
+  const until = expiresAt.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+  const lines = [
+    `Pairing code: ${pairing.code}`,
+    `Valid for ${minutes} minute${minutes === 1 ? "" : "s"} (until ${until}).`,
+    "",
+  ];
+  if (publicOrigin) {
+    lines.push(`Open ${publicOrigin} on your phone or browser and enter the code to pair.`);
+  } else {
+    lines.push(
+      "Open this server's address on your phone or browser and enter the code to pair.",
+      "To reach it from a phone, see `wispctl setup --public-origin`.",
+    );
+  }
+  return `${lines.join("\n")}\n`;
+}
+
+/** Paired devices as a person reads them, with the IDs `wispctl revoke` takes. */
+export function describeDevices(devices: readonly DeviceView[]): string {
+  if (devices.length === 0) return "No paired devices. Run `wispctl pair` to pair one.\n";
+  const when = (iso: string): string =>
+    new Date(iso).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
+  const lines = [`${devices.length} paired device${devices.length === 1 ? "" : "s"}:`];
+  for (const device of devices) {
+    lines.push(
+      "",
+      `${device.name}${device.local ? " (the desktop app on this computer)" : ""}`,
+      `  ID: ${device.id}`,
+      `  Paired ${when(device.createdAt)}, last seen ${device.lastSeenAt ? when(device.lastSeenAt) : "never"}`,
+    );
+  }
+  return `${lines.join("\n")}\n`;
+}
+
 /** Backs up a directory no server is using, holding its lock so none starts meanwhile. */
 async function backUpIdleDirectory(dataDirectory: string, output: string, key: Buffer): Promise<unknown> {
   let lock: InstanceLock;
@@ -183,8 +246,10 @@ async function backUpIdleDirectory(dataDirectory: string, output: string, key: B
 }
 
 if (require.main === module) {
-  runCli(process.argv.slice(2), (text) => process.stdout.write(text)).catch((error: unknown) => {
-    process.stderr.write(`${error instanceof Error ? error.message : "The command failed."}\n`);
-    process.exitCode = 1;
-  });
+  runCli(process.argv.slice(2), (text) => process.stdout.write(text), { terminal: process.stdout.isTTY }).catch(
+    (error: unknown) => {
+      process.stderr.write(`${error instanceof Error ? error.message : "The command failed."}\n`);
+      process.exitCode = 1;
+    },
+  );
 }

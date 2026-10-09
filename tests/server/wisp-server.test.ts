@@ -38,7 +38,10 @@ interface Harness {
   advance(ms: number): void;
 }
 
-async function start(existing?: Pick<Harness, "directory" | "key">): Promise<Harness> {
+async function start(
+  existing?: Pick<Harness, "directory" | "key">,
+  options: { publicOrigin?: string } = {},
+): Promise<Harness> {
   const directory = existing?.directory ?? (await mkdtemp(path.join(os.tmpdir(), "wisp-server-")));
   if (!existing) directories.push(directory);
   const key = existing?.key ?? randomBytes(32);
@@ -53,6 +56,7 @@ async function start(existing?: Pick<Harness, "directory" | "key">): Promise<Har
     appVersion: "1.2.3",
     allowModelNetwork: false,
     now: () => Date.now() + offset,
+    ...options,
   });
   servers.push(server);
   return {
@@ -411,5 +415,24 @@ describe("Wisp server", () => {
     await expect(
       runCli(["status", "--data-dir", path.join(harness.directory, "missing")], () => undefined),
     ).rejects.toThrow(/No Wisp server is running/);
+  });
+
+  it("prints pair and devices for people in a terminal, and JSON when asked", async () => {
+    const harness = await start(undefined, { publicOrigin: "https://wisp.example.ts.net" });
+    const output: string[] = [];
+    const cli = (...args: string[]) =>
+      runCli([...args, "--data-dir", harness.directory], (text) => output.push(text), { terminal: true });
+    await cli("devices");
+    expect(output.pop()).toBe("No paired devices. Run `wispctl pair` to pair one.\n");
+    await cli("pair");
+    const text = output.pop()!;
+    expect(text).toMatch(/^Pairing code: [A-Z0-9]{5}-[A-Z0-9]{5}\nValid for 10 minutes \(until .+\)\.\n\n/);
+    expect(text).toContain("Open https://wisp.example.ts.net on your phone or browser and enter the code to pair.");
+    const code = /Pairing code: (\S+)/.exec(text)![1]!;
+    await post(harness.server, "/api/v1/auth/pair", { code, deviceName: "Phone" });
+    await cli("devices");
+    expect(output.pop()).toMatch(/^1 paired device:\n\nPhone\n {2}ID: \S+\n {2}Paired .+, last seen /);
+    await cli("pair", "--json");
+    expect(JSON.parse(output.pop()!)).toEqual({ code: expect.any(String), expiresAt: expect.any(String) });
   });
 });

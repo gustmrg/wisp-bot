@@ -237,6 +237,7 @@ export async function createWispServer(options: WispServerOptions): Promise<Wisp
               version: options.appVersion,
               port: address.port,
               devices: auth.devices().length,
+              ...(publicOrigin ? { publicOrigin: publicOrigin.origin } : {}),
             };
           default:
             throw new HttpError(400, "invalid_request", "Unknown administrative command.");
