@@ -90,7 +90,7 @@ export function ConnectionsPanel({ view, serversOnly = false }: { view: Connecti
           .map((profile) => {
             const active = profile.id === view.activeId;
             return (
-              <li key={profile.id} className="flex items-center gap-3 rounded-xl px-4 py-3">
+              <li key={profile.id} className="flex items-center gap-3 rounded-xl px-4 py-4">
                 <span className="flex size-9 flex-none items-center justify-center rounded-lg bg-muted">
                   {profile.kind === "local" ? (
                     <LaptopIcon className="size-4 text-dim" aria-hidden="true" />
@@ -145,7 +145,7 @@ export function ConnectionsPanel({ view, serversOnly = false }: { view: Connecti
       <button
         type="button"
         onClick={() => setEditing("new")}
-        className="group mt-1 flex w-full min-w-0 items-center gap-3 rounded-xl px-4 py-3 text-left outline-none transition-colors hover:bg-popover focus-visible:ring-2 focus-visible:ring-ring"
+        className="group mt-1 flex w-full min-w-0 items-center gap-3 rounded-xl px-4 py-4 text-left outline-none transition-colors hover:bg-popover focus-visible:ring-2 focus-visible:ring-ring"
       >
         <span className="flex size-9 flex-none items-center justify-center rounded-lg bg-muted">
           <Plus className="size-4 text-dim group-hover:text-foreground" aria-hidden="true" />
