@@ -260,4 +260,37 @@ describe("Sidebar on mobile", () => {
     await user.click(screen.getByRole("button", { name: "Unread 1" }));
     expect(within(list).getAllByRole("button")).toHaveLength(1);
   });
+
+  it("counts the unread messages in the badge, up to 99+", () => {
+    const counted = (unreadCount: number) =>
+      wispChatView("beta", { wisp: { name: "Beta" }, chat: { preview: "Fresh reply", unread: true, unreadCount } });
+    const { rerender } = render(
+      <Sidebar
+        mobile
+        activeChatId=""
+        chats={{ beta: counted(3) }}
+        collapsed={false}
+        currentUser={currentUser}
+        width={280}
+        {...callbacks}
+      />,
+    );
+    const beta = screen.getByRole("button", { name: /Beta/ });
+    expect(within(beta).getByText("3")).toHaveAttribute("aria-hidden", "true");
+    expect(within(beta).getByText("3 unread")).toHaveClass("sr-only");
+
+    rerender(
+      <Sidebar
+        mobile
+        activeChatId=""
+        chats={{ beta: counted(120) }}
+        collapsed={false}
+        currentUser={currentUser}
+        width={280}
+        {...callbacks}
+      />,
+    );
+    expect(within(beta).getByText("99+")).toBeVisible();
+    expect(within(beta).getByText("120 unread")).toHaveClass("sr-only");
+  });
 });

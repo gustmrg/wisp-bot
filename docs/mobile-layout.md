@@ -23,10 +23,11 @@ the desktop sidebar keeps the creation order. Each row shows the Wisp's
 avatar with its state, the name, the time of the last activity, and one line
 that is either the last message or what needs attention: "Working…",
 "Waiting for your approval", or "The last reply failed". An unread
-conversation has a badge beside that line and a stronger time. A conversation
-turns unread on every device when a Wisp finishes a reply, fails one, or asks
-a question, and turns read when someone opens it, or when the reply arrives
-while it is on screen. A hairline
+conversation has a badge beside that line and a stronger time. The badge counts
+the unread replies and questions, up to "99+". A conversation turns unread on
+every device when a Wisp finishes a reply, fails one, or asks a question, each
+adding one to the count, and turns read when someone opens it, or when the
+reply arrives while it is on screen. A hairline
 separates the rows, starting after the avatar.
 
 ## Settings

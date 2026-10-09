@@ -1,5 +1,6 @@
 import {
   type Chat,
+  type ChatBase,
   type ChatChanges,
   type ChatCollection,
   type Message,
@@ -268,7 +269,7 @@ export function normalizeChat(value: unknown): Chat {
     messages: withUniqueMessageIds(
       raw.messages.map((message, index) => normalizeMessage(message, `${id}:message:${index}`)),
     ),
-    ...(typeof raw.unread === "boolean" ? { unread: raw.unread } : {}),
+    ...unreadFields(raw),
     ...(raw.lastActivityAt === undefined ? {} : { lastActivityAt: timestamp(raw.lastActivityAt) }),
   };
   if (raw.kind === "wisp") {
@@ -287,6 +288,20 @@ export function normalizeChat(value: unknown): Chat {
     description: string(raw.description, 10_000),
     memberIds: raw.memberIds.map(normalizeConversationId),
   };
+}
+
+/**
+ * `unread` and `unreadCount` always agree. A change that sets only `unread`,
+ * from a client that predates the count, decides between none and at least one.
+ */
+function unreadFields(raw: Record<string, unknown>): Pick<ChatBase, "unread" | "unreadCount"> {
+  if (raw.unreadCount !== undefined && !(Number.isSafeInteger(raw.unreadCount) && Number(raw.unreadCount) >= 0)) {
+    throw invalidRequest();
+  }
+  const count = raw.unreadCount as number | undefined;
+  if (typeof raw.unread !== "boolean") return count === undefined ? {} : { unread: count > 0, unreadCount: count };
+  const unreadCount = raw.unread ? Math.max(1, count ?? 1) : 0;
+  return { unread: unreadCount > 0, unreadCount };
 }
 
 /**
