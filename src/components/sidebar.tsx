@@ -51,6 +51,10 @@ const stateIndicator = "absolute -right-1 -bottom-1 size-[10px] rounded-full bor
 const approvalIndicator = cn("approval-indicator", stateIndicator, "bg-[#f0a83a]");
 const errorIndicator = cn("error-indicator", stateIndicator, "bg-[#e5594d]");
 
+function activityTime(chat: Parameters<typeof chatActivityDate>[0] | undefined): number {
+  return (chat && chatActivityDate(chat)?.getTime()) || 0;
+}
+
 function Sidebar({
   activeChatId,
   chats,
@@ -81,6 +85,8 @@ function Sidebar({
   const chatIds = allChatIds.filter(
     (id) => !mobile || filter === "all" || (filter === "unread" ? chats[id]?.unread : statuses[id] === "working"),
   );
+  // Like a messaging app, the phone list puts the latest activity first; the desktop keeps the creation order.
+  if (mobile) chatIds.sort((left, right) => activityTime(chats[right]) - activityTime(chats[left]));
 
   useEffect(() => {
     if (mobile && !hidden) titleRef.current?.focus();
@@ -192,6 +198,7 @@ function Sidebar({
                   collapsed && "h-[46px] justify-center py-[5px] px-0",
                 )}
                 data-selected={selected}
+                data-unread={chat.unread ? true : undefined}
                 type="button"
                 aria-current={selected ? "page" : undefined}
                 aria-label={collapsed ? (attention ? `${chatName(chat)}, ${attention}` : chatName(chat)) : undefined}
@@ -204,7 +211,7 @@ function Sidebar({
                     chat={chat}
                     state={pendingApproval ? "approval" : failed ? "error" : working ? "working" : "idle"}
                   />
-                  {chat.unread ? <span className={unreadIndicator} aria-label="Unread activity" /> : null}
+                  {chat.unread && !mobile ? <span className={unreadIndicator} aria-label="Unread activity" /> : null}
                   {pendingApproval ? <span className={approvalIndicator} aria-hidden="true" /> : null}
                   {failed ? <span className={errorIndicator} aria-hidden="true" /> : null}
                 </span>
@@ -223,23 +230,30 @@ function Sidebar({
                         </time>
                       ) : null}
                     </span>
-                    <span
-                      className={cn(
-                        "conversation-preview mt-px overflow-hidden text-faint text-sm leading-[17px] text-ellipsis whitespace-nowrap",
-                        pendingApproval && "font-medium text-warning",
-                        failed && "text-destructive",
-                      )}
-                      data-activity={
-                        pendingApproval ? "approval" : failed ? "failed" : mobile && working ? "working" : undefined
-                      }
-                    >
-                      {pendingApproval
-                        ? "Waiting for your approval"
-                        : failed
-                          ? "The last reply failed"
-                          : mobile && working
-                            ? "Working…"
-                            : chat.preview}
+                    <span className="flex min-w-0 items-center gap-2">
+                      <span
+                        className={cn(
+                          "conversation-preview mt-px min-w-0 flex-1 overflow-hidden text-faint text-sm leading-[17px] text-ellipsis whitespace-nowrap",
+                          pendingApproval && "font-medium text-warning",
+                          failed && "text-destructive",
+                        )}
+                        data-activity={
+                          pendingApproval ? "approval" : failed ? "failed" : mobile && working ? "working" : undefined
+                        }
+                      >
+                        {pendingApproval
+                          ? "Waiting for your approval"
+                          : failed
+                            ? "The last reply failed"
+                            : mobile && working
+                              ? "Working…"
+                              : chat.preview}
+                      </span>
+                      {chat.unread && mobile ? (
+                        <span className="conversation-unread-badge">
+                          <span className="sr-only">Unread</span>
+                        </span>
+                      ) : null}
                     </span>
                   </span>
                 )}

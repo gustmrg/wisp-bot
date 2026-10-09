@@ -7,6 +7,16 @@ and application settings use full-screen dialogs with their existing backend
 actions and focus management. Wider windows keep the desktop panels. The
 Electron window can be resized down to 360px wide to use this layout locally.
 
+## Conversation list
+
+The list reads like a messaging app. The latest activity comes first, while
+the desktop sidebar keeps the creation order. Each row shows the Wisp's
+avatar with its state, the name, the time of the last activity, and one line
+that is either the last message or what needs attention: "Working…",
+"Waiting for your approval", or "The last reply failed". An unread
+conversation has a badge beside that line and a stronger time. A hairline
+separates the rows, starting after the avatar.
+
 ## Settings
 
 The Settings overview starts with a profile card (see
