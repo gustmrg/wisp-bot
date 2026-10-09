@@ -42,6 +42,9 @@ that text, labeled with the model that produced it, in place of the image. One
 read sends at most five images or pages, three at a time, within 90 seconds;
 pages that do not finish in time are named so the Wisp can read them again.
 A failed or slow image model never fails the Wisp's turn.
+While it reads, the Wisp's activity names the image model and the page it is
+on. With an image model chosen, the composer says it will read attached images
+for the Wisp, and the Wisp's **Model** tab names it next to the no-image note.
 
 Transcriptions are cached in the Wisp's configuration directory, keyed by the
 file's contents, the model, and the page, so reading a file again does not

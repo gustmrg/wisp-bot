@@ -331,6 +331,8 @@ export type ConversationAgentEvent =
       toolName: string;
       phase: "started" | "updated" | "completed";
       isError?: boolean;
+      /** The tool's own progress text, such as which model reads a page; replaces the generic activity. */
+      label?: string;
     }
   | {
       type: "conversation_notice";

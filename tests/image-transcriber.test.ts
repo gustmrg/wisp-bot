@@ -119,8 +119,20 @@ describe("ImageTranscriber", () => {
     });
     const run = (await transcriber.start())!;
 
-    const outcomes = await run.transcribe([1, 2, 3, 4, 5].map(request));
+    const progress: Array<[number, number]> = [];
+    const outcomes = await run.transcribe([1, 2, 3, 4, 5].map(request), undefined, (done, total) =>
+      progress.push([done, total]),
+    );
 
+    expect(progress).toEqual([
+      [0, 5],
+      [1, 5],
+      [2, 5],
+      [3, 5],
+      // Requests the deadline cut off also count as finished.
+      [4, 5],
+      [5, 5],
+    ]);
     expect(maxActive()).toBeLessThanOrEqual(3);
     expect(outcomes.slice(0, 3).map(({ status }) => status)).toEqual(["done", "done", "done"]);
     expect(outcomes.slice(3)).toEqual([{ status: "timed_out" }, { status: "timed_out" }]);
