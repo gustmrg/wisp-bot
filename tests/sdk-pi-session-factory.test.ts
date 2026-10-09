@@ -10,6 +10,7 @@ import { snapshotRevision } from "../backend/integration-tool-source.js";
 import type { ModelRuntimeLike } from "../backend/model-service.js";
 import type { PluginToolSource } from "../backend/plugin-types.js";
 import { WORKSPACE_QUOTA_BYTES } from "../shared/workspace.js";
+import { buildPdf } from "./helpers/pdf-fixture.js";
 
 const sdk = vi.hoisted(() => {
   const session = {
@@ -294,6 +295,57 @@ describe("SdkPiSessionFactory", () => {
     ).rejects.toMatchObject({ code: "invalid_request", message: expect.stringContaining("workspace is full") });
     expect(authorize).not.toHaveBeenCalled();
     expect(sdk.toolExecute).toHaveBeenCalledTimes(2);
+  });
+
+  it("reads workspace PDFs page by page and leaves other files to Pi's read tool", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "wisp-pi-pdf-"));
+    const runtime = {
+      hasConfiguredAuth: vi.fn(() => true),
+      getModel: vi.fn(() => ({ provider: "provider", id: "model" })),
+    } as unknown as ModelRuntimeLike;
+    const context: ConversationAgentContext = {
+      conversationId: "one",
+      sessionId: "app-session",
+      name: "Atlas",
+      wispId: "one",
+      role: "Research",
+      soul: "",
+      workspaceDirectory: path.join(directory, "workspace"),
+      sessionDirectory: directory,
+      configDirectory: path.join(directory, "config"),
+      piSessionId: null,
+      piSessionFile: null,
+    };
+    await mkdir(path.join(context.workspaceDirectory, "inbox"), { recursive: true });
+    await writeFile(
+      path.join(context.workspaceDirectory, "inbox", "scan.pdf"),
+      buildPdf([{ text: "Quarterly report for the finance team, first page" }, { scan: true }]),
+    );
+    await writeFile(path.join(context.workspaceDirectory, "notes.txt"), "notes", "utf8");
+    await new SdkPiSessionFactory(runtime, { authorize: vi.fn(async () => undefined) }).create(context, {
+      providerId: "provider",
+      modelId: "model",
+    });
+    const options = sdk.createAgentSession.mock.calls[0]?.[0] as {
+      customTools: Array<{ name: string; description: string; execute: (...args: unknown[]) => Promise<unknown> }>;
+    };
+    const read = options.customTools.find(({ name }) => name === "read")!;
+    expect(read.description).toContain("PDFs return their text page by page");
+
+    const vision = (await read.execute("pdf-1", { path: "inbox/scan.pdf" }, undefined, undefined, {
+      model: { input: ["text", "image"] },
+    })) as { content: Array<{ type: string; text?: string }> };
+    expect(vision.content[0]?.text).toContain("Quarterly report for the finance team");
+    expect(vision.content.map(({ type }) => type)).toEqual(["text", "image"]);
+    const textOnly = (await read.execute("pdf-2", { path: "inbox/scan.pdf" }, undefined, undefined, {
+      model: { input: ["text"] },
+    })) as { content: Array<{ type: string; text?: string }> };
+    expect(textOnly.content.map(({ type }) => type)).toEqual(["text"]);
+    expect(textOnly.content[0]?.text).toContain("likely scanned");
+    expect(sdk.toolExecute).not.toHaveBeenCalled();
+
+    await read.execute("text-1", { path: "notes.txt" }, undefined, undefined, {});
+    expect(sdk.toolExecute).toHaveBeenCalledTimes(1);
   });
 
   it("saves skills only after approval and lists them in the next run's prompt", async () => {

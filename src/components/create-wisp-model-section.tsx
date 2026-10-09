@@ -1,5 +1,6 @@
 import type { AiSettingsView, ModelSelection } from "../../shared/contracts";
 import { missingModelSetup } from "../../shared/setup-status";
+import { NoImageInputNote } from "@/components/no-image-input-note";
 import { SettingsCard, SettingsRow, SettingsRowCopy } from "@/components/settings/settings-primitives";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -190,6 +191,7 @@ function CreateWispModelSection({ view, loadError, draft, onChange, notice }: Cr
                 <strong>Model</strong>
               </label>
               <small>{provider?.models.length ?? 0} models available.</small>
+              {model && !model.input.includes("image") ? <NoImageInputNote /> : null}
             </SettingsRowCopy>
             <Select
               items={provider?.models.map(({ id, name }) => ({ value: id, label: name })) ?? []}

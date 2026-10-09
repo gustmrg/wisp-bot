@@ -28,6 +28,7 @@ import { systemTimeZone } from "../shared/time-zone.js";
 import { SkillStore, validateSkillDraft } from "./skill-store.js";
 import { assertWorkspaceCapacity, SKILLS_DIRECTORY } from "./workspace-service.js";
 import { PiEventTranslator, type PiAgentEvent, sanitizeErrorMessage } from "./pi-event-translator.js";
+import { isPdfFile, readPdf } from "./pdf-reader.js";
 import { describeProviderError } from "./provider-error.js";
 import type { ToolAuthorizationBroker, ToolAuthorizationRequest } from "./tool-authorization-broker.js";
 import {
@@ -174,7 +175,12 @@ export class SdkPiSessionFactory implements PiSessionFactory {
             });
     }
     const confinedTools = [
-      secureTool(createReadToolDefinition(context.workspaceDirectory), context, this.authorizationBroker, "read"),
+      secureTool(
+        withPdfReading(createReadToolDefinition(context.workspaceDirectory)),
+        context,
+        this.authorizationBroker,
+        "read",
+      ),
       secureTool(createGrepToolDefinition(context.workspaceDirectory), context, this.authorizationBroker, "search"),
       secureTool(createFindToolDefinition(context.workspaceDirectory), context, this.authorizationBroker, "search"),
       secureTool(createLsToolDefinition(context.workspaceDirectory), context, this.authorizationBroker, "read"),
@@ -991,6 +997,29 @@ async function fileExists(filePath: string): Promise<boolean> {
   } catch {
     return false;
   }
+}
+
+/**
+ * Lets the read tool open PDFs: text by page, and pages without text as images
+ * when the model can see them. Expects the path secureTool already confined.
+ */
+function withPdfReading<TDefinition extends ToolDefinition<any, any, any>>(definition: TDefinition): TDefinition {
+  return {
+    ...definition,
+    description: `${definition.description} PDFs return their text page by page, and pages without text (such as scans) are attached as images when the model supports images. For PDFs, offset is the first page and limit the number of pages.`,
+    execute: async (...args: Parameters<TDefinition["execute"]>) => {
+      const [, parameters, signal, , ctx] = args;
+      const input = parameters as { path: string; offset?: number; limit?: number };
+      if (!(await isPdfFile(input.path))) return definition.execute(args[0], args[1], args[2], args[3], args[4]);
+      const model = (ctx as { model?: { input?: ReadonlyArray<string> } } | undefined)?.model;
+      return readPdf(input.path, {
+        offset: input.offset,
+        limit: input.limit,
+        supportsImages: model?.input?.includes("image") ?? false,
+        signal,
+      });
+    },
+  } as TDefinition;
 }
 
 function secureTool<TDefinition extends ToolDefinition<any, any, any>>(
