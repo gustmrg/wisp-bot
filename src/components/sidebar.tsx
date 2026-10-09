@@ -1,11 +1,23 @@
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
-import { PanelLeftCloseIcon, PlusIcon, SearchIcon, UserIcon } from "lucide-react";
+import {
+  BellIcon,
+  BellOffIcon,
+  MailCheckIcon,
+  MailIcon,
+  PanelLeftCloseIcon,
+  PinIcon,
+  PinOffIcon,
+  PlusIcon,
+  SearchIcon,
+  UserIcon,
+} from "lucide-react";
 
-import type { ChatId, ChatViewCollection, NewWisp } from "@/chat-data";
+import type { ChatId, ChatListAction, ChatView, ChatViewCollection, NewWisp } from "@/chat-data";
 import { ChatAvatar } from "@/components/chat-avatar";
 import { CreateAgentDialog } from "@/components/create-agent-dialog";
 import { MobileNavigation } from "@/components/mobile-navigation";
 import { Button } from "@/components/ui/button";
+import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger } from "@/components/ui/context-menu";
 import type { ManagedConversationStatus } from "../../shared/conversations";
 import type { ModelSelection } from "../../shared/contracts";
 import type { ToolApprovalRequest } from "../../shared/tool-policy";
@@ -44,6 +56,8 @@ interface SidebarProps {
   onOpenApprovals?: () => void;
   onResizeStart: (event: ReactPointerEvent<HTMLDivElement>) => void;
   onSelectChat: (chatId: ChatId) => void;
+  /** Without it the list has no menu, as in component tests that do not need it. */
+  onChatAction?: (chatId: ChatId, action: ChatListAction) => void;
 }
 
 // Product notification color intentionally remains explicit rather than a neutral surface token.
@@ -78,9 +92,11 @@ function Sidebar({
   onOpenApprovals,
   onResizeStart,
   onSelectChat,
+  onChatAction,
 }: SidebarProps) {
   const collapsed = !mobile && collapsedPreference;
   const [filter, setFilter] = useState<"all" | "unread" | "active">("all");
+  const [menuChatId, setMenuChatId] = useState<ChatId | null>(null);
   const titleRef = useRef<HTMLHeadingElement>(null);
   const now = useClock(30_000);
   const timeZone = useTimeZone();
@@ -91,6 +107,8 @@ function Sidebar({
   );
   // Like a messaging app, the phone list puts the latest activity first; the desktop keeps the creation order.
   if (mobile) chatIds.sort((left, right) => activityTime(chats[right]) - activityTime(chats[left]));
+  // Pinned conversations come first, each group keeping that order.
+  chatIds.sort((left, right) => Number(Boolean(chats[right]?.pinned)) - Number(Boolean(chats[left]?.pinned)));
 
   useEffect(() => {
     if (mobile && !hidden) titleRef.current?.focus();
@@ -195,7 +213,7 @@ function Sidebar({
             const activityDate = chatActivityDate(chat);
             const attention = pendingApproval ? "waiting for your approval" : failed ? "the last reply failed" : null;
 
-            return (
+            const row = (
               <button
                 className={cn(
                   "conversation-list-item group/item relative mb-1 flex w-full min-w-0 items-center gap-[9px] rounded-[10px] border-0 bg-transparent p-2 text-left hover:bg-muted data-[selected=true]:bg-accent",
@@ -208,7 +226,10 @@ function Sidebar({
                 aria-label={collapsed ? (attention ? `${chatName(chat)}, ${attention}` : chatName(chat)) : undefined}
                 title={collapsed ? (attention ? `${chatName(chat)} — ${attention}` : chatName(chat)) : undefined}
                 key={chatId}
-                onClick={() => onSelectChat(chatId)}
+                onClick={() => {
+                  // The click that ends a long press opened the menu, not the conversation.
+                  if (menuChatId !== chatId) onSelectChat(chatId);
+                }}
               >
                 <span className="conversation-avatar relative inline-flex flex-none">
                   <ChatAvatar
@@ -225,6 +246,12 @@ function Sidebar({
                       <strong className="min-w-0 flex-1 overflow-hidden text-base leading-[17px] font-semibold text-ellipsis whitespace-nowrap">
                         {chatName(chat)}
                       </strong>
+                      {chat.pinned ? (
+                        <span className="conversation-pin flex-none self-center text-faint">
+                          <PinIcon aria-hidden="true" className="size-3" />
+                          <span className="sr-only">Pinned</span>
+                        </span>
+                      ) : null}
                       {activityDate ? (
                         <time
                           className="flex-none text-faint text-2xs leading-[17px]"
@@ -270,6 +297,19 @@ function Sidebar({
                   </span>
                 )}
               </button>
+            );
+            if (!onChatAction) return row;
+            return (
+              <ContextMenu
+                key={chatId}
+                open={menuChatId === chatId}
+                onOpenChange={(open) =>
+                  setMenuChatId((current) => (open ? chatId : current === chatId ? null : current))
+                }
+              >
+                <ContextMenuTrigger render={row} />
+                <ConversationMenu chat={chat} onAction={(action) => onChatAction(chatId, action)} />
+              </ContextMenu>
             );
           })}
           {mobile && !chatIds.length ? (
@@ -342,6 +382,25 @@ function Sidebar({
         )}
       </aside>
     </>
+  );
+}
+
+function ConversationMenu({ chat, onAction }: { chat: ChatView; onAction: (action: ChatListAction) => void }) {
+  return (
+    <ContextMenuContent aria-label={`Actions for ${chatName(chat)}`}>
+      <ContextMenuItem onClick={() => onAction(chat.pinned ? "unpin" : "pin")}>
+        {chat.pinned ? <PinOffIcon aria-hidden="true" /> : <PinIcon aria-hidden="true" />}
+        {chat.pinned ? "Unpin" : "Pin"}
+      </ContextMenuItem>
+      <ContextMenuItem onClick={() => onAction(chat.notifyOnUpdatesEnabled ? "mute" : "unmute")}>
+        {chat.notifyOnUpdatesEnabled ? <BellOffIcon aria-hidden="true" /> : <BellIcon aria-hidden="true" />}
+        {chat.notifyOnUpdatesEnabled ? "Mute notifications" : "Turn on notifications"}
+      </ContextMenuItem>
+      <ContextMenuItem onClick={() => onAction(chat.unread ? "read" : "unread")}>
+        {chat.unread ? <MailCheckIcon aria-hidden="true" /> : <MailIcon aria-hidden="true" />}
+        {chat.unread ? "Mark as read" : "Mark as unread"}
+      </ContextMenuItem>
+    </ContextMenuContent>
   );
 }
 

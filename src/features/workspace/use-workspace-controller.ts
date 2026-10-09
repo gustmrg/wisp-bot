@@ -10,7 +10,7 @@ import {
   type WispChanges,
   type WispCollection,
 } from "../../../shared/conversations";
-import type { ChatView, ChatViewCollection } from "@/chat-data";
+import type { ChatListAction, ChatView, ChatViewCollection } from "@/chat-data";
 import type { ToolApprovalDecision, ToolApprovalRequest } from "../../../shared/tool-policy";
 import type { BackendError, ModelSelection } from "../../../shared/contracts";
 import { usePersistedPreferences } from "@/features/persistence/use-persisted-preferences";
@@ -59,6 +59,8 @@ export interface WorkspaceController {
   createCircle: (circle: NewCircle) => Promise<boolean>;
   updateWisp: (wispId: string, changes: WispChanges) => Promise<boolean>;
   updateActiveChat: (changes: ChatChanges) => Promise<boolean>;
+  /** Pins, mutes, or marks read or unread any conversation, from the list's menu. */
+  applyChatAction: (chatId: ChatId, action: ChatListAction) => Promise<boolean>;
   /** Deletes the active circle, or the active conversation's Wisp with it. */
   deleteActiveChat: () => Promise<boolean>;
   sendMessage: (text: string) => Promise<boolean>;
@@ -204,6 +206,26 @@ export function useWorkspaceController(): WorkspaceController {
     [activeChatId, conversations.update],
   );
 
+  const applyChatAction = useCallback(
+    (chatId: ChatId, action: ChatListAction): Promise<boolean> => {
+      const chat = conversations.chats[chatId];
+      if (!chat) return Promise.resolve(false);
+      switch (action) {
+        case "pin":
+        case "unpin":
+          return conversations.update(chatId, { kind: chat.kind, pinned: action === "pin" });
+        case "mute":
+        case "unmute":
+          return conversations.update(chatId, { kind: chat.kind, notifyOnUpdatesEnabled: action === "unmute" });
+        case "read":
+          return conversations.markRead(chatId);
+        case "unread":
+          return conversations.markUnread(chatId);
+      }
+    },
+    [conversations.chats, conversations.markRead, conversations.markUnread, conversations.update],
+  );
+
   const deleteActiveChat = useCallback((): Promise<boolean> => {
     if (!activeChat) return Promise.resolve(false);
     return activeChat.kind === "wisp"
@@ -287,6 +309,7 @@ export function useWorkspaceController(): WorkspaceController {
     createCircle,
     updateWisp: conversations.updateWisp,
     updateActiveChat,
+    applyChatAction,
     deleteActiveChat,
     sendMessage,
     answerPrompt,

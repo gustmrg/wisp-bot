@@ -1,4 +1,4 @@
-import { act, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
@@ -198,6 +198,11 @@ function createApi(initialState: ConversationStateView): WispApi {
       ok: true as const,
       value: { chat: chatSummary(state.chats[conversationId]!), added: [], updated: [] },
     })),
+    markConversationUnread: vi.fn(async ({ conversationId }) => {
+      const updated = { ...state.chats[conversationId]!, unread: true };
+      state = { ...state, chats: { ...state.chats, [conversationId]: updated } };
+      return { ok: true as const, value: { chat: chatSummary(updated), added: [], updated: [] } };
+    }),
     subscribeToConversationChanges: vi.fn(() => () => undefined),
     getConversationMessages: vi.fn(async ({ conversationId }) => ({
       ok: true as const,
@@ -420,6 +425,33 @@ describe("App", () => {
     act(() => document.dispatchEvent(new Event("visibilitychange")));
     await waitFor(() => expect(api.markConversationRead).toHaveBeenCalledWith({ conversationId: "atlas" }));
     visibility.mockRestore();
+  });
+
+  it("keeps the open chat unread when the person marks it so, until they choose it again", async () => {
+    const user = userEvent.setup();
+    const api = createApi(conversationState(true, { atlas }));
+    exposeApi(api);
+    render(<App />);
+    await screen.findByRole("textbox", { name: "Message Atlas" });
+    const list = screen.getByRole("navigation", { name: "Wisps and circles" });
+
+    fireEvent.contextMenu(within(list).getByRole("button", { name: /Atlas/ }));
+    await user.click(await screen.findByRole("menuitem", { name: "Mark as unread" }));
+    await waitFor(() => expect(api.markConversationUnread).toHaveBeenCalledWith({ conversationId: "atlas" }));
+    expect(await screen.findByLabelText("Unread activity")).toBeInTheDocument();
+    expect(api.markConversationRead).not.toHaveBeenCalled();
+
+    fireEvent.contextMenu(within(list).getByRole("button", { name: /Atlas/ }));
+    await user.click(await screen.findByRole("menuitem", { name: "Pin" }));
+    await waitFor(() =>
+      expect(api.updateConversation).toHaveBeenCalledWith({
+        conversationId: "atlas",
+        changes: { kind: "wisp", pinned: true },
+      }),
+    );
+
+    await user.click(within(list).getByRole("button", { name: /Atlas/ }));
+    await waitFor(() => expect(api.markConversationRead).toHaveBeenCalledWith({ conversationId: "atlas" }));
   });
 
   it("saves and sends the message itself when the server has no message queue", async () => {

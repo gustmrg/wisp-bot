@@ -32,3 +32,6 @@ export type CircleChatView = CircleSummary & { members: ReadonlyArray<Wisp> };
 /** A conversation as the app shows it: its summary with the Wisps it involves. */
 export type ChatView = WispChatView | CircleChatView;
 export type ChatViewCollection = Record<ChatId, ChatView>;
+
+/** What the conversation list's menu does to a conversation. */
+export type ChatListAction = "pin" | "unpin" | "mute" | "unmute" | "read" | "unread";

@@ -85,6 +85,10 @@ export function registerConversationHandlers(
       WISP_IPC_CHANNELS.markConversationRead,
       (payload) => service.markRead(parseMarkConversationReadRequest(payload).conversationId),
     ],
+    [
+      WISP_IPC_CHANNELS.markConversationUnread,
+      (payload) => service.markUnread(parseMarkConversationReadRequest(payload).conversationId),
+    ],
     [WISP_IPC_CHANNELS.getConversationMessages, (payload) => service.getMessagePage(parseMessagePageRequest(payload))],
     [WISP_IPC_CHANNELS.searchMessages, (payload) => service.searchMessages(parseSearchMessagesRequest(payload).query)],
   ]);

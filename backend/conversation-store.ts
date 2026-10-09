@@ -13,7 +13,8 @@ import type { ConversationRecord, WispRecord, WorkspaceRecords } from "./workspa
 // as columns instead of JSON; earlier readers understand neither. Version 6
 // drops the Wisp picture column, which version 5 writers still name. Version 7
 // adds unread counts; older writers keep `unread` right, and reads trust it.
-const STORE_VERSION = 7;
+// Version 8 adds pinned conversations; older writers leave the column alone.
+const STORE_VERSION = 8;
 const MIN_READER_VERSION = 6;
 /** The first layout that stores records as columns rather than JSON. */
 const COLUMN_RECORDS_VERSION = 5;
@@ -123,6 +124,7 @@ const RECORD_SCHEMA = `
     preview TEXT NOT NULL,
     unread INTEGER CHECK (unread IN (0, 1)),
     unread_count INTEGER CHECK (unread_count >= 0),
+    pinned INTEGER NOT NULL DEFAULT 0 CHECK (pinned IN (0, 1)),
     last_activity_at TEXT,
     storage_id TEXT NOT NULL,
     created_at TEXT NOT NULL,
@@ -211,6 +213,10 @@ const DROP_WISP_PICTURES = "ALTER TABLE wisps DROP COLUMN avatar_image;";
 // Builds before version 7 stored only whether a conversation was unread; reads
 // count one unread message for those.
 const ADD_UNREAD_COUNTS = "ALTER TABLE conversations ADD COLUMN unread_count INTEGER CHECK (unread_count >= 0);";
+
+// Builds before version 8 could not pin conversations.
+const ADD_PINNED_CONVERSATIONS =
+  "ALTER TABLE conversations ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0 CHECK (pinned IN (0, 1));";
 
 /** Tables layout 5 replaced; their rows held whole records as JSON. */
 const JSON_RECORD_TABLES = ["wisps", "conversations", "scheduled_messages", "queued_messages"];
@@ -305,6 +311,7 @@ function conversationRecordOf(row: Row): { chat: Row & { messages: unknown[] }; 
     preview: row.preview,
     messages: [] as unknown[],
     ...unreadOf(row),
+    ...(row.pinned === 1 ? { pinned: true } : {}),
     ...(lastActivityAt === undefined ? {} : { lastActivityAt }),
   };
   const chat =
@@ -415,6 +422,7 @@ export class ConversationStore {
         store.upgradeShapeToAppearance();
         store.dropWispPictures();
         store.addUnreadCounts();
+        store.addPinnedConversations();
       }
       return store;
     } catch (error) {
@@ -629,13 +637,13 @@ export class ConversationStore {
     const circle = chat.kind === "circle" ? chat : undefined;
     this.statement(
       `INSERT INTO conversations (id, kind, wisp_id, name, label, description, notify_on_updates_enabled,
-        preview, unread, unread_count, last_activity_at, storage_id, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        preview, unread, unread_count, pinned, last_activity_at, storage_id, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT (id) DO UPDATE SET
         kind = excluded.kind, wisp_id = excluded.wisp_id, name = excluded.name, label = excluded.label,
         description = excluded.description, notify_on_updates_enabled = excluded.notify_on_updates_enabled,
         preview = excluded.preview, unread = excluded.unread, unread_count = excluded.unread_count,
-        last_activity_at = excluded.last_activity_at,
+        pinned = excluded.pinned, last_activity_at = excluded.last_activity_at,
         storage_id = excluded.storage_id, created_at = excluded.created_at, updated_at = excluded.updated_at`,
     ).run(
       chat.id,
@@ -648,6 +656,7 @@ export class ConversationStore {
       chat.preview,
       chat.unread === undefined ? null : chat.unread ? 1 : 0,
       chat.unreadCount ?? null,
+      chat.pinned ? 1 : 0,
       chat.lastActivityAt ?? null,
       record.storageId,
       record.createdAt,
@@ -863,6 +872,20 @@ export class ConversationStore {
     this.db.exec("BEGIN IMMEDIATE");
     try {
       this.db.exec(ADD_UNREAD_COUNTS);
+      this.raiseVersions();
+      this.db.exec("COMMIT");
+    } catch (error) {
+      this.db.exec("ROLLBACK");
+      throw error;
+    }
+  }
+
+  private addPinnedConversations(): void {
+    const columns = this.db.prepare("SELECT name FROM pragma_table_info('conversations')").all();
+    if (columns.some((column) => column.name === "pinned")) return;
+    this.db.exec("BEGIN IMMEDIATE");
+    try {
+      this.db.exec(ADD_PINNED_CONVERSATIONS);
       this.raiseVersions();
       this.db.exec("COMMIT");
     } catch (error) {

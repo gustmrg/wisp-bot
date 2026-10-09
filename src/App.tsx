@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
+import type { ChatListAction } from "@/chat-data";
 import { AppSettingsDialogHost } from "@/components/app-settings-dialog-host";
 import type { AppSettingsDialogHandle } from "@/components/app-settings-dialog-host";
 import type { SettingsEntrySection } from "@/components/app-settings-dialog";
@@ -99,11 +100,20 @@ function Workspace({ userProfile }: { userProfile: UserProfileController }) {
   const activeChatShown = pageVisible && (!mobile || (mobilePage === "chat" && !detailsOpen));
   const activeChatUnread = Boolean(workspace.activeChat?.unread);
   const { markActiveChatRead } = workspace;
+  // A conversation the person marked unread stays so while it is open, until they choose it again.
+  const [keptUnreadChatId, setKeptUnreadChatId] = useState<string | null>(null);
+  const activeChatKeptUnread = keptUnreadChatId === workspace.activeChatId;
   useEffect(() => {
-    if (activeChatShown && activeChatUnread) markActiveChatRead();
-  }, [activeChatShown, activeChatUnread, markActiveChatRead]);
+    if (activeChatShown && activeChatUnread && !activeChatKeptUnread) markActiveChatRead();
+  }, [activeChatShown, activeChatUnread, activeChatKeptUnread, markActiveChatRead]);
+
+  function applyChatAction(chatId: string, action: ChatListAction) {
+    if (action === "unread") setKeptUnreadChatId(chatId);
+    void workspace.applyChatAction(chatId, action);
+  }
 
   function selectChat(chatId: string) {
+    setKeptUnreadChatId(null);
     navigationVersion.current += 1;
     workspace.selectChat(chatId);
     if (mobile) setDetailsOpen(false);
@@ -111,6 +121,7 @@ function Workspace({ userProfile }: { userProfile: UserProfileController }) {
   }
 
   function selectMessage(chatId: string, messageId: string) {
+    setKeptUnreadChatId(null);
     navigationVersion.current += 1;
     workspace.selectMessage(chatId, messageId);
     if (mobile) setDetailsOpen(false);
@@ -188,6 +199,7 @@ function Workspace({ userProfile }: { userProfile: UserProfileController }) {
             onOpenApprovals={showApprovals}
             onResizeStart={sidebarPanel.onResizeStart}
             onSelectChat={selectChat}
+            onChatAction={applyChatAction}
           />
           {workspace.activeChat ? (
             <ChatPanel

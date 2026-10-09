@@ -291,6 +291,29 @@ describe("Wisp server", () => {
     });
   });
 
+  it("keeps a pin and a conversation marked unread on the server for every device", async () => {
+    const harness = await start();
+    const laptop = await pair(harness, "Laptop");
+    const phone = await pair(harness, "Phone");
+    await setUpWisp(harness.server, laptop);
+
+    expect(
+      await rpc(harness.server, phone, "updateConversation", {
+        conversationId: "atlas",
+        changes: { kind: "wisp", pinned: true },
+      }),
+    ).toMatchObject({ ok: true });
+    expect(await rpc(harness.server, phone, "markConversationUnread", { conversationId: "atlas" })).toMatchObject({
+      ok: true,
+      value: { chat: { id: "atlas", unread: true, pinned: true } },
+    });
+
+    expect(await rpc(harness.server, laptop, "getConversationState")).toMatchObject({
+      ok: true,
+      value: { chats: { atlas: { unread: true, pinned: true } } },
+    });
+  });
+
   it("replays missed events after a reconnect and asks stale clients to resync", async () => {
     const harness = await start();
     const credentials = await pair(harness);

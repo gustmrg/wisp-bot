@@ -313,7 +313,7 @@ describe("ConversationStore versions", () => {
         .map(({ name }) => name),
     ).not.toContain("avatar_image");
     columns.close();
-    expect(meta(file)).toMatchObject({ store_version: "7", min_reader_version: "6" });
+    expect(meta(file)).toMatchObject({ store_version: "8", min_reader_version: "6" });
   });
 
   it("adds unread counts to a version 6 store, keeping which conversations are unread", async () => {
@@ -343,7 +343,7 @@ describe("ConversationStore versions", () => {
     expect(conversations.one).toMatchObject({ chat: { unread: true, unreadCount: 1 } });
     expect(conversations.two).toMatchObject({ chat: { unread: false, unreadCount: 0 } });
     upgraded.close();
-    expect(meta(file)).toMatchObject({ store_version: "7", min_reader_version: "6" });
+    expect(meta(file)).toMatchObject({ store_version: "8", min_reader_version: "6" });
   });
 
   it("trusts unread over a count that a version 6 build left behind", async () => {
@@ -362,6 +362,33 @@ describe("ConversationStore versions", () => {
 
     const reopened = ConversationStore.open(file);
     expect(reopened.read().conversations.one).toMatchObject({ chat: { unread: false, unreadCount: 0 } });
+    reopened.close();
+  });
+
+  it("adds pinning to a version 7 store, and keeps pins written since", async () => {
+    const file = await databasePath();
+    const store = ConversationStore.open(file);
+    store.transaction(() =>
+      store.replaceAll({ initialized: true, wisps: { one: wispRecord("one") }, conversations: { one: record("one") } }),
+    );
+    store.close();
+    // Recreate the layout version 7 wrote: no pinned column.
+    const db = new DatabaseSync(file);
+    db.exec(`
+      ALTER TABLE conversations DROP COLUMN pinned;
+      UPDATE meta SET value = '7' WHERE key = 'store_version';
+    `);
+    db.close();
+
+    const upgraded = ConversationStore.open(file);
+    expect(upgraded.read().conversations.one).toEqual(record("one"));
+    const pinned = { ...record("one"), chat: { ...record("one").chat, pinned: true } };
+    upgraded.transaction(() => upgraded.putConversation(pinned));
+    upgraded.close();
+    expect(meta(file)).toMatchObject({ store_version: "8", min_reader_version: "6" });
+
+    const reopened = ConversationStore.open(file);
+    expect(reopened.read().conversations.one).toEqual(pinned);
     reopened.close();
   });
 
@@ -453,7 +480,7 @@ describe("ConversationStore versions", () => {
       },
     });
     store.close();
-    expect(meta(file)).toMatchObject({ store_version: "7", min_reader_version: "6" });
+    expect(meta(file)).toMatchObject({ store_version: "8", min_reader_version: "6" });
     const db = new DatabaseSync(file, { readOnly: true });
     expect(db.prepare("SELECT conversation_id, type, author_id FROM messages").all()).toEqual([
       { conversation_id: "one", type: "incoming", author_id: "one" },
@@ -473,15 +500,15 @@ describe("ConversationStore versions", () => {
       db.close();
     };
 
-    raise(readable, "8", "6");
+    raise(readable, "9", "6");
     const newer = ConversationStore.open(readable);
     expect(newer.read().initialized).toBe(true);
     // Writing here must not lower the markers the newer build set.
     newer.transaction(() => newer.setInitialized(true));
     newer.close();
-    expect(meta(readable)).toMatchObject({ store_version: "8", min_reader_version: "6" });
+    expect(meta(readable)).toMatchObject({ store_version: "9", min_reader_version: "6" });
 
-    raise(readable, "9", "8");
+    raise(readable, "10", "9");
     const incompatible = ConversationStore.open(readable);
     expect(() => incompatible.read()).toThrow("Unsupported conversation store version.");
     incompatible.close();

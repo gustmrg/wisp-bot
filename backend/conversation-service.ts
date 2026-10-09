@@ -329,6 +329,11 @@ export class ConversationService {
     return this.requireDelta(conversationId, {});
   }
 
+  async markUnread(conversationId: string): Promise<ConversationDelta> {
+    await this.repository.markUnread(conversationId);
+    return this.requireDelta(conversationId, {});
+  }
+
   /** Deletes a circle; a Wisp's own conversation goes only with the Wisp. */
   async delete(conversationId: string): Promise<ConversationStateView> {
     await this.repository.delete(conversationId);

@@ -41,6 +41,7 @@ const REQUIRED_WISP_METHODS = [
   "appendConversationMessage",
   "answerConversationPrompt",
   "markConversationRead",
+  "markConversationUnread",
   "subscribeToConversationChanges",
   "getConversationMessages",
   "searchMessages",
