@@ -9,7 +9,7 @@ import {
   shell,
   type IpcMainInvokeEvent,
 } from "electron";
-import { autoUpdater } from "electron-updater";
+import { autoUpdater, DebUpdater, PacmanUpdater, RpmUpdater } from "electron-updater";
 import { hostname } from "node:os";
 import path from "node:path";
 import { LaunchAtLoginService } from "./backend/launch-at-login-service.js";
@@ -21,6 +21,7 @@ import { FileLogSink } from "../backend/file-log-sink.js";
 import { SafeStorageEncryption } from "./backend/safe-storage-encryption.js";
 import { CompositeLogSink, StructuredLogger } from "../backend/structured-logger.js";
 import { recordLaunchVersion } from "./backend/launch-version.js";
+import { relaunchAfterExit } from "./backend/relaunch-after-exit.js";
 import { resolveAutoInstallSupport } from "./backend/update-capability.js";
 import { UpdateService } from "./backend/update-service.js";
 import { disposeWithin } from "../backend/runtime.js";
@@ -145,6 +146,12 @@ async function createWindow(target: RendererTarget): Promise<void> {
   }
 }
 
+// These updaters install with pkexec or sudo, which a process started by
+// `app.relaunch()` cannot run on Linux (see relaunch-after-exit.ts).
+function installsThroughPackageManager(): boolean {
+  return autoUpdater instanceof DebUpdater || autoUpdater instanceof RpmUpdater || autoUpdater instanceof PacmanUpdater;
+}
+
 function handleFatalStartupError(error: unknown): void {
   if (fatalErrorHandled) return;
   fatalErrorHandled = true;
@@ -267,6 +274,9 @@ async function bootstrap(): Promise<void> {
       autoInstallSupported,
       logger,
       updatedFrom,
+      installsThroughPackageManager()
+        ? () => relaunchAfterExit(process.pid, process.execPath, process.argv.slice(1))
+        : undefined,
     ),
     connectionsDirectory: userData,
     deviceName: `Wisp on ${hostname()}`,
