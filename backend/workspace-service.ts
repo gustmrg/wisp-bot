@@ -31,12 +31,20 @@ export interface TreeMeasurement {
   partial: boolean;
 }
 
+/** A regular file met while measuring a folder. */
+export interface MeasuredFile {
+  /** Absolute path of the file. */
+  path: string;
+  size: number;
+  modifiedAt: Date;
+}
+
 /**
  * Logical size and file count under a folder. Symlinks are neither followed
  * nor counted; a missing folder is empty, but unreadable ones mark the result
- * partial instead of reading as zero.
+ * partial instead of reading as zero. `onFile` sees every file counted.
  */
-export async function measureTree(directory: string): Promise<TreeMeasurement> {
+export async function measureTree(directory: string, onFile?: (file: MeasuredFile) => void): Promise<TreeMeasurement> {
   const total: TreeMeasurement = { bytes: 0, files: 0, partial: false };
   const pending = [directory];
   while (pending.length) {
@@ -53,8 +61,10 @@ export async function measureTree(directory: string): Promise<TreeMeasurement> {
       if (entry.isDirectory()) pending.push(entryPath);
       else if (entry.isFile()) {
         try {
-          total.bytes += (await lstat(entryPath)).size;
+          const info = await lstat(entryPath);
+          total.bytes += info.size;
           total.files += 1;
+          onFile?.({ path: entryPath, size: info.size, modifiedAt: info.mtime });
         } catch (error) {
           // A file removed during the scan is gone, not unreadable.
           if ((error as NodeJS.ErrnoException).code !== "ENOENT") total.partial = true;
@@ -118,7 +128,7 @@ export async function readWorkspaceQuota(configDirectory: string, fallback = WOR
  * Free space on the disk that holds `directory`, measured at its nearest
  * existing ancestor so a workspace that was never written to still has an answer.
  */
-async function freeDiskBytes(directory: string): Promise<number> {
+export async function freeDiskBytes(directory: string): Promise<number> {
   let current = directory;
   for (;;) {
     try {
@@ -154,6 +164,8 @@ export interface WorkspaceServiceOptions {
   freeDiskBytes?: (directory: string) => Promise<number>;
   /** Held while files are written into a conversation's workspace; throws while it is being cleaned. */
   acquireWrite?: (conversationId: string) => () => void;
+  /** Called after a workspace was given another size. */
+  onQuotaChanged?: (conversationId: string) => void;
 }
 
 /**
@@ -202,6 +214,7 @@ export class WorkspaceService {
       path.join(configDirectory, WORKSPACE_SETTINGS_FILE),
       `${JSON.stringify({ quotaBytes }, null, 2)}\n`,
     );
+    this.options.onQuotaChanged?.(conversationId);
     return { ...view, quotaBytes };
   }
 
@@ -351,7 +364,7 @@ export class WorkspaceService {
 }
 
 /** The largest offered size a workspace can grow into with `roomBytes` of disk, never below the smallest. */
-function largestQuota(roomBytes: number): number {
+export function largestQuota(roomBytes: number): number {
   return WORKSPACE_QUOTA_PRESETS.filter((preset) => preset <= roomBytes).at(-1) ?? WORKSPACE_QUOTA_PRESETS[0]!;
 }
 

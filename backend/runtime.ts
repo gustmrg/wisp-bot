@@ -254,6 +254,8 @@ export async function createBackendRuntime(options: BackendRuntimeOptions): Prom
     resolveWorkspace: (id) => conversationRepository.getWorkspaceDirectory(id),
     openPath: options.openPath,
     selectFiles: options.selectFiles,
+    // The summary shows each workspace's size, so a resize must not wait for the cache to expire.
+    onQuotaChanged: () => storage.invalidate(),
   });
   const transcriptionService = new TranscriptionService({
     credentials: modelService,

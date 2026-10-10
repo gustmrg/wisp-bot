@@ -40,6 +40,11 @@
   --color-green: var(--green);
   --color-warning: var(--warning);
   --color-warning-solid: var(--warning-solid);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-rest: var(--chart-rest);
   --radius-sm: calc(var(--radius) * 0.6);
   --radius-md: calc(var(--radius) * 0.8);
   --radius-lg: var(--radius);
@@ -140,6 +145,12 @@
     --green: #16844e;
     --warning: #855c17;
     --warning-solid: #f59e0b;
+    /* Storage charts: one blue, darkest for the largest share; the remainder is grey. */
+    --chart-1: #1d4ed8;
+    --chart-2: #3b82f6;
+    --chart-3: #7aa7f7;
+    --chart-4: #b3cbf5;
+    --chart-rest: #b8b8b8;
     --focus-outline: rgba(0, 0, 0, 0.45);
     --scrollbar-thumb: rgba(0, 0, 0, 0.16);
   }
@@ -173,6 +184,12 @@
     --blue: #4a9eff;
     --green: #32d583;
     --warning: #e6b765;
+    /* Lightest for the largest share, so it stands out against the dark ground. */
+    --chart-1: #8fb4ff;
+    --chart-2: #5b8ef7;
+    --chart-3: #3a69cc;
+    --chart-4: #284b94;
+    --chart-rest: #5c5c5c;
     --focus-outline: rgba(255, 255, 255, 0.45);
     --scrollbar-thumb: rgba(255, 255, 255, 0.16);
   }

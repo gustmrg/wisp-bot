@@ -7,6 +7,7 @@ import {
   MAX_ARCHIVE_DELETIONS,
   MAX_CLEANUP_PATHS,
   STORAGE_PAGE_SIZE,
+  STORAGE_TOP_ITEMS,
   type ArchiveManifest,
   type StorageArchive,
   type StorageArchiveDeletionRequest,
@@ -19,13 +20,15 @@ import {
   type StorageDirectoryRequest,
   type StorageEntry,
   type StorageEntryType,
+  type StorageLargeFile,
   type StorageSummary,
   type StorageSummaryRequest,
+  type StorageUsageItem,
   type StorageWorkspace,
 } from "../shared/storage.js";
 import { WORKSPACE_INBOX_DIRECTORY, WORKSPACE_QUOTA_BYTES } from "../shared/workspace.js";
 import { WispBackendError } from "./backend-error.js";
-import { measureTree } from "./workspace-service.js";
+import { freeDiskBytes, largestQuota, measureTree, type TreeMeasurement } from "./workspace-service.js";
 
 /** How long a measurement is reused before the next summary measures again. */
 const SUMMARY_TTL_MS = 30_000;
@@ -63,6 +66,8 @@ export interface StorageServiceOptions {
   quotaBytes?: number;
   /** The size a Wisp's workspace was given; unset, every workspace has `quotaBytes`. */
   resolveQuota?: (conversationId: string, fallback: number) => Promise<number>;
+  /** Free space on the disk holding a folder; defaults to asking the operating system. */
+  freeDiskBytes?: (directory: string) => Promise<number>;
   now?: () => Date;
 }
 
@@ -109,6 +114,11 @@ export class StorageService {
     };
   }
 
+  /** Drops the cached measurement, so the next summary measures again. */
+  invalidate(): void {
+    this.cache = undefined;
+  }
+
   /** Whether files are being removed from the conversation's workspace; agents must not run meanwhile. */
   isCleaning(conversationId: string): boolean {
     return this.cleaning.has(conversationId);
@@ -136,7 +146,11 @@ export class StorageService {
     const seen = new Set<string>();
     const unique = this.options.listWorkspaces().filter(({ directory }) => !seen.has(directory) && seen.add(directory));
     const measured = await mapLimited(unique, MEASURE_CONCURRENCY, async (workspace) => {
-      const [tree, quotaBytes] = await Promise.all([measureTree(workspace.directory), this.quotaFor(workspace)]);
+      const [{ tree, folders, largestFiles }, quotaBytes] = await Promise.all([
+        measureWorkspace(workspace.directory),
+        this.quotaFor(workspace),
+      ]);
+      const maxQuotaBytes = workspace.kind === "wisp" ? await this.maxQuotaFor(workspace.directory, tree) : undefined;
       return {
         conversationId: workspace.conversationId,
         name: workspace.name,
@@ -145,6 +159,9 @@ export class StorageService {
         fileCount: tree.files,
         quotaBytes,
         partial: tree.partial,
+        ...(maxQuotaBytes === undefined ? {} : { maxQuotaBytes }),
+        folders,
+        largestFiles,
       } satisfies StorageWorkspace;
     });
     return measured.sort((a, b) => b.usedBytes - a.usedBytes || a.name.localeCompare(b.name));
@@ -160,6 +177,16 @@ export class StorageService {
     if (kind !== "wisp" || !this.options.resolveQuota) return this.quotaBytes;
     // A size that cannot be read must not hide the rest of the summary.
     return this.options.resolveQuota(conversationId, this.quotaBytes).catch(() => this.quotaBytes);
+  }
+
+  /** Like `WorkspaceView.maxQuotaBytes`; undefined when it cannot be known, so no size is wrongly offered. */
+  private async maxQuotaFor(directory: string, tree: TreeMeasurement): Promise<number | undefined> {
+    if (tree.partial) return undefined;
+    try {
+      return largestQuota(tree.bytes + (await (this.options.freeDiskBytes ?? freeDiskBytes)(directory)));
+    } catch {
+      return undefined;
+    }
   }
 
   private async measureArchives(): Promise<StorageArchive[]> {
@@ -294,6 +321,51 @@ export class StorageService {
   private now(): Date {
     return this.options.now?.() ?? new Date();
   }
+}
+
+/**
+ * One pass over a workspace: its totals, the size of each entry at its root,
+ * and its largest files, kept to `STORAGE_TOP_ITEMS` as they are met.
+ */
+async function measureWorkspace(directory: string): Promise<{
+  tree: TreeMeasurement;
+  folders: StorageUsageItem[];
+  largestFiles: StorageLargeFile[];
+}> {
+  const roots = new Map<string, StorageUsageItem>();
+  const largest: Array<{ path: string; size: number; modifiedAt: Date }> = [];
+  const tree = await measureTree(directory, (file) => {
+    const segments = path.relative(directory, file.path).split(path.sep);
+    const name = segments[0]!;
+    const root = roots.get(name) ?? {
+      path: name,
+      type: segments.length > 1 ? ("directory" as const) : ("file" as const),
+      size: 0,
+      fileCount: 0,
+    };
+    root.size += file.size;
+    root.fileCount += 1;
+    roots.set(name, root);
+    if (largest.length < STORAGE_TOP_ITEMS || file.size > largest.at(-1)!.size) {
+      const relative = segments.join("/");
+      const at = largest.findIndex(
+        (other) => file.size > other.size || (file.size === other.size && relative < other.path),
+      );
+      largest.splice(at === -1 ? largest.length : at, 0, {
+        path: relative,
+        size: file.size,
+        modifiedAt: file.modifiedAt,
+      });
+      largest.length = Math.min(largest.length, STORAGE_TOP_ITEMS);
+    }
+  });
+  return {
+    tree,
+    folders: [...roots.values()]
+      .sort((a, b) => b.size - a.size || a.path.localeCompare(b.path))
+      .slice(0, STORAGE_TOP_ITEMS),
+    largestFiles: largest.map((file) => ({ ...file, modifiedAt: file.modifiedAt.toISOString() })),
+  };
 }
 
 function describeFailure(error: unknown): string {

@@ -19,6 +19,7 @@ async function setup(
     quotaBytes?: number;
     onCleanupFinished?: (id: string) => void;
     resolveQuota?: (id: string, fallback: number) => Promise<number>;
+    freeDiskBytes?: (directory: string) => Promise<number>;
   } = {},
 ) {
   const root = await mkdtemp(path.join(os.tmpdir(), "wisp-storage-"));
@@ -47,6 +48,7 @@ async function setup(
     ...(options.onCleanupFinished ? { onCleanupFinished: options.onCleanupFinished } : {}),
     ...(options.quotaBytes === undefined ? {} : { quotaBytes: options.quotaBytes }),
     ...(options.resolveQuota ? { resolveQuota: options.resolveQuota } : {}),
+    freeDiskBytes: options.freeDiskBytes ?? (async () => 0),
   });
   return { root, atlas, circle, archive, service };
 }
@@ -117,6 +119,71 @@ describe("StorageService summary", () => {
     } finally {
       await chmod(locked, 0o700);
     }
+  });
+});
+
+describe("StorageService largest consumers", () => {
+  it("reports each workspace's root entries and largest files, without counting a shared folder twice", async () => {
+    const { atlas, service } = await setup();
+    await writeFile(path.join(atlas, "inbox", "big.zip"), Buffer.alloc(300));
+    await writeFile(path.join(atlas, "inbox", "small.txt"), Buffer.alloc(5));
+    await mkdir(path.join(atlas, "papers", "drafts"), { recursive: true });
+    await writeFile(path.join(atlas, "papers", "drafts", "thesis.pdf"), Buffer.alloc(120));
+    await writeFile(path.join(atlas, "notes.txt"), Buffer.alloc(40));
+
+    const { workspaces, workspaceBytes } = await service.getSummary();
+
+    expect(workspaces.filter(({ name }) => name.startsWith("Atlas"))).toHaveLength(1);
+    expect(workspaceBytes).toBe(465);
+    const atlasSummary = workspaces.find(({ conversationId }) => conversationId === "atlas")!;
+    expect(atlasSummary.folders).toEqual([
+      { path: "inbox", type: "directory", size: 305, fileCount: 2 },
+      { path: "papers", type: "directory", size: 120, fileCount: 1 },
+      { path: "notes.txt", type: "file", size: 40, fileCount: 1 },
+    ]);
+    expect(atlasSummary.largestFiles?.map(({ path: filePath, size }) => [filePath, size])).toEqual([
+      ["inbox/big.zip", 300],
+      ["papers/drafts/thesis.pdf", 120],
+      ["notes.txt", 40],
+      ["inbox/small.txt", 5],
+    ]);
+    expect(atlasSummary.largestFiles?.[0]?.modifiedAt).toEqual(expect.any(String));
+  });
+
+  it("keeps only the largest files", async () => {
+    const { circle, service } = await setup();
+    await Promise.all(
+      Array.from({ length: 25 }, (_, index) => writeFile(path.join(circle, `f${index}`), Buffer.alloc(index + 1))),
+    );
+    const { workspaces } = await service.getSummary();
+    const files = workspaces.find(({ conversationId }) => conversationId === "circle")!.largestFiles!;
+    expect(files.map(({ size }) => size)).toEqual([25, 24, 23, 22, 21, 20, 19, 18, 17, 16]);
+  });
+
+  it("offers Wisp workspaces the sizes the disk has room for, and none for circles", async () => {
+    const MIB = 1024 * 1024;
+    const { service } = await setup({ freeDiskBytes: async () => 3 * 1024 * MIB });
+    const { workspaces } = await service.getSummary();
+    expect(workspaces.find(({ conversationId }) => conversationId === "atlas")?.maxQuotaBytes).toBe(2 * 1024 * MIB);
+    expect(workspaces.find(({ conversationId }) => conversationId === "circle")).not.toHaveProperty("maxQuotaBytes");
+  });
+
+  it("leaves the largest size out when the disk cannot be measured", async () => {
+    const { service } = await setup({
+      freeDiskBytes: async () => {
+        throw new Error("statfs failed");
+      },
+    });
+    const { workspaces } = await service.getSummary();
+    expect(workspaces.find(({ conversationId }) => conversationId === "atlas")).not.toHaveProperty("maxQuotaBytes");
+  });
+
+  it("measures again after being invalidated", async () => {
+    const { atlas, service } = await setup();
+    expect((await service.getSummary()).workspaceBytes).toBe(0);
+    await writeFile(path.join(atlas, "a"), Buffer.alloc(10));
+    service.invalidate();
+    expect((await service.getSummary()).workspaceBytes).toBe(10);
   });
 });
 

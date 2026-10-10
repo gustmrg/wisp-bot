@@ -159,6 +159,24 @@ describe("WorkspaceService", () => {
     await expect(service.setQuota("atlas", smallest)).resolves.toMatchObject({ quotaBytes: smallest });
   });
 
+  it("reports a resize only once it is saved", async () => {
+    const { configDirectory, workspaceDirectory } = await setup();
+    const [, second, third] = WORKSPACE_QUOTA_PRESETS as [number, number, number];
+    const onQuotaChanged = vi.fn();
+    const service = new WorkspaceService({
+      resolveDirectories: () => ({ workspaceDirectory, configDirectory }),
+      openPath: async () => undefined,
+      selectFiles: async () => [],
+      freeDiskBytes: async () => second,
+      onQuotaChanged,
+    });
+
+    await expect(service.setQuota("atlas", third)).rejects.toBeTruthy();
+    expect(onQuotaChanged).not.toHaveBeenCalled();
+    await service.setQuota("atlas", second);
+    expect(onQuotaChanged).toHaveBeenCalledWith("atlas");
+  });
+
   it("enforces a resized workspace's size on attachments", async () => {
     const { service, picks, configDirectory } = await setup(["big.bin"], 1024);
     await writeFile(path.join(picks, "big.bin"), "x".repeat(10), "utf8");

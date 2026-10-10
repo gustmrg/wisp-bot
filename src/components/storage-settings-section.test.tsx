@@ -16,6 +16,12 @@ const summary = {
       fileCount: 12,
       quotaBytes: 512 * MIB,
       partial: false,
+      maxQuotaBytes: 2 * 1024 * MIB,
+      folders: [
+        { path: "inbox", type: "directory" as const, size: 400 * MIB, fileCount: 10 },
+        { path: "notes.txt", type: "file" as const, size: 60 * MIB, fileCount: 1 },
+      ],
+      largestFiles: [{ path: "inbox/dataset.zip", size: 300 * MIB, modifiedAt: null }],
     },
     {
       conversationId: "b",
@@ -25,6 +31,20 @@ const summary = {
       fileCount: 1,
       quotaBytes: 512 * MIB,
       partial: false,
+      maxQuotaBytes: 2 * 1024 * MIB,
+      folders: [{ path: "papers", type: "directory" as const, size: 2 * MIB, fileCount: 1 }],
+      largestFiles: [{ path: "papers/thesis.pdf", size: 2 * MIB, modifiedAt: null }],
+    },
+    {
+      conversationId: "c",
+      name: "Crew",
+      kind: "circle" as const,
+      usedBytes: 0,
+      fileCount: 0,
+      quotaBytes: 512 * MIB,
+      partial: false,
+      folders: [],
+      largestFiles: [],
     },
   ],
   workspaceBytes: 462 * MIB,
@@ -87,23 +107,24 @@ it("lists workspaces largest first with usage, and filters by search", async () 
   install();
   render(<StorageSettingsSection />);
 
-  expect(await screen.findByText("Atlas")).toBeInTheDocument();
+  expect(await screen.findByRole("button", { name: "Inspect Atlas" })).toBeInTheDocument();
   expect(screen.getByText(/460 MiB of 512 MiB \(90%\)/)).toBeInTheDocument();
   expect(screen.getByRole("progressbar", { name: "Atlas usage" })).toHaveAttribute("aria-valuenow", "90");
   expect(screen.getByText("462 MiB")).toBeInTheDocument();
+  expect(screen.getByText(/of 1.5 GiB allotted/)).toBeInTheDocument();
   await user.type(screen.getByRole("textbox", { name: "Search workspaces" }), "nov");
-  expect(screen.queryByText("Atlas")).not.toBeInTheDocument();
-  expect(screen.getByText("Nova")).toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "Inspect Atlas" })).not.toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Inspect Nova" })).toBeInTheDocument();
 });
 
 it("starts filtered to a workspace and can show all", async () => {
   const user = userEvent.setup();
   install();
   render(<StorageSettingsSection initialConversationId="b" />);
-  expect(await screen.findByText("Nova")).toBeInTheDocument();
-  expect(screen.queryByText("Atlas")).not.toBeInTheDocument();
+  expect(await screen.findByRole("button", { name: "Inspect Nova" })).toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "Inspect Atlas" })).not.toBeInTheDocument();
   await user.click(screen.getByRole("button", { name: "Show all workspaces" }));
-  expect(screen.getByText("Atlas")).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Inspect Atlas" })).toBeInTheDocument();
 });
 
 it("previews, then removes selected files only after explicit confirmation", async () => {
@@ -165,4 +186,133 @@ it("explains when the server is too old", async () => {
   });
   render(<StorageSettingsSection />);
   expect(await screen.findByRole("alert")).toHaveTextContent("Update the server");
+});
+
+it("charts usage with the same numbers as the list and counts full workspaces", async () => {
+  install();
+  render(<StorageSettingsSection />);
+  expect(await screen.findByRole("img", { name: "Space by workspace: Atlas 460 MiB, Nova 2.0 MiB" })).toBeVisible();
+  expect(screen.getByText("0 workspaces")).toBeInTheDocument();
+});
+
+it("says when there is nothing stored yet", async () => {
+  install({
+    getStorageSummary: vi.fn(async () => ({
+      ok: true as const,
+      value: { ...summary, workspaces: [summary.workspaces[2]], workspaceBytes: 0 },
+    })),
+  });
+  render(<StorageSettingsSection />);
+  expect(await screen.findByText("No files in workspaces yet.")).toBeInTheDocument();
+});
+
+it("opens the largest file in the inspector, already selected", async () => {
+  const user = userEvent.setup();
+  const wisp = install();
+  render(<StorageSettingsSection />);
+  await user.click(await screen.findByRole("radio", { name: "Files" }));
+  const largest = within(screen.getByRole("region", { name: "Largest" }));
+  expect(largest.getAllByRole("listitem").map((item) => item.textContent)).toEqual([
+    expect.stringContaining("dataset.zip"),
+    expect.stringContaining("thesis.pdf"),
+  ]);
+  await user.click(screen.getByRole("button", { name: "Show dataset.zip in Atlas › inbox" }));
+
+  expect(wisp.listStorageDirectory).toHaveBeenCalledWith({ conversationId: "a", path: "inbox" });
+  expect(await screen.findByRole("checkbox", { name: "Select inbox/dataset.zip" })).toBeChecked();
+  expect(screen.getByRole("button", { name: "Clean 1 selected…" })).toBeEnabled();
+});
+
+it("lists the largest folders across workspaces and opens one", async () => {
+  const user = userEvent.setup();
+  const wisp = install();
+  render(<StorageSettingsSection />);
+  await user.click(await screen.findByRole("radio", { name: "Folders" }));
+  // Files at a workspace's root are not folders.
+  expect(screen.queryByText("notes.txt/")).not.toBeInTheDocument();
+  await user.click(screen.getByRole("button", { name: "Open inbox/ in Atlas · 10 files" }));
+  expect(wisp.listStorageDirectory).toHaveBeenCalledWith({ conversationId: "a", path: "inbox" });
+  expect(
+    await screen.findByRole("img", { name: /Space by folder: inbox\/ 400 MiB, notes.txt 60.0 MiB/ }),
+  ).toBeVisible();
+});
+
+it("explains that an older server does not report folders and files", async () => {
+  const user = userEvent.setup();
+  install({
+    getStorageSummary: vi.fn(async () => ({
+      ok: true as const,
+      value: {
+        ...summary,
+        workspaces: summary.workspaces.map(({ folders: _f, largestFiles: _l, maxQuotaBytes: _m, ...rest }) => rest),
+      },
+    })),
+  });
+  render(<StorageSettingsSection />);
+  await user.click(await screen.findByRole("radio", { name: "Files" }));
+  expect(screen.getByText(/does not report folders and files/)).toBeInTheDocument();
+});
+
+it("resizes a workspace from the list, confirming a size below its usage", async () => {
+  const user = userEvent.setup();
+  const GIB = 1024 * MIB;
+  const setWorkspaceQuota = vi.fn(async ({ quotaBytes }: { quotaBytes: number }) => ({
+    ok: true as const,
+    value: { usedBytes: 460 * MIB, quotaBytes, maxQuotaBytes: 2 * GIB },
+  }));
+  install({ setWorkspaceQuota });
+  render(<StorageSettingsSection />);
+
+  const size = await screen.findByRole("combobox", { name: "Workspace size for Atlas" });
+  await user.click(size);
+  expect(screen.getByRole("option", { name: "10.0 GiB" })).toHaveAttribute("aria-disabled", "true");
+  await user.click(await screen.findByRole("option", { name: "2.0 GiB" }));
+  expect(setWorkspaceQuota).toHaveBeenCalledWith({ conversationId: "a", quotaBytes: 2 * GIB });
+  expect(await screen.findByText(/460 MiB of 2.0 GiB \(22%\)/)).toBeInTheDocument();
+  expect(screen.getByText(/of 3.0 GiB allotted/)).toBeInTheDocument();
+});
+
+it("asks before giving a workspace less room than it uses", async () => {
+  const user = userEvent.setup();
+  const GIB = 1024 * MIB;
+  const setWorkspaceQuota = vi.fn(async () => ({
+    ok: true as const,
+    value: { usedBytes: GIB, quotaBytes: 512 * MIB, maxQuotaBytes: 2 * GIB },
+  }));
+  const [atlas, ...others] = summary.workspaces;
+  install({
+    setWorkspaceQuota,
+    getStorageSummary: vi.fn(async () => ({
+      ok: true as const,
+      value: { ...summary, workspaces: [{ ...atlas!, usedBytes: GIB, quotaBytes: 2 * GIB }, ...others] },
+    })),
+  });
+  render(<StorageSettingsSection />);
+
+  await user.click(await screen.findByRole("combobox", { name: "Workspace size for Atlas" }));
+  await user.click(await screen.findByRole("option", { name: "512 MiB" }));
+  expect(setWorkspaceQuota).not.toHaveBeenCalled();
+  expect(screen.getByRole("alert")).toHaveTextContent("Smaller than what it holds (1.0 GiB)");
+  await user.click(screen.getByRole("button", { name: "Set to 512 MiB anyway" }));
+  expect(setWorkspaceQuota).toHaveBeenCalledWith({ conversationId: "a", quotaBytes: 512 * MIB });
+  // The list and the summary agree that it is now full.
+  expect(await screen.findByText("1 workspace")).toBeInTheDocument();
+  expect(screen.getByText(/1.0 GiB of 512 MiB \(200%\)/)).toBeInTheDocument();
+});
+
+it("keeps a circle's size fixed and reports servers that cannot resize", async () => {
+  const user = userEvent.setup();
+  install({
+    setWorkspaceQuota: vi.fn(async () => ({
+      ok: false as const,
+      error: { code: "unsupported" as const, message: "x", retryable: false },
+    })),
+  });
+  render(<StorageSettingsSection />);
+  expect(await screen.findByText("Circles keep 512 MiB")).toBeInTheDocument();
+  expect(screen.queryByRole("combobox", { name: "Workspace size for Crew" })).not.toBeInTheDocument();
+
+  await user.click(screen.getByRole("combobox", { name: "Workspace size for Nova" }));
+  await user.click(await screen.findByRole("option", { name: "2.0 GiB" }));
+  expect(await screen.findByRole("alert")).toHaveTextContent("cannot resize workspaces");
 });

@@ -2,6 +2,8 @@ import { useContext, useEffect, useMemo, useRef, useState } from "react";
 import { RefreshCwIcon, SearchIcon } from "lucide-react";
 
 import { StorageInspector } from "@/components/storage-inspector";
+import { LargestConsumers, StorageOverview, type InspectTarget } from "@/components/storage-overview";
+import { WorkspaceSizeSelect } from "@/components/workspace-size-select";
 import {
   ConfirmAction,
   SettingsCard,
@@ -14,7 +16,7 @@ import { Input } from "@/components/ui/input";
 import { describeStorageFailure, formatMeasuredAt } from "@/lib/storage-format";
 import { ActiveConnectionContext } from "@/features/connections/active-connection";
 import type { StorageArchive, StorageSummary, StorageWorkspace } from "../../shared/storage";
-import { formatBytes } from "../../shared/workspace";
+import { formatBytes, type WorkspaceView } from "../../shared/workspace";
 
 export function StorageSettingsSection({ initialConversationId }: { initialConversationId?: string }) {
   const connection = useContext(ActiveConnectionContext);
@@ -24,7 +26,7 @@ export function StorageSettingsSection({ initialConversationId }: { initialConve
   const [refreshCount, setRefreshCount] = useState(0);
   const [query, setQuery] = useState("");
   const [onlyConversation, setOnlyConversation] = useState(initialConversationId ?? null);
-  const [inspecting, setInspecting] = useState<string | null>(null);
+  const [inspecting, setInspecting] = useState<InspectTarget | null>(null);
   const first = useRef(true);
 
   useEffect(() => {
@@ -59,7 +61,26 @@ export function StorageSettingsSection({ initialConversationId }: { initialConve
         (!needle || workspace.name.toLowerCase().includes(needle)),
     );
   }, [summary, query, onlyConversation]);
-  const inspected = summary?.workspaces.find((workspace) => workspace.conversationId === inspecting);
+  const inspected = summary?.workspaces.find((workspace) => workspace.conversationId === inspecting?.conversationId);
+
+  // A resize changes only the size; usage stays as measured, so every number on the page agrees.
+  function applyResize(conversationId: string, view: WorkspaceView) {
+    setState((current) =>
+      current.summary
+        ? {
+            ...current,
+            summary: {
+              ...current.summary,
+              workspaces: current.summary.workspaces.map((workspace) =>
+                workspace.conversationId === conversationId
+                  ? { ...workspace, quotaBytes: view.quotaBytes, maxQuotaBytes: view.maxQuotaBytes }
+                  : workspace,
+              ),
+            },
+          }
+        : current,
+    );
+  }
 
   return (
     <section
@@ -75,11 +96,15 @@ export function StorageSettingsSection({ initialConversationId }: { initialConve
         length of the files, not the space they take on disk. Conversations, settings and sessions are not counted.
       </p>
 
-      {inspected ? (
+      {inspected && inspecting ? (
         <StorageInspector
+          key={`${inspecting.conversationId}:${inspecting.path ?? ""}:${inspecting.select ?? ""}`}
           workspace={inspected}
+          initialPath={inspecting.path}
+          initialSelection={inspecting.select}
           onClose={() => setInspecting(null)}
           onChanged={() => setRefreshCount((count) => count + 1)}
+          onResized={(view) => applyResize(inspected.conversationId, view)}
         />
       ) : (
         <>
@@ -103,31 +128,14 @@ export function StorageSettingsSection({ initialConversationId }: { initialConve
           ) : null}
           {summary ? (
             <div aria-busy={state.loading || undefined} className={state.loading ? "opacity-60" : undefined}>
-              <SettingsGroup label="Summary">
-                <SettingsCard variant="stacked">
-                  <SettingsRow>
-                    <SettingsRowCopy>
-                      <strong>Active workspaces</strong>
-                      <small>
-                        {summary.workspaces.length} {summary.workspaces.length === 1 ? "workspace" : "workspaces"}
-                      </small>
-                    </SettingsRowCopy>
-                    <span className="text-md font-medium tabular-nums">{formatBytes(summary.workspaceBytes)}</span>
-                  </SettingsRow>
-                  <SettingsRow>
-                    <SettingsRowCopy>
-                      <strong>Archived conversations</strong>
-                      <small>Kept after a Wisp or circle is deleted. Measured apart from workspaces.</small>
-                    </SettingsRowCopy>
-                    <span className="text-md font-medium tabular-nums">{formatBytes(summary.archiveBytes)}</span>
-                  </SettingsRow>
-                </SettingsCard>
-              </SettingsGroup>
+              <StorageOverview summary={summary} />
               {summary.partial ? (
                 <p role="alert" className="mx-0.5 mt-[7px] text-xs text-destructive">
                   Some folders could not be read, so the totals shown are a minimum.
                 </p>
               ) : null}
+
+              <LargestConsumers summary={summary} onInspect={setInspecting} />
 
               <SettingsGroup label="Workspaces">
                 <div className="mb-2 flex flex-wrap items-center gap-2">
@@ -159,7 +167,12 @@ export function StorageSettingsSection({ initialConversationId }: { initialConve
                 ) : (
                   <SettingsCard variant="stacked">
                     {visible.map((workspace) => (
-                      <WorkspaceRow key={workspace.conversationId} workspace={workspace} onInspect={setInspecting} />
+                      <WorkspaceRow
+                        key={workspace.conversationId}
+                        workspace={workspace}
+                        onInspect={(conversationId) => setInspecting({ conversationId })}
+                        onResized={(view) => applyResize(workspace.conversationId, view)}
+                      />
                     ))}
                   </SettingsCard>
                 )}
@@ -181,19 +194,31 @@ export function StorageSettingsSection({ initialConversationId }: { initialConve
 function WorkspaceRow({
   workspace,
   onInspect,
+  onResized,
 }: {
   workspace: StorageWorkspace;
   onInspect: (conversationId: string) => void;
+  onResized: (view: WorkspaceView) => void;
 }) {
-  const percent = Math.min(100, Math.round((workspace.usedBytes / workspace.quotaBytes) * 100));
+  // The text tells how far past its size a workspace is; the bar stops at full.
+  const share = Math.round((workspace.usedBytes / workspace.quotaBytes) * 100);
+  const percent = Math.min(100, share);
+  const full = workspace.usedBytes >= workspace.quotaBytes;
   return (
-    <SettingsRow>
-      <SettingsRowCopy>
-        <strong className="truncate">{workspace.name}</strong>
+    <SettingsRow className="flex-wrap">
+      <SettingsRowCopy className="min-w-48 flex-1">
+        <span className="flex min-w-0 items-center gap-2">
+          <strong className="truncate">{workspace.name}</strong>
+          {full ? (
+            <span className="shrink-0 rounded-full bg-destructive/10 px-1.5 py-px text-2xs font-medium text-destructive">
+              Full
+            </span>
+          ) : null}
+        </span>
         <small>
           {workspace.kind === "circle" ? "Circle · " : ""}
           {workspace.fileCount.toLocaleString("en-US")} {workspace.fileCount === 1 ? "file" : "files"} ·{" "}
-          {formatBytes(workspace.usedBytes)} of {formatBytes(workspace.quotaBytes)} ({percent}%)
+          {formatBytes(workspace.usedBytes)} of {formatBytes(workspace.quotaBytes)} ({share}%)
           {workspace.partial ? " · partial" : ""}
         </small>
         <div
@@ -210,14 +235,31 @@ function WorkspaceRow({
           />
         </div>
       </SettingsRowCopy>
-      <Button
-        size="sm"
-        variant="outline"
-        aria-label={`Inspect ${workspace.name}`}
-        onClick={() => onInspect(workspace.conversationId)}
-      >
-        Inspect
-      </Button>
+      <div className="flex items-start gap-2">
+        {workspace.kind === "wisp" ? (
+          <WorkspaceSizeSelect
+            conversationId={workspace.conversationId}
+            name={workspace.name}
+            usedBytes={workspace.usedBytes}
+            quotaBytes={workspace.quotaBytes}
+            maxQuotaBytes={workspace.maxQuotaBytes}
+            className="w-28"
+            onResized={onResized}
+          />
+        ) : (
+          <span className="flex h-8 items-center text-xs text-dim">
+            Circles keep {formatBytes(workspace.quotaBytes)}
+          </span>
+        )}
+        <Button
+          size="sm"
+          variant="outline"
+          aria-label={`Inspect ${workspace.name}`}
+          onClick={() => onInspect(workspace.conversationId)}
+        >
+          Inspect
+        </Button>
+      </div>
     </SettingsRow>
   );
 }
