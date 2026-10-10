@@ -51,7 +51,16 @@ description, grouped by theme.
 
 Returning to the list, opening settings, or resizing the window retains the
 current conversation draft. On mobile, Enter inserts a newline; the send button
-sends the message. The layout respects safe areas and follows the visual
+sends the message.
+
+The composer is a pill-shaped field between a + button and one main button.
+The main button is voice input while there is nothing to send, send once there
+is a draft, and stop while the Wisp works with nothing typed; typing during a
+reply queues the draft, and stop moves into the field. The + opens Attach
+files and Schedule send. A time picked there stays on the draft as a chip until
+the main button, now a calendar, schedules it. A long press on the send button
+(a right click on the desktop) offers the suggested times and schedules the
+draft right away. The layout respects safe areas and follows the visual
 viewport height when the software keyboard opens. It does not focus the
 composer merely because a conversation was opened.
 
