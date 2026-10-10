@@ -305,6 +305,29 @@ describe("ContainerManager", () => {
   });
 });
 
+describe("ContainerManager background processes", () => {
+  it("starts the container for a new process and runs the start script with its arguments", async () => {
+    const { cli, manager, spec, name } = await setup();
+    const result = await manager.processScript(spec, "start", ["abcd1234", "npm run dev", "8"], { gitToken: "t0k" });
+
+    expect(result).toEqual({ exitCode: 0, stdout: "" });
+    expect(cli.containers.get(name)?.running).toBe(true);
+    const call = cli.calls.find(({ args }) => args[0] === "exec")!;
+    expect(call.args.slice(0, 6)).toEqual(["exec", "-e", "WISP_GIT_TOKEN", "-w", "/workspace", name]);
+    expect(call.args.slice(-4)).toEqual(["wisp-start", "abcd1234", "npm run dev", "8"]);
+    expect(call.args[call.args.length - 5]).toContain("setsid");
+    expect(call.env).toEqual({ WISP_GIT_TOKEN: "t0k" });
+  });
+
+  it("answers from a stopped container without starting it", async () => {
+    const { cli, manager, spec, name } = await setup();
+    await expect(manager.processScript(spec, "list", [])).resolves.toBeNull();
+    await expect(manager.processScript(spec, "log", ["abcd1234", "50"])).resolves.toBeNull();
+    expect(cli.containers.has(name)).toBe(false);
+    expect(cli.calls.some(({ args }) => args[0] === "run")).toBe(false);
+  });
+});
+
 describe("ContainerManager with the local network blocked", () => {
   it("puts the Wisp on its own internal network whose only way out is the egress proxy", async () => {
     const { cli, manager, spec, name, root } = await setup();

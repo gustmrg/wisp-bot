@@ -77,6 +77,13 @@ and approving each `npm test` makes development impractical.
 - **Cancellation:** each command runs in its own process group; Stop, the
   request deadline or a timeout kills the group. Whatever a command leaves in
   the background is killed when it ends.
+- **Background processes:** a second tool, `process`, starts long-running
+  commands (dev servers, watchers, long builds) in their own session and lets
+  the Wisp list them, read their output, wait for them and stop them. At most
+  8 run at once; their output is kept in the container's `/tmp`. They count
+  as activity, but stop with the container after 30 minutes without a command
+  or process call. They are reachable from other commands in the container,
+  not from the user's browser.
 
 ## Consequences
 
@@ -91,8 +98,7 @@ and approving each `npm test` makes development impractical.
 - Whoever runs the Wisp server needs Docker or Podman. Membership in the
   `docker` group is root-equivalent on that machine; rootless Podman avoids it.
   Only the server talks to the container program; Wisps never see its socket.
-- Background processes (dev servers, watchers) do not survive a command yet.
-  A process tool and an SSH mode are follow-ups.
+- An SSH mode is a follow-up.
 
 ## Rejected alternatives
 

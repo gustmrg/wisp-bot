@@ -119,8 +119,8 @@ instructions are treated as user-provided context and never grant tools.
 
 A Wisp runs commands only when **Wisp settings → General → Commands** is set
 to run them in a container ([ADR 017](decisions/017-container-execution.md)).
-Its `run_command` tool runs each command in that Wisp's own Docker or Podman
-container, which mounts only the Wisp's workspace and receives none of the
+Its `run_command` and `process` tools run commands, in the foreground or in
+the background, in that Wisp's own Docker or Podman container, which mounts only the Wisp's workspace and receives none of the
 server's environment variables, config or credential stores. The container
 runs as the server's user without sudo, with all capabilities dropped,
 `no-new-privileges`, a read-only root, and process, memory and CPU limits. It

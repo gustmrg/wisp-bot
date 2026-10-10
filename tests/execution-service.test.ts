@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { ContainerManager } from "../backend/container-manager.js";
 import { SANDBOX_IMAGE } from "../backend/container-manager.js";
-import { containerPath, ExecutionService, RUN_COMMAND_TOOL } from "../backend/execution-service.js";
+import { containerPath, ExecutionService, PROCESS_TOOL, RUN_COMMAND_TOOL } from "../backend/execution-service.js";
 import { WORKSPACE_SETTINGS_FILE } from "../backend/workspace-service.js";
 import type { ContainerRuntimeStatus } from "../shared/execution.js";
 
@@ -38,6 +38,16 @@ async function setup(options: { runtime?: ContainerRuntimeStatus } = {}) {
       return { exitCode: 0 };
     }),
     remove: vi.fn(async () => undefined),
+    processScript: vi.fn(
+      async (
+        _spec: unknown,
+        _action: string,
+        _args: ReadonlyArray<string>,
+      ): Promise<{ exitCode: number; stdout: string } | null> => ({
+        exitCode: 0,
+        stdout: "",
+      }),
+    ),
     reconcile: vi.fn(async () => undefined),
   };
   const authorize = vi.fn(async () => undefined);
@@ -93,8 +103,8 @@ describe("ExecutionService", () => {
     const { service, manager } = await setup();
     await service.save({ conversationId: "atlas", mode: "container", image: null, localNetwork: false });
     const first = await service.getSnapshot("atlas");
-    expect(first.activeNames).toEqual([RUN_COMMAND_TOOL]);
-    expect(first.definitions.map(({ name }) => name)).toEqual([RUN_COMMAND_TOOL]);
+    expect(first.activeNames).toEqual([RUN_COMMAND_TOOL, PROCESS_TOOL]);
+    expect(first.definitions.map(({ name }) => name)).toEqual([RUN_COMMAND_TOOL, PROCESS_TOOL]);
     // Settings changes drop the old container so the next command gets one made from them.
     expect(manager.remove).toHaveBeenCalledWith("s1");
 
@@ -228,6 +238,100 @@ describe("ExecutionService", () => {
     await service.reconcile();
     expect(manager.reconcile).toHaveBeenCalledWith(new Set(["s1"]));
     await expect(service.getView("atlas")).resolves.toMatchObject({ hasGitToken: true });
+  });
+});
+
+type ProcessTool = {
+  execute: (id: string, params: Record<string, unknown>) => Promise<{ content: Array<{ text: string }> }>;
+};
+
+describe("process tool", () => {
+  async function processSetup() {
+    const context = await setup();
+    await context.service.save({
+      conversationId: "atlas",
+      mode: "container",
+      image: null,
+      localNetwork: false,
+      gitToken: "ghp_secret",
+    });
+    const snapshot = await context.service.getSnapshot("atlas");
+    const tool = snapshot.definitions.find(({ name }) => name === PROCESS_TOOL) as unknown as ProcessTool;
+    const text = async (params: Record<string, unknown>) => (await tool.execute("call", params)).content[0]!.text;
+    return { ...context, tool, text };
+  }
+
+  it("starts a process after authorizing it and reports its id and first output", async () => {
+    const { manager, authorize, text, wisp } = await processSetup();
+    manager.processScript.mockResolvedValueOnce({ exitCode: 0, stdout: "Listening on :3000\n" });
+
+    const answer = await text({ action: "start", command: "npm run dev" });
+
+    const id = /Started process ([a-f0-9]{8})\./.exec(answer)?.[1];
+    expect(id).toBeDefined();
+    expect(answer).toContain("Listening on :3000");
+    expect(authorize).toHaveBeenCalledWith(
+      expect.objectContaining({ toolName: PROCESS_TOOL, category: "container_command" }),
+      undefined,
+    );
+    expect(manager.processScript).toHaveBeenCalledWith(
+      { storageId: "s1", image: SANDBOX_IMAGE, workspaceDirectory: wisp.workspaceDirectory, localNetwork: false },
+      "start",
+      [id, "npm run dev", "8"],
+      { gitToken: "ghp_secret" },
+    );
+  });
+
+  it("refuses starts over the limit, harmful commands and a full workspace", async () => {
+    const { manager, text, wisp } = await processSetup();
+    manager.processScript.mockResolvedValueOnce({ exitCode: 3, stdout: "limit\n" });
+    await expect(text({ action: "start", command: "sleep 100" })).rejects.toThrow("already running");
+    await expect(text({ action: "start", command: "rm -rf /" })).rejects.toThrow("was not run");
+    await writeFile(path.join(wisp.configDirectory, WORKSPACE_SETTINGS_FILE), JSON.stringify({ quotaBytes: 1 }));
+    await writeFile(path.join(wisp.workspaceDirectory, "big.txt"), "12");
+    await expect(text({ action: "start", command: "sleep 100" })).rejects.toThrow("workspace is full");
+    expect(manager.processScript).toHaveBeenCalledTimes(1);
+  });
+
+  it("lists, reads, waits for and stops processes", async () => {
+    const { manager, text } = await processSetup();
+    const started = Math.floor(Date.now() / 1000) - 120;
+    manager.processScript.mockResolvedValueOnce({
+      exitCode: 0,
+      stdout: `abcd1234\trunning\t${started}\tnpm run dev\nffff0000\texited 1\t${started}\tnpm test\n`,
+    });
+    expect(await text({ action: "list" })).toBe(
+      "abcd1234  running  started 2 min ago  npm run dev\nffff0000  exited 1  started 2 min ago  npm test",
+    );
+
+    manager.processScript.mockResolvedValueOnce({ exitCode: 0, stdout: "line 1\nline 2\n" });
+    expect(await text({ action: "log", id: "abcd1234", lines: 9999 })).toBe("line 1\nline 2");
+    expect(manager.processScript).toHaveBeenLastCalledWith(expect.anything(), "log", ["abcd1234", "500"], {});
+
+    manager.processScript.mockResolvedValueOnce({ exitCode: 0, stdout: "exited 0\nall tests passed\n" });
+    expect(await text({ action: "wait", id: "abcd1234", timeout: 60 })).toBe(
+      "Process exited 0.\nLast output:\nall tests passed",
+    );
+    expect(manager.processScript).toHaveBeenLastCalledWith(expect.anything(), "wait", ["abcd1234", "60", "50"], {});
+
+    manager.processScript.mockResolvedValueOnce({ exitCode: 0, stdout: "running\n" });
+    expect(await text({ action: "wait", id: "abcd1234", timeout: 5 })).toBe(
+      "Still running after 5 seconds.\nNo output.",
+    );
+
+    expect(await text({ action: "kill", id: "abcd1234" })).toBe("Process abcd1234 stopped.");
+    manager.processScript.mockResolvedValueOnce({ exitCode: 4, stdout: "" });
+    expect(await text({ action: "log", id: "00000000" })).toContain("There is no process 00000000");
+    manager.processScript.mockResolvedValueOnce(null);
+    expect(await text({ action: "list" })).toContain("container is not running");
+  });
+
+  it("rejects malformed requests before touching the container", async () => {
+    const { manager, text } = await processSetup();
+    await expect(text({ action: "log", id: "../../etc" })).rejects.toThrow("Give the id");
+    await expect(text({ action: "start" })).rejects.toThrow("Give the command");
+    await expect(text({ action: "exec" })).rejects.toThrow("action must be");
+    expect(manager.processScript).not.toHaveBeenCalled();
   });
 });
 

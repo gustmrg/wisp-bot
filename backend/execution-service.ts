@@ -1,6 +1,7 @@
 import type { BashOperations, ToolDefinition } from "@earendil-works/pi-coding-agent" with {
   "resolution-mode": "import",
 };
+import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 
@@ -18,7 +19,13 @@ import { formatBytes } from "../shared/workspace.js";
 import { writeFileAtomically } from "./atomic-file.js";
 import { WispBackendError } from "./backend-error.js";
 import type { ContainerCli } from "./container-cli.js";
-import { SANDBOX_IMAGE, type ContainerManager } from "./container-manager.js";
+import {
+  MAX_BACKGROUND_PROCESSES,
+  SANDBOX_IMAGE,
+  type ContainerManager,
+  type ContainerSpec,
+  type ProcessAction,
+} from "./container-manager.js";
 import { EncryptedCredentialStore, type EncryptionService } from "./encrypted-credential-store.js";
 import {
   snapshotRevision,
@@ -29,6 +36,7 @@ import type { ToolAuthorizationBroker } from "./tool-authorization-broker.js";
 import { measureTree, readWorkspaceQuota } from "./workspace-service.js";
 
 export const RUN_COMMAND_TOOL = "run_command";
+export const PROCESS_TOOL = "process";
 /** File inside a Wisp's config directory that holds where its commands run. */
 export const EXECUTION_SETTINGS_FILE = "execution-settings.json";
 
@@ -47,7 +55,7 @@ const RUN_COMMAND_DESCRIPTION: ReadonlyArray<string> = [
   "Use it for git, builds, tests, package installs and other command-line work. git, curl, python3, node, npm, build-essential, ripgrep and jq are installed when the default image is used.",
   "Commands run as a regular user without sudo, so system packages cannot be installed; install tools into the home folder (pip --user, npm -g, downloads into ~/.local/bin). The home folder is inside the workspace and is kept; anything outside the workspace can disappear when the container is recreated.",
   "git over HTTPS to github.com uses the GitHub token configured for this Wisp, when there is one; never print or store the token.",
-  "Each call starts a fresh shell in the working directory; use cd within the command. Processes left running in the background are stopped when the command ends. Output is truncated to the last lines; optionally give a timeout in seconds.",
+  "Each call starts a fresh shell in the working directory; use cd within the command. Processes left running in the background are stopped when the command ends; start servers, watchers and other long-running commands with the process tool instead. Output is truncated to the last lines; optionally give a timeout in seconds.",
 ];
 
 /**
@@ -158,9 +166,12 @@ export class ExecutionService implements IntegrationToolSource {
     const runtime = await this.options.runtime.status();
     if (!runtime.available) return emptySnapshot();
     return {
-      definitions: [await this.createRunCommandTool(conversationId, wisp, settings)],
+      definitions: [
+        await this.createRunCommandTool(conversationId, wisp, settings),
+        this.createProcessTool(conversationId, wisp, settings),
+      ],
       metadata: [],
-      activeNames: [RUN_COMMAND_TOOL],
+      activeNames: [RUN_COMMAND_TOOL, PROCESS_TOOL],
       revision: snapshotRevision([
         RUN_COMMAND_TOOL,
         settings.image ?? SANDBOX_IMAGE,
@@ -201,36 +212,21 @@ export class ExecutionService implements IntegrationToolSource {
     const operations: BashOperations = {
       // The environment Pi offers is the server's own; none of it is passed to the container.
       exec: async (command, cwd, { onData, signal, timeout }) =>
-        this.options.manager.exec(
-          {
-            storageId: wisp.storageId,
-            image: settings.image ?? SANDBOX_IMAGE,
-            workspaceDirectory: wisp.workspaceDirectory,
-            localNetwork: settings.localNetwork,
-          },
-          command,
-          containerPath(wisp.workspaceDirectory, cwd),
-          {
-            onData,
-            ...(signal ? { signal } : {}),
-            ...(timeout === undefined ? {} : { timeout }),
-            ...(await this.gitToken(wisp.storageId).then((gitToken) => (gitToken ? { gitToken } : {}))),
-          },
-        ),
+        this.options.manager.exec(containerSpec(wisp, settings), command, containerPath(wisp.workspaceDirectory, cwd), {
+          onData,
+          ...(signal ? { signal } : {}),
+          ...(timeout === undefined ? {} : { timeout }),
+          ...(await this.gitToken(wisp.storageId).then((gitToken) => (gitToken ? { gitToken } : {}))),
+        }),
     };
     const base = createBashToolDefinition(wisp.workspaceDirectory, { operations, exposeSessionEnvironment: false });
     const execute: typeof base.execute = async (toolCallId, params, signal, onUpdate, ctx) => {
-      const refused = REFUSED_COMMANDS.find(({ pattern }) => pattern.test(params.command));
-      if (refused) throw new Error(`This command was not run because it ${refused.reason}.`);
-      await this.options.authorizationBroker.authorize(
-        {
-          conversationId,
-          toolCallId,
-          toolName: RUN_COMMAND_TOOL,
-          category: "container_command",
-          summary: "Run a command in the Wisp's container",
-          scope: { kind: "container", value: "Wisp container" },
-        },
+      assertAllowedCommand(params.command);
+      await this.authorize(
+        conversationId,
+        toolCallId,
+        RUN_COMMAND_TOOL,
+        "Run a command in the Wisp's container",
         signal,
       );
       await assertRoomToRun(wisp);
@@ -246,6 +242,216 @@ export class ExecutionService implements IntegrationToolSource {
       execute,
     } as unknown as ToolDefinition;
   }
+
+  private authorize(
+    conversationId: string,
+    toolCallId: string,
+    toolName: string,
+    summary: string,
+    signal: AbortSignal | undefined,
+  ): Promise<void> {
+    return this.options.authorizationBroker.authorize(
+      {
+        conversationId,
+        toolCallId,
+        toolName,
+        category: "container_command",
+        summary,
+        scope: { kind: "container", value: "Wisp container" },
+      },
+      signal,
+    );
+  }
+
+  private createProcessTool(conversationId: string, wisp: ExecutionWisp, settings: ExecutionSettings): ToolDefinition {
+    const spec = containerSpec(wisp, settings);
+    const run = async (action: ProcessAction, args: ReadonlyArray<string>, signal: AbortSignal | undefined) => {
+      const gitToken = action === "start" ? await this.gitToken(wisp.storageId) : undefined;
+      return this.options.manager.processScript(spec, action, args, {
+        ...(signal ? { signal } : {}),
+        ...(gitToken ? { gitToken } : {}),
+      });
+    };
+    const execute = async (toolCallId: string, params: ProcessParams, signal?: AbortSignal) => {
+      const request = parseProcessParams(params);
+      await this.authorize(conversationId, toolCallId, PROCESS_TOOL, PROCESS_SUMMARIES[request.action], signal);
+      return { content: [{ type: "text", text: await processResult(request, run, signal, wisp) }], details: {} };
+    };
+    return {
+      name: PROCESS_TOOL,
+      label: "Background process",
+      description: PROCESS_DESCRIPTION,
+      parameters: {
+        type: "object",
+        properties: {
+          action: { type: "string", enum: ["start", "list", "log", "wait", "kill"] },
+          command: { type: "string", minLength: 1, maxLength: MAX_PROCESS_COMMAND_LENGTH },
+          id: { type: "string", pattern: "^[a-f0-9]{8}$" },
+          lines: { type: "integer", minimum: 1, maximum: MAX_PROCESS_LOG_LINES },
+          timeout: { type: "integer", minimum: 1, maximum: MAX_PROCESS_WAIT_SECONDS },
+        },
+        required: ["action"],
+        additionalProperties: false,
+      },
+      execute,
+    } as unknown as ToolDefinition;
+  }
+}
+
+const MAX_PROCESS_COMMAND_LENGTH = 10_000;
+const MAX_PROCESS_LOG_LINES = 500;
+const MAX_PROCESS_WAIT_SECONDS = 300;
+const DEFAULT_PROCESS_LOG_LINES = 50;
+const DEFAULT_PROCESS_WAIT_SECONDS = 30;
+
+const PROCESS_DESCRIPTION = [
+  "Run long-running commands in the background of this Wisp's container, such as dev servers, watchers and long builds, and check on them.",
+  "action=start runs `command` from /workspace in its own process and returns an id with its first output; action=list shows every process with its state;",
+  "action=log returns the last `lines` lines of a process's output; action=wait waits up to `timeout` seconds for it to end and returns its state and output; action=kill stops it and everything it started.",
+  `At most ${MAX_BACKGROUND_PROCESSES} processes run at once. They can be reached from run_command (for example curl http://localhost:3000), not from the user's browser.`,
+  "They stop with the container, which stops after 30 minutes without a command or process call; their output is lost then.",
+].join(" ");
+
+const PROCESS_SUMMARIES: Record<ProcessAction, string> = {
+  start: "Start a background process in the Wisp's container",
+  list: "List background processes in the Wisp's container",
+  log: "Read a background process's output",
+  wait: "Wait for a background process to end",
+  kill: "Stop a background process in the Wisp's container",
+};
+
+interface ProcessParams {
+  action?: unknown;
+  command?: unknown;
+  id?: unknown;
+  lines?: unknown;
+  timeout?: unknown;
+}
+
+type ProcessRequest =
+  | { action: "start"; command: string }
+  | { action: "list" }
+  | { action: "log"; id: string; lines: number }
+  | { action: "wait"; id: string; lines: number; timeout: number }
+  | { action: "kill"; id: string };
+
+function parseProcessParams(params: ProcessParams): ProcessRequest {
+  const id = () => {
+    if (typeof params.id !== "string" || !/^[a-f0-9]{8}$/.test(params.id)) {
+      throw new Error("Give the id of a process, as returned by action=start or action=list.");
+    }
+    return params.id;
+  };
+  const bounded = (value: unknown, fallback: number, max: number) =>
+    typeof value === "number" && Number.isInteger(value) && value >= 1 ? Math.min(value, max) : fallback;
+  switch (params.action) {
+    case "start":
+      if (typeof params.command !== "string" || !params.command.trim()) throw new Error("Give the command to start.");
+      if (params.command.length > MAX_PROCESS_COMMAND_LENGTH) throw new Error("The command is too long.");
+      assertAllowedCommand(params.command);
+      return { action: "start", command: params.command };
+    case "list":
+      return { action: "list" };
+    case "log":
+      return {
+        action: "log",
+        id: id(),
+        lines: bounded(params.lines, DEFAULT_PROCESS_LOG_LINES, MAX_PROCESS_LOG_LINES),
+      };
+    case "wait":
+      return {
+        action: "wait",
+        id: id(),
+        lines: bounded(params.lines, DEFAULT_PROCESS_LOG_LINES, MAX_PROCESS_LOG_LINES),
+        timeout: bounded(params.timeout, DEFAULT_PROCESS_WAIT_SECONDS, MAX_PROCESS_WAIT_SECONDS),
+      };
+    case "kill":
+      return { action: "kill", id: id() };
+    default:
+      throw new Error("action must be start, list, log, wait or kill.");
+  }
+}
+
+type ProcessRunner = (
+  action: ProcessAction,
+  args: ReadonlyArray<string>,
+  signal: AbortSignal | undefined,
+) => Promise<{ exitCode: number; stdout: string } | null>;
+
+const STOPPED_CONTAINER =
+  "The container is not running, so no background processes are running and their output is gone.";
+
+async function processResult(
+  request: ProcessRequest,
+  run: ProcessRunner,
+  signal: AbortSignal | undefined,
+  wisp: ExecutionWisp,
+): Promise<string> {
+  const unknown = (id: string) => `There is no process ${id}. Use action=list to see the processes.`;
+  switch (request.action) {
+    case "start": {
+      await assertRoomToRun(wisp);
+      const id = randomUUID().replace(/-/g, "").slice(0, 8);
+      const result = (await run("start", [id, request.command, String(MAX_BACKGROUND_PROCESSES)], signal))!;
+      if (result.exitCode === 3) {
+        throw new Error(
+          `${MAX_BACKGROUND_PROCESSES} background processes are already running. Stop one with action=kill first.`,
+        );
+      }
+      if (result.exitCode !== 0) throw new Error("The process could not be started.");
+      const output = result.stdout.trim();
+      return `Started process ${id}.\n${output ? `First output:\n${output}` : "No output yet."}`;
+    }
+    case "list": {
+      const result = await run("list", [], signal);
+      if (!result) return STOPPED_CONTAINER;
+      const now = Math.floor(Date.now() / 1000);
+      const rows = result.stdout
+        .split("\n")
+        .filter(Boolean)
+        .map((line) => {
+          const [id, state, started, command] = line.split("\t");
+          const minutes = Math.max(0, Math.round((now - Number(started)) / 60));
+          return `${id}  ${state}  started ${minutes} min ago  ${command ?? ""}`;
+        });
+      return rows.length ? rows.join("\n") : "No background processes.";
+    }
+    case "log": {
+      const result = await run("log", [request.id, String(request.lines)], signal);
+      if (!result) return STOPPED_CONTAINER;
+      if (result.exitCode === 4) return unknown(request.id);
+      return result.stdout.trim() || "No output yet.";
+    }
+    case "wait": {
+      const result = await run("wait", [request.id, String(request.timeout), String(request.lines)], signal);
+      if (!result) return STOPPED_CONTAINER;
+      if (result.exitCode === 4) return unknown(request.id);
+      const [state = "unknown", ...output] = result.stdout.split("\n");
+      const status = state === "running" ? `Still running after ${request.timeout} seconds.` : `Process ${state}.`;
+      const text = output.join("\n").trim();
+      return `${status}\n${text ? `Last output:\n${text}` : "No output."}`;
+    }
+    case "kill": {
+      const result = await run("kill", [request.id], signal);
+      if (!result) return STOPPED_CONTAINER;
+      if (result.exitCode === 4) return unknown(request.id);
+      return `Process ${request.id} stopped.`;
+    }
+  }
+}
+
+function assertAllowedCommand(command: string): void {
+  const refused = REFUSED_COMMANDS.find(({ pattern }) => pattern.test(command));
+  if (refused) throw new Error(`This command was not run because it ${refused.reason}.`);
+}
+
+function containerSpec(wisp: ExecutionWisp, settings: ExecutionSettings): ContainerSpec {
+  return {
+    storageId: wisp.storageId,
+    image: settings.image ?? SANDBOX_IMAGE,
+    workspaceDirectory: wisp.workspaceDirectory,
+    localNetwork: settings.localNetwork,
+  };
 }
 
 /**
