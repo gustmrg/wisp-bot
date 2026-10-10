@@ -160,7 +160,8 @@ function completeBridge(): WispApi {
     installUpdate: async () => ({ ok: true, value: {} }),
     openReleasesPage: async () => ({ ok: true, value: {} }),
     subscribeToUpdateState: () => () => undefined,
-    getWorkspace: async () => ({ ok: true, value: { usedBytes: 0, quotaBytes: 1024 } }),
+    getWorkspace: async () => ({ ok: true, value: { usedBytes: 0, quotaBytes: 1024, maxQuotaBytes: 1024 } }),
+    setWorkspaceQuota: async () => ({ ok: true, value: { usedBytes: 0, quotaBytes: 1024, maxQuotaBytes: 1024 } }),
     getStorageSummary: async () => ({
       ok: true,
       value: { measuredAt: "", workspaces: [], workspaceBytes: 0, archives: [], archiveBytes: 0, partial: false },
@@ -176,7 +177,7 @@ function completeBridge(): WispApi {
     openSkillsFolder: async () => ({ ok: true, value: {} }),
     attachWorkspaceFiles: async () => ({
       ok: true,
-      value: { files: [], workspace: { usedBytes: 0, quotaBytes: 1024 } },
+      value: { files: [], workspace: { usedBytes: 0, quotaBytes: 1024, maxQuotaBytes: 1024 } },
     }),
     listSkills: async () => ({ ok: true, value: [] }),
     deleteSkill: async () => ({ ok: true, value: [] }),

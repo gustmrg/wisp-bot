@@ -4,8 +4,20 @@ import path from "node:path";
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { measureDirectory, safeFileName, WorkspaceService } from "../backend/workspace-service.js";
-import { messagePreview, messageWithAttachments, splitMessageAttachments } from "../shared/workspace.js";
+import {
+  measureDirectory,
+  readWorkspaceQuota,
+  safeFileName,
+  WORKSPACE_SETTINGS_FILE,
+  WorkspaceService,
+} from "../backend/workspace-service.js";
+import {
+  messagePreview,
+  messageWithAttachments,
+  splitMessageAttachments,
+  WORKSPACE_QUOTA_BYTES,
+  WORKSPACE_QUOTA_PRESETS,
+} from "../shared/workspace.js";
 
 const directories: string[] = [];
 
@@ -110,6 +122,59 @@ describe("WorkspaceService", () => {
     expect(await readFile(path.join(workspaceDirectory, "inbox", "notes.txt"), "utf8")).toBe("older");
     expect(await readFile(path.join(workspaceDirectory, "inbox", "notes (2).txt"), "utf8")).toBe("hello");
     expect(result.workspace.usedBytes).toBe(13);
+  });
+
+  it("resizes a Wisp's workspace and keeps the size in its config directory", async () => {
+    const { service, configDirectory } = await setup();
+    const larger = WORKSPACE_QUOTA_PRESETS[1]!;
+
+    const before = await service.getView("atlas");
+    expect(before).toMatchObject({ usedBytes: 0, quotaBytes: WORKSPACE_QUOTA_BYTES });
+    expect(before.maxQuotaBytes).toBeGreaterThanOrEqual(WORKSPACE_QUOTA_BYTES);
+
+    await expect(service.setQuota("atlas", larger)).resolves.toMatchObject({ quotaBytes: larger });
+    expect(await readWorkspaceQuota(configDirectory)).toBe(larger);
+    await expect(service.getView("atlas")).resolves.toMatchObject({ quotaBytes: larger });
+
+    await expect(service.setQuota("atlas", larger + 1)).rejects.toMatchObject({ code: "invalid_request" });
+    await expect(service.setQuota("other", larger)).rejects.toThrow();
+  });
+
+  it("refuses to grow past the free disk space but always allows shrinking", async () => {
+    const { configDirectory, workspaceDirectory } = await setup();
+    const [smallest, second, third] = WORKSPACE_QUOTA_PRESETS as [number, number, number];
+    const service = new WorkspaceService({
+      resolveDirectories: () => ({ workspaceDirectory, configDirectory }),
+      openPath: async () => undefined,
+      selectFiles: async () => [],
+      freeDiskBytes: async () => second,
+    });
+
+    await expect(service.getView("atlas")).resolves.toMatchObject({ maxQuotaBytes: second });
+    await expect(service.setQuota("atlas", third)).rejects.toMatchObject({
+      code: "invalid_request",
+      message: expect.stringContaining("does not have room"),
+    });
+    await expect(service.setQuota("atlas", second)).resolves.toMatchObject({ quotaBytes: second });
+    await expect(service.setQuota("atlas", smallest)).resolves.toMatchObject({ quotaBytes: smallest });
+  });
+
+  it("enforces a resized workspace's size on attachments", async () => {
+    const { service, picks, configDirectory } = await setup(["big.bin"], 1024);
+    await writeFile(path.join(picks, "big.bin"), "x".repeat(10), "utf8");
+    // A saved size wins over the default the service was given.
+    await mkdir(configDirectory, { recursive: true });
+    await writeFile(path.join(configDirectory, WORKSPACE_SETTINGS_FILE), JSON.stringify({ quotaBytes: 8 }), "utf8");
+
+    await expect(service.attach("atlas")).rejects.toMatchObject({ message: expect.stringContaining("of 8 B used") });
+  });
+
+  it("reports a damaged size setting instead of falling back to the default", async () => {
+    const { configDirectory } = await setup();
+    await expect(readWorkspaceQuota(configDirectory)).resolves.toBe(WORKSPACE_QUOTA_BYTES);
+    await mkdir(configDirectory, { recursive: true });
+    await writeFile(path.join(configDirectory, WORKSPACE_SETTINGS_FILE), "{", "utf8");
+    await expect(readWorkspaceQuota(configDirectory)).rejects.toMatchObject({ code: "internal_error" });
   });
 
   it("returns no files when the picker is dismissed", async () => {

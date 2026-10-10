@@ -59,7 +59,10 @@ export interface StorageServiceOptions {
   isBusy: (conversationId: string) => boolean;
   /** Called after a cleanup ends, so requests held back meanwhile can run. */
   onCleanupFinished?: (conversationId: string) => void;
+  /** Size of a workspace whose Wisp was never resized, and of every circle's. */
   quotaBytes?: number;
+  /** The size a Wisp's workspace was given; unset, every workspace has `quotaBytes`. */
+  resolveQuota?: (conversationId: string, fallback: number) => Promise<number>;
   now?: () => Date;
 }
 
@@ -133,18 +136,30 @@ export class StorageService {
     const seen = new Set<string>();
     const unique = this.options.listWorkspaces().filter(({ directory }) => !seen.has(directory) && seen.add(directory));
     const measured = await mapLimited(unique, MEASURE_CONCURRENCY, async (workspace) => {
-      const tree = await measureTree(workspace.directory);
+      const [tree, quotaBytes] = await Promise.all([measureTree(workspace.directory), this.quotaFor(workspace)]);
       return {
         conversationId: workspace.conversationId,
         name: workspace.name,
         kind: workspace.kind,
         usedBytes: tree.bytes,
         fileCount: tree.files,
-        quotaBytes: this.quotaBytes,
+        quotaBytes,
         partial: tree.partial,
       } satisfies StorageWorkspace;
     });
     return measured.sort((a, b) => b.usedBytes - a.usedBytes || a.name.localeCompare(b.name));
+  }
+
+  private async quotaFor({
+    conversationId,
+    kind,
+  }: {
+    conversationId: string;
+    kind: "wisp" | "circle";
+  }): Promise<number> {
+    if (kind !== "wisp" || !this.options.resolveQuota) return this.quotaBytes;
+    // A size that cannot be read must not hide the rest of the summary.
+    return this.options.resolveQuota(conversationId, this.quotaBytes).catch(() => this.quotaBytes);
   }
 
   private async measureArchives(): Promise<StorageArchive[]> {

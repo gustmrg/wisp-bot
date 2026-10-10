@@ -32,8 +32,9 @@ preset.
   authentication, granted per Wisp. See [MCP servers](docs/mcp-servers.md).
 - **Context and memory** — continuity summaries, explicit new topics, and
   user-maintained saved memory. See [context and memory](docs/context-and-memory.md).
-- **Workspaces and attachments** — each Wisp gets a private folder (capped at
-  512 MB) for the files it writes and the files you attach. See
+- **Workspaces and attachments** — each Wisp gets a private folder (512 MB by
+  default, resizable per Wisp up to 100 GB) for the files it writes and the
+  files you attach. See
   [security](docs/security.md).
 - **Message search** — search every conversation with `Cmd/Ctrl+K` and jump to
   the matching message.

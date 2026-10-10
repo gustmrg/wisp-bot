@@ -28,7 +28,7 @@ import { ToolAuthorizationBroker } from "./tool-authorization-broker.js";
 import { ToolPolicyStore } from "./tool-policy-store.js";
 import { fakeTranscriptionFetch, TranscriptionService } from "./transcription-service.js";
 import { StorageService } from "./storage-service.js";
-import { WorkspaceService } from "./workspace-service.js";
+import { readWorkspaceQuota, WorkspaceService } from "./workspace-service.js";
 
 /** Host capabilities the runtime needs, injected so any host (desktop or server) can compose it. */
 export interface BackendRuntimeOptions {
@@ -215,6 +215,8 @@ export async function createBackendRuntime(options: BackendRuntimeOptions): Prom
     isBusy: (id) => registry.isBusy(id),
     // Messages queued during the cleanup are delivered once it ends.
     onCleanupFinished: (id) => queue.pump(id),
+    resolveQuota: (id, fallback) =>
+      readWorkspaceQuota(conversationRepository.getAgentContext(id).configDirectory, fallback),
   });
   storageService = storage;
   const workspaceService = new WorkspaceService({

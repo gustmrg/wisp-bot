@@ -61,9 +61,14 @@ blocked, and conflicting auto-review rules resolve with `block` → `ask` →
 output to 64 KB.
 
 Each Wisp's workspace is a private folder under the backend data directory,
-capped at 512 MB. A file change that would exceed the cap is refused before
-the approval prompt. **Wisp settings → General → Workspace** shows usage and
-opens the workspace folder; the path is computed by the main process. Attached
+capped at 512 MB unless the Wisp is given another size. **Wisp settings →
+General → Workspace** offers 512 MB, 2, 10, 50 and 100 GB; growing needs that
+much room on the server's disk, and shrinking below what the workspace holds
+deletes nothing but stops new files. The size is kept in the Wisp's config
+directory, outside the workspace, so the Wisp cannot change it. A file change
+that would exceed the cap is refused before the approval prompt. The same
+panel shows usage and opens the workspace folder; the path is computed by the
+main process. Attached
 files are picked in a native dialog owned by the main process and copied into the
 workspace `inbox/` folder (at most 20 per request, never overwriting); the
 renderer never supplies a file path. On a server on another computer, and in

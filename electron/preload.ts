@@ -77,6 +77,7 @@ const WISP_IPC_CHANNELS = {
   openReleasesPage: "wisp:update:open-releases",
   updateState: "wisp:update:state",
   getWorkspace: "wisp:workspace:get",
+  setWorkspaceQuota: "wisp:workspace:set-quota",
   openWorkspaceFolder: "wisp:workspace:open",
   openSkillsFolder: "wisp:workspace:open-skills",
   attachWorkspaceFiles: "wisp:workspace:attach",
@@ -207,6 +208,7 @@ const wispApi: WispApi = {
     return () => ipcRenderer.removeListener(WISP_IPC_CHANNELS.updateState, handleState);
   },
   getWorkspace: (request) => ipcRenderer.invoke(WISP_IPC_CHANNELS.getWorkspace, request),
+  setWorkspaceQuota: (request) => ipcRenderer.invoke(WISP_IPC_CHANNELS.setWorkspaceQuota, request),
   openWorkspaceFolder: (request) => ipcRenderer.invoke(WISP_IPC_CHANNELS.openWorkspaceFolder, request),
   openSkillsFolder: (request) => ipcRenderer.invoke(WISP_IPC_CHANNELS.openSkillsFolder, request),
   attachWorkspaceFiles: (request) => ipcRenderer.invoke(WISP_IPC_CHANNELS.attachWorkspaceFiles, request),

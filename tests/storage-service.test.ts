@@ -14,7 +14,12 @@ afterEach(async () => {
 });
 
 async function setup(
-  options: { busy?: Set<string>; quotaBytes?: number; onCleanupFinished?: (id: string) => void } = {},
+  options: {
+    busy?: Set<string>;
+    quotaBytes?: number;
+    onCleanupFinished?: (id: string) => void;
+    resolveQuota?: (id: string, fallback: number) => Promise<number>;
+  } = {},
 ) {
   const root = await mkdtemp(path.join(os.tmpdir(), "wisp-storage-"));
   directories.push(root);
@@ -41,6 +46,7 @@ async function setup(
     isBusy: (id) => options.busy?.has(id) ?? false,
     ...(options.onCleanupFinished ? { onCleanupFinished: options.onCleanupFinished } : {}),
     ...(options.quotaBytes === undefined ? {} : { quotaBytes: options.quotaBytes }),
+    ...(options.resolveQuota ? { resolveQuota: options.resolveQuota } : {}),
   });
   return { root, atlas, circle, archive, service };
 }
@@ -268,6 +274,24 @@ describe("StorageService cleanup", () => {
     await running;
     expect(service.isCleaning("atlas")).toBe(false);
     expect(finished).toHaveBeenCalledWith("atlas");
+  });
+
+  it("reports each Wisp's own workspace size and the default for circles", async () => {
+    const resolveQuota = vi.fn(async (id: string, fallback: number) => {
+      if (id === "atlas-dup") throw new Error("unreadable");
+      return id === "atlas" ? 4096 : fallback;
+    });
+    const { service } = await setup({ quotaBytes: 100, resolveQuota });
+
+    const summary = await service.getSummary();
+
+    expect(summary.workspaces.map(({ conversationId, quotaBytes }) => [conversationId, quotaBytes])).toEqual(
+      expect.arrayContaining([
+        ["atlas", 4096],
+        ["circle", 100],
+      ]),
+    );
+    expect(resolveQuota).not.toHaveBeenCalledWith("circle", expect.anything());
   });
 
   it("blocks uploads during a cleanup and frees quota afterwards", async () => {

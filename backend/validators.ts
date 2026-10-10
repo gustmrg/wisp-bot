@@ -53,6 +53,7 @@ import type {
   ScheduleMessageRequest,
   UpdateScheduledMessageRequest,
 } from "../shared/scheduled-messages.js";
+import { WORKSPACE_QUOTA_PRESETS, type SetWorkspaceQuotaRequest } from "../shared/workspace.js";
 import { WispBackendError } from "./backend-error.js";
 import { MAX_SKILL_FILE_BYTES } from "./skill-store.js";
 import {
@@ -115,6 +116,13 @@ export function parseImportSkillRequest(value: unknown): ImportSkillRequest {
 export function parseConversationRequest(value: unknown): ConversationRequest {
   const request = asRecord(value);
   return { conversationId: parseId(request.conversationId) };
+}
+
+export function parseSetWorkspaceQuotaRequest(value: unknown): SetWorkspaceQuotaRequest {
+  const request = asRecord(value);
+  const quotaBytes = request.quotaBytes;
+  if (typeof quotaBytes !== "number" || !WORKSPACE_QUOTA_PRESETS.includes(quotaBytes)) throw invalidRequest();
+  return { conversationId: parseId(request.conversationId), quotaBytes };
 }
 
 export function parseSendMessageRequest(value: unknown): SendMessageRequest {
