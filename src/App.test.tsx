@@ -257,6 +257,7 @@ function createApi(initialState: ConversationStateView): WispApi {
       value: {
         mode: "off" as const,
         image: null,
+        localNetwork: false,
         defaultImage: "wisp-sandbox:test",
         hasGitToken: false,
         runtime: { available: false as const, message: "none" },
@@ -268,6 +269,7 @@ function createApi(initialState: ConversationStateView): WispApi {
       value: {
         mode: "off" as const,
         image: null,
+        localNetwork: false,
         defaultImage: "wisp-sandbox:test",
         hasGitToken: false,
         runtime: { available: false as const, message: "none" },

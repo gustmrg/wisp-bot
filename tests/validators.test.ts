@@ -77,20 +77,31 @@ describe("IPC request validators", () => {
   });
 
   it("validates command settings, keeping an omitted token distinct from a removed one", () => {
-    expect(parseSaveWispExecutionRequest({ conversationId: "wisp:one", mode: "container", image: null })).toEqual({
-      conversationId: "wisp:one",
-      mode: "container",
-      image: null,
-    });
     expect(
-      parseSaveWispExecutionRequest({ conversationId: "wisp:one", mode: "off", image: "node:22", gitToken: null }),
-    ).toEqual({ conversationId: "wisp:one", mode: "off", image: "node:22", gitToken: null });
+      parseSaveWispExecutionRequest({
+        conversationId: "wisp:one",
+        mode: "container",
+        image: null,
+        localNetwork: false,
+      }),
+    ).toEqual({ conversationId: "wisp:one", mode: "container", image: null, localNetwork: false });
+    expect(
+      parseSaveWispExecutionRequest({
+        conversationId: "wisp:one",
+        mode: "off",
+        image: "node:22",
+        localNetwork: true,
+        gitToken: null,
+      }),
+    ).toEqual({ conversationId: "wisp:one", mode: "off", image: "node:22", localNetwork: true, gitToken: null });
     for (const payload of [
-      { conversationId: "wisp:one", mode: "local", image: null },
-      { conversationId: "wisp:one", mode: "container", image: "--privileged" },
-      { conversationId: "wisp:one", mode: "container", image: "" },
-      { conversationId: "wisp:one", mode: "container", image: null, gitToken: "has space" },
-      { conversationId: "wisp:one", mode: "container" },
+      { conversationId: "wisp:one", mode: "local", image: null, localNetwork: false },
+      { conversationId: "wisp:one", mode: "container", image: "--privileged", localNetwork: false },
+      { conversationId: "wisp:one", mode: "container", image: "", localNetwork: false },
+      { conversationId: "wisp:one", mode: "container", image: null, localNetwork: false, gitToken: "has space" },
+      { conversationId: "wisp:one", mode: "container", localNetwork: false },
+      { conversationId: "wisp:one", mode: "container", image: null },
+      { conversationId: "wisp:one", mode: "container", image: null, localNetwork: "yes" },
     ]) {
       expect(() => parseSaveWispExecutionRequest(payload)).toThrow(WispBackendError);
     }

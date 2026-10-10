@@ -134,7 +134,8 @@ export function parseSetWorkspaceQuotaRequest(value: unknown): SetWorkspaceQuota
 
 export function parseSaveWispExecutionRequest(value: unknown): SaveWispExecutionRequest {
   const request = asRecord(value);
-  const { mode, image, gitToken } = request;
+  const { mode, image, localNetwork, gitToken } = request;
+  if (typeof localNetwork !== "boolean") throw invalidRequest();
   if (typeof mode !== "string" || !EXECUTION_MODES.includes(mode as ExecutionMode)) throw invalidRequest();
   if (image !== null && (typeof image !== "string" || !isContainerImage(image))) throw invalidRequest();
   if (gitToken !== undefined && gitToken !== null && (typeof gitToken !== "string" || !isGitToken(gitToken))) {
@@ -144,6 +145,7 @@ export function parseSaveWispExecutionRequest(value: unknown): SaveWispExecution
     conversationId: parseId(request.conversationId),
     mode: mode as ExecutionMode,
     image,
+    localNetwork,
     ...(gitToken === undefined ? {} : { gitToken }),
   };
 }

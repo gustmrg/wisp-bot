@@ -166,6 +166,7 @@ function completeBridge(): WispApi {
       value: {
         mode: "off",
         image: null,
+        localNetwork: false,
         defaultImage: "wisp-sandbox:test",
         hasGitToken: false,
         runtime: { available: false, message: "none" },
@@ -177,6 +178,7 @@ function completeBridge(): WispApi {
       value: {
         mode: "off",
         image: null,
+        localNetwork: false,
         defaultImage: "wisp-sandbox:test",
         hasGitToken: false,
         runtime: { available: false, message: "none" },

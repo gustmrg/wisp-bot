@@ -23,6 +23,8 @@ export interface WispExecutionView {
   mode: ExecutionMode;
   /** An image the person chose; null uses the Wisp sandbox image built on the server. */
   image: string | null;
+  /** Whether commands may reach local and private network addresses; the internet is always reachable. */
+  localNetwork: boolean;
   defaultImage: string;
   /** Whether a GitHub token is saved for this Wisp; the token itself never leaves the backend. */
   hasGitToken: boolean;
@@ -34,6 +36,7 @@ export interface SaveWispExecutionRequest {
   conversationId: string;
   mode: ExecutionMode;
   image: string | null;
+  localNetwork: boolean;
   /** A new token replaces the saved one, null removes it, and leaving it out keeps it. */
   gitToken?: string | null;
 }

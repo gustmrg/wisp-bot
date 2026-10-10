@@ -124,7 +124,10 @@ container, which mounts only the Wisp's workspace and receives none of the
 server's environment variables, config or credential stores. The container
 runs as the server's user without sudo, with all capabilities dropped,
 `no-new-privileges`, a read-only root, and process, memory and CPU limits. It
-can reach the internet. Commands run without approval cards: the container is
+can reach the internet, but not the local network unless **Allow local
+network** is on: its container sits on an internal network of its own whose
+only way out is an egress proxy that refuses private, loopback, link-local and
+other non-public addresses after resolving them itself. Commands run without approval cards: the container is
 the boundary, a Block rule for `container_command` stops them all, and the
 audit log records each one without its text. Commands that would wipe the
 workspace are refused. A Wisp's GitHub token is stored encrypted and reaches

@@ -32,14 +32,23 @@ export const RUN_COMMAND_TOOL = "run_command";
 /** File inside a Wisp's config directory that holds where its commands run. */
 export const EXECUTION_SETTINGS_FILE = "execution-settings.json";
 
-const RUN_COMMAND_DESCRIPTION = [
+function runCommandDescription(localNetwork: boolean): string {
+  return [
+    ...RUN_COMMAND_DESCRIPTION,
+    localNetwork
+      ? "The internet and the local network are reachable."
+      : "The internet is reachable through an HTTP proxy that tools find in HTTP_PROXY and HTTPS_PROXY (curl, git over HTTPS, npm, pip). Local and private network addresses are blocked, and connections that do not use the proxy, such as git over SSH, cannot leave the container.",
+  ].join(" ");
+}
+
+const RUN_COMMAND_DESCRIPTION: ReadonlyArray<string> = [
   "Run a bash command in this Wisp's own Linux container (Debian) and return its output.",
   `The working directory is ${CONTAINER_WORKSPACE}, which holds the same files as the workspace file tools; paths in commands use ${CONTAINER_WORKSPACE}.`,
   "Use it for git, builds, tests, package installs and other command-line work. git, curl, python3, node, npm, build-essential, ripgrep and jq are installed when the default image is used.",
   "Commands run as a regular user without sudo, so system packages cannot be installed; install tools into the home folder (pip --user, npm -g, downloads into ~/.local/bin). The home folder is inside the workspace and is kept; anything outside the workspace can disappear when the container is recreated.",
-  "The internet is reachable. git over HTTPS to github.com uses the GitHub token configured for this Wisp, when there is one; never print or store the token.",
+  "git over HTTPS to github.com uses the GitHub token configured for this Wisp, when there is one; never print or store the token.",
   "Each call starts a fresh shell in the working directory; use cd within the command. Processes left running in the background are stopped when the command ends. Output is truncated to the last lines; optionally give a timeout in seconds.",
-].join(" ");
+];
 
 /**
  * Commands refused before they reach the container. They would only damage
@@ -59,9 +68,10 @@ const REFUSED_COMMANDS: ReadonlyArray<{ pattern: RegExp; reason: string }> = [
 interface ExecutionSettings {
   mode: ExecutionMode;
   image: string | null;
+  localNetwork: boolean;
 }
 
-const DEFAULT_SETTINGS: ExecutionSettings = { mode: "off", image: null };
+const DEFAULT_SETTINGS: ExecutionSettings = { mode: "off", image: null, localNetwork: false };
 
 export interface ExecutionWisp {
   storageId: string;
@@ -116,7 +126,7 @@ export class ExecutionService implements IntegrationToolSource {
     }
     const wisp = this.options.resolveWisp(request.conversationId);
     const previous = await readSettings(wisp.configDirectory);
-    const next: ExecutionSettings = { mode: request.mode, image: request.image };
+    const next: ExecutionSettings = { mode: request.mode, image: request.image, localNetwork: request.localNetwork };
     if (request.gitToken === null) await this.credentials.delete(wisp.storageId);
     else if (request.gitToken !== undefined) {
       if (!this.credentials.isSecureStorageAvailable()) {
@@ -124,7 +134,7 @@ export class ExecutionService implements IntegrationToolSource {
       }
       await this.credentials.setApiKey(wisp.storageId, request.gitToken);
     }
-    if (previous.mode !== next.mode || previous.image !== next.image) {
+    if (previous.mode !== next.mode || previous.image !== next.image || previous.localNetwork !== next.localNetwork) {
       await writeFileAtomically(
         path.join(wisp.configDirectory, EXECUTION_SETTINGS_FILE),
         `${JSON.stringify(next, null, 2)}\n`,
@@ -151,7 +161,12 @@ export class ExecutionService implements IntegrationToolSource {
       definitions: [await this.createRunCommandTool(conversationId, wisp, settings)],
       metadata: [],
       activeNames: [RUN_COMMAND_TOOL],
-      revision: snapshotRevision([RUN_COMMAND_TOOL, settings.image ?? SANDBOX_IMAGE, runtime.name]),
+      revision: snapshotRevision([
+        RUN_COMMAND_TOOL,
+        settings.image ?? SANDBOX_IMAGE,
+        runtime.name,
+        settings.localNetwork ? "local-network" : "internet-only",
+      ]),
     };
   }
 
@@ -191,6 +206,7 @@ export class ExecutionService implements IntegrationToolSource {
             storageId: wisp.storageId,
             image: settings.image ?? SANDBOX_IMAGE,
             workspaceDirectory: wisp.workspaceDirectory,
+            localNetwork: settings.localNetwork,
           },
           command,
           containerPath(wisp.workspaceDirectory, cwd),
@@ -224,7 +240,7 @@ export class ExecutionService implements IntegrationToolSource {
       ...base,
       name: RUN_COMMAND_TOOL,
       label: "Run command",
-      description: RUN_COMMAND_DESCRIPTION,
+      description: runCommandDescription(settings.localNetwork),
       promptSnippet: "Run bash commands in this Wisp's Linux container",
       promptGuidelines: undefined,
       execute,
@@ -267,13 +283,18 @@ async function readSettings(configDirectory: string): Promise<ExecutionSettings>
     throw new WispBackendError("internal_error", "The command settings could not be read.", true);
   }
   try {
-    const { mode, image } = JSON.parse(contents) as { mode?: unknown; image?: unknown };
+    const { mode, image, localNetwork } = JSON.parse(contents) as {
+      mode?: unknown;
+      image?: unknown;
+      localNetwork?: unknown;
+    };
     if (
       typeof mode === "string" &&
       EXECUTION_MODES.includes(mode as ExecutionMode) &&
-      (image === null || (typeof image === "string" && isContainerImage(image)))
+      (image === null || (typeof image === "string" && isContainerImage(image))) &&
+      (localNetwork === undefined || typeof localNetwork === "boolean")
     ) {
-      return { mode: mode as ExecutionMode, image };
+      return { mode: mode as ExecutionMode, image, localNetwork: localNetwork ?? false };
     }
   } catch {
     // Falls through: a damaged file is reported like an unreadable one.

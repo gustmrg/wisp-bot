@@ -5,6 +5,7 @@ import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { SegmentedControl } from "@/components/ui/segmented-control";
+import { ToggleSwitch } from "@/components/ui/toggle-switch";
 
 const MODES: ReadonlyArray<{ value: ExecutionMode; label: string }> = [
   { value: "off", label: "Off" },
@@ -72,6 +73,7 @@ function ExecutionPanel({ conversationId }: { conversationId: string }) {
         conversationId,
         mode: view.mode,
         image: view.image,
+        localNetwork: view.localNetwork,
         ...changes,
       });
       if (!result.ok) {
@@ -120,6 +122,27 @@ function ExecutionPanel({ conversationId }: { conversationId: string }) {
               ? `${view.runtime.name === "docker" ? "Docker" : "Podman"} ${view.runtime.version} · Container: ${CONTAINER_STATES[view.container]}`
               : `Container: ${CONTAINER_STATES[view.container]}`}
           </p>
+          <div className="space-y-1.5">
+            <div className="flex items-center justify-between gap-3">
+              <span>Allow local network</span>
+              <ToggleSwitch
+                label="Allow local network"
+                checked={view.localNetwork}
+                disabled={saving}
+                onChange={() =>
+                  void save(
+                    { localNetwork: !view.localNetwork },
+                    view.localNetwork ? "Local network blocked." : "Local network allowed.",
+                  )
+                }
+              />
+            </div>
+            <p className="text-dim">
+              {view.localNetwork
+                ? "Commands can reach devices and services on the server's network, such as a router or a NAS."
+                : "Commands reach the internet through a proxy that blocks the server's network and local addresses. Changing this recreates the container."}
+            </p>
+          </div>
           <div className="space-y-1.5">
             <label htmlFor={`${id}-image`}>Image</label>
             <div className="flex gap-2">
