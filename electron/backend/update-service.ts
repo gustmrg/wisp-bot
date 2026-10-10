@@ -22,6 +22,8 @@ export class UpdateService {
     private readonly autoInstallSupported = true,
     private readonly logger?: StructuredLogger,
     private readonly updatedFrom?: string,
+    // Replaces the updater's own relaunch after an install; see relaunch-after-exit.ts.
+    private readonly relaunchAfterInstall?: () => void,
   ) {
     this.state = enabled
       ? { phase: "idle", currentVersion }
@@ -29,6 +31,7 @@ export class UpdateService {
     updater.autoDownload = false;
     updater.autoInstallOnAppQuit = true;
     updater.allowDowngrade = false;
+    if (relaunchAfterInstall) updater.autoRunAppAfterInstall = false;
     updater.on("checking-for-update", () => this.setState({ phase: "checking", currentVersion }));
     updater.on("update-available", (info: UpdateInfo) => {
       if (!this.autoInstallSupported) {
@@ -101,7 +104,27 @@ export class UpdateService {
     if (this.state.phase !== "downloaded")
       throw new WispBackendError("invalid_request", "No update is ready to install.");
     this.setState({ ...this.state, phase: "installing" });
-    setTimeout(() => this.updater.quitAndInstall(false, true), INSTALL_PAINT_DELAY_MS);
+    setTimeout(() => this.quitAndInstall(), INSTALL_PAINT_DELAY_MS);
+  }
+
+  private quitAndInstall(): void {
+    if (!this.relaunchAfterInstall) {
+      this.updater.quitAndInstall(false, true);
+      return;
+    }
+    // The install runs synchronously and reports a failure through the "error"
+    // event, in which case the app keeps running and must not start a second copy.
+    let failed = false;
+    const onError = () => {
+      failed = true;
+    };
+    this.updater.on("error", onError);
+    try {
+      this.updater.quitAndInstall(false, false);
+    } finally {
+      this.updater.off("error", onError);
+    }
+    if (!failed) this.relaunchAfterInstall();
   }
 
   private assertEnabled(): void {

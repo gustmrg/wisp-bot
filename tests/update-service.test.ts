@@ -9,6 +9,7 @@ function updater() {
     autoDownload: true,
     autoInstallOnAppQuit: false,
     allowDowngrade: true,
+    autoRunAppAfterInstall: true,
     checkForUpdates: vi.fn(async () => null),
     downloadUpdate: vi.fn(async () => []),
     quitAndInstall: vi.fn(),
@@ -51,6 +52,39 @@ describe("UpdateService", () => {
       expect(adapter.quitAndInstall).not.toHaveBeenCalled();
       vi.runAllTimers();
       expect(adapter.quitAndInstall).toHaveBeenCalledWith(false, true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("relaunches through its own hook only after a package-manager install succeeds", async () => {
+    const adapter = updater();
+    const relaunch = vi.fn();
+    const service = new UpdateService(adapter as never, "1.0.0", true, true, undefined, undefined, relaunch);
+    expect(adapter.autoRunAppAfterInstall).toBe(false);
+    const downloadAndInstall = async () => {
+      const checking = service.check();
+      adapter.emit("update-available", { version: "1.1.0" });
+      await checking;
+      const downloading = service.download();
+      adapter.emit("update-downloaded", { version: "1.1.0" });
+      await downloading;
+      service.install();
+      vi.runAllTimers();
+    };
+
+    vi.useFakeTimers();
+    try {
+      await downloadAndInstall();
+      expect(adapter.quitAndInstall).toHaveBeenCalledWith(false, false);
+      expect(relaunch).toHaveBeenCalledTimes(1);
+
+      // pkexec failing (or the password prompt being dismissed) keeps the app open.
+      adapter.quitAndInstall.mockImplementationOnce(() => adapter.emit("error", new Error("pkexec exited with 127")));
+      await downloadAndInstall();
+      expect(relaunch).toHaveBeenCalledTimes(1);
+      expect(service.getState()).toMatchObject({ phase: "error" });
+      expect(adapter.listenerCount("error")).toBe(1);
     } finally {
       vi.useRealTimers();
     }
