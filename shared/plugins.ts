@@ -46,7 +46,7 @@ export const PLUGIN_CATALOG: ReadonlyArray<PluginCatalogEntry> = [
     credentialLabel: "Linear personal API key",
     credentialUrl: "https://linear.app/settings/account/security",
     name: "Linear",
-    description: "Find, read, create, and update Linear issues.",
+    description: "Find, read, create, update, and comment on Linear issues.",
     supportsWrite: true,
     capabilities: [],
   },

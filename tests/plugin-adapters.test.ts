@@ -91,6 +91,27 @@ describe("built-in plugin adapters", () => {
     ["linear_update_issue", { id: "ENG-123" }],
     ["linear_update_issue", { id: "ENG-123", title: "x", query: "mutation { arbitrary }" }],
     ["linear_update_issue", { id: "ENG-123", description: "x".repeat(20_001) }],
+    ["linear_search_issues", { priority: 5 }],
+    ["linear_search_issues", { updatedSince: "last week" }],
+    ["linear_search_issues", { updatedSince: "2026-13-01" }],
+    ["linear_search_issues", { projectId: "" }],
+    ["linear_create_issue", { teamId: "team", title: "Title", dueDate: "2026-02-30" }],
+    ["linear_create_issue", { teamId: "team", title: "Title", dueDate: "" }],
+    ["linear_create_issue", { teamId: "team", title: "Title", assigneeId: "" }],
+    ["linear_create_issue", { teamId: "team", title: "Title", estimate: 101 }],
+    ["linear_create_issue", { teamId: "team", title: "Title", labelIds: "label" }],
+    [
+      "linear_create_issue",
+      { teamId: "team", title: "Title", labelIds: Array.from({ length: 21 }, (_, i) => `l${i}`) },
+    ],
+    ["linear_create_issue", { teamId: "team", title: "Title", addLabelIds: ["label"] }],
+    ["linear_update_issue", { id: "ENG-123", labelIds: ["label"] }],
+    ["linear_update_issue", { id: "ENG-123", removeLabelIds: [""] }],
+    ["linear_list_comments", {}],
+    ["linear_list_projects", { query: "x".repeat(201) }],
+    ["linear_list_users", { email: "someone@example.com" }],
+    ["linear_add_comment", { issueId: "issue-id", body: " " }],
+    ["linear_add_comment", { issueId: "issue-id", body: "x".repeat(10_001) }],
   ])("validates %s arguments before any request (%j)", async (name, args) => {
     const fetchMock = mockJson({});
     await expect(tool(name).execute(KEY, args)).rejects.toThrow();
@@ -131,6 +152,247 @@ describe("built-in plugin adapters", () => {
     });
     expect(result.nodes[0].identifier).toBe("ENG-123");
     expect(result.pageInfo).toEqual({ hasNextPage: true, endCursor: "next" });
+  });
+
+  it("filters Linear issues by project, label, assignee, parent, priority and update time", async () => {
+    const fetchMock = mockJson({ data: { issues: { nodes: [], pageInfo: { hasNextPage: false } } } });
+    await tool("linear_search_issues").execute(KEY, {
+      projectId: "project-id",
+      labelId: "label-id",
+      assigneeId: "me",
+      parentId: "eng-42",
+      priority: 0,
+      updatedSince: "-P7D",
+    });
+    expect(requestBody(fetchMock).variables.filter).toEqual({
+      project: { id: { eq: "project-id" } },
+      labels: { some: { id: { eq: "label-id" } } },
+      assignee: { isMe: { eq: true } },
+      parent: { team: { key: { eqIgnoreCase: "eng" } }, number: { eq: 42 } },
+      priority: { eq: 0 },
+      updatedAt: { gte: "-P7D" },
+    });
+    fetchMock.mockClear();
+    await tool("linear_search_issues").execute(KEY, {
+      assigneeId: "none",
+      parentId: "parent-uuid",
+      updatedSince: "2026-10-01T09:30:00Z",
+    });
+    expect(requestBody(fetchMock).variables.filter).toEqual({
+      assignee: { null: true },
+      parent: { id: { eq: "parent-uuid" } },
+      updatedAt: { gte: "2026-10-01T09:30:00Z" },
+    });
+    fetchMock.mockClear();
+    await tool("linear_search_issues").execute(KEY, { assigneeId: "user-id" });
+    expect(requestBody(fetchMock).variables.filter).toEqual({ assignee: { id: { eq: "user-id" } } });
+  });
+
+  it("returns project, labels, parent, estimate and due date with every issue", async () => {
+    mockJson({
+      data: {
+        issues: {
+          nodes: [
+            {
+              ...fakeIssue,
+              estimate: 3,
+              dueDate: "2026-10-31",
+              assignee: { id: "user-id", name: "Ada", email: "ada@example.com" },
+              project: { id: "project-id", name: "Wisp Bot" },
+              parent: { id: "parent-id", identifier: "ENG-1" },
+              labels: { nodes: [{ id: "label-id", name: "Bug" }] },
+            },
+          ],
+          pageInfo: { hasNextPage: false },
+        },
+      },
+    });
+    const [result] = JSON.parse(await tool("linear_search_issues").execute(KEY, {})).nodes;
+    expect(result).toMatchObject({
+      estimate: 3,
+      dueDate: "2026-10-31",
+      assignee: { id: "user-id", name: "Ada" },
+      project: { id: "project-id", name: "Wisp Bot" },
+      parent: { id: "parent-id", identifier: "ENG-1" },
+      labels: [{ id: "label-id", name: "Bug" }],
+    });
+    expect(JSON.stringify(result)).not.toContain("ada@example.com");
+  });
+
+  it("reads an issue with its sub-issues", async () => {
+    const fetchMock = mockJson({
+      data: {
+        issue: {
+          ...fakeIssue,
+          description: "Details",
+          children: {
+            nodes: [
+              { id: "child-id", identifier: "ENG-124", title: "Child", state: { name: "Todo", type: "unstarted" } },
+            ],
+            pageInfo: { hasNextPage: true },
+          },
+        },
+      },
+    });
+    const result = JSON.parse(await tool("linear_get_issue").execute(KEY, { id: "ENG-123" }));
+    expect(requestBody(fetchMock).query).toContain("children(first: 50)");
+    expect(result).toMatchObject({
+      project: null,
+      parent: null,
+      labels: [],
+      children: [{ id: "child-id", identifier: "ENG-124", title: "Child", state: { name: "Todo", type: "unstarted" } }],
+      moreChildren: true,
+    });
+  });
+
+  it("lists issue comments chronologically with bounded bodies", async () => {
+    const fetchMock = mockJson({
+      data: {
+        issue: {
+          comments: {
+            nodes: [
+              {
+                id: "c2",
+                body: "x".repeat(6_000),
+                createdAt: "2026-10-02T00:00:00.000Z",
+                user: { id: "user-id", name: "Ada" },
+                parent: { id: "c1" },
+              },
+              { id: "c1", body: "First", createdAt: "2026-10-01T00:00:00.000Z", user: null, parent: null },
+            ],
+            pageInfo: { hasNextPage: true, endCursor: "next" },
+          },
+        },
+      },
+    });
+    const result = JSON.parse(await tool("linear_list_comments").execute(KEY, { issueId: "ENG-123", limit: 2 }));
+    expect(requestBody(fetchMock).variables).toEqual({ id: "ENG-123", first: 2 });
+    expect(result.nodes.map(({ id }: { id: string }) => id)).toEqual(["c1", "c2"]);
+    expect(result.nodes[0]).toMatchObject({ body: "First", user: null, parentId: null });
+    expect(result.nodes[1]).toMatchObject({ user: { name: "Ada" }, parentId: "c1" });
+    expect(result.nodes[1].body).toContain("[truncated]");
+    expect(result.pageInfo).toEqual({ hasNextPage: true, endCursor: "next" });
+  });
+
+  it("discovers projects, labels and users with name and team filters", async () => {
+    const fetchMock = mockJson({
+      data: {
+        projects: {
+          nodes: [
+            {
+              id: "project-id",
+              name: "Wisp Bot",
+              url: "https://linear.app/p",
+              status: { name: "Started", type: "started" },
+            },
+          ],
+          pageInfo: { hasNextPage: false },
+        },
+        issueLabels: {
+          nodes: [
+            { id: "label-id", name: "Bug", parent: { name: "Type" }, team: null },
+            { id: "team-label", name: "Infra", parent: null, team: fakeIssue.team },
+          ],
+          pageInfo: { hasNextPage: false },
+        },
+        users: {
+          nodes: [{ id: "user-id", name: "Ada", displayName: "ada", isMe: true, email: "ada@example.com" }],
+          pageInfo: { hasNextPage: false },
+        },
+      },
+    });
+    const projects = JSON.parse(await tool("linear_list_projects").execute(KEY, { query: "wisp", teamId: "team-id" }));
+    expect(requestBody(fetchMock).variables).toEqual({
+      filter: { name: { containsIgnoreCase: "wisp" }, accessibleTeams: { some: { id: { eq: "team-id" } } } },
+      first: 10,
+    });
+    expect(projects.nodes).toEqual([
+      { id: "project-id", name: "Wisp Bot", url: "https://linear.app/p", status: { name: "Started", type: "started" } },
+    ]);
+    fetchMock.mockClear();
+    const labels = JSON.parse(await tool("linear_list_labels").execute(KEY, { teamId: "team-id" }));
+    expect(requestBody(fetchMock).variables.filter).toEqual({
+      or: [{ team: { id: { eq: "team-id" } } }, { team: { null: true } }],
+    });
+    expect(labels.nodes).toEqual([
+      { id: "label-id", name: "Bug", group: "Type", team: null },
+      { id: "team-label", name: "Infra", group: null, team: fakeIssue.team },
+    ]);
+    fetchMock.mockClear();
+    const users = JSON.parse(await tool("linear_list_users").execute(KEY, { query: "ada" }));
+    expect(requestBody(fetchMock).variables.filter).toEqual({
+      active: { eq: true },
+      or: [{ name: { containsIgnoreCase: "ada" } }, { displayName: { containsIgnoreCase: "ada" } }],
+    });
+    expect(users.nodes).toEqual([{ id: "user-id", name: "Ada", displayName: "ada", isMe: true }]);
+    expect(requestBody(fetchMock).query).not.toContain("email");
+  });
+
+  it("creates sub-issues with assignee, project, labels, estimate and due date", async () => {
+    const fetchMock = mockJson({ data: { issueCreate: { success: true, issue: fakeIssue } } });
+    const args = {
+      teamId: "team-id",
+      title: "Child",
+      assigneeId: "user-id",
+      projectId: "project-id",
+      parentId: "parent-id",
+      estimate: 2,
+      dueDate: "2026-10-31",
+      labelIds: ["label-a", " label-a ", "label-b"],
+    };
+    await tool("linear_create_issue").execute(KEY, args);
+    expect(requestBody(fetchMock).variables).toEqual({ input: { ...args, labelIds: ["label-a", "label-b"] } });
+  });
+
+  it("clears relations with empty strings and adds or removes labels without replacing them", async () => {
+    const fetchMock = mockJson({ data: { issueUpdate: { success: true, issue: fakeIssue } } });
+    const args = {
+      id: "ENG-123",
+      assigneeId: "",
+      projectId: " ",
+      parentId: "",
+      dueDate: "",
+      addLabelIds: ["label-a"],
+      removeLabelIds: ["label-b"],
+    };
+    await tool("linear_update_issue").execute(KEY, args);
+    expect(requestBody(fetchMock).variables).toEqual({
+      id: "ENG-123",
+      input: {
+        assigneeId: null,
+        projectId: null,
+        parentId: null,
+        dueDate: null,
+        addedLabelIds: ["label-a"],
+        removedLabelIds: ["label-b"],
+      },
+    });
+    expect(tool("linear_update_issue").summarize(args)).toBe(
+      "Update issue ENG-123 (dueDate, assigneeId, projectId, parentId, addedLabelIds, removedLabelIds)",
+    );
+  });
+
+  it("adds comments only through an approved write with a readable summary", async () => {
+    const fetchMock = mockJson({
+      data: {
+        commentCreate: {
+          success: true,
+          comment: { id: "c1", url: "https://linear.app/c1", body: "Done", createdAt: "2026-10-09T00:00:00.000Z" },
+        },
+      },
+    });
+    const add = tool("linear_add_comment");
+    expect(add.access).toBe("write");
+    expect(getToolMetadata("linear_add_comment")?.category).toBe("external_write");
+    expect(add.summarize({ issueId: "issue-id", body: "Done", parentId: "c0" })).toBe("Reply on issue issue-id: Done");
+    const result = JSON.parse(await add.execute(KEY, { issueId: "issue-id", body: "Done", parentId: "c0" }));
+    expect(requestBody(fetchMock).query).toContain("commentCreate(input: $input)");
+    expect(requestBody(fetchMock).variables).toEqual({ input: { issueId: "issue-id", body: "Done", parentId: "c0" } });
+    expect(result).toMatchObject({ success: true, comment: { id: "c1", body: "Done" } });
+    mockJson({ data: { commentCreate: { success: false } } });
+    await expect(add.execute(KEY, { issueId: "issue-id", body: "Done" })).rejects.toThrow(
+      "the change may have been applied",
+    );
   });
 
   it("gets issue identifiers directly and bounds long descriptions", async () => {
