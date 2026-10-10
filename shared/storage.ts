@@ -18,6 +18,35 @@ export interface StorageWorkspace {
   quotaBytes: number;
   /** Some folders or files could not be read, so the numbers are a lower bound. */
   partial: boolean;
+  /**
+   * The largest size a Wisp's workspace can be given now, as in `WorkspaceView`.
+   * Absent for circles, whose size is fixed, when the disk could not be
+   * measured, and from servers older than this field.
+   */
+  maxQuotaBytes?: number;
+  /** The largest folders and files at the workspace root, largest first; absent from older servers. */
+  folders?: ReadonlyArray<StorageUsageItem>;
+  /** The largest files anywhere in the workspace, largest first; absent from older servers. */
+  largestFiles?: ReadonlyArray<StorageLargeFile>;
+}
+
+/** Most entries a workspace reports in `folders` and in `largestFiles`. */
+export const STORAGE_TOP_ITEMS = 10;
+
+export interface StorageUsageItem {
+  /** Name at the workspace root. */
+  path: string;
+  type: "file" | "directory";
+  /** Logical bytes; for a folder, every file inside it. */
+  size: number;
+  fileCount: number;
+}
+
+export interface StorageLargeFile {
+  /** Path relative to the workspace root, with forward slashes. */
+  path: string;
+  size: number;
+  modifiedAt: string | null;
 }
 
 /** File at the root of an archive folder naming what was deleted. */

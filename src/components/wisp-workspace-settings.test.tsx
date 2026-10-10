@@ -80,3 +80,38 @@ it("resizes the workspace, offering only sizes the disk has room for", async () 
   expect(setWorkspaceQuota).toHaveBeenCalledWith({ conversationId: "one", quotaBytes: 10 * GIB });
   expect(await screen.findByText("5.0 MiB of 10.0 GiB used")).toBeInTheDocument();
 });
+
+it("asks before giving the workspace less room than it uses", async () => {
+  const user = userEvent.setup();
+  const MIB = 1024 * 1024;
+  const GIB = 1024 * MIB;
+  const setWorkspaceQuota = vi.fn(async () => ({
+    ok: true as const,
+    value: { usedBytes: GIB, quotaBytes: 512 * MIB, maxQuotaBytes: 10 * GIB },
+  }));
+  Object.defineProperty(window, "wisp", {
+    configurable: true,
+    value: {
+      getWorkspace: vi.fn(async () => ({
+        ok: true as const,
+        value: { usedBytes: GIB, quotaBytes: 2 * GIB, maxQuotaBytes: 10 * GIB },
+      })),
+      setWorkspaceQuota,
+      openWorkspaceFolder: vi.fn(),
+    },
+  });
+  render(<WispWorkspaceSettings conversationId="one" />);
+  await user.click(screen.getByRole("button", { name: "Workspace" }));
+  await user.click(await screen.findByRole("combobox", { name: "Size" }));
+  await user.click(screen.getByRole("option", { name: "512 MiB" }));
+
+  expect(screen.getByRole("alert")).toHaveTextContent("until about 512 MiB is freed");
+  await user.click(screen.getByRole("button", { name: "Cancel" }));
+  expect(setWorkspaceQuota).not.toHaveBeenCalled();
+
+  await user.click(screen.getByRole("combobox", { name: "Size" }));
+  await user.click(await screen.findByRole("option", { name: "512 MiB" }));
+  await user.click(screen.getByRole("button", { name: "Set to 512 MiB anyway" }));
+  expect(setWorkspaceQuota).toHaveBeenCalledWith({ conversationId: "one", quotaBytes: 512 * MIB });
+  expect(await screen.findByText("1.0 GiB of 512 MiB used")).toBeInTheDocument();
+});
