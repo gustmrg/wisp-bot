@@ -68,6 +68,69 @@ const RUN_SCRIPT = [
   'rm -f "/tmp/.wisp-exec/$id"',
   'exit "$code"',
 ].join("\n");
+/** Folder in the container's /tmp that holds each background process: its command, group, output and exit code. */
+const PROCESS_DIRECTORY = "/tmp/.wisp-proc";
+/** Most background processes a Wisp may have running at once. */
+export const MAX_BACKGROUND_PROCESSES = 8;
+/**
+ * Background process scripts, run with bash. Each process gets its own
+ * session (so it can be killed as a group), writes its output to a log in
+ * /tmp, and records its exit code when it ends. They outlive the command that
+ * started them, but not the container: it stops after the idle time.
+ */
+const PROCESS_SCRIPTS = {
+  start: [
+    `id="$1"; command="$2"; max="$3"; dir="${PROCESS_DIRECTORY}/$id"`,
+    "running=0",
+    `for other in ${PROCESS_DIRECTORY}/*/; do`,
+    '  [ -f "$other/pid" ] && [ ! -f "$other/exit" ] && kill -0 "$(cat "$other/pid")" 2>/dev/null && running=$((running + 1))',
+    "done",
+    'if [ "$running" -ge "$max" ]; then echo "limit"; exit 3; fi',
+    'mkdir -p "$dir"',
+    `printf '%s' "$command" > "$dir/cmd"`,
+    'date +%s > "$dir/started"',
+    "(",
+    '  setsid bash -c "$command" </dev/null >"$dir/log" 2>&1 &',
+    "  pid=$!",
+    '  echo "$pid" > "$dir/pid"',
+    '  wait "$pid"',
+    '  echo "$?" > "$dir/exit"',
+    ") </dev/null >/dev/null 2>&1 &",
+    'for _ in 1 2 3 4 5 6 7 8 9 10; do [ -f "$dir/pid" ] && break; sleep 0.1; done',
+    "sleep 1",
+    'tail -n 20 "$dir/log" 2>/dev/null',
+  ].join("\n"),
+  list: [
+    `for dir in ${PROCESS_DIRECTORY}/*/; do`,
+    '  [ -f "$dir/cmd" ] || continue',
+    '  if [ -f "$dir/exit" ]; then state="exited $(cat "$dir/exit")"',
+    '  elif kill -0 "$(cat "$dir/pid" 2>/dev/null)" 2>/dev/null; then state="running"',
+    '  else state="stopped"; fi',
+    `  printf '%s\t%s\t%s\t%s\n' "$(basename "$dir")" "$state" "$(cat "$dir/started")" "$(head -c 200 "$dir/cmd" | tr '\n' ' ')"`,
+    "done",
+  ].join("\n"),
+  log: [`dir="${PROCESS_DIRECTORY}/$1"`, '[ -f "$dir/cmd" ] || exit 4', 'tail -n "$2" "$dir/log" 2>/dev/null'].join(
+    "\n",
+  ),
+  wait: [
+    `dir="${PROCESS_DIRECTORY}/$1"; ticks=$(( $2 * 5 ))`,
+    '[ -f "$dir/cmd" ] || exit 4',
+    'while [ ! -f "$dir/exit" ] && [ "$ticks" -gt 0 ] && kill -0 "$(cat "$dir/pid" 2>/dev/null)" 2>/dev/null; do sleep 0.2; ticks=$((ticks - 1)); done',
+    'if [ -f "$dir/exit" ]; then echo "exited $(cat "$dir/exit")"; elif kill -0 "$(cat "$dir/pid" 2>/dev/null)" 2>/dev/null; then echo "running"; else echo "stopped"; fi',
+    'tail -n "$3" "$dir/log" 2>/dev/null',
+  ].join("\n"),
+  kill: [
+    `dir="${PROCESS_DIRECTORY}/$1"`,
+    '[ -f "$dir/cmd" ] || exit 4',
+    'pid=$(cat "$dir/pid" 2>/dev/null) || exit 0',
+    'kill -TERM -- "-$pid" 2>/dev/null || exit 0',
+    'for _ in 1 2 3 4 5 6 7 8 9 10; do kill -0 "$pid" 2>/dev/null || exit 0; sleep 0.2; done',
+    'kill -KILL -- "-$pid" 2>/dev/null; exit 0',
+  ].join("\n"),
+} as const;
+
+export type ProcessAction = keyof typeof PROCESS_SCRIPTS;
+
 const KILL_SCRIPT = 'pid=$(cat "/tmp/.wisp-exec/$1" 2>/dev/null) && kill -KILL -- "-$pid"';
 
 export interface ContainerSpec {
@@ -193,6 +256,50 @@ export class ContainerManager {
         if (timer) clearTimeout(timer);
         options.signal?.removeEventListener("abort", onAbort);
       }
+    } finally {
+      this.end(spec.storageId);
+    }
+  }
+
+  /**
+   * Runs one of the background process scripts in the Wisp's container. Only
+   * `start` creates or starts the container; the others answer from a
+   * container that is already running, and find nothing otherwise.
+   */
+  async processScript(
+    spec: ContainerSpec,
+    action: ProcessAction,
+    args: ReadonlyArray<string>,
+    options: { signal?: AbortSignal; gitToken?: string; onData?: (data: Buffer) => void } = {},
+  ): Promise<{ exitCode: number; stdout: string } | null> {
+    if (options.signal?.aborted) throw new Error("aborted");
+    const cli = await this.requireCli();
+    this.begin(spec.storageId);
+    try {
+      if (action === "start") {
+        await abortable(this.ensureRunning(cli, spec, options.onData ?? (() => undefined)), options.signal);
+      } else if ((await this.state(spec.storageId)) !== "running") {
+        return null;
+      }
+      const result = await abortable(
+        cli.run(
+          [
+            "exec",
+            ...(options.gitToken ? ["-e", "WISP_GIT_TOKEN"] : []),
+            "-w",
+            CONTAINER_WORKSPACE,
+            this.containerName(spec.storageId),
+            "bash",
+            "-c",
+            PROCESS_SCRIPTS[action],
+            `wisp-${action}`,
+            ...args,
+          ],
+          options.gitToken ? { env: { WISP_GIT_TOKEN: options.gitToken } } : {},
+        ),
+        options.signal,
+      );
+      return { exitCode: result.exitCode, stdout: result.stdout };
     } finally {
       this.end(spec.storageId);
     }
