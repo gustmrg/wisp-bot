@@ -14,6 +14,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { notifyProviderCredentialsChanged } from "@/lib/voice-credentials";
 import { voiceProvider } from "../../shared/voice";
 
 interface ModelSettingsSectionProps {
@@ -138,6 +139,7 @@ function ModelSettingsSection({
       }
       applyView(result.value);
       setSaved(true);
+      if (apiKey.trim()) notifyProviderCredentialsChanged();
     } catch {
       setError("Could not save AI model settings.");
     } finally {
@@ -157,6 +159,7 @@ function ModelSettingsSection({
         return;
       }
       applyView(result.value);
+      notifyProviderCredentialsChanged();
     } catch {
       setError("Could not remove the provider API key.");
     } finally {
