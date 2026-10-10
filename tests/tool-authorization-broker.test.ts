@@ -54,6 +54,20 @@ describe("tool policy", () => {
     expect(evaluateToolPolicy(settings, "create_file", "external_path")).toBe("ask");
   });
 
+  it("runs container commands without asking, unless a rule blocks them, and only in a container", () => {
+    const settings: ToolPolicySettings = { autoReview: false, rules: [] };
+    expect(evaluateToolPolicy(settings, "container_command", "container")).toBe("allow");
+    expect(evaluateToolPolicy(settings, "container_command", "workspace_path")).toBe("block");
+    expect(evaluateToolPolicy(settings, "container_command", "integration")).toBe("block");
+    const blocked: ToolPolicySettings = {
+      autoReview: true,
+      rules: [{ id: "block", action: "container_command", behavior: "block", scope: "workspace" }],
+    };
+    expect(evaluateToolPolicy(blocked, "container_command", "container")).toBe("block");
+    // Pi's own shell stays blocked whatever the scope.
+    expect(evaluateToolPolicy(settings, "shell", "container")).toBe("block");
+  });
+
   it("requires approval for external writes regardless of workspace allows and auto-review", () => {
     const settings: ToolPolicySettings = {
       autoReview: true,

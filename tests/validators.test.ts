@@ -16,6 +16,7 @@ import {
   parseSaveAuxiliaryModelRequest,
   parseSaveVoiceCredentialRequest,
   parseSendMessageRequest,
+  parseSaveWispExecutionRequest,
   parseSetWorkspaceQuotaRequest,
   parseTranscribeAudioRequest,
   parseUpdateConversationRequest,
@@ -73,6 +74,26 @@ describe("IPC request validators", () => {
       requestId: "request-1",
       text: "  keep intentional whitespace  ",
     });
+  });
+
+  it("validates command settings, keeping an omitted token distinct from a removed one", () => {
+    expect(parseSaveWispExecutionRequest({ conversationId: "wisp:one", mode: "container", image: null })).toEqual({
+      conversationId: "wisp:one",
+      mode: "container",
+      image: null,
+    });
+    expect(
+      parseSaveWispExecutionRequest({ conversationId: "wisp:one", mode: "off", image: "node:22", gitToken: null }),
+    ).toEqual({ conversationId: "wisp:one", mode: "off", image: "node:22", gitToken: null });
+    for (const payload of [
+      { conversationId: "wisp:one", mode: "local", image: null },
+      { conversationId: "wisp:one", mode: "container", image: "--privileged" },
+      { conversationId: "wisp:one", mode: "container", image: "" },
+      { conversationId: "wisp:one", mode: "container", image: null, gitToken: "has space" },
+      { conversationId: "wisp:one", mode: "container" },
+    ]) {
+      expect(() => parseSaveWispExecutionRequest(payload)).toThrow(WispBackendError);
+    }
   });
 
   it("accepts only the offered workspace sizes", () => {

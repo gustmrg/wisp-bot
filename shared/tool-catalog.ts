@@ -46,6 +46,12 @@ export const TOOL_CATALOG: ReadonlyArray<ToolMetadata> = [
     category: "search",
   },
   { name: "use_skill", label: "Use skill", activityLabel: "Reading a skill…", category: "read" },
+  {
+    name: "run_command",
+    label: "Run command",
+    activityLabel: "Running a command…",
+    category: "container_command",
+  },
   { name: "save_skill", label: "Save skill", activityLabel: "Saving a skill…", category: "save_skill" },
   {
     name: "web_read",
@@ -198,9 +204,10 @@ function boundedText(value: string, maxLength: number): string {
   return normalized.slice(0, maxLength);
 }
 
-export const BUILTIN_TOOL_NAMES = TOOL_CATALOG.filter(({ pluginId, pluginIds }) => !pluginId && !pluginIds).map(
-  ({ name }) => name,
-);
+/** Tools every Wisp has. `run_command` is not one: only Wisps whose commands run in a container get it. */
+export const BUILTIN_TOOL_NAMES = TOOL_CATALOG.filter(
+  ({ name, pluginId, pluginIds }) => !pluginId && !pluginIds && name !== "run_command",
+).map(({ name }) => name);
 
 export function getToolMetadata(name: string): ToolMetadata | undefined {
   return metadataByName.get(name);

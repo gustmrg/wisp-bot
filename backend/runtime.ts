@@ -29,6 +29,9 @@ import { ToolPolicyStore } from "./tool-policy-store.js";
 import { fakeTranscriptionFetch, TranscriptionService } from "./transcription-service.js";
 import { StorageService } from "./storage-service.js";
 import { readWorkspaceQuota, WorkspaceService } from "./workspace-service.js";
+import { ContainerRuntimeDetector, type ContainerCli } from "./container-cli.js";
+import { ContainerManager } from "./container-manager.js";
+import { ExecutionService } from "./execution-service.js";
 
 /** Host capabilities the runtime needs, injected so any host (desktop or server) can compose it. */
 export interface BackendRuntimeOptions {
@@ -59,6 +62,11 @@ export interface BackendRuntimeOptions {
   onScheduledMessagesChanged: (view: ScheduledMessagesView) => void;
   /** Receives every queued message after any change, including a Wisp taking one. */
   onMessageQueueChanged: (view: MessageQueueView) => void;
+  /**
+   * Container programs to look for, in order. Defaults to Docker then Podman;
+   * the fake agent mode looks for none, since its Wisps never run commands.
+   */
+  containerPrograms?: ReadonlyArray<ContainerCli>;
 }
 
 /** The composed backend services, independent of any window or transport. */
@@ -75,6 +83,7 @@ export interface BackendRuntime {
   workspace: WorkspaceService;
   storage: StorageService;
   transcription: TranscriptionService;
+  execution: ExecutionService;
   /** Validates and saves a single Wisp's model override; null clears it. */
   applyConversationModel(conversationId: string, model: ModelSelection | null): Promise<void>;
   /** Re-applies the saved global model, e.g. after a credential change made it usable. */
@@ -147,6 +156,22 @@ export async function createBackendRuntime(options: BackendRuntimeOptions): Prom
     onSettingsChanged: options.onMcpSettingsChanged,
   });
   await mcpService.load();
+  const containerRuntime = new ContainerRuntimeDetector(
+    options.containerPrograms ?? (options.agentMode === "fake" ? [] : undefined),
+  );
+  const containerManager = new ContainerManager({ cli: () => containerRuntime.cli(), dataDirectory });
+  const executionService = new ExecutionService({
+    dataDirectory,
+    encryption,
+    resolveWisp: (id) => {
+      const { workspaceDirectory, configDirectory } = conversationRepository.getAgentContext(id);
+      return { storageId: conversationRepository.getWispStorageId(id), workspaceDirectory, configDirectory };
+    },
+    listWispStorageIds: () => conversationRepository.listWispStorageIds(),
+    authorizationBroker: toolAuthorizationBroker,
+    manager: containerManager,
+    runtime: containerRuntime,
+  });
   const agentFactory: ConversationAgentFactory =
     options.agentMode === "fake"
       ? new FakeConversationAgentFactory({ latencyMs: 350 })
@@ -154,7 +179,7 @@ export async function createBackendRuntime(options: BackendRuntimeOptions): Prom
           new SdkPiSessionFactory(
             modelService.getModelRuntime(),
             toolAuthorizationBroker,
-            new CompositeIntegrationToolSource([pluginService, mcpService]),
+            new CompositeIntegrationToolSource([pluginService, mcpService, executionService]),
             () => modelService.getAuxiliaryModel("imageUnderstanding"),
           ),
         );
@@ -179,11 +204,15 @@ export async function createBackendRuntime(options: BackendRuntimeOptions): Prom
       onConversationsRemoved: () => {
         messageScheduler?.refresh();
         messageQueue?.refresh();
+        // A deleted Wisp's container goes with it.
+        void executionService.reconcile().catch(() => undefined);
       },
     },
   );
   conversationService = service;
   await service.start(await modelService.getSelection());
+  // Containers of Wisps deleted while the server was down; never blocks startup.
+  void executionService.reconcile().catch(() => undefined);
   const queue = new MessageQueue({
     repository: conversationRepository,
     isAvailable: (conversationId) => registry.isAvailable(conversationId),
@@ -249,6 +278,7 @@ export async function createBackendRuntime(options: BackendRuntimeOptions): Prom
     workspace: workspaceService,
     storage,
     transcription: transcriptionService,
+    execution: executionService,
     applyConversationModel: async (conversationId, model) => {
       if (model) await modelService.validateConversationSelection(model);
       await service.applyConversationModel(conversationId, model);
@@ -264,6 +294,8 @@ export async function createBackendRuntime(options: BackendRuntimeOptions): Prom
       mcpService.dispose();
       toolAuthorizationBroker.dispose();
       await registry.disposeAll();
+      // After the agents, so no command starts a container once they are stopped.
+      await containerManager.dispose().catch(() => undefined);
       // Last: agents may persist their final messages while they settle.
       await conversationRepository.close();
     },

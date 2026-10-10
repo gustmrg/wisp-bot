@@ -645,6 +645,43 @@ describe("SdkPiSessionFactory", () => {
     expect(pluginTools.getActiveToolNames).toHaveBeenCalledWith("coordinator");
   });
 
+  it("tells a Wisp with run_command where its commands run, and still excludes Pi's shells", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "wisp-pi-commands-"));
+    const context = {
+      conversationId: "builder",
+      sessionId: "builder",
+      name: "Builder",
+      wispId: "builder",
+      role: "Developer",
+      soul: "Build things.",
+      workspaceDirectory: directory,
+      sessionDirectory: directory,
+      configDirectory: path.join(directory, "config"),
+    };
+    const runtime = {
+      hasConfiguredAuth: () => true,
+      getModel: () => ({ provider: "provider", id: "model" }),
+    } as unknown as ModelRuntimeLike;
+    const pluginTools: PluginToolSource = {
+      getTools: vi.fn(() => [toolDefinition("run_command")]) as PluginToolSource["getTools"],
+      getActiveToolNames: vi.fn(async () => ["run_command"]),
+    };
+
+    await new SdkPiSessionFactory(runtime, undefined, toToolSource(pluginTools)).create(context, {
+      providerId: "provider",
+      modelId: "model",
+    });
+
+    expect(sdk.createAgentSession).toHaveBeenLastCalledWith(
+      expect.objectContaining({ excludeTools: ["bash", "powershell"] }),
+    );
+    const options = sdk.createAgentSession.mock.calls.at(-1)?.[0] as { customTools: { name: string }[] };
+    expect(options.customTools.map(({ name }) => name)).toContain("run_command");
+    const prompt = (sdk.loaderOptions.at(-1) as { systemPromptOverride: () => string }).systemPromptOverride();
+    expect(prompt).toContain("Run commands only with run_command");
+    expect(prompt).not.toContain("must not execute shell commands");
+  });
+
   it("rejects missing credentials and unavailable models without selecting a fallback", () => {
     const missingAuth = {
       hasConfiguredAuth: () => false,

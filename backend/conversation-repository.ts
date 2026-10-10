@@ -308,6 +308,11 @@ export class ConversationRepository {
     return this.requireWispConversation(conversationId).wispRecord.storageId;
   }
 
+  /** The storage IDs of every existing Wisp. */
+  listWispStorageIds(): ReadonlySet<string> {
+    return new Set(Object.values(this.state.wisps).map(({ storageId }) => storageId));
+  }
+
   /**
    * Each conversation's workspace folder, whatever its kind: the folder
    * belongs to the conversation, so a circle's members share one entry.

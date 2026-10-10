@@ -252,6 +252,28 @@ function createApi(initialState: ConversationStateView): WispApi {
       ok: true as const,
       value: { usedBytes: 0, quotaBytes: 1024, maxQuotaBytes: 1024 },
     })),
+    getWispExecution: vi.fn(async () => ({
+      ok: true as const,
+      value: {
+        mode: "off" as const,
+        image: null,
+        defaultImage: "wisp-sandbox:test",
+        hasGitToken: false,
+        runtime: { available: false as const, message: "none" },
+        container: "absent" as const,
+      },
+    })),
+    saveWispExecution: vi.fn(async () => ({
+      ok: true as const,
+      value: {
+        mode: "off" as const,
+        image: null,
+        defaultImage: "wisp-sandbox:test",
+        hasGitToken: false,
+        runtime: { available: false as const, message: "none" },
+        container: "absent" as const,
+      },
+    })),
     setWorkspaceQuota: vi.fn(async () => ({
       ok: true as const,
       value: { usedBytes: 0, quotaBytes: 1024, maxQuotaBytes: 1024 },

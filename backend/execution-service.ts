@@ -1,0 +1,290 @@
+import type { BashOperations, ToolDefinition } from "@earendil-works/pi-coding-agent" with {
+  "resolution-mode": "import",
+};
+import { readFile } from "node:fs/promises";
+import path from "node:path";
+
+import {
+  CONTAINER_WORKSPACE,
+  EXECUTION_MODES,
+  isContainerImage,
+  isGitToken,
+  type ContainerRuntimeStatus,
+  type ExecutionMode,
+  type SaveWispExecutionRequest,
+  type WispExecutionView,
+} from "../shared/execution.js";
+import { formatBytes } from "../shared/workspace.js";
+import { writeFileAtomically } from "./atomic-file.js";
+import { WispBackendError } from "./backend-error.js";
+import type { ContainerCli } from "./container-cli.js";
+import { SANDBOX_IMAGE, type ContainerManager } from "./container-manager.js";
+import { EncryptedCredentialStore, type EncryptionService } from "./encrypted-credential-store.js";
+import {
+  snapshotRevision,
+  type IntegrationToolSnapshot,
+  type IntegrationToolSource,
+} from "./integration-tool-source.js";
+import type { ToolAuthorizationBroker } from "./tool-authorization-broker.js";
+import { measureTree, readWorkspaceQuota } from "./workspace-service.js";
+
+export const RUN_COMMAND_TOOL = "run_command";
+/** File inside a Wisp's config directory that holds where its commands run. */
+export const EXECUTION_SETTINGS_FILE = "execution-settings.json";
+
+const RUN_COMMAND_DESCRIPTION = [
+  "Run a bash command in this Wisp's own Linux container (Debian) and return its output.",
+  `The working directory is ${CONTAINER_WORKSPACE}, which holds the same files as the workspace file tools; paths in commands use ${CONTAINER_WORKSPACE}.`,
+  "Use it for git, builds, tests, package installs and other command-line work. git, curl, python3, node, npm, build-essential, ripgrep and jq are installed when the default image is used.",
+  "Commands run as a regular user without sudo, so system packages cannot be installed; install tools into the home folder (pip --user, npm -g, downloads into ~/.local/bin). The home folder is inside the workspace and is kept; anything outside the workspace can disappear when the container is recreated.",
+  "The internet is reachable. git over HTTPS to github.com uses the GitHub token configured for this Wisp, when there is one; never print or store the token.",
+  "Each call starts a fresh shell in the working directory; use cd within the command. Processes left running in the background are stopped when the command ends. Output is truncated to the last lines; optionally give a timeout in seconds.",
+].join(" ");
+
+/**
+ * Commands refused before they reach the container. They would only damage
+ * the Wisp's own container and workspace, but nothing good comes from them.
+ * This guards against mistakes, not against a determined command: the
+ * container is the boundary.
+ */
+const REFUSED_COMMANDS: ReadonlyArray<{ pattern: RegExp; reason: string }> = [
+  {
+    pattern:
+      /\brm\s+(?:-{1,2}[\w-]+\s+)*(?:\/|\/\*|~\/?|\$HOME\/?|\/workspace\/?|\/workspace\/\*|\.\/?|\*)(?=\s|$|[;&|)])/,
+    reason: "deletes the whole workspace or container",
+  },
+  { pattern: /:\(\)\s*\{\s*:\s*\|\s*:\s*&\s*\}\s*;\s*:/, reason: "is a fork bomb" },
+];
+
+interface ExecutionSettings {
+  mode: ExecutionMode;
+  image: string | null;
+}
+
+const DEFAULT_SETTINGS: ExecutionSettings = { mode: "off", image: null };
+
+export interface ExecutionWisp {
+  storageId: string;
+  workspaceDirectory: string;
+  configDirectory: string;
+}
+
+export interface ExecutionServiceOptions {
+  dataDirectory: string;
+  encryption: EncryptionService;
+  /** A Wisp's own conversation; throws for circles and unknown conversations. */
+  resolveWisp: (conversationId: string) => ExecutionWisp;
+  listWispStorageIds: () => ReadonlySet<string>;
+  authorizationBroker: Pick<ToolAuthorizationBroker, "authorize">;
+  manager: ContainerManager;
+  runtime: { status(): Promise<ContainerRuntimeStatus>; cli(): Promise<ContainerCli | null> };
+}
+
+/**
+ * Decides where each Wisp's commands run and supplies the `run_command` tool
+ * to Wisps whose commands run in a container. Pi's own shell tools stay
+ * excluded: commands never run on the server itself.
+ */
+export class ExecutionService implements IntegrationToolSource {
+  private readonly credentials: EncryptedCredentialStore;
+
+  constructor(private readonly options: ExecutionServiceOptions) {
+    this.credentials = new EncryptedCredentialStore(
+      path.join(options.dataDirectory, "execution-credentials.enc.json"),
+      options.encryption,
+    );
+  }
+
+  async getView(conversationId: string): Promise<WispExecutionView> {
+    const wisp = this.options.resolveWisp(conversationId);
+    const [settings, runtime, container, hasGitToken] = await Promise.all([
+      readSettings(wisp.configDirectory),
+      this.options.runtime.status(),
+      this.options.manager.state(wisp.storageId),
+      this.hasGitToken(wisp.storageId),
+    ]);
+    return { ...settings, defaultImage: SANDBOX_IMAGE, hasGitToken, runtime, container };
+  }
+
+  async save(request: SaveWispExecutionRequest): Promise<WispExecutionView> {
+    if (!EXECUTION_MODES.includes(request.mode)) throw invalid();
+    if (request.image !== null && !isContainerImage(request.image)) {
+      throw new WispBackendError("invalid_request", "Enter an image name such as node:22 or ghcr.io/owner/image:tag.");
+    }
+    if (typeof request.gitToken === "string" && !isGitToken(request.gitToken)) {
+      throw new WispBackendError("invalid_request", "The GitHub token has unexpected characters.");
+    }
+    const wisp = this.options.resolveWisp(request.conversationId);
+    const previous = await readSettings(wisp.configDirectory);
+    const next: ExecutionSettings = { mode: request.mode, image: request.image };
+    if (request.gitToken === null) await this.credentials.delete(wisp.storageId);
+    else if (request.gitToken !== undefined) {
+      if (!this.credentials.isSecureStorageAvailable()) {
+        throw new WispBackendError("secure_storage_unavailable", "Secure storage is not available to save the token.");
+      }
+      await this.credentials.setApiKey(wisp.storageId, request.gitToken);
+    }
+    if (previous.mode !== next.mode || previous.image !== next.image) {
+      await writeFileAtomically(
+        path.join(wisp.configDirectory, EXECUTION_SETTINGS_FILE),
+        `${JSON.stringify(next, null, 2)}\n`,
+      );
+      // A container from the old settings must not keep running: it is created again on the next command.
+      await this.options.manager.remove(wisp.storageId);
+    }
+    return this.getView(request.conversationId);
+  }
+
+  async getSnapshot(conversationId: string): Promise<IntegrationToolSnapshot> {
+    let wisp: ExecutionWisp;
+    try {
+      wisp = this.options.resolveWisp(conversationId);
+    } catch {
+      return emptySnapshot();
+    }
+    // Unreadable settings leave commands off rather than preventing the Wisp from starting.
+    const settings = await readSettings(wisp.configDirectory).catch(() => DEFAULT_SETTINGS);
+    if (settings.mode !== "container") return emptySnapshot();
+    const runtime = await this.options.runtime.status();
+    if (!runtime.available) return emptySnapshot();
+    return {
+      definitions: [await this.createRunCommandTool(conversationId, wisp, settings)],
+      metadata: [],
+      activeNames: [RUN_COMMAND_TOOL],
+      revision: snapshotRevision([RUN_COMMAND_TOOL, settings.image ?? SANDBOX_IMAGE, runtime.name]),
+    };
+  }
+
+  /** Removes containers whose Wisp was deleted. */
+  async reconcile(): Promise<void> {
+    await this.options.manager.reconcile(this.options.listWispStorageIds());
+    const known = this.options.listWispStorageIds();
+    for (const { providerId } of await this.credentials.list().catch(() => [])) {
+      if (!known.has(providerId)) await this.credentials.delete(providerId).catch(() => undefined);
+    }
+  }
+
+  private async hasGitToken(storageId: string): Promise<boolean> {
+    try {
+      return Boolean(await this.credentials.read(storageId));
+    } catch {
+      return false;
+    }
+  }
+
+  private async gitToken(storageId: string): Promise<string | undefined> {
+    const credential = await this.credentials.read(storageId).catch(() => undefined);
+    return credential?.type === "api_key" ? credential.key : undefined;
+  }
+
+  private async createRunCommandTool(
+    conversationId: string,
+    wisp: ExecutionWisp,
+    settings: ExecutionSettings,
+  ): Promise<ToolDefinition> {
+    const { createBashToolDefinition } = await import("@earendil-works/pi-coding-agent");
+    const operations: BashOperations = {
+      // The environment Pi offers is the server's own; none of it is passed to the container.
+      exec: async (command, cwd, { onData, signal, timeout }) =>
+        this.options.manager.exec(
+          {
+            storageId: wisp.storageId,
+            image: settings.image ?? SANDBOX_IMAGE,
+            workspaceDirectory: wisp.workspaceDirectory,
+          },
+          command,
+          containerPath(wisp.workspaceDirectory, cwd),
+          {
+            onData,
+            ...(signal ? { signal } : {}),
+            ...(timeout === undefined ? {} : { timeout }),
+            ...(await this.gitToken(wisp.storageId).then((gitToken) => (gitToken ? { gitToken } : {}))),
+          },
+        ),
+    };
+    const base = createBashToolDefinition(wisp.workspaceDirectory, { operations, exposeSessionEnvironment: false });
+    const execute: typeof base.execute = async (toolCallId, params, signal, onUpdate, ctx) => {
+      const refused = REFUSED_COMMANDS.find(({ pattern }) => pattern.test(params.command));
+      if (refused) throw new Error(`This command was not run because it ${refused.reason}.`);
+      await this.options.authorizationBroker.authorize(
+        {
+          conversationId,
+          toolCallId,
+          toolName: RUN_COMMAND_TOOL,
+          category: "container_command",
+          summary: "Run a command in the Wisp's container",
+          scope: { kind: "container", value: "Wisp container" },
+        },
+        signal,
+      );
+      await assertRoomToRun(wisp);
+      return base.execute(toolCallId, params, signal, onUpdate, ctx);
+    };
+    return {
+      ...base,
+      name: RUN_COMMAND_TOOL,
+      label: "Run command",
+      description: RUN_COMMAND_DESCRIPTION,
+      promptSnippet: "Run bash commands in this Wisp's Linux container",
+      promptGuidelines: undefined,
+      execute,
+    } as unknown as ToolDefinition;
+  }
+}
+
+/**
+ * Commands are refused while the workspace holds more than its size. The
+ * container cannot be stopped from writing past it mid-command, so this is
+ * checked between commands.
+ */
+async function assertRoomToRun(wisp: ExecutionWisp): Promise<void> {
+  const [quota, tree] = await Promise.all([
+    readWorkspaceQuota(wisp.configDirectory),
+    measureTree(wisp.workspaceDirectory),
+  ]);
+  if (tree.bytes >= quota) {
+    throw new WispBackendError(
+      "invalid_request",
+      `This Wisp's workspace is full (${formatBytes(tree.bytes)} of ${formatBytes(quota)} used). Free some space or give the workspace a larger size before running more commands.`,
+    );
+  }
+}
+
+/** The container path for a folder in the workspace; anything else maps to the workspace itself. */
+export function containerPath(workspaceDirectory: string, directory: string): string {
+  const relative = path.relative(workspaceDirectory, directory);
+  if (!relative) return CONTAINER_WORKSPACE;
+  if (relative.startsWith("..") || path.isAbsolute(relative)) return CONTAINER_WORKSPACE;
+  return path.posix.join(CONTAINER_WORKSPACE, ...relative.split(path.sep));
+}
+
+async function readSettings(configDirectory: string): Promise<ExecutionSettings> {
+  let contents: string;
+  try {
+    contents = await readFile(path.join(configDirectory, EXECUTION_SETTINGS_FILE), "utf8");
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return { ...DEFAULT_SETTINGS };
+    throw new WispBackendError("internal_error", "The command settings could not be read.", true);
+  }
+  try {
+    const { mode, image } = JSON.parse(contents) as { mode?: unknown; image?: unknown };
+    if (
+      typeof mode === "string" &&
+      EXECUTION_MODES.includes(mode as ExecutionMode) &&
+      (image === null || (typeof image === "string" && isContainerImage(image)))
+    ) {
+      return { mode: mode as ExecutionMode, image };
+    }
+  } catch {
+    // Falls through: a damaged file is reported like an unreadable one.
+  }
+  throw new WispBackendError("internal_error", "The command settings could not be read.", true);
+}
+
+function emptySnapshot(): IntegrationToolSnapshot {
+  return { definitions: [], metadata: [], activeNames: [], revision: snapshotRevision([]) };
+}
+
+function invalid(): WispBackendError {
+  return new WispBackendError("invalid_request", "The backend request is invalid.");
+}

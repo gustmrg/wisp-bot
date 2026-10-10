@@ -115,9 +115,27 @@ them. `save_skill` always asks and shows the exact instructions; rules and
 auto-review cannot allow it, and its card offers no lasting decision. Skill
 instructions are treated as user-provided context and never grant tools.
 
+## Commands
+
+A Wisp runs commands only when **Wisp settings → General → Commands** is set
+to run them in a container ([ADR 017](decisions/017-container-execution.md)).
+Its `run_command` tool runs each command in that Wisp's own Docker or Podman
+container, which mounts only the Wisp's workspace and receives none of the
+server's environment variables, config or credential stores. The container
+runs as the server's user without sudo, with all capabilities dropped,
+`no-new-privileges`, a read-only root, and process, memory and CPU limits. It
+can reach the internet. Commands run without approval cards: the container is
+the boundary, a Block rule for `container_command` stops them all, and the
+audit log records each one without its text. Commands that would wipe the
+workspace are refused. A Wisp's GitHub token is stored encrypted and reaches
+git through the container program's environment, never a command line; it
+lets the Wisp push whatever the token allows. A misled Wisp can send its
+workspace contents over the network, so secrets do not belong in a workspace.
+
 ## Prohibited patterns
 
 Pi's automatic discovery of project extensions, skills, prompts, and context
-files remains disabled; bundled tools do not enable shell or PowerShell access.
+files remains disabled; Pi's shell and PowerShell tools stay excluded, so no
+command ever runs on the server itself.
 External search and issue content is model input, not authorization or
 executable instructions.
