@@ -61,7 +61,7 @@ import type {
   StorageSummary,
   StorageSummaryRequest,
 } from "./storage.js";
-import type { AttachWorkspaceFilesResult, WorkspaceView } from "./workspace.js";
+import type { AttachWorkspaceFilesResult, SetWorkspaceQuotaRequest, WorkspaceView } from "./workspace.js";
 import type { ImportSkillRequest, SkillRequest, SkillView } from "./skills.js";
 import type { ResolveToolApprovalRequest, ToolApprovalRequest, ToolPolicySettings } from "./tool-policy.js";
 import type {
@@ -152,6 +152,7 @@ export const WISP_IPC_CHANNELS = {
   openReleasesPage: "wisp:update:open-releases",
   updateState: "wisp:update:state",
   getWorkspace: "wisp:workspace:get",
+  setWorkspaceQuota: "wisp:workspace:set-quota",
   openWorkspaceFolder: "wisp:workspace:open",
   openSkillsFolder: "wisp:workspace:open-skills",
   attachWorkspaceFiles: "wisp:workspace:attach",
@@ -567,6 +568,8 @@ export interface WispApi {
   openReleasesPage(): Promise<EmptyResult>;
   subscribeToUpdateState(listener: (state: UpdateState) => void): () => void;
   getWorkspace(request: ConversationRequest): Promise<BackendResult<WorkspaceView>>;
+  /** Resizes a Wisp's workspace. Shrinking below what it holds deletes nothing; it only stops new files. */
+  setWorkspaceQuota(request: SetWorkspaceQuotaRequest): Promise<BackendResult<WorkspaceView>>;
   openWorkspaceFolder(request: ConversationRequest): Promise<EmptyResult>;
   /** Opens the Wisp's skills folder, creating it on first use. */
   openSkillsFolder(request: ConversationRequest): Promise<EmptyResult>;

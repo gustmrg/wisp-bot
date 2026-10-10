@@ -64,6 +64,7 @@ export const RUNTIME_OPERATIONS = [
   "saveToolPolicy",
   "resolveToolApproval",
   "getWorkspace",
+  "setWorkspaceQuota",
   "openWorkspaceFolder",
   "openSkillsFolder",
   "attachWorkspaceFiles",

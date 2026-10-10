@@ -1,5 +1,14 @@
-/** Most bytes a Wisp's workspace may hold, counting agent-written files and attachments. */
+/** Most bytes a workspace may hold, counting agent-written files and attachments, until its Wisp is given another size. */
 export const WORKSPACE_QUOTA_BYTES = 512 * 1024 * 1024;
+const GIB = 1024 * 1024 * 1024;
+/** The sizes a Wisp's workspace can be given, smallest first. */
+export const WORKSPACE_QUOTA_PRESETS: ReadonlyArray<number> = [
+  WORKSPACE_QUOTA_BYTES,
+  2 * GIB,
+  10 * GIB,
+  50 * GIB,
+  100 * GIB,
+];
 /** Most files a single attach request copies into the workspace. */
 export const MAX_ATTACHMENTS_PER_REQUEST = 20;
 /** Workspace folder, relative to its root, that receives attached files. */
@@ -7,6 +16,14 @@ export const WORKSPACE_INBOX_DIRECTORY = "inbox";
 
 export interface WorkspaceView {
   usedBytes: number;
+  quotaBytes: number;
+  /** The largest size the workspace can be given now: the disk must have room to grow into it. */
+  maxQuotaBytes: number;
+}
+
+export interface SetWorkspaceQuotaRequest {
+  conversationId: string;
+  /** One of `WORKSPACE_QUOTA_PRESETS`. */
   quotaBytes: number;
 }
 

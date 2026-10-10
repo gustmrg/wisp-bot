@@ -224,7 +224,7 @@ system keychain; without one, the app pairs again after every restart.
 
 Attaching files works on any server: the app opens this computer's file picker
 and uploads the files into the Wisp's workspace `inbox/` folder, with the same
-512 MB workspace cap and 20 files per message. Opening a Wisp's folder and
+workspace size limit and 20 files per message. Opening a Wisp's folder and
 signing in to an MCP server with OAuth need a screen on the server's computer
 and are not available on a server on another machine.
 

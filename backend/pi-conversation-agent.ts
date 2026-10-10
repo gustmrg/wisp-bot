@@ -32,7 +32,7 @@ import {
   validateSkillDraft,
   type SkillDraft,
 } from "./skill-store.js";
-import { assertWorkspaceCapacity, SKILLS_DIRECTORY } from "./workspace-service.js";
+import { assertWorkspaceCapacity, readWorkspaceQuota, SKILLS_DIRECTORY } from "./workspace-service.js";
 import { resolveWorkspacePath } from "./workspace-path.js";
 import { PiEventTranslator, type PiAgentEvent, sanitizeErrorMessage } from "./pi-event-translator.js";
 import { AUXILIARY_USAGE_ENTRY, ImageTranscriber, type TranscriptionRun } from "./image-transcriber.js";
@@ -1198,7 +1198,11 @@ function secureTool<TDefinition extends ToolDefinition<any, any, any>>(
       let executionPath = resolved.canonicalPath;
       if (category === "create_file" || category === "modify_file") {
         // Checked before asking, so the user is never prompted for a change that cannot fit.
-        await assertWorkspaceCapacity(context.workspaceDirectory, assertMutationInputSize(parameters));
+        await assertWorkspaceCapacity(
+          context.workspaceDirectory,
+          assertMutationInputSize(parameters),
+          await readWorkspaceQuota(context.configDirectory),
+        );
         await authorizationBroker.authorize(
           {
             conversationId: context.conversationId,

@@ -73,6 +73,7 @@ const REQUIRED_WISP_METHODS = [
   "openReleasesPage",
   "subscribeToUpdateState",
   "getWorkspace",
+  "setWorkspaceQuota",
   "openWorkspaceFolder",
   "openSkillsFolder",
   "attachWorkspaceFiles",

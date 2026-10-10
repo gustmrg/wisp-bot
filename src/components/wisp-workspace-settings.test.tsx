@@ -8,7 +8,7 @@ it("loads usage lazily and opens the workspace folder", async () => {
   const user = userEvent.setup();
   const getWorkspace = vi.fn(async () => ({
     ok: true as const,
-    value: { usedBytes: 5 * 1024 * 1024, quotaBytes: 512 * 1024 * 1024 },
+    value: { usedBytes: 5 * 1024 * 1024, quotaBytes: 512 * 1024 * 1024, maxQuotaBytes: 512 * 1024 * 1024 },
   }));
   const openWorkspaceFolder = vi.fn(async () => ({
     ok: false as const,
@@ -38,7 +38,7 @@ it("links to the storage view, prominently when the workspace is nearly full", a
     value: {
       getWorkspace: vi.fn(async () => ({
         ok: true as const,
-        value: { usedBytes: 500 * 1024 * 1024, quotaBytes: 512 * 1024 * 1024 },
+        value: { usedBytes: 500 * 1024 * 1024, quotaBytes: 512 * 1024 * 1024, maxQuotaBytes: 512 * 1024 * 1024 },
       })),
       openWorkspaceFolder: vi.fn(),
     },
@@ -47,4 +47,36 @@ it("links to the storage view, prominently when the workspace is nearly full", a
   await user.click(screen.getByRole("button", { name: "Workspace" }));
   await user.click(await screen.findByRole("button", { name: "Free up space" }));
   expect(onOpenSettings).toHaveBeenCalledWith({ section: "storage", conversationId: "one" });
+});
+
+it("resizes the workspace, offering only sizes the disk has room for", async () => {
+  const user = userEvent.setup();
+  const MIB = 1024 * 1024;
+  const GIB = 1024 * MIB;
+  const setWorkspaceQuota = vi.fn(async () => ({
+    ok: true as const,
+    value: { usedBytes: 5 * MIB, quotaBytes: 10 * GIB, maxQuotaBytes: 10 * GIB },
+  }));
+  Object.defineProperty(window, "wisp", {
+    configurable: true,
+    value: {
+      getWorkspace: vi.fn(async () => ({
+        ok: true as const,
+        value: { usedBytes: 5 * MIB, quotaBytes: 512 * MIB, maxQuotaBytes: 10 * GIB },
+      })),
+      setWorkspaceQuota,
+      openWorkspaceFolder: vi.fn(),
+    },
+  });
+  render(<WispWorkspaceSettings conversationId="one" />);
+  await user.click(screen.getByRole("button", { name: "Workspace" }));
+
+  const size = await screen.findByRole("combobox", { name: "Size" });
+  expect(size).toHaveTextContent("512 MiB");
+  await user.click(size);
+  expect(screen.getByRole("option", { name: "50.0 GiB" })).toHaveAttribute("aria-disabled", "true");
+  await user.click(screen.getByRole("option", { name: "10.0 GiB" }));
+
+  expect(setWorkspaceQuota).toHaveBeenCalledWith({ conversationId: "one", quotaBytes: 10 * GIB });
+  expect(await screen.findByText("5.0 MiB of 10.0 GiB used")).toBeInTheDocument();
 });

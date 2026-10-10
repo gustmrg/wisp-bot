@@ -248,7 +248,14 @@ function createApi(initialState: ConversationStateView): WispApi {
     installUpdate: vi.fn(async () => ({ ok: true as const, value: {} })),
     openReleasesPage: vi.fn(async () => ({ ok: true as const, value: {} })),
     subscribeToUpdateState: vi.fn(() => () => undefined),
-    getWorkspace: vi.fn(async () => ({ ok: true as const, value: { usedBytes: 0, quotaBytes: 1024 } })),
+    getWorkspace: vi.fn(async () => ({
+      ok: true as const,
+      value: { usedBytes: 0, quotaBytes: 1024, maxQuotaBytes: 1024 },
+    })),
+    setWorkspaceQuota: vi.fn(async () => ({
+      ok: true as const,
+      value: { usedBytes: 0, quotaBytes: 1024, maxQuotaBytes: 1024 },
+    })),
     getStorageSummary: vi.fn(async () => ({
       ok: true as const,
       value: { measuredAt: "", workspaces: [], workspaceBytes: 0, archives: [], archiveBytes: 0, partial: false },
@@ -267,7 +274,7 @@ function createApi(initialState: ConversationStateView): WispApi {
     openSkillsFolder: vi.fn(async () => ({ ok: true as const, value: {} })),
     attachWorkspaceFiles: vi.fn(async () => ({
       ok: true as const,
-      value: { files: [], workspace: { usedBytes: 0, quotaBytes: 1024 } },
+      value: { files: [], workspace: { usedBytes: 0, quotaBytes: 1024, maxQuotaBytes: 1024 } },
     })),
     listSkills: vi.fn(async () => ({ ok: true as const, value: [] })),
     deleteSkill: vi.fn(async () => ({ ok: true as const, value: [] })),

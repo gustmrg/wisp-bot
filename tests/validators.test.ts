@@ -16,6 +16,7 @@ import {
   parseSaveAuxiliaryModelRequest,
   parseSaveVoiceCredentialRequest,
   parseSendMessageRequest,
+  parseSetWorkspaceQuotaRequest,
   parseTranscribeAudioRequest,
   parseUpdateConversationRequest,
   parseUpdateWispRequest,
@@ -72,6 +73,20 @@ describe("IPC request validators", () => {
       requestId: "request-1",
       text: "  keep intentional whitespace  ",
     });
+  });
+
+  it("accepts only the offered workspace sizes", () => {
+    const gib = 1024 * 1024 * 1024;
+    expect(parseSetWorkspaceQuotaRequest({ conversationId: "wisp:one", quotaBytes: 2 * gib })).toEqual({
+      conversationId: "wisp:one",
+      quotaBytes: 2 * gib,
+    });
+    for (const quotaBytes of [0, -1, 3 * gib, 2 * gib + 0.5, "2147483648", null]) {
+      expect(() => parseSetWorkspaceQuotaRequest({ conversationId: "wisp:one", quotaBytes })).toThrow(WispBackendError);
+    }
+    expect(() => parseSetWorkspaceQuotaRequest({ conversationId: "../escape", quotaBytes: 2 * gib })).toThrow(
+      WispBackendError,
+    );
   });
 
   it.each([null, {}, { conversationId: "" }, { conversationId: "../escape" }, { conversationId: "a".repeat(129) }])(
