@@ -161,6 +161,28 @@ function completeBridge(): WispApi {
     openReleasesPage: async () => ({ ok: true, value: {} }),
     subscribeToUpdateState: () => () => undefined,
     getWorkspace: async () => ({ ok: true, value: { usedBytes: 0, quotaBytes: 1024, maxQuotaBytes: 1024 } }),
+    getWispExecution: async () => ({
+      ok: true,
+      value: {
+        mode: "off",
+        image: null,
+        defaultImage: "wisp-sandbox:test",
+        hasGitToken: false,
+        runtime: { available: false, message: "none" },
+        container: "absent",
+      },
+    }),
+    saveWispExecution: async () => ({
+      ok: true,
+      value: {
+        mode: "off",
+        image: null,
+        defaultImage: "wisp-sandbox:test",
+        hasGitToken: false,
+        runtime: { available: false, message: "none" },
+        container: "absent",
+      },
+    }),
     setWorkspaceQuota: async () => ({ ok: true, value: { usedBytes: 0, quotaBytes: 1024, maxQuotaBytes: 1024 } }),
     getStorageSummary: async () => ({
       ok: true,

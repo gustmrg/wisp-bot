@@ -26,7 +26,7 @@ export interface ToolAuthorizationRequest {
   toolName: string;
   category: ToolActionCategory;
   summary: string;
-  scope: { kind: "workspace_path" | "integration" | "skill"; value: string };
+  scope: { kind: "workspace_path" | "integration" | "skill" | "container"; value: string };
   /** Content the user must see to decide; only sent for skill changes. */
   preview?: string;
   /**
@@ -349,6 +349,14 @@ export function evaluateToolPolicy(
     )
       ? "block"
       : "ask";
+  }
+  if (category === "container_command") {
+    // The container is the boundary, so its commands run without asking, as
+    // in a terminal; a Block rule still stops every command.
+    if (scopeKind !== "container") return "block";
+    return settings.rules.some((rule) => ruleMatchesCategory(rule.action, category) && rule.behavior === "block")
+      ? "block"
+      : "allow";
   }
   if (category === "save_skill") {
     // Skills become standing instructions, so each change is reviewed by the

@@ -54,6 +54,13 @@ import type {
   UpdateScheduledMessageRequest,
 } from "../shared/scheduled-messages.js";
 import { WORKSPACE_QUOTA_PRESETS, type SetWorkspaceQuotaRequest } from "../shared/workspace.js";
+import {
+  EXECUTION_MODES,
+  isContainerImage,
+  isGitToken,
+  type ExecutionMode,
+  type SaveWispExecutionRequest,
+} from "../shared/execution.js";
 import { WispBackendError } from "./backend-error.js";
 import { MAX_SKILL_FILE_BYTES } from "./skill-store.js";
 import {
@@ -123,6 +130,22 @@ export function parseSetWorkspaceQuotaRequest(value: unknown): SetWorkspaceQuota
   const quotaBytes = request.quotaBytes;
   if (typeof quotaBytes !== "number" || !WORKSPACE_QUOTA_PRESETS.includes(quotaBytes)) throw invalidRequest();
   return { conversationId: parseId(request.conversationId), quotaBytes };
+}
+
+export function parseSaveWispExecutionRequest(value: unknown): SaveWispExecutionRequest {
+  const request = asRecord(value);
+  const { mode, image, gitToken } = request;
+  if (typeof mode !== "string" || !EXECUTION_MODES.includes(mode as ExecutionMode)) throw invalidRequest();
+  if (image !== null && (typeof image !== "string" || !isContainerImage(image))) throw invalidRequest();
+  if (gitToken !== undefined && gitToken !== null && (typeof gitToken !== "string" || !isGitToken(gitToken))) {
+    throw invalidRequest();
+  }
+  return {
+    conversationId: parseId(request.conversationId),
+    mode: mode as ExecutionMode,
+    image,
+    ...(gitToken === undefined ? {} : { gitToken }),
+  };
 }
 
 export function parseSendMessageRequest(value: unknown): SendMessageRequest {

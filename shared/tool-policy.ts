@@ -15,6 +15,7 @@ export type ToolActionCategory =
   | "external_write"
   | "integration_call"
   | "save_skill"
+  | "container_command"
   | "shell";
 export type ToolPolicyBehavior = "allow" | "ask" | "block";
 
@@ -103,7 +104,7 @@ export interface ToolApprovalRequest {
   toolCallId: string;
   toolName: string;
   category: ToolActionCategory;
-  scope: { kind: "workspace_path" | "integration" | "skill"; display: string };
+  scope: { kind: "workspace_path" | "integration" | "skill" | "container"; display: string };
   summary: string;
   /** Exact content to review, shown for skill changes; bounded and stripped of control characters. */
   preview?: string;

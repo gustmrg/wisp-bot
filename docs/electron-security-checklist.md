@@ -14,7 +14,7 @@ Verified for the Phase 6 backend boundary:
 - Plugin access defaults to deny for every Wisp and is bound to its immutable application session ID. Calls recheck live grants; revocation cancels pending approvals and requests.
 - Linear mutations require an expiring, single-use integration approval. Workspace auto-review rules cannot authorize external writes.
 - Bundled plugin requests use fixed HTTPS provider endpoints, reject redirects, and enforce request/response bounds. Remote mutation cancellation is not a rollback guarantee.
-- Shell and PowerShell tools are excluded and cannot be enabled by tool policy.
+- Pi's shell and PowerShell tools are excluded and cannot be enabled by tool policy. Wisps given container execution run commands only through `run_command`, in their own container ([ADR 017](decisions/017-container-execution.md)).
 - File paths are canonicalized against the Wisp workspace, including symlink parents.
 - Mutation paths are revalidated after approval and before execution.
 - Approval responses are expiring, single-use, and bound to a window, conversation, and tool call.

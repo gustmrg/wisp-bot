@@ -36,6 +36,9 @@ preset.
   default, resizable per Wisp up to 100 GB) for the files it writes and the
   files you attach. See
   [security](docs/security.md).
+- **Commands** — a Wisp can be allowed to run commands (git, builds, tests) in
+  its own Docker or Podman container that sees only its workspace. See
+  [ADR 017](docs/decisions/017-container-execution.md).
 - **Message search** — search every conversation with `Cmd/Ctrl+K` and jump to
   the matching message.
 - **Skills** — per-Wisp reusable procedures, saved on request after you

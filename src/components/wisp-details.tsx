@@ -8,6 +8,7 @@ import { WispSettingsFields, type WispSettingsDraft } from "@/components/wisp-se
 import { WispSessionReportSection } from "@/components/wisp-session-report";
 import { WispSkillSettings } from "@/components/wisp-skill-settings";
 import { WispWorkspaceSettings } from "@/components/wisp-workspace-settings";
+import { WispExecutionSettings } from "@/components/wisp-execution-settings";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -119,6 +120,7 @@ export function WispDetails({
           />
           <WispContextSettings conversationId={chat.id} />
           <WispWorkspaceSettings conversationId={chat.id} onOpenSettings={onOpenSettings} />
+          <WispExecutionSettings conversationId={chat.id} />
           <WispSkillSettings conversationId={chat.id} />
           {generalActions ? (
             <div className="mt-5 flex flex-col gap-2 border-t border-border pt-4">{generalActions}</div>
