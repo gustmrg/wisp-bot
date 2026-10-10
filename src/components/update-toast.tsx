@@ -78,7 +78,8 @@ export function UpdateToast({ displayName }: { displayName: string }) {
   );
 }
 
-function ToastFrame({ children }: { children: ReactNode }) {
+/** A toast at the bottom right of the window, the place every toast of the app uses. */
+export function ToastFrame({ children }: { children: ReactNode }) {
   return (
     <div
       role="status"

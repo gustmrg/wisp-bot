@@ -10,6 +10,7 @@ import { StructuredLogger } from "../../backend/structured-logger.js";
 import {
   FatalTransportError,
   RemoteSession,
+  TransportError,
   type RemoteSessionPhase,
   type RemoteTransport,
 } from "../../client/remote-session.js";
@@ -313,6 +314,8 @@ describe("RemoteSession", () => {
       refreshToken: "r",
     };
     const phases: Array<[RemoteSessionPhase, string | undefined]> = [];
+    const failures: unknown[] = [];
+    const retries: number[] = [];
     const paired = new RemoteSession({
       serverName: "Test server",
       deviceName: "Test device",
@@ -320,7 +323,7 @@ describe("RemoteSession", () => {
         baseUrl: `http://127.0.0.1:${port}`,
         closed: new Promise(() => undefined),
         close: () => undefined,
-        explainFailure: () => "Nothing answers on port 8787.",
+        explainFailure: () => new TransportError("Nothing answers on port 8787.", "not_running", "connect failed"),
       }),
       credentials: {
         load: () => stored,
@@ -328,7 +331,11 @@ describe("RemoteSession", () => {
           stored = credentials as DeviceCredentials | undefined;
         },
       },
-      onStatus: (phase, message) => phases.push([phase, message]),
+      onStatus: (phase, message, failure) => {
+        phases.push([phase, message]);
+        failures.push(failure);
+      },
+      onRetry: (attempt) => retries.push(attempt),
       onEvent: () => undefined,
       onReset: () => undefined,
       backoffMs: () => 50,
@@ -337,5 +344,9 @@ describe("RemoteSession", () => {
     paired.start(undefined, false);
     await waitUntil(() => phases.length > 0, "a status");
     expect(phases.at(-1)).toEqual(["connecting", "Nothing answers on port 8787."]);
+    // The kind of failure and the transport's own output reach the app, and the session says when it retries.
+    expect(failures.at(-1)).toEqual({ failure: "not_running", details: "connect failed" });
+    await waitUntil(() => retries.length > 1, "a second retry");
+    expect(retries.slice(0, 2)).toEqual([1, 2]);
   });
 });

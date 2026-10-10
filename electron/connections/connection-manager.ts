@@ -4,11 +4,19 @@ import path from "node:path";
 
 import { WispBackendError } from "../../backend/backend-error.js";
 import type { StructuredLogger } from "../../backend/structured-logger.js";
-import { RemoteSession, type RemoteSessionPhase, type RemoteTransport } from "../../client/remote-session.js";
+import {
+  RemoteSession,
+  TransportError,
+  type RemoteSessionPhase,
+  type RemoteTransport,
+} from "../../client/remote-session.js";
 import {
   LOCAL_CONNECTION_ID,
+  type ConnectionFailure,
   type ConnectionPhase,
   type ConnectionProfile,
+  type ConnectionProgress,
+  type ConnectionRetry,
   type ConnectionStatus,
   type ConnectionsView,
   type SshConnectionProfile,
@@ -17,7 +25,9 @@ import {
 import { WISP_IPC_CHANNELS, type BackendResult } from "../../shared/contracts.js";
 import type { DeviceCredentials, HostRequest, HostResponse } from "../../shared/remote-protocol.js";
 import type { LocalServer } from "../local-server/local-server.js";
+import { advance, connectSteps, createProgress, fail, INSTALL_STEPS } from "./connection-progress.js";
 import type { ConnectionStore } from "./connection-store.js";
+import type { InstallStep } from "./ssh-install.js";
 
 export interface ConnectionManagerOptions {
   store: ConnectionStore;
@@ -27,7 +37,7 @@ export interface ConnectionManagerOptions {
   /** Installs and starts the Wisp server on the machine behind an SSH profile; reports progress lines. */
   installServer(
     profile: SshConnectionProfile,
-    onProgress: (message: string) => void,
+    onProgress: (message: string, step: InstallStep) => void,
     signal: AbortSignal,
   ): Promise<void>;
   /** Does what the local server asks on this computer's screen. */
@@ -42,6 +52,8 @@ export interface ConnectionManagerOptions {
   hasLocalData(): Promise<boolean>;
 }
 
+// The failures the reconnect details list, newest last.
+const MAX_RETRY_FAILURES = 5;
 // sshd gives up on a login after two minutes by default.
 const SSH_PROMPT_TIMEOUT_MS = 120_000;
 const MAX_SSH_ANSWER = 1024;
@@ -65,6 +77,10 @@ const PUSHED = new Set([
  */
 export class ConnectionManager {
   private status: ConnectionStatus = { profileId: LOCAL_CONNECTION_ID, phase: "connecting", epoch: 0 };
+  /** The steps of the attempt in progress, or of the last one that failed. */
+  private progress: ConnectionProgress | undefined;
+  /** Automatic retries since the connection failed or dropped. */
+  private retrying: ConnectionRetry | undefined;
   private session: RemoteSession | undefined;
   private queue: Promise<unknown> = Promise.resolve();
   private disposed = false;
@@ -99,7 +115,11 @@ export class ConnectionManager {
         ...profile,
         paired: profile.kind === "local" || Boolean(store.loadCredentials(profile.id)),
       })),
-      status: { ...this.status },
+      status: {
+        ...this.status,
+        ...(this.progress ? { progress: structuredClone(this.progress) } : {}),
+        ...(this.retrying ? { retry: structuredClone(this.retrying) } : {}),
+      },
       secureStorageAvailable: store.secureStorageAvailable,
       ...(this.sshPrompts[0] ? { sshPrompt: this.sshPrompts[0].view } : {}),
     };
@@ -127,6 +147,10 @@ export class ConnectionManager {
       const timer = setTimeout(decline, SSH_PROMPT_TIMEOUT_MS);
       signal?.addEventListener("abort", decline, { once: true });
       this.sshPrompts.push({ view: { id, ...prompt }, finish });
+      // OpenSSH asks once it reached the host: signing in is what waits on the person.
+      if (this.progress?.steps.some((step) => step.id === "reach" && step.state === "active")) {
+        this.progress = advance(this.progress, "sign_in");
+      }
       this.publish();
     });
   }
@@ -197,6 +221,33 @@ export class ConnectionManager {
     });
   }
 
+  /**
+   * Stops connecting to the active connection, or setting it up. It then
+   * shows as cancelled, and `retry` connects again.
+   */
+  cancel(): Promise<ConnectionsView> {
+    if (this.installation?.profileId === this.status.profileId) this.installation.controller.abort();
+    return this.serialized(async () => {
+      const { phase, profileId, serverVersion } = this.status;
+      if (this.session && (phase === "connecting" || phase === "reconnecting")) {
+        await this.close();
+        // Between attempts nothing runs: the last failed attempt stays on screen.
+        if (this.progress?.steps.some(({ state }) => state === "active")) {
+          this.progress = fail(this.progress, "cancelled");
+        }
+        this.retrying = undefined;
+        this.setStatus({
+          profileId,
+          phase: "error",
+          message: "Connecting was cancelled.",
+          failure: "cancelled",
+          ...(serverVersion ? { serverVersion } : {}),
+        });
+      }
+      return this.view();
+    });
+  }
+
   save(request: unknown): Promise<ConnectionsView> {
     return this.serialized(async () => {
       const profile = await this.options.store.save(request);
@@ -230,7 +281,15 @@ export class ConnectionManager {
         const active = profile.id === this.status.profileId;
         // Reconnecting to a server that is being installed would only fail again.
         if (active) {
+          // A server that answered before is updated; otherwise it is installed.
+          const fromVersion = this.status.serverVersion;
           await this.close();
+          this.retrying = undefined;
+          this.progress = advance(
+            createProgress(fromVersion ? "update" : "install", INSTALL_STEPS, fromVersion),
+            "download",
+            `Connecting to ${profile.host} over SSH…`,
+          );
           this.setStatus({
             profileId: id,
             phase: "connecting",
@@ -245,8 +304,9 @@ export class ConnectionManager {
       try {
         await this.options.installServer(
           profile,
-          (message) => {
+          (message, step) => {
             if (showing() && !signal.aborted) {
+              if (this.progress) this.progress = advance(this.progress, step, message);
               this.setStatus({ profileId: id, phase: "connecting", message, installing: true });
             }
           },
@@ -255,13 +315,24 @@ export class ConnectionManager {
       } catch (error) {
         const message = error instanceof Error ? error.message : "The server could not be set up.";
         this.options.logger.warn("server_install_failed", { profileId: id, cancelled: signal.aborted });
-        if (showing()) this.setStatus({ profileId: id, phase: "error", message });
+        if (showing()) {
+          const failure: ConnectionFailure = signal.aborted
+            ? "cancelled"
+            : error instanceof TransportError
+              ? (error.failure ?? "install")
+              : "install";
+          if (this.progress) this.progress = fail(this.progress, failure, { skipRest: true });
+          const details = error instanceof TransportError ? error.details : undefined;
+          this.setStatus({ profileId: id, phase: "error", message, failure, ...(details ? { details } : {}) });
+        }
         throw new WispBackendError("unavailable", message, true);
       }
       this.options.logger.info("server_installed", { profileId: id });
       return await this.serialized(async () => {
         if (signal.aborted) throw new WispBackendError("unavailable", "Setting up the server was cancelled.", true);
-        await this.open(id, undefined, true);
+        // The setup's steps stay on screen while the app connects to the new server.
+        const setup = showing() && this.progress && this.progress.kind !== "connect" ? this.progress : undefined;
+        await this.open(id, undefined, true, setup);
         return this.view();
       });
     } finally {
@@ -299,7 +370,12 @@ export class ConnectionManager {
     });
   }
 
-  private async open(id: string, pairingCode: string | undefined, userInitiated: boolean): Promise<void> {
+  private async open(
+    id: string,
+    pairingCode: string | undefined,
+    userInitiated: boolean,
+    setup?: ConnectionProgress,
+  ): Promise<void> {
     await this.close();
     // Wisps on this computer run only while it is chosen.
     if (id !== LOCAL_CONNECTION_ID) await this.options.localServer.stop();
@@ -307,12 +383,24 @@ export class ConnectionManager {
     const { store } = this.options;
     const profile = store.get(id) ?? store.active;
     if (profile.id !== store.active.id || !store.hasChoice) await store.setActive(profile.id);
-    this.openSession(profile, pairingCode, userInitiated);
+    this.openSession(profile, pairingCode, userInitiated, setup);
   }
 
-  private openSession(profile: ConnectionProfile, pairingCode: string | undefined, userInitiated: boolean): void {
+  private openSession(
+    profile: ConnectionProfile,
+    pairingCode: string | undefined,
+    userInitiated: boolean,
+    setup?: ConnectionProgress,
+  ): void {
     const { store, localServer } = this.options;
     const local = profile.kind === "local";
+    // After a setup, its last step stands for the whole connection.
+    const steps = (): ConnectionProgress =>
+      setup
+        ? advance(setup, "connect")
+        : createProgress("connect", connectSteps(profile.kind, Boolean(store.loadCredentials(profile.id))));
+    this.progress = steps();
+    this.retrying = undefined;
     this.setStatus({
       profileId: profile.id,
       phase: "connecting",
@@ -342,14 +430,67 @@ export class ConnectionManager {
           if (this.session === session) this.publish();
         },
       },
-      onStatus: (phase, message) => {
+      onStatus: (phase, message, failure) => {
         if (this.session !== session) return;
+        const now = Date.now();
+        if (phase === "connected") {
+          this.progress = undefined;
+          this.retrying = undefined;
+        } else if (phase === "connecting" || phase === "reconnecting" || phase === "error") {
+          // Only a failed attempt, or a dropped connection, reports these: the first status is set above.
+          if (this.progress) this.progress = fail(this.progress, failure?.failure, { now });
+          const dropped = this.status.phase === "connected" || this.status.phase === "local";
+          if (phase === "error") this.retrying = undefined;
+          else if (dropped) this.retrying = { since: now, attempt: 0, failures: [] };
+          else if (message) {
+            const failures = [...(this.retrying?.failures ?? []), { at: now, message }];
+            this.retrying = {
+              since: this.retrying?.since ?? now,
+              attempt: (this.retrying?.attempt ?? 0) + 1,
+              failures: failures.slice(-MAX_RETRY_FAILURES),
+            };
+          }
+        }
         this.setStatus({
           profileId: profile.id,
           phase: phaseOf(phase, local),
           ...(message ? { message } : {}),
+          ...(failure?.failure ? { failure: failure.failure } : {}),
+          ...(failure?.details ? { details: failure.details } : {}),
           ...(serverVersion ? { serverVersion } : {}),
         });
+      },
+      onStage: (stage) => {
+        if (this.session !== session) return;
+        if (stage === "transport") {
+          // A new attempt starts over; the setup's steps stay done.
+          this.progress = steps();
+          if (this.retrying) this.retrying = { ...this.retrying, nextAttemptAt: undefined };
+        }
+        const progress = this.progress;
+        if (!progress) return;
+        if (progress.kind !== "connect") {
+          if (stage === "transport") this.progress = advance(progress, "connect");
+        } else if (stage === "transport") {
+          const first = progress.steps[0];
+          if (first) this.progress = advance(progress, first.id);
+        } else if (stage === "pair") {
+          // This app pairs with its own server by itself, as part of starting it.
+          if (!local) this.progress = advance(progress, "pair", undefined, "server");
+        } else if (stage === "server") this.progress = advance(progress, local ? "start_local" : "server");
+        else this.progress = advance(progress, "load");
+        this.publish();
+      },
+      onRetry: (_attempt, delayMs) => {
+        if (this.session !== session) return;
+        const now = Date.now();
+        this.retrying = {
+          since: this.retrying?.since ?? now,
+          attempt: this.retrying?.attempt ?? 0,
+          failures: this.retrying?.failures ?? [],
+          nextAttemptAt: now + delayMs,
+        };
+        this.publish();
       },
       onServer: (server) => {
         if (!local) serverVersion = server.version;
@@ -377,7 +518,7 @@ export class ConnectionManager {
     await session?.stop();
   }
 
-  private setStatus(next: Omit<ConnectionStatus, "epoch">, reset = false): void {
+  private setStatus(next: Omit<ConnectionStatus, "epoch" | "progress" | "retry">, reset = false): void {
     // A different profile is always a different backend for the renderer.
     const changedTarget = next.profileId !== this.status.profileId;
     this.status = { ...next, epoch: this.status.epoch + (reset || changedTarget ? 1 : 0) };

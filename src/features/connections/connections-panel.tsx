@@ -47,8 +47,17 @@ type ConnectionsResult = { ok: true; value: ConnectionsView } | { ok: false; err
  * the screen shown while a server cannot be used. The main process pushes every
  * change, so action results only report errors.
  */
-export function ConnectionsPanel({ view, serversOnly = false }: { view: ConnectionsView; serversOnly?: boolean }) {
-  const [editing, setEditing] = useState<"new" | string | null>(null);
+export function ConnectionsPanel({
+  view,
+  serversOnly = false,
+  initialEditing = null,
+}: {
+  view: ConnectionsView;
+  serversOnly?: boolean;
+  /** Opens with this connection's settings, as "Edit connection" does on the connection screen. */
+  initialEditing?: string | null;
+}) {
+  const [editing, setEditing] = useState<"new" | string | null>(initialEditing);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
 

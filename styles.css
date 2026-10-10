@@ -330,3 +330,30 @@
     translate: 0 -2px;
   }
 }
+
+/* The moving bar on top of the connection card while something runs. */
+.connection-progress::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  width: 35%;
+  background: var(--tone);
+  animation: connection-progress 1.4s ease-in-out infinite;
+}
+
+@keyframes connection-progress {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(290%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .connection-progress::after {
+    width: 100%;
+    opacity: 0.4;
+    animation: none;
+  }
+}

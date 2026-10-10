@@ -73,6 +73,9 @@ async function startServer(): Promise<{ server: WispServer; directory: string }>
   return { server, directory };
 }
 
+/** Each step of the connection's progress, with its state. */
+const stepsOf = (view: ConnectionsView) => view.status.progress?.steps.map(({ id, state }) => [id, state]);
+
 /** The desktop backend with fake IPC; reopening the same directory simulates a restart. */
 /** Pass `choose: false` to stay at the first-run choice, and `askpass: true` to let SSH ask questions. */
 async function desktop(
@@ -362,6 +365,16 @@ describe("desktop connections", () => {
     await app.waitForPhase("connected");
     expect(server.auth.devices()).toEqual([expect.objectContaining({ name: "Test computer" })]);
     expect(await app.chats()).toEqual([]);
+
+    // A dropped connection is not a failed attempt: the attempts after it are.
+    await server.close();
+    await app.waitForPhase("reconnecting");
+    await vi.waitFor(async () => expect((await app.view()).status.retry?.attempt).toBeGreaterThan(0), {
+      timeout: 8_000,
+    });
+    const { retry } = (await app.view()).status;
+    expect(retry?.failures.length).toBe(retry?.attempt);
+    expect(retry?.failures[0]?.message).toMatch(/nothing answers on its port/);
   });
 
   it("explains an SSH failure and goes back to this computer when the connection is removed", async () => {
@@ -381,6 +394,57 @@ describe("desktop connections", () => {
     await app.waitForPhase("local");
     expect((await app.view()).activeId).toBe("local");
     expect(await app.call(WISP_IPC_CHANNELS.removeConnection, { id: "local" })).toMatchObject({ ok: false });
+  });
+
+  it("shows the step an SSH connection failed at, what kind of failure it was, and what OpenSSH said", async () => {
+    process.env.FAKE_SSH_FAIL = "denied";
+    const app = await desktop();
+    const { profiles } = await app.invoke<ConnectionsView>(WISP_IPC_CHANNELS.saveConnection, {
+      kind: "ssh",
+      name: "Pi",
+      host: "raspberrypi",
+      serverPort: 8787,
+    });
+    const ssh = profiles.find((profile) => profile.kind === "ssh")!;
+    await app.invoke(WISP_IPC_CHANNELS.activateConnection, { id: ssh.id });
+    await app.waitForPhase("error");
+    const view = await app.view();
+    expect(view.status).toMatchObject({ failure: "auth", details: expect.stringMatching(/Permission denied/) });
+    expect(stepsOf(view)).toEqual([
+      ["reach", "done"],
+      ["sign_in", "failed"],
+      ["pair", "pending"],
+      ["server", "pending"],
+      ["load", "pending"],
+    ]);
+  });
+
+  it("retries a host it cannot reach, says when it tries next, and stops on request", async () => {
+    process.env.FAKE_SSH_FAIL = "resolve";
+    const app = await desktop();
+    const { profiles } = await app.invoke<ConnectionsView>(WISP_IPC_CHANNELS.saveConnection, {
+      kind: "ssh",
+      name: "Pi",
+      host: "nowhere",
+      serverPort: 8787,
+    });
+    const ssh = profiles.find((profile) => profile.kind === "ssh")!;
+    await app.invoke(WISP_IPC_CHANNELS.activateConnection, { id: ssh.id });
+    await vi.waitFor(async () => expect((await app.view()).status.retry?.attempt).toBeGreaterThan(0), {
+      timeout: 8_000,
+    });
+    const { status } = await app.view();
+    expect(status).toMatchObject({ phase: "connecting", failure: "unreachable" });
+    expect(status.retry).toMatchObject({
+      nextAttemptAt: expect.any(Number),
+      failures: [{ message: expect.stringMatching(/nowhere could not be resolved/) }],
+    });
+    expect(stepsOf(await app.view())?.[0]).toEqual(["reach", "failed"]);
+
+    await app.invoke(WISP_IPC_CHANNELS.cancelConnection);
+    const cancelled = (await app.view()).status;
+    expect(cancelled).toMatchObject({ phase: "error", failure: "cancelled" });
+    expect(cancelled.retry).toBeUndefined();
   });
 
   it("asks to trust a new host key and for a password, then connects with this computer's key", async () => {
@@ -410,6 +474,11 @@ describe("desktop connections", () => {
       return found!;
     };
     const hostKey = await prompt("host_key");
+    // OpenSSH reached the host: signing in waits on the person.
+    expect(stepsOf(await app.view())?.slice(0, 2)).toEqual([
+      ["reach", "done"],
+      ["sign_in", "active"],
+    ]);
     expect(hostKey).toMatchObject({ host: "home-server", message: expect.stringMatching(/SHA256:fakefakefake/) });
     await app.invoke(WISP_IPC_CHANNELS.answerSshPrompt, { id: hostKey.id, answer: "yes" });
     const password = await prompt("password");
@@ -462,6 +531,7 @@ describe("desktop connections", () => {
     expect(view.activeId).toBe(ssh.id);
     await app.waitForPhase("connected");
     expect(server.auth.devices()).toEqual([expect.objectContaining({ name: "Test computer" })]);
+    expect((await app.view()).status.progress).toBeUndefined();
 
     const calls = (await readFile(log, "utf8"))
       .trim()
@@ -496,6 +566,19 @@ describe("desktop connections", () => {
     }
     // Nothing changed for the connection that was in use.
     expect((await app.view()).activeId).toBe("local");
+
+    // Setting up the server in use shows the step that failed; nothing after it runs.
+    await app.invoke(WISP_IPC_CHANNELS.activateConnection, { id: ssh.id });
+    process.env.FAKE_SSH_INSTALL = "no-node";
+    expect(await app.call(WISP_IPC_CHANNELS.installServer, { id: ssh.id })).toMatchObject({ ok: false });
+    expect((await app.view()).status).toMatchObject({ phase: "error", failure: "node" });
+    expect(stepsOf(await app.view())).toEqual([
+      ["download", "failed"],
+      ["install", "skipped"],
+      ["service", "skipped"],
+      ["connect", "skipped"],
+    ]);
+    await app.invoke(WISP_IPC_CHANNELS.activateConnection, { id: "local" });
     expect(await app.call(WISP_IPC_CHANNELS.installServer, { id: "local" })).toMatchObject({ ok: false });
     expect(await app.call(WISP_IPC_CHANNELS.installServer, { id: "nowhere" })).toMatchObject({ ok: false });
   });
@@ -514,6 +597,15 @@ describe("desktop connections", () => {
 
     const installing = app.call(WISP_IPC_CHANNELS.installServer, { id: ssh.id });
     await vi.waitFor(async () => expect((await app.view()).status).toMatchObject({ installing: true }));
+    // The setup reports where it is.
+    await vi.waitFor(async () =>
+      expect((await app.view()).status.progress?.steps[1]).toMatchObject({
+        id: "install",
+        state: "active",
+        detail: expect.stringMatching(/^Installing /),
+      }),
+    );
+    expect((await app.view()).status.progress?.kind).toBe("install");
     expect(await app.call(WISP_IPC_CHANNELS.installServer, { id: ssh.id })).toMatchObject({
       ok: false,
       error: { message: expect.stringMatching(/already setting up/) },
@@ -523,8 +615,14 @@ describe("desktop connections", () => {
 
     await app.invoke(WISP_IPC_CHANNELS.cancelServerInstall);
     expect(await installing).toMatchObject({ ok: false, error: { message: expect.stringMatching(/cancelled/) } });
-    expect((await app.view()).status).toMatchObject({ profileId: ssh.id, phase: "error" });
+    expect((await app.view()).status).toMatchObject({ profileId: ssh.id, phase: "error", failure: "cancelled" });
     expect((await app.view()).status.installing).toBeUndefined();
+    expect(stepsOf(await app.view())).toEqual([
+      ["download", "done"],
+      ["install", "skipped"],
+      ["service", "skipped"],
+      ["connect", "skipped"],
+    ]);
 
     // Choosing another connection cancels a setup, too, and wins.
     const again = app.call(WISP_IPC_CHANNELS.installServer, { id: ssh.id });

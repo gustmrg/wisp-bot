@@ -27,6 +27,7 @@ function bridge(initial: ConnectionsView) {
     retryConnection: vi.fn(ok),
     installServer: vi.fn(ok),
     cancelServerInstall: vi.fn(ok),
+    cancelConnection: vi.fn(ok),
     answerSshPrompt: vi.fn(ok),
     subscribeToConnections: vi.fn((listener: (next: ConnectionsView) => void) => {
       push = listener;
@@ -120,15 +121,49 @@ describe("ConnectionGate", () => {
       </ConnectionGate>,
     );
     await screen.findByText("Workspace");
-    await push(view({ phase: "reconnecting" }));
-    expect(screen.getByRole("status")).toHaveTextContent("Reconnecting to Home server");
+    const since = Date.now() - 42_000;
+    await push(
+      view({
+        phase: "reconnecting",
+        retry: {
+          since,
+          attempt: 2,
+          nextAttemptAt: Date.now() + 8_000,
+          failures: [
+            { at: since + 5_000, message: "raspberrypi cannot be reached over SSH." },
+            { at: since + 17_000, message: "raspberrypi cannot be reached over SSH." },
+          ],
+        },
+      }),
+    );
+    // Says how it is retrying: the attempt, and when the next one starts.
+    expect(screen.getByRole("status")).toHaveTextContent(
+      /Reconnecting to Home server.*Attempt 3 · next in \d+s · Wisps on it keep working/,
+    );
     expect(screen.getByText("Workspace")).toBeVisible();
     await userEvent.click(screen.getByRole("button", { name: "Retry now" }));
     expect(api.retryConnection).toHaveBeenCalled();
     expect(mounted).toHaveBeenCalledTimes(1);
+    // The details list each failed attempt, and keep the way back to this computer.
+    await userEvent.click(screen.getByRole("button", { name: "Details" }));
+    const attempts = await screen.findByRole("list", { name: "Attempts" });
+    expect(attempts).toHaveTextContent(/Attempt 1.*cannot be reached.*Attempt 2.*Attempt 3/);
     // A server that stays away must not keep the person from the Wisps on this computer.
     await userEvent.click(screen.getByRole("button", { name: "Use this computer instead" }));
     expect(api.activateConnection).toHaveBeenCalledWith({ id: "local" });
+  });
+
+  it("turns the banner red and dims the app after a long time away", async () => {
+    const { push } = bridge(view({ phase: "connected" }));
+    render(
+      <ConnectionGate>
+        <App onMount={() => undefined} />
+      </ConnectionGate>,
+    );
+    await screen.findByText("Workspace");
+    await push(view({ phase: "reconnecting", retry: { since: Date.now() - 5 * 60_000, attempt: 9, failures: [] } }));
+    expect(screen.getByRole("alert")).toHaveTextContent(/Unreachable for 5 min.*Home server · still retrying/);
+    expect(screen.getByRole("button", { name: "Edit connection" })).toBeVisible();
   });
 
   it("warns, until dismissed, when the server runs another version than this app", async () => {
@@ -160,8 +195,8 @@ describe("ConnectionGate", () => {
     // Nothing runs on the server until the person confirms.
     expect(api.installServer).not.toHaveBeenCalled();
     // An update keeps the server's data and says so, instead of describing a first install.
-    expect(screen.getByRole("group", { name: "Update server" })).toHaveTextContent(/are kept.*interrupted/);
-    expect(screen.queryByRole("button", { name: "Install and connect" })).toBeNull();
+    const dialog = await screen.findByRole("dialog", { name: /Update Home server to/ });
+    expect(dialog).toHaveTextContent(/Kept:.*Interrupted:/);
     await userEvent.click(screen.getByRole("button", { name: "Update and reconnect" }));
     expect(api.installServer).toHaveBeenCalledWith({ id: "pi" });
   });
@@ -209,32 +244,43 @@ describe("ConnectionGate", () => {
         <App onMount={() => undefined} />
       </ConnectionGate>,
     );
-    expect(await screen.findByRole("alert")).toHaveTextContent("host key of raspberrypi");
-    await userEvent.click(screen.getByRole("button", { name: "Retry" }));
+    expect(await screen.findByText(/host key of raspberrypi/)).toBeVisible();
+    await userEvent.click(screen.getByRole("button", { name: "Try again" }));
     expect(api.retryConnection).toHaveBeenCalled();
     await userEvent.click(screen.getByRole("button", { name: "Use this computer instead" }));
     expect(api.activateConnection).toHaveBeenCalledWith({ id: "local" });
   });
 
-  it("offers to set the server up over SSH, after asking, when the connection fails", async () => {
-    const { api } = bridge(view({ phase: "error", message: "wispctl is not installed on raspberrypi." }));
+  it("offers to set the server up over SSH when it is not installed, saying what that does", async () => {
+    const { api } = bridge(
+      view({ phase: "error", message: "wispctl is not installed on raspberrypi.", failure: "not_installed" }),
+    );
     render(
       <ConnectionGate>
         <App onMount={() => undefined} />
       </ConnectionGate>,
     );
-    await userEvent.click(await screen.findByRole("button", { name: "Install the Wisp server" }));
-    // Nothing runs on the other computer until the person confirms.
-    expect(api.installServer).not.toHaveBeenCalled();
-    expect(screen.getByRole("group", { name: "Install the Wisp server" })).toHaveTextContent(
+    expect(await screen.findByRole("heading", { name: "Wisp is not installed on Home server" })).toBeVisible();
+    expect(screen.getByText("Wisp can set it up for you").parentElement).toHaveTextContent(
       "npx @gustmrg/wisp-server setup",
     );
-    await userEvent.click(screen.getByRole("button", { name: "Install and connect" }));
+    await userEvent.click(screen.getByRole("button", { name: "Install on raspberrypi" }));
     expect(api.installServer).toHaveBeenCalledWith({ id: "pi" });
   });
 
+  it("offers no setup for a failure a setup cannot fix", async () => {
+    bridge(view({ phase: "error", message: "me@raspberrypi did not accept an SSH key.", failure: "auth" }));
+    render(
+      <ConnectionGate>
+        <App onMount={() => undefined} />
+      </ConnectionGate>,
+    );
+    expect(await screen.findByRole("heading", { name: "Could not sign in to Home server" })).toBeVisible();
+    expect(screen.queryByRole("button", { name: /Install on/ })).toBeNull();
+  });
+
   it("shows why the setup failed", async () => {
-    const { api } = bridge(view({ phase: "error", message: "Down." }));
+    const { api } = bridge(view({ phase: "error", message: "Down.", failure: "not_running" }));
     api.installServer.mockResolvedValueOnce({
       ok: false,
       error: { code: "unavailable", message: "Node.js is missing on raspberrypi.", retryable: true },
@@ -244,20 +290,154 @@ describe("ConnectionGate", () => {
         <App onMount={() => undefined} />
       </ConnectionGate>,
     );
-    await userEvent.click(await screen.findByRole("button", { name: "Install the Wisp server" }));
-    await userEvent.click(screen.getByRole("button", { name: "Install and connect" }));
+    await userEvent.click(await screen.findByRole("button", { name: "Install on raspberrypi" }));
     expect(await screen.findByText("Node.js is missing on raspberrypi.")).toBeVisible();
   });
 
-  it("lets the person cancel a setup in progress", async () => {
-    const { api } = bridge(view({ phase: "connecting", message: "Installing…", installing: true }));
+  it("shows a setup step by step, and lets the person cancel it", async () => {
+    const { api } = bridge(
+      view({
+        phase: "connecting",
+        message: "Installing…",
+        installing: true,
+        serverVersion: "0.0.1",
+        progress: {
+          kind: "update",
+          fromVersion: "0.0.1",
+          steps: [
+            { id: "download", state: "done", startedAt: 1_000, endedAt: 3_000 },
+            { id: "install", state: "active", startedAt: Date.now(), detail: "Installing @gustmrg/wisp-server…" },
+            { id: "service", state: "pending" },
+            { id: "connect", state: "pending" },
+          ],
+        },
+      }),
+    );
     render(
       <ConnectionGate>
         <App onMount={() => undefined} />
       </ConnectionGate>,
     );
-    await userEvent.click(await screen.findByRole("button", { name: "Cancel setup" }));
+    expect(await screen.findByRole("heading", { name: "Updating Home server" })).toBeVisible();
+    const steps = screen.getByRole("list", { name: "Steps" });
+    expect(steps).toHaveTextContent(/Done: Download wisp-server.*2\.0s/);
+    expect(steps).toHaveTextContent(/In progress: Install wisp-server.*Installing @gustmrg\/wisp-server…/);
+    // An update says where running Wisps stop.
+    expect(steps).toHaveTextContent(/Restart the service.*Running Wisps stop here/);
+    await userEvent.click(screen.getByRole("button", { name: "Cancel update" }));
     expect(api.cancelServerInstall).toHaveBeenCalled();
+  });
+
+  it("after a cancelled update, offers to keep the old version or update again", async () => {
+    const { api } = bridge(
+      view({
+        phase: "error",
+        failure: "cancelled",
+        serverVersion: "0.0.1",
+        message: "Installing the server was cancelled.",
+        progress: {
+          kind: "update",
+          fromVersion: "0.0.1",
+          steps: [
+            { id: "download", state: "skipped", startedAt: 1_000, endedAt: 2_000 },
+            { id: "install", state: "skipped" },
+            { id: "service", state: "skipped" },
+            { id: "connect", state: "skipped" },
+          ],
+        },
+      }),
+    );
+    render(
+      <ConnectionGate>
+        <App onMount={() => undefined} />
+      </ConnectionGate>,
+    );
+    expect(await screen.findByRole("heading", { name: "Update cancelled" })).toBeVisible();
+    expect(screen.getByRole("status")).toHaveTextContent("Home server still runs 0.0.1. Nothing was changed");
+    expect(screen.getByRole("list", { name: "Steps" })).toHaveTextContent("Cancelled by you");
+    await userEvent.click(screen.getByRole("button", { name: "Continue with 0.0.1" }));
+    expect(api.retryConnection).toHaveBeenCalled();
+    await userEvent.click(screen.getByRole("button", { name: "Update again" }));
+    expect(api.installServer).toHaveBeenCalledWith({ id: "pi" });
+  });
+
+  it("shows each step of connecting, waits on the person while SSH asks, and can be cancelled", async () => {
+    const connecting = view({
+      phase: "connecting",
+      progress: {
+        kind: "connect",
+        steps: [
+          { id: "reach", state: "done", startedAt: 1_000, endedAt: 1_300 },
+          { id: "sign_in", state: "active", startedAt: Date.now() },
+          { id: "server", state: "pending" },
+          { id: "load", state: "pending" },
+        ],
+      },
+    });
+    const { api, push } = bridge(connecting);
+    render(
+      <ConnectionGate>
+        <App onMount={() => undefined} />
+      </ConnectionGate>,
+    );
+    expect(await screen.findByRole("heading", { name: "Connecting to Home server" })).toBeVisible();
+    expect(screen.getByRole("list", { name: "Steps" })).toHaveTextContent(
+      /Done: Reach raspberrypi.*In progress: Sign in over SSH.*Waiting: Check the Wisp server/,
+    );
+    await push({
+      ...connecting,
+      sshPrompt: { id: "ssh-1", kind: "host_key", host: "raspberrypi", message: "fingerprint" },
+    });
+    // The question's dialog hides the screen behind it from assistive technology.
+    expect(screen.getByRole("heading", { name: "Home server needs your answer", hidden: true })).toBeInTheDocument();
+    expect(screen.getByRole("list", { name: "Steps", hidden: true })).toHaveTextContent("Waiting for your answer");
+    await push(connecting);
+    await userEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(api.cancelConnection).toHaveBeenCalled();
+  });
+
+  it("keeps trying a server it cannot reach, and says why and when it tries next", async () => {
+    const { api } = bridge(
+      view({
+        phase: "connecting",
+        failure: "unreachable",
+        message: "raspberrypi cannot be reached over SSH. Check that it is on.",
+        retry: { since: Date.now() - 20_000, attempt: 3, nextAttemptAt: Date.now() + 8_000, failures: [] },
+        progress: {
+          kind: "connect",
+          steps: [
+            { id: "reach", state: "failed" },
+            { id: "sign_in", state: "pending" },
+          ],
+        },
+      }),
+    );
+    render(
+      <ConnectionGate>
+        <App onMount={() => undefined} />
+      </ConnectionGate>,
+    );
+    expect(await screen.findByRole("heading", { name: "Cannot reach Home server" })).toBeVisible();
+    expect(screen.getByRole("alert")).toHaveTextContent(/3 failed attempts · trying again in \d+s/);
+    expect(screen.getByRole("list", { name: "Steps" })).toHaveTextContent("Failed: Reach raspberrypiNo answer");
+    expect(screen.getByText(/Check that it is on/)).toBeVisible();
+    await userEvent.click(screen.getByRole("button", { name: "Try again now" }));
+    expect(api.retryConnection).toHaveBeenCalled();
+    await userEvent.click(screen.getByRole("button", { name: "Edit connection" }));
+    expect(screen.getByRole("textbox", { name: "Host" })).toHaveValue("raspberrypi");
+  });
+
+  it("says which server it connected to", async () => {
+    const { push } = bridge(view({ phase: "connecting" }));
+    render(
+      <ConnectionGate>
+        <App onMount={() => undefined} />
+      </ConnectionGate>,
+    );
+    await screen.findByRole("heading", { name: "Connecting to Home server" });
+    await push(view({ phase: "connected", serverVersion: __APP_VERSION__ }));
+    expect(await screen.findByText("Connected to Home server")).toBeVisible();
+    expect(screen.getByText(`me@raspberrypi · server ${__APP_VERSION__}`)).toBeVisible();
   });
 
   it("does not offer a server setup for an address or this computer", async () => {
@@ -271,8 +451,8 @@ describe("ConnectionGate", () => {
         <App onMount={() => undefined} />
       </ConnectionGate>,
     );
-    await screen.findByRole("button", { name: "Retry" });
-    expect(screen.queryByRole("button", { name: "Install the Wisp server" })).toBeNull();
+    await screen.findByRole("button", { name: "Try again" });
+    expect(screen.queryByRole("button", { name: /Install on/ })).toBeNull();
   });
 
   it("in the browser app, offers only pairing with the server that served it", async () => {
@@ -338,6 +518,8 @@ describe("ConnectionGate", () => {
         <App onMount={() => undefined} />
       </ConnectionGate>,
     );
+    // The connections list is one click away, unchanged.
+    await userEvent.click(await screen.findByRole("button", { name: "Manage" }));
     await userEvent.click(await screen.findByRole("button", { name: /Add a server/ }));
     await userEvent.type(screen.getByRole("textbox", { name: "Name" }), "Office");
     await userEvent.type(screen.getByRole("textbox", { name: "Host" }), "office-box");

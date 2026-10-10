@@ -1,3 +1,4 @@
+import type { ConnectionFailure } from "../shared/connections.js";
 import type { BackendResult } from "../shared/contracts.js";
 import {
   REMOTE_PROTOCOL_VERSION,
@@ -25,15 +26,41 @@ export interface RemoteTransport {
   /** Asks the server for a pairing code over an already authenticated channel, such as SSH. */
   requestPairingCode?(): Promise<string>;
   /** A clearer reason for the last failure to reach the server, when the transport knows one. */
-  explainFailure?(): string | undefined;
+  explainFailure?(): TransportError | undefined;
+}
+
+/**
+ * A failure to reach the server that may pass, such as a host that is off.
+ * `failure` says what kind it is, and `details` holds what the transport
+ * reported, such as OpenSSH's output.
+ */
+export class TransportError extends Error {
+  override name = "TransportError";
+
+  constructor(
+    message: string,
+    readonly failure?: ConnectionFailure,
+    readonly details?: string,
+  ) {
+    super(message);
+  }
 }
 
 /** A transport failure that retrying cannot fix, such as an untrusted host key. */
-export class FatalTransportError extends Error {
+export class FatalTransportError extends TransportError {
   override name = "FatalTransportError";
 }
 
 export type RemoteSessionPhase = "connecting" | "pairing_required" | "connected" | "reconnecting" | "error";
+
+/** What a session is doing while it connects: opening the transport, pairing, describing the server, or opening its events. */
+export type RemoteSessionStage = "transport" | "pair" | "server" | "events";
+
+/** What kind of failure a status reports, when it reports one. */
+export interface RemoteSessionFailure {
+  failure?: ConnectionFailure;
+  details?: string;
+}
 
 export interface RemoteSessionOptions {
   /** Shown in messages, e.g. "Home server". */
@@ -43,7 +70,11 @@ export interface RemoteSessionOptions {
   credentials: CredentialStore;
   /** Authenticate with HttpOnly cookies, as the browser app does. */
   cookies?: boolean;
-  onStatus(phase: RemoteSessionPhase, message?: string): void;
+  onStatus(phase: RemoteSessionPhase, message?: string, failure?: RemoteSessionFailure): void;
+  /** Called as each attempt to connect moves on. */
+  onStage?(stage: RemoteSessionStage): void;
+  /** Called when attempt `attempt` (from 1) failed and the next one starts in `delayMs`. */
+  onRetry?(attempt: number, delayMs: number): void;
   /** Called with the server's description on every connection, before its status. */
   onServer?(server: ServerDescriptor): void;
   onEvent(type: Exclude<RemoteEventType, "resync" | "hostRequest">, payload: unknown): void;
@@ -210,6 +241,7 @@ export class RemoteSession {
     while (!signal.aborted) {
       let waitForUser = false;
       try {
+        this.options.onStage?.("transport");
         if (!this.transport) {
           const opened = await this.options.openTransport(signal);
           // Stopped while the transport was opening: nothing else may start.
@@ -233,6 +265,7 @@ export class RemoteSession {
         });
         this.client = client;
         if (!this.options.credentials.load()) {
+          this.options.onStage?.("pair");
           const code = this.pairingCode || (this.autoPair ? await transport.requestPairingCode?.() : undefined);
           this.pairingCode = undefined;
           if (!code) {
@@ -246,15 +279,18 @@ export class RemoteSession {
         }
         if (!waitForUser) {
           const pinned = this.options.credentials.load()?.serverId;
+          this.options.onStage?.("server");
           const server = await client.describe();
           if (pinned && server.serverId !== pinned) {
             throw new FatalTransportError(
               "This is not the server this device paired with. Remove the connection and add it again.",
+              "wrong_server",
             );
           }
           this.options.onServer?.(server);
           const mismatch = protocolMismatch(this.options.serverName, server);
-          if (mismatch) throw new FatalTransportError(mismatch);
+          if (mismatch) throw new FatalTransportError(mismatch, "version");
+          this.options.onStage?.("events");
           await client.streamEvents(
             this.cursor,
             {
@@ -283,7 +319,7 @@ export class RemoteSession {
         if (signal.aborted) break;
         this.connected = false;
         if (error instanceof FatalTransportError) {
-          this.options.onStatus("error", error.message);
+          this.options.onStatus("error", error.message, failureOf(error));
           waitForUser = true;
         } else if (error instanceof RemoteError && error.code === "unauthorized") {
           this.requirePairing(
@@ -293,9 +329,10 @@ export class RemoteSession {
           );
           waitForUser = true;
         } else {
+          const explained = this.transport?.explainFailure?.() ?? error;
           this.disconnected(
-            this.transport?.explainFailure?.() ??
-              (error instanceof Error ? error.message : "The server cannot be reached."),
+            explained instanceof Error ? explained.message : "The server cannot be reached.",
+            failureOf(explained),
           );
         }
       }
@@ -308,16 +345,18 @@ export class RemoteSession {
         attempt = 0;
         continue;
       }
-      await this.sleep((this.options.backoffMs ?? defaultBackoff)(attempt++));
+      const delay = (this.options.backoffMs ?? defaultBackoff)(attempt++);
+      this.options.onRetry?.(attempt, delay);
+      await this.sleep(delay);
     }
     this.connected = false;
     this.transport?.close();
     this.transport = undefined;
   }
 
-  private disconnected(message: string): void {
+  private disconnected(message: string, failure?: RemoteSessionFailure): void {
     this.connected = false;
-    this.options.onStatus(this.everConnected ? "reconnecting" : "connecting", message);
+    this.options.onStatus(this.everConnected ? "reconnecting" : "connecting", message, failure);
   }
 
   /** Waits, or returns early when stopped or restarted. */
@@ -333,6 +372,11 @@ export class RemoteSession {
       this.wake = undefined;
     });
   }
+}
+
+function failureOf(error: unknown): RemoteSessionFailure | undefined {
+  if (!(error instanceof TransportError) || (!error.failure && !error.details)) return undefined;
+  return { ...(error.failure ? { failure: error.failure } : {}), ...(error.details ? { details: error.details } : {}) };
 }
 
 /** Why this app cannot talk to the server, when their protocols differ. */

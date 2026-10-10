@@ -23,7 +23,7 @@ import { ConnectionManager } from "./connections/connection-manager.js";
 import { ConnectionStore, parseRemoteProfile } from "./connections/connection-store.js";
 import type { SshAskpass } from "./connections/ssh-askpass.js";
 import type { SshInteraction } from "./connections/ssh-auth.js";
-import { installRemoteServer } from "./connections/ssh-install.js";
+import { installRemoteServer, type InstallStep } from "./connections/ssh-install.js";
 import { testSshConnection } from "./connections/ssh-test.js";
 import { openSshTunnel } from "./connections/ssh-tunnel.js";
 import { registerLaunchAtLoginHandlers } from "./ipc/register-launch-at-login-handlers.js";
@@ -68,7 +68,7 @@ export interface BackendHost {
   /** Installs the server over SSH; tests substitute a fake. */
   installServer?: (
     profile: SshConnectionProfile,
-    onProgress: (message: string) => void,
+    onProgress: (message: string, step: InstallStep) => void,
     signal: AbortSignal,
     interaction: SshInteraction | undefined,
   ) => Promise<void>;
@@ -172,6 +172,7 @@ export async function createBackend(host: BackendHost): Promise<Backend> {
       [WISP_IPC_CHANNELS.retryConnection, () => manager.retry()],
       [WISP_IPC_CHANNELS.installServer, (payload) => manager.installServer(connectionId(payload))],
       [WISP_IPC_CHANNELS.cancelServerInstall, () => manager.cancelInstall()],
+      [WISP_IPC_CHANNELS.cancelConnection, () => manager.cancel()],
       [WISP_IPC_CHANNELS.answerSshPrompt, (payload) => manager.answerSshPrompt(payload)],
     ]),
   ];

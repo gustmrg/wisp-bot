@@ -4,7 +4,7 @@ import { FatalTransportError } from "../../client/remote-session.js";
 import type { SshConnectionProfile } from "../../shared/connections.js";
 import { SERVER_VERSION_PATTERN, WISP_SERVER_PACKAGE } from "../../shared/server-package.js";
 import { SshQuestions, type SshInteraction } from "./ssh-auth.js";
-import { sshArguments, sshFailure } from "./ssh-tunnel.js";
+import { detailsOf, sshArguments, sshFailure } from "./ssh-tunnel.js";
 
 // Downloading the package and its dependencies can take a while on a small machine.
 const INSTALL_TIMEOUT_MS = 10 * 60_000;
@@ -16,10 +16,20 @@ export interface SshInstallOptions {
   /** The OpenSSH client; tests substitute a fake. */
   sshPath?: string;
   signal?: AbortSignal;
-  /** Called with each line the setup reports, such as "Installing…". */
-  onProgress?: (message: string) => void;
+  /** Called with each line the setup reports, such as "Installing…", and the step it belongs to. */
+  onProgress?: (message: string, step: InstallStep) => void;
   /** Lets OpenSSH ask the person questions; without it, SSH runs in BatchMode. */
   interaction?: SshInteraction;
+}
+
+/** Where the setup is: downloading itself, installing the server, or starting its service. */
+export type InstallStep = "download" | "install" | "service";
+
+/** The step a line of the setup's output belongs to, given the step before it. */
+export function installStepOf(message: string, previous: InstallStep): InstallStep {
+  if (/service|Waiting for the server/i.test(message)) return "service";
+  if (/^Installing |is already installed|master key/i.test(message)) return "install";
+  return previous;
 }
 
 /**
@@ -53,6 +63,7 @@ export async function installRemoteServer(profile: SshConnectionProfile, options
   let stdout = "";
   let stderr = "";
   let pending = "";
+  let step: InstallStep = "download";
   child.stdout?.setEncoding("utf8");
   child.stdout?.on("data", (chunk: string) => {
     stdout = (stdout + chunk).slice(-MAX_OUTPUT);
@@ -66,7 +77,10 @@ export async function installRemoteServer(profile: SshConnectionProfile, options
     for (const line of lines) {
       const message = line.trim();
       // npm's own chatter is not about Wisp.
-      if (message && !/^npm /i.test(message)) options.onProgress?.(message.slice(0, 160));
+      if (message && !/^npm /i.test(message)) {
+        step = installStepOf(message, step);
+        options.onProgress?.(message.slice(0, 160), step);
+      }
     }
   });
   let timedOut = false;
@@ -88,7 +102,7 @@ export async function installRemoteServer(profile: SshConnectionProfile, options
   questions.close();
   child.stdin?.destroy();
   options.signal?.removeEventListener("abort", stop);
-  if (options.signal?.aborted) throw new FatalTransportError("Installing the server was cancelled.");
+  if (options.signal?.aborted) throw new FatalTransportError("Installing the server was cancelled.", "cancelled");
   if (code === 0 && /^\{.*\}$/m.test(stdout)) return;
   throw explainInstallFailure(profile, options.version, code, stderr, timedOut, spawnError, questions);
 }
@@ -104,14 +118,18 @@ export function explainInstallFailure(
   questions?: SshQuestions,
 ): FatalTransportError {
   const { host } = profile;
+  const details = detailsOf(stderr);
   if (timedOut) {
     return new FatalTransportError(
       `Installing on ${host} took more than ${INSTALL_TIMEOUT_MS / 60_000} minutes. Check its internet connection, or run \`npx ${WISP_SERVER_PACKAGE} setup\` there.`,
+      "install",
+      details,
     );
   }
   // OpenSSH exits with 255 when the connection itself failed.
   if (spawnError || exitCode === 255) {
-    return new FatalTransportError(sshFailure(stderr, profile, spawnError, questions).message);
+    const failure = sshFailure(stderr, profile, spawnError, questions);
+    return new FatalTransportError(failure.message, failure.failure, failure.details);
   }
   if (
     /npx: (command )?not found|npx: No such file|env: .?(node|npx).?: No such file/i.test(stderr) ||
@@ -119,6 +137,8 @@ export function explainInstallFailure(
   ) {
     return new FatalTransportError(
       `Node.js is missing on ${host}, or not in the PATH of SSH commands. Install Node.js 22.19 or later there, then retry.`,
+      "node",
+      details,
     );
   }
   const last = stderr
@@ -127,12 +147,18 @@ export function explainInstallFailure(
     .filter((line) => !/^npm (warn|notice)/i.test(line))
     .pop();
   if (/Wisp needs Node\.js/i.test(stderr)) {
-    return new FatalTransportError(`${last ?? "Node.js is too old"} (on ${host})`);
+    return new FatalTransportError(`${last ?? "Node.js is too old"} (on ${host})`, "node", details);
   }
   if (/E404|404 Not Found|is not published on npm/i.test(stderr)) {
     return new FatalTransportError(
       `Wisp server ${version} is not published on npm, so ${host} cannot install it. Update Wisp to a released version, or set the server up by hand (see “How to set up a Wisp server”).`,
+      "install",
+      details,
     );
   }
-  return new FatalTransportError(`Could not set up the Wisp server on ${host}${last ? `: ${last}` : "."}`);
+  return new FatalTransportError(
+    `Could not set up the Wisp server on ${host}${last ? `: ${last}` : "."}`,
+    "install",
+    details,
+  );
 }
