@@ -1,7 +1,7 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import { createConnection, createServer } from "node:net";
 
-import { FatalTransportError, type RemoteTransport } from "../../client/remote-session.js";
+import { FatalTransportError, TransportError, type RemoteTransport } from "../../client/remote-session.js";
 import type { SshConnectionProfile } from "../../shared/connections.js";
 import { SshQuestions, type SshInteraction } from "./ssh-auth.js";
 
@@ -9,6 +9,8 @@ const READY_TIMEOUT_MS = 20_000;
 const PAIR_TIMEOUT_MS = 30_000;
 const AUTHORIZE_TIMEOUT_MS = 30_000;
 const MAX_STDERR = 8 * 1024;
+// What the app shows of OpenSSH's own output, under "Technical details".
+const MAX_DETAILS = 2 * 1024;
 // A fixed command: the remote shell sees no user input. ~/.local/bin is where
 // the server docs install wispctl, and it is often missing from the PATH of
 // non-interactive SSH sessions.
@@ -107,12 +109,19 @@ export async function openSshTunnel(
       const expire = (): void => {
         // Time spent answering SSH's questions does not count.
         if (questions.busy(READY_TIMEOUT_MS)) timer = setTimeout(expire, READY_TIMEOUT_MS);
-        else finish(new Error(`SSH to ${profile.host} did not connect within ${READY_TIMEOUT_MS / 1000} seconds.`));
+        else
+          finish(
+            new TransportError(
+              `SSH to ${profile.host} did not connect within ${READY_TIMEOUT_MS / 1000} seconds.`,
+              "unreachable",
+              detailsOf(stderr()),
+            ),
+          );
       };
       let timer = setTimeout(expire, READY_TIMEOUT_MS);
       void exited.then(() => finish(sshFailure(stderr(), profile, spawnError, questions)));
       waitForPort(localPort, () => settled || Boolean(options.signal?.aborted)).then(
-        (ready) => finish(ready ? undefined : new Error("Connecting was cancelled.")),
+        (ready) => finish(ready ? undefined : new TransportError("Connecting was cancelled.", "cancelled")),
         finish,
       );
     });
@@ -140,7 +149,11 @@ export async function openSshTunnel(
       const recent = stderr().slice(explained);
       explained = stderr().length;
       return /open failed: connect failed/i.test(recent)
-        ? `SSH to ${profile.host} works, but nothing answers on its port ${profile.serverPort}. Start the Wisp server there (for example \`systemctl --user start wisp\`) or check the server port of this connection.`
+        ? new TransportError(
+            `SSH to ${profile.host} works, but nothing answers on its port ${profile.serverPort}. Start the Wisp server there (for example \`systemctl --user start wisp\`) or check the server port of this connection.`,
+            "not_running",
+            detailsOf(recent),
+          )
         : undefined;
     },
   };
@@ -245,16 +258,24 @@ export function explainPairingFailure(
 ): FatalTransportError {
   const { host } = profile;
   const manual = "Or run `wispctl pair` there and enter the code here.";
+  const details = detailsOf(stderr);
   if (timedOut) {
-    return new FatalTransportError(`${host} did not answer within ${PAIR_TIMEOUT_MS / 1000} seconds. ${manual}`);
+    return new FatalTransportError(
+      `${host} did not answer within ${PAIR_TIMEOUT_MS / 1000} seconds. ${manual}`,
+      "unreachable",
+      details,
+    );
   }
   // OpenSSH exits with 255 when the connection itself failed.
   if (spawnError || exitCode === 255) {
-    return new FatalTransportError(sshFailure(stderr, profile, spawnError, questions).message);
+    const failure = sshFailure(stderr, profile, spawnError, questions);
+    return new FatalTransportError(failure.message, failure.failure, failure.details);
   }
   if (/No Wisp server is running/i.test(stderr)) {
     return new FatalTransportError(
       `The Wisp server is not running on ${host}. Start it there (for example \`systemctl --user start wisp\`), then retry.`,
+      "not_running",
+      details,
     );
   }
   if (
@@ -263,20 +284,30 @@ export function explainPairingFailure(
   ) {
     return new FatalTransportError(
       `wispctl is not installed on ${host}, or not in ~/.local/bin. Choose “Install the Wisp server” to set it up, or run \`npx @gustmrg/wisp-server setup\` there. ${manual}`,
+      "not_installed",
+      details,
     );
   }
   if (/node: (command )?not found|env: .?node.?: No such file/i.test(stderr)) {
     return new FatalTransportError(
       `Node.js is missing on ${host}, or not in the PATH of SSH commands. Install Node.js 22.19 or later there, then retry.`,
+      "node",
+      details,
     );
   }
   if (/Cannot find module/i.test(stderr)) {
     return new FatalTransportError(
       `The Wisp server files are missing on ${host}. Choose “Install the Wisp server” to set it up again, or run \`npx @gustmrg/wisp-server setup\` there.`,
+      "not_installed",
+      details,
     );
   }
   const detail = stderr.trim().split("\n").pop();
-  return new FatalTransportError(`Could not get a pairing code from ${host}. ${manual}${detail ? ` (${detail})` : ""}`);
+  return new FatalTransportError(
+    `Could not get a pairing code from ${host}. ${manual}${detail ? ` (${detail})` : ""}`,
+    undefined,
+    details,
+  );
 }
 
 /**
@@ -288,17 +319,21 @@ export function sshFailure(
   profile: SshConnectionProfile,
   spawnError: Error | undefined,
   questions?: SshQuestions,
-): Error {
+): TransportError {
   const { host } = profile;
   if (questions?.noKey) {
     return new FatalTransportError(
       `${host} asks for a password. Wisp uses a password only to add this computer's SSH key to the server, and this computer has no SSH key yet. Create one with \`ssh-keygen -t ed25519\`, then retry.`,
+      "auth",
     );
   }
   if (questions?.declined === "host_key") {
-    return new FatalTransportError(`Wisp did not connect to ${host}, because its SSH host key was not trusted.`);
+    return new FatalTransportError(
+      `Wisp did not connect to ${host}, because its SSH host key was not trusted.`,
+      "host_key",
+    );
   }
-  if (questions?.declined) return new FatalTransportError(`Connecting to ${host} over SSH was cancelled.`);
+  if (questions?.declined) return new FatalTransportError(`Connecting to ${host} over SSH was cancelled.`, "cancelled");
   return classify(stderr, profile, spawnError, questions);
 }
 
@@ -308,40 +343,63 @@ export function classify(
   profile: SshConnectionProfile,
   spawnError: Error | undefined,
   questions?: SshQuestions,
-): Error {
+): TransportError {
   const { host } = profile;
+  const details = detailsOf(stderr);
   if ((spawnError as NodeJS.ErrnoException | undefined)?.code === "ENOENT") {
     return new FatalTransportError("OpenSSH is not installed on this computer. Install the ssh client and retry.");
   }
   if (/REMOTE HOST IDENTIFICATION HAS CHANGED|Host key for .* has changed/i.test(stderr)) {
     return new FatalTransportError(
       `The SSH host key of ${host} has changed. That happens when the server is reinstalled, but can also mean someone is intercepting the connection. If you expected it, run \`ssh-keygen -R ${host}\`, then retry.`,
+      "host_key",
+      details,
     );
   }
   if (/Host key verification failed|host key .* not known/i.test(stderr)) {
     return new FatalTransportError(
       `The SSH host key of ${host} is not trusted yet. Run \`ssh ${host}\` in a terminal to verify it, then retry.`,
+      "host_key",
+      details,
     );
   }
   if (/login\.tailscale\.com|tailscale.*(check|approval)/i.test(stderr)) {
     return new FatalTransportError(
       `Tailscale SSH asks for a browser check. Run \`ssh ${host}\` in a terminal to approve it, then retry.`,
+      "auth",
+      details,
     );
   }
-  if (/Permission denied/i.test(stderr)) return new FatalTransportError(explainDenied(stderr, profile, questions));
+  if (/Permission denied/i.test(stderr)) {
+    return new FatalTransportError(explainDenied(stderr, profile, questions), "auth", details);
+  }
   if (/Could not resolve hostname/i.test(stderr)) {
-    return new Error(
+    return new TransportError(
       `The host name ${host} could not be resolved. Check the spelling, or that this computer is on the tailnet.`,
+      "unreachable",
+      details,
     );
   }
   if (/Connection refused/i.test(stderr)) {
-    return new Error(`${host} refused the SSH connection. Check that SSH runs there and that the SSH port is right.`);
+    return new TransportError(
+      `${host} refused the SSH connection. Check that SSH runs there and that the SSH port is right.`,
+      "unreachable",
+      details,
+    );
   }
   if (/timed out|No route to host|Network is unreachable/i.test(stderr)) {
-    return new Error(`${host} cannot be reached over SSH. Check that it is on and on this network or tailnet.`);
+    return new TransportError(
+      `${host} cannot be reached over SSH. Check that it is on and on this network or tailnet.`,
+      "unreachable",
+      details,
+    );
   }
   const last = stderr.trim().split("\n").pop();
-  return new Error(last ? `SSH to ${host} failed: ${last}` : `SSH to ${host} exited unexpectedly.`);
+  return new TransportError(
+    last ? `SSH to ${host} failed: ${last}` : `SSH to ${host} exited unexpectedly.`,
+    undefined,
+    details,
+  );
 }
 
 /**
@@ -364,6 +422,12 @@ function explainDenied(stderr: string, profile: SshConnectionProfile, questions?
     `Add this computer's public key to ~/.ssh/authorized_keys${user ? ` for ${user}` : ""} on ${profile.host} (for example with \`ssh-copy-id ${port}${target}\`), then retry.`,
     `To test the way Wisp connects, run \`ssh -o BatchMode=yes ${port}${target} true\`.`,
   ].join(" ");
+}
+
+/** The end of OpenSSH's output, for the app to show as it is; undefined when it said nothing. */
+export function detailsOf(stderr: string): string | undefined {
+  const text = stderr.trim();
+  return text ? text.slice(-MAX_DETAILS) : undefined;
 }
 
 function collect(child: ChildProcess): () => string {

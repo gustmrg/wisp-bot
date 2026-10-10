@@ -1,14 +1,36 @@
-import { Fragment, useEffect, useState, type ReactNode } from "react";
-import { LaptopIcon, LoaderCircleIcon, ServerIcon, XIcon } from "lucide-react";
+import { Fragment, useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import {
+  CircleCheckIcon,
+  CircleXIcon,
+  LaptopIcon,
+  LoaderCircleIcon,
+  RefreshCwIcon,
+  ServerIcon,
+  WifiOffIcon,
+  XIcon,
+} from "lucide-react";
 
+import { ToastFrame } from "@/components/update-toast";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { APP_METADATA } from "@/config/app-metadata";
+import { useMobileLayout } from "@/hooks/use-mobile-layout";
+import { cn } from "@/lib/utils";
 import { LOCAL_CONNECTION_ID, type ConnectionsView } from "../../../shared/connections";
 import { ActiveConnectionContext } from "./active-connection";
+import {
+  activeName,
+  activeProfile,
+  addressOf,
+  canUseThisComputer,
+  ConnectionScreen,
+  ServerChip,
+} from "./connection-screen";
+import { formatDuration, useNow } from "./connection-steps";
 import { ConnectionsPanel } from "./connections-panel";
-import { InstallServerAction } from "./install-server-action";
 import { SshPromptDialog } from "./ssh-prompt-dialog";
+import { compareVersions, UpdateServerDialog } from "./update-server-dialog";
 
 /** The active connection, kept current from the main process. */
 export function useConnections(): [ConnectionsView | null, string] {
@@ -45,6 +67,14 @@ export function useConnections(): [ConnectionsView | null, string] {
  */
 export function ConnectionGate({ children }: { children: ReactNode }) {
   const [view, error] = useConnections();
+  const [toast, setToast] = useState<ToastContent>();
+  const previous = useRef<ConnectionsView | null>(null);
+  useEffect(() => {
+    const next = view ? toastFor(previous.current, view) : undefined;
+    if (next) setToast(next);
+    previous.current = view;
+  }, [view]);
+  const dismissToast = useCallback(() => setToast(undefined), []);
   // OpenSSH can ask while connecting, reconnecting, or setting a server up.
   return (
     <>
@@ -52,12 +82,14 @@ export function ConnectionGate({ children }: { children: ReactNode }) {
         {children}
       </GateContent>
       {view?.sshPrompt ? <SshPromptDialog prompt={view.sshPrompt} /> : null}
+      {toast ? <ConnectionToast key={toast.key} toast={toast} onDismiss={dismissToast} /> : null}
     </>
   );
 }
 
 function GateContent({ view, error, children }: { view: ConnectionsView | null; error: string; children: ReactNode }) {
   const [dismissedVersion, setDismissedVersion] = useState("");
+  const now = useNow(view?.status.phase === "reconnecting");
   if (!view) {
     return error ? <ConnectionMessage title="Wisp could not start" message={error} /> : null;
   }
@@ -67,7 +99,7 @@ function GateContent({ view, error, children }: { view: ConnectionsView | null; 
     // its place in the tree, so showing the banner does not remount it.
     return (
       <div className="flex h-full min-h-0 flex-col">
-        {status.phase === "reconnecting" ? <ReconnectingBanner view={view} /> : null}
+        {status.phase === "reconnecting" ? <ReconnectingBanner view={view} now={now} /> : null}
         {status.phase === "connected" &&
         status.serverVersion &&
         status.serverVersion !== APP_METADATA.version &&
@@ -78,7 +110,16 @@ function GateContent({ view, error, children }: { view: ConnectionsView | null; 
             onDismiss={() => setDismissedVersion(`${view.activeId}:${status.serverVersion}`)}
           />
         ) : null}
-        <div className="min-h-0 flex-1">
+        <div
+          className={cn(
+            "min-h-0 flex-1 transition-opacity",
+            // Away for long, what the app shows may be out of date.
+            status.phase === "reconnecting" &&
+              status.retry &&
+              now - status.retry.since >= LONG_OUTAGE_MS &&
+              "opacity-60",
+          )}
+        >
           <ActiveConnectionContext.Provider value={view}>
             <Fragment key={`${view.activeId}:${status.epoch}`}>{children}</Fragment>
           </ActiveConnectionContext.Provider>
@@ -171,40 +212,163 @@ function FirstRunChoice({ view }: { view: ConnectionsView }) {
   );
 }
 
-function activeName(view: ConnectionsView): string {
-  return view.profiles.find((profile) => profile.id === view.activeId)?.name ?? "the server";
-}
+const LONG_OUTAGE_MS = 2 * 60_000;
 
-/** Whether this client can leave the active server for the Wisps on this computer. */
-function canUseThisComputer(view: ConnectionsView): boolean {
+/**
+ * Shown above the app while the server is away. The app keeps its place, and
+ * Wisps on the server keep working. After a while away it turns red and the
+ * app dims, since what it shows may be out of date.
+ */
+function ReconnectingBanner({ view, now }: { view: ConnectionsView; now: number }) {
+  const [details, setDetails] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const mobile = useMobileLayout();
+  const { retry } = view.status;
+  const name = activeName(view);
+  const away = retry ? now - retry.since : 0;
+  const long = away >= LONG_OUTAGE_MS;
+  const next = retry?.nextAttemptAt ? Math.max(0, Math.ceil((retry.nextAttemptAt - now) / 1000)) : undefined;
+  const meta = long
+    ? `${name} · still retrying`
+    : [
+        retry ? `Attempt ${retry.attempt + 1}` : undefined,
+        next === undefined ? undefined : `next in ${next}s`,
+        "Wisps on it keep working",
+      ]
+        .filter(Boolean)
+        .join(" · ");
+  const canManage = view.canManage !== false;
+  const detailsContent = <ReconnectDetails view={view} now={now} />;
   return (
-    view.canManage !== false &&
-    view.activeId !== LOCAL_CONNECTION_ID &&
-    view.profiles.some(({ kind }) => kind === "local")
+    <div
+      role={long ? "alert" : "status"}
+      className={cn(
+        "flex flex-none flex-wrap items-center gap-x-2 gap-y-1.5 border-b px-3.5 py-1.5 text-sm text-foreground",
+        "max-[760px]:grid max-[760px]:grid-cols-[16px_minmax(0,1fr)] max-[760px]:gap-x-2 max-[760px]:gap-y-0.5 max-[760px]:px-3 max-[760px]:py-2",
+        long
+          ? "[--tone:var(--destructive)] border-destructive/25 bg-[color-mix(in_srgb,var(--destructive)_13%,var(--background))]"
+          : "[--tone:var(--warning-solid)] border-warning-solid/25 bg-[color-mix(in_srgb,var(--warning-solid)_13%,var(--background))]",
+      )}
+    >
+      <span className="flex text-[var(--tone)] max-[760px]:row-span-2 max-[760px]:self-center">
+        {long ? (
+          <WifiOffIcon aria-hidden="true" className="size-4" />
+        ) : (
+          <LoaderCircleIcon aria-hidden="true" className="size-4 animate-spin" />
+        )}
+      </span>
+      <span className="font-medium max-[760px]:col-start-2">
+        {long ? `Unreachable for ${Math.floor(away / 60_000)} min` : `Reconnecting to ${name}`}
+      </span>
+      <span className="text-dim before:content-['·_'] max-[760px]:col-start-2 max-[760px]:text-xs max-[760px]:before:content-none">
+        {meta}
+      </span>
+      <div className="ml-auto flex flex-wrap gap-1.5 max-[760px]:col-start-2 max-[760px]:mt-1 max-[760px]:ml-0">
+        <Button type="button" size="xs" variant="outline" onClick={() => void window.wisp.retryConnection()}>
+          Retry now
+        </Button>
+        {long && canManage ? (
+          <Button type="button" size="xs" variant="ghost" onClick={() => setEditing(true)}>
+            Edit connection
+          </Button>
+        ) : null}
+        {mobile ? (
+          <Button type="button" size="xs" variant="ghost" onClick={() => setDetails(true)}>
+            Details
+          </Button>
+        ) : (
+          <Popover open={details} onOpenChange={setDetails}>
+            <PopoverTrigger render={<Button type="button" size="xs" variant="ghost" />}>Details</PopoverTrigger>
+            <PopoverContent side="bottom" className="w-80 p-4">
+              {detailsContent}
+            </PopoverContent>
+          </Popover>
+        )}
+      </div>
+      {mobile && details ? (
+        <Dialog open onOpenChange={setDetails}>
+          <DialogContent className="self-end pt-11">
+            <DialogTitle className="sr-only">Connection details</DialogTitle>
+            {detailsContent}
+          </DialogContent>
+        </Dialog>
+      ) : null}
+      {editing ? (
+        <Dialog open onOpenChange={setEditing}>
+          <DialogContent>
+            <DialogTitle className="sr-only">Edit connection</DialogTitle>
+            <ConnectionsPanel view={view} initialEditing={view.activeId} />
+          </DialogContent>
+        </Dialog>
+      ) : null}
+    </div>
   );
 }
 
-function ReconnectingBanner({ view }: { view: ConnectionsView }) {
+/** The gist of a failure for the list of attempts: its first sentence, without the code marks. */
+function firstSentence(message: string): string {
+  const plain = message.replaceAll("`", "");
+  const end = plain.search(/\.\s/);
+  return end < 0 ? plain : plain.slice(0, end + 1);
+}
+
+/** How long the server has been away, why each attempt failed, and when the next one starts. */
+function ReconnectDetails({ view, now }: { view: ConnectionsView; now: number }) {
+  const { retry } = view.status;
+  const profile = activeProfile(view);
+  const name = activeName(view);
+  const failures = retry?.failures ?? [];
+  const next = retry?.nextAttemptAt ? Math.max(0, Math.ceil((retry.nextAttemptAt - now) / 1000)) : undefined;
+  const firstAttempt = (retry?.attempt ?? 0) - failures.length + 1;
   return (
-    <div
-      role="status"
-      className="flex flex-none flex-wrap items-center justify-center gap-3 bg-warning-solid/15 px-4 py-1.5 text-sm text-foreground"
-    >
-      <LoaderCircleIcon className="size-3.5 animate-spin" aria-hidden="true" />
-      <span>Reconnecting to {activeName(view)}. Wisps on it keep working.</span>
-      <Button type="button" size="xs" variant="outline" onClick={() => void window.wisp.retryConnection()}>
-        Retry now
-      </Button>
-      {canUseThisComputer(view) ? (
-        <Button
-          type="button"
-          size="xs"
-          variant="ghost"
-          onClick={() => void window.wisp.activateConnection({ id: LOCAL_CONNECTION_ID }).catch(() => undefined)}
-        >
-          Use this computer instead
+    <div className="[--tone:var(--warning-solid)] text-sm">
+      {profile ? <ServerChip profile={profile} serverVersion={view.status.serverVersion} /> : null}
+      <h3 className="mt-3 mb-0 text-base font-semibold">
+        {retry ? `Lost the connection ${formatDuration(now - retry.since)} ago` : "Lost the connection"}
+      </h3>
+      <p className="mt-1 mb-0 leading-relaxed text-dim">
+        Wisps on {name} keep running; you will see what they did when the app reconnects.
+      </p>
+      <ol className="mt-3 mb-0 flex list-none flex-col gap-2 p-0" aria-label="Attempts">
+        {failures.map((failure, index) => (
+          <li key={failure.at} className="grid grid-cols-[16px_1fr_auto] gap-2">
+            <CircleXIcon aria-hidden="true" className="mt-0.5 size-4 text-destructive" />
+            <span>
+              Attempt {Math.max(1, firstAttempt + index)}
+              <span className="block text-xs break-words text-destructive">{firstSentence(failure.message)}</span>
+            </span>
+            <span className="text-xs text-faint tabular-nums">
+              {retry ? formatDuration(failure.at - retry.since) : ""}
+            </span>
+          </li>
+        ))}
+        <li className="grid grid-cols-[16px_1fr_auto] gap-2">
+          <LoaderCircleIcon aria-hidden="true" className="mt-0.5 size-4 animate-spin text-[var(--tone)]" />
+          <span>
+            Attempt {(retry?.attempt ?? 0) + 1}
+            <span className="block text-xs text-dim">
+              {next === undefined ? "Trying now…" : `Next try in ${next}s`}
+            </span>
+          </span>
+        </li>
+      </ol>
+      <div className="mt-4 flex flex-wrap gap-2">
+        <Button type="button" size="sm" onClick={() => void window.wisp.retryConnection()}>
+          <RefreshCwIcon aria-hidden="true" />
+          Retry now
         </Button>
-      ) : null}
+        {canUseThisComputer(view) ? (
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            onClick={() => void window.wisp.activateConnection({ id: LOCAL_CONNECTION_ID }).catch(() => undefined)}
+          >
+            <LaptopIcon aria-hidden="true" />
+            Use this computer instead
+          </Button>
+        ) : null}
+      </div>
     </div>
   );
 }
@@ -219,11 +383,12 @@ function VersionMismatchBanner({
   serverVersion: string;
   onDismiss: () => void;
 }) {
+  const [confirming, setConfirming] = useState(false);
   const appVersion = APP_METADATA.version;
   const serverIsOlder = compareVersions(serverVersion, appVersion) < 0;
-  const profile = view.profiles.find(({ id }) => id === view.activeId);
+  const profile = activeProfile(view);
   // An SSH server can be updated right here, after the person confirms.
-  const canUpdate = serverIsOlder && profile?.kind === "ssh";
+  const canUpdate = serverIsOlder && profile?.kind === "ssh" && view.canManage !== false;
   const advice = !serverIsOlder
     ? "Update this app so every feature works."
     : canUpdate
@@ -238,25 +403,89 @@ function VersionMismatchBanner({
         {activeName(view)} runs Wisp server {serverVersion}, {serverIsOlder ? "older" : "newer"} than this app (
         {appVersion}). {advice}
       </span>
-      {canUpdate && profile ? (
-        <InstallServerAction profileId={profile.id} host={profile.host} label="Update server" mode="update" />
+      {canUpdate ? (
+        <Button type="button" size="xs" variant="outline" onClick={() => setConfirming(true)}>
+          Update server
+        </Button>
       ) : null}
       <Button type="button" size="icon-xs" variant="ghost" aria-label="Dismiss" onClick={onDismiss}>
         <XIcon aria-hidden="true" />
       </Button>
+      {confirming && profile?.kind === "ssh" ? (
+        <UpdateServerDialog
+          name={activeName(view)}
+          host={profile.host}
+          serverVersion={serverVersion}
+          onCancel={() => setConfirming(false)}
+          onConfirm={() => {
+            setConfirming(false);
+            void window.wisp.installServer({ id: profile.id }).catch(() => undefined);
+          }}
+        />
+      ) : null}
     </div>
   );
 }
 
-/** Compares dotted version numbers; anything after a `-` is ignored. */
-function compareVersions(left: string, right: string): number {
-  const parts = (version: string) => (version.split("-")[0] ?? "").split(".").map((part) => Number(part) || 0);
-  const [a, b] = [parts(left), parts(right)];
-  for (let index = 0; index < Math.max(a.length, b.length); index++) {
-    const difference = (a[index] ?? 0) - (b[index] ?? 0);
-    if (difference) return difference;
+const CONNECTED_TOAST_MS = 4_000;
+const UPDATED_TOAST_MS = 12_000;
+
+type ToastContent = { key: string; title: string; detail: string; durationMs: number };
+
+/**
+ * What the last change of connection deserves a toast for: a server just
+ * connected, or set up or updated. Reconnecting quietly needs none.
+ */
+function toastFor(previous: ConnectionsView | null, view: ConnectionsView): ToastContent | undefined {
+  if (!previous || view.status.phase !== "connected" || previous.status.phase === "connected") return undefined;
+  if (previous.status.phase === "reconnecting") return undefined;
+  const profile = activeProfile(view);
+  if (!profile) return undefined;
+  const version = view.status.serverVersion;
+  const setup = previous.activeId === view.activeId ? previous.status.progress : undefined;
+  if (setup && setup.kind !== "connect") {
+    return {
+      key: `${view.activeId}:${view.status.epoch}:setup`,
+      title:
+        setup.kind === "update"
+          ? `${profile.name} updated to ${version ?? APP_METADATA.version}`
+          : `Wisp is set up on ${profile.name}`,
+      detail: setup.fromVersion ? `Previously ${setup.fromVersion}.` : `${addressOf(profile)}`,
+      durationMs: UPDATED_TOAST_MS,
+    };
   }
-  return 0;
+  return {
+    key: `${view.activeId}:${view.status.epoch}:connected`,
+    title: `Connected to ${profile.name}`,
+    detail: `${addressOf(profile)}${version ? ` · server ${version}` : ""}`,
+    durationMs: CONNECTED_TOAST_MS,
+  };
+}
+
+function ConnectionToast({ toast, onDismiss }: { toast: ToastContent; onDismiss: () => void }) {
+  useEffect(() => {
+    const timer = setTimeout(onDismiss, toast.durationMs);
+    return () => clearTimeout(timer);
+  }, [toast, onDismiss]);
+  return (
+    <ToastFrame>
+      <CircleCheckIcon aria-hidden="true" className="mt-0.5 size-4 shrink-0 text-green" />
+      <div className="grid min-w-0 gap-0.5">
+        <strong className="text-sm">{toast.title}</strong>
+        <span className="truncate text-xs text-dim">{toast.detail}</span>
+      </div>
+      <Button
+        variant="ghost"
+        size="icon-xs"
+        type="button"
+        aria-label="Dismiss"
+        className="-mt-1 -mr-1 ml-auto"
+        onClick={onDismiss}
+      >
+        <XIcon aria-hidden="true" />
+      </Button>
+    </ToastFrame>
+  );
 }
 
 function ConnectionMessage({ title, message }: { title: string; message: string }) {
@@ -266,134 +495,6 @@ function ConnectionMessage({ title, message }: { title: string; message: string 
         <h1 className="text-lg font-semibold">{title}</h1>
         <p className="mt-2 text-base leading-relaxed text-dim">{message}</p>
       </section>
-    </main>
-  );
-}
-
-/** Shown while the chosen server is connecting, needs pairing, or cannot be reached. */
-function ConnectionScreen({ view }: { view: ConnectionsView }) {
-  const { status } = view;
-  const profile = view.profiles.find((candidate) => candidate.id === view.activeId);
-  const [code, setCode] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [actionError, setActionError] = useState("");
-
-  async function act(action: () => Promise<{ ok: true } | { ok: false; error: { message: string } }>) {
-    setBusy(true);
-    setActionError("");
-    try {
-      const result = await action();
-      if (!result.ok) setActionError(result.error.message);
-    } catch {
-      setActionError("Wisp could not change the connection.");
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  const title =
-    status.phase === "connecting"
-      ? `Connecting to ${activeName(view)}`
-      : status.phase === "pairing_required"
-        ? `Pair with ${activeName(view)}`
-        : `Cannot use ${activeName(view)}`;
-
-  return (
-    <main className="flex h-full min-h-0 items-start justify-center overflow-y-auto bg-background p-6 text-foreground">
-      <div className="my-auto w-full max-w-lg">
-        <section className="rounded-2xl border border-border bg-card p-6 shadow-sm" aria-labelledby="connection-title">
-          <div className="mb-4 flex size-10 items-center justify-center rounded-xl bg-muted">
-            {status.phase === "connecting" ? (
-              <LoaderCircleIcon aria-hidden="true" className="size-5 animate-spin" />
-            ) : (
-              <ServerIcon aria-hidden="true" className="size-5" />
-            )}
-          </div>
-          <h1 id="connection-title" className="text-lg font-semibold">
-            {title}
-          </h1>
-          {status.message ? (
-            <p role={status.phase === "error" ? "alert" : "status"} className="mt-2 text-base leading-relaxed text-dim">
-              {status.message}
-            </p>
-          ) : null}
-          {status.phase === "pairing_required" ? (
-            <form
-              className="mt-4 flex flex-wrap items-center gap-2"
-              onSubmit={(event) => {
-                event.preventDefault();
-                void act(() => window.wisp.activateConnection({ id: view.activeId, pairingCode: code }));
-              }}
-            >
-              <Input
-                aria-label="Pairing code"
-                className="w-44 font-mono uppercase"
-                placeholder="ABCDE-FGHJK"
-                value={code}
-                onChange={(event) => setCode(event.target.value)}
-              />
-              <Button type="submit" disabled={busy || code.trim().length === 0}>
-                Pair
-              </Button>
-              {profile?.kind === "ssh" ? (
-                <Button
-                  type="button"
-                  variant="outline"
-                  disabled={busy}
-                  onClick={() => void act(() => window.wisp.retryConnection())}
-                >
-                  Pair over SSH
-                </Button>
-              ) : null}
-            </form>
-          ) : null}
-          {status.phase === "error" && profile?.kind === "ssh" ? (
-            <div className="mt-4 border-t border-border pt-4">
-              <p className="mb-2 mt-0 text-sm leading-relaxed text-dim">
-                If Wisp is not installed on {profile.host} yet, or is out of date, Wisp can set it up for you.
-              </p>
-              <InstallServerAction profileId={profile.id} host={profile.host} disabled={busy} />
-            </div>
-          ) : null}
-          <div className="mt-4 flex flex-wrap gap-2">
-            {status.installing ? (
-              <Button
-                type="button"
-                variant="outline"
-                disabled={busy}
-                onClick={() => void act(() => window.wisp.cancelServerInstall())}
-              >
-                Cancel setup
-              </Button>
-            ) : null}
-            {status.phase === "error" ? (
-              <Button type="button" disabled={busy} onClick={() => void act(() => window.wisp.retryConnection())}>
-                Retry
-              </Button>
-            ) : null}
-            {!canUseThisComputer(view) ? null : (
-              <Button
-                type="button"
-                variant="outline"
-                disabled={busy}
-                onClick={() => void act(() => window.wisp.activateConnection({ id: LOCAL_CONNECTION_ID }))}
-              >
-                Use this computer instead
-              </Button>
-            )}
-          </div>
-          {actionError ? (
-            <p role="alert" className="mt-3 text-sm text-destructive">
-              {actionError}
-            </p>
-          ) : null}
-        </section>
-        {view.canManage === false ? null : (
-          <section className="mt-4 rounded-2xl border border-border bg-card p-4" aria-label="Connections">
-            <ConnectionsPanel view={view} />
-          </section>
-        )}
-      </div>
     </main>
   );
 }

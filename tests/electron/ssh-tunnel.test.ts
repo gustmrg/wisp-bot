@@ -157,7 +157,7 @@ describe("openSshTunnel", () => {
     const tunnel = await openSshTunnel(profile(port), { sshPath: fakeSsh });
     cleanups.push(() => tunnel.close());
     await expect(fetch(`${tunnel.baseUrl}/health`)).rejects.toThrow();
-    await expect.poll(() => tunnel.explainFailure?.()).toMatch(/nothing answers on its port \d+/);
+    await expect.poll(() => tunnel.explainFailure?.()?.message).toMatch(/nothing answers on its port \d+/);
     // Explained once: a later failure needs its own report.
     expect(tunnel.explainFailure?.()).toBeUndefined();
   });
