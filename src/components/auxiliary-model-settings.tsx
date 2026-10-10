@@ -2,7 +2,14 @@ import { useState } from "react";
 
 import type { AiSettingsView, AuxiliaryModelView, ModelSelection } from "../../shared/contracts";
 import { SearchableCombobox } from "@/components/searchable-combobox";
-import { SettingsCard, SettingsGroup, SettingsRow, SettingsRowCopy } from "@/components/settings/settings-primitives";
+import {
+  SettingsCard,
+  SettingsGroup,
+  SettingsRow,
+  SettingsRowCopy,
+  SettingsRowDescription,
+  SettingsRowTitle,
+} from "@/components/settings/settings-primitives";
 
 const OFF = "off";
 
@@ -89,14 +96,12 @@ function AuxiliaryModelSettings({ view, onViewChange }: AuxiliaryModelSettingsPr
       <SettingsCard>
         <SettingsRow>
           <SettingsRowCopy>
-            <label htmlFor="ai-auxiliary-image-model">
-              <strong>Image understanding</strong>
-            </label>
-            <small>
+            <SettingsRowTitle htmlFor="ai-auxiliary-image-model">Image understanding</SettingsRowTitle>
+            <SettingsRowDescription>
               Reads images and scanned PDF pages for Wisps whose model cannot see them, and returns the text to the
               Wisp. Those files are sent to the chosen provider. Only models that accept images, from providers with a
               saved key, are listed.
-            </small>
+            </SettingsRowDescription>
             {unavailable ? (
               <span role="alert" className="text-xs leading-relaxed text-warning">
                 {unavailable}

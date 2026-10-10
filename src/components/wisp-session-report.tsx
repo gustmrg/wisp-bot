@@ -176,7 +176,6 @@ function ToolCallList({ report }: { report: WispSessionReport }) {
   const timeZone = useTimeZone();
   return (
     <div>
-      <h4 className="mb-1 text-xs text-dim">Tool calls</h4>
       {report.toolCalls.length === 0 ? (
         <p className="text-xs text-dim">No tool calls recorded.</p>
       ) : (
@@ -221,7 +220,6 @@ function EventList({ report }: { report: WispSessionReport }) {
   if (report.events.length === 0) return null;
   return (
     <div>
-      <h4 className="mb-1 text-xs text-dim">Events</h4>
       <ul className="flex flex-col gap-1 text-xs">
         {report.events.map((event, index) => (
           <li key={`${event.kind}:${event.timestamp}:${index}`} className="flex min-w-0 flex-col gap-0.5">

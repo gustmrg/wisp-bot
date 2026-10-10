@@ -8,6 +8,8 @@ import {
   SettingsGroup,
   SettingsRow,
   SettingsRowCopy,
+  SettingsRowDescription,
+  SettingsRowTitle,
   SoonBadge,
 } from "@/components/settings/settings-primitives";
 import { Button } from "@/components/ui/button";
@@ -97,13 +99,7 @@ function PreferenceSwitch({
 function SoonTitle({ children, htmlFor }: { children: ReactNode; htmlFor?: string }) {
   return (
     <span className="flex items-center gap-1.5">
-      {htmlFor ? (
-        <label htmlFor={htmlFor}>
-          <strong>{children}</strong>
-        </label>
-      ) : (
-        <strong>{children}</strong>
-      )}
+      <SettingsRowTitle htmlFor={htmlFor}>{children}</SettingsRowTitle>
       <SoonBadge />
     </span>
   );
@@ -145,7 +141,7 @@ function GeneralSettingsSections({ preferences, onPreferencesChange }: GeneralSe
           <SettingsRow>
             <SettingsRowCopy>
               <SoonTitle>Use hardware acceleration</SoonTitle>
-              <small>Wisp always uses the system default for now.</small>
+              <SettingsRowDescription>Wisp always uses the system default for now.</SettingsRowDescription>
             </SettingsRowCopy>
             <PreferenceSwitch
               label="Use hardware acceleration"
@@ -163,10 +159,10 @@ function GeneralSettingsSections({ preferences, onPreferencesChange }: GeneralSe
         <SettingsCard variant="stacked">
           <SettingsRow>
             <SettingsRowCopy>
-              <label htmlFor="app-timezone">
-                <strong>Timezone</strong>
-              </label>
-              <small>Dates and times in Wisp, and the local time Wisps work with.</small>
+              <SettingsRowTitle htmlFor="app-timezone">Timezone</SettingsRowTitle>
+              <SettingsRowDescription>
+                Dates and times in Wisp, and the local time Wisps work with.
+              </SettingsRowDescription>
             </SettingsRowCopy>
             <SearchableCombobox
               id="app-timezone"
@@ -180,12 +176,12 @@ function GeneralSettingsSections({ preferences, onPreferencesChange }: GeneralSe
           </SettingsRow>
           <SettingsRow>
             <SettingsRowCopy>
-              <strong>Auto-review file changes</strong>
-              <small>
+              <SettingsRowTitle>Auto-review file changes</SettingsRowTitle>
+              <SettingsRowDescription>
                 {preferences.autoReview
                   ? "Wisp follows the rules below before changing workspace files."
                   : "Wisp asks before every file change. Turn on to use the rules below."}
-              </small>
+              </SettingsRowDescription>
             </SettingsRowCopy>
             <PreferenceSwitch
               label="Auto-review file changes"
@@ -196,8 +192,8 @@ function GeneralSettingsSections({ preferences, onPreferencesChange }: GeneralSe
           {FILE_CATEGORIES.map((category) => (
             <SettingsRow key={category.value} aria-disabled={!preferences.autoReview || undefined}>
               <SettingsRowCopy className={preferences.autoReview ? undefined : "opacity-50"}>
-                <strong>{category.label}</strong>
-                <small>{category.description}</small>
+                <SettingsRowTitle>{category.label}</SettingsRowTitle>
+                <SettingsRowDescription>{category.description}</SettingsRowDescription>
               </SettingsRowCopy>
               <SegmentedControl
                 label={`When Wisp wants to ${category.label.toLocaleLowerCase()}`}
@@ -210,18 +206,18 @@ function GeneralSettingsSections({ preferences, onPreferencesChange }: GeneralSe
           ))}
           {integrationRules.length ? (
             <SettingsRow className="flex-col items-stretch gap-[5px]">
-              <strong>Integration blocks</strong>
-              <small>
+              <SettingsRowTitle>Integration blocks</SettingsRowTitle>
+              <SettingsRowDescription>
                 Changes to integrations always ask first. Actions you block from an approval prompt are listed here.
-              </small>
+              </SettingsRowDescription>
               <ul className="m-0 mt-[3px] flex list-none flex-col p-0" aria-label="Integration blocks">
                 {integrationRules.map((rule) => (
                   <li key={rule.id} className="flex items-center gap-3 border-t border-border py-2">
                     <span className="min-w-0 flex-1 text-sm [overflow-wrap:anywhere]">
                       {INTEGRATION_ACTION_LABELS[rule.action] ?? rule.action}
-                      <small className="mt-0.5 block">
+                      <span className="mt-0.5 block text-xs text-dim">
                         {RULE_BEHAVIORS.find((behavior) => behavior.value === rule.behavior)?.label}
-                      </small>
+                      </span>
                     </span>
                     <Button
                       variant="ghost"

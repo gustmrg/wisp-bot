@@ -4,8 +4,10 @@ import { FolderOpenIcon, HardDriveIcon } from "lucide-react";
 
 import type { IntegrationSettingsTarget } from "@/lib/plugin-access";
 import { formatBytes, type WorkspaceView } from "../../shared/workspace";
-import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
+import { AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Button } from "@/components/ui/button";
+import { Field, FieldDescription, FieldGroup, FieldLabel, FieldTitle } from "@/components/ui/field";
+import { FormStatus } from "@/components/ui/form-status";
 import { WorkspaceSizeSelect } from "@/components/workspace-size-select";
 
 export function WispWorkspaceSettings({
@@ -17,21 +19,19 @@ export function WispWorkspaceSettings({
 }) {
   const [visited, setVisited] = useState(false);
   return (
-    <Accordion
-      className="mt-4"
-      onValueChange={(values) => {
-        if (values.length) setVisited(true);
+    <AccordionItem
+      value="workspace"
+      onOpenChange={(open) => {
+        if (open) setVisited(true);
       }}
     >
-      <AccordionItem value="workspace">
-        <AccordionTrigger>Workspace</AccordionTrigger>
-        <AccordionContent keepMounted>
-          {visited ? (
-            <WorkspacePanel key={conversationId} conversationId={conversationId} onOpenSettings={onOpenSettings} />
-          ) : null}
-        </AccordionContent>
-      </AccordionItem>
-    </Accordion>
+      <AccordionTrigger>Workspace</AccordionTrigger>
+      <AccordionContent keepMounted>
+        {visited ? (
+          <WorkspacePanel key={conversationId} conversationId={conversationId} onOpenSettings={onOpenSettings} />
+        ) : null}
+      </AccordionContent>
+    </AccordionItem>
   );
 }
 
@@ -47,11 +47,13 @@ function WorkspacePanel({
   const id = useId();
   const [view, setView] = useState<WorkspaceView | null>(null);
   const [error, setError] = useState("");
+  const [loadRequest, setLoadRequest] = useState({ conversationId });
 
   useEffect(() => {
     let active = true;
+    setError("");
     void window.wisp
-      .getWorkspace({ conversationId })
+      .getWorkspace(loadRequest)
       .then((result) => {
         if (!active) return;
         if (result.ok) setView(result.value);
@@ -63,7 +65,7 @@ function WorkspacePanel({
     return () => {
       active = false;
     };
-  }, [conversationId]);
+  }, [loadRequest]);
 
   async function openFolder() {
     setError("");
@@ -77,49 +79,51 @@ function WorkspacePanel({
 
   const percent = view ? Math.min(100, Math.round((view.usedBytes / view.quotaBytes) * 100)) : 0;
   return (
-    <div className="space-y-3 text-sm">
-      <p className="text-dim">
+    <FieldGroup className="gap-3">
+      <FieldDescription>
         A private folder only this Wisp can read and write. Attached files are copied to its inbox folder.
-      </p>
+      </FieldDescription>
       {view ? (
-        <div className="space-y-1.5">
-          <p>
-            {formatBytes(view.usedBytes)} of {formatBytes(view.quotaBytes)} used
-          </p>
-          <div
-            className="h-1.5 overflow-hidden rounded-full bg-muted"
-            role="progressbar"
-            aria-label="Workspace usage"
-            aria-valuemin={0}
-            aria-valuemax={100}
-            aria-valuenow={percent}
-          >
+        <>
+          <Field>
+            <FieldTitle>
+              {formatBytes(view.usedBytes)} of {formatBytes(view.quotaBytes)} used
+            </FieldTitle>
             <div
-              className={percent >= 90 ? "h-full bg-destructive" : "h-full bg-primary"}
-              style={{ width: `${percent}%` }}
+              className="h-1.5 overflow-hidden rounded-full bg-muted"
+              role="progressbar"
+              aria-label="Workspace usage"
+              aria-valuemin={0}
+              aria-valuemax={100}
+              aria-valuenow={percent}
+            >
+              <div
+                className={percent >= 90 ? "h-full bg-destructive" : "h-full bg-primary"}
+                style={{ width: `${percent}%` }}
+              />
+            </div>
+          </Field>
+          <Field>
+            <FieldLabel htmlFor={`${id}-size`}>Size</FieldLabel>
+            <WorkspaceSizeSelect
+              id={`${id}-size`}
+              conversationId={conversationId}
+              usedBytes={view.usedBytes}
+              quotaBytes={view.quotaBytes}
+              maxQuotaBytes={view.maxQuotaBytes}
+              className="w-full"
+              onResized={setView}
             />
-          </div>
-        </div>
-      ) : null}
-      {view ? (
-        <div className="space-y-1.5">
-          <label htmlFor={`${id}-size`}>Size</label>
-          <WorkspaceSizeSelect
-            id={`${id}-size`}
-            conversationId={conversationId}
-            usedBytes={view.usedBytes}
-            quotaBytes={view.quotaBytes}
-            maxQuotaBytes={view.maxQuotaBytes}
-            className="w-full"
-            onResized={setView}
-          />
-          <p className="text-dim">
-            {view.usedBytes > view.quotaBytes
-              ? "Holds more than this size. Nothing is deleted, but no new files fit until you free space."
-              : "Larger sizes need free space on the disk."}
-          </p>
-        </div>
-      ) : null}
+            <FieldDescription>
+              {view.usedBytes > view.quotaBytes
+                ? "Holds more than this size. Nothing is deleted, but no new files fit until you free space."
+                : "Larger sizes need free space on the disk."}
+            </FieldDescription>
+          </Field>
+        </>
+      ) : error ? null : (
+        <FormStatus pending="Loading workspace…" />
+      )}
       {onOpenSettings ? (
         <Button
           className="w-full"
@@ -136,11 +140,12 @@ function WorkspacePanel({
           Open workspace folder
         </Button>
       ) : null}
-      {error ? (
-        <p role="alert" className="text-destructive">
-          {error}
-        </p>
+      <FormStatus error={error} />
+      {!view && error ? (
+        <Button className="self-start" variant="outline" size="sm" onClick={() => setLoadRequest({ conversationId })}>
+          Retry
+        </Button>
       ) : null}
-    </div>
+    </FieldGroup>
   );
 }

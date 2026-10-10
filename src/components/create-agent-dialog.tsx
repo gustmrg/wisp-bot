@@ -27,6 +27,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
+import { Field, FieldError, FieldLabel } from "@/components/ui/field";
 import { AVATAR_COLORS } from "@/lib/wisp-appearance";
 import { parseWispTemplate } from "@/lib/wisp-template";
 
@@ -203,10 +204,8 @@ function CreateAgentDialog({ onCreate, trigger }: CreateAgentDialogProps) {
 
         <form className="flex min-h-0 flex-col gap-5" onSubmit={(event) => void handleSubmit(event)}>
           {step === "identity" && importOpen ? (
-            <div className="flex flex-none flex-col gap-2 px-1">
-              <label htmlFor="create-wisp-template" className="text-sm font-medium">
-                Template
-              </label>
+            <Field className="flex-none px-1">
+              <FieldLabel htmlFor="create-wisp-template">Template</FieldLabel>
               <Textarea
                 id="create-wisp-template"
                 rows={5}
@@ -218,11 +217,7 @@ function CreateAgentDialog({ onCreate, trigger }: CreateAgentDialogProps) {
                   setImportError("");
                 }}
               />
-              {importError ? (
-                <p className="text-xs text-destructive" role="alert">
-                  {importError}
-                </p>
-              ) : null}
+              {importError ? <FieldError>{importError}</FieldError> : null}
               <div className="flex justify-end gap-2">
                 <Button variant="outline" size="sm" type="button" onClick={closeImport}>
                   Cancel
@@ -236,7 +231,7 @@ function CreateAgentDialog({ onCreate, trigger }: CreateAgentDialogProps) {
                   Apply template
                 </Button>
               </div>
-            </div>
+            </Field>
           ) : step === "identity" ? (
             <div className="flex flex-none items-center justify-between gap-3 px-1">
               <p className="text-xs text-dim" role="status">

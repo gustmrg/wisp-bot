@@ -6,25 +6,26 @@ import type { SkillView } from "../../shared/skills";
 
 /** Same bound the backend applies to a whole SKILL.md. */
 const MAX_SKILL_FILE_BYTES = 64 * 1024;
-import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
+import { ConfirmAction } from "@/components/settings/settings-primitives";
+import { AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Button } from "@/components/ui/button";
+import { FieldDescription, FieldGroup, FieldTitle } from "@/components/ui/field";
+import { FormStatus } from "@/components/ui/form-status";
 
 export function WispSkillSettings({ conversationId }: { conversationId: string }) {
   const [visited, setVisited] = useState(false);
   return (
-    <Accordion
-      className="mt-4"
-      onValueChange={(values) => {
-        if (values.length) setVisited(true);
+    <AccordionItem
+      value="skills"
+      onOpenChange={(open) => {
+        if (open) setVisited(true);
       }}
     >
-      <AccordionItem value="skills">
-        <AccordionTrigger>Skills</AccordionTrigger>
-        <AccordionContent keepMounted>
-          {visited ? <SkillPanel key={conversationId} conversationId={conversationId} /> : null}
-        </AccordionContent>
-      </AccordionItem>
-    </Accordion>
+      <AccordionTrigger>Skills</AccordionTrigger>
+      <AccordionContent keepMounted>
+        {visited ? <SkillPanel key={conversationId} conversationId={conversationId} /> : null}
+      </AccordionContent>
+    </AccordionItem>
   );
 }
 
@@ -32,7 +33,6 @@ function SkillPanel({ conversationId }: { conversationId: string }) {
   // Opening a folder needs this computer's file manager and the Wisp's files on this computer.
   const screenActions = useScreenActions();
   const [skills, setSkills] = useState<ReadonlyArray<SkillView> | null>(null);
-  const [confirming, setConfirming] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   // A picked file whose skill name is already taken, waiting for the user to confirm the replacement.
@@ -77,7 +77,6 @@ function SkillPanel({ conversationId }: { conversationId: string }) {
       setError("Could not delete the skill.");
     } finally {
       setBusy(false);
-      setConfirming(null);
     }
   }
 
@@ -130,38 +129,38 @@ function SkillPanel({ conversationId }: { conversationId: string }) {
   }
 
   return (
-    <div className="space-y-3 text-sm">
-      <p className="text-dim">
+    <FieldGroup className="gap-3">
+      <FieldDescription>
         Reusable procedures this Wisp follows when a request matches. Ask the Wisp to save a workflow as a skill; you
         review it before it is saved. You can also import a SKILL.md file you already have.
-      </p>
-      {skills?.length === 0 ? <p className="text-dim">No skills yet.</p> : null}
+      </FieldDescription>
+      <FieldDescription>
+        Skills live outside the workspace, so this Wisp's file tools cannot change them. Edits made in the folder apply
+        from the next message.
+      </FieldDescription>
+      {skills === null && !error ? <FormStatus pending="Loading skills…" /> : null}
+      {skills?.length === 0 ? <FieldTitle>No skills yet.</FieldTitle> : null}
       {skills?.length ? (
-        <ul className="space-y-2" aria-label="Saved skills">
+        <ul className="m-0 flex list-none flex-col gap-2 p-0" aria-label="Saved skills">
           {skills.map((skill) => (
-            <li key={skill.name} className="space-y-1.5 rounded-md border border-border p-2.5">
-              <p className="font-medium">{skill.name}</p>
-              <p className="text-dim break-words">{skill.description}</p>
+            <li key={skill.name} className="flex flex-col gap-1.5 rounded-[10px] border border-border p-3 text-sm">
+              <p className="m-0 font-medium">{skill.name}</p>
+              <FieldDescription className="break-words">{skill.description}</FieldDescription>
               <details>
-                <summary className="cursor-pointer">View instructions</summary>
+                <summary className="cursor-pointer text-xs text-dim">View instructions</summary>
                 <pre className="mt-2 max-h-64 overflow-y-auto whitespace-pre-wrap break-words font-mono text-xs">
                   {skill.instructions}
                 </pre>
               </details>
-              {confirming === skill.name ? (
-                <div className="flex gap-2">
-                  <Button size="sm" variant="destructive" disabled={busy} onClick={() => void remove(skill.name)}>
-                    Delete {skill.name}
-                  </Button>
-                  <Button size="sm" variant="ghost" onClick={() => setConfirming(null)}>
-                    Cancel
-                  </Button>
-                </div>
-              ) : (
-                <Button size="sm" variant="ghost" disabled={busy} onClick={() => setConfirming(skill.name)}>
-                  Delete
-                </Button>
-              )}
+              <ConfirmAction
+                label="Delete"
+                confirmLabel={`Delete ${skill.name}`}
+                variant="ghost"
+                className="self-start"
+                disabled={busy}
+                description="The Wisp stops following this skill from the next message. This cannot be undone."
+                onConfirm={() => void remove(skill.name)}
+              />
             </li>
           ))}
         </ul>
@@ -180,18 +179,16 @@ function SkillPanel({ conversationId }: { conversationId: string }) {
         }}
       />
       {pendingImport ? (
-        <div role="alert" className="space-y-2 rounded-md border border-border p-2.5">
-          <p>{pendingImport.message} Replace it with the file you picked?</p>
-          <div className="flex gap-2">
-            <Button
-              size="sm"
-              variant="destructive"
-              disabled={busy}
-              onClick={() => void saveImport(pendingImport.contents, true)}
-            >
+        <div
+          role="alert"
+          className="flex flex-col gap-2.5 rounded-[10px] border border-destructive/30 bg-destructive/5 p-3"
+        >
+          <p className="m-0 text-xs leading-relaxed">{pendingImport.message} Replace it with the file you picked?</p>
+          <div className="flex flex-wrap gap-2">
+            <Button variant="destructive" disabled={busy} onClick={() => void saveImport(pendingImport.contents, true)}>
               Replace skill
             </Button>
-            <Button size="sm" variant="ghost" onClick={() => setPendingImport(null)}>
+            <Button variant="ghost" onClick={() => setPendingImport(null)}>
               Cancel
             </Button>
           </div>
@@ -209,17 +206,9 @@ function SkillPanel({ conversationId }: { conversationId: string }) {
       ) : null}
       <Button className="w-full" variant="ghost" onClick={() => void load()}>
         <RefreshCwIcon aria-hidden="true" />
-        Reload skills
+        {skills === null && error ? "Retry" : "Reload skills"}
       </Button>
-      <p className="text-dim">
-        Skills live outside the workspace, so this Wisp's file tools cannot change them. Edits made in the folder apply
-        from the next message.
-      </p>
-      {error ? (
-        <p role="alert" className="text-destructive">
-          {error}
-        </p>
-      ) : null}
-    </div>
+      <FormStatus error={error} />
+    </FieldGroup>
   );
 }

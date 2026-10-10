@@ -1,7 +1,14 @@
 import { useState } from "react";
 import type { KeyboardEvent } from "react";
 
-import { SettingsCard, SettingsGroup, SettingsRow, SettingsRowCopy } from "@/components/settings/settings-primitives";
+import {
+  SettingsCard,
+  SettingsGroup,
+  SettingsRow,
+  SettingsRowCopy,
+  SettingsRowDescription,
+  SettingsRowTitle,
+} from "@/components/settings/settings-primitives";
 import { Button } from "@/components/ui/button";
 import type { AppPreferences } from "@/lib/app-preferences";
 import {
@@ -98,8 +105,8 @@ function ShortcutSettingsSection({ active, preferences, onPreferencesChange }: S
               return (
                 <SettingsRow key={id}>
                   <SettingsRowCopy>
-                    <strong>{SHORTCUT_LABELS[id]}</strong>
-                    <small>Works while a conversation is open.</small>
+                    <SettingsRowTitle>{SHORTCUT_LABELS[id]}</SettingsRowTitle>
+                    <SettingsRowDescription>Works while a conversation is open.</SettingsRowDescription>
                   </SettingsRowCopy>
                   <div className="flex flex-none items-center gap-2">
                     {recording ? null : <Keys keys={shortcutKeys(shortcut)} />}
@@ -146,7 +153,7 @@ function ShortcutSettingsSection({ active, preferences, onPreferencesChange }: S
             {FIXED_SHORTCUTS.map((item) => (
               <SettingsRow key={item.label}>
                 <SettingsRowCopy>
-                  <strong>{item.label}</strong>
+                  <SettingsRowTitle>{item.label}</SettingsRowTitle>
                 </SettingsRowCopy>
                 <Keys keys={item.keys} />
               </SettingsRow>

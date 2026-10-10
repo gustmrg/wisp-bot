@@ -23,10 +23,13 @@ import {
   SettingsGroup,
   SettingsRow,
   SettingsRowCopy,
+  SettingsRowDescription,
+  SettingsRowTitle,
   StatusDot,
   type StatusTone,
 } from "@/components/settings/settings-primitives";
 import { Button } from "@/components/ui/button";
+import { Field, FieldDescription, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ToggleSwitch } from "@/components/ui/toggle-switch";
@@ -332,9 +335,11 @@ function DefaultProviders({
           <SettingsRow key={capability.id}>
             <SettingsRowCopy>
               <label htmlFor={`${formId}-${capability.id}`}>
-                <strong>{capability.name}</strong>
+                <SettingsRowTitle>{capability.name}</SettingsRowTitle>
               </label>
-              <small>Suggested first in each Wisp's Access tab. Wisps keep the provider they already use.</small>
+              <SettingsRowDescription>
+                Suggested first in each Wisp's Access tab. Wisps keep the provider they already use.
+              </SettingsRowDescription>
             </SettingsRowCopy>
             <Select
               value={view.defaultProviders[capability.id] ?? providers[0]!.id}
@@ -454,8 +459,8 @@ function PluginConnectForm({
           if (key && secureStorageAvailable && !busy) void connect();
         }}
       >
-        <label htmlFor={`${formId}-key`} className="flex flex-col gap-1.5">
-          <strong>{pluginCatalogEntry(plugin.id).credentialLabel}</strong>
+        <Field>
+          <FieldLabel htmlFor={`${formId}-key`}>{pluginCatalogEntry(plugin.id).credentialLabel}</FieldLabel>
           <Input
             id={`${formId}-key`}
             type="password"
@@ -469,10 +474,10 @@ function PluginConnectForm({
               setError("");
             }}
           />
-        </label>
-        <p className="text-dim">
-          <KeyLink pluginId={plugin.id} /> · Keys are encrypted on this device and never shown to Wisps.
-        </p>
+          <FieldDescription>
+            <KeyLink pluginId={plugin.id} /> · Keys are encrypted on this device and never shown to Wisps.
+          </FieldDescription>
+        </Field>
         {error ? (
           <p role="alert" className="text-destructive">
             {error}
@@ -577,8 +582,10 @@ function PluginManageView({
         <SettingsCard>
           <SettingsRow className="min-h-0">
             <SettingsRowCopy>
-              <strong>Enabled</strong>
-              <small>Disabling blocks this plugin for every Wisp but keeps their access choices.</small>
+              <SettingsRowTitle>Enabled</SettingsRowTitle>
+              <SettingsRowDescription>
+                Disabling blocks this plugin for every Wisp but keeps their access choices.
+              </SettingsRowDescription>
             </SettingsRowCopy>
             <ToggleSwitch
               checked={plugin.enabled}
@@ -606,8 +613,10 @@ function PluginManageView({
                 if (key && view.secureStorageAvailable && !busy) void run("replace");
               }}
             >
-              <label htmlFor={`${formId}-key`} className="flex flex-col gap-1.5">
-                <strong>{`New ${pluginCatalogEntry(plugin.id).credentialLabel}`}</strong>
+              <Field>
+                <FieldLabel
+                  htmlFor={`${formId}-key`}
+                >{`New ${pluginCatalogEntry(plugin.id).credentialLabel}`}</FieldLabel>
                 <Input
                   id={`${formId}-key`}
                   type="password"
@@ -622,7 +631,7 @@ function PluginManageView({
                     setMessage("");
                   }}
                 />
-              </label>
+              </Field>
               {key && plugin.configured ? (
                 <p className="text-warning">
                   Replacing the key removes {plugin.name} from every Wisp, because the new key may belong to a different

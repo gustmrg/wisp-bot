@@ -46,20 +46,31 @@ describe("variant details", () => {
     render(<WispDetails chat={wisp} onChangeWisp={onChange} onChangeNotifications={onChangeNotifications} />);
 
     const name = screen.getByRole("textbox", { name: "Name" });
-    const save = screen.getByRole("button", { name: "Save changes" });
-    expect(save).toBeDisabled();
+    expect(screen.queryByRole("button", { name: "Save profile" })).not.toBeInTheDocument();
 
     await user.clear(name);
     await user.type(name, "Nova");
 
     expect(onChange).not.toHaveBeenCalled();
-    expect(save).toBeEnabled();
-
-    await user.click(save);
+    await user.click(screen.getByRole("button", { name: "Save profile" }));
 
     expect(onChange).toHaveBeenCalledOnce();
     expect(onChange).toHaveBeenCalledWith(expect.objectContaining({ name: "Nova", role: "Research" }));
     expect(onChangeNotifications).not.toHaveBeenCalled();
+  });
+
+  it("discards unsaved profile edits", async () => {
+    const user = userEvent.setup();
+    const onChange = vi.fn(async () => true);
+    render(<WispDetails chat={wisp} onChangeWisp={onChange} onChangeNotifications={vi.fn()} />);
+
+    const name = screen.getByRole("textbox", { name: "Name" });
+    await user.type(name, " II");
+    await user.click(screen.getByRole("button", { name: "Discard" }));
+
+    expect(name).toHaveValue("Atlas");
+    expect(screen.queryByRole("button", { name: "Save profile" })).not.toBeInTheDocument();
+    expect(onChange).not.toHaveBeenCalled();
   });
 
   it("saves the notification setting on the Wisp's conversation", async () => {
@@ -69,7 +80,7 @@ describe("variant details", () => {
     render(<WispDetails chat={wisp} onChangeWisp={onChange} onChangeNotifications={onChangeNotifications} />);
 
     await user.click(screen.getByRole("switch", { name: "Notifications" }));
-    await user.click(screen.getByRole("button", { name: "Save changes" }));
+    await user.click(screen.getByRole("button", { name: "Save profile" }));
 
     expect(onChange).not.toHaveBeenCalled();
     expect(onChangeNotifications).toHaveBeenCalledWith(false);

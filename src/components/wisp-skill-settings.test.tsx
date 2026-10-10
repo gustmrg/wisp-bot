@@ -5,6 +5,7 @@ import { expect, it, vi } from "vitest";
 import type { SequencedConversationAgentEvent } from "../../shared/contracts";
 import type { SkillView } from "../../shared/skills";
 import { WispSkillSettings } from "./wisp-skill-settings";
+import { Accordion } from "@/components/ui/accordion";
 
 const report: SkillView = {
   name: "weekly-report",
@@ -34,7 +35,11 @@ it("lists skills lazily, refreshes after a save, and deletes after confirmation"
       },
     },
   });
-  render(<WispSkillSettings conversationId="one" />);
+  render(
+    <Accordion>
+      <WispSkillSettings conversationId="one" />
+    </Accordion>,
+  );
   expect(listSkills).not.toHaveBeenCalled();
 
   await user.click(screen.getByRole("button", { name: "Skills" }));
@@ -83,7 +88,11 @@ it("imports a picked SKILL.md and asks before replacing a skill with the same na
       subscribeToAgentEvents: () => () => undefined,
     },
   });
-  render(<WispSkillSettings conversationId="one" />);
+  render(
+    <Accordion>
+      <WispSkillSettings conversationId="one" />
+    </Accordion>,
+  );
   await user.click(screen.getByRole("button", { name: "Skills" }));
   expect(await screen.findByText("No skills yet.")).toBeInTheDocument();
 

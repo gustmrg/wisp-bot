@@ -8,6 +8,7 @@ import { PROFILE_LIMITS } from "../../shared/user-profile";
 import { ModelSettingsSection } from "@/components/model-settings-section";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Field, FieldDescription, FieldLabel } from "@/components/ui/field";
 import type { UserProfileController } from "@/hooks/use-user-profile";
 import { useConnections } from "@/features/connections/connection-gate";
 import { ConnectionsPanel } from "@/features/connections/connections-panel";
@@ -62,8 +63,11 @@ function ProfileStep({ controller, onNext }: { controller: UserProfileController
 
   return (
     <form className="flex flex-col gap-4" onSubmit={(event) => void handleSubmit(event)}>
-      <label className="flex flex-col gap-2 text-base font-medium" htmlFor="onboarding-name">
-        What should Wisps call you?
+      <Field className="gap-2">
+        {/* The step's one question, so it reads larger than a settings label. */}
+        <FieldLabel className="text-base font-medium text-foreground" htmlFor="onboarding-name">
+          What should Wisps call you?
+        </FieldLabel>
         <Input
           id="onboarding-name"
           autoComplete="given-name"
@@ -74,10 +78,10 @@ function ProfileStep({ controller, onNext }: { controller: UserProfileController
           disabled={saving}
           onChange={(event) => setName(event.target.value)}
         />
-      </label>
-      <p className="m-0 text-xs leading-relaxed text-dim">
-        Saved on this device and shared with your Wisps. You can add more about yourself later in Settings.
-      </p>
+        <FieldDescription>
+          Saved on this device and shared with your Wisps. You can add more about yourself later in Settings.
+        </FieldDescription>
+      </Field>
       {controller.error ? (
         <p role="alert" className="m-0 text-xs text-destructive">
           {controller.error}
