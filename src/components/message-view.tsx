@@ -169,10 +169,10 @@ function MessageView({ message, dense = false, onAnswer, onRetry }: MessageViewP
       >
         <div
           className={cn(
-            "message-bubble max-w-[min(820px,78vw)] rounded-[11px] px-2.5 py-[7px] leading-[1.42] select-text",
+            "message-bubble max-w-[min(820px,78vw)] rounded-[16px] px-2.5 py-[7px] leading-[1.42] select-text",
             outgoing
-              ? "bg-bubble-out whitespace-pre-wrap text-white"
-              : "border border-border bg-bubble-in text-foreground",
+              ? "rounded-br-[5px] bg-bubble-out whitespace-pre-wrap text-white"
+              : "rounded-bl-[5px] border border-border bg-bubble-in text-foreground",
           )}
         >
           {outgoing ? <OutgoingText text={message.text} /> : <MarkdownView text={message.text} />}

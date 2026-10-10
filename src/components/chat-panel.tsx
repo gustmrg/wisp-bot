@@ -328,12 +328,20 @@ function ChatPanel({
                 ))
               : null}
             {showActivity ? (
-              <div
-                role="status"
-                className="mt-3 flex items-center gap-2 text-dim text-sm [&_svg]:animate-working-pulse"
-              >
-                <ChatAvatar chat={chat} size="sm" />
-                <span>{activity || `${name} is working…`}</span>
+              <div role="status" className="mt-3 flex items-center gap-2 text-dim text-sm">
+                <span
+                  aria-hidden="true"
+                  className="flex items-center gap-1 rounded-[16px] rounded-bl-[5px] border border-border bg-bubble-in px-3.5 py-3"
+                >
+                  {[0, 200, 400].map((delay) => (
+                    <span
+                      key={delay}
+                      className="size-1.5 rounded-full bg-dim animate-typing-dot motion-reduce:animate-none"
+                      style={{ animationDelay: `${delay}ms` }}
+                    />
+                  ))}
+                </span>
+                {activity ? <span>{activity}</span> : <span className="sr-only">{`${name} is working…`}</span>}
               </div>
             ) : null}
           </div>
@@ -387,6 +395,7 @@ function ChatPanel({
         }
         autoFocus={!onBack && !hidden}
         enterToSend={!onBack}
+        mobile={mobile}
       />
     </main>
   );

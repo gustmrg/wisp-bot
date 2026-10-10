@@ -369,30 +369,80 @@
     flex: 1 1 auto;
   }
   .chat-composer {
-    padding: 8px 14px max(12px, env(safe-area-inset-bottom, 0px));
+    padding: 6px 8px max(8px, env(safe-area-inset-bottom, 0px));
   }
-  .composer-box {
-    border-radius: 20px;
+  /* The field is the pill; the + and the main button sit beside it. */
+  .composer-box,
+  .composer-box:focus-within {
+    padding: 0;
+    border-color: transparent;
+    background: transparent;
   }
   .composer-input {
-    min-height: 58px;
-    padding: 6px;
+    gap: 6px;
   }
-  .composer-input textarea {
-    min-height: 44px;
-    max-height: min(120px, 25dvh);
-    padding: 10px 6px;
+  .composer-field {
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    background: var(--muted);
+    transition: border-color 120ms;
+  }
+  .composer-field:focus-within {
+    border-color: var(--ring);
+  }
+  .composer-box[data-recording] .composer-field {
+    border-color: color-mix(in oklch, var(--destructive) 60%, transparent);
+  }
+  .composer-chips {
+    padding: 7px 8px 0 10px;
+  }
+  .composer-field textarea {
+    min-height: 38px;
+    max-height: min(132px, 25dvh);
+    padding: 8px 4px 8px 14px;
     font-size: 16px;
-    line-height: 24px;
+    line-height: 22px;
   }
-  .composer-input textarea::placeholder {
-    font-size: 13px;
+  .composer-field .recording-meter {
+    min-height: 38px;
+    padding: 0 10px 0 14px;
   }
-  .composer-input button {
-    width: 44px;
-    height: 44px;
+  .composer-lead,
+  .composer-primary {
+    position: relative;
+    width: 40px;
+    height: 40px;
   }
-  .composer-input button svg {
+  /* 40px to the eye, 46px to the finger. */
+  .composer-lead::after,
+  .composer-primary::after {
+    content: "";
+    position: absolute;
+    inset: -3px;
+  }
+  .composer-lead {
+    border: 1px solid var(--border);
+    background: var(--muted);
+    color: var(--foreground);
+  }
+  .composer-lead svg {
+    width: 20px;
+    height: 20px;
+  }
+  .composer-primary svg {
+    width: 19px;
+    height: 19px;
+  }
+  .composer-primary[data-variant="stop"] svg,
+  .composer-primary[data-variant="recording"] svg {
+    width: 14px;
+    height: 14px;
+  }
+  .composer-inline {
+    width: 36px;
+    height: 38px;
+  }
+  .composer-inline svg {
     width: 18px;
     height: 18px;
   }

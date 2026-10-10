@@ -45,8 +45,12 @@ describe("ChatComposer", () => {
     render(<ChatComposer {...defaultProps} chat={wisp("one", "One")} onSend={onSend} onSchedule={onSchedule} />);
     const input = screen.getByRole("textbox", { name: "Message One" });
     await user.type(input, "Later");
-    await user.click(screen.getByRole("button", { name: "Schedule send" }));
-    await user.click(await screen.findByRole("button", { name: "Schedule" }));
+    await user.click(screen.getByRole("button", { name: "Attach or schedule" }));
+    await user.click(await screen.findByRole("button", { name: "Schedule send" }));
+    await user.click(await screen.findByRole("button", { name: "Set time" }));
+    // Picking a time from the + menu only marks the draft; the main button schedules it.
+    expect(onSchedule).not.toHaveBeenCalled();
+    await user.click(screen.getByRole("button", { name: "Schedule message" }));
 
     expect(onSchedule).toHaveBeenCalledWith("Later", expect.any(Date));
     expect(onSend).not.toHaveBeenCalled();
@@ -55,11 +59,64 @@ describe("ChatComposer", () => {
     expect(input).toHaveValue("Later");
   });
 
-  it("offers scheduling only with a draft and when the backend supports it", async () => {
+  it("offers scheduling only when the backend supports it", async () => {
+    const user = userEvent.setup();
     const { rerender } = render(<ChatComposer {...defaultProps} chat={wisp("one", "One")} />);
-    expect(screen.queryByRole("button", { name: "Schedule send" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Attach files" })).toBeVisible();
+    expect(screen.queryByRole("button", { name: "Attach or schedule" })).toBeNull();
     rerender(<ChatComposer {...defaultProps} chat={wisp("one", "One")} onSchedule={vi.fn(async () => null)} />);
-    expect(screen.getByRole("button", { name: "Schedule send" })).toBeDisabled();
+    await user.click(screen.getByRole("button", { name: "Attach or schedule" }));
+    expect(await screen.findByRole("button", { name: "Schedule send" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Attach files" })).toBeEnabled();
+  });
+
+  it("lets a time be picked before writing and dropped again", async () => {
+    const user = userEvent.setup();
+    const onSend = vi.fn();
+    const onSchedule = vi.fn(async () => null);
+    render(<ChatComposer {...defaultProps} chat={wisp("one", "One")} onSend={onSend} onSchedule={onSchedule} />);
+    await user.click(screen.getByRole("button", { name: "Attach or schedule" }));
+    await user.click(await screen.findByRole("button", { name: "Schedule send" }));
+    await user.click(await screen.findByRole("button", { name: /Tomorrow morning/ }));
+
+    expect(screen.getByRole("button", { name: "Schedule message" })).toBeDisabled();
+    await user.click(screen.getByRole("button", { name: "Remove the scheduled time" }));
+    await user.type(screen.getByRole("textbox", { name: "Message One" }), "Now{enter}");
+
+    expect(onSend).toHaveBeenCalledWith("Now");
+    expect(onSchedule).not.toHaveBeenCalled();
+  });
+
+  it("schedules from the send button's menu", async () => {
+    const user = userEvent.setup();
+    const onSend = vi.fn();
+    const onSchedule = vi.fn(async () => null);
+    render(<ChatComposer {...defaultProps} chat={wisp("one", "One")} onSend={onSend} onSchedule={onSchedule} />);
+    await user.type(screen.getByRole("textbox", { name: "Message One" }), "Good morning");
+    await user.pointer({ keys: "[MouseRight]", target: screen.getByRole("button", { name: "Send message" }) });
+    await user.click(await screen.findByRole("menuitem", { name: /Tomorrow morning/ }));
+
+    expect(onSchedule).toHaveBeenCalledWith("Good morning", expect.any(Date));
+    expect(onSend).not.toHaveBeenCalled();
+  });
+
+  it("puts voice input in the main button on a phone until there is something to send", async () => {
+    const user = userEvent.setup();
+    const onAbort = vi.fn();
+    const { rerender } = render(<ChatComposer {...defaultProps} chat={wisp("one", "One")} mobile />);
+    expect(screen.queryByRole("button", { name: "Send message" })).toBeNull();
+    expect(screen.getAllByRole("button", { name: "Start voice input" })).toHaveLength(1);
+
+    await user.type(screen.getByRole("textbox", { name: "Message One" }), "Hi");
+    expect(screen.getByRole("button", { name: "Send message" })).toBeEnabled();
+    expect(screen.getAllByRole("button", { name: "Start voice input" })).toHaveLength(1);
+
+    // While the Wisp works, the main button queues the draft and stop moves into the field.
+    rerender(<ChatComposer {...defaultProps} chat={wisp("one", "One")} mobile status="working" onAbort={onAbort} />);
+    expect(screen.getByRole("button", { name: "Queue message" })).toBeEnabled();
+    expect(screen.queryByRole("button", { name: "Start voice input" })).toBeNull();
+    await user.click(screen.getByRole("button", { name: "Stop response" }));
+    expect(onAbort).toHaveBeenCalledOnce();
   });
 
   it("uses Enter for newlines on mobile and sends only through the send control", async () => {
@@ -408,7 +465,8 @@ describe("ChatComposer voice input", () => {
 
     await user.click(screen.getByRole("button", { name: "Start voice input" }));
     expect(await screen.findByText(/Recording… Press Ctrl\+Space/)).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Send message" })).toBeDisabled();
+    // The main button stops the recording instead of sending.
+    expect(screen.queryByRole("button", { name: "Send message" })).toBeNull();
     await user.click(screen.getByRole("button", { name: "Stop recording and transcribe" }));
 
     await waitFor(() => expect(input).toHaveValue("Please dictated words now"));
