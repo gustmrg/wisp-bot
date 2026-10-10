@@ -42,8 +42,9 @@ the web** and for **Read web pages**; under **Apps**, choose **Read only** or
 **Settings → Plugins** offers the same choices for every Wisp. Plugins that are
 not connected or are turned off are summarized in one line that links to
 Settings. Every Wisp starts with **No access**. New tools become available on
-its next message. Linear issue creation and updates still require an **Allow
-once** approval before execution, regardless of file auto-review rules.
+its next message. Creating or updating Linear issues and adding comments still
+require an **Allow once** approval before execution, regardless of file
+auto-review rules.
 
 When more than one connected plugin can search or read pages, **Settings →
 Plugins → Default web providers** sets which one is listed first and marked
@@ -55,7 +56,7 @@ the provider a Wisp already uses.
 | Plugin | Category | Access levels | Tools |
 | --- | --- | --- | --- |
 | Brave Search | Web & research | `none`, `read` | `web_search` |
-| Linear | Productivity | `none`, `read`, `write` | `linear_search_issues`, `linear_get_issue`, `linear_list_teams`, `linear_list_statuses`; write also enables `linear_create_issue` and `linear_update_issue` |
+| Linear | Productivity | `none`, `read`, `write` | `linear_search_issues`, `linear_get_issue`, `linear_list_comments`, `linear_list_teams`, `linear_list_statuses`, `linear_list_projects`, `linear_list_labels`, `linear_list_users`; write also enables `linear_create_issue`, `linear_update_issue`, and `linear_add_comment` |
 | Firecrawl | Web & research | `none`, `read` | `web_search`, `web_read` |
 | Tavily | Web & research | `none`, `read` | `web_search`, `web_read` |
 | Exa | Web & research | `none`, `read` | `web_search`, `web_read` |
@@ -97,9 +98,9 @@ usage reports still recognize the old name, but new sessions advertise `web_read
 
 Brave Search returns titles, source URLs, and snippets through the
 [Brave Search API](https://api-dashboard.search.brave.com/documentation/services/web-search);
-it does not browse pages or fetch arbitrary URLs. Linear can search/read
-issues, list teams and statuses, and create/update issues through its
-[GraphQL API](https://linear.app/developers/graphql). `web_read` reads
+it does not browse pages or fetch arbitrary URLs. Linear works through its
+[GraphQL API](https://linear.app/developers/graphql) (see
+[Linear](#linear) below). `web_read` reads
 one HTTP(S) page as Markdown (long content is truncated) using the
 [Firecrawl v2 scrape API](https://docs.firecrawl.dev/api-reference/endpoint/scrape);
 scraping uses Firecrawl credits. Firecrawl-backed `web_search` uses the
@@ -121,6 +122,35 @@ and bounded highlights for snippets. `web_read` uses the
 without HTML tags, and bounded crawl time and content length. Both adapters
 use fixed API endpoints and the same request limits and sanitized errors as
 the other bundled plugins. Page content and highlights can consume credits.
+
+## Linear
+
+The Linear plugin covers the everyday issue workflow:
+
+- `linear_search_issues` filters by text, team, status, project, label,
+  assignee (`"me"`, `"none"`, or a user UUID), parent issue (UUID or
+  identifier such as `ENG-123`), priority, and last update (`updatedSince`, an
+  ISO 8601 date/date-time or a duration such as `-P7D`).
+- Issue results include status, assignee, project, labels, parent, priority,
+  estimate, and due date. `linear_get_issue` adds the description and up to 50
+  sub-issues; `linear_list_comments` returns the discussion with authors and
+  reply parents.
+- `linear_list_teams`, `linear_list_statuses`, `linear_list_projects`,
+  `linear_list_labels`, and `linear_list_users` return the UUIDs the other
+  tools accept. User results include names and whether the user is the
+  connected account, never email addresses.
+- With write access, `linear_create_issue` sets status, priority, assignee,
+  project, labels, parent (making a sub-issue), estimate, and due date.
+  `linear_update_issue` changes the same fields; an empty string clears the
+  assignee, project, parent, or due date, and labels are added
+  (`addLabelIds`) or removed (`removeLabelIds`) without replacing the others.
+  `linear_add_comment` posts a Markdown comment or reply.
+
+The plugin is deliberately partial. Cycles, milestones, issue relations,
+attachments, documents, project updates, and administrative operations are
+not included, and it never deletes anything. Wisps that need them can use
+Linear's official MCP server (`https://mcp.linear.app/mcp`) as a
+[remote MCP server](mcp-servers.md), where every call is approved separately.
 
 ## Revocation and key changes
 

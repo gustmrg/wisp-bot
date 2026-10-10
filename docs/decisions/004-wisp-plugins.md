@@ -1,7 +1,7 @@
 # ADR 004: Plugin connections and per-Wisp access
 
 - Status: Accepted
-- Date: 2026-09-07 (updated 2026-10-04 to include Tavily and Exa and per-capability web providers)
+- Date: 2026-09-07 (updated 2026-10-04 to include Tavily and Exa and per-capability web providers; updated 2026-10-09 to extend Linear coverage)
 - Decision owners: Wisp product and security boundary
 - Scope: Bundled Brave Search, Linear, Firecrawl, Tavily, and Exa integrations
 
@@ -27,7 +27,7 @@ or permission to write.
 | Plugin | Access | Tools |
 | --- | --- | --- |
 | Brave Search (`web-search`) | `none`, `read` | `web_search`: titles, URLs, and snippets |
-| Linear | `none`, `read`, `write` | `linear_search_issues`, `linear_get_issue`, `linear_list_teams`, `linear_list_statuses`; write also enables `linear_create_issue` and `linear_update_issue` |
+| Linear | `none`, `read`, `write` | `linear_search_issues`, `linear_get_issue`, `linear_list_comments`, `linear_list_teams`, `linear_list_statuses`, `linear_list_projects`, `linear_list_labels`, `linear_list_users`; write also enables `linear_create_issue`, `linear_update_issue`, and `linear_add_comment` |
 | Firecrawl | `none`, `read` | `web_search` and `web_read`: search for sources and read a web page as bounded Markdown; no browser interaction or arbitrary POST |
 | Tavily | `none`, `read` | `web_search` and `web_read`: basic search with source snippets and single-page Markdown extraction |
 | Exa | `none`, `read` | `web_search` and `web_read`: automatic search with bounded highlights and single-page content retrieval |
@@ -61,7 +61,11 @@ another paid provider.
 The plugin ID `web-search` is kept for Brave Search so saved grants remain
 valid; only its display name changed.
 
-Linear updates support title, description, status, and priority. Read operations
+Linear writes cover issue title, description, status, priority, assignee,
+project, labels, parent, estimate, and due date, plus issue comments; nothing
+is deleted. Reads add project, label, and user discovery, issue comments, and
+sub-issues. The rest of Linear's API stays out of the bundled plugin and is
+available through Linear's official remote MCP server. Read operations
 are bounded and paginated where applicable. Requests reject redirects, enforce
 timeouts and response limits, and return sanitized failures. External search and
 issue content is model input, not authorization or executable instructions.
