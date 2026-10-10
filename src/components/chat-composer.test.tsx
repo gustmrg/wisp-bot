@@ -1,4 +1,4 @@
-import { act, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -97,6 +97,32 @@ describe("ChatComposer", () => {
     await user.click(await screen.findByRole("menuitem", { name: /Tomorrow morning/ }));
 
     expect(onSchedule).toHaveBeenCalledWith("Good morning", expect.any(Date));
+    expect(onSend).not.toHaveBeenCalled();
+  });
+
+  it("keeps the send button's menu open when a long press ends", async () => {
+    const onSend = vi.fn();
+    render(
+      <ChatComposer
+        {...defaultProps}
+        chat={wisp("one", "One")}
+        onSend={onSend}
+        onSchedule={vi.fn(async () => null)}
+        mobile
+      />,
+    );
+    fireEvent.change(screen.getByRole("textbox", { name: "Message One" }), { target: { value: "Later" } });
+    vi.useFakeTimers();
+    try {
+      const send = screen.getByRole("button", { name: "Send message" });
+      fireEvent.touchStart(send, { touches: [{ clientX: 10, clientY: 10 }] });
+      act(() => vi.advanceTimersByTime(600));
+      expect(screen.getByRole("menu", { name: "Schedule send" })).toBeInTheDocument();
+      // A prevented touchend stops the browser's follow-up click, which would close the menu or send.
+      expect(fireEvent.touchEnd(send)).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
     expect(onSend).not.toHaveBeenCalled();
   });
 

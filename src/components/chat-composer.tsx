@@ -388,7 +388,15 @@ export function ChatComposer({
           sendMenuOpen.current = open;
         }}
       >
-        <ContextMenuTrigger render={<span className="inline-flex flex-none" />}>{send}</ContextMenuTrigger>
+        <ContextMenuTrigger
+          render={<span className="inline-flex flex-none" />}
+          onTouchEnd={(event) => {
+            // Lifting the finger after a long press would click outside the menu that just opened and close it.
+            if (sendMenuOpen.current) event.preventDefault();
+          }}
+        >
+          {send}
+        </ContextMenuTrigger>
         <ContextMenuContent aria-label="Schedule send">
           <div className="px-2.5 pt-1.5 pb-1 text-xs font-medium text-dim">Schedule send</div>
           {schedulePresets(now, timeZone).map((preset) => (
