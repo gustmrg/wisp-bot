@@ -1,6 +1,7 @@
 import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
+import { FieldError } from "@/components/ui/field";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { WORKSPACE_QUOTA_PRESETS, formatBytes, type WorkspaceView } from "../../shared/workspace";
 
@@ -61,7 +62,8 @@ export function WorkspaceSizeSelect({
   }
 
   return (
-    <div className="space-y-2">
+    // Flex gap, not space-y: the select's hidden form input follows the trigger and would add a margin below it.
+    <div className="flex flex-col gap-2">
       <Select
         items={sizes}
         value={String(quotaBytes)}
@@ -105,11 +107,7 @@ export function WorkspaceSizeSelect({
           </div>
         </div>
       ) : null}
-      {error ? (
-        <p role="alert" className="m-0 text-xs text-destructive">
-          {error}
-        </p>
-      ) : null}
+      {error ? <FieldError>{error}</FieldError> : null}
     </div>
   );
 }

@@ -9,8 +9,16 @@ import {
 } from "../../shared/conversations";
 import { AvatarEditor } from "@/components/avatar-editor";
 import { MarkdownView } from "@/components/markdown-view";
-import { SettingsCard, SettingsField, SettingsRow, SettingsRowCopy } from "@/components/settings/settings-primitives";
+import {
+  SettingsCard,
+  SettingsField,
+  SettingsRow,
+  SettingsRowCopy,
+  SettingsRowDescription,
+  SettingsRowTitle,
+} from "@/components/settings/settings-primitives";
 import { Button } from "@/components/ui/button";
+import { Field, FieldDescription, FieldTitle } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { SegmentedControl } from "@/components/ui/segmented-control";
 import { Textarea } from "@/components/ui/textarea";
@@ -63,17 +71,15 @@ const SOUL_MODES = [
 function WispSoulField({ soul, onChange }: { soul: string; onChange: (soul: string) => void }) {
   const [mode, setMode] = useState<SoulMode>("edit");
   return (
-    <section className="mb-3 flex flex-col gap-[5px]" aria-labelledby="wisp-soul-title">
+    <Field className="mb-3" role="group" aria-labelledby="wisp-soul-title">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <span id="wisp-soul-title" className="text-xs text-dim">
-          Soul
-        </span>
+        <FieldTitle id="wisp-soul-title">Soul</FieldTitle>
         <SegmentedControl<SoulMode> label="Soul view" value={mode} options={SOUL_MODES} onChange={setMode} />
       </div>
-      <p className="m-0 text-xs text-dim">
+      <FieldDescription>
         Who this Wisp is: its identity, personality, and how it behaves. It follows this in every conversation. Markdown
         is supported.
-      </p>
+      </FieldDescription>
       {mode === "edit" ? (
         <Textarea
           rows={10}
@@ -91,7 +97,7 @@ function WispSoulField({ soul, onChange }: { soul: string; onChange: (soul: stri
       )}
       {mode === "edit" && !soul.trim() ? (
         <div className="flex flex-wrap items-center gap-1.5" role="group" aria-label="Soul templates">
-          <span className="text-xs text-dim">Start from a template:</span>
+          <FieldTitle>Start from a template:</FieldTitle>
           {SOUL_TEMPLATES.map((template) => (
             <Button
               key={template.id}
@@ -105,7 +111,7 @@ function WispSoulField({ soul, onChange }: { soul: string; onChange: (soul: stri
           ))}
         </div>
       ) : null}
-    </section>
+    </Field>
   );
 }
 
@@ -117,10 +123,8 @@ function WispBehaviorFields({ settings, onChange }: WispSettingsFieldsProps) {
       <SettingsCard className="mt-[15px]">
         <SettingsRow className="min-h-0 p-[11px]">
           <SettingsRowCopy>
-            <strong className="text-sm">Notifications</strong>
-            <small className="text-dim text-xs leading-[1.3]">
-              Get notified when this Wisp finishes or needs input
-            </small>
+            <SettingsRowTitle>Notifications</SettingsRowTitle>
+            <SettingsRowDescription>Get notified when this Wisp finishes or needs input</SettingsRowDescription>
           </SettingsRowCopy>
           <ToggleSwitch
             checked={settings.notifyOnUpdatesEnabled}

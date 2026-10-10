@@ -1,6 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 import type { BackendResult, LaunchAtLoginState } from "../../shared/contracts";
-import { SettingsRow, SettingsRowCopy } from "@/components/settings/settings-primitives";
+import {
+  SettingsRow,
+  SettingsRowCopy,
+  SettingsRowDescription,
+  SettingsRowTitle,
+} from "@/components/settings/settings-primitives";
 import { ToggleSwitch } from "@/components/ui/toggle-switch";
 
 export function LaunchAtLoginSetting({ open }: { open: boolean }) {
@@ -70,9 +75,13 @@ export function LaunchAtLoginSetting({ open }: { open: boolean }) {
   return (
     <SettingsRow>
       <SettingsRowCopy>
-        <strong>Launch at login</strong>
-        <small>{state.reason ?? "Open Wisp automatically when you sign in."}</small>
-        {error ? <small role="alert">{error}</small> : null}
+        <SettingsRowTitle>Launch at login</SettingsRowTitle>
+        <SettingsRowDescription>{state.reason ?? "Open Wisp automatically when you sign in."}</SettingsRowDescription>
+        {error ? (
+          <SettingsRowDescription role="alert" className="text-destructive">
+            {error}
+          </SettingsRowDescription>
+        ) : null}
       </SettingsRowCopy>
       <ToggleSwitch
         label="Launch at login"

@@ -6,6 +6,7 @@ import { ConfirmAction, SettingsCard } from "@/components/settings/settings-prim
 import { UsageBar } from "@/components/storage-overview";
 import { WorkspaceSizeSelect } from "@/components/workspace-size-select";
 import { Button } from "@/components/ui/button";
+import { FieldDescription, FieldLabel } from "@/components/ui/field";
 import { useScreenActions } from "@/features/connections/active-connection";
 import type { StorageCleanupPreview, StorageEntry, StorageWorkspace } from "../../shared/storage";
 import { WORKSPACE_INBOX_DIRECTORY, formatBytes, type WorkspaceView } from "../../shared/workspace";
@@ -209,10 +210,10 @@ export function StorageInspector({
             <p className="m-0 text-xs text-dim">Update the server to see which folders take the space.</p>
           )}
         </SettingsCard>
-        <SettingsCard className="space-y-2 p-3.5">
-          <h4 className="m-0 text-xs font-medium text-dim">
-            <label htmlFor={`size-${conversationId}`}>Workspace size</label>
-          </h4>
+        <SettingsCard className="flex flex-col gap-1.5 p-3.5">
+          <FieldLabel htmlFor={`size-${conversationId}`} className="font-medium">
+            Workspace size
+          </FieldLabel>
           {workspace.kind === "wisp" ? (
             <>
               <WorkspaceSizeSelect
@@ -224,14 +225,14 @@ export function StorageInspector({
                 className="w-full"
                 onResized={onResized}
               />
-              <p className="m-0 text-xs text-dim">
+              <FieldDescription>
                 The most this workspace can hold. The same setting as in the Wisp&apos;s Workspace settings.
-              </p>
+              </FieldDescription>
             </>
           ) : (
-            <p className="m-0 text-xs text-dim">
+            <FieldDescription>
               {formatBytes(workspace.quotaBytes)}. Circles share one workspace of a fixed size.
-            </p>
+            </FieldDescription>
           )}
         </SettingsCard>
       </div>

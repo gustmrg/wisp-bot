@@ -2,6 +2,7 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, it, vi } from "vitest";
 import { WispContextSettings } from "./wisp-context-settings";
+import { Accordion } from "@/components/ui/accordion";
 import { DEFAULT_CONTEXT_POLICY, type ContextCommand } from "../../shared/context-policy";
 
 it("loads lazily, saves memory and requires an explicit new-topic choice", async () => {
@@ -26,7 +27,11 @@ it("loads lazily, saves memory and requires an explicit new-topic choice", async
       subscribeToAgentEvents: vi.fn(() => () => undefined),
     },
   });
-  render(<WispContextSettings conversationId="one" />);
+  render(
+    <Accordion>
+      <WispContextSettings conversationId="one" />
+    </Accordion>,
+  );
   expect(manageContext).not.toHaveBeenCalled();
   await user.click(screen.getByRole("button", { name: "Context & memory" }));
   const memory = await screen.findByRole("textbox", { name: "Saved memory" });
@@ -62,7 +67,11 @@ it("disables context mutations while a Wisp is working", async () => {
       subscribeToAgentEvents: vi.fn(() => () => undefined),
     },
   });
-  render(<WispContextSettings conversationId="one" />);
+  render(
+    <Accordion>
+      <WispContextSettings conversationId="one" />
+    </Accordion>,
+  );
   await user.click(screen.getByRole("button", { name: "Context & memory" }));
   expect(await screen.findByRole("button", { name: "Summarize context" })).toBeDisabled();
   expect(screen.getByRole("button", { name: "Start new topic" })).toBeDisabled();

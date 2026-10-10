@@ -10,6 +10,8 @@ import {
   SettingsGroup,
   SettingsRow,
   SettingsRowCopy,
+  SettingsRowDescription,
+  SettingsRowTitle,
 } from "@/components/settings/settings-primitives";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -208,19 +210,19 @@ function WorkspaceRow({
     <SettingsRow className="flex-wrap">
       <SettingsRowCopy className="min-w-48 flex-1">
         <span className="flex min-w-0 items-center gap-2">
-          <strong className="truncate">{workspace.name}</strong>
+          <SettingsRowTitle className="truncate">{workspace.name}</SettingsRowTitle>
           {full ? (
             <span className="shrink-0 rounded-full bg-destructive/10 px-1.5 py-px text-2xs font-medium text-destructive">
               Full
             </span>
           ) : null}
         </span>
-        <small>
+        <SettingsRowDescription>
           {workspace.kind === "circle" ? "Circle · " : ""}
           {workspace.fileCount.toLocaleString("en-US")} {workspace.fileCount === 1 ? "file" : "files"} ·{" "}
           {formatBytes(workspace.usedBytes)} of {formatBytes(workspace.quotaBytes)} ({share}%)
           {workspace.partial ? " · partial" : ""}
-        </small>
+        </SettingsRowDescription>
         <div
           className="mt-1 h-1 overflow-hidden rounded-full bg-muted"
           role="progressbar"
@@ -317,12 +319,12 @@ function ArchiveList({ archives, onDeleted }: { archives: ReadonlyArray<StorageA
                   }}
                 />
                 <SettingsRowCopy>
-                  <strong className="truncate">{archive.name ?? archive.id}</strong>
-                  <small>
+                  <SettingsRowTitle className="truncate">{archive.name ?? archive.id}</SettingsRowTitle>
+                  <SettingsRowDescription>
                     {archive.kind === "circle" ? "Circle · " : archive.kind === "wisp" ? "Wisp · " : ""}
                     {archive.archivedAt ? `Archived ${formatMeasuredAt(archive.archivedAt)}` : "Archive date unknown"} ·{" "}
                     {archive.fileCount.toLocaleString("en-US")} files{archive.partial ? " · partial" : ""}
-                  </small>
+                  </SettingsRowDescription>
                 </SettingsRowCopy>
                 <span className="text-sm tabular-nums">{formatBytes(archive.usedBytes)}</span>
               </SettingsRow>

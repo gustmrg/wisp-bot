@@ -2,6 +2,7 @@ import { useEffect, useId, useRef, useState } from "react";
 import type { ComponentPropsWithoutRef, ReactNode } from "react";
 
 import { Button } from "@/components/ui/button";
+import { Field, FieldDescription, FieldLabel } from "@/components/ui/field";
 import { cn } from "@/lib/utils";
 
 export function SettingsGroup({
@@ -32,7 +33,7 @@ export function SettingsCard({
   return (
     <div
       className={cn(
-        "overflow-hidden rounded-[10px] bg-popover [&_small]:text-xs [&_small]:text-dim [&_strong]:text-sm",
+        "overflow-hidden rounded-[10px] bg-popover",
         variant === "stacked" && "divide-y divide-border",
         className,
       )}
@@ -51,17 +52,50 @@ export function SettingsRowCopy({ className, ...props }: ComponentPropsWithoutRe
   return <div className={cn("settings-row-copy flex min-w-0 flex-1 flex-col gap-[3px]", className)} {...props} />;
 }
 
+/** Title of a settings row. With `htmlFor` it labels the row's control. */
+export function SettingsRowTitle({
+  htmlFor,
+  className,
+  children,
+}: {
+  htmlFor?: string;
+  className?: string;
+  children: ReactNode;
+}) {
+  const classes = cn("text-sm font-bold", className);
+  return htmlFor ? (
+    <label htmlFor={htmlFor} className={classes}>
+      {children}
+    </label>
+  ) : (
+    <span className={classes}>{children}</span>
+  );
+}
+
+export function SettingsRowDescription({ className, ...props }: ComponentPropsWithoutRef<"p">) {
+  return <p className={cn("m-0 text-xs leading-[1.3] text-dim", className)} {...props} />;
+}
+
+/** A labelled control with optional help text below it. The label wraps the control. */
 export function SettingsField({
   label,
+  description,
   className,
   children,
   ...props
-}: Omit<ComponentPropsWithoutRef<"label">, "children"> & { label: ReactNode; children: ReactNode }) {
+}: Omit<ComponentPropsWithoutRef<"label">, "children"> & {
+  label: ReactNode;
+  description?: ReactNode;
+  children: ReactNode;
+}) {
   return (
-    <label className={cn("mb-3 flex flex-col gap-[5px] text-xs text-dim", className)} {...props}>
-      <span>{label}</span>
-      {children}
-    </label>
+    <Field className={cn("mb-3", className)}>
+      <FieldLabel className="flex flex-col gap-1.5" {...props}>
+        <span>{label}</span>
+        {children}
+      </FieldLabel>
+      {description ? <FieldDescription>{description}</FieldDescription> : null}
+    </Field>
   );
 }
 
@@ -103,6 +137,8 @@ export function ConfirmAction({
   pending = false,
   description,
   disabled = false,
+  variant = "destructive",
+  className,
   onConfirm,
 }: {
   label: string;
@@ -111,6 +147,9 @@ export function ConfirmAction({
   pending?: boolean;
   description: ReactNode;
   disabled?: boolean;
+  /** How the first button looks; the confirming button is always destructive. */
+  variant?: "destructive" | "outline" | "ghost";
+  className?: string;
   onConfirm: () => void;
 }) {
   const [confirming, setConfirming] = useState(false);
@@ -122,7 +161,13 @@ export function ConfirmAction({
 
   if (!confirming) {
     return (
-      <Button variant="destructive" type="button" disabled={disabled || pending} onClick={() => setConfirming(true)}>
+      <Button
+        variant={variant}
+        type="button"
+        className={className}
+        disabled={disabled || pending}
+        onClick={() => setConfirming(true)}
+      >
         {pending && pendingLabel ? pendingLabel : label}
       </Button>
     );

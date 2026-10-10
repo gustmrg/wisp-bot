@@ -1,7 +1,13 @@
 import type { AiSettingsView, ModelSelection } from "../../shared/contracts";
 import { missingModelSetup } from "../../shared/setup-status";
 import { NoImageInputNote } from "@/components/no-image-input-note";
-import { SettingsCard, SettingsRow, SettingsRowCopy } from "@/components/settings/settings-primitives";
+import {
+  SettingsCard,
+  SettingsRow,
+  SettingsRowCopy,
+  SettingsRowDescription,
+  SettingsRowTitle,
+} from "@/components/settings/settings-primitives";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ToggleSwitch } from "@/components/ui/toggle-switch";
@@ -130,10 +136,10 @@ function CreateWispModelSection({ view, loadError, draft, onChange, notice }: Cr
     <SettingsCard className="mt-[15px]">
       <SettingsRow className="min-h-0 p-[11px]">
         <SettingsRowCopy>
-          <strong className="text-sm">Model</strong>
-          <small className="text-dim text-xs leading-[1.3]">
+          <SettingsRowTitle>Model</SettingsRowTitle>
+          <SettingsRowDescription>
             {draft.useGlobal ? globalSummary(view) : "Specific to this Wisp"}
-          </small>
+          </SettingsRowDescription>
         </SettingsRowCopy>
         <ToggleSwitch
           checked={!draft.useGlobal}
@@ -162,9 +168,7 @@ function CreateWispModelSection({ view, loadError, draft, onChange, notice }: Cr
         <>
           <SettingsRow className="min-h-0 p-[11px]">
             <SettingsRowCopy>
-              <label htmlFor="create-wisp-provider">
-                <strong>Provider</strong>
-              </label>
+              <SettingsRowTitle htmlFor="create-wisp-provider">Provider</SettingsRowTitle>
             </SettingsRowCopy>
             <Select
               items={catalog.map(({ id, name }) => ({ value: id, label: name }))}
@@ -187,10 +191,8 @@ function CreateWispModelSection({ view, loadError, draft, onChange, notice }: Cr
           </SettingsRow>
           <SettingsRow className="min-h-0 p-[11px]">
             <SettingsRowCopy>
-              <label htmlFor="create-wisp-model">
-                <strong>Model</strong>
-              </label>
-              <small>{provider?.models.length ?? 0} models available.</small>
+              <SettingsRowTitle htmlFor="create-wisp-model">Model</SettingsRowTitle>
+              <SettingsRowDescription>{provider?.models.length ?? 0} models available.</SettingsRowDescription>
               {model && !model.input.includes("image") ? <NoImageInputNote /> : null}
             </SettingsRowCopy>
             <Select
@@ -216,10 +218,10 @@ function CreateWispModelSection({ view, loadError, draft, onChange, notice }: Cr
           </SettingsRow>
           <SettingsRow className="min-h-0 p-[11px]">
             <SettingsRowCopy>
-              <label htmlFor="create-wisp-max-output-tokens">
-                <strong>Maximum output tokens</strong>
-              </label>
-              <small>Leave empty to use the safe automatic limit of up to 32,768 tokens.</small>
+              <SettingsRowTitle htmlFor="create-wisp-max-output-tokens">Maximum output tokens</SettingsRowTitle>
+              <SettingsRowDescription>
+                Leave empty to use the safe automatic limit of up to 32,768 tokens.
+              </SettingsRowDescription>
             </SettingsRowCopy>
             <Input
               id="create-wisp-max-output-tokens"

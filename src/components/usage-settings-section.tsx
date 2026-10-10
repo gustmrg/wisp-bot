@@ -2,7 +2,14 @@ import { useEffect, useState } from "react";
 import { RefreshCwIcon } from "lucide-react";
 
 import { Wisp } from "@/components/wisp";
-import { SettingsCard, SettingsGroup, SettingsRow, SettingsRowCopy } from "@/components/settings/settings-primitives";
+import {
+  SettingsCard,
+  SettingsGroup,
+  SettingsRow,
+  SettingsRowCopy,
+  SettingsRowDescription,
+  SettingsRowTitle,
+} from "@/components/settings/settings-primitives";
 import { Button } from "@/components/ui/button";
 import { SegmentedControl } from "@/components/ui/segmented-control";
 import { useTimeZone } from "@/hooks/use-time-zone";
@@ -96,8 +103,8 @@ export function UsageSettingsSection({ wisps = [] }: { wisps?: ReadonlyArray<Wis
             <SettingsCard variant="stacked">
               <SettingsRow>
                 <SettingsRowCopy>
-                  <strong>Total tokens</strong>
-                  <small>Input, output and cache tokens.</small>
+                  <SettingsRowTitle>Total tokens</SettingsRowTitle>
+                  <SettingsRowDescription>Input, output and cache tokens.</SettingsRowDescription>
                 </SettingsRowCopy>
                 <span className="text-md font-medium tabular-nums">
                   {report.totals.totalTokens.toLocaleString("en-US")}
@@ -105,8 +112,8 @@ export function UsageSettingsSection({ wisps = [] }: { wisps?: ReadonlyArray<Wis
               </SettingsRow>
               <SettingsRow>
                 <SettingsRowCopy>
-                  <strong>Estimated cost</strong>
-                  <small>In USD, from the latest available model prices.</small>
+                  <SettingsRowTitle>Estimated cost</SettingsRowTitle>
+                  <SettingsRowDescription>In USD, from the latest available model prices.</SettingsRowDescription>
                 </SettingsRowCopy>
                 <span className="text-md font-medium tabular-nums">{cost(report.totals.costUsd)}</span>
               </SettingsRow>

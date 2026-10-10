@@ -42,6 +42,8 @@ import {
   SettingsGroup,
   SettingsRow,
   SettingsRowCopy,
+  SettingsRowDescription,
+  SettingsRowTitle,
   SoonBadge,
 } from "@/components/settings/settings-primitives";
 import { Button } from "@/components/ui/button";
@@ -431,10 +433,8 @@ function AppSettingsDialog({
               <SettingsCard variant="stacked">
                 <SettingsRow>
                   <SettingsRowCopy>
-                    <label htmlFor="app-theme">
-                      <strong>Theme</strong>
-                    </label>
-                    <small className="text-dim text-xs">Choose how Wisp looks on this device.</small>
+                    <SettingsRowTitle htmlFor="app-theme">Theme</SettingsRowTitle>
+                    <SettingsRowDescription>Choose how Wisp looks on this device.</SettingsRowDescription>
                   </SettingsRowCopy>
                   <Select
                     items={THEME_OPTIONS}
@@ -508,8 +508,8 @@ function AppSettingsDialog({
               <SettingsCard>
                 <SettingsRow>
                   <SettingsRowCopy>
-                    <strong className="text-sm">{appMetadata.displayName}</strong>
-                    <small className="text-dim text-xs">Version {appMetadata.version}</small>
+                    <SettingsRowTitle>{appMetadata.displayName}</SettingsRowTitle>
+                    <SettingsRowDescription>Version {appMetadata.version}</SettingsRowDescription>
                   </SettingsRowCopy>
                   {browserApp ? null : (
                     <Button
@@ -612,8 +612,8 @@ function AboutLink({ href, label, description }: { href: string; label: string; 
       className="settings-row flex min-h-[58px] items-center gap-3 px-3.5 py-[11px] text-foreground no-underline outline-none transition-colors hover:bg-muted/50 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
     >
       <SettingsRowCopy>
-        <strong>{label}</strong>
-        <small>{description}</small>
+        <SettingsRowTitle>{label}</SettingsRowTitle>
+        <SettingsRowDescription>{description}</SettingsRowDescription>
       </SettingsRowCopy>
       <ExternalLinkIcon className="size-4 shrink-0 text-dim" aria-hidden="true" />
     </a>

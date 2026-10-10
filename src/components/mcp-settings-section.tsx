@@ -20,10 +20,13 @@ import {
   SettingsCard,
   SettingsRow,
   SettingsRowCopy,
+  SettingsRowDescription,
+  SettingsRowTitle,
   StatusDot,
   type StatusTone,
 } from "@/components/settings/settings-primitives";
 import { Button } from "@/components/ui/button";
+import { Field, FieldDescription, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ToggleSwitch } from "@/components/ui/toggle-switch";
@@ -426,8 +429,8 @@ function McpServerForm({
             {server.tools.length ? ` · ${server.tools.length} tool${server.tools.length === 1 ? "" : "s"}` : ""}
           </p>
         ) : null}
-        <label htmlFor={`${formId}-name`} className="flex flex-col gap-1.5">
-          <strong>Name</strong>
+        <Field>
+          <FieldLabel htmlFor={`${formId}-name`}>Name</FieldLabel>
           <Input
             id={`${formId}-name`}
             value={draft.name}
@@ -440,9 +443,9 @@ function McpServerForm({
               setError("");
             }}
           />
-        </label>
-        <label htmlFor={`${formId}-endpoint`} className="flex flex-col gap-1.5">
-          <strong>Endpoint URL</strong>
+        </Field>
+        <Field>
+          <FieldLabel htmlFor={`${formId}-endpoint`}>Endpoint URL</FieldLabel>
           <Input
             id={`${formId}-endpoint`}
             type="url"
@@ -456,12 +459,10 @@ function McpServerForm({
               setError("");
             }}
           />
-        </label>
-        <p className="text-dim">Only HTTPS endpoints are allowed.</p>
-        <div className="flex flex-col gap-1.5">
-          <label htmlFor={`${formId}-auth`}>
-            <strong>Authentication</strong>
-          </label>
+          <FieldDescription>Only HTTPS endpoints are allowed.</FieldDescription>
+        </Field>
+        <Field>
+          <FieldLabel htmlFor={`${formId}-auth`}>Authentication</FieldLabel>
           <Select
             items={AUTH_MODE_OPTIONS}
             value={draft.authMode}
@@ -486,11 +487,11 @@ function McpServerForm({
               </SelectGroup>
             </SelectContent>
           </Select>
-        </div>
+        </Field>
         {draft.authMode === "header" ? (
           <>
-            <label htmlFor={`${formId}-header-name`} className="flex flex-col gap-1.5">
-              <strong>Header name</strong>
+            <Field>
+              <FieldLabel htmlFor={`${formId}-header-name`}>Header name</FieldLabel>
               <Input
                 id={`${formId}-header-name`}
                 value={draft.headerName}
@@ -503,9 +504,9 @@ function McpServerForm({
                   setError("");
                 }}
               />
-            </label>
-            <label htmlFor={`${formId}-header-value`} className="flex flex-col gap-1.5">
-              <strong>Header value</strong>
+            </Field>
+            <Field>
+              <FieldLabel htmlFor={`${formId}-header-value`}>Header value</FieldLabel>
               <Input
                 id={`${formId}-header-value`}
                 type="password"
@@ -519,11 +520,11 @@ function McpServerForm({
                   setError("");
                 }}
               />
-            </label>
-            <p className="text-dim">
-              {server?.headerConfigured ? "Leave blank to keep the saved value. " : ""}
-              Values are encrypted on this device and never shown to Wisps.
-            </p>
+              <FieldDescription>
+                {server?.headerConfigured ? "Leave blank to keep the saved value. " : ""}
+                Values are encrypted on this device and never shown to Wisps.
+              </FieldDescription>
+            </Field>
           </>
         ) : null}
         {draft.authMode === "oauth" ? (
@@ -536,11 +537,11 @@ function McpServerForm({
         <SettingsCard>
           <SettingsRow className="min-h-0">
             <SettingsRowCopy>
-              <strong>Enabled</strong>
-              <small>
+              <SettingsRowTitle>Enabled</SettingsRowTitle>
+              <SettingsRowDescription>
                 Disabling blocks this server for every Wisp while keeping grants. Changing the endpoint or credentials
                 revokes Wisp access.
-              </small>
+              </SettingsRowDescription>
             </SettingsRowCopy>
             <ToggleSwitch
               checked={draft.enabled}

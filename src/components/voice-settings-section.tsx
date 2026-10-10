@@ -7,6 +7,8 @@ import {
   SettingsGroup,
   SettingsRow,
   SettingsRowCopy,
+  SettingsRowDescription,
+  SettingsRowTitle,
 } from "@/components/settings/settings-primitives";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -163,10 +165,10 @@ function VoiceSettingsSection({ active, preferences, onPreferencesChange }: Voic
           <SettingsCard variant="stacked">
             <SettingsRow>
               <SettingsRowCopy>
-                <label htmlFor="voice-microphone">
-                  <strong>Microphone</strong>
-                </label>
-                <small>Device names appear after Wisp first uses the microphone.</small>
+                <SettingsRowTitle htmlFor="voice-microphone">Microphone</SettingsRowTitle>
+                <SettingsRowDescription>
+                  Device names appear after Wisp first uses the microphone.
+                </SettingsRowDescription>
               </SettingsRowCopy>
               <SettingsSelect
                 id="voice-microphone"
@@ -177,12 +179,12 @@ function VoiceSettingsSection({ active, preferences, onPreferencesChange }: Voic
             </SettingsRow>
             <SettingsRow>
               <SettingsRowCopy>
-                <strong>Send automatically</strong>
-                <small>
+                <SettingsRowTitle>Send automatically</SettingsRowTitle>
+                <SettingsRowDescription>
                   {preferences.voiceAutoSend
                     ? "The message is sent as soon as it is transcribed."
                     : "The transcript waits in the composer so you can review it before sending."}
-                </small>
+                </SettingsRowDescription>
               </SettingsRowCopy>
               <PreferenceSwitch
                 label="Send automatically"
@@ -197,10 +199,10 @@ function VoiceSettingsSection({ active, preferences, onPreferencesChange }: Voic
           <SettingsCard variant="stacked">
             <SettingsRow>
               <SettingsRowCopy>
-                <label htmlFor="voice-provider">
-                  <strong>Provider</strong>
-                </label>
-                <small>The speech-to-text service that transcribes your recordings.</small>
+                <SettingsRowTitle htmlFor="voice-provider">Provider</SettingsRowTitle>
+                <SettingsRowDescription>
+                  The speech-to-text service that transcribes your recordings.
+                </SettingsRowDescription>
               </SettingsRowCopy>
               <SettingsSelect
                 id="voice-provider"
@@ -217,9 +219,7 @@ function VoiceSettingsSection({ active, preferences, onPreferencesChange }: Voic
             </SettingsRow>
             <SettingsRow>
               <SettingsRowCopy>
-                <label htmlFor="voice-model">
-                  <strong>Model</strong>
-                </label>
+                <SettingsRowTitle htmlFor="voice-model">Model</SettingsRowTitle>
               </SettingsRowCopy>
               <SettingsSelect
                 id="voice-model"
@@ -230,10 +230,8 @@ function VoiceSettingsSection({ active, preferences, onPreferencesChange }: Voic
             </SettingsRow>
             <SettingsRow>
               <SettingsRowCopy>
-                <label htmlFor="voice-language">
-                  <strong>Language</strong>
-                </label>
-                <small>Choosing the language you speak improves accuracy.</small>
+                <SettingsRowTitle htmlFor="voice-language">Language</SettingsRowTitle>
+                <SettingsRowDescription>Choosing the language you speak improves accuracy.</SettingsRowDescription>
               </SettingsRowCopy>
               <SettingsSelect
                 id="voice-language"
@@ -251,14 +249,12 @@ function VoiceSettingsSection({ active, preferences, onPreferencesChange }: Voic
           <SettingsCard>
             <div className="flex flex-col gap-3 px-3.5 py-3.5">
               <SettingsRowCopy>
-                <label htmlFor="voice-api-key">
-                  <strong>{provider.name} API key</strong>
-                </label>
-                <small>
+                <SettingsRowTitle htmlFor="voice-api-key">{provider.name} API key</SettingsRowTitle>
+                <SettingsRowDescription>
                   {providerStatus?.credentialConfigured
                     ? `An encrypted key is saved for ${provider.name} and shared with AI Model settings. Enter a new key to replace it.`
                     : `Add a ${provider.name} key to use voice input. It is encrypted using your operating system's credential storage.`}
-                </small>
+                </SettingsRowDescription>
               </SettingsRowCopy>
               <div className="flex gap-2">
                 <Input

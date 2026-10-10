@@ -6,11 +6,15 @@ import {
   type ContextPolicy,
   type ContextView,
 } from "../../shared/context-policy";
-import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
+import { ConfirmAction } from "@/components/settings/settings-primitives";
+import { AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Button } from "@/components/ui/button";
+import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel, FieldTitle } from "@/components/ui/field";
+import { FormStatus } from "@/components/ui/form-status";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { useTransientMessage } from "@/hooks/use-transient-message";
 
 const modes = [
   { value: "idle", label: "After inactivity" },
@@ -19,22 +23,21 @@ const modes = [
   { value: "none", label: "Manual only" },
 ];
 
+/** The Context & memory section of a Wisp's settings; place it inside an `Accordion`. */
 export function WispContextSettings({ conversationId }: { conversationId: string }) {
   const [visited, setVisited] = useState(false);
   return (
-    <Accordion
-      className="mt-4"
-      onValueChange={(values) => {
-        if (values.length) setVisited(true);
+    <AccordionItem
+      value="context"
+      onOpenChange={(open) => {
+        if (open) setVisited(true);
       }}
     >
-      <AccordionItem value="context">
-        <AccordionTrigger>Context & memory</AccordionTrigger>
-        <AccordionContent keepMounted>
-          {visited ? <ContextForm key={conversationId} conversationId={conversationId} /> : null}
-        </AccordionContent>
-      </AccordionItem>
-    </Accordion>
+      <AccordionTrigger>Context & memory</AccordionTrigger>
+      <AccordionContent keepMounted>
+        {visited ? <ContextForm key={conversationId} conversationId={conversationId} /> : null}
+      </AccordionContent>
+    </AccordionItem>
   );
 }
 
@@ -46,8 +49,7 @@ function ContextForm({ conversationId }: { conversationId: string }) {
   const [busy, setBusy] = useState(false);
   const [working, setWorking] = useState(false);
   const [error, setError] = useState("");
-  const [notice, setNotice] = useState("");
-  const [confirmNew, setConfirmNew] = useState(false);
+  const [notice, setNotice] = useTransientMessage();
   const [loadRequest, setLoadRequest] = useState({ conversationId });
   useEffect(() => {
     let active = true;
@@ -106,7 +108,6 @@ function ContextForm({ conversationId }: { conversationId: string }) {
             ? "Context summarized. History preserved."
             : "New topic started. History and saved memory preserved.",
       );
-      setConfirmNew(false);
     } catch {
       setError("Could not update context. Please try again.");
     } finally {
@@ -115,47 +116,60 @@ function ContextForm({ conversationId }: { conversationId: string }) {
   }
   if (!view)
     return (
-      <div className="space-y-2 text-sm">
-        <p role={error ? "alert" : "status"}>{error || "Loading context…"}</p>
+      <div className="flex flex-col items-start gap-2">
         {error ? (
-          <Button variant="outline" onClick={() => setLoadRequest({ conversationId })}>
-            Retry
-          </Button>
-        ) : null}
+          <>
+            <FieldError>{error}</FieldError>
+            <Button variant="outline" size="sm" onClick={() => setLoadRequest({ conversationId })}>
+              Retry
+            </Button>
+          </>
+        ) : (
+          <FormStatus pending="Loading context…" />
+        )}
       </div>
     );
   const disabled = busy || working;
   const dirty = JSON.stringify(policy) !== JSON.stringify(view.policy) || memory !== view.memory;
   return (
-    <div className="space-y-3 text-sm">
-      <p className="text-dim">
+    <FieldGroup className="gap-3">
+      <FieldDescription>
         Your chat history stays visible. Summaries retain goals, decisions and pending work; the Wisp can search older
         messages when needed.
-      </p>
-      <label htmlFor={`${id}-mode`}>Renew context</label>
-      <Select
-        items={modes}
-        value={policy.mode}
-        disabled={disabled}
-        onValueChange={(value) => {
-          if (value) setPolicy((current) => ({ ...current, mode: value as ContextPolicy["mode"] }));
-        }}
-      >
-        <SelectTrigger id={`${id}-mode`} className="w-full">
-          <SelectValue />
-        </SelectTrigger>
-        <SelectContent>
-          {modes.map((mode) => (
-            <SelectItem key={mode.value} value={mode.value}>
-              {mode.label}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
+      </FieldDescription>
+      <Field>
+        <FieldLabel htmlFor={`${id}-mode`}>Renew context</FieldLabel>
+        <Select
+          items={modes}
+          value={policy.mode}
+          disabled={disabled}
+          onValueChange={(value) => {
+            if (value) setPolicy((current) => ({ ...current, mode: value as ContextPolicy["mode"] }));
+          }}
+        >
+          <SelectTrigger id={`${id}-mode`} className="w-full">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {modes.map((mode) => (
+              <SelectItem key={mode.value} value={mode.value}>
+                {mode.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        {policy.mode !== "none" ? (
+          <FieldDescription>
+            Checked when your next message arrives. Small conversations are kept intact. Summaries use model tokens.
+            Automatic compression near the model limit remains enabled.
+          </FieldDescription>
+        ) : null}
+      </Field>
       {policy.mode === "idle" || policy.mode === "both" ? (
-        <label className="block">
-          Inactivity (hours)
+        <Field>
+          <FieldLabel htmlFor={`${id}-idle`}>Inactivity (hours)</FieldLabel>
           <Input
+            id={`${id}-idle`}
             type="number"
             min={1}
             max={720}
@@ -163,12 +177,13 @@ function ContextForm({ conversationId }: { conversationId: string }) {
             disabled={disabled}
             onChange={(event) => setPolicy((current) => ({ ...current, idleHours: Number(event.target.value) }))}
           />
-        </label>
+        </Field>
       ) : null}
       {policy.mode === "daily" || policy.mode === "both" ? (
-        <label className="block">
-          Daily hour (your timezone, 0–23)
+        <Field>
+          <FieldLabel htmlFor={`${id}-daily`}>Daily hour (your timezone, 0–23)</FieldLabel>
           <Input
+            id={`${id}-daily`}
             type="number"
             min={0}
             max={23}
@@ -176,31 +191,27 @@ function ContextForm({ conversationId }: { conversationId: string }) {
             disabled={disabled}
             onChange={(event) => setPolicy((current) => ({ ...current, dailyHour: Number(event.target.value) }))}
           />
-        </label>
+        </Field>
       ) : null}
       {policy.mode !== "none" ? (
-        <>
-          <label className="block">
-            Minimum context tokens
-            <Input
-              type="number"
-              min={1000}
-              max={200000}
-              step={1000}
-              value={policy.minimumTokens}
-              disabled={disabled}
-              onChange={(event) => setPolicy((current) => ({ ...current, minimumTokens: Number(event.target.value) }))}
-            />
-          </label>
-          <p className="text-dim">
-            Checked when your next message arrives. Small conversations are kept intact. Summaries use model tokens.
-            Automatic compression near the model limit remains enabled.
-          </p>
-        </>
+        <Field>
+          <FieldLabel htmlFor={`${id}-tokens`}>Minimum context tokens</FieldLabel>
+          <Input
+            id={`${id}-tokens`}
+            type="number"
+            min={1000}
+            max={200000}
+            step={1000}
+            value={policy.minimumTokens}
+            disabled={disabled}
+            onChange={(event) => setPolicy((current) => ({ ...current, minimumTokens: Number(event.target.value) }))}
+          />
+        </Field>
       ) : null}
-      <label className="block">
-        Saved memory
+      <Field>
+        <FieldLabel htmlFor={`${id}-memory`}>Saved memory</FieldLabel>
         <Textarea
+          id={`${id}-memory`}
           rows={3}
           maxLength={8000}
           value={memory}
@@ -208,10 +219,10 @@ function ContextForm({ conversationId }: { conversationId: string }) {
           onChange={(event) => setMemory(event.target.value)}
           placeholder="Preferences and facts to keep across topics"
         />
-      </label>
-      <p className="text-dim">
-        Memory is stored locally and included in model requests. Starting a new topic keeps it.
-      </p>
+        <FieldDescription>
+          Memory is stored locally and included in model requests. Starting a new topic keeps it.
+        </FieldDescription>
+      </Field>
       <Button
         className="w-full"
         disabled={disabled || !dirty || !isContextPolicy(policy)}
@@ -219,8 +230,8 @@ function ContextForm({ conversationId }: { conversationId: string }) {
       >
         Save context settings
       </Button>
-      <div className="border-t border-border pt-3 space-y-2">
-        <p>Active context: approximately {view.tokens.toLocaleString()} tokens</p>
+      <div className="flex flex-col gap-2 border-t border-border pt-3">
+        <FieldTitle>Active context: approximately {view.tokens.toLocaleString()} tokens</FieldTitle>
         <Button
           className="w-full"
           variant="outline"
@@ -229,38 +240,27 @@ function ContextForm({ conversationId }: { conversationId: string }) {
         >
           Summarize context
         </Button>
-        <Button className="w-full" variant="outline" disabled={disabled} onClick={() => setConfirmNew(true)}>
-          Start new topic
-        </Button>
-        {confirmNew ? (
-          <div className="space-y-2 rounded-md border border-border p-3">
-            <p>
-              The next message will start without the current conversation context. Chat history and saved memory remain
-              available.
-            </p>
-            <Button disabled={disabled} onClick={() => void run({ action: "new_topic" })}>
-              Start fresh context
-            </Button>
-            <Button variant="ghost" onClick={() => setConfirmNew(false)}>
-              Cancel
-            </Button>
-          </div>
-        ) : null}
+        <ConfirmAction
+          label="Start new topic"
+          confirmLabel="Start fresh context"
+          variant="outline"
+          className="w-full"
+          disabled={disabled}
+          description="The next message will start without the current conversation context. Chat history and saved memory remain available."
+          onConfirm={() => void run({ action: "new_topic" })}
+        />
         {view.summary ? (
-          <details>
-            <summary className="cursor-pointer">View continuity summary</summary>
+          <details className="text-sm">
+            <summary className="cursor-pointer text-xs text-dim">View continuity summary</summary>
             <p className="mt-2 max-h-64 overflow-y-auto whitespace-pre-wrap break-words">{view.summary}</p>
           </details>
         ) : null}
       </div>
-      {working ? <p role="status">Available after the Wisp finishes its current work.</p> : null}
-      {busy ? <p role="status">Updating context…</p> : null}
-      {error ? (
-        <p role="alert" className="text-destructive">
-          {error}
-        </p>
-      ) : null}
-      {notice ? <p role="status">{notice}</p> : null}
-    </div>
+      <FormStatus
+        error={error}
+        pending={working ? "Available after the Wisp finishes its current work." : busy ? "Updating context…" : ""}
+        notice={notice}
+      />
+    </FieldGroup>
   );
 }

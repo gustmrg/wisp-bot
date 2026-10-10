@@ -1,7 +1,14 @@
 import type { CircleChatChanges, CircleChatView, WispCollection } from "@/chat-data";
 import { ChatAvatar, WispAvatar } from "@/components/chat-avatar";
 import { CircleMemberPicker } from "@/components/circle-member-picker";
-import { SettingsCard, SettingsField, SettingsRow, SettingsRowCopy } from "@/components/settings/settings-primitives";
+import {
+  SettingsCard,
+  SettingsField,
+  SettingsRow,
+  SettingsRowCopy,
+  SettingsRowDescription,
+  SettingsRowTitle,
+} from "@/components/settings/settings-primitives";
 import { ToggleSwitch } from "@/components/ui/toggle-switch";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -69,8 +76,8 @@ export function CircleDetails({ chat, wisps, onChange }: CircleDetailsProps) {
       <SettingsCard className="mt-[15px]">
         <SettingsRow className="min-h-0 p-[11px]">
           <SettingsRowCopy>
-            <strong className="text-sm">Notifications</strong>
-            <small className="text-dim text-xs leading-[1.3]">Get notified about activity in this circle</small>
+            <SettingsRowTitle>Notifications</SettingsRowTitle>
+            <SettingsRowDescription>Get notified about activity in this circle</SettingsRowDescription>
           </SettingsRowCopy>
           <ToggleSwitch
             checked={chat.notifyOnUpdatesEnabled}

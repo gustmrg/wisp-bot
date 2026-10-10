@@ -1,8 +1,9 @@
 import { CalendarClockIcon } from "lucide-react";
-import { useState } from "react";
+import { useId, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Field, FieldError, FieldLabel } from "@/components/ui/field";
 import { useTimeZone } from "@/hooks/use-time-zone";
 import {
   formatScheduledTime,
@@ -27,6 +28,7 @@ export function ScheduleSendPicker({
   onPick,
 }: ScheduleSendPickerProps) {
   const timeZone = useTimeZone();
+  const customId = useId();
   const [now] = useState(() => new Date());
   const [custom, setCustom] = useState(() =>
     toDateTimeLocalValue(initial ?? new Date(now.getTime() + 60 * 60_000), timeZone),
@@ -59,17 +61,18 @@ export function ScheduleSendPicker({
           if (customAt && !customInPast) onPick(customAt);
         }}
       >
-        <label className="flex flex-col gap-1 text-xs text-dim">
-          {initial ? "Send at" : "Custom time"}
+        <Field>
+          <FieldLabel htmlFor={customId}>{initial ? "Send at" : "Custom time"}</FieldLabel>
           <Input
+            id={customId}
             type="datetime-local"
             value={custom}
             min={toDateTimeLocalValue(now, timeZone)}
             aria-invalid={customInPast || undefined}
             onChange={(event) => setCustom(event.currentTarget.value)}
           />
-        </label>
-        {customInPast ? <span className="text-xs text-destructive">Choose a time in the future.</span> : null}
+          {customInPast ? <FieldError>Choose a time in the future.</FieldError> : null}
+        </Field>
         <Button type="submit" size="sm" disabled={!customAt || customInPast || busy}>
           <CalendarClockIcon aria-hidden="true" />
           {submitLabel}

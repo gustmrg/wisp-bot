@@ -1,5 +1,12 @@
 import { PreferenceSwitch } from "@/components/general-settings-sections";
-import { SettingsCard, SettingsGroup, SettingsRow, SettingsRowCopy } from "@/components/settings/settings-primitives";
+import {
+  SettingsCard,
+  SettingsGroup,
+  SettingsRow,
+  SettingsRowCopy,
+  SettingsRowDescription,
+  SettingsRowTitle,
+} from "@/components/settings/settings-primitives";
 import { Button } from "@/components/ui/button";
 import type { PersistenceStatus } from "@/features/persistence/storage-policy";
 import type { AppPreferences } from "@/lib/app-preferences";
@@ -48,8 +55,8 @@ export function NotificationSettingsSection({
           <SettingsCard variant="stacked">
             <SettingsRow>
               <SettingsRowCopy>
-                <strong>Notification sounds</strong>
-                <small>Play sounds for Wisp updates.</small>
+                <SettingsRowTitle>Notification sounds</SettingsRowTitle>
+                <SettingsRowDescription>Play sounds for Wisp updates.</SettingsRowDescription>
               </SettingsRowCopy>
               <PreferenceSwitch
                 label="Notification sounds"
@@ -61,10 +68,8 @@ export function NotificationSettingsSection({
             </SettingsRow>
             <SettingsRow>
               <SettingsRowCopy>
-                <label htmlFor="notification-volume">
-                  <strong>Volume</strong>
-                </label>
-                <small>Adjust the volume of all notification sounds.</small>
+                <SettingsRowTitle htmlFor="notification-volume">Volume</SettingsRowTitle>
+                <SettingsRowDescription>Adjust the volume of all notification sounds.</SettingsRowDescription>
               </SettingsRowCopy>
               <div className="flex shrink-0 items-center gap-2">
                 <input
@@ -93,8 +98,8 @@ export function NotificationSettingsSection({
             {EVENTS.map(({ key, label, description, sound }) => (
               <SettingsRow key={key}>
                 <SettingsRowCopy>
-                  <strong>{label}</strong>
-                  <small>{description}</small>
+                  <SettingsRowTitle>{label}</SettingsRowTitle>
+                  <SettingsRowDescription>{description}</SettingsRowDescription>
                 </SettingsRowCopy>
                 <div className="flex shrink-0 items-center gap-2">
                   <Button
@@ -122,8 +127,10 @@ export function NotificationSettingsSection({
           <SettingsCard>
             <SettingsRow>
               <SettingsRowCopy>
-                <strong>Mute the open conversation</strong>
-                <small>Skip sounds for the selected conversation while this window is in focus.</small>
+                <SettingsRowTitle>Mute the open conversation</SettingsRowTitle>
+                <SettingsRowDescription>
+                  Skip sounds for the selected conversation while this window is in focus.
+                </SettingsRowDescription>
               </SettingsRowCopy>
               <PreferenceSwitch
                 label="Mute the open conversation"

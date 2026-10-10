@@ -9,6 +9,9 @@ import { WispSessionReportSection } from "@/components/wisp-session-report";
 import { WispSkillSettings } from "@/components/wisp-skill-settings";
 import { WispWorkspaceSettings } from "@/components/wisp-workspace-settings";
 import { WispExecutionSettings } from "@/components/wisp-execution-settings";
+import { SettingsGroup } from "@/components/settings/settings-primitives";
+import { Accordion } from "@/components/ui/accordion";
+import { FormStatus } from "@/components/ui/form-status";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -54,6 +57,7 @@ export function WispDetails({
     draft.color !== wisp.color ||
     !sameWispAppearance(draft.appearance, wisp.appearance);
   const notificationsChanged = draft.notifyOnUpdatesEnabled !== chat.notifyOnUpdatesEnabled;
+  const profileChanged = wispChanged || notificationsChanged;
 
   async function save() {
     const name = draft.name.trim() || "Untitled";
@@ -114,33 +118,45 @@ export function WispDetails({
         className={cn("flex min-h-0 flex-col overflow-hidden", tab === "general" && slideClass)}
       >
         <div className="min-h-0 flex-1 overflow-y-auto p-3.5">
-          <WispSettingsFields
-            settings={draft}
-            onChange={(changes) => setDraft((current) => ({ ...current, ...changes }))}
-          />
-          <WispContextSettings conversationId={chat.id} />
-          <WispWorkspaceSettings conversationId={chat.id} onOpenSettings={onOpenSettings} />
-          <WispExecutionSettings conversationId={chat.id} />
-          <WispSkillSettings conversationId={chat.id} />
+          <SettingsGroup label="Profile" className="[&>h3]:mt-0">
+            <WispSettingsFields
+              settings={draft}
+              onChange={(changes) => setDraft((current) => ({ ...current, ...changes }))}
+            />
+          </SettingsGroup>
+          {/* Each of these sections saves its own changes. */}
+          <Accordion multiple className="mt-4 border-t border-border">
+            <WispContextSettings conversationId={chat.id} />
+            <WispSkillSettings conversationId={chat.id} />
+            <WispWorkspaceSettings conversationId={chat.id} onOpenSettings={onOpenSettings} />
+            <WispExecutionSettings conversationId={chat.id} />
+          </Accordion>
           {generalActions ? (
             <div className="mt-5 flex flex-col gap-2 border-t border-border pt-4">{generalActions}</div>
           ) : null}
         </div>
-        <footer className="flex-none border-t border-border p-3.5">
-          {error ? (
-            <p className="mb-3 text-base text-destructive" role="alert">
-              {error}
-            </p>
-          ) : null}
-          <Button
-            className="w-full"
-            type="button"
-            disabled={!(wispChanged || notificationsChanged) || saving}
-            onClick={() => void save()}
-          >
-            {saving ? "Saving…" : "Save changes"}
-          </Button>
-        </footer>
+        {profileChanged ? (
+          <footer className="flex flex-none flex-col gap-3 border-t border-border p-3.5">
+            <FormStatus error={error} />
+            <div className="flex gap-2">
+              <Button
+                className="flex-1"
+                type="button"
+                variant="outline"
+                disabled={saving}
+                onClick={() => {
+                  setDraft(draftOf(chat));
+                  setError("");
+                }}
+              >
+                Discard
+              </Button>
+              <Button className="flex-1" type="button" disabled={saving} onClick={() => void save()}>
+                {saving ? "Saving…" : "Save profile"}
+              </Button>
+            </div>
+          </footer>
+        ) : null}
       </TabsContent>
       <TabsContent
         value="model"

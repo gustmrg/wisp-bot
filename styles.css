@@ -231,6 +231,15 @@
     outline: 2px solid var(--focus-outline);
     outline-offset: 2px;
   }
+  /* Tailwind 4 draws a border without a color in the text color, which shows as a
+     bright line in dark mode. Borders and dividers use the theme's border color. */
+  *,
+  ::before,
+  ::after,
+  ::backdrop,
+  ::file-selector-button {
+    border-color: var(--color-border, currentColor);
+  }
   ::selection {
     background: rgba(74, 158, 255, 0.32);
   }

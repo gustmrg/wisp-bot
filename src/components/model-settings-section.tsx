@@ -10,6 +10,8 @@ import {
   SettingsGroup,
   SettingsRow,
   SettingsRowCopy,
+  SettingsRowDescription,
+  SettingsRowTitle,
 } from "@/components/settings/settings-primitives";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -215,10 +217,8 @@ function ModelSettingsSection({
             <SettingsCard variant="stacked">
               <SettingsRow>
                 <SettingsRowCopy>
-                  <label htmlFor="ai-provider">
-                    <strong>Provider</strong>
-                  </label>
-                  <small>Select the service that will run your Wisps.</small>
+                  <SettingsRowTitle htmlFor="ai-provider">Provider</SettingsRowTitle>
+                  <SettingsRowDescription>Select the service that will run your Wisps.</SettingsRowDescription>
                 </SettingsRowCopy>
                 <Select items={providerItems} value={providerId} onValueChange={handleProviderChange}>
                   <SelectTrigger id="ai-provider" className="w-[220px] max-w-[55%]">
@@ -237,10 +237,10 @@ function ModelSettingsSection({
               </SettingsRow>
               <SettingsRow>
                 <SettingsRowCopy>
-                  <label htmlFor="ai-model">
-                    <strong>Model</strong>
-                  </label>
-                  <small>{provider?.models.length ?? 0} models available. Search by name or ID.</small>
+                  <SettingsRowTitle htmlFor="ai-model">Model</SettingsRowTitle>
+                  <SettingsRowDescription>
+                    {provider?.models.length ?? 0} models available. Search by name or ID.
+                  </SettingsRowDescription>
                   {model && !model.input.includes("image") ? <NoImageInputNote /> : null}
                 </SettingsRowCopy>
                 <SearchableCombobox
@@ -261,10 +261,10 @@ function ModelSettingsSection({
               </SettingsRow>
               <SettingsRow>
                 <SettingsRowCopy>
-                  <label htmlFor="ai-max-output-tokens">
-                    <strong>Maximum output tokens</strong>
-                  </label>
-                  <small>Leave empty to use the safe automatic limit of up to 32,768 tokens.</small>
+                  <SettingsRowTitle htmlFor="ai-max-output-tokens">Maximum output tokens</SettingsRowTitle>
+                  <SettingsRowDescription>
+                    Leave empty to use the safe automatic limit of up to 32,768 tokens.
+                  </SettingsRowDescription>
                 </SettingsRowCopy>
                 <Input
                   id="ai-max-output-tokens"
@@ -289,14 +289,12 @@ function ModelSettingsSection({
             <SettingsCard>
               <div className="flex flex-col gap-3 px-3.5 py-3.5">
                 <SettingsRowCopy>
-                  <label htmlFor="ai-api-key">
-                    <strong>API key</strong>
-                  </label>
-                  <small>
+                  <SettingsRowTitle htmlFor="ai-api-key">API key</SettingsRowTitle>
+                  <SettingsRowDescription>
                     {provider?.credentialConfigured
                       ? `An encrypted key is saved for ${provider.name}${voiceProvider(provider.id) ? " and shared with Voice Input settings" : ""}. Enter a new key to replace it.`
                       : "The key is encrypted using your operating system's credential storage."}
-                  </small>
+                  </SettingsRowDescription>
                 </SettingsRowCopy>
                 <Input
                   id="ai-api-key"
