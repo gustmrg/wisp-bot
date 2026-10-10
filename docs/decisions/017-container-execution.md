@@ -27,7 +27,7 @@ and approving each `npm test` makes development impractical.
 
 - **Modes per Wisp:** `off` (the default, as before) or `container`. Pi's own
   `bash` and `powershell` stay excluded: commands never run on the server
-  itself. A later mode may run them over SSH on a machine the user chooses.
+  itself. An SSH mode is deferred; see below.
 - **The tool:** `run_command`, Pi's bash tool with its execution replaced. It
   is offered through the integration tool source, so turning commands on or
   changing the image rebuilds the session, and the system prompt says where
@@ -98,7 +98,44 @@ and approving each `npm test` makes development impractical.
 - Whoever runs the Wisp server needs Docker or Podman. Membership in the
   `docker` group is root-equivalent on that machine; rootless Podman avoids it.
   Only the server talks to the container program; Wisps never see its socket.
-- An SSH mode is a follow-up.
+
+## Deferred: SSH mode
+
+A third mode would run a Wisp's commands over SSH on a machine the user
+chooses, such as a development VM, instead of in a container. It is deferred
+(2026-10-10): containers cover development work, and SSH needs more than a
+command runner. Recorded here so it is not rebuilt from scratch:
+
+- **The machine is the boundary.** Nothing confines commands on it, so the
+  settings must say so; it suits a dedicated VM, not the user's own computer.
+- **Files must move too.** `read`, `write`, `edit`, `grep`, `find` and `ls`
+  work on the server's workspace, so either they run on the remote machine
+  (Pi's tools accept pluggable operations; to be confirmed for each) or the
+  workspace lives there and attachments are uploaded to it. Mixing a local
+  workspace with remote commands is rejected: the Wisp would see two different
+  sets of files.
+- **Reuse the SSH connections Wisp already has** (system OpenSSH,
+  `known_hosts`, askpass, [ADR 013](013-ssh-questions.md)); no new key store.
+- **Approval:** commands outward of the machine are not contained, so
+  `git push` and similar may need the auxiliary-model risk check
+  ([ADR 012](012-auxiliary-models.md)) plus a hard blocklist, as Hermes Agent
+  does for its non-container backends.
+- **Size, cancellation and background processes** need the same guarantees as
+  in containers: a size check between commands, killing a command's process
+  group, and the `process` tool working remotely.
+
+Tracked in Linear as SWE-135.
+
+## Decisions taken with the user
+
+- The container runs as a regular user, never root.
+- The default image is based on `debian:trixie-slim`.
+- Pushing relies on the GitHub token's scope; there is no approval per push.
+- Containers stop after 30 minutes without a command.
+- The internet stays open; only the local network is blocked, and a Wisp can
+  be allowed it.
+- Each Wisp's workspace size is set per Wisp (512 MB to 100 GB) and also
+  bounds what its container installs.
 
 ## Rejected alternatives
 
