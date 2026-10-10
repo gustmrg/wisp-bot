@@ -3,10 +3,12 @@ import { ArrowLeftIcon, FolderOpenIcon } from "lucide-react";
 
 import { describeStorageFailure, formatMeasuredAt } from "@/lib/storage-format";
 import { ConfirmAction, SettingsCard } from "@/components/settings/settings-primitives";
+import { UsageBar } from "@/components/storage-overview";
+import { WorkspaceSizeSelect } from "@/components/workspace-size-select";
 import { Button } from "@/components/ui/button";
 import { useScreenActions } from "@/features/connections/active-connection";
 import type { StorageCleanupPreview, StorageEntry, StorageWorkspace } from "../../shared/storage";
-import { WORKSPACE_INBOX_DIRECTORY, formatBytes } from "../../shared/workspace";
+import { WORKSPACE_INBOX_DIRECTORY, formatBytes, type WorkspaceView } from "../../shared/workspace";
 
 interface Listing {
   entries: StorageEntry[];
@@ -15,21 +17,29 @@ interface Listing {
 
 export function StorageInspector({
   workspace,
+  initialPath = "",
+  initialSelection,
   onClose,
   onChanged,
+  onResized,
 }: {
   workspace: StorageWorkspace;
+  /** Folder to open first, relative to the workspace root. */
+  initialPath?: string;
+  /** Path to select for cleanup when opening, such as a file picked among the largest. */
+  initialSelection?: string;
   onClose: () => void;
   /** Called after files were removed, so the summary measures again. */
   onChanged: () => void;
+  onResized: (view: WorkspaceView) => void;
 }) {
   const { conversationId } = workspace;
   const screenActions = useScreenActions();
-  const [folder, setFolder] = useState("");
+  const [folder, setFolder] = useState(initialPath);
   const [listing, setListing] = useState<Listing | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [selected, setSelected] = useState<ReadonlySet<string>>(new Set());
+  const [selected, setSelected] = useState<ReadonlySet<string>>(new Set(initialSelection ? [initialSelection] : []));
   const [preview, setPreview] = useState<StorageCleanupPreview | null>(null);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
@@ -144,6 +154,15 @@ export function StorageInspector({
   const inInbox = folder === WORKSPACE_INBOX_DIRECTORY || folder.startsWith(`${WORKSPACE_INBOX_DIRECTORY}/`);
   const nearlyFull = workspace.usedBytes / workspace.quotaBytes >= 0.9;
   const entries = listing?.entries ?? [];
+  const largestFiles = workspace.largestFiles ?? [];
+
+  function toggle(entryPath: string, checked: boolean) {
+    const next = new Set(selected);
+    if (checked) next.add(entryPath);
+    else next.delete(entryPath);
+    setSelected(next);
+    setPreview(null);
+  }
 
   return (
     <div className="space-y-3">
@@ -166,6 +185,79 @@ export function StorageInspector({
         <p role="alert" className="m-0 text-xs text-destructive">
           This workspace is almost full. New attachments are refused once it is. Select files below to remove them.
         </p>
+      ) : null}
+
+      <div className="grid gap-3 sm:grid-cols-2">
+        <SettingsCard className="space-y-3 p-3.5">
+          <h4 className="m-0 text-xs font-medium text-dim">What takes the space</h4>
+          {workspace.folders ? (
+            workspace.usedBytes > 0 ? (
+              <UsageBar
+                label="Space by folder"
+                capacity={workspace.quotaBytes}
+                shares={workspace.folders.map((item) => ({
+                  key: item.path,
+                  label: item.type === "directory" ? `${item.path}/` : item.path,
+                  bytes: item.size,
+                }))}
+                restLabel={() => "Everything else"}
+              />
+            ) : (
+              <p className="m-0 text-xs text-dim">This workspace is empty.</p>
+            )
+          ) : (
+            <p className="m-0 text-xs text-dim">Update the server to see which folders take the space.</p>
+          )}
+        </SettingsCard>
+        <SettingsCard className="space-y-2 p-3.5">
+          <h4 className="m-0 text-xs font-medium text-dim">
+            <label htmlFor={`size-${conversationId}`}>Workspace size</label>
+          </h4>
+          {workspace.kind === "wisp" ? (
+            <>
+              <WorkspaceSizeSelect
+                id={`size-${conversationId}`}
+                conversationId={conversationId}
+                usedBytes={workspace.usedBytes}
+                quotaBytes={workspace.quotaBytes}
+                maxQuotaBytes={workspace.maxQuotaBytes}
+                className="w-full"
+                onResized={onResized}
+              />
+              <p className="m-0 text-xs text-dim">
+                The most this workspace can hold. The same setting as in the Wisp&apos;s Workspace settings.
+              </p>
+            </>
+          ) : (
+            <p className="m-0 text-xs text-dim">
+              {formatBytes(workspace.quotaBytes)}. Circles share one workspace of a fixed size.
+            </p>
+          )}
+        </SettingsCard>
+      </div>
+
+      {largestFiles.length ? (
+        <section aria-labelledby={`largest-${conversationId}`} className="space-y-2">
+          <h4 id={`largest-${conversationId}`} className="m-0 text-xs font-medium text-dim">
+            Largest files here
+          </h4>
+          <SettingsCard variant="stacked">
+            <ul className="m-0 list-none p-0 text-xs">
+              {largestFiles.map((file) => (
+                <li key={file.path} className="flex items-center gap-3 border-border px-3 py-2 not-first:border-t">
+                  <input
+                    type="checkbox"
+                    aria-label={`Select ${file.path}`}
+                    checked={selected.has(file.path)}
+                    onChange={(event) => toggle(file.path, event.target.checked)}
+                  />
+                  <span className="min-w-0 flex-1 break-all">{file.path}</span>
+                  <span className="tabular-nums">{formatBytes(file.size)}</span>
+                </li>
+              ))}
+            </ul>
+          </SettingsCard>
+        </section>
       ) : null}
 
       <nav aria-label="Folder" className="flex flex-wrap items-center gap-1 text-xs">
@@ -234,13 +326,7 @@ export function StorageInspector({
                       aria-label={`Select ${entry.name}`}
                       disabled={entry.type !== "file" && entry.type !== "directory"}
                       checked={selected.has(entry.path)}
-                      onChange={(event) => {
-                        const next = new Set(selected);
-                        if (event.target.checked) next.add(entry.path);
-                        else next.delete(entry.path);
-                        setSelected(next);
-                        setPreview(null);
-                      }}
+                      onChange={(event) => toggle(entry.path, event.target.checked)}
                     />
                   </td>
                   <td className="max-w-56 px-3 py-2 break-words">
