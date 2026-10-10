@@ -8,6 +8,7 @@ import type { ChatView } from "@/chat-data";
 import { circleChatView, wispChatView } from "@/test/chat-fixtures";
 import { ChatComposer } from "@/components/chat-composer";
 import { ActiveConnectionContext } from "@/features/connections/active-connection";
+import { notifyProviderCredentialsChanged } from "@/lib/voice-credentials";
 
 function wisp(id: string, name = id): ChatView {
   return wispChatView(id, { wisp: { name } });
@@ -359,6 +360,13 @@ describe("ChatComposer voice input", () => {
   const microphone = { kind: "audioinput", deviceId: "default", label: "" } as MediaDeviceInfo;
   const enumerateDevices = vi.fn(async () => [microphone]);
   let mediaDevices: EventTarget;
+  const getVoiceSettings = vi.fn<WispApi["getVoiceSettings"]>();
+  function voiceSettings(credentialConfigured: boolean): Awaited<ReturnType<WispApi["getVoiceSettings"]>> {
+    return {
+      ok: true,
+      value: { secureStorageAvailable: true, providers: [{ id: "groq", name: "Groq", credentialConfigured }] },
+    };
+  }
 
   type TranscribeAudio = ReturnType<typeof vi.fn<WispApi["transcribeAudio"]>>;
   function setup(
@@ -371,7 +379,8 @@ describe("ChatComposer voice input", () => {
     enumerateDevices.mockReset().mockResolvedValue([microphone]);
     mediaDevices = Object.assign(new EventTarget(), { getUserMedia, enumerateDevices });
     Object.defineProperty(navigator, "mediaDevices", { configurable: true, value: mediaDevices });
-    Object.defineProperty(window, "wisp", { configurable: true, value: { transcribeAudio } });
+    getVoiceSettings.mockReset().mockResolvedValue(voiceSettings(true));
+    Object.defineProperty(window, "wisp", { configurable: true, value: { transcribeAudio, getVoiceSettings } });
     return transcribeAudio;
   }
 
@@ -380,6 +389,34 @@ describe("ChatComposer voice input", () => {
     getUserMedia.mockClear();
     track.stop.mockClear();
     Object.defineProperty(navigator, "mediaDevices", { configurable: true, value: undefined });
+  });
+
+  it("blocks clicks and the shortcut without a speech-to-text key and explains why on hover", async () => {
+    const user = userEvent.setup();
+    setup();
+    getVoiceSettings.mockResolvedValue(voiceSettings(false));
+    render(<ChatComposer {...defaultProps} chat={wisp("one", "One")} />);
+    await waitFor(() => expect(getVoiceSettings).toHaveBeenCalledOnce());
+    const button = screen.getByRole("button", { name: "Start voice input" });
+    await waitFor(() => expect(button).toBeDisabled());
+    await user.click(button.parentElement!);
+    await user.keyboard("{Control>} {/Control}");
+    expect(getUserMedia).not.toHaveBeenCalled();
+    await user.unhover(button.parentElement!);
+    await user.hover(button.parentElement!);
+    expect(await screen.findByText("Add a speech-to-text API key in Settings to use voice input.")).toBeVisible();
+  });
+
+  it("enables voice input once a key is saved in Settings", async () => {
+    setup();
+    getVoiceSettings.mockResolvedValue(voiceSettings(false));
+    render(<ChatComposer {...defaultProps} chat={wisp("one", "One")} />);
+    const button = screen.getByRole("button", { name: "Start voice input" });
+    await waitFor(() => expect(getVoiceSettings).toHaveBeenCalledOnce());
+    expect(button).toBeDisabled();
+    getVoiceSettings.mockResolvedValue(voiceSettings(true));
+    act(() => notifyProviderCredentialsChanged());
+    await waitFor(() => expect(button).toBeEnabled());
   });
 
   it("blocks clicks and the shortcut without a microphone and explains why on hover", async () => {

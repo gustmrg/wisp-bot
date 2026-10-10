@@ -7,6 +7,7 @@ import {
   type VoiceLanguage,
   type VoiceProviderId,
 } from "../../shared/voice";
+import { subscribeToProviderCredentials } from "@/lib/voice-credentials";
 
 export type VoicePhase = "idle" | "starting" | "recording" | "transcribing";
 
@@ -90,6 +91,7 @@ export function useVoiceInput(options: VoiceInputOptions) {
   const [microphoneStatus, setMicrophoneStatus] = useState<"checking" | "available" | "missing" | "unsupported">(
     "checking",
   );
+  const [credentialStatus, setCredentialStatus] = useState<"checking" | "configured" | "missing">("checking");
   const [phase, setPhase] = useState<VoicePhase>("idle");
   const [elapsed, setElapsed] = useState(0);
   const [levels, setLevels] = useState<ReadonlyArray<number>>(NO_LEVELS);
@@ -134,6 +136,31 @@ export function useVoiceInput(options: VoiceInputOptions) {
     };
   }, []);
 
+  const { providerId } = options;
+  useEffect(() => {
+    let active = true;
+    let request = 0;
+    setCredentialStatus("checking");
+    async function refresh() {
+      const current = ++request;
+      try {
+        const result = await window.wisp.getVoiceSettings();
+        if (!active || current !== request) return;
+        // A failed lookup does not prove the key is missing; transcription reports that on its own.
+        const provider = result.ok ? result.value.providers.find(({ id }) => id === providerId) : undefined;
+        setCredentialStatus(provider && !provider.credentialConfigured ? "missing" : "configured");
+      } catch {
+        if (active && current === request) setCredentialStatus("configured");
+      }
+    }
+    void refresh();
+    const unsubscribe = subscribeToProviderCredentials(() => void refresh());
+    return () => {
+      active = false;
+      unsubscribe();
+    };
+  }, [providerId]);
+
   const changePhase = useCallback((next: VoicePhase) => {
     phaseRef.current = next;
     setPhase(next);
@@ -173,7 +200,7 @@ export function useVoiceInput(options: VoiceInputOptions) {
   );
 
   const start = useCallback(async () => {
-    if (phaseRef.current !== "idle" || microphoneStatus !== "available") return;
+    if (phaseRef.current !== "idle" || microphoneStatus !== "available" || credentialStatus !== "configured") return;
     setError(null);
     if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined") {
       setError({ message: "Voice input is not supported on this device.", needsSetup: false });
@@ -252,7 +279,7 @@ export function useVoiceInput(options: VoiceInputOptions) {
     setLevels(NO_LEVELS);
     recorder.start();
     changePhase("recording");
-  }, [changePhase, release, transcribe, microphoneStatus]);
+  }, [changePhase, release, transcribe, microphoneStatus, credentialStatus]);
 
   /** Ends the recording and transcribes it. */
   const stop = useCallback(() => {
@@ -298,7 +325,11 @@ export function useVoiceInput(options: VoiceInputOptions) {
         ? "No microphone was found. Connect a microphone to use voice input."
         : microphoneStatus === "unsupported"
           ? "Voice input is not supported on this device."
-          : null;
+          : credentialStatus === "checking"
+            ? "Checking voice input settings…"
+            : credentialStatus === "missing"
+              ? "Add a speech-to-text API key in Settings to use voice input."
+              : null;
 
   return { phase, elapsed, levels, error, unavailableReason, start, stop, cancel, toggle, clearError };
 }

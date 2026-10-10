@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import type { AppPreferences } from "@/lib/app-preferences";
 import { formatShortcut } from "@/lib/shortcuts";
+import { notifyProviderCredentialsChanged } from "@/lib/voice-credentials";
 import {
   defaultVoiceModel,
   isVoiceLanguage,
@@ -110,6 +111,7 @@ function VoiceSettingsSection({ active, preferences, onPreferencesChange }: Voic
         setView(result.value);
         setApiKey("");
         setSaved(true);
+        notifyProviderCredentialsChanged();
       } else {
         setError(result.error.message);
       }
@@ -131,6 +133,7 @@ function VoiceSettingsSection({ active, preferences, onPreferencesChange }: Voic
         setError(removed.error.message);
         return;
       }
+      notifyProviderCredentialsChanged();
       const result = await window.wisp.getVoiceSettings();
       if (result.ok) setView(result.value);
       else setError(result.error.message);
