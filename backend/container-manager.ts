@@ -1,11 +1,12 @@
 import { createHash, randomUUID } from "node:crypto";
-import { mkdir, mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
 import { CONTAINER_HOME, CONTAINER_IDLE_MS, CONTAINER_WORKSPACE, type ContainerState } from "../shared/execution.js";
 import { WispBackendError } from "./backend-error.js";
 import type { ContainerCli } from "./container-cli.js";
+import { EGRESS_PROXY_HOST, EGRESS_PROXY_PORT, EGRESS_PROXY_SCRIPT, EGRESS_PROXY_SCRIPT_HASH } from "./egress-proxy.js";
 
 /**
  * The Wisp sandbox image, built on the server from this file the first time a
@@ -24,7 +25,13 @@ RUN apt-get update \\
 export const SANDBOX_IMAGE = `wisp-sandbox:${createHash("sha256").update(SANDBOX_DOCKERFILE).digest("hex").slice(0, 12)}`;
 
 /** Bumped when the way containers are created changes, so existing ones are recreated. */
-const CONTAINER_LAYOUT_VERSION = 1;
+const CONTAINER_LAYOUT_VERSION = 2;
+const PROXY_URL = `http://${EGRESS_PROXY_HOST}:${EGRESS_PROXY_PORT}`;
+const PROXY_SCRIPT_TARGET = "/opt/wisp/egress-proxy.cjs";
+const PROXY_MEMORY = "256m";
+const PROXY_PROCESS_LIMIT = 128;
+/** Key that serializes work on the shared egress proxy, apart from any Wisp's own container. */
+const EGRESS_KEY = "\u0000egress";
 const MEMORY_LIMIT_BYTES = 4 * 1024 * 1024 * 1024;
 const CPU_LIMIT = 2;
 const PROCESS_LIMIT = 512;
@@ -68,6 +75,12 @@ export interface ContainerSpec {
   storageId: string;
   image: string;
   workspaceDirectory: string;
+  /**
+   * Whether the container may reach private and local network addresses. When
+   * not, it sits on its own network with no route out, and reaches the
+   * internet only through the egress proxy, which refuses those addresses.
+   */
+  localNetwork: boolean;
 }
 
 export interface ContainerExecOptions {
@@ -109,6 +122,15 @@ export class ContainerManager {
 
   containerName(storageId: string): string {
     return `wisp-${this.installation}-${storageId}`;
+  }
+
+  networkName(storageId: string): string {
+    return `wisp-net-${this.installation}-${storageId}`;
+  }
+
+  /** Not prefixed like Wisp containers, so cleaning up deleted Wisps never matches it. */
+  proxyName(): string {
+    return `wisp-egress-${this.installation}`;
   }
 
   async state(storageId: string): Promise<ContainerState> {
@@ -183,6 +205,7 @@ export class ContainerManager {
     if (!cli) return;
     await this.serialized(storageId, async () => {
       await cli.run(["rm", "-f", this.containerName(storageId)]);
+      await this.removeNetwork(cli, this.networkName(storageId));
     });
   }
 
@@ -196,6 +219,27 @@ export class ContainerManager {
         await cli.run(["rm", "-f", name]);
       }
     }
+    const networkPrefix = `wisp-net-${this.installation}-`;
+    const networks = await cli.run([
+      "network",
+      "ls",
+      "--filter",
+      `label=wisp.installation=${this.installation}`,
+      "--format",
+      "{{.Name}}",
+    ]);
+    if (networks.exitCode !== 0) return;
+    for (const name of networks.stdout.split("\n").map((line) => line.trim())) {
+      if (name.startsWith(networkPrefix) && !storageIds.has(name.slice(networkPrefix.length))) {
+        await this.removeNetwork(cli, name);
+      }
+    }
+  }
+
+  private async removeNetwork(cli: ContainerCli, network: string): Promise<void> {
+    // The proxy is attached to every Wisp network; a network in use cannot be removed.
+    await cli.run(["network", "disconnect", "-f", network, this.proxyName()]);
+    await cli.run(["network", "rm", network]);
   }
 
   /** Stops every running container of this server; they start again on their next command. */
@@ -238,6 +282,8 @@ export class ContainerManager {
       if (this.disposed) throw new WispBackendError("unavailable", "The Wisp server is shutting down.", true);
       const name = this.containerName(spec.storageId);
       const fingerprint = this.fingerprint(cli, spec);
+      // Before the Wisp's container: it is created on this network, and needs the proxy running to go anywhere.
+      if (!spec.localNetwork) await this.ensureEgress(cli, spec.storageId, onData);
       const inspected = await cli.run([
         "inspect",
         "--format",
@@ -298,6 +344,23 @@ export class ContainerManager {
       `--pids-limit=${PROCESS_LIMIT}`,
       `--memory=${memory}b`,
       `--cpus=${cpus}`,
+      ...(spec.localNetwork
+        ? []
+        : [
+            "--network",
+            this.networkName(spec.storageId),
+            ...["HTTP_PROXY", "HTTPS_PROXY", "http_proxy", "https_proxy"].flatMap((variable) => [
+              "-e",
+              `${variable}=${PROXY_URL}`,
+            ]),
+            "-e",
+            "NO_PROXY=localhost,127.0.0.1,::1",
+            "-e",
+            "no_proxy=localhost,127.0.0.1,::1",
+            // Node's own fetch honours the variables above only when asked to.
+            "-e",
+            "NODE_USE_ENV_PROXY=1",
+          ]),
       "--mount",
       `type=bind,source=${spec.workspaceDirectory},target=${CONTAINER_WORKSPACE}`,
       "-w",
@@ -325,9 +388,130 @@ export class ContainerManager {
 
   private fingerprint(cli: ContainerCli, spec: ContainerSpec): string {
     return createHash("sha256")
-      .update(JSON.stringify([CONTAINER_LAYOUT_VERSION, cli.name, spec.image, path.resolve(spec.workspaceDirectory)]))
+      .update(
+        JSON.stringify([
+          CONTAINER_LAYOUT_VERSION,
+          cli.name,
+          spec.image,
+          path.resolve(spec.workspaceDirectory),
+          spec.localNetwork,
+        ]),
+      )
       .digest("hex")
       .slice(0, 16);
+  }
+
+  /**
+   * Makes sure the shared egress proxy runs, the Wisp's network exists, and
+   * the proxy is on it under the name Wisp containers use for it.
+   */
+  private ensureEgress(cli: ContainerCli, storageId: string, onData: (data: Buffer) => void): Promise<void> {
+    return this.serialized(EGRESS_KEY, async () => {
+      await this.ensureImage(cli, SANDBOX_IMAGE, onData);
+      const script = await this.writeProxyScript();
+      const proxy = this.proxyName();
+      const fingerprint = createHash("sha256")
+        .update(JSON.stringify([CONTAINER_LAYOUT_VERSION, cli.name, SANDBOX_IMAGE, EGRESS_PROXY_SCRIPT_HASH, script]))
+        .digest("hex")
+        .slice(0, 16);
+      const inspected = await cli.run([
+        "inspect",
+        "--format",
+        '{{.State.Running}} {{index .Config.Labels "wisp.spec"}}',
+        proxy,
+      ]);
+      const [running, label] = inspected.stdout.trim().split(" ");
+      let ready = inspected.exitCode === 0 && label === fingerprint && running === "true";
+      if (!ready && inspected.exitCode === 0 && label === fingerprint) {
+        ready = (await cli.run(["start", proxy])).exitCode === 0;
+      }
+      if (!ready) {
+        if (inspected.exitCode === 0) await cli.run(["rm", "-f", proxy]);
+        const created = await cli.run(this.proxyArgs(cli, proxy, fingerprint, script));
+        if (created.exitCode !== 0) {
+          throw new WispBackendError(
+            "internal_error",
+            `The network proxy for Wisp containers could not be started: ${firstLine(created.stderr)}`,
+            true,
+          );
+        }
+      }
+      const network = this.networkName(storageId);
+      if ((await cli.run(["network", "inspect", network])).exitCode !== 0) {
+        const created = await cli.run([
+          "network",
+          "create",
+          "--internal",
+          "--label",
+          `wisp.installation=${this.installation}`,
+          network,
+        ]);
+        if (created.exitCode !== 0) {
+          throw new WispBackendError(
+            "internal_error",
+            `The Wisp's container network could not be created: ${firstLine(created.stderr)}`,
+            true,
+          );
+        }
+      }
+      const attached = await cli.run(["inspect", "--format", "{{json .NetworkSettings.Networks}}", proxy]);
+      if (!attached.stdout.includes(`"${network}"`)) {
+        const connected = await cli.run(["network", "connect", "--alias", EGRESS_PROXY_HOST, network, proxy]);
+        if (connected.exitCode !== 0) {
+          throw new WispBackendError(
+            "internal_error",
+            `The network proxy could not join the Wisp's network: ${firstLine(connected.stderr)}`,
+            true,
+          );
+        }
+      }
+    });
+  }
+
+  private proxyArgs(cli: ContainerCli, name: string, fingerprint: string, script: string): string[] {
+    if (script.includes(","))
+      throw new WispBackendError("internal_error", "The proxy script's path cannot be mounted.");
+    const uid = this.options.uid ?? process.getuid?.() ?? 1000;
+    const gid = this.options.gid ?? process.getgid?.() ?? 1000;
+    return [
+      "run",
+      "-d",
+      "--name",
+      name,
+      "--label",
+      "wisp.managed=true",
+      "--label",
+      `wisp.installation=${this.installation}`,
+      "--label",
+      `wisp.spec=${fingerprint}`,
+      "--user",
+      `${uid}:${gid}`,
+      ...(cli.name === "podman" ? ["--userns=keep-id"] : []),
+      "--init",
+      "--read-only",
+      "--cap-drop=ALL",
+      "--security-opt=no-new-privileges",
+      `--pids-limit=${PROXY_PROCESS_LIMIT}`,
+      `--memory=${PROXY_MEMORY}`,
+      "--mount",
+      `type=bind,source=${script},target=${PROXY_SCRIPT_TARGET},readonly`,
+      "-e",
+      `WISP_EGRESS_PORT=${EGRESS_PROXY_PORT}`,
+      "--entrypoint",
+      "node",
+      SANDBOX_IMAGE,
+      PROXY_SCRIPT_TARGET,
+    ];
+  }
+
+  /** The proxy script on disk, where the container program can mount it; rewritten only when it changed. */
+  private async writeProxyScript(): Promise<string> {
+    const file = path.join(path.resolve(this.options.dataDirectory), "containers", "egress-proxy.cjs");
+    if ((await readFile(file, "utf8").catch(() => null)) !== EGRESS_PROXY_SCRIPT) {
+      await mkdir(path.dirname(file), { recursive: true });
+      await writeFile(file, EGRESS_PROXY_SCRIPT, { mode: 0o644 });
+    }
+    return file;
   }
 
   private ensureImage(cli: ContainerCli, image: string, onData: (data: Buffer) => void): Promise<void> {

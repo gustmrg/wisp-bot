@@ -8,6 +8,7 @@ import { WispExecutionSettings } from "./wisp-execution-settings";
 const VIEW: WispExecutionView = {
   mode: "off",
   image: null,
+  localNetwork: false,
   defaultImage: "wisp-sandbox:abc",
   hasGitToken: false,
   runtime: { available: true, name: "docker", version: "29.8.1" },
@@ -17,11 +18,17 @@ const VIEW: WispExecutionView = {
 function install(view: WispExecutionView) {
   let current = view;
   const saveWispExecution = vi.fn(
-    async (request: { mode: WispExecutionView["mode"]; image: string | null; gitToken?: string | null }) => {
+    async (request: {
+      mode: WispExecutionView["mode"];
+      image: string | null;
+      localNetwork: boolean;
+      gitToken?: string | null;
+    }) => {
       current = {
         ...current,
         mode: request.mode,
         image: request.image,
+        localNetwork: request.localNetwork,
         ...(request.gitToken === undefined ? {} : { hasGitToken: request.gitToken !== null }),
       };
       return { ok: true as const, value: current };
@@ -41,7 +48,7 @@ it("turns commands on, saves a token without echoing it, and keeps other setting
   await user.click(screen.getByRole("button", { name: "Commands" }));
 
   await user.click(await screen.findByRole("radio", { name: "In a container" }));
-  expect(save).toHaveBeenLastCalledWith({ conversationId: "one", mode: "container", image: null });
+  expect(save).toHaveBeenLastCalledWith({ conversationId: "one", mode: "container", image: null, localNetwork: false });
   expect(await screen.findByText("Docker 29.8.1 · Container: Not created yet")).toBeInTheDocument();
 
   const token = screen.getByLabelText("GitHub token");
@@ -52,10 +59,17 @@ it("turns commands on, saves a token without echoing it, and keeps other setting
     conversationId: "one",
     mode: "container",
     image: null,
+    localNetwork: false,
     gitToken: "github_pat_x",
   });
   expect(await screen.findByRole("button", { name: "Remove token" })).toBeInTheDocument();
   expect(screen.getByLabelText("GitHub token")).toHaveValue("");
+
+  const local = screen.getByRole("switch", { name: "Allow local network" });
+  expect(local).toHaveAttribute("aria-checked", "false");
+  await user.click(local);
+  expect(save).toHaveBeenLastCalledWith({ conversationId: "one", mode: "container", image: null, localNetwork: true });
+  expect(await screen.findByRole("switch", { name: "Allow local network" })).toHaveAttribute("aria-checked", "true");
 });
 
 it("explains a missing container program and does not offer to turn commands on", async () => {

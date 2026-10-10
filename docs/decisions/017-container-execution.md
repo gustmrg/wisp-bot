@@ -55,7 +55,17 @@ and approving each `npm test` makes development impractical.
   rule matches, and every command is in the tool audit log (category only,
   never the command). A short list of commands that would wipe the workspace
   or fork-bomb is refused outright; it guards against mistakes, not attacks.
-- **Network:** open. Data, packages and repositories are on the internet.
+- **Network:** the internet is open; data, packages and repositories are
+  there. The local network is blocked unless the Wisp is allowed it. A blocked
+  Wisp's container sits on its own `--internal` network with no route out; its
+  only way out is a shared egress proxy container (Node, run from the sandbox
+  image) that is also on that network as `wisp-egress`. The proxy resolves each
+  destination itself, refuses it if any answer is a private, loopback,
+  link-local, CGNAT, multicast or reserved address (IPv4 and IPv6), and
+  connects to the address it checked. Wisp containers get `HTTP_PROXY` and
+  `HTTPS_PROXY`, which curl, git, npm and pip honour; anything else (git over
+  SSH, raw TCP) cannot leave. Each Wisp has its own network, so Wisps cannot
+  reach each other's containers.
 - **Git:** a GitHub token per Wisp, stored encrypted like other keys. It
   reaches a command through the container program's environment, never its
   arguments, and git's credential helper hands it to github.com. Pushing is
@@ -74,15 +84,15 @@ and approving each `npm test` makes development impractical.
 - **Accepted risk:** a Wisp misled by content it read can send its workspace
   contents anywhere, or push what its token allows. Secrets do not belong in a
   workspace, and tokens should be narrow.
-- The container can reach the local network, including services on the
-  server's other interfaces. The Wisp server listens on loopback by default,
-  which the container cannot reach; blocking private ranges needs an egress
-  proxy and is left for later.
+- A Wisp allowed the local network can reach devices and services on the
+  server's network, including the server's other interfaces. Blocked Wisps
+  cannot, but tools that ignore the proxy variables, such as Node.js 20's
+  built-in `fetch`, cannot reach the internet either.
 - Whoever runs the Wisp server needs Docker or Podman. Membership in the
   `docker` group is root-equivalent on that machine; rootless Podman avoids it.
   Only the server talks to the container program; Wisps never see its socket.
 - Background processes (dev servers, watchers) do not survive a command yet.
-  A process tool, an egress proxy and an SSH mode are follow-ups.
+  A process tool and an SSH mode are follow-ups.
 
 ## Rejected alternatives
 
@@ -94,5 +104,8 @@ and approving each `npm test` makes development impractical.
   macOS.
 - **No network, or an allowlist of domains:** too limiting for what Wisps are
   asked to do.
+- **Blocking private ranges with firewall rules:** needs root on the server and
+  differs between Docker, Podman and macOS; an internal network plus a proxy
+  works the same everywhere.
 - **A token approval on every push:** a credential helper cannot tell a push
   from a fetch reliably, and the user chose to rely on the token's scope.

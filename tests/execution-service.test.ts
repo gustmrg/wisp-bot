@@ -79,6 +79,7 @@ describe("ExecutionService", () => {
     await expect(service.getView("atlas")).resolves.toEqual({
       mode: "off",
       image: null,
+      localNetwork: false,
       defaultImage: SANDBOX_IMAGE,
       hasGitToken: false,
       runtime: { available: true, name: "docker", version: "29.0.0" },
@@ -90,27 +91,46 @@ describe("ExecutionService", () => {
 
   it("offers run_command once commands run in a container, and a new revision when the image changes", async () => {
     const { service, manager } = await setup();
-    await service.save({ conversationId: "atlas", mode: "container", image: null });
+    await service.save({ conversationId: "atlas", mode: "container", image: null, localNetwork: false });
     const first = await service.getSnapshot("atlas");
     expect(first.activeNames).toEqual([RUN_COMMAND_TOOL]);
     expect(first.definitions.map(({ name }) => name)).toEqual([RUN_COMMAND_TOOL]);
     // Settings changes drop the old container so the next command gets one made from them.
     expect(manager.remove).toHaveBeenCalledWith("s1");
 
-    await service.save({ conversationId: "atlas", mode: "container", image: "node:22" });
+    await service.save({ conversationId: "atlas", mode: "container", image: "node:22", localNetwork: false });
     expect((await service.getSnapshot("atlas")).revision).not.toBe(first.revision);
+  });
+
+  it("blocks the local network unless allowed, and recreates the container when that changes", async () => {
+    const { service, manager } = await setup();
+    await service.save({ conversationId: "atlas", mode: "container", image: null, localNetwork: false });
+    const blocked = await service.getSnapshot("atlas");
+    const description = (blocked.definitions[0] as unknown as { description: string }).description;
+    expect(description).toContain("Local and private network addresses are blocked");
+    manager.remove.mockClear();
+
+    await service.save({ conversationId: "atlas", mode: "container", image: null, localNetwork: true });
+    expect(manager.remove).toHaveBeenCalledWith("s1");
+    const open = await service.getSnapshot("atlas");
+    expect(open.revision).not.toBe(blocked.revision);
+    expect((open.definitions[0] as unknown as { description: string }).description).toContain(
+      "the local network are reachable",
+    );
   });
 
   it("offers no tool while no container program is available", async () => {
     const { service } = await setup({ runtime: { available: false, message: "Install Docker" } });
-    await service.save({ conversationId: "atlas", mode: "container", image: null });
+    await service.save({ conversationId: "atlas", mode: "container", image: null, localNetwork: false });
     await expect(service.getSnapshot("atlas")).resolves.toMatchObject({ activeNames: [] });
   });
 
   it("refuses images that could be read as options", async () => {
     const { service } = await setup();
     for (const image of ["--privileged", "a b", "x".repeat(300), "a//b"]) {
-      await expect(service.save({ conversationId: "atlas", mode: "container", image })).rejects.toMatchObject({
+      await expect(
+        service.save({ conversationId: "atlas", mode: "container", image, localNetwork: false }),
+      ).rejects.toMatchObject({
         code: "invalid_request",
       });
     }
@@ -122,6 +142,7 @@ describe("ExecutionService", () => {
       conversationId: "atlas",
       mode: "container",
       image: null,
+      localNetwork: false,
       gitToken: "ghp_secret",
     });
     expect(view.hasGitToken).toBe(true);
@@ -129,13 +150,19 @@ describe("ExecutionService", () => {
     expect(await readFile(path.join(root, "execution-credentials.enc.json"), "utf8")).not.toContain("ghp_secret");
 
     await expect(
-      service.save({ conversationId: "atlas", mode: "container", image: null, gitToken: null }),
+      service.save({ conversationId: "atlas", mode: "container", image: null, localNetwork: false, gitToken: null }),
     ).resolves.toMatchObject({ hasGitToken: false });
   });
 
   it("runs a command in the container after authorizing it, with the token and the container path", async () => {
     const { service, manager, authorize, wisp } = await setup();
-    await service.save({ conversationId: "atlas", mode: "container", image: null, gitToken: "ghp_secret" });
+    await service.save({
+      conversationId: "atlas",
+      mode: "container",
+      image: null,
+      localNetwork: false,
+      gitToken: "ghp_secret",
+    });
     const tool = await runCommandTool(service);
 
     const result = await tool.execute("call-1", { command: "git status" });
@@ -150,7 +177,7 @@ describe("ExecutionService", () => {
       undefined,
     );
     expect(manager.exec).toHaveBeenCalledWith(
-      { storageId: "s1", image: SANDBOX_IMAGE, workspaceDirectory: wisp.workspaceDirectory },
+      { storageId: "s1", image: SANDBOX_IMAGE, workspaceDirectory: wisp.workspaceDirectory, localNetwork: false },
       "git status",
       "/workspace",
       expect.objectContaining({ gitToken: "ghp_secret" }),
@@ -162,7 +189,7 @@ describe("ExecutionService", () => {
 
   it("refuses commands that would wipe the workspace, without running them", async () => {
     const { service, manager, authorize } = await setup();
-    await service.save({ conversationId: "atlas", mode: "container", image: null });
+    await service.save({ conversationId: "atlas", mode: "container", image: null, localNetwork: false });
     const tool = await runCommandTool(service);
     for (const command of ["rm -rf /", "rm -rf ~", "cd x && rm -rf /workspace", "rm -rf .", ":(){ :|:& };:"]) {
       await expect(tool.execute("call", { command })).rejects.toThrow("was not run");
@@ -178,7 +205,7 @@ describe("ExecutionService", () => {
 
   it("refuses commands while the workspace holds more than its size", async () => {
     const { service, manager, wisp } = await setup();
-    await service.save({ conversationId: "atlas", mode: "container", image: null });
+    await service.save({ conversationId: "atlas", mode: "container", image: null, localNetwork: false });
     await writeFile(path.join(wisp.configDirectory, WORKSPACE_SETTINGS_FILE), JSON.stringify({ quotaBytes: 4 }));
     await writeFile(path.join(wisp.workspaceDirectory, "big.txt"), "12345");
     const tool = await runCommandTool(service);
@@ -191,7 +218,13 @@ describe("ExecutionService", () => {
 
   it("forgets the tokens and containers of deleted Wisps", async () => {
     const { service, manager } = await setup();
-    await service.save({ conversationId: "atlas", mode: "container", image: null, gitToken: "ghp_secret" });
+    await service.save({
+      conversationId: "atlas",
+      mode: "container",
+      image: null,
+      localNetwork: false,
+      gitToken: "ghp_secret",
+    });
     await service.reconcile();
     expect(manager.reconcile).toHaveBeenCalledWith(new Set(["s1"]));
     await expect(service.getView("atlas")).resolves.toMatchObject({ hasGitToken: true });
