@@ -1,9 +1,10 @@
 import type {
   ConnectionFailure,
   ConnectionProgress,
+  ConnectionRetry,
   ConnectionStep,
   ConnectionStepId,
-} from "../../shared/connections.js";
+} from "./connections.js";
 
 /** The steps of connecting to a profile, given its kind and whether this device still has to pair. */
 export function connectSteps(kind: "local" | "ssh" | "url", paired: boolean): ConnectionStepId[] {
@@ -95,6 +96,18 @@ export function fail(
       if (position > index) return { id: step.id, state: skipRest ? "skipped" : "pending" };
       return finished(step, cancelled ? "skipped" : "failed", now);
     }),
+  };
+}
+
+// The failures the reconnect details list, newest last.
+const MAX_RETRY_FAILURES = 5;
+
+/** Counts one more failed attempt to connect, keeping why the latest ones failed. */
+export function failedAttempt(retry: ConnectionRetry | undefined, message: string, now = Date.now()): ConnectionRetry {
+  return {
+    since: retry?.since ?? now,
+    attempt: (retry?.attempt ?? 0) + 1,
+    failures: [...(retry?.failures ?? []), { at: now, message }].slice(-MAX_RETRY_FAILURES),
   };
 }
 

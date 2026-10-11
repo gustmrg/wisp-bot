@@ -1,6 +1,7 @@
 import type { StoredSession } from "../../client/remote-client";
 import { RemoteSession } from "../../client/remote-session";
-import type { ConnectionsView, ConnectionStatus } from "../../shared/connections";
+import { advance, connectSteps, createProgress, fail, failedAttempt } from "../../shared/connection-progress";
+import type { ConnectionProgress, ConnectionRetry, ConnectionsView, ConnectionStatus } from "../../shared/connections";
 import type { BackendResult, WispApi } from "../../shared/contracts";
 import { RUNTIME_OPERATIONS } from "../../shared/runtime-operations";
 
@@ -47,10 +48,18 @@ export function createWebWispApi(options: WebApiOptions): WispApi {
       return undefined;
     }
   };
+  // The steps of the current attempt, and the attempts that failed, as the desktop app reports them.
+  const steps = (): ConnectionProgress => createProgress("connect", connectSteps("url", Boolean(loadSession())));
+  let progress: ConnectionProgress | undefined = steps();
+  let retrying: ConnectionRetry | undefined;
   const view = (): ConnectionsView => ({
     activeId: WEB_CONNECTION_ID,
     profiles: [{ id: WEB_CONNECTION_ID, kind: "url", name: host, url: options.origin, paired: Boolean(loadSession()) }],
-    status: { ...status },
+    status: {
+      ...status,
+      ...(progress ? { progress: structuredClone(progress) } : {}),
+      ...(retrying ? { retry: structuredClone(retrying) } : {}),
+    },
     secureStorageAvailable: true,
     canManage: false,
     deviceName: options.deviceName,
@@ -76,8 +85,53 @@ export function createWebWispApi(options: WebApiOptions): WispApi {
         else options.storage.removeItem(SESSION_KEY);
       },
     },
-    onStatus: (phase, message) => {
-      status = { profileId: WEB_CONNECTION_ID, phase, epoch: status.epoch, ...(message ? { message } : {}) };
+    onStatus: (phase, message, failure) => {
+      const now = Date.now();
+      if (phase === "connected") {
+        progress = undefined;
+        retrying = undefined;
+      } else if (phase === "connecting" || phase === "reconnecting" || phase === "error") {
+        if (progress) progress = fail(progress, failure?.failure, { now });
+        if (phase === "error") retrying = undefined;
+        else if (status.phase === "connected") retrying = { since: now, attempt: 0, failures: [] };
+        else if (message) retrying = failedAttempt(retrying, message, now);
+      }
+      // Only this device's own network can be at fault here: say what to check.
+      const explained =
+        message && failure?.failure === "unreachable"
+          ? `${message} Check that this device is online and can reach ${host}, for example over your VPN or Tailscale.`
+          : message;
+      status = {
+        profileId: WEB_CONNECTION_ID,
+        phase,
+        epoch: status.epoch,
+        ...(explained ? { message: explained } : {}),
+        ...(failure?.failure ? { failure: failure.failure } : {}),
+        ...(failure?.details ? { details: failure.details } : {}),
+      };
+      publish();
+    },
+    onStage: (stage) => {
+      if (stage === "transport") {
+        // Each attempt starts its steps over.
+        progress = steps();
+        if (retrying) retrying = { ...retrying, nextAttemptAt: undefined };
+        const first = progress.steps[0];
+        if (first) progress = advance(progress, first.id);
+      } else if (progress) {
+        if (stage === "pair") progress = advance(progress, "pair", undefined, "server");
+        else progress = advance(progress, stage === "server" ? "server" : "load");
+      }
+      publish();
+    },
+    onRetry: (_attempt, delayMs) => {
+      const now = Date.now();
+      retrying = {
+        since: retrying?.since ?? now,
+        attempt: retrying?.attempt ?? 0,
+        failures: retrying?.failures ?? [],
+        nextAttemptAt: now + delayMs,
+      };
       publish();
     },
     onEvent: (type, payload) => {

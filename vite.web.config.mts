@@ -1,6 +1,9 @@
 import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
+import { createHash } from "node:crypto";
+import { readFile, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
+import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { defineConfig } from "vite";
 
@@ -35,6 +38,31 @@ export default defineConfig(({ command }) => ({
           "__WISP_CSP__",
           command === "serve" ? policy.replace("script-src 'self'", "script-src 'self' 'unsafe-inline'") : policy,
         );
+      },
+    },
+    {
+      name: "wisp-web-service-worker",
+      apply: "build",
+      async writeBundle(options, bundle) {
+        // The service worker installs this build's files up front, so a cold
+        // open with a slow or missing network has every file the app needs.
+        const assets = Object.keys(bundle)
+          .filter((fileName) => fileName.startsWith("assets/"))
+          .sort()
+          .map((fileName) => `/${fileName}`);
+        const hash = createHash("sha256");
+        for (const fileName of Object.keys(bundle).sort()) {
+          const output = bundle[fileName]!;
+          hash.update(fileName).update(output.type === "chunk" ? output.code : output.source);
+        }
+        const file = path.join(options.dir!, "sw.js");
+        const source = await readFile(file, "utf8");
+        const built = source
+          .replace('const VERSION = "dev";', `const VERSION = ${JSON.stringify(hash.digest("hex").slice(0, 12))};`)
+          .replace("const ASSETS = [];", `const ASSETS = ${JSON.stringify(assets)};`);
+        if (!built.includes('const ASSETS = ["'))
+          throw new Error("sw.js no longer has the placeholders the build fills in.");
+        await writeFile(file, built);
       },
     },
     react(),

@@ -25,7 +25,14 @@ import {
 import { WISP_IPC_CHANNELS, type BackendResult } from "../../shared/contracts.js";
 import type { DeviceCredentials, HostRequest, HostResponse } from "../../shared/remote-protocol.js";
 import type { LocalServer } from "../local-server/local-server.js";
-import { advance, connectSteps, createProgress, fail, INSTALL_STEPS } from "./connection-progress.js";
+import {
+  advance,
+  connectSteps,
+  createProgress,
+  fail,
+  failedAttempt,
+  INSTALL_STEPS,
+} from "../../shared/connection-progress.js";
 import type { ConnectionStore } from "./connection-store.js";
 import type { InstallStep } from "./ssh-install.js";
 
@@ -52,8 +59,6 @@ export interface ConnectionManagerOptions {
   hasLocalData(): Promise<boolean>;
 }
 
-// The failures the reconnect details list, newest last.
-const MAX_RETRY_FAILURES = 5;
 // sshd gives up on a login after two minutes by default.
 const SSH_PROMPT_TIMEOUT_MS = 120_000;
 const MAX_SSH_ANSWER = 1024;
@@ -442,14 +447,7 @@ export class ConnectionManager {
           const dropped = this.status.phase === "connected" || this.status.phase === "local";
           if (phase === "error") this.retrying = undefined;
           else if (dropped) this.retrying = { since: now, attempt: 0, failures: [] };
-          else if (message) {
-            const failures = [...(this.retrying?.failures ?? []), { at: now, message }];
-            this.retrying = {
-              since: this.retrying?.since ?? now,
-              attempt: (this.retrying?.attempt ?? 0) + 1,
-              failures: failures.slice(-MAX_RETRY_FAILURES),
-            };
-          }
+          else if (message) this.retrying = failedAttempt(this.retrying, message, now);
         }
         this.setStatus({
           profileId: profile.id,

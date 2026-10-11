@@ -18,4 +18,8 @@ if ("serviceWorker" in navigator && import.meta.env.PROD) {
   void navigator.serviceWorker.register("/sw.js", { scope: "/" }).catch(() => undefined);
 }
 
-void import("./main");
+// Without the app, the page would stay on its opening screen with nothing to explain why.
+void import("./main").catch(() => {
+  const message = document.getElementById("boot-message");
+  if (message) message.textContent = "Wisp could not load. Check your connection to the server, then reload.";
+});

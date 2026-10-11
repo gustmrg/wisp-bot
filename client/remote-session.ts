@@ -375,6 +375,8 @@ export class RemoteSession {
 }
 
 function failureOf(error: unknown): RemoteSessionFailure | undefined {
+  // Nothing answered: the server is off, or this device cannot reach it.
+  if (error instanceof RemoteError && error.code === "network") return { failure: "unreachable" };
   if (!(error instanceof TransportError) || (!error.failure && !error.details)) return undefined;
   return { ...(error.failure ? { failure: error.failure } : {}), ...(error.details ? { details: error.details } : {}) };
 }
