@@ -6,7 +6,9 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { AiSettingsStore } from "../backend/ai-settings-store.js";
 import { WispBackendError } from "../backend/backend-error.js";
 import { EncryptedCredentialStore, type EncryptionService } from "../backend/encrypted-credential-store.js";
-import { ModelService, type ModelRuntimeLike } from "../backend/model-service.js";
+import { getSupportedThinkingLevels } from "@earendil-works/pi-ai";
+
+import { ModelService, supportedThinkingLevels, type ModelRuntimeLike } from "../backend/model-service.js";
 
 const directories: string[] = [];
 
@@ -63,6 +65,7 @@ function createRuntime() {
       provider: "provider-b",
       baseUrl: "https://example.test",
       reasoning: true,
+      thinkingLevelMap: { minimal: null, xhigh: "xhigh" },
       input: ["text"],
       cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
       contextWindow: 100_000,
@@ -273,6 +276,65 @@ describe("ModelService", () => {
         code: "invalid_configuration",
       }),
     );
+  });
+
+  it("lists only the thinking levels each model supports", async () => {
+    const { service } = await createService();
+    const view = await service.getView();
+    const models = view.providers.flatMap((provider) => provider.models);
+
+    expect(models.find(({ id }) => id === "vision-b")?.thinkingLevels).toEqual(["off"]);
+    expect(models.find(({ id }) => id === "model-a")?.thinkingLevels).toEqual([
+      "off",
+      "minimal",
+      "low",
+      "medium",
+      "high",
+    ]);
+    expect(models.find(({ id }) => id === "model-b")?.thinkingLevels).toEqual([
+      "off",
+      "low",
+      "medium",
+      "high",
+      "xhigh",
+    ]);
+  });
+
+  it("agrees with Pi on the levels a model supports", () => {
+    const maps = [
+      undefined,
+      {},
+      { minimal: null, xhigh: "xhigh" },
+      { off: null, max: "max" },
+      { off: null, minimal: null, low: null, medium: null, high: null },
+    ];
+    for (const reasoning of [false, true]) {
+      for (const thinkingLevelMap of maps) {
+        const model = { reasoning, thinkingLevelMap } as Parameters<typeof getSupportedThinkingLevels>[0];
+        expect(supportedThinkingLevels(model)).toEqual(getSupportedThinkingLevels(model));
+      }
+    }
+  });
+
+  it("saves a supported thinking level and refuses one the model does not support", async () => {
+    const { service } = await createService();
+    const view = await service.save({
+      selection: { providerId: "provider-b", modelId: "model-b", thinkingLevel: "xhigh" },
+      apiKey: "secret-provider-key",
+    });
+    expect(view.selection).toEqual({ providerId: "provider-b", modelId: "model-b", thinkingLevel: "xhigh" });
+    await expect(service.getSelection()).resolves.toEqual(view.selection);
+
+    for (const selection of [
+      { providerId: "provider-b", modelId: "model-b", thinkingLevel: "minimal" as const },
+      { providerId: "provider-b", modelId: "vision-b", thinkingLevel: "low" as const },
+    ]) {
+      await expect(service.save({ selection })).rejects.toMatchObject({ code: "invalid_configuration" });
+    }
+    // "off" is the default every model accepts; Pi clamps it for one that always reasons.
+    await expect(
+      service.save({ selection: { providerId: "provider-b", modelId: "vision-b", thinkingLevel: "off" } }),
+    ).resolves.toMatchObject({ selection: { providerId: "provider-b", modelId: "vision-b" } });
   });
 
   it("saves a key outside a selection and reads it back for direct provider calls", async () => {

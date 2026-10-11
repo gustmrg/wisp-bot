@@ -32,6 +32,33 @@ describe("AiSettingsStore", () => {
     });
   });
 
+  it("keeps a chosen thinking level, never stores the default, and never lets auxiliary models reason", async () => {
+    const { filePath, store } = await createStore();
+    const selection = { providerId: "anthropic", modelId: "claude-example", thinkingLevel: "high" as const };
+    await store.setSelection(selection);
+    await expect(new AiSettingsStore(filePath).getSelection()).resolves.toEqual(selection);
+
+    const auxiliary = { providerId: "openai", modelId: "vision", thinkingLevel: "high" };
+    for (const [thinkingLevel, expected] of [
+      ["off", { providerId: "anthropic", modelId: "claude-example" }],
+      ["extreme", null],
+    ] as const) {
+      await writeFile(
+        filePath,
+        JSON.stringify({
+          schemaVersion: 1,
+          selection: { providerId: "anthropic", modelId: "claude-example", thinkingLevel },
+          auxiliary: { imageUnderstanding: auxiliary },
+        }),
+      );
+      const reloaded = new AiSettingsStore(filePath);
+      await expect(reloaded.getSelection()).resolves.toEqual(expected);
+      await expect(reloaded.getAuxiliary()).resolves.toEqual({
+        imageUnderstanding: { providerId: "openai", modelId: "vision" },
+      });
+    }
+  });
+
   it("normalizes unsupported and malformed settings", async () => {
     const { filePath } = await createStore();
     await writeFile(filePath, JSON.stringify({ schemaVersion: 99, selection: { providerId: "x", modelId: "y" } }));

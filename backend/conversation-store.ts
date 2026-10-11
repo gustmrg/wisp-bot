@@ -14,7 +14,9 @@ import type { ConversationRecord, WispRecord, WorkspaceRecords } from "./workspa
 // drops the Wisp picture column, which version 5 writers still name. Version 7
 // adds unread counts; older writers keep `unread` right, and reads trust it.
 // Version 8 adds pinned conversations; older writers leave the column alone.
-const STORE_VERSION = 8;
+// Version 9 adds each Wisp's thinking level; older writers leave it alone too,
+// so reads ignore it when the Wisp has no model of its own.
+const STORE_VERSION = 9;
 const MIN_READER_VERSION = 6;
 /** The first layout that stores records as columns rather than JSON. */
 const COLUMN_RECORDS_VERSION = 5;
@@ -107,6 +109,7 @@ const RECORD_SCHEMA = `
     model_provider_id TEXT,
     model_id TEXT,
     model_max_output_tokens INTEGER,
+    model_thinking_level TEXT,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
     CHECK ((model_provider_id IS NULL) = (model_id IS NULL)),
@@ -218,6 +221,9 @@ const ADD_UNREAD_COUNTS = "ALTER TABLE conversations ADD COLUMN unread_count INT
 const ADD_PINNED_CONVERSATIONS =
   "ALTER TABLE conversations ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0 CHECK (pinned IN (0, 1));";
 
+// Builds before version 9 could not choose a Wisp's thinking level; its Wisps think "off".
+const ADD_WISP_THINKING_LEVELS = "ALTER TABLE wisps ADD COLUMN model_thinking_level TEXT;";
+
 /** Tables layout 5 replaced; their rows held whole records as JSON. */
 const JSON_RECORD_TABLES = ["wisps", "conversations", "scheduled_messages", "queued_messages"];
 
@@ -270,6 +276,7 @@ const optional = (value: unknown) => (value === null || value === undefined ? un
 function wispRecordOf(row: Row): unknown {
   const color = optional(row.color);
   const maxOutputTokens = optional(row.model_max_output_tokens);
+  const thinkingLevel = optional(row.model_thinking_level);
   return {
     wisp: {
       id: row.id,
@@ -295,6 +302,7 @@ function wispRecordOf(row: Row): unknown {
             providerId: row.model_provider_id,
             modelId: row.model_id,
             ...(maxOutputTokens === undefined ? {} : { maxOutputTokens: Number(maxOutputTokens) }),
+            ...(thinkingLevel === undefined ? {} : { thinkingLevel }),
           },
     createdAt: row.created_at,
     updatedAt: row.updated_at,
@@ -423,6 +431,7 @@ export class ConversationStore {
         store.dropWispPictures();
         store.addUnreadCounts();
         store.addPinnedConversations();
+        store.addWispThinkingLevels();
       }
       return store;
     } catch (error) {
@@ -594,8 +603,9 @@ export class ConversationStore {
     const { appearance } = wisp;
     this.statement(
       `INSERT INTO wisps (id, name, role, soul, body, trail, tone, eyes, eye_ink, finish, mark, color,
-        storage_id, model_provider_id, model_id, model_max_output_tokens, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        storage_id, model_provider_id, model_id, model_max_output_tokens, model_thinking_level,
+        created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT (id) DO UPDATE SET
         name = excluded.name, role = excluded.role, soul = excluded.soul,
         body = excluded.body, trail = excluded.trail, tone = excluded.tone, eyes = excluded.eyes,
@@ -603,6 +613,7 @@ export class ConversationStore {
         color = excluded.color, storage_id = excluded.storage_id,
         model_provider_id = excluded.model_provider_id, model_id = excluded.model_id,
         model_max_output_tokens = excluded.model_max_output_tokens,
+        model_thinking_level = excluded.model_thinking_level,
         created_at = excluded.created_at, updated_at = excluded.updated_at`,
     ).run(
       wisp.id,
@@ -621,6 +632,7 @@ export class ConversationStore {
       modelOverride?.providerId ?? null,
       modelOverride?.modelId ?? null,
       modelOverride?.maxOutputTokens ?? null,
+      modelOverride?.thinkingLevel ?? null,
       record.createdAt,
       record.updatedAt,
     );
@@ -886,6 +898,20 @@ export class ConversationStore {
     this.db.exec("BEGIN IMMEDIATE");
     try {
       this.db.exec(ADD_PINNED_CONVERSATIONS);
+      this.raiseVersions();
+      this.db.exec("COMMIT");
+    } catch (error) {
+      this.db.exec("ROLLBACK");
+      throw error;
+    }
+  }
+
+  private addWispThinkingLevels(): void {
+    const columns = this.db.prepare("SELECT name FROM pragma_table_info('wisps')").all();
+    if (columns.some((column) => column.name === "model_thinking_level")) return;
+    this.db.exec("BEGIN IMMEDIATE");
+    try {
+      this.db.exec(ADD_WISP_THINKING_LEVELS);
       this.raiseVersions();
       this.db.exec("COMMIT");
     } catch (error) {

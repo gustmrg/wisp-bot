@@ -210,6 +210,27 @@ describe("IPC request validators", () => {
     ).toThrow(WispBackendError);
   });
 
+  it("accepts known thinking levels, drops the default, and rejects others", () => {
+    const request = (thinkingLevel: unknown) => ({
+      conversationId: "wisp-1",
+      model: { providerId: "anthropic", modelId: "claude", thinkingLevel },
+    });
+    expect(parseApplyModelRequest(request("xhigh")).model).toEqual({
+      providerId: "anthropic",
+      modelId: "claude",
+      thinkingLevel: "xhigh",
+    });
+    expect(parseApplyModelRequest(request("off")).model).toEqual({ providerId: "anthropic", modelId: "claude" });
+    expect(() => parseApplyModelRequest(request("extreme"))).toThrow(WispBackendError);
+    expect(() => parseApplyModelRequest(request(3))).toThrow(WispBackendError);
+    expect(
+      parseSaveAuxiliaryModelRequest({
+        task: "imageUnderstanding",
+        selection: { providerId: "openai", modelId: "vision", thinkingLevel: "high" },
+      }),
+    ).toEqual({ task: "imageUnderstanding", selection: { providerId: "openai", modelId: "vision" } });
+  });
+
   it("accepts catalog model IDs containing slashes", () => {
     expect(
       parseSaveAiSettingsRequest({

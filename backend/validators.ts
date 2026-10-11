@@ -1,14 +1,15 @@
 import { isContextPolicy, type ContextRequest } from "../shared/context-policy.js";
-import type {
-  UsageReportRequest,
-  ApplyModelRequest,
-  ConversationRequest,
-  ModelSelection,
-  RemoveProviderCredentialRequest,
-  SaveAiSettingsRequest,
-  SaveAuxiliaryModelRequest,
-  SendMessageRequest,
-  SetUserTimeZoneRequest,
+import {
+  isThinkingLevel,
+  type UsageReportRequest,
+  type ApplyModelRequest,
+  type ConversationRequest,
+  type ModelSelection,
+  type RemoveProviderCredentialRequest,
+  type SaveAiSettingsRequest,
+  type SaveAuxiliaryModelRequest,
+  type SendMessageRequest,
+  type SetUserTimeZoneRequest,
 } from "../shared/contracts.js";
 import type {
   AnswerConversationPromptRequest,
@@ -174,10 +175,13 @@ function parseModelSelection(value: unknown): ModelSelection {
   ) {
     throw invalidRequest();
   }
+  const thinkingLevel = model.thinkingLevel;
+  if (thinkingLevel !== undefined && !isThinkingLevel(thinkingLevel)) throw invalidRequest();
   return {
     providerId: parseId(model.providerId),
     modelId: parseCatalogId(model.modelId),
     ...(maxOutputTokens === undefined ? {} : { maxOutputTokens: maxOutputTokens as number }),
+    ...(thinkingLevel === undefined || thinkingLevel === "off" ? {} : { thinkingLevel }),
   };
 }
 

@@ -1,8 +1,15 @@
 import { useEffect, useState } from "react";
 import { InfoIcon } from "lucide-react";
 
-import type { AiSettingsView, ConversationModelView } from "../../shared/contracts";
+import type { AiSettingsView, ConversationModelView, ThinkingLevel } from "../../shared/contracts";
 import { NoImageInputNote } from "@/components/no-image-input-note";
+import { SettingsCard } from "@/components/settings/settings-primitives";
+import {
+  canChooseThinkingLevel,
+  keepThinkingLevel,
+  THINKING_LEVEL_LABELS,
+  ThinkingLevelRow,
+} from "@/components/thinking-level-select";
 import { imageModelName } from "@/hooks/use-model-image-input";
 import { Button } from "@/components/ui/button";
 
@@ -10,6 +17,8 @@ export function WispModelSettings({ conversationId }: { conversationId: string }
   const [catalog, setCatalog] = useState<AiSettingsView | null>(null);
   const [view, setView] = useState<ConversationModelView | null>(null);
   const [error, setError] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState("");
   const [loadRequest, setLoadRequest] = useState({ conversationId });
   useEffect(() => {
     let active = true;
@@ -57,6 +66,38 @@ export function WispModelSettings({ conversationId }: { conversationId: string }
   const applied = view?.applied ?? null;
   const appliedProvider = applied ? catalog?.providers.find(({ id }) => id === applied.providerId) : undefined;
   const appliedModel = applied ? appliedProvider?.models.find(({ id }) => id === applied.modelId) : undefined;
+  const override = view?.override ?? null;
+  const overrideModel = override
+    ? catalog?.providers.find(({ id }) => id === override.providerId)?.models.find(({ id }) => id === override.modelId)
+    : undefined;
+  const effective = view?.effective ?? null;
+  const effectiveModel = effective
+    ? catalog?.providers
+        .find(({ id }) => id === effective.providerId)
+        ?.models.find(({ id }) => id === effective.modelId)
+    : undefined;
+
+  async function changeThinkingLevel(level: ThinkingLevel): Promise<void> {
+    if (!override) return;
+    const { thinkingLevel: _previous, ...model } = override;
+    setSaving(true);
+    setSaveError("");
+    try {
+      const result = await window.wisp.applyModel({
+        conversationId,
+        model: level === "off" ? model : { ...model, thinkingLevel: level },
+      });
+      if (!result.ok) {
+        setSaveError(result.error.message);
+        return;
+      }
+      setLoadRequest({ conversationId });
+    } catch {
+      setSaveError("Could not change the reasoning level.");
+    } finally {
+      setSaving(false);
+    }
+  }
 
   return (
     <div className="flex min-h-0 flex-1 flex-col text-sm">
@@ -95,6 +136,29 @@ export function WispModelSettings({ conversationId }: { conversationId: string }
                 </p>
               ) : null}
             </section>
+            {override && canChooseThinkingLevel(overrideModel) ? (
+              <SettingsCard>
+                <ThinkingLevelRow
+                  id="wisp-thinking-level"
+                  className="min-h-0 p-[11px]"
+                  model={overrideModel}
+                  value={keepThinkingLevel(override.thinkingLevel ?? "off", overrideModel)}
+                  disabled={saving}
+                  onChange={(level) => void changeThinkingLevel(level)}
+                />
+              </SettingsCard>
+            ) : null}
+            {!override && effective && canChooseThinkingLevel(effectiveModel) ? (
+              <p className="m-0 text-xs text-dim">
+                Reasoning: {THINKING_LEVEL_LABELS[keepThinkingLevel(effective.thinkingLevel ?? "off", effectiveModel)]}{" "}
+                — set with the global model in Settings → AI Model.
+              </p>
+            ) : null}
+            {saveError ? (
+              <p role="alert" className="m-0 text-destructive">
+                {saveError}
+              </p>
+            ) : null}
             <p className="m-0 flex items-start gap-2 rounded-lg border border-border bg-muted/60 p-2.5 leading-relaxed text-dim">
               <InfoIcon aria-hidden="true" className="mt-0.5 size-3.5 flex-none" />
               <span>The model is set when the Wisp is created and can't be changed for now.</span>

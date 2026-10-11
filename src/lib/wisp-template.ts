@@ -1,4 +1,4 @@
-import type { ModelSelection } from "../../shared/contracts";
+import { isThinkingLevel, type ModelSelection } from "../../shared/contracts";
 import {
   WISP_NAME_MAX_LENGTH,
   WISP_ROLE_MAX_LENGTH,
@@ -72,9 +72,16 @@ function limitedString(value: unknown, maxLength: number): string | undefined {
 
 function modelSelection(value: unknown): ModelSelection | undefined {
   if (!isRecord(value)) return undefined;
-  const { providerId, modelId, maxOutputTokens } = value;
+  const { providerId, modelId, maxOutputTokens, thinkingLevel } = value;
   if (typeof providerId !== "string" || !providerId || typeof modelId !== "string" || !modelId) return undefined;
-  if (maxOutputTokens === undefined) return { providerId, modelId };
-  if (!Number.isSafeInteger(maxOutputTokens) || (maxOutputTokens as number) < 1) return undefined;
-  return { providerId, modelId, maxOutputTokens: maxOutputTokens as number };
+  if (maxOutputTokens !== undefined && (!Number.isSafeInteger(maxOutputTokens) || (maxOutputTokens as number) < 1)) {
+    return undefined;
+  }
+  return {
+    providerId,
+    modelId,
+    ...(maxOutputTokens === undefined ? {} : { maxOutputTokens: maxOutputTokens as number }),
+    // A level this app does not know is dropped rather than failing the import.
+    ...(isThinkingLevel(thinkingLevel) && thinkingLevel !== "off" ? { thinkingLevel } : {}),
+  };
 }
