@@ -1,18 +1,34 @@
 # Wisp Bot
 
-Wisp Bot is an open-source desktop app that gives you a squad of AI agents —
-your Wisps — that keep working with you across days instead of starting over in
-every chat. Each Wisp has its own name, look, model, memory, skills, tools, and
-private workspace folder, so you can keep a research Wisp, a coding Wisp, and a
-planning Wisp side by side, each picking up where it left off.
+Wisp Bot is an open-source app for building a **team of specialized AI agents
+that work for you**. Instead of one general-purpose chat, you assemble a squad
+of Wisps — a research Wisp, a coding Wisp, a planning Wisp, a writing Wisp —
+each with a focused job, its own personality, and its own model. They keep
+working with you across days instead of starting over in every conversation.
+
+Every Wisp is yours to shape:
+
+- **Identity and personality.** Give each Wisp a name, a role, a look, and a
+  *soul*: a Markdown document that defines who it is, how it talks, and how it
+  behaves. A terse engineer and a warm editor are just two different souls.
+- **Your own keys, your own models.** You bring your own provider API keys and
+  pick the model per Wisp — a strong reasoning model for the researcher, a fast
+  cheap one for the inbox triager — or let a Wisp inherit your default.
+- **Its own memory, skills, tools, and workspace.** Each Wisp has saved memory,
+  reusable skills, the plugins and MCP servers you grant it, and a private
+  workspace folder, so one Wisp never sees another's files or access.
 
 The project is inspired by Grok Bot but built from scratch and is not affiliated
-with it. The app runs on your own machine: you bring your own model provider
-keys, and conversations, credentials, and workspaces stay in your local
-user-data directory.
+with it. The app runs on your own machine: provider keys, conversations,
+credentials, and workspaces stay in your local user-data directory, and nothing
+goes through a Wisp Bot service.
 
 <p align="center">
-  <img src="docs/screenshot.png" alt="Wisp Bot app screenshot" width="800" />
+  <img src="docs/screenshot.png" alt="Wisp Bot showing a team of Wisps in the sidebar and a conversation with Atlas, the research Wisp" width="800" />
+</p>
+
+<p align="center">
+  <img src="docs/screenshot-identity.png" alt="A Wisp's settings: appearance, name, role, and soul" width="800" />
 </p>
 
 Under the hood, each Wisp owns a persistent agent session on the
@@ -24,8 +40,15 @@ preset.
 
 ## Highlights
 
+- **A team of specialized Wisps** — create as many as you need, each with its
+  own name, role, appearance, and soul (its personality and behavior, written
+  in Markdown with starting templates). See
+  [ADR 010](docs/decisions/010-wisp-entity.md).
+- **Bring your own keys, model per Wisp** — provider keys are stored encrypted
+  and shared; each Wisp can use the global model or its own provider, model,
+  and reasoning level. See [AI models](docs/models.md).
 - **Persistent agent conversations** — one durable Pi session per Wisp, with
-  streaming events, retries, and compaction. See [AI models](docs/models.md).
+  streaming events, retries, and compaction.
 - **Bundled plugins** — Brave Search, Linear, Firecrawl, Tavily, and Exa, connected once and
   granted per Wisp. See [plugins](docs/plugins.md).
 - **Remote MCP servers** — Streamable HTTP integrations with header or OAuth
