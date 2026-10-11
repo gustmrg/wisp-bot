@@ -1,5 +1,6 @@
 import { CircleCheckIcon, LoaderCircleIcon, XIcon } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 
 import type { UpdateState } from "../../shared/contracts";
 import { Button } from "@/components/ui/button";
@@ -78,14 +79,31 @@ export function UpdateToast({ displayName }: { displayName: string }) {
   );
 }
 
-/** A toast at the bottom right of the window, the place every toast of the app uses. */
+/**
+ * A toast at the bottom right of the window, the place every toast of the app
+ * uses. Toasts shown at the same time stack one above the other.
+ */
 export function ToastFrame({ children }: { children: ReactNode }) {
-  return (
+  return createPortal(
     <div
       role="status"
-      className="fixed right-4 bottom-4 z-[60] flex w-80 max-w-[calc(100vw-2rem)] items-start gap-2.5 rounded-xl border border-border bg-card p-3.5 text-foreground shadow-lg animate-in fade-in-0 slide-in-from-bottom-2"
+      className="pointer-events-auto flex w-full items-start gap-2.5 rounded-xl border border-border bg-card p-3.5 text-foreground shadow-lg animate-in fade-in-0 slide-in-from-bottom-2"
     >
       {children}
-    </div>
+    </div>,
+    toastStack(),
   );
+}
+
+let stack: HTMLElement | undefined;
+
+/** The one column every toast renders into, created the first time a toast shows. */
+function toastStack(): HTMLElement {
+  if (stack?.isConnected) return stack;
+  stack = document.createElement("div");
+  stack.dataset.toastStack = "";
+  stack.className =
+    "pointer-events-none fixed right-4 bottom-4 z-[60] flex w-80 max-w-[calc(100vw-2rem)] flex-col items-stretch gap-2";
+  document.body.append(stack);
+  return stack;
 }
