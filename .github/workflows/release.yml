@@ -173,7 +173,35 @@ jobs:
           # A prerelease must not become what `npx @gustmrg/wisp-server` runs.
           TAG=latest
           if [[ "$VERSION" == *-* ]]; then TAG=beta; fi
+          # A re-run after a publish that went through only waits for it below.
+          if [[ "$(npm view "@gustmrg/wisp-server@$VERSION" version --prefer-online 2>/dev/null)" == "$VERSION" ]]; then
+            echo "@gustmrg/wisp-server $VERSION is already on npm."
+            exit 0
+          fi
           if ! npm publish --provenance --access public --tag "$TAG"; then
             echo "::error::@gustmrg/wisp-server $VERSION was not published. Check the package's trusted publisher on npm, then re-run this job."
             exit 1
           fi
+      # npm takes a few minutes to process a new version. Until then the app
+      # cannot install it on a server, so the release is not done yet.
+      - name: Wait until npm serves the version
+        env:
+          VERSION: ${{ needs.prepare.outputs.version }}
+        run: |
+          TAG=latest
+          if [[ "$VERSION" == *-* ]]; then TAG=beta; fi
+          deadline=$((SECONDS + 600))
+          while true; do
+            found="$(npm view "@gustmrg/wisp-server@$VERSION" version --prefer-online 2>/dev/null || true)"
+            tagged="$(npm view @gustmrg/wisp-server "dist-tags.$TAG" --prefer-online 2>/dev/null || true)"
+            if [[ "$found" == "$VERSION" && "$tagged" == "$VERSION" ]]; then
+              echo "@gustmrg/wisp-server $VERSION is installable, and $TAG points to it."
+              exit 0
+            fi
+            if ((SECONDS >= deadline)); then
+              echo "::error::npm still does not serve @gustmrg/wisp-server $VERSION as $TAG after 10 minutes (version: ${found:-none}, $TAG: ${tagged:-none}). Check the package on npmjs.com, then re-run this job."
+              exit 1
+            fi
+            echo "Waiting for npm (version: ${found:-none}, $TAG: ${tagged:-none})…"
+            sleep 15
+          done
