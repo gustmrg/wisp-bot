@@ -16,6 +16,8 @@ import { readServerSentEvents } from "./sse.js";
 // Refresh this long before the access token expires rather than waiting for a 401.
 const REFRESH_MARGIN_MS = 30_000;
 const REQUEST_TIMEOUT_MS = 60_000;
+// Connecting gives up sooner, so a server that never answers counts as a failed attempt and the app says so.
+const CONNECT_TIMEOUT_MS = 10_000;
 // The server sends a keep-alive every 20 seconds; silence this long means the path is dead.
 const STREAM_IDLE_TIMEOUT_MS = 45_000;
 
@@ -96,7 +98,7 @@ export class RemoteClient {
   }
 
   async describe(): Promise<ServerDescriptor> {
-    return valueOf(await this.authorized("GET", "/server", undefined, true)) as ServerDescriptor;
+    return valueOf(await this.authorized("GET", "/server", undefined, CONNECT_TIMEOUT_MS)) as ServerDescriptor;
   }
 
   /** Runs one operation; transport failures throw `RemoteError`, operation failures return their result. */
@@ -105,7 +107,7 @@ export class RemoteClient {
       "POST",
       `/rpc/${encodeURIComponent(operation)}`,
       payload ?? {},
-      true,
+      REQUEST_TIMEOUT_MS,
     )) as BackendResult<unknown>;
   }
 
@@ -177,7 +179,7 @@ export class RemoteClient {
     }
   }
 
-  private async authorized(method: "GET" | "POST", path: string, body?: unknown, timeout = false): Promise<unknown> {
+  private async authorized(method: "GET" | "POST", path: string, body?: unknown, timeoutMs?: number): Promise<unknown> {
     const attempt = async (auth: Record<string, string>): Promise<Response> =>
       this.send(`${REMOTE_API_PREFIX}${path}`, {
         method,
@@ -186,7 +188,7 @@ export class RemoteClient {
           ...(body === undefined ? {} : { "Content-Type": "application/json" }),
         },
         ...(body === undefined ? {} : { body: encodeRemoteJson(body) }),
-        ...(timeout ? { signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) } : {}),
+        ...(timeoutMs ? { signal: AbortSignal.timeout(timeoutMs) } : {}),
       });
     let response = await attempt(await this.authHeaders());
     // A 401 means the request never ran, so repeating it once with fresh credentials is safe.

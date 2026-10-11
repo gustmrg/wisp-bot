@@ -146,6 +146,37 @@ describe("browser WispApi", () => {
     expect(storage.values.size).toBe(0);
   });
 
+  it("says when the server cannot be reached, with each attempt and the next one", async () => {
+    const storage = memoryStorage();
+    storage.setItem("wisp.session", JSON.stringify({ deviceId: "phone", accessExpiresAt: "2999-01-01T00:00:00.000Z" }));
+    const api = createWebWispApi({
+      origin: "https://wisp.example.ts.net",
+      storage,
+      deviceName: "Safari on iPhone",
+      appVersion: "1.0.0",
+      fetch: async () => {
+        throw new TypeError("Failed to fetch");
+      },
+    });
+    const views: ConnectionsView[] = [];
+    api.subscribeToConnections((view) => views.push(view));
+
+    await until(() => Boolean(views.at(-1)?.status.retry?.nextAttemptAt), "the next attempt to be scheduled");
+    const { status } = views.at(-1)!;
+    expect(status).toMatchObject({
+      phase: "connecting",
+      failure: "unreachable",
+      retry: { attempt: 1, failures: [{ message: "The server cannot be reached." }] },
+    });
+    expect(status.message).toMatch(/can reach wisp\.example\.ts\.net, for example over your VPN or Tailscale/);
+    expect(status.progress?.steps).toEqual([
+      expect.objectContaining({ id: "server", state: "failed" }),
+      expect.objectContaining({ id: "load", state: "pending" }),
+    ]);
+    // While it waited, the screen showed which step was running.
+    expect(views.some((view) => view.status.progress?.steps[0]?.state === "active")).toBe(true);
+  });
+
   it("names browsers by their user agent", () => {
     expect(browserDeviceName("Mozilla/5.0 (Linux; Android 15) Chrome/130.0 Mobile Safari/537.36")).toBe(
       "Chrome on Android",

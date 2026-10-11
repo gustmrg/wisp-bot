@@ -1,5 +1,13 @@
 <!doctype html>
-<html lang="en" data-wisp-platform="web">
+<!--
+  Colors live in style attributes: the policy allows those, but no inline
+  <style> or script, and this page must look right before any file loads.
+-->
+<html
+  lang="en"
+  data-wisp-platform="web"
+  style="background: #ffffff; background: light-dark(#ffffff, #0a0a0a); color: #202020; color: light-dark(#202020, #ededed)"
+>
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content" />
@@ -17,7 +25,18 @@
   <title>Wisp</title>
 </head>
 <body>
-  <div id="root"></div>
+  <!-- Shown until the app starts, which replaces it; the link works even if the app never loads. -->
+  <div id="root">
+    <div
+      id="boot"
+      role="status"
+      style="position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; font: 15px/1.4 system-ui, -apple-system, sans-serif; text-align: center; padding: 16px"
+    >
+      <img src="/favicon.svg" alt="" width="40" height="40" />
+      <p id="boot-message" style="margin: 0">Opening Wisp…</p>
+      <a href="/" style="color: inherit; opacity: 0.6; font-size: 13px">Reload</a>
+    </div>
+  </div>
   <script type="module" src="../src/web-main.tsx"></script>
 </body>
 </html>

@@ -91,7 +91,7 @@ function GateContent({ view, error, children }: { view: ConnectionsView | null; 
   const [dismissedVersion, setDismissedVersion] = useState("");
   const now = useNow(view?.status.phase === "reconnecting");
   if (!view) {
-    return error ? <ConnectionMessage title="Wisp could not start" message={error} /> : null;
+    return error ? <ConnectionMessage title="Wisp could not start" message={error} /> : <Opening />;
   }
   const { status } = view;
   if (status.phase === "local" || status.phase === "connected" || status.phase === "reconnecting") {
@@ -485,6 +485,16 @@ function ConnectionToast({ toast, onDismiss }: { toast: ToastContent; onDismiss:
         <XIcon aria-hidden="true" />
       </Button>
     </ToastFrame>
+  );
+}
+
+/** Shown for the moment before the app knows its connection, so the window is never blank. */
+function Opening() {
+  return (
+    <main className="flex h-full min-h-0 flex-col items-center justify-center gap-3 bg-background p-6 text-dim">
+      <LoaderCircleIcon aria-hidden="true" className="size-5 animate-spin" />
+      <p className="m-0 text-base">Opening Wisp…</p>
+    </main>
   );
 }
 
