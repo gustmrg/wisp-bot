@@ -539,7 +539,7 @@ describe("desktop connections", () => {
       .map((line) => JSON.parse(line) as string[]);
     expect(calls[0]?.slice(-2)).toEqual([
       "raspberrypi",
-      `PATH="$HOME/.local/bin:$PATH" npx --yes @gustmrg/wisp-server@1.0.0 setup --json --no-pair --until-stdin-closes --port ${server.port}`,
+      `sh -c 'PATH="$HOME/.local/bin:$PATH"; d=$(mktemp -d) || exit 1; npm install --prefix "$d" --no-audit --no-fund --loglevel=error @gustmrg/wisp-server@1.0.0 >&2 && node "$d/node_modules/@gustmrg/wisp-server/server/cli.js" setup --json --no-pair --until-stdin-closes --port ${server.port}; s=$?; rm -rf "$d"; exit $s'`,
     ]);
   });
 
