@@ -106,8 +106,8 @@ function Sidebar({
   const chatIds = allChatIds.filter(
     (id) => !mobile || filter === "all" || (filter === "unread" ? chats[id]?.unread : statuses[id] === "working"),
   );
-  // Like a messaging app, the phone list puts the latest activity first; the desktop keeps the creation order.
-  if (mobile) chatIds.sort((left, right) => activityTime(chats[right]) - activityTime(chats[left]));
+  // Like a messaging app, the list puts the latest activity first.
+  chatIds.sort((left, right) => activityTime(chats[right]) - activityTime(chats[left]));
   // Pinned conversations come first, each group keeping that order.
   chatIds.sort((left, right) => Number(Boolean(chats[right]?.pinned)) - Number(Boolean(chats[left]?.pinned)));
 

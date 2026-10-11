@@ -347,7 +347,7 @@ describe("Sidebar conversation menu", () => {
     expect(within(mobile.getByRole("button", { name: /Gamma/ })).getByText("Pinned")).toHaveClass("sr-only");
     document.body.innerHTML = "";
 
-    expect(names(renderList(vi.fn(), false))).toEqual(["Gamma", "Atlas", "Beta"]);
+    expect(names(renderList(vi.fn(), false))).toEqual(["Gamma", "Beta", "Atlas"]);
   });
 
   it("offers each action for what the conversation is now", async () => {

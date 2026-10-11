@@ -18,8 +18,8 @@ leaves both.
 
 ## Conversation list
 
-The list reads like a messaging app. The latest activity comes first, while
-the desktop sidebar keeps the creation order. Each row shows the Wisp's
+The list reads like a messaging app. The latest activity comes first, on the
+phone and on the desktop sidebar alike. Each row shows the Wisp's
 avatar with its state, the name, the time of the last activity, and one line
 that is either the last message or what needs attention: "Working…",
 "Waiting for your approval", or "The last reply failed". An unread
