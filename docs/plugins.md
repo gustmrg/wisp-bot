@@ -166,4 +166,6 @@ These five bundled plugins plus remote MCP servers are the supported
 integrations. Arbitrary plugin installation, custom endpoints, and multiple
 accounts per plugin are not available yet. See
 [ADR 004](decisions/004-wisp-plugins.md) for the connection model, adapter
-boundaries, and validation scope.
+boundaries, and validation scope. A possible direction for user-written,
+installable plugins is described in the
+[plugin extensibility analysis](plugin-extensibility-analysis.md).
