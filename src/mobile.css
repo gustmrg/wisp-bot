@@ -528,6 +528,12 @@
     flex: 1;
     min-height: 46px;
   }
+  /* Only its icon shows, so the step's own buttons keep their width. */
+  [data-slot="dialog-footer"] > .create-wisp-import {
+    flex: none;
+    width: 46px;
+    padding: 0;
+  }
   [data-slot="dialog-content"] [data-slot="button"] {
     min-height: 44px;
   }

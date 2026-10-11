@@ -186,6 +186,10 @@ function completeBridge(): WispApi {
       },
     }),
     setWorkspaceQuota: async () => ({ ok: true, value: { usedBytes: 0, quotaBytes: 1024, maxQuotaBytes: 1024 } }),
+    getWispSetup: async () => ({
+      ok: true,
+      value: { maxQuotaBytes: 1024, runtime: { available: false, message: "none" } },
+    }),
     getStorageSummary: async () => ({
       ok: true,
       value: { measuredAt: "", workspaces: [], workspaceBytes: 0, archives: [], archiveBytes: 0, partial: false },

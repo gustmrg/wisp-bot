@@ -46,10 +46,11 @@ interface SidebarProps {
   loading?: boolean;
   error?: string | null;
   onCollapsedChange: (collapsed: boolean) => void;
+  /** Resolves with the new Wisp's conversation ID, or null when it could not be created. */
   onCreate: (
     wisp: NewWisp,
     options: { notifyOnUpdatesEnabled: boolean; model: ModelSelection | null },
-  ) => Promise<boolean> | void;
+  ) => Promise<string | null>;
   onOpenSearch: () => void;
   onOpenSettings: () => void;
   /** Opens the mobile Approvals tab. */

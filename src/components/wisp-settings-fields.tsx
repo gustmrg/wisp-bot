@@ -21,9 +21,10 @@ import { Button } from "@/components/ui/button";
 import { Field, FieldDescription, FieldTitle } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { SegmentedControl } from "@/components/ui/segmented-control";
+import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { ToggleSwitch } from "@/components/ui/toggle-switch";
-import { SOUL_TEMPLATES, soulFromTemplate } from "@/lib/soul-templates";
+import { SOUL_TEMPLATES, soulFromTemplate, type SoulTemplate } from "@/lib/soul-templates";
 
 /** A Wisp as its settings form edits it, with its conversation's notification setting. */
 export type WispSettingsDraft = NewWisp & { notifyOnUpdatesEnabled: boolean };
@@ -70,16 +71,79 @@ const SOUL_MODES = [
 /** The Wisp's soul: a markdown document that defines who it is and how it behaves. */
 function WispSoulField({ soul, onChange }: { soul: string; onChange: (soul: string) => void }) {
   const [mode, setMode] = useState<SoulMode>("edit");
+  // A template picked over edited text, waiting for the person to confirm losing the edits.
+  const [pendingTemplate, setPendingTemplate] = useState<SoulTemplate | null>(null);
+  const applied = SOUL_TEMPLATES.find((template) => soulFromTemplate(template) === soul);
+
+  function chooseTemplate(template: SoulTemplate) {
+    // An empty soul or an untouched template has nothing to lose.
+    if (!soul.trim() || applied) {
+      setPendingTemplate(null);
+      onChange(soulFromTemplate(template));
+    } else setPendingTemplate(template);
+  }
+
   return (
     <Field className="mb-3" role="group" aria-labelledby="wisp-soul-title">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <FieldTitle id="wisp-soul-title">Soul</FieldTitle>
-        <SegmentedControl<SoulMode> label="Soul view" value={mode} options={SOUL_MODES} onChange={setMode} />
+        <div className="flex items-center gap-2">
+          {soul.trim() ? (
+            <Select
+              items={SOUL_TEMPLATES.map(({ id, label }) => ({ value: id, label }))}
+              value={applied?.id ?? null}
+              onValueChange={(id) => {
+                const template = SOUL_TEMPLATES.find((item) => item.id === id);
+                if (template && template !== applied) chooseTemplate(template);
+              }}
+            >
+              <SelectTrigger size="sm" aria-label="Soul template" className="min-w-[110px]">
+                <SelectValue placeholder="Template" />
+              </SelectTrigger>
+              <SelectContent align="end" alignItemWithTrigger={false}>
+                <SelectGroup>
+                  {SOUL_TEMPLATES.map((template) => (
+                    <SelectItem key={template.id} value={template.id}>
+                      {template.label}
+                    </SelectItem>
+                  ))}
+                </SelectGroup>
+              </SelectContent>
+            </Select>
+          ) : null}
+          <SegmentedControl<SoulMode> label="Soul view" value={mode} options={SOUL_MODES} onChange={setMode} />
+        </div>
       </div>
       <FieldDescription>
         Who this Wisp is: its identity, personality, and how it behaves. It follows this in every conversation. Markdown
         is supported.
       </FieldDescription>
+      {pendingTemplate ? (
+        <div
+          role="alert"
+          className="space-y-2.5 rounded-[10px] border border-warning-solid/40 bg-warning-solid/10 p-3 text-xs leading-relaxed"
+        >
+          <p className="m-0">
+            <strong className="font-medium">Replace the soul with the {pendingTemplate.label} template?</strong> What
+            you wrote is lost.
+          </p>
+          <div className="flex flex-wrap justify-end gap-2">
+            <Button type="button" size="sm" variant="ghost" onClick={() => setPendingTemplate(null)}>
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              onClick={() => {
+                onChange(soulFromTemplate(pendingTemplate));
+                setPendingTemplate(null);
+              }}
+            >
+              Replace
+            </Button>
+          </div>
+        </div>
+      ) : null}
       {mode === "edit" ? (
         <Textarea
           rows={10}
@@ -104,7 +168,7 @@ function WispSoulField({ soul, onChange }: { soul: string; onChange: (soul: stri
               type="button"
               variant="outline"
               size="xs"
-              onClick={() => onChange(soulFromTemplate(template))}
+              onClick={() => chooseTemplate(template)}
             >
               {template.label}
             </Button>

@@ -280,6 +280,10 @@ function createApi(initialState: ConversationStateView): WispApi {
       ok: true as const,
       value: { usedBytes: 0, quotaBytes: 1024, maxQuotaBytes: 1024 },
     })),
+    getWispSetup: vi.fn(async () => ({
+      ok: true as const,
+      value: { maxQuotaBytes: 1024, runtime: { available: false as const, message: "none" } },
+    })),
     getStorageSummary: vi.fn(async () => ({
       ok: true as const,
       value: { measuredAt: "", workspaces: [], workspaceBytes: 0, archives: [], archiveBytes: 0, partial: false },

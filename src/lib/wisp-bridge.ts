@@ -76,6 +76,7 @@ const REQUIRED_WISP_METHODS = [
   "setWorkspaceQuota",
   "getWispExecution",
   "saveWispExecution",
+  "getWispSetup",
   "openWorkspaceFolder",
   "openSkillsFolder",
   "attachWorkspaceFiles",

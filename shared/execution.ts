@@ -32,6 +32,13 @@ export interface WispExecutionView {
   container: ContainerState;
 }
 
+/** What a Wisp being created can be given, before it exists. */
+export interface WispSetupView {
+  /** The largest workspace size the disk has room for. */
+  maxQuotaBytes: number;
+  runtime: ContainerRuntimeStatus;
+}
+
 export interface SaveWispExecutionRequest {
   conversationId: string;
   mode: ExecutionMode;

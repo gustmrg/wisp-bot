@@ -124,6 +124,11 @@ export class ExecutionService implements IntegrationToolSource {
     return { ...settings, defaultImage: SANDBOX_IMAGE, hasGitToken, runtime, container };
   }
 
+  /** Whether the server can run commands at all, before any Wisp is involved. */
+  runtimeStatus(): Promise<ContainerRuntimeStatus> {
+    return this.options.runtime.status();
+  }
+
   async save(request: SaveWispExecutionRequest): Promise<WispExecutionView> {
     if (!EXECUTION_MODES.includes(request.mode)) throw invalid();
     if (request.image !== null && !isContainerImage(request.image)) {
