@@ -36,8 +36,11 @@ export function installStepOf(message: string, previous: InstallStep): InstallSt
  * The command run on the server. The remote shell sees only the app's own
  * version and the profile's port, both validated; never text from the user.
  * ~/.local/bin is added because it is often missing from the PATH of
- * non-interactive SSH sessions. Without a terminal, ending ssh does not stop
- * the remote command, so it stops itself when its stdin closes.
+ * non-interactive SSH sessions. The package goes into a new directory each
+ * time, unlike `npx`, whose cache keeps a half-extracted install from an
+ * interrupted setup and fails on it from then on. npm's output goes to stderr
+ * so stdout carries only the setup's result. Without a terminal, ending ssh
+ * does not stop the remote command, so it stops itself when its stdin closes.
  */
 export function installCommand(version: string, serverPort: number): string {
   if (!SERVER_VERSION_PATTERN.test(version))
@@ -45,7 +48,17 @@ export function installCommand(version: string, serverPort: number): string {
   if (!Number.isInteger(serverPort) || serverPort < 1 || serverPort > 65535) {
     throw new FatalTransportError("The server port is invalid.");
   }
-  return `PATH="$HOME/.local/bin:$PATH" npx --yes ${WISP_SERVER_PACKAGE}@${version} setup --json --no-pair --until-stdin-closes --port ${serverPort}`;
+  const cli = `"$d/node_modules/${WISP_SERVER_PACKAGE}/server/cli.js"`;
+  const script = [
+    `PATH="$HOME/.local/bin:$PATH"`,
+    `d=$(mktemp -d) || exit 1`,
+    `npm install --prefix "$d" --no-audit --no-fund --loglevel=error ${WISP_SERVER_PACKAGE}@${version} >&2 && node ${cli} setup --json --no-pair --until-stdin-closes --port ${serverPort}`,
+    `s=$?`,
+    `rm -rf "$d"`,
+    `exit $s`,
+  ].join("; ");
+  // sh runs it whatever the account's login shell is.
+  return `sh -c '${script}'`;
 }
 
 /** Installs and starts the Wisp server on a machine reached over SSH, by running its `setup` there. */
@@ -132,7 +145,9 @@ export function explainInstallFailure(
     return new FatalTransportError(failure.message, failure.failure, failure.details);
   }
   if (
-    /npx: (command )?not found|npx: No such file|env: .?(node|npx).?: No such file/i.test(stderr) ||
+    /(npx|npm|node): (command )?not found|(npx|npm|node): No such file|env: .?(node|npx|npm).?: No such file/i.test(
+      stderr,
+    ) ||
     exitCode === 127
   ) {
     return new FatalTransportError(

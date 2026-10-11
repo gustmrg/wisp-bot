@@ -262,7 +262,7 @@ describe("ConnectionGate", () => {
     );
     expect(await screen.findByRole("heading", { name: "Wisp is not installed on Home server" })).toBeVisible();
     expect(screen.getByText("Wisp can set it up for you").parentElement).toHaveTextContent(
-      "npx @gustmrg/wisp-server setup",
+      "the setup of @gustmrg/wisp-server",
     );
     await userEvent.click(screen.getByRole("button", { name: "Install on raspberrypi" }));
     expect(api.installServer).toHaveBeenCalledWith({ id: "pi" });
@@ -519,7 +519,7 @@ describe("ConnectionGate", () => {
       </ConnectionGate>,
     );
     // The connections list is one click away, unchanged.
-    await userEvent.click(await screen.findByRole("button", { name: "Manage" }));
+    await userEvent.click(await screen.findByRole("button", { name: "Manage connections" }));
     await userEvent.click(await screen.findByRole("button", { name: /Add a server/ }));
     await userEvent.type(screen.getByRole("textbox", { name: "Name" }), "Office");
     await userEvent.type(screen.getByRole("textbox", { name: "Host" }), "office-box");

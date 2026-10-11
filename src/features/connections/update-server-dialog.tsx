@@ -57,7 +57,7 @@ export function UpdateServerDialog({
           <h2 className="m-0 mb-1.5 text-sm font-semibold">What happens</h2>
           <ul className="m-0 flex flex-col gap-1 pl-4">
             <li>
-              Wisp runs <code>npx {WISP_SERVER_PACKAGE} setup</code> on {host} over SSH, then reconnects.
+              Wisp runs the setup of <code>{WISP_SERVER_PACKAGE}</code> on {host} over SSH, then reconnects.
             </li>
             <li>
               <strong className="font-medium">Kept:</strong> Wisps, conversations and the master key in{" "}

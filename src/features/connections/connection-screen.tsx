@@ -361,7 +361,7 @@ export function ConnectionScreen({ view }: { view: ConnectionsView }) {
         <Guidance message={status.message} />
         {offerInstall && ssh ? (
           <Note icon={<InfoIcon aria-hidden="true" className="size-3.5" />} title="Wisp can set it up for you">
-            Wisp runs <code>npx {WISP_SERVER_PACKAGE} setup</code> on {ssh.host} over SSH. It installs the server in{" "}
+            Wisp runs the setup of <code>{WISP_SERVER_PACKAGE}</code> on {ssh.host} over SSH. It installs the server in{" "}
             <code>~/.local/lib/wisp-server</code>, creates a master key in <code>~/.config/wisp</code>, and starts a
             systemd user service. The machine needs Node.js 22.19 or later and internet access.
           </Note>
@@ -483,20 +483,23 @@ export function ConnectionScreen({ view }: { view: ConnectionsView }) {
             ) : null}
           </div>
           {canManage ? (
-            <div className="flex items-center gap-2 border-t border-border bg-[color-mix(in_srgb,var(--muted)_40%,var(--card))] px-6 py-2.5 text-sm text-dim max-[760px]:px-4">
+            <button
+              type="button"
+              aria-label="Manage connections"
+              aria-expanded={manage.open}
+              className="flex w-full items-center gap-2 border-t border-border bg-[color-mix(in_srgb,var(--muted)_40%,var(--card))] px-6 py-2.5 text-left text-sm text-dim outline-none transition-colors hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring max-[760px]:px-4"
+              onClick={() => setManage((current) => ({ open: !current.open, editing: null }))}
+            >
               <Settings2Icon aria-hidden="true" className="size-4" />
               Connections
-              <Button
-                type="button"
-                size="xs"
-                variant="ghost"
-                className="ml-auto"
-                aria-expanded={manage.open}
-                onClick={() => setManage((current) => ({ open: !current.open, editing: null }))}
-              >
-                Manage
-              </Button>
-            </div>
+              <span className="ml-auto flex items-center gap-1 text-xs font-medium">
+                {manage.open ? "Hide" : "Manage"}
+                <ChevronRightIcon
+                  aria-hidden="true"
+                  className={cn("size-3.5 transition-transform", manage.open && "rotate-90")}
+                />
+              </span>
+            </button>
           ) : null}
         </section>
         {canManage && manage.open ? (

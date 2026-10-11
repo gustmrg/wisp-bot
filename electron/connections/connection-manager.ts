@@ -319,7 +319,7 @@ export class ConnectionManager {
         );
       } catch (error) {
         const message = error instanceof Error ? error.message : "The server could not be set up.";
-        this.options.logger.warn("server_install_failed", { profileId: id, cancelled: signal.aborted });
+        this.options.logger.warn("server_install_failed", { profileId: id, cancelled: signal.aborted, message });
         if (showing()) {
           const failure: ConnectionFailure = signal.aborted
             ? "cancelled"
