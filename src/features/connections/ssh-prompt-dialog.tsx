@@ -12,6 +12,7 @@ import {
 import { Field, FieldDescription, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import type { SshPromptView } from "../../../shared/connections";
+import { CONNECTION_BACKDROP } from "./update-server-dialog";
 
 /**
  * Asks what OpenSSH needs to know while connecting: to trust a host key the
@@ -46,7 +47,7 @@ function SshPromptForm({ prompt }: { prompt: SshPromptView }) {
   const { title, description, action } = copy(prompt);
   return (
     <Dialog open onOpenChange={(open) => (open ? undefined : send())}>
-      <DialogContent>
+      <DialogContent backdropClassName={CONNECTION_BACKDROP}>
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
           <DialogDescription>{description}</DialogDescription>

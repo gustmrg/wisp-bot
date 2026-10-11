@@ -30,7 +30,7 @@ import {
 import { formatDuration, useNow } from "./connection-steps";
 import { ConnectionsPanel } from "./connections-panel";
 import { SshPromptDialog } from "./ssh-prompt-dialog";
-import { compareVersions, UpdateServerDialog } from "./update-server-dialog";
+import { CONNECTION_BACKDROP, compareVersions, UpdateServerDialog } from "./update-server-dialog";
 
 /** The active connection, kept current from the main process. */
 export function useConnections(): [ConnectionsView | null, string] {
@@ -287,7 +287,7 @@ function ReconnectingBanner({ view, now }: { view: ConnectionsView; now: number 
       </div>
       {mobile && details ? (
         <Dialog open onOpenChange={setDetails}>
-          <DialogContent className="self-end pt-11">
+          <DialogContent backdropClassName={CONNECTION_BACKDROP} className="self-end pt-11">
             <DialogTitle className="sr-only">Connection details</DialogTitle>
             {detailsContent}
           </DialogContent>
@@ -295,7 +295,7 @@ function ReconnectingBanner({ view, now }: { view: ConnectionsView; now: number 
       ) : null}
       {editing ? (
         <Dialog open onOpenChange={setEditing}>
-          <DialogContent>
+          <DialogContent backdropClassName={CONNECTION_BACKDROP}>
             <DialogTitle className="sr-only">Edit connection</DialogTitle>
             <ConnectionsPanel view={view} initialEditing={view.activeId} />
           </DialogContent>

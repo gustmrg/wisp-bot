@@ -27,7 +27,7 @@ function DialogBackdrop({ className, ...props }: DialogPrimitive.Backdrop.Props)
     <DialogPrimitive.Backdrop
       data-slot="dialog-backdrop"
       className={cn(
-        "fixed inset-0 z-50 bg-black/30 data-open:animate-in data-open:fade-in-0 data-closed:animate-out data-closed:fade-out-0 data-closed:animation-duration-100",
+        "fixed inset-0 z-50 bg-black/50 data-open:animate-in data-open:fade-in-0 data-closed:animate-out data-closed:fade-out-0 data-closed:animation-duration-100",
         className,
       )}
       {...props}
@@ -40,11 +40,16 @@ function DialogContent({
   children,
   showCloseButton = true,
   mobileFullscreen = false,
+  backdropClassName,
   ...props
-}: DialogPrimitive.Popup.Props & { showCloseButton?: boolean; mobileFullscreen?: boolean }) {
+}: DialogPrimitive.Popup.Props & {
+  showCloseButton?: boolean;
+  mobileFullscreen?: boolean;
+  backdropClassName?: string;
+}) {
   return (
     <DialogPortal>
-      <DialogBackdrop />
+      <DialogBackdrop className={backdropClassName} />
       <DialogPrimitive.Viewport
         data-mobile-fullscreen={mobileFullscreen}
         className="dialog-viewport fixed inset-0 z-50 flex items-center justify-center p-4"

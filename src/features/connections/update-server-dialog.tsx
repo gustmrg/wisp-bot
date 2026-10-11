@@ -12,6 +12,9 @@ import {
 import { APP_METADATA } from "@/config/app-metadata";
 import { WISP_SERVER_PACKAGE } from "../../../shared/server-package";
 
+/** A lighter backdrop for the connection dialogs, so the connection screen stays readable behind them. */
+export const CONNECTION_BACKDROP = "bg-black/30";
+
 /** Compares dotted version numbers; anything after a `-` is ignored. */
 export function compareVersions(left: string, right: string): number {
   const parts = (version: string) => (version.split("-")[0] ?? "").split(".").map((part) => Number(part) || 0);
@@ -44,7 +47,7 @@ export function UpdateServerDialog({
   const appVersion = APP_METADATA.version;
   return (
     <Dialog open onOpenChange={(open) => (open ? undefined : onCancel())}>
-      <DialogContent>
+      <DialogContent backdropClassName={CONNECTION_BACKDROP}>
         <DialogHeader>
           <DialogTitle>
             Update {name} to {appVersion}?
