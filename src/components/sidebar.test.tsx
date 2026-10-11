@@ -30,6 +30,10 @@ beforeEach(() => {
         ok: true,
         value: { selection: null, secureStorageAvailable: true, providers: [] },
       })),
+      getWispSetup: vi.fn(async () => ({
+        ok: true,
+        value: { maxQuotaBytes: 1024, runtime: { available: false, message: "none" } },
+      })),
     },
   });
 });

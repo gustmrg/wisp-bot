@@ -51,11 +51,11 @@ export interface WorkspaceController {
   loadOlderMessages: () => void;
   loadNewerMessages: () => void;
   showLatestMessages: () => void;
-  /** Creates a Wisp with its own conversation and opens it. */
+  /** Creates a Wisp with its own conversation and opens it; resolves with its ID, or null when it failed. */
   createWisp: (
     wisp: NewWisp,
     options: { notifyOnUpdatesEnabled: boolean; model?: ModelSelection | null },
-  ) => Promise<boolean>;
+  ) => Promise<string | null>;
   createCircle: (circle: NewCircle) => Promise<boolean>;
   updateWisp: (wispId: string, changes: WispChanges) => Promise<boolean>;
   updateActiveChat: (changes: ChatChanges) => Promise<boolean>;
@@ -180,12 +180,13 @@ export function useWorkspaceController(): WorkspaceController {
     async (
       wisp: NewWisp,
       options: { notifyOnUpdatesEnabled: boolean; model?: ModelSelection | null },
-    ): Promise<boolean> => {
+    ): Promise<string | null> => {
       // A Wisp's own conversation shares its ID.
       const id = createChatId(conversations.chats);
       const created = await conversations.createWisp({ ...wisp, id }, options);
-      if (created) setActiveChatId(id);
-      return created;
+      if (!created) return null;
+      setActiveChatId(id);
+      return id;
     },
     [conversations.chats, conversations.createWisp, createChatId],
   );

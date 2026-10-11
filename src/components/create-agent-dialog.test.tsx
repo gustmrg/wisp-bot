@@ -21,23 +21,34 @@ const providers: AiSettingsView["providers"] = ["a", "b"].map((id) => ({
   ],
 }));
 
-function mockAiSettings(selection: AiSettingsView["selection"] = { providerId: "provider-a", modelId: "model-a" }) {
-  Object.defineProperty(window, "wisp", {
-    configurable: true,
-    value: {
-      getAiSettings: vi.fn(async () => ({
-        ok: true,
-        value: { selection, secureStorageAvailable: true, providers },
-      })),
-    },
-  });
+const GIB = 1024 * 1024 * 1024;
+
+function mockAiSettings(
+  selection: AiSettingsView["selection"] = { providerId: "provider-a", modelId: "model-a" },
+  setup: Partial<Record<"getWispSetup" | "setWorkspaceQuota" | "saveWispExecution", ReturnType<typeof vi.fn>>> = {},
+) {
+  const api = {
+    getAiSettings: vi.fn(async () => ({
+      ok: true,
+      value: { selection, secureStorageAvailable: true, providers },
+    })),
+    getWispSetup: vi.fn(async () => ({
+      ok: true,
+      value: { maxQuotaBytes: 10 * GIB, runtime: { available: true, name: "docker", version: "27.0" } },
+    })),
+    setWorkspaceQuota: vi.fn(async () => ({ ok: true, value: { usedBytes: 0, quotaBytes: 0, maxQuotaBytes: 0 } })),
+    saveWispExecution: vi.fn(async () => ({ ok: true, value: {} })),
+    ...setup,
+  };
+  Object.defineProperty(window, "wisp", { configurable: true, value: api });
+  return api;
 }
 
 describe("CreateAgentDialog persistence", () => {
   it("keeps the form open on failure so the same draft can be retried", async () => {
     mockAiSettings();
     const user = userEvent.setup();
-    const onCreate = vi.fn().mockResolvedValueOnce(false).mockResolvedValueOnce(true);
+    const onCreate = vi.fn().mockResolvedValueOnce(null).mockResolvedValueOnce("atlas");
     render(<CreateAgentDialog onCreate={onCreate} />);
     await user.click(screen.getByRole("button", { name: "Create Wisp" }));
     const name = screen.getByRole("textbox", { name: "Name" });
@@ -53,7 +64,7 @@ describe("CreateAgentDialog persistence", () => {
   it("inherits the global model when the custom selection stays off", async () => {
     mockAiSettings();
     const user = userEvent.setup();
-    const onCreate = vi.fn().mockResolvedValue(true);
+    const onCreate = vi.fn().mockResolvedValue("atlas");
     render(<CreateAgentDialog onCreate={onCreate} />);
     await user.click(screen.getByRole("button", { name: "Create Wisp" }));
     await user.type(screen.getByRole("textbox", { name: "Name" }), "Atlas");
@@ -71,7 +82,7 @@ describe("CreateAgentDialog persistence", () => {
   it("submits the chosen provider and model for this Wisp", async () => {
     mockAiSettings();
     const user = userEvent.setup();
-    const onCreate = vi.fn().mockResolvedValue(true);
+    const onCreate = vi.fn().mockResolvedValue("atlas");
     render(<CreateAgentDialog onCreate={onCreate} />);
     await user.click(screen.getByRole("button", { name: "Create Wisp" }));
     await user.type(screen.getByRole("textbox", { name: "Name" }), "Atlas");
@@ -91,7 +102,7 @@ describe("CreateAgentDialog persistence", () => {
   it("warns when the selected provider has no saved API key", async () => {
     mockAiSettings({ providerId: "provider-b", modelId: "model-b" });
     const user = userEvent.setup();
-    const onCreate = vi.fn().mockResolvedValue(true);
+    const onCreate = vi.fn().mockResolvedValue("atlas");
     render(<CreateAgentDialog onCreate={onCreate} />);
     await user.click(screen.getByRole("button", { name: "Create Wisp" }));
     await user.type(screen.getByRole("textbox", { name: "Name" }), "Atlas");
@@ -118,19 +129,19 @@ describe("CreateAgentDialog persistence", () => {
     expect(submit).toBeEnabled();
   });
 
-  it("splits creation into two steps and keeps the draft between them", async () => {
+  it("splits creation into steps and keeps the draft between them", async () => {
     mockAiSettings();
     const user = userEvent.setup();
-    const onCreate = vi.fn().mockResolvedValue(true);
+    const onCreate = vi.fn().mockResolvedValue("atlas");
     render(<CreateAgentDialog onCreate={onCreate} />);
     await user.click(screen.getByRole("button", { name: "Create Wisp" }));
-    expect(screen.getByText("Step 1 of 2 · Appearance and name")).toBeVisible();
+    expect(screen.getByText("Step 1 of 3 · Appearance and name")).toBeVisible();
     expect(screen.queryByRole("textbox", { name: "Soul" })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Next" })).toBeDisabled();
 
     await user.type(screen.getByRole("textbox", { name: "Name" }), "Atlas");
     await user.click(screen.getByRole("button", { name: "Next" }));
-    expect(screen.getByText("Step 2 of 2 · Soul and behavior")).toBeVisible();
+    expect(screen.getByText("Step 2 of 3 · Soul and behavior")).toBeVisible();
     const personality = screen.getByRole("textbox", { name: "Soul" });
     expect(personality).toHaveFocus();
     expect(screen.queryByRole("textbox", { name: "Name" })).not.toBeInTheDocument();
@@ -154,7 +165,7 @@ describe("CreateAgentDialog persistence", () => {
 describe("CreateAgentDialog template import", () => {
   const wisp = { name: "Atlas", role: "Research", soul: "Careful researcher" };
 
-  async function importTemplate(text: string, onCreate = vi.fn().mockResolvedValue(true)) {
+  async function importTemplate(text: string, onCreate = vi.fn().mockResolvedValue("atlas")) {
     const user = userEvent.setup();
     render(<CreateAgentDialog onCreate={onCreate} />);
     await user.click(screen.getByRole("button", { name: "Create Wisp" }));
@@ -216,5 +227,137 @@ describe("CreateAgentDialog template import", () => {
     await importTemplate("wisp://template/atlas");
     expect(screen.getByRole("alert")).toHaveTextContent("not a valid Wisp template");
     expect(screen.getByRole("textbox", { name: "Name" })).toHaveValue("");
+  });
+});
+
+describe("CreateAgentDialog workspace and commands", () => {
+  async function openSetupStep() {
+    const user = userEvent.setup();
+    const onCreate = vi.fn().mockResolvedValue("atlas");
+    render(<CreateAgentDialog onCreate={onCreate} />);
+    await user.click(screen.getByRole("button", { name: "Create Wisp" }));
+    await user.type(screen.getByRole("textbox", { name: "Name" }), "Atlas");
+    await user.click(screen.getByRole("button", { name: "Next" }));
+    await user.click(screen.getByRole("button", { name: "Next" }));
+    expect(screen.getByText("Step 3 of 3 · Workspace and commands")).toBeVisible();
+    return { user, onCreate };
+  }
+
+  it("leaves a Wisp created with the defaults alone", async () => {
+    const api = mockAiSettings();
+    const { user, onCreate } = await openSetupStep();
+    expect(await screen.findByRole("combobox", { name: "Workspace size" })).toHaveTextContent("512 MiB");
+    expect(screen.getByRole("switch", { name: "Run commands in a container" })).not.toBeChecked();
+    expect(screen.queryByRole("button", { name: "Next" })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Create Wisp" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    expect(onCreate).toHaveBeenCalledOnce();
+    expect(api.setWorkspaceQuota).not.toHaveBeenCalled();
+    expect(api.saveWispExecution).not.toHaveBeenCalled();
+  });
+
+  it("gives the new Wisp the chosen size and commands", async () => {
+    const api = mockAiSettings();
+    const { user } = await openSetupStep();
+    await user.click(await screen.findByRole("combobox", { name: "Workspace size" }));
+    expect(await screen.findByRole("option", { name: "50.0 GiB" })).toHaveAttribute("aria-disabled", "true");
+    await user.click(await screen.findByRole("option", { name: "128 MiB" }));
+    await user.click(screen.getByRole("switch", { name: "Run commands in a container" }));
+    expect(screen.getByText(/Packages installed by commands count toward the workspace/)).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "Create Wisp" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    expect(api.setWorkspaceQuota).toHaveBeenCalledWith({ conversationId: "atlas", quotaBytes: 128 * 1024 * 1024 });
+    expect(api.saveWispExecution).toHaveBeenCalledWith({
+      conversationId: "atlas",
+      mode: "container",
+      image: null,
+      localNetwork: false,
+    });
+  });
+
+  it("keeps commands off when the server cannot run them", async () => {
+    mockAiSettings(undefined, {
+      getWispSetup: vi.fn(async () => ({
+        ok: true,
+        value: { maxQuotaBytes: 10 * GIB, runtime: { available: false, message: "Install Docker or Podman." } },
+      })),
+    });
+    await openSetupStep();
+    expect(await screen.findByText("Install Docker or Podman.")).toBeVisible();
+    expect(screen.getByRole("switch", { name: "Run commands in a container" })).toBeDisabled();
+  });
+
+  it("explains that an older server keeps the defaults", async () => {
+    mockAiSettings(undefined, {
+      getWispSetup: vi.fn(async () => ({
+        ok: false,
+        error: { code: "unsupported", message: "not offered", retryable: false },
+      })),
+    });
+    await openSetupStep();
+    expect(await screen.findByText(/This server is older than this app/)).toBeVisible();
+    expect(screen.queryByRole("combobox", { name: "Workspace size" })).not.toBeInTheDocument();
+  });
+
+  it("reports a setup that could not be applied without creating the Wisp again", async () => {
+    mockAiSettings(undefined, {
+      setWorkspaceQuota: vi.fn(async () => ({
+        ok: false,
+        error: { code: "invalid_request", message: "Choose one of the offered workspace sizes.", retryable: false },
+      })),
+    });
+    const { user, onCreate } = await openSetupStep();
+    await user.click(await screen.findByRole("combobox", { name: "Workspace size" }));
+    await user.click(await screen.findByRole("option", { name: "64.0 MiB" }));
+    await user.click(screen.getByRole("button", { name: "Create Wisp" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Atlas was created, but its workspace size (Choose one of the offered workspace sizes.) could not be set.",
+    );
+    await user.click(screen.getByRole("button", { name: "Done" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    expect(onCreate).toHaveBeenCalledOnce();
+  });
+});
+
+describe("CreateAgentDialog soul templates", () => {
+  async function openSoulStep() {
+    mockAiSettings();
+    const user = userEvent.setup();
+    render(<CreateAgentDialog onCreate={vi.fn().mockResolvedValue("atlas")} />);
+    await user.click(screen.getByRole("button", { name: "Create Wisp" }));
+    await user.type(screen.getByRole("textbox", { name: "Name" }), "Atlas");
+    await user.click(screen.getByRole("button", { name: "Next" }));
+    return user;
+  }
+
+  it("switches between templates while the text is untouched", async () => {
+    const user = await openSoulStep();
+    await user.click(screen.getByRole("button", { name: "Friendly" }));
+    const soul = screen.getByRole("textbox", { name: "Soul" });
+    expect((soul as HTMLTextAreaElement).value).toContain("Warm and approachable");
+    expect(screen.getByRole("combobox", { name: "Soul template" })).toHaveTextContent("Friendly");
+
+    await user.click(screen.getByRole("combobox", { name: "Soul template" }));
+    await user.click(await screen.findByRole("option", { name: "Direct" }));
+    expect((soul as HTMLTextAreaElement).value).toContain("Straight to the point");
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it("asks before a template replaces edited text", async () => {
+    const user = await openSoulStep();
+    const soul = screen.getByRole("textbox", { name: "Soul" });
+    await user.type(soul, "My own soul");
+    await user.click(screen.getByRole("combobox", { name: "Soul template" }));
+    await user.click(await screen.findByRole("option", { name: "Formal" }));
+    expect(screen.getByRole("alert")).toHaveTextContent("Replace the soul with the Formal template?");
+    expect(soul).toHaveValue("My own soul");
+
+    await user.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(soul).toHaveValue("My own soul");
+
+    await user.click(screen.getByRole("combobox", { name: "Soul template" }));
+    await user.click(await screen.findByRole("option", { name: "Formal" }));
+    await user.click(screen.getByRole("button", { name: "Replace" }));
+    expect((soul as HTMLTextAreaElement).value).toContain("Professional and polished");
   });
 });

@@ -62,7 +62,7 @@ import type {
   StorageSummaryRequest,
 } from "./storage.js";
 import type { AttachWorkspaceFilesResult, SetWorkspaceQuotaRequest, WorkspaceView } from "./workspace.js";
-import type { SaveWispExecutionRequest, WispExecutionView } from "./execution.js";
+import type { SaveWispExecutionRequest, WispExecutionView, WispSetupView } from "./execution.js";
 import type { ImportSkillRequest, SkillRequest, SkillView } from "./skills.js";
 import type { ResolveToolApprovalRequest, ToolApprovalRequest, ToolPolicySettings } from "./tool-policy.js";
 import type {
@@ -156,6 +156,7 @@ export const WISP_IPC_CHANNELS = {
   setWorkspaceQuota: "wisp:workspace:set-quota",
   getWispExecution: "wisp:execution:get",
   saveWispExecution: "wisp:execution:save",
+  getWispSetup: "wisp:execution:setup",
   openWorkspaceFolder: "wisp:workspace:open",
   openSkillsFolder: "wisp:workspace:open-skills",
   attachWorkspaceFiles: "wisp:workspace:attach",
@@ -577,6 +578,8 @@ export interface WispApi {
   /** Where the Wisp's commands run, and whether the server can run them. */
   getWispExecution(request: ConversationRequest): Promise<BackendResult<WispExecutionView>>;
   saveWispExecution(request: SaveWispExecutionRequest): Promise<BackendResult<WispExecutionView>>;
+  /** Workspace room and command support for a Wisp that does not exist yet. */
+  getWispSetup(): Promise<BackendResult<WispSetupView>>;
   openWorkspaceFolder(request: ConversationRequest): Promise<EmptyResult>;
   /** Opens the Wisp's skills folder, creating it on first use. */
   openSkillsFolder(request: ConversationRequest): Promise<EmptyResult>;

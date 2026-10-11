@@ -126,7 +126,7 @@ describe("WorkspaceService", () => {
 
   it("resizes a Wisp's workspace and keeps the size in its config directory", async () => {
     const { service, configDirectory } = await setup();
-    const larger = WORKSPACE_QUOTA_PRESETS[1]!;
+    const larger = WORKSPACE_QUOTA_PRESETS[WORKSPACE_QUOTA_PRESETS.indexOf(WORKSPACE_QUOTA_BYTES) + 1]!;
 
     const before = await service.getView("atlas");
     expect(before).toMatchObject({ usedBytes: 0, quotaBytes: WORKSPACE_QUOTA_BYTES });
@@ -142,7 +142,9 @@ describe("WorkspaceService", () => {
 
   it("refuses to grow past the free disk space but always allows shrinking", async () => {
     const { configDirectory, workspaceDirectory } = await setup();
-    const [smallest, second, third] = WORKSPACE_QUOTA_PRESETS as [number, number, number];
+    // Sizes above the default, which a new workspace starts with.
+    const [second, third] = WORKSPACE_QUOTA_PRESETS.filter((size) => size > WORKSPACE_QUOTA_BYTES) as [number, number];
+    const [smallest] = WORKSPACE_QUOTA_PRESETS as [number];
     const service = new WorkspaceService({
       resolveDirectories: () => ({ workspaceDirectory, configDirectory }),
       openPath: async () => undefined,
@@ -159,9 +161,31 @@ describe("WorkspaceService", () => {
     await expect(service.setQuota("atlas", smallest)).resolves.toMatchObject({ quotaBytes: smallest });
   });
 
+  it("offers sizes below the default and measures room for a Wisp not created yet", async () => {
+    const { configDirectory, workspaceDirectory, root } = await setup();
+    const [smallest] = WORKSPACE_QUOTA_PRESETS as [number];
+    expect(smallest).toBeLessThan(WORKSPACE_QUOTA_BYTES);
+    const measured: string[] = [];
+    const service = new WorkspaceService({
+      resolveDirectories: () => ({ workspaceDirectory, configDirectory }),
+      openPath: async () => undefined,
+      selectFiles: async () => [],
+      freeDiskBytes: async (directory) => {
+        measured.push(directory);
+        return WORKSPACE_QUOTA_BYTES;
+      },
+      workspaceRoot: path.join(root, "workspaces"),
+    });
+
+    await expect(service.newWorkspaceRoom()).resolves.toBe(WORKSPACE_QUOTA_BYTES);
+    expect(measured).toEqual([path.join(root, "workspaces")]);
+    await expect(service.setQuota("atlas", smallest)).resolves.toMatchObject({ quotaBytes: smallest });
+    expect(await readWorkspaceQuota(configDirectory)).toBe(smallest);
+  });
+
   it("reports a resize only once it is saved", async () => {
     const { configDirectory, workspaceDirectory } = await setup();
-    const [, second, third] = WORKSPACE_QUOTA_PRESETS as [number, number, number];
+    const [second, third] = WORKSPACE_QUOTA_PRESETS.filter((size) => size > WORKSPACE_QUOTA_BYTES) as [number, number];
     const onQuotaChanged = vi.fn();
     const service = new WorkspaceService({
       resolveDirectories: () => ({ workspaceDirectory, configDirectory }),

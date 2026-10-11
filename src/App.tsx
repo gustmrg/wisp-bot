@@ -186,13 +186,13 @@ function Workspace({ userProfile }: { userProfile: UserProfileController }) {
             error={workspace.error}
             onCollapsedChange={setSidebarCollapsed}
             onCreate={async (wisp, options) => {
-              const created = await workspace.createWisp(wisp, options);
-              if (created) {
+              const id = await workspace.createWisp(wisp, options);
+              if (id) {
                 navigationVersion.current += 1;
                 if (mobile) setDetailsOpen(false);
                 setMobilePage("chat");
               }
-              return created;
+              return id;
             }}
             onOpenSearch={() => showSearch(true)}
             onOpenSettings={() => showSettings("general")}

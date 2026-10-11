@@ -256,6 +256,7 @@ export async function createBackendRuntime(options: BackendRuntimeOptions): Prom
     selectFiles: options.selectFiles,
     // The summary shows each workspace's size, so a resize must not wait for the cache to expire.
     onQuotaChanged: () => storage.invalidate(),
+    workspaceRoot: path.join(dataDirectory, "workspaces"),
   });
   const transcriptionService = new TranscriptionService({
     credentials: modelService,

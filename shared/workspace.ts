@@ -1,10 +1,16 @@
+const MIB = 1024 * 1024;
+const GIB = 1024 * MIB;
 /** Most bytes a workspace may hold, counting agent-written files and attachments, until its Wisp is given another size. */
-export const WORKSPACE_QUOTA_BYTES = 512 * 1024 * 1024;
-const GIB = 1024 * 1024 * 1024;
+export const WORKSPACE_QUOTA_BYTES = 512 * MIB;
+/** Below this, packages installed by a Wisp's commands quickly fill its workspace. */
+export const COMMAND_WORKSPACE_QUOTA_BYTES = 2 * GIB;
 /** The sizes a Wisp's workspace can be given, smallest first. */
 export const WORKSPACE_QUOTA_PRESETS: ReadonlyArray<number> = [
+  64 * MIB,
+  128 * MIB,
+  256 * MIB,
   WORKSPACE_QUOTA_BYTES,
-  2 * GIB,
+  COMMAND_WORKSPACE_QUOTA_BYTES,
   10 * GIB,
   50 * GIB,
   100 * GIB,

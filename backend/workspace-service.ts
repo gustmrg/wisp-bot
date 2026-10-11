@@ -166,6 +166,8 @@ export interface WorkspaceServiceOptions {
   acquireWrite?: (conversationId: string) => () => void;
   /** Called after a workspace was given another size. */
   onQuotaChanged?: (conversationId: string) => void;
+  /** Folder that holds every Wisp's workspace, where a new Wisp's workspace is created. */
+  workspaceRoot?: string;
 }
 
 /**
@@ -191,6 +193,14 @@ export class WorkspaceService {
       (this.options.freeDiskBytes ?? freeDiskBytes)(workspaceDirectory),
     ]);
     return { usedBytes, quotaBytes, maxQuotaBytes: largestQuota(usedBytes + freeBytes) };
+  }
+
+  /** The largest size a Wisp created now could be given. */
+  async newWorkspaceRoom(): Promise<number> {
+    const { workspaceRoot } = this.options;
+    if (!workspaceRoot)
+      throw new WispBackendError("internal_error", "The free disk space could not be measured.", true);
+    return largestQuota(await (this.options.freeDiskBytes ?? freeDiskBytes)(workspaceRoot));
   }
 
   /**

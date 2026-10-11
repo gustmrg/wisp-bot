@@ -34,7 +34,7 @@ export function registerRuntimeHandlers(
     ),
     registerSessionReportHandlers(router, runtime.sessionReports, authorizeSender),
     registerWorkspaceHandlers(router, runtime.workspace, authorizeSender),
-    registerExecutionHandlers(router, runtime.execution, authorizeSender),
+    registerExecutionHandlers(router, runtime.execution, runtime.workspace, authorizeSender),
     registerStorageHandlers(router, runtime.storage, authorizeSender),
     // A key added for voice input can make the saved chat model usable, so Wisps re-apply it.
     registerVoiceHandlers(router, runtime.transcription, authorizeSender, () => runtime.reapplySavedModel()),
