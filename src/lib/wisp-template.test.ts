@@ -11,6 +11,21 @@ describe("Wisp templates", () => {
     expect(parseWispTemplate(serializeWispTemplate(wisp, model))).toEqual({ ok: true, template: { ...wisp, model } });
   });
 
+  it("carries the model's thinking level, dropping one this app does not know", () => {
+    const model = { providerId: "anthropic", modelId: "claude-sonnet-5-5", thinkingLevel: "high" as const };
+    expect(parseWispTemplate(serializeWispTemplate(wisp, model))).toEqual({ ok: true, template: { ...wisp, model } });
+    const unknown = JSON.stringify({
+      format: "wisp-template",
+      version: 1,
+      ...wisp,
+      model: { providerId: "a", modelId: "b", thinkingLevel: "extreme" },
+    });
+    expect(parseWispTemplate(unknown)).toEqual({
+      ok: true,
+      template: { ...wisp, model: { providerId: "a", modelId: "b" } },
+    });
+  });
+
   it("round-trips a Wisp without a model", () => {
     expect(parseWispTemplate(`\n${serializeWispTemplate(wisp, null)}\n`)).toEqual({ ok: true, template: wisp });
   });

@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import type { ModelSelection } from "../shared/contracts.js";
+import type { ModelSelection, ThinkingLevel } from "../shared/contracts.js";
 import type { ConversationAgentContext } from "../backend/conversation-agent.js";
 import { PiConversationAgent, type PiSessionFactory, type PiSessionLike } from "../backend/pi-conversation-agent.js";
 import type { PiAgentEvent } from "../backend/pi-event-translator.js";
@@ -12,6 +12,7 @@ class MockPiSession implements PiSessionLike {
   readonly toolRevision: string;
   readonly prompts: string[] = [];
   readonly models: unknown[] = [];
+  readonly thinkingLevels: ThinkingLevel[] = [];
   abortCount = 0;
   disposeCount = 0;
   reloadCount = 0;
@@ -60,6 +61,10 @@ class MockPiSession implements PiSessionLike {
 
   async setModel(model: never): Promise<void> {
     this.models.push(model);
+  }
+
+  setThinkingLevel(level: ThinkingLevel): void {
+    this.thinkingLevels.push(level);
   }
 
   getActiveToolNames(): string[] {
@@ -281,6 +286,35 @@ it("reports the model actually used while an override waits for the active turn"
     pending: null,
   });
   expect(sessions.get("one")?.models).toHaveLength(1);
+  await agent.dispose();
+});
+
+it("opens the session at the chosen thinking level and changes it with the model", async () => {
+  const sessions = new Map<string, MockPiSession>();
+  const created: ModelSelection[] = [];
+  const factory = factoryFor(sessions);
+  const agent = new PiConversationAgent(context("one"), {
+    ...factory,
+    create: async (agentContext, chosen) => {
+      created.push(chosen);
+      return factory.create(agentContext, chosen);
+    },
+  });
+  await agent.start();
+  await agent.applyModel({ ...selection(), thinkingLevel: "high" });
+  const first = agent.send({ conversationId: "one", requestId: "r1", text: "Hello" });
+  await vi.waitFor(() => expect(sessions.get("one")?.isIdle).toBe(false));
+  expect(created).toEqual([{ ...selection(), thinkingLevel: "high" }]);
+
+  // A change during a turn waits for it, like a model change.
+  await agent.applyModel(selection());
+  expect(sessions.get("one")?.thinkingLevels).toEqual([]);
+  sessions.get("one")?.finishPrompt();
+  await first;
+  await vi.waitFor(() => expect(sessions.get("one")?.thinkingLevels).toEqual(["off"]));
+
+  await agent.applyModel({ ...selection(), thinkingLevel: "low" });
+  expect(sessions.get("one")?.thinkingLevels).toEqual(["off", "low"]);
   await agent.dispose();
 });
 

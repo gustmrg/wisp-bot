@@ -12,7 +12,13 @@ import type {
   ToolDefinition,
 } from "@earendil-works/pi-coding-agent" with { "resolution-mode": "import" };
 
-import type { BackendError, ConversationAgentEvent, ModelSelection, SendMessageRequest } from "../shared/contracts.js";
+import type {
+  BackendError,
+  ConversationAgentEvent,
+  ModelSelection,
+  SendMessageRequest,
+  ThinkingLevel,
+} from "../shared/contracts.js";
 import { WispBackendError } from "./backend-error.js";
 import { normalizeUserName } from "./conversation-agent.js";
 import type { IntegrationToolSource } from "./integration-tool-source.js";
@@ -69,6 +75,8 @@ export interface PiSessionLike {
   waitForIdle(): Promise<void>;
   reload(): Promise<void>;
   setModel(model: PiModel, options?: { persist?: boolean }): Promise<void>;
+  /** Pi clamps the level to what the current model supports. */
+  setThinkingLevel(level: ThinkingLevel): void;
   getActiveToolNames(): string[];
   dispose(): void;
 }
@@ -156,7 +164,7 @@ export class SdkPiSessionFactory implements PiSessionFactory {
       systemPromptOverride: () => buildSystemPrompt(context, { runsCommands }),
       appendSystemPromptOverride: () => [],
       extensionFactories: [
-        providerRequestExtension(context.workspaceDirectory),
+        providerRequestExtension(context.workspaceDirectory, () => session?.thinkingLevel ?? "off"),
         {
           name: "wisp-continuity",
           hidden: true,
@@ -237,7 +245,9 @@ export class SdkPiSessionFactory implements PiSessionFactory {
         ...new Set((current?.activeNames ?? []).filter((name) => registeredIntegrationNames.has(name))),
       ];
     };
-    const { session } = await createAgentSession({
+    // Read by the provider request hook, which runs only after the session exists.
+    let session: AgentSession | undefined;
+    ({ session } = await createAgentSession({
       cwd: context.workspaceDirectory,
       agentDir: context.configDirectory,
       model,
@@ -273,8 +283,8 @@ export class SdkPiSessionFactory implements PiSessionFactory {
         ...createSkillTools(skills, context, this.authorizationBroker),
       ] as unknown as ToolDefinition[],
       excludeTools: ["bash", "powershell"],
-      thinkingLevel: "off",
-    });
+      thinkingLevel: selection.thinkingLevel ?? "off",
+    }));
     continuity = new ContextSession(
       session,
       path.join(context.configDirectory, "context-settings.json"),
@@ -319,13 +329,24 @@ export class SdkPiSessionFactory implements PiSessionFactory {
   }
 }
 
-export function excludeOpenRouterReasoning(payload: unknown, providerId: string | undefined): unknown {
+/**
+ * Keeps OpenRouter from returning reasoning text, which Wisps never show. With
+ * thinking off it also turns reasoning off; otherwise the effort Pi set stays.
+ */
+export function excludeOpenRouterReasoning(
+  payload: unknown,
+  providerId: string | undefined,
+  thinkingLevel: ThinkingLevel = "off",
+): unknown {
   if (providerId !== "openrouter" || !payload || typeof payload !== "object" || Array.isArray(payload)) return payload;
   const request = payload as Record<string, unknown>;
   const reasoning =
     request.reasoning && typeof request.reasoning === "object" && !Array.isArray(request.reasoning)
       ? (request.reasoning as Record<string, unknown>)
       : {};
+  if (thinkingLevel !== "off") {
+    return { ...request, include_reasoning: false, reasoning: { ...reasoning, exclude: true } };
+  }
   return {
     ...request,
     include_reasoning: false,
@@ -359,13 +380,17 @@ export function sanitizeWorkspacePath(payload: unknown, workspaceDirectory: stri
   return sanitize(payload);
 }
 
-function providerRequestExtension(workspaceDirectory: string): InlineExtension {
+function providerRequestExtension(workspaceDirectory: string, thinkingLevel: () => ThinkingLevel): InlineExtension {
   return {
     name: "wisp-provider-request",
     hidden: true,
     factory: (pi) => {
       pi.on("before_provider_request", (event, context) =>
-        excludeOpenRouterReasoning(sanitizeWorkspacePath(event.payload, workspaceDirectory), context.model?.provider),
+        excludeOpenRouterReasoning(
+          sanitizeWorkspacePath(event.payload, workspaceDirectory),
+          context.model?.provider,
+          thinkingLevel(),
+        ),
       );
     },
   };
@@ -558,6 +583,7 @@ export class PiConversationAgent implements ConversationAgent {
     }
     try {
       await this.session.setModel(model, { persist: false });
+      this.session.setThinkingLevel(selection.thinkingLevel ?? "off");
       this.appliedSelection = { ...selection };
       this.pendingSelection = null;
       this.pendingModel = null;
@@ -676,6 +702,7 @@ export class PiConversationAgent implements ConversationAgent {
     this.pendingSelection = null;
     try {
       await session.setModel(model, { persist: false });
+      session.setThinkingLevel(selection?.thinkingLevel ?? "off");
       this.appliedSelection = selection;
       this.publishModel();
     } catch {
@@ -992,6 +1019,7 @@ function adaptSession(
       await refreshTools();
     },
     setModel: (model, options) => session.setModel(model, options),
+    setThinkingLevel: (level) => session.setThinkingLevel(level),
     getActiveToolNames: () => session.getActiveToolNames(),
     dispose: () => {
       unsubscribeTelemetry();

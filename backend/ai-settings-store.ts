@@ -1,6 +1,11 @@
 import { readFile } from "node:fs/promises";
 
-import type { AuxiliaryModelSelections, AuxiliaryTask, ModelSelection } from "../shared/contracts.js";
+import {
+  isThinkingLevel,
+  type AuxiliaryModelSelections,
+  type AuxiliaryTask,
+  type ModelSelection,
+} from "../shared/contracts.js";
 import { writeFileAtomically } from "./atomic-file.js";
 
 /**
@@ -29,14 +34,21 @@ export function normalizeSelection(value: unknown): ModelSelection | null {
   ) {
     return null;
   }
+  const thinkingLevel = candidate.thinkingLevel;
+  if (thinkingLevel !== undefined && !isThinkingLevel(thinkingLevel)) return null;
   return {
     providerId: candidate.providerId,
     modelId: candidate.modelId,
     ...(maxOutputTokens === undefined ? {} : { maxOutputTokens }),
+    // "off" is the default, so it is never stored.
+    ...(thinkingLevel === undefined || thinkingLevel === "off" ? {} : { thinkingLevel }),
   };
 }
 
-/** An auxiliary selection names a provider and model only; its output limit is fixed by its task. */
+/**
+ * An auxiliary selection names a provider and model only; its output limit is
+ * fixed by its task, and it never reasons: its tasks are short.
+ */
 function normalizeAuxiliary(value: unknown): AuxiliaryModelSelections {
   const record = value && typeof value === "object" ? (value as Partial<Record<AuxiliaryTask, unknown>>) : {};
   const selection = normalizeSelection(record.imageUnderstanding);

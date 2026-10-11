@@ -47,6 +47,7 @@ const UNCONFIGURED_AI: AiSettingsView = {
           id: "test-model",
           name: "Test Model",
           reasoning: false,
+          thinkingLevels: ["off"],
           input: ["text"],
           contextWindow: 10_000,
           maxOutputTokens: 1_000,

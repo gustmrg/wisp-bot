@@ -283,7 +283,10 @@ export async function createBackendRuntime(options: BackendRuntimeOptions): Prom
     transcription: transcriptionService,
     execution: executionService,
     applyConversationModel: async (conversationId, model) => {
-      if (model) await modelService.validateConversationSelection(model);
+      if (model) {
+        await modelService.validateConversationSelection(model);
+        modelService.assertSupportedThinkingLevel(model);
+      }
       await service.applyConversationModel(conversationId, model);
     },
     reapplySavedModel: async () => service.applyModel(await modelService.getSelection()),
@@ -329,7 +332,8 @@ function sameSelection(left: ModelSelection | null, right: ModelSelection | null
   return (
     left?.providerId === right?.providerId &&
     left?.modelId === right?.modelId &&
-    left?.maxOutputTokens === right?.maxOutputTokens
+    left?.maxOutputTokens === right?.maxOutputTokens &&
+    left?.thinkingLevel === right?.thinkingLevel
   );
 }
 

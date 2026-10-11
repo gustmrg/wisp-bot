@@ -165,6 +165,7 @@ describe("SdkPiSessionFactory", () => {
         modelRuntime: runtime,
         tools: ["read", "grep", "find", "ls", "edit", "write", "search_history", "use_skill", "save_skill"],
         excludeTools: ["bash", "powershell"],
+        thinkingLevel: "off",
         customTools: expect.arrayContaining([
           expect.objectContaining({ name: "read" }),
           expect.objectContaining({ name: "grep" }),
@@ -745,6 +746,71 @@ describe("SdkPiSessionFactory", () => {
       messages: [],
     });
     expect(excludeOpenRouterReasoning(payload, "anthropic")).toBe(payload);
+  });
+
+  it("keeps the effort Pi set for OpenRouter when reasoning is on, still hiding its text", () => {
+    const payload = { model: "model", reasoning: { effort: "high" }, messages: [] };
+
+    expect(excludeOpenRouterReasoning(payload, "openrouter", "high")).toEqual({
+      model: "model",
+      include_reasoning: false,
+      reasoning: { effort: "high", exclude: true },
+      messages: [],
+    });
+    expect(excludeOpenRouterReasoning(payload, "anthropic", "high")).toBe(payload);
+  });
+
+  it("opens the session at the chosen thinking level and sends it to OpenRouter", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "wisp-pi-thinking-"));
+    const runtime = {
+      hasConfiguredAuth: vi.fn(() => true),
+      getModel: vi.fn(() => ({ provider: "openrouter", id: "model" })),
+    } as unknown as ModelRuntimeLike;
+    const context: ConversationAgentContext = {
+      conversationId: "one",
+      sessionId: "app-session",
+      name: "Atlas",
+      wispId: "one",
+      role: "",
+      soul: "",
+      workspaceDirectory: path.join(directory, "workspace"),
+      sessionDirectory: directory,
+      configDirectory: path.join(directory, "config"),
+      piSessionId: null,
+      piSessionFile: null,
+    };
+    await mkdir(context.workspaceDirectory, { recursive: true });
+    const session = sdk.session as typeof sdk.session & { thinkingLevel?: string };
+    session.thinkingLevel = "medium";
+    try {
+      await new SdkPiSessionFactory(runtime).create(context, {
+        providerId: "openrouter",
+        modelId: "model",
+        thinkingLevel: "medium",
+      });
+
+      expect(sdk.createAgentSession).toHaveBeenCalledWith(expect.objectContaining({ thinkingLevel: "medium" }));
+      const loader = sdk.loaderOptions[0] as {
+        extensionFactories: Array<{ name: string; factory: (pi: unknown) => void }>;
+      };
+      let beforeRequest:
+        | ((event: { payload: unknown }, context: { model?: { provider: string } }) => unknown)
+        | undefined;
+      loader.extensionFactories
+        .find(({ name }) => name === "wisp-provider-request")!
+        .factory({ on: (_event: string, handler: typeof beforeRequest) => (beforeRequest = handler) });
+      expect(
+        beforeRequest!({ payload: { reasoning: { effort: "medium" } } }, { model: { provider: "openrouter" } }),
+      ).toEqual({ include_reasoning: false, reasoning: { effort: "medium", exclude: true } });
+
+      // The hook reads the session's level at each request, so runtime changes apply.
+      session.thinkingLevel = "off";
+      expect(
+        beforeRequest!({ payload: { reasoning: { effort: "none" } } }, { model: { provider: "openrouter" } }),
+      ).toEqual({ include_reasoning: false, reasoning: { effort: "none", enabled: false, exclude: true } });
+    } finally {
+      delete session.thinkingLevel;
+    }
   });
 
   it("removes the absolute workspace path from nested provider payloads", () => {

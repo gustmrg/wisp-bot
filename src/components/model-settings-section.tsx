@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import type { AiSettingsView, ProviderSummary } from "../../shared/contracts";
+import type { AiSettingsView, ProviderSummary, ThinkingLevel } from "../../shared/contracts";
 import { AuxiliaryModelSettings } from "@/components/auxiliary-model-settings";
 import { NoImageInputNote } from "@/components/no-image-input-note";
 import { SearchableCombobox } from "@/components/searchable-combobox";
+import { canChooseThinkingLevel, keepThinkingLevel, ThinkingLevelRow } from "@/components/thinking-level-select";
 import {
   ConfirmAction,
   SettingsCard,
@@ -47,6 +48,7 @@ function ModelSettingsSection({
   const [providerId, setProviderId] = useState("");
   const [modelId, setModelId] = useState("");
   const [maxOutputTokens, setMaxOutputTokens] = useState("");
+  const [thinkingLevel, setThinkingLevel] = useState<ThinkingLevel>("off");
   const [apiKey, setApiKey] = useState("");
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -69,11 +71,10 @@ function ModelSettingsSection({
         ? nextSelection.modelId
         : (nextProvider?.models[0]?.id ?? "");
     setModelId(nextModelId);
-    setMaxOutputTokens(
-      nextSelection && nextSelection.providerId === nextProvider?.id && nextSelection.modelId === nextModelId
-        ? String(nextSelection.maxOutputTokens ?? "")
-        : "",
-    );
+    const savedModel =
+      nextSelection && nextSelection.providerId === nextProvider?.id && nextSelection.modelId === nextModelId;
+    setMaxOutputTokens(savedModel ? String(nextSelection.maxOutputTokens ?? "") : "");
+    setThinkingLevel(savedModel ? (nextSelection.thinkingLevel ?? "off") : "off");
     setApiKey("");
   }, []);
 
@@ -109,13 +110,11 @@ function ModelSettingsSection({
   function handleProviderChange(nextProviderId: string | null): void {
     if (!nextProviderId || !view) return;
     const nextProvider = view.providers.find(({ id }) => id === nextProviderId);
+    const saved = view.selection?.providerId === nextProviderId ? view.selection : null;
     setProviderId(nextProviderId);
-    setModelId(
-      view.selection?.providerId === nextProviderId ? view.selection.modelId : (nextProvider?.models[0]?.id ?? ""),
-    );
-    setMaxOutputTokens(
-      view.selection?.providerId === nextProviderId ? String(view.selection.maxOutputTokens ?? "") : "",
-    );
+    setModelId(saved ? saved.modelId : (nextProvider?.models[0]?.id ?? ""));
+    setMaxOutputTokens(saved ? String(saved.maxOutputTokens ?? "") : "");
+    setThinkingLevel(saved?.thinkingLevel ?? "off");
     setApiKey("");
     setError(null);
     setSaved(false);
@@ -132,6 +131,7 @@ function ModelSettingsSection({
           providerId,
           modelId,
           ...(maxOutputTokens ? { maxOutputTokens: Number(maxOutputTokens) } : {}),
+          ...(effectiveThinkingLevel === "off" ? {} : { thinkingLevel: effectiveThinkingLevel }),
         },
         ...(apiKey.trim() ? { apiKey } : {}),
       });
@@ -172,6 +172,7 @@ function ModelSettingsSection({
   const providerItems = view?.providers.map(({ id, name }) => ({ value: id, label: name })) ?? [];
   const modelItems = provider?.models.map(({ id, name }) => ({ value: id, label: name, description: id })) ?? [];
   const model = provider?.models.find(({ id }) => id === modelId);
+  const effectiveThinkingLevel = keepThinkingLevel(thinkingLevel, model);
   const parsedMaxOutputTokens = maxOutputTokens ? Number(maxOutputTokens) : undefined;
   const invalidMaxOutputTokens =
     parsedMaxOutputTokens !== undefined &&
@@ -254,6 +255,12 @@ function ModelSettingsSection({
                   onChange={(value) => {
                     setModelId(value);
                     setMaxOutputTokens("");
+                    setThinkingLevel((level) =>
+                      keepThinkingLevel(
+                        level,
+                        provider?.models.find(({ id }) => id === value),
+                      ),
+                    );
                     setError(null);
                     setSaved(false);
                   }}
@@ -282,6 +289,18 @@ function ModelSettingsSection({
                   }}
                 />
               </SettingsRow>
+              {canChooseThinkingLevel(model) ? (
+                <ThinkingLevelRow
+                  id="ai-thinking-level"
+                  model={model}
+                  value={effectiveThinkingLevel}
+                  onChange={(level) => {
+                    setThinkingLevel(level);
+                    setError(null);
+                    setSaved(false);
+                  }}
+                />
+              ) : null}
             </SettingsCard>
           </SettingsGroup>
 

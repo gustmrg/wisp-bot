@@ -14,6 +14,7 @@ const providers: AiSettingsView["providers"] = ["a", "b"].map((id) => ({
       id: `model-${id}`,
       name: `Model ${id}`,
       reasoning: false,
+      thinkingLevels: ["off"],
       input: ["text"],
       contextWindow: 10000,
       maxOutputTokens: 1000,

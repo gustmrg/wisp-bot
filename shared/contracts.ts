@@ -203,16 +203,29 @@ export interface SetUserTimeZoneRequest {
   timeZone: string;
 }
 
+/** How much a reasoning model thinks before answering, from Pi's thinking levels. */
+export const THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh", "max"] as const;
+
+export type ThinkingLevel = (typeof THINKING_LEVELS)[number];
+
+export function isThinkingLevel(value: unknown): value is ThinkingLevel {
+  return typeof value === "string" && (THINKING_LEVELS as ReadonlyArray<string>).includes(value);
+}
+
 export interface ModelSelection {
   providerId: string;
   modelId: string;
   maxOutputTokens?: number;
+  /** Absent means "off": the model answers without reasoning. */
+  thinkingLevel?: ThinkingLevel;
 }
 
 export interface ModelSummary {
   id: string;
   name: string;
   reasoning: boolean;
+  /** The levels this model supports, in increasing order; "off" is missing when it cannot stop reasoning. */
+  thinkingLevels: ReadonlyArray<ThinkingLevel>;
   input: ReadonlyArray<"text" | "image">;
   contextWindow: number;
   maxOutputTokens: number;

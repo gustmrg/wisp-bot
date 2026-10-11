@@ -2,15 +2,17 @@ import path from "node:path";
 
 import type { ModelRuntime } from "@earendil-works/pi-coding-agent" with { "resolution-mode": "import" };
 
-import type {
-  AiSettingsView,
-  AuxiliaryModelUnavailableReason,
-  AuxiliaryModelView,
-  AuxiliaryTask,
-  ModelSelection,
-  ModelSummary,
-  ProviderSummary,
-  SaveAiSettingsRequest,
+import {
+  THINKING_LEVELS,
+  type ThinkingLevel,
+  type AiSettingsView,
+  type AuxiliaryModelUnavailableReason,
+  type AuxiliaryModelView,
+  type AuxiliaryTask,
+  type ModelSelection,
+  type ModelSummary,
+  type ProviderSummary,
+  type SaveAiSettingsRequest,
 } from "../shared/contracts.js";
 import { WispBackendError } from "./backend-error.js";
 import { AiSettingsStore } from "./ai-settings-store.js";
@@ -51,6 +53,23 @@ function describeRefreshFailure(result: ModelRefreshResult): string | null {
   const problems = [...result.errors].map(([providerId, error]) => `${providerId}: ${error.message}`);
   if (result.aborted) problems.push("the catalog refresh timed out");
   return problems.length > 0 ? problems.join("; ") : null;
+}
+
+type CatalogModel = NonNullable<ReturnType<ModelRuntime["getModel"]>>;
+
+/**
+ * The thinking levels a model supports, as Pi's `getSupportedThinkingLevels`
+ * reports them: "off" plus every level its thinking map does not disable,
+ * with "xhigh" and "max" only when the map names them.
+ */
+export function supportedThinkingLevels(model: Pick<CatalogModel, "reasoning" | "thinkingLevelMap">): ThinkingLevel[] {
+  if (!model.reasoning) return ["off"];
+  return THINKING_LEVELS.filter((level) => {
+    const mapped = model.thinkingLevelMap?.[level];
+    if (mapped === null) return false;
+    if (level === "xhigh" || level === "max") return mapped !== undefined;
+    return true;
+  });
 }
 
 function compareByName(left: { name: string }, right: { name: string }): number {
@@ -143,6 +162,7 @@ export class ModelService {
             id: model.id,
             name: model.name,
             reasoning: model.reasoning,
+            thinkingLevels: supportedThinkingLevels(model),
             input: [...model.input],
             contextWindow: model.contextWindow,
             maxOutputTokens: model.maxTokens,
@@ -175,6 +195,7 @@ export class ModelService {
   async save(request: SaveAiSettingsRequest): Promise<AiSettingsView> {
     const { selection } = request;
     this.assertValidSelection(selection);
+    this.assertSupportedThinkingLevel(selection);
 
     const apiKey = request.apiKey?.trim();
     if (apiKey !== undefined && (!apiKey || apiKey.length > MAX_API_KEY_LENGTH)) {
@@ -343,6 +364,20 @@ export class ModelService {
   private assertValidSelection(selection: ModelSelection): void {
     if (!this.isValidSelection(selection)) {
       throw new WispBackendError("invalid_configuration", "The selected provider and model are not available.");
+    }
+  }
+
+  /**
+   * Checks a newly chosen thinking level. The default, "off", is always
+   * accepted, and a saved level the catalog later drops is not rejected: Pi
+   * clamps either to the nearest level the model supports.
+   */
+  assertSupportedThinkingLevel(selection: ModelSelection): void {
+    const level = selection.thinkingLevel;
+    if (!level || level === "off") return;
+    const model = this.runtime.getModel(selection.providerId, selection.modelId);
+    if (model && !supportedThinkingLevels(model).includes(level)) {
+      throw new WispBackendError("invalid_configuration", "The selected model does not support this reasoning level.");
     }
   }
 }

@@ -1,6 +1,7 @@
-import type { AiSettingsView, ModelSelection } from "../../shared/contracts";
+import type { AiSettingsView, ModelSelection, ThinkingLevel } from "../../shared/contracts";
 import { missingModelSetup } from "../../shared/setup-status";
 import { NoImageInputNote } from "@/components/no-image-input-note";
+import { canChooseThinkingLevel, keepThinkingLevel, ThinkingLevelRow } from "@/components/thinking-level-select";
 import {
   SettingsCard,
   SettingsRow,
@@ -17,10 +18,11 @@ export interface WispModelDraft {
   providerId: string;
   modelId: string;
   maxOutputTokens: string;
+  thinkingLevel: ThinkingLevel;
 }
 
 export function createDefaultWispModelDraft(): WispModelDraft {
-  return { useGlobal: true, providerId: "", modelId: "", maxOutputTokens: "" };
+  return { useGlobal: true, providerId: "", modelId: "", maxOutputTokens: "", thinkingLevel: "off" };
 }
 
 export function resolveWispModelSelection(draft: WispModelDraft): ModelSelection | null {
@@ -30,6 +32,7 @@ export function resolveWispModelSelection(draft: WispModelDraft): ModelSelection
     providerId: draft.providerId,
     modelId: draft.modelId,
     ...(maxOutputTokens ? { maxOutputTokens: Number(maxOutputTokens) } : {}),
+    ...(draft.thinkingLevel === "off" ? {} : { thinkingLevel: draft.thinkingLevel }),
   };
 }
 
@@ -56,7 +59,13 @@ export function wispModelDraftFromTemplate(
       ? String(model.maxOutputTokens)
       : "";
   return {
-    draft: { useGlobal: false, providerId: provider.id, modelId: known.id, maxOutputTokens },
+    draft: {
+      useGlobal: false,
+      providerId: provider.id,
+      modelId: known.id,
+      maxOutputTokens,
+      thinkingLevel: keepThinkingLevel(model.thinkingLevel ?? "off", known),
+    },
     notice: "",
   };
 }
@@ -116,6 +125,7 @@ function CreateWispModelSection({ view, loadError, draft, onChange, notice }: Cr
           ? selection.modelId
           : (nextProvider?.models[0]?.id ?? ""),
       maxOutputTokens: "",
+      thinkingLevel: "off",
     });
   }
 
@@ -123,12 +133,17 @@ function CreateWispModelSection({ view, loadError, draft, onChange, notice }: Cr
     if (!nextProviderId) return;
     const nextProvider = catalog.find(({ id }) => id === nextProviderId);
     const selection = view?.selection;
+    const modelId =
+      selection && selection.providerId === nextProviderId ? selection.modelId : (nextProvider?.models[0]?.id ?? "");
     onChange({
       ...draft,
       providerId: nextProviderId,
-      modelId:
-        selection && selection.providerId === nextProviderId ? selection.modelId : (nextProvider?.models[0]?.id ?? ""),
+      modelId,
       maxOutputTokens: "",
+      thinkingLevel: keepThinkingLevel(
+        draft.thinkingLevel,
+        nextProvider?.models.find(({ id }) => id === modelId),
+      ),
     });
   }
 
@@ -199,7 +214,14 @@ function CreateWispModelSection({ view, loadError, draft, onChange, notice }: Cr
               items={provider?.models.map(({ id, name }) => ({ value: id, label: name })) ?? []}
               value={draft.modelId}
               onValueChange={(value) => {
-                if (value !== null) onChange({ ...draft, modelId: value, maxOutputTokens: "" });
+                if (value === null) return;
+                const next = provider?.models.find(({ id }) => id === value);
+                onChange({
+                  ...draft,
+                  modelId: value,
+                  maxOutputTokens: "",
+                  thinkingLevel: keepThinkingLevel(draft.thinkingLevel, next),
+                });
               }}
             >
               <SelectTrigger id="create-wisp-model" className="w-[220px] max-w-[55%]">
@@ -235,6 +257,15 @@ function CreateWispModelSection({ view, loadError, draft, onChange, notice }: Cr
               onChange={(event) => onChange({ ...draft, maxOutputTokens: event.currentTarget.value })}
             />
           </SettingsRow>
+          {canChooseThinkingLevel(model) ? (
+            <ThinkingLevelRow
+              id="create-wisp-thinking-level"
+              className="min-h-0 p-[11px]"
+              model={model}
+              value={keepThinkingLevel(draft.thinkingLevel, model)}
+              onChange={(thinkingLevel) => onChange({ ...draft, thinkingLevel })}
+            />
+          ) : null}
           {provider && !provider.credentialConfigured ? (
             <p role="alert" className="m-0 px-3.5 pb-3 text-xs text-destructive">
               No API key saved for {provider.name} yet. Add one in Settings → AI Model before creating this Wisp.

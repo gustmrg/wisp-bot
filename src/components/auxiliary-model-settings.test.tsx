@@ -6,7 +6,15 @@ import { AuxiliaryModelSettings } from "@/components/auxiliary-model-settings";
 import type { AiSettingsView, AuxiliaryModelView } from "../../shared/contracts";
 
 function model(id: string, input: ReadonlyArray<"text" | "image">) {
-  return { id, name: id.toUpperCase(), reasoning: false, input, contextWindow: 10_000, maxOutputTokens: 1_000 };
+  return {
+    id,
+    name: id.toUpperCase(),
+    reasoning: false,
+    thinkingLevels: ["off" as const],
+    input,
+    contextWindow: 10_000,
+    maxOutputTokens: 1_000,
+  };
 }
 
 function view(slot: AuxiliaryModelView = { selection: null, unavailable: null }): AiSettingsView {
