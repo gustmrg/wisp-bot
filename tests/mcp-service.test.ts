@@ -995,7 +995,10 @@ describe("McpService interactive sign-in lifecycle", () => {
     const view = await pending;
     expect(view.servers[0]?.signInPending).toBeUndefined();
     expect(view.servers[0]?.tools).toHaveLength(1);
-    expect(await secrets.oauthTokens(serverId)).toMatchObject({ accessToken: "exchanged-token" });
+    // The provider persists tokens without holding up the sign-in.
+    await vi.waitFor(async () =>
+      expect(await secrets.oauthTokens(serverId)).toMatchObject({ accessToken: "exchanged-token" }),
+    );
     // Pushed to every window: waiting when it starts, not waiting when it ends.
     expect(published).toContain(true);
     expect(published.at(-1)).toBeUndefined();

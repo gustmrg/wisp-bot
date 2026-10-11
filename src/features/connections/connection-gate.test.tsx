@@ -1,6 +1,6 @@
 import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { useEffect, useRef } from "react";
+import { useLayoutEffect, useRef } from "react";
 import { describe, expect, it, vi } from "vitest";
 
 import type { ConnectionsView, ConnectionStatus } from "../../../shared/connections";
@@ -44,7 +44,9 @@ function ScreenActionProbe() {
 
 function App({ onMount }: { onMount: () => void }) {
   const mounted = useRef(onMount);
-  useEffect(() => mounted.current(), []);
+  // A layout effect runs with the commit that shows "Workspace"; a passive one
+  // may run after findByText resolves.
+  useLayoutEffect(() => mounted.current(), []);
   return <p>Workspace</p>;
 }
 
