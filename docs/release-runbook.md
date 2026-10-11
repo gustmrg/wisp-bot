@@ -39,7 +39,9 @@ To package locally, `npm run dist` builds installers for the current OS and `npm
 
 The last job, **publish-server**, builds `npm run package:server` from the release tag, updates npm to 11.5.1 or later, and runs `npm publish --provenance`. Prereleases (`-beta.1`) get the `beta` dist-tag, so `npx @gustmrg/wisp-server` never runs one. The package's page on npm shows `server/README.md`.
 
-The job runs after the GitHub release is out. If it fails, fix the cause and re-run only that job; npm refuses a version published twice.
+npm takes a few minutes to process a new version, and until then installing it fails with `ETARGET`. So the job then waits, for up to 10 minutes, until npm serves the version and its dist-tag points to it. The release is done only when that step passes; until then, do not update servers from the app.
+
+The job runs after the GitHub release is out. If it fails, fix the cause and re-run only that job. A re-run skips the publish when the version is already on npm, since npm refuses a version published twice, and only waits for it.
 
 ### Authentication
 
