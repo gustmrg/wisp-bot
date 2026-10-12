@@ -27,7 +27,8 @@ export interface WispOption {
 export type IntegrationSettingsTarget =
   | { section: "plugins"; pluginId?: PluginId }
   | { section: "mcp" }
-  | { section: "storage"; conversationId: string };
+  | { section: "storage"; conversationId: string }
+  | { section: "jobs" };
 
 export function isPluginAvailable(plugin: PluginSummary | undefined): boolean {
   return Boolean(plugin?.configured && plugin.enabled);

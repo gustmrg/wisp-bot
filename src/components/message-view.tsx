@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { CalendarClockIcon, CheckIcon, CircleAlertIcon, CircleStopIcon, CopyIcon } from "lucide-react";
+import { CalendarClockIcon, CheckIcon, CircleAlertIcon, CircleStopIcon, CopyIcon, RepeatIcon } from "lucide-react";
 
 import type { Message } from "@/chat-data";
 import { splitMessageAttachments } from "../../shared/workspace";
@@ -200,9 +200,11 @@ function MessageView({ message, dense = false, onAnswer, onRetry }: MessageViewP
       {message.status === "queued" ||
       message.status === "cancelled" ||
       message.status === "failed" ||
-      message.scheduled ? (
+      message.scheduled ||
+      message.job ? (
         <div className={cn("mt-1 flex items-center gap-2 text-2xs text-faint", outgoing && "mr-1")}>
           {message.scheduled ? <ScheduledBadge scheduledAt={message.scheduled.scheduledAt} /> : null}
+          {message.job ? <JobBadge title={message.job.title} /> : null}
           {message.status === "queued" || message.status === "cancelled" || message.status === "failed" ? (
             <span>
               {message.status === "queued" ? "Queued" : message.status === "cancelled" ? "Stopped" : "Failed"}
@@ -236,6 +238,19 @@ function OutgoingText({ text }: { text: string }) {
         chipClassName="border-white/25 bg-white/15"
       />
     </>
+  );
+}
+
+/** Marks a Wisp's message that one of its jobs sent, with no request before it. */
+function JobBadge({ title }: { title: string }) {
+  return (
+    <Tooltip>
+      <TooltipTrigger render={<span />} className="inline-flex min-w-0 items-center gap-1" delay={300}>
+        <RepeatIcon aria-hidden="true" className="size-3 flex-none" />
+        <span className="truncate">{`Job · ${title}`}</span>
+      </TooltipTrigger>
+      <TooltipContent>{`Sent by the job "${title}", which ran in the background`}</TooltipContent>
+    </Tooltip>
   );
 }
 

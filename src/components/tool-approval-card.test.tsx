@@ -5,6 +5,47 @@ import { describe, expect, it, vi } from "vitest";
 import { ToolApprovalCard } from "@/components/tool-approval-card";
 
 describe("ToolApprovalCard", () => {
+  it("shows everything a job may do and allows it only once", async () => {
+    const user = userEvent.setup();
+    const onResolve = vi.fn();
+    render(
+      <ToolApprovalCard
+        request={{
+          approvalId: "approval-job",
+          conversationId: "atlas",
+          toolCallId: "tool-job",
+          toolName: "schedule_job",
+          category: "schedule_job",
+          scope: { kind: "job", display: "Job openings" },
+          summary: "Schedule Job openings",
+          job: {
+            title: "Job openings",
+            schedule: "Every day at 10:00 (America/Sao_Paulo)",
+            nextRunAt: "2026-10-12T13:00:00.000Z",
+            instructions: "Search the boards for remote roles.",
+            skills: ["job-search"],
+            tools: ["web_search", "run_command"],
+          },
+          expiresAt: "2026-10-11T12:01:00.000Z",
+        }}
+        wispName="Atlas"
+        allowAlwaysAvailable
+        onResolve={onResolve}
+      />,
+    );
+
+    expect(screen.getByText("Approve job?")).toBeVisible();
+    expect(screen.getByText("Job openings")).toBeVisible();
+    expect(screen.getByText("Every day at 10:00 (America/Sao_Paulo)")).toBeVisible();
+    expect(screen.getByText("Search web, Run command")).toBeVisible();
+    expect(screen.getByText("job-search")).toBeVisible();
+    expect(screen.getByLabelText("Job instructions")).toHaveTextContent("Search the boards for remote roles.");
+    expect(screen.queryByRole("button", { name: /Always/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /block/i })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Allow once" }));
+    expect(onResolve).toHaveBeenCalledWith("allow_once");
+  });
+
   it("describes an integration write and allows denying it", async () => {
     const user = userEvent.setup();
     const onResolve = vi.fn();

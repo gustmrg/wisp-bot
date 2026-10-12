@@ -297,7 +297,7 @@ describe("AppSettingsDialog on mobile", () => {
       within(wisps)
         .getAllByRole("button")
         .map((button) => button.getAttribute("aria-label")),
-    ).toEqual(["AI Model", "Voice input", "Plugins", "MCP servers"]);
+    ).toEqual(["AI Model", "Voice input", "Plugins", "MCP servers", "Jobs"]);
     expect(screen.getByRole("button", { name: "Storage" })).toHaveAccessibleDescription(
       "See the space used and clean up Wisp files",
     );

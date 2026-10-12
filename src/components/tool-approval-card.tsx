@@ -1,7 +1,9 @@
 import { ShieldAlertIcon } from "lucide-react";
 
+import { getToolMetadata } from "../../shared/tool-catalog";
 import { isWorkspaceFileCategory } from "../../shared/tool-policy";
-import type { ToolApprovalDecision, ToolApprovalRequest } from "../../shared/tool-policy";
+import type { JobApprovalDetails, ToolApprovalDecision, ToolApprovalRequest } from "../../shared/tool-policy";
+import { useTimeZone } from "@/hooks/use-time-zone";
 import { Button } from "@/components/ui/button";
 import { useClock } from "@/hooks/use-clock";
 import { cn } from "@/lib/utils";
@@ -24,10 +26,52 @@ function remainingLabel(seconds: number): string {
   return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
 }
 
+/** Everything a job may do while no one is present, as its approval card shows it (ADR 019). */
+function JobDetails({ job }: { job: JobApprovalDetails }) {
+  const timeZone = useTimeZone();
+  const nextRun = job.nextRunAt
+    ? new Date(job.nextRunAt).toLocaleString([], {
+        timeZone,
+        weekday: "short",
+        month: "short",
+        day: "numeric",
+        hour: "numeric",
+        minute: "2-digit",
+      })
+    : "None";
+  const tools = job.tools.map((name) => getToolMetadata(name)?.label ?? name);
+  return (
+    <dl className="my-2 grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1 text-sm">
+      <dt className="text-dim">Job</dt>
+      <dd className="m-0 break-words font-medium">{job.title}</dd>
+      <dt className="text-dim">Schedule</dt>
+      <dd className="m-0 break-words">{job.schedule}</dd>
+      <dt className="text-dim">Next run</dt>
+      <dd className="m-0">{nextRun}</dd>
+      <dt className="text-dim">Tools</dt>
+      <dd className="m-0 break-words">{tools.length ? tools.join(", ") : "None"}</dd>
+      <dt className="text-dim">Skills</dt>
+      <dd className="m-0 break-words">{job.skills.length ? job.skills.join(", ") : "None"}</dd>
+      <dt className="col-span-2 mt-1 text-dim">Instructions</dt>
+      <dd className="col-span-2 m-0">
+        <pre
+          className="max-h-64 overflow-y-auto whitespace-pre-wrap break-words rounded-md border border-border bg-background/60 p-2 font-mono text-xs text-foreground"
+          aria-label="Job instructions"
+        >
+          {job.instructions}
+        </pre>
+      </dd>
+    </dl>
+  );
+}
+
 function ToolApprovalCard({ request, wispName, allowAlwaysAvailable, onResolve }: ToolApprovalCardProps) {
   const now = useClock(1_000);
   const integration = request.scope.kind === "integration";
   const skill = request.category === "save_skill" && request.scope.kind === "skill";
+  const job = request.category === "schedule_job" && request.scope.kind === "job" ? request.job : undefined;
+  // Skills and jobs are approved one at a time; no lasting rule covers them.
+  const reviewed = skill || Boolean(job);
   const fileCategory = !integration && isWorkspaceFileCategory(request.category) ? request.category : null;
   const alwaysAllowTool = integration && request.alwaysAllowTool === true;
   const remaining = Math.max(0, Math.ceil((new Date(request.expiresAt).getTime() - now.getTime()) / 1_000));
@@ -45,7 +89,13 @@ function ToolApprovalCard({ request, wispName, allowAlwaysAvailable, onResolve }
         <div className="min-w-0 flex-1">
           <div className="flex items-baseline gap-2">
             <strong className="min-w-0 flex-1 text-sm">
-              {skill ? "Approve skill?" : integration ? "Approve integration change?" : "Approve file change?"}
+              {job
+                ? "Approve job?"
+                : skill
+                  ? "Approve skill?"
+                  : integration
+                    ? "Approve integration change?"
+                    : "Approve file change?"}
             </strong>
             {Number.isNaN(remaining) ? null : (
               <time
@@ -57,7 +107,7 @@ function ToolApprovalCard({ request, wispName, allowAlwaysAvailable, onResolve }
               </time>
             )}
           </div>
-          <p className="my-1 break-words text-sm text-dim">{request.summary}</p>
+          {job ? <JobDetails job={job} /> : <p className="my-1 break-words text-sm text-dim">{request.summary}</p>}
           {skill && request.preview ? (
             <pre
               className="my-2 max-h-64 overflow-y-auto whitespace-pre-wrap break-words rounded-md border border-border bg-background/60 p-2 font-mono text-xs text-foreground"
@@ -67,7 +117,12 @@ function ToolApprovalCard({ request, wispName, allowAlwaysAvailable, onResolve }
             </pre>
           ) : null}
           <small className="text-faint">
-            {skill ? (
+            {job ? (
+              <>
+                {wispName} will run this job in the background with no one present, using only these tools, and send you
+                its results here. You can pause or delete it in Settings → Jobs.
+              </>
+            ) : skill ? (
               <>
                 {wispName} wants to save the skill {request.scope.display}. Once saved, it guides this Wisp's future
                 replies; you can delete it in Wisp settings.
@@ -84,7 +139,7 @@ function ToolApprovalCard({ request, wispName, allowAlwaysAvailable, onResolve }
         </div>
       </div>
       <div className="mt-3 flex flex-wrap justify-end gap-1.5">
-        {skill ? null : (
+        {reviewed ? null : (
           <Button type="button" size="sm" variant="ghost" onClick={() => onResolve("block")}>
             {blockLabel}
           </Button>
