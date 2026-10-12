@@ -21,6 +21,21 @@ describe("MessageView", () => {
     expect(screen.getByText("Scheduled")).toBeTruthy();
   });
 
+  it("marks a Wisp's message that one of its jobs sent", () => {
+    render(
+      <MessageView
+        message={{
+          id: "job-run-1",
+          type: "incoming",
+          text: "Two new posts",
+          status: "complete",
+          job: { jobId: "job-1", runId: "run-1", title: "Blog watch" },
+        }}
+      />,
+    );
+    expect(screen.getByText("Job · Blog watch")).toBeTruthy();
+  });
+
   it("does not mark a message typed then", () => {
     render(<MessageView message={{ id: "typed", type: "outgoing", text: "Hello", status: "complete" }} />);
     expect(screen.queryByText("Scheduled")).toBeNull();

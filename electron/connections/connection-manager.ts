@@ -72,6 +72,7 @@ const PUSHED = new Set([
   "mcpSettingsChanged",
   "scheduledMessagesChanged",
   "messageQueueChanged",
+  "jobsChanged",
 ]);
 
 /**

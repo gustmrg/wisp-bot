@@ -29,6 +29,8 @@ export class FakeConversationAgent implements ConversationAgent {
   private started = false;
   private disposed = false;
   private model: ModelSelection | undefined;
+  /** What the Wisp's jobs delivered, in order, as its context would hold them. */
+  readonly jobResults: string[] = [];
 
   constructor(conversationId: string, options: FakeConversationAgentOptions = {}) {
     this.conversationId = conversationId;
@@ -41,6 +43,11 @@ export class FakeConversationAgent implements ConversationAgent {
     if (this.started) return;
     this.started = true;
     this.emit({ type: "conversation_status", conversationId: this.conversationId, status: "idle" });
+  }
+
+  async rememberJobResult(text: string): Promise<void> {
+    this.assertNotDisposed();
+    this.jobResults.push(text);
   }
 
   send(request: SendMessageRequest): Promise<void> {

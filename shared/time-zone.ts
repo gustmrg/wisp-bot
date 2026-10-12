@@ -1,3 +1,4 @@
+const MINUTE_MS = 60_000;
 const DAY_MS = 86_400_000;
 
 /** The calendar date and wall-clock time of an instant in one time zone. */
@@ -69,20 +70,38 @@ export function zonedDayNumber(date: Date, timeZone: string): number {
 
 /**
  * The instant a wall-clock time happens in `timeZone`. Days and months past
- * their range roll over, as with `Date.UTC`. A time skipped by a daylight
- * saving change resolves to the instant just after the gap.
+ * their range roll over, as with `Date.UTC`. A time skipped when clocks go
+ * forward resolves to the first instant after the gap (02:30 becomes 03:00);
+ * a time that happens twice when clocks go back resolves to the first.
  */
 export function zonedTime(
   wall: { year: number; month: number; day: number; hour?: number; minute?: number },
   timeZone: string,
 ): Date {
   const target = Date.UTC(wall.year, wall.month - 1, wall.day, wall.hour ?? 0, wall.minute ?? 0);
-  let instant = target;
-  // The offset at the guess can differ from the offset at the answer near a change; two passes settle it.
-  for (let pass = 0; pass < 2; pass += 1) {
-    const parts = zonedParts(new Date(instant), timeZone);
-    const shown = Date.UTC(parts.year, parts.month - 1, parts.day, parts.hour, parts.minute);
-    instant += target - shown;
+  // Offsets change at most once within a day, so the offsets a day either side are the only candidates.
+  const before = offsetAt(target - DAY_MS, timeZone);
+  const after = offsetAt(target + DAY_MS, timeZone);
+  // A larger offset gives an earlier instant, so it is tried first.
+  const larger = Math.max(before, after);
+  const smaller = Math.min(before, after);
+  for (const offset of [larger, smaller]) {
+    if (offsetAt(target - offset, timeZone) === offset) return new Date(target - offset);
   }
-  return new Date(instant);
+  // Skipped: find the minute the clocks went forward, between the two readings.
+  let low = target - larger;
+  let high = target - smaller;
+  while (high - low > MINUTE_MS) {
+    const middle = low + Math.floor((high - low) / 2 / MINUTE_MS) * MINUTE_MS;
+    if (offsetAt(middle, timeZone) === before) low = middle;
+    else high = middle;
+  }
+  return new Date(high);
+}
+
+/** How far the wall clock in `timeZone` is ahead of UTC at an instant, to the minute. */
+function offsetAt(instant: number, timeZone: string): number {
+  const parts = zonedParts(new Date(instant), timeZone);
+  const minute = Math.floor(instant / MINUTE_MS) * MINUTE_MS;
+  return Date.UTC(parts.year, parts.month - 1, parts.day, parts.hour, parts.minute) - minute;
 }

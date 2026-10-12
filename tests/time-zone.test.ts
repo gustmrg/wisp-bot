@@ -42,4 +42,17 @@ describe("time zones", () => {
     );
     expect(zonedTime({ year: 2026, month: 1, day: 32, hour: 0 }, "UTC").toISOString()).toBe("2026-02-01T00:00:00.000Z");
   });
+
+  it("moves a skipped time past the gap, and picks the first of a repeated time", () => {
+    // Berlin skips 02:00-03:00 on March 29, 2026, and repeats it on October 25.
+    expect(zonedTime({ year: 2026, month: 3, day: 29, hour: 2, minute: 30 }, "Europe/Berlin").toISOString()).toBe(
+      "2026-03-29T01:00:00.000Z",
+    );
+    expect(zonedTime({ year: 2026, month: 10, day: 25, hour: 2, minute: 30 }, "Europe/Berlin").toISOString()).toBe(
+      "2026-10-25T00:30:00.000Z",
+    );
+    expect(zonedTime({ year: 2026, month: 3, day: 8, hour: 2, minute: 30 }, "America/New_York").toISOString()).toBe(
+      "2026-03-08T07:00:00.000Z",
+    );
+  });
 });

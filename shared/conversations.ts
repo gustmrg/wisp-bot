@@ -72,6 +72,14 @@ export interface CircleChat extends ChatBase {
   memberIds: ReadonlyArray<WispId>;
 }
 
+/** The job run that produced a Wisp's message (ADR 019). */
+export interface JobOrigin {
+  jobId: string;
+  runId: string;
+  /** The job's title when the run delivered, so the badge survives the job's deletion. */
+  title: string;
+}
+
 /** Where a message the backend sent on the person's behalf came from. */
 export interface ScheduledOrigin {
   scheduledMessageId: string;
@@ -94,6 +102,8 @@ export interface TextMessage extends MessageMetadata {
   authorId?: WispId;
   /** Set on an outgoing message sent from a scheduled message rather than typed then. */
   scheduled?: ScheduledOrigin;
+  /** Set on an incoming message a job's run delivered, with no request before it. */
+  job?: JobOrigin;
 }
 
 export interface TimeMessage extends MessageMetadata {

@@ -13,6 +13,7 @@ import {
   type ChatCollection,
   type ConversationDelta,
   type ConversationStateView,
+  type JobOrigin,
   type Message,
   type MessagePage,
   type MessagePageRequest,
@@ -300,6 +301,62 @@ export class ConversationService {
    * One page of a transcript. Replies still streaming are overlaid by ID, and
    * those not yet stored are added to a page that reaches the newest message.
    */
+  /**
+   * Adds a job run's message as the Wisp's own, unread and notifying like a
+   * reply, and then to the Wisp's context once its current turn ends (ADR
+   * 019). Resolves with the message's ID once it is saved.
+   */
+  async deliverJobMessage(conversationId: string, text: string, origin: JobOrigin, context: string): Promise<string> {
+    const message: Message & { id: string } = {
+      id: `job-${origin.runId}`,
+      type: "incoming",
+      text,
+      status: "complete",
+      createdAt: new Date().toISOString(),
+      ...this.authorOf(conversationId),
+      job: origin,
+    };
+    const change = await this.repository.appendMessage(conversationId, message);
+    this.publish(conversationId, changesOf(change));
+    this.registry.publishExternalEvent({
+      type: "job_message_delivered",
+      conversationId,
+      jobId: origin.jobId,
+      messageId: message.id,
+    });
+    // The person already has the message; the Wisp learning it later is not worth failing the delivery.
+    void this.registry.rememberJobResult(conversationId, context).catch((error) => {
+      this.logger?.warn("job_result_context_failed", { conversationId, code: sanitizeBackendError(error).code });
+    });
+    return message.id;
+  }
+
+  /** Adds a line about a job to its conversation, such as that it paused itself. */
+  async addJobNotice(conversationId: string, text: string, id: string): Promise<void> {
+    const change = await this.repository.appendMessage(conversationId, {
+      id,
+      type: "time",
+      text,
+      createdAt: new Date().toISOString(),
+    });
+    this.publish(conversationId, changesOf(change));
+  }
+
+  /** Adds a card about a job to its conversation, such as one created or changed with its next run. */
+  async addJobCard(
+    conversationId: string,
+    items: ReadonlyArray<{ label: string; text: string }>,
+    id: string,
+  ): Promise<void> {
+    const change = await this.repository.appendMessage(conversationId, {
+      id,
+      type: "card",
+      items,
+      createdAt: new Date().toISOString(),
+    });
+    this.publish(conversationId, changesOf(change));
+  }
+
   async getMessagePage(request: MessagePageRequest): Promise<MessagePage> {
     const page = await this.repository.getMessagePage(request);
     const live = this.liveMessages.get(request.conversationId);

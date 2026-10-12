@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from "node:async_hooks";
 import { randomUUID } from "node:crypto";
 
 import type { ConversationAgentEvent } from "../shared/contracts.js";
@@ -8,6 +9,7 @@ import {
   workspaceFileBehavior,
   type ResolveToolApprovalRequest,
   type ToolActionCategory,
+  type JobApprovalDetails,
   type ToolApprovalRequest,
   type ToolPolicyBehavior,
   type ToolPolicySettings,
@@ -26,9 +28,11 @@ export interface ToolAuthorizationRequest {
   toolName: string;
   category: ToolActionCategory;
   summary: string;
-  scope: { kind: "workspace_path" | "integration" | "skill" | "container"; value: string };
+  scope: { kind: "workspace_path" | "integration" | "skill" | "container" | "job"; value: string };
   /** Content the user must see to decide; only sent for skill changes. */
   preview?: string;
+  /** The job the user must see to decide; only sent for job approvals. */
+  job?: JobApprovalDetails;
   /**
    * The user already always allowed this exact integration tool for this Wisp.
    * Honored for integration calls only, and never over a Block rule.
@@ -36,6 +40,15 @@ export interface ToolAuthorizationRequest {
   alwaysAllowed?: boolean;
   /** Remembers this integration tool for this Wisp; offering it adds "Always allow" to the card. */
   rememberApproval?: () => Promise<void>;
+}
+
+/**
+ * What the person approved for a run with no one present, such as a job's
+ * run (ADR 019): the tools approved with the job.
+ */
+export interface UnattendedGrant {
+  conversationId: string;
+  approvedTools: ReadonlySet<string>;
 }
 
 interface PendingApproval {
@@ -66,6 +79,7 @@ export class ToolAuthorizationBroker {
   private readonly selectWindowId: () => number | null;
   private readonly pending = new Map<string, PendingApproval>();
   private readonly audit: ToolAuditSink;
+  private readonly unattended = new AsyncLocalStorage<UnattendedGrant>();
 
   constructor(
     store: ToolPolicyStore,
@@ -93,6 +107,16 @@ export class ToolAuthorizationBroker {
     return this.store.save(value);
   }
 
+  /**
+   * Runs `run` with no one present: inside it, an action that would ask is
+   * allowed when its tool was approved in `grant`, and refused at once
+   * otherwise, so nothing ever waits for an approval card. Block rules still
+   * win. Tool calls made anywhere within `run` inherit this.
+   */
+  runUnattended<T>(grant: UnattendedGrant, run: () => Promise<T>): Promise<T> {
+    return this.unattended.run(grant, run);
+  }
+
   authorize(action: ToolAuthorizationRequest, signal?: AbortSignal): Promise<void> {
     const actionId = this.createId();
     if (signal?.aborted) {
@@ -107,6 +131,26 @@ export class ToolAuthorizationBroker {
     if (behavior === "block") {
       this.auditDecision(actionId, action, behavior, "block", "policy", "blocked");
       return Promise.reject(new WispBackendError("tool_blocked", "This tool action is blocked by policy."));
+    }
+    const unattended = this.unattended.getStore();
+    if (unattended) {
+      // Skill and job changes are reviewed one by one, so no grant covers them.
+      const approved =
+        unattended.conversationId === action.conversationId &&
+        action.category !== "save_skill" &&
+        action.category !== "schedule_job" &&
+        unattended.approvedTools.has(action.toolName);
+      if (approved) {
+        this.auditDecision(actionId, action, behavior, "allow", "user", "allowed");
+        return Promise.resolve();
+      }
+      this.auditDecision(actionId, action, behavior, "block", "system", "blocked");
+      return Promise.reject(
+        new WispBackendError(
+          "tool_blocked",
+          "No one is present to approve this action, and it was not approved with the job.",
+        ),
+      );
     }
     const integrationTool = action.category === "integration_call" && action.scope.kind === "integration";
     if (integrationTool && action.alwaysAllowed) {
@@ -132,6 +176,7 @@ export class ToolAuthorizationBroker {
       scope: { kind: action.scope.kind, display: sanitizeSummary(action.scope.value) },
       summary: sanitizeSummary(action.summary),
       ...(action.preview ? { preview: sanitizePreview(action.preview) } : {}),
+      ...(action.job && action.category === "schedule_job" ? { job: sanitizeJob(action.job) } : {}),
       ...(rememberApproval ? { alwaysAllowTool: true } : {}),
       expiresAt,
     };
@@ -177,6 +222,9 @@ export class ToolAuthorizationBroker {
     }
     if (request.decision === "block" && category === "save_skill") {
       throw new WispBackendError("invalid_request", "Skill changes can only be allowed once or denied.");
+    }
+    if (request.decision === "block" && category === "schedule_job") {
+      throw new WispBackendError("invalid_request", "Jobs can only be allowed once or denied.");
     }
     // Claim the approval before awaiting anything, so a repeated decision, an
     // expiry, or a cancellation during the policy write cannot settle it twice.
@@ -358,6 +406,11 @@ export function evaluateToolPolicy(
       ? "block"
       : "allow";
   }
+  if (category === "schedule_job") {
+    // A job runs unattended with the tools approved with it, so the user
+    // approves every job and every widening of one; nothing approves it for them.
+    return scopeKind === "job" ? "ask" : "block";
+  }
   if (category === "save_skill") {
     // Skills become standing instructions, so each change is reviewed by the
     // user; no rule or auto-review setting can approve or suppress the prompt.
@@ -371,6 +424,17 @@ export function evaluateToolPolicy(
 function sanitizePreview(value: string): string {
   const preview = value.replaceAll(/[\u0000-\u0008\u000b-\u001f\u007f]/g, "");
   return preview.length > MAX_PREVIEW_LENGTH ? `${preview.slice(0, MAX_PREVIEW_LENGTH)}\n…` : preview;
+}
+
+function sanitizeJob(job: JobApprovalDetails): JobApprovalDetails {
+  return {
+    title: sanitizeSummary(job.title),
+    schedule: sanitizeSummary(job.schedule),
+    ...(job.nextRunAt ? { nextRunAt: job.nextRunAt } : {}),
+    instructions: sanitizePreview(job.instructions),
+    skills: job.skills.slice(0, 50).map(sanitizeSummary),
+    tools: job.tools.slice(0, 100).map(sanitizeSummary),
+  };
 }
 
 function sanitizeSummary(value: string): string {

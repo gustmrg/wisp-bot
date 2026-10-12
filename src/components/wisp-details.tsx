@@ -1,3 +1,4 @@
+import { WispJobSettings } from "@/components/wisp-job-settings";
 import { WispContextSettings } from "@/components/wisp-context-settings";
 import { useState, type ReactNode } from "react";
 
@@ -130,6 +131,7 @@ export function WispDetails({
             <WispSkillSettings conversationId={chat.id} />
             <WispWorkspaceSettings conversationId={chat.id} onOpenSettings={onOpenSettings} />
             <WispExecutionSettings conversationId={chat.id} />
+            <WispJobSettings conversationId={chat.id} onOpenSettings={onOpenSettings} />
           </Accordion>
           {generalActions ? (
             <div className="mt-5 flex flex-col gap-2 border-t border-border pt-4">{generalActions}</div>

@@ -2,6 +2,7 @@ import type { SequencedConversationAgentEvent } from "./contracts.js";
 import type { ConversationDelta } from "./conversations.js";
 import type { McpSettingsView } from "./mcp.js";
 import type { MessageQueueView } from "./message-queue.js";
+import type { JobsView } from "./jobs.js";
 import type { ScheduledMessagesView } from "./scheduled-messages.js";
 
 /**
@@ -79,6 +80,7 @@ export interface RemoteEventPayloads {
   mcpSettingsChanged: McpSettingsView;
   scheduledMessagesChanged: ScheduledMessagesView;
   messageQueueChanged: MessageQueueView;
+  jobsChanged: JobsView;
   /** Sent only to the device that asked for the operation; never replayed. */
   hostRequest: HostRequest;
   /** The client's cursor is unknown (another boot, or older than the buffer): reload state. */

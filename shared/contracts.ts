@@ -37,6 +37,7 @@ import type {
   UpdateConversationRequest,
   UpdateWispRequest,
 } from "./conversations.js";
+import type { JobRequest, JobRunsView, JobsView } from "./jobs.js";
 import type {
   MessageQueueView,
   QueuedMessageRequest,
@@ -136,6 +137,13 @@ export const WISP_IPC_CHANNELS = {
   updateQueuedMessage: "wisp:message-queue:update",
   cancelQueuedMessage: "wisp:message-queue:cancel",
   messageQueueChanged: "wisp:message-queue:changed",
+  getJobs: "wisp:jobs:get",
+  getJobRuns: "wisp:jobs:get-runs",
+  pauseJob: "wisp:jobs:pause",
+  resumeJob: "wisp:jobs:resume",
+  runJobNow: "wisp:jobs:run-now",
+  deleteJob: "wisp:jobs:delete",
+  jobsChanged: "wisp:jobs:changed",
   getSessionReport: "wisp:conversations:get-session-report",
   getUsageReport: "wisp:usage:get",
   getToolPolicy: "wisp:tool-policy:get",
@@ -394,6 +402,13 @@ export type ConversationAgentEvent =
       approvalId: string;
       toolCallId: string;
       decision: "allow_once" | "allow_always" | "deny" | "block" | "expired";
+    }
+  | {
+      /** A job's run added its message to the conversation; it notifies like a reply. */
+      type: "job_message_delivered";
+      conversationId: string;
+      jobId: string;
+      messageId: string;
     };
 
 export type SequencedConversationAgentEvent = ConversationAgentEvent & { sequence: number };
@@ -557,6 +572,19 @@ export interface WispApi {
   sendScheduledMessageNow(request: ScheduledMessageRequest): Promise<BackendResult<ScheduledMessagesView>>;
   /** Pushes every scheduled message after any change, including sends. */
   subscribeToScheduledMessages(listener: (view: ScheduledMessagesView) => void): () => void;
+  /** Every job of every Wisp, soonest next run first (ADR 019). */
+  getJobs(): Promise<BackendResult<JobsView>>;
+  /** A job's recent runs, newest first. */
+  getJobRuns(request: JobRequest): Promise<BackendResult<JobRunsView>>;
+  pauseJob(request: JobRequest): Promise<BackendResult<JobsView>>;
+  /** Resumes from now: occurrences missed while paused do not run. */
+  resumeJob(request: JobRequest): Promise<BackendResult<JobsView>>;
+  /** Runs a job now without changing its schedule. */
+  runJobNow(request: JobRequest): Promise<BackendResult<JobsView>>;
+  /** Deletes a job with its runs. */
+  deleteJob(request: JobRequest): Promise<BackendResult<JobsView>>;
+  /** Pushes every job after any change, including runs. */
+  subscribeToJobs(listener: (view: JobsView) => void): () => void;
   /** Every message waiting for its Wisp, oldest first. */
   getMessageQueue(): Promise<BackendResult<MessageQueueView>>;
   /**

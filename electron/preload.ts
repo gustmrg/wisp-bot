@@ -60,6 +60,13 @@ const WISP_IPC_CHANNELS = {
   updateQueuedMessage: "wisp:message-queue:update",
   cancelQueuedMessage: "wisp:message-queue:cancel",
   messageQueueChanged: "wisp:message-queue:changed",
+  getJobs: "wisp:jobs:get",
+  getJobRuns: "wisp:jobs:get-runs",
+  pauseJob: "wisp:jobs:pause",
+  resumeJob: "wisp:jobs:resume",
+  runJobNow: "wisp:jobs:run-now",
+  deleteJob: "wisp:jobs:delete",
+  jobsChanged: "wisp:jobs:changed",
   getUsageReport: "wisp:usage:get",
   getToolPolicy: "wisp:tool-policy:get",
   getUserProfile: "wisp:profile:get",
@@ -181,6 +188,18 @@ const wispApi: WispApi = {
       listener(view);
     ipcRenderer.on(WISP_IPC_CHANNELS.scheduledMessagesChanged, handleView);
     return () => ipcRenderer.removeListener(WISP_IPC_CHANNELS.scheduledMessagesChanged, handleView);
+  },
+  getJobs: () => ipcRenderer.invoke(WISP_IPC_CHANNELS.getJobs),
+  getJobRuns: (request) => ipcRenderer.invoke(WISP_IPC_CHANNELS.getJobRuns, request),
+  pauseJob: (request) => ipcRenderer.invoke(WISP_IPC_CHANNELS.pauseJob, request),
+  resumeJob: (request) => ipcRenderer.invoke(WISP_IPC_CHANNELS.resumeJob, request),
+  runJobNow: (request) => ipcRenderer.invoke(WISP_IPC_CHANNELS.runJobNow, request),
+  deleteJob: (request) => ipcRenderer.invoke(WISP_IPC_CHANNELS.deleteJob, request),
+  subscribeToJobs: (listener) => {
+    const handleView = (_event: Electron.IpcRendererEvent, view: Parameters<typeof listener>[0]): void =>
+      listener(view);
+    ipcRenderer.on(WISP_IPC_CHANNELS.jobsChanged, handleView);
+    return () => ipcRenderer.removeListener(WISP_IPC_CHANNELS.jobsChanged, handleView);
   },
   getMessageQueue: () => ipcRenderer.invoke(WISP_IPC_CHANNELS.getMessageQueue),
   queueMessage: (request) => ipcRenderer.invoke(WISP_IPC_CHANNELS.queueMessage, request),

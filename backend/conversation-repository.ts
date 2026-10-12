@@ -22,6 +22,7 @@ import type {
   WispCollection,
   WispId,
 } from "../shared/conversations.js";
+import { MAX_JOB_RUNS_KEPT, type Job, type JobRun } from "../shared/jobs.js";
 import type { QueuedMessage } from "../shared/message-queue.js";
 import type { ScheduledMessage } from "../shared/scheduled-messages.js";
 import { WispBackendError } from "./backend-error.js";
@@ -36,6 +37,7 @@ import {
   validateConversationGraph,
 } from "./conversation-normalizer.js";
 import { ConversationStore, type StoredPageRequest } from "./conversation-store.js";
+import { normalizeJob, normalizeJobRun } from "./job-records.js";
 import { splitLegacyChat } from "./legacy-conversations.js";
 import { normalizeQueuedMessage } from "./message-queue.js";
 import { normalizeScheduledMessage } from "./message-schedule.js";
@@ -720,6 +722,69 @@ export class ConversationRepository {
     });
   }
 
+  /** Every job, soonest next run first and ended jobs last. Malformed records are skipped. */
+  async listJobs(): Promise<Job[]> {
+    return this.enqueue(() => this.readJobs());
+  }
+
+  /** Saves a new job for an existing Wisp that holds fewer than `limit`. */
+  async addJob(job: Job, limit: number): Promise<void> {
+    await this.enqueue(async () => {
+      if (this.state.conversations[job.conversationId]?.chat.kind !== "wisp") {
+        throw new WispBackendError("not_found", "The Wisp was not found.");
+      }
+      const jobs = await this.readJobs();
+      if (jobs.some(({ id }) => id === job.id)) {
+        throw new WispBackendError("already_exists", "This job already exists.");
+      }
+      if (jobs.filter(({ conversationId }) => conversationId === job.conversationId).length >= limit) {
+        throw new WispBackendError("invalid_request", "This Wisp already has too many jobs.");
+      }
+      const store = await this.openStore();
+      store.transaction(() => store.putJob(job));
+    });
+  }
+
+  /**
+   * Replaces a job with what `change` returns: a new version, or null to
+   * delete it with its runs. Returning undefined leaves it as it is. Resolves
+   * with the job as it was before a change, or undefined when nothing changed.
+   */
+  async changeJob(id: string, change: (current: Job) => Job | null | undefined): Promise<Job | undefined> {
+    return this.enqueue(async () => {
+      const current = (await this.readJobs()).find((job) => job.id === id);
+      if (!current) return undefined;
+      const next = change(current);
+      if (next === undefined) return undefined;
+      const store = await this.openStore();
+      const files = next ? [] : this.readJobRunsFrom(store, id, MAX_JOB_RUNS_KEPT).flatMap(runFiles);
+      store.transaction(() => {
+        if (next) store.putJob({ ...next, id, conversationId: current.conversationId });
+        else store.deleteJob(id);
+      });
+      await this.removeRunFiles(files);
+      return current;
+    });
+  }
+
+  /** A job's most recent runs, newest first. Malformed records are skipped. */
+  async listJobRuns(jobId: string, limit = MAX_JOB_RUNS_KEPT): Promise<JobRun[]> {
+    return this.enqueue(async () => this.readJobRunsFrom(await this.openStore(), jobId, limit));
+  }
+
+  /** Writes a run record while its job exists; only the job's newest runs are kept. */
+  async putJobRun(run: JobRun): Promise<void> {
+    await this.enqueue(async () => {
+      if (!(await this.readJobs()).some(({ id }) => id === run.jobId)) return;
+      const store = await this.openStore();
+      let removed: string[] = [];
+      store.transaction(() => {
+        removed = store.putJobRun(run, MAX_JOB_RUNS_KEPT);
+      });
+      await this.removeRunFiles(removed);
+    });
+  }
+
   /** Every queued message, oldest first. Malformed records are skipped. */
   async listQueuedMessages(): Promise<QueuedMessage[]> {
     return this.enqueue(() => this.readQueuedMessages());
@@ -828,6 +893,33 @@ export class ConversationRepository {
       const message = normalizeQueuedMessage(value);
       return message ? [message] : [];
     });
+  }
+
+  private async readJobs(): Promise<Job[]> {
+    return (await this.openStore()).readJobs().flatMap((value) => {
+      const job = normalizeJob(value);
+      return job ? [job] : [];
+    });
+  }
+
+  private readJobRunsFrom(store: ConversationStore, jobId: string, limit: number): JobRun[] {
+    return store.readJobRuns(jobId, limit).flatMap((value) => {
+      const run = normalizeJobRun(value);
+      return run ? [run] : [];
+    });
+  }
+
+  /** Deletes run session files, only ever inside the session folders. */
+  private async removeRunFiles(files: ReadonlyArray<string>): Promise<void> {
+    const root = path.resolve(this.sessionRoot);
+    await Promise.all(
+      files.map((file) => {
+        const resolved = path.resolve(file);
+        const relative = path.relative(root, resolved);
+        if (!relative || relative.startsWith("..") || path.isAbsolute(relative)) return undefined;
+        return rm(resolved, { force: true }).catch(() => undefined);
+      }),
+    );
   }
 
   private async readScheduledMessages(): Promise<ScheduledMessage[]> {
@@ -1230,6 +1322,10 @@ export class ConversationRepository {
       ...(wisp ? [move(path.join(this.configRoot, wisp.storageId), "pi-config")] : []),
     ]);
   }
+}
+
+function runFiles(run: JobRun): string[] {
+  return run.sessionFile ? [run.sessionFile] : [];
 }
 
 function storedPageRequest(request: MessagePageRequest): StoredPageRequest {

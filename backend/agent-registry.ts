@@ -261,6 +261,25 @@ export class AgentRegistry {
       .finally(() => entry.reportedRequestErrors.delete(request.requestId));
   }
 
+  /**
+   * Adds a job's result to the Wisp's context after the conversation's current
+   * and queued turns, without counting as a turn itself.
+   */
+  rememberJobResult(conversationId: string, text: string): Promise<void> {
+    const entry = this.require(conversationId);
+    const { agent } = entry;
+    if (!agent.rememberJobResult) return Promise.resolve();
+    const operation = entry.commandQueue.then(() => {
+      if (entry.disposed) throw new WispBackendError("disposed", "The Wisp was deleted.");
+      return agent.rememberJobResult!(text);
+    });
+    entry.commandQueue = operation.then(
+      () => undefined,
+      () => undefined,
+    );
+    return operation;
+  }
+
   async abort(conversationId: string): Promise<void> {
     await this.require(conversationId).agent.abort();
   }

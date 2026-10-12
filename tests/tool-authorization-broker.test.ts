@@ -547,6 +547,115 @@ describe("tool policy", () => {
     expect(broker.listPending()).toEqual([]);
   });
 
+  it("decides at once with no one present: approved tools run, others are refused, blocks still win", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "wisp-policy-unattended-"));
+    const store = new ToolPolicyStore(path.join(directory, "policy.json"));
+    await store.load();
+    const events: ConversationAgentEvent[] = [];
+    const broker = new ToolAuthorizationBroker(store, (event) => events.push(event), { selectWindowId: () => 7 });
+    const action = (toolName: string, category: "modify_file" | "integration_call" | "save_skill") => ({
+      conversationId: "one",
+      toolCallId: `call-${toolName}`,
+      toolName,
+      category,
+      summary: "Do something",
+      scope:
+        category === "integration_call"
+          ? { kind: "integration" as const, value: "Linear" }
+          : category === "save_skill"
+            ? { kind: "skill" as const, value: "notes" }
+            : { kind: "workspace_path" as const, value: "notes.md" },
+    });
+    const grant = { conversationId: "one", approvedTools: new Set(["edit", "save_skill"]) };
+
+    await broker.runUnattended(grant, async () => {
+      await expect(broker.authorize(action("edit", "modify_file"))).resolves.toBeUndefined();
+      await expect(broker.authorize(action("mcp_linear_create", "integration_call"))).rejects.toMatchObject({
+        code: "tool_blocked",
+      });
+      await expect(broker.authorize(action("save_skill", "save_skill"))).rejects.toMatchObject({
+        code: "tool_blocked",
+      });
+      // The grant covers its own conversation only.
+      await expect(broker.authorize({ ...action("edit", "modify_file"), conversationId: "two" })).rejects.toMatchObject(
+        { code: "tool_blocked" },
+      );
+    });
+    expect(events).toEqual([]);
+    expect(broker.listPending()).toEqual([]);
+
+    await store.blockCategory("modify_file", () => "block-1");
+    await broker.runUnattended(grant, async () => {
+      await expect(broker.authorize(action("edit", "modify_file"))).rejects.toMatchObject({ code: "tool_blocked" });
+    });
+
+    // Outside a run, the person is asked as usual.
+    void broker.authorize(action("mcp_linear_create", "integration_call")).catch(() => undefined);
+    expect(events).toEqual([expect.objectContaining({ type: "tool_approval_requested" })]);
+    broker.dispose();
+  });
+
+  it("always asks for jobs, shows what they may do, and refuses lasting decisions", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "wisp-policy-job-"));
+    const store = new ToolPolicyStore(path.join(directory, "policy.json"));
+    await store.load();
+    const events: ConversationAgentEvent[] = [];
+    const broker = new ToolAuthorizationBroker(store, (event) => events.push(event), {
+      createId: () => "approval-job",
+      selectWindowId: () => 7,
+    });
+    expect(evaluateToolPolicy({ autoReview: true, rules: [] }, "schedule_job", "job")).toBe("ask");
+    expect(evaluateToolPolicy({ autoReview: true, rules: [] }, "schedule_job", "workspace_path")).toBe("block");
+    const job = {
+      title: "Openings",
+      schedule: "Every day at 10:00 (UTC)",
+      nextRunAt: "2026-10-12T10:00:00.000Z",
+      instructions: "Search\u0007 the boards.",
+      skills: ["job-search"],
+      tools: ["web_search"],
+    };
+    const authorization = broker.authorize({
+      conversationId: "one",
+      toolCallId: "tool-1",
+      toolName: "schedule_job",
+      category: "schedule_job",
+      scope: { kind: "job", value: "Openings" },
+      summary: "Schedule Openings",
+      job,
+    });
+    expect(events[0]).toMatchObject({
+      type: "tool_approval_requested",
+      request: {
+        category: "schedule_job",
+        scope: { kind: "job" },
+        job: { ...job, instructions: "Search the boards." },
+      },
+    });
+    const decision = { approvalId: "approval-job", conversationId: "one", toolCallId: "tool-1" };
+    await expect(broker.resolve({ ...decision, decision: "block" }, 7)).rejects.toMatchObject({
+      code: "invalid_request",
+    });
+    await expect(broker.resolve({ ...decision, decision: "allow_always" }, 7)).rejects.toMatchObject({
+      code: "invalid_request",
+    });
+    await broker.resolve({ ...decision, decision: "allow_once" }, 7);
+    await expect(authorization).resolves.toBeUndefined();
+
+    // A job's run never approves another job.
+    await broker.runUnattended({ conversationId: "one", approvedTools: new Set(["schedule_job"]) }, async () => {
+      await expect(
+        broker.authorize({
+          conversationId: "one",
+          toolCallId: "tool-2",
+          toolName: "schedule_job",
+          category: "schedule_job",
+          scope: { kind: "job", value: "Openings" },
+          summary: "Schedule Openings",
+        }),
+      ).rejects.toMatchObject({ code: "tool_blocked" });
+    });
+  });
+
   it("cancels a pending approval when the tool execution is aborted", async () => {
     const directory = await mkdtemp(path.join(os.tmpdir(), "wisp-approval-abort-"));
     const events: ConversationAgentEvent[] = [];

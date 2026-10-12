@@ -8,6 +8,7 @@ import {
   BellIcon,
   BotIcon,
   CableIcon,
+  CalendarClockIcon,
   ChevronLeftIcon,
   ChevronRightIcon,
   CircleFadingArrowUpIcon,
@@ -29,6 +30,7 @@ import { GeneralSettingsSections } from "@/components/general-settings-sections"
 import { NotificationSettingsSection } from "@/components/notification-settings-section";
 import { StorageSettingsSection } from "@/components/storage-settings-section";
 import { UsageSettingsSection } from "@/components/usage-settings-section";
+import { JobsSettingsSection } from "@/components/jobs-settings-section";
 import { ModelSettingsSection } from "@/components/model-settings-section";
 import { PluginSettingsSection } from "@/components/plugin-settings-section";
 import { McpSettingsSection } from "@/components/mcp-settings-section";
@@ -70,9 +72,10 @@ type SettingsSection =
   | "shortcuts"
   | "about"
   | "usage"
-  | "storage";
+  | "storage"
+  | "jobs";
 /** Sections other parts of the app can open the dialog at. */
-export type SettingsEntrySection = "general" | "model" | "voice" | "plugins" | "mcp" | "storage";
+export type SettingsEntrySection = "general" | "model" | "voice" | "plugins" | "mcp" | "storage" | "jobs";
 
 /** Navigation order; entries without a section are announced but not available yet. */
 const NAV_ITEMS: ReadonlyArray<
@@ -124,6 +127,13 @@ const NAV_ITEMS: ReadonlyArray<
     icon: ServerIcon,
   },
   {
+    section: "jobs",
+    panelId: "jobs-settings-panel",
+    label: "Jobs",
+    description: "Tasks your Wisps run on a schedule",
+    icon: CalendarClockIcon,
+  },
+  {
     section: "usage",
     panelId: "usage-settings-panel",
     label: "Token usage",
@@ -163,7 +173,7 @@ const NAV_ITEMS: ReadonlyArray<
 /** How the mobile overview groups the sections, under the profile card. */
 const MOBILE_NAV_GROUPS: ReadonlyArray<{ label: string; sections: ReadonlyArray<SettingsSection> }> = [
   { label: "Account and server", sections: ["general", "connections"] },
-  { label: "Wisps", sections: ["model", "voice", "plugins", "mcp"] },
+  { label: "Wisps", sections: ["model", "voice", "plugins", "mcp", "jobs"] },
   { label: "Notifications and input", sections: ["notifications", "shortcuts"] },
   { label: "Storage and data", sections: ["storage", "usage"] },
   { label: "App", sections: ["about"] },
@@ -247,6 +257,7 @@ function AppSettingsDialog({
     about: "About",
     usage: "Token usage",
     storage: "Storage",
+    jobs: "Jobs",
   };
   function openSection(nextSection: typeof section) {
     setSection(nextSection);
@@ -403,6 +414,7 @@ function AppSettingsDialog({
           )}
         </nav>
         {section === "usage" && open && !showOverview ? <UsageSettingsSection wisps={wisps} /> : null}
+        {section === "jobs" && open && !showOverview ? <JobsSettingsSection wisps={wisps} /> : null}
         {section === "storage" && open && !showOverview ? (
           <StorageSettingsSection
             key={initialStorageConversationId ?? "all"}

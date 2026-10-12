@@ -21,6 +21,11 @@ export interface ConversationAgent {
   clearModel(): Promise<void>;
   dispose(): Promise<void>;
   subscribe(listener: ConversationAgentListener): () => void;
+  /**
+   * Adds what one of the Wisp's jobs delivered to its context, without
+   * starting a turn, so the person can follow up on it (ADR 019).
+   */
+  rememberJobResult?(text: string): Promise<void>;
 }
 
 /** One Wisp's agent in one conversation: who the Wisp is, and where its files and session live. */
