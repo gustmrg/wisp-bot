@@ -7,16 +7,52 @@ and application settings use full-screen dialogs with their existing backend
 actions and focus management. Wider windows keep the desktop panels. The
 Electron window can be resized down to 360px wide to use this layout locally.
 
+## Each Wisp's color
+
+Each Wisp's color marks what belongs to it. The color is the one chosen for
+the Wisp, or one derived from its name:
+
+- **Avatars.** A Wisp sits on a soft disc of its color. A ring around it says
+  what it is doing: an arc going round while it works, amber while it waits
+  for an approval, and red after a failed reply.
+- **The list.** The Wisp's role, its unread count, and the line saying what it
+  is doing ("Searching the web…") take its color.
+- **Its conversation.** The Wisp's light spills from the top of the chat. Its
+  replies and its typing bubble are tinted with its color, and the composer's
+  main button (voice or send) is filled with it. The person's own messages are
+  neutral so the Wisp's color stands out. Under the name, the header shows the
+  Wisp's role, or "Working…", "Waiting for your approval", or "Couldn't
+  reply". A Wisp with nothing said yet introduces itself with the first
+  paragraph of its soul.
+- **Circles.** Each run of replies is named by the Wisp that wrote it and
+  tinted with that Wisp's color.
+
 ## Bottom bar and Approvals
 
 The bottom bar has Wisps, Approvals, and Settings (see
-[ADR 015](decisions/015-mobile-bottom-bar.md)). Wisps shows how many
+[ADR 015](decisions/015-mobile-bottom-bar.md)). It floats as a pill near the
+bottom edge; only the current tab shows its name. Wisps shows how many
 conversations are unread and Approvals how many tool approvals are pending.
-The Approvals screen lists every pending approval, the latest first, each with
-the conversation it came from. An approval answered there or in the chat
-leaves both.
+The Approvals screen lists every pending approval, the latest first, each in
+a card lit by the Wisp that asked and saying what it wants to do. An approval
+answered there, from the list, or in the chat leaves all of them.
 
 ## Conversation list
+
+The list starts with a greeting for the time of day, the title Wisps, and
+buttons for search and creating a Wisp. Under them, a row of every Wisp, in
+its color, shows at a glance which are waiting for the person, working,
+failed, or unread, in that order; tapping one opens its conversation. The
+light at the top of the list comes from the busiest Wisps' colors.
+
+**Approving from the list.** When a Wisp is waiting for an approval, the one
+asked last sits above the conversations: who asks, what it wants to do, the
+request in one or two lines, and the time left. Deny and Allow once answer it
+there. A job or a skill must be read in full first, so it offers Review
+instead. Tapping the card opens a sheet from the bottom with the whole
+request and every answer the chat offers, including Always allow and Always
+block, and a way into the conversation. When more are waiting, "N more
+waiting" opens the Approvals tab.
 
 The list reads like a messaging app. The latest activity comes first, on the
 phone and on the desktop sidebar alike. Each row shows the Wisp's
@@ -37,6 +73,15 @@ The same menu opens with a right click on the desktop and with the keyboard's
 menu key or Shift+F10 on a focused row; the arrow keys move through it and
 Escape closes it. A conversation marked unread while it is open stays unread
 until it is chosen again.
+
+## A Wisp's profile
+
+On a phone, the gear in a Wisp's conversation opens its profile: the Wisp
+large in its own light, its name, role, and soul, the model it runs on,
+whether it notifies, and its jobs. Chat goes back to the conversation; Model,
+Access, and Usage open that tab of its settings, and Edit opens General.
+Settings opened from the profile go back to it. A circle's gear still opens
+its settings.
 
 ## Settings
 
