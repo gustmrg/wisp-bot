@@ -2,6 +2,8 @@ import "@testing-library/jest-dom/vitest";
 import { cleanup } from "@testing-library/react";
 import { afterEach, vi } from "vitest";
 
+import { clearComposerDrafts } from "@/lib/composer-drafts";
+
 class MatchMediaMock implements MediaQueryList {
   readonly matches = false;
   readonly media: string;
@@ -31,6 +33,7 @@ Object.defineProperty(window, "scrollTo", {
 afterEach(() => {
   cleanup();
   window.localStorage.clear();
+  clearComposerDrafts();
   document.documentElement.className = "";
   document.documentElement.removeAttribute("style");
 });

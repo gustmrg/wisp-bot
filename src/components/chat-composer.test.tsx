@@ -53,6 +53,30 @@ describe("ChatComposer", () => {
     expect(screen.queryByRole("button", { name: "New topic" })).toBeNull();
   });
 
+  it("keeps the unsent draft when it remounts, as after a reconnect", async () => {
+    const user = userEvent.setup();
+    const { unmount } = render(<ChatComposer {...defaultProps} chat={wisp("one", "One")} />);
+    await user.type(screen.getByRole("textbox", { name: "Message One" }), "Half a thought");
+    unmount();
+
+    render(<ChatComposer {...defaultProps} chat={wisp("one", "One")} />);
+    expect(screen.getByRole("textbox", { name: "Message One" })).toHaveValue("Half a thought");
+  });
+
+  it("keeps each conversation's draft apart and forgets one once sent", async () => {
+    const user = userEvent.setup();
+    const onSend = vi.fn();
+    const { rerender } = render(<ChatComposer {...defaultProps} key="one" chat={wisp("one", "One")} onSend={onSend} />);
+    await user.type(screen.getByRole("textbox", { name: "Message One" }), "Hello{Enter}");
+    expect(onSend).toHaveBeenCalledWith("Hello");
+    await user.type(screen.getByRole("textbox", { name: "Message One" }), "Unsent");
+
+    rerender(<ChatComposer {...defaultProps} key="two" chat={wisp("two", "Two")} onSend={onSend} />);
+    expect(screen.getByRole("textbox", { name: "Message Two" })).toHaveValue("");
+    rerender(<ChatComposer {...defaultProps} key="one" chat={wisp("one", "One")} onSend={onSend} />);
+    expect(screen.getByRole("textbox", { name: "Message One" })).toHaveValue("Unsent");
+  });
+
   it("schedules the draft from the shortcut instead of sending it", async () => {
     const user = userEvent.setup();
     const onSend = vi.fn();

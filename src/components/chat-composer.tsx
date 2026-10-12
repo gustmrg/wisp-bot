@@ -27,6 +27,7 @@ import { DEFAULT_PREFERENCES } from "@/lib/app-preferences";
 import { formatScheduledTime, schedulePresets } from "@/lib/scheduled-time";
 import { formatShortcut, matchesShortcut, SCHEDULE_SEND_SHORTCUT } from "@/lib/shortcuts";
 import { cn } from "@/lib/utils";
+import { readComposerDraft, saveComposerDraft } from "@/lib/composer-drafts";
 import type { ManagedConversationStatus } from "../../shared/conversations";
 import type { ChatView } from "@/chat-data";
 import { chatName } from "@/lib/chat-schema";
@@ -90,8 +91,8 @@ export function ChatComposer({
   onSchedule,
   onNewTopic,
 }: ChatComposerProps) {
-  const [draft, setDraft] = useState("");
-  const [attachments, setAttachments] = useState<ReadonlyArray<WorkspaceAttachment>>([]);
+  const [draft, setDraft] = useState(() => readComposerDraft(chat.id).text);
+  const [attachments, setAttachments] = useState(() => readComposerDraft(chat.id).attachments);
   const [attaching, setAttaching] = useState(false);
   const [attachError, setAttachError] = useState("");
   const [menuOpen, setMenuOpen] = useState(false);
@@ -117,6 +118,7 @@ export function ChatComposer({
   const insertAt = useRef<readonly [number, number] | null>(null);
   const latest = useRef({ draft, attachments, canSend, autoSend: voice.autoSend });
   latest.current = { draft, attachments, canSend, autoSend: voice.autoSend };
+  useEffect(() => saveComposerDraft(chat.id, { text: draft, attachments }), [chat.id, draft, attachments]);
   const voiceInput = useVoiceInput({
     deviceId: voice.deviceId,
     providerId: voice.providerId,
