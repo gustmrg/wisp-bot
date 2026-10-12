@@ -1,6 +1,7 @@
 import { useContext, useEffect, useMemo, useRef, useState } from "react";
 import { RefreshCwIcon, SearchIcon } from "lucide-react";
 
+import { ChatAvatar } from "@/components/chat-avatar";
 import { StorageInspector } from "@/components/storage-inspector";
 import { LargestConsumers, StorageOverview, type InspectTarget } from "@/components/storage-overview";
 import { WorkspaceSizeSelect } from "@/components/workspace-size-select";
@@ -17,10 +18,18 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { describeStorageFailure, formatMeasuredAt } from "@/lib/storage-format";
 import { ActiveConnectionContext } from "@/features/connections/active-connection";
+import { Wisp } from "@/components/wisp";
+import type { ChatView } from "@/chat-data";
 import type { StorageArchive, StorageSummary, StorageWorkspace } from "../../shared/storage";
 import { formatBytes, type WorkspaceView } from "../../shared/workspace";
 
-export function StorageSettingsSection({ initialConversationId }: { initialConversationId?: string }) {
+export function StorageSettingsSection({
+  initialConversationId,
+  conversations = [],
+}: {
+  initialConversationId?: string;
+  conversations?: ReadonlyArray<ChatView>;
+}) {
   const connection = useContext(ActiveConnectionContext);
   const connectionName =
     connection?.profiles.find((profile) => profile.id === connection.activeId)?.name ?? "This computer";
@@ -63,6 +72,10 @@ export function StorageSettingsSection({ initialConversationId }: { initialConve
         (!needle || workspace.name.toLowerCase().includes(needle)),
     );
   }, [summary, query, onlyConversation]);
+  const conversationsById = useMemo(
+    () => new Map(conversations.map((conversation) => [conversation.id, conversation])),
+    [conversations],
+  );
   const inspected = summary?.workspaces.find((workspace) => workspace.conversationId === inspecting?.conversationId);
 
   // A resize changes only the size; usage stays as measured, so every number on the page agrees.
@@ -172,6 +185,7 @@ export function StorageSettingsSection({ initialConversationId }: { initialConve
                       <WorkspaceRow
                         key={workspace.conversationId}
                         workspace={workspace}
+                        conversation={conversationsById.get(workspace.conversationId)}
                         onInspect={(conversationId) => setInspecting({ conversationId })}
                         onResized={(view) => applyResize(workspace.conversationId, view)}
                       />
@@ -195,10 +209,13 @@ export function StorageSettingsSection({ initialConversationId }: { initialConve
 
 function WorkspaceRow({
   workspace,
+  conversation,
   onInspect,
   onResized,
 }: {
   workspace: StorageWorkspace;
+  /** The Wisp's or circle's conversation, for its picture. */
+  conversation?: ChatView;
   onInspect: (conversationId: string) => void;
   onResized: (view: WorkspaceView) => void;
 }) {
@@ -208,6 +225,11 @@ function WorkspaceRow({
   const full = workspace.usedBytes >= workspace.quotaBytes;
   return (
     <SettingsRow className="flex-wrap">
+      {conversation ? (
+        <ChatAvatar chat={conversation} />
+      ) : workspace.kind === "wisp" ? (
+        <Wisp aria-hidden="true" className="flex-none" name={workspace.name} />
+      ) : null}
       <SettingsRowCopy className="min-w-48 flex-1">
         <span className="flex min-w-0 items-center gap-2">
           <SettingsRowTitle className="truncate">{workspace.name}</SettingsRowTitle>

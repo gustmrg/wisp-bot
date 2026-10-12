@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useId, useMemo, useState } from "react";
 
 import type { PluginId, PluginSummary, WispPluginAccessView } from "../../shared/plugins";
-import { AccessRow, InitialsBadge } from "@/components/access-row";
+import { AccessRow } from "@/components/access-row";
+import { Wisp } from "@/components/wisp";
 import { SettingsGroup } from "@/components/settings/settings-primitives";
 import { Button } from "@/components/ui/button";
 import {
@@ -122,7 +123,16 @@ export function PluginWispAccessPanel({
                 <AccessRow
                   key={wisp.id}
                   id={`${formId}-${wisp.id}`}
-                  icon={<InitialsBadge name={wisp.name} />}
+                  icon={
+                    <Wisp
+                      aria-hidden="true"
+                      className="flex-none"
+                      appearance={wisp.appearance}
+                      color={wisp.color}
+                      name={wisp.name}
+                      size="sm"
+                    />
+                  }
                   label={wisp.name}
                   value={value}
                   options={options}

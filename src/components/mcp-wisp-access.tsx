@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useId, useState } from "react";
 
 import type { McpAccess, McpServerSummary, SaveWispMcpAccessRequest, WispMcpAccessView } from "../../shared/mcp";
-import { AccessRow, InitialsBadge } from "@/components/access-row";
+import { AccessRow } from "@/components/access-row";
+import { Wisp } from "@/components/wisp";
 import { SettingsGroup } from "@/components/settings/settings-primitives";
 import { Button } from "@/components/ui/button";
 import type { WispOption } from "@/lib/plugin-access";
@@ -163,7 +164,16 @@ export function McpWispAccessPanel({
                 <AccessRow
                   key={wisp.id}
                   id={`${formId}-${wisp.id}`}
-                  icon={<InitialsBadge name={wisp.name} />}
+                  icon={
+                    <Wisp
+                      aria-hidden="true"
+                      className="flex-none"
+                      appearance={wisp.appearance}
+                      color={wisp.color}
+                      name={wisp.name}
+                      size="sm"
+                    />
+                  }
                   label={wisp.name}
                   value={draft[wisp.id] ?? mcpAccessChoice(view, server.serverId)}
                   options={options}

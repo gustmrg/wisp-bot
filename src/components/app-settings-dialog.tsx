@@ -57,6 +57,7 @@ import { cn } from "@/lib/utils";
 import { WISP_RELEASES_URL, WISP_REPOSITORY_URL, type UpdateState } from "../../shared/contracts";
 import type { PluginId } from "../../shared/plugins";
 import type { WispOption } from "@/lib/plugin-access";
+import type { ChatView } from "@/chat-data";
 
 type SettingsSection =
   | "general"
@@ -192,6 +193,8 @@ interface AppSettingsDialogProps {
   initialStorageConversationId?: string;
   /** Wisps that Plugins can give access to. */
   wisps?: ReadonlyArray<WispOption>;
+  /** Conversations whose pictures Storage shows beside their workspaces. */
+  conversations?: ReadonlyArray<ChatView>;
   preferences: AppPreferences;
   persistenceStatus: PersistenceStatus;
   persistenceError: string | null;
@@ -208,6 +211,7 @@ function AppSettingsDialog({
   initialPluginId,
   initialStorageConversationId,
   wisps,
+  conversations,
   mobile = false,
   onOpenConversations,
   onOpenApprovals,
@@ -403,6 +407,7 @@ function AppSettingsDialog({
           <StorageSettingsSection
             key={initialStorageConversationId ?? "all"}
             initialConversationId={initialStorageConversationId}
+            conversations={conversations}
           />
         ) : null}
         {section === "plugins" && open && !showOverview ? (

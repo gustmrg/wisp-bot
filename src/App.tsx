@@ -73,6 +73,7 @@ function Workspace({ userProfile }: { userProfile: UserProfileController }) {
       ),
     [workspace.chats],
   );
+  const conversations = useMemo(() => Object.values(workspace.chats), [workspace.chats]);
   const sidebarPanel = useResizablePanel({
     ...SIDEBAR_LAYOUT.resize,
     enabled: !mobile && !sidebarCollapsed,
@@ -293,6 +294,7 @@ function Workspace({ userProfile }: { userProfile: UserProfileController }) {
           onOpenApprovals={showApprovals}
           navigationCounts={{ unread: unreadCount, approvals: approvalCount }}
           wisps={wisps}
+          conversations={conversations}
           userProfile={userProfile}
           preferences={workspace.preferences}
           persistenceStatus={workspace.persistenceStatus}
