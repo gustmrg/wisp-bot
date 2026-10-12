@@ -286,3 +286,32 @@ describe("ChatPanel transcript", () => {
     expect(scroller.scrollTop).toBe(bottomOf(10));
   });
 });
+
+describe("ChatPanel identity", () => {
+  it("takes on the Wisp's color and says what it does under its name", () => {
+    renderPanel(transcript(messages(0, 1)));
+    expect(document.querySelector("main")?.style.getPropertyValue("--wisp")).toMatch(/^#[0-9a-f]{6}$/i);
+    expect(screen.getByText("Research")).toBeInTheDocument();
+  });
+
+  it("says when the Wisp is working, waiting, or failed", () => {
+    const { show } = renderPanel(transcript(messages(0, 1)), { status: "working" });
+    expect(screen.getByText("Working…")).toBeInTheDocument();
+    show(transcript([{ id: "f", type: "incoming", text: "", status: "failed" }]), { status: "idle" });
+    expect(screen.getByText("Couldn't reply")).toBeInTheDocument();
+  });
+
+  it("introduces a Wisp with nothing said yet by its soul", () => {
+    const chat = wispChatView("atlas", {
+      wisp: { name: "Atlas", role: "Research", soul: "# Atlas\n\nCurious, **careful** with sources." },
+    });
+    renderPanel(transcript([]), { chat });
+    expect(screen.getByRole("heading", { name: "Hi, I'm Atlas" })).toBeInTheDocument();
+    expect(screen.getByText("Curious, careful with sources.")).toBeInTheDocument();
+  });
+
+  it("does not introduce the Wisp once there are messages", () => {
+    renderPanel(transcript(messages(0, 1)));
+    expect(screen.queryByRole("heading", { name: "Hi, I'm Atlas" })).not.toBeInTheDocument();
+  });
+});

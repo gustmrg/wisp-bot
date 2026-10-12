@@ -189,12 +189,13 @@ describe("Sidebar states", () => {
     expect(screen.getByRole("button", { name: "Atlas, the last reply failed" })).toBeVisible();
   });
 
-  it("animates a Wisp while it works", () => {
+  it("animates a Wisp while it works and says what it is doing", () => {
     const { container } = render(
       <Sidebar
         activeChatId=""
         chats={chats}
         statuses={{ atlas: "working" }}
+        activity={{ atlas: "Searching the web…" }}
         collapsed={false}
         currentUser={currentUser}
         width={280}
@@ -202,7 +203,8 @@ describe("Sidebar states", () => {
       />,
     );
     expect(container.querySelector("[data-slot=wisp]")).toHaveAttribute("data-state", "working");
-    expect(screen.getByText("Latest research")).toBeVisible();
+    expect(screen.getByText("Searching the web…")).toBeVisible();
+    expect(screen.queryByText("Latest research")).not.toBeInTheDocument();
   });
 });
 

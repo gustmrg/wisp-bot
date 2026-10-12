@@ -191,6 +191,7 @@ function Workspace({ userProfile }: { userProfile: UserProfileController }) {
             mobile={mobile}
             hidden={mobile && (mobilePage !== "list" || detailsOpen)}
             statuses={workspace.statuses}
+            activity={workspace.activity}
             approvals={workspace.approvals}
             failedChats={workspace.failedChats}
             loading={workspace.loading}

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
+import { useEffect, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
 import {
   BellIcon,
   BellOffIcon,
@@ -30,6 +30,7 @@ import { chatActivityDate, chatActivityLabel } from "@/lib/date-dividers";
 import { sidebarLayoutStyle } from "@/lib/layout";
 import { panelResizer, profileAvatar } from "@/lib/ui-classes";
 import { cn } from "@/lib/utils";
+import { inkOn, wispColor } from "@/lib/wisp-appearance";
 
 interface SidebarProps {
   activeChatId: ChatId;
@@ -40,6 +41,8 @@ interface SidebarProps {
   mobile?: boolean;
   hidden?: boolean;
   statuses?: Record<string, ManagedConversationStatus>;
+  /** What each working conversation is doing, such as "Searching the web". */
+  activity?: Record<string, string | undefined>;
   approvals?: Record<string, ReadonlyArray<ToolApprovalRequest>>;
   /** Conversations whose last reply failed while they were not open. */
   failedChats?: Record<string, boolean>;
@@ -82,6 +85,7 @@ function Sidebar({
   mobile = false,
   hidden = false,
   statuses = {},
+  activity = {},
   approvals = {},
   failedChats = {},
   loading = false,
@@ -212,6 +216,8 @@ function Sidebar({
             const failed = !pendingApproval && Boolean(failedChats[chatId]);
             const working = statuses[chatId] === "working";
             const activityDate = chatActivityDate(chat);
+            const color = chat.kind === "wisp" ? wispColor(chat.wisp.name, chat.wisp.color) : undefined;
+            const role = chat.kind === "wisp" ? chat.wisp.role.trim() : "";
             const attention = pendingApproval ? "waiting for your approval" : failed ? "the last reply failed" : null;
 
             const row = (
@@ -222,6 +228,7 @@ function Sidebar({
                 )}
                 data-selected={selected}
                 data-unread={chat.unread ? true : undefined}
+                style={color ? ({ "--wisp": color, "--wisp-ink": inkOn(color) } as CSSProperties) : undefined}
                 type="button"
                 aria-current={selected ? "page" : undefined}
                 aria-label={collapsed ? (attention ? `${chatName(chat)}, ${attention}` : chatName(chat)) : undefined}
@@ -232,7 +239,10 @@ function Sidebar({
                   if (menuChatId !== chatId) onSelectChat(chatId);
                 }}
               >
-                <span className="conversation-avatar relative inline-flex flex-none">
+                <span
+                  className="conversation-avatar wisp-halo relative inline-flex flex-none"
+                  data-state={pendingApproval ? "approval" : failed ? "error" : working ? "working" : "idle"}
+                >
                   <ChatAvatar
                     chat={chat}
                     state={pendingApproval ? "approval" : failed ? "error" : working ? "working" : "idle"}
@@ -244,9 +254,13 @@ function Sidebar({
                 {collapsed ? null : (
                   <span className="flex min-w-0 flex-1 flex-col">
                     <span className="flex min-w-0 items-baseline gap-2">
-                      <strong className="min-w-0 flex-1 overflow-hidden text-base leading-[17px] font-semibold text-ellipsis whitespace-nowrap">
+                      <strong className="min-w-0 overflow-hidden text-base leading-[17px] font-semibold text-ellipsis whitespace-nowrap">
                         {chatName(chat)}
                       </strong>
+                      {role ? (
+                        <small className="conversation-role min-w-0 flex-[0_1_auto] truncate">{role}</small>
+                      ) : null}
+                      <span className="flex-1" />
                       {chat.pinned ? (
                         <span className="conversation-pin flex-none self-center text-faint">
                           <PinIcon aria-hidden="true" className="size-3" />
@@ -270,15 +284,15 @@ function Sidebar({
                           failed && "text-destructive",
                         )}
                         data-activity={
-                          pendingApproval ? "approval" : failed ? "failed" : mobile && working ? "working" : undefined
+                          pendingApproval ? "approval" : failed ? "failed" : working ? "working" : undefined
                         }
                       >
                         {pendingApproval
                           ? "Waiting for your approval"
                           : failed
                             ? "The last reply failed"
-                            : mobile && working
-                              ? "Working…"
+                            : working
+                              ? (activity[chatId] ?? "Working…")
                               : messagePreview(chat.preview)}
                       </span>
                       {chat.unread && mobile ? (

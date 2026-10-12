@@ -171,7 +171,7 @@ function MessageView({ message, dense = false, onAnswer, onRetry }: MessageViewP
           className={cn(
             "message-bubble max-w-[min(820px,78vw)] rounded-[16px] px-2.5 py-[7px] leading-[1.42] select-text",
             outgoing
-              ? "rounded-br-[5px] bg-bubble-out whitespace-pre-wrap text-white"
+              ? "rounded-br-[5px] bg-bubble-out whitespace-pre-wrap text-bubble-out-foreground"
               : "rounded-bl-[5px] border border-border bg-bubble-in text-foreground",
           )}
         >
@@ -235,7 +235,7 @@ function OutgoingText({ text }: { text: string }) {
       <AttachmentChips
         attachments={attachments}
         className={cn("whitespace-normal", typed && "mt-1.5")}
-        chipClassName="border-white/25 bg-white/15"
+        chipClassName="border-current/25 bg-current/10"
       />
     </>
   );

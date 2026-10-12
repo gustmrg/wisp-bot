@@ -1,0 +1,226 @@
+/* Aura: each Wisp's color shows around it. A row or chat that belongs to one
+   Wisp sets --wisp (its color) and --wisp-ink (text that reads on it). */
+
+/* ---------- The halo: a soft disc of the Wisp's color, and a ring for its state ---------- */
+
+.wisp-halo {
+  position: relative;
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  border-radius: 50%;
+  background: radial-gradient(
+    circle at 42% 38%,
+    color-mix(in srgb, var(--wisp, var(--text-faint)) 30%, transparent),
+    transparent 72%
+  );
+}
+.wisp-halo::before {
+  content: "";
+  position: absolute;
+  inset: -2px;
+  border-radius: 50%;
+  pointer-events: none;
+}
+/* Working: an arc of the Wisp's color going round. */
+.wisp-halo[data-state="working"]::before {
+  background: conic-gradient(from 0deg, var(--wisp, var(--blue)), transparent 62%, var(--wisp, var(--blue)));
+  mask: radial-gradient(farthest-side, transparent calc(100% - 2px), #000 calc(100% - 1.5px));
+  animation: wisp-halo-spin 2.4s linear infinite;
+}
+/* Waiting for the person, or failed: a steady ring that says which. */
+.wisp-halo[data-state="approval"]::before {
+  box-shadow:
+    inset 0 0 0 2px var(--warning-solid),
+    0 0 12px color-mix(in srgb, var(--warning-solid) 45%, transparent);
+}
+.wisp-halo[data-state="error"]::before {
+  box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--destructive) 80%, transparent);
+}
+.wisp-halo[data-state="error"] {
+  background: radial-gradient(
+    circle at 42% 38%,
+    color-mix(in srgb, var(--destructive) 18%, transparent),
+    transparent 72%
+  );
+}
+/* The ring says it; the dots that used to are kept for the collapsed sidebar's labels only. */
+.wisp-halo > .approval-indicator,
+.wisp-halo > .error-indicator {
+  display: none;
+}
+
+@keyframes wisp-halo-spin {
+  to {
+    rotate: 360deg;
+  }
+}
+
+/* ---------- Conversation list ---------- */
+
+.conversation-avatar.wisp-halo {
+  width: 38px;
+  height: 38px;
+}
+.conversation-avatar.wisp-halo > svg {
+  width: 28px;
+  height: 28px;
+}
+.conversation-role {
+  margin-left: -4px;
+  color: color-mix(in srgb, var(--wisp) 78%, var(--foreground));
+  font-size: var(--text-2xs);
+  font-weight: 600;
+  letter-spacing: 0;
+}
+.conversation-list-item[style] .unread-dot {
+  background: var(--wisp);
+}
+.conversation-preview[data-activity="working"] {
+  color: color-mix(in srgb, var(--wisp, var(--blue)) 72%, var(--foreground));
+}
+.conversation-list-item[style][data-selected="true"] {
+  background: color-mix(in srgb, var(--wisp) 13%, var(--sidebar-background));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--wisp) 24%, transparent);
+}
+
+/* ---------- Chat ---------- */
+
+.chat-panel {
+  isolation: isolate;
+}
+/* The Wisp's light, spilling from the top of its conversation. */
+.chat-ambient {
+  position: absolute;
+  inset: 0 0 auto;
+  height: 420px;
+  pointer-events: none;
+  background: radial-gradient(
+    760px 440px at 15% -140px,
+    color-mix(in srgb, var(--wisp, transparent) 20%, transparent),
+    transparent 72%
+  );
+}
+.dark .chat-ambient {
+  background: radial-gradient(
+    760px 460px at 15% -140px,
+    color-mix(in srgb, var(--wisp, transparent) 32%, transparent),
+    transparent 72%
+  );
+}
+.chat-ambient[data-tone="error"],
+.dark .chat-ambient[data-tone="error"] {
+  background: radial-gradient(
+    760px 440px at 15% -140px,
+    color-mix(in srgb, var(--destructive) 16%, transparent),
+    transparent 72%
+  );
+}
+.chat-heading .wisp-halo {
+  width: 34px;
+  height: 34px;
+}
+.chat-heading .wisp-halo > svg,
+.chat-heading .wisp-halo > span {
+  width: 26px;
+  height: 26px;
+}
+.chat-subline {
+  margin-top: 1px;
+  color: var(--text-dim);
+}
+.chat-subline[data-tone="working"] {
+  color: color-mix(in srgb, var(--wisp, var(--blue)) 75%, var(--foreground));
+}
+.chat-subline[data-tone="approval"] {
+  color: var(--warning);
+}
+.chat-subline[data-tone="error"] {
+  color: var(--destructive);
+}
+.chat-subline-pulse {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  animation: chat-subline-pulse 1.4s ease-out infinite;
+}
+@keyframes chat-subline-pulse {
+  from {
+    box-shadow: 0 0 0 0 currentColor;
+  }
+  to {
+    box-shadow: 0 0 0 6px transparent;
+  }
+}
+
+/* A Wisp's replies, and its typing bubble, take a tint of its color. */
+.chat-panel[data-accent] .message-row[data-outgoing="false"] .message-bubble,
+.chat-panel[data-accent] .chat-activity-bubble {
+  border-color: color-mix(in srgb, var(--wisp) 24%, transparent);
+  background: color-mix(in srgb, var(--wisp) 9%, var(--background));
+}
+.dark .chat-panel[data-accent] .message-row[data-outgoing="false"] .message-bubble,
+.dark .chat-panel[data-accent] .chat-activity-bubble {
+  background: color-mix(in srgb, var(--wisp) 11%, #141418);
+}
+.chat-panel[data-accent] .chat-activity-dot {
+  background: var(--wisp);
+}
+
+/* The main button of a Wisp's composer is in its color; stop and recording keep theirs. */
+.chat-panel[data-accent] .composer-primary:is([data-variant="voice"], [data-variant="send"]) {
+  background: var(--wisp);
+  color: var(--wisp-ink);
+}
+.dark .chat-panel[data-accent] .composer-primary:is([data-variant="voice"], [data-variant="send"]):enabled {
+  box-shadow: 0 0 18px color-mix(in srgb, var(--wisp) 40%, transparent);
+}
+
+/* A Wisp with nothing said yet introduces itself. */
+.chat-intro {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  max-width: 380px;
+  margin: 56px auto 12px;
+  text-align: center;
+  animation: var(--animate-message-in);
+}
+.chat-intro-wisp {
+  display: grid;
+  place-items: center;
+  width: 148px;
+  height: 148px;
+  border-radius: 50%;
+  background: radial-gradient(circle, color-mix(in srgb, var(--wisp) 30%, transparent), transparent 68%);
+}
+.chat-intro-wisp > svg,
+.chat-intro-wisp > img {
+  width: 84px;
+  height: 84px;
+}
+.chat-intro h2 {
+  margin-top: 4px;
+  font-size: var(--text-xl);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+.chat-intro-role {
+  color: color-mix(in srgb, var(--wisp) 75%, var(--foreground));
+  font-size: var(--text-sm);
+  font-weight: 600;
+}
+.chat-intro p:not(.chat-intro-role) {
+  margin-top: 8px;
+  color: var(--text-dim);
+  line-height: 1.55;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .wisp-halo[data-state="working"]::before,
+  .chat-subline-pulse {
+    animation: none;
+  }
+}

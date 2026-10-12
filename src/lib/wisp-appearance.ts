@@ -80,6 +80,28 @@ export function luminance(hex: string): number {
   return 0.2126 * linear(red) + 0.7152 * linear(green) + 0.0722 * linear(blue);
 }
 
+/** A stable number from a string, for picking a color or offsetting an animation. */
+export function hashSeed(seed: string) {
+  let hash = 2166136261;
+  for (const character of seed) {
+    hash ^= character.charCodeAt(0);
+    hash = Math.imul(hash, 16777619);
+  }
+  return hash >>> 0;
+}
+
+/** A Wisp's color: the one it was given, or one derived from its name. */
+export function wispColor(name: string, color?: string): string {
+  if (color) return color;
+  const hash = hashSeed(name || "agent");
+  return WISP_COLORS[hash % WISP_COLORS.length]?.value ?? WISP_COLORS[0].value;
+}
+
+/** Text or icon color that reads on a fill of `color`. */
+export function inkOn(color: string): string {
+  return luminance(color) > 0.3 ? "#111111" : "#ffffff";
+}
+
 export interface WispPalette {
   base: string;
   light: string;

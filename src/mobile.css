@@ -112,7 +112,7 @@
     border-color: transparent;
   }
   .conversation-list-item[data-unread="true"] time {
-    color: var(--foreground);
+    color: color-mix(in srgb, var(--wisp, var(--foreground)) 80%, var(--foreground));
     font-weight: 600;
   }
   .conversation-unread-badge {
@@ -120,8 +120,8 @@
     width: 10px;
     height: 10px;
     border-radius: 50%;
-    /* The product's unread color, as on the desktop avatar dot. */
-    background: #ff3b30;
+    /* The product's unread color, or the Wisp's own. */
+    background: var(--wisp, #ff3b30);
   }
   .conversation-unread-badge[data-counted] {
     width: auto;
@@ -129,7 +129,7 @@
     height: 20px;
     padding: 0 6px;
     border-radius: 999px;
-    color: #fff;
+    color: var(--wisp-ink, #fff);
     font-size: 12px;
     font-weight: 600;
     font-variant-numeric: tabular-nums;
@@ -139,11 +139,15 @@
   .conversation-list-item[data-selected="true"] {
     background: color-mix(in srgb, var(--foreground) 3%, transparent);
   }
+  .conversation-avatar.wisp-halo {
+    width: 50px;
+    height: 50px;
+  }
   .conversation-avatar > svg,
   .conversation-avatar > img,
   .conversation-avatar > span:first-child {
-    width: 48px;
-    height: 48px;
+    width: 38px;
+    height: 38px;
   }
   .conversation-list-item strong {
     font-size: 15px;
@@ -159,9 +163,6 @@
     line-height: 20px;
     color: var(--text-dim);
   }
-  .conversation-preview[data-activity="working"] {
-    color: var(--green);
-  }
   .conversation-preview[data-activity="approval"] {
     color: var(--warning);
   }
@@ -172,26 +173,49 @@
     line-height: 1.7;
   }
 
+  /* A pill near the bottom edge: the current tab is a filled capsule with its name. */
   .mobile-navigation {
     display: flex;
     flex: none;
-    padding: 7px 24px max(8px, env(safe-area-inset-bottom, 0px));
-    border-top: 1px solid var(--border);
-    background: var(--sidebar-background);
+    align-self: center;
+    gap: 4px;
+    margin: 6px auto max(10px, env(safe-area-inset-bottom, 0px));
+    padding: 5px;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--card) 88%, transparent);
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.18);
+    backdrop-filter: blur(16px);
+  }
+  .dark .mobile-navigation {
+    background: color-mix(in srgb, #26262c 86%, transparent);
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.55);
   }
   .mobile-navigation button {
     display: flex;
-    flex: 1;
-    flex-direction: column;
     align-items: center;
     justify-content: center;
-    gap: 4px;
-    min-height: 50px;
+    gap: 7px;
+    min-width: 54px;
+    min-height: 46px;
+    padding: 0 16px;
+    border-radius: 999px;
     color: var(--text-dim);
-    font-size: 11px;
+    font-size: 14px;
+    font-weight: 600;
   }
   .mobile-navigation button[aria-current="page"] {
-    color: var(--foreground);
+    background: var(--foreground);
+    color: var(--background);
+  }
+  /* Only the current tab shows its name; the others keep it for screen readers. */
+  .mobile-navigation button:not([aria-current="page"]) > span:nth-child(2) {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
   }
   .mobile-navigation svg {
     width: 21px;
@@ -201,18 +225,20 @@
     position: relative;
     display: inline-flex;
   }
+  .mobile-navigation-icon:has(.mobile-navigation-badge) {
+    margin-right: 8px;
+  }
   .mobile-navigation-badge {
     position: absolute;
-    top: -5px;
+    top: -7px;
     left: 13px;
     min-width: 18px;
     height: 18px;
     padding: 0 5px;
-    border: 2px solid var(--sidebar-background);
+    border: 2px solid var(--card);
     border-radius: 999px;
-    /* The product's unread color, as on the list's badge. */
-    background: #ff3b30;
-    color: #fff;
+    background: var(--foreground);
+    color: var(--background);
     font-size: 10px;
     font-weight: 700;
     line-height: 14px;
@@ -293,11 +319,15 @@
     flex: 1;
     gap: 9px;
   }
-  .chat-heading > svg,
-  .chat-heading > img,
-  .chat-heading > span {
-    width: 35px;
-    height: 35px;
+  .chat-heading .wisp-halo {
+    width: 42px;
+    height: 42px;
+  }
+  .chat-heading .wisp-halo > svg,
+  .chat-heading .wisp-halo > img,
+  .chat-heading .wisp-halo > span {
+    width: 32px;
+    height: 32px;
   }
   .chat-heading h1 {
     font-size: 16px;
