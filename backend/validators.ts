@@ -1,3 +1,4 @@
+import type { JobRequest } from "../shared/jobs.js";
 import { isContextPolicy, type ContextRequest } from "../shared/context-policy.js";
 import {
   isThinkingLevel,
@@ -439,6 +440,10 @@ export function parseUpdateScheduledMessageRequest(value: unknown): UpdateSchedu
     ...(request.schedule === undefined ? {} : { schedule: parseMessageSchedule(request.schedule) }),
     ...(request.timeZone === undefined ? {} : { timeZone: parseTimeZone(request.timeZone) }),
   };
+}
+
+export function parseJobRequest(value: unknown): JobRequest {
+  return { jobId: parseId(asRecord(value).jobId) };
 }
 
 export function parseScheduledMessageRequest(value: unknown): ScheduledMessageRequest {

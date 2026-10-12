@@ -69,6 +69,9 @@ export function useNotificationSounds(options: NotificationSoundsOptions): void 
         case "tool_approval_requested":
           notify(id, "needs-input");
           return;
+        case "job_message_delivered":
+          notify(id, "finished");
+          return;
       }
     });
   }, []);

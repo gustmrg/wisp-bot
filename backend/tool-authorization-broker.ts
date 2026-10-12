@@ -9,6 +9,7 @@ import {
   workspaceFileBehavior,
   type ResolveToolApprovalRequest,
   type ToolActionCategory,
+  type JobApprovalDetails,
   type ToolApprovalRequest,
   type ToolPolicyBehavior,
   type ToolPolicySettings,
@@ -27,9 +28,11 @@ export interface ToolAuthorizationRequest {
   toolName: string;
   category: ToolActionCategory;
   summary: string;
-  scope: { kind: "workspace_path" | "integration" | "skill" | "container"; value: string };
+  scope: { kind: "workspace_path" | "integration" | "skill" | "container" | "job"; value: string };
   /** Content the user must see to decide; only sent for skill changes. */
   preview?: string;
+  /** The job the user must see to decide; only sent for job approvals. */
+  job?: JobApprovalDetails;
   /**
    * The user already always allowed this exact integration tool for this Wisp.
    * Honored for integration calls only, and never over a Block rule.
@@ -131,10 +134,11 @@ export class ToolAuthorizationBroker {
     }
     const unattended = this.unattended.getStore();
     if (unattended) {
-      // Skill changes are reviewed one by one, so no grant covers them.
+      // Skill and job changes are reviewed one by one, so no grant covers them.
       const approved =
         unattended.conversationId === action.conversationId &&
         action.category !== "save_skill" &&
+        action.category !== "schedule_job" &&
         unattended.approvedTools.has(action.toolName);
       if (approved) {
         this.auditDecision(actionId, action, behavior, "allow", "user", "allowed");
@@ -172,6 +176,7 @@ export class ToolAuthorizationBroker {
       scope: { kind: action.scope.kind, display: sanitizeSummary(action.scope.value) },
       summary: sanitizeSummary(action.summary),
       ...(action.preview ? { preview: sanitizePreview(action.preview) } : {}),
+      ...(action.job && action.category === "schedule_job" ? { job: sanitizeJob(action.job) } : {}),
       ...(rememberApproval ? { alwaysAllowTool: true } : {}),
       expiresAt,
     };
@@ -217,6 +222,9 @@ export class ToolAuthorizationBroker {
     }
     if (request.decision === "block" && category === "save_skill") {
       throw new WispBackendError("invalid_request", "Skill changes can only be allowed once or denied.");
+    }
+    if (request.decision === "block" && category === "schedule_job") {
+      throw new WispBackendError("invalid_request", "Jobs can only be allowed once or denied.");
     }
     // Claim the approval before awaiting anything, so a repeated decision, an
     // expiry, or a cancellation during the policy write cannot settle it twice.
@@ -398,6 +406,11 @@ export function evaluateToolPolicy(
       ? "block"
       : "allow";
   }
+  if (category === "schedule_job") {
+    // A job runs unattended with the tools approved with it, so the user
+    // approves every job and every widening of one; nothing approves it for them.
+    return scopeKind === "job" ? "ask" : "block";
+  }
   if (category === "save_skill") {
     // Skills become standing instructions, so each change is reviewed by the
     // user; no rule or auto-review setting can approve or suppress the prompt.
@@ -411,6 +424,17 @@ export function evaluateToolPolicy(
 function sanitizePreview(value: string): string {
   const preview = value.replaceAll(/[\u0000-\u0008\u000b-\u001f\u007f]/g, "");
   return preview.length > MAX_PREVIEW_LENGTH ? `${preview.slice(0, MAX_PREVIEW_LENGTH)}\n…` : preview;
+}
+
+function sanitizeJob(job: JobApprovalDetails): JobApprovalDetails {
+  return {
+    title: sanitizeSummary(job.title),
+    schedule: sanitizeSummary(job.schedule),
+    ...(job.nextRunAt ? { nextRunAt: job.nextRunAt } : {}),
+    instructions: sanitizePreview(job.instructions),
+    skills: job.skills.slice(0, 50).map(sanitizeSummary),
+    tools: job.tools.slice(0, 100).map(sanitizeSummary),
+  };
 }
 
 function sanitizeSummary(value: string): string {

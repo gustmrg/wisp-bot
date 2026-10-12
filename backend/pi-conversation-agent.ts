@@ -23,6 +23,7 @@ import type {
 import { WispBackendError } from "./backend-error.js";
 import { normalizeUserName } from "./conversation-agent.js";
 import type { IntegrationToolSource } from "./integration-tool-source.js";
+import { createJobTools, JOB_INSTRUCTIONS, JOB_TOOL_NAMES, type JobToolHost } from "./job-tools.js";
 import type {
   ConversationAgent,
   ConversationAgentContext,
@@ -79,8 +80,13 @@ export interface PiSessionLike {
   /** Pi clamps the level to what the current model supports. */
   setThinkingLevel(level: ThinkingLevel): void;
   getActiveToolNames(): string[];
+  /** Adds a message to the model's context without starting a turn; not shown in the session's own UI. */
+  appendCustomMessage?(customType: string, text: string): Promise<void>;
   dispose(): void;
 }
+
+/** The custom message type a job's delivered result has in the conversation's session. */
+export const JOB_RESULT_MESSAGE = "wisp:job-result";
 
 export interface PiSessionFactory {
   resolveModel(selection: ModelSelection): PiModel;
@@ -90,7 +96,11 @@ export interface PiSessionFactory {
 }
 
 /** Tools a job run is never offered, even when the job lists them (ADR 019). */
-export const TOOLS_NEVER_IN_JOB_RUNS: ReadonlySet<string> = new Set(["save_skill", "search_history"]);
+export const TOOLS_NEVER_IN_JOB_RUNS: ReadonlySet<string> = new Set([
+  "save_skill",
+  "search_history",
+  ...JOB_TOOL_NAMES,
+]);
 
 /** What makes a job run's session differ from the conversation's. */
 export interface JobSessionSpec {
@@ -132,6 +142,7 @@ export class SdkPiSessionFactory implements PiSessionFactory {
   private readonly authorizationBroker: Pick<ToolAuthorizationBroker, "authorize">;
   private readonly toolSource?: IntegrationToolSource;
   private readonly getImageModel?: () => Promise<ModelSelection | null>;
+  private readonly jobs?: JobToolHost;
 
   constructor(
     modelRuntime: ModelRuntimeLike,
@@ -139,11 +150,14 @@ export class SdkPiSessionFactory implements PiSessionFactory {
     toolSource?: IntegrationToolSource,
     /** The auxiliary image model for Wisps whose model cannot see images, or null when that task is off. */
     getImageModel?: () => Promise<ModelSelection | null>,
+    /** Where the Wisp's jobs live; without it, Wisps have no job tools. */
+    jobs?: JobToolHost,
   ) {
     this.modelRuntime = modelRuntime;
     this.authorizationBroker = authorizationBroker;
     this.toolSource = toolSource;
     this.getImageModel = getImageModel;
+    this.jobs = jobs;
   }
 
   async getToolRevision(conversationId: string): Promise<string | null> {
@@ -244,6 +258,8 @@ export class SdkPiSessionFactory implements PiSessionFactory {
     const snapshot = this.toolSource ? await this.toolSource.getSnapshot(context.conversationId) : undefined;
     const runsCommands = (snapshot?.activeNames ?? []).includes(RUN_COMMAND_TOOL);
     const jobSkills = job ? await loadJobSkills(skills, job.skills) : [];
+    // A job's own runs never manage jobs.
+    const jobTools = this.jobs && !job ? [...JOB_TOOL_NAMES] : [];
     const resourceLoader = new DefaultResourceLoader({
       cwd: context.workspaceDirectory,
       agentDir: context.configDirectory,
@@ -256,6 +272,7 @@ export class SdkPiSessionFactory implements PiSessionFactory {
         buildSystemPrompt(context, {
           runsCommands: runsCommands && (!job || job.tools.includes(RUN_COMMAND_TOOL)),
           ...(job ? { job: { skills: jobSkills } } : {}),
+          jobs: jobTools.length > 0,
         }),
       appendSystemPromptOverride: () => [],
       extensionFactories: [
@@ -343,7 +360,7 @@ export class SdkPiSessionFactory implements PiSessionFactory {
         ...BUILTIN_TOOL_NAMES,
         ...new Set((current?.activeNames ?? []).filter((name) => registeredIntegrationNames.has(name))),
       ];
-      if (!job) return allowed;
+      if (!job) return [...allowed, ...jobTools];
       // A run offers only the job's tools the Wisp still has, and the tools only runs have.
       const offered = allowed.filter((name) => job.tools.includes(name) && !TOOLS_NEVER_IN_JOB_RUNS.has(name));
       return [...offered, ...runToolNames];
@@ -363,7 +380,7 @@ export class SdkPiSessionFactory implements PiSessionFactory {
       }),
       // Pi treats this as a permanent registry allowlist, including after reload.
       // Current Wisp grants are applied below before the session can be used.
-      tools: [...BUILTIN_TOOL_NAMES, ...registeredIntegrationNames, ...runToolNames],
+      tools: [...BUILTIN_TOOL_NAMES, ...registeredIntegrationNames, ...runToolNames, ...jobTools],
       customTools: [
         ...confinedTools,
         ...integrationDefinitions,
@@ -385,6 +402,16 @@ export class SdkPiSessionFactory implements PiSessionFactory {
         },
         ...createSkillTools(skills, context, this.authorizationBroker),
         ...(job?.runTools ?? []),
+        ...(this.jobs && jobTools.length
+          ? createJobTools({
+              host: this.jobs,
+              context,
+              authorizationBroker: this.authorizationBroker,
+              hasSkill: (name) => skills.exists(name),
+              availableTools: async () =>
+                (await getAllowedTools()).filter((name) => !TOOLS_NEVER_IN_JOB_RUNS.has(name)),
+            })
+          : []),
       ] as unknown as ToolDefinition[],
       excludeTools: ["bash", "powershell"],
       thinkingLevel: selection.thinkingLevel ?? "off",
@@ -582,6 +609,16 @@ export class PiConversationAgent implements ConversationAgent {
       this.translator.finish();
       throw new WispBackendError(backendError.code, backendError.message, backendError.retryable);
     }
+  }
+
+  async rememberJobResult(text: string): Promise<void> {
+    this.assertNotDisposed();
+    await this.enqueueModelMutation(async () => {
+      const session = await this.openSession();
+      // The registry already waits for turns it knows of; a turn started otherwise ends first.
+      if (!session.isIdle) await session.waitForIdle();
+      await session.appendCustomMessage?.(JOB_RESULT_MESSAGE, text);
+    });
   }
 
   async manageContext(command: ContextCommand): Promise<ContextView> {
@@ -861,7 +898,7 @@ export class PiConversationAgentFactory implements ConversationAgentFactory {
 
 function buildSystemPrompt(
   context: ConversationAgentContext,
-  options: { runsCommands: boolean; job?: { skills: ReadonlyArray<SkillDraft> } },
+  options: { runsCommands: boolean; job?: { skills: ReadonlyArray<SkillDraft> }; jobs?: boolean },
 ): string {
   const soul = context.soul.trim() || "Help the user inspect and understand their workspace.";
   const userName = normalizeUserName(context.userName);
@@ -931,6 +968,7 @@ function buildSystemPrompt(
     "When the user asks you to turn a workflow into a skill, write general, step-by-step instructions that work for future requests (not a transcript of this one), choose a short hyphenated name and a description that says what the skill does and when to use it, then call save_skill. When the user asks you to save a skill file they provided, such as an attached SKILL.md, call save_skill with only its workspace path and do not rewrite it. Never save a skill unless the user asked for it.",
     "The user reviews every skill in an approval card that shows its exact content, so do not repeat the skill's content in your reply or ask for confirmation in the chat; call save_skill directly. After it is saved, confirm in one short sentence.",
     "",
+    ...(options.jobs ? [JOB_INSTRUCTIONS, ""] : []),
     ...(options.job
       ? jobRunInstructions(options.job.skills)
       : [
@@ -1144,6 +1182,8 @@ function adaptSession(
     setModel: (model, options) => session.setModel(model, options),
     setThinkingLevel: (level) => session.setThinkingLevel(level),
     getActiveToolNames: () => session.getActiveToolNames(),
+    appendCustomMessage: (customType, text) =>
+      session.sendCustomMessage({ customType, content: text, display: false }, { triggerTurn: false }),
     dispose: () => {
       unsubscribeTelemetry();
       session.dispose();

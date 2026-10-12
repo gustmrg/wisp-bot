@@ -135,6 +135,13 @@ function completeBridge(): WispApi {
     updateQueuedMessage: async () => ({ ok: true, value: { messages: [] } }),
     cancelQueuedMessage: async () => ({ ok: true, value: { messages: [] } }),
     subscribeToMessageQueue: () => () => undefined,
+    getJobs: async () => ({ ok: true, value: { jobs: [] } }),
+    getJobRuns: async () => ({ ok: true, value: { jobId: "job", runs: [] } }),
+    pauseJob: async () => ({ ok: true, value: { jobs: [] } }),
+    resumeJob: async () => ({ ok: true, value: { jobs: [] } }),
+    runJobNow: async () => ({ ok: true, value: { jobs: [] } }),
+    deleteJob: async () => ({ ok: true, value: { jobs: [] } }),
+    subscribeToJobs: () => () => undefined,
     getUsageReport: async () => {
       throw new Error("Not implemented in test");
     },

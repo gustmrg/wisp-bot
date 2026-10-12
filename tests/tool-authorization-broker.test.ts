@@ -595,6 +595,67 @@ describe("tool policy", () => {
     broker.dispose();
   });
 
+  it("always asks for jobs, shows what they may do, and refuses lasting decisions", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "wisp-policy-job-"));
+    const store = new ToolPolicyStore(path.join(directory, "policy.json"));
+    await store.load();
+    const events: ConversationAgentEvent[] = [];
+    const broker = new ToolAuthorizationBroker(store, (event) => events.push(event), {
+      createId: () => "approval-job",
+      selectWindowId: () => 7,
+    });
+    expect(evaluateToolPolicy({ autoReview: true, rules: [] }, "schedule_job", "job")).toBe("ask");
+    expect(evaluateToolPolicy({ autoReview: true, rules: [] }, "schedule_job", "workspace_path")).toBe("block");
+    const job = {
+      title: "Openings",
+      schedule: "Every day at 10:00 (UTC)",
+      nextRunAt: "2026-10-12T10:00:00.000Z",
+      instructions: "Search\u0007 the boards.",
+      skills: ["job-search"],
+      tools: ["web_search"],
+    };
+    const authorization = broker.authorize({
+      conversationId: "one",
+      toolCallId: "tool-1",
+      toolName: "schedule_job",
+      category: "schedule_job",
+      scope: { kind: "job", value: "Openings" },
+      summary: "Schedule Openings",
+      job,
+    });
+    expect(events[0]).toMatchObject({
+      type: "tool_approval_requested",
+      request: {
+        category: "schedule_job",
+        scope: { kind: "job" },
+        job: { ...job, instructions: "Search the boards." },
+      },
+    });
+    const decision = { approvalId: "approval-job", conversationId: "one", toolCallId: "tool-1" };
+    await expect(broker.resolve({ ...decision, decision: "block" }, 7)).rejects.toMatchObject({
+      code: "invalid_request",
+    });
+    await expect(broker.resolve({ ...decision, decision: "allow_always" }, 7)).rejects.toMatchObject({
+      code: "invalid_request",
+    });
+    await broker.resolve({ ...decision, decision: "allow_once" }, 7);
+    await expect(authorization).resolves.toBeUndefined();
+
+    // A job's run never approves another job.
+    await broker.runUnattended({ conversationId: "one", approvedTools: new Set(["schedule_job"]) }, async () => {
+      await expect(
+        broker.authorize({
+          conversationId: "one",
+          toolCallId: "tool-2",
+          toolName: "schedule_job",
+          category: "schedule_job",
+          scope: { kind: "job", value: "Openings" },
+          summary: "Schedule Openings",
+        }),
+      ).rejects.toMatchObject({ code: "tool_blocked" });
+    });
+  });
+
   it("cancels a pending approval when the tool execution is aborted", async () => {
     const directory = await mkdtemp(path.join(os.tmpdir(), "wisp-approval-abort-"));
     const events: ConversationAgentEvent[] = [];

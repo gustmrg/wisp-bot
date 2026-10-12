@@ -1,7 +1,9 @@
+import { randomUUID } from "node:crypto";
 import path from "node:path";
 
 import type { ModelSelection, SequencedConversationAgentEvent } from "../shared/contracts.js";
 import type { ConversationDelta } from "../shared/conversations.js";
+import type { JobsView } from "../shared/jobs.js";
 import type { McpSettingsView } from "../shared/mcp.js";
 import type { MessageQueueView } from "../shared/message-queue.js";
 import type { ScheduledMessagesView } from "../shared/scheduled-messages.js";
@@ -14,6 +16,10 @@ import { ConversationService } from "./conversation-service.js";
 import type { EncryptionService } from "./encrypted-credential-store.js";
 import { FakeConversationAgentFactory } from "./fake-conversation-agent.js";
 import { CompositeIntegrationToolSource } from "./integration-tool-source.js";
+import { jobCardItems, jobResultContext } from "./job-host.js";
+import { JobRunner } from "./job-runner.js";
+import { JobScheduler, type JobRunOutcome } from "./job-scheduler.js";
+import type { JobToolHost } from "./job-tools.js";
 import { McpService } from "./mcp-service.js";
 import { MessageQueue } from "./message-queue.js";
 import { MessageScheduler } from "./message-scheduler.js";
@@ -62,6 +68,8 @@ export interface BackendRuntimeOptions {
   onScheduledMessagesChanged: (view: ScheduledMessagesView) => void;
   /** Receives every queued message after any change, including a Wisp taking one. */
   onMessageQueueChanged: (view: MessageQueueView) => void;
+  /** Receives every job after any change, including runs. */
+  onJobsChanged: (view: JobsView) => void;
   /**
    * Container programs to look for, in order. Defaults to Docker then Podman;
    * the fake agent mode looks for none, since its Wisps never run commands.
@@ -79,6 +87,7 @@ export interface BackendRuntime {
   conversations: ConversationService;
   scheduledMessages: MessageScheduler;
   messageQueue: MessageQueue;
+  jobs: JobScheduler;
   sessionReports: SessionReportService;
   workspace: WorkspaceService;
   storage: StorageService;
@@ -109,6 +118,21 @@ export async function createBackendRuntime(options: BackendRuntimeOptions): Prom
   let messageScheduler: MessageScheduler | undefined;
   let messageQueue: MessageQueue | undefined;
   let storageService: StorageService | undefined;
+  let jobScheduler: JobScheduler | undefined;
+  const requireJobs = (): JobScheduler => {
+    if (!jobScheduler) throw new Error("Jobs are not ready.");
+    return jobScheduler;
+  };
+  // The job tools reach the scheduler, which is created once the conversations are.
+  const jobHost: JobToolHost = {
+    list: async (conversationId) =>
+      (await requireJobs().getView()).jobs.filter((job) => job.conversationId === conversationId),
+    create: (job) => requireJobs().create(job),
+    update: (jobId, changes) => requireJobs().update(jobId, changes),
+    delete: (jobId) => requireJobs().delete(jobId),
+    recordChange: (job, change) =>
+      service.addJobCard(job.conversationId, jobCardItems(job, change), `job-card-${randomUUID()}`),
+  };
   const publishAgentEvent = (event: SequencedConversationAgentEvent): void => {
     conversationService?.handleAgentEvent(event);
     if (event.type === "conversation_error") {
@@ -172,17 +196,17 @@ export async function createBackendRuntime(options: BackendRuntimeOptions): Prom
     manager: containerManager,
     runtime: containerRuntime,
   });
+  const sessionFactory = new SdkPiSessionFactory(
+    modelService.getModelRuntime(),
+    toolAuthorizationBroker,
+    new CompositeIntegrationToolSource([pluginService, mcpService, executionService]),
+    () => modelService.getAuxiliaryModel("imageUnderstanding"),
+    jobHost,
+  );
   const agentFactory: ConversationAgentFactory =
     options.agentMode === "fake"
       ? new FakeConversationAgentFactory({ latencyMs: 350 })
-      : new PiConversationAgentFactory(
-          new SdkPiSessionFactory(
-            modelService.getModelRuntime(),
-            toolAuthorizationBroker,
-            new CompositeIntegrationToolSource([pluginService, mcpService, executionService]),
-            () => modelService.getAuxiliaryModel("imageUnderstanding"),
-          ),
-        );
+      : new PiConversationAgentFactory(sessionFactory);
   const registry = new AgentRegistry(
     agentFactory,
     publishAgentEvent,
@@ -203,6 +227,7 @@ export async function createBackendRuntime(options: BackendRuntimeOptions): Prom
       onConversationChanged: options.onConversationChanged,
       onConversationsRemoved: () => {
         messageScheduler?.refresh();
+        jobScheduler?.refresh();
         messageQueue?.refresh();
         // A deleted Wisp's container goes with it.
         void executionService.reconcile().catch(() => undefined);
@@ -232,6 +257,30 @@ export async function createBackendRuntime(options: BackendRuntimeOptions): Prom
   });
   messageScheduler = scheduler;
   scheduler.start();
+
+  const jobRunner = new JobRunner({
+    sessionFactory,
+    getContext: (conversationId) => conversationRepository.getAgentContext(conversationId),
+    getSelection: async (context) => context.modelOverride ?? (await modelService.getSelection()),
+    runUnattended: (grant, run) => toolAuthorizationBroker.runUnattended(grant, run),
+  });
+  const jobs = new JobScheduler({
+    repository: conversationRepository,
+    // The fake agent mode never reaches a model, so its runs answer at once.
+    runJob: options.agentMode === "fake" ? fakeJobRun : jobRunner.run,
+    deliver: (job, text, run) =>
+      service.deliverJobMessage(
+        job.conversationId,
+        text,
+        { jobId: job.id, runId: run.id, title: job.title },
+        jobResultContext(job, text, new Date()),
+      ),
+    notify: (job, text) => service.addJobNotice(job.conversationId, text, `job-notice-${randomUUID()}`),
+    onChanged: options.onJobsChanged,
+    logger,
+  });
+  jobScheduler = jobs;
+  jobs.start();
 
   const sessionReportService = new SessionReportService(
     conversationRepository,
@@ -277,6 +326,7 @@ export async function createBackendRuntime(options: BackendRuntimeOptions): Prom
     conversations: service,
     scheduledMessages: scheduler,
     messageQueue: queue,
+    jobs,
     sessionReports: sessionReportService,
     workspace: workspaceService,
     storage,
@@ -292,6 +342,7 @@ export async function createBackendRuntime(options: BackendRuntimeOptions): Prom
     reapplySavedModel: async () => service.applyModel(await modelService.getSelection()),
     dispose: async () => {
       // Stop new work and integrations first, then the agents, which may still be settling their last turn.
+      await jobs.dispose();
       await scheduler.dispose();
       queue.dispose();
       modelService.dispose();
@@ -306,6 +357,10 @@ export async function createBackendRuntime(options: BackendRuntimeOptions): Prom
       await conversationRepository.close();
     },
   };
+}
+
+async function fakeJobRun(job: { title: string }): Promise<JobRunOutcome> {
+  return { kind: "message", text: `## ${job.title}\n\nThis is a test result from the fake agent.` };
 }
 
 /**

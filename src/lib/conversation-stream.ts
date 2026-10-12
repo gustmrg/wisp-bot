@@ -252,6 +252,9 @@ export function reduceConversationAgentEvent(
           ),
         },
       };
+    case "job_message_delivered":
+      // The message itself arrives with the conversation's changes.
+      return next;
   }
 }
 

@@ -757,6 +757,52 @@ describe("SdkPiSessionFactory", () => {
     ).rejects.toMatchObject({ code: "not_found" });
   });
 
+  it("offers the job tools in the conversation only, never in a job's runs", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "wisp-pi-job-tools-"));
+    const context: ConversationAgentContext = {
+      conversationId: "atlas",
+      sessionId: "atlas-session",
+      name: "Atlas",
+      wispId: "atlas",
+      role: "Recruiter",
+      soul: "Find jobs.",
+      workspaceDirectory: directory,
+      sessionDirectory: directory,
+      configDirectory: path.join(directory, "config"),
+    };
+    const runtime = {
+      hasConfiguredAuth: () => true,
+      getModel: () => ({ provider: "provider", id: "model" }),
+    } as unknown as ModelRuntimeLike;
+    const host = {
+      list: vi.fn(async () => []),
+      create: vi.fn(),
+      update: vi.fn(),
+      delete: vi.fn(),
+      recordChange: vi.fn(),
+    };
+    const factory = new SdkPiSessionFactory(runtime, undefined, undefined, undefined, host);
+    const jobTools = ["schedule_job", "list_jobs", "update_job", "cancel_job"];
+
+    await factory.create(context, { providerId: "provider", modelId: "model" });
+    const options = sdk.createAgentSession.mock.calls.at(-1)?.[0] as { customTools: { name: string }[] };
+    expect(options.customTools.map(({ name }) => name)).toEqual(expect.arrayContaining(jobTools));
+    expect(sdk.session.setActiveToolsByName.mock.calls.at(-1)?.[0]).toEqual(expect.arrayContaining(jobTools));
+    const prompt = (sdk.loaderOptions.at(-1) as { systemPromptOverride: () => string }).systemPromptOverride();
+    expect(prompt).toContain("## Jobs");
+
+    await factory.createJobSession(
+      context,
+      { providerId: "provider", modelId: "model" },
+      { runId: "run-1", runDirectory: directory, tools: jobTools, skills: [], runTools: [] },
+    );
+    const runOptions = sdk.createAgentSession.mock.calls.at(-1)?.[0] as { customTools: { name: string }[] };
+    expect(runOptions.customTools.map(({ name }) => name)).not.toContain("schedule_job");
+    expect(sdk.session.setActiveToolsByName).toHaveBeenLastCalledWith([]);
+    const runPrompt = (sdk.loaderOptions.at(-1) as { systemPromptOverride: () => string }).systemPromptOverride();
+    expect(runPrompt).not.toContain("## Jobs");
+  });
+
   it("rejects missing credentials and unavailable models without selecting a fallback", () => {
     const missingAuth = {
       hasConfiguredAuth: () => false,

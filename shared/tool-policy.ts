@@ -6,6 +6,9 @@
  *
  * "save_skill" creates or updates one of the Wisp's own skills. It always asks:
  * policy rules can neither allow nor block it.
+ *
+ * "schedule_job" creates a job, or changes what one does (ADR 019). It always
+ * asks, like skills: approving the card authorizes the job's tools for its runs.
  */
 export type ToolActionCategory =
   | "read"
@@ -15,6 +18,7 @@ export type ToolActionCategory =
   | "external_write"
   | "integration_call"
   | "save_skill"
+  | "schedule_job"
   | "container_command"
   | "shell";
 export type ToolPolicyBehavior = "allow" | "ask" | "block";
@@ -104,13 +108,28 @@ export interface ToolApprovalRequest {
   toolCallId: string;
   toolName: string;
   category: ToolActionCategory;
-  scope: { kind: "workspace_path" | "integration" | "skill" | "container"; display: string };
+  scope: { kind: "workspace_path" | "integration" | "skill" | "container" | "job"; display: string };
   summary: string;
+  /** What a job will do, shown for job approvals. */
+  job?: JobApprovalDetails;
   /** Exact content to review, shown for skill changes; bounded and stripped of control characters. */
   preview?: string;
   /** The integration can remember this tool for this Wisp, so the card offers "Always allow". */
   alwaysAllowTool?: boolean;
   expiresAt: string;
+}
+
+/** A job as its approval card shows it: everything it may do while no one is present. */
+export interface JobApprovalDetails {
+  title: string;
+  /** The schedule in words. */
+  schedule: string;
+  /** When it would run first (ISO 8601), absent when its schedule has ended. */
+  nextRunAt?: string;
+  instructions: string;
+  skills: ReadonlyArray<string>;
+  /** Tool names; the card shows their labels. */
+  tools: ReadonlyArray<string>;
 }
 
 /**

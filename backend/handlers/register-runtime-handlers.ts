@@ -5,6 +5,7 @@ import { registerAgentHandlers } from "./register-agent-handlers.js";
 import { registerConversationHandlers } from "./register-conversation-handlers.js";
 import { registerExecutionHandlers } from "./register-execution-handlers.js";
 import { registerMcpHandlers } from "./register-mcp-handlers.js";
+import { registerJobHandlers } from "./register-job-handlers.js";
 import { registerMessageQueueHandlers } from "./register-message-queue-handlers.js";
 import { registerModelSettingsHandlers } from "./register-model-settings-handlers.js";
 import { registerPluginHandlers } from "./register-plugin-handlers.js";
@@ -41,6 +42,7 @@ export function registerRuntimeHandlers(
     registerConversationHandlers(router, conversations, authorizeSender),
     registerScheduledMessageHandlers(router, runtime.scheduledMessages, authorizeSender),
     registerMessageQueueHandlers(router, runtime.messageQueue, authorizeSender),
+    registerJobHandlers(router, runtime.jobs, authorizeSender),
     registerAgentHandlers(router, runtime.registry, authorizeSender, (id, model) =>
       runtime.applyConversationModel(id, model),
     ),

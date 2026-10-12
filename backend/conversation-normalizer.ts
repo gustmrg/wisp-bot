@@ -5,6 +5,7 @@ import {
   type ChatCollection,
   type Message,
   type MessageStatus,
+  type JobOrigin,
   type ScheduledOrigin,
   type Wisp,
   type WispChanges,
@@ -118,6 +119,15 @@ export function normalizeScheduledOrigin(value: unknown): ScheduledOrigin {
   };
 }
 
+export function normalizeJobOrigin(value: unknown): JobOrigin {
+  const raw = asRecord(value);
+  return {
+    jobId: normalizeConversationId(raw.jobId),
+    runId: normalizeConversationId(raw.runId),
+    title: string(raw.title, 200),
+  };
+}
+
 export function normalizeMessage(value: unknown, fallbackId?: string): Message {
   const raw = asRecord(value);
   const id = raw.id === undefined ? fallbackId : normalizeConversationId(raw.id);
@@ -150,6 +160,7 @@ export function normalizeMessage(value: unknown, fallbackId?: string): Message {
       ...(raw.scheduled === undefined || raw.type !== "outgoing"
         ? {}
         : { scheduled: normalizeScheduledOrigin(raw.scheduled) }),
+      ...(raw.job === undefined || raw.type !== "incoming" ? {} : { job: normalizeJobOrigin(raw.job) }),
     };
   }
   if (raw.type === "time") {

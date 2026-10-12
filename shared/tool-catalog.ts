@@ -12,6 +12,8 @@ export interface ToolMetadata {
   pluginIds?: ReadonlyArray<PluginId>;
   /** Set for dynamically discovered MCP tools; references the owning server. */
   mcpServerId?: string;
+  /** Manages the Wisp's jobs (ADR 019); offered only where jobs can run. */
+  jobs?: boolean;
 }
 
 export interface DynamicToolMetadataInput {
@@ -59,6 +61,17 @@ export const TOOL_CATALOG: ReadonlyArray<ToolMetadata> = [
     category: "container_command",
   },
   { name: "save_skill", label: "Save skill", activityLabel: "Saving a skill…", category: "save_skill" },
+  // Job tools are offered only where jobs can run, so they are not among the tools every Wisp has.
+  {
+    name: "schedule_job",
+    label: "Schedule job",
+    activityLabel: "Scheduling a job…",
+    category: "schedule_job",
+    jobs: true,
+  },
+  { name: "list_jobs", label: "List jobs", activityLabel: "Checking jobs…", category: "read", jobs: true },
+  { name: "update_job", label: "Update job", activityLabel: "Updating a job…", category: "schedule_job", jobs: true },
+  { name: "cancel_job", label: "Cancel job", activityLabel: "Cancelling a job…", category: "schedule_job", jobs: true },
   {
     name: "web_read",
     label: "Read web page",
@@ -212,7 +225,7 @@ function boundedText(value: string, maxLength: number): string {
 
 /** Tools every Wisp has. Container tools are not: only Wisps whose commands run in a container get them. */
 export const BUILTIN_TOOL_NAMES = TOOL_CATALOG.filter(
-  ({ pluginId, pluginIds, category }) => !pluginId && !pluginIds && category !== "container_command",
+  ({ pluginId, pluginIds, category, jobs }) => !pluginId && !pluginIds && category !== "container_command" && !jobs,
 ).map(({ name }) => name);
 
 export function getToolMetadata(name: string): ToolMetadata | undefined {
