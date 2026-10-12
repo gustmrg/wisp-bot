@@ -1150,6 +1150,14 @@
     font-size: 16px;
     font-weight: 600;
   }
+  /* The overview is a page of its own, titled like the list. */
+  .mobile-settings-header[data-overview] {
+    border-bottom-color: transparent;
+  }
+  .mobile-settings-header[data-overview] h2 {
+    font-size: 30px;
+    letter-spacing: -0.04em;
+  }
   .mobile-settings-header button,
   .mobile-search-header button {
     min-width: 44px;
@@ -1181,8 +1189,26 @@
   .mobile-settings-group {
     display: flex;
     flex-direction: column;
-    gap: 6px;
-    margin-top: 14px;
+    gap: 0;
+    margin-top: 18px;
+  }
+  /* A group's sections share one card, with a hairline between them. */
+  .mobile-settings-group .settings-nav-button {
+    border-width: 0 1px 1px;
+    border-radius: 0;
+  }
+  .mobile-settings-group h3 + .settings-nav-button {
+    border-top-width: 1px;
+    border-radius: 20px 20px 0 0;
+  }
+  .mobile-settings-group .settings-nav-button:last-child {
+    border-radius: 0 0 20px 20px;
+  }
+  .mobile-settings-group h3 + .settings-nav-button:last-child {
+    border-radius: 20px;
+  }
+  .mobile-settings-group .settings-nav-button svg:first-child {
+    color: var(--text-dim);
   }
   .mobile-settings-group h3 {
     margin: 0 4px 2px;
@@ -1224,7 +1250,7 @@
     flex-direction: column;
     overflow: hidden;
     border: 1px solid var(--border);
-    border-radius: 13px;
+    border-radius: 22px;
     background: var(--card);
   }
   .mobile-settings-profile > button {
@@ -1248,7 +1274,9 @@
   .mobile-settings-profile > button > [aria-hidden="true"]:first-child:not(.mobile-connection-dot) {
     width: 45px;
     height: 45px;
-    font-size: 13px;
+    background: linear-gradient(135deg, #3c82f6, #885cf5);
+    color: #fff;
+    font-size: 15px;
   }
   .mobile-settings-profile strong {
     font-weight: 600;

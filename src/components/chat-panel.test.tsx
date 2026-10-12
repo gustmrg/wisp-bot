@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Message } from "@/chat-data";
 import { ChatPanel, type ChatPanelProps } from "@/components/chat-panel";
 import type { MessageWindow } from "@/lib/message-windows";
-import { wispChatView } from "@/test/chat-fixtures";
+import { circleChatView, testWisp, wispChatView } from "@/test/chat-fixtures";
 
 const ROW_HEIGHT = 40;
 const VIEWPORT_HEIGHT = 200;
@@ -315,3 +315,40 @@ describe("ChatPanel identity", () => {
     expect(screen.queryByRole("heading", { name: "Hi, I'm Atlas" })).not.toBeInTheDocument();
   });
 });
+
+describe("ChatPanel circles", () => {
+  it("names the Wisp above each run of its replies", () => {
+    const crew = circleChatView("crew", [testWisp("quill", { name: "Quill" }), testWisp("forge", { name: "Forge" })], {
+      name: "Launch crew",
+    });
+    renderPanelIn(crew, [
+      { id: "1", type: "outgoing", text: "What's left?" },
+      { id: "2", type: "incoming", text: "Changelog is up.", authorId: "quill" },
+      { id: "3", type: "incoming", text: "And the blog post.", authorId: "quill" },
+      { id: "4", type: "incoming", text: "Tests are green.", authorId: "forge" },
+    ]);
+    expect(screen.getAllByText("Quill")).toHaveLength(1);
+    expect(screen.getAllByText("Forge")).toHaveLength(1);
+  });
+});
+
+function renderPanelIn(chat: ChatPanelProps["chat"], held: Message[]) {
+  return render(
+    <ChatPanel
+      chat={chat}
+      transcript={transcript(held)}
+      status="idle"
+      acknowledging={false}
+      approvals={[]}
+      onAnswerPrompt={vi.fn()}
+      onAbort={vi.fn()}
+      onLoadOlder={vi.fn()}
+      onLoadNewer={vi.fn()}
+      onShowLatest={vi.fn()}
+      onOpenDetails={vi.fn()}
+      onRetry={vi.fn()}
+      onResolveApproval={vi.fn()}
+      onSend={vi.fn()}
+    />,
+  );
+}

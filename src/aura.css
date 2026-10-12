@@ -233,3 +233,26 @@
   background: var(--warning-solid);
   color: #1a1204;
 }
+
+/* In a circle, each Wisp's reply is named and tinted with that Wisp's color. */
+.message-author {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 4px 2px;
+  color: color-mix(in srgb, var(--wisp) 78%, var(--foreground));
+  font-size: var(--text-xs);
+  font-weight: 600;
+}
+.message-author > svg,
+.message-author > img {
+  width: 18px;
+  height: 18px;
+}
+.message-row[data-authored] .message-bubble {
+  border-color: color-mix(in srgb, var(--wisp) 24%, transparent);
+  background: color-mix(in srgb, var(--wisp) 9%, var(--background));
+}
+.dark .message-row[data-authored] .message-bubble {
+  background: color-mix(in srgb, var(--wisp) 11%, #141418);
+}

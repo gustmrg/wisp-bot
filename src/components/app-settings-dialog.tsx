@@ -361,7 +361,7 @@ function AppSettingsDialog({
           <DialogDescription>Manage your profile and application preferences.</DialogDescription>
         </DialogHeader>
         {mobile ? (
-          <header className="mobile-settings-header">
+          <header className="mobile-settings-header" data-overview={showOverview || undefined}>
             <Button
               variant="ghost"
               size="icon"

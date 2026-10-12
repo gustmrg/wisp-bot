@@ -362,16 +362,26 @@ function ChatPanel({
             ) : null}
             {transcriptMessages.map((message, index) => {
               const previous = transcriptMessages[index - 1];
+              // In a circle each reply carries its Wisp's name and color; consecutive ones share the name.
+              const author =
+                message.type === "incoming" && message.authorId
+                  ? members.find((member) => member.id === message.authorId)
+                  : undefined;
+              const previousAuthor = previous?.type === "incoming" ? previous.authorId : undefined;
+              const authorColor = author ? wispColor(author.name, author.color) : undefined;
               return (
                 <div
                   key={message.id ?? `${chat.id}-${message.type}-${index}`}
                   className={messageRow}
+                  style={authorColor ? ({ "--wisp": authorColor } as CSSProperties) : undefined}
                   data-message-id={message.id}
                   data-highlighted={(message.id !== undefined && message.id === targetMessageId) || undefined}
                 >
                   <MessageView
                     message={message}
                     dense={message.type === "outgoing" && previous?.type === "outgoing"}
+                    author={author}
+                    showAuthor={Boolean(author) && previousAuthor !== author?.id}
                     onAnswer={(answer) => onAnswerPrompt(message.id, answer)}
                     onRetry={() => onRetry(message.id)}
                   />
