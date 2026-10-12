@@ -8,6 +8,7 @@ import { ChatPanel } from "@/components/chat-panel";
 import { DetailsPanel } from "@/components/details-panel";
 import { SearchDialog } from "@/components/search-dialog";
 import { MobileApprovals } from "@/components/mobile-approvals";
+import { WispProfile, type WispSettingsTab } from "@/components/wisp-profile";
 import { Sidebar } from "@/components/sidebar";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { UpdateToast } from "@/components/update-toast";
@@ -71,6 +72,9 @@ function Workspace({ userProfile }: { userProfile: UserProfileController }) {
   const [mobilePage, setMobilePage] = useState<"list" | "chat" | "approvals">("list");
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [detailsOpen, setDetailsOpen] = useState(false);
+  // On a phone a Wisp's settings start from its profile.
+  const [profileOpen, setProfileOpen] = useState(false);
+  const [detailsTab, setDetailsTab] = useState<WispSettingsTab | undefined>(undefined);
   const [searchOpen, setSearchOpen] = useState(false);
   const settingsDialog = useRef<AppSettingsDialogHandle>(null);
   const navigationVersion = useRef(0);
@@ -108,7 +112,7 @@ function Workspace({ userProfile }: { userProfile: UserProfileController }) {
 
   // A reply that arrives while its chat is on screen has been seen.
   const pageVisible = usePageVisible();
-  const activeChatShown = pageVisible && (!mobile || (mobilePage === "chat" && !detailsOpen));
+  const activeChatShown = pageVisible && (!mobile || (mobilePage === "chat" && !detailsOpen && !profileOpen));
   const activeChatUnread = Boolean(workspace.activeChat?.unread);
   const { markActiveChatRead } = workspace;
   // A conversation the person marked unread stays so while it is open, until they choose it again.
@@ -128,6 +132,7 @@ function Workspace({ userProfile }: { userProfile: UserProfileController }) {
     navigationVersion.current += 1;
     workspace.selectChat(chatId);
     if (mobile) setDetailsOpen(false);
+    setProfileOpen(false);
     setMobilePage("chat");
   }
 
@@ -136,24 +141,36 @@ function Workspace({ userProfile }: { userProfile: UserProfileController }) {
     navigationVersion.current += 1;
     workspace.selectMessage(chatId, messageId);
     if (mobile) setDetailsOpen(false);
+    setProfileOpen(false);
     setMobilePage("chat");
   }
 
   function showConversations() {
     navigationVersion.current += 1;
     setDetailsOpen(false);
+    setProfileOpen(false);
     setMobilePage("list");
   }
 
   function showApprovals() {
     navigationVersion.current += 1;
     setDetailsOpen(false);
+    setProfileOpen(false);
     setMobilePage("approvals");
   }
 
-  function showDetails(open: boolean) {
+  function showDetails(open: boolean, tab?: WispSettingsTab) {
     navigationVersion.current += 1;
+    setDetailsTab(tab);
     setDetailsOpen(open);
+  }
+
+  /** The gear in a chat: a Wisp's profile on a phone, its settings otherwise. */
+  function openChatDetails() {
+    if (mobile && workspace.activeChat?.kind === "wisp") {
+      navigationVersion.current += 1;
+      setProfileOpen(true);
+    } else showDetails(true);
   }
 
   function showSettings(section: SettingsEntrySection, pluginId?: PluginId, storageConversationId?: string) {
@@ -217,7 +234,7 @@ function Workspace({ userProfile }: { userProfile: UserProfileController }) {
           />
           {workspace.activeChat ? (
             <ChatPanel
-              hidden={mobile && (mobilePage !== "chat" || detailsOpen)}
+              hidden={mobile && (mobilePage !== "chat" || detailsOpen || profileOpen)}
               onBack={mobile ? showConversations : undefined}
               chat={workspace.activeChat}
               transcript={workspace.activeTranscript}
@@ -232,7 +249,7 @@ function Workspace({ userProfile }: { userProfile: UserProfileController }) {
               onLoadOlder={workspace.loadOlderMessages}
               onLoadNewer={workspace.loadNewerMessages}
               onShowLatest={workspace.showLatestMessages}
-              onOpenDetails={() => showDetails(true)}
+              onOpenDetails={openChatDetails}
               onConfigure={() => showSettings("model")}
               voice={{
                 deviceId: workspace.preferences.microphone,
@@ -255,9 +272,28 @@ function Workspace({ userProfile }: { userProfile: UserProfileController }) {
               {workspace.loading ? "Loading conversations…" : (workspace.error ?? "Create a Wisp to get started.")}
             </main>
           )}
+          {mobile && profileOpen && !detailsOpen && mobilePage === "chat" && workspace.activeChat?.kind === "wisp" ? (
+            <WispProfile
+              chat={workspace.activeChat}
+              state={
+                workspace.approvals[workspace.activeChat.id]?.length
+                  ? "approval"
+                  : workspace.statuses[workspace.activeChat.id] === "working"
+                    ? "working"
+                    : "idle"
+              }
+              onBack={() => {
+                navigationVersion.current += 1;
+                setProfileOpen(false);
+              }}
+              onOpenSettings={(tab) => showDetails(true, tab)}
+            />
+          ) : null}
           {detailsOpen && workspace.activeChat ? (
             <DetailsPanel
               mobile={mobile}
+              initialTab={detailsTab}
+              backLabel={profileOpen ? "Back to profile" : undefined}
               chat={workspace.activeChat}
               wisps={workspace.wisps}
               width={detailsPanel.width}

@@ -23,6 +23,8 @@ const TAB_ORDER = ["general", "model", "access", "usage"] as const;
 
 interface WispDetailsProps {
   chat: WispChatView;
+  /** The tab shown first. */
+  initialTab?: (typeof TAB_ORDER)[number];
   generalActions?: ReactNode;
   /** Saves the Wisp's own settings. */
   onChangeWisp: (changes: WispChanges) => Promise<boolean> | void;
@@ -42,10 +44,11 @@ export function WispDetails({
   onChangeNotifications,
   onOpenSettings,
   generalActions,
+  initialTab = "general",
 }: WispDetailsProps) {
-  const [tab, setTab] = useState("general");
+  const [tab, setTab] = useState<string>(initialTab);
   const [slideDirection, setSlideDirection] = useState<"forward" | "back">("forward");
-  const [visited, setVisited] = useState(() => new Set(["general"]));
+  const [visited, setVisited] = useState(() => new Set(["general", initialTab]));
   const [draft, setDraft] = useState(() => draftOf(chat));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
