@@ -11,10 +11,19 @@
     padding-right: env(safe-area-inset-right, 0px);
   }
 
+  /* The whole list scrolls as one page, under a bottom bar that stays put. */
   .workspace-sidebar {
     width: 100%;
     min-width: 0;
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior: contain;
     transition: none;
+  }
+  .workspace-sidebar > .mobile-navigation {
+    position: sticky;
+    bottom: 0;
+    z-index: 2;
   }
 
   .mobile-list-header {
@@ -27,7 +36,7 @@
   }
 
   .mobile-list-header h1 {
-    font-size: 29px;
+    font-size: 32px;
     font-weight: 600;
     letter-spacing: -0.05em;
     outline: none;
@@ -36,6 +45,296 @@
     margin-top: 4px;
     color: var(--text-dim);
     font-size: 12px;
+  }
+  .mobile-list-header .mobile-list-greeting {
+    margin: 0 0 2px;
+    font-size: 14px;
+  }
+  /* The busiest Wisps' colors, as light at the top of the list. */
+  .mobile-list-ambient {
+    position: absolute;
+    inset: 0 0 auto;
+    height: 440px;
+    pointer-events: none;
+    background:
+      radial-gradient(
+        240px 200px at 12% 20%,
+        color-mix(in srgb, var(--ambient-1, transparent) 22%, transparent),
+        transparent 70%
+      ),
+      radial-gradient(
+        220px 200px at 55% 8%,
+        color-mix(in srgb, var(--ambient-2, transparent) 18%, transparent),
+        transparent 70%
+      ),
+      radial-gradient(
+        240px 220px at 96% 24%,
+        color-mix(in srgb, var(--ambient-3, transparent) 18%, transparent),
+        transparent 70%
+      );
+  }
+  .dark .mobile-list-ambient {
+    background:
+      radial-gradient(
+        240px 200px at 12% 20%,
+        color-mix(in srgb, var(--ambient-1, transparent) 26%, transparent),
+        transparent 70%
+      ),
+      radial-gradient(
+        220px 200px at 55% 8%,
+        color-mix(in srgb, var(--ambient-2, transparent) 22%, transparent),
+        transparent 70%
+      ),
+      radial-gradient(
+        240px 220px at 96% 24%,
+        color-mix(in srgb, var(--ambient-3, transparent) 22%, transparent),
+        transparent 70%
+      );
+  }
+  .mobile-list-header,
+  .mobile-list-search,
+  .wisp-orbs,
+  .needs-you,
+  .mobile-list-filters,
+  .conversation-list {
+    position: relative;
+  }
+  .mobile-list-search {
+    position: absolute;
+    top: 24px;
+    right: 75px;
+    z-index: 1;
+    display: grid;
+    place-items: center;
+    width: 44px;
+    height: 44px;
+    border: 1px solid var(--border);
+    border-radius: 50%;
+    background: color-mix(in srgb, var(--foreground) 7%, transparent);
+    color: var(--foreground);
+  }
+  .mobile-list-search svg {
+    width: 19px;
+    height: 19px;
+  }
+
+  /* ---------- Every Wisp, and what it is doing ---------- */
+  .wisp-orbs {
+    display: flex;
+    flex: none;
+    gap: 14px;
+    padding: 6px 20px 14px;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .wisp-orbs::-webkit-scrollbar {
+    display: none;
+  }
+  .wisp-orb {
+    display: flex;
+    flex: none;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    width: 64px;
+  }
+  .wisp-orb .wisp-halo {
+    width: 62px;
+    height: 62px;
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--foreground) 6%, transparent);
+  }
+  .wisp-orb .wisp-halo::before {
+    inset: -3px;
+  }
+  .wisp-orb .wisp-halo[data-state="working"]::before {
+    mask: radial-gradient(farthest-side, transparent calc(100% - 3px), #000 calc(100% - 2.5px));
+  }
+  .wisp-orb .wisp-halo[data-state="approval"]::before {
+    box-shadow:
+      inset 0 0 0 3px var(--warning-solid),
+      0 0 16px color-mix(in srgb, var(--warning-solid) 45%, transparent);
+  }
+  .wisp-orb .wisp-halo > svg,
+  .wisp-orb .wisp-halo > img {
+    width: 42px;
+    height: 42px;
+  }
+  .wisp-orb-name {
+    max-width: 100%;
+    overflow: hidden;
+    color: var(--text-dim);
+    font-size: 12px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .wisp-orb-badge {
+    position: absolute;
+    top: -2px;
+    right: -2px;
+    display: grid;
+    place-items: center;
+    width: 20px;
+    height: 20px;
+    border: 2px solid var(--sidebar-background);
+    border-radius: 50%;
+    font-size: 11px;
+    font-weight: 800;
+    line-height: 1;
+  }
+  .wisp-orb-badge[data-tone="approval"] {
+    background: var(--warning-solid);
+    color: #1a1204;
+  }
+  .wisp-orb-badge[data-tone="error"] {
+    background: var(--destructive);
+    color: #fff;
+  }
+  .wisp-orb-badge[data-tone="unread"] {
+    top: 1px;
+    right: 1px;
+    width: 15px;
+    height: 15px;
+    background: var(--wisp);
+  }
+
+  /* ---------- The approval waiting for the person ---------- */
+  .needs-you {
+    flex: none;
+    margin: 0 16px 10px;
+  }
+  .needs-you-card {
+    position: relative;
+    padding: 14px;
+    border: 1px solid color-mix(in srgb, var(--warning-solid) 30%, transparent);
+    border-radius: 20px;
+    background: linear-gradient(160deg, color-mix(in srgb, var(--warning-solid) 13%, var(--card)), var(--card));
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+  }
+  /* More waiting: the edge of another card behind this one. */
+  .needs-you-card[data-stacked] {
+    margin-bottom: 8px;
+    box-shadow:
+      0 7px 0 -3px color-mix(in srgb, var(--warning-solid) 16%, var(--card)),
+      0 7px 0 -2px color-mix(in srgb, var(--warning-solid) 30%, transparent);
+  }
+  .needs-you-summary {
+    display: flex;
+    width: 100%;
+    flex-direction: column;
+    gap: 10px;
+    text-align: left;
+  }
+  .needs-you-title {
+    display: flex;
+    width: 100%;
+    align-items: center;
+    gap: 8px;
+    color: var(--text-dim);
+    font-size: 14px;
+  }
+  .needs-you-title strong {
+    color: var(--foreground);
+  }
+  .needs-you-title > svg,
+  .needs-you-title > img {
+    width: 24px;
+    height: 24px;
+  }
+  .needs-you-title time {
+    flex: none;
+    color: var(--warning);
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+  }
+  .needs-you-detail {
+    display: -webkit-box;
+    width: 100%;
+    overflow: hidden;
+    padding: 9px 11px;
+    border-radius: 11px;
+    background: color-mix(in srgb, var(--foreground) 6%, transparent);
+    font-size: 12.5px;
+    line-height: 1.45;
+    overflow-wrap: anywhere;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+  }
+  .needs-you-actions {
+    display: flex;
+    gap: 8px;
+    margin-top: 12px;
+  }
+  .needs-you-actions [data-slot="button"] {
+    flex: 1;
+    height: 42px;
+    border-radius: 13px;
+    font-size: 14px;
+  }
+  .needs-you-actions .needs-you-allow {
+    background: var(--warning-solid);
+    color: #1a1204;
+  }
+  .needs-you-more {
+    display: flex;
+    width: 100%;
+    align-items: center;
+    justify-content: center;
+    gap: 2px;
+    min-height: 36px;
+    color: var(--warning);
+    font-size: 13px;
+  }
+  .needs-you-more svg {
+    width: 15px;
+    height: 15px;
+  }
+
+  /* The full request, from the bottom of the screen. */
+  .approval-sheet-viewport {
+    align-items: flex-end;
+    padding: 0;
+  }
+  .approval-sheet[data-slot="dialog-content"] {
+    max-width: none;
+    gap: 14px;
+    padding: 22px 18px max(18px, env(safe-area-inset-bottom, 0px));
+    border-width: 1px 0 0;
+    border-radius: 28px 28px 0 0;
+    background:
+      radial-gradient(
+        320px 160px at 10% 0,
+        color-mix(in srgb, var(--wisp, var(--warning-solid)) 18%, transparent),
+        transparent
+      ),
+      var(--card);
+  }
+  .approval-sheet-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding-right: 30px;
+  }
+  .approval-sheet-header .wisp-halo {
+    width: 46px;
+    height: 46px;
+  }
+  .approval-sheet .tool-approval-card {
+    margin: 0;
+    padding: 0;
+    border: 0;
+    background: transparent;
+  }
+  .approval-sheet .tool-approval-card > div:first-child > svg {
+    display: none;
+  }
+  .approval-sheet .tool-approval-card [data-slot="button"],
+  .mobile-approval .tool-approval-card [data-slot="button"] {
+    border-radius: 13px;
+  }
+  .approval-sheet .tool-approval-card [data-slot="button"]:last-child,
+  .mobile-approval .tool-approval-card [data-slot="button"]:last-child {
+    background: var(--warning-solid);
+    color: #1a1204;
   }
   .mobile-create-button {
     width: 44px;
@@ -74,22 +373,24 @@
     display: flex;
     flex: none;
     gap: 6px;
-    padding: 0 20px 12px;
+    padding: 6px 20px 6px;
   }
   .mobile-list-filters button {
-    min-height: 44px;
+    min-height: 34px;
     padding: 0 12px;
-    border-radius: 10px;
+    border-radius: 999px;
     color: var(--text-dim);
-    font-size: 12px;
+    font-size: 13px;
+    font-weight: 500;
   }
   .mobile-list-filters button[aria-pressed="true"] {
     color: var(--foreground);
     background: var(--muted);
   }
   .conversation-list {
+    flex: 1 0 auto;
+    overflow: visible;
     padding: 0 12px 16px;
-    overscroll-behavior: contain;
   }
   .conversation-list-item {
     min-height: 72px;
@@ -270,9 +571,61 @@
     overflow-y: auto;
     overscroll-behavior: contain;
   }
+  /* Each request is a card lit by the Wisp that asked. */
+  .mobile-approval {
+    padding: 12px 14px 14px;
+    border: 1px solid var(--border);
+    border-radius: 22px;
+    background:
+      radial-gradient(
+        260px 120px at 0 0,
+        color-mix(in srgb, var(--wisp, var(--warning-solid)) 18%, transparent),
+        transparent
+      ),
+      var(--card);
+  }
   .mobile-approval .tool-approval-card {
     width: 100%;
     margin-top: 6px;
+    padding: 0;
+    border: 0;
+    background: transparent;
+  }
+  .mobile-approval .tool-approval-card > div:first-child > svg {
+    display: none;
+  }
+  .mobile-approval-chat .wisp-halo {
+    width: 38px;
+    height: 38px;
+  }
+  .mobile-approval-who {
+    display: flex;
+    flex: 1;
+    min-width: 0;
+    flex-direction: column;
+    line-height: 1.3;
+  }
+  .mobile-approval-who small {
+    color: var(--text-dim);
+    font-size: 12.5px;
+  }
+  .mobile-approvals-empty {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    margin: 12px 4px;
+    padding: 16px;
+    border: 1px dashed var(--border);
+    border-radius: 20px;
+    color: var(--text-dim);
+    line-height: 1.55;
+  }
+  .mobile-approvals-empty strong {
+    color: var(--foreground);
+  }
+  .mobile-approvals-empty .wisp-halo {
+    width: 58px;
+    height: 58px;
   }
   .mobile-approval-chat {
     display: flex;
@@ -288,7 +641,6 @@
     text-align: left;
   }
   .mobile-approval-chat strong {
-    flex: 1;
     min-width: 0;
     overflow: hidden;
     font-weight: 600;

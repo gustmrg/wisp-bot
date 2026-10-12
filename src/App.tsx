@@ -209,6 +209,8 @@ function Workspace({ userProfile }: { userProfile: UserProfileController }) {
             onOpenSearch={() => showSearch(true)}
             onOpenSettings={() => showSettings("general")}
             onOpenApprovals={showApprovals}
+            onResolveApproval={(request, decision) => void workspace.resolveApproval(request, decision)}
+            allowAlwaysAvailable={workspace.preferences.autoReview}
             onResizeStart={sidebarPanel.onResizeStart}
             onSelectChat={selectChat}
             onChatAction={applyChatAction}

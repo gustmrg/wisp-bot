@@ -281,7 +281,8 @@ describe("Sidebar on mobile", () => {
         {...callbacks}
       />,
     );
-    const beta = screen.getByRole("button", { name: /Beta/ });
+    const list = () => screen.getByRole("navigation", { name: "Wisps and circles" });
+    const beta = within(list()).getByRole("button", { name: /Beta/ });
     expect(within(beta).getByText("3")).toHaveAttribute("aria-hidden", "true");
     expect(within(beta).getByText("3 unread")).toHaveClass("sr-only");
 

@@ -16,11 +16,13 @@ import type { ChatId, ChatListAction, ChatView, ChatViewCollection, NewWisp } fr
 import { ChatAvatar } from "@/components/chat-avatar";
 import { CreateAgentDialog } from "@/components/create-agent-dialog";
 import { MobileNavigation } from "@/components/mobile-navigation";
+import { NeedsYou } from "@/components/needs-you";
+import { WispOrbs } from "@/components/wisp-orbs";
 import { Button } from "@/components/ui/button";
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger } from "@/components/ui/context-menu";
 import type { ManagedConversationStatus } from "../../shared/conversations";
 import type { ModelSelection } from "../../shared/contracts";
-import type { ToolApprovalRequest } from "../../shared/tool-policy";
+import type { ToolApprovalDecision, ToolApprovalRequest } from "../../shared/tool-policy";
 import { messagePreview } from "../../shared/workspace";
 import type { CurrentUser } from "@/config/app-metadata";
 import { useClock } from "@/hooks/use-clock";
@@ -58,6 +60,10 @@ interface SidebarProps {
   onOpenSettings: () => void;
   /** Opens the mobile Approvals tab. */
   onOpenApprovals?: () => void;
+  /** Answers an approval from the mobile list; without it the list does not offer to. */
+  onResolveApproval?: (request: ToolApprovalRequest, decision: ToolApprovalDecision) => void;
+  /** Auto-review is on, so approvals can offer a lasting Allow rule. */
+  allowAlwaysAvailable?: boolean;
   onResizeStart: (event: ReactPointerEvent<HTMLDivElement>) => void;
   onSelectChat: (chatId: ChatId) => void;
   /** Without it the list has no menu, as in component tests that do not need it. */
@@ -71,6 +77,35 @@ const unreadIndicator =
 const stateIndicator = "absolute -right-1 -bottom-1 size-[10px] rounded-full border-2 border-sidebar";
 const approvalIndicator = cn("approval-indicator", stateIndicator, "bg-[#f0a83a]");
 const errorIndicator = cn("error-indicator", stateIndicator, "bg-[#e5594d]");
+
+/** "Good morning", "Good afternoon", or "Good evening", by the hour where the person is. */
+function greeting(now: Date, timeZone: string, name: string): string {
+  const hour = Number(new Intl.DateTimeFormat("en-US", { hour: "numeric", hourCycle: "h23", timeZone }).format(now));
+  const part = hour >= 5 && hour < 12 ? "morning" : hour >= 12 && hour < 18 ? "afternoon" : "evening";
+  return name ? `Good ${part}, ${name}` : `Good ${part}`;
+}
+
+/** The colors of the Wisps that are busiest, for the light at the top of the mobile list. */
+function ambientColors(
+  chats: ChatViewCollection,
+  statuses: Record<string, ManagedConversationStatus>,
+  approvals: Record<string, ReadonlyArray<ToolApprovalRequest>>,
+): CSSProperties {
+  const ranked = Object.values(chats)
+    .flatMap((chat) => (chat.kind === "wisp" ? [chat] : []))
+    .sort(
+      (left, right) =>
+        Number(Boolean(approvals[right.id]?.length)) * 4 +
+        Number(statuses[right.id] === "working") * 2 +
+        Number(Boolean(right.unread)) -
+        (Number(Boolean(approvals[left.id]?.length)) * 4 +
+          Number(statuses[left.id] === "working") * 2 +
+          Number(Boolean(left.unread))),
+    )
+    .slice(0, 3)
+    .map((chat) => wispColor(chat.wisp.name, chat.wisp.color));
+  return Object.fromEntries(ranked.map((color, index) => [`--ambient-${index + 1}`, color])) as CSSProperties;
+}
 
 function activityTime(chat: Parameters<typeof chatActivityDate>[0] | undefined): number {
   return (chat && chatActivityDate(chat)?.getTime()) || 0;
@@ -95,6 +130,8 @@ function Sidebar({
   onOpenSearch,
   onOpenSettings,
   onOpenApprovals,
+  onResolveApproval,
+  allowAlwaysAvailable = false,
   onResizeStart,
   onSelectChat,
   onChatAction,
@@ -133,28 +170,41 @@ function Sidebar({
       >
         {mobile ? (
           <>
+            <div className="mobile-list-ambient" style={ambientColors(chats, statuses, approvals)} aria-hidden="true" />
             <header className="mobile-list-header">
               <div>
+                <p className="mobile-list-greeting">{greeting(now, timeZone, currentUser.givenName)}</p>
                 <h1 ref={titleRef} tabIndex={-1}>
-                  Conversations
+                  Wisps
                 </h1>
-                <p>
-                  Your team · {allChatIds.length} {allChatIds.length === 1 ? "Wisp" : "Wisps"}
-                </p>
               </div>
             </header>
             <button
-              className={cn(
-                "sidebar-search flex h-8 flex-none items-center gap-2 rounded-lg border text-left text-dim hover:text-foreground",
-                "border-border bg-card hover:border-ring",
-                "[&_svg]:size-[13px] [&_svg]:flex-none [&_span]:flex-1",
-              )}
+              className="mobile-list-search"
               type="button"
+              aria-label="Search conversations"
+              title="Search conversations"
               onClick={onOpenSearch}
             >
               <SearchIcon aria-hidden="true" />
-              <span>Search conversations</span>
             </button>
+            <WispOrbs
+              chats={chats}
+              statuses={statuses}
+              approvals={approvals}
+              failedChats={failedChats}
+              onSelectChat={onSelectChat}
+            />
+            {onResolveApproval ? (
+              <NeedsYou
+                chats={chats}
+                approvals={approvals}
+                allowAlwaysAvailable={allowAlwaysAvailable}
+                onResolve={onResolveApproval}
+                onOpenChat={onSelectChat}
+                onOpenApprovals={onOpenApprovals}
+              />
+            ) : null}
           </>
         ) : (
           <div className={cn("flex h-11 flex-none items-center gap-1 px-2 pb-1", collapsed && "justify-center")}>

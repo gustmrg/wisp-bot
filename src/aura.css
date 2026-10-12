@@ -224,3 +224,12 @@
     animation: none;
   }
 }
+
+/* An approval in a Wisp's conversation answers with the same amber as everywhere else. */
+.chat-panel .tool-approval-card {
+  border-radius: 18px;
+}
+.chat-panel .tool-approval-card [data-slot="button"]:last-child {
+  background: var(--warning-solid);
+  color: #1a1204;
+}

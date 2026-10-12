@@ -22,6 +22,33 @@ const ALWAYS_ALLOW_LABELS = {
   modify_file: "Always allow editing files",
 } as const;
 
+/** What a Wisp is asking for, to follow its name: "Atlas wants to edit a file". */
+function approvalAsk(request: ToolApprovalRequest): string {
+  switch (request.category) {
+    case "create_file":
+      return "wants to create a file";
+    case "modify_file":
+      return "wants to edit a file";
+    case "save_skill":
+      return "wants to save a skill";
+    case "schedule_job":
+      return "wants to schedule a job";
+    case "container_command":
+    case "shell":
+      return "wants to run a command";
+    case "external_write":
+    case "integration_call":
+      return `wants to use ${request.scope.display}`;
+    default:
+      return "asks for your approval";
+  }
+}
+
+/** Jobs and skills are read in full before they are approved, so they have no one-tap answer. */
+function needsReview(request: ToolApprovalRequest): boolean {
+  return request.category === "save_skill" || request.category === "schedule_job";
+}
+
 function remainingLabel(seconds: number): string {
   return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
 }
@@ -95,7 +122,9 @@ function ToolApprovalCard({ request, wispName, allowAlwaysAvailable, onResolve }
                   ? "Approve skill?"
                   : integration
                     ? "Approve integration change?"
-                    : "Approve file change?"}
+                    : request.category === "shell" || request.category === "container_command"
+                      ? "Approve command?"
+                      : "Approve file change?"}
             </strong>
             {Number.isNaN(remaining) ? null : (
               <time
@@ -132,7 +161,9 @@ function ToolApprovalCard({ request, wispName, allowAlwaysAvailable, onResolve }
                 {wispName} requested {request.toolName} for {request.scope.display}.{" "}
                 {integration
                   ? "This action can change data in the connected service."
-                  : "No file content is shown here."}
+                  : fileCategory
+                    ? "No file content is shown here."
+                    : ""}
               </>
             )}
           </small>
@@ -176,5 +207,5 @@ function ToolApprovalCard({ request, wispName, allowAlwaysAvailable, onResolve }
   );
 }
 
-export { ToolApprovalCard };
+export { ToolApprovalCard, approvalAsk, needsReview, remainingLabel };
 export type { ToolApprovalCardProps };
