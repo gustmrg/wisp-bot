@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -59,8 +59,17 @@ async function fixture() {
   return { control, session, settingsPath, manager, onRenewed };
 }
 describe("context continuity", () => {
-  it("summarizes before a return after inactivity, with continuity instructions", async () => {
+  it("starts a new topic by default on a return after inactivity", async () => {
+    const { control, session, onRenewed } = await fixture();
+    await control.beforePrompt();
+    expect(session.compact).not.toHaveBeenCalled();
+    expect(session.state.messages).toHaveLength(0);
+    expect(onRenewed).toHaveBeenCalledWith("new_topic", expect.any(String));
+    expect(control.search("SQLite")).toContain("migration remains pending");
+  });
+  it("summarizes before a return after inactivity when chosen, with continuity instructions", async () => {
     const { control, session } = await fixture();
+    await control.command({ action: "save", policy: { ...DEFAULT_CONTEXT_POLICY, renewal: "compact" }, memory: "" });
     await control.beforePrompt();
     expect(session.compact).toHaveBeenCalledWith(expect.stringMatching(/decisions.*preferences.*pending work/));
     session.compact.mockRejectedValueOnce(new Error("provider failed"));
@@ -95,6 +104,14 @@ describe("context continuity", () => {
     const reloaded = new ContextSession(session as unknown as AgentSession, settingsPath, vi.fn());
     await reloaded.load();
     expect(reloaded.view()).toMatchObject({ memory: "Use Portuguese", policy: { idleHours: 48 } });
+  });
+  it("loads settings saved before the renewal choice existed", async () => {
+    const { session, settingsPath } = await fixture();
+    const { renewal: _, ...older } = DEFAULT_CONTEXT_POLICY;
+    await writeFile(settingsPath, JSON.stringify({ policy: { ...older, idleHours: 6 }, memory: "" }));
+    const reloaded = new ContextSession(session as unknown as AgentSession, settingsPath, vi.fn());
+    await reloaded.load();
+    expect(reloaded.view().policy).toEqual({ ...DEFAULT_CONTEXT_POLICY, idleHours: 6 });
   });
   it("bounds history search results and excludes tool payloads", async () => {
     const { control } = await fixture();

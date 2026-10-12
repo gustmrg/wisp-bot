@@ -2,6 +2,8 @@ import { systemTimeZone, zonedParts, zonedTime } from "./time-zone.js";
 
 export interface ContextPolicy {
   mode: "idle" | "daily" | "both" | "none";
+  /** What an automatic renewal does: start a new topic, or summarize the context and continue. */
+  renewal: "new_topic" | "compact";
   idleHours: number;
   minimumTokens: number;
   dailyHour: number;
@@ -9,6 +11,7 @@ export interface ContextPolicy {
 
 export const DEFAULT_CONTEXT_POLICY: ContextPolicy = {
   mode: "idle",
+  renewal: "new_topic",
   idleHours: 24,
   minimumTokens: 12_000,
   dailyHour: 4,
@@ -34,12 +37,18 @@ export interface ContextRequest {
   command: ContextCommand;
 }
 
+/** Fills fields saved before they existed, so older settings keep loading. */
+export function withPolicyDefaults(value: unknown): unknown {
+  return value && typeof value === "object" ? { ...DEFAULT_CONTEXT_POLICY, ...value } : value;
+}
+
 export function isContextPolicy(value: unknown): value is ContextPolicy {
   if (!value || typeof value !== "object") return false;
   const policy = value as ContextPolicy;
   return (
-    Object.keys(policy).every((key) => ["mode", "idleHours", "minimumTokens", "dailyHour"].includes(key)) &&
+    Object.keys(policy).every((key) => ["mode", "renewal", "idleHours", "minimumTokens", "dailyHour"].includes(key)) &&
     ["idle", "daily", "both", "none"].includes(policy.mode) &&
+    ["new_topic", "compact"].includes(policy.renewal) &&
     Number.isInteger(policy.idleHours) &&
     policy.idleHours >= 1 &&
     policy.idleHours <= 720 &&

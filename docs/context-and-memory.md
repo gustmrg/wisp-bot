@@ -2,9 +2,13 @@
 
 Open **Wisp settings → General → Context & memory** to configure context
 renewal for a Wisp. By default, the next message after 24 hours of inactivity
-triggers a continuity summary only when the active context is at least 12,000
-tokens. Both values are configurable (inactivity between 1 and 720 hours;
-minimum context between 1,000 and 200,000 tokens). Optional daily renewal uses
+starts a new topic, but only when the active context is at least 12,000
+tokens. **On renewal** can instead summarize the context and continue, which
+costs a summarization request and keeps the summary in every later request;
+starting a new topic sends only the system prompt, saved memory and the new
+message, and the Wisp can still reach earlier messages with `search_history`.
+The thresholds are configurable (inactivity between 1 and 720 hours; minimum
+context between 1,000 and 200,000 tokens). Optional daily renewal uses
 the timezone from **Settings → General**, is evaluated on the next message,
 and also requires the minimum context size. Nothing runs just because the clock passes the
 configured hour. Native Pi compression near the model's context limit remains
