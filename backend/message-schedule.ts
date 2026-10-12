@@ -1,29 +1,12 @@
 import type { ScheduledOrigin } from "../shared/conversations.js";
 import type { MessageSchedule, ScheduledMessage } from "../shared/scheduled-messages.js";
+import { isoTime, normalizeSchedule } from "../shared/schedule.js";
 import { isTimeZone } from "../shared/time-zone.js";
 
-/** A valid schedule with its times in canonical UTC form, or undefined. */
+/** A valid schedule for a scheduled message (only one-off sends today), or undefined. */
 export function normalizeMessageSchedule(value: unknown): MessageSchedule | undefined {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
-  const schedule = value as Record<string, unknown>;
-  if (schedule.kind === "once") {
-    const at = isoTime(schedule.at);
-    return at ? { kind: "once", at } : undefined;
-  }
-  return undefined;
-}
-
-/**
- * The first time the schedule sends strictly after `after`, or null when it
- * never sends again. Recurring kinds evaluate their rule in `timeZone`.
- */
-export function nextOccurrence(schedule: MessageSchedule, _timeZone: string, after: Date): Date | null {
-  switch (schedule.kind) {
-    case "once": {
-      const at = new Date(schedule.at);
-      return at.getTime() > after.getTime() ? at : null;
-    }
-  }
+  const schedule = normalizeSchedule(value);
+  return schedule?.kind === "once" ? schedule : undefined;
 }
 
 /** A stored scheduled message, or undefined when the record is not valid. */
@@ -65,15 +48,6 @@ export function normalizeScheduledMessage(value: unknown): ScheduledMessage | un
     createdAt,
     updatedAt,
   };
-}
-
-const ISO_TIME_PATTERN = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d{1,3})?)?(Z|[+-]\d{2}:\d{2})$/;
-
-/** An ISO 8601 time with an explicit offset, as UTC; local times without an offset are ambiguous and refused. */
-function isoTime(value: unknown): string | undefined {
-  if (typeof value !== "string" || !ISO_TIME_PATTERN.test(value)) return undefined;
-  const time = Date.parse(value);
-  return Number.isFinite(time) ? new Date(time).toISOString() : undefined;
 }
 
 /**

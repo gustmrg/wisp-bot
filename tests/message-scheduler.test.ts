@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { nextOccurrence, normalizeScheduledMessage } from "../backend/message-schedule.js";
+import { normalizeScheduledMessage } from "../backend/message-schedule.js";
+import { nextOccurrence } from "../shared/schedule.js";
 import { parseScheduleMessageRequest, parseUpdateScheduledMessageRequest } from "../backend/validators.js";
 import { newWisp, setupMessaging, START } from "./helpers/messaging-harness.js";
 

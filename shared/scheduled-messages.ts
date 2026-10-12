@@ -1,14 +1,14 @@
 import type { ChatId } from "./conversations.js";
+import type { OnceSchedule } from "./schedule.js";
 
 /** Scheduled messages a single Wisp may hold at once. */
 export const MAX_SCHEDULED_MESSAGES_PER_WISP = 50;
 
 /**
- * When a scheduled message is sent. Only one-off sends exist today; a
- * recurring kind (a rule evaluated in the message's time zone) joins this
- * union and `nextOccurrence` in the backend without changing stored records.
+ * When a scheduled message is sent. Only one-off sends exist today; the
+ * recurring kinds of `Schedule` can join without changing stored records.
  */
-export type MessageSchedule = { kind: "once"; at: string };
+export type MessageSchedule = OnceSchedule;
 
 /** A message the backend sends to a Wisp on the person's behalf, as if typed then. */
 export interface ScheduledMessage {

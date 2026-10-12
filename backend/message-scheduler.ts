@@ -8,9 +8,9 @@ import {
   type ScheduleMessageRequest,
   type UpdateScheduledMessageRequest,
 } from "../shared/scheduled-messages.js";
+import { nextOccurrence } from "../shared/schedule.js";
 import { sanitizeBackendError, WispBackendError } from "./backend-error.js";
 import type { ConversationRepository } from "./conversation-repository.js";
-import { nextOccurrence } from "./message-schedule.js";
 import type { StructuredLogger } from "./structured-logger.js";
 
 /**
