@@ -1,6 +1,7 @@
 import { DatabaseSync, type StatementSync } from "node:sqlite";
 
 import type { Message } from "../shared/conversations.js";
+import type { Job, JobRun } from "../shared/jobs.js";
 import type { QueuedMessage } from "../shared/message-queue.js";
 import type { ScheduledMessage } from "../shared/scheduled-messages.js";
 import type { ConversationRecord, WispRecord, WorkspaceRecords } from "./workspace-actions.js";
@@ -16,7 +17,9 @@ import type { ConversationRecord, WispRecord, WorkspaceRecords } from "./workspa
 // Version 8 adds pinned conversations; older writers leave the column alone.
 // Version 9 adds each Wisp's thinking level; older writers leave it alone too,
 // so reads ignore it when the Wisp has no model of its own.
-const STORE_VERSION = 9;
+// Version 10 adds jobs and their runs; older writers leave them alone, and
+// deleting a conversation removes them through foreign keys.
+const STORE_VERSION = 10;
 const MIN_READER_VERSION = 6;
 /** The first layout that stores records as columns rather than JSON. */
 const COLUMN_RECORDS_VERSION = 5;
@@ -189,6 +192,51 @@ const PENDING_MESSAGES_SCHEMA = `
   CREATE INDEX IF NOT EXISTS queued_messages_by_conversation ON queued_messages (conversation_id, seq);
 `;
 
+// Jobs a Wisp runs on a schedule, and a record of each run (ADR 019). Like
+// scheduled messages, a job belongs to its Wisp's conversation and goes with
+// it. Schedules, lists and small nested records stay JSON.
+const JOBS_SCHEMA = `
+  CREATE TABLE IF NOT EXISTS jobs (
+    seq INTEGER PRIMARY KEY,
+    id TEXT NOT NULL UNIQUE,
+    conversation_id TEXT NOT NULL REFERENCES conversations (id) ON DELETE CASCADE,
+    title TEXT NOT NULL,
+    instructions TEXT NOT NULL,
+    skills TEXT NOT NULL CHECK (json_valid(skills)),
+    tools TEXT NOT NULL CHECK (json_valid(tools)),
+    schedule TEXT NOT NULL CHECK (json_valid(schedule)),
+    time_zone TEXT NOT NULL,
+    next_run_at TEXT,
+    retry TEXT CHECK (retry IS NULL OR json_valid(retry)),
+    paused TEXT CHECK (paused IS NULL OR json_valid(paused)),
+    state TEXT NOT NULL,
+    run_count INTEGER NOT NULL,
+    consecutive_failures INTEGER NOT NULL,
+    last_run TEXT CHECK (last_run IS NULL OR json_valid(last_run)),
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  ) STRICT;
+  CREATE INDEX IF NOT EXISTS jobs_by_conversation ON jobs (conversation_id);
+  CREATE TABLE IF NOT EXISTS job_runs (
+    seq INTEGER PRIMARY KEY,
+    id TEXT NOT NULL UNIQUE,
+    job_id TEXT NOT NULL REFERENCES jobs (id) ON DELETE CASCADE,
+    conversation_id TEXT NOT NULL,
+    trigger TEXT NOT NULL,
+    scheduled_at TEXT NOT NULL,
+    started_at TEXT NOT NULL,
+    ended_at TEXT,
+    status TEXT,
+    error_code TEXT,
+    delivery_error_code TEXT,
+    skip_reason TEXT,
+    usage TEXT CHECK (usage IS NULL OR json_valid(usage)),
+    message_id TEXT,
+    session_file TEXT
+  ) STRICT;
+  CREATE INDEX IF NOT EXISTS job_runs_by_job ON job_runs (job_id, seq);
+`;
+
 // Builds of layout 5 made before Wisp appearances stored a single shape. Each
 // Wisp keeps the closest body and the flat look it had, with no trail; this
 // matches `appearanceFromLegacyShape`.
@@ -356,6 +404,49 @@ function scheduledMessageOf(row: Row): unknown {
   };
 }
 
+const json = (value: unknown) => (value === null || value === undefined ? undefined : JSON.parse(String(value)));
+
+function jobOf(row: Row): unknown {
+  return {
+    id: row.id,
+    conversationId: row.conversation_id,
+    title: row.title,
+    instructions: row.instructions,
+    skills: json(row.skills),
+    tools: json(row.tools),
+    schedule: json(row.schedule),
+    timeZone: row.time_zone,
+    nextRunAt: optional(row.next_run_at),
+    retry: json(row.retry),
+    paused: json(row.paused),
+    state: row.state,
+    runCount: Number(row.run_count),
+    consecutiveFailures: Number(row.consecutive_failures),
+    lastRun: json(row.last_run),
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+function jobRunOf(row: Row): unknown {
+  return {
+    id: row.id,
+    jobId: row.job_id,
+    conversationId: row.conversation_id,
+    trigger: row.trigger,
+    scheduledAt: row.scheduled_at,
+    startedAt: row.started_at,
+    endedAt: optional(row.ended_at),
+    status: optional(row.status),
+    errorCode: optional(row.error_code),
+    deliveryErrorCode: optional(row.delivery_error_code),
+    skipReason: optional(row.skip_reason),
+    usage: json(row.usage),
+    messageId: optional(row.message_id),
+    sessionFile: optional(row.session_file),
+  };
+}
+
 function queuedMessageOf(row: Row): unknown {
   return {
     id: row.id,
@@ -422,7 +513,7 @@ export class ConversationStore {
         );
       }
       const jsonRecords = version !== undefined && Number(version) < COLUMN_RECORDS_VERSION;
-      if (!jsonRecords) db.exec(`${RECORD_SCHEMA}${PENDING_MESSAGES_SCHEMA}`);
+      if (!jsonRecords) db.exec(`${RECORD_SCHEMA}${PENDING_MESSAGES_SCHEMA}${JOBS_SCHEMA}`);
       db.exec(`${MESSAGES_SCHEMA}${SEARCH_SCHEMA}`);
       const store = new ConversationStore(db, jsonRecords);
       if (Number(version) < 2) store.upgradeFromVersion1();
@@ -559,7 +650,7 @@ export class ConversationStore {
       this.transaction(() => {
         this.statements.clear();
         this.db.exec(JSON_RECORD_TABLES.map((table) => `DROP TABLE IF EXISTS ${table};`).join("\n"));
-        this.db.exec(`${RECORD_SCHEMA}${PENDING_MESSAGES_SCHEMA}`);
+        this.db.exec(`${RECORD_SCHEMA}${PENDING_MESSAGES_SCHEMA}${JOBS_SCHEMA}`);
         for (const column of MESSAGE_COLUMNS) this.db.exec(`ALTER TABLE messages ADD COLUMN ${column}`);
         for (const record of Object.values(records.wisps)) this.putWisp(record);
         for (const record of Object.values(records.conversations)) this.putConversation(record);
@@ -769,6 +860,93 @@ export class ConversationStore {
 
   deleteQueuedMessage(id: string): void {
     this.statement("DELETE FROM queued_messages WHERE id = ?").run(id);
+  }
+
+  /** Raw job records, soonest next run first and ended jobs last; validated by the repository. */
+  readJobs(): unknown[] {
+    if (this.jsonRecords) return [];
+    return this.db.prepare("SELECT * FROM jobs ORDER BY next_run_at IS NULL, next_run_at, seq").all().map(jobOf);
+  }
+
+  putJob(job: Job): void {
+    const nullableJson = (value: unknown) => (value === undefined ? null : JSON.stringify(value));
+    this.statement(
+      `INSERT INTO jobs (id, conversation_id, title, instructions, skills, tools, schedule, time_zone, next_run_at,
+        retry, paused, state, run_count, consecutive_failures, last_run, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT (id) DO UPDATE SET
+        title = excluded.title, instructions = excluded.instructions, skills = excluded.skills,
+        tools = excluded.tools, schedule = excluded.schedule, time_zone = excluded.time_zone,
+        next_run_at = excluded.next_run_at, retry = excluded.retry, paused = excluded.paused,
+        state = excluded.state, run_count = excluded.run_count,
+        consecutive_failures = excluded.consecutive_failures, last_run = excluded.last_run,
+        created_at = excluded.created_at, updated_at = excluded.updated_at`,
+    ).run(
+      job.id,
+      job.conversationId,
+      job.title,
+      job.instructions,
+      JSON.stringify(job.skills),
+      JSON.stringify(job.tools),
+      JSON.stringify(job.schedule),
+      job.timeZone,
+      job.nextRunAt ?? null,
+      nullableJson(job.retry),
+      nullableJson(job.paused),
+      job.state,
+      job.runCount,
+      job.consecutiveFailures,
+      nullableJson(job.lastRun),
+      job.createdAt,
+      job.updatedAt,
+    );
+  }
+
+  /** Deletes the job and, through foreign keys, its runs. */
+  deleteJob(id: string): void {
+    this.statement("DELETE FROM jobs WHERE id = ?").run(id);
+  }
+
+  /** Raw run records of a job, newest first; validated by the repository. */
+  readJobRuns(jobId: string, limit: number): unknown[] {
+    if (this.jsonRecords) return [];
+    return this.statement("SELECT * FROM job_runs WHERE job_id = ? ORDER BY seq DESC LIMIT ?")
+      .all(jobId, limit)
+      .map(jobRunOf);
+  }
+
+  /** Writes a run record, keeping only the newest `keep` of its job; returns the session files of runs removed. */
+  putJobRun(run: JobRun, keep: number): string[] {
+    this.statement(
+      `INSERT INTO job_runs (id, job_id, conversation_id, trigger, scheduled_at, started_at, ended_at, status,
+        error_code, delivery_error_code, skip_reason, usage, message_id, session_file)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT (id) DO UPDATE SET
+        ended_at = excluded.ended_at, status = excluded.status, error_code = excluded.error_code,
+        delivery_error_code = excluded.delivery_error_code, skip_reason = excluded.skip_reason,
+        usage = excluded.usage, message_id = excluded.message_id, session_file = excluded.session_file`,
+    ).run(
+      run.id,
+      run.jobId,
+      run.conversationId,
+      run.trigger,
+      run.scheduledAt,
+      run.startedAt,
+      run.endedAt ?? null,
+      run.status ?? null,
+      run.errorCode ?? null,
+      run.deliveryErrorCode ?? null,
+      run.skipReason ?? null,
+      run.usage === undefined ? null : JSON.stringify(run.usage),
+      run.messageId ?? null,
+      run.sessionFile ?? null,
+    );
+    const stale = "job_id = ? AND seq NOT IN (SELECT seq FROM job_runs WHERE job_id = ? ORDER BY seq DESC LIMIT ?)";
+    const files = this.statement(`SELECT session_file FROM job_runs WHERE session_file IS NOT NULL AND ${stale}`)
+      .all(run.jobId, run.jobId, keep)
+      .map((row) => String(row.session_file));
+    this.statement(`DELETE FROM job_runs WHERE ${stale}`).run(run.jobId, run.jobId, keep);
+    return files;
   }
 
   setInitialized(initialized: boolean): void {
