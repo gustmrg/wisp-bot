@@ -2,6 +2,7 @@ import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, it, vi } from "vitest";
 
+import { circleChatView, testWisp, wispChatView } from "@/test/chat-fixtures";
 import { StorageSettingsSection } from "./storage-settings-section";
 
 const MIB = 1024 * 1024;
@@ -115,6 +116,23 @@ it("lists workspaces largest first with usage, and filters by search", async () 
   await user.type(screen.getByRole("textbox", { name: "Search workspaces" }), "nov");
   expect(screen.queryByRole("button", { name: "Inspect Atlas" })).not.toBeInTheDocument();
   expect(screen.getByRole("button", { name: "Inspect Nova" })).toBeInTheDocument();
+});
+
+it("shows each workspace with its Wisp's or circle's picture", async () => {
+  install();
+  const conversations = [
+    wispChatView("a", { wisp: { name: "Atlas", color: "#5b8def" } }),
+    circleChatView("c", [testWisp("Rio"), testWisp("Lua")], { name: "Crew" }),
+  ];
+  render(<StorageSettingsSection conversations={conversations} />);
+
+  const row = (name: string) =>
+    screen.getByRole("progressbar", { name: `${name} usage` }).closest(".settings-row") as HTMLElement;
+  await screen.findByRole("button", { name: "Inspect Atlas" });
+  expect(row("Atlas").querySelectorAll('[data-slot="wisp"]')).toHaveLength(1);
+  expect(row("Crew").querySelectorAll('[data-slot="wisp"]')).toHaveLength(2);
+  // Without its conversation a Wisp is still drawn, from its name.
+  expect(row("Nova").querySelectorAll('[data-slot="wisp"]')).toHaveLength(1);
 });
 
 it("starts filtered to a workspace and can show all", async () => {
