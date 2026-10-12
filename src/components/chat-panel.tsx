@@ -83,6 +83,8 @@ interface ChatPanelProps {
   scheduledMessages?: ScheduledMessagesController;
   /** Messages waiting for every Wisp; absent when the backend has no queue. */
   messageQueue?: MessageQueueController;
+  /** Starts a new topic in a Wisp; resolves with an error message, or null. */
+  onNewTopic?: (conversationId: string) => Promise<string | null>;
 }
 
 function ChatPanel({
@@ -110,6 +112,7 @@ function ChatPanel({
   onSend,
   scheduledMessages,
   messageQueue,
+  onNewTopic,
 }: ChatPanelProps) {
   const transcriptRef = useRef<HTMLDivElement>(null);
   const messagesRef = useRef<HTMLDivElement>(null);
@@ -393,6 +396,7 @@ function ChatPanel({
         onSchedule={
           scheduledMessages?.available ? (text, at) => scheduledMessages.schedule(chat.id, text, at) : undefined
         }
+        onNewTopic={onNewTopic ? () => onNewTopic(chat.id) : undefined}
         autoFocus={!onBack && !hidden}
         enterToSend={!onBack}
         mobile={mobile}
