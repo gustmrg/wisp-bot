@@ -23,7 +23,8 @@ the Wisp, or one derived from its name:
   neutral so the Wisp's color stands out. Under the name, the header shows the
   Wisp's role, or "Working…", "Waiting for your approval", or "Couldn't
   reply". A Wisp with nothing said yet introduces itself with the first
-  paragraph of its soul.
+  paragraph of its soul. While it works, the tools it has used in this turn
+  show as a trail of steps, each checked, failed, or still running.
 - **Circles.** Each run of replies is named by the Wisp that wrote it and
   tinted with that Wisp's color.
 
@@ -88,9 +89,11 @@ its settings.
 The Settings overview starts with a profile card (see
 [ADR 014](decisions/014-mobile-identity.md)). One row shows the person's name
 and opens General. The other shows where the Wisps run, the connection state,
-and, in the browser app, this device's name, and opens Connections. Below the
-card, each section is a card with an icon, a title, and a one-line
-description, grouped by theme.
+and, in the browser app, this device's name, and opens Connections. Under it,
+a row of the Wisps in their colors, with how many there are, leads back to
+the list. Below, the sections are grouped by theme; each has an icon, a
+title, and a one-line description, and the sections of a group share one
+card.
 
 ## Draft and input behavior
 

@@ -103,6 +103,31 @@ describe("conversation stream reducer", () => {
     expect(state.messages.two).toBeUndefined();
   });
 
+  it("starts a new list of steps when a turn starts, and keeps it while the turn goes on", () => {
+    const chats = stored(["one"]);
+    const step = (sequence: number, toolCallId: string) =>
+      ({
+        sequence,
+        type: "tool_activity",
+        conversationId: "one",
+        requestId: "request",
+        toolCallId,
+        toolName: "read",
+        phase: "completed",
+      }) as const;
+    const status = (sequence: number, value: "working" | "idle") =>
+      ({ sequence, type: "conversation_status", conversationId: "one", status: value }) as const;
+    let state = createConversationRuntime(0, {});
+    state = reduceConversationAgentEvent(state, status(1, "working"), chats);
+    state = reduceConversationAgentEvent(state, step(2, "first"), chats);
+    state = reduceConversationAgentEvent(state, status(3, "working"), chats);
+    state = reduceConversationAgentEvent(state, step(4, "second"), chats);
+    expect(state.toolActivities.one?.map(({ toolCallId }) => toolCallId)).toEqual(["first", "second"]);
+    state = reduceConversationAgentEvent(state, status(5, "idle"), chats);
+    state = reduceConversationAgentEvent(state, status(6, "working"), chats);
+    expect(state.toolActivities.one).toEqual([]);
+  });
+
   it("tracks sanitized activity, cancellation, and retryable errors without cross-chat leakage", () => {
     const chats = stored(["one", "two"]);
     let state = createConversationRuntime(0, {});

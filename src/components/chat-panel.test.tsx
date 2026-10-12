@@ -352,3 +352,21 @@ function renderPanelIn(chat: ChatPanelProps["chat"], held: Message[]) {
     />,
   );
 }
+
+describe("ChatPanel steps", () => {
+  it("shows the tools used in this turn while the Wisp works, and hides them after", () => {
+    const steps = [
+      { toolCallId: "1", toolName: "read", phase: "completed" as const },
+      { toolCallId: "2", toolName: "grep", phase: "completed" as const, isError: true },
+      { toolCallId: "3", toolName: "read", phase: "started" as const },
+    ];
+    const { show } = renderPanel(transcript(messages(0, 1)), { status: "working", steps });
+    const trail = screen.getByRole("list", { name: "What Atlas has done so far" });
+    expect(trail.querySelectorAll("li")).toHaveLength(3);
+    expect(trail).toHaveTextContent("Search workspace, failed");
+    expect(trail).toHaveTextContent("Read file, running");
+
+    show(transcript(messages(0, 1)), { status: "idle", steps });
+    expect(screen.queryByRole("list", { name: "What Atlas has done so far" })).not.toBeInTheDocument();
+  });
+});

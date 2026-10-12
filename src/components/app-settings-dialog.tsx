@@ -2,7 +2,7 @@ import { LaunchAtLoginSetting } from "@/components/launch-at-login-setting";
 import { isBrowserApp } from "@/lib/platform";
 import { UserProfileSettings } from "@/components/user-profile-settings";
 import type { UserProfileController } from "@/hooks/use-user-profile";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type CSSProperties } from "react";
 import {
   BarChart3Icon,
   BellIcon,
@@ -39,6 +39,9 @@ import { VoiceSettingsSection } from "@/components/voice-settings-section";
 import { ConnectionSettingsSection } from "@/components/connection-settings-section";
 import { MobileNavigation } from "@/components/mobile-navigation";
 import { MobileSettingsProfile } from "@/components/mobile-settings-profile";
+import { WispAvatar } from "@/components/chat-avatar";
+import { wispColor } from "@/lib/wisp-appearance";
+import { DEFAULT_WISP_APPEARANCE } from "../../shared/wisp-appearance";
 import {
   SettingsCard,
   SettingsGroup,
@@ -392,6 +395,32 @@ function AppSettingsDialog({
                 onOpenProfile={() => openSection("general")}
                 onOpenConnection={() => openSection("connections")}
               />
+              {wisps?.length ? (
+                <button
+                  type="button"
+                  className="mobile-settings-wisps"
+                  onClick={onOpenConversations ?? (() => onOpenChange(false))}
+                >
+                  <span className="mobile-settings-wisps-row" aria-hidden="true">
+                    {wisps.slice(0, 5).map((wisp) => (
+                      <span
+                        key={wisp.id}
+                        className="wisp-halo"
+                        style={{ "--wisp": wispColor(wisp.name, wisp.color) } as CSSProperties}
+                      >
+                        <WispAvatar
+                          wisp={{ ...wisp, appearance: wisp.appearance ?? DEFAULT_WISP_APPEARANCE }}
+                          size="sm"
+                        />
+                      </span>
+                    ))}
+                  </span>
+                  <span className="mobile-settings-wisps-count">
+                    {`${wisps.length} ${wisps.length === 1 ? "Wisp" : "Wisps"}`}
+                  </span>
+                  <ChevronRightIcon aria-hidden="true" className="mobile-settings-chevron" />
+                </button>
+              ) : null}
               {MOBILE_NAV_GROUPS.map((group) => (
                 <div
                   key={group.label}
