@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from "node:async_hooks";
 import { randomUUID } from "node:crypto";
 
 import type { ConversationAgentEvent } from "../shared/contracts.js";
@@ -38,6 +39,15 @@ export interface ToolAuthorizationRequest {
   rememberApproval?: () => Promise<void>;
 }
 
+/**
+ * What the person approved for a run with no one present, such as a job's
+ * run (ADR 019): the tools approved with the job.
+ */
+export interface UnattendedGrant {
+  conversationId: string;
+  approvedTools: ReadonlySet<string>;
+}
+
 interface PendingApproval {
   request: ToolApprovalRequest;
   windowId: number;
@@ -66,6 +76,7 @@ export class ToolAuthorizationBroker {
   private readonly selectWindowId: () => number | null;
   private readonly pending = new Map<string, PendingApproval>();
   private readonly audit: ToolAuditSink;
+  private readonly unattended = new AsyncLocalStorage<UnattendedGrant>();
 
   constructor(
     store: ToolPolicyStore,
@@ -93,6 +104,16 @@ export class ToolAuthorizationBroker {
     return this.store.save(value);
   }
 
+  /**
+   * Runs `run` with no one present: inside it, an action that would ask is
+   * allowed when its tool was approved in `grant`, and refused at once
+   * otherwise, so nothing ever waits for an approval card. Block rules still
+   * win. Tool calls made anywhere within `run` inherit this.
+   */
+  runUnattended<T>(grant: UnattendedGrant, run: () => Promise<T>): Promise<T> {
+    return this.unattended.run(grant, run);
+  }
+
   authorize(action: ToolAuthorizationRequest, signal?: AbortSignal): Promise<void> {
     const actionId = this.createId();
     if (signal?.aborted) {
@@ -107,6 +128,25 @@ export class ToolAuthorizationBroker {
     if (behavior === "block") {
       this.auditDecision(actionId, action, behavior, "block", "policy", "blocked");
       return Promise.reject(new WispBackendError("tool_blocked", "This tool action is blocked by policy."));
+    }
+    const unattended = this.unattended.getStore();
+    if (unattended) {
+      // Skill changes are reviewed one by one, so no grant covers them.
+      const approved =
+        unattended.conversationId === action.conversationId &&
+        action.category !== "save_skill" &&
+        unattended.approvedTools.has(action.toolName);
+      if (approved) {
+        this.auditDecision(actionId, action, behavior, "allow", "user", "allowed");
+        return Promise.resolve();
+      }
+      this.auditDecision(actionId, action, behavior, "block", "system", "blocked");
+      return Promise.reject(
+        new WispBackendError(
+          "tool_blocked",
+          "No one is present to approve this action, and it was not approved with the job.",
+        ),
+      );
     }
     const integrationTool = action.category === "integration_call" && action.scope.kind === "integration";
     if (integrationTool && action.alwaysAllowed) {

@@ -547,6 +547,54 @@ describe("tool policy", () => {
     expect(broker.listPending()).toEqual([]);
   });
 
+  it("decides at once with no one present: approved tools run, others are refused, blocks still win", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "wisp-policy-unattended-"));
+    const store = new ToolPolicyStore(path.join(directory, "policy.json"));
+    await store.load();
+    const events: ConversationAgentEvent[] = [];
+    const broker = new ToolAuthorizationBroker(store, (event) => events.push(event), { selectWindowId: () => 7 });
+    const action = (toolName: string, category: "modify_file" | "integration_call" | "save_skill") => ({
+      conversationId: "one",
+      toolCallId: `call-${toolName}`,
+      toolName,
+      category,
+      summary: "Do something",
+      scope:
+        category === "integration_call"
+          ? { kind: "integration" as const, value: "Linear" }
+          : category === "save_skill"
+            ? { kind: "skill" as const, value: "notes" }
+            : { kind: "workspace_path" as const, value: "notes.md" },
+    });
+    const grant = { conversationId: "one", approvedTools: new Set(["edit", "save_skill"]) };
+
+    await broker.runUnattended(grant, async () => {
+      await expect(broker.authorize(action("edit", "modify_file"))).resolves.toBeUndefined();
+      await expect(broker.authorize(action("mcp_linear_create", "integration_call"))).rejects.toMatchObject({
+        code: "tool_blocked",
+      });
+      await expect(broker.authorize(action("save_skill", "save_skill"))).rejects.toMatchObject({
+        code: "tool_blocked",
+      });
+      // The grant covers its own conversation only.
+      await expect(broker.authorize({ ...action("edit", "modify_file"), conversationId: "two" })).rejects.toMatchObject(
+        { code: "tool_blocked" },
+      );
+    });
+    expect(events).toEqual([]);
+    expect(broker.listPending()).toEqual([]);
+
+    await store.blockCategory("modify_file", () => "block-1");
+    await broker.runUnattended(grant, async () => {
+      await expect(broker.authorize(action("edit", "modify_file"))).rejects.toMatchObject({ code: "tool_blocked" });
+    });
+
+    // Outside a run, the person is asked as usual.
+    void broker.authorize(action("mcp_linear_create", "integration_call")).catch(() => undefined);
+    expect(events).toEqual([expect.objectContaining({ type: "tool_approval_requested" })]);
+    broker.dispose();
+  });
+
   it("cancels a pending approval when the tool execution is aborted", async () => {
     const directory = await mkdtemp(path.join(os.tmpdir(), "wisp-approval-abort-"));
     const events: ConversationAgentEvent[] = [];
