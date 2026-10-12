@@ -1,4 +1,4 @@
-import { useEffect, useRef, type PointerEvent as ReactPointerEvent } from "react";
+import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { CheckIcon, ChevronLeftIcon, Share2Icon, XIcon } from "lucide-react";
 
 import type { ChatChanges, ChatView, WispChanges, WispCollection } from "@/chat-data";
@@ -22,7 +22,8 @@ import { panelResizer } from "@/lib/ui-classes";
 import { cn } from "@/lib/utils";
 import { serializeWispTemplate } from "@/lib/wisp-template";
 import type { IntegrationSettingsTarget } from "@/lib/plugin-access";
-import type { WispSettingsTab } from "@/components/wisp-profile";
+import { WispProfile, type WispSettingsTab } from "@/components/wisp-profile";
+import type { WispState } from "@/components/wisp";
 
 interface DetailsPanelProps {
   mobile?: boolean;
@@ -31,6 +32,8 @@ interface DetailsPanelProps {
   initialTab?: WispSettingsTab;
   /** On a phone, names where the back button goes. */
   backLabel?: string;
+  /** What the Wisp is doing, for its picture on the desktop profile. */
+  state?: WispState;
   wisps: WispCollection;
   width: number;
   onChange: (changes: ChatChanges) => Promise<boolean> | void;
@@ -54,7 +57,19 @@ function DetailsPanel({
   mobile = false,
   initialTab,
   backLabel = "Back to conversation",
+  state = "idle",
 }: DetailsPanelProps) {
+  // On the desktop a Wisp's panel opens on its profile; its settings are a step further.
+  const [settingsTab, setSettingsTab] = useState<WispSettingsTab | null>(
+    mobile || chat.kind !== "wisp" ? (initialTab ?? "general") : (initialTab ?? null),
+  );
+  const [shownChatId, setShownChatId] = useState(chat.id);
+  // Switching conversations keeps the panel on the profile or on the settings; a circle has no profile.
+  if (shownChatId !== chat.id) {
+    setShownChatId(chat.id);
+    if (chat.kind !== "wisp" && settingsTab === null) setSettingsTab("general");
+  }
+  const showProfile = !mobile && chat.kind === "wisp" && settingsTab === null;
   const copyFeedback = useCopyFeedback(chat.id);
   const titleRef = useRef<HTMLHeadingElement>(null);
   const focusChatId = mobile ? chat.id : null;
@@ -134,8 +149,24 @@ function DetailsPanel({
         />
       ) : null}
       <header className="details-header grid h-11 flex-none grid-cols-[28px_1fr_28px] items-center border-b border-black/[0.04] px-[9px] dark:border-white/[0.04]">
-        <h2 ref={titleRef} tabIndex={-1} className="col-start-2 text-center text-sm font-semibold outline-none">
-          {mobile ? "Wisp settings" : "Settings"}
+        {!mobile && chat.kind === "wisp" && !showProfile ? (
+          <Button
+            className="col-start-1 row-start-1"
+            variant="ghost"
+            size="icon-sm"
+            type="button"
+            aria-label="Back to profile"
+            onClick={() => setSettingsTab(null)}
+          >
+            <ChevronLeftIcon aria-hidden="true" />
+          </Button>
+        ) : null}
+        <h2
+          ref={titleRef}
+          tabIndex={-1}
+          className="col-start-2 row-start-1 text-center text-sm font-semibold outline-none"
+        >
+          {mobile ? "Wisp settings" : showProfile ? "Profile" : "Settings"}
         </h2>
         <Button
           className={mobile ? "details-back" : undefined}
@@ -149,11 +180,13 @@ function DetailsPanel({
         </Button>
       </header>
 
-      {chat.kind === "wisp" ? (
+      {showProfile && chat.kind === "wisp" ? (
+        <WispProfile embedded chat={chat} state={state} onBack={onClose} onOpenSettings={setSettingsTab} />
+      ) : chat.kind === "wisp" ? (
         <WispDetails
-          key={`${chat.id}:${initialTab ?? "general"}`}
+          key={`${chat.id}:${settingsTab ?? "general"}`}
           chat={chat}
-          initialTab={initialTab}
+          initialTab={settingsTab ?? "general"}
           onChangeWisp={(changes) => onChangeWisp(chat.wispId, changes)}
           onChangeNotifications={(notifyOnUpdatesEnabled) => onChange({ kind: "wisp", notifyOnUpdatesEnabled })}
           onOpenSettings={onOpenSettings}

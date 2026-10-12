@@ -574,6 +574,9 @@ describe("App", () => {
     render(<App />);
     await screen.findByRole("textbox", { name: "Message Atlas" });
     await user.click(screen.getByRole("button", { name: "Open Wisp settings" }));
+    // The panel opens on the Wisp's profile; Edit leads to its settings.
+    expect(screen.getByRole("region", { name: "Atlas" })).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "Edit" }));
     const name = screen.getByRole("textbox", { name: "Name" });
     await user.clear(name);
     await user.type(name, "Unsaved Atlas name");
@@ -847,7 +850,7 @@ it.each([false, true])("preserves later navigation when deletion completes (mobi
   });
   await user.click(await within(list).findByRole("button", { name: /Atlas/ }));
   await user.click(screen.getByRole("button", { name: "Open Wisp settings" }));
-  if (mobile) await user.click(screen.getByRole("button", { name: "Edit" }));
+  await user.click(screen.getByRole("button", { name: "Edit" }));
   await user.click(screen.getByRole("button", { name: "Delete Wisp" }));
   await user.click(screen.getByRole("button", { name: "Confirm deletion" }));
   await waitFor(() => expect(api.deleteWisp).toHaveBeenCalledOnce());

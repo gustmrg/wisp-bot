@@ -9,6 +9,7 @@ import {
   KeyRoundIcon,
   MessageCircleIcon,
   PauseIcon,
+  PencilIcon,
 } from "lucide-react";
 
 import type { WispChatView } from "@/chat-data";
@@ -27,6 +28,8 @@ interface WispProfileProps {
   state: WispState;
   onBack: () => void;
   onOpenSettings: (tab: WispSettingsTab) => void;
+  /** Inside the desktop's side panel, which has its own header and keeps the chat beside it. */
+  embedded?: boolean;
 }
 
 /** The soul as plain text: its paragraphs without headings or Markdown marks. */
@@ -45,7 +48,7 @@ export function soulText(soul: string): string {
 }
 
 /** Who a Wisp is, on a phone: its picture, soul, model, and jobs, with the way into its settings. */
-export function WispProfile({ chat, state, onBack, onOpenSettings }: WispProfileProps) {
+export function WispProfile({ chat, state, onBack, onOpenSettings, embedded = false }: WispProfileProps) {
   const { wisp } = chat;
   const titleRef = useRef<HTMLHeadingElement>(null);
   const jobs = useJobs().jobs.filter((job) => job.conversationId === chat.id);
@@ -54,8 +57,8 @@ export function WispProfile({ chat, state, onBack, onOpenSettings }: WispProfile
   const soul = soulText(wisp.soul);
 
   useEffect(() => {
-    titleRef.current?.focus();
-  }, []);
+    if (!embedded) titleRef.current?.focus();
+  }, [embedded]);
 
   useEffect(() => {
     let cancelled = false;
@@ -74,17 +77,20 @@ export function WispProfile({ chat, state, onBack, onOpenSettings }: WispProfile
     <section
       className="wisp-profile"
       aria-labelledby="wisp-profile-name"
+      data-embedded={embedded || undefined}
       style={{ "--wisp": color, "--wisp-ink": inkOn(color) } as CSSProperties}
     >
       <div className="wisp-profile-hero">
-        <div className="wisp-profile-bar">
-          <Button variant="ghost" size="icon" type="button" aria-label="Back to conversation" onClick={onBack}>
-            <ChevronLeftIcon aria-hidden="true" />
-          </Button>
-          <Button variant="ghost" type="button" onClick={() => onOpenSettings("general")}>
-            Edit
-          </Button>
-        </div>
+        {embedded ? null : (
+          <div className="wisp-profile-bar">
+            <Button variant="ghost" size="icon" type="button" aria-label="Back to conversation" onClick={onBack}>
+              <ChevronLeftIcon aria-hidden="true" />
+            </Button>
+            <Button variant="ghost" type="button" onClick={() => onOpenSettings("general")}>
+              Edit
+            </Button>
+          </div>
+        )}
         <div className="wisp-profile-picture">
           <WispAvatar wisp={wisp} size="xl" state={state} />
         </div>
@@ -93,10 +99,17 @@ export function WispProfile({ chat, state, onBack, onOpenSettings }: WispProfile
         </h1>
         {wisp.role ? <p className="wisp-profile-role">{wisp.role}</p> : null}
         <div className="wisp-profile-actions">
-          <button type="button" onClick={onBack}>
-            <MessageCircleIcon aria-hidden="true" />
-            Chat
-          </button>
+          {embedded ? (
+            <button type="button" onClick={() => onOpenSettings("general")}>
+              <PencilIcon aria-hidden="true" />
+              Edit
+            </button>
+          ) : (
+            <button type="button" onClick={onBack}>
+              <MessageCircleIcon aria-hidden="true" />
+              Chat
+            </button>
+          )}
           <button type="button" onClick={() => onOpenSettings("model")}>
             <CpuIcon aria-hidden="true" />
             Model

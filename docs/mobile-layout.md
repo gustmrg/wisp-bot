@@ -112,6 +112,17 @@ draft right away. The layout respects safe areas and follows the visual
 viewport height when the software keyboard opens. It does not focus the
 composer merely because a conversation was opened.
 
+## On the desktop
+
+The desktop shares the Wisps' colors, state rings, the chat's light, the
+step trail, and the introduction of a new Wisp. Its sidebar shows the same
+row of Wisps and the approval asked last, with Deny and Allow once; "N more
+waiting" opens every waiting approval in a dialog, since the desktop has no
+Approvals tab. The conversation reads as one centered column. The gear opens
+a side panel on the Wisp's profile; Edit, Model, Access, and Usage open its
+settings there, and Back to profile returns. A circle's gear opens its
+settings directly.
+
 ## Scope
 
 The mobile layout applies wherever the renderer runs in a narrow viewport:

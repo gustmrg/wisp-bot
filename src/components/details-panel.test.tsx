@@ -12,6 +12,7 @@ const chat = wispChatView("atlas", {
 function renderDetails(onDelete = vi.fn()): void {
   render(
     <DetailsPanel
+      initialTab="general"
       chat={chat}
       wisps={{ atlas: chat.wisp }}
       width={318}
@@ -110,5 +111,40 @@ describe("DetailsPanel deletion", () => {
     await user.click(screen.getByRole("button", { name: "Confirm deletion" }));
 
     expect(onDelete).toHaveBeenCalledOnce();
+  });
+});
+
+describe("DetailsPanel on the desktop", () => {
+  it("opens on the Wisp's profile, and its settings are a step further", async () => {
+    const user = userEvent.setup();
+    Object.defineProperty(window, "wisp", {
+      configurable: true,
+      value: {
+        getConversationModel: vi.fn(async () => ({ ok: false, error: { message: "unavailable" } })),
+        getJobs: vi.fn(async () => ({ ok: true, value: { jobs: [] } })),
+        subscribeToJobs: vi.fn(() => () => {}),
+      },
+    });
+    render(
+      <DetailsPanel
+        chat={chat}
+        wisps={{ atlas: chat.wisp }}
+        width={318}
+        onChange={vi.fn()}
+        onChangeWisp={vi.fn()}
+        onClose={vi.fn()}
+        onDelete={vi.fn()}
+        onResizeStart={vi.fn()}
+      />,
+    );
+    expect(screen.getByRole("heading", { name: "Profile" })).toBeVisible();
+    expect(screen.getByRole("region", { name: "Atlas" })).toHaveTextContent("Finds relevant information");
+
+    await user.click(screen.getByRole("button", { name: "Edit" }));
+    expect(screen.getByRole("heading", { name: "Settings" })).toBeVisible();
+    expect(screen.getByRole("textbox", { name: "Name" })).toHaveValue("Atlas");
+
+    await user.click(screen.getByRole("button", { name: "Back to profile" }));
+    expect(screen.getByRole("region", { name: "Atlas" })).toBeVisible();
   });
 });

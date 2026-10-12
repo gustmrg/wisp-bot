@@ -3,10 +3,10 @@ import { ChevronRightIcon, MessageCircleIcon } from "lucide-react";
 
 import type { ChatId, ChatView, ChatViewCollection } from "@/chat-data";
 import { ChatAvatar } from "@/components/chat-avatar";
-import { pendingApprovals } from "@/components/mobile-approvals";
+import { ApprovalEntry, pendingApprovals } from "@/components/mobile-approvals";
 import { ToolApprovalCard, approvalAsk, needsReview, remainingLabel } from "@/components/tool-approval-card";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useClock } from "@/hooks/use-clock";
 import { chatName } from "@/lib/chat-schema";
 import { inkOn, wispColor } from "@/lib/wisp-appearance";
@@ -19,6 +19,7 @@ interface NeedsYouProps {
   allowAlwaysAvailable: boolean;
   onResolve: (request: ToolApprovalRequest, decision: ToolApprovalDecision) => void;
   onOpenChat: (chatId: ChatId) => void;
+  /** Opens the Approvals tab; without it (the desktop) the rest open in a dialog here. */
   onOpenApprovals?: () => void;
 }
 
@@ -42,11 +43,40 @@ export function NeedsYou({
 }: NeedsYouProps) {
   const now = useClock(1_000);
   const [reviewingId, setReviewingId] = useState<string | null>(null);
+  const [listOpen, setListOpen] = useState(false);
   const pending = pendingApprovals(chats, approvals);
   const request = pending[0];
   const reviewing = pending.find(({ approvalId }) => approvalId === reviewingId);
   const reviewingChat = reviewing ? chats[reviewing.conversationId] : undefined;
   if (!request && !reviewing) return null;
+
+  const list = listOpen ? (
+    <Dialog open onOpenChange={(open) => (open ? null : setListOpen(false))}>
+      <DialogContent className="approvals-dialog max-w-xl">
+        <DialogHeader>
+          <DialogTitle>Approvals</DialogTitle>
+          <DialogDescription>
+            {pending.length ? `${pending.length} waiting for you` : "Nothing is waiting for you."}
+          </DialogDescription>
+        </DialogHeader>
+        <div className="approvals-dialog-list">
+          {pending.map((item) => (
+            <ApprovalEntry
+              key={item.approvalId}
+              chat={chats[item.conversationId]!}
+              request={item}
+              allowAlwaysAvailable={allowAlwaysAvailable}
+              onResolve={(decision) => onResolve(item, decision)}
+              onOpenChat={(chatId) => {
+                setListOpen(false);
+                onOpenChat(chatId);
+              }}
+            />
+          ))}
+        </div>
+      </DialogContent>
+    </Dialog>
+  ) : null;
 
   const sheet =
     reviewing && reviewingChat ? (
@@ -131,13 +161,14 @@ export function NeedsYou({
           )}
         </div>
       </div>
-      {more > 0 && onOpenApprovals ? (
-        <button type="button" className="needs-you-more" onClick={onOpenApprovals}>
+      {more > 0 ? (
+        <button type="button" className="needs-you-more" onClick={onOpenApprovals ?? (() => setListOpen(true))}>
           {`${more} more waiting`}
           <ChevronRightIcon aria-hidden="true" />
         </button>
       ) : null}
       {sheet}
+      {list}
     </section>
   );
 }

@@ -1,7 +1,7 @@
 import { useEffect, useRef, type CSSProperties } from "react";
 import { ChevronRightIcon } from "lucide-react";
 
-import type { ChatId, ChatViewCollection } from "@/chat-data";
+import type { ChatId, ChatView, ChatViewCollection } from "@/chat-data";
 import { ChatAvatar, WispAvatar } from "@/components/chat-avatar";
 import { MobileNavigation } from "@/components/mobile-navigation";
 import { ToolApprovalCard, approvalAsk } from "@/components/tool-approval-card";
@@ -31,6 +31,49 @@ export function pendingApprovals(
     .flat()
     .filter((request) => chats[request.conversationId])
     .sort((left, right) => Date.parse(right.expiresAt) - Date.parse(left.expiresAt));
+}
+
+interface ApprovalEntryProps {
+  chat: ChatView;
+  request: ToolApprovalRequest;
+  allowAlwaysAvailable: boolean;
+  onResolve: (decision: ToolApprovalDecision) => void;
+  onOpenChat: (chatId: ChatId) => void;
+}
+
+/** One pending approval, in a card lit by the Wisp that asked, with a way into its conversation. */
+export function ApprovalEntry({ chat, request, allowAlwaysAvailable, onResolve, onOpenChat }: ApprovalEntryProps) {
+  const name = chatName(chat);
+  const color = chat.kind === "wisp" ? wispColor(chat.wisp.name, chat.wisp.color) : undefined;
+  return (
+    <article
+      className="mobile-approval"
+      aria-label={`${name}: ${request.summary}`}
+      style={color ? ({ "--wisp": color, "--wisp-ink": inkOn(color) } as CSSProperties) : undefined}
+    >
+      <button
+        type="button"
+        className="mobile-approval-chat"
+        aria-label={`Open the conversation with ${name}`}
+        onClick={() => onOpenChat(chat.id)}
+      >
+        <span className="wisp-halo">
+          <ChatAvatar chat={chat} size="sm" />
+        </span>
+        <span className="mobile-approval-who">
+          <strong>{name}</strong>
+          <small>{approvalAsk(request)}</small>
+        </span>
+        <ChevronRightIcon aria-hidden="true" />
+      </button>
+      <ToolApprovalCard
+        request={request}
+        wispName={name}
+        allowAlwaysAvailable={allowAlwaysAvailable}
+        onResolve={onResolve}
+      />
+    </article>
+  );
 }
 
 /** Every pending tool approval in one place, for the mobile Approvals tab (ADR 015). */
@@ -64,41 +107,16 @@ export function MobileApprovals({
         </div>
       </header>
       <div className="mobile-approvals-list">
-        {pending.map((request) => {
-          const chat = chats[request.conversationId]!;
-          const name = chatName(chat);
-          const color = chat.kind === "wisp" ? wispColor(chat.wisp.name, chat.wisp.color) : undefined;
-          return (
-            <article
-              key={request.approvalId}
-              className="mobile-approval"
-              aria-label={`${name}: ${request.summary}`}
-              style={color ? ({ "--wisp": color, "--wisp-ink": inkOn(color) } as CSSProperties) : undefined}
-            >
-              <button
-                type="button"
-                className="mobile-approval-chat"
-                aria-label={`Open the conversation with ${name}`}
-                onClick={() => onOpenChat(chat.id)}
-              >
-                <span className="wisp-halo">
-                  <ChatAvatar chat={chat} size="sm" />
-                </span>
-                <span className="mobile-approval-who">
-                  <strong>{name}</strong>
-                  <small>{approvalAsk(request)}</small>
-                </span>
-                <ChevronRightIcon aria-hidden="true" />
-              </button>
-              <ToolApprovalCard
-                request={request}
-                wispName={name}
-                allowAlwaysAvailable={allowAlwaysAvailable}
-                onResolve={(decision) => onResolve(request, decision)}
-              />
-            </article>
-          );
-        })}
+        {pending.map((request) => (
+          <ApprovalEntry
+            key={request.approvalId}
+            chat={chats[request.conversationId]!}
+            request={request}
+            allowAlwaysAvailable={allowAlwaysAvailable}
+            onResolve={(decision) => onResolve(request, decision)}
+            onOpenChat={onOpenChat}
+          />
+        ))}
         {pending.length ? null : (
           <div className="mobile-approvals-empty" role="status">
             {resting ? (

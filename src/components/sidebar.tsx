@@ -235,6 +235,27 @@ function Sidebar({
           </div>
         )}
 
+        {!mobile && !collapsed ? (
+          <div className="sidebar-wisps">
+            <WispOrbs
+              chats={chats}
+              statuses={statuses}
+              approvals={approvals}
+              failedChats={failedChats}
+              onSelectChat={onSelectChat}
+            />
+            {onResolveApproval ? (
+              <NeedsYou
+                chats={chats}
+                approvals={approvals}
+                allowAlwaysAvailable={allowAlwaysAvailable}
+                onResolve={onResolveApproval}
+                onOpenChat={onSelectChat}
+              />
+            ) : null}
+          </div>
+        ) : null}
+
         {mobile ? (
           <div className="mobile-list-filters" role="group" aria-label="Filter conversations">
             {(
