@@ -1,0 +1,484 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Wisp — tail explorations</title>
+<style>
+  :root {
+    --bg: #0b0f1a;
+    --panel: #121826;
+    --panel-2: #182033;
+    --line: #232d44;
+    --text: #e7ecf5;
+    --muted: #8a96ad;
+    --accent: #38c6fd;
+  }
+  body.light {
+    --bg: #f4f5f7;
+    --panel: #ffffff;
+    --panel-2: #f0f2f5;
+    --line: #e1e4ea;
+    --text: #17191e;
+    --muted: #6b7280;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font: 14px/1.5 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+    background: var(--bg);
+    color: var(--text);
+  }
+  header {
+    position: sticky;
+    top: 0;
+    z-index: 5;
+    background: color-mix(in srgb, var(--bg) 88%, transparent);
+    backdrop-filter: blur(10px);
+    border-bottom: 1px solid var(--line);
+    padding: 14px 28px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 14px 24px;
+    align-items: center;
+  }
+  header h1 { font-size: 16px; margin: 0 12px 0 0; }
+  .control { display: flex; align-items: center; gap: 8px; }
+  .control > span { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .06em; }
+  .seg { display: inline-flex; background: var(--panel-2); border: 1px solid var(--line); border-radius: 9px; padding: 2px; }
+  .seg button {
+    border: 0; background: transparent; color: var(--muted); font: inherit; font-size: 13px;
+    padding: 4px 10px; border-radius: 7px; cursor: pointer;
+  }
+  .seg button[aria-pressed="true"] { background: var(--panel); color: var(--text); box-shadow: 0 1px 2px #0004; }
+  main { padding: 28px; max-width: 1280px; margin: 0 auto; }
+  section { margin-bottom: 44px; }
+  section > h2 { font-size: 15px; margin: 0 0 4px; }
+  section > p { color: var(--muted); margin: 0 0 16px; max-width: 760px; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 16px; padding: 20px; }
+
+  .hero { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+  .hero .card { display: flex; flex-direction: column; align-items: center; gap: 12px; }
+  .hero img, .hero svg { width: 168px; height: 168px; }
+  .hero figcaption { color: var(--muted); font-size: 13px; text-align: center; }
+
+  table.matrix { border-collapse: separate; border-spacing: 0; width: 100%; }
+  .matrix th { font-weight: 500; color: var(--muted); font-size: 12px; padding: 6px; text-align: center; }
+  .matrix th.row { text-align: left; white-space: nowrap; padding-right: 16px; }
+  .matrix td { text-align: center; padding: 8px; border-top: 1px solid var(--line); }
+  .matrix td svg { width: 64px; height: 64px; cursor: pointer; border-radius: 12px; transition: background .15s; }
+  .matrix td svg:hover { background: var(--panel-2); }
+
+  .colors { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; }
+  .colors .card { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 16px 8px; }
+  .colors svg { width: 72px; height: 72px; }
+  .colors small { color: var(--muted); }
+
+  .sizes { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .sidebar { display: flex; flex-direction: column; gap: 2px; }
+  .sidebar .item { display: flex; align-items: center; gap: 10px; padding: 7px 10px; border-radius: 10px; }
+  .sidebar .item.active { background: var(--panel-2); }
+  .sidebar .item svg { width: 24px; height: 24px; flex: none; }
+  .sidebar .item .title { font-size: 13px; }
+  .sidebar .item .sub { font-size: 12px; color: var(--muted); }
+  .scale-row { display: flex; align-items: end; gap: 22px; flex-wrap: wrap; }
+  .scale-row figure { margin: 0; display: flex; flex-direction: column; align-items: center; gap: 6px; }
+  .scale-row figcaption { font-size: 11px; color: var(--muted); }
+
+  .compare { display: grid; grid-template-columns: repeat(8, 1fr); gap: 8px; }
+  .compare .pair { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 10px 4px; }
+  .compare svg { width: 52px; height: 52px; }
+  .compare small { color: var(--muted); font-size: 11px; }
+
+  .picker { display: grid; grid-template-columns: 260px 1fr; gap: 20px; align-items: center; }
+  .picker .big { display: flex; justify-content: center; }
+  .picker .big svg { width: 220px; height: 220px; }
+  .swatches { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; }
+  .swatches button { width: 26px; height: 26px; border-radius: 50%; border: 2px solid transparent; cursor: pointer; }
+  .swatches button[aria-pressed="true"] { border-color: var(--text); }
+  .shape-picks { display: flex; flex-wrap: wrap; gap: 8px; }
+  .shape-picks button {
+    background: var(--panel-2); border: 1px solid var(--line); border-radius: 12px; padding: 6px;
+    cursor: pointer;
+  }
+  .shape-picks button[aria-pressed="true"] { outline: 2px solid var(--accent); }
+  .shape-picks svg { width: 40px; height: 40px; display: block; }
+
+  /* Animation */
+  .tail-anim { transform-box: view-box; transform-origin: 26px 40px; }
+  body.animate .tail-anim { animation: sway 3.2s ease-in-out infinite; }
+  .eyes-anim { transform-box: view-box; }
+  body.animate .eyes-anim { animation: blink 5s infinite; animation-delay: var(--blink-delay, 0s); }
+  @keyframes sway { 0%, 100% { transform: rotate(0deg); } 50% { transform: rotate(-3.5deg) skewX(-3deg); } }
+  @keyframes blink { 0%, 92%, 100% { transform: scaleY(1); } 95% { transform: scaleY(.1); } }
+  body.animate .spark { animation: twinkle 2.6s ease-in-out infinite; }
+  @keyframes twinkle { 0%, 100% { opacity: .9; } 50% { opacity: .25; } }
+</style>
+</head>
+<body class="animate">
+<header>
+  <h1>Wisp · tail explorations</h1>
+  <div class="control"><span>Tail</span><div class="seg" data-key="tail"></div></div>
+  <div class="control"><span>Eyes</span><div class="seg" data-key="eyes"></div></div>
+  <div class="control"><span>Style</span><div class="seg" data-key="style"></div></div>
+  <div class="control"><span>Lean</span><div class="seg" data-key="lean"></div></div>
+  <div class="control"><span>Theme</span><div class="seg" data-key="theme"></div></div>
+  <div class="control"><span>Motion</span><div class="seg" data-key="motion"></div></div>
+</header>
+
+<main>
+  <section>
+    <h2>Reference</h2>
+    <p>The app icon is a flame-like spirit: a round body leaning down-left, a tail rising and curling to the upper-right, and two uneven oval eyes low on the face. The current Wisp is a centered shape with two upright pill eyes — the part that reads like Grok.</p>
+    <div class="hero">
+      <figure class="card"><img src="../../build/icons/256x256.png" alt="App icon" /><figcaption>App icon</figcaption></figure>
+      <figure class="card"><div id="hero-current"></div><figcaption>Current Wisp</figcaption></figure>
+      <figure class="card"><div id="hero-new"></div><figcaption>New Wisp (current controls)</figcaption></figure>
+    </div>
+  </section>
+
+  <section>
+    <h2>Playground</h2>
+    <p>Pick a color and shape; the header controls change tail, eyes, style and lean everywhere on the page.</p>
+    <div class="card picker">
+      <div class="big" id="picker-big"></div>
+      <div>
+        <div class="swatches" id="swatches"></div>
+        <div class="shape-picks" id="shape-picks"></div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Shapes × tails</h2>
+    <p>Every existing shape keeps its silhouette and gains a tail. Click a cell to apply that tail to the whole page.</p>
+    <div class="card"><table class="matrix" id="matrix"></table></div>
+  </section>
+
+  <section>
+    <h2>Shapes × eyes</h2>
+    <p>The icon's eyes are two uneven ovals set low and to the left — this alone moves away from the upright pill eyes.</p>
+    <div class="card"><table class="matrix" id="eyes-matrix"></table></div>
+  </section>
+
+  <section>
+    <h2>Colors</h2>
+    <p>The ten existing avatar colors, one per shape in rotation.</p>
+    <div class="colors" id="colors"></div>
+  </section>
+
+  <section>
+    <h2>Real sizes</h2>
+    <p>Sidebar rows use 24px; headers use 32–36px; the details panel uses 56px. The tail must still read at 24px.</p>
+    <div class="sizes">
+      <div class="card sidebar" id="sidebar"></div>
+      <div class="card"><div class="scale-row" id="scale-row"></div></div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Before / after</h2>
+    <p>Top: current. Bottom: new, with the selected controls.</p>
+    <div class="card compare" id="compare"></div>
+  </section>
+</main>
+
+<script>
+// Values copied from src/lib/wisp-appearance.ts and src/components/wisp.tsx.
+const COLORS = [
+  { id: "charcoal", label: "Charcoal", value: "#262626" },
+  { id: "red", label: "Red", value: "#ff3b30" },
+  { id: "orange", label: "Orange", value: "#ed712e" },
+  { id: "amber", label: "Amber", value: "#f19d38" },
+  { id: "teal", label: "Teal", value: "#54b9a6" },
+  { id: "blue", label: "Blue", value: "#3c82f6" },
+  { id: "indigo", label: "Indigo", value: "#6464ef" },
+  { id: "violet", label: "Violet", value: "#885cf5" },
+  { id: "magenta", label: "Magenta", value: "#e5498f" },
+  { id: "gray", label: "Gray", value: "#8e8e8e" },
+];
+
+const SHAPES = {
+  circle: { label: "Circle", body: '<circle cx="32" cy="32" r="27"/>' },
+  pebble: { label: "Pebble", body: '<path d="M31 6C46 4 56 17 59 33s-9 24-25 24S5 49 5 35 15 8 31 6Z"/>' },
+  square: { label: "Square", body: '<rect x="6" y="6" width="52" height="52" rx="15"/>' },
+  triangle: { label: "Triangle", body: '<path d="M26 8q6-10 12 0l23 40q6 11-7 11H10Q-3 59 3 48Z"/>' },
+  diamond: { label: "Diamond", body: '<rect x="11" y="11" width="42" height="42" rx="12" transform="rotate(45 32 32)"/>' },
+  hexagon: { label: "Hexagon", body: '<path d="M27 3q5-3 10 0l19 11q5 3 5 9v20q0 6-5 9L37 63q-5 3-10 0L8 52q-5-3-5-9V23q0-6 5-9Z" transform="translate(2 0) scale(.94)"/>' },
+  cloud: { label: "Cloud", body: '<path d="M14 25C9 7 34 2 40 13c13-5 22 6 19 18C72 48 49 61 37 53 20 64 0 52 5 38q1-9 9-13Z"/>' },
+  drop: { label: "Drop", body: '<path d="M32 4c8 11 20 23 20 36a20 20 0 1 1-40 0C12 27 24 15 32 4Z"/>' },
+};
+
+// The body is scaled into the lower-left of the 64×64 box so the tail has room
+// to rise toward the upper-right, like the icon. Body center lands at (24, 40).
+const BODY_TRANSFORM = "translate(1 17) scale(.72)";
+
+// Tails live in the same 64×64 space. Their base sits inside the body so the
+// union reads as a single silhouette.
+const TAILS = {
+  none: { label: "None", path: "" },
+  flame: {
+    label: "Flame",
+    path: "M10 30C15 19 26 16 35 14C41 12.5 44.5 9 42 3.5C51 5.5 58.5 13.5 57 24C55.8 32 50 37 43 43L28 38Z",
+  },
+  curl: {
+    label: "Curl",
+    path: "M10 30C15 19 27 16 36 14C42 12.6 45.5 9.4 44 6C43 3.8 40.2 3.6 39.4 5.6C38.4 2 42.4 0 46.6 1.8C54.6 5.2 59 14 57.4 24C56 32 50 37 43 43L28 38Z",
+  },
+  ribbon: {
+    label: "Ribbon",
+    path: "M18 25C26 21 35 20 40 14C43.5 9.8 43 5 39.5 2C47.5 3 52 9.4 51 17C50 25 45 30 42 38L26 36Z",
+  },
+  twin: {
+    label: "Twin",
+    path:
+      "M10 30C15 19 26 16 35 14C41 12.5 44.5 9 42 3.5C51 5.5 58.5 13.5 57 24C55.8 32 50 37 43 43L28 38Z" +
+      "M40 30C47 27.5 53 25 54.5 19C59 23 61 30 58 37C55.5 42.5 50 44 44 44Z",
+  },
+  ember: {
+    label: "Ember",
+    path: "M12 30C17 22 26 20 33 18C38 16.6 41 13.5 40 9C47 11.5 52 17.5 50.5 25.5C49.4 32 46 36 42 41L28 38Z",
+    sparks: true,
+  },
+};
+
+const EYES = {
+  icon: {
+    label: "Icon ovals",
+    svg: '<ellipse cx="15.5" cy="42" rx="3.3" ry="4.6" transform="rotate(-12 15.5 42)"/><ellipse cx="27.5" cy="48.5" rx="4.6" ry="3.3" transform="rotate(-22 27.5 48.5)"/>',
+  },
+  even: {
+    label: "Even ovals",
+    svg: '<ellipse cx="17" cy="42" rx="3.4" ry="4.3" transform="rotate(-20 17 42)"/><ellipse cx="28.5" cy="46" rx="3.4" ry="4.3" transform="rotate(-20 28.5 46)"/>',
+  },
+  dots: {
+    label: "Dots",
+    svg: '<circle cx="17" cy="42.5" r="3.3"/><circle cx="28.5" cy="46.5" r="3.3"/>',
+  },
+  pills: {
+    label: "Current pills",
+    svg: '<g transform="rotate(-18 24 42)"><rect x="17.5" y="38" width="3.6" height="8" rx="1.8"/><rect x="27.5" y="38" width="3.6" height="8" rx="1.8"/></g>',
+  },
+};
+
+const STYLES = { flat: "Flat", glow: "Glow", outline: "Outline" };
+
+const state = {
+  tail: "flame",
+  eyes: "icon",
+  style: "flat",
+  lean: "on",
+  theme: "dark",
+  motion: "on",
+  color: "#3c82f6",
+  shape: "circle",
+};
+
+// Any state key can be preset from the URL, e.g. ?tail=curl&style=glow
+for (const [key, value] of new URLSearchParams(location.search)) {
+  if (key in state) state[key] = value;
+}
+
+let uid = 0;
+
+function mix(hex, target, amount) {
+  const a = hex.match(/\w\w/g).map((h) => parseInt(h, 16));
+  const b = target.match(/\w\w/g).map((h) => parseInt(h, 16));
+  return "#" + a.map((v, i) => Math.round(v + (b[i] - v) * amount).toString(16).padStart(2, "0")).join("");
+}
+
+function hashSeed(seed) {
+  let hash = 2166136261;
+  for (const c of seed) {
+    hash ^= c.charCodeAt(0);
+    hash = Math.imul(hash, 16777619);
+  }
+  return hash >>> 0;
+}
+
+function silhouette(shape, tail) {
+  const t = TAILS[tail];
+  return (
+    `<g class="tail-anim">${t.path ? `<path d="${t.path}"/>` : ""}</g>` +
+    `<g transform="${BODY_TRANSFORM}">${SHAPES[shape].body}</g>`
+  );
+}
+
+function sparks(tail, fill) {
+  if (!TAILS[tail].sparks) return "";
+  return (
+    `<g fill="${fill}">` +
+    `<circle class="spark" cx="55" cy="7" r="1.9"/>` +
+    `<circle class="spark" cx="60" cy="16" r="1.3" style="animation-delay:-.9s"/>` +
+    `<circle class="spark" cx="47.5" cy="4" r="1.1" style="animation-delay:-1.7s"/>` +
+    `</g>`
+  );
+}
+
+function newWisp(opts = {}) {
+  const o = { ...state, ...opts };
+  const id = `w${uid++}`;
+  const lean = o.lean === "on" ? "rotate(-8 30 34)" : "";
+  const eyes = `<g class="eyes-anim" style="transform-origin:22px 45px">${EYES[o.eyes].svg}</g>`;
+  const blink = `--blink-delay:${-((hashSeed(id) >>> 16) % 48) / 10}s`;
+  const outlineColor = state.theme === "dark" ? "#b8b8b8" : "#5c5c5c";
+  let inner;
+
+  if (o.style === "glow") {
+    const light = mix(o.color, "#ffffff", 0.55);
+    const dark = mix(o.color, "#000000", 0.25);
+    inner =
+      `<defs><radialGradient id="${id}g" gradientUnits="userSpaceOnUse" cx="20" cy="44" r="40">` +
+      `<stop offset="0" stop-color="${light}"/><stop offset=".55" stop-color="${o.color}"/><stop offset="1" stop-color="${dark}"/>` +
+      `</radialGradient>` +
+      `<mask id="${id}m" maskUnits="userSpaceOnUse" x="0" y="0" width="64" height="64">` +
+      `<g fill="#fff">${silhouette(o.shape, o.tail)}</g></mask></defs>` +
+      sparks(o.tail, light) +
+      // Painting through a mask keeps body and tail one seamless shape.
+      `<rect width="64" height="64" fill="url(#${id}g)" mask="url(#${id}m)"/>` +
+      `<g fill="#ffffff" fill-opacity=".92">${eyes}</g>`;
+  } else {
+    const outline =
+      o.style === "outline"
+        ? `<g fill="none" stroke="${outlineColor}" stroke-width="2" stroke-linejoin="round" transform="translate(-3.2 -3.2) scale(1.1)">${silhouette(o.shape, o.tail)}</g>`
+        : "";
+    inner =
+      outline +
+      sparks(o.tail, o.color) +
+      `<mask id="${id}m" maskUnits="userSpaceOnUse" x="0" y="0" width="64" height="64">` +
+      `<g fill="#fff">${silhouette(o.shape, o.tail)}</g><g fill="#000">${eyes}</g></mask>` +
+      `<g fill="${o.color}" mask="url(#${id}m)">${silhouette(o.shape, o.tail)}</g>`;
+  }
+
+  return `<svg viewBox="0 0 64 64" style="${blink}" data-tail="${o.tail}"><g transform="${lean}">${inner}</g></svg>`;
+}
+
+// Faithful copy of the current component, for comparison.
+function currentWisp(color, shape) {
+  const id = `c${uid++}`;
+  const shifted = shape === "triangle" || shape === "drop" || shape === "diamond";
+  const eyes =
+    `<g transform="${shifted ? "translate(-6 8) " : ""}rotate(-18 38 27)">` +
+    `<rect x="31" y="23" width="4.5" height="10" rx="2.25"/><rect x="46" y="23" width="4.5" height="10" rx="2.25"/></g>`;
+  return (
+    `<svg viewBox="0 0 64 64"><mask id="${id}" maskUnits="userSpaceOnUse" x="0" y="0" width="64" height="64">` +
+    `<g fill="#fff">${SHAPES[shape].body}</g><g fill="#000">${eyes}</g></mask>` +
+    `<g fill="${color}" mask="url(#${id})">${SHAPES[shape].body}</g></svg>`
+  );
+}
+
+function renderControls() {
+  const groups = {
+    tail: Object.fromEntries(Object.entries(TAILS).map(([k, v]) => [k, v.label])),
+    eyes: Object.fromEntries(Object.entries(EYES).map(([k, v]) => [k, v.label])),
+    style: STYLES,
+    lean: { on: "On", off: "Off" },
+    theme: { dark: "Dark", light: "Light" },
+    motion: { on: "On", off: "Off" },
+  };
+  for (const seg of document.querySelectorAll(".seg")) {
+    const key = seg.dataset.key;
+    seg.innerHTML = Object.entries(groups[key])
+      .map(([value, label]) => `<button data-value="${value}" aria-pressed="${state[key] === value}">${label}</button>`)
+      .join("");
+  }
+}
+
+function render() {
+  uid = 0;
+  document.body.classList.toggle("light", state.theme === "light");
+  document.body.classList.toggle("animate", state.motion === "on");
+  renderControls();
+
+  document.getElementById("hero-current").innerHTML = currentWisp("#3c82f6", "circle");
+  document.getElementById("hero-new").innerHTML = newWisp({ color: "#3c82f6", shape: "circle" });
+
+  document.getElementById("picker-big").innerHTML = newWisp();
+  document.getElementById("swatches").innerHTML = COLORS.map(
+    (c) => `<button title="${c.label}" data-color="${c.value}" style="background:${c.value}" aria-pressed="${state.color === c.value}"></button>`,
+  ).join("");
+  document.getElementById("shape-picks").innerHTML = Object.entries(SHAPES)
+    .map(([k, v]) => `<button title="${v.label}" data-shape="${k}" aria-pressed="${state.shape === k}">${newWisp({ shape: k })}</button>`)
+    .join("");
+
+  const shapeHeader = `<tr><th></th>${Object.values(SHAPES).map((s) => `<th>${s.label}</th>`).join("")}</tr>`;
+  document.getElementById("matrix").innerHTML =
+    shapeHeader +
+    Object.entries(TAILS)
+      .map(
+        ([tk, tv]) =>
+          `<tr><th class="row">${tv.label}</th>${Object.keys(SHAPES)
+            .map((sk) => `<td data-pick-tail="${tk}">${newWisp({ shape: sk, tail: tk })}</td>`)
+            .join("")}</tr>`,
+      )
+      .join("");
+
+  document.getElementById("eyes-matrix").innerHTML =
+    shapeHeader +
+    Object.entries(EYES)
+      .map(
+        ([ek, ev]) =>
+          `<tr><th class="row">${ev.label}</th>${Object.keys(SHAPES)
+            .map((sk) => `<td data-pick-eyes="${ek}">${newWisp({ shape: sk, eyes: ek })}</td>`)
+            .join("")}</tr>`,
+      )
+      .join("");
+
+  const shapeKeys = Object.keys(SHAPES);
+  document.getElementById("colors").innerHTML = COLORS.map(
+    (c, i) =>
+      `<div class="card">${newWisp({ color: c.value, shape: shapeKeys[i % shapeKeys.length] })}<small>${c.label}</small></div>`,
+  ).join("");
+
+  const rows = [
+    ["Research assistant", "Summarized the paper", "#3c82f6", "circle"],
+    ["Home server", "Disk usage is fine", "#54b9a6", "hexagon"],
+    ["Writing coach", "Draft two is ready", "#e5498f", "cloud"],
+    ["Trip planner", "Found three flights", "#f19d38", "pebble"],
+    ["Code reviewer", "Two comments left", "#885cf5", "diamond"],
+    ["Budget", "Monthly report", "#262626", "square"],
+  ];
+  document.getElementById("sidebar").innerHTML = rows
+    .map(
+      ([title, sub, color, shape], i) =>
+        `<div class="item${i === 0 ? " active" : ""}">${newWisp({ color, shape })}<div><div class="title">${title}</div><div class="sub">${sub}</div></div></div>`,
+    )
+    .join("");
+  document.getElementById("scale-row").innerHTML = [16, 24, 32, 36, 56, 96]
+    .map((px) => `<figure><div style="width:${px}px;height:${px}px">${newWisp()}</div><figcaption>${px}px</figcaption></figure>`)
+    .join("");
+
+  document.getElementById("compare").innerHTML = shapeKeys
+    .map(
+      (sk, i) =>
+        `<div class="pair">${currentWisp(COLORS[(i + 1) % COLORS.length].value, sk)}${newWisp({
+          shape: sk,
+          color: COLORS[(i + 1) % COLORS.length].value,
+        })}<small>${SHAPES[sk].label}</small></div>`,
+    )
+    .join("");
+
+  for (const el of document.querySelectorAll("#scale-row svg")) {
+    el.style.width = "100%";
+    el.style.height = "100%";
+  }
+}
+
+document.addEventListener("click", (event) => {
+  const seg = event.target.closest(".seg button");
+  if (seg) state[seg.parentElement.dataset.key] = seg.dataset.value;
+  const color = event.target.closest("[data-color]");
+  if (color) state.color = color.dataset.color;
+  const shape = event.target.closest("[data-shape]");
+  if (shape) state.shape = shape.dataset.shape;
+  const tail = event.target.closest("[data-pick-tail]");
+  if (tail) state.tail = tail.dataset.pickTail;
+  const eyes = event.target.closest("[data-pick-eyes]");
+  if (eyes) state.eyes = eyes.dataset.pickEyes;
+  if (seg || color || shape || tail || eyes) render();
+});
+
+render();
+</script>
+</body>
+</html>
