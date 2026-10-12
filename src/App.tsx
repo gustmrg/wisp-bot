@@ -39,6 +39,16 @@ export default function App() {
   return <Workspace userProfile={userProfile} />;
 }
 
+/** Starts a new topic in a Wisp; resolves with an error message, or null. */
+async function startNewTopic(conversationId: string): Promise<string | null> {
+  try {
+    const result = await window.wisp.manageContext({ conversationId, command: { action: "new_topic" } });
+    return result.ok ? null : result.error.message;
+  } catch {
+    return "Could not start a new topic. Please try again.";
+  }
+}
+
 function Workspace({ userProfile }: { userProfile: UserProfileController }) {
   const workspace = useWorkspaceController();
   const timeZone = effectiveTimeZone(workspace.preferences);
@@ -235,6 +245,7 @@ function Workspace({ userProfile }: { userProfile: UserProfileController }) {
               onSend={(text) => void workspace.sendMessage(text)}
               scheduledMessages={scheduledMessages}
               messageQueue={messageQueue}
+              onNewTopic={startNewTopic}
             />
           ) : (
             <main hidden={mobile} className={cn(mainPanel, "items-center justify-center text-dim", mobile && "hidden")}>

@@ -5,6 +5,7 @@ import {
   EyeOffIcon,
   FileIcon,
   LoaderCircleIcon,
+  MessageSquarePlusIcon,
   MicIcon,
   PaperclipIcon,
   PlusIcon,
@@ -15,6 +16,7 @@ import type { FormEvent, KeyboardEvent, ReactNode } from "react";
 import { useEffect, useRef, useState } from "react";
 
 import { ScheduleSendPicker } from "@/components/schedule-send-picker";
+import { Button } from "@/components/ui/button";
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger } from "@/components/ui/context-menu";
 import { Popover, PopoverContent, PopoverTitle, PopoverTrigger } from "@/components/ui/popover";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -67,6 +69,8 @@ export interface ChatComposerProps {
   onSend: (text: string) => void;
   /** Schedules the draft instead of sending it; resolves with an error message, or null. Absent when unavailable. */
   onSchedule?: (text: string, at: Date) => Promise<string | null>;
+  /** Starts a new topic; resolves with an error message, or null. Absent when unavailable. */
+  onNewTopic?: () => Promise<string | null>;
 }
 
 export function ChatComposer({
@@ -84,18 +88,21 @@ export function ChatComposer({
   onAbort,
   onSend,
   onSchedule,
+  onNewTopic,
 }: ChatComposerProps) {
   const [draft, setDraft] = useState("");
   const [attachments, setAttachments] = useState<ReadonlyArray<WorkspaceAttachment>>([]);
   const [attaching, setAttaching] = useState(false);
   const [attachError, setAttachError] = useState("");
   const [menuOpen, setMenuOpen] = useState(false);
-  const [menuView, setMenuView] = useState<"actions" | "schedule">("actions");
+  const [menuView, setMenuView] = useState<"actions" | "schedule" | "new_topic">("actions");
   // A time picked from the + menu waits on the draft; from the send button's menu or the shortcut it schedules now.
   const [pickMode, setPickMode] = useState<"draft" | "now">("draft");
   const [scheduledAt, setScheduledAt] = useState<Date | null>(null);
   const [scheduling, setScheduling] = useState(false);
   const [scheduleError, setScheduleError] = useState("");
+  const [renewing, setRenewing] = useState(false);
+  const [newTopicError, setNewTopicError] = useState("");
   // A long press opens the send button's menu; the tap that ends it must not also send.
   const sendMenuOpen = useRef(false);
   const timeZone = useTimeZone();
@@ -161,6 +168,23 @@ export function ChatComposer({
     setDraft("");
     setAttachments([]);
     setAttachError("");
+    textareaRef.current?.focus();
+  }
+
+  // The Wisp must be idle: a new topic cannot interrupt a response, a queued message or an approval.
+  const canStartNewTopic = Boolean(onNewTopic) && chat.kind === "wisp" && status === "idle" && !acknowledging;
+
+  async function startNewTopic(): Promise<void> {
+    if (!onNewTopic || !canStartNewTopic) return;
+    setRenewing(true);
+    setNewTopicError("");
+    const failure = await onNewTopic();
+    setRenewing(false);
+    if (failure) {
+      setNewTopicError(failure);
+      return;
+    }
+    setMenuOpen(false);
     textareaRef.current?.focus();
   }
 
@@ -418,7 +442,7 @@ export function ChatComposer({
       );
     }
     if (chat.kind !== "wisp") return null;
-    if (!schedulable) {
+    if (!schedulable && !onNewTopic) {
       return (
         <ComposerTooltip message={attaching ? "Copying files to the workspace…" : "Attach files"}>
           <button
@@ -439,15 +463,27 @@ export function ChatComposer({
         onOpenChange={(open) => {
           if (open) setMenuView("actions");
           setMenuOpen(open);
-          if (!open) setScheduleError("");
+          if (!open) {
+            setScheduleError("");
+            setNewTopicError("");
+          }
         }}
       >
-        <ComposerTooltip message={`Attach files or schedule (${scheduleShortcutLabel})`}>
-          <PopoverTrigger type="button" className={LEAD_BUTTON} aria-label="Attach or schedule">
+        <ComposerTooltip
+          message={
+            schedulable
+              ? `Attach files, schedule (${scheduleShortcutLabel}) or start a new topic`
+              : "Attach files or start a new topic"
+          }
+        >
+          <PopoverTrigger type="button" className={LEAD_BUTTON} aria-label="Attach, schedule or new topic">
             <PlusIcon aria-hidden="true" />
           </PopoverTrigger>
         </ComposerTooltip>
-        <PopoverContent align="start" className={menuView === "actions" ? "w-56 p-1" : undefined}>
+        <PopoverContent
+          align="start"
+          className={menuView === "actions" ? "w-56 p-1" : menuView === "new_topic" ? "w-72" : undefined}
+        >
           {menuView === "actions" ? (
             <div className="flex flex-col gap-0.5">
               <button
@@ -462,15 +498,49 @@ export function ChatComposer({
                 <PaperclipIcon aria-hidden="true" />
                 Attach files
               </button>
-              <button
-                type="button"
-                className={MENU_ROW}
-                disabled={!canPickTime}
-                onClick={() => openSchedulePicker("draft")}
-              >
-                <CalendarClockIcon aria-hidden="true" />
-                Schedule send
-              </button>
+              {schedulable ? (
+                <button
+                  type="button"
+                  className={MENU_ROW}
+                  disabled={!canPickTime}
+                  onClick={() => openSchedulePicker("draft")}
+                >
+                  <CalendarClockIcon aria-hidden="true" />
+                  Schedule send
+                </button>
+              ) : null}
+              {onNewTopic ? (
+                <button
+                  type="button"
+                  className={MENU_ROW}
+                  disabled={!canStartNewTopic}
+                  onClick={() => setMenuView("new_topic")}
+                >
+                  <MessageSquarePlusIcon aria-hidden="true" />
+                  New topic
+                </button>
+              ) : null}
+            </div>
+          ) : menuView === "new_topic" ? (
+            <div className="flex flex-col gap-2">
+              <PopoverTitle>Start a new topic?</PopoverTitle>
+              <p className="px-2 text-sm text-dim">
+                Your next message starts without the current conversation context. Chat history and saved memory remain
+                available.
+              </p>
+              {newTopicError ? (
+                <p role="alert" className="px-2 text-xs text-destructive">
+                  {newTopicError}
+                </p>
+              ) : null}
+              <div className="flex justify-end gap-2">
+                <Button variant="ghost" size="sm" disabled={renewing} onClick={() => setMenuView("actions")}>
+                  Cancel
+                </Button>
+                <Button size="sm" disabled={renewing || !canStartNewTopic} onClick={() => void startNewTopic()}>
+                  Start new topic
+                </Button>
+              </div>
             </div>
           ) : (
             <>

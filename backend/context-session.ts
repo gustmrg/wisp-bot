@@ -5,6 +5,7 @@ import {
   DEFAULT_CONTEXT_POLICY,
   isContextPolicy,
   shouldRenewContext,
+  withPolicyDefaults,
   type ContextCommand,
   type ContextView,
 } from "../shared/context-policy.js";
@@ -28,9 +29,10 @@ export class ContextSession {
   async load(): Promise<void> {
     try {
       const data = JSON.parse(await readFile(this.settingsPath, "utf8"));
-      if (!isContextPolicy(data.policy) || typeof data.memory !== "string" || data.memory.length > 8000)
+      const policy = withPolicyDefaults(data.policy);
+      if (!isContextPolicy(policy) || typeof data.memory !== "string" || data.memory.length > 8000)
         throw new Error("Invalid context settings");
-      this.settings = { policy: data.policy, memory: data.memory };
+      this.settings = { policy, memory: data.memory };
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== "ENOENT")
         throw new WispBackendError("invalid_configuration", "Could not load this Wisp's context settings.");
@@ -64,7 +66,7 @@ export class ContextSession {
   async beforePrompt(): Promise<void> {
     const view = this.view();
     if (shouldRenewContext(view.policy, view.lastActivityAt, view.tokens, this.now(), this.timeZone()))
-      await this.command({ action: "compact" });
+      await this.command({ action: view.policy.renewal });
   }
 
   async command(command: ContextCommand): Promise<ContextView> {

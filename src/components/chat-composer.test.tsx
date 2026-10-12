@@ -22,6 +22,37 @@ const defaultProps = {
 };
 
 describe("ChatComposer", () => {
+  it("starts a new topic from the + menu only after confirmation", async () => {
+    const user = userEvent.setup();
+    const onNewTopic = vi
+      .fn<() => Promise<string | null>>()
+      .mockResolvedValueOnce("Wait for the Wisp to finish before changing its context.")
+      .mockResolvedValueOnce(null);
+    render(<ChatComposer {...defaultProps} chat={wisp("one", "One")} onNewTopic={onNewTopic} />);
+    await user.click(screen.getByRole("button", { name: "Attach, schedule or new topic" }));
+    await user.click(await screen.findByRole("button", { name: "New topic" }));
+    expect(onNewTopic).not.toHaveBeenCalled();
+    await user.click(screen.getByRole("button", { name: "Cancel" }));
+    await user.click(await screen.findByRole("button", { name: "New topic" }));
+    await user.click(screen.getByRole("button", { name: "Start new topic" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent(/finish/);
+    await user.click(screen.getByRole("button", { name: "Start new topic" }));
+    expect(onNewTopic).toHaveBeenCalledTimes(2);
+    await waitFor(() => expect(screen.queryByRole("button", { name: "Start new topic" })).toBeNull());
+  });
+
+  it("offers a new topic only for an idle Wisp", async () => {
+    const user = userEvent.setup();
+    const onNewTopic = vi.fn(async () => null);
+    const { rerender } = render(
+      <ChatComposer {...defaultProps} status="working" chat={wisp("one", "One")} onNewTopic={onNewTopic} />,
+    );
+    await user.click(screen.getByRole("button", { name: "Attach, schedule or new topic" }));
+    expect(await screen.findByRole("button", { name: "New topic" })).toBeDisabled();
+    rerender(<ChatComposer {...defaultProps} chat={wisp("one", "One")} />);
+    expect(screen.queryByRole("button", { name: "New topic" })).toBeNull();
+  });
+
   it("schedules the draft from the shortcut instead of sending it", async () => {
     const user = userEvent.setup();
     const onSend = vi.fn();
@@ -46,7 +77,7 @@ describe("ChatComposer", () => {
     render(<ChatComposer {...defaultProps} chat={wisp("one", "One")} onSend={onSend} onSchedule={onSchedule} />);
     const input = screen.getByRole("textbox", { name: "Message One" });
     await user.type(input, "Later");
-    await user.click(screen.getByRole("button", { name: "Attach or schedule" }));
+    await user.click(screen.getByRole("button", { name: "Attach, schedule or new topic" }));
     await user.click(await screen.findByRole("button", { name: "Schedule send" }));
     await user.click(await screen.findByRole("button", { name: "Set time" }));
     // Picking a time from the + menu only marks the draft; the main button schedules it.
@@ -64,9 +95,9 @@ describe("ChatComposer", () => {
     const user = userEvent.setup();
     const { rerender } = render(<ChatComposer {...defaultProps} chat={wisp("one", "One")} />);
     expect(screen.getByRole("button", { name: "Attach files" })).toBeVisible();
-    expect(screen.queryByRole("button", { name: "Attach or schedule" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Attach, schedule or new topic" })).toBeNull();
     rerender(<ChatComposer {...defaultProps} chat={wisp("one", "One")} onSchedule={vi.fn(async () => null)} />);
-    await user.click(screen.getByRole("button", { name: "Attach or schedule" }));
+    await user.click(screen.getByRole("button", { name: "Attach, schedule or new topic" }));
     expect(await screen.findByRole("button", { name: "Schedule send" })).toBeEnabled();
     expect(screen.getByRole("button", { name: "Attach files" })).toBeEnabled();
   });
@@ -76,7 +107,7 @@ describe("ChatComposer", () => {
     const onSend = vi.fn();
     const onSchedule = vi.fn(async () => null);
     render(<ChatComposer {...defaultProps} chat={wisp("one", "One")} onSend={onSend} onSchedule={onSchedule} />);
-    await user.click(screen.getByRole("button", { name: "Attach or schedule" }));
+    await user.click(screen.getByRole("button", { name: "Attach, schedule or new topic" }));
     await user.click(await screen.findByRole("button", { name: "Schedule send" }));
     await user.click(await screen.findByRole("button", { name: /Tomorrow morning/ }));
 

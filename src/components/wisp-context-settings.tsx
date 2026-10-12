@@ -23,6 +23,11 @@ const modes = [
   { value: "none", label: "Manual only" },
 ];
 
+const renewals = [
+  { value: "new_topic", label: "Start a new topic" },
+  { value: "compact", label: "Summarize and continue" },
+];
+
 /** The Context & memory section of a Wisp's settings; place it inside an `Accordion`. */
 export function WispContextSettings({ conversationId }: { conversationId: string }) {
   const [visited, setVisited] = useState(false);
@@ -160,11 +165,40 @@ function ContextForm({ conversationId }: { conversationId: string }) {
         </Select>
         {policy.mode !== "none" ? (
           <FieldDescription>
-            Checked when your next message arrives. Small conversations are kept intact. Summaries use model tokens.
-            Automatic compression near the model limit remains enabled.
+            Checked when your next message arrives. Small conversations are kept intact. Automatic compression near the
+            model limit remains enabled.
           </FieldDescription>
         ) : null}
       </Field>
+      {policy.mode !== "none" ? (
+        <Field>
+          <FieldLabel htmlFor={`${id}-renewal`}>On renewal</FieldLabel>
+          <Select
+            items={renewals}
+            value={policy.renewal}
+            disabled={disabled}
+            onValueChange={(value) => {
+              if (value) setPolicy((current) => ({ ...current, renewal: value as ContextPolicy["renewal"] }));
+            }}
+          >
+            <SelectTrigger id={`${id}-renewal`} className="w-full">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {renewals.map((renewal) => (
+                <SelectItem key={renewal.value} value={renewal.value}>
+                  {renewal.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <FieldDescription>
+            {policy.renewal === "new_topic"
+              ? "The next message starts without earlier context, which uses the fewest tokens. The Wisp can still search older messages."
+              : "A summary keeps goals, decisions and pending work. Summarizing uses model tokens."}
+          </FieldDescription>
+        </Field>
+      ) : null}
       {policy.mode === "idle" || policy.mode === "both" ? (
         <Field>
           <FieldLabel htmlFor={`${id}-idle`}>Inactivity (hours)</FieldLabel>

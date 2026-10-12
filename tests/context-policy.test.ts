@@ -38,6 +38,7 @@ describe("context renewal policy", () => {
       { action: "get", extra: true },
       { action: "save", policy: DEFAULT_CONTEXT_POLICY, memory: "x".repeat(8001) },
       { action: "save", policy: { ...DEFAULT_CONTEXT_POLICY, idleHours: 0 }, memory: "" },
+      { action: "save", policy: { ...DEFAULT_CONTEXT_POLICY, renewal: "delete" }, memory: "" },
     ]) {
       expect(() => parseContextRequest({ conversationId: "one", command })).toThrow();
     }
@@ -47,5 +48,9 @@ describe("context renewal policy", () => {
         command: { action: "save", policy: DEFAULT_CONTEXT_POLICY, memory: "Prefers concise responses" },
       }).command.action,
     ).toBe("save");
+    const { renewal: _, ...older } = DEFAULT_CONTEXT_POLICY;
+    expect(
+      parseContextRequest({ conversationId: "one", command: { action: "save", policy: older, memory: "" } }).command,
+    ).toEqual({ action: "save", policy: DEFAULT_CONTEXT_POLICY, memory: "" });
   });
 });
