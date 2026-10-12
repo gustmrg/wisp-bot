@@ -11,6 +11,9 @@ import type {
   ConnectionStepState,
 } from "../../../shared/connections";
 
+/** A lighter backdrop for the connection dialogs, so the connection screen stays readable behind them. */
+export const CONNECTION_BACKDROP = "bg-black/30";
+
 /** The current time, updated every `intervalMs` while `enabled`, for elapsed times and countdowns. */
 export function useNow(enabled: boolean, intervalMs = 1000): number {
   const [now, setNow] = useState(() => Date.now());

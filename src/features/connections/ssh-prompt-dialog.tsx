@@ -12,7 +12,7 @@ import {
 import { Field, FieldDescription, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import type { SshPromptView } from "../../../shared/connections";
-import { CONNECTION_BACKDROP } from "./update-server-dialog";
+import { CONNECTION_BACKDROP } from "./connection-steps";
 
 /**
  * Asks what OpenSSH needs to know while connecting: to trust a host key the

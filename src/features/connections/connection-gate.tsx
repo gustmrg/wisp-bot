@@ -27,10 +27,10 @@ import {
   ConnectionScreen,
   ServerChip,
 } from "./connection-screen";
-import { formatDuration, useNow } from "./connection-steps";
+import { CONNECTION_BACKDROP, formatDuration, useNow } from "./connection-steps";
 import { ConnectionsPanel } from "./connections-panel";
 import { SshPromptDialog } from "./ssh-prompt-dialog";
-import { CONNECTION_BACKDROP, compareVersions, UpdateServerDialog } from "./update-server-dialog";
+import { compareVersions, UpdateServerDialog } from "./update-server-dialog";
 
 /** The active connection, kept current from the main process. */
 export function useConnections(): [ConnectionsView | null, string] {
