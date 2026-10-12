@@ -31,9 +31,7 @@ export const JOB_RETRY_DELAYS_MS: ReadonlyArray<number> = [5 * 60_000, 15 * 60_0
 export const MAX_CONSECUTIVE_JOB_FAILURES = 3;
 
 /** What a run ended with: a message to deliver, or nothing to say. A run that fails throws. */
-export type JobRunOutcome =
-  | { kind: "message"; text: string; usage?: SessionReportUsage; sessionFile?: string }
-  | { kind: "silent"; reason: string; usage?: SessionReportUsage; sessionFile?: string };
+export type JobRunOutcome = { kind: "message"; text: string } | { kind: "silent"; reason: string };
 
 export interface JobRunContext {
   run: JobRun;
@@ -43,6 +41,8 @@ export interface JobRunContext {
   signal: AbortSignal;
   /** Replaces the job's saved state for the next run; see `save_job_state`. */
   saveState: (state: string) => Promise<void>;
+  /** Keeps the run's session file and token usage with its record, whether it succeeds or fails. */
+  recordSession: (details: { sessionFile?: string; usage?: SessionReportUsage }) => void;
 }
 
 /** Fields a new job is created with; see `JobScheduler.create`. */
@@ -362,6 +362,7 @@ export class JobScheduler {
     const timedOut = new WispBackendError("aborted", "The job ran for too long.");
     const timeout = setTimeout(() => controller.abort(timedOut), this.runTimeoutMs);
     let ended: JobRun;
+    let session: Pick<JobRun, "sessionFile" | "usage"> = {};
     try {
       const outcome = await abortable(
         this.runJob(job, {
@@ -369,14 +370,18 @@ export class JobScheduler {
           ...(job.lastRun ? { lastRunAt: job.lastRun.endedAt } : {}),
           signal: controller.signal,
           saveState: (state) => this.saveState(job.id, state),
+          recordSession: (details) => {
+            session = { ...session, ...definedOf(details) };
+          },
         }),
         controller.signal,
       );
-      ended = await this.finish(job, run, outcome);
+      ended = await this.finish(job, { ...run, ...session }, outcome);
     } catch (error) {
       // Besides backend error codes, a run fails with "timed_out" or "empty_response".
       ended = {
         ...run,
+        ...session,
         endedAt: this.now().toISOString(),
         status: "failed",
         errorCode: controller.signal.reason === timedOut ? "timed_out" : sanitizeBackendError(error).code,
@@ -397,12 +402,7 @@ export class JobScheduler {
     await this.recordOutcome(job, ended);
   }
 
-  private async finish(job: Job, run: JobRun, outcome: JobRunOutcome): Promise<JobRun> {
-    const base: JobRun = {
-      ...run,
-      ...(outcome.usage ? { usage: outcome.usage } : {}),
-      ...(outcome.sessionFile ? { sessionFile: outcome.sessionFile } : {}),
-    };
+  private async finish(job: Job, base: JobRun, outcome: JobRunOutcome): Promise<JobRun> {
     if (outcome.kind === "silent") {
       return { ...base, endedAt: this.now().toISOString(), status: "silent", skipReason: outcome.reason };
     }
@@ -410,7 +410,7 @@ export class JobScheduler {
       return { ...base, endedAt: this.now().toISOString(), status: "failed", errorCode: "empty_response" };
     }
     try {
-      const messageId = await this.deliver(job, outcome.text, run);
+      const messageId = await this.deliver(job, outcome.text, base);
       return { ...base, endedAt: this.now().toISOString(), status: "delivered", messageId };
     } catch (error) {
       this.warn("job_delivery_failed", error, job);

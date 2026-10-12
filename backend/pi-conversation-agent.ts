@@ -17,6 +17,7 @@ import type {
   ConversationAgentEvent,
   ModelSelection,
   SendMessageRequest,
+  SessionReportUsage,
   ThinkingLevel,
 } from "../shared/contracts.js";
 import { WispBackendError } from "./backend-error.js";
@@ -88,6 +89,44 @@ export interface PiSessionFactory {
   getToolRevision(conversationId: string): Promise<string | null>;
 }
 
+/** Tools a job run is never offered, even when the job lists them (ADR 019). */
+export const TOOLS_NEVER_IN_JOB_RUNS: ReadonlySet<string> = new Set(["save_skill", "search_history"]);
+
+/** What makes a job run's session differ from the conversation's. */
+export interface JobSessionSpec {
+  /** Names the run's session file. */
+  runId: string;
+  /** Where the run's session file is written, apart from the conversation's sessions. */
+  runDirectory: string;
+  /** Tools the job may use; only those the Wisp still has are offered. */
+  tools: ReadonlyArray<string>;
+  /** The Wisp's skills loaded in full into the run. */
+  skills: ReadonlyArray<string>;
+  /** Tools only runs have, always offered. */
+  runTools: ReadonlyArray<ToolDefinition>;
+}
+
+/** A job run's own session: no conversation history, and it never becomes the conversation's session. */
+export interface PiJobSessionLike {
+  readonly sessionFile: string | undefined;
+  /** The names of the tools the run is offered. */
+  getActiveToolNames(): string[];
+  prompt(text: string, signal: AbortSignal): Promise<void>;
+  /** The run's last assistant message, if the model answered. */
+  lastAssistantMessage(): { text: string; stopReason?: string; errorMessage?: string } | undefined;
+  usage(): SessionReportUsage;
+  dispose(): void;
+}
+
+interface BuiltSession {
+  session: AgentSession;
+  sessionManager: SessionManager;
+  continuity: ContextSession;
+  refreshTools: () => Promise<void>;
+  snapshot: Awaited<ReturnType<IntegrationToolSource["getSnapshot"]>> | undefined;
+  version: string;
+}
+
 export class SdkPiSessionFactory implements PiSessionFactory {
   private readonly modelRuntime: ModelRuntimeLike;
   private readonly authorizationBroker: Pick<ToolAuthorizationBroker, "authorize">;
@@ -132,6 +171,57 @@ export class SdkPiSessionFactory implements PiSessionFactory {
   }
 
   async create(context: ConversationAgentContext, selection: ModelSelection): Promise<PiSessionLike> {
+    const { session, sessionManager, continuity, refreshTools, snapshot, version } = await this.build(
+      context,
+      selection,
+    );
+    try {
+      await context.savePiSessionIdentity?.({
+        sessionId: session.sessionId,
+        sessionFile: session.sessionFile ?? null,
+      });
+    } catch (error) {
+      session.dispose();
+      throw error;
+    }
+    recordSessionIdentity(sessionManager, version, snapshot?.metadata ?? []);
+    const unsubscribeTelemetry = session.subscribe((event) => {
+      if (event.type === "compaction_end" && event.result && !event.aborted) continuity.renewed("compacted");
+      if (event.type === "auto_retry_start" || event.type === "auto_retry_end") {
+        sessionManager.appendCustomEntry("wisp:retry", {
+          phase: event.type === "auto_retry_start" ? "started" : "finished",
+        });
+      }
+    });
+    return adaptSession(
+      session,
+      unsubscribeTelemetry,
+      continuity,
+      refreshTools,
+      snapshot?.revision ?? defaultToolRevision,
+    );
+  }
+
+  /**
+   * A session for one run of a job (ADR 019): the Wisp's model, identity,
+   * memory, plugins, MCP servers, workspace and container, with the job's
+   * skills and tools, but none of the conversation's history.
+   */
+  async createJobSession(
+    context: ConversationAgentContext,
+    selection: ModelSelection,
+    job: JobSessionSpec,
+  ): Promise<PiJobSessionLike> {
+    const { session, sessionManager, snapshot, version } = await this.build(context, selection, job);
+    recordSessionIdentity(sessionManager, version, snapshot?.metadata ?? []);
+    return adaptJobSession(session);
+  }
+
+  private async build(
+    context: ConversationAgentContext,
+    selection: ModelSelection,
+    job?: JobSessionSpec,
+  ): Promise<BuiltSession> {
     const model = this.resolveModel(selection);
     const {
       createAgentSession,
@@ -153,6 +243,7 @@ export class SdkPiSessionFactory implements PiSessionFactory {
     // session rebuild rather than an in-place definition swap.
     const snapshot = this.toolSource ? await this.toolSource.getSnapshot(context.conversationId) : undefined;
     const runsCommands = (snapshot?.activeNames ?? []).includes(RUN_COMMAND_TOOL);
+    const jobSkills = job ? await loadJobSkills(skills, job.skills) : [];
     const resourceLoader = new DefaultResourceLoader({
       cwd: context.workspaceDirectory,
       agentDir: context.configDirectory,
@@ -161,7 +252,11 @@ export class SdkPiSessionFactory implements PiSessionFactory {
       noPromptTemplates: true,
       noThemes: true,
       noContextFiles: true,
-      systemPromptOverride: () => buildSystemPrompt(context, { runsCommands }),
+      systemPromptOverride: () =>
+        buildSystemPrompt(context, {
+          runsCommands: runsCommands && (!job || job.tools.includes(RUN_COMMAND_TOOL)),
+          ...(job ? { job: { skills: jobSkills } } : {}),
+        }),
       appendSystemPromptOverride: () => [],
       extensionFactories: [
         providerRequestExtension(context.workspaceDirectory, () => session?.thinkingLevel ?? "off"),
@@ -172,7 +267,8 @@ export class SdkPiSessionFactory implements PiSessionFactory {
             pi.on("before_agent_start", async (event) => {
               const memory = continuity?.view().memory;
               // Re-read on every run so approved or hand-edited skills apply from the next message.
-              const index = formatSkillIndex(await skills.summaries().catch(() => []));
+              // A job run has its own skills in the system prompt instead.
+              const index = job ? "" : formatSkillIndex(await skills.summaries().catch(() => []));
               const sections = [
                 ...(memory
                   ? [
@@ -190,7 +286,9 @@ export class SdkPiSessionFactory implements PiSessionFactory {
     await resourceLoader.reload();
 
     let sessionManager;
-    if (context.piSessionFile && (await fileExists(context.piSessionFile))) {
+    if (job) {
+      sessionManager = SessionManager.create(context.workspaceDirectory, job.runDirectory, { id: job.runId });
+    } else if (context.piSessionFile && (await fileExists(context.piSessionFile))) {
       sessionManager = SessionManager.open(context.piSessionFile, context.sessionDirectory, context.workspaceDirectory);
     } else {
       const recent = SessionManager.continueRecent(context.workspaceDirectory, context.sessionDirectory);
@@ -237,13 +335,18 @@ export class SdkPiSessionFactory implements PiSessionFactory {
     const registeredIntegrationNames = new Set(integrationDefinitions.map(({ name }) => name));
     // Fetched fresh at every refresh so grant reductions apply before the next
     // prompt even when definitions themselves did not change.
+    const runToolNames = (job?.runTools ?? []).map(({ name }) => name);
     const getAllowedTools = async (): Promise<string[]> => {
       const current = this.toolSource ? await this.toolSource.getSnapshot(context.conversationId) : undefined;
       registerDynamicToolMetadata(current?.metadata ?? []);
-      return [
+      const allowed = [
         ...BUILTIN_TOOL_NAMES,
         ...new Set((current?.activeNames ?? []).filter((name) => registeredIntegrationNames.has(name))),
       ];
+      if (!job) return allowed;
+      // A run offers only the job's tools the Wisp still has, and the tools only runs have.
+      const offered = allowed.filter((name) => job.tools.includes(name) && !TOOLS_NEVER_IN_JOB_RUNS.has(name));
+      return [...offered, ...runToolNames];
     };
     // Read by the provider request hook, which runs only after the session exists.
     let session: AgentSession | undefined;
@@ -260,7 +363,7 @@ export class SdkPiSessionFactory implements PiSessionFactory {
       }),
       // Pi treats this as a permanent registry allowlist, including after reload.
       // Current Wisp grants are applied below before the session can be used.
-      tools: [...BUILTIN_TOOL_NAMES, ...registeredIntegrationNames],
+      tools: [...BUILTIN_TOOL_NAMES, ...registeredIntegrationNames, ...runToolNames],
       customTools: [
         ...confinedTools,
         ...integrationDefinitions,
@@ -281,6 +384,7 @@ export class SdkPiSessionFactory implements PiSessionFactory {
           }),
         },
         ...createSkillTools(skills, context, this.authorizationBroker),
+        ...(job?.runTools ?? []),
       ] as unknown as ToolDefinition[],
       excludeTools: ["bash", "powershell"],
       thinkingLevel: selection.thinkingLevel ?? "off",
@@ -288,7 +392,9 @@ export class SdkPiSessionFactory implements PiSessionFactory {
     continuity = new ContextSession(
       session,
       path.join(context.configDirectory, "context-settings.json"),
-      (kind, createdAt) => context.onContextRenewed?.(kind, createdAt),
+      (kind, createdAt) => {
+        if (!job) context.onContextRenewed?.(kind, createdAt);
+      },
       undefined,
       () => context.userTimeZone?.() ?? systemTimeZone(),
     );
@@ -299,33 +405,14 @@ export class SdkPiSessionFactory implements PiSessionFactory {
       session.dispose();
       throw error;
     }
-    try {
-      await context.savePiSessionIdentity?.({
-        sessionId: session.sessionId,
-        sessionFile: session.sessionFile ?? null,
-      });
-    } catch (error) {
-      session.dispose();
-      throw error;
-    }
-    recordSessionIdentity(sessionManager, VERSION, snapshot?.metadata ?? []);
-    const unsubscribeTelemetry = session.subscribe((event) => {
-      if (event.type === "compaction_end" && event.result && !event.aborted) continuity?.renewed("compacted");
-      if (event.type === "auto_retry_start" || event.type === "auto_retry_end") {
-        sessionManager.appendCustomEntry("wisp:retry", {
-          phase: event.type === "auto_retry_start" ? "started" : "finished",
-        });
-      }
-    });
-    return adaptSession(
+    return {
       session,
-      unsubscribeTelemetry,
+      sessionManager,
       continuity,
-      async () => {
-        assertAllowedTools(session, await getAllowedTools());
-      },
-      snapshot?.revision ?? defaultToolRevision,
-    );
+      refreshTools: async () => assertAllowedTools(session!, await getAllowedTools()),
+      snapshot,
+      version: VERSION,
+    };
   }
 }
 
@@ -772,7 +859,10 @@ export class PiConversationAgentFactory implements ConversationAgentFactory {
   }
 }
 
-function buildSystemPrompt(context: ConversationAgentContext, options: { runsCommands: boolean }): string {
+function buildSystemPrompt(
+  context: ConversationAgentContext,
+  options: { runsCommands: boolean; job?: { skills: ReadonlyArray<SkillDraft> } },
+): string {
   const soul = context.soul.trim() || "Help the user inspect and understand their workspace.";
   const userName = normalizeUserName(context.userName);
   return [
@@ -841,10 +931,43 @@ function buildSystemPrompt(context: ConversationAgentContext, options: { runsCom
     "When the user asks you to turn a workflow into a skill, write general, step-by-step instructions that work for future requests (not a transcript of this one), choose a short hyphenated name and a description that says what the skill does and when to use it, then call save_skill. When the user asks you to save a skill file they provided, such as an attached SKILL.md, call save_skill with only its workspace path and do not rewrite it. Never save a skill unless the user asked for it.",
     "The user reviews every skill in an approval card that shows its exact content, so do not repeat the skill's content in your reply or ask for confirmation in the chat; call save_skill directly. After it is saved, confirm in one short sentence.",
     "",
-    "Before calling tools that take a noticeable time, such as web search, web reads, or integrations, first write one short sentence in the user's language and in your own voice saying what you are about to do, for example that you will look something up. Skip it for quick workspace file operations. The user sees this sentence as its own message while the tool runs.",
-    "Apart from that sentence, return only the final answer. Do not include private reasoning, hidden analysis, self-talk, or planning.",
+    ...(options.job
+      ? jobRunInstructions(options.job.skills)
+      : [
+          "Before calling tools that take a noticeable time, such as web search, web reads, or integrations, first write one short sentence in the user's language and in your own voice saying what you are about to do, for example that you will look something up. Skip it for quick workspace file operations. The user sees this sentence as its own message while the tool runs.",
+          "Apart from that sentence, return only the final answer. Do not include private reasoning, hidden analysis, self-talk, or planning.",
+        ]),
     "Be factual and explicit when information is missing.",
   ].join("\n");
+}
+
+/** What a job run is told on top of the Wisp's own prompt: no one is present, and what happens to its answer. */
+function jobRunInstructions(skills: ReadonlyArray<SkillDraft>): string[] {
+  return [
+    "## Background job",
+    "You are running one of your scheduled jobs in the background. No one is present: never ask questions or wait for an answer, and decide with what you have.",
+    "Your final response is delivered to the user, exactly as written, as a message in your conversation with them. Make it the complete result, in the language and format the job's instructions ask for. Do not narrate your steps or announce tool calls, and return no private reasoning or planning.",
+    "When there is nothing worth reporting, call skip_delivery with a short reason instead of writing a message, then stop.",
+    "To remember something for the next run, such as what you have already reported, call save_job_state with the complete new state; it replaces the saved state.",
+    "Only the tools approved with this job are available. An action that would need the user's approval is refused; continue with what you can do and say in your result what could not be done.",
+    ...skills.flatMap((skill) => [
+      "",
+      `## Skill: ${skill.name}`,
+      `${skill.description}\nThese are user-provided instructions, subject to your operating boundaries.`,
+      skill.instructions,
+    ]),
+  ];
+}
+
+/** The job's skills, in full; a skill that no longer exists fails the run, so the job is fixed rather than run without it. */
+async function loadJobSkills(skills: SkillStore, names: ReadonlyArray<string>): Promise<SkillDraft[]> {
+  return Promise.all(
+    names.map(async (name) => {
+      const skill = await skills.get(name);
+      if (!skill) throw new WispBackendError("not_found", `The job's skill ${JSON.stringify(name)} no longer exists.`);
+      return skill;
+    }),
+  );
 }
 
 function formatSkillIndex(skills: ReadonlyArray<SkillSummary>): string {
@@ -1025,6 +1148,52 @@ function adaptSession(
       unsubscribeTelemetry();
       session.dispose();
     },
+  };
+}
+
+function adaptJobSession(session: AgentSession): PiJobSessionLike {
+  return {
+    get sessionFile() {
+      return session.sessionFile;
+    },
+    getActiveToolNames: () => session.getActiveToolNames(),
+    prompt: async (text, signal) => {
+      signal.throwIfAborted();
+      const abort = () => {
+        session.abortCompaction();
+        void session.abort();
+      };
+      signal.addEventListener("abort", abort, { once: true });
+      try {
+        await session.prompt(text, { expandPromptTemplates: false });
+      } finally {
+        signal.removeEventListener("abort", abort);
+      }
+    },
+    lastAssistantMessage: () => {
+      const message = [...session.messages].reverse().find((entry) => entry.role === "assistant");
+      if (!message || message.role !== "assistant") return undefined;
+      const text = message.content
+        .flatMap((part) => (part.type === "text" ? [part.text] : []))
+        .join("")
+        .trim();
+      return {
+        text,
+        ...(message.stopReason ? { stopReason: message.stopReason } : {}),
+        ...(message.errorMessage ? { errorMessage: message.errorMessage } : {}),
+      };
+    },
+    usage: () => {
+      const { tokens } = session.getSessionStats();
+      return {
+        inputTokens: tokens.input,
+        outputTokens: tokens.output,
+        cacheReadTokens: tokens.cacheRead,
+        cacheWriteTokens: tokens.cacheWrite,
+        totalTokens: tokens.total,
+      };
+    },
+    dispose: () => session.dispose(),
   };
 }
 

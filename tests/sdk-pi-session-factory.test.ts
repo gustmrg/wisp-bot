@@ -683,6 +683,80 @@ describe("SdkPiSessionFactory", () => {
     expect(prompt).not.toContain("must not execute shell commands");
   });
 
+  it("opens a job run apart from the conversation, with only the job's tools and skills", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "wisp-pi-job-"));
+    const configDirectory = path.join(directory, "config");
+    await mkdir(path.join(configDirectory, "skills", "job-search"), { recursive: true });
+    await writeFile(
+      path.join(configDirectory, "skills", "job-search", "SKILL.md"),
+      "---\nname: job-search\ndescription: Find job openings.\n---\nSearch three boards.\n",
+    );
+    const savePiSessionIdentity = vi.fn(async () => undefined);
+    const context: ConversationAgentContext = {
+      conversationId: "atlas",
+      sessionId: "atlas-session",
+      name: "Atlas",
+      wispId: "atlas",
+      role: "Recruiter",
+      soul: "Find jobs.",
+      workspaceDirectory: directory,
+      sessionDirectory: directory,
+      configDirectory,
+      piSessionId: "conversation-session",
+      piSessionFile: path.join(directory, "conversation.jsonl"),
+      savePiSessionIdentity,
+    };
+    const runtime = {
+      hasConfiguredAuth: () => true,
+      getModel: () => ({ provider: "provider", id: "model" }),
+    } as unknown as ModelRuntimeLike;
+    const pluginTools: PluginToolSource = {
+      getTools: vi.fn(() => [
+        toolDefinition("web_search"),
+        toolDefinition("linear_get_issue"),
+      ]) as PluginToolSource["getTools"],
+      getActiveToolNames: vi.fn(async () => ["web_search", "linear_get_issue"]),
+    };
+    const factory = new SdkPiSessionFactory(runtime, undefined, toToolSource(pluginTools));
+    const runDirectory = path.join(directory, "jobs", "job-1");
+
+    const run = await factory.createJobSession(
+      context,
+      { providerId: "provider", modelId: "model" },
+      {
+        runId: "run-1",
+        runDirectory,
+        tools: ["web_search", "edit", "save_skill", "search_history", "linear_create_issue"],
+        skills: ["job-search"],
+        runTools: [toolDefinition("skip_delivery"), toolDefinition("save_job_state")] as never,
+      },
+    );
+
+    expect(sdk.createSession).toHaveBeenLastCalledWith(directory, runDirectory, { id: "run-1" });
+    expect(sdk.open).not.toHaveBeenCalled();
+    expect(savePiSessionIdentity).not.toHaveBeenCalled();
+    expect(sdk.session.setActiveToolsByName).toHaveBeenLastCalledWith([
+      "edit",
+      "web_search",
+      "skip_delivery",
+      "save_job_state",
+    ]);
+    const prompt = (sdk.loaderOptions.at(-1) as { systemPromptOverride: () => string }).systemPromptOverride();
+    expect(prompt).toContain("## Background job");
+    expect(prompt).toContain("## Skill: job-search");
+    expect(prompt).toContain("Search three boards.");
+    expect(prompt).not.toContain("first write one short sentence");
+    expect(run.sessionFile).toBe("/sessions/concrete.jsonl");
+
+    await expect(
+      factory.createJobSession(
+        context,
+        { providerId: "provider", modelId: "model" },
+        { runId: "run-2", runDirectory, tools: [], skills: ["deleted-skill"], runTools: [] },
+      ),
+    ).rejects.toMatchObject({ code: "not_found" });
+  });
+
   it("rejects missing credentials and unavailable models without selecting a fallback", () => {
     const missingAuth = {
       hasConfiguredAuth: () => false,
