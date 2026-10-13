@@ -7,7 +7,6 @@ import {
   type ContextView,
 } from "../../shared/context-policy";
 import { ConfirmAction } from "@/components/settings/settings-primitives";
-import { AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Button } from "@/components/ui/button";
 import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel, FieldTitle } from "@/components/ui/field";
 import { FormStatus } from "@/components/ui/form-status";
@@ -28,22 +27,9 @@ const renewals = [
   { value: "compact", label: "Summarize and continue" },
 ];
 
-/** The Context & memory section of a Wisp's settings; place it inside an `Accordion`. */
+/** The Context & memory section of a Wisp's settings. */
 export function WispContextSettings({ conversationId }: { conversationId: string }) {
-  const [visited, setVisited] = useState(false);
-  return (
-    <AccordionItem
-      value="context"
-      onOpenChange={(open) => {
-        if (open) setVisited(true);
-      }}
-    >
-      <AccordionTrigger>Context & memory</AccordionTrigger>
-      <AccordionContent keepMounted>
-        {visited ? <ContextForm key={conversationId} conversationId={conversationId} /> : null}
-      </AccordionContent>
-    </AccordionItem>
-  );
+  return <ContextForm key={conversationId} conversationId={conversationId} />;
 }
 
 function ContextForm({ conversationId }: { conversationId: string }) {

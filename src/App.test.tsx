@@ -567,25 +567,22 @@ describe("App", () => {
     );
   });
 
-  it("keeps desktop settings drafts when reselecting a conversation", async () => {
+  it("opens the desktop settings dialog for the Wisp the panel shows", async () => {
     const user = userEvent.setup();
     const beta = wispChat("beta");
     exposeApi(createApi(conversationState(true, { atlas, beta })));
     render(<App />);
     await screen.findByRole("textbox", { name: "Message Atlas" });
     await user.click(screen.getByRole("button", { name: "Open Wisp settings" }));
-    // The panel opens on the Wisp's profile; Edit leads to its settings.
+    // The panel opens on the Wisp's profile; its rows open the settings dialog.
     expect(screen.getByRole("region", { name: "Atlas" })).toBeVisible();
-    await user.click(screen.getByRole("button", { name: "Edit" }));
-    const name = screen.getByRole("textbox", { name: "Name" });
-    await user.clear(name);
-    await user.type(name, "Unsaved Atlas name");
+    await user.click(screen.getByRole("button", { name: /Edit profile/ }));
+    expect(screen.getByRole("textbox", { name: "Name" })).toHaveValue("Atlas");
+    await user.keyboard("{Escape}");
     const list = screen.getByRole("navigation", { name: "Wisps and circles" });
-    await user.click(within(list).getByRole("button", { name: /Atlas/ }));
-    expect(name).toBeVisible();
-    expect(name).toHaveValue("Unsaved Atlas name");
     await user.click(within(list).getByRole("button", { name: /Beta/ }));
     expect(screen.getByRole("complementary", { name: "Beta settings" })).toBeVisible();
+    await user.click(screen.getByRole("button", { name: /Edit profile/ }));
     expect(screen.getByRole("textbox", { name: "Name" })).toHaveValue("Beta");
   });
 
@@ -850,12 +847,11 @@ it.each([false, true])("preserves later navigation when deletion completes (mobi
   });
   await user.click(await within(list).findByRole("button", { name: /Atlas/ }));
   await user.click(screen.getByRole("button", { name: "Open Wisp settings" }));
-  await user.click(screen.getByRole("button", { name: "Edit" }));
-  await user.click(screen.getByRole("button", { name: "Delete Wisp" }));
+  // The profile deletes the Wisp, on a phone and on the desktop alike.
+  await user.click(screen.getByRole("button", { name: "Delete Atlas…" }));
   await user.click(screen.getByRole("button", { name: "Confirm deletion" }));
   await waitFor(() => expect(api.deleteWisp).toHaveBeenCalledOnce());
   if (mobile) {
-    await user.click(screen.getByRole("button", { name: "Back to profile" }));
     await user.click(screen.getByRole("button", { name: "Back to conversation" }));
     await user.click(screen.getByRole("button", { name: "Back to conversations" }));
   }
@@ -863,12 +859,14 @@ it.each([false, true])("preserves later navigation when deletion completes (mobi
   if (mobile) {
     await user.click(screen.getByRole("button", { name: "Open Wisp settings" }));
     await user.click(screen.getByRole("button", { name: "Edit" }));
+  } else {
+    await user.click(screen.getByRole("button", { name: /Edit profile/ }));
   }
   const name = screen.getByRole("textbox", { name: "Name" });
   await user.clear(name);
   await user.type(name, "Unsaved Beta name");
   await act(async () => finishDelete());
-  expect(screen.getByRole("complementary", { name: "Beta settings" })).toBeVisible();
+  expect(name).toBeVisible();
   expect(name).toHaveValue("Unsaved Beta name");
 });
 

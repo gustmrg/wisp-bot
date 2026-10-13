@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { FormEvent, ReactElement } from "react";
-import { ClipboardPasteIcon, PlusIcon } from "lucide-react";
+import { ClipboardPasteIcon } from "lucide-react";
 
 import type { AiSettingsView, ModelSelection } from "../../shared/contracts";
 import type { WispSetupView } from "../../shared/execution";
@@ -44,7 +44,8 @@ interface CreateAgentDialogProps {
     wisp: NewWisp,
     options: { notifyOnUpdatesEnabled: boolean; model: ModelSelection | null },
   ) => Promise<string | null>;
-  trigger?: ReactElement;
+  /** The button that opens the dialog. */
+  trigger: ReactElement;
 }
 
 const STEPS: ReadonlyArray<CreateWispStep> = ["identity", "behavior", "setup"];
@@ -228,25 +229,7 @@ function CreateAgentDialog({ onCreate, trigger }: CreateAgentDialogProps) {
         if (!nextOpen) resetForm();
       }}
     >
-      <DialogTrigger
-        render={
-          trigger ?? (
-            <Button
-              className="w-full justify-center gap-2 px-3 text-base group-data-[collapsed=true]/sidebar:w-9 group-data-[collapsed=true]/sidebar:px-0"
-              variant="ghost"
-              type="button"
-              aria-label="Create Wisp"
-            />
-          )
-        }
-      >
-        {trigger ? null : (
-          <>
-            <PlusIcon />
-            <span className="group-data-[collapsed=true]/sidebar:hidden">Create Wisp</span>
-          </>
-        )}
-      </DialogTrigger>
+      <DialogTrigger render={trigger} />
 
       <DialogContent
         mobileFullscreen

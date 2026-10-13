@@ -3,9 +3,8 @@ import userEvent from "@testing-library/user-event";
 import { expect, it, vi } from "vitest";
 
 import { WispWorkspaceSettings } from "./wisp-workspace-settings";
-import { Accordion } from "@/components/ui/accordion";
 
-it("loads usage lazily and opens the workspace folder", async () => {
+it("loads usage and opens the workspace folder", async () => {
   const user = userEvent.setup();
   const getWorkspace = vi.fn(async () => ({
     ok: true as const,
@@ -19,14 +18,7 @@ it("loads usage lazily and opens the workspace folder", async () => {
     configurable: true,
     value: { getWorkspace, openWorkspaceFolder },
   });
-  render(
-    <Accordion>
-      <WispWorkspaceSettings conversationId="one" />
-    </Accordion>,
-  );
-  expect(getWorkspace).not.toHaveBeenCalled();
-
-  await user.click(screen.getByRole("button", { name: "Workspace" }));
+  render(<WispWorkspaceSettings conversationId="one" />);
 
   expect(await screen.findByText("5.0 MiB of 512 MiB used")).toBeInTheDocument();
   expect(screen.getByRole("progressbar", { name: "Workspace usage" })).toHaveAttribute("aria-valuenow", "1");
@@ -48,12 +40,7 @@ it("links to the storage view, prominently when the workspace is nearly full", a
       openWorkspaceFolder: vi.fn(),
     },
   });
-  render(
-    <Accordion>
-      <WispWorkspaceSettings conversationId="one" onOpenSettings={onOpenSettings} />
-    </Accordion>,
-  );
-  await user.click(screen.getByRole("button", { name: "Workspace" }));
+  render(<WispWorkspaceSettings conversationId="one" onOpenSettings={onOpenSettings} />);
   await user.click(await screen.findByRole("button", { name: "Free up space" }));
   expect(onOpenSettings).toHaveBeenCalledWith({ section: "storage", conversationId: "one" });
 });
@@ -77,12 +64,7 @@ it("resizes the workspace, offering only sizes the disk has room for", async () 
       openWorkspaceFolder: vi.fn(),
     },
   });
-  render(
-    <Accordion>
-      <WispWorkspaceSettings conversationId="one" />
-    </Accordion>,
-  );
-  await user.click(screen.getByRole("button", { name: "Workspace" }));
+  render(<WispWorkspaceSettings conversationId="one" />);
 
   const size = await screen.findByRole("combobox", { name: "Size" });
   expect(size).toHaveTextContent("512 MiB");
@@ -113,12 +95,7 @@ it("asks before giving the workspace less room than it uses", async () => {
       openWorkspaceFolder: vi.fn(),
     },
   });
-  render(
-    <Accordion>
-      <WispWorkspaceSettings conversationId="one" />
-    </Accordion>,
-  );
-  await user.click(screen.getByRole("button", { name: "Workspace" }));
+  render(<WispWorkspaceSettings conversationId="one" />);
   await user.click(await screen.findByRole("combobox", { name: "Size" }));
   await user.click(screen.getByRole("option", { name: "512 MiB" }));
 

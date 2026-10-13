@@ -49,31 +49,52 @@ describe("soulText", () => {
   });
 });
 
+function renderProfile(overrides: Partial<Parameters<typeof WispProfile>[0]> = {}) {
+  const props = {
+    chat: atlas,
+    state: "idle" as const,
+    onBack: vi.fn(),
+    onOpenSection: vi.fn(),
+    onChangeNotifications: vi.fn(),
+    onDelete: vi.fn(),
+    ...overrides,
+  };
+  render(<WispProfile {...props} />);
+  return props;
+}
+
 describe("WispProfile", () => {
-  it("shows who the Wisp is, its model and its jobs", async () => {
-    render(<WispProfile chat={atlas} state="idle" onBack={vi.fn()} onOpenSettings={vi.fn()} />);
+  it("shows who the Wisp is and what it knows and does, with its jobs counted", async () => {
+    renderProfile();
     const profile = screen.getByRole("region", { name: "Atlas" });
     expect(within(profile).getByText("Research")).toBeVisible();
     expect(within(profile).getByRole("region", { name: "Soul" })).toHaveTextContent("Curious, careful with sources.");
-    expect(await within(profile).findByText("claude-sonnet-5-5")).toBeVisible();
-    const jobs = within(profile).getByRole("region", { name: "Jobs" });
-    expect(await within(jobs).findByText("Morning digest")).toBeVisible();
-    expect(within(jobs).getByText("Paused")).toBeVisible();
-    expect(within(jobs).queryByText("Not Atlas's")).not.toBeInTheDocument();
+    const more = within(profile).getByRole("region", { name: "What Atlas knows and does" });
+    expect(await within(more).findByText("1 scheduled")).toBeVisible();
+    expect(within(more).getByRole("button", { name: /Memory/ })).toBeVisible();
   });
 
-  it("goes back to the chat, or into a settings tab", async () => {
+  it("goes back to the chat, or into a page of its settings", async () => {
     const user = userEvent.setup();
-    const onBack = vi.fn();
-    const onOpenSettings = vi.fn();
-    render(<WispProfile chat={atlas} state="idle" onBack={onBack} onOpenSettings={onOpenSettings} />);
+    const props = renderProfile();
     await user.click(screen.getByRole("button", { name: "Chat" }));
-    expect(onBack).toHaveBeenCalled();
+    expect(props.onBack).toHaveBeenCalled();
     await user.click(screen.getByRole("button", { name: "Edit" }));
-    expect(onOpenSettings).toHaveBeenLastCalledWith("general");
+    expect(props.onOpenSection).toHaveBeenLastCalledWith("profile");
     await user.click(screen.getByRole("button", { name: "Model" }));
-    expect(onOpenSettings).toHaveBeenLastCalledWith("model");
-    await user.click(screen.getByRole("button", { name: "Usage" }));
-    expect(onOpenSettings).toHaveBeenLastCalledWith("usage");
+    expect(props.onOpenSection).toHaveBeenLastCalledWith("model");
+    await user.click(screen.getByRole("button", { name: /Commands/ }));
+    expect(props.onOpenSection).toHaveBeenLastCalledWith("execution");
+  });
+
+  it("turns notifications off from the profile, and deletes only after confirmation", async () => {
+    const user = userEvent.setup();
+    const props = renderProfile();
+    await user.click(screen.getByRole("switch", { name: "Notifications" }));
+    expect(props.onChangeNotifications).toHaveBeenCalledWith(false);
+    await user.click(screen.getByRole("button", { name: "Delete Atlas…" }));
+    expect(props.onDelete).not.toHaveBeenCalled();
+    await user.click(screen.getByRole("button", { name: "Confirm deletion" }));
+    expect(props.onDelete).toHaveBeenCalledOnce();
   });
 });

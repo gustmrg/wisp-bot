@@ -14,7 +14,6 @@ const currentUser: CurrentUser = {
 };
 
 const callbacks = {
-  onCollapsedChange: vi.fn(),
   onCreate: vi.fn(),
   onOpenSearch: vi.fn(),
   onOpenSettings: vi.fn(),
@@ -40,9 +39,7 @@ beforeEach(() => {
 
 describe("Sidebar current user", () => {
   it("renders injected identity metadata", () => {
-    render(
-      <Sidebar activeChatId="" chats={{}} collapsed={false} currentUser={currentUser} width={280} {...callbacks} />,
-    );
+    render(<Sidebar activeChatId="" chats={{}} currentUser={currentUser} width={280} {...callbacks} />);
 
     expect(screen.getByText("Ada Lovelace")).toBeVisible();
     expect(screen.getByText("AL")).toBeVisible();
@@ -53,7 +50,6 @@ describe("Sidebar current user", () => {
       <Sidebar
         activeChatId=""
         chats={{}}
-        collapsed={false}
         currentUser={{ displayName: "Your profile", givenName: "", initials: "" }}
         width={280}
         {...callbacks}
@@ -67,15 +63,9 @@ describe("Sidebar current user", () => {
 
   it("opens a Wisp-only creation dialog without a kind selector", async () => {
     const user = userEvent.setup();
-    render(
-      <Sidebar activeChatId="" chats={{}} collapsed={false} currentUser={currentUser} width={280} {...callbacks} />,
-    );
+    render(<Sidebar activeChatId="" chats={{}} currentUser={currentUser} width={280} {...callbacks} />);
 
-    const createButton = screen.getByRole("button", { name: "Create Wisp" });
-    expect(createButton).toHaveClass("w-full", "text-base");
-    expect(createButton).not.toHaveClass("w-fit");
-
-    await user.click(createButton);
+    await user.click(screen.getByRole("button", { name: "Create Wisp" }));
 
     expect(screen.getByRole("heading", { name: "Create new Wisp" })).toBeVisible();
     expect(screen.queryByRole("group", { name: "Creation type" })).not.toBeInTheDocument();
@@ -107,7 +97,6 @@ describe("Sidebar approvals", () => {
         activeChatId=""
         chats={chats}
         approvals={approvals}
-        collapsed={false}
         currentUser={currentUser}
         width={280}
         {...callbacks}
@@ -117,21 +106,6 @@ describe("Sidebar approvals", () => {
     expect(screen.queryByText("Latest research")).not.toBeInTheDocument();
   });
 
-  it("names the pending approval in the collapsed sidebar", () => {
-    render(
-      <Sidebar
-        activeChatId=""
-        chats={chats}
-        approvals={approvals}
-        collapsed
-        currentUser={currentUser}
-        width={280}
-        {...callbacks}
-      />,
-    );
-    expect(screen.getByRole("button", { name: "Atlas, waiting for your approval" })).toBeVisible();
-  });
-
   it("marks waiting for approval with a dot instead of the shield, and the Wisp's eyes grow", () => {
     const { container } = render(
       <Sidebar
@@ -139,7 +113,6 @@ describe("Sidebar approvals", () => {
         chats={chats}
         approvals={approvals}
         failedChats={{ atlas: true }}
-        collapsed={false}
         currentUser={currentUser}
         width={280}
         {...callbacks}
@@ -163,7 +136,6 @@ describe("Sidebar states", () => {
         activeChatId=""
         chats={chats}
         failedChats={{ atlas: true }}
-        collapsed={false}
         currentUser={currentUser}
         width={280}
         {...callbacks}
@@ -174,21 +146,6 @@ describe("Sidebar states", () => {
     expect(container.querySelector("[data-slot=wisp]")).toHaveAttribute("data-state", "error");
   });
 
-  it("names a failed reply in the collapsed sidebar", () => {
-    render(
-      <Sidebar
-        activeChatId=""
-        chats={chats}
-        failedChats={{ atlas: true }}
-        collapsed
-        currentUser={currentUser}
-        width={280}
-        {...callbacks}
-      />,
-    );
-    expect(screen.getByRole("button", { name: "Atlas, the last reply failed" })).toBeVisible();
-  });
-
   it("animates a Wisp while it works and says what it is doing", () => {
     const { container } = render(
       <Sidebar
@@ -196,7 +153,6 @@ describe("Sidebar states", () => {
         chats={chats}
         statuses={{ atlas: "working" }}
         activity={{ atlas: "Searching the web…" }}
-        collapsed={false}
         currentUser={currentUser}
         width={280}
         {...callbacks}
@@ -216,9 +172,7 @@ describe("Sidebar previews", () => {
         chat: { preview: "Attached to the workspace:\n- `inbox/boleto.pdf`" },
       }),
     };
-    render(
-      <Sidebar activeChatId="" chats={chats} collapsed={false} currentUser={currentUser} width={280} {...callbacks} />,
-    );
+    render(<Sidebar activeChatId="" chats={chats} currentUser={currentUser} width={280} {...callbacks} />);
     expect(screen.getByText("boleto.pdf")).toBeVisible();
     expect(screen.queryByText(/Attached to the workspace/)).toBeNull();
   });
@@ -239,17 +193,7 @@ describe("Sidebar on mobile", () => {
 
   it("lists the latest activity first, with an unread badge beside the preview", async () => {
     const user = userEvent.setup();
-    render(
-      <Sidebar
-        mobile
-        activeChatId=""
-        chats={chats}
-        collapsed={false}
-        currentUser={currentUser}
-        width={280}
-        {...callbacks}
-      />,
-    );
+    render(<Sidebar mobile activeChatId="" chats={chats} currentUser={currentUser} width={280} {...callbacks} />);
     const list = screen.getByRole("navigation", { name: "Wisps and circles" });
 
     expect(
@@ -275,7 +219,6 @@ describe("Sidebar on mobile", () => {
         mobile
         activeChatId=""
         chats={{ beta: counted(3) }}
-        collapsed={false}
         currentUser={currentUser}
         width={280}
         {...callbacks}
@@ -291,7 +234,6 @@ describe("Sidebar on mobile", () => {
         mobile
         activeChatId=""
         chats={{ beta: counted(120) }}
-        collapsed={false}
         currentUser={currentUser}
         width={280}
         {...callbacks}
@@ -331,7 +273,6 @@ describe("Sidebar conversation menu", () => {
         mobile={mobile}
         activeChatId=""
         chats={chats}
-        collapsed={false}
         currentUser={currentUser}
         width={280}
         {...callbacks}

@@ -4,7 +4,6 @@ import {
   BellOffIcon,
   MailCheckIcon,
   MailIcon,
-  PanelLeftCloseIcon,
   PinIcon,
   PinOffIcon,
   PlusIcon,
@@ -32,12 +31,11 @@ import { chatActivityDate, chatActivityLabel } from "@/lib/date-dividers";
 import { sidebarLayoutStyle } from "@/lib/layout";
 import { panelResizer, profileAvatar } from "@/lib/ui-classes";
 import { cn } from "@/lib/utils";
-import { inkOn, wispColor } from "@/lib/wisp-appearance";
+import { wispAccent, wispAccentStyle, wispColor } from "@/lib/wisp-appearance";
 
 interface SidebarProps {
   activeChatId: ChatId;
   chats: ChatViewCollection;
-  collapsed: boolean;
   currentUser: CurrentUser;
   width: number;
   mobile?: boolean;
@@ -50,7 +48,6 @@ interface SidebarProps {
   failedChats?: Record<string, boolean>;
   loading?: boolean;
   error?: string | null;
-  onCollapsedChange: (collapsed: boolean) => void;
   /** Resolves with the new Wisp's conversation ID, or null when it could not be created. */
   onCreate: (
     wisp: NewWisp,
@@ -103,7 +100,7 @@ function ambientColors(
           Number(Boolean(left.unread))),
     )
     .slice(0, 3)
-    .map((chat) => wispColor(chat.wisp.name, chat.wisp.color));
+    .map((chat) => wispAccent(wispColor(chat.wisp.name, chat.wisp.color)).accent);
   return Object.fromEntries(ranked.map((color, index) => [`--ambient-${index + 1}`, color])) as CSSProperties;
 }
 
@@ -114,7 +111,6 @@ function activityTime(chat: Parameters<typeof chatActivityDate>[0] | undefined):
 function Sidebar({
   activeChatId,
   chats,
-  collapsed: collapsedPreference,
   currentUser,
   width,
   mobile = false,
@@ -125,7 +121,6 @@ function Sidebar({
   failedChats = {},
   loading = false,
   error,
-  onCollapsedChange,
   onCreate,
   onOpenSearch,
   onOpenSettings,
@@ -136,7 +131,6 @@ function Sidebar({
   onSelectChat,
   onChatAction,
 }: SidebarProps) {
-  const collapsed = !mobile && collapsedPreference;
   const [filter, setFilter] = useState<"all" | "unread" | "active">("all");
   const [menuChatId, setMenuChatId] = useState<ChatId | null>(null);
   const titleRef = useRef<HTMLHeadingElement>(null);
@@ -161,11 +155,10 @@ function Sidebar({
       <aside
         hidden={hidden}
         className={cn(
-          "workspace-sidebar group/sidebar relative z-[2] flex min-h-0 min-w-(--sidebar-min-width) w-(--sidebar-width) flex-none flex-col overflow-hidden bg-sidebar transition-[width] duration-[180ms]",
+          "workspace-sidebar relative z-[2] flex min-h-0 w-(--sidebar-width) flex-none flex-col overflow-hidden bg-sidebar",
           hidden && "hidden",
         )}
-        data-collapsed={collapsed}
-        style={sidebarLayoutStyle(width, collapsed)}
+        style={sidebarLayoutStyle(width)}
         aria-label="Conversations"
       >
         {mobile ? (
@@ -207,52 +200,32 @@ function Sidebar({
             ) : null}
           </>
         ) : (
-          <div className={cn("flex h-11 flex-none items-center gap-1 px-2 pb-1", collapsed && "justify-center")}>
-            {collapsed ? null : (
-              <button
-                className={cn(
-                  "sidebar-search flex h-8 min-w-0 flex-1 items-center gap-2 rounded-lg border text-left text-dim hover:text-foreground",
-                  "border-border bg-card hover:border-ring",
-                  "px-[9px] [&_svg]:size-[13px] [&_svg]:flex-none [&_span]:flex-1",
-                )}
-                type="button"
-                onClick={onOpenSearch}
-              >
-                <SearchIcon aria-hidden="true" />
-                <span>Search</span>
-              </button>
-            )}
+          // The Create Wisp button, rendered further down, is placed at the end of this row.
+          <div className="flex h-11 flex-none items-center pr-[50px] pl-2 pb-1">
             <button
-              className="flex size-7 flex-none items-center justify-center border-0 bg-transparent text-dim transition-colors duration-[120ms] hover:text-foreground [&_svg]:size-[15px] [&_svg]:transition-transform [&_svg]:duration-[180ms] data-[collapsed=true]:[&_svg]:rotate-180"
+              className={cn(
+                "sidebar-search flex h-[34px] min-w-0 flex-1 items-center gap-2 rounded-[10px] border-0 text-left text-dim hover:text-foreground",
+                "bg-foreground/[0.05] hover:bg-foreground/[0.08]",
+                "px-2.5 [&_svg]:size-[15px] [&_svg]:flex-none [&_span]:flex-1",
+              )}
               type="button"
-              data-collapsed={collapsed}
-              aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
-              title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
-              onClick={() => onCollapsedChange(!collapsed)}
+              onClick={onOpenSearch}
             >
-              <PanelLeftCloseIcon aria-hidden="true" />
+              <SearchIcon aria-hidden="true" />
+              <span>Search</span>
             </button>
           </div>
         )}
 
-        {!mobile && !collapsed ? (
+        {!mobile && onResolveApproval ? (
           <div className="sidebar-wisps">
-            <WispOrbs
+            <NeedsYou
               chats={chats}
-              statuses={statuses}
               approvals={approvals}
-              failedChats={failedChats}
-              onSelectChat={onSelectChat}
+              allowAlwaysAvailable={allowAlwaysAvailable}
+              onResolve={onResolveApproval}
+              onOpenChat={onSelectChat}
             />
-            {onResolveApproval ? (
-              <NeedsYou
-                chats={chats}
-                approvals={approvals}
-                allowAlwaysAvailable={allowAlwaysAvailable}
-                onResolve={onResolveApproval}
-                onOpenChat={onSelectChat}
-              />
-            ) : null}
           </div>
         ) : null}
 
@@ -273,10 +246,7 @@ function Sidebar({
         ) : null}
 
         <nav
-          className={cn(
-            "conversation-list min-h-0 flex-1 overflow-x-hidden overflow-y-auto [&::-webkit-scrollbar]:w-0",
-            collapsed ? "px-2" : "px-2.5",
-          )}
+          className="conversation-list min-h-0 flex-1 overflow-x-hidden overflow-y-auto px-2.5 [&::-webkit-scrollbar]:w-0"
           aria-label="Wisps and circles"
         >
           {chatIds.map((chatId) => {
@@ -289,21 +259,15 @@ function Sidebar({
             const activityDate = chatActivityDate(chat);
             const color = chat.kind === "wisp" ? wispColor(chat.wisp.name, chat.wisp.color) : undefined;
             const role = chat.kind === "wisp" ? chat.wisp.role.trim() : "";
-            const attention = pendingApproval ? "waiting for your approval" : failed ? "the last reply failed" : null;
 
             const row = (
               <button
-                className={cn(
-                  "conversation-list-item group/item relative mb-1 flex w-full min-w-0 items-center gap-[9px] rounded-[10px] border-0 bg-transparent p-2 text-left hover:bg-muted data-[selected=true]:bg-accent",
-                  collapsed && "h-[46px] justify-center py-[5px] px-0",
-                )}
+                className="conversation-list-item group/item relative mb-1 flex w-full min-w-0 items-center gap-[9px] rounded-[10px] border-0 bg-transparent p-2 text-left hover:bg-muted data-[selected=true]:bg-accent"
                 data-selected={selected}
                 data-unread={chat.unread ? true : undefined}
-                style={color ? ({ "--wisp": color, "--wisp-ink": inkOn(color) } as CSSProperties) : undefined}
+                style={color ? wispAccentStyle(color) : undefined}
                 type="button"
                 aria-current={selected ? "page" : undefined}
-                aria-label={collapsed ? (attention ? `${chatName(chat)}, ${attention}` : chatName(chat)) : undefined}
-                title={collapsed ? (attention ? `${chatName(chat)} — ${attention}` : chatName(chat)) : undefined}
                 key={chatId}
                 onClick={() => {
                   // The click that ends a long press opened the menu, not the conversation.
@@ -322,66 +286,60 @@ function Sidebar({
                   {pendingApproval ? <span className={approvalIndicator} aria-hidden="true" /> : null}
                   {failed ? <span className={errorIndicator} aria-hidden="true" /> : null}
                 </span>
-                {collapsed ? null : (
-                  <span className="flex min-w-0 flex-1 flex-col">
-                    <span className="flex min-w-0 items-baseline gap-2">
-                      <strong className="min-w-0 overflow-hidden text-base leading-[17px] font-semibold text-ellipsis whitespace-nowrap">
-                        {chatName(chat)}
-                      </strong>
-                      {role ? (
-                        <small className="conversation-role min-w-0 flex-[0_1_auto] truncate">{role}</small>
-                      ) : null}
-                      <span className="flex-1" />
-                      {chat.pinned ? (
-                        <span className="conversation-pin flex-none self-center text-faint">
-                          <PinIcon aria-hidden="true" className="size-3" />
-                          <span className="sr-only">Pinned</span>
-                        </span>
-                      ) : null}
-                      {activityDate ? (
-                        <time
-                          className="flex-none text-faint text-2xs leading-[17px]"
-                          dateTime={activityDate.toISOString()}
-                        >
-                          {chatActivityLabel(activityDate, now, timeZone)}
-                        </time>
-                      ) : null}
-                    </span>
-                    <span className="flex min-w-0 items-center gap-2">
-                      <span
-                        className={cn(
-                          "conversation-preview mt-px min-w-0 flex-1 overflow-hidden text-faint text-sm leading-[17px] text-ellipsis whitespace-nowrap",
-                          pendingApproval && "font-medium text-warning",
-                          failed && "text-destructive",
-                        )}
-                        data-activity={
-                          pendingApproval ? "approval" : failed ? "failed" : working ? "working" : undefined
-                        }
-                      >
-                        {pendingApproval
-                          ? "Waiting for your approval"
-                          : failed
-                            ? "The last reply failed"
-                            : working
-                              ? (activity[chatId] ?? "Working…")
-                              : messagePreview(chat.preview)}
+                <span className="flex min-w-0 flex-1 flex-col">
+                  <span className="flex min-w-0 items-baseline gap-2">
+                    <strong className="min-w-0 overflow-hidden text-base leading-[17px] font-semibold text-ellipsis whitespace-nowrap">
+                      {chatName(chat)}
+                    </strong>
+                    {role ? <small className="conversation-role min-w-0 flex-[0_1_auto] truncate">{role}</small> : null}
+                    <span className="flex-1" />
+                    {chat.pinned ? (
+                      <span className="conversation-pin flex-none self-center text-faint">
+                        <PinIcon aria-hidden="true" className="size-3" />
+                        <span className="sr-only">Pinned</span>
                       </span>
-                      {chat.unread && mobile ? (
-                        // A server that predates counts sends only `unread`: a dot then.
-                        <span className="conversation-unread-badge" data-counted={chat.unreadCount ? true : undefined}>
-                          {chat.unreadCount ? (
-                            <>
-                              <span aria-hidden="true">{chat.unreadCount > 99 ? "99+" : chat.unreadCount}</span>
-                              <span className="sr-only">{`${chat.unreadCount} unread`}</span>
-                            </>
-                          ) : (
-                            <span className="sr-only">Unread</span>
-                          )}
-                        </span>
-                      ) : null}
-                    </span>
+                    ) : null}
+                    {activityDate ? (
+                      <time
+                        className="flex-none text-faint text-2xs leading-[17px]"
+                        dateTime={activityDate.toISOString()}
+                      >
+                        {chatActivityLabel(activityDate, now, timeZone)}
+                      </time>
+                    ) : null}
                   </span>
-                )}
+                  <span className="flex min-w-0 items-center gap-2">
+                    <span
+                      className={cn(
+                        "conversation-preview mt-px min-w-0 flex-1 overflow-hidden text-faint text-sm leading-[17px] text-ellipsis whitespace-nowrap",
+                        pendingApproval && "font-medium text-warning",
+                        failed && "text-destructive",
+                      )}
+                      data-activity={pendingApproval ? "approval" : failed ? "failed" : working ? "working" : undefined}
+                    >
+                      {pendingApproval
+                        ? "Waiting for your approval"
+                        : failed
+                          ? "The last reply failed"
+                          : working
+                            ? (activity[chatId] ?? "Working…")
+                            : messagePreview(chat.preview)}
+                    </span>
+                    {chat.unread && mobile ? (
+                      // A server that predates counts sends only `unread`: a dot then.
+                      <span className="conversation-unread-badge" data-counted={chat.unreadCount ? true : undefined}>
+                        {chat.unreadCount ? (
+                          <>
+                            <span aria-hidden="true">{chat.unreadCount > 99 ? "99+" : chat.unreadCount}</span>
+                            <span className="sr-only">{`${chat.unreadCount} unread`}</span>
+                          </>
+                        ) : (
+                          <span className="sr-only">Unread</span>
+                        )}
+                      </span>
+                    ) : null}
+                  </span>
+                </span>
               </button>
             );
             if (!onChatAction) return row;
@@ -412,12 +370,8 @@ function Sidebar({
           ) : null}
         </nav>
 
-        <div
-          className={cn(
-            "sidebar-create mt-4 mb-1 mx-2.5 flex flex-none items-center justify-stretch gap-2 pt-2 [&>button]:h-[46px] [&>button]:flex-none [&>button]:rounded-[10px] [&>button]:[&_svg]:size-[13px]!",
-            collapsed && "flex-col",
-          )}
-        >
+        {/* One dialog for both layouts, so a Wisp being created survives a change between them. */}
+        <div className={mobile ? "sidebar-create" : "absolute top-[3px] right-2 z-[1]"}>
           <CreateAgentDialog
             onCreate={onCreate}
             trigger={
@@ -425,7 +379,16 @@ function Sidebar({
                 <Button className="mobile-create-button" type="button" aria-label="Create Wisp">
                   <PlusIcon aria-hidden="true" />
                 </Button>
-              ) : undefined
+              ) : (
+                <button
+                  className="flex size-[34px] items-center justify-center rounded-[10px] border-0 bg-foreground/[0.05] text-dim transition-colors duration-[120ms] hover:bg-foreground/[0.08] hover:text-foreground [&_svg]:size-4"
+                  type="button"
+                  aria-label="Create Wisp"
+                  title="Create Wisp"
+                >
+                  <PlusIcon aria-hidden="true" />
+                </button>
+              )
             }
           />
         </div>
@@ -444,7 +407,6 @@ function Sidebar({
             className={cn(
               "flex min-w-0 flex-none items-center gap-[9px] rounded-[9px] border-0 bg-transparent p-1.5 text-left hover:bg-muted",
               "mt-[5px] mx-3 mb-[9px]",
-              collapsed && "mx-2 justify-center px-0",
             )}
             type="button"
             aria-label="Open user settings"
@@ -454,11 +416,11 @@ function Sidebar({
             <span className={profileAvatar}>
               {currentUser.initials || <UserIcon aria-hidden="true" className="size-3.5" />}
             </span>
-            {collapsed ? null : <span className="min-w-0 flex-1 truncate">{currentUser.displayName}</span>}
+            <span className="min-w-0 flex-1 truncate">{currentUser.displayName}</span>
           </button>
         )}
 
-        {collapsed || mobile ? null : (
+        {mobile ? null : (
           <div
             className={cn(panelResizer, "-right-1")}
             role="separator"

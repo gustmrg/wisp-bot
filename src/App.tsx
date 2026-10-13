@@ -8,7 +8,8 @@ import { ChatPanel } from "@/components/chat-panel";
 import { DetailsPanel } from "@/components/details-panel";
 import { SearchDialog } from "@/components/search-dialog";
 import { MobileApprovals } from "@/components/mobile-approvals";
-import { WispProfile, type WispSettingsTab } from "@/components/wisp-profile";
+import { WispProfile } from "@/components/wisp-profile";
+import type { WispSettingsSection } from "@/components/wisp-settings";
 import { Sidebar } from "@/components/sidebar";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { UpdateToast } from "@/components/update-toast";
@@ -70,11 +71,10 @@ function Workspace({ userProfile }: { userProfile: UserProfileController }) {
   };
   const mobile = useMobileLayout();
   const [mobilePage, setMobilePage] = useState<"list" | "chat" | "approvals">("list");
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [detailsOpen, setDetailsOpen] = useState(false);
   // On a phone a Wisp's settings start from its profile.
   const [profileOpen, setProfileOpen] = useState(false);
-  const [detailsTab, setDetailsTab] = useState<WispSettingsTab | undefined>(undefined);
+  const [detailsSection, setDetailsSection] = useState<WispSettingsSection | undefined>(undefined);
   const [searchOpen, setSearchOpen] = useState(false);
   const settingsDialog = useRef<AppSettingsDialogHandle>(null);
   const navigationVersion = useRef(0);
@@ -90,7 +90,7 @@ function Workspace({ userProfile }: { userProfile: UserProfileController }) {
   const conversations = useMemo(() => Object.values(workspace.chats), [workspace.chats]);
   const sidebarPanel = useResizablePanel({
     ...SIDEBAR_LAYOUT.resize,
-    enabled: !mobile && !sidebarCollapsed,
+    enabled: !mobile,
   });
   const detailsPanel = useResizablePanel({
     ...DETAILS_LAYOUT.resize,
@@ -159,10 +159,16 @@ function Workspace({ userProfile }: { userProfile: UserProfileController }) {
     setMobilePage("approvals");
   }
 
-  function showDetails(open: boolean, tab?: WispSettingsTab) {
+  function showDetails(open: boolean, section?: WispSettingsSection) {
     navigationVersion.current += 1;
-    setDetailsTab(tab);
+    setDetailsSection(section);
     setDetailsOpen(open);
+  }
+
+  async function deleteActiveChat() {
+    const startedAt = navigationVersion.current;
+    const deleted = await workspace.deleteActiveChat();
+    if (deleted && startedAt === navigationVersion.current) showConversations();
   }
 
   /** The gear in a chat: a Wisp's profile on a phone, its settings otherwise. */
@@ -202,7 +208,6 @@ function Workspace({ userProfile }: { userProfile: UserProfileController }) {
           <Sidebar
             activeChatId={workspace.activeChatId}
             chats={workspace.chats}
-            collapsed={sidebarCollapsed}
             currentUser={currentUser}
             width={sidebarPanel.width}
             mobile={mobile}
@@ -213,7 +218,6 @@ function Workspace({ userProfile }: { userProfile: UserProfileController }) {
             failedChats={workspace.failedChats}
             loading={workspace.loading}
             error={workspace.error}
-            onCollapsedChange={setSidebarCollapsed}
             onCreate={async (wisp, options) => {
               const id = await workspace.createWisp(wisp, options);
               if (id) {
@@ -287,13 +291,17 @@ function Workspace({ userProfile }: { userProfile: UserProfileController }) {
                 navigationVersion.current += 1;
                 setProfileOpen(false);
               }}
-              onOpenSettings={(tab) => showDetails(true, tab)}
+              onOpenSection={(section) => showDetails(true, section)}
+              onChangeNotifications={(notifyOnUpdatesEnabled) =>
+                void workspace.updateActiveChat({ kind: "wisp", notifyOnUpdatesEnabled })
+              }
+              onDelete={() => void deleteActiveChat()}
             />
           ) : null}
           {detailsOpen && workspace.activeChat ? (
             <DetailsPanel
               mobile={mobile}
-              initialTab={detailsTab}
+              section={detailsSection}
               backLabel={profileOpen ? "Back to profile" : undefined}
               state={
                 workspace.approvals[workspace.activeChat.id]?.length
@@ -315,11 +323,7 @@ function Workspace({ userProfile }: { userProfile: UserProfileController }) {
                 )
               }
               onClose={() => showDetails(false)}
-              onDelete={async () => {
-                const startedAt = navigationVersion.current;
-                const deleted = await workspace.deleteActiveChat();
-                if (deleted && startedAt === navigationVersion.current) showConversations();
-              }}
+              onDelete={() => void deleteActiveChat()}
               onResizeStart={detailsPanel.onResizeStart}
             />
           ) : null}

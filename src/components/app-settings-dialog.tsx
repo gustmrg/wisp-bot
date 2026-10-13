@@ -2,7 +2,7 @@ import { LaunchAtLoginSetting } from "@/components/launch-at-login-setting";
 import { isBrowserApp } from "@/lib/platform";
 import { UserProfileSettings } from "@/components/user-profile-settings";
 import type { UserProfileController } from "@/hooks/use-user-profile";
-import { useEffect, useRef, useState, type CSSProperties } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   BarChart3Icon,
   BellIcon,
@@ -40,7 +40,7 @@ import { ConnectionSettingsSection } from "@/components/connection-settings-sect
 import { MobileNavigation } from "@/components/mobile-navigation";
 import { MobileSettingsProfile } from "@/components/mobile-settings-profile";
 import { WispAvatar } from "@/components/chat-avatar";
-import { wispColor } from "@/lib/wisp-appearance";
+import { wispAccentStyle, wispColor } from "@/lib/wisp-appearance";
 import { DEFAULT_WISP_APPEARANCE } from "../../shared/wisp-appearance";
 import {
   SettingsCard,
@@ -406,7 +406,7 @@ function AppSettingsDialog({
                       <span
                         key={wisp.id}
                         className="wisp-halo"
-                        style={{ "--wisp": wispColor(wisp.name, wisp.color) } as CSSProperties}
+                        style={wispAccentStyle(wispColor(wisp.name, wisp.color))}
                       >
                         <WispAvatar
                           wisp={{ ...wisp, appearance: wisp.appearance ?? DEFAULT_WISP_APPEARANCE }}

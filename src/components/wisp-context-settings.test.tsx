@@ -2,10 +2,9 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, it, vi } from "vitest";
 import { WispContextSettings } from "./wisp-context-settings";
-import { Accordion } from "@/components/ui/accordion";
 import { DEFAULT_CONTEXT_POLICY, type ContextCommand } from "../../shared/context-policy";
 
-it("loads lazily, saves memory and requires an explicit new-topic choice", async () => {
+it("loads, saves memory and requires an explicit new-topic choice", async () => {
   const user = userEvent.setup();
   const view = {
     policy: DEFAULT_CONTEXT_POLICY,
@@ -27,13 +26,7 @@ it("loads lazily, saves memory and requires an explicit new-topic choice", async
       subscribeToAgentEvents: vi.fn(() => () => undefined),
     },
   });
-  render(
-    <Accordion>
-      <WispContextSettings conversationId="one" />
-    </Accordion>,
-  );
-  expect(manageContext).not.toHaveBeenCalled();
-  await user.click(screen.getByRole("button", { name: "Context & memory" }));
+  render(<WispContextSettings conversationId="one" />);
   const memory = await screen.findByRole("textbox", { name: "Saved memory" });
   await user.type(memory, "Use Portuguese");
   await user.click(screen.getByRole("button", { name: "Save context settings" }));
@@ -48,7 +41,6 @@ it("loads lazily, saves memory and requires an explicit new-topic choice", async
 });
 
 it("disables context mutations while a Wisp is working", async () => {
-  const user = userEvent.setup();
   Object.defineProperty(window, "wisp", {
     configurable: true,
     value: {
@@ -67,12 +59,7 @@ it("disables context mutations while a Wisp is working", async () => {
       subscribeToAgentEvents: vi.fn(() => () => undefined),
     },
   });
-  render(
-    <Accordion>
-      <WispContextSettings conversationId="one" />
-    </Accordion>,
-  );
-  await user.click(screen.getByRole("button", { name: "Context & memory" }));
+  render(<WispContextSettings conversationId="one" />);
   expect(await screen.findByRole("button", { name: "Summarize context" })).toBeDisabled();
   expect(screen.getByRole("button", { name: "Start new topic" })).toBeDisabled();
 });

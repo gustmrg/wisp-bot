@@ -34,13 +34,13 @@ Discovery accepts at most 128 tools per server and fails clearly beyond that.
 That is a per-server bound, not a per-Wisp one: a Wisp's built-in, plugin, and
 granted MCP tools are all sent to the model together, and some models accept
 fewer (OpenAI models reject more than 128). When a model refuses the request
-for that reason, the chat says so and points to the Access tab.
+for that reason, the chat says so and points to the Access section.
 
 ## Per-Wisp access
 
 Adding a server never grants any Wisp access. Grants are per-Wisp, with a
 single first-release level, **Use with approval**. They can be chosen in each
-Wisp's **Access** tab, or for every Wisp at once in the server's **Wisp access**
+Wisp's **Access** section, or for every Wisp at once in the server's **Wisp access**
 section under **Settings → MCP servers**, which opens right after a server is
 added. Both edit the same grants. Granting requires an enabled connection, and
 a completed sign-in for OAuth. Every
@@ -54,7 +54,7 @@ tool, for that one Wisp, and to the definition (name, description, and input
 schema) the card was shown for: when the server changes the tool, it asks
 again. Removing the Wisp's access, changing the connection's endpoint,
 mechanism, or credential, and removing the server drop the permission too. A
-**Block all integration calls** rule still wins. The Wisp's **Access** tab
+**Block all integration calls** rule still wins. The Wisp's **Access** section
 lists always-allowed tools under each server; removing one there makes the
 tool ask again. Forms can only remove always-allowed tools, never add them.
 

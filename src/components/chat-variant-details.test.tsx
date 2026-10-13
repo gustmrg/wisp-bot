@@ -1,9 +1,10 @@
 import { render, screen } from "@testing-library/react";
+import { useState } from "react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
 import { CircleDetails } from "@/components/circle-details";
-import { WispDetails } from "@/components/wisp-details";
+import { WispSettingsDialog, WispSettingsSectionContent, type WispSettingsSection } from "@/components/wisp-settings";
 import { circleChatView, wispChatView } from "@/test/chat-fixtures";
 
 const wisp = wispChatView("atlas", { wisp: { name: "Atlas", role: "Research", soul: "Researches" } });
@@ -11,7 +12,7 @@ const circle = circleChatView("crew", [wisp.wisp], { name: "Crew", description: 
 
 describe("variant details", () => {
   it("renders Wisp-only appearance editing and the soul", () => {
-    render(<WispDetails chat={wisp} onChangeWisp={vi.fn()} onChangeNotifications={vi.fn()} />);
+    render(<WispSettingsSectionContent chat={wisp} section="profile" onChangeWisp={vi.fn()} />);
     for (const axis of ["Wisp trail", "Wisp body", "Wisp eyes"]) {
       expect(screen.getByRole("group", { name: axis })).toBeVisible();
     }
@@ -24,10 +25,10 @@ describe("variant details", () => {
   it("previews the soul as markdown and offers templates for an empty one", async () => {
     const user = userEvent.setup();
     render(
-      <WispDetails
+      <WispSettingsSectionContent
         chat={wispChatView("nova", { wisp: { soul: "" } })}
+        section="profile"
         onChangeWisp={vi.fn()}
-        onChangeNotifications={vi.fn()}
       />,
     );
     await user.click(screen.getByRole("button", { name: "Teacher" }));
@@ -42,48 +43,33 @@ describe("variant details", () => {
   it("keeps Wisp edits local until they are saved", async () => {
     const user = userEvent.setup();
     const onChange = vi.fn(async () => true);
-    const onChangeNotifications = vi.fn(async () => true);
-    render(<WispDetails chat={wisp} onChangeWisp={onChange} onChangeNotifications={onChangeNotifications} />);
+    render(<WispSettingsSectionContent chat={wisp} section="profile" onChangeWisp={onChange} />);
 
     const name = screen.getByRole("textbox", { name: "Name" });
-    expect(screen.queryByRole("button", { name: "Save profile" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Save" })).not.toBeInTheDocument();
 
     await user.clear(name);
     await user.type(name, "Nova");
 
     expect(onChange).not.toHaveBeenCalled();
-    await user.click(screen.getByRole("button", { name: "Save profile" }));
+    await user.click(screen.getByRole("button", { name: "Save" }));
 
     expect(onChange).toHaveBeenCalledOnce();
     expect(onChange).toHaveBeenCalledWith(expect.objectContaining({ name: "Nova", role: "Research" }));
-    expect(onChangeNotifications).not.toHaveBeenCalled();
   });
 
   it("discards unsaved profile edits", async () => {
     const user = userEvent.setup();
     const onChange = vi.fn(async () => true);
-    render(<WispDetails chat={wisp} onChangeWisp={onChange} onChangeNotifications={vi.fn()} />);
+    render(<WispSettingsSectionContent chat={wisp} section="profile" onChangeWisp={onChange} />);
 
     const name = screen.getByRole("textbox", { name: "Name" });
     await user.type(name, " II");
     await user.click(screen.getByRole("button", { name: "Discard" }));
 
     expect(name).toHaveValue("Atlas");
-    expect(screen.queryByRole("button", { name: "Save profile" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Save" })).not.toBeInTheDocument();
     expect(onChange).not.toHaveBeenCalled();
-  });
-
-  it("saves the notification setting on the Wisp's conversation", async () => {
-    const user = userEvent.setup();
-    const onChange = vi.fn(async () => true);
-    const onChangeNotifications = vi.fn(async () => true);
-    render(<WispDetails chat={wisp} onChangeWisp={onChange} onChangeNotifications={onChangeNotifications} />);
-
-    await user.click(screen.getByRole("switch", { name: "Notifications" }));
-    await user.click(screen.getByRole("button", { name: "Save profile" }));
-
-    expect(onChange).not.toHaveBeenCalled();
-    expect(onChangeNotifications).toHaveBeenCalledWith(false);
   });
 
   it("renders circle-only membership details", () => {
@@ -94,7 +80,13 @@ describe("variant details", () => {
   });
 });
 
-it("loads model and usage data lazily and keeps model details across tabs", async () => {
+/** The dialog as the side panel opens it, with its sections switched by the person. */
+function SettingsDialog({ onChangeWisp = vi.fn() }: { onChangeWisp?: () => void }) {
+  const [section, setSection] = useState<WispSettingsSection | null>("profile");
+  return <WispSettingsDialog chat={wisp} section={section} onSectionChange={setSection} onChangeWisp={onChangeWisp} />;
+}
+
+it("loads model and usage data when shown and keeps an unsaved edit across sections", async () => {
   const user = userEvent.setup();
   const getAiSettings = vi.fn(async () => ({
     ok: true,
@@ -131,27 +123,26 @@ it("loads model and usage data lazily and keeps model details across tabs", asyn
     },
   });
   const onChange = vi.fn();
-  render(<WispDetails chat={wisp} onChangeWisp={onChange} onChangeNotifications={onChange} />);
-  expect(screen.getByRole("tab", { name: "General" })).toHaveAttribute("aria-selected", "true");
+  render(<SettingsDialog onChangeWisp={onChange} />);
+  expect(screen.getByRole("button", { name: "Profile" })).toHaveAttribute("aria-current", "page");
   expect(getAiSettings).not.toHaveBeenCalled();
   expect(getSessionReport).not.toHaveBeenCalled();
   await user.clear(screen.getByRole("textbox", { name: "Name" }));
   await user.type(screen.getByRole("textbox", { name: "Name" }), "Unsent name");
-  await user.click(screen.getByRole("tab", { name: "Model" }));
+  await user.click(screen.getByRole("button", { name: "Model" }));
   expect(await screen.findByText("Test")).toBeVisible();
-  expect(screen.getByText("model")).toBeVisible();
   expect(screen.getByText(/set when the Wisp is created/)).toBeVisible();
-  await user.click(screen.getByRole("tab", { name: "Usage" }));
+  await user.click(screen.getByRole("button", { name: "Usage" }));
   expect(await screen.findByText(/No agent session yet/)).toBeVisible();
-  await user.click(screen.getByRole("tab", { name: "Model" }));
+  await user.click(screen.getByRole("button", { name: "Model" }));
   expect(screen.getByText("Test")).toBeVisible();
   expect(getAiSettings).toHaveBeenCalledTimes(1);
-  await user.click(screen.getByRole("tab", { name: "General" }));
+  await user.click(screen.getByRole("button", { name: "Profile" }));
   expect(screen.getByRole("textbox", { name: "Name" })).toHaveValue("Unsent name");
   expect(onChange).not.toHaveBeenCalled();
 });
 
-it("supports keyboard navigation between settings tabs", async () => {
+it("moves between sections with the arrow keys", async () => {
   const user = userEvent.setup();
   Object.defineProperty(window, "wisp", {
     configurable: true,
@@ -161,9 +152,13 @@ it("supports keyboard navigation between settings tabs", async () => {
       subscribeToAgentEvents: vi.fn(() => () => undefined),
     },
   });
-  render(<WispDetails chat={wisp} onChangeWisp={vi.fn()} onChangeNotifications={vi.fn()} />);
-  screen.getByRole("tab", { name: "General" }).focus();
-  await user.keyboard("{ArrowRight}{Enter}");
-  expect(screen.getByRole("tab", { name: "Model" })).toHaveFocus();
-  expect(screen.getByRole("tab", { name: "Model" })).toHaveAttribute("aria-selected", "true");
+  render(<SettingsDialog />);
+  screen.getByRole("button", { name: "Profile" }).focus();
+  await user.keyboard("{ArrowDown}");
+  expect(screen.getByRole("button", { name: "Model" })).toHaveFocus();
+  expect(screen.getByRole("button", { name: "Model" })).toHaveAttribute("aria-current", "page");
+  expect(screen.getByRole("heading", { name: "Model" })).toBeVisible();
+  await user.keyboard("{ArrowUp}");
+  expect(screen.getByRole("button", { name: "Profile" })).toHaveFocus();
+  expect(screen.getByRole("textbox", { name: "Name" })).toBeVisible();
 });

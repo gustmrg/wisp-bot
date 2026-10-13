@@ -2,7 +2,6 @@ import { useEffect, useId, useState } from "react";
 
 import type { ExecutionMode, SaveWispExecutionRequest, WispExecutionView } from "../../shared/execution";
 import { ConfirmAction } from "@/components/settings/settings-primitives";
-import { AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Button } from "@/components/ui/button";
 import {
   Field,
@@ -26,21 +25,9 @@ const MODES: ReadonlyArray<{ value: ExecutionMode; label: string }> = [
 
 const CONTAINER_STATES = { absent: "Not created yet", stopped: "Stopped", running: "Running" } as const;
 
+/** The Commands section of a Wisp's settings. */
 export function WispExecutionSettings({ conversationId }: { conversationId: string }) {
-  const [visited, setVisited] = useState(false);
-  return (
-    <AccordionItem
-      value="commands"
-      onOpenChange={(open) => {
-        if (open) setVisited(true);
-      }}
-    >
-      <AccordionTrigger>Commands</AccordionTrigger>
-      <AccordionContent keepMounted>
-        {visited ? <ExecutionPanel key={conversationId} conversationId={conversationId} /> : null}
-      </AccordionContent>
-    </AccordionItem>
-  );
+  return <ExecutionPanel key={conversationId} conversationId={conversationId} />;
 }
 
 function ExecutionPanel({ conversationId }: { conversationId: string }) {

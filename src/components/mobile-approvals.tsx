@@ -1,4 +1,4 @@
-import { useEffect, useRef, type CSSProperties } from "react";
+import { useEffect, useRef } from "react";
 import { ChevronRightIcon } from "lucide-react";
 
 import type { ChatId, ChatView, ChatViewCollection } from "@/chat-data";
@@ -6,7 +6,7 @@ import { ChatAvatar, WispAvatar } from "@/components/chat-avatar";
 import { MobileNavigation } from "@/components/mobile-navigation";
 import { ToolApprovalCard, approvalAsk } from "@/components/tool-approval-card";
 import { chatName } from "@/lib/chat-schema";
-import { inkOn, wispColor } from "@/lib/wisp-appearance";
+import { wispAccentStyle, wispColor } from "@/lib/wisp-appearance";
 import type { ToolApprovalDecision, ToolApprovalRequest } from "../../shared/tool-policy";
 
 interface MobileApprovalsProps {
@@ -49,7 +49,7 @@ export function ApprovalEntry({ chat, request, allowAlwaysAvailable, onResolve, 
     <article
       className="mobile-approval"
       aria-label={`${name}: ${request.summary}`}
-      style={color ? ({ "--wisp": color, "--wisp-ink": inkOn(color) } as CSSProperties) : undefined}
+      style={color ? wispAccentStyle(color) : undefined}
     >
       <button
         type="button"

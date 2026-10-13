@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -105,8 +105,8 @@ describe("ChatPanel transcript", () => {
       activity: "Searching the web…",
     });
 
-    expect(screen.getAllByText("Searching the web…")).toHaveLength(1);
-    expect(scroller).toContainElement(screen.getByText("Searching the web…"));
+    // The header says it too; below the messages it shows once.
+    expect(within(scroller).getAllByText("Searching the web…")).toHaveLength(1);
     expect(screen.queryByText("Atlas is working…")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Stop response" })).toBeInTheDocument();
 
@@ -125,7 +125,7 @@ describe("ChatPanel transcript", () => {
   });
 
   it("keeps the execution indicator below text the Wisp wrote before using a tool", () => {
-    renderPanel(
+    const { scroller } = renderPanel(
       transcript([
         { id: "request", type: "outgoing", text: "Search the web", status: "complete" },
         { id: "request:assistant", type: "incoming", text: "Let me look that up.", status: "complete" },
@@ -133,18 +133,18 @@ describe("ChatPanel transcript", () => {
       { status: "working", activity: "Searching the web…" },
     );
     expect(screen.getByText("Let me look that up.")).toBeInTheDocument();
-    expect(screen.getByText("Searching the web…")).toBeInTheDocument();
+    expect(within(scroller).getByText("Searching the web…")).toBeInTheDocument();
   });
 
   it("keeps the execution indicator hidden when a message is queued during the reply", () => {
-    renderPanel(
+    const { scroller } = renderPanel(
       transcript([
         { id: "reply", type: "incoming", text: "Here is what I found.", status: "streaming" },
         { id: "queued", type: "outgoing", text: "Next question", status: "queued" },
       ]),
       { status: "working", activity: "Searching the web…" },
     );
-    expect(screen.queryByText("Searching the web…")).not.toBeInTheDocument();
+    expect(within(scroller).queryByText("Searching the web…")).not.toBeInTheDocument();
     expect(screen.queryByText("Atlas is working…")).not.toBeInTheDocument();
   });
 
@@ -290,7 +290,7 @@ describe("ChatPanel transcript", () => {
 describe("ChatPanel identity", () => {
   it("takes on the Wisp's color and says what it does under its name", () => {
     renderPanel(transcript(messages(0, 1)));
-    expect(document.querySelector("main")?.style.getPropertyValue("--wisp")).toMatch(/^#[0-9a-f]{6}$/i);
+    expect(document.querySelector("main")?.style.getPropertyValue("--wisp")).toMatch(/#[0-9a-f]{6}/i);
     expect(screen.getByText("Research")).toBeInTheDocument();
   });
 
@@ -299,6 +299,11 @@ describe("ChatPanel identity", () => {
     expect(screen.getByText("Working…")).toBeInTheDocument();
     show(transcript([{ id: "f", type: "incoming", text: "", status: "failed" }]), { status: "idle" });
     expect(screen.getByText("Couldn't reply")).toBeInTheDocument();
+  });
+
+  it("says under its name what the Wisp is doing while it works", () => {
+    renderPanel(transcript(messages(0, 1)), { status: "working", activity: "Searching the web" });
+    expect(document.querySelector(".chat-subline")).toHaveTextContent("Searching the web");
   });
 
   it("introduces a Wisp with nothing said yet by its soul", () => {

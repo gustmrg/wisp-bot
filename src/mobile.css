@@ -558,9 +558,11 @@
     padding: 8px 12px 8px 6px;
   }
   .details-header h2 {
-    grid-row: 1;
     font-size: 16px;
-    text-align: left;
+  }
+  .details-crumb {
+    color: var(--text-dim);
+    font-size: 11px;
   }
   .details-back {
     grid-column: 1;
@@ -571,14 +573,6 @@
   .details-back svg {
     width: 21px;
     height: 21px;
-  }
-  .wisp-details-panel [data-slot="tabs-list"] {
-    height: auto;
-    min-height: 48px;
-  }
-  .wisp-details-panel [data-slot="tabs-trigger"] {
-    min-height: 44px;
-    font-size: 12px;
   }
   .wisp-details-panel footer {
     padding-bottom: max(14px, env(safe-area-inset-bottom, 0px));

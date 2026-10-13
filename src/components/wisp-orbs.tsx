@@ -1,10 +1,8 @@
-import type { CSSProperties } from "react";
-
 import type { ChatId, ChatViewCollection, WispChatView } from "@/chat-data";
 import { WispAvatar } from "@/components/chat-avatar";
 import type { WispState } from "@/components/wisp";
 import { chatActivityDate } from "@/lib/date-dividers";
-import { inkOn, wispColor } from "@/lib/wisp-appearance";
+import { wispAccentStyle, wispColor } from "@/lib/wisp-appearance";
 import type { ManagedConversationStatus } from "../../shared/conversations";
 import type { ToolApprovalRequest } from "../../shared/tool-policy";
 
@@ -60,7 +58,7 @@ export function WispOrbs({ chats, statuses, approvals, failedChats, onSelectChat
             key={chat.id}
             type="button"
             className="wisp-orb"
-            style={{ "--wisp": color, "--wisp-ink": inkOn(color) } as CSSProperties}
+            style={wispAccentStyle(color)}
             aria-label={description ? `${chat.wisp.name}, ${description}` : chat.wisp.name}
             onClick={() => onSelectChat(chat.id)}
           >

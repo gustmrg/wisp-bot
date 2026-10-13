@@ -4,7 +4,6 @@ import { FolderOpenIcon, HardDriveIcon } from "lucide-react";
 
 import type { IntegrationSettingsTarget } from "@/lib/plugin-access";
 import { formatBytes, type WorkspaceView } from "../../shared/workspace";
-import { AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Button } from "@/components/ui/button";
 import { Field, FieldDescription, FieldGroup, FieldLabel, FieldTitle } from "@/components/ui/field";
 import { FormStatus } from "@/components/ui/form-status";
@@ -17,22 +16,7 @@ export function WispWorkspaceSettings({
   conversationId: string;
   onOpenSettings?: (target: IntegrationSettingsTarget) => void;
 }) {
-  const [visited, setVisited] = useState(false);
-  return (
-    <AccordionItem
-      value="workspace"
-      onOpenChange={(open) => {
-        if (open) setVisited(true);
-      }}
-    >
-      <AccordionTrigger>Workspace</AccordionTrigger>
-      <AccordionContent keepMounted>
-        {visited ? (
-          <WorkspacePanel key={conversationId} conversationId={conversationId} onOpenSettings={onOpenSettings} />
-        ) : null}
-      </AccordionContent>
-    </AccordionItem>
-  );
+  return <WorkspacePanel key={conversationId} conversationId={conversationId} onOpenSettings={onOpenSettings} />;
 }
 
 function WorkspacePanel({

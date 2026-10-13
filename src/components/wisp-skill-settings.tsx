@@ -7,26 +7,13 @@ import type { SkillView } from "../../shared/skills";
 /** Same bound the backend applies to a whole SKILL.md. */
 const MAX_SKILL_FILE_BYTES = 64 * 1024;
 import { ConfirmAction } from "@/components/settings/settings-primitives";
-import { AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Button } from "@/components/ui/button";
 import { FieldDescription, FieldGroup, FieldTitle } from "@/components/ui/field";
 import { FormStatus } from "@/components/ui/form-status";
 
+/** The Skills section of a Wisp's settings. */
 export function WispSkillSettings({ conversationId }: { conversationId: string }) {
-  const [visited, setVisited] = useState(false);
-  return (
-    <AccordionItem
-      value="skills"
-      onOpenChange={(open) => {
-        if (open) setVisited(true);
-      }}
-    >
-      <AccordionTrigger>Skills</AccordionTrigger>
-      <AccordionContent keepMounted>
-        {visited ? <SkillPanel key={conversationId} conversationId={conversationId} /> : null}
-      </AccordionContent>
-    </AccordionItem>
-  );
+  return <SkillPanel key={conversationId} conversationId={conversationId} />;
 }
 
 function SkillPanel({ conversationId }: { conversationId: string }) {

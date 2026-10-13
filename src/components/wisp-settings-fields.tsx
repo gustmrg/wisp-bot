@@ -201,13 +201,4 @@ function WispBehaviorFields({ settings, onChange }: WispSettingsFieldsProps) {
   );
 }
 
-function WispSettingsFields(props: WispSettingsFieldsProps) {
-  return (
-    <>
-      <WispIdentityFields {...props} />
-      <WispBehaviorFields {...props} />
-    </>
-  );
-}
-
-export { WispBehaviorFields, WispIdentityFields, WispSettingsFields };
+export { WispBehaviorFields, WispIdentityFields, WispSoulField };

@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from "react";
-import { ArrowDownIcon, CheckIcon, ChevronLeftIcon, SettingsIcon, XIcon } from "lucide-react";
+import { ArrowDownIcon, CheckIcon, ChevronLeftIcon, EllipsisIcon, XIcon } from "lucide-react";
 
 import type { ChatView, Message } from "@/chat-data";
 import type { ManagedConversationStatus } from "../../shared/conversations";
@@ -11,7 +11,7 @@ import { withDateDividers } from "@/lib/date-dividers";
 import { isAttached, type MessageWindow } from "@/lib/message-windows";
 import { mainPanel } from "@/lib/ui-classes";
 import { cn } from "@/lib/utils";
-import { inkOn, wispColor } from "@/lib/wisp-appearance";
+import { wispAccentStyle, wispColor } from "@/lib/wisp-appearance";
 import { ChatAvatar, WispAvatar } from "@/components/chat-avatar";
 import { ChatComposer, type VoiceInputSettings } from "@/components/chat-composer";
 import { Button } from "@/components/ui/button";
@@ -61,7 +61,7 @@ function atBottom(element: HTMLElement): boolean {
 function chatAccentStyle(chat: ChatView): CSSProperties | undefined {
   if (chat.kind !== "wisp") return undefined;
   const color = wispColor(chat.wisp.name, chat.wisp.color);
-  return { "--wisp": color, "--wisp-ink": inkOn(color) } as CSSProperties;
+  return wispAccentStyle(color);
 }
 
 /** The soul's first paragraph, as plain text, for a Wisp to introduce itself with. */
@@ -171,7 +171,7 @@ function ChatPanel({
   const subline = approvals.length
     ? { tone: "approval", text: "Waiting for your approval" }
     : working
-      ? { tone: "working", text: "Working…" }
+      ? { tone: "working", text: activity ?? "Working…" }
       : failed
         ? { tone: "error", text: "Couldn't reply" }
         : {
@@ -334,6 +334,7 @@ function ChatPanel({
             </button>
           ) : null}
           <Button
+            className="size-9 rounded-full border-0 bg-foreground/[0.06] hover:bg-foreground/[0.1] dark:hover:bg-foreground/[0.1]"
             variant="ghost"
             size="icon-sm"
             type="button"
@@ -341,7 +342,7 @@ function ChatPanel({
             title={chat.kind === "circle" ? "Circle settings" : "Wisp settings"}
             onClick={onOpenDetails}
           >
-            <SettingsIcon aria-hidden="true" />
+            <EllipsisIcon aria-hidden="true" />
           </Button>
         </div>
       </header>
@@ -385,7 +386,7 @@ function ChatPanel({
                 <div
                   key={message.id ?? `${chat.id}-${message.type}-${index}`}
                   className={messageRow}
-                  style={authorColor ? ({ "--wisp": authorColor } as CSSProperties) : undefined}
+                  style={authorColor ? wispAccentStyle(authorColor) : undefined}
                   data-message-id={message.id}
                   data-highlighted={(message.id !== undefined && message.id === targetMessageId) || undefined}
                 >
