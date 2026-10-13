@@ -4,8 +4,8 @@ Wisp Bot ships these artifacts from GitHub Releases, which also hosts the update
 
 | Platform | Architecture | Artifacts | Update feed |
 | --- | --- | --- | --- |
-| macOS 14+ | arm64 | DMG, ZIP | `latest-mac.yml` |
-| Linux | x64 | AppImage, `.deb` | `latest-linux.yml` |
+| macOS 14+ | arm64 | DMG, ZIP | `latest-mac.yml`, or `beta-mac.yml` for a beta |
+| Linux | x64 | AppImage, `.deb` | `latest-linux.yml`, or `beta-linux.yml` for a beta |
 
 Windows is not built yet. [ADR 007](decisions/007-release-automation.md) records the platform matrix and release flow.
 
@@ -18,7 +18,7 @@ Linux packages are unsigned. The updater checks each download against the SHA-51
 ## Publish a release
 
 1. Merge everything for the release into `main`. Make sure CI passes and `npm run audit:prod` is clean, because the release fails on any high-severity production advisory.
-2. Run **Desktop release** from `main` under GitHub Actions → Desktop release → Run workflow. Set **version** to `patch`, `minor`, `major`, or an exact version such as `1.2.0`, or `1.3.0-beta.1` for a prerelease.
+2. Run **Desktop release** from `main` under GitHub Actions → Desktop release → Run workflow. Set **version** to `patch`, `minor`, `major`, or an exact version such as `1.2.0`. For a beta, see [Publish a beta](#publish-a-beta).
 3. The workflow:
    1. resolves the version on top of `main` and fails if its tag already exists;
    2. runs lint, formatting, typecheck, tests, build, the production audit, and the SBOM against the bumped tree;
@@ -29,7 +29,17 @@ Linux packages are unsigned. The updater checks each download against the SHA-51
 
 Nothing is committed or tagged until all checks and both packaging jobs pass, so a failed run leaves the repository unchanged. Fix the cause on `main` and run the workflow again. If someone pushes to `main` during the run, the atomic push fails. Run the workflow again to release the newer commit.
 
-Versions with a prerelease suffix (`-beta.1`) are published as GitHub prereleases. Builds that run a prerelease version read the `beta` channel. Stable builds never read it.
+## Publish a beta
+
+A beta puts changes in front of real installs before they reach `main`.
+
+1. Push the branch and make sure CI passes on it.
+2. Run **Desktop release** from that branch (the **Use workflow from** menu) with **version** set to `beta`. The workflow picks the next minor version's next beta: with `main` at `0.18.0`, that is `0.19.0-beta.1`, then `0.19.0-beta.2`. An exact version such as `0.18.1-beta.1` works too. Only `-beta.N` versions are accepted, and only betas run from a branch other than `main`.
+3. The workflow runs the same gates and packaging as a release. It then commits the version on top of the branch, tags it, and pushes only the tag, so neither the branch nor `main` takes the beta's version. The GitHub release is marked as a prerelease, and the server goes to npm under the `beta` dist-tag.
+
+Builds that run a beta read the `beta` channel and update to newer betas. Stable builds never read it. When the next release ships, its version is higher than every beta before it, so beta installs update to it and return to the stable channel.
+
+Betas share their data with stable installs on the same computer and server. Before a build upgrades a database, it copies the old one beside it as `conversations.sqlite.v<N>.backup` (and `server.sqlite.v<N>.backup` on a server), keeping the newest three. A beta that ships an upgrade must never change it in a later beta: a fix is a new upgrade with a new version. Prefer additive upgrades, which older builds can still read.
 
 To package locally, `npm run dist` builds installers for the current OS and `npm run dist:dir` builds an unpacked app. Both write to `release/` and never publish anything.
 
@@ -64,6 +74,6 @@ A download that fails verification stays an error and never reaches the restart-
 
 ## Rollback
 
-Downgrades are disabled, so persisted data never meets an older reader. To roll back, fix forward with a higher version that restores the previous behavior. To pull a broken release, delete it or mark it as a prerelease so that `latest*.yml` stops pointing at it. Keep earlier installers until the replacement is confirmed.
+Downgrades are disabled, so persisted data never meets an older reader through an update. Someone who installs an older build by hand over data a newer one upgraded either keeps working, after an additive upgrade, or gets an error that names the backup to restore, which brings the data back as it was before the upgrade. To roll back, fix forward with a higher version that restores the previous behavior. To pull a broken release, delete it or mark it as a prerelease so that `latest*.yml` stops pointing at it. Keep earlier installers until the replacement is confirmed.
 
 Never paste credentials or raw provider responses into release notes or logs.
