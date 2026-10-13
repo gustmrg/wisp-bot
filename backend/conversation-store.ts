@@ -1,15 +1,21 @@
+import path from "node:path";
 import { DatabaseSync, type StatementSync } from "node:sqlite";
 
 import type { Message } from "../shared/conversations.js";
 import type { Job, JobRun } from "../shared/jobs.js";
 import type { QueuedMessage } from "../shared/message-queue.js";
 import type { ScheduledMessage } from "../shared/scheduled-messages.js";
+import { backUpBeforeUpgrade, IntactDatabaseError } from "./sqlite-backup.js";
 import type { ConversationRecord, WispRecord, WorkspaceRecords } from "./workspace-actions.js";
 
 // The layout this build writes, and the oldest layout reader that can still
 // read and write a database it produced. Additive changes (new tables, indexes,
 // or triggers that older writers keep consistent) raise only STORE_VERSION, so
 // a downgrade keeps working. Record contents are validated by the repository.
+// Prefer additive changes: after one that raises MIN_READER_VERSION, going back
+// to an older release means restoring the backup made before the upgrade.
+// Beta releases share this database with stable ones, so once a beta ships an
+// upgrade it is never edited: a fix is a new upgrade with a new version.
 // Version 4 stored Wisps apart from conversations, and version 5 stores records
 // as columns instead of JSON; earlier readers understand neither. Version 6
 // drops the Wisp picture column, which version 5 writers still name. Version 7
@@ -503,6 +509,13 @@ export class ConversationStore {
         CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL) STRICT;
       `);
       const version = db.prepare("SELECT value FROM meta WHERE key = 'store_version'").get()?.value;
+      const minReader = db.prepare("SELECT value FROM meta WHERE key = 'min_reader_version'").get()?.value ?? version;
+      if (Number(minReader) > STORE_VERSION) {
+        throw new IntactDatabaseError(
+          `Conversations were saved by a newer version of Wisp Bot. Install it again, or replace ${path.basename(filePath)} with a ${path.basename(filePath)}.v<N>.backup beside it, N at most ${STORE_VERSION}.`,
+        );
+      }
+      if (version !== undefined && Number(version) < STORE_VERSION) backUpBeforeUpgrade(db, filePath, Number(version));
       if (version === undefined) {
         // Nothing was ever committed here, so any tables are empty leftovers
         // of an interrupted first run, possibly in an older layout.

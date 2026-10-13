@@ -98,6 +98,7 @@ async function populated() {
   const transcriptions = path.join(dataDirectory, "backend", "pi-config", wispConfig!, "transcription-cache");
   await mkdir(transcriptions, { recursive: true });
   await writeFile(path.join(transcriptions, "entry.json"), JSON.stringify({ text: "Scanned contract" }));
+  await writeFile(path.join(dataDirectory, "backend", "conversations.sqlite.v9.backup"), "upgrade backup");
   return {
     dataDirectory,
     masterKey,
@@ -140,6 +141,7 @@ describe("backups", () => {
     await expect(
       lstat(path.join(target, "backend", "pi-config", source.wispConfig, "transcription-cache")),
     ).rejects.toThrow();
+    await expect(lstat(path.join(target, "backend", "conversations.sqlite.v9.backup"))).rejects.toThrow();
 
     // Same identity, devices, conversations, and credentials, in a different directory.
     const { server } = await start(target, source.masterKey);

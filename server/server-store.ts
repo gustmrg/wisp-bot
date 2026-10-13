@@ -2,6 +2,8 @@ import { randomUUID } from "node:crypto";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 
+import { backUpBeforeUpgrade, IntactDatabaseError } from "../backend/sqlite-backup.js";
+
 const SCHEMA_VERSION = 2;
 
 const SCHEMA = `
@@ -25,6 +27,8 @@ const SCHEMA = `
 `;
 
 // Version 2 marks the desktop app that started this server as a local device.
+// Beta releases share this database with stable ones, so once a beta ships a
+// migration it is never edited: a fix is a new migration with a new version.
 const MIGRATIONS: Record<number, string> = {
   2: `
     ALTER TABLE devices ADD COLUMN local INTEGER NOT NULL DEFAULT 0;
@@ -42,7 +46,8 @@ export class ServerStore {
   readonly serverId: string;
 
   constructor(dataDirectory: string) {
-    this.database = new DatabaseSync(path.join(dataDirectory, "server.sqlite"));
+    const filePath = path.join(dataDirectory, "server.sqlite");
+    this.database = new DatabaseSync(filePath);
     try {
       this.database.exec(`
         PRAGMA journal_mode = WAL;
@@ -53,8 +58,11 @@ export class ServerStore {
       const stored = this.getMeta("schemaVersion");
       const version = stored === undefined ? SCHEMA_VERSION : Number(stored);
       if (version > SCHEMA_VERSION) {
-        throw new Error("This data directory was written by a newer Wisp server.");
+        throw new IntactDatabaseError(
+          `This data directory was written by a newer Wisp server. Install it again, or replace server.sqlite with a server.sqlite.v<N>.backup beside it, N at most ${SCHEMA_VERSION}.`,
+        );
       }
+      if (stored !== undefined && version < SCHEMA_VERSION) backUpBeforeUpgrade(this.database, filePath, version);
       this.transaction(() => {
         if (stored === undefined) this.database.exec(SCHEMA);
         for (let next = version + 1; next <= SCHEMA_VERSION; next++) this.database.exec(MIGRATIONS[next] ?? "");

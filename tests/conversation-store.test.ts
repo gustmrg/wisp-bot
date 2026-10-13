@@ -1,4 +1,4 @@
-import { mkdtemp } from "node:fs/promises";
+import { mkdtemp, readdir, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
@@ -11,6 +11,7 @@ import {
   MESSAGE_PAGE_SIZE,
   type StoredMessagePage,
 } from "../backend/conversation-store.js";
+import { IntactDatabaseError } from "../backend/sqlite-backup.js";
 import type { ConversationRecord, WispRecord } from "../backend/workspace-actions.js";
 import type { Message } from "../shared/conversations.js";
 import { messageSearchText } from "../shared/message-search.js";
@@ -545,8 +546,37 @@ describe("ConversationStore versions", () => {
     expect(meta(readable)).toMatchObject({ store_version: "11", min_reader_version: "6" });
 
     raise(readable, "12", "11");
-    const incompatible = ConversationStore.open(readable);
-    expect(() => incompatible.read()).toThrow("Unsupported conversation store version.");
-    incompatible.close();
+    expect(() => ConversationStore.open(readable)).toThrow(IntactDatabaseError);
+    expect(() => ConversationStore.open(readable)).toThrow("saved by a newer version of Wisp Bot");
+    // Refusing leaves the newer build's layout exactly as it was.
+    expect(meta(readable)).toMatchObject({ store_version: "12", min_reader_version: "11" });
+  });
+
+  it("backs up a store before upgrading it, keeping the newest few backups", async () => {
+    const file = await databasePath();
+    const created = ConversationStore.open(file);
+    created.transaction(() => created.setInitialized(true));
+    created.close();
+    const directory = path.dirname(file);
+    const backups = async () => (await readdir(directory)).filter((name) => name.endsWith(".backup")).sort();
+    // A store this build created, or already upgraded, needs no backup.
+    ConversationStore.open(file).close();
+    expect(await backups()).toEqual([]);
+
+    for (const version of [1, 2, 3]) await writeFile(`${file}.v${version}.backup`, "");
+    const db = new DatabaseSync(file);
+    db.exec("UPDATE meta SET value = '9' WHERE key = 'store_version'");
+    db.close();
+    const upgraded = ConversationStore.open(file);
+    upgraded.transaction(() => upgraded.setInitialized(true));
+    upgraded.close();
+
+    expect(await backups()).toEqual([
+      "conversations.sqlite.v2.backup",
+      "conversations.sqlite.v3.backup",
+      "conversations.sqlite.v9.backup",
+    ]);
+    expect(meta(`${file}.v9.backup`)).toMatchObject({ store_version: "9", initialized: "1" });
+    expect(meta(file)).toMatchObject({ store_version: "10" });
   });
 });

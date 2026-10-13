@@ -42,6 +42,7 @@ import { splitLegacyChat } from "./legacy-conversations.js";
 import { normalizeQueuedMessage } from "./message-queue.js";
 import { normalizeScheduledMessage } from "./message-schedule.js";
 import { buildSnippet, MessageSearchWorker } from "./message-search.js";
+import { IntactDatabaseError } from "./sqlite-backup.js";
 import { CONVERSATION_STORAGE_POLICY } from "./storage-policy.js";
 import { ARCHIVE_MANIFEST_FILE, type ArchiveManifest } from "../shared/storage.js";
 import {
@@ -188,9 +189,12 @@ export class ConversationRepository {
           queued: await this.readQueuedMessages(),
         });
       }
-    } catch {
-      // Unreadable, invalid, or written by a newer app version: keep the file
-      // for inspection and start with an empty store.
+    } catch (error) {
+      // Written by a newer app version, or not backed up before an upgrade:
+      // the file is fine, so leave it in place and refuse to start.
+      if (error instanceof IntactDatabaseError) throw error;
+      // Unreadable or invalid: keep the file for inspection and start with an
+      // empty store.
       await this.preserveCorruptDatabase();
       this.recoveredCorruptState = true;
       return;

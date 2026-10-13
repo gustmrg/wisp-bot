@@ -64,6 +64,25 @@ describe("ServerStore", () => {
     expect(store.serverId).toBe("kept-server");
     expect(store.getMeta("schemaVersion")).toBe("2");
     expect(new DeviceAuth(store).devices()).toEqual([expect.objectContaining({ id: "laptop", local: false })]);
+    const backup = new DatabaseSync(path.join(directory, "server.sqlite.v1.backup"));
+    expect(backup.prepare("SELECT value FROM meta WHERE key = 'schemaVersion'").get()?.value).toBe("1");
+    backup.close();
+  });
+
+  it("refuses a database from a newer server and leaves it in place", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "wisp-store-"));
+    directories.push(directory);
+    const newer = new DatabaseSync(path.join(directory, "server.sqlite"));
+    newer.exec(`
+      CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL) STRICT;
+      INSERT INTO meta VALUES ('schemaVersion', '99'), ('serverId', 'newer-server');
+    `);
+    newer.close();
+
+    expect(() => new ServerStore(directory)).toThrow("written by a newer Wisp server");
+    const reopened = new DatabaseSync(path.join(directory, "server.sqlite"));
+    expect(reopened.prepare("SELECT value FROM meta WHERE key = 'schemaVersion'").get()?.value).toBe("99");
+    reopened.close();
   });
 });
 

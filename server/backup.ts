@@ -31,6 +31,8 @@ const DATABASES = new Set(["server.sqlite", "backend/conversations.sqlite"]);
 const SKIPPED_DIRECTORIES = new Set(["backend/logs"]);
 /** Each Wisp's cache of image transcriptions: text from the user's documents that can be rebuilt. */
 const SKIPPED_DIRECTORY_PATTERNS = [/^backend\/pi-config\/[^/]+\/transcription-cache$/u];
+/** Copies the app keeps before upgrading a database, for going back on this computer only. */
+const SKIPPED_FILE_PATTERNS = [/^backend\/conversations\.sqlite\.v\d+\.backup$/u];
 const SKIPPED_SUFFIXES = ["-wal", "-shm", "-journal", ".tmp", ".keychain-backup", ".partial"];
 
 export interface BackupManifest {
@@ -338,6 +340,7 @@ async function collectFiles(dataDirectory: string): Promise<{ paths: string[]; s
     if (
       SKIPPED_DIRECTORIES.has(relative) ||
       SKIPPED_DIRECTORY_PATTERNS.some((pattern) => pattern.test(relative)) ||
+      SKIPPED_FILE_PATTERNS.some((pattern) => pattern.test(relative)) ||
       SKIPPED_SUFFIXES.some((suffix) => relative.endsWith(suffix))
     ) {
       return;
