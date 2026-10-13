@@ -97,7 +97,15 @@ jobs:
       - name: Build and package
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
-        run: npm run build && npx electron-builder ${{ matrix.builder-args }} --publish never
+          VERSION: ${{ needs.prepare.outputs.version }}
+        run: |
+          # Betas wear the amber dev icon so they are told apart from the stable
+          # app once installed. electron-builder converts the PNG for each platform.
+          ICON_ARGS=()
+          if [[ "$VERSION" == *-* ]]; then
+            ICON_ARGS=(-c.mac.icon=build/icon-mac-dev.png -c.linux.icon=build/icon-mac-dev.png)
+          fi
+          npm run build && npx electron-builder ${{ matrix.builder-args }} "${ICON_ARGS[@]}" --publish never
       - uses: actions/upload-artifact@v4
         with:
           name: desktop-${{ matrix.name }}
