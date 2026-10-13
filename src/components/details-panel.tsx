@@ -2,7 +2,6 @@ import { CheckIcon, ChevronLeftIcon, Share2Icon, XIcon } from "lucide-react";
 import { type PointerEvent as ReactPointerEvent, useEffect, useRef } from "react";
 
 import type { ChatChanges, ChatView, WispChanges, WispCollection } from "@/chat-data";
-import { ChatAvatar } from "@/components/chat-avatar";
 import { CircleDetails } from "@/components/circle-details";
 import { Button } from "@/components/ui/button";
 import {
@@ -15,7 +14,6 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import type { WispState } from "@/components/wisp";
 import { WispDetails, type WispSettingsTab } from "@/components/wisp-details";
 import {
   type WispSettingsSection,
@@ -28,7 +26,6 @@ import { detailsLayoutStyle } from "@/lib/layout";
 import type { IntegrationSettingsTarget } from "@/lib/plugin-access";
 import { panelResizer } from "@/lib/ui-classes";
 import { cn } from "@/lib/utils";
-import { wispAccentStyle, wispColor } from "@/lib/wisp-appearance";
 import { serializeWispTemplate } from "@/lib/wisp-template";
 
 interface DetailsPanelProps {
@@ -40,8 +37,6 @@ interface DetailsPanelProps {
   initialTab?: WispSettingsTab;
   /** On a phone, names where the back button goes. */
   backLabel?: string;
-  /** What the Wisp is doing, for its picture in the panel's header. */
-  state?: WispState;
   wisps: WispCollection;
   width: number;
   onChange: (changes: ChatChanges) => Promise<boolean> | void;
@@ -66,10 +61,7 @@ function DetailsPanel({
   section = "profile",
   initialTab,
   backLabel = "Back to conversation",
-  state = "idle",
 }: DetailsPanelProps) {
-  // On the desktop the panel is a Wisp's settings; who the Wisp is sits in the panel's header.
-  const desktopWisp = !mobile && chat.kind === "wisp";
   const copyFeedback = useCopyFeedback(chat.id);
   const titleRef = useRef<HTMLHeadingElement>(null);
   const focusChatId = mobile ? chat.id : null;
@@ -151,45 +143,24 @@ function DetailsPanel({
           onPointerDown={onResizeStart}
         />
       ) : null}
-      {desktopWisp ? (
-        // Who the Wisp is, as tall as the conversation's own top bar; the tabs below carry its settings.
-        <header className="details-header flex h-[52px] flex-none items-center justify-between gap-1 border-b border-black/[0.04] pr-[9px] pl-2 dark:border-white/[0.04]">
-          <div
-            className="chat-heading inline-flex min-w-0 flex-1 items-center gap-2 rounded-lg p-1"
-            style={wispAccentStyle(wispColor(chat.wisp.name, chat.wisp.color))}
-          >
-            <span className="wisp-halo" data-state={state}>
-              <ChatAvatar chat={chat} size="sm" state={state} />
-            </span>
-            <div className="min-w-0">
-              <h2 className="truncate font-semibold leading-tight">{name}</h2>
-              {chat.wisp.role ? <p className="chat-subline truncate text-xs">{chat.wisp.role}</p> : null}
-            </div>
-          </div>
-          <Button variant="ghost" size="icon-sm" type="button" aria-label="Close details" onClick={onClose}>
-            <XIcon aria-hidden="true" />
-          </Button>
-        </header>
-      ) : (
-        <header className="details-header grid h-[52px] flex-none grid-cols-[28px_1fr_28px] items-center border-b border-black/[0.04] px-[9px] dark:border-white/[0.04]">
-          <div className="col-start-2 row-start-1 flex min-w-0 flex-col items-center leading-tight">
-            {mobile && chat.kind === "wisp" ? <small className="details-crumb">{name}</small> : null}
-            <h2 ref={titleRef} tabIndex={-1} className="truncate text-sm font-semibold outline-none">
-              {title}
-            </h2>
-          </div>
-          <Button
-            className={mobile ? "details-back" : undefined}
-            variant="ghost"
-            size="icon-sm"
-            type="button"
-            aria-label={mobile ? backLabel : "Close details"}
-            onClick={onClose}
-          >
-            {mobile ? <ChevronLeftIcon aria-hidden="true" /> : <XIcon />}
-          </Button>
-        </header>
-      )}
+      <header className="details-header grid h-[52px] flex-none grid-cols-[28px_1fr_28px] items-center border-b border-black/[0.04] px-[9px] dark:border-white/[0.04]">
+        <div className="col-start-2 row-start-1 flex min-w-0 flex-col items-center leading-tight">
+          {mobile && chat.kind === "wisp" ? <small className="details-crumb">{name}</small> : null}
+          <h2 ref={titleRef} tabIndex={-1} className="truncate text-sm font-semibold outline-none">
+            {title}
+          </h2>
+        </div>
+        <Button
+          className={mobile ? "details-back" : undefined}
+          variant="ghost"
+          size="icon-sm"
+          type="button"
+          aria-label={mobile ? backLabel : "Close details"}
+          onClick={onClose}
+        >
+          {mobile ? <ChevronLeftIcon aria-hidden="true" /> : <XIcon />}
+        </Button>
+      </header>
 
       {chat.kind === "wisp" && mobile ? (
         <WispSettingsSectionContent

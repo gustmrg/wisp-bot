@@ -141,15 +141,15 @@ describe("DetailsPanel on the desktop", () => {
         onResizeStart={vi.fn()}
       />,
     );
-    expect(screen.getByRole("heading", { name: "Atlas" })).toBeVisible();
-    expect(screen.getByText("Research")).toBeVisible();
+    // The conversation's own header names the Wisp; the panel says what it is.
+    expect(screen.getByRole("heading", { name: "Settings" })).toBeVisible();
     expect(screen.getByRole("textbox", { name: "Name" })).toHaveValue("Atlas");
     expect(screen.queryByRole("button", { name: "Back to profile" })).not.toBeInTheDocument();
 
     // The tabs carry the navigation; switching them stays inside the panel.
     await user.click(screen.getByRole("tab", { name: "Model" }));
     expect(screen.getByRole("tab", { name: "Model" })).toHaveAttribute("aria-selected", "true");
-    expect(screen.getByRole("heading", { name: "Atlas" })).toBeVisible();
+    expect(screen.getByRole("heading", { name: "Settings" })).toBeVisible();
     await user.click(screen.getByRole("tab", { name: "General" }));
     expect(screen.getByRole("textbox", { name: "Name" })).toHaveValue("Atlas");
   });

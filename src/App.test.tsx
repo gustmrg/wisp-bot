@@ -575,7 +575,7 @@ describe("App", () => {
     await user.click(screen.getByRole("button", { name: "Open Wisp settings" }));
     // The panel opens straight on the Wisp's settings, with who it is in its header.
     const panel = screen.getByRole("complementary", { name: "Atlas settings" });
-    expect(within(panel).getByRole("heading", { name: "Atlas" })).toBeVisible();
+    expect(within(panel).getByRole("heading", { name: "Settings" })).toBeVisible();
     const name = within(panel).getByRole("textbox", { name: "Name" });
     await user.clear(name);
     await user.type(name, "Unsaved Atlas name");

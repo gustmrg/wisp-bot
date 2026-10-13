@@ -307,13 +307,6 @@ function Workspace({ userProfile }: { userProfile: UserProfileController }) {
               mobile={mobile}
               section={detailsSection}
               backLabel={profileOpen ? "Back to profile" : undefined}
-              state={
-                workspace.approvals[workspace.activeChat.id]?.length
-                  ? "approval"
-                  : workspace.statuses[workspace.activeChat.id] === "working"
-                    ? "working"
-                    : "idle"
-              }
               chat={workspace.activeChat}
               wisps={workspace.wisps}
               width={detailsPanel.width}

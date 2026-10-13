@@ -307,7 +307,7 @@ function ChatPanel({
         ) : null}
         <div className="chat-heading inline-flex min-w-0 items-center gap-2 rounded-lg p-1">
           <span className="wisp-halo" data-state={avatarState}>
-            <ChatAvatar chat={chat} size="sm" state={avatarState} />
+            <ChatAvatar chat={chat} state={avatarState} />
           </span>
           <div className="min-w-0">
             <h1 ref={titleRef} tabIndex={-1} className="block truncate font-semibold leading-tight outline-none">

@@ -59,8 +59,8 @@
 /* ---------- Conversation list ---------- */
 
 .conversation-avatar.wisp-halo {
-  width: 38px;
-  height: 38px;
+  width: 44px;
+  height: 44px;
 }
 /* In the list the Wisp stands alone: no disc of its color behind it. The ring for its state stays. */
 .conversation-avatar.wisp-halo,
@@ -68,8 +68,8 @@
   background: none;
 }
 .conversation-avatar.wisp-halo > svg {
-  width: 28px;
-  height: 28px;
+  width: 34px;
+  height: 34px;
 }
 .conversation-role {
   margin-left: -4px;
@@ -129,6 +129,23 @@
 .chat-heading .wisp-halo > span {
   width: 26px;
   height: 26px;
+}
+/* On the desktop the Wisp stands alone in the header: no disc, and no ring, since the subline says what it is doing. */
+@media (min-width: 761px) {
+  .chat-heading .wisp-halo,
+  .chat-heading .wisp-halo[data-state="error"] {
+    width: 32px;
+    height: 32px;
+    background: none;
+  }
+  .chat-heading .wisp-halo::before {
+    display: none;
+  }
+  .chat-heading .wisp-halo > svg,
+  .chat-heading .wisp-halo > span {
+    width: 32px;
+    height: 32px;
+  }
 }
 .chat-subline {
   margin-top: 1px;
