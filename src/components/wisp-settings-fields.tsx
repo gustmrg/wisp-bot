@@ -68,19 +68,23 @@ const SOUL_MODES = [
   { value: "preview", label: "Preview" },
 ] as const;
 
+// Select values that are not templates: clearing the soul, and a soul edited past any template.
+const BLANK = "blank";
+const CUSTOM = "custom";
+
 /** The Wisp's soul: a markdown document that defines who it is and how it behaves. */
 function WispSoulField({ soul, onChange }: { soul: string; onChange: (soul: string) => void }) {
   const [mode, setMode] = useState<SoulMode>("edit");
-  // A template picked over edited text, waiting for the person to confirm losing the edits.
-  const [pendingTemplate, setPendingTemplate] = useState<SoulTemplate | null>(null);
+  // A template or a blank soul picked over edited text, waiting for the person to confirm losing the edits.
+  const [pending, setPending] = useState<SoulTemplate | typeof BLANK | null>(null);
   const applied = SOUL_TEMPLATES.find((template) => soulFromTemplate(template) === soul);
 
-  function chooseTemplate(template: SoulTemplate) {
+  function choose(next: SoulTemplate | typeof BLANK) {
     // An empty soul or an untouched template has nothing to lose.
     if (!soul.trim() || applied) {
-      setPendingTemplate(null);
-      onChange(soulFromTemplate(template));
-    } else setPendingTemplate(template);
+      setPending(null);
+      onChange(next === BLANK ? "" : soulFromTemplate(next));
+    } else setPending(next);
   }
 
   return (
@@ -90,18 +94,24 @@ function WispSoulField({ soul, onChange }: { soul: string; onChange: (soul: stri
         <div className="flex items-center gap-2">
           {soul.trim() ? (
             <Select
-              items={SOUL_TEMPLATES.map(({ id, label }) => ({ value: id, label }))}
-              value={applied?.id ?? null}
+              items={[
+                { value: BLANK, label: "Blank" },
+                ...SOUL_TEMPLATES.map(({ id, label }) => ({ value: id, label })),
+                { value: CUSTOM, label: "Custom" },
+              ]}
+              value={applied?.id ?? CUSTOM}
               onValueChange={(id) => {
+                if (id === BLANK) choose(BLANK);
                 const template = SOUL_TEMPLATES.find((item) => item.id === id);
-                if (template && template !== applied) chooseTemplate(template);
+                if (template && template !== applied) choose(template);
               }}
             >
               <SelectTrigger size="sm" aria-label="Soul template" className="min-w-[110px]">
-                <SelectValue placeholder="Template" />
+                <SelectValue />
               </SelectTrigger>
               <SelectContent align="end" alignItemWithTrigger={false}>
                 <SelectGroup>
+                  <SelectItem value={BLANK}>Blank</SelectItem>
                   {SOUL_TEMPLATES.map((template) => (
                     <SelectItem key={template.id} value={template.id}>
                       {template.label}
@@ -118,28 +128,30 @@ function WispSoulField({ soul, onChange }: { soul: string; onChange: (soul: stri
         Who this Wisp is: its identity, personality, and how it behaves. It follows this in every conversation. Markdown
         is supported.
       </FieldDescription>
-      {pendingTemplate ? (
+      {pending ? (
         <div
           role="alert"
           className="space-y-2.5 rounded-[10px] border border-warning-solid/40 bg-warning-solid/10 p-3 text-xs leading-relaxed"
         >
           <p className="m-0">
-            <strong className="font-medium">Replace the soul with the {pendingTemplate.label} template?</strong> What
-            you wrote is lost.
+            <strong className="font-medium">
+              {pending === BLANK ? "Clear the soul?" : `Replace the soul with the ${pending.label} template?`}
+            </strong>{" "}
+            What you wrote is lost.
           </p>
           <div className="flex flex-wrap justify-end gap-2">
-            <Button type="button" size="sm" variant="ghost" onClick={() => setPendingTemplate(null)}>
+            <Button type="button" size="sm" variant="ghost" onClick={() => setPending(null)}>
               Cancel
             </Button>
             <Button
               type="button"
               size="sm"
               onClick={() => {
-                onChange(soulFromTemplate(pendingTemplate));
-                setPendingTemplate(null);
+                onChange(pending === BLANK ? "" : soulFromTemplate(pending));
+                setPending(null);
               }}
             >
-              Replace
+              {pending === BLANK ? "Clear" : "Replace"}
             </Button>
           </div>
         </div>
@@ -160,19 +172,15 @@ function WispSoulField({ soul, onChange }: { soul: string; onChange: (soul: stri
         </div>
       )}
       {mode === "edit" && !soul.trim() ? (
-        <div className="flex flex-wrap items-center gap-1.5" role="group" aria-label="Soul templates">
-          <FieldTitle>Start from a template:</FieldTitle>
-          {SOUL_TEMPLATES.map((template) => (
-            <Button
-              key={template.id}
-              type="button"
-              variant="outline"
-              size="xs"
-              onClick={() => chooseTemplate(template)}
-            >
-              {template.label}
-            </Button>
-          ))}
+        <div className="flex flex-col gap-1.5" role="group" aria-label="Soul templates">
+          <FieldTitle>Start from a template</FieldTitle>
+          <div className="flex flex-wrap gap-1.5">
+            {SOUL_TEMPLATES.map((template) => (
+              <Button key={template.id} type="button" variant="outline" size="xs" onClick={() => choose(template)}>
+                {template.label}
+              </Button>
+            ))}
+          </div>
         </div>
       ) : null}
     </Field>

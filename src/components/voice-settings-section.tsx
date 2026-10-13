@@ -248,14 +248,27 @@ function VoiceSettingsSection({ active, preferences, onPreferencesChange }: Voic
         <SettingsGroup label="Credential">
           <SettingsCard>
             <div className="flex flex-col gap-3 px-3.5 py-3.5">
-              <SettingsRowCopy>
-                <SettingsRowTitle htmlFor="voice-api-key">{provider.name} API key</SettingsRowTitle>
-                <SettingsRowDescription>
-                  {providerStatus?.credentialConfigured
-                    ? `An encrypted key is saved for ${provider.name} and shared with AI Model settings. Enter a new key to replace it.`
-                    : `Add a ${provider.name} key to use voice input. It is encrypted using your operating system's credential storage.`}
-                </SettingsRowDescription>
-              </SettingsRowCopy>
+              <div className="flex flex-wrap items-start gap-3">
+                <SettingsRowCopy>
+                  <SettingsRowTitle htmlFor="voice-api-key">{provider.name} API key</SettingsRowTitle>
+                  <SettingsRowDescription>
+                    {providerStatus?.credentialConfigured
+                      ? `An encrypted key is saved for ${provider.name} and shared with AI Model settings. Enter a new key to replace it.`
+                      : `Add a ${provider.name} key to use voice input. It is encrypted using your operating system's credential storage.`}
+                  </SettingsRowDescription>
+                </SettingsRowCopy>
+                {providerStatus?.credentialConfigured ? (
+                  <ConfirmAction
+                    label="Remove key"
+                    confirmLabel="Remove key"
+                    variant="ghost"
+                    className="shrink-0"
+                    disabled={saving}
+                    description={`Voice input and Wisps using ${provider.name} stop working until you enter a new key.`}
+                    onConfirm={() => void handleRemoveKey()}
+                  />
+                ) : null}
+              </div>
               <div className="flex gap-2">
                 <Input
                   id="voice-api-key"
@@ -287,15 +300,6 @@ function VoiceSettingsSection({ active, preferences, onPreferencesChange }: Voic
             {error ? <p className="m-0 text-xs text-destructive">{error}</p> : null}
             {saved ? <p className="m-0 text-xs text-dim">{provider.name} key saved.</p> : null}
           </div>
-          {providerStatus?.credentialConfigured ? (
-            <ConfirmAction
-              label="Remove key"
-              confirmLabel="Remove key"
-              disabled={saving}
-              description={`Voice input and Wisps using ${provider.name} stop working until you enter a new key.`}
-              onConfirm={() => void handleRemoveKey()}
-            />
-          ) : null}
         </div>
       </div>
     </section>

@@ -46,6 +46,7 @@ function unavailableText(slot: AuxiliaryModelView, providerName: string): string
 function AuxiliaryModelSettings({ view, onViewChange }: AuxiliaryModelSettingsProps) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [saved, setSaved] = useState(false);
   const slot = view.auxiliary.imageUnderstanding;
   const selected = slot.selection;
   const providerName = (providerId: string) => view.providers.find(({ id }) => id === providerId)?.name ?? providerId;
@@ -76,13 +77,16 @@ function AuxiliaryModelSettings({ view, onViewChange }: AuxiliaryModelSettingsPr
     if (value === (selected ? optionValue(selected) : OFF)) return;
     setSaving(true);
     setError(null);
+    setSaved(false);
     try {
       const result = await window.wisp.saveAuxiliaryModel({
         task: "imageUnderstanding",
         selection: parseOptionValue(value),
       });
-      if (result.ok) onViewChange(result.value);
-      else setError(result.error.message);
+      if (result.ok) {
+        onViewChange(result.value);
+        setSaved(true);
+      } else setError(result.error.message);
     } catch {
       setError("Could not save the image model.");
     } finally {
@@ -100,7 +104,7 @@ function AuxiliaryModelSettings({ view, onViewChange }: AuxiliaryModelSettingsPr
             <SettingsRowDescription>
               Reads images and scanned PDF pages for Wisps whose model cannot see them, and returns the text to the
               Wisp. Those files are sent to the chosen provider. Only models that accept images, from providers with a
-              saved key, are listed.
+              saved key, are listed. Changes save automatically.
             </SettingsRowDescription>
             {unavailable ? (
               <span role="alert" className="text-xs leading-relaxed text-warning">
@@ -126,6 +130,9 @@ function AuxiliaryModelSettings({ view, onViewChange }: AuxiliaryModelSettingsPr
           />
         </SettingsRow>
       </SettingsCard>
+      <div aria-live="polite" className="mt-3">
+        {saved ? <p className="m-0 text-xs text-dim">Image model saved.</p> : null}
+      </div>
     </SettingsGroup>
   );
 }

@@ -307,14 +307,27 @@ function ModelSettingsSection({
           <SettingsGroup label="Credential">
             <SettingsCard>
               <div className="flex flex-col gap-3 px-3.5 py-3.5">
-                <SettingsRowCopy>
-                  <SettingsRowTitle htmlFor="ai-api-key">API key</SettingsRowTitle>
-                  <SettingsRowDescription>
-                    {provider?.credentialConfigured
-                      ? `An encrypted key is saved for ${provider.name}${voiceProvider(provider.id) ? " and shared with Voice Input settings" : ""}. Enter a new key to replace it.`
-                      : "The key is encrypted using your operating system's credential storage."}
-                  </SettingsRowDescription>
-                </SettingsRowCopy>
+                <div className="flex flex-wrap items-start gap-3">
+                  <SettingsRowCopy>
+                    <SettingsRowTitle htmlFor="ai-api-key">API key</SettingsRowTitle>
+                    <SettingsRowDescription>
+                      {provider?.credentialConfigured
+                        ? `An encrypted key is saved for ${provider.name}${voiceProvider(provider.id) ? " and shared with Voice Input settings" : ""}. Enter a new key to replace it.`
+                        : "The key is encrypted using your operating system's credential storage."}
+                    </SettingsRowDescription>
+                  </SettingsRowCopy>
+                  {provider?.credentialConfigured ? (
+                    <ConfirmAction
+                      label="Remove key"
+                      confirmLabel="Remove key"
+                      variant="ghost"
+                      className="shrink-0"
+                      disabled={saving}
+                      description={`${voiceProvider(provider.id) ? "Voice input and Wisps" : "Wisps"} using ${provider.name} stop working until you enter a new key.`}
+                      onConfirm={() => void handleRemoveCredential()}
+                    />
+                  ) : null}
+                </div>
                 <Input
                   id="ai-api-key"
                   type="password"
@@ -343,15 +356,6 @@ function ModelSettingsSection({
               {saved ? <p className="m-0 text-xs text-dim">AI model settings saved.</p> : null}
             </div>
             <div className="flex flex-wrap justify-end gap-2">
-              {provider?.credentialConfigured ? (
-                <ConfirmAction
-                  label="Remove key"
-                  confirmLabel="Remove key"
-                  disabled={saving}
-                  description={`${voiceProvider(provider.id) ? "Voice input and Wisps" : "Wisps"} using ${provider.name} stop working until you enter a new key.`}
-                  onConfirm={() => void handleRemoveCredential()}
-                />
-              ) : null}
               <Button type="button" disabled={saveDisabled} onClick={() => void handleSave()}>
                 {saving ? "Saving…" : "Save"}
               </Button>
@@ -359,7 +363,7 @@ function ModelSettingsSection({
           </div>
 
           {showAuxiliaryModels ? (
-            <div className="mt-6">
+            <div className="mt-6 border-t border-border pt-2">
               <AuxiliaryModelSettings view={view} onViewChange={applyAuxiliaryView} />
             </div>
           ) : null}

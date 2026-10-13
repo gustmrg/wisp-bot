@@ -363,4 +363,30 @@ describe("CreateAgentDialog soul templates", () => {
     await user.click(screen.getByRole("button", { name: "Replace" }));
     expect((soul as HTMLTextAreaElement).value).toContain("Professional and polished");
   });
+
+  it("shows an edited soul as custom and asks before clearing it", async () => {
+    const user = await openSoulStep();
+    const soul = screen.getByRole("textbox", { name: "Soul" });
+    await user.type(soul, "My own soul");
+    expect(screen.getByRole("combobox", { name: "Soul template" })).toHaveTextContent("Custom");
+
+    await user.click(screen.getByRole("combobox", { name: "Soul template" }));
+    await user.click(await screen.findByRole("option", { name: "Blank" }));
+    expect(screen.getByRole("alert")).toHaveTextContent("Clear the soul?");
+    expect(soul).toHaveValue("My own soul");
+
+    await user.click(screen.getByRole("button", { name: "Clear" }));
+    expect(soul).toHaveValue("");
+    expect(screen.queryByRole("combobox", { name: "Soul template" })).not.toBeInTheDocument();
+    expect(screen.getByRole("group", { name: "Soul templates" })).toBeInTheDocument();
+  });
+
+  it("clears an untouched template without asking", async () => {
+    const user = await openSoulStep();
+    await user.click(screen.getByRole("button", { name: "Friendly" }));
+    await user.click(screen.getByRole("combobox", { name: "Soul template" }));
+    await user.click(await screen.findByRole("option", { name: "Blank" }));
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(screen.getByRole("textbox", { name: "Soul" })).toHaveValue("");
+  });
 });
