@@ -42,6 +42,17 @@ describe("normalizePreferences", () => {
     });
   });
 
+  it("keeps saved panel widths within each panel's bounds", () => {
+    expect(normalizePreferences({ sidebarWidth: 312.4, detailsWidth: 9000 })).toMatchObject({
+      sidebarWidth: 312,
+      detailsWidth: 480,
+    });
+    expect(normalizePreferences({ sidebarWidth: 10, detailsWidth: "wide" })).toMatchObject({
+      sidebarWidth: 220,
+      detailsWidth: 400,
+    });
+  });
+
   it("falls back for invalid values and removes malformed rules", () => {
     expect(
       normalizePreferences({

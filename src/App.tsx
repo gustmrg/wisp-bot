@@ -1,29 +1,29 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import type { ChatListAction } from "@/chat-data";
-import { AppSettingsDialogHost } from "@/components/app-settings-dialog-host";
-import type { AppSettingsDialogHandle } from "@/components/app-settings-dialog-host";
 import type { SettingsEntrySection } from "@/components/app-settings-dialog";
+import type { AppSettingsDialogHandle } from "@/components/app-settings-dialog-host";
+import { AppSettingsDialogHost } from "@/components/app-settings-dialog-host";
 import { ChatPanel } from "@/components/chat-panel";
 import { DetailsPanel } from "@/components/details-panel";
-import { SearchDialog } from "@/components/search-dialog";
 import { MobileApprovals } from "@/components/mobile-approvals";
-import { WispProfile } from "@/components/wisp-profile";
-import type { WispSettingsSection } from "@/components/wisp-settings";
+import { Onboarding, SetupStatus } from "@/components/onboarding";
+import { SearchDialog } from "@/components/search-dialog";
 import { Sidebar } from "@/components/sidebar";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { UpdateToast } from "@/components/update-toast";
+import { WispProfile } from "@/components/wisp-profile";
+import type { WispSettingsSection } from "@/components/wisp-settings";
 import { APP_METADATA } from "@/config/app-metadata";
-import { Onboarding, SetupStatus } from "@/components/onboarding";
-import { useSetupGate } from "@/hooks/use-setup-gate";
-import { useUserProfile, type UserProfileController } from "@/hooks/use-user-profile";
-import { useResizablePanel } from "@/hooks/use-resizable-panel";
+import { useWorkspaceController } from "@/features/workspace/use-workspace-controller";
 import { useMessageQueue } from "@/hooks/use-message-queue";
-import { useScheduledMessages } from "@/hooks/use-scheduled-messages";
 import { useMobileLayout } from "@/hooks/use-mobile-layout";
 import { usePageVisible } from "@/hooks/use-page-visible";
+import { useResizablePanel } from "@/hooks/use-resizable-panel";
+import { useScheduledMessages } from "@/hooks/use-scheduled-messages";
+import { useSetupGate } from "@/hooks/use-setup-gate";
 import { TimeZoneProvider, useReportedTimeZone } from "@/hooks/use-time-zone";
-import { useWorkspaceController } from "@/features/workspace/use-workspace-controller";
+import { type UserProfileController, useUserProfile } from "@/hooks/use-user-profile";
 import { effectiveTimeZone } from "@/lib/app-preferences";
 import { DETAILS_LAYOUT, SIDEBAR_LAYOUT } from "@/lib/layout";
 import { mainPanel } from "@/lib/ui-classes";
@@ -90,11 +90,15 @@ function Workspace({ userProfile }: { userProfile: UserProfileController }) {
   const conversations = useMemo(() => Object.values(workspace.chats), [workspace.chats]);
   const sidebarPanel = useResizablePanel({
     ...SIDEBAR_LAYOUT.resize,
+    defaultWidth: workspace.preferences.sidebarWidth,
     enabled: !mobile,
+    onResizeEnd: (sidebarWidth) => workspace.updatePreferences({ ...workspace.preferences, sidebarWidth }),
   });
   const detailsPanel = useResizablePanel({
     ...DETAILS_LAYOUT.resize,
+    defaultWidth: workspace.preferences.detailsWidth,
     enabled: !mobile && detailsOpen && Boolean(workspace.activeChat),
+    onResizeEnd: (detailsWidth) => workspace.updatePreferences({ ...workspace.preferences, detailsWidth }),
   });
 
   useEffect(() => {

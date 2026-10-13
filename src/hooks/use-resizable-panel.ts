@@ -5,15 +5,26 @@ import type { ResizablePanelLayout } from "@/lib/layout";
 
 interface UseResizablePanelOptions extends ResizablePanelLayout {
   readonly enabled?: boolean;
+  /** Called once a drag ends with a new width, so it can be saved. */
+  readonly onResizeEnd?: (width: number) => void;
 }
 
 function clampWidth(width: number, minWidth: number, maxWidth: number) {
   return Math.min(maxWidth, Math.max(minWidth, width));
 }
 
-function useResizablePanel({ defaultWidth, minWidth, maxWidth, direction, enabled = true }: UseResizablePanelOptions) {
+function useResizablePanel({
+  defaultWidth,
+  minWidth,
+  maxWidth,
+  direction,
+  enabled = true,
+  onResizeEnd,
+}: UseResizablePanelOptions) {
   const [width, setWidth] = useState(defaultWidth);
   const cleanupRef = useRef<() => void>(() => undefined);
+  const onResizeEndRef = useRef(onResizeEnd);
+  onResizeEndRef.current = onResizeEnd;
 
   const cancelResize = useCallback(() => cleanupRef.current(), []);
 
@@ -34,6 +45,7 @@ function useResizablePanel({ defaultWidth, minWidth, maxWidth, direction, enable
       const pointerId = event.pointerId;
       const startX = event.clientX;
       const startWidth = width;
+      let lastWidth = startWidth;
       let captured = false;
       let cleaned = false;
 
@@ -50,7 +62,8 @@ function useResizablePanel({ defaultWidth, minWidth, maxWidth, direction, enable
         const pointerEvent = moveEvent as PointerEvent;
         if (pointerEvent.pointerId !== pointerId) return;
         const delta = (pointerEvent.clientX - startX) * direction;
-        setWidth(clampWidth(startWidth + delta, minWidth, maxWidth));
+        lastWidth = clampWidth(startWidth + delta, minWidth, maxWidth);
+        setWidth(lastWidth);
       }
 
       function stop(stopEvent: Event) {
@@ -79,6 +92,7 @@ function useResizablePanel({ defaultWidth, minWidth, maxWidth, direction, enable
         }
 
         if (cleanupRef.current === cleanup) cleanupRef.current = () => undefined;
+        if (lastWidth !== startWidth) onResizeEndRef.current?.(lastWidth);
       }
 
       cleanupRef.current = cleanup;

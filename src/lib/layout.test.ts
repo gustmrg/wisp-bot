@@ -15,6 +15,6 @@ describe("panel layout", () => {
       "--details-width": "360px",
       "--details-min-width": "280px",
     });
-    expect(DETAILS_LAYOUT.resize).toEqual({ defaultWidth: 318, minWidth: 280, maxWidth: 480, direction: -1 });
+    expect(DETAILS_LAYOUT.resize).toEqual({ defaultWidth: 400, minWidth: 280, maxWidth: 480, direction: -1 });
   });
 });

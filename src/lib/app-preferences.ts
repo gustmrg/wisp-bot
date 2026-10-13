@@ -1,4 +1,5 @@
 import { DEFAULT_SHORTCUTS, normalizeShortcuts, type ShortcutPreferences } from "@/lib/shortcuts";
+import { DETAILS_LAYOUT, SIDEBAR_LAYOUT, type ResizablePanelLayout } from "@/lib/layout";
 import { normalizeTheme, type ThemePreference } from "@/lib/theme";
 import {
   DEFAULT_VOICE_PROVIDER,
@@ -41,6 +42,9 @@ export interface AppPreferences {
   timezone: string;
   autoReview: boolean;
   autoReviewRules: AutoReviewRule[];
+  /** Desktop widths of the Wisp list and the Wisp's settings panel, as last dragged. */
+  sidebarWidth: number;
+  detailsWidth: number;
 }
 
 export const DEFAULT_PREFERENCES: AppPreferences = {
@@ -62,6 +66,8 @@ export const DEFAULT_PREFERENCES: AppPreferences = {
   timezone: "auto",
   autoReview: true,
   autoReviewRules: [],
+  sidebarWidth: SIDEBAR_LAYOUT.resize.defaultWidth,
+  detailsWidth: DETAILS_LAYOUT.resize.defaultWidth,
 };
 
 export function isRuleBehavior(value: unknown): value is RuleBehavior {
@@ -83,6 +89,12 @@ function isAutoReviewRule(value: unknown): value is AutoReviewRule {
 
 function preferenceRecord(value: unknown): Record<string, unknown> | undefined {
   return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : undefined;
+}
+
+function panelWidth(value: unknown, { defaultWidth, minWidth, maxWidth }: ResizablePanelLayout): number {
+  return typeof value === "number" && Number.isFinite(value)
+    ? Math.min(maxWidth, Math.max(minWidth, Math.round(value)))
+    : defaultWidth;
 }
 
 /** The time zone the person chose, or this device's when they left it on auto-detect. */
@@ -132,5 +144,7 @@ export function normalizePreferences(value: unknown): AppPreferences {
           scope: rule.scope ?? "workspace",
         }))
       : [],
+    sidebarWidth: panelWidth(saved?.sidebarWidth, SIDEBAR_LAYOUT.resize),
+    detailsWidth: panelWidth(saved?.detailsWidth, DETAILS_LAYOUT.resize),
   };
 }

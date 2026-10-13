@@ -29,7 +29,7 @@ const SIDEBAR_LAYOUT = {
 
 const DETAILS_LAYOUT = {
   resize: {
-    defaultWidth: 318,
+    defaultWidth: 400,
     minWidth: 280,
     maxWidth: 480,
     direction: -1,
