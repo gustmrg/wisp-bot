@@ -12,6 +12,7 @@ const chat = wispChatView("atlas", {
 function renderDetails(onDelete = vi.fn()): void {
   render(
     <DetailsPanel
+      initialTab="general"
       chat={chat}
       wisps={{ atlas: chat.wisp }}
       width={318}
@@ -103,10 +104,9 @@ describe("DetailsPanel deletion", () => {
   it("requires explicit confirmation and describes the data being removed", async () => {
     const user = userEvent.setup();
     const onDelete = vi.fn();
-    mockConversationModel({ ok: false, error: { code: "not_found", message: "Missing" } });
     renderDetails(onDelete);
 
-    await user.click(screen.getByRole("button", { name: "Delete Atlas…" }));
+    await user.click(screen.getByRole("button", { name: "Delete Wisp" }));
 
     expect(onDelete).not.toHaveBeenCalled();
     expect(screen.getByRole("heading", { name: "Delete Atlas?" })).toBeVisible();
@@ -119,19 +119,13 @@ describe("DetailsPanel deletion", () => {
 });
 
 describe("DetailsPanel on the desktop", () => {
-  it("shows a compact profile whose rows open the settings dialog at their section", async () => {
+  it("opens straight on the Wisp's settings, with who it is in the panel's header", async () => {
     const user = userEvent.setup();
-    const onChange = vi.fn();
     Object.defineProperty(window, "wisp", {
       configurable: true,
       value: {
-        getConversationModel: vi.fn(async () => ({
-          ok: true,
-          value: { effective: { providerId: "anthropic", modelId: "claude-opus-5-5" } },
-        })),
-        getAiSettings: vi.fn(async () => ({ ok: false, error: { message: "unavailable" } })),
-        getJobs: vi.fn(async () => ({ ok: true, value: { jobs: [] } })),
-        subscribeToJobs: vi.fn(() => () => {}),
+        getAiSettings: vi.fn(async () => ({ ok: false, error: { message: "No settings yet" } })),
+        getConversationModel: vi.fn(async () => ({ ok: false, error: { message: "No model yet" } })),
         subscribeToAgentEvents: vi.fn(() => () => undefined),
       },
     });
@@ -140,33 +134,23 @@ describe("DetailsPanel on the desktop", () => {
         chat={chat}
         wisps={{ atlas: chat.wisp }}
         width={318}
-        onChange={onChange}
+        onChange={vi.fn()}
         onChangeWisp={vi.fn()}
         onClose={vi.fn()}
         onDelete={vi.fn()}
         onResizeStart={vi.fn()}
       />,
     );
-    const profile = screen.getByRole("region", { name: "Atlas" });
-    expect(profile).toHaveTextContent("Finds relevant information");
-    expect(screen.queryByRole("tab")).not.toBeInTheDocument();
-    // The Model row says which model is set without opening it.
-    expect(await screen.findByText("claude-opus-5-5")).toBeVisible();
+    expect(screen.getByRole("heading", { name: "Atlas" })).toBeVisible();
+    expect(screen.getByText("Research")).toBeVisible();
+    expect(screen.getByRole("textbox", { name: "Name" })).toHaveValue("Atlas");
+    expect(screen.queryByRole("button", { name: "Back to profile" })).not.toBeInTheDocument();
 
-    await user.click(screen.getByRole("switch", { name: "Notifications" }));
-    expect(onChange).toHaveBeenCalledWith({ kind: "wisp", notifyOnUpdatesEnabled: false });
-
-    await user.click(screen.getByRole("button", { name: /^Model/ }));
-    const dialog = await screen.findByRole("dialog", { name: "Atlas" });
-    expect(screen.getByRole("heading", { name: "Model" })).toBeVisible();
-    expect(screen.getByRole("navigation", { name: "Atlas settings sections" })).toBeVisible();
-
-    await user.keyboard("{Escape}");
-    expect(dialog).not.toBeInTheDocument();
-
-    // E edits the profile while the panel has focus.
-    screen.getByRole("button", { name: /^Usage/ }).focus();
-    await user.keyboard("e");
-    expect(await screen.findByRole("textbox", { name: "Name" })).toHaveValue("Atlas");
+    // The tabs carry the navigation; switching them stays inside the panel.
+    await user.click(screen.getByRole("tab", { name: "Model" }));
+    expect(screen.getByRole("tab", { name: "Model" })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("heading", { name: "Atlas" })).toBeVisible();
+    await user.click(screen.getByRole("tab", { name: "General" }));
+    expect(screen.getByRole("textbox", { name: "Name" })).toHaveValue("Atlas");
   });
 });

@@ -1,16 +1,9 @@
-import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
-import { ChevronLeftIcon, XIcon } from "lucide-react";
+import { CheckIcon, ChevronLeftIcon, Share2Icon, XIcon } from "lucide-react";
+import { type PointerEvent as ReactPointerEvent, useEffect, useRef } from "react";
 
 import type { ChatChanges, ChatView, WispChanges, WispCollection } from "@/chat-data";
+import { ChatAvatar } from "@/components/chat-avatar";
 import { CircleDetails } from "@/components/circle-details";
-import { WispProfilePanel } from "@/components/wisp-profile";
-import {
-  WispSettingsDialog,
-  WispSettingsSectionContent,
-  wispSettingsSectionLabel,
-  type WispSettingsSection,
-} from "@/components/wisp-settings";
-import type { WispState } from "@/components/wisp";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -22,20 +15,32 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
+import type { WispState } from "@/components/wisp";
+import { WispDetails, type WispSettingsTab } from "@/components/wisp-details";
+import {
+  type WispSettingsSection,
+  WispSettingsSectionContent,
+  wispSettingsSectionLabel,
+} from "@/components/wisp-settings";
+import { useCopyFeedback } from "@/hooks/use-copy-feedback";
 import { chatName } from "@/lib/chat-schema";
 import { detailsLayoutStyle } from "@/lib/layout";
+import type { IntegrationSettingsTarget } from "@/lib/plugin-access";
 import { panelResizer } from "@/lib/ui-classes";
 import { cn } from "@/lib/utils";
-import type { IntegrationSettingsTarget } from "@/lib/plugin-access";
+import { wispAccentStyle, wispColor } from "@/lib/wisp-appearance";
+import { serializeWispTemplate } from "@/lib/wisp-template";
 
 interface DetailsPanelProps {
   mobile?: boolean;
   chat: ChatView;
   /** On a phone, the page of a Wisp's settings shown. */
   section?: WispSettingsSection;
+  /** On the desktop, the settings tab the panel opens first. */
+  initialTab?: WispSettingsTab;
   /** On a phone, names where the back button goes. */
   backLabel?: string;
-  /** What the Wisp is doing, for its picture on the desktop profile. */
+  /** What the Wisp is doing, for its picture in the panel's header. */
   state?: WispState;
   wisps: WispCollection;
   width: number;
@@ -59,21 +64,73 @@ function DetailsPanel({
   onResizeStart,
   mobile = false,
   section = "profile",
+  initialTab,
   backLabel = "Back to conversation",
   state = "idle",
 }: DetailsPanelProps) {
-  // On the desktop a Wisp's settings open in a dialog over its profile.
-  const [dialogSection, setDialogSection] = useState<WispSettingsSection | null>(null);
+  // On the desktop the panel is a Wisp's settings; who the Wisp is sits in the panel's header.
+  const desktopWisp = !mobile && chat.kind === "wisp";
+  const copyFeedback = useCopyFeedback(chat.id);
   const titleRef = useRef<HTMLHeadingElement>(null);
   const focusChatId = mobile ? chat.id : null;
   useEffect(() => {
     if (focusChatId) titleRef.current?.focus();
   }, [focusChatId]);
 
+  /** Copies the Wisp's soul and the model it runs on, so it can be pasted when creating a Wisp. */
+  async function shareTemplate(): Promise<void> {
+    if (chat.kind !== "wisp") return;
+    const model = await window.wisp.getConversationModel({ conversationId: chat.id }).catch(() => null);
+    await copyFeedback.copy(serializeWispTemplate(chat.wisp, model?.ok ? model.value.effective : null));
+  }
+
   const name = chatName(chat);
   // On a phone the profile's page is where it is edited, as the button that opens it says.
   const pageTitle = section === "profile" ? "Edit" : wispSettingsSectionLabel(section);
-  const title = chat.kind === "wisp" ? (mobile ? pageTitle : name) : "Settings";
+  const title = mobile && chat.kind === "wisp" ? pageTitle : "Settings";
+  const deleteControl = (
+    <Dialog>
+      <DialogTrigger render={<Button className="w-full" variant="destructive" type="button" />}>
+        Delete {chat.kind === "circle" ? "circle" : "Wisp"}
+      </DialogTrigger>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Delete {name}?</DialogTitle>
+          <DialogDescription>
+            This permanently deletes this {chat.kind === "circle" ? "circle" : "Wisp"}, including its conversation
+            history and settings. This action cannot be undone.
+          </DialogDescription>
+        </DialogHeader>
+        <DialogFooter>
+          <DialogClose render={<Button variant="outline" type="button" />}>Cancel</DialogClose>
+          <DialogClose render={<Button variant="destructive" type="button" onClick={onDelete} />}>
+            Confirm deletion
+          </DialogClose>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+  const shareControl = (
+    <>
+      <span
+        className="sr-only"
+        role={copyFeedback.status === "error" ? "alert" : "status"}
+        aria-live={copyFeedback.status === "error" ? "assertive" : "polite"}
+      >
+        {copyFeedback.message}
+      </span>
+      <Button className="w-full" variant="secondary" type="button" onClick={() => void shareTemplate()}>
+        {copyFeedback.status === "success" ? <CheckIcon /> : <Share2Icon />}
+        {copyFeedback.status === "copying"
+          ? "Copying template…"
+          : copyFeedback.status === "success"
+            ? "Template copied"
+            : copyFeedback.status === "error"
+              ? "Could not copy template"
+              : "Share as template"}
+      </Button>
+    </>
+  );
 
   return (
     <aside
@@ -94,24 +151,45 @@ function DetailsPanel({
           onPointerDown={onResizeStart}
         />
       ) : null}
-      <header className="details-header grid h-[52px] flex-none grid-cols-[28px_1fr_28px] items-center border-b border-black/[0.04] px-[9px] dark:border-white/[0.04]">
-        <div className="col-start-2 row-start-1 flex min-w-0 flex-col items-center leading-tight">
-          {mobile && chat.kind === "wisp" ? <small className="details-crumb">{name}</small> : null}
-          <h2 ref={titleRef} tabIndex={-1} className="truncate text-sm font-semibold outline-none">
-            {title}
-          </h2>
-        </div>
-        <Button
-          className={mobile ? "details-back" : undefined}
-          variant="ghost"
-          size="icon-sm"
-          type="button"
-          aria-label={mobile ? backLabel : "Close details"}
-          onClick={onClose}
-        >
-          {mobile ? <ChevronLeftIcon aria-hidden="true" /> : <XIcon />}
-        </Button>
-      </header>
+      {desktopWisp ? (
+        // Who the Wisp is, as tall as the conversation's own top bar; the tabs below carry its settings.
+        <header className="details-header flex h-[52px] flex-none items-center justify-between gap-1 border-b border-black/[0.04] pr-[9px] pl-2 dark:border-white/[0.04]">
+          <div
+            className="chat-heading inline-flex min-w-0 flex-1 items-center gap-2 rounded-lg p-1"
+            style={wispAccentStyle(wispColor(chat.wisp.name, chat.wisp.color))}
+          >
+            <span className="wisp-halo" data-state={state}>
+              <ChatAvatar chat={chat} size="sm" state={state} />
+            </span>
+            <div className="min-w-0">
+              <h2 className="truncate font-semibold leading-tight">{name}</h2>
+              {chat.wisp.role ? <p className="chat-subline truncate text-xs">{chat.wisp.role}</p> : null}
+            </div>
+          </div>
+          <Button variant="ghost" size="icon-sm" type="button" aria-label="Close details" onClick={onClose}>
+            <XIcon aria-hidden="true" />
+          </Button>
+        </header>
+      ) : (
+        <header className="details-header grid h-[52px] flex-none grid-cols-[28px_1fr_28px] items-center border-b border-black/[0.04] px-[9px] dark:border-white/[0.04]">
+          <div className="col-start-2 row-start-1 flex min-w-0 flex-col items-center leading-tight">
+            {mobile && chat.kind === "wisp" ? <small className="details-crumb">{name}</small> : null}
+            <h2 ref={titleRef} tabIndex={-1} className="truncate text-sm font-semibold outline-none">
+              {title}
+            </h2>
+          </div>
+          <Button
+            className={mobile ? "details-back" : undefined}
+            variant="ghost"
+            size="icon-sm"
+            type="button"
+            aria-label={mobile ? backLabel : "Close details"}
+            onClick={onClose}
+          >
+            {mobile ? <ChevronLeftIcon aria-hidden="true" /> : <XIcon />}
+          </Button>
+        </header>
+      )}
 
       {chat.kind === "wisp" && mobile ? (
         <WispSettingsSectionContent
@@ -122,51 +200,25 @@ function DetailsPanel({
           onOpenSettings={onOpenSettings}
         />
       ) : chat.kind === "wisp" ? (
-        <>
-          <WispProfilePanel
-            chat={chat}
-            state={state}
-            onOpenSection={setDialogSection}
-            onChangeNotifications={(notifyOnUpdatesEnabled) => onChange({ kind: "wisp", notifyOnUpdatesEnabled })}
-            onDelete={onDelete}
-          />
-          <WispSettingsDialog
-            chat={chat}
-            section={dialogSection}
-            onSectionChange={setDialogSection}
-            onChangeWisp={(changes) => onChangeWisp(chat.wispId, changes)}
-            onOpenSettings={(target) => {
-              setDialogSection(null);
-              onOpenSettings?.(target);
-            }}
-          />
-        </>
+        <WispDetails
+          key={chat.id}
+          chat={chat}
+          initialTab={initialTab ?? "general"}
+          onChangeWisp={(changes) => onChangeWisp(chat.wispId, changes)}
+          onChangeNotifications={(notifyOnUpdatesEnabled) => onChange({ kind: "wisp", notifyOnUpdatesEnabled })}
+          onOpenSettings={onOpenSettings}
+          generalActions={
+            <>
+              {shareControl}
+              {deleteControl}
+            </>
+          }
+        />
       ) : (
         <div className="relative flex min-h-0 flex-1 flex-col">
           <div className="min-h-0 flex-1 overflow-y-auto p-3.5">
             <CircleDetails chat={chat} wisps={wisps} onChange={onChange} />
-            <div className="mt-[18px]">
-              <Dialog>
-                <DialogTrigger render={<Button className="w-full" variant="destructive" type="button" />}>
-                  Delete circle
-                </DialogTrigger>
-                <DialogContent>
-                  <DialogHeader>
-                    <DialogTitle>Delete {name}?</DialogTitle>
-                    <DialogDescription>
-                      This permanently deletes this circle, including its conversation history and settings. This action
-                      cannot be undone.
-                    </DialogDescription>
-                  </DialogHeader>
-                  <DialogFooter>
-                    <DialogClose render={<Button variant="outline" type="button" />}>Cancel</DialogClose>
-                    <DialogClose render={<Button variant="destructive" type="button" onClick={onDelete} />}>
-                      Confirm deletion
-                    </DialogClose>
-                  </DialogFooter>
-                </DialogContent>
-              </Dialog>
-            </div>
+            <div className="mt-[18px]">{deleteControl}</div>
           </div>
         </div>
       )}
@@ -174,5 +226,5 @@ function DetailsPanel({
   );
 }
 
-export { DetailsPanel };
 export type { DetailsPanelProps };
+export { DetailsPanel };

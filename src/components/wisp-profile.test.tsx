@@ -2,7 +2,7 @@ import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { WispProfile, soulText } from "@/components/wisp-profile";
+import { soulText, WispProfile } from "@/components/wisp-profile";
 import { wispChatView } from "@/test/chat-fixtures";
 
 const atlas = wispChatView("atlas", {

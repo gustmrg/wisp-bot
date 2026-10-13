@@ -4,7 +4,7 @@ Wisp ships with five bundled integrations: **Brave Search** (web search),
 **Linear**, **Firecrawl**, **Tavily**, and **Exa** (the latter three support web
 search and page reading). Connections are configured globally in
 **Settings → Plugins**; each Wisp receives access independently through its
-**Access** section. Connecting a plugin grants no Wisp access automatically.
+**Access** tab. Connecting a plugin grants no Wisp access automatically.
 
 For dynamically discovered integrations, see [remote MCP servers](mcp-servers.md).
 
@@ -36,7 +36,7 @@ permission to write.
 
 ## Per-Wisp access
 
-Open a Wisp's **Access** section. Under **Web**, choose a provider for **Search
+Open a Wisp's **Access** tab. Under **Web**, choose a provider for **Search
 the web** and for **Read web pages**; under **Apps**, choose **Read only** or
 **Read and write** for Linear. Select **Save access**. Each plugin's page in
 **Settings → Plugins** offers the same choices for every Wisp. Plugins that are
@@ -48,7 +48,7 @@ auto-review rules.
 
 When more than one connected plugin can search or read pages, **Settings →
 Plugins → Default web providers** sets which one is listed first and marked
-as the default in each Wisp's Access section. Changing the default does not change
+as the default in each Wisp's Access tab. Changing the default does not change
 the provider a Wisp already uses.
 
 ## Capabilities

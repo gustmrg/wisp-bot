@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from "react";
-import { ArrowDownIcon, CheckIcon, ChevronLeftIcon, EllipsisIcon, XIcon } from "lucide-react";
+import { ArrowDownIcon, CheckIcon, ChevronLeftIcon, SettingsIcon, XIcon } from "lucide-react";
 
 import type { ChatView, Message } from "@/chat-data";
 import type { ManagedConversationStatus } from "../../shared/conversations";
@@ -342,7 +342,7 @@ function ChatPanel({
             title={chat.kind === "circle" ? "Circle settings" : "Wisp settings"}
             onClick={onOpenDetails}
           >
-            <EllipsisIcon aria-hidden="true" />
+            <SettingsIcon aria-hidden="true" />
           </Button>
         </div>
       </header>

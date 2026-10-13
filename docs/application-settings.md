@@ -27,7 +27,7 @@ saved key.
   auto-review off makes Wisp ask before every file change and disables the
   choices. **Always allow** and **Always block** on an approval card change
   the same choices. MCP tools always allowed from an approval card are per
-  Wisp, listed in that Wisp's **Access** section instead. Integration blocks added from approval prompts are listed below them
+  Wisp, listed in that Wisp's **Access** tab instead. Integration blocks added from approval prompts are listed below them
   (see [security](security.md) for how rules are applied).
 
 **Timezone** defaults to auto-detect, which follows this device. Every date

@@ -1,4 +1,3 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
 import {
   CheckIcon,
   ChevronLeftIcon,
@@ -8,16 +7,10 @@ import {
   Share2Icon,
   Trash2Icon,
 } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
 
 import type { WispChatView } from "@/chat-data";
 import { WispAvatar } from "@/components/chat-avatar";
-import type { WispState } from "@/components/wisp";
-import {
-  WISP_SETTINGS_MAIN,
-  WISP_SETTINGS_MORE,
-  type WispSettingsSection,
-  type WispSettingsSectionInfo,
-} from "@/components/wisp-settings";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -30,9 +23,15 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { ToggleSwitch } from "@/components/ui/toggle-switch";
+import type { WispState } from "@/components/wisp";
+import {
+  WISP_SETTINGS_MAIN,
+  WISP_SETTINGS_MORE,
+  type WispSettingsSection,
+  type WispSettingsSectionInfo,
+} from "@/components/wisp-settings";
 import { useCopyFeedback } from "@/hooks/use-copy-feedback";
 import { useJobs } from "@/hooks/use-jobs";
-import { cn } from "@/lib/utils";
 import { wispAccentStyle, wispColor } from "@/lib/wisp-appearance";
 import { serializeWispTemplate } from "@/lib/wisp-template";
 
@@ -249,112 +248,6 @@ export function WispProfile({
           <DeleteWispButton chat={chat} className="wisp-profile-end-button" onDelete={onDelete} />
         </div>
       </div>
-    </section>
-  );
-}
-
-function PanelRow({
-  icon: Icon,
-  label,
-  value,
-  shortcut,
-  onClick,
-}: {
-  icon: WispSettingsSectionInfo["icon"];
-  label: string;
-  value?: string;
-  shortcut?: string;
-  onClick: () => void;
-}) {
-  return (
-    <button type="button" className="wisp-panel-row" onClick={onClick} aria-keyshortcuts={shortcut}>
-      <Icon aria-hidden="true" />
-      <span className="wisp-panel-row-label">{label}</span>
-      {value ? <span className="wisp-panel-row-value">{value}</span> : null}
-      {shortcut ? <kbd className="wisp-kbd">{shortcut}</kbd> : null}
-    </button>
-  );
-}
-
-function PanelMenu({ label, children }: { label?: string; children: ReactNode }) {
-  return (
-    <div className="wisp-panel-menu" role={label ? "group" : undefined} aria-label={label}>
-      {label ? <p className="wisp-panel-menu-label">{label}</p> : null}
-      {children}
-    </div>
-  );
-}
-
-/** Who a Wisp is, in the desktop's side panel: compact, a list of rows that say what is set. */
-export function WispProfilePanel({ chat, state, onOpenSection, onChangeNotifications, onDelete }: WispProfileProps) {
-  const { wisp } = chat;
-  const values = useSectionValues(chat);
-  const soul = soulText(wisp.soul);
-  return (
-    <section
-      className="wisp-profile-panel"
-      aria-labelledby="wisp-profile-name"
-      style={wispAccentStyle(wispColor(wisp.name, wisp.color))}
-      onKeyDown={(event) => {
-        // E edits the profile, unless the key is typed into something.
-        const target = event.target as HTMLElement;
-        if (event.key.toLowerCase() !== "e" || event.ctrlKey || event.metaKey || event.altKey) return;
-        if (target.closest("input, textarea, [contenteditable=true]")) return;
-        event.preventDefault();
-        onOpenSection("profile");
-      }}
-    >
-      <div className="wisp-profile-panel-id">
-        <span className="wisp-profile-picture">
-          <WispAvatar wisp={wisp} size="lg" state={state} />
-        </span>
-        <div className="min-w-0">
-          <h1 id="wisp-profile-name">{wisp.name}</h1>
-          {wisp.role ? <p className="wisp-profile-role">{wisp.role}</p> : null}
-        </div>
-      </div>
-      {soul ? (
-        <p className="wisp-profile-panel-soul">{soul}</p>
-      ) : (
-        <p className="wisp-profile-panel-soul wisp-profile-empty">No soul yet.</p>
-      )}
-      <PanelMenu>
-        {WISP_SETTINGS_MAIN.map((info) => (
-          <PanelRow
-            key={info.section}
-            icon={info.section === "profile" ? PencilIcon : info.icon}
-            label={info.section === "profile" ? "Edit profile" : info.label}
-            value={values[info.section]}
-            shortcut={info.section === "profile" ? "E" : undefined}
-            onClick={() => onOpenSection(info.section)}
-          />
-        ))}
-      </PanelMenu>
-      <PanelMenu label={`What ${wisp.name} knows and does`}>
-        {WISP_SETTINGS_MORE.map((info) => (
-          <PanelRow
-            key={info.section}
-            icon={info.icon}
-            label={info.label}
-            value={values[info.section]}
-            onClick={() => onOpenSection(info.section)}
-          />
-        ))}
-      </PanelMenu>
-      <PanelMenu>
-        <div className="wisp-panel-row wisp-panel-toggle">
-          <span className="wisp-panel-row-label">Notifications</span>
-          <ToggleSwitch
-            checked={chat.notifyOnUpdatesEnabled}
-            label="Notifications"
-            onChange={() => onChangeNotifications(!chat.notifyOnUpdatesEnabled)}
-          />
-        </div>
-      </PanelMenu>
-      <PanelMenu>
-        <ShareTemplateButton chat={chat} className="wisp-panel-row" />
-        <DeleteWispButton chat={chat} className={cn("wisp-panel-row", "wisp-panel-row-danger")} onDelete={onDelete} />
-      </PanelMenu>
     </section>
   );
 }

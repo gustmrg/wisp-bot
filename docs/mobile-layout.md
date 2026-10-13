@@ -122,12 +122,10 @@ conversations, without the row of Wisps, and creates a Wisp from the button
 beside Search. Above the list it shows the approval asked last, with Deny and
 Allow once; "N more waiting" opens every waiting approval in a dialog, since
 the desktop has no Approvals tab. The conversation reads as one centered
-column. The "…" button opens a side panel with a compact profile for mouse
-and keyboard: the Wisp, its soul, and rows that say what is set, such as its
-model. A row opens the Wisp's settings in a dialog shaped like the app's
-Settings, with the sections in a sidebar; the arrow keys move between them,
-Ctrl+S saves the profile, Esc closes, and E opens Edit profile while the panel
-has focus. A circle's "…" opens its settings directly.
+column. A gear button opens a side panel on the Wisp's settings; who the Wisp
+is sits in the panel's header, as tall as the conversation's own top bar, and
+General, Model, Access, and Usage tabs carry the rest. A circle's gear opens
+its settings directly.
 
 In the dark theme a near-black Wisp lends the interface a silver tint instead
 of its own color, so its glow and accents still show on the dark background.

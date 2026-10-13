@@ -19,7 +19,7 @@ shown in these settings.
 When creating a Wisp, the **Model** section can select another provider/model
 and output-token limit for that Wisp, or keep **Use global model** to inherit
 the default. Overrides are saved locally with the Wisp and restored on restart;
-a Wisp's **Model** section shows the selection read-only. An invalid override
+a Wisp's **Model** tab shows the selection read-only. An invalid override
 requires configuration; it does not silently use a different provider. Removing
 a provider key disables affected Wisps until the key is restored.
 
@@ -44,7 +44,7 @@ pages that do not finish in time are named so the Wisp can read them again.
 A failed or slow image model never fails the Wisp's turn.
 While it reads, the Wisp's activity names the image model and the page it is
 on. With an image model chosen, the composer says it will read attached images
-for the Wisp, and the Wisp's **Model** section names it next to the no-image note.
+for the Wisp, and the Wisp's **Model** tab names it next to the no-image note.
 
 Transcriptions are cached in the Wisp's configuration directory, keyed by the
 file's contents, the model, and the page, so reading a file again does not

@@ -201,7 +201,7 @@ function Sidebar({
           </>
         ) : (
           // The Create Wisp button, rendered further down, is placed at the end of this row.
-          <div className="flex h-11 flex-none items-center pr-[50px] pl-2 pb-1">
+          <div className="flex h-[52px] flex-none items-center pt-2 pr-[50px] pl-2 pb-1">
             <button
               className={cn(
                 "sidebar-search flex h-[34px] min-w-0 flex-1 items-center gap-2 rounded-[10px] border-0 text-left text-dim hover:text-foreground",
@@ -371,7 +371,7 @@ function Sidebar({
         </nav>
 
         {/* One dialog for both layouts, so a Wisp being created survives a change between them. */}
-        <div className={mobile ? "sidebar-create" : "absolute top-[3px] right-2 z-[1]"}>
+        <div className={mobile ? "sidebar-create" : "absolute top-[11px] right-2 z-[1]"}>
           <CreateAgentDialog
             onCreate={onCreate}
             trigger={

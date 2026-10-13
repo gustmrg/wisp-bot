@@ -1,9 +1,9 @@
 import { act, render, screen, waitFor } from "@testing-library/react";
-import { useState } from "react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
-
+import { wispChatView } from "@/test/chat-fixtures";
 import type { BackendResult } from "../../shared/contracts";
+import type { McpGrant, McpServerSummary } from "../../shared/mcp";
 import {
   PLUGIN_CATALOG,
   type PluginGrant,
@@ -12,10 +12,8 @@ import {
   type WebProviders,
   type WispPluginAccessView,
 } from "../../shared/plugins";
-import type { McpGrant, McpServerSummary } from "../../shared/mcp";
+import { WispDetails } from "./wisp-details";
 import { WispPluginSettings } from "./wisp-plugin-settings";
-import { WispSettingsDialog, type WispSettingsSection } from "./wisp-settings";
-import { wispChatView } from "@/test/chat-fixtures";
 
 const NO_PROVIDERS: WebProviders = { search: null, read: null };
 
@@ -305,26 +303,21 @@ describe("WispPluginSettings", () => {
     });
   });
 
-  it("reloads global connections every time Access is shown", async () => {
+  it("reloads global connections every time the Access tab opens", async () => {
     const api = setup();
     const user = userEvent.setup();
-    function Dialog() {
-      const [section, setSection] = useState<WispSettingsSection | null>("profile");
-      return (
-        <WispSettingsDialog
-          chat={wispChatView("researcher", { wisp: { name: "Researcher", role: "Research", soul: "" } })}
-          section={section}
-          onSectionChange={setSection}
-          onChangeWisp={vi.fn()}
-        />
-      );
-    }
-    render(<Dialog />);
+    render(
+      <WispDetails
+        chat={wispChatView("researcher", { wisp: { name: "Researcher", role: "Research", soul: "" } })}
+        onChangeWisp={vi.fn()}
+        onChangeNotifications={vi.fn()}
+      />,
+    );
     expect(api.getPluginSettings).not.toHaveBeenCalled();
-    await user.click(screen.getByRole("button", { name: "Access" }));
+    await user.click(screen.getByRole("tab", { name: "Access" }));
     expect(await screen.findByRole("combobox", { name: "Linear access" })).toBeVisible();
-    await user.click(screen.getByRole("button", { name: "Profile" }));
-    await user.click(screen.getByRole("button", { name: "Access" }));
+    await user.click(screen.getByRole("tab", { name: "General" }));
+    await user.click(screen.getByRole("tab", { name: "Access" }));
     await waitFor(() => expect(api.getPluginSettings).toHaveBeenCalledTimes(2));
     expect(api.getWispPluginAccess).toHaveBeenCalledTimes(2);
   });

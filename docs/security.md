@@ -62,7 +62,7 @@ output to 64 KB.
 
 Each Wisp's workspace is a private folder under the backend data directory,
 capped at 512 MB unless the Wisp is given another size. **Wisp settings →
-Workspace** offers 512 MB, 2, 10, 50 and 100 GB; growing needs that
+General → Workspace** offers 512 MB, 2, 10, 50 and 100 GB; growing needs that
 much room on the server's disk, and shrinking below what the workspace holds
 deletes nothing but stops new files. The size is kept in the Wisp's config
 directory, outside the workspace, so the Wisp cannot change it. A file change

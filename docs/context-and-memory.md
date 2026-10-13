@@ -1,6 +1,6 @@
 # Context and memory
 
-Open **Wisp settings → Memory** to configure context
+Open **Wisp settings → General → Context & memory** to configure context
 renewal for a Wisp. By default, the next message after 24 hours of inactivity
 starts a new topic, but only when the active context is at least 12,000
 tokens. **On renewal** can instead summarize the context and continue, which
@@ -42,7 +42,7 @@ Ask a Wisp to save a workflow as a skill and it drafts reusable instructions
 for you to approve; the approval card shows exactly what will be saved. Each
 Wisp sees the names and descriptions of its own skills and loads one when a
 request matches. Attach a SKILL.md and ask the Wisp to save it, and it saves
-the file as written after your approval. **Wisp settings → Skills**
+the file as written after your approval. **Wisp settings → General → Skills**
 lists, imports, deletes, and opens the folder holding them. See
 [ADR 008](decisions/008-wisp-skills.md).
 
@@ -57,5 +57,5 @@ search dialog (`Cmd/Ctrl+K`), which searches chats and messages directly.
 
 Usage totals include summarization input/output and cache tokens. Summary costs
 use the runtime's persisted estimate when positive and available; unavailable
-estimates remain unknown. The Usage section identifies the summarization token
+estimates remain unknown. The Usage tab identifies the summarization token
 subtotal. See [token usage](token-usage.md).
