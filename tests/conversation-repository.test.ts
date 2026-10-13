@@ -848,20 +848,9 @@ describe("ConversationRepository", () => {
     expect(new Set(restored.map(({ id }) => id)).size).toBe(2);
   });
 
-  it.each([
-    ["not a database", async (file: string) => writeFile(file, "definitely not sqlite", "utf8")],
-    [
-      "from a newer app version",
-      async (file: string) => {
-        const db = new DatabaseSync(file);
-        db.exec("CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL) STRICT;");
-        db.exec("INSERT INTO meta VALUES ('store_version', '99')");
-        db.close();
-      },
-    ],
-  ])("preserves a database that is %s and starts fresh", async (_label, prepare) => {
+  it("preserves a database that is not a database and starts fresh", async () => {
     const directory = await mkdtemp(path.join(os.tmpdir(), "wisp-corrupt-db-"));
-    await prepare(path.join(directory, "conversations.sqlite"));
+    await writeFile(path.join(directory, "conversations.sqlite"), "definitely not sqlite", "utf8");
     const repository = new ConversationRepository({ dataDirectory: directory });
 
     await repository.load();
@@ -871,6 +860,23 @@ describe("ConversationRepository", () => {
     expect((await readdir(directory)).some((name) => name.startsWith("conversations.sqlite.corrupt-"))).toBe(true);
     await repository.initialize({ first: chat("first") });
     expect(Object.keys((await reload(directory)).getChats())).toEqual(["first"]);
+  });
+
+  it("refuses a database from a newer app version and leaves it in place", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "wisp-newer-db-"));
+    const file = path.join(directory, "conversations.sqlite");
+    const db = new DatabaseSync(file);
+    db.exec("CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL) STRICT;");
+    db.exec("INSERT INTO meta VALUES ('store_version', '99')");
+    db.close();
+    const repository = new ConversationRepository({ dataDirectory: directory });
+
+    await expect(repository.load()).rejects.toThrow("saved by a newer version of Wisp Bot");
+
+    expect(repository.didRecoverCorruptState()).toBe(false);
+    expect((await readdir(directory)).filter((name) => name.startsWith("conversations.sqlite"))).toEqual([
+      "conversations.sqlite",
+    ]);
   });
 
   it("keeps each chat's last activity, never moving it backwards", async () => {
