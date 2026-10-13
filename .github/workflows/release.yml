@@ -25,8 +25,8 @@ jobs:
     outputs:
       version: ${{ steps.bump.outputs.version }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 22.19.0
           cache: npm
@@ -67,7 +67,7 @@ jobs:
       - run: npm run build
       - run: npm run audit:prod
       - run: npm sbom --omit=dev --sbom-format=cyclonedx > wisp-bot-sbom.cdx.json
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: sbom
           path: wisp-bot-sbom.cdx.json
@@ -87,8 +87,8 @@ jobs:
             builder-args: --linux AppImage deb --x64
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 22.19.0
           cache: npm
@@ -106,7 +106,7 @@ jobs:
             ICON_ARGS=(-c.mac.icon=build/icon-mac-dev.png -c.linux.icon=build/icon-mac-dev.png)
           fi
           npm run build && npx electron-builder ${{ matrix.builder-args }} "${ICON_ARGS[@]}" --publish never
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: desktop-${{ matrix.name }}
           path: |
@@ -129,8 +129,8 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 22.19.0
       - name: Commit and tag the version
@@ -152,7 +152,7 @@ jobs:
             # main during the run makes this fail rather than overwrite it.
             git push --atomic origin "HEAD:refs/heads/main" "refs/tags/v$VERSION"
           fi
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           path: artifacts
           merge-multiple: true
@@ -182,10 +182,10 @@ jobs:
       contents: read
       id-token: write # trusted publishing and provenance
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: v${{ needs.prepare.outputs.version }}
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 22.19.0
           cache: npm
