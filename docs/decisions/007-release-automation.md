@@ -4,6 +4,7 @@
 - Date: 2026-10-04
 - Decision owners: Wisp maintainer
 - Scope: Platform matrix, signing, update rollout, and the release workflow
+- Related: [ADR 020](020-development-workflow.md) sets the branch strategy betas and releases are cut from
 - Supersedes: the platform matrix, signing, rollout, and release-gate sections of [ADR 002](002-distribution.md)
 
 ## Context

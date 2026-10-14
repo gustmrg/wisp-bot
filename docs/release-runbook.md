@@ -7,7 +7,7 @@ Wisp Bot ships these artifacts from GitHub Releases, which also hosts the update
 | macOS 14+ | arm64 | DMG, ZIP | `latest-mac.yml`, or `beta-mac.yml` for a beta |
 | Linux | x64 | AppImage, `.deb` | `latest-linux.yml`, or `beta-linux.yml` for a beta |
 
-Windows is not built yet. [ADR 007](decisions/007-release-automation.md) records the platform matrix and release flow.
+Windows is not built yet. [ADR 007](decisions/007-release-automation.md) records the platform matrix and release flow, and [ADR 020](decisions/020-development-workflow.md) the branch strategy: changes reach `main` through pull requests, betas are cut from `main`, and a release promotes the beta line.
 
 ## Signing
 
@@ -18,24 +18,29 @@ Linux packages are unsigned. The updater checks each download against the SHA-51
 ## Publish a release
 
 1. Merge everything for the release into `main`. Make sure CI passes and `npm run audit:prod` is clean, because the release fails on any high-severity production advisory.
-2. Run **Desktop release** from `main` under GitHub Actions → Desktop release → Run workflow. Set **version** to `patch`, `minor`, `major`, or an exact version such as `1.2.0`. For a beta, see [Publish a beta](#publish-a-beta).
+2. Run **Desktop release** from `main` under GitHub Actions → Desktop release → Run workflow. Set **version** to `minor` to promote the betas, or to `patch`, `major`, or an exact version such as `1.2.0`. For a beta, see [Publish a beta](#publish-a-beta).
+
+   While a beta is out, a release must sort above it, or beta installs would never update to it. With `0.19.0-beta.2` out, `patch` (`0.18.1`) fails and names `0.19.0` instead, so release `minor`.
 3. The workflow:
-   1. resolves the version on top of `main` and fails if its tag already exists;
+   1. resolves the version on top of `main`, and fails if its tag already exists or if any install already runs a higher version;
    2. runs lint, formatting, typecheck, tests, build, the production audit, and the SBOM against the bumped tree;
    3. packages macOS (on `macos-14`) and Linux (on `ubuntu-latest`) in parallel;
    4. commits `chore(release): prepare vX.Y.Z` to `main` and pushes it with the `vX.Y.Z` tag in one atomic push;
-   5. publishes the GitHub release with generated notes, every artifact, both update feeds, the SBOM, and `SHA256SUMS.txt`.
+   5. publishes the GitHub release with notes generated since the previous release, every artifact, both update feeds, the SBOM, and `SHA256SUMS.txt`.
 4. Download the artifacts and check them against `SHA256SUMS.txt`.
 
 Nothing is committed or tagged until all checks and both packaging jobs pass, so a failed run leaves the repository unchanged. Fix the cause on `main` and run the workflow again. If someone pushes to `main` during the run, the atomic push fails. Run the workflow again to release the newer commit.
 
 ## Publish a beta
 
-A beta puts changes in front of real installs before they reach `main`.
+A beta puts what `main` holds in front of real installs before it becomes a release.
 
-1. Push the branch and make sure CI passes on it.
-2. Run **Desktop release** from that branch (the **Use workflow from** menu) with **version** set to `beta`. The workflow picks the next minor version's next beta: with `main` at `0.18.0`, that is `0.19.0-beta.1`, then `0.19.0-beta.2`. An exact version such as `0.18.1-beta.1` works too. Only `-beta.N` versions are accepted, and only betas run from a branch other than `main`.
-3. The workflow runs the same gates and packaging as a release. It then commits the version on top of the branch, tags it, and pushes only the tag, so neither the branch nor `main` takes the beta's version. The GitHub release is marked as a prerelease, and the server goes to npm under the `beta` dist-tag.
+1. Merge the changes into `main` and make sure CI passes.
+2. Run **Desktop release** from `main` with **version** set to `beta`. The workflow picks the next minor version's next beta: with `main` at `0.18.0`, that is `0.19.0-beta.1`, then `0.19.0-beta.2`. An exact version such as `0.19.0-beta.5` works too. Only `-beta.N` versions are accepted.
+3. The workflow runs the same gates and packaging as a release. It then commits the version on top of `main`, tags it, and pushes only the tag, so `main` does not take the beta's version. The GitHub release is marked as a prerelease, its notes list what changed since the version before it, and the server goes to npm under the `beta` dist-tag.
+4. Repeat as more changes land. When the betas hold up, [publish a release](#publish-a-release) with `minor`.
+
+To try one branch on its own, run the workflow from that branch with `beta` and **preview_branch** checked. Without it, a beta from a branch other than `main` fails. Such a beta carries none of the fixes on `main` that the branch lacks, so keep it for changes too risky to merge first.
 
 Builds that run a beta read the `beta` channel and update to newer betas. Stable builds never read it. When the next release ships, its version is higher than every beta before it, so beta installs update to it and return to the stable channel.
 
