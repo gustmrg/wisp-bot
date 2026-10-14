@@ -314,7 +314,8 @@ function ChatPanel({
               {name}
             </h1>
             {subline.text ? (
-              <p className="chat-subline flex min-w-0 items-center gap-1.5 truncate text-xs" data-tone={subline.tone}>
+              // The text truncates on its own, so the line does not clip the pulse around its dot.
+              <p className="chat-subline flex min-w-0 items-center gap-1.5 text-xs" data-tone={subline.tone}>
                 {subline.tone === "working" ? <span className="chat-subline-pulse" aria-hidden="true" /> : null}
                 <span className="truncate">{subline.text}</span>
               </p>
