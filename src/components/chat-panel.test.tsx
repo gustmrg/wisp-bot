@@ -207,16 +207,26 @@ describe("ChatPanel transcript", () => {
     expect(scroller.scrollTop).toBe(bottomOf(11));
   });
 
-  it("keeps a reader's place when a reply arrives, and offers a way to it", async () => {
+  it("offers a way to the newest messages once the reader scrolls up, and back down hides it", () => {
+    const { scroller } = renderPanel(transcript(messages(0, 10)));
+    expect(screen.queryByRole("button", { name: "Jump to latest" })).not.toBeInTheDocument();
+
+    scrollAsPerson(scroller, 40);
+    expect(screen.getByRole("button", { name: "Jump to latest" })).toBeInTheDocument();
+
+    scrollAsPerson(scroller, bottomOf(10));
+    expect(screen.queryByRole("button", { name: "Jump to latest" })).not.toBeInTheDocument();
+  });
+
+  it("keeps a reader's place when a reply arrives, and marks the way to it", async () => {
     const user = userEvent.setup();
     const { scroller, show, props } = renderPanel(transcript(messages(0, 10)));
     scrollAsPerson(scroller, 40);
-    expect(screen.queryByRole("button", { name: "Jump to latest" })).not.toBeInTheDocument();
 
     show(transcript([...messages(0, 10), { id: "reply", type: "incoming", text: "Hi", status: "streaming" }]));
     expect(scroller.scrollTop).toBe(40);
 
-    await user.click(screen.getByRole("button", { name: "Jump to latest" }));
+    await user.click(screen.getByRole("button", { name: "Jump to latest, new messages below" }));
     // The window already holds the newest messages, so nothing is loaded.
     expect(props.onShowLatest).not.toHaveBeenCalled();
     expect(scroller.scrollTop).toBe(bottomOf(11));
@@ -299,7 +309,6 @@ describe("ChatPanel transcript", () => {
     expect(scroller.scrollTop).toBe(opened);
     // Reattaching to a visible reply must not add an execution indicator below it.
     expect(screen.queryByText("Atlas is working…")).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Jump to latest" })).not.toBeInTheDocument();
 
     show(held);
     await user.click(screen.getByRole("button", { name: "Jump to latest" }));

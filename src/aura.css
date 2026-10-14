@@ -205,6 +205,19 @@
   box-shadow: 0 0 18px color-mix(in srgb, var(--wisp) 40%, transparent);
 }
 
+/* The way back to the newest messages carries a dot when something new arrived below. */
+.chat-jump[data-unseen]::after {
+  content: "";
+  position: absolute;
+  top: 1px;
+  right: 1px;
+  width: 9px;
+  height: 9px;
+  border: 2px solid var(--background);
+  border-radius: 50%;
+  background: var(--wisp, var(--blue));
+}
+
 /* A Wisp with nothing said yet introduces itself. */
 .chat-intro {
   display: flex;

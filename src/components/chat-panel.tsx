@@ -156,6 +156,8 @@ function ChatPanel({
   const following = useRef(true);
   // When the person last scrolled, and whether a finger or the scrollbar is still holding the view.
   const scrollIntent = useRef({ at: Number.NEGATIVE_INFINITY, holding: false });
+  // The view is away from the newest messages, so it offers a way back to them.
+  const [away, setAway] = useState(false);
   // Something new arrived at the end while the person was reading further up.
   const [unseen, setUnseen] = useState(false);
   const titleRef = useRef<HTMLHeadingElement>(null);
@@ -200,6 +202,12 @@ function ChatPanel({
   const canLoadOlder = Boolean(transcript?.olderCursor) && !transcript?.loading;
   const canLoadNewer = Boolean(transcript?.newerCursor) && !transcript?.loading;
 
+  function follow(value: boolean): void {
+    following.current = value;
+    setAway(!value);
+    if (value) setUnseen(false);
+  }
+
   function noteScrollIntent(): void {
     scrollIntent.current.at = performance.now();
   }
@@ -227,14 +235,13 @@ function ChatPanel({
     if (byPerson) {
       // A scroll that keeps going, like a fling or a held key, stays theirs.
       intent.at = now;
-      following.current = bottom;
+      follow(bottom);
     } else if (bottom) {
-      following.current = true;
+      follow(true);
     } else if (following.current && shown.current?.attached) {
       // The view moved without the person: put the newest messages back in view.
       element.scrollTop = element.scrollHeight;
     }
-    if (following.current) setUnseen(false);
     loadPageAtEdge();
   }
 
@@ -245,8 +252,7 @@ function ChatPanel({
       return;
     }
     element.scrollTop = element.scrollHeight;
-    following.current = true;
-    setUnseen(false);
+    follow(true);
   }
 
   function loadPageAtEdge(): void {
@@ -274,7 +280,7 @@ function ChatPanel({
       element.scrollTop = target
         ? target.offsetTop - (element.clientHeight - target.offsetHeight) / 2
         : element.scrollHeight;
-      following.current = atBottom(element);
+      follow(atBottom(element));
       setUnseen(false);
     } else {
       // An older page arrived above: keep the message that was first where it is.
@@ -286,7 +292,7 @@ function ChatPanel({
         // The person's own message always shows, and the view follows the reply from there;
         // anything else only while they follow along.
         const sent = lastMessage?.id !== previous.lastMessageId && lastMessage?.type === "outgoing";
-        if (sent) following.current = true;
+        if (sent) follow(true);
         if (following.current) element.scrollTop = element.scrollHeight;
         else setUnseen(true);
       }
@@ -517,16 +523,18 @@ function ChatPanel({
             ) : null}
           </div>
         </div>
-        {attached && !unseen ? null : (
+        {attached && !away && !unseen ? null : (
           <Button
-            className="absolute bottom-3 left-1/2 -translate-x-1/2 shadow-sm"
+            className="chat-jump absolute bottom-3 left-1/2 size-9 -translate-x-1/2 rounded-full bg-background shadow-md dark:bg-popover dark:hover:bg-muted"
             variant="outline"
-            size="sm"
+            size="icon"
             type="button"
+            aria-label={unseen ? "Jump to latest, new messages below" : "Jump to latest"}
+            title="Jump to latest"
+            data-unseen={unseen || undefined}
             onClick={showLatest}
           >
             <ArrowDownIcon aria-hidden="true" />
-            Jump to latest
           </Button>
         )}
       </div>
