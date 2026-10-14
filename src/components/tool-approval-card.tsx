@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { ShieldAlertIcon } from "lucide-react";
 
 import { getToolMetadata } from "../../shared/tool-catalog";
@@ -207,5 +208,42 @@ function ToolApprovalCard({ request, wispName, allowAlwaysAvailable, onResolve }
   );
 }
 
-export { ToolApprovalCard, approvalAsk, needsReview, remainingLabel };
+interface AllowAllApprovalsProps {
+  requests: ReadonlyArray<ToolApprovalRequest>;
+  onAllow: (request: ToolApprovalRequest) => void;
+}
+
+/**
+ * Allows once, in one tap, every waiting approval a tap may answer. Skills and jobs still
+ * need their own review, so they are left to their cards.
+ */
+function AllowAllApprovals({ requests, onAllow }: AllowAllApprovalsProps) {
+  // The ones already answered from here, until they leave the list.
+  const [sent, setSent] = useState<ReadonlySet<string>>(() => new Set());
+  const allowable = requests.filter((request) => !needsReview(request) && !sent.has(request.approvalId));
+  if (allowable.length < 2) return null;
+  const reviews = requests.filter(needsReview).length;
+  return (
+    <div className="allow-all-approvals mt-2 flex w-[min(680px,90%)] items-center gap-3 rounded-xl border border-warning-solid/25 bg-warning-solid/[0.06] py-2 pr-2 pl-3">
+      <span className="min-w-0 flex-1 text-sm">
+        {`${allowable.length} approvals waiting`}
+        {reviews ? (
+          <span className="text-dim">{` · ${reviews} ${reviews === 1 ? "needs" : "need"} a review`}</span>
+        ) : null}
+      </span>
+      <Button
+        type="button"
+        size="sm"
+        onClick={() => {
+          setSent(new Set([...sent, ...allowable.map(({ approvalId }) => approvalId)]));
+          for (const request of allowable) onAllow(request);
+        }}
+      >
+        {`Allow all ${allowable.length} once`}
+      </Button>
+    </div>
+  );
+}
+
+export { AllowAllApprovals, ToolApprovalCard, approvalAsk, needsReview, remainingLabel };
 export type { ToolApprovalCardProps };

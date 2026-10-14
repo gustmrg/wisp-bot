@@ -2,7 +2,8 @@ import { act, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
-import { ToolApprovalCard } from "@/components/tool-approval-card";
+import { AllowAllApprovals, ToolApprovalCard } from "@/components/tool-approval-card";
+import type { ToolApprovalRequest } from "../../shared/tool-policy";
 
 describe("ToolApprovalCard", () => {
   it("shows everything a job may do and allows it only once", async () => {
@@ -196,5 +197,46 @@ describe("ToolApprovalCard", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+function fileApproval(approvalId: string): ToolApprovalRequest {
+  return {
+    approvalId,
+    conversationId: "atlas",
+    toolCallId: `${approvalId}-call`,
+    toolName: "write",
+    category: "create_file",
+    scope: { kind: "workspace_path", display: `${approvalId}.txt` },
+    summary: `Create ${approvalId}.txt`,
+    expiresAt: "2026-10-11T12:01:00.000Z",
+  };
+}
+
+describe("AllowAllApprovals", () => {
+  it("allows every approval a tap may answer once, and leaves skills and jobs to their review", async () => {
+    const user = userEvent.setup();
+    const onAllow = vi.fn();
+    const skill: ToolApprovalRequest = {
+      ...fileApproval("skill"),
+      category: "save_skill",
+      scope: { kind: "skill", display: "notes" },
+    };
+    const requests = [fileApproval("one"), skill, fileApproval("two"), fileApproval("three")];
+    const { rerender } = render(<AllowAllApprovals requests={requests} onAllow={onAllow} />);
+
+    expect(screen.getByText("1 needs a review", { exact: false })).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "Allow all 3 once" }));
+    expect(onAllow.mock.calls.map(([request]) => request.approvalId)).toEqual(["one", "two", "three"]);
+    // Answered ones are not offered again while they wait to leave the list.
+    expect(screen.queryByRole("button", { name: /Allow all/ })).not.toBeInTheDocument();
+
+    rerender(<AllowAllApprovals requests={[skill]} onAllow={onAllow} />);
+    expect(screen.queryByRole("button", { name: /Allow all/ })).not.toBeInTheDocument();
+  });
+
+  it("is not offered for a single approval", () => {
+    render(<AllowAllApprovals requests={[fileApproval("one")]} onAllow={vi.fn()} />);
+    expect(screen.queryByRole("button", { name: /Allow all/ })).not.toBeInTheDocument();
   });
 });

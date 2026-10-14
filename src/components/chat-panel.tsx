@@ -20,7 +20,7 @@ import { PendingMessagesBar } from "@/components/pending-messages-bar";
 import type { MessageQueueController } from "@/hooks/use-message-queue";
 import type { ScheduledMessagesController } from "@/hooks/use-scheduled-messages";
 import { useTimeZone } from "@/hooks/use-time-zone";
-import { ToolApprovalCard } from "@/components/tool-approval-card";
+import { AllowAllApprovals, ToolApprovalCard } from "@/components/tool-approval-card";
 
 const NO_MESSAGES: ReadonlyArray<Message> = [];
 const unavailable = async () => "This server cannot do that. Update it first.";
@@ -30,6 +30,8 @@ const NO_SCHEDULE = { update: unavailable, cancel: unavailable, sendNow: unavail
 const PAGE_EDGE_DISTANCE = 120;
 /** How close to the bottom, in pixels, the view still counts as following the newest messages. */
 const FOLLOW_DISTANCE = 24;
+/** How long after the person's last wheel, key or scroll a scroll still counts as theirs, in milliseconds. */
+const SCROLL_INTENT_MS = 250;
 
 // The flash is drawn over the row, centered on the message rather than on the margin above it.
 const messageRow =
@@ -149,8 +151,13 @@ function ChatPanel({
 }: ChatPanelProps) {
   const transcriptRef = useRef<HTMLDivElement>(null);
   const messagesRef = useRef<HTMLDivElement>(null);
-  // Whether the view is at the newest messages, so it keeps them in view as the transcript changes size.
+  // Whether the view keeps the newest messages in view as the transcript changes size. Only the
+  // person scrolling stops it: content growing or shrinking under the view does not.
   const following = useRef(true);
+  // When the person last scrolled, and whether a finger or the scrollbar is still holding the view.
+  const scrollIntent = useRef({ at: Number.NEGATIVE_INFINITY, holding: false });
+  // The view is away from the newest messages, so it offers a way back to them.
+  const [away, setAway] = useState(false);
   // Something new arrived at the end while the person was reading further up.
   const [unseen, setUnseen] = useState(false);
   const titleRef = useRef<HTMLHeadingElement>(null);
@@ -195,11 +202,46 @@ function ChatPanel({
   const canLoadOlder = Boolean(transcript?.olderCursor) && !transcript?.loading;
   const canLoadNewer = Boolean(transcript?.newerCursor) && !transcript?.loading;
 
+  function follow(value: boolean): void {
+    following.current = value;
+    setAway(!value);
+    if (value) setUnseen(false);
+  }
+
+  function noteScrollIntent(): void {
+    scrollIntent.current.at = performance.now();
+  }
+
+  function holdScroll(): void {
+    scrollIntent.current.holding = true;
+    noteScrollIntent();
+    window.addEventListener(
+      "pointerup",
+      () => {
+        scrollIntent.current.holding = false;
+        noteScrollIntent();
+      },
+      { once: true },
+    );
+  }
+
   function handleScroll(): void {
     const element = transcriptRef.current;
     if (!element) return;
-    following.current = atBottom(element);
-    if (following.current) setUnseen(false);
+    const intent = scrollIntent.current;
+    const now = performance.now();
+    const byPerson = intent.holding || now - intent.at <= SCROLL_INTENT_MS;
+    const bottom = atBottom(element);
+    if (byPerson) {
+      // A scroll that keeps going, like a fling or a held key, stays theirs.
+      intent.at = now;
+      follow(bottom);
+    } else if (bottom) {
+      follow(true);
+    } else if (following.current && shown.current?.attached) {
+      // The view moved without the person: put the newest messages back in view.
+      element.scrollTop = element.scrollHeight;
+    }
     loadPageAtEdge();
   }
 
@@ -210,8 +252,7 @@ function ChatPanel({
       return;
     }
     element.scrollTop = element.scrollHeight;
-    following.current = true;
-    setUnseen(false);
+    follow(true);
   }
 
   function loadPageAtEdge(): void {
@@ -239,6 +280,7 @@ function ChatPanel({
       element.scrollTop = target
         ? target.offsetTop - (element.clientHeight - target.offsetHeight) / 2
         : element.scrollHeight;
+      follow(atBottom(element));
       setUnseen(false);
     } else {
       // An older page arrived above: keep the message that was first where it is.
@@ -247,13 +289,14 @@ function ChatPanel({
       if (anchor) element.scrollTop += anchor.offsetTop - previous.firstMessageTop;
       // Only a change at the end of an attached window is a new message; a newer page is not.
       if (attached && previous.attached && previous.endKey !== endKey) {
-        // The person's own message always shows; anything else only while they follow along.
+        // The person's own message always shows, and the view follows the reply from there;
+        // anything else only while they follow along.
         const sent = lastMessage?.id !== previous.lastMessageId && lastMessage?.type === "outgoing";
-        if (following.current || sent) element.scrollTop = element.scrollHeight;
+        if (sent) follow(true);
+        if (following.current) element.scrollTop = element.scrollHeight;
         else setUnseen(true);
       }
     }
-    following.current = atBottom(element);
     shown.current = {
       openKey,
       endKey,
@@ -314,7 +357,8 @@ function ChatPanel({
               {name}
             </h1>
             {subline.text ? (
-              <p className="chat-subline flex min-w-0 items-center gap-1.5 truncate text-xs" data-tone={subline.tone}>
+              // The text truncates on its own, so the line does not clip the pulse around its dot.
+              <p className="chat-subline flex min-w-0 items-center gap-1.5 text-xs" data-tone={subline.tone}>
                 {subline.tone === "working" ? <span className="chat-subline-pulse" aria-hidden="true" /> : null}
                 <span className="truncate">{subline.text}</span>
               </p>
@@ -355,6 +399,24 @@ function ChatPanel({
           tabIndex={0}
           aria-label={`${name} conversation`}
           onScroll={handleScroll}
+          onWheel={noteScrollIntent}
+          onKeyDown={noteScrollIntent}
+          onTouchStart={() => {
+            scrollIntent.current.holding = true;
+            noteScrollIntent();
+          }}
+          onTouchEnd={() => {
+            scrollIntent.current.holding = false;
+            noteScrollIntent();
+          }}
+          onTouchCancel={() => {
+            scrollIntent.current.holding = false;
+            noteScrollIntent();
+          }}
+          onPointerDown={(event) => {
+            // Only the scrollbar is the transcript itself; a press on a message is not a scroll.
+            if (event.target === event.currentTarget && event.pointerType === "mouse") holdScroll();
+          }}
         >
           <div
             ref={messagesRef}
@@ -402,8 +464,13 @@ function ChatPanel({
               );
             })}
             {/* These belong to the newest messages, so a window opened elsewhere in the transcript omits them. */}
-            {attached
-              ? approvals.map((request) => (
+            {attached ? (
+              <>
+                <AllowAllApprovals
+                  requests={approvals}
+                  onAllow={(request) => onResolveApproval(request, "allow_once")}
+                />
+                {approvals.map((request) => (
                   <ToolApprovalCard
                     key={request.approvalId}
                     request={request}
@@ -411,8 +478,9 @@ function ChatPanel({
                     allowAlwaysAvailable={allowAlwaysAvailable}
                     onResolve={(decision) => onResolveApproval(request, decision)}
                   />
-                ))
-              : null}
+                ))}
+              </>
+            ) : null}
             {attached && working && steps.length ? (
               <ol className="chat-steps" aria-label={`What ${name} has done so far`}>
                 {steps.length > VISIBLE_STEPS ? (
@@ -461,16 +529,18 @@ function ChatPanel({
             ) : null}
           </div>
         </div>
-        {attached && !unseen ? null : (
+        {attached && !away && !unseen ? null : (
           <Button
-            className="absolute bottom-3 left-1/2 -translate-x-1/2 shadow-sm"
+            className="chat-jump absolute bottom-3 left-1/2 size-9 -translate-x-1/2 rounded-full bg-background shadow-md dark:bg-popover dark:hover:bg-muted"
             variant="outline"
-            size="sm"
+            size="icon"
             type="button"
+            aria-label={unseen ? "Jump to latest, new messages below" : "Jump to latest"}
+            title="Jump to latest"
+            data-unseen={unseen || undefined}
             onClick={showLatest}
           >
             <ArrowDownIcon aria-hidden="true" />
-            Jump to latest
           </Button>
         )}
       </div>

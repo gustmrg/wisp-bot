@@ -23,6 +23,8 @@ export interface AutoReviewRule {
 
 export interface AppPreferences {
   theme: ThemePreference;
+  /** Each Wisp's color tints its replies, its send button and its selected conversation. */
+  wispColors: boolean;
   /** Legacy storage only; desktop autostart registration is the source of truth. */
   launchAtLogin: boolean;
   notificationSounds: boolean;
@@ -49,6 +51,7 @@ export interface AppPreferences {
 
 export const DEFAULT_PREFERENCES: AppPreferences = {
   theme: "system",
+  wispColors: true,
   launchAtLogin: false,
   notificationSounds: true,
   notificationVolume: 100,
@@ -115,6 +118,7 @@ export function normalizePreferences(value: unknown): AppPreferences {
   const voiceProvider = isVoiceProviderId(saved?.voiceProvider) ? saved.voiceProvider : DEFAULT_VOICE_PROVIDER;
   return {
     theme: normalizeTheme(saved?.theme),
+    wispColors: typeof saved?.wispColors === "boolean" ? saved.wispColors : true,
     launchAtLogin: typeof saved?.launchAtLogin === "boolean" ? saved.launchAtLogin : false,
     notificationSounds: typeof saved?.notificationSounds === "boolean" ? saved.notificationSounds : true,
     notificationVolume:

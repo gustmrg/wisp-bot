@@ -11,6 +11,7 @@ describe("normalizePreferences", () => {
     expect(
       normalizePreferences({
         theme: "dark",
+        wispColors: false,
         launchAtLogin: true,
         notificationSounds: false,
         microphone: "studio-mic",
@@ -27,6 +28,7 @@ describe("normalizePreferences", () => {
     ).toEqual({
       ...DEFAULT_PREFERENCES,
       theme: "dark",
+      wispColors: false,
       launchAtLogin: true,
       notificationSounds: false,
       microphone: "studio-mic",

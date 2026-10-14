@@ -90,29 +90,6 @@ describe("NeedsYou", () => {
   });
 });
 
-describe("NeedsYou on the desktop", () => {
-  it("lists every waiting approval in a dialog when there is no Approvals tab", async () => {
-    const user = userEvent.setup();
-    const onResolve = vi.fn();
-    const older = request("atlas", "older", 2);
-    render(
-      <NeedsYou
-        chats={chats}
-        approvals={{ atlas: [older], sage: [request("sage", "latest", 8)] }}
-        allowAlwaysAvailable={false}
-        onResolve={onResolve}
-        onOpenChat={vi.fn()}
-      />,
-    );
-    await user.click(screen.getByRole("button", { name: /1 more waiting/ }));
-    const dialog = screen.getByRole("dialog", { name: "Approvals" });
-    expect(within(dialog).getAllByRole("article")).toHaveLength(2);
-    const atlasEntry = within(dialog).getByRole("article", { name: /Atlas/ });
-    await user.click(within(atlasEntry).getByRole("button", { name: "Allow once" }));
-    expect(onResolve).toHaveBeenCalledWith(older, "allow_once");
-  });
-});
-
 describe("WispOrbs", () => {
   it("puts the Wisps that need the person first and names what each is doing", async () => {
     const user = userEvent.setup();

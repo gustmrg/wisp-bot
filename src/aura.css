@@ -84,7 +84,8 @@
 .conversation-preview[data-activity="working"] {
   color: color-mix(in srgb, var(--wisp, var(--blue)) 72%, var(--foreground));
 }
-.conversation-list-item[style][data-selected="true"] {
+/* With Wisp colors off, the selected conversation keeps the neutral background. */
+:root:not([data-wisp-colors="off"]) .conversation-list-item[style][data-selected="true"] {
   background: color-mix(in srgb, var(--wisp) 13%, var(--sidebar-background));
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--wisp) 24%, transparent);
 }
@@ -177,27 +178,44 @@
   }
 }
 
-/* A Wisp's replies, and its typing bubble, take a tint of its color. */
-.chat-panel[data-accent] .message-row[data-outgoing="false"] .message-bubble,
-.chat-panel[data-accent] .chat-activity-bubble {
+/* A Wisp's replies, and its typing bubble, take a tint of its color, unless Wisp colors are off. */
+:root:not([data-wisp-colors="off"]) .chat-panel[data-accent] .message-row[data-outgoing="false"] .message-bubble,
+:root:not([data-wisp-colors="off"]) .chat-panel[data-accent] .chat-activity-bubble {
   border-color: color-mix(in srgb, var(--wisp) 24%, transparent);
   background: color-mix(in srgb, var(--wisp) 9%, var(--background));
 }
-.dark .chat-panel[data-accent] .message-row[data-outgoing="false"] .message-bubble,
-.dark .chat-panel[data-accent] .chat-activity-bubble {
+:root.dark:not([data-wisp-colors="off"]) .chat-panel[data-accent] .message-row[data-outgoing="false"] .message-bubble,
+:root.dark:not([data-wisp-colors="off"]) .chat-panel[data-accent] .chat-activity-bubble {
   background: color-mix(in srgb, var(--wisp) 11%, #141418);
 }
-.chat-panel[data-accent] .chat-activity-dot {
+:root:not([data-wisp-colors="off"]) .chat-panel[data-accent] .chat-activity-dot {
   background: var(--wisp);
 }
 
 /* The main button of a Wisp's composer is in its color; stop and recording keep theirs. */
-.chat-panel[data-accent] .composer-primary:is([data-variant="voice"], [data-variant="send"]) {
+:root:not([data-wisp-colors="off"])
+  .chat-panel[data-accent]
+  .composer-primary:is([data-variant="voice"], [data-variant="send"]) {
   background: var(--wisp);
   color: var(--wisp-ink);
 }
-.dark .chat-panel[data-accent] .composer-primary:is([data-variant="voice"], [data-variant="send"]):enabled {
+:root.dark:not([data-wisp-colors="off"])
+  .chat-panel[data-accent]
+  .composer-primary:is([data-variant="voice"], [data-variant="send"]):enabled {
   box-shadow: 0 0 18px color-mix(in srgb, var(--wisp) 40%, transparent);
+}
+
+/* The way back to the newest messages carries a dot when something new arrived below. */
+.chat-jump[data-unseen]::after {
+  content: "";
+  position: absolute;
+  top: 1px;
+  right: 1px;
+  width: 9px;
+  height: 9px;
+  border: 2px solid var(--background);
+  border-radius: 50%;
+  background: var(--wisp, var(--blue));
 }
 
 /* A Wisp with nothing said yet introduces itself. */
@@ -251,7 +269,11 @@
 .chat-panel .tool-approval-card {
   border-radius: 18px;
 }
-.chat-panel .tool-approval-card [data-slot="button"]:last-child {
+.chat-panel .allow-all-approvals {
+  border-radius: 18px;
+}
+.chat-panel .tool-approval-card [data-slot="button"]:last-child,
+.allow-all-approvals [data-slot="button"] {
   background: var(--warning-solid);
   color: #1a1204;
 }
@@ -533,6 +555,11 @@
     ),
     var(--card);
 }
+.mobile-approvals-list .allow-all-approvals {
+  width: 100%;
+  margin-top: 0;
+  border-radius: 14px;
+}
 .mobile-approval .tool-approval-card {
   width: 100%;
   margin-top: 6px;
@@ -600,48 +627,6 @@
   width: 16px;
   height: 16px;
   color: var(--text-dim);
-}
-
-/* ---------- Desktop sizes for the sidebar's Wisps and approvals ---------- */
-
-.approvals-dialog-list {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  max-height: min(60vh, 560px);
-  overflow-y: auto;
-}
-
-@media (min-width: 761px) {
-  .sidebar-wisps {
-    flex: none;
-  }
-  .sidebar-wisps .needs-you {
-    margin: 0 10px 8px;
-  }
-  .sidebar-wisps .needs-you-card {
-    padding: 11px;
-    border-radius: 16px;
-  }
-  .sidebar-wisps .needs-you-title {
-    font-size: var(--text-sm);
-  }
-  .sidebar-wisps .needs-you-detail {
-    padding: 7px 9px;
-    font-size: var(--text-xs);
-  }
-  .sidebar-wisps .needs-you-actions {
-    margin-top: 9px;
-  }
-  .sidebar-wisps .needs-you-actions [data-slot="button"] {
-    height: 30px;
-    border-radius: 10px;
-    font-size: var(--text-sm);
-  }
-  .sidebar-wisps .needs-you-more {
-    min-height: 26px;
-    font-size: var(--text-xs);
-  }
 }
 
 /* ---------- A Wisp's profile ---------- */
