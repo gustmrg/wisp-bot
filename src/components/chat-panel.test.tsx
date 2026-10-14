@@ -35,6 +35,13 @@ function bottomOf(rows: number): number {
   return Math.max(0, rows * ROW_HEIGHT - viewportHeight);
 }
 
+/** Scrolls the transcript as the person does, with the wheel, rather than as content moving under it. */
+function scrollAsPerson(scroller: HTMLElement, top: number): void {
+  fireEvent.wheel(scroller);
+  scroller.scrollTop = top;
+  fireEvent.scroll(scroller);
+}
+
 // jsdom has no ResizeObserver; the tests report resizes themselves.
 let resized: () => void = () => {};
 class FakeResizeObserver {
@@ -163,8 +170,7 @@ describe("ChatPanel transcript", () => {
     const held = transcript(messages(5, 15), { olderCursor: "5" });
     const { scroller, show, props } = renderPanel(held);
 
-    scroller.scrollTop = 60;
-    fireEvent.scroll(scroller);
+    scrollAsPerson(scroller, 60);
     expect(props.onLoadOlder).toHaveBeenCalledTimes(1);
 
     // While the page is on its way, scrolling does not ask for it again.
@@ -204,8 +210,7 @@ describe("ChatPanel transcript", () => {
   it("keeps a reader's place when a reply arrives, and offers a way to it", async () => {
     const user = userEvent.setup();
     const { scroller, show, props } = renderPanel(transcript(messages(0, 10)));
-    scroller.scrollTop = 40;
-    fireEvent.scroll(scroller);
+    scrollAsPerson(scroller, 40);
     expect(screen.queryByRole("button", { name: "Jump to latest" })).not.toBeInTheDocument();
 
     show(transcript([...messages(0, 10), { id: "reply", type: "incoming", text: "Hi", status: "streaming" }]));
@@ -218,10 +223,30 @@ describe("ChatPanel transcript", () => {
     expect(screen.queryByRole("button", { name: "Jump to latest" })).not.toBeInTheDocument();
   });
 
-  it("always shows the person's own message", () => {
+  it("keeps following when the view moves without the person scrolling", () => {
     const { scroller, show } = renderPanel(transcript(messages(0, 10)));
+    // Content changing size moved the view away from the bottom; no wheel, key or touch did.
     scroller.scrollTop = 40;
     fireEvent.scroll(scroller);
+    expect(scroller.scrollTop).toBe(bottomOf(10));
+
+    show(transcript([...messages(0, 10), { id: "reply", type: "incoming", text: "Done", status: "complete" }]));
+    expect(scroller.scrollTop).toBe(bottomOf(11));
+  });
+
+  it("follows the reply to the person's own message even after they had scrolled up", () => {
+    const { scroller, show } = renderPanel(transcript(messages(0, 10)));
+    scrollAsPerson(scroller, 40);
+    const sent = { id: "sent", type: "outgoing" as const, text: "And then?", status: "queued" as const };
+
+    show(transcript([...messages(0, 10), sent]));
+    show(transcript([...messages(0, 10), sent, { id: "reply", type: "incoming", text: "Then", status: "streaming" }]));
+    expect(scroller.scrollTop).toBe(bottomOf(12));
+  });
+
+  it("always shows the person's own message", () => {
+    const { scroller, show } = renderPanel(transcript(messages(0, 10)));
+    scrollAsPerson(scroller, 40);
 
     show(transcript([...messages(0, 10), { id: "sent", type: "outgoing", text: "And then?", status: "queued" }]));
     expect(scroller.scrollTop).toBe(bottomOf(11));
@@ -236,8 +261,7 @@ describe("ChatPanel transcript", () => {
     expect(scroller.scrollTop).toBe(bottomOf(10));
 
     // A reader further up is left where they are.
-    scroller.scrollTop = 40;
-    fireEvent.scroll(scroller);
+    scrollAsPerson(scroller, 40);
     viewportHeight = 80;
     resized();
     expect(scroller.scrollTop).toBe(40);
