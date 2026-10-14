@@ -16,6 +16,8 @@ export interface WebApiOptions {
   storage: Pick<Storage, "getItem" | "setItem" | "removeItem">;
   deviceName: string;
   appVersion: string;
+  /** A code from a pairing link (`#pair=`), used once this browser is named; ignored when already paired. */
+  pairingCode?: string;
   fetch?: typeof fetch;
   /** Asks the person for files to attach; resolves empty when dismissed. Defaults to the browser's file picker. */
   pickFiles?: () => Promise<ReadonlyArray<File>>;
@@ -41,6 +43,7 @@ export function createWebWispApi(options: WebApiOptions): WispApi {
     connections: new Set<Listener<ConnectionsView>>(),
   };
   let status: ConnectionStatus = { profileId: WEB_CONNECTION_ID, phase: "connecting", epoch: 0 };
+  let linkCode: string | undefined;
   const loadSession = (): StoredSession | undefined => {
     try {
       const stored = options.storage.getItem(SESSION_KEY);
@@ -64,6 +67,7 @@ export function createWebWispApi(options: WebApiOptions): WispApi {
     secureStorageAvailable: true,
     canManage: false,
     deviceName: options.deviceName,
+    ...(linkCode && status.phase === "pairing_required" ? { pairingLink: { deviceName: options.deviceName } } : {}),
   });
   const publish = (): void => {
     const current = view();
@@ -143,6 +147,7 @@ export function createWebWispApi(options: WebApiOptions): WispApi {
       publish();
     },
   });
+  if (options.pairingCode && !loadSession()) linkCode = options.pairingCode;
   session.start(undefined, false);
 
   const ok = <T>(value: T): BackendResult<T> => ({ ok: true, value });
@@ -184,8 +189,11 @@ export function createWebWispApi(options: WebApiOptions): WispApi {
       await session.signOut();
       return ok(view());
     },
-    activateConnection: async (request: { pairingCode?: string }) => {
-      session.start(request.pairingCode);
+    activateConnection: async (request: { pairingCode?: string; deviceName?: string }) => {
+      // A link's code is tried once; if the server refuses it, the person enters one by hand.
+      const code = request.pairingCode ?? linkCode;
+      linkCode = undefined;
+      session.start(code, true, request.deviceName);
       return ok(view());
     },
     installServer: desktopOnly,
@@ -223,6 +231,24 @@ function pickFilesWithInput(): Promise<ReadonlyArray<File>> {
     input.addEventListener("cancel", () => resolve([]), { once: true });
     input.click();
   });
+}
+
+/**
+ * Takes the pairing code from a link such as `https://server/#pair=ABCDE-FGHJK`
+ * and removes it from the address and history, so it is not bookmarked, shared,
+ * or reused. Browsers never send the fragment to the server.
+ */
+export function takePairingCode(
+  location: Pick<Location, "hash" | "pathname" | "search">,
+  history: Pick<History, "replaceState" | "state">,
+): string | undefined {
+  const fragment = new URLSearchParams(location.hash.replace(/^#/, ""));
+  if (!fragment.has("pair")) return undefined;
+  const code = fragment.get("pair")?.trim() ?? "";
+  fragment.delete("pair");
+  const rest = fragment.toString();
+  history.replaceState(history.state, "", `${location.pathname}${location.search}${rest ? `#${rest}` : ""}`);
+  return /^[A-Za-z0-9-]{1,64}$/.test(code) ? code : undefined;
 }
 
 /** A readable name for this browser, shown in `wispctl devices`. */

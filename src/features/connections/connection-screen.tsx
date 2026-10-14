@@ -150,6 +150,8 @@ export function ConnectionScreen({ view }: { view: ConnectionsView }) {
   const profile = activeProfile(view);
   const name = activeName(view);
   const [code, setCode] = useState("");
+  // Unset until edited: the suggested name arrives once the screen leaves "connecting".
+  const [editedName, setEditedName] = useState<string>();
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState("");
   const [manage, setManage] = useState<{ open: boolean; editing: string | null }>({ open: false, editing: null });
@@ -225,7 +227,37 @@ export function ConnectionScreen({ view }: { view: ConnectionsView }) {
     <Disclosure label={setup ? "Setup output" : "Technical details"}>{status.details}</Disclosure>
   ) : null;
 
-  if (status.phase === "pairing_required") {
+  // Opened from a pairing link: the code is already here, only a name is missing.
+  const pairingLink = status.phase === "pairing_required" ? view.pairingLink : undefined;
+  const deviceName = editedName ?? pairingLink?.deviceName ?? "";
+
+  if (pairingLink) {
+    tone = "neutral";
+    icon = <KeyRoundIcon aria-hidden="true" className="size-5" />;
+    title = `Pair with ${name}`;
+    text = "Name this device to finish pairing. The name appears in `wispctl devices`.";
+    body = (
+      <form
+        className="mt-4 flex items-center gap-2"
+        onSubmit={(event) => {
+          event.preventDefault();
+          void act(() => window.wisp.activateConnection({ id: view.activeId, deviceName: deviceName.trim() }));
+        }}
+      >
+        <Input
+          aria-label="Device name"
+          className="min-w-0 flex-1"
+          maxLength={128}
+          value={deviceName}
+          onChange={(event) => setEditedName(event.target.value)}
+        />
+        <Button type="submit" disabled={busy || deviceName.trim().length === 0}>
+          Pair
+        </Button>
+      </form>
+    );
+    actions = useLocal;
+  } else if (status.phase === "pairing_required") {
     tone = "neutral";
     icon = <KeyRoundIcon aria-hidden="true" className="size-5" />;
     title = `Pair with ${name}`;
