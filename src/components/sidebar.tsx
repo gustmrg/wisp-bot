@@ -217,18 +217,6 @@ function Sidebar({
           </div>
         )}
 
-        {!mobile && onResolveApproval ? (
-          <div className="sidebar-wisps">
-            <NeedsYou
-              chats={chats}
-              approvals={approvals}
-              allowAlwaysAvailable={allowAlwaysAvailable}
-              onResolve={onResolveApproval}
-              onOpenChat={onSelectChat}
-            />
-          </div>
-        ) : null}
-
         {mobile ? (
           <div className="mobile-list-filters" role="group" aria-label="Filter conversations">
             {(

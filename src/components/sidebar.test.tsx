@@ -106,6 +106,22 @@ describe("Sidebar approvals", () => {
     expect(screen.queryByText("Latest research")).not.toBeInTheDocument();
   });
 
+  it("leaves approvals to the conversation on desktop instead of listing them", () => {
+    render(
+      <Sidebar
+        activeChatId=""
+        chats={chats}
+        approvals={approvals}
+        currentUser={currentUser}
+        width={280}
+        onResolveApproval={vi.fn()}
+        {...callbacks}
+      />,
+    );
+    expect(screen.queryByRole("region", { name: "Needs you" })).not.toBeInTheDocument();
+    expect(screen.getByText("Waiting for your approval")).toBeVisible();
+  });
+
   it("marks waiting for approval with a dot instead of the shield, and the Wisp's eyes grow", () => {
     const { container } = render(
       <Sidebar

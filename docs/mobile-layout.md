@@ -119,9 +119,8 @@ composer merely because a conversation was opened.
 The desktop shares the Wisps' colors, state rings, the chat's light, the
 step trail, and the introduction of a new Wisp. Its sidebar lists only the
 conversations, without the row of Wisps, and creates a Wisp from the button
-beside Search. Above the list it shows the approval asked last, with Deny and
-Allow once; "N more waiting" opens every waiting approval in a dialog, since
-the desktop has no Approvals tab. The conversation reads as one centered
+beside Search. It lists no approvals: a Wisp waiting for one is marked in its
+row, and the approval is answered in the conversation. The conversation reads as one centered
 column. A gear button opens a side panel on the Wisp's settings; who the Wisp
 is sits in the panel's header, as tall as the conversation's own top bar, and
 General, Model, Access, and Usage tabs carry the rest. A circle's gear opens

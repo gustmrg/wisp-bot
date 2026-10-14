@@ -620,48 +620,6 @@
   color: var(--text-dim);
 }
 
-/* ---------- Desktop sizes for the sidebar's Wisps and approvals ---------- */
-
-.approvals-dialog-list {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  max-height: min(60vh, 560px);
-  overflow-y: auto;
-}
-
-@media (min-width: 761px) {
-  .sidebar-wisps {
-    flex: none;
-  }
-  .sidebar-wisps .needs-you {
-    margin: 0 10px 8px;
-  }
-  .sidebar-wisps .needs-you-card {
-    padding: 11px;
-    border-radius: 16px;
-  }
-  .sidebar-wisps .needs-you-title {
-    font-size: var(--text-sm);
-  }
-  .sidebar-wisps .needs-you-detail {
-    padding: 7px 9px;
-    font-size: var(--text-xs);
-  }
-  .sidebar-wisps .needs-you-actions {
-    margin-top: 9px;
-  }
-  .sidebar-wisps .needs-you-actions [data-slot="button"] {
-    height: 30px;
-    border-radius: 10px;
-    font-size: var(--text-sm);
-  }
-  .sidebar-wisps .needs-you-more {
-    min-height: 26px;
-    font-size: var(--text-xs);
-  }
-}
-
 /* ---------- A Wisp's profile ---------- */
 .wisp-profile {
   display: flex;
