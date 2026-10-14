@@ -35,8 +35,11 @@ The bottom bar has Wisps, Approvals, and Settings (see
 bottom edge; only the current tab shows its name. Wisps shows how many
 conversations are unread and Approvals how many tool approvals are pending.
 The Approvals screen lists every pending approval, the latest first, each in
-a card lit by the Wisp that asked and saying what it wants to do. An approval
-answered there, from the list, or in the chat leaves all of them.
+a card lit by the Wisp that asked and saying what it wants to do. With more
+than one waiting, "Allow all N once" above them answers every one a tap may
+answer; jobs and skills still need their own review. The chat offers the same
+above its approval cards. An approval answered there, from the list, or in the
+chat leaves all of them.
 
 ## Conversation list
 

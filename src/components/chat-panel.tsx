@@ -20,7 +20,7 @@ import { PendingMessagesBar } from "@/components/pending-messages-bar";
 import type { MessageQueueController } from "@/hooks/use-message-queue";
 import type { ScheduledMessagesController } from "@/hooks/use-scheduled-messages";
 import { useTimeZone } from "@/hooks/use-time-zone";
-import { ToolApprovalCard } from "@/components/tool-approval-card";
+import { AllowAllApprovals, ToolApprovalCard } from "@/components/tool-approval-card";
 
 const NO_MESSAGES: ReadonlyArray<Message> = [];
 const unavailable = async () => "This server cannot do that. Update it first.";
@@ -464,8 +464,13 @@ function ChatPanel({
               );
             })}
             {/* These belong to the newest messages, so a window opened elsewhere in the transcript omits them. */}
-            {attached
-              ? approvals.map((request) => (
+            {attached ? (
+              <>
+                <AllowAllApprovals
+                  requests={approvals}
+                  onAllow={(request) => onResolveApproval(request, "allow_once")}
+                />
+                {approvals.map((request) => (
                   <ToolApprovalCard
                     key={request.approvalId}
                     request={request}
@@ -473,8 +478,9 @@ function ChatPanel({
                     allowAlwaysAvailable={allowAlwaysAvailable}
                     onResolve={(decision) => onResolveApproval(request, decision)}
                   />
-                ))
-              : null}
+                ))}
+              </>
+            ) : null}
             {attached && working && steps.length ? (
               <ol className="chat-steps" aria-label={`What ${name} has done so far`}>
                 {steps.length > VISIBLE_STEPS ? (

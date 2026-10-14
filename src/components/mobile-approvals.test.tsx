@@ -88,6 +88,30 @@ describe("MobileApprovals", () => {
     expect(onOpenChat).toHaveBeenCalledWith("beta");
   });
 
+  it("allows every waiting approval at once", async () => {
+    const user = userEvent.setup();
+    const onResolve = vi.fn();
+    render(
+      <MobileApprovals
+        chats={chats}
+        approvals={{
+          atlas: [request("atlas", "older", "2026-10-09T10:00:00.000Z", "Create notes.txt")],
+          beta: [request("beta", "newer", "2026-10-09T10:05:00.000Z", "Create plan.md")],
+        }}
+        allowAlwaysAvailable={false}
+        unreadCount={0}
+        onResolve={onResolve}
+        onOpenChat={vi.fn()}
+        onConversations={vi.fn()}
+        onSettings={vi.fn()}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Allow all 2 once" }));
+    expect(onResolve).toHaveBeenCalledWith(expect.objectContaining({ approvalId: "newer" }), "allow_once");
+    expect(onResolve).toHaveBeenCalledWith(expect.objectContaining({ approvalId: "older" }), "allow_once");
+  });
+
   it("says when nothing is waiting", () => {
     render(
       <MobileApprovals

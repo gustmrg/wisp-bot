@@ -4,7 +4,7 @@ import { ChevronRightIcon } from "lucide-react";
 import type { ChatId, ChatView, ChatViewCollection } from "@/chat-data";
 import { ChatAvatar, WispAvatar } from "@/components/chat-avatar";
 import { MobileNavigation } from "@/components/mobile-navigation";
-import { ToolApprovalCard, approvalAsk } from "@/components/tool-approval-card";
+import { AllowAllApprovals, ToolApprovalCard, approvalAsk } from "@/components/tool-approval-card";
 import { chatName } from "@/lib/chat-schema";
 import { wispAccentStyle, wispColor } from "@/lib/wisp-appearance";
 import type { ToolApprovalDecision, ToolApprovalRequest } from "../../shared/tool-policy";
@@ -107,6 +107,7 @@ export function MobileApprovals({
         </div>
       </header>
       <div className="mobile-approvals-list">
+        <AllowAllApprovals requests={pending} onAllow={(request) => onResolve(request, "allow_once")} />
         {pending.map((request) => (
           <ApprovalEntry
             key={request.approvalId}

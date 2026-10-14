@@ -6,6 +6,7 @@ import type { Message } from "@/chat-data";
 import { ChatPanel, type ChatPanelProps } from "@/components/chat-panel";
 import type { MessageWindow } from "@/lib/message-windows";
 import { circleChatView, testWisp, wispChatView } from "@/test/chat-fixtures";
+import type { ToolApprovalRequest } from "../../shared/tool-policy";
 
 const ROW_HEIGHT = 40;
 const VIEWPORT_HEIGHT = 200;
@@ -317,6 +318,28 @@ describe("ChatPanel transcript", () => {
     // The latest page is a new window, so the view goes to its newest message.
     show(transcript(messages(12, 22), { epoch: 2, olderCursor: "12" }));
     expect(scroller.scrollTop).toBe(bottomOf(10));
+  });
+});
+
+describe("ChatPanel approvals", () => {
+  it("allows every waiting approval at once from the conversation", async () => {
+    const user = userEvent.setup();
+    const approval = (approvalId: string): ToolApprovalRequest => ({
+      approvalId,
+      conversationId: "atlas",
+      toolCallId: `${approvalId}-call`,
+      toolName: "write",
+      category: "create_file",
+      scope: { kind: "workspace_path", display: `${approvalId}.txt` },
+      summary: `Create ${approvalId}.txt`,
+      expiresAt: "2026-10-11T12:01:00.000Z",
+    });
+    const { props } = renderPanel(transcript(messages(0, 2)), { approvals: [approval("one"), approval("two")] });
+
+    expect(screen.getAllByRole("region", { name: "Tool approval required" })).toHaveLength(2);
+    await user.click(screen.getByRole("button", { name: "Allow all 2 once" }));
+    expect(props.onResolveApproval).toHaveBeenCalledTimes(2);
+    expect(props.onResolveApproval).toHaveBeenCalledWith(expect.objectContaining({ approvalId: "two" }), "allow_once");
   });
 });
 

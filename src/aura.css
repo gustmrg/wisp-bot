@@ -269,7 +269,11 @@
 .chat-panel .tool-approval-card {
   border-radius: 18px;
 }
-.chat-panel .tool-approval-card [data-slot="button"]:last-child {
+.chat-panel .allow-all-approvals {
+  border-radius: 18px;
+}
+.chat-panel .tool-approval-card [data-slot="button"]:last-child,
+.allow-all-approvals [data-slot="button"] {
   background: var(--warning-solid);
   color: #1a1204;
 }
@@ -550,6 +554,11 @@
       transparent
     ),
     var(--card);
+}
+.mobile-approvals-list .allow-all-approvals {
+  width: 100%;
+  margin-top: 0;
+  border-radius: 14px;
 }
 .mobile-approval .tool-approval-card {
   width: 100%;
