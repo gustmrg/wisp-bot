@@ -20,7 +20,7 @@ saved key.
 ## General
 
 - **Your profile** — preferred name, optional background, and response preferences. Saved locally in `user-profile.json` and shared with every Wisp (and its AI provider when chatting). Changes refresh existing Wisp context; busy Wisps apply the refresh after their current turn. Blank fields remove that profile context. The preferred name is required and also supplies the sidebar name and initials.
-- **Application** — theme and launch at login.
+- **Application** — theme, Wisp colors, and launch at login. With **Wisp colors** off, replies, the send button, and the selected conversation keep the neutral look instead of each Wisp's color.
 - **System** — microphone selection and hardware acceleration preferences.
 - **Wisp** — timezone and auto-review. Auto-review shows one Allow / Ask /
   Block choice for **Create files** and one for **Modify files**; turning

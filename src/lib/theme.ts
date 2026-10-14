@@ -28,3 +28,9 @@ export function applyTheme(preference: ThemePreference): () => void {
   stopFollowingSystem = stop;
   return stop;
 }
+
+/** Without Wisp colors, conversations keep the neutral look; the styles that tint them check this. */
+export function applyWispColors(enabled: boolean): void {
+  if (enabled) delete document.documentElement.dataset.wispColors;
+  else document.documentElement.dataset.wispColors = "off";
+}

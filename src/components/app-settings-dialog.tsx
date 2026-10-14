@@ -26,7 +26,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 
-import { GeneralSettingsSections } from "@/components/general-settings-sections";
+import { GeneralSettingsSections, PreferenceSwitch } from "@/components/general-settings-sections";
 import { NotificationSettingsSection } from "@/components/notification-settings-section";
 import { StorageSettingsSection } from "@/components/storage-settings-section";
 import { UsageSettingsSection } from "@/components/usage-settings-section";
@@ -502,6 +502,19 @@ function AppSettingsDialog({
                       </SelectGroup>
                     </SelectContent>
                   </Select>
+                </SettingsRow>
+                <SettingsRow>
+                  <SettingsRowCopy>
+                    <SettingsRowTitle>Wisp colors</SettingsRowTitle>
+                    <SettingsRowDescription>
+                      Tint replies, the send button and the selected conversation with each Wisp's color.
+                    </SettingsRowDescription>
+                  </SettingsRowCopy>
+                  <PreferenceSwitch
+                    label="Wisp colors"
+                    checked={preferences.wispColors}
+                    onChange={() => onPreferencesChange({ ...preferences, wispColors: !preferences.wispColors })}
+                  />
                 </SettingsRow>
                 {browserApp ? null : <LaunchAtLoginSetting open={open} />}
               </SettingsCard>

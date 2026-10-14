@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 
-import { applyTheme } from "@/lib/theme";
+import { applyTheme, applyWispColors } from "@/lib/theme";
 
 const originalMatchMedia = window.matchMedia;
 
@@ -45,5 +45,14 @@ describe("applyTheme", () => {
     system.set(false);
     expect(document.documentElement).toHaveClass("dark");
     expect(document.documentElement.style.colorScheme).toBe("dark");
+  });
+});
+
+describe("applyWispColors", () => {
+  it("marks the document only while Wisp colors are off", () => {
+    applyWispColors(false);
+    expect(document.documentElement.dataset.wispColors).toBe("off");
+    applyWispColors(true);
+    expect(document.documentElement.dataset.wispColors).toBeUndefined();
   });
 });
