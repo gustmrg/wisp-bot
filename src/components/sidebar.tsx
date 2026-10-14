@@ -70,10 +70,6 @@ interface SidebarProps {
 // Product notification color intentionally remains explicit rather than a neutral surface token.
 const unreadIndicator =
   "unread-dot absolute -top-1 -right-1 size-[10px] rounded-full border-2 border-sidebar bg-[#ff3b30]";
-// Waiting for approval and a failed reply share a dot in the bottom corner; only the color differs.
-const stateIndicator = "absolute -right-1 -bottom-1 size-[10px] rounded-full border-2 border-sidebar";
-const approvalIndicator = cn("approval-indicator", stateIndicator, "bg-[#f0a83a]");
-const errorIndicator = cn("error-indicator", stateIndicator, "bg-[#e5594d]");
 
 /** "Good morning", "Good afternoon", or "Good evening", by the hour where the person is. */
 function greeting(now: Date, timeZone: string, name: string): string {
@@ -271,8 +267,6 @@ function Sidebar({
                     state={pendingApproval ? "approval" : failed ? "error" : working ? "working" : "idle"}
                   />
                   {chat.unread && !mobile ? <span className={unreadIndicator} aria-label="Unread activity" /> : null}
-                  {pendingApproval ? <span className={approvalIndicator} aria-hidden="true" /> : null}
-                  {failed ? <span className={errorIndicator} aria-hidden="true" /> : null}
                 </span>
                 <span className="flex min-w-0 flex-1 flex-col">
                   <span className="flex min-w-0 items-baseline gap-2">

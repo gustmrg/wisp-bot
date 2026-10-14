@@ -44,11 +44,6 @@
     transparent 72%
   );
 }
-/* The ring says it; the dots that used to are kept for the collapsed sidebar's labels only. */
-.wisp-halo > .approval-indicator,
-.wisp-halo > .error-indicator {
-  display: none;
-}
 
 @keyframes wisp-halo-spin {
   to {

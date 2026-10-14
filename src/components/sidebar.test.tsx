@@ -122,7 +122,7 @@ describe("Sidebar approvals", () => {
     expect(screen.getByText("Waiting for your approval")).toBeVisible();
   });
 
-  it("marks waiting for approval with a dot instead of the shield, and the Wisp's eyes grow", () => {
+  it("rings a Wisp waiting for approval, and its eyes grow", () => {
     const { container } = render(
       <Sidebar
         activeChatId=""
@@ -134,9 +134,8 @@ describe("Sidebar approvals", () => {
         {...callbacks}
       />,
     );
-    expect(container.querySelector(".approval-indicator")).not.toBeNull();
     // Approval needs the person, so it wins over a failure.
-    expect(container.querySelector(".error-indicator")).toBeNull();
+    expect(container.querySelector(".conversation-avatar")).toHaveAttribute("data-state", "approval");
     expect(container.querySelector("[data-slot=wisp]")).toHaveAttribute("data-state", "approval");
   });
 });
@@ -158,7 +157,7 @@ describe("Sidebar states", () => {
       />,
     );
     expect(screen.getByText("The last reply failed")).toBeVisible();
-    expect(container.querySelector(".error-indicator")).not.toBeNull();
+    expect(container.querySelector(".conversation-avatar")).toHaveAttribute("data-state", "error");
     expect(container.querySelector("[data-slot=wisp]")).toHaveAttribute("data-state", "error");
   });
 
