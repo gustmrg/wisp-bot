@@ -3,7 +3,6 @@ import { InfoIcon } from "lucide-react";
 
 import type { AiSettingsView, ConversationModelView, ThinkingLevel } from "../../shared/contracts";
 import { NoImageInputNote } from "@/components/no-image-input-note";
-import { SettingsCard } from "@/components/settings/settings-primitives";
 import {
   canChooseThinkingLevel,
   keepThinkingLevel,
@@ -137,16 +136,16 @@ export function WispModelSettings({ conversationId }: { conversationId: string }
               ) : null}
             </section>
             {override && canChooseThinkingLevel(overrideModel) ? (
-              <SettingsCard>
+              <section aria-label="Reasoning" className="rounded-lg border border-border bg-card p-3">
                 <ThinkingLevelRow
                   id="wisp-thinking-level"
-                  className="min-h-0 p-[11px]"
+                  stacked
                   model={overrideModel}
                   value={keepThinkingLevel(override.thinkingLevel ?? "off", overrideModel)}
                   disabled={saving}
                   onChange={(level) => void changeThinkingLevel(level)}
                 />
-              </SettingsCard>
+              </section>
             ) : null}
             {!override && effective && canChooseThinkingLevel(effectiveModel) ? (
               <p className="m-0 text-xs text-dim">

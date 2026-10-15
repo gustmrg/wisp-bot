@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import type { ChatListAction } from "@/chat-data";
 import type { SettingsEntrySection } from "@/components/app-settings-dialog";
@@ -26,6 +26,7 @@ import { TimeZoneProvider, useReportedTimeZone } from "@/hooks/use-time-zone";
 import { type UserProfileController, useUserProfile } from "@/hooks/use-user-profile";
 import { effectiveTimeZone } from "@/lib/app-preferences";
 import { DETAILS_LAYOUT, SIDEBAR_LAYOUT } from "@/lib/layout";
+import { matchesShortcut, TOGGLE_SIDEBAR_SHORTCUT } from "@/lib/shortcuts";
 import { mainPanel } from "@/lib/ui-classes";
 import { cn } from "@/lib/utils";
 import type { PluginId } from "../shared/plugins";
@@ -193,17 +194,36 @@ function Workspace({ userProfile }: { userProfile: UserProfileController }) {
     setSearchOpen(open);
   }
 
+  const sidebarCollapsed = !mobile && workspace.preferences.sidebarCollapsed;
+  const latestPreferences = useRef(workspace.preferences);
+  latestPreferences.current = workspace.preferences;
+  const { updatePreferences } = workspace;
+  const toggleSidebar = useCallback(() => {
+    const preferences = latestPreferences.current;
+    updatePreferences({ ...preferences, sidebarCollapsed: !preferences.sidebarCollapsed });
+  }, [updatePreferences]);
+
   useEffect(() => {
     function handleKeyDown(event: KeyboardEvent) {
       if ((event.metaKey || event.ctrlKey) && event.key.toLocaleLowerCase() === "k") {
         event.preventDefault();
         navigationVersion.current += 1;
         setSearchOpen(true);
+        return;
+      }
+      // Dialogs keep their own keys; a Wisp being created must not lose its dialog's place.
+      if (
+        !mobile &&
+        matchesShortcut(event, TOGGLE_SIDEBAR_SHORTCUT) &&
+        !(event.target instanceof Element && event.target.closest("[role='dialog']"))
+      ) {
+        event.preventDefault();
+        if (!event.repeat) toggleSidebar();
       }
     }
     document.addEventListener("keydown", handleKeyDown);
     return () => document.removeEventListener("keydown", handleKeyDown);
-  }, []);
+  }, [mobile, toggleSidebar]);
 
   return (
     <TimeZoneProvider timeZone={timeZone}>
@@ -215,6 +235,8 @@ function Workspace({ userProfile }: { userProfile: UserProfileController }) {
             currentUser={currentUser}
             width={sidebarPanel.width}
             mobile={mobile}
+            collapsed={sidebarCollapsed}
+            onToggleCollapsed={toggleSidebar}
             hidden={mobile && (mobilePage !== "list" || detailsOpen)}
             statuses={workspace.statuses}
             activity={workspace.activity}

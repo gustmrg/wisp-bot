@@ -11,6 +11,9 @@ export const DEFAULT_SHORTCUTS: ShortcutPreferences = { voiceInput: "Ctrl+Space"
 
 export const SHORTCUT_LABELS: Record<ShortcutId, string> = { voiceInput: "Start or stop voice input" };
 
+/** Folds the desktop Wisp list to a rail and back: ⌘B on Apple keyboards, Ctrl+B elsewhere. */
+export const TOGGLE_SIDEBAR_SHORTCUT = isApplePlatform() ? "Meta+KeyB" : "Ctrl+KeyB";
+
 /** Opens the schedule menu from the composer: ⌘⇧Enter on Apple keyboards, Ctrl+Shift+Enter elsewhere. */
 export const SCHEDULE_SEND_SHORTCUT = isApplePlatform() ? "Meta+Shift+Enter" : "Ctrl+Shift+Enter";
 
@@ -21,6 +24,8 @@ type Modifier = (typeof MODIFIERS)[number];
 const RESERVED_SHORTCUTS: ReadonlyArray<{ shortcut: string; label: string }> = [
   { shortcut: "Ctrl+KeyK", label: "Search" },
   { shortcut: "Meta+KeyK", label: "Search" },
+  { shortcut: "Ctrl+KeyB", label: "Collapse sidebar" },
+  { shortcut: "Meta+KeyB", label: "Collapse sidebar" },
   { shortcut: "Ctrl+Shift+Enter", label: "Schedule message" },
   { shortcut: "Meta+Shift+Enter", label: "Schedule message" },
 ];
