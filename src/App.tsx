@@ -23,6 +23,7 @@ import { useResizablePanel } from "@/hooks/use-resizable-panel";
 import { useScheduledMessages } from "@/hooks/use-scheduled-messages";
 import { useSetupGate } from "@/hooks/use-setup-gate";
 import { ReplyPaceProvider } from "@/hooks/use-reply-pace";
+import { useSystemNotifications } from "@/hooks/use-system-notifications";
 import { TimeZoneProvider, useReportedTimeZone } from "@/hooks/use-time-zone";
 import { type UserProfileController, useUserProfile } from "@/hooks/use-user-profile";
 import { effectiveTimeZone } from "@/lib/app-preferences";
@@ -141,6 +142,14 @@ function Workspace({ userProfile }: { userProfile: UserProfileController }) {
     setProfileOpen(false);
     setMobilePage("chat");
   }
+
+  useSystemNotifications({
+    preferences: workspace.preferences,
+    shownChatId: activeChatShown ? (workspace.activeChatId ?? null) : null,
+    onOpen: ({ conversationId }) => {
+      if (workspace.chats[conversationId]) selectChat(conversationId);
+    },
+  });
 
   function selectMessage(chatId: string, messageId: string) {
     setKeptUnreadChatId(null);

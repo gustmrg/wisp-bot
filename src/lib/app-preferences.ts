@@ -40,6 +40,11 @@ export interface AppPreferences {
   notifyOnApproval: boolean;
   notifyOnError: boolean;
   muteActiveConversation: boolean;
+  /** Native notifications from the desktop app, for the events below. */
+  systemNotifications: boolean;
+  systemNotifyOnCompletion: boolean;
+  systemNotifyOnApproval: boolean;
+  systemNotifyOnError: boolean;
   microphone: string;
   voiceProvider: VoiceProviderId;
   voiceModel: string;
@@ -69,6 +74,10 @@ export const DEFAULT_PREFERENCES: AppPreferences = {
   notifyOnApproval: true,
   notifyOnError: true,
   muteActiveConversation: false,
+  systemNotifications: true,
+  systemNotifyOnCompletion: true,
+  systemNotifyOnApproval: true,
+  systemNotifyOnError: true,
   microphone: "default",
   voiceProvider: DEFAULT_VOICE_PROVIDER,
   voiceModel: defaultVoiceModel(DEFAULT_VOICE_PROVIDER),
@@ -141,6 +150,11 @@ export function normalizePreferences(value: unknown): AppPreferences {
     notifyOnApproval: typeof saved?.notifyOnApproval === "boolean" ? saved.notifyOnApproval : true,
     notifyOnError: typeof saved?.notifyOnError === "boolean" ? saved.notifyOnError : true,
     muteActiveConversation: typeof saved?.muteActiveConversation === "boolean" ? saved.muteActiveConversation : false,
+    systemNotifications: typeof saved?.systemNotifications === "boolean" ? saved.systemNotifications : true,
+    systemNotifyOnCompletion:
+      typeof saved?.systemNotifyOnCompletion === "boolean" ? saved.systemNotifyOnCompletion : true,
+    systemNotifyOnApproval: typeof saved?.systemNotifyOnApproval === "boolean" ? saved.systemNotifyOnApproval : true,
+    systemNotifyOnError: typeof saved?.systemNotifyOnError === "boolean" ? saved.systemNotifyOnError : true,
     microphone: typeof saved?.microphone === "string" && saved.microphone ? saved.microphone : "default",
     voiceProvider,
     voiceModel: isVoiceModel(voiceProvider, saved?.voiceModel) ? saved.voiceModel : defaultVoiceModel(voiceProvider),
