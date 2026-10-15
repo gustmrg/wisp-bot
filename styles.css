@@ -369,3 +369,58 @@
     animation: none;
   }
 }
+
+/* The token usage table stacks each Wisp into labelled cells when its panel is narrow. */
+@container (max-width: 35rem) {
+  .usage-table thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+  }
+  .usage-table,
+  .usage-table tbody,
+  .usage-table tfoot {
+    display: block;
+  }
+  .usage-table tr {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 6px 12px;
+    padding: 12px 14px;
+  }
+  .usage-table tbody tr:not(:last-child),
+  .usage-table tfoot tr {
+    border-bottom: 1px solid var(--border);
+  }
+  .usage-table tfoot tr {
+    border-bottom: 0;
+    border-top: 1px solid var(--border);
+  }
+  .usage-table tr > * {
+    display: block;
+    padding: 0;
+    border: 0 !important;
+    text-align: left;
+  }
+  .usage-table th[scope="row"] {
+    margin-bottom: 4px;
+  }
+  /* The cost sits beside the Wisp's name, the token counts in the rows below. */
+  .usage-table .usage-cost {
+    grid-row: 1;
+    grid-column: 2;
+    font-size: var(--text-sm);
+    text-align: right;
+  }
+  .usage-table td::before {
+    content: attr(data-label);
+    display: block;
+    color: var(--text-dim);
+    font-weight: 400;
+  }
+  .usage-table .usage-cost::before {
+    display: none;
+  }
+}
