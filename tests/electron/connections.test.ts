@@ -18,6 +18,8 @@ import { installRemoteServer } from "../../electron/connections/ssh-install.js";
 import { testSshConnection } from "../../electron/connections/ssh-test.js";
 import { openSshTunnel } from "../../electron/connections/ssh-tunnel.js";
 import { createBackend, type Backend } from "../../electron/create-backend.js";
+import { Tailscale } from "../../electron/local-server/tailscale.js";
+import { FakeTailscale } from "../helpers/fake-tailscale.js";
 import { InProcessLocalServer } from "../helpers/in-process-local-server.js";
 import { adminRequest } from "../../server/admin.js";
 import { MasterKeyEncryption } from "../../server/master-key.js";
@@ -78,23 +80,6 @@ async function startServer(): Promise<{ server: WispServer; directory: string }>
   return { server, directory };
 }
 
-/**
- * Stands in for Tailscale Serve when the app checks a remote access address:
- * laptop.tailnet.ts.net forwards to the port remote access exposes, stale.tailnet.ts.net
- * forwards to a port nothing listens on, and other addresses do not resolve.
- */
-function tailscaleServe(localServer: InProcessLocalServer): typeof fetch {
-  return (async (input: string | URL | Request, init?: RequestInit) => {
-    const url = new URL(input instanceof Request ? input.url : input);
-    if (url.hostname === "stale.tailnet.ts.net") return new Response("Bad Gateway", { status: 502 });
-    if (url.hostname !== "laptop.tailnet.ts.net") throw new TypeError("fetch failed");
-    // Forwards to the port remote access asked for; nothing listening there is a bad gateway.
-    return fetch(`http://127.0.0.1:${localServer.exposedPort}${url.pathname}`, init).catch(
-      () => new Response("Bad Gateway", { status: 502 }),
-    );
-  }) as typeof fetch;
-}
-
 /** Each step of the connection's progress, with its state. */
 const stepsOf = (view: ConnectionsView) => view.status.progress?.steps.map(({ id, state }) => [id, state]);
 
@@ -114,6 +99,7 @@ async function desktop(
     quitAndInstall: vi.fn(),
   });
   const localServer = new InProcessLocalServer(directory, key);
+  const tailscale = new FakeTailscale();
   const hostActions = {
     openExternal: vi.fn(async () => undefined),
     openPath: vi.fn(async () => undefined),
@@ -143,7 +129,8 @@ async function desktop(
     connectionsDirectory: directory,
     deviceName: "Test computer",
     appVersion: "1.0.0",
-    fetch: tailscaleServe(localServer),
+    fetch: tailscale.fetch,
+    tailscale: new Tailscale({ locate: tailscale.locate, run: tailscale.run }),
     testSshConnection: (profile, options) => testSshConnection(profile, { ...options, sshPath: fakeSsh }),
     ...(askpass ? { startSshAskpass: () => SshAskpass.start() } : {}),
     openSshTunnel: (profile, signal, interaction) =>
@@ -192,6 +179,7 @@ async function desktop(
     directory,
     key,
     localServer,
+    tailscale,
     hostActions,
     handlers,
     broadcasts,
@@ -717,9 +705,11 @@ describe("remote access to this computer", () => {
     await app.waitForPhase("local");
     expect(await app.invoke(WISP_IPC_CHANNELS.getRemoteAccess)).toEqual({
       enabled: false,
+      automatic: false,
       port: 8787,
       webAppAvailable: false,
       devices: [],
+      tailscale: { status: "ready", origin: "https://laptop.tailnet.ts.net", httpsEnabled: true },
     });
     for (const [request, message] of [
       [{ enabled: true, port: 8787 }, "Enter the HTTPS address"],
@@ -744,6 +734,8 @@ describe("remote access to this computer", () => {
     await app.waitForPhase("local");
     const { epoch } = (await app.view()).status;
     const port = await freePort();
+    // As if tailscale serve --bg had been run by hand.
+    app.tailscale.serveByHand(port);
     await app.invoke(WISP_IPC_CHANNELS.saveRemoteAccess, { enabled: true, port, publicOrigin: origin });
     expect(await answers(port)).toBe(true);
     await app.invoke(WISP_IPC_CHANNELS.saveRemoteAccess, { enabled: false, port, publicOrigin: origin });
@@ -756,6 +748,8 @@ describe("remote access to this computer", () => {
     const app = await desktop();
     await app.waitForPhase("local");
     const port = await freePort();
+    // As if tailscale serve --bg had been run by hand.
+    app.tailscale.serveByHand(port);
     for (const [publicOrigin, message] of [
       ["https://desktop.tailnet.ts.net", "could not reach https://desktop.tailnet.ts.net"],
       ["https://stale.tailnet.ts.net", "answers, but Wisp does not"],
@@ -798,6 +792,8 @@ describe("remote access to this computer", () => {
     const app = await desktop();
     await app.waitForPhase("local");
     const port = await freePort();
+    // As if tailscale serve --bg had been run by hand.
+    app.tailscale.serveByHand(port);
     const view = await app.invoke<RemoteAccessView>(WISP_IPC_CHANNELS.saveRemoteAccess, {
       enabled: true,
       port,
@@ -830,6 +826,8 @@ describe("remote access to this computer", () => {
     const app = await desktop();
     await app.waitForPhase("local");
     const port = await freePort();
+    // As if tailscale serve --bg had been run by hand.
+    app.tailscale.serveByHand(port);
     await app.invoke(WISP_IPC_CHANNELS.saveRemoteAccess, { enabled: true, port, publicOrigin: origin });
     const added = await app.invoke<ConnectionsView>(WISP_IPC_CHANNELS.saveConnection, {
       kind: "url",
@@ -857,6 +855,8 @@ describe("remote access to this computer", () => {
     const app = await desktop();
     await app.waitForPhase("local");
     const port = await freePort();
+    // As if tailscale serve --bg had been run by hand.
+    app.tailscale.serveByHand(port);
     await app.invoke(WISP_IPC_CHANNELS.saveRemoteAccess, { enabled: true, port, publicOrigin: origin });
     const added = await app.invoke<ConnectionsView>(WISP_IPC_CHANNELS.saveConnection, {
       kind: "url",
@@ -873,5 +873,114 @@ describe("remote access to this computer", () => {
     await restarted.waitForPhase("pairing_required");
     await vi.waitFor(async () => expect(await answers(port)).toBe(true), { timeout: 8_000 });
     expect(await restarted.invoke(WISP_IPC_CHANNELS.getRemoteAccess)).toMatchObject({ enabled: true });
+  });
+
+  describe("set up by Wisp with Tailscale Serve", () => {
+    it("serves this computer, then removes only that serve when turned off", async () => {
+      const app = await desktop();
+      await app.waitForPhase("local");
+      const port = await freePort();
+      const view = await app.invoke<RemoteAccessView>(WISP_IPC_CHANNELS.saveRemoteAccess, {
+        enabled: true,
+        port,
+        automatic: true,
+      });
+      expect(view).toMatchObject({ enabled: true, automatic: true, publicOrigin: origin, port });
+      expect(app.tailscale.handler).toBe(`http://127.0.0.1:${port}`);
+      expect(app.tailscale.calls).toContainEqual(["serve", "--bg", "--yes", "--https=443", `http://127.0.0.1:${port}`]);
+      // Never Funnel.
+      expect(app.tailscale.calls.flat()).not.toContain("funnel");
+      const pairing = await app.invoke<RemoteAccessPairing>(WISP_IPC_CHANNELS.pairRemoteDevice);
+      expect(pairing.link).toBe(`${origin}/#pair=${pairing.code}`);
+
+      await app.invoke(WISP_IPC_CHANNELS.saveRemoteAccess, {
+        enabled: false,
+        port,
+        automatic: true,
+        publicOrigin: origin,
+      });
+      expect(app.tailscale.handler).toBeUndefined();
+      // The switch turns it on again the same way.
+      await app.invoke(WISP_IPC_CHANNELS.saveRemoteAccess, {
+        enabled: true,
+        port,
+        automatic: true,
+        publicOrigin: origin,
+      });
+      expect(app.tailscale.handler).toBe(`http://127.0.0.1:${port}`);
+
+      // A new port moves the serve Wisp added.
+      const next = await freePort();
+      await app.invoke(WISP_IPC_CHANNELS.saveRemoteAccess, { enabled: true, port: next, automatic: true });
+      expect(app.tailscale.handler).toBe(`http://127.0.0.1:${next}`);
+      expect(await answers(next)).toBe(true);
+      expect(await answers(port)).toBe(false);
+    });
+
+    it("never replaces a serve it did not add, nor removes one", async () => {
+      const app = await desktop();
+      await app.waitForPhase("local");
+      const port = await freePort();
+      app.tailscale.handler = "http://127.0.0.1:3000";
+      expect(
+        await app.call(WISP_IPC_CHANNELS.saveRemoteAccess, { enabled: true, port, automatic: true }),
+      ).toMatchObject({ ok: false, error: { message: expect.stringContaining("already shares something else") } });
+      expect(app.tailscale.handler).toBe("http://127.0.0.1:3000");
+      expect(await app.invoke(WISP_IPC_CHANNELS.getRemoteAccess)).toMatchObject({ enabled: false });
+
+      // Set up by hand for Wisp's port: used as it is, and left in place when turned off.
+      app.tailscale.serveByHand(port);
+      await app.invoke(WISP_IPC_CHANNELS.saveRemoteAccess, { enabled: true, port, automatic: true });
+      await app.invoke(WISP_IPC_CHANNELS.saveRemoteAccess, {
+        enabled: false,
+        port,
+        automatic: true,
+        publicOrigin: origin,
+      });
+      expect(app.tailscale.handler).toBe(`http://127.0.0.1:${port}`);
+    });
+
+    it("says what to do when Tailscale cannot serve this computer, and changes nothing", async () => {
+      const app = await desktop();
+      await app.waitForPhase("local");
+      const port = await freePort();
+      const turnOn = () => app.call(WISP_IPC_CHANNELS.saveRemoteAccess, { enabled: true, port, automatic: true });
+
+      app.tailscale.needsConsent = true;
+      app.tailscale.httpsEnabled = false;
+      expect((await app.invoke<RemoteAccessView>(WISP_IPC_CHANNELS.getRemoteAccess)).tailscale).toEqual({
+        status: "ready",
+        origin,
+        httpsEnabled: false,
+      });
+      expect(await turnOn()).toMatchObject({
+        ok: false,
+        error: { message: expect.stringContaining("https://login.tailscale.com/f/serve?node=n123") },
+      });
+      app.tailscale.needsConsent = false;
+
+      app.tailscale.denied = true;
+      expect(await turnOn()).toMatchObject({
+        ok: false,
+        error: { message: expect.stringContaining("sudo tailscale set --operator=$USER") },
+      });
+      app.tailscale.denied = false;
+
+      app.tailscale.running = false;
+      expect((await app.invoke<RemoteAccessView>(WISP_IPC_CHANNELS.getRemoteAccess)).tailscale).toMatchObject({
+        status: "not_running",
+      });
+      expect(await turnOn()).toMatchObject({ ok: false, error: { message: expect.stringContaining("not running") } });
+
+      app.tailscale.installed = false;
+      expect((await app.invoke<RemoteAccessView>(WISP_IPC_CHANNELS.getRemoteAccess)).tailscale).toMatchObject({
+        status: "not_installed",
+      });
+      expect(await turnOn()).toMatchObject({ ok: false, error: { message: expect.stringContaining("not installed") } });
+
+      expect(app.tailscale.handler).toBeUndefined();
+      expect(await answers(port)).toBe(false);
+      await expect(readFile(path.join(app.directory, "remote-access.json"))).rejects.toThrow();
+    });
   });
 });

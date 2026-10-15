@@ -79,7 +79,7 @@ function conversationState(initialized: boolean, chats: Record<string, Chat> = {
   };
 }
 
-const remoteAccessOff = { enabled: false, port: 8787, webAppAvailable: true, devices: [] };
+const remoteAccessOff = { enabled: false, automatic: false, port: 8787, webAppAvailable: true, devices: [] };
 const localConnections: ConnectionsView = {
   activeId: "local",
   profiles: [{ id: "local", kind: "local", name: "This computer", paired: true }],

@@ -12,8 +12,15 @@ const phone = {
   createdAt: "2026-10-10T12:00:00.000Z",
   lastSeenAt: "2026-10-14T12:00:00.000Z",
 };
-const unset: RemoteAccessView = { enabled: false, port: 8787, webAppAvailable: true, devices: [] };
-const on: RemoteAccessView = { enabled: true, port: 8787, publicOrigin: origin, webAppAvailable: true, devices: [] };
+const unset: RemoteAccessView = { enabled: false, automatic: false, port: 8787, webAppAvailable: true, devices: [] };
+const on: RemoteAccessView = {
+  enabled: true,
+  automatic: false,
+  port: 8787,
+  publicOrigin: origin,
+  webAppAvailable: true,
+  devices: [],
+};
 const off: RemoteAccessView = { ...on, enabled: false, devices: [] };
 
 function expose(initial: RemoteAccessView) {
@@ -114,5 +121,72 @@ describe("RemoteAccessSettingsSection", () => {
     await userEvent.click(screen.getByRole("button", { name: "Revoke Chrome on Android" }));
     expect(api.revokeRemoteDevice).toHaveBeenCalledWith({ deviceId: "phone" });
     expect(await screen.findByText("No devices are paired yet.")).toBeVisible();
+  });
+
+  describe("with Tailscale", () => {
+    const ready: RemoteAccessView = {
+      ...unset,
+      tailscale: { status: "ready", origin, httpsEnabled: true },
+    };
+
+    it("turns on in one step, letting Wisp set up Tailscale Serve", async () => {
+      const api = expose(ready);
+      api.saveRemoteAccess.mockResolvedValueOnce({ ok: true, value: { ...on, automatic: true } });
+      render(<RemoteAccessSettingsSection />);
+      expect(await screen.findByText("Tailscale is ready on this computer")).toBeVisible();
+      expect(screen.getByText(origin)).toBeVisible();
+      expect(screen.queryByRole("textbox", { name: "HTTPS address" })).toBeNull();
+      await userEvent.click(screen.getByRole("button", { name: "Turn on remote access" }));
+      expect(api.saveRemoteAccess).toHaveBeenCalledWith({ enabled: true, port: 8787, automatic: true });
+      expect(await screen.findByText(/set up by Wisp with Tailscale Serve/)).toBeVisible();
+
+      // The switch keeps letting Wisp set it up.
+      api.saveRemoteAccess.mockResolvedValueOnce({ ok: true, value: { ...off, automatic: true } });
+      await userEvent.click(screen.getByRole("switch", { name: "Remote access" }));
+      expect(api.saveRemoteAccess).toHaveBeenLastCalledWith({
+        enabled: false,
+        port: 8787,
+        publicOrigin: origin,
+        automatic: true,
+      });
+    });
+
+    it("shows what Tailscale asks for as a link, and can be set up by hand instead", async () => {
+      const api = expose(ready);
+      api.saveRemoteAccess.mockResolvedValueOnce({
+        ok: false,
+        error: {
+          code: "invalid_request",
+          message:
+            "Turn on Tailscale Serve for your tailnet at https://login.tailscale.com/f/serve?node=n1, then try again.",
+          retryable: false,
+        },
+      });
+      render(<RemoteAccessSettingsSection />);
+      await userEvent.click(await screen.findByRole("button", { name: "Turn on remote access" }));
+      expect(await screen.findByRole("link", { name: "https://login.tailscale.com/f/serve?node=n1" })).toHaveAttribute(
+        "href",
+        "https://login.tailscale.com/f/serve?node=n1",
+      );
+
+      await userEvent.click(screen.getByRole("button", { name: "Set it up by hand" }));
+      expect(screen.getByRole("textbox", { name: "HTTPS address" })).toBeVisible();
+      await userEvent.click(screen.getByRole("button", { name: "Let Wisp set up Tailscale Serve instead" }));
+      expect(screen.getByText("Tailscale is ready on this computer")).toBeVisible();
+    });
+
+    it("says how to get Tailscale when it is not installed, above the steps by hand", async () => {
+      expose({
+        ...unset,
+        tailscale: { status: "not_installed", message: "Tailscale is not installed on this computer." },
+      });
+      render(<RemoteAccessSettingsSection />);
+      expect(await screen.findByText(/Tailscale is not installed on this computer/)).toBeVisible();
+      expect(screen.getByRole("link", { name: "Install Tailscale" })).toHaveAttribute(
+        "href",
+        "https://tailscale.com/download",
+      );
+      expect(screen.getByRole("textbox", { name: "HTTPS address" })).toBeVisible();
+    });
   });
 });

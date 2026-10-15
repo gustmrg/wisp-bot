@@ -11,6 +11,7 @@ import {
   type RemoteAccessView,
 } from "../../shared/remote-access.js";
 import type { LocalServer, LocalServerExposure } from "./local-server.js";
+import type { Tailscale } from "./tailscale.js";
 
 const SETTINGS_FILE = "remote-access.json";
 const CHECK_TIMEOUT_MS = 10_000;
@@ -19,6 +20,10 @@ interface RemoteAccessSettings {
   enabled: boolean;
   port: number;
   publicOrigin?: string;
+  /** Wisp sets up Tailscale Serve itself. */
+  automatic?: boolean;
+  /** The Tailscale Serve to `port` is one Wisp added, so Wisp removes it when turned off. */
+  served?: boolean;
 }
 
 export interface RemoteAccessServiceOptions {
@@ -27,20 +32,23 @@ export interface RemoteAccessServiceOptions {
   localServer: LocalServer;
   /** Whether this build carries the browser app the local server serves to other devices. */
   webAppAvailable: boolean;
-  /** Exposes Wisps on this computer, or stops exposing them; restarts the local server when that changes. */
+  /** Exposes Wisps on this computer, or stops exposing them, without restarting its server. */
   apply(exposure: LocalServerExposure | undefined): Promise<void>;
   /** Reaches the address through its proxy, to check it leads to this computer; tests substitute a fake. */
   fetch: typeof fetch;
+  /** Sets up Tailscale Serve when remote access is automatic; tests substitute a fake. */
+  tailscale: Pick<Tailscale, "detect" | "serve" | "unserve">;
 }
 
 const invalid = (message: string): WispBackendError => new WispBackendError("invalid_request", message);
 
 /**
  * Remote access to Wisps on this computer. The setting lives with the app,
- * not the server, since it decides how the app starts its server: on a fixed
- * loopback port behind a private HTTPS proxy, serving the browser app, kept
- * running while the app runs. Pairing and devices go through the server's
- * administrative commands, which only this app can send.
+ * not the server, since it decides how the app runs its server: exposed on a
+ * second loopback port behind a private HTTPS proxy, serving the browser app,
+ * kept running while the app runs. Wisp can set the proxy up itself with
+ * Tailscale Serve. Pairing and devices go through the server's administrative
+ * commands, which only this app can send.
  */
 export class RemoteAccessService {
   private settings: RemoteAccessSettings = { enabled: false, port: DEFAULT_REMOTE_ACCESS_PORT };
@@ -59,7 +67,7 @@ export class RemoteAccessService {
     }
     try {
       const { version, ...settings } = (stored ?? {}) as { version?: unknown };
-      if (version === 1) this.settings = parseSettings(settings);
+      if (version === 1) this.settings = parseSettings(settings, true);
     } catch {
       // Edited into an invalid shape: remote access stays off until saved again.
     }
@@ -84,16 +92,28 @@ export class RemoteAccessService {
   }
 
   async view(): Promise<RemoteAccessView> {
-    const { enabled, port, publicOrigin } = this.settings;
+    const { enabled, port, publicOrigin, automatic = false, served } = this.settings;
     const view: RemoteAccessView = {
       enabled,
+      automatic,
       port,
       ...(publicOrigin ? { publicOrigin } : {}),
       webAppAvailable: this.options.webAppAvailable,
       devices: [],
     };
     const exposure = this.exposure();
-    if (!exposure) return view;
+    if (!exposure) {
+      return {
+        ...view,
+        tailscale: await this.options.tailscale.detect(),
+        // Removing the serve failed when remote access was turned off.
+        ...(served && publicOrigin
+          ? {
+              error: `Tailscale still serves ${publicOrigin}: Wisp could not remove it. Run tailscale serve --https=443 --set-path=/ off.`,
+            }
+          : {}),
+      };
+    }
     try {
       const devices = await this.devices();
       // Applied again, so a port that could not open when the server started shows why.
@@ -117,8 +137,32 @@ export class RemoteAccessService {
   }
 
   private async saveNow(request: unknown): Promise<RemoteAccessView> {
-    const settings = parseSettings(request);
+    const settings = parseSettings(request, false);
     const previous = this.settings;
+    const { tailscale } = this.options;
+    // Set up Tailscale Serve first: it gives the address to check.
+    let added = false;
+    // The serve Wisp added for the previous port, moved to the new one.
+    let moved = false;
+    const putBack = async (): Promise<void> => {
+      if (moved) await tailscale.serve(previous.port).catch(() => undefined);
+    };
+    if (settings.enabled && settings.automatic) {
+      let served: { origin: string; created: boolean };
+      try {
+        if (previous.served && previous.port !== settings.port) {
+          await tailscale.unserve(previous.port);
+          moved = true;
+        }
+        served = await tailscale.serve(settings.port);
+      } catch (error) {
+        await putBack();
+        throw invalid(error instanceof Error ? error.message : "Tailscale could not set up Serve.");
+      }
+      added = served.created;
+      settings.publicOrigin = served.origin;
+      settings.served = added || (previous.served === true && previous.port === settings.port);
+    }
     this.settings = settings;
     const exposure = this.exposure();
     let problem: string | undefined;
@@ -129,9 +173,21 @@ export class RemoteAccessService {
     }
     if (exposure) problem ??= await this.check(exposure);
     if (problem) {
+      if (added) await tailscale.unserve(settings.port).catch(() => undefined);
+      await putBack();
       this.settings = previous;
       await this.options.apply(this.exposure()).catch(() => undefined);
       throw invalid(problem);
+    }
+    // The serve Wisp added before is no longer wanted, or forwards to another port. Still on
+    // the same port, it stays: set up by hand from now on, it is the person's to keep.
+    if (previous.served && !(settings.enabled && previous.port === settings.port)) {
+      try {
+        await tailscale.unserve(previous.port);
+      } catch {
+        // Kept, so the section says it is still there and how to remove it.
+        if (!settings.enabled) settings.served = true;
+      }
     }
     await writeFileAtomically(
       path.join(this.options.directory, SETTINGS_FILE),
@@ -212,7 +268,8 @@ export class RemoteAccessService {
   }
 }
 
-function parseSettings(value: unknown): RemoteAccessSettings {
+/** Validates the setting from the renderer, or from disk, which also records whether Wisp added the serve. */
+function parseSettings(value: unknown, fromDisk: boolean): RemoteAccessSettings {
   if (!value || typeof value !== "object" || Array.isArray(value))
     throw invalid("The remote access settings are invalid.");
   const input = value as Record<string, unknown>;
@@ -221,14 +278,22 @@ function parseSettings(value: unknown): RemoteAccessSettings {
   if (!Number.isInteger(port) || (port as number) < 1024 || (port as number) > 65_535) {
     throw invalid("The port must be between 1024 and 65535.");
   }
+  const automatic = input.automatic === true;
   const publicOrigin =
     input.publicOrigin === undefined || input.publicOrigin === null || input.publicOrigin === ""
       ? undefined
       : parsePublicOrigin(input.publicOrigin);
-  if (input.enabled && !publicOrigin) {
+  // Tailscale gives the address when Wisp sets it up.
+  if (input.enabled && !publicOrigin && !(automatic && !fromDisk)) {
     throw invalid("Enter the HTTPS address other devices reach this computer at, such as a Tailscale Serve address.");
   }
-  return { enabled: input.enabled, port: port as number, ...(publicOrigin ? { publicOrigin } : {}) };
+  return {
+    enabled: input.enabled,
+    port: port as number,
+    ...(publicOrigin ? { publicOrigin } : {}),
+    ...(automatic ? { automatic } : {}),
+    ...(fromDisk && input.served === true ? { served: true } : {}),
+  };
 }
 
 /** An HTTPS origin only: Wisps on this computer are never offered over plain HTTP. */

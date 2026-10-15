@@ -5,7 +5,13 @@ import type { ConnectionsView } from "../shared/connections.js";
 import type { WispApi } from "../shared/contracts.js";
 import { isWispBridgeAvailable } from "../src/lib/wisp-bridge.js";
 
-const remoteAccess: RemoteAccessView = { enabled: false, port: 8787, webAppAvailable: true, devices: [] };
+const remoteAccess: RemoteAccessView = {
+  enabled: false,
+  automatic: false,
+  port: 8787,
+  webAppAvailable: true,
+  devices: [],
+};
 const connections: ConnectionsView = {
   activeId: "local",
   profiles: [{ id: "local", kind: "local", name: "This computer", paired: true }],
