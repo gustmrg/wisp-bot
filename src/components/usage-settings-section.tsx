@@ -4,6 +4,7 @@ import { ChartColumnIcon, CircleAlertIcon, RefreshCwIcon, TriangleAlertIcon } fr
 
 import { Wisp } from "@/components/wisp";
 import { SettingsCard, SettingsGroup } from "@/components/settings/settings-primitives";
+import { formatUsd, plural, TokenCount, TokenMix } from "@/components/usage-display";
 import { Button } from "@/components/ui/button";
 import { SegmentedControl } from "@/components/ui/segmented-control";
 import { useTimeZone } from "@/hooks/use-time-zone";
@@ -16,13 +17,6 @@ const PERIOD_OPTIONS: ReadonlyArray<{ value: UsagePeriod; label: string }> = [
   { value: "30d", label: "Last 30 days" },
   { value: "all", label: "All history" },
 ];
-
-const TOKEN_KINDS = [
-  { key: "inputTokens", label: "Input", color: "bg-chart-1" },
-  { key: "outputTokens", label: "Output", color: "bg-chart-2" },
-  { key: "cacheReadTokens", label: "Cache read", color: "bg-chart-3" },
-  { key: "cacheWriteTokens", label: "Cache write", color: "bg-chart-4" },
-] as const;
 
 type Totals = WispUsageRow["totals"];
 
@@ -178,7 +172,11 @@ function UsageSummary({ report }: { report: UsageReport }) {
           <div className="space-y-0.5">
             <p className="m-0 text-xs text-dim">Estimated cost</p>
             <p className="m-0 text-[28px] font-semibold leading-tight tracking-tight tabular-nums">
-              {totals.costUsd !== null ? cost(totals.costUsd) : pricedCost > 0 ? `${cost(pricedCost)}+` : "Unknown"}
+              {totals.costUsd !== null
+                ? formatUsd(totals.costUsd)
+                : pricedCost > 0
+                  ? `${formatUsd(pricedCost)}+`
+                  : "Unknown"}
             </p>
             <p className="m-0 text-xs text-dim">
               {plural(active, "Wisp")} with usage · {plural(sessions, "session")}
@@ -199,45 +197,6 @@ function UsageSummary({ report }: { report: UsageReport }) {
         ) : null}
       </SettingsCard>
     </SettingsGroup>
-  );
-}
-
-/** A stacked bar of how the total splits into token kinds, with a legend carrying the same numbers. */
-function TokenMix({ totals }: { totals: Totals }) {
-  if (!totals.totalTokens) return null;
-  const share = (value: number) => Math.round((value / totals.totalTokens) * 100);
-  const parts = TOKEN_KINDS.map((kind) => ({ ...kind, value: totals[kind.key] }));
-  return (
-    <div className="space-y-2.5">
-      <div
-        role="img"
-        aria-label={`Token mix: ${parts.map((part) => `${part.label} ${share(part.value)}%`).join(", ")}`}
-        className="flex h-3 gap-0.5 overflow-hidden rounded-full bg-muted"
-      >
-        {parts
-          .filter((part) => part.value > 0)
-          .map((part) => (
-            <div
-              key={part.key}
-              className={cn("h-full min-w-0.5", part.color)}
-              style={{ width: `${(part.value / totals.totalTokens) * 100}%` }}
-            />
-          ))}
-      </div>
-      <ul className="m-0 grid list-none grid-cols-4 gap-x-4 gap-y-2 p-0 text-xs @max-[28rem]:grid-cols-2">
-        {parts.map((part) => (
-          <li key={part.key} className="flex min-w-0 flex-col">
-            <span className="flex items-center gap-1.5 text-dim">
-              <span aria-hidden="true" className={cn("size-2.5 shrink-0 rounded-[3px]", part.color)} />
-              {part.label}
-            </span>
-            <span className="pl-4 font-medium tabular-nums">
-              <TokenCount value={part.value} /> · {share(part.value)}%
-            </span>
-          </li>
-        ))}
-      </ul>
-    </div>
   );
 }
 
@@ -327,7 +286,7 @@ function UsageCells({ totals, topCost }: { totals: Totals; topCost?: number }) {
           totals.costUsd === null && "font-normal text-dim",
         )}
       >
-        {cost(totals.costUsd)}
+        {formatUsd(totals.costUsd)}
         {topCost && totals.costUsd !== null ? (
           <span aria-hidden="true" className="mt-1 ml-auto block h-[3px] w-full max-w-20 rounded-full bg-muted">
             <span
@@ -379,31 +338,4 @@ function UsageSkeleton() {
       </div>
     </>
   );
-}
-
-/** A token count shortened for reading (12.4M), with the exact count for screen readers and on hover. */
-function TokenCount({ value }: { value: number }) {
-  const full = value.toLocaleString("en-US");
-  return (
-    <span title={`${full} tokens`}>
-      <span aria-hidden="true">{compactNumber(value)}</span>
-      <span className="sr-only">{full}</span>
-    </span>
-  );
-}
-
-function compactNumber(value: number): string {
-  return value < 1000
-    ? String(value)
-    : new Intl.NumberFormat("en-US", { notation: "compact", maximumSignificantDigits: 3 }).format(value);
-}
-
-function plural(count: number, noun: string): string {
-  return `${count.toLocaleString("en-US")} ${noun}${count === 1 ? "" : "s"}`;
-}
-
-function cost(value: number | null): string {
-  if (value === null) return "Unknown";
-  if (value > 0 && value < 0.01) return "<$0.01";
-  return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 2 }).format(value);
 }

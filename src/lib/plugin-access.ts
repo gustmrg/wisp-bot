@@ -28,7 +28,8 @@ export type IntegrationSettingsTarget =
   | { section: "plugins"; pluginId?: PluginId }
   | { section: "mcp" }
   | { section: "storage"; conversationId: string }
-  | { section: "jobs" };
+  | { section: "jobs" }
+  | { section: "usage" };
 
 export function isPluginAvailable(plugin: PluginSummary | undefined): boolean {
   return Boolean(plugin?.configured && plugin.enabled);

@@ -81,7 +81,7 @@ type SettingsSection =
   | "storage"
   | "jobs";
 /** Sections other parts of the app can open the dialog at. */
-export type SettingsEntrySection = "general" | "model" | "voice" | "plugins" | "mcp" | "storage" | "jobs";
+export type SettingsEntrySection = "general" | "model" | "voice" | "plugins" | "mcp" | "storage" | "jobs" | "usage";
 
 /** Navigation order; entries without a section are announced but not available yet. */
 const NAV_ITEMS: ReadonlyArray<

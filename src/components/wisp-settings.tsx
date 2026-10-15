@@ -91,7 +91,7 @@ export function WispSettingsSectionContent({ chat, section, onChangeWisp, onOpen
     default:
       return (
         <div className="wisp-settings-scroll min-h-0 flex-1 overflow-y-auto p-3.5 text-sm">
-          {section === "usage" ? <WispSessionReportSection chatId={id} /> : null}
+          {section === "usage" ? <WispSessionReportSection chatId={id} onOpenSettings={onOpenSettings} /> : null}
           {section === "memory" ? <WispContextSettings conversationId={id} /> : null}
           {section === "skills" ? <WispSkillSettings conversationId={id} /> : null}
           {section === "workspace" ? (
