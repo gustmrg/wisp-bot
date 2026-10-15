@@ -40,7 +40,6 @@ export interface AppPreferences {
   /** Send the message as soon as a recording is transcribed instead of leaving it in the composer. */
   voiceAutoSend: boolean;
   shortcuts: ShortcutPreferences;
-  hardwareAcceleration: boolean;
   timezone: string;
   autoReview: boolean;
   autoReviewRules: AutoReviewRule[];
@@ -67,7 +66,6 @@ export const DEFAULT_PREFERENCES: AppPreferences = {
   voiceLanguage: "auto",
   voiceAutoSend: false,
   shortcuts: DEFAULT_SHORTCUTS,
-  hardwareAcceleration: true,
   timezone: "auto",
   autoReview: true,
   autoReviewRules: [],
@@ -138,7 +136,6 @@ export function normalizePreferences(value: unknown): AppPreferences {
     voiceLanguage: isVoiceLanguage(saved?.voiceLanguage) ? saved.voiceLanguage : "auto",
     voiceAutoSend: typeof saved?.voiceAutoSend === "boolean" ? saved.voiceAutoSend : false,
     shortcuts: normalizeShortcuts(saved?.shortcuts),
-    hardwareAcceleration: typeof saved?.hardwareAcceleration === "boolean" ? saved.hardwareAcceleration : true,
     timezone,
     autoReview: typeof saved?.autoReview === "boolean" ? saved.autoReview : true,
     autoReviewRules: Array.isArray(saved?.autoReviewRules)
