@@ -137,24 +137,16 @@ function MessageView({ message, dense = false, author, showAuthor = false, onAns
   const outgoing = message.type === "outgoing";
   const empty = !message.text.trim();
   if (empty && (message.status === "cancelled" || message.status === "failed")) {
-    const failed = message.status === "failed";
     return (
       <div className="mt-[13px] mb-[5px] flex animate-message-in items-center justify-center gap-1.5 text-faint text-2xs">
-        {failed ? (
-          <CircleAlertIcon aria-hidden="true" className="size-3 flex-none" />
+        {message.status === "failed" ? (
+          <FailedNotice onRetry={message.retryable ? onRetry : undefined} />
         ) : (
-          <CircleStopIcon aria-hidden="true" className="size-3 flex-none" />
+          <>
+            <CircleStopIcon aria-hidden="true" className="size-3 flex-none" />
+            <span>Stopped</span>
+          </>
         )}
-        <span>{failed ? "Failed" : "Stopped"}</span>
-        {failed && message.retryable ? (
-          <button
-            type="button"
-            className="rounded-md border border-black/[0.08] px-1.5 py-0.5 text-dim hover:bg-muted hover:text-foreground dark:border-white/[0.08]"
-            onClick={onRetry}
-          >
-            Retry
-          </button>
-        ) : null}
       </div>
     );
   }
@@ -216,23 +208,34 @@ function MessageView({ message, dense = false, author, showAuthor = false, onAns
         <div className={cn("mt-1 flex items-center gap-2 text-2xs text-faint", outgoing && "mr-1")}>
           {message.scheduled ? <ScheduledBadge scheduledAt={message.scheduled.scheduledAt} /> : null}
           {message.job ? <JobBadge title={message.job.title} /> : null}
-          {message.status === "queued" || message.status === "cancelled" || message.status === "failed" ? (
-            <span>
-              {message.status === "queued" ? "Queued" : message.status === "cancelled" ? "Stopped" : "Failed"}
-            </span>
+          {message.status === "queued" || message.status === "cancelled" ? (
+            <span>{message.status === "queued" ? "Queued" : "Stopped"}</span>
           ) : null}
-          {!outgoing && message.status === "failed" && message.retryable ? (
-            <button
-              type="button"
-              className="rounded-md border border-black/[0.08] px-1.5 py-0.5 text-dim hover:bg-muted hover:text-foreground dark:border-white/[0.08]"
-              onClick={onRetry}
-            >
-              Retry
-            </button>
+          {message.status === "failed" ? (
+            <FailedNotice onRetry={!outgoing && message.retryable ? onRetry : undefined} />
           ) : null}
         </div>
       ) : null}
     </div>
+  );
+}
+
+/** Marks a message that failed, in the error colour so it stands apart from a stopped or queued one. */
+function FailedNotice({ onRetry }: { onRetry?: () => void }) {
+  return (
+    <span className="inline-flex items-center gap-1.5 text-destructive">
+      <CircleAlertIcon aria-hidden="true" className="size-3 flex-none" />
+      <span>Failed</span>
+      {onRetry ? (
+        <button
+          type="button"
+          className="rounded-md border border-black/[0.08] px-1.5 py-0.5 text-dim hover:bg-muted hover:text-foreground dark:border-white/[0.08]"
+          onClick={onRetry}
+        >
+          Retry
+        </button>
+      ) : null}
+    </span>
   );
 }
 
