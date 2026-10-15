@@ -44,7 +44,11 @@ describe("built-in plugin adapters", () => {
       for (const spec of adapter.tools) {
         const metadata = getToolMetadata(spec.name);
         expect(metadata?.pluginIds ?? [metadata?.pluginId]).toContain(adapter.id);
-        expect(metadata).toMatchObject({ label: spec.label, activityLabel: spec.activityLabel, category: spec.category });
+        expect(metadata).toMatchObject({
+          label: spec.label,
+          activityLabel: spec.activityLabel,
+          category: spec.category,
+        });
         expect(spec.category === "external_write").toBe(spec.access === "write");
         expect(BUILTIN_TOOL_NAMES).not.toContain(spec.name);
       }
