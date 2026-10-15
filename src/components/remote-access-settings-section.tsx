@@ -100,10 +100,16 @@ export function RemoteAccessSettingsSection() {
     return undefined;
   }
 
-  async function save(enabled: boolean, port: number, publicOrigin: string | undefined) {
+  async function save(enabled: boolean, port: number, publicOrigin: string | undefined, automatic: boolean) {
     const value = await run(
       "save",
-      () => window.wisp.saveRemoteAccess({ enabled, port, ...(publicOrigin ? { publicOrigin } : {}) }),
+      () =>
+        window.wisp.saveRemoteAccess({
+          enabled,
+          port,
+          ...(publicOrigin ? { publicOrigin } : {}),
+          ...(automatic ? { automatic } : {}),
+        }),
       "Remote access could not be changed.",
     );
     if (!value) return;
@@ -152,12 +158,12 @@ export function RemoteAccessSettingsSection() {
           </p>
         )
       ) : editing || !view.publicOrigin ? (
-        <SetupSteps
+        <Setup
           key={`${view.publicOrigin}:${view.port}`}
           view={view}
           busy={busy === "save"}
           error={error}
-          onSubmit={(port, publicOrigin) => void save(true, port, publicOrigin)}
+          onSubmit={(port, publicOrigin, automatic) => void save(true, port, publicOrigin, automatic)}
           onCancel={view.publicOrigin ? () => setEditing(false) : undefined}
         />
       ) : (
@@ -176,7 +182,7 @@ export function RemoteAccessSettingsSection() {
                 label="Remote access"
                 checked={view.enabled}
                 disabled={busy !== null}
-                onChange={() => void save(!view.enabled, view.port, view.publicOrigin)}
+                onChange={() => void save(!view.enabled, view.port, view.publicOrigin, view.automatic)}
               />
             </SettingsRow>
             <SettingsRow>
@@ -184,6 +190,7 @@ export function RemoteAccessSettingsSection() {
                 <SettingsRowTitle>Address</SettingsRowTitle>
                 <SettingsRowDescription className="truncate">
                   {view.publicOrigin} · port {view.port}
+                  {view.automatic ? " · set up by Wisp with Tailscale Serve" : ""}
                 </SettingsRowDescription>
               </SettingsRowCopy>
               <Button
@@ -207,7 +214,7 @@ export function RemoteAccessSettingsSection() {
           ) : null}
           {error ? (
             <p role="alert" className="mt-3 text-xs leading-relaxed text-destructive">
-              {error}
+              <WithLinks text={error} />
             </p>
           ) : null}
           {view.enabled && !view.webAppAvailable ? (
@@ -216,7 +223,7 @@ export function RemoteAccessSettingsSection() {
               run build:web.
             </p>
           ) : null}
-          {view.enabled && view.error ? (
+          {view.error ? (
             <p role="alert" className="mt-3 text-xs text-destructive">
               {view.error}
             </p>
@@ -259,19 +266,136 @@ export function RemoteAccessSettingsSection() {
 }
 
 /** First setup, or editing the address: share the port with Tailscale Serve, then enter its address. */
-function SetupSteps({
+interface SetupProps {
+  view: RemoteAccessView;
+  busy: boolean;
+  error: string;
+  onSubmit: (port: number, publicOrigin: string | undefined, automatic: boolean) => void;
+  onCancel?: () => void;
+}
+
+/** Lets Wisp set up Tailscale Serve when Tailscale is ready here; otherwise, or on request, the steps by hand. */
+function Setup(props: SetupProps) {
+  const { view } = props;
+  const ready = view.tailscale?.status === "ready" ? view.tailscale : undefined;
+  // An address set up by hand is edited by hand.
+  const [byHand, setByHand] = useState(Boolean(view.publicOrigin) && !view.automatic);
+  return ready && !byHand ? (
+    <AutomaticSetup
+      {...props}
+      origin={ready.origin}
+      httpsEnabled={ready.httpsEnabled}
+      onByHand={() => setByHand(true)}
+    />
+  ) : (
+    <SetupSteps {...props} onAutomatic={ready ? () => setByHand(false) : undefined} />
+  );
+}
+
+function PortField({ port, onChange }: { port: string; onChange: (port: string) => void }) {
+  return (
+    <label className="mt-3 flex items-center gap-2 text-xs text-dim">
+      Port
+      <Input
+        className="h-7 w-24"
+        inputMode="numeric"
+        aria-label="Port"
+        value={port}
+        onChange={(event) => onChange(event.target.value.replace(/\D/g, "").slice(0, 5))}
+      />
+      <span>Change it only if another program uses it.</span>
+    </label>
+  );
+}
+
+function AutomaticSetup({
   view,
   busy,
   error,
   onSubmit,
   onCancel,
-}: {
-  view: RemoteAccessView;
-  busy: boolean;
-  error: string;
-  onSubmit: (port: number, publicOrigin: string) => void;
-  onCancel?: () => void;
-}) {
+  origin,
+  httpsEnabled,
+  onByHand,
+}: SetupProps & { origin: string; httpsEnabled: boolean; onByHand: () => void }) {
+  const [port, setPort] = useState(String(view.port || DEFAULT_REMOTE_ACCESS_PORT));
+  return (
+    <form
+      aria-label="Set up remote access"
+      onSubmit={(event) => {
+        event.preventDefault();
+        if (!busy) onSubmit(Number(port) || DEFAULT_REMOTE_ACCESS_PORT, undefined, true);
+      }}
+    >
+      <SettingsCard className="px-3.5 py-3">
+        <p className="m-0 text-sm font-medium">Tailscale is ready on this computer</p>
+        <p className="mt-1 text-xs leading-relaxed text-dim">
+          Wisp shares the Wisps on this computer at <strong className="text-foreground">{origin}</strong> with Tailscale
+          Serve, only to devices on your Tailscale network. It never uses Funnel, and turning remote access off removes
+          what it added.
+        </p>
+        {httpsEnabled ? null : (
+          <p className="mt-2 text-xs leading-relaxed text-dim">
+            HTTPS certificates are off for your Tailscale network: Tailscale asks you to turn them on first.
+          </p>
+        )}
+        <PortField port={port} onChange={setPort} />
+        {error ? (
+          <p role="alert" className="mt-3 text-xs leading-relaxed text-destructive">
+            <WithLinks text={error} />
+          </p>
+        ) : null}
+        <div className="mt-3 flex flex-wrap gap-2">
+          <Button type="submit" disabled={busy}>
+            {busy ? "Setting up Tailscale Serve…" : view.enabled ? "Save" : "Turn on remote access"}
+          </Button>
+          <Button type="button" variant="ghost" disabled={busy} onClick={onByHand}>
+            Set it up by hand
+          </Button>
+          {onCancel ? (
+            <Button type="button" variant="ghost" disabled={busy} onClick={onCancel}>
+              Cancel
+            </Button>
+          ) : null}
+        </div>
+      </SettingsCard>
+    </form>
+  );
+}
+
+/** Why Wisp cannot set up Tailscale Serve itself, with what to do about it. */
+function TailscaleNotice({ view, onAutomatic }: { view: RemoteAccessView; onAutomatic?: () => void }) {
+  const { tailscale } = view;
+  if (!tailscale) return null;
+  if (tailscale.status === "ready") {
+    return onAutomatic ? (
+      <button
+        type="button"
+        className="mb-3 cursor-pointer text-xs text-dim underline underline-offset-2 hover:text-foreground"
+        onClick={onAutomatic}
+      >
+        Let Wisp set up Tailscale Serve instead
+      </button>
+    ) : null;
+  }
+  return (
+    <p className="mb-3 text-xs leading-relaxed text-dim">
+      {tailscale.message}{" "}
+      {tailscale.status === "not_installed" ? (
+        <>
+          <a className="underline" href="https://tailscale.com/download" target="_blank" rel="noreferrer">
+            Install Tailscale
+          </a>{" "}
+          and sign in, and Wisp sets up the rest. Or set it up by hand:
+        </>
+      ) : (
+        "Then Wisp sets up the rest. Or set it up by hand:"
+      )}
+    </p>
+  );
+}
+
+function SetupSteps({ view, busy, error, onSubmit, onCancel, onAutomatic }: SetupProps & { onAutomatic?: () => void }) {
   const [port, setPort] = useState(String(view.port || DEFAULT_REMOTE_ACCESS_PORT));
   const [origin, setOrigin] = useState(view.publicOrigin ?? "");
   const [missing, setMissing] = useState("");
@@ -289,9 +413,10 @@ function SetupSteps({
           return;
         }
         setMissing("");
-        onSubmit(Number(port) || DEFAULT_REMOTE_ACCESS_PORT, origin.trim());
+        onSubmit(Number(port) || DEFAULT_REMOTE_ACCESS_PORT, origin.trim(), false);
       }}
     >
+      <TailscaleNotice view={view} onAutomatic={onAutomatic} />
       <SettingsCard variant="stacked">
         <div className={step}>
           <span className={number}>1</span>
@@ -302,17 +427,7 @@ function SetupSteps({
               address that only your devices can open. Wisp itself never listens beyond this computer.
             </p>
             <CopyCommand command={`tailscale serve --bg http://127.0.0.1:${port || DEFAULT_REMOTE_ACCESS_PORT}`} />
-            <label className="mt-3 flex items-center gap-2 text-xs text-dim">
-              Port
-              <Input
-                className="h-7 w-24"
-                inputMode="numeric"
-                aria-label="Port"
-                value={port}
-                onChange={(event) => setPort(event.target.value.replace(/\D/g, "").slice(0, 5))}
-              />
-              <span>Change it only if another program uses it.</span>
-            </label>
+            <PortField port={port} onChange={setPort} />
           </div>
         </div>
         <div className={step}>
@@ -336,12 +451,11 @@ function SetupSteps({
           <span className={number}>3</span>
           <div className="min-w-0 flex-1">
             <p className="m-0 text-xs leading-relaxed text-dim">
-              Wisp checks that the address reaches this computer, then restarts the Wisps on it to turn remote access
-              on.
+              Wisp checks that the address reaches this computer, then turns remote access on.
             </p>
             {missing || error ? (
               <p role="alert" className="mt-2 text-xs leading-relaxed text-destructive">
-                {missing || error}
+                <WithLinks text={missing || error} />
               </p>
             ) : null}
             <div className="mt-3 flex flex-wrap gap-2">
@@ -448,5 +562,23 @@ function DeviceList({
         ) : null}
       </SettingsCard>
     </SettingsGroup>
+  );
+}
+
+/** Text with its https links clickable; they open in the browser. */
+function WithLinks({ text }: { text: string }) {
+  const parts = text.split(/(https:\/\/[^\s,]*[^\s,.])/);
+  return (
+    <>
+      {parts.map((part, index) =>
+        index % 2 === 1 ? (
+          <a key={index} className="underline" href={part} target="_blank" rel="noreferrer">
+            {part}
+          </a>
+        ) : (
+          part
+        ),
+      )}
+    </>
   );
 }

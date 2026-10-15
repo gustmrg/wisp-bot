@@ -62,15 +62,39 @@ socket, so only the app that started it can pair and revoke devices.
 Wisps on this computer, the same way they pair with a Wisp server. It is
 separate from **Connections**, which chooses where this app's Wisps run.
 
-The first time, the section walks through three steps: run the
-`tailscale serve` command it shows, enter the address Tailscale gives this
-computer, and turn remote access on. Before it turns on, the app requests
-`<address>/health` and compares the server ID there with its own server's;
-when the address does not lead to this computer's server, nothing changes and
-the section says what to fix (Tailscale not reachable, nothing forwarded to the
-port, or another Wisp server behind it). After that, a switch turns remote
-access on and off, and **Edit** changes the address or port, checked the same
-way. Wisp never runs `tailscale` itself. While remote access is on:
+With Tailscale installed and signed in on this computer, turning remote
+access on takes one click: Wisp runs
+`tailscale serve --bg --yes --https=443 http://127.0.0.1:<port>` itself and
+takes the address from `tailscale status --json` (`Self.DNSName`). It looks
+for the CLI on `PATH` and where each platform installs it, since apps started
+from a desktop do not get a shell's `PATH`: the app bundle and Homebrew on
+macOS, `Program Files` on Windows, and `/usr/bin`, `/usr/local/bin`, or
+`/snap/bin` on Linux. Wisp:
+
+- never uses Funnel;
+- never replaces a serve already at `https://<machine>/`: it uses one that
+  already forwards to Wisp's port, and refuses anything else;
+- records whether it added the serve, and removes only that one when remote
+  access is turned off (`tailscale serve --https=443 --set-path=/ off`), and
+  only while it still forwards to Wisp's port. Changing the port moves it.
+
+When Tailscale cannot do it, the section says what to do: install Tailscale or
+sign in; turn on Serve or HTTPS certificates for the tailnet at the link
+Tailscale gives; or, on Linux, run `sudo tailscale set --operator=$USER` once
+so Wisp may change Tailscale's settings. Nothing changes until then.
+
+Without Tailscale, or with **Set it up by hand**, the section walks through
+three steps instead: run the `tailscale serve` command it shows, enter the
+address Tailscale gives this computer, and turn remote access on. Wisp then
+leaves Tailscale's settings to you.
+
+Either way, before it turns on, the app requests `<address>/health` and
+compares the server ID there with its own server's; when the address does not
+lead to this computer's server, nothing changes and the section says what to
+fix (Tailscale not reachable, nothing forwarded to the port, or another Wisp
+server behind it). After that, a switch turns remote access on and off, and
+**Edit** changes the address or port, checked the same way. While remote
+access is on:
 
 - The local server keeps running whichever connection is chosen, and the app
   keeps running in the tray with every window closed. **Quit Wisp** in the tray

@@ -30,6 +30,7 @@ import { registerLaunchAtLoginHandlers } from "./ipc/register-launch-at-login-ha
 import { registerUpdateHandlers } from "./ipc/register-update-handlers.js";
 import type { LocalServer } from "./local-server/local-server.js";
 import { RemoteAccessService } from "./local-server/remote-access.js";
+import { locateTailscale, Tailscale } from "./local-server/tailscale.js";
 
 /** What the local server may ask the app to do on this computer's screen. */
 export interface HostActions {
@@ -54,6 +55,8 @@ export interface BackendHost {
   webAppAvailable?: boolean;
   /** Checks that a remote access address reaches this computer; tests substitute a fake. */
   fetch?: typeof fetch;
+  /** Sets up Tailscale Serve for remote access; tests substitute a fake, never the real CLI. */
+  tailscale?: Pick<Tailscale, "detect" | "serve" | "unserve">;
   /** Encrypts pairing credentials; the system keychain in the app. */
   encryption: EncryptionService;
   logger: StructuredLogger;
@@ -135,6 +138,7 @@ export async function createBackend(host: BackendHost): Promise<Backend> {
     webAppAvailable: host.webAppAvailable ?? false,
     apply: (exposure) => manager.setLocalExposure(exposure),
     fetch: host.fetch ?? fetch,
+    tailscale: host.tailscale ?? new Tailscale({ locate: () => locateTailscale() }),
   });
   await remoteAccess.load();
   await manager.setLocalExposure(remoteAccess.exposure());
