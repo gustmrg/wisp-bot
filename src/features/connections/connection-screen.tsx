@@ -588,7 +588,7 @@ function Guidance({ message }: { message: string | undefined }) {
   );
 }
 
-function CopyCommand({ command }: { command: string }) {
+export function CopyCommand({ command }: { command: string }) {
   const [copied, setCopied] = useState(false);
   return (
     <div className="mt-2 flex items-center gap-2 rounded-md border border-border bg-card py-1 pr-1 pl-2.5 text-xs">

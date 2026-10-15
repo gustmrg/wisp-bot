@@ -10,6 +10,7 @@ import {
   type IpcMainInvokeEvent,
 } from "electron";
 import { autoUpdater, DebUpdater, PacmanUpdater, RpmUpdater } from "electron-updater";
+import { existsSync } from "node:fs";
 import { hostname } from "node:os";
 import path from "node:path";
 import { LaunchAtLoginService } from "./backend/launch-at-login-service.js";
@@ -29,6 +30,7 @@ import { SshAskpass } from "./connections/ssh-askpass.js";
 import { createBackend } from "./create-backend.js";
 import { loadOrCreateLocalMasterKey, migrateKeychainCredentials } from "./local-server/local-credentials.js";
 import { ChildProcessLocalServer } from "./local-server/local-server.js";
+import { RemoteAccessTray } from "./remote-access-tray.js";
 import { MasterKeyEncryption } from "../server/master-key.js";
 import {
   isAllowedExternalUrl,
@@ -40,6 +42,11 @@ import {
 
 const productionRendererPath = path.join(__dirname, "../../dist/index.html");
 const developmentIconPath = path.join(__dirname, "../../build/icon-mac-dev.png");
+// The browser app, served to other devices while remote access to this computer is on.
+const webAppPath = path.join(__dirname, "../../dist-web");
+const trayIconPath = app.isPackaged
+  ? path.join(__dirname, "../../dist/apple-touch-icon.png")
+  : path.join(__dirname, "../../build/icons/32x32.png");
 const windowBackground = (): string => (nativeTheme.shouldUseDarkColors ? "#0a0a0a" : "#ffffff");
 // Agents get this long to settle their last turn on quit before the app exits anyway.
 // The local server gives agents ten seconds to settle, then has a few seconds to exit.
@@ -48,6 +55,8 @@ let rendererTarget: RendererTarget | undefined;
 let fatalErrorHandled = false;
 // Set once the backend is ready; opens a window if none is open.
 let showWindow: (() => void) | undefined;
+// While remote access is on, the app keeps running in the tray with every window closed.
+let keepRunningWithoutWindows = false;
 
 // Packaged and unpackaged builds share the package name, so Electron hands both
 // the same userData directory and dev work would mutate the installed app's
@@ -230,6 +239,7 @@ async function bootstrap(): Promise<void> {
       logger,
     );
   }
+  const webAppAvailable = existsSync(path.join(webAppPath, "index.html"));
   const backend = await createBackend({
     launchAtLoginService: new LaunchAtLoginService({
       platform: process.platform,
@@ -263,8 +273,10 @@ async function bootstrap(): Promise<void> {
       dataDirectory: userData,
       agentMode: selectAgentMode(app.isPackaged, process.env.WISP_AGENT_MODE),
       ...(masterKey ? { masterKey } : {}),
+      ...(webAppAvailable ? { webRoot: webAppPath } : {}),
       logger,
     }),
+    webAppAvailable,
     encryption: keychain,
     logger,
     updateService: new UpdateService(
@@ -303,6 +315,27 @@ async function bootstrap(): Promise<void> {
     if (BrowserWindow.getAllWindows().length === 0) createWindow(target).catch(handleFatalStartupError);
   };
   app.on("activate", () => showWindow?.());
+
+  const tray = new RemoteAccessTray({
+    iconPath: trayIconPath,
+    openWindow: () => {
+      const window = BrowserWindow.getAllWindows().find((candidate) => !candidate.isDestroyed());
+      if (!window) {
+        showWindow?.();
+        return;
+      }
+      if (window.isMinimized()) window.restore();
+      window.show();
+      window.focus();
+    },
+    quit: () => app.quit(),
+  });
+  const applyRemoteAccess = (enabled: boolean): void => {
+    keepRunningWithoutWindows = enabled;
+    tray.setVisible(enabled);
+  };
+  applyRemoteAccess(backend.remoteAccess.enabled);
+  backend.remoteAccess.subscribe(applyRemoteAccess);
 }
 
 // A termination signal (logout, `kill`) quits like the menu does, so agents
@@ -312,7 +345,7 @@ for (const signal of ["SIGTERM", "SIGINT"] as const) {
 }
 
 app.on("window-all-closed", () => {
-  if (process.platform !== "darwin") {
+  if (process.platform !== "darwin" && !keepRunningWithoutWindows) {
     app.quit();
   }
 });

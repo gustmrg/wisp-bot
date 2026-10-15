@@ -2,7 +2,8 @@ import { describe, expect, it } from "vitest";
 
 import { renderUnicodeCompact } from "uqr";
 
-import { describeDevices, describePairing, pairingLink } from "../../server/cli.js";
+import { describeDevices, describePairing } from "../../server/cli.js";
+import { pairingLink } from "../../shared/pairing-link.js";
 
 describe("wispctl output for people", () => {
   const now = new Date("2026-10-09T20:18:37.435Z");

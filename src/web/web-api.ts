@@ -197,6 +197,11 @@ export function createWebWispApi(options: WebApiOptions): WispApi {
       return ok(view());
     },
     installServer: desktopOnly,
+    // Remote access exposes Wisps on a desktop computer; a server's devices are managed with wispctl.
+    getRemoteAccess: desktopOnly,
+    saveRemoteAccess: desktopOnly,
+    pairRemoteDevice: desktopOnly,
+    revokeRemoteDevice: desktopOnly,
     cancelServerInstall: desktopOnly,
     cancelConnection: desktopOnly,
     answerSshPrompt: desktopOnly,
