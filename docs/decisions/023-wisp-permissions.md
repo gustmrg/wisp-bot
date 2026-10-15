@@ -49,7 +49,9 @@ conversation that might ask, even for short tasks.
   over risk mode.
 - **Cards wait.** A card waits 30 minutes instead of 60 seconds, and the
   request deadline is paused while any card of that conversation waits, so
-  answering late does not time the reply out.
+  answering late does not time the reply out. In the desktop app a new card
+  also shows a native notification ([ADR 022](022-system-notifications.md)),
+  so the person can leave the conversation and still hear about it.
 - **Audit.** Actions allowed by risk mode are logged as `allow_everything`;
   those allowed by a remembered tool or integration as `allow_always`.
 
