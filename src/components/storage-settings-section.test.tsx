@@ -283,7 +283,7 @@ it("resizes a workspace from the list, confirming a size below its usage", async
 
   const size = await screen.findByRole("combobox", { name: "Workspace size for Atlas" });
   await user.click(size);
-  expect(screen.getByRole("option", { name: "10.0 GiB" })).toHaveAttribute("aria-disabled", "true");
+  expect(await screen.findByRole("option", { name: "10.0 GiB" })).toHaveAttribute("aria-disabled", "true");
   await user.click(await screen.findByRole("option", { name: "2.0 GiB" }));
   expect(setWorkspaceQuota).toHaveBeenCalledWith({ conversationId: "a", quotaBytes: 2 * GIB });
   expect(await screen.findByText(/460 MiB of 2.0 GiB \(22%\)/)).toBeInTheDocument();
