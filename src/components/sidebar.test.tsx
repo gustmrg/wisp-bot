@@ -417,7 +417,9 @@ describe("Sidebar conversation menu", () => {
 
     // Browsers fire contextmenu on the focused element for the menu key and Shift+F10.
     fireEvent.contextMenu(gamma);
-    await screen.findByRole("menu");
+    const menu = await screen.findByRole("menu");
+    // Keys pressed before the menu takes focus would go to the conversation instead.
+    await waitFor(() => expect(menu.contains(document.activeElement)).toBe(true));
     await user.keyboard("{ArrowDown}{ArrowDown}");
     expect(screen.getByRole("menuitem", { name: "Turn on notifications" })).toHaveFocus();
     await user.keyboard("{Enter}");
