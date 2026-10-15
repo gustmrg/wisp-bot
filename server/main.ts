@@ -124,8 +124,8 @@ async function main(): Promise<void> {
     port: config.port,
     allowExternalBind: config.allowExternalBind,
     ...(config.publicOrigin ? { publicOrigin: config.publicOrigin } : {}),
-    // The desktop app's own server serves the browser app only when the app asks, for remote access.
-    ...(bootstrap ? (config.webRoot ? { webRoot: config.webRoot } : {}) : webRootOption(config.webRoot)),
+    // The desktop app's own server serves the browser app only while it is exposed for remote access.
+    ...(bootstrap ? {} : webRootOption(config.webRoot)),
     encryption,
     logger,
     agentMode: config.agentMode,

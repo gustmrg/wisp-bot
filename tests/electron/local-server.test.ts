@@ -113,29 +113,37 @@ describe("ChildProcessLocalServer", () => {
 
     const { server } = await launcher(undefined, undefined, web);
     await expect(server.admin({ command: "devices" })).rejects.toThrow(/not running/);
-    const exposure = { port, publicOrigin: "https://laptop.tailnet.ts.net" };
-    server.setExposure(exposure);
     const running = await server.ensureRunning();
-    expect(running).toMatchObject({ baseUrl: `http://127.0.0.1:${port}`, exposure });
-    // The browser app, for the address the proxy serves.
-    const page = await fetch(`${running.baseUrl}/`, { headers: { host: "laptop.tailnet.ts.net" } });
+    const app = client(running.baseUrl);
+    await app.pair(running.localPairingCode, "Test computer");
+
+    // Exposed while running: a second port, without restarting or dropping this app.
+    await server.setExposure({ port, publicOrigin: "https://laptop.tailnet.ts.net" });
+    const exposed = `http://127.0.0.1:${port}`;
+    const page = await fetch(`${exposed}/`, { headers: { host: "laptop.tailnet.ts.net" } });
     expect(page.status).toBe(200);
     expect(await page.text()).toContain("<title>Wisp</title>");
+    expect(await app.call("getAiSettings", {})).toMatchObject({ ok: true });
 
     const { code } = (await server.admin({ command: "pair" })) as { code: string };
-    await client(running.baseUrl).pair(code, "Safari on iPhone");
+    await client(exposed).pair(code, "Chrome on Android");
     expect(await server.admin({ command: "devices" })).toEqual([
-      expect.objectContaining({ name: "Safari on iPhone", local: false }),
+      expect.objectContaining({ name: "Test computer", local: true }),
+      expect.objectContaining({ name: "Chrome on Android", local: false }),
     ]);
     await expect(server.admin({ command: "revoke", deviceId: "missing" })).rejects.toThrow(/No paired device/);
 
-    // Without an exposure it starts as before: any free port, no browser app.
-    server.setExposure(undefined);
+    // Not exposed: the port closes, and this app keeps its connection.
+    await server.setExposure(undefined);
+    await expect(fetch(`${exposed}/health`)).rejects.toThrow();
+    expect(await app.call("getAiSettings", {})).toMatchObject({ ok: true });
+    expect((await fetch(`${running.baseUrl}/`)).status).toBe(404);
+
+    // A restarted server is exposed again before it is used.
+    await server.setExposure({ port, publicOrigin: "https://laptop.tailnet.ts.net" });
     await server.stop();
-    const plain = await server.ensureRunning();
-    expect(plain.baseUrl).not.toBe(running.baseUrl);
-    expect(plain.exposure).toBeUndefined();
-    expect((await fetch(`${plain.baseUrl}/`)).status).toBe(404);
+    await server.ensureRunning();
+    expect((await fetch(`${exposed}/health`)).status).toBe(200);
     await server.stop();
   }, 60_000);
 

@@ -129,17 +129,16 @@ export class ConnectionManager {
   /**
    * Sets how Wisps on this computer are exposed for remote access. While they
    * are, the local server keeps running whichever connection is chosen, until
-   * the app quits. Its port and origin are fixed when it starts, so a change
-   * restarts it; a session with it reconnects by itself.
+   * the app quits. A running server changes without restarting, so nothing
+   * reconnects; rejects when it cannot, such as when the port is taken.
    */
   setLocalExposure(exposure: LocalServerExposure | undefined): Promise<void> {
     return this.serialized(async () => {
-      const changed = exposure?.port !== this.exposure?.port || exposure?.publicOrigin !== this.exposure?.publicOrigin;
       this.exposure = exposure;
-      this.options.localServer.setExposure(exposure);
-      if (!changed || !this.started || this.disposed) return;
-      // A session with this computer reconnects by itself, so the app stays on screen meanwhile.
-      await this.options.localServer.stop();
+      await this.options.localServer.setExposure(exposure);
+      if (!this.started || this.disposed) return;
+      // Turned off while a server is chosen: Wisps on this computer stop, as they did before.
+      if (!exposure && this.status.profileId !== LOCAL_CONNECTION_ID) await this.options.localServer.stop();
       this.keepLocalServerRunning();
     });
   }

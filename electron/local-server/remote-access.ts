@@ -92,9 +92,13 @@ export class RemoteAccessService {
       webAppAvailable: this.options.webAppAvailable,
       devices: [],
     };
-    if (!enabled) return view;
+    const exposure = this.exposure();
+    if (!exposure) return view;
     try {
-      return { ...view, devices: await this.devices() };
+      const devices = await this.devices();
+      // Applied again, so a port that could not open when the server started shows why.
+      await this.options.localServer.setExposure(exposure);
+      return { ...view, devices: devices.filter(({ local }) => !local).map(({ local: _local, ...device }) => device) };
     } catch (error) {
       return { ...view, error: error instanceof Error ? error.message : "Wisps on this computer are unavailable." };
     }
@@ -116,15 +120,18 @@ export class RemoteAccessService {
     const settings = parseSettings(request);
     const previous = this.settings;
     this.settings = settings;
-    await this.options.apply(this.exposure());
     const exposure = this.exposure();
-    if (exposure) {
-      const problem = await this.check(exposure);
-      if (problem) {
-        this.settings = previous;
-        await this.options.apply(this.exposure());
-        throw invalid(problem);
-      }
+    let problem: string | undefined;
+    try {
+      await this.options.apply(exposure);
+    } catch (error) {
+      problem = error instanceof Error ? error.message : "Remote access could not be turned on.";
+    }
+    if (exposure) problem ??= await this.check(exposure);
+    if (problem) {
+      this.settings = previous;
+      await this.options.apply(this.exposure()).catch(() => undefined);
+      throw invalid(problem);
     }
     await writeFileAtomically(
       path.join(this.options.directory, SETTINGS_FILE),
@@ -139,12 +146,11 @@ export class RemoteAccessService {
     let serverId: unknown;
     try {
       await this.options.localServer.ensureRunning();
+      // Applied again, so a port that could not open when the server started reports why.
+      await this.options.localServer.setExposure({ port, publicOrigin });
       serverId = ((await this.options.localServer.admin({ command: "status" })) as { serverId?: unknown }).serverId;
     } catch (error) {
-      const message = error instanceof Error ? error.message : "";
-      return /EADDRINUSE/.test(message)
-        ? `Another program already uses port ${port} on this computer. Choose another port, and point Tailscale Serve at it.`
-        : message || "Wisps on this computer could not start.";
+      return error instanceof Error && error.message ? error.message : "Wisps on this computer could not start.";
     }
     let response: Response;
     try {
@@ -191,11 +197,12 @@ export class RemoteAccessService {
     return this.view();
   }
 
-  private async devices(): Promise<PairedDeviceView[]> {
+  /** Every paired device, including this computer's own app, which pairs by itself. */
+  private async devices(): Promise<Array<PairedDeviceView & { local: boolean }>> {
     await this.options.localServer.ensureRunning();
     const devices = await this.options.localServer.admin({ command: "devices" });
     if (!Array.isArray(devices)) return [];
-    return devices.map((device: PairedDeviceView) => ({
+    return devices.map((device: PairedDeviceView & { local: boolean }) => ({
       id: device.id,
       name: device.name,
       createdAt: device.createdAt,

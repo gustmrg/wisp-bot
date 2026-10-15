@@ -9,7 +9,7 @@ import { registerRuntimeHandlers } from "../backend/handlers/register-runtime-ha
 import { parseConversationRequest } from "../backend/validators.js";
 import { createBackendRuntime, disposeWithin, type BackendRuntime } from "../backend/runtime.js";
 import type { StructuredLogger } from "../backend/structured-logger.js";
-import { startAdminSocket, type AdminHandler } from "./admin.js";
+import { startAdminSocket, type AdminCommand, type AdminHandler } from "./admin.js";
 import { createBackup } from "./backup.js";
 import { readPrivateKeyFile } from "./master-key.js";
 import { DeviceAuth } from "./device-auth.js";
@@ -63,7 +63,10 @@ export interface WispServer {
   serverId: string;
   auth: DeviceAuth;
   runtime: BackendRuntime;
-  /** Runs an administrative command (pair, devices, revoke, status, backup), as the admin socket does. */
+  /**
+   * Runs an administrative command (pair, devices, revoke, status, backup, or
+   * expose, which opens a second port for remote access), as the admin socket does.
+   */
   admin: AdminHandler;
   /** Stops accepting requests, ends event streams, then lets agents settle before closing storage. */
   close(): Promise<void>;
@@ -170,14 +173,67 @@ export async function createWispServer(options: WispServerOptions): Promise<Wisp
     });
     // No limit on a whole request, so a large upload over a slow link can finish;
     // a connection that sends nothing for two minutes is closed instead.
-    const http = createServer({ headersTimeout: 15_000, requestTimeout: 0 }, (request, response) =>
-      api.handle(request, response),
-    );
-    http.setTimeout(IDLE_TIMEOUT_MS);
+    const createListener = (): Server => {
+      const listener = createServer({ headersTimeout: 15_000, requestTimeout: 0 }, (request, response) =>
+        api.handle(request, response),
+      );
+      listener.setTimeout(IDLE_TIMEOUT_MS);
+      return listener;
+    };
+    const http = createListener();
     await listen(http, options.port, options.host);
     cleanup.push(() => closeServer(http, () => api.closeStreams()));
     const address = http.address();
     if (!address || typeof address === "string") throw new Error("The HTTP listener is unavailable.");
+
+    // A second loopback port a private HTTPS proxy forwards to, opened while the
+    // desktop app exposes its server for remote access; clients on the first
+    // port keep their connections.
+    let exposed: { listener: Server; port: number; origin: string; webRoot?: string } | undefined;
+    const unexpose = async (): Promise<void> => {
+      const current = exposed;
+      exposed = undefined;
+      if (!current) return;
+      api.setPublicAccess(undefined);
+      await closeServer(current.listener);
+    };
+    cleanup.push(unexpose);
+    const expose = async (command: AdminCommand): Promise<void> => {
+      if (command.publicOrigin === undefined || command.publicOrigin === null) {
+        await unexpose();
+        return;
+      }
+      let origin: string;
+      try {
+        origin = parsePublicOrigin(boundedString(command.publicOrigin, 2048)).origin;
+      } catch (error) {
+        throw new HttpError(400, "invalid_request", error instanceof Error ? error.message : "The origin is invalid.");
+      }
+      const port = command.port;
+      if (!Number.isInteger(port) || (port as number) < 1 || (port as number) > 65_535) {
+        throw new HttpError(400, "invalid_request", "The port must be between 1 and 65535.");
+      }
+      const webRoot = command.webRoot === undefined ? undefined : boundedString(command.webRoot, 4096);
+      if (webRoot !== undefined && !path.isAbsolute(webRoot)) {
+        throw new HttpError(400, "invalid_request", "Give the browser app's folder as an absolute path.");
+      }
+      if (exposed && exposed.port === port && exposed.origin === origin && exposed.webRoot === webRoot) return;
+      await unexpose();
+      const listener = createListener();
+      try {
+        await listen(listener, port as number, options.host);
+      } catch (error) {
+        throw new HttpError(
+          409,
+          "invalid_request",
+          (error as NodeJS.ErrnoException).code === "EADDRINUSE"
+            ? `Another program already uses port ${port} on this computer. Choose another port.`
+            : `Wisp could not listen on port ${port}.`,
+        );
+      }
+      exposed = { listener, port: port as number, origin, ...(webRoot ? { webRoot } : {}) };
+      api.setPublicAccess({ publicOrigin: origin, ...(webRoot ? { webRoot } : {}) });
+    };
 
     // Reaching this handler is the authorization: the admin socket, or the
     // stdin of a server the desktop app started, belong to the data's owner.
@@ -185,6 +241,9 @@ export async function createWispServer(options: WispServerOptions): Promise<Wisp
       switch (command.command) {
         case "pair":
           return auth.createPairingCode();
+        case "expose":
+          await expose(command);
+          return {};
         case "devices":
           return auth.devices();
         case "revoke": {
@@ -233,7 +292,11 @@ export async function createWispServer(options: WispServerOptions): Promise<Wisp
             version: options.appVersion,
             port: address.port,
             devices: auth.devices().length,
-            ...(publicOrigin ? { publicOrigin: publicOrigin.origin } : {}),
+            ...(exposed
+              ? { publicOrigin: exposed.origin, exposedPort: exposed.port }
+              : publicOrigin
+                ? { publicOrigin: publicOrigin.origin }
+                : {}),
           };
         default:
           throw new HttpError(400, "invalid_request", "Unknown administrative command.");

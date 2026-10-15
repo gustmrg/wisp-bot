@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
-import { LaptopIcon, QrCodeIcon, SmartphoneIcon } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { CheckCircle2Icon, QrCodeIcon, SmartphoneIcon } from "lucide-react";
 import { encode } from "uqr";
 
 import {
@@ -25,6 +25,9 @@ import {
 
 type Busy = "save" | "pair" | `revoke:${string}` | null;
 
+// How often the list is read while a QR code waits to be scanned.
+const PAIRING_POLL_MS = 2_000;
+
 /**
  * Remote access to Wisps on this computer, for a phone or another device.
  * Set up in steps until it has an address, then a switch that turns it on
@@ -37,6 +40,9 @@ export function RemoteAccessSettingsSection() {
   const [busy, setBusy] = useState<Busy>(null);
   const [error, setError] = useState("");
   const [pairing, setPairing] = useState<RemoteAccessPairing | null>(null);
+  /** The device that paired with the code last shown, to say so. */
+  const [paired, setPaired] = useState<string | null>(null);
+  const knownDevices = useRef<ReadonlySet<string>>(new Set());
 
   useEffect(() => {
     let active = true;
@@ -54,6 +60,30 @@ export function RemoteAccessSettingsSection() {
       active = false;
     };
   }, []);
+
+  // While a QR code is on screen, watch for the device that scans it.
+  useEffect(() => {
+    if (!pairing) return;
+    let active = true;
+    const timer = setInterval(() => {
+      window.wisp.getRemoteAccess().then(
+        (result) => {
+          if (!active || !result.ok) return;
+          setView(result.value);
+          const device = result.value.devices.find(({ id }) => !knownDevices.current.has(id));
+          if (device) {
+            setPairing(null);
+            setPaired(device.name);
+          }
+        },
+        () => undefined,
+      );
+    }, PAIRING_POLL_MS);
+    return () => {
+      active = false;
+      clearInterval(timer);
+    };
+  }, [pairing]);
 
   async function run<T>(key: Exclude<Busy, null>, action: () => Promise<BackendResult<T>>, fallback: string) {
     setBusy(key);
@@ -83,6 +113,8 @@ export function RemoteAccessSettingsSection() {
   }
 
   async function pair() {
+    knownDevices.current = new Set(view?.devices.map(({ id }) => id));
+    setPaired(null);
     const value = await run("pair", () => window.wisp.pairRemoteDevice(), "A pairing code could not be created.");
     if (value) setPairing(value);
   }
@@ -191,6 +223,12 @@ export function RemoteAccessSettingsSection() {
           ) : null}
 
           <SettingsGroup label="Pair a device">
+            {paired && view.enabled && !pairing ? (
+              <p role="status" className="mb-2 flex items-center gap-1.5 text-xs text-dim">
+                <CheckCircle2Icon className="size-3.5 text-emerald-500" aria-hidden="true" />
+                {paired} is paired with this computer.
+              </p>
+            ) : null}
             {pairing && view.enabled ? (
               <PairingCode pairing={pairing} onDone={() => setPairing(null)} />
             ) : (
@@ -382,36 +420,30 @@ function DeviceList({
     <SettingsGroup label="Paired devices">
       <SettingsCard variant="stacked">
         {devices.map((device) => (
-          <SettingsRow key={device.id} className="max-[520px]:flex-wrap">
-            {device.local ? (
-              <LaptopIcon className="size-4 flex-none text-dim" aria-hidden="true" />
-            ) : (
-              <SmartphoneIcon className="size-4 flex-none text-dim" aria-hidden="true" />
-            )}
+          <SettingsRow key={device.id} className="flex-wrap">
+            <SmartphoneIcon className="size-4 flex-none text-dim" aria-hidden="true" />
             <SettingsRowCopy>
-              <SettingsRowTitle>{device.local ? `${device.name} (this computer)` : device.name}</SettingsRowTitle>
+              <SettingsRowTitle>{device.name}</SettingsRowTitle>
               <SettingsRowDescription>
                 Paired {date(device.createdAt)}
                 {device.lastSeenAt ? ` · Last seen ${date(device.lastSeenAt)}` : ""}
               </SettingsRowDescription>
             </SettingsRowCopy>
-            {device.local ? null : (
-              <ConfirmAction
-                label="Revoke"
-                confirmLabel={`Revoke ${device.name}`}
-                pendingLabel="Revoking…"
-                pending={busy === `revoke:${device.id}`}
-                disabled={busy !== null}
-                variant="outline"
-                description={`${device.name} is signed out and must pair again to use the Wisps on this computer.`}
-                onConfirm={() => onRevoke(device)}
-              />
-            )}
+            <ConfirmAction
+              label="Revoke"
+              confirmLabel={`Revoke ${device.name}`}
+              pendingLabel="Revoking…"
+              pending={busy === `revoke:${device.id}`}
+              disabled={busy !== null}
+              variant="outline"
+              description={`${device.name} is signed out and must pair again to use the Wisps on this computer.`}
+              onConfirm={() => onRevoke(device)}
+            />
           </SettingsRow>
         ))}
-        {devices.every(({ local }) => local) ? (
+        {devices.length === 0 ? (
           <SettingsRow>
-            <SettingsRowDescription>No other devices are paired yet.</SettingsRowDescription>
+            <SettingsRowDescription>No devices are paired yet.</SettingsRowDescription>
           </SettingsRow>
         ) : null}
       </SettingsCard>

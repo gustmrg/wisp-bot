@@ -14,8 +14,8 @@ const ADMIN_TIMEOUT_MS = 30_000;
 
 /**
  * How other devices reach the server while remote access to this computer is
- * on: it still listens on loopback only, on a fixed port a private HTTPS proxy
- * such as Tailscale Serve forwards to, and serves the browser app.
+ * on: besides its own port, it listens on a fixed loopback port that a private
+ * HTTPS proxy such as Tailscale Serve forwards to, and serves the browser app.
  */
 export interface LocalServerExposure {
   port: number;
@@ -29,8 +29,13 @@ export interface LocalServer {
   ensureRunning(): Promise<RunningLocalServer>;
   /** Lets running Wisps settle, then stops the server. */
   stop(): Promise<void>;
-  /** How the next start exposes the server; a running server keeps its own until it restarts. */
-  setExposure(exposure: LocalServerExposure | undefined): void;
+  /**
+   * Exposes the server for remote access, or stops exposing it. A running
+   * server changes without restarting, so this app stays connected; rejects
+   * when it cannot, such as when another program uses the port. Every later
+   * start applies it too.
+   */
+  setExposure(exposure: LocalServerExposure | undefined): Promise<void>;
   /** Runs an administrative command, such as `pair`, `devices`, or `revoke`, on the running server. */
   admin(command: AdminCommand): Promise<unknown>;
 }
@@ -41,8 +46,6 @@ export interface RunningLocalServer {
   localPairingCode: string;
   /** Resolves when the server process exits. */
   exited: Promise<void>;
-  /** Set when the server started exposed for remote access. */
-  exposure?: LocalServerExposure;
 }
 
 export interface ChildProcessLocalServerOptions {
@@ -80,8 +83,24 @@ export class ChildProcessLocalServer implements LocalServer {
 
   constructor(private readonly options: ChildProcessLocalServerOptions) {}
 
-  setExposure(exposure: LocalServerExposure | undefined): void {
+  async setExposure(exposure: LocalServerExposure | undefined): Promise<void> {
     this.exposure = exposure;
+    const running = this.running;
+    if (!running || running.child.exitCode !== null || running.child.signalCode !== null) return;
+    await running.ready;
+    if (this.running === running) await this.send(running.child, this.exposeCommand());
+  }
+
+  private exposeCommand(): AdminCommand {
+    const { exposure } = this;
+    return exposure
+      ? {
+          command: "expose",
+          port: exposure.port,
+          publicOrigin: exposure.publicOrigin,
+          ...(this.options.webRoot ? { webRoot: this.options.webRoot } : {}),
+        }
+      : { command: "expose" };
   }
 
   ensureRunning(): Promise<RunningLocalServer> {
@@ -90,7 +109,6 @@ export class ChildProcessLocalServer implements LocalServer {
       return this.running.ready;
     }
     const { options } = this;
-    const exposure = this.exposure;
     const child = spawn(
       options.execPath ?? process.execPath,
       [
@@ -98,9 +116,7 @@ export class ChildProcessLocalServer implements LocalServer {
         "--data-dir",
         options.dataDirectory,
         "--port",
-        String(exposure?.port ?? 0),
-        ...(exposure ? ["--public-origin", exposure.publicOrigin] : []),
-        ...(exposure && options.webRoot ? ["--web-root", options.webRoot] : []),
+        "0",
         "--agent-mode",
         options.agentMode,
         "--bootstrap-stdin",
@@ -151,12 +167,20 @@ export class ChildProcessLocalServer implements LocalServer {
         }
         if (event?.event === "server_started" && typeof event.port === "number") {
           clearTimeout(timer);
-          resolve({
-            baseUrl: `http://127.0.0.1:${event.port}`,
-            localPairingCode,
-            exited,
-            ...(exposure ? { exposure } : {}),
-          });
+          const running = { baseUrl: `http://127.0.0.1:${event.port}`, localPairingCode, exited };
+          if (!this.exposure) {
+            resolve(running);
+            return;
+          }
+          // A server that restarted is exposed again before anyone uses it. Without the
+          // port it still serves this app; remote access then reports why.
+          this.send(child, this.exposeCommand()).then(
+            () => resolve(running),
+            (error: Error) => {
+              options.logger.warn("local_server_expose_failed", { message: error.message });
+              resolve(running);
+            },
+          );
         }
       });
       void exited.then(() => {
@@ -187,6 +211,10 @@ export class ChildProcessLocalServer implements LocalServer {
     const running = this.running;
     if (!running) throw new Error("Wisps on this computer are not running.");
     await running.ready;
+    return this.send(running.child, command);
+  }
+
+  private send(child: ChildProcessWithoutNullStreams, command: AdminCommand): Promise<unknown> {
     const id = ++this.adminRequests;
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
@@ -203,7 +231,7 @@ export class ChildProcessLocalServer implements LocalServer {
           reject(error);
         },
       });
-      running.child.stdin.write(`${JSON.stringify({ id, command })}\n`);
+      child.stdin.write(`${JSON.stringify({ id, command })}\n`);
     });
   }
 

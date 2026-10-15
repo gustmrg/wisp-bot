@@ -52,8 +52,9 @@ or quit, unless [remote access](#remote-access-to-this-computer) is on.
 Disabling Electron's `RunAsNode` fuse would break this mode.
 
 Later stdin lines are administrative commands, the same ones `admin.sock`
-serves, each answered on its own stdout line: the desktop app's server opens
-no admin socket, so only the app that started it can pair and revoke devices.
+serves plus `expose`, which opens or closes the remote access port, each
+answered on its own stdout line: the desktop app's server opens no admin
+socket, so only the app that started it can pair and revoke devices.
 
 ### Remote access to this computer
 
@@ -75,31 +76,34 @@ way. Wisp never runs `tailscale` itself. While remote access is on:
   keeps running in the tray with every window closed. **Quit Wisp** in the tray
   menu, or quitting the app, stops it after its Wisps settle, as before; it
   never outlives the app. The app starts it again if it stops.
-- The server still listens on loopback only, now on a fixed port (8787 unless
-  you pick another), and serves the browser app. Reach it through a private
-  HTTPS proxy, never by publishing the port:
+- The server opens a second loopback port (8787 unless you pick another) and
+  serves the browser app; the app keeps using the server's own port. It still
+  listens on loopback only. Reach it through a private HTTPS proxy, never by
+  publishing the port:
 
   ```sh
   tailscale serve --bg http://127.0.0.1:8787
   tailscale serve status        # shows https://<machine>.<tailnet>.ts.net
   ```
 
-  Wisp passes the address to the server as its `--public-origin`, so it
-  accepts that host name, marks session cookies `Secure`, and puts it in
-  pairing links. Only an exact HTTPS origin is accepted. Do not use Funnel.
+  The server then accepts that host name, as a `--public-origin` would, marks
+  session cookies `Secure`, and puts it in pairing links. Only an exact HTTPS origin is accepted. Do not use Funnel.
 - **Show QR code**, under **Pair a device**, shows a QR code of
   `<address>/#pair=<code>` and the code. They are the code from `wispctl pair`,
   with the same rules: single-use, valid for 10 minutes, and limited to ten
   failed attempts a minute. A device paired this way acts for this computer's owner and reaches
   everything the browser app does, but never opens folders or file pickers
   here: only this computer's own app is a local device.
-- **Paired devices** lists every device; **Revoke** signs one out and ends its
-  sessions. This computer's own app cannot be revoked there.
+- While the QR code is on screen, the section watches for the device that
+  scans it, then closes the QR code and lists it under **Paired devices**.
+  **Revoke** signs a device out and ends its sessions. This computer's own app
+  pairs by itself and is never listed.
 
-Changing the address or port, or turning remote access on or off, restarts the
-local server; the app reconnects to it by itself. Turning it off returns to the
-default: any free loopback port, no browser app, and the server stops when
-another connection is chosen. Devices stay paired, but cannot reach the server
+Turning remote access on or off, or changing its address or port, opens or
+closes that second port through an administrative command, without
+restarting the server: the app stays connected and Wisps keep working. Turning
+it off returns to the default: no second port, no browser app, and the server
+stops when another connection is chosen. Devices stay paired, but cannot reach the server
 until remote access is on again. The setting is kept in `remote-access.json`
 in the app's data directory.
 

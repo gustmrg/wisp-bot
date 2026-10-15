@@ -1,6 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { EventEmitter } from "node:events";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { get as httpGet } from "node:http";
 import { createServer as createNetServer, type AddressInfo } from "node:net";
 import os from "node:os";
 import path from "node:path";
@@ -79,15 +80,18 @@ async function startServer(): Promise<{ server: WispServer; directory: string }>
 
 /**
  * Stands in for Tailscale Serve when the app checks a remote access address:
- * laptop.tailnet.ts.net forwards to this computer's server, stale.tailnet.ts.net
+ * laptop.tailnet.ts.net forwards to the port remote access exposes, stale.tailnet.ts.net
  * forwards to a port nothing listens on, and other addresses do not resolve.
  */
 function tailscaleServe(localServer: InProcessLocalServer): typeof fetch {
   return (async (input: string | URL | Request, init?: RequestInit) => {
     const url = new URL(input instanceof Request ? input.url : input);
     if (url.hostname === "stale.tailnet.ts.net") return new Response("Bad Gateway", { status: 502 });
-    if (url.hostname !== "laptop.tailnet.ts.net" || !localServer.server) throw new TypeError("fetch failed");
-    return fetch(`${localServer.server.url}${url.pathname}`, init);
+    if (url.hostname !== "laptop.tailnet.ts.net") throw new TypeError("fetch failed");
+    // Forwards to the port remote access asked for; nothing listening there is a bad gateway.
+    return fetch(`http://127.0.0.1:${localServer.exposedPort}${url.pathname}`, init).catch(
+      () => new Response("Bad Gateway", { status: 502 }),
+    );
   }) as typeof fetch;
 }
 
@@ -681,6 +685,16 @@ async function freePort(): Promise<number> {
   return port;
 }
 
+/** Whether a Wisp server answers on a loopback port, on a new connection each time. */
+function answers(port: number): Promise<boolean> {
+  return new Promise((resolve) => {
+    httpGet(`http://127.0.0.1:${port}/health`, { agent: false }, (response) => {
+      response.resume();
+      resolve(response.statusCode === 200);
+    }).on("error", () => resolve(false));
+  });
+}
+
 /** Another device, such as a phone, that pairs with a server over HTTP. */
 function phone(baseUrl: string) {
   let stored: DeviceCredentials | undefined;
@@ -725,6 +739,19 @@ describe("remote access to this computer", () => {
     expect(app.localServer.starts).toBe(1);
   });
 
+  it("turns on without restarting Wisps on this computer, so the app never reconnects", async () => {
+    const app = await desktop();
+    await app.waitForPhase("local");
+    const { epoch } = (await app.view()).status;
+    const port = await freePort();
+    await app.invoke(WISP_IPC_CHANNELS.saveRemoteAccess, { enabled: true, port, publicOrigin: origin });
+    expect(await answers(port)).toBe(true);
+    await app.invoke(WISP_IPC_CHANNELS.saveRemoteAccess, { enabled: false, port, publicOrigin: origin });
+    expect(await answers(port)).toBe(false);
+    expect(app.localServer.starts).toBe(1);
+    expect((await app.view()).status).toMatchObject({ phase: "local", epoch });
+  });
+
   it("turns on only when the address reaches this computer, and says what to fix when it does not", async () => {
     const app = await desktop();
     await app.waitForPhase("local");
@@ -739,10 +766,18 @@ describe("remote access to this computer", () => {
       });
       expect(await app.invoke(WISP_IPC_CHANNELS.getRemoteAccess)).toMatchObject({ enabled: false, port: 8787 });
     }
-    // The server went back to how it ran before, and the app reconnected to it.
-    await app.waitForPhase("local");
-    expect(app.localServer.server?.url).not.toBe(`http://127.0.0.1:${port}`);
+    // The port closed again, and nothing was saved.
+    expect(await answers(port)).toBe(false);
     await expect(readFile(path.join(app.directory, "remote-access.json"))).rejects.toThrow();
+
+    // A port another program uses is refused with that reason.
+    const taken = createNetServer();
+    await new Promise<void>((resolve) => taken.listen(0, "127.0.0.1", resolve));
+    cleanups.push(() => new Promise<void>((resolve) => taken.close(() => resolve())));
+    const takenPort = (taken.address() as AddressInfo).port;
+    expect(
+      await app.call(WISP_IPC_CHANNELS.saveRemoteAccess, { enabled: true, port: takenPort, publicOrigin: origin }),
+    ).toMatchObject({ ok: false, error: { message: expect.stringContaining(`already uses port ${takenPort}`) } });
 
     expect(
       await app.invoke(WISP_IPC_CHANNELS.saveRemoteAccess, { enabled: true, port, publicOrigin: origin }),
@@ -756,11 +791,10 @@ describe("remote access to this computer", () => {
       }),
     ).toMatchObject({ ok: false });
     expect(await app.invoke(WISP_IPC_CHANNELS.getRemoteAccess)).toMatchObject({ enabled: true, publicOrigin: origin });
-    await app.waitForPhase("local");
-    expect(app.localServer.server?.url).toBe(`http://127.0.0.1:${port}`);
+    expect(await answers(port)).toBe(true);
   });
 
-  it("pairs a device with a QR code link, lists it, and revokes it, but never this computer's own app", async () => {
+  it("pairs a device with a QR code link, lists only other devices, and revokes them", async () => {
     const app = await desktop();
     await app.waitForPhase("local");
     const port = await freePort();
@@ -769,30 +803,24 @@ describe("remote access to this computer", () => {
       port,
       publicOrigin: `${origin}/`,
     });
-    expect(view).toMatchObject({ enabled: true, port, publicOrigin: origin });
-    // The server restarted on the fixed port, and the app reconnected to it by itself.
-    await app.waitForPhase("local");
-    expect(app.localServer.starts).toBe(2);
-    expect(app.localServer.server?.url).toBe(`http://127.0.0.1:${port}`);
+    expect(view).toMatchObject({ enabled: true, port, publicOrigin: origin, devices: [] });
 
     const pairing = await app.invoke<RemoteAccessPairing>(WISP_IPC_CHANNELS.pairRemoteDevice);
     expect(pairing.link).toBe(`${origin}/#pair=${pairing.code}`);
-    await phone(`http://127.0.0.1:${port}`).pair(pairing.code, "Safari on iPhone");
+    await phone(`http://127.0.0.1:${port}`).pair(pairing.code, "Chrome on Android");
 
     const { devices } = await app.invoke<RemoteAccessView>(WISP_IPC_CHANNELS.getRemoteAccess);
-    expect(devices).toEqual([
-      expect.objectContaining({ name: "Test computer", local: true }),
-      expect.objectContaining({ name: "Safari on iPhone", local: false }),
-    ]);
-    const own = devices.find(({ local }) => local)!;
+    expect(devices).toEqual([expect.objectContaining({ name: "Chrome on Android" })]);
+    // This computer's own app is never listed, nor revoked.
+    const own = app.localServer.server!.auth.devices().find(({ local }) => local)!;
     expect(await app.call(WISP_IPC_CHANNELS.revokeRemoteDevice, { deviceId: own.id })).toMatchObject({
       ok: false,
       error: { message: expect.stringContaining("cannot be revoked") },
     });
     const revoked = await app.invoke<RemoteAccessView>(WISP_IPC_CHANNELS.revokeRemoteDevice, {
-      deviceId: devices.find(({ local }) => !local)!.id,
+      deviceId: devices[0]!.id,
     });
-    expect(revoked.devices.map(({ name }) => name)).toEqual(["Test computer"]);
+    expect(revoked.devices).toEqual([]);
     // A pairing code is single-use.
     await expect(phone(`http://127.0.0.1:${port}`).pair(pairing.code, "Again")).rejects.toThrow();
   });
@@ -811,8 +839,8 @@ describe("remote access to this computer", () => {
     const remote = added.profiles.find((profile) => profile.kind === "url")!;
     await app.invoke(WISP_IPC_CHANNELS.activateConnection, { id: remote.id });
     await app.waitForPhase("pairing_required");
-    expect(app.localServer.server?.url).toBe(`http://127.0.0.1:${port}`);
-    expect((await fetch(`http://127.0.0.1:${port}/health`)).status).toBe(200);
+    expect(app.localServer.server).toBeDefined();
+    expect(await answers(port)).toBe(true);
 
     await app.invoke(WISP_IPC_CHANNELS.saveRemoteAccess, { enabled: false, port, publicOrigin: origin });
     expect(app.localServer.server).toBeUndefined();
@@ -839,13 +867,11 @@ describe("remote access to this computer", () => {
       id: added.profiles.find((profile) => profile.kind === "url")!.id,
     });
     await app.dispose();
-    expect(app.localServer.server).toBeUndefined();
+    expect(await answers(port)).toBe(false);
 
     const restarted = await desktop(app.directory, app.key, { choose: false });
     await restarted.waitForPhase("pairing_required");
-    await vi.waitFor(() => expect(restarted.localServer.server?.url).toBe(`http://127.0.0.1:${port}`), {
-      timeout: 8_000,
-    });
+    await vi.waitFor(async () => expect(await answers(port)).toBe(true), { timeout: 8_000 });
     expect(await restarted.invoke(WISP_IPC_CHANNELS.getRemoteAccess)).toMatchObject({ enabled: true });
   });
 });

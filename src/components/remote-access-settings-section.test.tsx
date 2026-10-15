@@ -6,16 +6,14 @@ import type { RemoteAccessView } from "../../shared/remote-access";
 import { RemoteAccessSettingsSection } from "./remote-access-settings-section";
 
 const origin = "https://laptop.tailnet.ts.net";
-const own = { id: "own", name: "Wisp on laptop", createdAt: "2026-10-01T12:00:00.000Z", lastSeenAt: null, local: true };
 const phone = {
   id: "phone",
-  name: "Safari on iPhone",
+  name: "Chrome on Android",
   createdAt: "2026-10-10T12:00:00.000Z",
   lastSeenAt: "2026-10-14T12:00:00.000Z",
-  local: false,
 };
 const unset: RemoteAccessView = { enabled: false, port: 8787, webAppAvailable: true, devices: [] };
-const on: RemoteAccessView = { enabled: true, port: 8787, publicOrigin: origin, webAppAvailable: true, devices: [own] };
+const on: RemoteAccessView = { enabled: true, port: 8787, publicOrigin: origin, webAppAvailable: true, devices: [] };
 const off: RemoteAccessView = { ...on, enabled: false, devices: [] };
 
 function expose(initial: RemoteAccessView) {
@@ -26,7 +24,7 @@ function expose(initial: RemoteAccessView) {
       ok: true,
       value: { code: "ABCDE-FGHJK", expiresAt: "2026-10-14T12:10:00.000Z", link: `${origin}/#pair=ABCDE-FGHJK` },
     })),
-    revokeRemoteDevice: vi.fn(async () => ({ ok: true, value: { ...on, devices: [own] } })),
+    revokeRemoteDevice: vi.fn(async () => ({ ok: true, value: on })),
   };
   Object.defineProperty(window, "wisp", { configurable: true, value: api });
   return api;
@@ -89,18 +87,32 @@ describe("RemoteAccessSettingsSection", () => {
     await waitFor(() => expect(toggle).toHaveAttribute("aria-checked", "false"));
   });
 
-  it("shows a QR code of the pairing link, and revokes other devices but not this computer", async () => {
-    const api = expose({ ...on, devices: [own, phone] });
-    render(<RemoteAccessSettingsSection />);
-    await userEvent.click(await screen.findByRole("button", { name: "Show QR code" }));
-    expect(screen.getByRole("img", { name: /QR code that pairs a device/ })).toBeVisible();
-    expect(screen.getByText("ABCDE-FGHJK")).toBeVisible();
+  it("shows a QR code, and closes it when the phone that scanned it is paired", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      const api = expose(on);
+      render(<RemoteAccessSettingsSection />);
+      await userEvent.click(await screen.findByRole("button", { name: "Show QR code" }));
+      expect(screen.getByRole("img", { name: /QR code that pairs a device/ })).toBeVisible();
+      expect(screen.getByText("ABCDE-FGHJK")).toBeVisible();
+      expect(screen.getByText("No devices are paired yet.")).toBeVisible();
 
-    expect(screen.getByText("Wisp on laptop (this computer)")).toBeVisible();
-    expect(screen.getAllByRole("button", { name: "Revoke" })).toHaveLength(1);
-    await userEvent.click(screen.getByRole("button", { name: "Revoke" }));
-    await userEvent.click(screen.getByRole("button", { name: "Revoke Safari on iPhone" }));
+      api.getRemoteAccess.mockResolvedValue({ ok: true, value: { ...on, devices: [phone] } });
+      await vi.advanceTimersByTimeAsync(2_000);
+      expect(await screen.findByText("Chrome on Android is paired with this computer.")).toBeVisible();
+      expect(screen.queryByRole("img", { name: /QR code/ })).toBeNull();
+      expect(screen.getByText("Chrome on Android")).toBeVisible();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("revokes a paired device", async () => {
+    const api = expose({ ...on, devices: [phone] });
+    render(<RemoteAccessSettingsSection />);
+    await userEvent.click(await screen.findByRole("button", { name: "Revoke" }));
+    await userEvent.click(screen.getByRole("button", { name: "Revoke Chrome on Android" }));
     expect(api.revokeRemoteDevice).toHaveBeenCalledWith({ deviceId: "phone" });
-    expect(await screen.findByText("No other devices are paired yet.")).toBeVisible();
+    expect(await screen.findByText("No devices are paired yet.")).toBeVisible();
   });
 });

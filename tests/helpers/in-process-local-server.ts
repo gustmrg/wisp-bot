@@ -21,8 +21,19 @@ export class InProcessLocalServer implements LocalServer {
     readonly key: Buffer = randomBytes(32),
   ) {}
 
-  setExposure(exposure: LocalServerExposure | undefined): void {
+  /** The port remote access is exposed on, as a proxy such as Tailscale Serve would forward to. */
+  get exposedPort(): number | undefined {
+    return this.exposure?.port;
+  }
+
+  async setExposure(exposure: LocalServerExposure | undefined): Promise<void> {
     this.exposure = exposure;
+    if (this.server) await this.server.admin(this.exposeCommand());
+  }
+
+  private exposeCommand(): AdminCommand {
+    const { exposure } = this;
+    return exposure ? { command: "expose", ...exposure } : { command: "expose" };
   }
 
   async admin(command: AdminCommand): Promise<unknown> {
@@ -34,13 +45,11 @@ export class InProcessLocalServer implements LocalServer {
     if (this.running) return Promise.resolve(this.running.info);
     this.starting ??= (async () => {
       this.starts++;
-      const exposure = this.exposure;
       const localPairingCode = randomBytes(16).toString("hex").toUpperCase();
       const server = await createWispServer({
         dataDirectory: this.dataDirectory,
         host: "127.0.0.1",
-        port: exposure?.port ?? 0,
-        ...(exposure ? { publicOrigin: exposure.publicOrigin } : {}),
+        port: 0,
         encryption: new MasterKeyEncryption(this.key),
         logger: silent,
         agentMode: "fake",
@@ -55,10 +64,8 @@ export class InProcessLocalServer implements LocalServer {
         exit = resolve;
       });
       this.server = server;
-      this.running = {
-        info: { baseUrl: server.url, localPairingCode, exited, ...(exposure ? { exposure } : {}) },
-        exit,
-      };
+      if (this.exposure) await server.admin(this.exposeCommand()).catch(() => undefined);
+      this.running = { info: { baseUrl: server.url, localPairingCode, exited }, exit };
       return this.running.info;
     })().finally(() => {
       this.starting = undefined;

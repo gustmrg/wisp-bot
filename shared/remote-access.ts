@@ -8,13 +8,12 @@
 /** The loopback port a proxy forwards to unless the person picks another. */
 export const DEFAULT_REMOTE_ACCESS_PORT = 8787;
 
+/** Another device paired with Wisps on this computer; this computer's own app is never listed. */
 export interface PairedDeviceView {
   id: string;
   name: string;
   createdAt: string;
   lastSeenAt: string | null;
-  /** This computer's own app, which pairs by itself and cannot be revoked here. */
-  local: boolean;
 }
 
 export interface RemoteAccessView {
