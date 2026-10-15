@@ -64,7 +64,6 @@ describe("MobileApprovals", () => {
           beta: [request("beta", "newer", "2026-10-09T10:05:00.000Z", "Create plan.md")],
           gone: [request("gone", "orphan", "2026-10-09T10:09:00.000Z", "Create lost.md")],
         }}
-        allowAlwaysAvailable={false}
         unreadCount={0}
         onResolve={onResolve}
         onOpenChat={onOpenChat}
@@ -98,7 +97,6 @@ describe("MobileApprovals", () => {
           atlas: [request("atlas", "older", "2026-10-09T10:00:00.000Z", "Create notes.txt")],
           beta: [request("beta", "newer", "2026-10-09T10:05:00.000Z", "Create plan.md")],
         }}
-        allowAlwaysAvailable={false}
         unreadCount={0}
         onResolve={onResolve}
         onOpenChat={vi.fn()}
@@ -117,7 +115,6 @@ describe("MobileApprovals", () => {
       <MobileApprovals
         chats={chats}
         approvals={{}}
-        allowAlwaysAvailable={false}
         unreadCount={0}
         onResolve={vi.fn()}
         onOpenChat={vi.fn()}

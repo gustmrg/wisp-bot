@@ -36,7 +36,7 @@ function renderNeedsYou(approvals: Record<string, ReadonlyArray<ToolApprovalRequ
     onOpenChat: vi.fn(),
     onOpenApprovals: vi.fn(),
   };
-  render(<NeedsYou chats={chats} approvals={approvals} allowAlwaysAvailable={false} {...props} />);
+  render(<NeedsYou chats={chats} approvals={approvals} {...props} />);
   return props;
 }
 

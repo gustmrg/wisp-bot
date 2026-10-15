@@ -6,6 +6,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import { evaluateToolPolicy, ToolAuthorizationBroker } from "../backend/tool-authorization-broker.js";
 import { ToolPolicyStore } from "../backend/tool-policy-store.js";
+import { WispToolPolicyStore } from "../backend/wisp-tool-policy-store.js";
 import type { ConversationAgentEvent } from "../shared/contracts.js";
 import type { ToolPolicySettings } from "../shared/tool-policy.js";
 
@@ -259,11 +260,13 @@ describe("tool policy", () => {
     try {
       const directory = await mkdtemp(path.join(os.tmpdir(), "wisp-approval-expiry-"));
       const store = new ToolPolicyStore(path.join(directory, "policy.json"));
+      const wispPolicies = new WispToolPolicyStore(() => directory);
       let nextId = 0;
       const broker = new ToolAuthorizationBroker(store, () => undefined, {
         approvalTtlMs: 10,
         createId: () => `id-${++nextId}`,
         selectWindowId: () => 1,
+        wispPolicies,
       });
       const expired = broker.authorize({
         conversationId: "one",
@@ -296,54 +299,60 @@ describe("tool policy", () => {
         1,
       );
       await blockedExpectation;
-      expect(evaluateToolPolicy(store.get(), "modify_file")).toBe("block");
+      // A file block belongs to this Wisp; the app-wide policy is unchanged.
+      expect(wispPolicies.get("one").files).toEqual({ modify_file: "block" });
+      expect(evaluateToolPolicy(store.get(), "modify_file")).toBe("ask");
     } finally {
       vi.useRealTimers();
     }
   });
 
-  it("saves a lasting Allow rule for one file category and keeps the other category asking", async () => {
+  it("remembers a lasting Allow for one file category for this Wisp only", async () => {
     const directory = await mkdtemp(path.join(os.tmpdir(), "wisp-approval-always-"));
     const store = new ToolPolicyStore(path.join(directory, "policy.json"));
+    const wispPolicies = new WispToolPolicyStore((conversationId) => path.join(directory, conversationId));
+    const events: ConversationAgentEvent[] = [];
     let nextId = 0;
-    const broker = new ToolAuthorizationBroker(store, () => undefined, {
+    const broker = new ToolAuthorizationBroker(store, (event) => events.push(event), {
       createId: () => `id-${++nextId}`,
       selectWindowId: () => 1,
+      wispPolicies,
     });
-    const authorization = broker.authorize({
-      conversationId: "one",
-      toolCallId: "tool-create",
-      toolName: "write",
-      category: "create_file",
-      scope: { kind: "workspace_path", value: "notes.txt" },
-      summary: "Create notes.txt",
-    });
+    const create = (conversationId: string, toolCallId: string) =>
+      broker.authorize({
+        conversationId,
+        toolCallId,
+        toolName: "write",
+        category: "create_file",
+        scope: { kind: "workspace_path", value: "notes.txt" },
+        summary: "Create notes.txt",
+      });
+    const authorization = create("one", "tool-create");
     await broker.resolve(
       { approvalId: "id-1", conversationId: "one", toolCallId: "tool-create", decision: "allow_always" },
       1,
     );
     await expect(authorization).resolves.toBeUndefined();
-    expect(evaluateToolPolicy(store.get(), "create_file")).toBe("allow");
-    expect(evaluateToolPolicy(store.get(), "modify_file")).toBe("ask");
-    await expect(
-      broker.authorize({
-        conversationId: "one",
-        toolCallId: "tool-create-2",
-        toolName: "write",
-        category: "create_file",
-        scope: { kind: "workspace_path", value: "other.txt" },
-        summary: "Create other.txt",
-      }),
-    ).resolves.toBeUndefined();
+    expect(wispPolicies.get("one").files).toEqual({ create_file: "allow" });
+    expect(store.get().rules).toEqual([]);
+    events.length = 0;
+    await expect(create("one", "tool-create-2")).resolves.toBeUndefined();
+    expect(events).toEqual([]);
+    // Another Wisp still asks.
+    void create("two", "tool-create-3").catch(() => undefined);
+    expect(events[0]).toMatchObject({ type: "tool_approval_requested" });
+    broker.dispose();
   });
 
-  it("refuses a lasting Allow for integrations or while auto-review is off", async () => {
+  it("refuses a lasting Allow an integration cannot remember, and remembers files even with auto-review off", async () => {
     const directory = await mkdtemp(path.join(os.tmpdir(), "wisp-approval-always-refused-"));
     const store = new ToolPolicyStore(path.join(directory, "policy.json"));
+    const wispPolicies = new WispToolPolicyStore(() => directory);
     let nextId = 0;
     const broker = new ToolAuthorizationBroker(store, () => undefined, {
       createId: () => `id-${++nextId}`,
       selectWindowId: () => 1,
+      wispPolicies,
     });
     const integration = broker.authorize({
       conversationId: "one",
@@ -374,16 +383,17 @@ describe("tool policy", () => {
     });
     await expect(
       broker.resolve(
-        { approvalId: "id-2", conversationId: "one", toolCallId: "tool-edit", decision: "allow_always" },
+        { approvalId: "id-2", conversationId: "one", toolCallId: "tool-edit", decision: "allow_integration" },
         1,
       ),
     ).rejects.toMatchObject({ code: "invalid_request" });
     await broker.resolve(
-      { approvalId: "id-2", conversationId: "one", toolCallId: "tool-edit", decision: "allow_once" },
+      { approvalId: "id-2", conversationId: "one", toolCallId: "tool-edit", decision: "allow_always" },
       1,
     );
     await expect(file).resolves.toBeUndefined();
     expect(store.get().rules).toEqual([]);
+    expect(wispPolicies.get("one").files).toEqual({ modify_file: "allow" });
   });
 
   it("remembers an always-allowed MCP tool through its integration and never over a Block rule", async () => {
@@ -425,27 +435,28 @@ describe("tool policy", () => {
     await store.blockCategory("integration_call", () => "rule-1");
     await expect(broker.authorize({ ...call, alwaysAllowed: true })).rejects.toMatchObject({ code: "tool_blocked" });
 
-    // Other categories cannot use the integration's remembered approval.
+    // Plugin writes honor their integration's remembered approval too.
     await store.save({ autoReview: true, rules: [] });
     events.length = 0;
-    const write = broker.authorize({
+    await expect(
+      broker.authorize({ ...call, toolCallId: "tool-write", category: "external_write", alwaysAllowed: true }),
+    ).resolves.toBeUndefined();
+    expect(events).toEqual([]);
+
+    // Other categories cannot use an integration's remembered approval.
+    const file = broker.authorize({
       ...call,
-      toolCallId: "tool-write",
-      category: "external_write",
+      toolCallId: "tool-file",
+      category: "modify_file",
+      scope: { kind: "workspace_path", value: "notes.txt" },
       alwaysAllowed: true,
       rememberApproval,
     });
     expect(events[0]).toMatchObject({ type: "tool_approval_requested" });
     expect((events[0] as { request: { alwaysAllowTool?: boolean } }).request.alwaysAllowTool).toBeUndefined();
-    const writeId = (events[0] as { request: { approvalId: string } }).request.approvalId;
-    await expect(
-      broker.resolve(
-        { approvalId: writeId, conversationId: "one", toolCallId: "tool-write", decision: "allow_always" },
-        1,
-      ),
-    ).rejects.toMatchObject({ code: "invalid_request" });
-    await broker.resolve({ approvalId: writeId, conversationId: "one", toolCallId: "tool-write", decision: "deny" }, 1);
-    await expect(write).rejects.toMatchObject({ code: "tool_blocked" });
+    const fileId = (events[0] as { request: { approvalId: string } }).request.approvalId;
+    await broker.resolve({ approvalId: fileId, conversationId: "one", toolCallId: "tool-file", decision: "deny" }, 1);
+    await expect(file).rejects.toMatchObject({ code: "tool_blocked" });
     expect(rememberApproval).toHaveBeenCalledTimes(1);
   });
 
@@ -495,6 +506,7 @@ describe("tool policy", () => {
       createId: () => "approval-1",
       selectWindowId: () => 1,
       audit,
+      wispPolicies: new WispToolPolicyStore(() => directory),
     });
     const action = broker.authorize({
       conversationId: "one",
@@ -512,7 +524,7 @@ describe("tool policy", () => {
       decision: "block",
     } as const;
 
-    // A double click sends the second decision while the first is still saving the block rule.
+    // A double click sends the second decision while the first is still saving the block.
     const results = await Promise.allSettled([broker.resolve(decision, 1), broker.resolve(decision, 1)]);
 
     await actionExpectation;
@@ -524,10 +536,12 @@ describe("tool policy", () => {
   it("blocks the action even when the block rule cannot be saved", async () => {
     const directory = await mkdtemp(path.join(os.tmpdir(), "wisp-approval-save-failure-"));
     const store = new ToolPolicyStore(path.join(directory, "policy.json"));
-    vi.spyOn(store, "blockCategory").mockRejectedValue(new Error("disk full"));
+    const wispPolicies = new WispToolPolicyStore(() => directory);
+    vi.spyOn(wispPolicies, "setFileBehavior").mockRejectedValue(new Error("disk full"));
     const broker = new ToolAuthorizationBroker(store, () => undefined, {
       createId: () => "approval-1",
       selectWindowId: () => 1,
+      wispPolicies,
     });
     const action = broker.authorize({
       conversationId: "one",
@@ -708,5 +722,137 @@ describe("tool policy", () => {
 
     await expectation;
     expect(broker.listPending()).toEqual([]);
+  });
+
+  it("lets a Wisp in risk mode act without asking, except for skills, jobs and blocks", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "wisp-policy-everything-"));
+    const store = new ToolPolicyStore(path.join(directory, "policy.json"));
+    const wispPolicies = new WispToolPolicyStore(() => directory);
+    await wispPolicies.save("one", { files: {}, allowEverything: true });
+    const events: ConversationAgentEvent[] = [];
+    const audit = { append: vi.fn() };
+    let nextId = 0;
+    const broker = new ToolAuthorizationBroker(store, (event) => events.push(event), {
+      createId: () => `id-${++nextId}`,
+      selectWindowId: () => 1,
+      audit,
+      wispPolicies,
+    });
+    const base = { conversationId: "one", toolCallId: "call", summary: "Do it" };
+    await expect(
+      broker.authorize({
+        ...base,
+        toolName: "write",
+        category: "create_file",
+        scope: { kind: "workspace_path", value: "a.txt" },
+      }),
+    ).resolves.toBeUndefined();
+    await expect(
+      broker.authorize({
+        ...base,
+        toolName: "linear_update_issue",
+        category: "external_write",
+        scope: { kind: "integration", value: "Linear" },
+      }),
+    ).resolves.toBeUndefined();
+    await expect(
+      broker.authorize({
+        ...base,
+        toolName: "mcp_test_search",
+        category: "integration_call",
+        scope: { kind: "integration", value: "Docs" },
+      }),
+    ).resolves.toBeUndefined();
+    expect(events).toEqual([]);
+    expect(audit.append).toHaveBeenLastCalledWith(
+      expect.objectContaining({ decision: "allow_everything", actor: "user", outcome: "allowed" }),
+    );
+
+    // Skills still ask.
+    void broker
+      .authorize({ ...base, toolName: "save_skill", category: "save_skill", scope: { kind: "skill", value: "notes" } })
+      .catch(() => undefined);
+    expect(events[0]).toMatchObject({ type: "tool_approval_requested", request: { category: "save_skill" } });
+    broker.dispose();
+
+    // A Block rule, or the Wisp's own block for a kind of file change, still wins.
+    await store.blockCategory("integration_call", () => "rule-1");
+    await expect(
+      broker.authorize({
+        ...base,
+        toolName: "mcp_test_search",
+        category: "integration_call",
+        scope: { kind: "integration", value: "Docs" },
+      }),
+    ).rejects.toMatchObject({ code: "tool_blocked" });
+    await wispPolicies.setFileBehavior("one", "modify_file", "block");
+    await expect(
+      broker.authorize({
+        ...base,
+        toolName: "edit",
+        category: "modify_file",
+        scope: { kind: "workspace_path", value: "a.txt" },
+      }),
+    ).rejects.toMatchObject({ code: "tool_blocked" });
+  });
+
+  it("lets the person always allow a whole integration from a card", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "wisp-approval-integration-"));
+    const store = new ToolPolicyStore(path.join(directory, "policy.json"));
+    const events: ConversationAgentEvent[] = [];
+    const broker = new ToolAuthorizationBroker(store, (event) => events.push(event), {
+      createId: () => "id-1",
+      selectWindowId: () => 1,
+    });
+    const rememberApproval = vi.fn(async () => undefined);
+    const rememberIntegration = vi.fn(async () => undefined);
+    const asked = broker.authorize({
+      conversationId: "one",
+      toolCallId: "tool-linear",
+      toolName: "linear_update_issue",
+      category: "external_write",
+      scope: { kind: "integration", value: "Linear" },
+      summary: "Update ENG-1",
+      rememberApproval,
+      rememberIntegration,
+    });
+    expect(events[0]).toMatchObject({
+      type: "tool_approval_requested",
+      request: { alwaysAllowTool: true, alwaysAllowIntegration: true },
+    });
+    await broker.resolve(
+      { approvalId: "id-1", conversationId: "one", toolCallId: "tool-linear", decision: "allow_integration" },
+      1,
+    );
+    await expect(asked).resolves.toBeUndefined();
+    expect(rememberIntegration).toHaveBeenCalledTimes(1);
+    expect(rememberApproval).not.toHaveBeenCalled();
+    expect(events.at(-1)).toMatchObject({ type: "tool_approval_resolved", decision: "allow_integration" });
+  });
+
+  it("reports a Wisp's permissions with the app-wide defaults it falls back to", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "wisp-policy-view-"));
+    const store = new ToolPolicyStore(path.join(directory, "policy.json"));
+    await store.save({
+      autoReview: true,
+      rules: [{ id: "allow", action: "create_file", behavior: "allow", scope: "workspace" }],
+    });
+    const broker = new ToolAuthorizationBroker(store, () => undefined, {
+      wispPolicies: new WispToolPolicyStore(() => directory),
+    });
+    expect(broker.getWispPolicy("one")).toEqual({
+      conversationId: "one",
+      files: {},
+      allowEverything: false,
+      defaults: { create_file: "allow", modify_file: "ask" },
+    });
+    await expect(
+      broker.saveWispPolicy({ conversationId: "one", files: { modify_file: "allow" }, allowEverything: true }),
+    ).resolves.toMatchObject({ files: { modify_file: "allow" }, allowEverything: true });
+    // Saved to the Wisp's own file, and read back by a fresh store.
+    expect(new WispToolPolicyStore(() => directory).get("one")).toEqual({
+      files: { modify_file: "allow" },
+      allowEverything: true,
+    });
   });
 });

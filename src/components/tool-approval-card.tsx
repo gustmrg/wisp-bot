@@ -13,8 +13,6 @@ interface ToolApprovalCardProps {
   request: ToolApprovalRequest;
   /** Display name of the Wisp that asked. */
   wispName: string;
-  /** Auto-review is on, so a lasting Allow rule would take effect. */
-  allowAlwaysAvailable: boolean;
   onResolve: (decision: ToolApprovalDecision) => void;
 }
 
@@ -93,7 +91,7 @@ function JobDetails({ job }: { job: JobApprovalDetails }) {
   );
 }
 
-function ToolApprovalCard({ request, wispName, allowAlwaysAvailable, onResolve }: ToolApprovalCardProps) {
+function ToolApprovalCard({ request, wispName, onResolve }: ToolApprovalCardProps) {
   const now = useClock(1_000);
   const integration = request.scope.kind === "integration";
   const skill = request.category === "save_skill" && request.scope.kind === "skill";
@@ -102,10 +100,11 @@ function ToolApprovalCard({ request, wispName, allowAlwaysAvailable, onResolve }
   const reviewed = skill || Boolean(job);
   const fileCategory = !integration && isWorkspaceFileCategory(request.category) ? request.category : null;
   const alwaysAllowTool = integration && request.alwaysAllowTool === true;
+  const alwaysAllowIntegration = integration && request.alwaysAllowIntegration === true;
   const remaining = Math.max(0, Math.ceil((new Date(request.expiresAt).getTime() - now.getTime()) / 1_000));
   const expiresSoon = remaining <= 10;
-  // The block action persists a global integration-scope rule; label it so the
-  // scope is explicit instead of implying a per-tool block.
+  // An integration block persists a global integration-scope rule; label it so
+  // the scope is explicit instead of implying a per-tool block. File blocks are per Wisp.
   const blockLabel = integration ? "Block all integration calls" : "Always block";
   return (
     <section
@@ -179,7 +178,7 @@ function ToolApprovalCard({ request, wispName, allowAlwaysAvailable, onResolve }
         <Button type="button" size="sm" variant="secondary" onClick={() => onResolve("deny")}>
           Deny
         </Button>
-        {fileCategory && allowAlwaysAvailable ? (
+        {fileCategory ? (
           <Button type="button" size="sm" variant="secondary" onClick={() => onResolve("allow_always")}>
             {ALWAYS_ALLOW_LABELS[fileCategory]}
           </Button>
@@ -189,19 +188,25 @@ function ToolApprovalCard({ request, wispName, allowAlwaysAvailable, onResolve }
             Always allow this tool
           </Button>
         ) : null}
+        {alwaysAllowIntegration ? (
+          <Button type="button" size="sm" variant="secondary" onClick={() => onResolve("allow_integration")}>
+            Always allow all of {request.scope.display}
+          </Button>
+        ) : null}
         <Button type="button" size="sm" onClick={() => onResolve("allow_once")}>
           Allow once
         </Button>
       </div>
-      {fileCategory && allowAlwaysAvailable ? (
+      {fileCategory ? (
         <p className="m-0 mt-2 text-right text-xs text-faint">
-          Lasting rules can be changed in Settings → General → Auto-review.
+          Always allow and Always block apply to {wispName} only. Change them in Wisp settings → Access.
         </p>
       ) : null}
-      {alwaysAllowTool ? (
+      {alwaysAllowTool || alwaysAllowIntegration ? (
         <p className="m-0 mt-2 text-right text-xs text-faint">
-          Always allow applies to {wispName} only and asks again if the tool changes. Remove it in Wisp settings →
-          Access.
+          Always allow applies to {wispName} only
+          {request.category === "integration_call" ? "; a single tool asks again if it changes" : ""}. Remove it in Wisp
+          settings → Access.
         </p>
       ) : null}
     </section>

@@ -12,6 +12,7 @@ import {
   type WebProviders,
   type WispPluginAccessView,
 } from "../../shared/plugins";
+import type { SaveWispToolPolicyRequest, WispToolPolicy, WispToolPolicyView } from "../../shared/tool-policy";
 import { WispDetails } from "./wisp-details";
 import { WispPluginSettings } from "./wisp-plugin-settings";
 
@@ -25,6 +26,7 @@ function setup({
   defaultProviders = { search: "web-search", read: "firecrawl" },
   mcpServers = [],
   mcpGrants = [],
+  policy = { files: {}, allowEverything: false },
 }: {
   available?: ReadonlyArray<PluginId>;
   disabled?: ReadonlyArray<PluginId>;
@@ -33,6 +35,7 @@ function setup({
   defaultProviders?: WebProviders;
   mcpServers?: ReadonlyArray<McpServerSummary>;
   mcpGrants?: ReadonlyArray<McpGrant>;
+  policy?: WispToolPolicy;
 } = {}) {
   const getPluginSettings = vi.fn(async () => ({
     ok: true,
@@ -72,6 +75,19 @@ function setup({
       value: request,
     }),
   );
+  const defaults = { create_file: "ask", modify_file: "ask" } as const;
+  const getWispToolPolicy = vi.fn(
+    async ({ conversationId }: { conversationId: string }): Promise<BackendResult<WispToolPolicyView>> => ({
+      ok: true,
+      value: { conversationId, ...policy, defaults },
+    }),
+  );
+  const saveWispToolPolicy = vi.fn(
+    async (request: SaveWispToolPolicyRequest): Promise<BackendResult<WispToolPolicyView>> => ({
+      ok: true,
+      value: { ...request, defaults },
+    }),
+  );
   Object.defineProperty(window, "wisp", {
     configurable: true,
     value: {
@@ -81,9 +97,11 @@ function setup({
       getMcpSettings,
       getWispMcpAccess,
       saveWispMcpAccess,
+      getWispToolPolicy,
+      saveWispToolPolicy,
     },
   });
-  return { getPluginSettings, getWispPluginAccess, saveWispPluginAccess, saveWispMcpAccess };
+  return { getPluginSettings, getWispPluginAccess, saveWispPluginAccess, saveWispMcpAccess, saveWispToolPolicy };
 }
 
 function grantsFor(access: Partial<Record<PluginId, PluginGrant["access"]>>): PluginGrant[] {
@@ -169,6 +187,51 @@ describe("WispPluginSettings", () => {
       grants: grantsFor({ linear: "write" }),
       webProviders: NO_PROVIDERS,
     });
+  });
+
+  it("lets a Wisp write to an app without asking, and removes single always-allowed actions", async () => {
+    const api = setup({
+      grants: grantsFor({ linear: "write" }).map((grant) =>
+        grant.pluginId === "linear" ? { ...grant, alwaysAllowedTools: ["linear_add_comment"] } : grant,
+      ),
+    });
+    const user = userEvent.setup();
+    render(<WispPluginSettings conversationId="researcher" />);
+    await user.click(await screen.findByRole("button", { name: "Ask again before Comment on Linear issue" }));
+    await user.click(screen.getByRole("button", { name: "Save access" }));
+    expect(api.saveWispPluginAccess).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        grants: expect.arrayContaining([{ pluginId: "linear", access: "write", alwaysAllowedTools: [] }]),
+      }),
+    );
+
+    await openSelect(user, screen.getByRole("combobox", { name: "Linear access" }));
+    await user.click(screen.getByRole("option", { name: "Write without asking" }));
+    await user.click(screen.getByRole("button", { name: "Save access" }));
+    expect(api.saveWispPluginAccess).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        grants: expect.arrayContaining([{ pluginId: "linear", access: "write", alwaysAllowAll: true }]),
+      }),
+    );
+  });
+
+  it("saves risk mode and a Wisp's own file rules", async () => {
+    const api = setup();
+    const user = userEvent.setup();
+    render(<WispPluginSettings conversationId="researcher" />);
+    expect(await screen.findByRole("combobox", { name: "Create files access" })).toHaveTextContent("Default (Ask)");
+    await openSelect(user, screen.getByRole("combobox", { name: "Edit files access" }));
+    await user.click(screen.getByRole("option", { name: "Allow" }));
+    await user.click(screen.getByRole("switch", { name: "Allow everything" }));
+    expect(screen.getByText(/Risk mode: this Wisp creates and edits files/)).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "Save access" }));
+    expect(api.saveWispToolPolicy).toHaveBeenCalledWith({
+      conversationId: "researcher",
+      files: { modify_file: "allow" },
+      allowEverything: true,
+    });
+    expect(api.saveWispPluginAccess).not.toHaveBeenCalled();
+    expect(await screen.findByRole("status")).toHaveTextContent("Access settings saved for this Wisp.");
   });
 
   it("summarizes unavailable plugins in one line and links to Settings", async () => {

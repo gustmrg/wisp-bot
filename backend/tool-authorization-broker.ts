@@ -4,6 +4,7 @@ import { randomUUID } from "node:crypto";
 import type { ConversationAgentEvent } from "../shared/contracts.js";
 import { getToolMetadata } from "../shared/tool-catalog.js";
 import {
+  ALLOW_EVERYTHING_CATEGORIES,
   isWorkspaceFileCategory,
   ruleMatchesCategory,
   workspaceFileBehavior,
@@ -13,12 +14,21 @@ import {
   type ToolApprovalRequest,
   type ToolPolicyBehavior,
   type ToolPolicySettings,
+  type SaveWispToolPolicyRequest,
+  type WispToolPolicy,
+  type WispToolPolicyView,
+  type WorkspaceFileCategory,
 } from "../shared/tool-policy.js";
 import { WispBackendError } from "./backend-error.js";
 import { ToolPolicyStore } from "./tool-policy-store.js";
 import { NullToolAuditSink, type ToolAuditSink } from "./tool-audit-store.js";
+import { defaultWispToolPolicy } from "./wisp-tool-policy-store.js";
 
-const DEFAULT_APPROVAL_TTL_MS = 60_000;
+/**
+ * How long a card waits for the person. The request deadline is paused while
+ * a card waits (AgentRegistry), so this, not the deadline, bounds the wait.
+ */
+export const DEFAULT_APPROVAL_TTL_MS = 30 * 60_000;
 const MAX_SUMMARY_LENGTH = 240;
 const MAX_PREVIEW_LENGTH = 20_000;
 
@@ -34,13 +44,38 @@ export interface ToolAuthorizationRequest {
   /** The job the user must see to decide; only sent for job approvals. */
   job?: JobApprovalDetails;
   /**
-   * The user already always allowed this exact integration tool for this Wisp.
-   * Honored for integration calls only, and never over a Block rule.
+   * The user already always allowed this integration tool, or the whole
+   * integration, for this Wisp. Honored for integration calls and external
+   * writes only, and never over a Block rule.
    */
   alwaysAllowed?: boolean;
   /** Remembers this integration tool for this Wisp; offering it adds "Always allow" to the card. */
   rememberApproval?: () => Promise<void>;
+  /** Lets this Wisp use the whole integration without asking; offering it adds that choice to the card. */
+  rememberIntegration?: () => Promise<void>;
 }
+
+/** Each Wisp's own permissions (ADR 023). */
+export interface WispToolPolicySource {
+  /** Synchronous, so an approval card is published in the same tick as its action. */
+  get(conversationId: string): WispToolPolicy;
+  save(conversationId: string, policy: WispToolPolicy): Promise<WispToolPolicy>;
+  setFileBehavior(
+    conversationId: string,
+    category: WorkspaceFileCategory,
+    behavior: ToolPolicyBehavior,
+  ): Promise<unknown>;
+}
+
+const NO_WISP_POLICIES: WispToolPolicySource = {
+  get: () => defaultWispToolPolicy(),
+  save: async () => {
+    throw new WispBackendError("unavailable", "This Wisp's permissions cannot be saved.");
+  },
+  setFileBehavior: async () => {
+    throw new WispBackendError("unavailable", "This Wisp's permissions cannot be saved.");
+  },
+};
 
 /**
  * What the person approved for a run with no one present, such as a job's
@@ -58,6 +93,7 @@ interface PendingApproval {
   resolve: () => void;
   reject: (error: unknown) => void;
   rememberApproval?: () => Promise<void>;
+  rememberIntegration?: () => Promise<void>;
   signal?: AbortSignal;
   abortListener?: () => void;
 }
@@ -68,6 +104,7 @@ export interface ToolAuthorizationBrokerOptions {
   now?: () => Date;
   selectWindowId?: () => number | null;
   audit?: ToolAuditSink;
+  wispPolicies?: WispToolPolicySource;
 }
 
 export class ToolAuthorizationBroker {
@@ -79,6 +116,7 @@ export class ToolAuthorizationBroker {
   private readonly selectWindowId: () => number | null;
   private readonly pending = new Map<string, PendingApproval>();
   private readonly audit: ToolAuditSink;
+  private readonly wispPolicies: WispToolPolicySource;
   private readonly unattended = new AsyncLocalStorage<UnattendedGrant>();
 
   constructor(
@@ -93,6 +131,7 @@ export class ToolAuthorizationBroker {
     this.now = options.now ?? (() => new Date());
     this.selectWindowId = options.selectWindowId ?? (() => null);
     this.audit = options.audit ?? new NullToolAuditSink();
+    this.wispPolicies = options.wispPolicies ?? NO_WISP_POLICIES;
   }
 
   getPolicy(): ToolPolicySettings {
@@ -105,6 +144,36 @@ export class ToolAuthorizationBroker {
 
   savePolicy(value: unknown): Promise<ToolPolicySettings> {
     return this.store.save(value);
+  }
+
+  getWispPolicy(conversationId: string): WispToolPolicyView {
+    return this.wispPolicyView(conversationId, this.wispPolicies.get(conversationId));
+  }
+
+  async saveWispPolicy(request: SaveWispToolPolicyRequest): Promise<WispToolPolicyView> {
+    const { conversationId, ...policy } = request;
+    return this.wispPolicyView(conversationId, await this.wispPolicies.save(conversationId, policy));
+  }
+
+  /** An unknown Wisp, or one whose permissions cannot be read, has none of its own. */
+  private readWispPolicy(conversationId: string): WispToolPolicy {
+    try {
+      return this.wispPolicies.get(conversationId);
+    } catch {
+      return defaultWispToolPolicy();
+    }
+  }
+
+  private wispPolicyView(conversationId: string, policy: WispToolPolicy): WispToolPolicyView {
+    const settings = this.store.get();
+    return {
+      conversationId,
+      ...policy,
+      defaults: {
+        create_file: evaluateToolPolicy(settings, "create_file"),
+        modify_file: evaluateToolPolicy(settings, "modify_file"),
+      },
+    };
   }
 
   /**
@@ -123,7 +192,18 @@ export class ToolAuthorizationBroker {
       this.auditDecision(actionId, action, "ask", "cancelled", "system", "cancelled");
       return Promise.reject(new WispBackendError("aborted", "The tool action was cancelled."));
     }
-    const behavior = evaluateToolPolicy(this.store.get(), action.category, action.scope.kind);
+    let behavior = evaluateToolPolicy(this.store.get(), action.category, action.scope.kind);
+    let everything = false;
+    if (behavior !== "block") {
+      // A Block rule is final; otherwise the Wisp's own permissions may answer.
+      const wisp = this.readWispPolicy(action.conversationId);
+      behavior = applyWispToolPolicy(behavior, wisp, action.category, action.scope.kind);
+      everything = behavior === "ask" && allowsEverything(wisp, action.category);
+    }
+    if (everything) {
+      this.auditDecision(actionId, action, behavior, "allow_everything", "user", "allowed");
+      return Promise.resolve();
+    }
     if (behavior === "allow") {
       this.auditDecision(actionId, action, behavior, "allow", "policy", "allowed");
       return Promise.resolve();
@@ -152,13 +232,16 @@ export class ToolAuthorizationBroker {
         ),
       );
     }
-    const integrationTool = action.category === "integration_call" && action.scope.kind === "integration";
+    const integrationTool =
+      (action.category === "integration_call" || action.category === "external_write") &&
+      action.scope.kind === "integration";
     if (integrationTool && action.alwaysAllowed) {
-      // The user's earlier "Always allow" for this tool and Wisp answers the prompt.
+      // The user's earlier "Always allow" for this tool or integration and Wisp answers the prompt.
       this.auditDecision(actionId, action, behavior, "allow_always", "user", "allowed");
       return Promise.resolve();
     }
     const rememberApproval = integrationTool ? action.rememberApproval : undefined;
+    const rememberIntegration = integrationTool ? action.rememberIntegration : undefined;
     const windowId = this.selectWindowId();
     if (windowId === null) {
       this.auditDecision(actionId, action, behavior, "block", "system", "blocked");
@@ -178,6 +261,7 @@ export class ToolAuthorizationBroker {
       ...(action.preview ? { preview: sanitizePreview(action.preview) } : {}),
       ...(action.job && action.category === "schedule_job" ? { job: sanitizeJob(action.job) } : {}),
       ...(rememberApproval ? { alwaysAllowTool: true } : {}),
+      ...(rememberIntegration ? { alwaysAllowIntegration: true } : {}),
       expiresAt,
     };
     this.auditDecision(actionId, action, behavior, "ask", "policy", "pending");
@@ -194,6 +278,7 @@ export class ToolAuthorizationBroker {
         signal,
         abortListener,
         ...(rememberApproval ? { rememberApproval } : {}),
+        ...(rememberIntegration ? { rememberIntegration } : {}),
       });
       this.publish({ type: "tool_approval_requested", conversationId: action.conversationId, request });
     });
@@ -210,15 +295,16 @@ export class ToolAuthorizationBroker {
       throw new WispBackendError("invalid_request", "The approval response does not match the pending action.");
     }
     const { category } = pending.request;
-    const alwaysAllowFiles =
-      isWorkspaceFileCategory(category) &&
-      pending.request.scope.kind === "workspace_path" &&
-      this.store.get().autoReview;
-    if (request.decision === "allow_always" && !alwaysAllowFiles && !pending.rememberApproval) {
+    const fileCategory =
+      isWorkspaceFileCategory(category) && pending.request.scope.kind === "workspace_path" ? category : null;
+    if (request.decision === "allow_always" && !fileCategory && !pending.rememberApproval) {
       throw new WispBackendError(
         "invalid_request",
-        "Always allow is available only for workspace file changes while auto-review is on, or for an integration tool that offers it.",
+        "Always allow is available only for workspace file changes, or for an integration tool that offers it.",
       );
+    }
+    if (request.decision === "allow_integration" && !pending.rememberIntegration) {
+      throw new WispBackendError("invalid_request", "This integration cannot be always allowed.");
     }
     if (request.decision === "block" && category === "save_skill") {
       throw new WispBackendError("invalid_request", "Skill changes can only be allowed once or denied.");
@@ -231,22 +317,28 @@ export class ToolAuthorizationBroker {
     this.pending.delete(request.approvalId);
     this.cleanup(pending);
     let policyError: unknown;
-    if (request.decision === "block") {
-      await this.store.blockCategory(category, this.createId).catch((error: unknown) => {
+    const remember = (operation: () => Promise<unknown>) =>
+      operation().catch((error: unknown) => {
         policyError = error;
       });
+    // File changes are remembered for this Wisp; an integration block applies to every Wisp.
+    if (request.decision === "block" && fileCategory) {
+      await remember(() => this.wispPolicies.setFileBehavior(request.conversationId, fileCategory, "block"));
+    } else if (request.decision === "block") {
+      await remember(() => this.store.blockCategory(category, this.createId));
     }
-    if (request.decision === "allow_always" && isWorkspaceFileCategory(category)) {
-      await this.store.allowFileCategory(category, this.createId).catch((error: unknown) => {
-        policyError = error;
-      });
+    if (request.decision === "allow_always" && fileCategory) {
+      await remember(() => this.wispPolicies.setFileBehavior(request.conversationId, fileCategory, "allow"));
+    } else if (request.decision === "allow_always" && pending.rememberApproval) {
+      await remember(pending.rememberApproval);
     }
-    if (request.decision === "allow_always" && pending.rememberApproval) {
-      await pending.rememberApproval().catch((error: unknown) => {
-        policyError = error;
-      });
+    if (request.decision === "allow_integration" && pending.rememberIntegration) {
+      await remember(pending.rememberIntegration);
     }
-    const allowed = request.decision === "allow_once" || request.decision === "allow_always";
+    const allowed =
+      request.decision === "allow_once" ||
+      request.decision === "allow_always" ||
+      request.decision === "allow_integration";
     this.audit.append({
       actionId: request.approvalId,
       conversationId: request.conversationId,
@@ -330,7 +422,7 @@ export class ToolAuthorizationBroker {
     actionId: string,
     action: ToolAuthorizationRequest,
     matchedPolicy: ToolPolicyBehavior,
-    decision: "allow" | "ask" | "block" | "allow_always" | "cancelled",
+    decision: "allow" | "ask" | "block" | "allow_always" | "allow_everything" | "cancelled",
     actor: "policy" | "user" | "system",
     outcome: "pending" | "allowed" | "blocked" | "cancelled",
   ): void {
@@ -419,6 +511,25 @@ export function evaluateToolPolicy(
   if (category !== "create_file" && category !== "modify_file") return "block";
   if (!settings.autoReview || scopeKind !== "workspace_path") return "ask";
   return workspaceFileBehavior(settings.rules, category);
+}
+
+/**
+ * The Wisp's own setting for a kind of file change replaces the app-wide one,
+ * which still decides when the Wisp has none. Called only when no Block rule matched.
+ */
+export function applyWispToolPolicy(
+  behavior: ToolPolicyBehavior,
+  wisp: WispToolPolicy,
+  category: ToolActionCategory | string,
+  scopeKind: string,
+): ToolPolicyBehavior {
+  if (scopeKind === "workspace_path" && isWorkspaceFileCategory(category)) return wisp.files[category] ?? behavior;
+  return behavior;
+}
+
+/** Risk mode covers only what it lists; skills, jobs and commands keep their own rules. */
+function allowsEverything(wisp: WispToolPolicy, category: ToolActionCategory): boolean {
+  return wisp.allowEverything && ALLOW_EVERYTHING_CATEGORIES.includes(category);
 }
 
 function sanitizePreview(value: string): string {

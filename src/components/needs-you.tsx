@@ -15,8 +15,6 @@ import type { ToolApprovalDecision, ToolApprovalRequest } from "../../shared/too
 interface NeedsYouProps {
   chats: ChatViewCollection;
   approvals: Record<string, ReadonlyArray<ToolApprovalRequest>>;
-  /** Auto-review is on, so a lasting Allow rule would take effect. */
-  allowAlwaysAvailable: boolean;
   onResolve: (request: ToolApprovalRequest, decision: ToolApprovalDecision) => void;
   onOpenChat: (chatId: ChatId) => void;
   /** Opens the Approvals tab, where the rest wait; without it they are not pointed to. */
@@ -33,14 +31,7 @@ function accentStyle(chat: ChatView): CSSProperties | undefined {
  * The approval waiting longest for the person, at the top of the mobile list, so it can be
  * answered without opening the conversation. Tapping it shows everything about the request.
  */
-export function NeedsYou({
-  chats,
-  approvals,
-  allowAlwaysAvailable,
-  onResolve,
-  onOpenChat,
-  onOpenApprovals,
-}: NeedsYouProps) {
+export function NeedsYou({ chats, approvals, onResolve, onOpenChat, onOpenApprovals }: NeedsYouProps) {
   const now = useClock(1_000);
   const [reviewingId, setReviewingId] = useState<string | null>(null);
   const pending = pendingApprovals(chats, approvals);
@@ -68,7 +59,6 @@ export function NeedsYou({
           <ToolApprovalCard
             request={reviewing}
             wispName={chatName(reviewingChat)}
-            allowAlwaysAvailable={allowAlwaysAvailable}
             onResolve={(decision) => {
               setReviewingId(null);
               onResolve(reviewing, decision);

@@ -76,24 +76,35 @@ the browser app, the device uploads the picked files instead: the server takes
 only the base name, sanitizes it, writes to a hidden partial file, and links it
 into `inbox/` without overwriting once exactly the declared size arrived.
 
-An approval request expires after 60 seconds and is then denied; the card
-shows the remaining time. For a workspace file change, while auto-review is on,
-the card also offers **Always allow creating files** or **Always allow editing
-files**. It saves an Allow rule for that category only, visible and reversible
-in Settings → General → Auto-review. The broker refuses this decision while
-auto-review is off and for integration calls, except an MCP tool card's
-**Always allow this tool** (see below). **Always block** saves a Block rule the
-same way; blocking an MCP call stores an integration-scope rule.
+An approval request waits 30 minutes and is then denied; the card shows the
+remaining time. While a card waits, the request's 10-minute deadline is paused.
+For a workspace file change the card also offers **Always allow creating
+files** or **Always allow editing files**, and **Always block**. They apply to
+that Wisp and that category only, are kept in the Wisp's config directory, and
+can be changed in the Wisp's **Access** tab; a category the Wisp sets nothing
+for follows Settings → General → Auto-review. Blocking an integration call
+stores an app-wide integration-scope rule. See
+[ADR 023](decisions/023-wisp-permissions.md).
+
+**Allow everything** (risk mode) in a Wisp's **Access** tab lets that Wisp
+create and edit files, write to plugins and call MCP tools, including calls
+that send workspace files, without asking. It never covers skills, jobs or
+commands outside a container, app-wide Block rules still win, and so does the
+Wisp's own Block for a kind of file change. Each action it allows is logged as
+`allow_everything` in the tool audit log.
 
 Integration access is granted per Wisp (see [plugins](plugins.md) and
 [remote MCP servers](mcp-servers.md)) and rechecked in the backend on every
-call. Linear writes require `write` access plus an expiring, single-use
-**Allow once** approval through the authorization broker; workspace auto-review
-rules cannot allow integration writes. MCP calls run under a generic
-`integration_call` category that asks and can only be blocked, never allowed,
-by policy rules. The user can always allow one MCP tool for one Wisp from its
-approval card; that permission is bound to the reviewed tool definition, so a
-changed tool asks again, and a Block rule still wins. Approval cards show a
+call. Linear writes require `write` access plus an approval through the
+authorization broker, unless the person always allowed that tool, or all of
+Linear, for that Wisp from a card or chose **Write without asking**; workspace
+auto-review rules cannot allow integration writes. MCP calls run under a
+generic `integration_call` category that asks and can only be blocked, never
+allowed, by policy rules. The user can always allow one MCP tool for one Wisp
+from its approval card; that permission is bound to the reviewed tool
+definition, so a changed tool asks again. **Use without asking** allows every
+tool of a server for one Wisp, including changed ones, except calls that send
+workspace files. A Block rule still wins over all of them. Approval cards show a
 bounded operation description with secret-like values redacted, and access is
 rechecked after the approval wait and again immediately before dispatch.
 

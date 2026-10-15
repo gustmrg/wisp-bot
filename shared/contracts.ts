@@ -71,7 +71,13 @@ import type {
 import type { AttachWorkspaceFilesResult, SetWorkspaceQuotaRequest, WorkspaceView } from "./workspace.js";
 import type { SaveWispExecutionRequest, WispExecutionView, WispSetupView } from "./execution.js";
 import type { ImportSkillRequest, SkillRequest, SkillView } from "./skills.js";
-import type { ResolveToolApprovalRequest, ToolApprovalRequest, ToolPolicySettings } from "./tool-policy.js";
+import type {
+  ResolveToolApprovalRequest,
+  SaveWispToolPolicyRequest,
+  ToolApprovalRequest,
+  ToolPolicySettings,
+  WispToolPolicyView,
+} from "./tool-policy.js";
 import type {
   SaveVoiceCredentialRequest,
   TranscribeAudioRequest,
@@ -158,6 +164,8 @@ export const WISP_IPC_CHANNELS = {
   setUserTimeZone: "wisp:time-zone:set",
   saveToolPolicy: "wisp:tool-policy:save",
   resolveToolApproval: "wisp:tool-policy:resolve-approval",
+  getWispToolPolicy: "wisp:tool-policy:get-wisp",
+  saveWispToolPolicy: "wisp:tool-policy:save-wisp",
   getLaunchAtLoginState: "wisp:login:get",
   setLaunchAtLogin: "wisp:login:set",
   getUpdateState: "wisp:update:get-state",
@@ -416,7 +424,7 @@ export type ConversationAgentEvent =
       conversationId: string;
       approvalId: string;
       toolCallId: string;
-      decision: "allow_once" | "allow_always" | "deny" | "block" | "expired";
+      decision: "allow_once" | "allow_always" | "allow_integration" | "deny" | "block" | "expired";
     }
   | {
       /** A job's run added its message to the conversation; it notifies like a reply. */
@@ -661,6 +669,9 @@ export interface WispApi {
   setUserTimeZone(request: SetUserTimeZoneRequest): Promise<EmptyResult>;
   saveToolPolicy(settings: ToolPolicySettings): Promise<BackendResult<ToolPolicySettings>>;
   resolveToolApproval(request: ResolveToolApprovalRequest): Promise<EmptyResult>;
+  /** What this Wisp may do without asking (ADR 023). */
+  getWispToolPolicy(request: ConversationRequest): Promise<BackendResult<WispToolPolicyView>>;
+  saveWispToolPolicy(request: SaveWispToolPolicyRequest): Promise<BackendResult<WispToolPolicyView>>;
   getUpdateState(): Promise<BackendResult<UpdateState>>;
   checkForUpdates(): Promise<BackendResult<UpdateState>>;
   downloadUpdate(): Promise<BackendResult<UpdateState>>;

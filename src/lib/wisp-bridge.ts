@@ -71,6 +71,8 @@ const REQUIRED_WISP_METHODS = [
   "getToolPolicy",
   "saveToolPolicy",
   "resolveToolApproval",
+  "getWispToolPolicy",
+  "saveWispToolPolicy",
   "getLaunchAtLoginState",
   "setLaunchAtLogin",
   "getUpdateState",

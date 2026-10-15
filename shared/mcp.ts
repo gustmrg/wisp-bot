@@ -9,10 +9,15 @@ export type McpAuthMode = (typeof MCP_AUTH_MODES)[number];
 export type McpConnectionState = "configured" | "connected" | "needs_sign_in" | "unavailable";
 
 /**
- * Wisp grant for an MCP server. Every call asks for approval, except tools the
- * user chose to always allow for that Wisp (see McpGrant.alwaysAllowedTools).
+ * Wisp grant for an MCP server. With "use_with_approval" every call asks,
+ * except tools the user chose to always allow for that Wisp (see
+ * McpGrant.alwaysAllowedTools). With "allow_all" no call asks, including tools
+ * the server adds or changes later; a call that sends workspace files still
+ * asks (ADR 016), and Block rules still win.
  */
-export type McpAccess = "none" | "use_with_approval";
+export type McpAccess = "none" | "use_with_approval" | "allow_all";
+
+export const MCP_ACCESS_LEVELS: ReadonlyArray<McpAccess> = ["none", "use_with_approval", "allow_all"];
 
 export interface McpToolSummary {
   /** Original tool name reported by the server. */

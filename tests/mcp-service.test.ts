@@ -538,6 +538,46 @@ describe("McpService", () => {
     expect(service.getAccess({ conversationId: "wisp-a" }).grants).toEqual([{ serverId, access: "use_with_approval" }]);
   });
 
+  it("lets a Wisp use every tool of a server without asking, including changed ones", async () => {
+    const changedTool = { ...TOOL, description: "Search things, differently" };
+    const connections = [
+      { outcome: "connected" as const, tools: [TOOL] },
+      { outcome: "connected" as const, tools: [TOOL] },
+      { outcome: "connected" as const, tools: [changedTool] },
+      { outcome: "connected" as const, tools: [changedTool] },
+    ];
+    const asked: string[] = [];
+    const authorize = vi.fn(
+      async (action: { toolCallId: string; alwaysAllowed?: boolean; rememberIntegration?: () => Promise<void> }) => {
+        if (action.alwaysAllowed) return;
+        asked.push(action.toolCallId);
+        // The user picks "Always allow all of Docs" on the first card.
+        if (action.toolCallId === "call-1") await action.rememberIntegration?.();
+      },
+    );
+    const { service } = await createService({ authorizationBroker: { authorize } }, connections);
+    const { serverId } = await addServer(service);
+    await grantAccess(service, "wisp-a", serverId);
+
+    await (await firstDefinition(service)).execute("call-1", { query: "one" });
+    expect(service.getAccess({ conversationId: "wisp-a" }).grants).toEqual([{ serverId, access: "allow_all" }]);
+    await (await firstDefinition(service)).execute("call-2", { query: "two" });
+    // A changed tool is covered too.
+    await service.refreshTools({ serverId });
+    await (await firstDefinition(service)).execute("call-3", { query: "three" });
+    expect(asked).toEqual(["call-1"]);
+
+    // A form can set it back to asking.
+    const access = service.getAccess({ conversationId: "wisp-a" });
+    await service.saveAccess({
+      conversationId: "wisp-a",
+      revision: access.revision,
+      grants: [{ serverId, access: "use_with_approval" }],
+    });
+    await (await firstDefinition(service)).execute("call-4", { query: "four" });
+    expect(asked).toEqual(["call-1", "call-4"]);
+  });
+
   it("drops tools from the snapshot when the server is disabled and unregisters labels on removal", async () => {
     const connections = [{ outcome: "connected" as const, tools: [TOOL] }];
     const { service } = await createService({}, connections);

@@ -402,6 +402,72 @@ describe("plugin service", () => {
     expect(execute).toHaveBeenCalledTimes(1);
   });
 
+  it("lets a Wisp always run one write action, or all of them, and forgets them with write access", async () => {
+    const { service, options, connect, grant, call, authorize } = await setup();
+    await connect();
+    await grant("write");
+    await call("linear_update_issue");
+    const first = authorize.mock.calls.at(-1)![0] as unknown as {
+      alwaysAllowed: boolean;
+      rememberApproval: () => Promise<void>;
+      rememberIntegration: () => Promise<void>;
+    };
+    expect(first.alwaysAllowed).toBe(false);
+    await first.rememberApproval();
+    const linear = () =>
+      service.getAccess({ conversationId: "one" }).grants.find(({ pluginId }) => pluginId === "linear");
+    expect(linear()).toEqual({ pluginId: "linear", access: "write", alwaysAllowedTools: ["linear_update_issue"] });
+    await call("linear_update_issue");
+    expect(authorize.mock.calls.at(-1)![0]).toMatchObject({ alwaysAllowed: true });
+    // Another Wisp still asks.
+    await grant("write", "two");
+    await call("linear_update_issue", "two");
+    expect(authorize.mock.calls.at(-1)![0]).toMatchObject({ alwaysAllowed: false });
+
+    // A form can remove a tool but never add one.
+    await service.saveAccess({
+      ...accessForm(service, "one"),
+      grants: [{ pluginId: "linear", access: "write", alwaysAllowedTools: [] }],
+    });
+    expect(linear()).toEqual({ pluginId: "linear", access: "write" });
+    await service.saveAccess({
+      ...accessForm(service, "one"),
+      grants: [{ pluginId: "linear", access: "write", alwaysAllowedTools: ["linear_update_issue"] }],
+    });
+    expect(linear()).toEqual({ pluginId: "linear", access: "write" });
+
+    // The whole plugin, from a form or a card, survives a restart.
+    await service.saveAccess({
+      ...accessForm(service, "one"),
+      grants: [{ pluginId: "linear", access: "write", alwaysAllowAll: true }],
+    });
+    const reloaded = new PluginService(options);
+    await reloaded.load();
+    expect(reloaded.getAccess({ conversationId: "one" }).grants.find(({ pluginId }) => pluginId === "linear")).toEqual({
+      pluginId: "linear",
+      access: "write",
+      alwaysAllowAll: true,
+    });
+    await call("linear_update_issue");
+    expect(authorize.mock.calls.at(-1)![0]).toMatchObject({ alwaysAllowed: true });
+
+    // Dropping to read access forgets it.
+    await grant("read");
+    await grant("write");
+    expect(linear()).toEqual({ pluginId: "linear", access: "write" });
+    await call("linear_update_issue", "two");
+    await (authorize.mock.calls.at(-1)![0] as unknown as typeof first).rememberIntegration();
+    expect(service.getAccess({ conversationId: "two" }).grants.find(({ pluginId }) => pluginId === "linear")).toEqual({
+      pluginId: "linear",
+      access: "write",
+      alwaysAllowAll: true,
+    });
+    await grant("none", "two");
+    await expect(
+      (authorize.mock.calls.at(-1)![0] as unknown as typeof first).rememberIntegration(),
+    ).rejects.toMatchObject({ code: "tool_blocked" });
+  });
+
   it("disabling cancels a running request; removing or replacing keys clears every previous account grant", async () => {
     const { service, connect, grant, call, execute } = await setup();
     await connect();

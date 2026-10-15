@@ -42,9 +42,11 @@ the web** and for **Read web pages**; under **Apps**, choose **Read only** or
 **Settings → Plugins** offers the same choices for every Wisp. Plugins that are
 not connected or are turned off are summarized in one line that links to
 Settings. Every Wisp starts with **No access**. New tools become available on
-its next message. Creating or updating Linear issues and adding comments still
-require an **Allow once** approval before execution, regardless of file
-auto-review rules.
+its next message. Creating or updating Linear issues and adding comments
+require an approval before execution, regardless of file auto-review rules.
+The card offers **Always allow this tool** and **Always allow all of Linear**
+for that Wisp; **Write without asking** in the Access tab does the same as the
+second. The Access tab lists always-allowed tools and can remove them.
 
 When more than one connected plugin can search or read pages, **Settings →
 Plugins → Default web providers** sets which one is listed first and marked

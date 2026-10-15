@@ -6,6 +6,7 @@ import type { ToolDefinition } from "@earendil-works/pi-coding-agent" with { "re
 
 import {
   disambiguateMcpAlias,
+  MCP_ACCESS_LEVELS,
   mcpToolAlias,
   type McpAccess,
   type McpAuthMode,
@@ -488,7 +489,7 @@ export class McpService {
       );
       const increases = request.grants.filter(({ serverId, access }) => this.access(sessionId, serverId) !== access);
       for (const { serverId } of increases) {
-        if (grants[serverId] !== "use_with_approval") continue;
+        if (grants[serverId] === "none") continue;
         const server = this.state.servers[serverId];
         if (!server || !server.enabled) {
           throw new WispBackendError("configuration_required", "Enable the connection before granting access.");
@@ -498,8 +499,9 @@ export class McpService {
         }
       }
       this.assertAccessRevision(request.conversationId, sessionId, request.revision);
-      const changedServers = Object.keys(this.state.servers).filter(
-        (serverId) => this.access(sessionId, serverId) !== (grants[serverId] ?? "none"),
+      // Calls in progress stop when access is revoked, not when it only stops asking.
+      const revokedServers = Object.keys(this.state.servers).filter(
+        (serverId) => this.access(sessionId, serverId) !== "none" && (grants[serverId] ?? "none") === "none",
       );
       const next = structuredClone(this.state);
       next.grants[sessionId] = grants;
@@ -516,7 +518,7 @@ export class McpService {
       next.alwaysAllowed[sessionId] = alwaysAllowed;
       await this.commit(next);
       for (const [controller, running] of this.running) {
-        if (running.sessionId === sessionId && changedServers.includes(running.serverId)) controller.abort();
+        if (running.sessionId === sessionId && revokedServers.includes(running.serverId)) controller.abort();
       }
       return this.getAccess({ conversationId: request.conversationId });
     });
@@ -643,7 +645,8 @@ export class McpService {
           ...(files.length
             ? {}
             : {
-                alwaysAllowed: this.isAlwaysAllowed(sessionId, serverId, tool),
+                alwaysAllowed:
+                  this.access(sessionId, serverId) === "allow_all" || this.isAlwaysAllowed(sessionId, serverId, tool),
                 rememberApproval: () =>
                   this.alwaysAllowTool(
                     conversationId,
@@ -653,6 +656,8 @@ export class McpService {
                     reviewedGeneration,
                     reviewedFingerprint,
                   ),
+                rememberIntegration: () =>
+                  this.alwaysAllowServer(conversationId, sessionId, serverId, reviewedGeneration),
               }),
         },
         combinedSignal,
@@ -710,6 +715,28 @@ export class McpService {
       const next = structuredClone(this.state);
       const wisp = (next.alwaysAllowed[sessionId] ??= {});
       wisp[serverId] = { ...wisp[serverId], [toolName]: fingerprint };
+      await this.commit(next);
+    });
+  }
+
+  /**
+   * Lets this Wisp call every tool of one server without asking, including
+   * tools added or changed later. Refused when access or the connection
+   * changed since the approval card showed it.
+   */
+  private alwaysAllowServer(
+    conversationId: string,
+    sessionId: string,
+    serverId: string,
+    generation: number | undefined,
+  ): Promise<void> {
+    return this.enqueue(async () => {
+      this.assertToolAccess(conversationId, sessionId, serverId);
+      if (this.state.servers[serverId]?.configGeneration !== generation) {
+        throw new WispBackendError("invalid_request", "This connection changed. Review the tool again.");
+      }
+      const next = structuredClone(this.state);
+      (next.grants[sessionId] ??= {})[serverId] = "allow_all";
       await this.commit(next);
     });
   }
@@ -972,10 +999,11 @@ export class McpService {
     const alwaysAllowed = this.state.alwaysAllowed[sessionId] ?? {};
     const entries = Object.entries(grants)
       .filter(([, access]) => access !== "none")
-      .map(([serverId]) => {
+      .map(([serverId, access]) => {
         const server = this.state.servers[serverId];
         return [
           serverId,
+          access,
           server?.enabled ?? null,
           server?.configGeneration ?? null,
           server?.authMode ?? null,
@@ -1222,8 +1250,9 @@ function normalizeState(value: unknown): McpState {
     const sessionGrants = mcpRecord(value);
     const normalizedGrants: Record<string, McpAccess> = {};
     for (const [serverId, access] of Object.entries(sessionGrants)) {
-      if (access !== "none" && access !== "use_with_approval") throw invalidMcpRequest();
-      normalizedGrants[serverId] = access;
+      if (typeof access !== "string" || !(MCP_ACCESS_LEVELS as ReadonlyArray<string>).includes(access))
+        throw invalidMcpRequest();
+      normalizedGrants[serverId] = access as McpAccess;
     }
     normalized.grants[sessionId] = normalizedGrants;
   }

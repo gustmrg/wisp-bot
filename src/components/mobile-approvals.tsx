@@ -12,8 +12,6 @@ import type { ToolApprovalDecision, ToolApprovalRequest } from "../../shared/too
 interface MobileApprovalsProps {
   chats: ChatViewCollection;
   approvals: Record<string, ReadonlyArray<ToolApprovalRequest>>;
-  /** Auto-review is on, so a lasting Allow rule would take effect. */
-  allowAlwaysAvailable: boolean;
   unreadCount: number;
   onResolve: (request: ToolApprovalRequest, decision: ToolApprovalDecision) => void;
   onOpenChat: (chatId: ChatId) => void;
@@ -36,13 +34,12 @@ export function pendingApprovals(
 interface ApprovalEntryProps {
   chat: ChatView;
   request: ToolApprovalRequest;
-  allowAlwaysAvailable: boolean;
   onResolve: (decision: ToolApprovalDecision) => void;
   onOpenChat: (chatId: ChatId) => void;
 }
 
 /** One pending approval, in a card lit by the Wisp that asked, with a way into its conversation. */
-export function ApprovalEntry({ chat, request, allowAlwaysAvailable, onResolve, onOpenChat }: ApprovalEntryProps) {
+export function ApprovalEntry({ chat, request, onResolve, onOpenChat }: ApprovalEntryProps) {
   const name = chatName(chat);
   const color = chat.kind === "wisp" ? wispColor(chat.wisp.name, chat.wisp.color) : undefined;
   return (
@@ -66,12 +63,7 @@ export function ApprovalEntry({ chat, request, allowAlwaysAvailable, onResolve, 
         </span>
         <ChevronRightIcon aria-hidden="true" />
       </button>
-      <ToolApprovalCard
-        request={request}
-        wispName={name}
-        allowAlwaysAvailable={allowAlwaysAvailable}
-        onResolve={onResolve}
-      />
+      <ToolApprovalCard request={request} wispName={name} onResolve={onResolve} />
     </article>
   );
 }
@@ -80,7 +72,6 @@ export function ApprovalEntry({ chat, request, allowAlwaysAvailable, onResolve, 
 export function MobileApprovals({
   chats,
   approvals,
-  allowAlwaysAvailable,
   unreadCount,
   onResolve,
   onOpenChat,
@@ -113,7 +104,6 @@ export function MobileApprovals({
             key={request.approvalId}
             chat={chats[request.conversationId]!}
             request={request}
-            allowAlwaysAvailable={allowAlwaysAvailable}
             onResolve={(decision) => onResolve(request, decision)}
             onOpenChat={onOpenChat}
           />
