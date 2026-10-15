@@ -7,3 +7,19 @@ release/
 dist-server/
 deploy/docker/master.key
 dist-web/
+
+# Claude Code: local worktrees and settings are not versioned
+.claude/worktrees/
+.claude/settings.local.json
+
+# Secrets and local environment
+.env
+.env.*
+!.env.example
+
+# Build and test byproducts
+*.tsbuildinfo
+coverage/
+
+# OS metadata
+.DS_Store
