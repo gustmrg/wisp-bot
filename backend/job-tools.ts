@@ -1,6 +1,7 @@
 import type { ToolDefinition } from "@earendil-works/pi-coding-agent" with { "resolution-mode": "import" };
 
 import {
+  isJobFinished,
   type Job,
   MAX_JOB_INSTRUCTIONS_LENGTH,
   MAX_JOB_SKILLS,
@@ -189,7 +190,8 @@ export function createJobTools(options: JobToolOptions): ToolDefinition[] {
           throw new WispBackendError("invalid_request", "A job needs a title, instructions and a schedule.");
         }
         await checkNames(fields);
-        if ((await host.list(context.conversationId)).length >= MAX_JOBS_PER_WISP) {
+        const held = (await host.list(context.conversationId)).filter((job) => !isJobFinished(job));
+        if (held.length >= MAX_JOBS_PER_WISP) {
           throw new WispBackendError(
             "invalid_request",
             `You already have ${MAX_JOBS_PER_WISP} jobs; cancel one first.`,
@@ -220,12 +222,23 @@ export function createJobTools(options: JobToolOptions): ToolDefinition[] {
     {
       name: "list_jobs",
       label: "List jobs",
-      description: "List the jobs of this conversation, with their schedule, next run and last outcome.",
+      description:
+        "List the jobs of this conversation, with their schedule, next run and last outcome. Finished jobs are not listed.",
       parameters: { type: "object", properties: {}, additionalProperties: false },
       execute: async () => {
-        const jobs = await host.list(context.conversationId);
-        if (!jobs.length) return text("There are no jobs in this conversation.");
-        return text(jobs.map(describeJob).join("\n\n"));
+        const all = await host.list(context.conversationId);
+        const jobs = all.filter((job) => !isJobFinished(job));
+        const finished = all.length - jobs.length;
+        const note = finished
+          ? `${finished === 1 ? "1 finished job is" : `${finished} finished jobs are`} kept but not listed.`
+          : undefined;
+        if (!jobs.length)
+          return text(
+            note
+              ? `There are no scheduled jobs in this conversation. ${note}`
+              : "There are no jobs in this conversation.",
+          );
+        return text([...jobs.map(describeJob), ...(note ? [note] : [])].join("\n\n"));
       },
     },
     {
@@ -358,7 +371,7 @@ function describeJob(job: Job): string {
 }
 
 function nextRunText(job: Pick<Job, "nextRunAt" | "timeZone">): string {
-  if (!job.nextRunAt) return "Its schedule has ended.";
+  if (!job.nextRunAt) return "Its schedule has ended; it stays here until it is cancelled.";
   const at = new Date(job.nextRunAt).toLocaleString("en-US", {
     timeZone: job.timeZone,
     weekday: "short",

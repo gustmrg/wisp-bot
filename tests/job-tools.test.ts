@@ -186,4 +186,41 @@ describe("job tools", () => {
     await harness.tool("cancel_job").execute("call-5", { job_id: "job-1" });
     expect(harness.jobs).toEqual([other]);
   });
+
+  it("leaves finished jobs out of the list and the limit, but keeps failed ones", async () => {
+    const ended = (id: string, status: "delivered" | "failed"): Job => ({
+      id,
+      conversationId: "atlas",
+      title: `Reminder ${id}`,
+      instructions: "Remind me.",
+      skills: [],
+      tools: [],
+      schedule: { kind: "once", at: "2026-10-10T13:00:00.000Z" },
+      timeZone: "UTC",
+      state: "",
+      runCount: 1,
+      consecutiveFailures: status === "failed" ? 1 : 0,
+      lastRun: { runId: `run-${id}`, status, endedAt: "2026-10-10T13:02:00.000Z" },
+      createdAt: NOW.toISOString(),
+      updatedAt: NOW.toISOString(),
+    });
+    const harness = setup({ jobs: [ended("done", "delivered")] });
+    expect((await harness.tool("list_jobs").execute("call-1", {})).content[0]?.text).toBe(
+      "There are no scheduled jobs in this conversation. 1 finished job is kept but not listed.",
+    );
+
+    harness.jobs.push(ended("broken", "failed"));
+    const listed = (await harness.tool("list_jobs").execute("call-2", {})).content[0]?.text;
+    expect(listed).toContain("Reminder broken (ID broken)");
+    expect(listed).toContain("Its schedule has ended; it stays here until it is cancelled.");
+    expect(listed).not.toContain("Reminder done");
+    expect(listed).toMatch(/1 finished job is kept but not listed\.$/);
+
+    for (let index = 0; index < 18; index += 1) harness.jobs.push(ended(`filler-${index}`, "delivered"));
+    await expect(harness.tool("schedule_job").execute("call-3", REQUEST)).resolves.toBeDefined();
+    for (let index = 0; index < 18; index += 1) harness.jobs.push(ended(`failing-${index}`, "failed"));
+    await expect(harness.tool("schedule_job").execute("call-4", REQUEST)).rejects.toMatchObject({
+      code: "invalid_request",
+    });
+  });
 });

@@ -110,6 +110,26 @@ describe("job records", () => {
     await reloaded.close();
   });
 
+  it("keeps finished jobs stored without counting them toward the limit", async () => {
+    const { repository } = await setup();
+    const finished = job({
+      id: "finished",
+      nextRunAt: undefined,
+      lastRun: { runId: "run-1", status: "delivered", endedAt: "2026-10-12T13:02:00.000Z" },
+    });
+    const failed = job({
+      id: "failed",
+      nextRunAt: undefined,
+      lastRun: { runId: "run-2", status: "failed", endedAt: "2026-10-12T13:02:00.000Z", errorCode: "timed_out" },
+    });
+    await repository.addJob(finished, 2);
+    await repository.addJob(failed, 2);
+    await repository.addJob(job({ id: "next" }), 2);
+    await expect(repository.addJob(job({ id: "one-too-many" }), 2)).rejects.toMatchObject({ code: "invalid_request" });
+    expect((await repository.listJobs()).map(({ id }) => id).sort()).toEqual(["failed", "finished", "next"]);
+    await repository.close();
+  });
+
   it("changes and deletes a job, keeping it in its conversation", async () => {
     const { repository } = await setup();
     await repository.addJob(job(), 20);

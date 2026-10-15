@@ -22,7 +22,7 @@ import type {
   WispCollection,
   WispId,
 } from "../shared/conversations.js";
-import { MAX_JOB_RUNS_KEPT, type Job, type JobRun } from "../shared/jobs.js";
+import { isJobFinished, MAX_JOB_RUNS_KEPT, type Job, type JobRun } from "../shared/jobs.js";
 import type { QueuedMessage } from "../shared/message-queue.js";
 import type { ScheduledMessage } from "../shared/scheduled-messages.js";
 import { WispBackendError } from "./backend-error.js";
@@ -745,7 +745,7 @@ export class ConversationRepository {
     return this.enqueue(() => this.readJobs());
   }
 
-  /** Saves a new job for an existing Wisp that holds fewer than `limit`. */
+  /** Saves a new job for an existing Wisp that holds fewer than `limit`, not counting finished ones. */
   async addJob(job: Job, limit: number): Promise<void> {
     await this.enqueue(async () => {
       if (this.state.conversations[job.conversationId]?.chat.kind !== "wisp") {
@@ -755,7 +755,8 @@ export class ConversationRepository {
       if (jobs.some(({ id }) => id === job.id)) {
         throw new WispBackendError("already_exists", "This job already exists.");
       }
-      if (jobs.filter(({ conversationId }) => conversationId === job.conversationId).length >= limit) {
+      const held = jobs.filter((other) => other.conversationId === job.conversationId && !isJobFinished(other));
+      if (held.length >= limit) {
         throw new WispBackendError("invalid_request", "This Wisp already has too many jobs.");
       }
       const store = await this.openStore();

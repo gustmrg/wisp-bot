@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { useJobs } from "@/hooks/use-jobs";
 import { useTimeZone } from "@/hooks/use-time-zone";
 import type { IntegrationSettingsTarget } from "@/lib/plugin-access";
+import { isJobFinished } from "../../shared/jobs";
 import { describeSchedule } from "../../shared/schedule";
 
 /** A Wisp's jobs at a glance, with the way to the jobs list where they are managed. */
@@ -26,7 +27,7 @@ function WispJobs({
 }) {
   const { available, jobs } = useJobs();
   const timeZone = useTimeZone();
-  const own = jobs.filter((job) => job.conversationId === conversationId);
+  const own = jobs.filter((job) => job.conversationId === conversationId && !isJobFinished(job));
   return (
     <div className="flex flex-col gap-3">
       <p className="m-0 text-xs leading-relaxed text-dim">
@@ -50,7 +51,9 @@ function WispJobs({
                         hour: "numeric",
                         minute: "2-digit",
                       })}`
-                    : "Finished"}
+                    : job.lastRun?.status === "failed"
+                      ? "Failed, will not run again"
+                      : "Its schedule has ended"}
               </span>
             </li>
           ))}
