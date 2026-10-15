@@ -21,7 +21,6 @@ saved key.
 
 - **Your profile** — preferred name, optional background, and response preferences. Saved locally in `user-profile.json` and shared with every Wisp (and its AI provider when chatting). Changes refresh existing Wisp context; busy Wisps apply the refresh after their current turn. Blank fields remove that profile context. The preferred name is required and also supplies the sidebar name and initials.
 - **Application** — theme, Wisp colors, and launch at login. With **Wisp colors** off, replies, the send button, and the selected conversation keep the neutral look instead of each Wisp's color.
-- **System** — microphone selection and hardware acceleration preferences.
 - **Wisp** — timezone and auto-review. Auto-review shows one Allow / Ask /
   Block choice for **Create files** and one for **Modify files**; turning
   auto-review off makes Wisp ask before every file change and disables the
@@ -40,8 +39,8 @@ zone to the server it is connected to, which saves it in
 each message, and daily context renewal and new scheduled messages use the
 same zone. Until the app reports a zone, a server uses its own.
 
-Settings that are saved but not wired to the desktop yet (microphone,
-hardware acceleration) are shown disabled with a **Soon** badge.
+Settings that are saved but not wired to the desktop yet (microphone) are
+shown disabled with a **Soon** badge.
 
 **Plugins** and **MCP servers** open each connection in place, inside the
 settings dialog. Removing a connection or a provider API key asks for an
@@ -108,7 +107,6 @@ in an installed release").
 
 - Microphone capture and voice input.
 - Launch at login on macOS.
-- Hardware acceleration (saved, but not read by the desktop).
 - The Shortcuts settings panel (the `Cmd/Ctrl+K` search dialog itself works).
 - **Circles** cannot run their own model sessions, and the create dialog only
   creates Wisps.

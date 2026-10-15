@@ -31,8 +31,8 @@ it("updates volume, previews each sound, and preserves event choices when muted"
   ]) {
     await user.click(screen.getByRole("button", { name: `Test sound: ${label}` }));
     expect(playNotificationSound).toHaveBeenLastCalledWith(kind, 40);
-    await user.click(screen.getByRole("switch", { name: label }));
-    expect(screen.getByRole("switch", { name: label })).not.toBeChecked();
+    await user.click(screen.getByRole("switch", { name: `Sound: ${label}` }));
+    expect(screen.getByRole("switch", { name: `Sound: ${label}` })).not.toBeChecked();
   }
   await user.click(screen.getByRole("switch", { name: "Mute the open conversation" }));
   expect(screen.getByRole("switch", { name: "Mute the open conversation" })).toBeChecked();
@@ -41,7 +41,7 @@ it("updates volume, previews each sound, and preserves event choices when muted"
   expect(screen.getByRole("button", { name: "Test sound: Response completed" })).toBeDisabled();
   await user.click(screen.getByRole("switch", { name: "Notification sounds" }));
   expect(screen.getByRole("slider")).toHaveValue("40");
-  expect(screen.getByRole("switch", { name: "Response completed" })).not.toBeChecked();
+  expect(screen.getByRole("switch", { name: "Sound: Response completed" })).not.toBeChecked();
 });
 
 it("shows persistence errors", () => {
@@ -54,4 +54,29 @@ it("shows persistence errors", () => {
     />,
   );
   expect(screen.getByRole("alert")).toHaveTextContent("Could not save preferences.");
+});
+
+it("controls system notifications apart from sounds, with a test for each event, in the desktop app", async () => {
+  const user = userEvent.setup();
+  const test = vi.fn(async () => ({ ok: true as const, value: {} }));
+  Object.defineProperty(window, "wisp", { configurable: true, value: { systemNotifications: { test } } });
+  try {
+    render(<Settings />);
+    await user.click(screen.getByRole("button", { name: "Test notification: Approval needed" }));
+    expect(test).toHaveBeenCalledWith({ kind: "needs-input" });
+    await user.click(screen.getByRole("switch", { name: "Notification: Execution error" }));
+    expect(screen.getByRole("switch", { name: "Notification: Execution error" })).not.toBeChecked();
+    expect(screen.getByRole("switch", { name: "Sound: Execution error" })).toBeChecked();
+    await user.click(screen.getByRole("switch", { name: "System notifications" }));
+    expect(screen.getByRole("button", { name: "Test notification: Approval needed" })).toBeDisabled();
+    expect(screen.getByRole("switch", { name: "Notification: Response completed" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Test sound: Approval needed" })).toBeEnabled();
+  } finally {
+    Reflect.deleteProperty(window, "wisp");
+  }
+});
+
+it("offers no system notifications in the browser app", () => {
+  render(<Settings />);
+  expect(screen.queryByRole("switch", { name: "System notifications" })).toBeNull();
 });

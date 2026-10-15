@@ -4,6 +4,7 @@ import { CalendarClockIcon, CheckIcon, CircleAlertIcon, CircleStopIcon, CopyIcon
 import type { Message, Wisp } from "@/chat-data";
 import { WispAvatar } from "@/components/chat-avatar";
 import { splitMessageAttachments } from "../../shared/workspace";
+import { useRevealedText } from "@/hooks/use-reply-pace";
 import { useTimeZone } from "@/hooks/use-time-zone";
 import { copyText } from "@/lib/clipboard";
 import { cn } from "@/lib/utils";
@@ -72,6 +73,12 @@ function MessageTools({
 }
 
 function MessageView({ message, dense = false, author, showAuthor = false, onAnswer, onRetry }: MessageViewProps) {
+  // Called before anything can return, so a reply is seen while it is still empty and streaming.
+  const reveal = useRevealedText(
+    message.type === "incoming" ? message.id : undefined,
+    message.type === "incoming" ? message.text : "",
+    message.status,
+  );
   if (message.type === "time") {
     return (
       <div className="mt-[13px] mb-[5px] flex items-center justify-center text-faint text-2xs">
@@ -140,7 +147,10 @@ function MessageView({ message, dense = false, author, showAuthor = false, onAns
     return (
       <div className="mt-[13px] mb-[5px] flex animate-message-in items-center justify-center gap-1.5 text-faint text-2xs">
         {message.status === "failed" ? (
-          <FailedNotice onRetry={message.retryable ? onRetry : undefined} />
+          <FailedNotice
+            reason={message.type === "incoming" ? message.error?.message : undefined}
+            onRetry={message.retryable ? onRetry : undefined}
+          />
         ) : (
           <>
             <CircleStopIcon aria-hidden="true" className="size-3 flex-none" />
@@ -150,7 +160,7 @@ function MessageView({ message, dense = false, author, showAuthor = false, onAns
       </div>
     );
   }
-  if (empty) return null;
+  if (empty || (!outgoing && !reveal.text.trim())) return null;
   return (
     <div
       className={cn(
@@ -178,7 +188,7 @@ function MessageView({ message, dense = false, author, showAuthor = false, onAns
               : "rounded-bl-[5px] border border-border bg-bubble-in text-foreground",
           )}
         >
-          {outgoing ? <OutgoingText text={message.text} /> : <MarkdownView text={message.text} />}
+          {outgoing ? <OutgoingText text={message.text} /> : <IncomingText reveal={reveal} />}
         </div>
         <MessageTools
           text={outgoing ? splitMessageAttachments(message.text).text : message.text}
@@ -212,7 +222,10 @@ function MessageView({ message, dense = false, author, showAuthor = false, onAns
             <span>{message.status === "queued" ? "Queued" : "Stopped"}</span>
           ) : null}
           {message.status === "failed" ? (
-            <FailedNotice onRetry={!outgoing && message.retryable ? onRetry : undefined} />
+            <FailedNotice
+              reason={outgoing ? undefined : message.error?.message}
+              onRetry={!outgoing && message.retryable ? onRetry : undefined}
+            />
           ) : null}
         </div>
       ) : null}
@@ -220,12 +233,24 @@ function MessageView({ message, dense = false, author, showAuthor = false, onAns
   );
 }
 
-/** Marks a message that failed, in the error colour so it stands apart from a stopped or queued one. */
-function FailedNotice({ onRetry }: { onRetry?: () => void }) {
+/**
+ * Marks a message that failed, in the error colour so it stands apart from a
+ * stopped or queued one, with the reason on one line and in full on hover.
+ */
+function FailedNotice({ reason, onRetry }: { reason?: string; onRetry?: () => void }) {
   return (
-    <span className="inline-flex items-center gap-1.5 text-destructive">
+    <span className="inline-flex min-w-0 items-center gap-1.5 text-destructive">
       <CircleAlertIcon aria-hidden="true" className="size-3 flex-none" />
-      <span>Failed</span>
+      {reason ? (
+        <Tooltip>
+          <TooltipTrigger render={<span />} className="min-w-0 max-w-[min(520px,70vw)] truncate" delay={300}>
+            {`Failed · ${reason}`}
+          </TooltipTrigger>
+          <TooltipContent className="max-w-[360px]">{reason}</TooltipContent>
+        </Tooltip>
+      ) : (
+        <span>Failed</span>
+      )}
       {onRetry ? (
         <button
           type="button"
@@ -236,6 +261,16 @@ function FailedNotice({ onRetry }: { onRetry?: () => void }) {
         </button>
       ) : null}
     </span>
+  );
+}
+
+/** A Wisp's reply, appearing at the person's chosen pace while it arrives; a click shows the rest at once. */
+function IncomingText({ reveal }: { reveal: ReturnType<typeof useRevealedText> }) {
+  if (!reveal.revealing) return <MarkdownView text={reveal.text} />;
+  return (
+    <div data-revealing="" onClick={reveal.finish}>
+      <MarkdownView text={reveal.text} />
+    </div>
   );
 }
 
