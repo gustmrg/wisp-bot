@@ -102,6 +102,38 @@ export function withWorkspaceFileBehavior<Rule extends ToolPolicyRule>(
   return [...untouched, ...rewritten];
 }
 
+/**
+ * A Wisp's own permissions, kept in its config folder (ADR 023). Block rules
+ * in the app-wide policy still win over everything here.
+ */
+export interface WispToolPolicy {
+  /** File changes in the Wisp's workspace; a category left out follows the app-wide setting. */
+  files: Partial<Record<WorkspaceFileCategory, ToolPolicyBehavior>>;
+  /**
+   * Risk mode: every action in ALLOW_EVERYTHING_CATEGORIES runs without
+   * asking. Skills, jobs and commands outside a container are never covered.
+   */
+  allowEverything: boolean;
+}
+
+/** What risk mode allows without asking. */
+export const ALLOW_EVERYTHING_CATEGORIES: ReadonlyArray<ToolActionCategory> = [
+  "create_file",
+  "modify_file",
+  "external_write",
+  "integration_call",
+];
+
+export interface WispToolPolicyView extends WispToolPolicy {
+  conversationId: string;
+  /** The app-wide behavior a file category follows when the Wisp sets none. */
+  defaults: Record<WorkspaceFileCategory, ToolPolicyBehavior>;
+}
+
+export interface SaveWispToolPolicyRequest extends WispToolPolicy {
+  conversationId: string;
+}
+
 export interface ToolApprovalRequest {
   approvalId: string;
   conversationId: string;
@@ -116,6 +148,8 @@ export interface ToolApprovalRequest {
   preview?: string;
   /** The integration can remember this tool for this Wisp, so the card offers "Always allow". */
   alwaysAllowTool?: boolean;
+  /** The integration can let this Wisp use all of it without asking, so the card offers that too. */
+  alwaysAllowIntegration?: boolean;
   expiresAt: string;
 }
 
@@ -133,11 +167,14 @@ export interface JobApprovalDetails {
 }
 
 /**
- * "allow_always" saves an Allow rule for workspace file changes while
- * auto-review is on, or always allows one integration tool for one Wisp when
- * the request offers it (alwaysAllowTool).
+ * "allow_always" lets this Wisp make that kind of workspace file change
+ * without asking, or always allows one integration tool for this Wisp when the
+ * request offers it (alwaysAllowTool). "allow_integration" lets this Wisp use
+ * the whole integration without asking (alwaysAllowIntegration). "block"
+ * blocks file changes of that kind for this Wisp, and integration calls for
+ * every Wisp.
  */
-export type ToolApprovalDecision = "allow_once" | "allow_always" | "deny" | "block";
+export type ToolApprovalDecision = "allow_once" | "allow_always" | "allow_integration" | "deny" | "block";
 
 export interface ResolveToolApprovalRequest {
   approvalId: string;

@@ -66,8 +66,6 @@ interface SidebarProps {
   onOpenApprovals?: () => void;
   /** Answers an approval from the mobile list; without it the list does not offer to. */
   onResolveApproval?: (request: ToolApprovalRequest, decision: ToolApprovalDecision) => void;
-  /** Auto-review is on, so approvals can offer a lasting Allow rule. */
-  allowAlwaysAvailable?: boolean;
   onResizeStart: (event: ReactPointerEvent<HTMLDivElement>) => void;
   onSelectChat: (chatId: ChatId) => void;
   /** Without it the list has no menu, as in component tests that do not need it. */
@@ -137,7 +135,6 @@ function Sidebar({
   onOpenSettings,
   onOpenApprovals,
   onResolveApproval,
-  allowAlwaysAvailable = false,
   onResizeStart,
   onSelectChat,
   onChatAction,
@@ -219,7 +216,6 @@ function Sidebar({
               <NeedsYou
                 chats={chats}
                 approvals={approvals}
-                allowAlwaysAvailable={allowAlwaysAvailable}
                 onResolve={onResolveApproval}
                 onOpenChat={onSelectChat}
                 onOpenApprovals={onOpenApprovals}

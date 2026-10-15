@@ -169,6 +169,24 @@ function completeBridge(): WispApi {
       throw new Error("not called");
     },
     resolveToolApproval: async () => ({ ok: true, value: {} }),
+    getWispToolPolicy: async () => ({
+      ok: true,
+      value: {
+        conversationId: "one",
+        files: {},
+        allowEverything: false,
+        defaults: { create_file: "ask", modify_file: "ask" },
+      },
+    }),
+    saveWispToolPolicy: async () => ({
+      ok: true,
+      value: {
+        conversationId: "one",
+        files: {},
+        allowEverything: false,
+        defaults: { create_file: "ask", modify_file: "ask" },
+      },
+    }),
     getUpdateState: async () => ({ ok: true, value: { phase: "idle", currentVersion: "0.1.0" } }),
     checkForUpdates: async () => ({ ok: true, value: { phase: "up-to-date", currentVersion: "0.1.0" } }),
     downloadUpdate: async () => ({ ok: true, value: { phase: "downloaded", currentVersion: "0.1.0" } }),

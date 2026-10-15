@@ -257,7 +257,6 @@ function Workspace({ userProfile }: { userProfile: UserProfileController }) {
             onOpenSettings={() => showSettings("general")}
             onOpenApprovals={showApprovals}
             onResolveApproval={(request, decision) => void workspace.resolveApproval(request, decision)}
-            allowAlwaysAvailable={workspace.preferences.autoReview}
             onResizeStart={sidebarPanel.onResizeStart}
             onSelectChat={selectChat}
             onChatAction={applyChatAction}
@@ -274,7 +273,6 @@ function Workspace({ userProfile }: { userProfile: UserProfileController }) {
               error={workspace.conversationErrors[workspace.activeChat.id]?.message}
               acknowledging={Boolean(workspace.acknowledging[workspace.activeChat.id])}
               approvals={workspace.approvals[workspace.activeChat.id] ?? []}
-              allowAlwaysAvailable={workspace.preferences.autoReview}
               onAnswerPrompt={(messageId, answer) => void workspace.answerPrompt(messageId, answer)}
               onAbort={() => void workspace.abortActiveChat()}
               onLoadOlder={workspace.loadOlderMessages}
@@ -350,7 +348,6 @@ function Workspace({ userProfile }: { userProfile: UserProfileController }) {
             <MobileApprovals
               chats={workspace.chats}
               approvals={workspace.approvals}
-              allowAlwaysAvailable={workspace.preferences.autoReview}
               unreadCount={unreadCount}
               onResolve={(request, decision) => void workspace.resolveApproval(request, decision)}
               onOpenChat={selectChat}

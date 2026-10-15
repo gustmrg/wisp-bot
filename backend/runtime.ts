@@ -29,6 +29,7 @@ import { PiConversationAgentFactory, SdkPiSessionFactory } from "./pi-conversati
 import { PluginService } from "./plugin-service.js";
 import { SessionReportService } from "./session-report-service.js";
 import type { StructuredLogger } from "./structured-logger.js";
+import { WispToolPolicyStore } from "./wisp-tool-policy-store.js";
 import { ToolAuditStore } from "./tool-audit-store.js";
 import { ToolAuthorizationBroker } from "./tool-authorization-broker.js";
 import { ToolPolicyStore } from "./tool-policy-store.js";
@@ -158,6 +159,9 @@ export async function createBackendRuntime(options: BackendRuntimeOptions): Prom
     {
       selectWindowId: options.selectApprovalWindowId,
       audit: new ToolAuditStore(path.join(dataDirectory, "tool-audit.jsonl")),
+      wispPolicies: new WispToolPolicyStore(
+        (conversationId) => conversationRepository.getAgentContext(conversationId).configDirectory,
+      ),
     },
   );
   const conversationRepository = new ConversationRepository({ dataDirectory, userName: options.userName });

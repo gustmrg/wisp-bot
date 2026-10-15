@@ -253,6 +253,50 @@ describe("AgentRegistry", () => {
     await registry.disposeAll();
     vi.useRealTimers();
   });
+
+  it("pauses the deadline while an approval card waits for the person", async () => {
+    vi.useFakeTimers();
+    const events: SequencedConversationAgentEvent[] = [];
+    const agent = new FakeConversationAgent("one", { latencyMs: 60_000 });
+    const abort = vi.spyOn(agent, "abort");
+    const registry = new AgentRegistry(
+      { create: () => agent },
+      (event) => events.push(event),
+      () => undefined,
+      { executionTimeoutMs: 100 },
+    );
+    await registry.restore([context("one")], { providerId: "test", modelId: "test" });
+    registry.dispatch({ conversationId: "one", requestId: "deadline", text: "Slow" });
+    await vi.advanceTimersByTimeAsync(60);
+    const request = {
+      approvalId: "approval-1",
+      conversationId: "one",
+      toolCallId: "tool-1",
+      toolName: "write",
+      category: "create_file" as const,
+      scope: { kind: "workspace_path" as const, display: "notes.txt" },
+      summary: "Create notes.txt",
+      expiresAt: "2026-10-15T12:00:00.000Z",
+    };
+    registry.publishExternalEvent({ type: "tool_approval_requested", conversationId: "one", request });
+    // Waiting for the person does not use up the deadline.
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(abort).not.toHaveBeenCalled();
+    registry.publishExternalEvent({
+      type: "tool_approval_resolved",
+      conversationId: "one",
+      approvalId: "approval-1",
+      toolCallId: "tool-1",
+      decision: "allow_once",
+    });
+    // The 40 ms left run out once the card is answered.
+    await vi.advanceTimersByTimeAsync(39);
+    expect(abort).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(2);
+    expect(abort).toHaveBeenCalledTimes(1);
+    await registry.disposeAll();
+    vi.useRealTimers();
+  });
 });
 
 it("never publishes idle or accepts a message before configuration, then enables the new Wisp", async () => {

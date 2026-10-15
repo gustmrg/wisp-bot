@@ -30,7 +30,6 @@ describe("ToolApprovalCard", () => {
           expiresAt: "2026-10-11T12:01:00.000Z",
         }}
         wispName="Atlas"
-        allowAlwaysAvailable
         onResolve={onResolve}
       />,
     );
@@ -63,7 +62,6 @@ describe("ToolApprovalCard", () => {
           expiresAt: "2026-09-07T12:01:00.000Z",
         }}
         wispName="Atlas"
-        allowAlwaysAvailable
         onResolve={onResolve}
       />,
     );
@@ -89,22 +87,28 @@ describe("ToolApprovalCard", () => {
       summary: "search — query: wisp",
       expiresAt: "2026-09-07T12:01:00.000Z",
     };
-    const { rerender } = render(
-      <ToolApprovalCard request={request} wispName="Atlas" allowAlwaysAvailable={false} onResolve={onResolve} />,
-    );
+    const { rerender } = render(<ToolApprovalCard request={request} wispName="Atlas" onResolve={onResolve} />);
     expect(screen.queryByRole("button", { name: /Always allow/ })).not.toBeInTheDocument();
 
     rerender(
+      <ToolApprovalCard request={{ ...request, alwaysAllowTool: true }} wispName="Atlas" onResolve={onResolve} />,
+    );
+    expect(
+      screen.getByText(/Always allow applies to Atlas only; a single tool asks again if it changes/),
+    ).toBeVisible();
+    expect(screen.queryByRole("button", { name: "Always allow all of Docs" })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Always allow this tool" }));
+    expect(onResolve).toHaveBeenCalledWith("allow_always");
+
+    rerender(
       <ToolApprovalCard
-        request={{ ...request, alwaysAllowTool: true }}
+        request={{ ...request, alwaysAllowTool: true, alwaysAllowIntegration: true }}
         wispName="Atlas"
-        allowAlwaysAvailable={false}
         onResolve={onResolve}
       />,
     );
-    expect(screen.getByText(/Always allow applies to Atlas only and asks again if the tool changes/)).toBeVisible();
-    await user.click(screen.getByRole("button", { name: "Always allow this tool" }));
-    expect(onResolve).toHaveBeenCalledWith("allow_always");
+    await user.click(screen.getByRole("button", { name: "Always allow all of Docs" }));
+    expect(onResolve).toHaveBeenCalledWith("allow_integration");
   });
 
   it("shows the exact skill instructions and offers only allow once or deny", async () => {
@@ -124,7 +128,6 @@ describe("ToolApprovalCard", () => {
           expiresAt: "2026-09-07T12:01:00.000Z",
         }}
         wispName="Atlas"
-        allowAlwaysAvailable
         onResolve={onResolve}
       />,
     );
@@ -154,7 +157,6 @@ describe("ToolApprovalCard", () => {
           expiresAt: "2026-09-02T12:01:00.000Z",
         }}
         wispName="Atlas"
-        allowAlwaysAvailable
         onResolve={onResolve}
       />,
     );
@@ -164,7 +166,7 @@ describe("ToolApprovalCard", () => {
     expect(onResolve).toHaveBeenCalledWith("allow_once");
   });
 
-  it("counts down to expiry and offers a lasting Allow for workspace files only while auto-review is on", async () => {
+  it("counts down to expiry and offers a lasting Allow for workspace files for this Wisp", async () => {
     vi.useFakeTimers({ toFake: ["Date", "setInterval", "clearInterval"] });
     vi.setSystemTime(new Date("2026-09-02T12:00:00.000Z"));
     try {
@@ -179,21 +181,14 @@ describe("ToolApprovalCard", () => {
         summary: "Edit notes.txt",
         expiresAt: "2026-09-02T12:01:00.000Z",
       };
-      const { rerender } = render(
-        <ToolApprovalCard request={request} wispName="Atlas" allowAlwaysAvailable onResolve={onResolve} />,
-      );
+      render(<ToolApprovalCard request={request} wispName="Atlas" onResolve={onResolve} />);
       expect(screen.getByText("Expires in 1:00")).toBeVisible();
       act(() => vi.advanceTimersByTime(52_000));
       expect(screen.getByText("Expires in 0:08")).toHaveClass("text-destructive");
 
       screen.getByRole("button", { name: "Always allow editing files" }).click();
       expect(onResolve).toHaveBeenCalledWith("allow_always");
-      expect(screen.getByText(/Settings → General → Auto-review/)).toBeVisible();
-
-      rerender(
-        <ToolApprovalCard request={request} wispName="Atlas" allowAlwaysAvailable={false} onResolve={onResolve} />,
-      );
-      expect(screen.queryByRole("button", { name: /Always allow/ })).not.toBeInTheDocument();
+      expect(screen.getByText(/apply to Atlas only\. Change them in Wisp settings → Access/)).toBeVisible();
     } finally {
       vi.useRealTimers();
     }

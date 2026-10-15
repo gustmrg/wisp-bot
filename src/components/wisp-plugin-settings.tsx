@@ -1,5 +1,5 @@
 import { useEffect, useId, useState, type ReactNode } from "react";
-import { GlobeIcon, XIcon } from "lucide-react";
+import { FilePenIcon, FilePlusIcon, GlobeIcon, TriangleAlertIcon, XIcon } from "lucide-react";
 
 import {
   PLUGIN_CATALOG,
@@ -12,22 +12,46 @@ import {
   type WebProviders,
 } from "../../shared/plugins";
 import type { McpAccess, McpGrant, McpSettingsView } from "../../shared/mcp";
+import { getToolMetadata } from "../../shared/tool-catalog";
+import type {
+  ToolPolicyBehavior,
+  WispToolPolicy,
+  WispToolPolicyView,
+  WorkspaceFileCategory,
+} from "../../shared/tool-policy";
 import { AccessRow, InitialsBadge, type AccessOption } from "@/components/access-row";
 import { SettingsActions } from "@/components/settings/settings-primitives";
 import { PluginLogo } from "@/components/plugin-logo";
 import { Button } from "@/components/ui/button";
+import { ToggleSwitch } from "@/components/ui/toggle-switch";
 import { buildAccessRequest, isPluginAvailable, type IntegrationSettingsTarget } from "@/lib/plugin-access";
 
 const ACCESS_OPTIONS = [
   { value: "none", label: "No access" },
   { value: "read", label: "Read only" },
   { value: "write", label: "Read and write" },
+  // Write access whose actions never ask; saved as alwaysAllowAll on a "write" grant.
+  { value: "write_all", label: "Write without asking" },
 ] as const;
 
 const MCP_ACCESS_OPTIONS = [
   { value: "none", label: "No access" },
   { value: "use_with_approval", label: "Use with approval" },
+  { value: "allow_all", label: "Use without asking" },
 ] as const;
+
+const FILE_CATEGORIES: ReadonlyArray<{ value: WorkspaceFileCategory; label: string; icon: ReactNode }> = [
+  {
+    value: "create_file",
+    label: "Create files",
+    icon: <FilePlusIcon className="size-3.5 text-dim" aria-hidden="true" />,
+  },
+  { value: "modify_file", label: "Edit files", icon: <FilePenIcon className="size-3.5 text-dim" aria-hidden="true" /> },
+];
+
+const BEHAVIOR_LABELS: Record<ToolPolicyBehavior, string> = { allow: "Allow", ask: "Ask", block: "Block" };
+
+const NO_POLICY: WispToolPolicy = { files: {}, allowEverything: false };
 
 const MAX_PREVIEW_TOOLS = 6;
 const NO_PROVIDERS: WebProviders = { search: null, read: null };
@@ -43,10 +67,40 @@ export function WispPluginSettings({
 }
 
 function completeGrants(grants: ReadonlyArray<PluginGrant>): PluginGrant[] {
-  return PLUGIN_CATALOG.map(({ id }) => ({
-    pluginId: id,
-    access: grants.find((grant) => grant.pluginId === id)?.access ?? "none",
-  }));
+  return PLUGIN_CATALOG.map(({ id }) => {
+    const grant = grants.find((entry) => entry.pluginId === id);
+    return {
+      pluginId: id,
+      access: grant?.access ?? "none",
+      alwaysAllowAll: grant?.alwaysAllowAll === true,
+      // Left out when there are none, so a save sends a list only to remove from it.
+      ...(grant?.alwaysAllowedTools?.length ? { alwaysAllowedTools: grant.alwaysAllowedTools } : {}),
+    };
+  });
+}
+
+function sameList(left: ReadonlyArray<string> = [], right: ReadonlyArray<string> = []): boolean {
+  return left.length === right.length && left.every((name) => right.includes(name));
+}
+
+function samePluginGrant(left: PluginGrant, right: PluginGrant | undefined): boolean {
+  return (
+    left.access === right?.access &&
+    Boolean(left.alwaysAllowAll) === Boolean(right.alwaysAllowAll) &&
+    sameList(left.alwaysAllowedTools, right.alwaysAllowedTools)
+  );
+}
+
+function samePolicy(left: WispToolPolicy, right: WispToolPolicy): boolean {
+  return (
+    left.allowEverything === right.allowEverything &&
+    FILE_CATEGORIES.every(({ value }) => left.files[value] === right.files[value])
+  );
+}
+
+function pluginChoice(grant: PluginGrant | undefined): string {
+  if (grant?.access === "write" && grant.alwaysAllowAll) return "write_all";
+  return grant?.access ?? "none";
 }
 
 function completeMcpGrants(view: McpSettingsView, grants: ReadonlyArray<McpGrant>): McpGrant[] {
@@ -61,12 +115,41 @@ function completeMcpGrants(view: McpSettingsView, grants: ReadonlyArray<McpGrant
 }
 
 function sameMcpGrant(left: McpGrant, right: McpGrant | undefined): boolean {
-  const leftTools = left.alwaysAllowedTools ?? [];
-  const rightTools = right?.alwaysAllowedTools ?? [];
+  return left.access === right?.access && sameList(left.alwaysAllowedTools, right?.alwaysAllowedTools);
+}
+
+/** Tools a Wisp runs without asking, each a chip that makes it ask again. */
+function AlwaysAllowedChips({
+  names,
+  label,
+  disabled,
+  onRemove,
+}: {
+  names: ReadonlyArray<string>;
+  label: (name: string) => string;
+  disabled: boolean;
+  onRemove: (name: string) => void;
+}) {
+  if (!names.length) return null;
   return (
-    left.access === right?.access &&
-    leftTools.length === rightTools.length &&
-    leftTools.every((name) => rightTools.includes(name))
+    <span className="mt-1.5 flex flex-wrap items-center gap-1.5">
+      Always allowed:
+      {names.map((name) => (
+        <Button
+          key={name}
+          type="button"
+          size="xs"
+          variant="secondary"
+          disabled={disabled}
+          aria-label={`Ask again before ${label(name)}`}
+          title="Ask again before every call"
+          onClick={() => onRemove(name)}
+        >
+          {label(name)}
+          <XIcon aria-hidden="true" />
+        </Button>
+      ))}
+    </span>
   );
 }
 
@@ -119,6 +202,9 @@ function WispAccessForm({
   const [mcpGrants, setMcpGrants] = useState<ReadonlyArray<McpGrant>>([]);
   const [savedMcpGrants, setSavedMcpGrants] = useState<ReadonlyArray<McpGrant>>([]);
   const [mcpRevision, setMcpRevision] = useState("");
+  const [policy, setPolicy] = useState<WispToolPolicy>(NO_POLICY);
+  const [savedPolicy, setSavedPolicy] = useState<WispToolPolicy>(NO_POLICY);
+  const [policyDefaults, setPolicyDefaults] = useState<WispToolPolicyView["defaults"] | null>(null);
   const [error, setError] = useState("");
   const [saved, setSaved] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -133,8 +219,9 @@ function WispAccessForm({
       window.wisp.getWispPluginAccess({ conversationId }),
       window.wisp.getMcpSettings(),
       window.wisp.getWispMcpAccess({ conversationId }),
+      window.wisp.getWispToolPolicy({ conversationId }),
     ])
-      .then(([plugins, access, mcp, mcpAccess]) => {
+      .then(([plugins, access, mcp, mcpAccess, wispPolicy]) => {
         if (cancelled) return;
         if (!plugins.ok) {
           setError(plugins.error.message);
@@ -144,10 +231,18 @@ function WispAccessForm({
           setError(access.error.message);
           return;
         }
-        if (access.value.conversationId !== conversationId) {
+        if (!wispPolicy.ok) {
+          setError(wispPolicy.error.message);
+          return;
+        }
+        if (access.value.conversationId !== conversationId || wispPolicy.value.conversationId !== conversationId) {
           setError("Could not load this Wisp's access settings.");
           return;
         }
+        const { defaults, conversationId: _policyConversation, ...nextPolicy } = wispPolicy.value;
+        setPolicy(nextPolicy);
+        setSavedPolicy(nextPolicy);
+        setPolicyDefaults(defaults);
         const nextGrants = completeGrants(access.value.grants);
         setSettings(plugins.value);
         setGrants(nextGrants);
@@ -178,8 +273,12 @@ function WispAccessForm({
     grants.some(
       (grant) =>
         !isWebProvider(grant.pluginId) &&
-        grant.access !== savedGrants.find((savedGrant) => savedGrant.pluginId === grant.pluginId)?.access,
+        !samePluginGrant(
+          grant,
+          savedGrants.find((savedGrant) => savedGrant.pluginId === grant.pluginId),
+        ),
     );
+  const policyDirty = !samePolicy(policy, savedPolicy);
   const mcpDirty = mcpGrants.some(
     (grant) =>
       !sameMcpGrant(
@@ -189,7 +288,7 @@ function WispAccessForm({
   );
 
   // The footer shows only while there is something to save or report, like the profile's.
-  const unsaved = dirty || mcpDirty || saving;
+  const unsaved = dirty || mcpDirty || policyDirty || saving;
 
   function changed() {
     setError("");
@@ -201,6 +300,17 @@ function WispAccessForm({
     setError("");
     setSaved(false);
     try {
+      if (policyDirty) {
+        const result = await window.wisp.saveWispToolPolicy({ conversationId, ...policy });
+        if (!result.ok) {
+          setError(result.error.message);
+          return;
+        }
+        const { defaults, conversationId: _policyConversation, ...nextPolicy } = result.value;
+        setPolicy(nextPolicy);
+        setSavedPolicy(nextPolicy);
+        setPolicyDefaults(defaults);
+      }
       if (dirty) {
         const result = await window.wisp.saveWispPluginAccess(
           buildAccessRequest({ conversationId, revision }, grants, providers),
@@ -239,7 +349,7 @@ function WispAccessForm({
     }
   }
 
-  const loaded = settings !== null && mcpView !== null;
+  const loaded = settings !== null && mcpView !== null && policyDefaults !== null;
   const plugin = (pluginId: PluginId) => settings?.plugins.find(({ id }) => id === pluginId);
   const available = (pluginId: PluginId) => isPluginAvailable(plugin(pluginId));
 
@@ -305,28 +415,64 @@ function WispAccessForm({
   });
 
   const appRows = PLUGIN_CATALOG.filter(({ id }) => !isWebProvider(id)).flatMap((entry) => {
-    const access = grants.find(({ pluginId }) => pluginId === entry.id)?.access ?? "none";
+    const grant = grants.find(({ pluginId }) => pluginId === entry.id);
+    const access = grant?.access ?? "none";
     const savedAccess = savedGrants.find(({ pluginId }) => pluginId === entry.id)?.access ?? "none";
     if (!available(entry.id) && savedAccess === "none") return [];
+    const alwaysAllowed = access === "write" && !grant?.alwaysAllowAll ? (grant?.alwaysAllowedTools ?? []) : [];
     return [
       <AccessRow
         key={entry.id}
         id={`${formId}-${entry.id}`}
         icon={<PluginLogo pluginId={entry.id} size="sm" />}
         label={entry.name}
-        value={access}
-        options={ACCESS_OPTIONS.filter((option) => entry.supportsWrite || option.value !== "write").map((option) => ({
+        value={pluginChoice(grant)}
+        options={ACCESS_OPTIONS.filter(
+          (option) => entry.supportsWrite || (option.value !== "write" && option.value !== "write_all"),
+        ).map((option) => ({
           ...option,
           disabled: !available(entry.id) && option.value !== "none",
         }))}
         disabled={saving}
         onChange={(value) => {
           setGrants((current) =>
-            current.map((grant) => (grant.pluginId === entry.id ? { ...grant, access: value as PluginAccess } : grant)),
+            current.map((item) =>
+              item.pluginId === entry.id
+                ? {
+                    ...item,
+                    access: (value === "write_all" ? "write" : value) as PluginAccess,
+                    alwaysAllowAll: value === "write_all",
+                  }
+                : item,
+            ),
           );
           changed();
         }}
-        notice={!available(entry.id) ? unavailableNotice(entry.id) : undefined}
+        notice={
+          !available(entry.id) || alwaysAllowed.length ? (
+            <>
+              {!available(entry.id) ? unavailableNotice(entry.id) : null}
+              <AlwaysAllowedChips
+                names={alwaysAllowed}
+                label={(name) => getToolMetadata(name)?.label ?? name}
+                disabled={saving}
+                onRemove={(name) => {
+                  setGrants((current) =>
+                    current.map((item) =>
+                      item.pluginId === entry.id
+                        ? {
+                            ...item,
+                            alwaysAllowedTools: (item.alwaysAllowedTools ?? []).filter((tool) => tool !== name),
+                          }
+                        : item,
+                    ),
+                  );
+                  changed();
+                }}
+              />
+            </>
+          ) : undefined
+        }
       />,
     ];
   });
@@ -347,6 +493,72 @@ function WispAccessForm({
         </p>
         {loaded ? (
           <>
+            <AccessSection label="Without asking">
+              <div className="flex flex-col gap-1.5 py-2.5">
+                <div className="flex items-center gap-2.5">
+                  <span className="flex size-7 flex-none items-center justify-center rounded-lg bg-muted">
+                    <TriangleAlertIcon className="size-3.5 text-warning" aria-hidden="true" />
+                  </span>
+                  <span id={`${formId}-everything`} className="min-w-0 flex-1 leading-snug font-medium break-words">
+                    Allow everything
+                  </span>
+                  <ToggleSwitch
+                    label="Allow everything"
+                    checked={policy.allowEverything}
+                    disabled={saving}
+                    onChange={() => {
+                      setPolicy((current) => ({ ...current, allowEverything: !current.allowEverything }));
+                      changed();
+                    }}
+                  />
+                </div>
+                <p className={policy.allowEverything ? "leading-relaxed text-warning" : "leading-relaxed text-dim"}>
+                  {policy.allowEverything
+                    ? "Risk mode: this Wisp creates and edits files, writes to connected apps and calls MCP tools, including ones that send workspace files, without asking you first. Block rules still apply, and skills and jobs still need your review."
+                    : "Turn on to let this Wisp act on its own: no approval cards for files, apps or MCP tools. Skills and jobs still need your review."}
+                </p>
+              </div>
+              {FILE_CATEGORIES.map((category) => {
+                const own = policy.files[category.value];
+                return (
+                  <AccessRow
+                    key={category.value}
+                    id={`${formId}-${category.value}`}
+                    icon={
+                      <span className="flex size-7 flex-none items-center justify-center rounded-lg bg-muted">
+                        {category.icon}
+                      </span>
+                    }
+                    label={category.label}
+                    value={own ?? "default"}
+                    options={[
+                      { value: "default", label: `Default (${BEHAVIOR_LABELS[policyDefaults[category.value]]})` },
+                      ...(["allow", "ask", "block"] as const).map((value) => ({
+                        value,
+                        label: BEHAVIOR_LABELS[value],
+                      })),
+                    ]}
+                    disabled={saving}
+                    onChange={(value) => {
+                      setPolicy((current) => {
+                        const files = { ...current.files };
+                        if (value === "default") delete files[category.value];
+                        else files[category.value] = value as ToolPolicyBehavior;
+                        return { ...current, files };
+                      });
+                      changed();
+                    }}
+                    notice={
+                      policy.allowEverything && own !== "block"
+                        ? "Allowed by Allow everything."
+                        : own === undefined
+                          ? "Follows Settings → General → Auto-review."
+                          : undefined
+                    }
+                  />
+                );
+              })}
+            </AccessSection>
             {webRows.length ? (
               <AccessSection label="Web">
                 {webRows}
@@ -388,7 +600,7 @@ function WispAccessForm({
                   const serverAvailable = server.enabled && server.state !== "needs_sign_in";
                   const grant = mcpGrants.find(({ serverId }) => serverId === server.serverId);
                   const access = grant?.access ?? "none";
-                  const alwaysAllowed = access === "none" ? [] : (grant?.alwaysAllowedTools ?? []);
+                  const alwaysAllowed = access === "use_with_approval" ? (grant?.alwaysAllowedTools ?? []) : [];
                   return (
                     <AccessRow
                       key={server.serverId}
@@ -436,43 +648,26 @@ function WispAccessForm({
                               You can still remove existing access.
                             </>
                           ) : null}
-                          {alwaysAllowed.length ? (
-                            <span className="mt-1.5 flex flex-wrap items-center gap-1.5">
-                              Always allowed:
-                              {alwaysAllowed.map((name) => {
-                                const label = server.tools.find((tool) => tool.name === name)?.label ?? name;
-                                return (
-                                  <Button
-                                    key={name}
-                                    type="button"
-                                    size="xs"
-                                    variant="secondary"
-                                    disabled={saving}
-                                    aria-label={`Ask again before ${label}`}
-                                    title="Ask again before every call"
-                                    onClick={() => {
-                                      setMcpGrants((current) =>
-                                        current.map((entry) =>
-                                          entry.serverId === server.serverId
-                                            ? {
-                                                ...entry,
-                                                alwaysAllowedTools: (entry.alwaysAllowedTools ?? []).filter(
-                                                  (tool) => tool !== name,
-                                                ),
-                                              }
-                                            : entry,
+                          <AlwaysAllowedChips
+                            names={alwaysAllowed}
+                            label={(name) => server.tools.find((tool) => tool.name === name)?.label ?? name}
+                            disabled={saving}
+                            onRemove={(name) => {
+                              setMcpGrants((current) =>
+                                current.map((entry) =>
+                                  entry.serverId === server.serverId
+                                    ? {
+                                        ...entry,
+                                        alwaysAllowedTools: (entry.alwaysAllowedTools ?? []).filter(
+                                          (tool) => tool !== name,
                                         ),
-                                      );
-                                      changed();
-                                    }}
-                                  >
-                                    {label}
-                                    <XIcon aria-hidden="true" />
-                                  </Button>
-                                );
-                              })}
-                            </span>
-                          ) : null}
+                                      }
+                                    : entry,
+                                ),
+                              );
+                              changed();
+                            }}
+                          />
                         </>
                       }
                     />
@@ -481,9 +676,10 @@ function WispAccessForm({
               </AccessSection>
             )}
             <p className="leading-relaxed text-dim">
-              MCP tool calls require approval, with a preview of the arguments, unless you chose Always allow for that
-              tool on an approval card. A tool that changes asks again. Revoking access blocks new calls immediately;
-              calls already in progress may finish.
+              With approval, MCP tool calls ask first, with a preview of the arguments, unless you chose Always allow
+              for that tool on an approval card; a tool that changes asks again. Without asking covers every tool of the
+              server, including new ones, except calls that send workspace files. Revoking access blocks new calls
+              immediately; calls already in progress may finish.
             </p>
           </>
         ) : error ? (
@@ -526,6 +722,9 @@ function WispAccessForm({
                   setMcpGrants([]);
                   setSavedMcpGrants([]);
                   setMcpRevision("");
+                  setPolicy(NO_POLICY);
+                  setSavedPolicy(NO_POLICY);
+                  setPolicyDefaults(null);
                   setSaved(false);
                   setAttempt((current) => current + 1);
                 }}
@@ -534,7 +733,11 @@ function WispAccessForm({
               </Button>
             ) : null}
             {unsaved || error ? (
-              <Button type="button" disabled={(!dirty && !mcpDirty) || saving} onClick={() => void save()}>
+              <Button
+                type="button"
+                disabled={(!dirty && !mcpDirty && !policyDirty) || saving}
+                onClick={() => void save()}
+              >
                 {saving ? "Saving…" : "Save access"}
               </Button>
             ) : null}

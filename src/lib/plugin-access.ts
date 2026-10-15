@@ -47,14 +47,17 @@ export function buildAccessRequest(
   return {
     conversationId: view.conversationId,
     revision: view.revision,
-    grants: PLUGIN_CATALOG.map(({ id }) => ({
-      pluginId: id,
-      access: isWebProvider(id)
-        ? used.has(id)
-          ? "read"
-          : "none"
-        : (grants.find((grant) => grant.pluginId === id)?.access ?? "none"),
-    })),
+    grants: PLUGIN_CATALOG.map(({ id }): PluginGrant => {
+      if (isWebProvider(id)) return { pluginId: id, access: used.has(id) ? "read" : "none" };
+      const grant = grants.find((entry) => entry.pluginId === id);
+      // What the Wisp may do without asking travels with the grant, so saving another choice keeps it.
+      return {
+        pluginId: id,
+        access: grant?.access ?? "none",
+        ...(grant?.alwaysAllowAll ? { alwaysAllowAll: true } : {}),
+        ...(grant?.alwaysAllowedTools ? { alwaysAllowedTools: grant.alwaysAllowedTools } : {}),
+      };
+    }),
     webProviders,
   };
 }

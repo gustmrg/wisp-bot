@@ -99,8 +99,6 @@ interface ChatPanelProps {
   error?: string;
   acknowledging: boolean;
   approvals: ReadonlyArray<ToolApprovalRequest>;
-  /** Auto-review is on, so approvals can offer a lasting Allow rule. */
-  allowAlwaysAvailable?: boolean;
   onAnswerPrompt: (messageId: string | undefined, answer: string) => void;
   onAbort: () => void;
   onLoadOlder: () => void;
@@ -132,7 +130,6 @@ function ChatPanel({
   error,
   acknowledging,
   approvals,
-  allowAlwaysAvailable = false,
   onAnswerPrompt,
   onAbort,
   onLoadOlder,
@@ -475,7 +472,6 @@ function ChatPanel({
                     key={request.approvalId}
                     request={request}
                     wispName={name}
-                    allowAlwaysAvailable={allowAlwaysAvailable}
                     onResolve={(decision) => onResolveApproval(request, decision)}
                   />
                 ))}

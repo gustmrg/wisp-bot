@@ -69,6 +69,8 @@ export const RUNTIME_OPERATIONS = [
   "getToolPolicy",
   "saveToolPolicy",
   "resolveToolApproval",
+  "getWispToolPolicy",
+  "saveWispToolPolicy",
   "getWorkspace",
   "setWorkspaceQuota",
   "getWispExecution",

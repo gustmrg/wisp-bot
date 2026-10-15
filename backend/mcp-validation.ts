@@ -1,4 +1,4 @@
-import { MCP_AUTH_MODES, type McpAccess, type McpAuthMode, type McpGrant } from "../shared/mcp.js";
+import { MCP_ACCESS_LEVELS, MCP_AUTH_MODES, type McpAccess, type McpAuthMode, type McpGrant } from "../shared/mcp.js";
 import { WispBackendError } from "./backend-error.js";
 
 /**
@@ -164,7 +164,11 @@ export function parseMcpGrants(value: unknown): McpGrant[] {
   return value.map((entry) => {
     const raw = mcpRecord(entry, ["serverId", "access", "alwaysAllowedTools"]);
     const serverId = parseMcpServerId(raw.serverId);
-    if (seen.has(serverId) || typeof raw.access !== "string" || !["none", "use_with_approval"].includes(raw.access))
+    if (
+      seen.has(serverId) ||
+      typeof raw.access !== "string" ||
+      !(MCP_ACCESS_LEVELS as ReadonlyArray<string>).includes(raw.access)
+    )
       throw invalidMcpRequest();
     seen.add(serverId);
     const alwaysAllowedTools = parseAlwaysAllowedTools(raw.alwaysAllowedTools);

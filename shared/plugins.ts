@@ -127,6 +127,13 @@ export interface PluginConnectionResult {
 export interface PluginGrant {
   pluginId: PluginId;
   access: PluginAccess;
+  /** With "write" access, the Wisp runs every write action of the plugin without asking. */
+  alwaysAllowAll?: boolean;
+  /**
+   * Write tools this Wisp runs without asking. Only an approval card can add
+   * one. When saving, omit to keep the current list; a list can only remove.
+   */
+  alwaysAllowedTools?: ReadonlyArray<string>;
 }
 export interface WispPluginAccessView {
   conversationId: string;
