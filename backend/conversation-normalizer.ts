@@ -6,6 +6,8 @@ import {
   type Message,
   type MessageStatus,
   type JobOrigin,
+  type MessageFailure,
+  MESSAGE_FAILURE_MAX_LENGTH,
   type ScheduledOrigin,
   type Wisp,
   type WispChanges,
@@ -128,6 +130,11 @@ export function normalizeJobOrigin(value: unknown): JobOrigin {
   };
 }
 
+function normalizeMessageFailure(value: unknown): MessageFailure {
+  const raw = asRecord(value);
+  return { code: string(raw.code, 64, false), message: string(raw.message, MESSAGE_FAILURE_MAX_LENGTH, false) };
+}
+
 export function normalizeMessage(value: unknown, fallbackId?: string): Message {
   const raw = asRecord(value);
   const id = raw.id === undefined ? fallbackId : normalizeConversationId(raw.id);
@@ -164,6 +171,7 @@ export function normalizeMessage(value: unknown, fallbackId?: string): Message {
       ...(raw.fallbackModel === undefined || raw.type !== "incoming"
         ? {}
         : { fallbackModel: string(raw.fallbackModel, 256, false) }),
+      ...(raw.error === undefined || raw.type !== "incoming" ? {} : { error: normalizeMessageFailure(raw.error) }),
     };
   }
   if (raw.type === "time") {

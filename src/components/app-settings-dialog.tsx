@@ -55,7 +55,8 @@ import {
 } from "@/components/settings/settings-primitives";
 import { Button } from "@/components/ui/button";
 import type { AppMetadata, CurrentUser } from "@/config/app-metadata";
-import type { AppPreferences } from "@/lib/app-preferences";
+import type { AppPreferences, ReplyPace } from "@/lib/app-preferences";
+import { SegmentedControl } from "@/components/ui/segmented-control";
 import type { PersistenceStatus } from "@/features/persistence/storage-policy";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -81,7 +82,7 @@ type SettingsSection =
   | "storage"
   | "jobs";
 /** Sections other parts of the app can open the dialog at. */
-export type SettingsEntrySection = "general" | "model" | "voice" | "plugins" | "mcp" | "storage" | "jobs";
+export type SettingsEntrySection = "general" | "model" | "voice" | "plugins" | "mcp" | "storage" | "jobs" | "usage";
 
 /** Navigation order; entries without a section are announced but not available yet. */
 const NAV_ITEMS: ReadonlyArray<
@@ -191,6 +192,18 @@ const MOBILE_NAV_GROUPS: ReadonlyArray<{ label: string; sections: ReadonlyArray<
   { label: "Storage and data", sections: ["storage", "usage"] },
   { label: "App", sections: ["about"] },
 ];
+
+const REPLY_PACE_OPTIONS: ReadonlyArray<{ value: ReplyPace; label: string }> = [
+  { value: "instant", label: "Instant" },
+  { value: "smooth", label: "Smooth" },
+  { value: "natural", label: "Natural" },
+];
+
+const REPLY_PACE_DESCRIPTIONS: Record<ReplyPace, string> = {
+  instant: "Replies appear as fast as the model writes them.",
+  smooth: "Replies flow in evenly, keeping up with the model.",
+  natural: "Replies appear at a slower, steady pace, even from fast models. Click a reply to show the rest.",
+};
 
 const THEME_OPTIONS = [
   { value: "system", label: "System" },
@@ -529,6 +542,18 @@ function AppSettingsDialog({
                     label="Wisp colors"
                     checked={preferences.wispColors}
                     onChange={() => onPreferencesChange({ ...preferences, wispColors: !preferences.wispColors })}
+                  />
+                </SettingsRow>
+                <SettingsRow>
+                  <SettingsRowCopy>
+                    <SettingsRowTitle>Reply speed</SettingsRowTitle>
+                    <SettingsRowDescription>{REPLY_PACE_DESCRIPTIONS[preferences.replyPace]}</SettingsRowDescription>
+                  </SettingsRowCopy>
+                  <SegmentedControl<ReplyPace>
+                    label="Reply speed"
+                    value={preferences.replyPace}
+                    options={REPLY_PACE_OPTIONS}
+                    onChange={(replyPace) => onPreferencesChange({ ...preferences, replyPace })}
                   />
                 </SettingsRow>
                 {browserApp ? null : <LaunchAtLoginSetting open={open} />}

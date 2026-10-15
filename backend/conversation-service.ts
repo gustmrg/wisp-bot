@@ -8,6 +8,7 @@ import type {
 import {
   assistantMessageId,
   chatSummary,
+  messageFailure,
   type Chat,
   type ChatChanges,
   type CircleChat,
@@ -174,7 +175,7 @@ export class ConversationService {
     }
   }
 
-  /** Marks the person's message failed and adds the reply saying why. */
+  /** Marks the person's message failed and the reply too, keeping what it wrote and why it failed. */
   private persistRequestFailure(
     conversationId: string,
     requestId: string,
@@ -187,8 +188,9 @@ export class ConversationService {
     this.persistLiveMessage(conversationId, {
       id: replyId,
       type: "incoming",
-      text: current?.type === "incoming" && current.text ? current.text : error.message,
+      text: current?.type === "incoming" ? current.text : "",
       status: "failed",
+      error: messageFailure(error),
       retryable: error.retryable,
       createdAt: current?.createdAt ?? createdAt,
       ...this.authorOf(conversationId),

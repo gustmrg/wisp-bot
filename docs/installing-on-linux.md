@@ -21,6 +21,16 @@ chmod +x Wisp-Bot-<version>-linux-x86_64.AppImage
 - Some distributions, Ubuntu 24.04 and later among them, use AppArmor to block the unprivileged user namespaces that Chromium's sandbox needs. If the AppImage exits with a sandbox error, use the `.deb` instead. Do not run it with `--no-sandbox`, because that turns off a renderer protection the app depends on.
 - Updates replace the AppImage file in place, so keep it somewhere you can write to.
 
+## Rendering problems
+
+Wisp Bot uses the GPU when Chromium supports it and falls back to software rendering on drivers it blocks. If the window still opens blank, flickers, or shows visual glitches (seen with some NVIDIA drivers on Wayland), start the app with `--disable-gpu`:
+
+```bash
+wisp-bot --disable-gpu
+```
+
+For the AppImage, pass the flag to the AppImage file instead.
+
 ## Credential storage
 
 Wisp Bot encrypts API keys through the desktop secret store: GNOME Keyring, KWallet, or another Secret Service provider. Without one, Electron falls back to `basic_text`, and Wisp Bot will not save credentials. Install and unlock a keyring, for example `gnome-keyring`, before you add a model.

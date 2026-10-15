@@ -1,6 +1,11 @@
 import { contextBridge, ipcRenderer } from "electron";
 
-import type { SequencedConversationAgentEvent, WispApi } from "../shared/contracts.js";
+import type {
+  BackendResult,
+  SequencedConversationAgentEvent,
+  SystemNotificationTarget,
+  WispApi,
+} from "../shared/contracts.js";
 
 // Sandboxed preload scripts cannot require application modules at runtime.
 // Keep this allowlist local and let the shared WispApi type enforce its shape.
@@ -76,6 +81,8 @@ const WISP_IPC_CHANNELS = {
   setUserTimeZone: "wisp:time-zone:set",
   saveToolPolicy: "wisp:tool-policy:save",
   resolveToolApproval: "wisp:tool-policy:resolve-approval",
+  getWispToolPolicy: "wisp:tool-policy:get-wisp",
+  saveWispToolPolicy: "wisp:tool-policy:save-wisp",
   getSessionReport: "wisp:conversations:get-session-report",
   getLaunchAtLoginState: "wisp:login:get",
   setLaunchAtLogin: "wisp:login:set",
@@ -119,6 +126,11 @@ const WISP_IPC_CHANNELS = {
   saveRemoteAccess: "wisp:remote-access:save",
   pairRemoteDevice: "wisp:remote-access:pair",
   revokeRemoteDevice: "wisp:remote-access:revoke",
+  configureSystemNotifications: "wisp:system-notifications:configure",
+  setNotificationFocus: "wisp:system-notifications:set-focus",
+  testSystemNotification: "wisp:system-notifications:test",
+  takeNotificationTarget: "wisp:system-notifications:take-target",
+  openNotificationTarget: "wisp:system-notifications:open",
 } as const;
 
 const wispApi: WispApi = {
@@ -227,6 +239,8 @@ const wispApi: WispApi = {
   getToolPolicy: () => ipcRenderer.invoke(WISP_IPC_CHANNELS.getToolPolicy),
   saveToolPolicy: (settings) => ipcRenderer.invoke(WISP_IPC_CHANNELS.saveToolPolicy, settings),
   resolveToolApproval: (request) => ipcRenderer.invoke(WISP_IPC_CHANNELS.resolveToolApproval, request),
+  getWispToolPolicy: (request) => ipcRenderer.invoke(WISP_IPC_CHANNELS.getWispToolPolicy, request),
+  saveWispToolPolicy: (request) => ipcRenderer.invoke(WISP_IPC_CHANNELS.saveWispToolPolicy, request),
   getUpdateState: () => ipcRenderer.invoke(WISP_IPC_CHANNELS.getUpdateState),
   checkForUpdates: () => ipcRenderer.invoke(WISP_IPC_CHANNELS.checkForUpdates),
   downloadUpdate: () => ipcRenderer.invoke(WISP_IPC_CHANNELS.downloadUpdate),
@@ -277,6 +291,24 @@ const wispApi: WispApi = {
   saveRemoteAccess: (request) => ipcRenderer.invoke(WISP_IPC_CHANNELS.saveRemoteAccess, request),
   pairRemoteDevice: () => ipcRenderer.invoke(WISP_IPC_CHANNELS.pairRemoteDevice),
   revokeRemoteDevice: (request) => ipcRenderer.invoke(WISP_IPC_CHANNELS.revokeRemoteDevice, request),
+  systemNotifications: {
+    configure: (settings) => ipcRenderer.invoke(WISP_IPC_CHANNELS.configureSystemNotifications, settings),
+    setFocus: (request) => ipcRenderer.invoke(WISP_IPC_CHANNELS.setNotificationFocus, request),
+    test: (request) => ipcRenderer.invoke(WISP_IPC_CHANNELS.testSystemNotification, request),
+    subscribeToOpen: (listener) => {
+      const handleTarget = (_event: Electron.IpcRendererEvent, target: SystemNotificationTarget): void =>
+        listener(target);
+      ipcRenderer.on(WISP_IPC_CHANNELS.openNotificationTarget, handleTarget);
+      // A notification clicked while no window was open opened this one; it is waiting.
+      void ipcRenderer
+        .invoke(WISP_IPC_CHANNELS.takeNotificationTarget)
+        .then((result: BackendResult<SystemNotificationTarget | null>) => {
+          if (result.ok && result.value) listener(result.value);
+        })
+        .catch(() => undefined);
+      return () => ipcRenderer.removeListener(WISP_IPC_CHANNELS.openNotificationTarget, handleTarget);
+    },
+  },
 };
 
 contextBridge.exposeInMainWorld("wisp", Object.freeze(wispApi));

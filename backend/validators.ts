@@ -40,7 +40,11 @@ import {
   type StorageSummaryRequest,
 } from "../shared/storage.js";
 import { isValidSkillName, type ImportSkillRequest, type SkillRequest } from "../shared/skills.js";
-import type { ResolveToolApprovalRequest } from "../shared/tool-policy.js";
+import {
+  isWorkspaceFileCategory,
+  type ResolveToolApprovalRequest,
+  type SaveWispToolPolicyRequest,
+} from "../shared/tool-policy.js";
 import {
   isVoiceLanguage,
   isVoiceModel,
@@ -354,7 +358,13 @@ export function parseMarkConversationReadRequest(value: unknown): MarkConversati
 export function parseResolveToolApprovalRequest(value: unknown): ResolveToolApprovalRequest {
   const request = asRecord(value);
   const decision = request.decision;
-  if (decision !== "allow_once" && decision !== "allow_always" && decision !== "deny" && decision !== "block") {
+  if (
+    decision !== "allow_once" &&
+    decision !== "allow_always" &&
+    decision !== "allow_integration" &&
+    decision !== "deny" &&
+    decision !== "block"
+  ) {
     throw invalidRequest();
   }
   return {
@@ -363,6 +373,23 @@ export function parseResolveToolApprovalRequest(value: unknown): ResolveToolAppr
     toolCallId: parseId(request.toolCallId),
     decision,
   };
+}
+
+export function parseSaveWispToolPolicyRequest(value: unknown): SaveWispToolPolicyRequest {
+  const request = asRecord(value);
+  const files = asRecord(request.files);
+  if (typeof request.allowEverything !== "boolean") throw invalidRequest();
+  const parsed: SaveWispToolPolicyRequest = {
+    conversationId: parseId(request.conversationId),
+    files: {},
+    allowEverything: request.allowEverything,
+  };
+  for (const [category, behavior] of Object.entries(files)) {
+    if (!isWorkspaceFileCategory(category) || (behavior !== "allow" && behavior !== "ask" && behavior !== "block"))
+      throw invalidRequest();
+    parsed.files[category] = behavior;
+  }
+  return parsed;
 }
 
 function stringValue(value: unknown, maxLength: number): string {

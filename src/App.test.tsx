@@ -265,6 +265,24 @@ function createApi(initialState: ConversationStateView): WispApi {
       ok: true as const,
       value: { usedBytes: 0, quotaBytes: 1024, maxQuotaBytes: 1024 },
     })),
+    getWispToolPolicy: vi.fn(async ({ conversationId }: { conversationId: string }) => ({
+      ok: true as const,
+      value: {
+        conversationId,
+        files: {},
+        allowEverything: false,
+        defaults: { create_file: "ask" as const, modify_file: "ask" as const },
+      },
+    })),
+    saveWispToolPolicy: vi.fn(async (request: { conversationId: string }) => ({
+      ok: true as const,
+      value: {
+        ...request,
+        files: {},
+        allowEverything: false,
+        defaults: { create_file: "ask" as const, modify_file: "ask" as const },
+      },
+    })),
     getWispExecution: vi.fn(async () => ({
       ok: true as const,
       value: {

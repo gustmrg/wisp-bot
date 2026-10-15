@@ -100,6 +100,13 @@ function marksUnread(message: Message): boolean {
   return message.type === "incoming" && message.status !== "streaming" && message.status !== "cancelled";
 }
 
+/** What a conversation's preview shows for a message: a reply that failed before writing anything shows why. */
+function previewOf(message: Message, current: string): string {
+  if (!("text" in message)) return current;
+  if (!message.text && message.type === "incoming" && message.error) return message.error.message;
+  return message.text;
+}
+
 export function applyWorkspaceAction(records: WorkspaceRecords, action: WorkspaceAction): WorkspaceActionResult {
   switch (action.type) {
     case "create-wisp": {
@@ -210,7 +217,7 @@ export function applyWorkspaceAction(records: WorkspaceRecords, action: Workspac
           ...record,
           chat: {
             ...chat,
-            preview: "text" in message ? message.text : chat.preview,
+            preview: previewOf(message, chat.preview),
             ...(counts ? { unread: true, unreadCount } : {}),
             lastActivityAt: laterOf(chat.lastActivityAt, message.createdAt ?? action.updatedAt),
           },

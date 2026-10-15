@@ -7,6 +7,7 @@ import {
   PLUGIN_IDS,
   WEB_CAPABILITIES,
   type PluginAccess,
+  type PluginGrant,
   type PluginId,
   type PluginSettingsView,
   type WebCapability,
@@ -28,6 +29,7 @@ import {
   parsePluginConversation,
   parsePluginId,
   parsePluginRequest,
+  parsePluginToolNames,
   parseSavePluginDefaults,
   parseSavePluginSettings,
   parseSaveWispPluginAccess,
@@ -44,6 +46,9 @@ interface PluginToolBinding {
 }
 
 type AccessMap = Partial<Record<PluginId, PluginAccess>>;
+/** Write actions a Wisp runs without asking: every one of the plugin's, or the listed tools. */
+type AlwaysAllowed = "all" | string[];
+type AlwaysAllowedMap = Partial<Record<PluginId, AlwaysAllowed>>;
 interface PluginState {
   schemaVersion: 1;
   revision: string;
@@ -54,6 +59,8 @@ interface PluginState {
   webProviders: Record<string, WebProviders>;
   /** Provider preselected when a Wisp turns a capability on. */
   defaultProviders: Partial<Record<WebCapability, PluginId>>;
+  /** Per session; kept only while the session has write access to the plugin. */
+  alwaysAllowed: Record<string, AlwaysAllowedMap>;
 }
 
 export interface PluginServiceOptions {
@@ -72,6 +79,7 @@ function defaultState(): PluginState {
     grants: {},
     webProviders: {},
     defaultProviders: {},
+    alwaysAllowed: {},
   };
 }
 
@@ -104,6 +112,7 @@ export class PluginService implements PluginToolSource, IntegrationToolSource {
         "grants",
         "webProviders",
         "defaultProviders",
+        "alwaysAllowed",
       ]);
       if (raw.schemaVersion !== 1) throw invalidPluginRequest();
       if (
@@ -146,6 +155,17 @@ export class PluginService implements PluginToolSource, IntegrationToolSource {
       }
       const defaults = parseWebProviders(raw.defaultProviders ?? {});
       for (const { id } of WEB_CAPABILITIES) if (defaults[id]) normalized.defaultProviders[id] = defaults[id];
+      // Settings saved before always-allowed actions existed have none.
+      for (const [sessionId, value] of Object.entries(pluginRecord(raw.alwaysAllowed ?? {}))) {
+        if (!Object.hasOwn(normalized.grants, sessionId)) continue;
+        const entries: AlwaysAllowedMap = {};
+        for (const [pluginId, allowed] of Object.entries(pluginRecord(value, PLUGIN_IDS))) {
+          entries[pluginId as PluginId] =
+            allowed === "all" ? "all" : parsePluginToolNames(pluginId as PluginId, allowed);
+        }
+        setOwn(normalized.alwaysAllowed, sessionId, entries);
+      }
+      normalized.alwaysAllowed = prunedAlwaysAllowed(normalized);
       this.state = normalized;
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === "ENOENT") return;
@@ -269,7 +289,16 @@ export class PluginService implements PluginToolSource, IntegrationToolSource {
     return {
       conversationId,
       revision: this.accessRevision(sessionId),
-      grants: PLUGIN_IDS.map((pluginId) => ({ pluginId, access: this.access(sessionId, pluginId) })),
+      grants: PLUGIN_IDS.map((pluginId): PluginGrant => {
+        const access = this.access(sessionId, pluginId);
+        const allowed = this.alwaysAllowed(sessionId, pluginId);
+        return {
+          pluginId,
+          access,
+          ...(allowed === "all" ? { alwaysAllowAll: true } : {}),
+          ...(Array.isArray(allowed) && allowed.length ? { alwaysAllowedTools: [...allowed].sort() } : {}),
+        };
+      }),
       webProviders,
     };
   }
@@ -315,6 +344,18 @@ export class PluginService implements PluginToolSource, IntegrationToolSource {
           configurable: true,
         });
       } else delete next.webProviders[sessionId];
+      // A saved form can turn "all" on or off, but can only remove listed tools; adding one takes an approval card.
+      const alwaysAllowed: AlwaysAllowedMap = {};
+      for (const { pluginId, alwaysAllowAll, alwaysAllowedTools } of request.grants) {
+        const current = this.alwaysAllowed(sessionId, pluginId);
+        if (alwaysAllowAll) alwaysAllowed[pluginId] = "all";
+        else if (Array.isArray(current))
+          alwaysAllowed[pluginId] = alwaysAllowedTools
+            ? current.filter((name) => alwaysAllowedTools.includes(name))
+            : current;
+      }
+      setOwn(next.alwaysAllowed, sessionId, alwaysAllowed);
+      next.alwaysAllowed = prunedAlwaysAllowed(next);
       await this.commit(next);
       for (const [controller, running] of this.running)
         if (running.sessionId === sessionId && changedPlugins.includes(running.pluginId)) controller.abort();
@@ -469,6 +510,7 @@ export class PluginService implements PluginToolSource, IntegrationToolSource {
       this.assertAccess(conversationId, sessionId, pluginId, tool.access);
       const params = structuredClone(input);
       if (tool.access === "write") {
+        const allowed = this.alwaysAllowed(sessionId, pluginId);
         await this.options.authorizationBroker.authorize(
           {
             conversationId,
@@ -477,6 +519,9 @@ export class PluginService implements PluginToolSource, IntegrationToolSource {
             category: "external_write",
             scope: { kind: "integration", value: PLUGIN_CATALOG.find(({ id }) => id === pluginId)!.name },
             summary: tool.summarize(params),
+            alwaysAllowed: allowed === "all" || (Array.isArray(allowed) && allowed.includes(tool.name)),
+            rememberApproval: () => this.alwaysAllow(conversationId, sessionId, pluginId, tool.name),
+            rememberIntegration: () => this.alwaysAllow(conversationId, sessionId, pluginId, "all"),
           },
           combinedSignal,
         );
@@ -521,6 +566,26 @@ export class PluginService implements PluginToolSource, IntegrationToolSource {
     return Object.hasOwn(this.state.grants, sessionId) ? (this.state.grants[sessionId]?.[pluginId] ?? "none") : "none";
   }
 
+  private alwaysAllowed(sessionId: string, pluginId: PluginId): AlwaysAllowed | undefined {
+    return Object.hasOwn(this.state.alwaysAllowed, sessionId)
+      ? this.state.alwaysAllowed[sessionId]?.[pluginId]
+      : undefined;
+  }
+
+  /** Lets this Wisp run one write tool, or all of them, without asking; refused once write access is gone. */
+  private alwaysAllow(conversationId: string, sessionId: string, pluginId: PluginId, tool: string): Promise<void> {
+    return this.enqueue(async () => {
+      this.assertAccess(conversationId, sessionId, pluginId, "write");
+      const current = this.alwaysAllowed(sessionId, pluginId);
+      if (current === "all") return;
+      const next = structuredClone(this.state);
+      const entries = { ...(next.alwaysAllowed[sessionId] ?? {}) };
+      entries[pluginId] = tool === "all" ? "all" : [...new Set([...(current ?? []), tool])];
+      setOwn(next.alwaysAllowed, sessionId, entries);
+      await this.commit(next);
+    });
+  }
+
   private explicitWebProviders(sessionId: string): WebProviders | undefined {
     return Object.hasOwn(this.state.webProviders, sessionId) ? this.state.webProviders[sessionId] : undefined;
   }
@@ -561,6 +626,7 @@ export class PluginService implements PluginToolSource, IntegrationToolSource {
     const next = structuredClone(this.state);
     next.enabled[pluginId] = false;
     for (const grants of Object.values(next.grants)) delete grants[pluginId];
+    for (const allowed of Object.values(next.alwaysAllowed)) delete allowed[pluginId];
     for (const providers of Object.values(next.webProviders))
       for (const { id } of WEB_CAPABILITIES) if (providers[id] === pluginId) providers[id] = null;
     for (const { id } of WEB_CAPABILITIES) if (next.defaultProviders[id] === pluginId) delete next.defaultProviders[id];
@@ -594,6 +660,26 @@ export class PluginService implements PluginToolSource, IntegrationToolSource {
   private assertLive(): void {
     if (this.disposed) throw new WispBackendError("disposed", "The plugin service has stopped.");
   }
+}
+
+/** Sets an own property, so a session ID can never reach the prototype. */
+function setOwn<T>(record: Record<string, T>, key: string, value: T): void {
+  Object.defineProperty(record, key, { value, enumerable: true, writable: true, configurable: true });
+}
+
+/** Keeps always-allowed actions only where the session still has write access to the plugin. */
+function prunedAlwaysAllowed(state: PluginState): PluginState["alwaysAllowed"] {
+  const pruned: PluginState["alwaysAllowed"] = {};
+  for (const [sessionId, entries] of Object.entries(state.alwaysAllowed)) {
+    const kept = Object.entries(entries).filter(
+      ([pluginId, allowed]) =>
+        Object.hasOwn(state.grants, sessionId) &&
+        state.grants[sessionId]?.[pluginId as PluginId] === "write" &&
+        (allowed === "all" || allowed.length > 0),
+    );
+    if (kept.length) setOwn(pruned, sessionId, Object.fromEntries(kept) as AlwaysAllowedMap);
+  }
+  return pruned;
 }
 
 function accessRank(access: PluginAccess): number {

@@ -1,6 +1,7 @@
 import type { BackendError, ConversationAgentEvent, SequencedConversationAgentEvent } from "../../shared/contracts";
 import {
   assistantMessageId,
+  messageFailure,
   type ManagedConversationStatus,
   type Message,
   type TextMessage,
@@ -112,8 +113,9 @@ export function markOutgoingFailed(
   return setRuntimeMessage(next, conversationId, {
     id: assistantMessageId(requestId),
     type: "incoming",
-    text: error.message,
+    text: "",
     status: "failed",
+    error: messageFailure(error),
     retryable: error.retryable,
     createdAt: new Date().toISOString(),
   });
@@ -207,8 +209,9 @@ export function reduceConversationAgentEvent(
       return setRuntimeMessage(next, event.conversationId, {
         id: assistantId,
         type: "incoming",
-        text: assistant?.type === "incoming" && assistant.text ? assistant.text : event.error.message,
+        text: assistant?.type === "incoming" ? assistant.text : "",
         status: "failed",
+        error: messageFailure(event.error),
         retryable: event.error.retryable,
         createdAt: assistant?.createdAt ?? event.createdAt,
       });

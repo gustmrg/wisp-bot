@@ -21,6 +21,9 @@ interface AgentEntry {
   pendingCommands: number;
   acceptedRequestIds: Set<string>;
   suppressedCancellationIds: Set<string>;
+  /** Approval cards waiting for the person; the request deadline is paused while any wait. */
+  pendingApprovals: Set<string>;
+  deadline?: { pause(): void; resume(): void };
   disposed: boolean;
   override: ModelSelection | null;
   effective: ModelSelection | null;
@@ -107,6 +110,7 @@ export class AgentRegistry {
       pendingCommands: 0,
       acceptedRequestIds: new Set(),
       suppressedCancellationIds: new Set(),
+      pendingApprovals: new Set(),
       disposed: false,
     };
     entry.unsubscribe = agent.subscribe((event) => {
@@ -175,7 +179,15 @@ export class AgentRegistry {
   }
 
   publishExternalEvent(event: ConversationAgentEvent): void {
-    if (!this.entries.has(event.conversationId)) return;
+    const entry = this.entries.get(event.conversationId);
+    if (!entry) return;
+    // Time spent waiting for the person does not count toward the request deadline.
+    if (event.type === "tool_approval_requested") {
+      entry.pendingApprovals.add(event.request.approvalId);
+      entry.deadline?.pause();
+    } else if (event.type === "tool_approval_resolved" && entry.pendingApprovals.delete(event.approvalId)) {
+      if (!entry.pendingApprovals.size) entry.deadline?.resume();
+    }
     this.publishEvent(event);
   }
 
@@ -228,20 +240,41 @@ export class AgentRegistry {
   private async sendWithDeadline(entry: AgentEntry, request: SendMessageRequest): Promise<void> {
     let timeout: ReturnType<typeof setTimeout> | undefined;
     let timedOut = false;
+    let remaining = this.executionTimeoutMs;
+    let armedAt = 0;
+    let expire: () => void = () => undefined;
     const deadline = new Promise<never>((_resolve, reject) => {
-      timeout = setTimeout(() => {
+      expire = () => {
         timedOut = true;
+        timeout = undefined;
         entry.suppressedCancellationIds.add(request.requestId);
         reject(new WispBackendError("aborted", "The model request timed out.", true));
         void entry.agent
           .abort()
           .catch(() => undefined)
           .finally(() => entry.suppressedCancellationIds.delete(request.requestId));
-      }, this.executionTimeoutMs);
+      };
     });
+    const arm = () => {
+      armedAt = Date.now();
+      timeout = setTimeout(expire, remaining);
+    };
+    entry.deadline = {
+      pause: () => {
+        if (timeout === undefined) return;
+        clearTimeout(timeout);
+        timeout = undefined;
+        remaining = Math.max(0, remaining - (Date.now() - armedAt));
+      },
+      resume: () => {
+        if (timeout === undefined && !timedOut) arm();
+      },
+    };
+    if (!entry.pendingApprovals.size) arm();
     try {
       await Promise.race([entry.agent.send(request), deadline]);
     } finally {
+      entry.deadline = undefined;
       if (timeout !== undefined) clearTimeout(timeout);
       if (!timedOut) entry.suppressedCancellationIds.delete(request.requestId);
     }

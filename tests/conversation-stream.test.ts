@@ -194,7 +194,8 @@ describe("conversation stream reducer", () => {
     expect(state.messages.two).toContainEqual(
       expect.objectContaining({
         status: "failed",
-        text: "Try again.",
+        text: "",
+        error: { code: "internal_error", message: "Try again." },
         createdAt: "2026-08-31T23:11:00.000Z",
       }),
     );
@@ -240,7 +241,12 @@ describe("conversation stream reducer", () => {
     });
     expect(state.messages.one).toEqual([
       expect.objectContaining({ id: "request-1:assistant", status: "complete", text: "Let me look." }),
-      expect.objectContaining({ id: "request-1:assistant:2", status: "failed", text: "Try again." }),
+      expect.objectContaining({
+        id: "request-1:assistant:2",
+        status: "failed",
+        text: "",
+        error: { code: "internal_error", message: "Try again." },
+      }),
     ]);
   });
 

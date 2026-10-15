@@ -11,6 +11,7 @@ import {
   type SaveWispPluginAccessRequest,
   type WebProviders,
 } from "../shared/plugins.js";
+import { getToolMetadata } from "../shared/tool-catalog.js";
 import { WispBackendError } from "./backend-error.js";
 
 export function pluginRecord(value: unknown, keys?: readonly string[]): Record<string, unknown> {
@@ -60,18 +61,37 @@ export function parseGrants(value: unknown): PluginGrant[] {
   if (!Array.isArray(value) || value.length > PLUGIN_IDS.length) throw invalidPluginRequest();
   const seen = new Set<PluginId>();
   return value.map((entry) => {
-    const raw = pluginRecord(entry, ["pluginId", "access"]);
+    const raw = pluginRecord(entry, ["pluginId", "access", "alwaysAllowAll", "alwaysAllowedTools"]);
     const pluginId = parsePluginId(raw.pluginId);
     if (
       seen.has(pluginId) ||
       typeof raw.access !== "string" ||
       !["none", "read", "write"].includes(raw.access) ||
-      (!PLUGIN_CATALOG.find(({ id }) => id === pluginId)!.supportsWrite && raw.access === "write")
+      (!PLUGIN_CATALOG.find(({ id }) => id === pluginId)!.supportsWrite && raw.access === "write") ||
+      (raw.alwaysAllowAll !== undefined && typeof raw.alwaysAllowAll !== "boolean")
     )
       throw invalidPluginRequest();
     seen.add(pluginId);
-    return { pluginId, access: raw.access as PluginGrant["access"] };
+    const alwaysAllowedTools =
+      raw.alwaysAllowedTools === undefined ? undefined : parsePluginToolNames(pluginId, raw.alwaysAllowedTools);
+    return {
+      pluginId,
+      access: raw.access as PluginGrant["access"],
+      ...(raw.alwaysAllowAll === true ? { alwaysAllowAll: true } : {}),
+      ...(alwaysAllowedTools ? { alwaysAllowedTools } : {}),
+    };
   });
+}
+
+/** Names of a plugin's own write tools, such as the ones a Wisp always runs without asking. */
+export function parsePluginToolNames(pluginId: PluginId, value: unknown): string[] {
+  if (!Array.isArray(value) || value.length > 50) throw invalidPluginRequest();
+  for (const name of value) {
+    const metadata = typeof name === "string" ? getToolMetadata(name) : undefined;
+    if (!metadata || metadata.pluginId !== pluginId || metadata.category !== "external_write")
+      throw invalidPluginRequest();
+  }
+  return [...new Set(value as string[])];
 }
 
 /** Parses one provider per web capability; each provider must supply that capability. */

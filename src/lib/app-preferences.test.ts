@@ -20,7 +20,6 @@ describe("normalizePreferences", () => {
         voiceLanguage: "pt",
         voiceAutoSend: true,
         shortcuts: { voiceInput: "Ctrl+Shift+KeyM" },
-        hardwareAcceleration: false,
         timezone: "UTC",
         autoReview: false,
         autoReviewRules: [{ id: "rule-1", action: "Read files", behavior: "ask" }],
@@ -37,11 +36,16 @@ describe("normalizePreferences", () => {
       voiceLanguage: "pt",
       voiceAutoSend: true,
       shortcuts: { voiceInput: "Ctrl+Shift+KeyM" },
-      hardwareAcceleration: false,
       timezone: "UTC",
       autoReview: false,
       autoReviewRules: [{ id: "rule-1", action: "Read files", behavior: "ask", scope: "workspace" }],
     });
+  });
+
+  it("keeps a known reply speed and smooths replies otherwise", () => {
+    expect(normalizePreferences({ replyPace: "natural" }).replyPace).toBe("natural");
+    expect(normalizePreferences({ replyPace: "warp" }).replyPace).toBe("smooth");
+    expect(normalizePreferences({}).replyPace).toBe("smooth");
   });
 
   it("remembers whether the sidebar is collapsed", () => {
@@ -68,7 +72,6 @@ describe("normalizePreferences", () => {
         launchAtLogin: "yes" as never,
         notificationSounds: 1 as never,
         microphone: "",
-        hardwareAcceleration: null as never,
         timezone: "Not/A_Timezone",
         autoReview: "enabled" as never,
         autoReviewRules: [

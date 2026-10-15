@@ -10,6 +10,7 @@ import type { WispOption } from "@/lib/plugin-access";
 const MCP_ACCESS_OPTIONS: ReadonlyArray<{ value: McpAccess; label: string }> = [
   { value: "none", label: "No access" },
   { value: "use_with_approval", label: "Use with approval" },
+  { value: "allow_all", label: "Use without asking" },
 ];
 
 export interface McpAccessIndex {

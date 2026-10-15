@@ -45,6 +45,44 @@ describe("MessageView", () => {
     expect(screen.getByText("Fallback · Backup")).toBeTruthy();
   });
 
+  it("says why a reply failed beside the mark, not as something the Wisp said", () => {
+    const { container } = render(
+      <MessageView
+        message={{
+          id: "r:assistant",
+          type: "incoming",
+          text: "",
+          status: "failed",
+          error: { code: "model_unavailable", message: "The provider is out of credits." },
+        }}
+      />,
+    );
+    expect(screen.getByText("Failed · The provider is out of credits.")).toBeTruthy();
+    expect(container.querySelector(".message-bubble")).toBeNull();
+  });
+
+  it("keeps a failed reply's partial text and says why it stopped", () => {
+    render(
+      <MessageView
+        message={{
+          id: "r:assistant",
+          type: "incoming",
+          text: "Here is the first half",
+          status: "failed",
+          error: { code: "unavailable", message: "The connection dropped." },
+        }}
+      />,
+    );
+    expect(screen.getByText("Here is the first half")).toBeTruthy();
+    expect(screen.getByText("Failed · The connection dropped.")).toBeTruthy();
+  });
+
+  it("still shows an older failed reply whose reason was saved as its text", () => {
+    render(<MessageView message={{ id: "r:assistant", type: "incoming", text: "Wisp stopped.", status: "failed" }} />);
+    expect(screen.getByText("Wisp stopped.")).toBeTruthy();
+    expect(screen.getByText("Failed")).toBeTruthy();
+  });
+
   it("does not mark a message typed then", () => {
     render(<MessageView message={{ id: "typed", type: "outgoing", text: "Hello", status: "complete" }} />);
     expect(screen.queryByText("Scheduled")).toBeNull();

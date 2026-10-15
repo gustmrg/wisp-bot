@@ -1,30 +1,46 @@
-import { useEffect, useState } from "react";
-import { RefreshCwIcon } from "lucide-react";
+import { type ReactNode, useEffect, useState } from "react";
+import {
+  CheckIcon,
+  CircleAlertIcon,
+  CircleDashedIcon,
+  MessageCircleIcon,
+  RefreshCwIcon,
+  TriangleAlertIcon,
+  XIcon,
+} from "lucide-react";
 
-import type { WispSessionReport } from "../../shared/contracts";
-import { SettingsCard } from "@/components/settings/settings-primitives";
+import type { SessionReportToolCall, WispSessionReport } from "../../shared/contracts";
+import { SettingsCard, SettingsGroup } from "@/components/settings/settings-primitives";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Button } from "@/components/ui/button";
+import { formatUsd, plural, TokenCount, TokenMix } from "@/components/usage-display";
 import { useTimeZone } from "@/hooks/use-time-zone";
+import type { IntegrationSettingsTarget } from "@/lib/plugin-access";
+import { cn } from "@/lib/utils";
 
 interface WispSessionReportSectionProps {
   chatId: string;
   active?: boolean;
+  onOpenSettings?: (target: IntegrationSettingsTarget) => void;
 }
 
+/** Tool names offered as filters, besides All and Failed. */
+const TOOL_FILTERS_SHOWN = 3;
+
+// The last report stays visible (dimmed) while the next one loads, so refreshing does not collapse the tab.
 type ReportState =
   | { status: "idle" }
-  | { status: "loading" }
+  | { status: "loading"; report?: WispSessionReport | null }
   | { status: "ready"; report: WispSessionReport | null }
   | { status: "error"; message: string };
 
-export function WispSessionReportSection({ chatId, active = true }: WispSessionReportSectionProps) {
+export function WispSessionReportSection({ chatId, active = true, onOpenSettings }: WispSessionReportSectionProps) {
   const [state, setState] = useState<ReportState>({ status: "idle" });
   const [request, setRequest] = useState({});
   useEffect(() => {
     if (!active) return;
     let cancelled = false;
-    setState({ status: "loading" });
+    setState((current) => ({ status: "loading", report: "report" in current ? current.report : undefined }));
     void window.wisp
       .getSessionReport({ ...request, conversationId: chatId })
       .then((result) => {
@@ -40,131 +56,302 @@ export function WispSessionReportSection({ chatId, active = true }: WispSessionR
       cancelled = true;
     };
   }, [chatId, active, request]);
-  return <SessionReportContent state={state} onRefresh={() => setRequest({})} />;
+  return <SessionReportContent state={state} onRefresh={() => setRequest({})} onOpenSettings={onOpenSettings} />;
 }
 
-function SessionReportContent({ state, onRefresh }: { state: ReportState; onRefresh: () => void }) {
+function SessionReportContent({
+  state,
+  onRefresh,
+  onOpenSettings,
+}: {
+  state: ReportState;
+  onRefresh: () => void;
+  onOpenSettings?: (target: IntegrationSettingsTarget) => void;
+}) {
   if (state.status === "idle") return null;
-  if (state.status === "loading") {
-    return (
-      <p className="text-dim" role="status">
-        Loading session activity…
-      </p>
-    );
-  }
   if (state.status === "error") {
     return (
-      <div className="">
-        <p className="text-base text-destructive" role="alert">
-          {state.message}
-        </p>
-        <RefreshButton onRefresh={onRefresh} />
+      <div role="alert" className="flex gap-2.5 rounded-[10px] bg-popover p-3 text-xs leading-relaxed">
+        <CircleAlertIcon aria-hidden="true" className="mt-px size-4 flex-none text-destructive" />
+        <div className="space-y-2">
+          <p className="m-0 font-semibold">{state.message}</p>
+          <Button size="sm" variant="outline" type="button" onClick={onRefresh}>
+            Try again
+          </Button>
+        </div>
       </div>
     );
   }
-  if (!state.report) {
+  if (state.status === "loading" && state.report === undefined) return <ReportSkeleton />;
+  const report = state.report;
+  if (!report) {
     return (
-      <p className="text-dim" role="status">
-        No agent session yet. Configure a model and send a message to create one.
-      </p>
+      <SettingsCard className="flex flex-col items-center gap-1.5 px-5 py-7 text-center">
+        <span className="mb-1 grid size-10 place-items-center rounded-full bg-muted text-dim">
+          <MessageCircleIcon aria-hidden="true" className="size-[18px]" />
+        </span>
+        <p role="status" className="m-0 text-sm font-semibold">
+          No session yet
+        </p>
+        <p className="m-0 max-w-[34ch] text-xs text-dim">
+          Usage appears here after this Wisp replies for the first time. Configure a model and send a message to start
+          one.
+        </p>
+      </SettingsCard>
     );
   }
-  const { report } = state;
+  const loading = state.status === "loading";
   return (
-    <div className="flex flex-col gap-4">
-      <div className="grid grid-cols-2 gap-2">
-        <SettingsCard className="p-3">
-          <p className="text-xs text-dim">Total tokens</p>
-          <p className="mt-1 text-xl font-medium tabular-nums">{formatTokenCount(report.totals.totalTokens)}</p>
-        </SettingsCard>
-        <SettingsCard className="p-3">
-          <p className="text-xs text-dim">Estimated USD</p>
-          <p className="mt-1 break-all text-xl font-medium tabular-nums">
-            {report.totals.costUsd === null ? "Unknown" : formatCost(report.totals.costUsd)}
-          </p>
-        </SettingsCard>
+    <div className="flex flex-col gap-3.5">
+      <div className="flex items-center justify-between gap-2">
+        <p className="m-0 text-xs text-dim">Current session · {plural(report.turns, "turn")}</p>
+        <Button
+          size="sm"
+          variant="ghost"
+          type="button"
+          className="-my-1 text-xs"
+          disabled={loading}
+          onClick={onRefresh}
+        >
+          <RefreshCwIcon aria-hidden="true" className={cn(loading && "motion-safe:animate-spin")} />
+          Refresh
+        </Button>
       </div>
-      <dl className="flex flex-col gap-1.5 text-xs">
-        <SummaryTerm label="Input" value={formatTokenCount(report.totals.inputTokens)} />
-        <SummaryTerm label="Output" value={formatTokenCount(report.totals.outputTokens)} />
-        <SummaryTerm
-          label="Cache read / write"
-          value={`${formatTokenCount(report.totals.cacheReadTokens)} / ${formatTokenCount(report.totals.cacheWriteTokens)}`}
-        />
-      </dl>
-      <p className="text-xs leading-relaxed text-dim">
-        Usage for this session. Costs are estimates based on available model prices.
-        {report.totals.costUsd === null ? " Pricing is unavailable for one or more models." : ""}
-      </p>
-      {report.compactionUsage?.totalTokens ? (
-        <p className="text-sm text-dim">
-          Includes {report.compactionUsage.totalTokens.toLocaleString()} tokens used to summarize context. Summary costs
-          use the runtime's recorded estimate.
-        </p>
-      ) : null}
-      {report.auxiliaryUsage?.totalTokens ? (
-        <p className="text-sm text-dim">
-          Includes {report.auxiliaryUsage.totalTokens.toLocaleString()} tokens used by the image model to read images
-          for this Wisp. Their costs use the runtime's recorded estimate.
-        </p>
-      ) : null}
-      <Accordion>
-        <AccordionItem>
-          <AccordionTrigger>Session details</AccordionTrigger>
-          <AccordionContent>
-            <dl className="mb-3 flex flex-col gap-1.5 text-xs">
-              <SummaryTerm label="Session" value={report.sessionId} />
-              {report.piVersion ? <SummaryTerm label="Pi version" value={report.piVersion} /> : null}
-              <SummaryTerm label="Turns" value={String(report.turns)} />
-            </dl>
-            <ModelList report={report} />
-          </AccordionContent>
-        </AccordionItem>
-        <AccordionItem>
-          <AccordionTrigger>Tool calls ({report.toolCalls.length})</AccordionTrigger>
-          <AccordionContent>
-            <ToolCallList report={report} />
-          </AccordionContent>
-        </AccordionItem>
-        <AccordionItem>
-          <AccordionTrigger>Events ({report.events.length})</AccordionTrigger>
-          <AccordionContent>
-            {report.events.length ? (
+      <div
+        aria-busy={loading || undefined}
+        className={cn("flex flex-col gap-3.5 transition-opacity duration-200", loading && "opacity-60")}
+      >
+        <SessionSummary report={report} />
+        <ModelList report={report} />
+        <IncludedUsage report={report} />
+        <Accordion multiple className="border-y border-border">
+          <AccordionItem>
+            <AccordionTrigger className="text-sm">
+              <span className="flex items-center gap-1.5">
+                Tool calls
+                <CountBadge>{report.toolCalls.length}</CountBadge>
+                <FailedBadge count={report.toolCalls.filter((call) => call.status === "error").length} />
+              </span>
+            </AccordionTrigger>
+            <AccordionContent>
+              <ToolCallList toolCalls={report.toolCalls} />
+            </AccordionContent>
+          </AccordionItem>
+          <AccordionItem>
+            <AccordionTrigger className="text-sm">
+              <span className="flex items-center gap-1.5">
+                Events
+                <CountBadge>{report.events.length}</CountBadge>
+                <FailedBadge count={report.events.filter((event) => event.kind === "error").length} noun="error" />
+              </span>
+            </AccordionTrigger>
+            <AccordionContent>
               <EventList report={report} />
-            ) : (
-              <p className="text-sm text-dim">No events recorded.</p>
-            )}
-          </AccordionContent>
-        </AccordionItem>
-      </Accordion>
-      <p className="text-xs text-dim">
-        Argument text and provider error details are hidden for privacy. Latest 50 tool calls and events.
-      </p>
-      <RefreshButton onRefresh={onRefresh} />
+            </AccordionContent>
+          </AccordionItem>
+          <AccordionItem>
+            <AccordionTrigger className="text-sm">Session details</AccordionTrigger>
+            <AccordionContent>
+              <SessionDetails report={report} />
+            </AccordionContent>
+          </AccordionItem>
+        </Accordion>
+        <p className="m-0 text-xs leading-relaxed text-dim">
+          Costs are estimates based on available model prices. Argument text and provider error details are hidden for
+          privacy. Shows the latest 50 tool calls and events.
+        </p>
+        {onOpenSettings ? (
+          <Button
+            variant="link"
+            size="xs"
+            type="button"
+            className="h-auto self-start p-0"
+            onClick={() => onOpenSettings({ section: "usage" })}
+          >
+            Compare with other Wisps in Token usage
+          </Button>
+        ) : null}
+      </div>
     </div>
+  );
+}
+
+function SessionSummary({ report }: { report: WispSessionReport }) {
+  const unpriced = report.models.filter((model) => model.costUsd === null);
+  return (
+    <>
+      <SettingsCard className="space-y-3 p-3">
+        <div className="flex flex-wrap items-end justify-between gap-3">
+          <div>
+            <p className="m-0 text-xs text-dim">Estimated cost</p>
+            <p className="m-0 text-[26px] font-semibold leading-tight tracking-tight tabular-nums">
+              {formatUsd(report.totals.costUsd)}
+            </p>
+          </div>
+          <div className="text-right">
+            <p className="m-0 text-xs text-dim">Total tokens</p>
+            <p className="m-0 text-md font-semibold tabular-nums">
+              <TokenCount value={report.totals.totalTokens} />
+            </p>
+          </div>
+        </div>
+        <TokenMix totals={report.totals} compact />
+      </SettingsCard>
+      {report.totals.costUsd === null ? (
+        <div
+          role="status"
+          className="flex gap-2.5 rounded-[10px] border border-warning-solid/40 bg-warning-solid/10 p-3 text-xs leading-relaxed text-warning"
+        >
+          <TriangleAlertIcon aria-hidden="true" className="mt-px size-4 flex-none" />
+          <p className="m-0">
+            {unpriced.length
+              ? `No price is available for ${unpriced.map((model) => shortModelId(model.modelId)).join(", ")}.`
+              : "Pricing is unavailable for one or more models."}{" "}
+            Tokens are still counted.
+          </p>
+        </div>
+      ) : null}
+    </>
   );
 }
 
 function ModelList({ report }: { report: WispSessionReport }) {
   if (report.models.length === 0) return null;
+  const models = [...report.models].sort((a, b) => (b.costUsd ?? -1) - (a.costUsd ?? -1));
+  const topCost = Math.max(0, ...models.map((model) => model.costUsd ?? 0));
   return (
-    <div>
-      <h4 className="mb-1 text-xs text-dim">Models</h4>
-      <ul className="flex flex-col gap-1 text-xs">
-        {report.models.map((model) => (
-          <li
+    <SettingsGroup label="By model" className="[&>h3]:mt-0">
+      <SettingsCard variant="stacked">
+        {models.map((model) => (
+          <div
             key={`${model.auxiliary ? `${model.auxiliary.task}:` : ""}${model.providerId}:${model.modelId}`}
-            className="flex flex-wrap gap-1.5"
+            className="flex flex-col gap-1.5 px-3 py-2.5 text-xs"
           >
-            <span className="min-w-0 break-all">
-              {model.modelId} ·{" "}
-              {model.auxiliary
-                ? `image model · ${model.auxiliary.calls} ${model.auxiliary.calls === 1 ? "call" : "calls"}`
-                : `${model.turns} ${model.turns === 1 ? "turn" : "turns"}`}
+            <div className="flex items-baseline gap-2">
+              <span className="min-w-0 flex-1 break-words text-sm" title={model.modelId}>
+                {shortModelId(model.modelId)}
+                {model.auxiliary ? (
+                  <span className="ml-1.5 rounded-full bg-accent px-1.5 text-2xs text-dim">image model</span>
+                ) : null}
+              </span>
+              <span
+                className={cn(
+                  "whitespace-nowrap font-semibold tabular-nums",
+                  model.costUsd === null && "font-normal text-dim",
+                )}
+              >
+                {formatUsd(model.costUsd)}
+              </span>
+            </div>
+            {topCost && model.costUsd !== null ? (
+              <span aria-hidden="true" className="block h-1 rounded-full bg-muted">
+                <span
+                  className="block h-full rounded-full bg-chart-2"
+                  style={{ width: `${(model.costUsd / topCost) * 100}%` }}
+                />
+              </span>
+            ) : null}
+            <span className="text-dim tabular-nums">
+              {model.auxiliary ? plural(model.auxiliary.calls, "call") : plural(model.turns, "turn")} ·{" "}
+              <TokenCount value={model.usage.totalTokens} /> tokens
             </span>
-            <span className="text-dim">
-              {model.costUsd === null ? "cost unknown" : `${formatCost(model.costUsd)} est.`}
-            </span>
+          </div>
+        ))}
+      </SettingsCard>
+    </SettingsGroup>
+  );
+}
+
+/** Usage that the totals include although no turn of the conversation spent it directly. */
+function IncludedUsage({ report }: { report: WispSessionReport }) {
+  const rows = [
+    { label: "Context summaries", usage: report.compactionUsage },
+    { label: "Reading images", usage: report.auxiliaryUsage },
+  ].filter((row) => row.usage?.totalTokens);
+  if (rows.length === 0) return null;
+  return (
+    <SettingsGroup label="Included in the totals" className="[&>h3]:mt-0">
+      <SettingsCard className="space-y-1.5 p-3 text-xs">
+        <dl className="m-0 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5">
+          {rows.map((row) => (
+            <div key={row.label} className="contents">
+              <dt className="text-dim">{row.label}</dt>
+              <dd className="m-0 text-right tabular-nums">
+                <TokenCount value={row.usage?.totalTokens ?? 0} /> tokens
+              </dd>
+            </div>
+          ))}
+        </dl>
+        <p className="m-0 text-dim">Their costs use the runtime's recorded estimate.</p>
+      </SettingsCard>
+    </SettingsGroup>
+  );
+}
+
+type ToolFilter = { kind: "all" } | { kind: "failed" } | { kind: "tool"; name: string };
+
+function ToolCallList({ toolCalls }: { toolCalls: ReadonlyArray<SessionReportToolCall> }) {
+  const timeZone = useTimeZone();
+  const [filter, setFilter] = useState<ToolFilter>({ kind: "all" });
+  if (toolCalls.length === 0) return <p className="m-0 text-xs text-dim">No tool calls recorded.</p>;
+  const failed = toolCalls.filter((call) => call.status === "error").length;
+  const counts = new Map<string, number>();
+  for (const call of toolCalls) counts.set(call.toolName, (counts.get(call.toolName) ?? 0) + 1);
+  const topTools = [...counts].sort((a, b) => b[1] - a[1]).slice(0, TOOL_FILTERS_SHOWN);
+  const filters: Array<{ filter: ToolFilter; label: string }> = [
+    { filter: { kind: "all" }, label: `All ${toolCalls.length}` },
+    ...(failed ? [{ filter: { kind: "failed" } as const, label: `Failed ${failed}` }] : []),
+    ...(counts.size > 1
+      ? topTools.map(([name, count]) => ({ filter: { kind: "tool", name } as const, label: `${name} ${count}` }))
+      : []),
+  ];
+  const sameFilter = (a: ToolFilter, b: ToolFilter) =>
+    a.kind === b.kind && (a.kind !== "tool" || (b.kind === "tool" && a.name === b.name));
+  const shown = toolCalls.filter((call) =>
+    filter.kind === "all" ? true : filter.kind === "failed" ? call.status === "error" : call.toolName === filter.name,
+  );
+  return (
+    <div className="flex flex-col gap-2">
+      {filters.length > 1 ? (
+        <div role="group" aria-label="Filter tool calls" className="flex flex-wrap gap-1">
+          {filters.map((option) => {
+            const pressed = sameFilter(option.filter, filter);
+            return (
+              <button
+                key={option.label}
+                type="button"
+                aria-pressed={pressed}
+                onClick={() => setFilter(option.filter)}
+                className={cn(
+                  "rounded-full border border-border px-2 py-0.5 text-xs tabular-nums outline-none focus-visible:ring-3 focus-visible:ring-ring/50",
+                  pressed ? "border-foreground bg-foreground text-background" : "hover:bg-accent",
+                )}
+              >
+                {option.label}
+              </button>
+            );
+          })}
+        </div>
+      ) : null}
+      <ul className="m-0 flex list-none flex-col gap-0.5 p-0 text-xs">
+        {shown.map((toolCall) => (
+          <li
+            key={toolCall.toolCallId}
+            className="grid min-w-0 grid-cols-[16px_minmax(0,1fr)_auto] gap-x-2 gap-y-0.5 rounded-md px-1 py-1"
+          >
+            <ToolStatus status={toolCall.status} />
+            <span className="min-w-0 break-all font-mono">{toolCall.toolName}</span>
+            <span className="whitespace-nowrap text-dim">{formatTimestamp(toolCall.timestamp, timeZone)}</span>
+            {toolCall.argumentSummary ? (
+              <span className="col-start-2 col-end-4 break-all text-dim">{toolCall.argumentSummary}</span>
+            ) : null}
+            {toolCall.imageModel ? (
+              <span className="col-start-2 col-end-4 break-all text-dim">
+                {toolCall.imageModel.fromCache
+                  ? `From ${toolCall.imageModel.name}'s saved transcription`
+                  : `Read with ${toolCall.imageModel.name}`}
+              </span>
+            ) : null}
           </li>
         ))}
       </ul>
@@ -172,106 +359,127 @@ function ModelList({ report }: { report: WispSessionReport }) {
   );
 }
 
-function ToolCallList({ report }: { report: WispSessionReport }) {
-  const timeZone = useTimeZone();
+function ToolStatus({ status }: { status: SessionReportToolCall["status"] }) {
+  const label = status === "error" ? "Failed" : status === "pending" ? "Running" : "Completed";
+  const Icon = status === "error" ? XIcon : status === "pending" ? CircleDashedIcon : CheckIcon;
   return (
-    <div>
-      {report.toolCalls.length === 0 ? (
-        <p className="text-xs text-dim">No tool calls recorded.</p>
-      ) : (
-        <ul className="flex flex-col gap-1 text-xs">
-          {report.toolCalls.map((toolCall) => (
-            <li key={toolCall.toolCallId} className="flex min-w-0 flex-col gap-0.5">
-              <span className="flex min-w-0 items-baseline gap-1.5">
-                <span
-                  className={
-                    toolCall.status === "error"
-                      ? "text-destructive"
-                      : toolCall.status === "pending"
-                        ? "text-dim"
-                        : "text-foreground"
-                  }
-                >
-                  {toolCall.status === "error" ? "✗" : toolCall.status === "pending" ? "…" : "✓"}
-                </span>
-                <span className="min-w-0 break-all">{toolCall.toolName}</span>
-                <span className="ml-auto shrink-0 text-dim">{formatTimestamp(toolCall.timestamp, timeZone)}</span>
-              </span>
-              {toolCall.argumentSummary ? (
-                <span className="ml-4 break-all text-dim">{toolCall.argumentSummary}</span>
-              ) : null}
-              {toolCall.imageModel ? (
-                <span className="ml-4 break-all text-dim">
-                  {toolCall.imageModel.fromCache
-                    ? `From ${toolCall.imageModel.name}'s saved transcription`
-                    : `Read with ${toolCall.imageModel.name}`}
-                </span>
-              ) : null}
-            </li>
-          ))}
-        </ul>
+    <span
+      role="img"
+      aria-label={label}
+      className={cn(
+        "mt-px",
+        status === "error" ? "text-destructive" : status === "pending" ? "text-dim" : "text-foreground",
       )}
-    </div>
+    >
+      <Icon aria-hidden="true" className="size-3.5" />
+    </span>
   );
 }
+
+const EVENT_LABELS = {
+  error: "Error",
+  compaction: "Context summarized",
+  retry_started: "Retry started",
+  retry_finished: "Retry finished",
+  fallback: "Fallback",
+} as const;
 
 function EventList({ report }: { report: WispSessionReport }) {
   const timeZone = useTimeZone();
-  if (report.events.length === 0) return null;
+  if (report.events.length === 0) return <p className="m-0 text-xs text-dim">No events recorded.</p>;
   return (
-    <div>
-      <ul className="flex flex-col gap-1 text-xs">
-        {report.events.map((event, index) => (
-          <li key={`${event.kind}:${event.timestamp}:${index}`} className="flex min-w-0 flex-col gap-0.5">
-            <span className="flex items-baseline gap-1.5">
-              <span className={event.kind === "error" ? "text-destructive" : "text-foreground"}>
-                {event.kind === "error"
-                  ? "Error"
-                  : event.kind === "compaction"
-                    ? "Compaction"
-                    : event.kind === "fallback"
-                      ? "Fallback"
-                      : "Retry"}
-              </span>
-              <span className="ml-auto shrink-0 text-dim">{formatTimestamp(event.timestamp, timeZone)}</span>
+    <ul className="m-0 flex list-none flex-col gap-1.5 p-0 text-xs">
+      {report.events.map((event, index) => (
+        <li key={`${event.kind}:${event.timestamp}:${index}`} className="flex min-w-0 flex-col gap-0.5">
+          <span className="flex items-baseline gap-1.5">
+            <span className={event.kind === "error" ? "text-destructive" : "text-foreground"}>
+              {EVENT_LABELS[event.kind]}
             </span>
-            <span className="break-all text-dim">{event.detail}</span>
-          </li>
-        ))}
-      </ul>
-    </div>
+            <span className="ml-auto shrink-0 text-dim">{formatTimestamp(event.timestamp, timeZone)}</span>
+          </span>
+          <span className="break-all text-dim">{event.detail}</span>
+        </li>
+      ))}
+    </ul>
   );
 }
 
-function RefreshButton({ onRefresh }: { onRefresh: () => void }) {
+function SessionDetails({ report }: { report: WispSessionReport }) {
+  const [copied, setCopied] = useState(false);
   return (
-    <Button className="self-start text-xs" size="sm" type="button" variant="ghost" onClick={onRefresh} disabled={false}>
-      <RefreshCwIcon data-icon="inline-start" />
-      Refresh
-    </Button>
+    <dl className="m-0 grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1.5 text-xs">
+      <dt className="text-dim">Session</dt>
+      <dd className="m-0 truncate font-mono" title={report.sessionId}>
+        {report.sessionId}
+      </dd>
+      <dd className="m-0">
+        <Button
+          size="xs"
+          variant="ghost"
+          type="button"
+          onClick={() =>
+            void navigator.clipboard
+              ?.writeText(report.sessionId)
+              .then(() => setCopied(true))
+              .catch(() => undefined)
+          }
+        >
+          {copied ? "Copied" : "Copy"}
+        </Button>
+      </dd>
+      {report.piVersion ? (
+        <>
+          <dt className="text-dim">Pi version</dt>
+          <dd className="col-span-2 m-0">{report.piVersion}</dd>
+        </>
+      ) : null}
+    </dl>
   );
 }
 
-function SummaryTerm({ label, value }: { label: string; value: string }) {
+function CountBadge({ children }: { children: ReactNode }) {
+  return <span className="rounded-full bg-accent px-1.5 text-2xs font-normal text-dim tabular-nums">{children}</span>;
+}
+
+function FailedBadge({ count, noun = "failed" }: { count: number; noun?: "failed" | "error" }) {
+  if (!count) return null;
   return (
-    <div className="flex min-w-0 gap-1.5">
-      <dt className="shrink-0 text-dim">{label}</dt>
-      <dd className="min-w-0 break-all">{value}</dd>
-    </div>
+    <span className="rounded-full bg-destructive/10 px-1.5 text-2xs font-normal text-destructive tabular-nums">
+      {noun === "failed" ? `${count} failed` : plural(count, "error")}
+    </span>
   );
 }
 
-function formatTokenCount(value: number): string {
-  return Number.isFinite(value) ? value.toLocaleString("en-US") : "0";
+function ReportSkeleton() {
+  const bar = "rounded-md bg-muted motion-safe:animate-pulse";
+  return (
+    <>
+      <p role="status" className="sr-only">
+        Loading session activity…
+      </p>
+      <div aria-hidden="true" className="flex flex-col gap-3.5">
+        <div className={cn(bar, "h-2.5 w-40")} />
+        <SettingsCard className="space-y-3 p-3">
+          <div className={cn(bar, "h-2.5 w-20")} />
+          <div className={cn(bar, "h-7 w-28")} />
+          <div className={cn(bar, "h-3 w-full rounded-full")} />
+        </SettingsCard>
+        <SettingsCard variant="stacked">
+          {[0, 1].map((row) => (
+            <div key={row} className="space-y-2 px-3 py-3">
+              <div className={cn(bar, "h-2.5 w-3/5")} />
+              <div className={cn(bar, "h-1 w-full")} />
+            </div>
+          ))}
+        </SettingsCard>
+      </div>
+    </>
+  );
 }
 
-function formatCost(value: number): string {
-  return new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency: "USD",
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 6,
-  }).format(value);
+/** The model's own name, without its vendor prefix (openai/gpt-oss-120b → gpt-oss-120b). */
+function shortModelId(modelId: string): string {
+  return modelId.split("/").pop() || modelId;
 }
 
 function formatTimestamp(value: string, timeZone: string): string {

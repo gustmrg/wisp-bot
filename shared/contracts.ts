@@ -71,7 +71,13 @@ import type {
 import type { AttachWorkspaceFilesResult, SetWorkspaceQuotaRequest, WorkspaceView } from "./workspace.js";
 import type { SaveWispExecutionRequest, WispExecutionView, WispSetupView } from "./execution.js";
 import type { ImportSkillRequest, SkillRequest, SkillView } from "./skills.js";
-import type { ResolveToolApprovalRequest, ToolApprovalRequest, ToolPolicySettings } from "./tool-policy.js";
+import type {
+  ResolveToolApprovalRequest,
+  SaveWispToolPolicyRequest,
+  ToolApprovalRequest,
+  ToolPolicySettings,
+  WispToolPolicyView,
+} from "./tool-policy.js";
 import type {
   SaveVoiceCredentialRequest,
   TranscribeAudioRequest,
@@ -160,6 +166,8 @@ export const WISP_IPC_CHANNELS = {
   setUserTimeZone: "wisp:time-zone:set",
   saveToolPolicy: "wisp:tool-policy:save",
   resolveToolApproval: "wisp:tool-policy:resolve-approval",
+  getWispToolPolicy: "wisp:tool-policy:get-wisp",
+  saveWispToolPolicy: "wisp:tool-policy:save-wisp",
   getLaunchAtLoginState: "wisp:login:get",
   setLaunchAtLogin: "wisp:login:set",
   getUpdateState: "wisp:update:get-state",
@@ -202,6 +210,11 @@ export const WISP_IPC_CHANNELS = {
   saveRemoteAccess: "wisp:remote-access:save",
   pairRemoteDevice: "wisp:remote-access:pair",
   revokeRemoteDevice: "wisp:remote-access:revoke",
+  configureSystemNotifications: "wisp:system-notifications:configure",
+  setNotificationFocus: "wisp:system-notifications:set-focus",
+  testSystemNotification: "wisp:system-notifications:test",
+  takeNotificationTarget: "wisp:system-notifications:take-target",
+  openNotificationTarget: "wisp:system-notifications:open",
 } as const;
 
 export const WISP_REPOSITORY_URL = "https://github.com/gustmrg/wisp-bot";
@@ -453,7 +466,7 @@ export type ConversationAgentEvent =
       conversationId: string;
       approvalId: string;
       toolCallId: string;
-      decision: "allow_once" | "allow_always" | "deny" | "block" | "expired";
+      decision: "allow_once" | "allow_always" | "allow_integration" | "deny" | "block" | "expired";
     }
   | {
       /** A job's run added its message to the conversation; it notifies like a reply. */
@@ -563,6 +576,45 @@ export interface LaunchAtLoginState {
   reason?: string;
 }
 
+/** What a native notification is about; the same events notification sounds play for. */
+export type SystemNotificationKind = "finished" | "needs-input" | "error";
+
+/** Which Wisp updates show a native notification. */
+export interface SystemNotificationSettings {
+  enabled: boolean;
+  onCompletion: boolean;
+  onApproval: boolean;
+  onError: boolean;
+}
+
+/** The conversation open in the app, and whether its window has focus: its updates need no notification. */
+export interface NotificationFocusRequest {
+  conversationId: string | null;
+}
+
+export interface TestSystemNotificationRequest {
+  kind: SystemNotificationKind;
+}
+
+/** Where clicking a native notification takes the person. */
+export interface SystemNotificationTarget {
+  conversationId: string;
+  approvalId?: string;
+}
+
+/** Native notifications and the dock or taskbar badge. Desktop app only. */
+export interface SystemNotificationsApi {
+  configure(settings: SystemNotificationSettings): Promise<EmptyResult>;
+  setFocus(request: NotificationFocusRequest): Promise<EmptyResult>;
+  /** Shows a sample notification, whatever the settings say. */
+  test(request: TestSystemNotificationRequest): Promise<EmptyResult>;
+  /**
+   * Calls `listener` when the person clicks a notification, including one
+   * clicked while no window was open, which opened this one.
+   */
+  subscribeToOpen(listener: (target: SystemNotificationTarget) => void): () => void;
+}
+
 export interface WispApi {
   getLaunchAtLoginState(): Promise<BackendResult<LaunchAtLoginState>>;
   setLaunchAtLogin(enabled: boolean): Promise<BackendResult<LaunchAtLoginState>>;
@@ -661,6 +713,9 @@ export interface WispApi {
   setUserTimeZone(request: SetUserTimeZoneRequest): Promise<EmptyResult>;
   saveToolPolicy(settings: ToolPolicySettings): Promise<BackendResult<ToolPolicySettings>>;
   resolveToolApproval(request: ResolveToolApprovalRequest): Promise<EmptyResult>;
+  /** What this Wisp may do without asking (ADR 023). */
+  getWispToolPolicy(request: ConversationRequest): Promise<BackendResult<WispToolPolicyView>>;
+  saveWispToolPolicy(request: SaveWispToolPolicyRequest): Promise<BackendResult<WispToolPolicyView>>;
   getUpdateState(): Promise<BackendResult<UpdateState>>;
   checkForUpdates(): Promise<BackendResult<UpdateState>>;
   downloadUpdate(): Promise<BackendResult<UpdateState>>;
@@ -728,4 +783,6 @@ export interface WispApi {
   pairRemoteDevice(): Promise<BackendResult<RemoteAccessPairing>>;
   /** Removes a device paired with Wisps on this computer and ends its sessions. */
   revokeRemoteDevice(request: RevokeRemoteDeviceRequest): Promise<BackendResult<RemoteAccessView>>;
+  /** Absent in the browser app, which has no native notifications. */
+  systemNotifications?: SystemNotificationsApi;
 }

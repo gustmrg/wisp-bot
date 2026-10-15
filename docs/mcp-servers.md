@@ -38,14 +38,17 @@ for that reason, the chat says so and points to the Access tab.
 
 ## Per-Wisp access
 
-Adding a server never grants any Wisp access. Grants are per-Wisp, with a
-single first-release level, **Use with approval**. They can be chosen in each
+Adding a server never grants any Wisp access. Grants are per-Wisp, at two
+levels: **Use with approval** and **Use without asking**. They can be chosen in each
 Wisp's **Access** tab, or for every Wisp at once in the server's **Wisp access**
 section under **Settings → MCP servers**, which opens right after a server is
 added. Both edit the same grants. Granting requires an enabled connection, and
-a completed sign-in for OAuth. Every
+a completed sign-in for OAuth. With approval, every
 MCP tool call asks before execution: server-supplied tool annotations are
 untrusted, so policy rules may block these calls but never auto-allow them.
+Without asking, every tool of the server runs without a card, including tools
+the server adds or changes later; a call that sends workspace files still
+asks, and a **Block all integration calls** rule still wins.
 Approvals identify the Wisp, connection, tool, and a bounded argument preview
 with secret-like keys redacted.
 
@@ -57,6 +60,8 @@ mechanism, or credential, and removing the server drop the permission too. A
 **Block all integration calls** rule still wins. The Wisp's **Access** tab
 lists always-allowed tools under each server; removing one there makes the
 tool ask again. Forms can only remove always-allowed tools, never add them.
+The card's **Always allow all of {server}** switches the Wisp to **Use without
+asking** for that server.
 
 Tools get deterministic aliases derived from the immutable server ID plus the
 original tool name, so server-side renames preserve identity and two servers

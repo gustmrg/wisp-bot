@@ -46,7 +46,7 @@ export function AccessRow({
             if (typeof next === "string" && !options.find((option) => option.value === next)?.disabled) onChange(next);
           }}
         >
-          <SelectTrigger id={id} aria-label={`${label} access`} className="w-[136px] shrink-0">
+          <SelectTrigger id={id} aria-label={`${label} access`} className="w-[164px] shrink-0">
             <SelectValue />
           </SelectTrigger>
           <SelectContent align="end" alignItemWithTrigger={false}>

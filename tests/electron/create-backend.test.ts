@@ -29,6 +29,7 @@ const PUSH_CHANNELS = new Set<string>([
   WISP_IPC_CHANNELS.messageQueueChanged,
   WISP_IPC_CHANNELS.jobsChanged,
   WISP_IPC_CHANNELS.connectionsChanged,
+  WISP_IPC_CHANNELS.openNotificationTarget,
 ]);
 
 const encryption: EncryptionService = {
@@ -96,6 +97,10 @@ async function compose() {
     connectionsDirectory: dataDirectory,
     deviceName: "Test computer",
     appVersion: "1.0.0",
+    systemNotifications: {
+      notifier: { configure: () => undefined, setFocus: () => undefined, test: () => undefined },
+      takeTarget: () => null,
+    },
   });
   backends.push(backend);
   const invoke = async <T>(channel: string, payload?: unknown): Promise<T> => {

@@ -364,6 +364,62 @@ describe("ConversationService", () => {
     await service.dispose();
   });
 
+  it("keeps why a reply failed apart from its text, across a restart", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "wisp-service-failure-reason-"));
+    const repository = new ConversationRepository({ dataDirectory: directory });
+    const registry = new AgentRegistry(new FakeConversationAgentFactory(), () => undefined);
+    const service = new ConversationService(repository, registry);
+    await service.start({ providerId: "test", modelId: "test" });
+    await service.initialize({ one: chat("one"), two: chat("two") });
+    await service.appendMessage("one", { id: "request-1", type: "outgoing", text: "A", status: "queued" });
+    await service.appendMessage("two", { id: "request-2", type: "outgoing", text: "B", status: "queued" });
+    const error = { code: "model_unavailable", message: "The provider is out of credits.", retryable: false } as const;
+    const events = [
+      {
+        type: "assistant_message_started",
+        conversationId: "one",
+        requestId: "request-1",
+        messageId: "request-1:assistant",
+        createdAt: "2026-10-15T12:00:00.000Z",
+      },
+      {
+        type: "assistant_text_delta",
+        conversationId: "one",
+        requestId: "request-1",
+        messageId: "request-1:assistant",
+        delta: "Partial",
+      },
+      { type: "conversation_error", conversationId: "one", requestId: "request-1", error: { ...error, detail: "raw" } },
+      { type: "conversation_error", conversationId: "two", requestId: "request-2", error },
+    ] as const;
+    events.forEach((event, index) => service.handleAgentEvent({ ...event, sequence: index + 1 }));
+    await vi.waitFor(() =>
+      expect(service.getState().chats.two?.messages).toContainEqual(
+        expect.objectContaining({ id: "request-2:assistant", status: "failed" }),
+      ),
+    );
+    await service.dispose();
+
+    const restoredRepository = new ConversationRepository({ dataDirectory: directory });
+    const restored = new ConversationService(
+      restoredRepository,
+      new AgentRegistry(new FakeConversationAgentFactory(), () => undefined),
+    );
+    await restored.start({ providerId: "test", modelId: "test" });
+    await restored.initialize({});
+    const failure = { code: "model_unavailable", message: "The provider is out of credits." };
+    const { chats } = restored.getState();
+    expect(chats.one?.messages).toContainEqual(
+      expect.objectContaining({ id: "request-1:assistant", status: "failed", text: "Partial", error: failure }),
+    );
+    expect(chats.two?.messages).toContainEqual(
+      expect.objectContaining({ id: "request-2:assistant", status: "failed", text: "", error: failure }),
+    );
+    // A reply that failed before writing anything previews why.
+    expect(chats.two?.preview).toBe("The provider is out of credits.");
+    await restored.dispose();
+  });
+
   it("deletes a Wisp during active work without resurrecting its stream", async () => {
     const directory = await mkdtemp(path.join(os.tmpdir(), "wisp-service-delete-active-"));
     const repository = new ConversationRepository({ dataDirectory: directory });
