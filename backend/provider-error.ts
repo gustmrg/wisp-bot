@@ -18,6 +18,11 @@ const CONNECTION_PATTERN =
 const CONTEXT_LENGTH_PATTERN =
   /context.?(?:length|window)|maximum context|prompt is too long|input is too long|too many (?:input )?tokens/i;
 
+// Out of credits or over a quota, whatever the status: OpenAI says so with a 429,
+// Anthropic with a 400. Retrying does not help, as Pi knows.
+const QUOTA_PATTERN =
+  /insufficient_quota|exceeded your current quota|quota exceeded|out of budget|credit balance|insufficient (?:credits|balance|funds)|billing/i;
+
 const TOO_MANY_TOOLS_PATTERN = /(?:'tools'|\btools\b)[^.]*(?:too long|too many|maximum)|too many tools/i;
 
 const STATUS_MESSAGES: Record<number, string> = {
@@ -40,6 +45,7 @@ function providerStatus(message: string): number | undefined {
 }
 
 export function isRetryableProviderError(message: string): boolean {
+  if (QUOTA_PATTERN.test(message)) return false;
   const code = providerStatus(message);
   if (code !== undefined) {
     return code === 408 || code === 409 || code === 425 || code === 429 || code >= 500;
@@ -62,6 +68,12 @@ export function describeProviderError(raw: string): { message: string; retryable
       retryable: false,
     };
   }
+  if (QUOTA_PATTERN.test(detail)) {
+    return {
+      message: "The provider account is out of credits or over its quota. Add credits or choose a different model.",
+      retryable: false,
+    };
+  }
   if (CONTEXT_LENGTH_PATTERN.test(detail)) {
     return {
       message: "This conversation is too long for the model. Start a new chat or choose a model with a larger context.",
@@ -79,4 +91,9 @@ export function describeProviderError(raw: string): { message: string; retryable
           ? "The provider is temporarily unavailable. Please try again in a moment."
           : GENERIC_PROVIDER_ERROR);
   return { message, retryable: isRetryableProviderError(detail) };
+}
+
+/** Whether a request failed for being too large for the model, which compaction fixes rather than another model. */
+export function isRequestTooLarge(message: string): boolean {
+  return CONTEXT_LENGTH_PATTERN.test(message) || providerStatus(message) === 413;
 }

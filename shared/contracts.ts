@@ -98,6 +98,7 @@ export const WISP_IPC_CHANNELS = {
   sendMessage: "wisp:agent:send",
   abortConversation: "wisp:agent:abort",
   applyModel: "wisp:agent:apply-model",
+  applyFallbackModel: "wisp:agent:apply-fallback",
   getConversationModel: "wisp:agent:get-model",
   manageContext: "wisp:agent:context",
   disposeConversation: "wisp:agent:dispose",
@@ -122,6 +123,7 @@ export const WISP_IPC_CHANNELS = {
   saveWispMcpAccess: "wisp:mcp:access:save",
   saveAiSettings: "wisp:settings:ai:save",
   saveAuxiliaryModel: "wisp:settings:ai:save-auxiliary",
+  saveFallbackModel: "wisp:settings:ai:save-fallback",
   removeProviderCredential: "wisp:settings:ai:remove-credential",
   getConversationState: "wisp:conversations:get",
   initializeConversations: "wisp:conversations:initialize",
@@ -283,9 +285,36 @@ export interface AuxiliaryModelView {
   unavailable: AuxiliaryModelUnavailableReason | null;
 }
 
+/** Why a saved fallback model is not used. The selection is kept so the person can see and fix it. */
+export type FallbackModelUnavailableReason = "missing_key" | "model_unavailable";
+
+export interface FallbackModelView {
+  selection: ModelSelection | null;
+  /** Set when a saved selection cannot be used; there is then no fallback. */
+  unavailable: FallbackModelUnavailableReason | null;
+}
+
+/**
+ * What a Wisp answers with when its model fails for good, such as when the
+ * provider is out of credits: nothing, the global fallback model, or a model
+ * of its own. A fallback names a provider and model only.
+ */
+export type WispFallback = "off" | "global" | ModelSelection;
+
+/**
+ * A Wisp's fallback choice. One that never chose follows its model: a Wisp on
+ * the global model uses the global fallback, and one with its own model has
+ * none until the person turns it on.
+ */
+export function wispFallbackChoice(modelOverride: ModelSelection | null, saved: WispFallback | null): WispFallback {
+  return saved ?? (modelOverride ? "off" : "global");
+}
+
 export interface AiSettingsView {
   selection: ModelSelection | null;
   auxiliary: Record<AuxiliaryTask, AuxiliaryModelView>;
+  /** The model Wisps on the global model answer with when it fails for good. */
+  fallback: FallbackModelView;
   secureStorageAvailable: boolean;
   providers: ReadonlyArray<ProviderSummary>;
   /** Set when the model catalog could not be fully loaded or refreshed and the built-in list is shown. */
@@ -303,6 +332,11 @@ export interface SaveAuxiliaryModelRequest {
   selection: ModelSelection | null;
 }
 
+export interface SaveFallbackModelRequest {
+  /** Null turns the global fallback off. */
+  selection: ModelSelection | null;
+}
+
 export interface RemoveProviderCredentialRequest {
   providerId: string;
 }
@@ -311,11 +345,17 @@ export interface ApplyModelRequest extends ConversationRequest {
   model: ModelSelection | null;
 }
 
+export interface ApplyFallbackModelRequest extends ConversationRequest {
+  fallback: WispFallback;
+}
+
 export interface ConversationModelView {
   override: ModelSelection | null;
   effective: ModelSelection | null;
   applied: ModelSelection | null;
   pending: ModelSelection | null;
+  /** The Wisp's fallback choice; a Wisp that never chose has the default for its model. */
+  fallback: WispFallback;
   status: ConversationStatus;
 }
 
@@ -381,6 +421,8 @@ export type ConversationAgentEvent =
       conversationId: string;
       requestId: string;
       messageId: string;
+      /** The fallback model's name, set when it answered because the Wisp's model failed. */
+      fallbackModel?: string;
     }
   | {
       type: "assistant_message_cancelled";
@@ -412,7 +454,7 @@ export type ConversationAgentEvent =
       type: "conversation_notice";
       conversationId: string;
       requestId?: string;
-      kind: "retry_started" | "retry_finished" | "compaction_started" | "compaction_finished";
+      kind: "retry_started" | "retry_finished" | "compaction_started" | "compaction_finished" | "fallback_started";
     }
   | {
       type: "tool_approval_requested";
@@ -465,7 +507,7 @@ export interface SessionReportToolCall {
 }
 
 export interface SessionReportEvent {
-  kind: "compaction" | "error" | "retry_started" | "retry_finished";
+  kind: "compaction" | "error" | "retry_started" | "retry_finished" | "fallback";
   timestamp: string;
   detail: string;
 }
@@ -598,12 +640,14 @@ export interface WispApi {
   sendMessage(request: SendMessageRequest): Promise<EmptyResult>;
   abortConversation(request: ConversationRequest): Promise<EmptyResult>;
   applyModel(request: ApplyModelRequest): Promise<EmptyResult>;
+  applyFallbackModel(request: ApplyFallbackModelRequest): Promise<EmptyResult>;
   getConversationModel(request: ConversationRequest): Promise<BackendResult<ConversationModelView>>;
   disposeConversation(request: ConversationRequest): Promise<EmptyResult>;
   subscribeToAgentEvents(listener: (event: SequencedConversationAgentEvent) => void): () => void;
   getAiSettings(): Promise<BackendResult<AiSettingsView>>;
   saveAiSettings(request: SaveAiSettingsRequest): Promise<BackendResult<AiSettingsView>>;
   saveAuxiliaryModel(request: SaveAuxiliaryModelRequest): Promise<BackendResult<AiSettingsView>>;
+  saveFallbackModel(request: SaveFallbackModelRequest): Promise<BackendResult<AiSettingsView>>;
   removeProviderCredential(request: RemoveProviderCredentialRequest): Promise<BackendResult<AiSettingsView>>;
   getConversationState(): Promise<BackendResult<ConversationStateView>>;
   initializeConversations(request: InitializeConversationsRequest): Promise<BackendResult<ConversationStateView>>;

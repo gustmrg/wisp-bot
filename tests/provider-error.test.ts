@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { describeProviderError, isRetryableProviderError } from "../backend/provider-error.js";
+import { describeProviderError, isRequestTooLarge, isRetryableProviderError } from "../backend/provider-error.js";
 
 describe("describeProviderError", () => {
   it("classifies by HTTP status with short actionable messages", () => {
@@ -11,6 +11,24 @@ describe("describeProviderError", () => {
     expect(describeProviderError("Anthropic API error (401): invalid api key").message).toContain("API key");
     expect(describeProviderError("OpenAI API error (402): insufficient credits").message).toContain("credits");
     expect(describeProviderError("Gemini API error (429): resource exhausted").message).toContain("rate limiting");
+  });
+
+  it("names an account out of credits whatever status the provider uses", () => {
+    const outOfCredits = {
+      message: "The provider account is out of credits or over its quota. Add credits or choose a different model.",
+      retryable: false,
+    };
+    expect(
+      describeProviderError(
+        'OpenAI API error (429): {"error":{"message":"You exceeded your current quota","code":"insufficient_quota"}}',
+      ),
+    ).toEqual(outOfCredits);
+    expect(
+      describeProviderError(
+        "400 Your credit balance is too low to access the Anthropic API. Please go to Plans & Billing.",
+      ),
+    ).toEqual(outOfCredits);
+    expect(isRetryableProviderError("429 insufficient_quota")).toBe(false);
   });
 
   it("treats server errors and network failures as retryable", () => {
@@ -76,5 +94,15 @@ describe("isRetryableProviderError", () => {
     expect(isRetryableProviderError("OpenRouter API error (500): internal")).toBe(true);
     expect(isRetryableProviderError("service unavailable")).toBe(true);
     expect(isRetryableProviderError("stream disconnected unexpectedly")).toBe(false);
+  });
+});
+
+describe("isRequestTooLarge", () => {
+  it("recognizes requests too large for the model, which compaction fixes", () => {
+    expect(isRequestTooLarge("400 prompt is too long: 250000 tokens > 200000 maximum")).toBe(true);
+    expect(isRequestTooLarge("This model's maximum context length is 128000 tokens")).toBe(true);
+    expect(isRequestTooLarge("413 Request Entity Too Large")).toBe(true);
+    expect(isRequestTooLarge("402 Payment Required")).toBe(false);
+    expect(isRequestTooLarge("400 invalid max tokens")).toBe(false);
   });
 });

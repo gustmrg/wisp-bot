@@ -14,6 +14,8 @@ import {
   parseResolveToolApprovalRequest,
   parseSaveAiSettingsRequest,
   parseSaveAuxiliaryModelRequest,
+  parseSaveFallbackModelRequest,
+  parseApplyFallbackModelRequest,
   parseSaveVoiceCredentialRequest,
   parseSendMessageRequest,
   parseSaveWispExecutionRequest,
@@ -273,6 +275,35 @@ describe("IPC request validators", () => {
     expect(() =>
       parseSaveAuxiliaryModelRequest({ task: "imageUnderstanding", selection: { providerId: "openrouter" } }),
     ).toThrow(WispBackendError);
+  });
+
+  it("accepts a fallback model without an output limit or reasoning, or off", () => {
+    const backup = { providerId: "openrouter", modelId: "openai/gpt-oss-120b" };
+    expect(
+      parseSaveFallbackModelRequest({ selection: { ...backup, maxOutputTokens: 100, thinkingLevel: "high" } }),
+    ).toEqual({
+      selection: backup,
+    });
+    expect(parseSaveFallbackModelRequest({ selection: null })).toEqual({ selection: null });
+    expect(() => parseSaveFallbackModelRequest({ selection: { providerId: "openrouter" } })).toThrow(WispBackendError);
+
+    expect(parseApplyFallbackModelRequest({ conversationId: "wisp-1", fallback: "off" })).toEqual({
+      conversationId: "wisp-1",
+      fallback: "off",
+    });
+    expect(parseApplyFallbackModelRequest({ conversationId: "wisp-1", fallback: "global" }).fallback).toBe("global");
+    expect(
+      parseApplyFallbackModelRequest({ conversationId: "wisp-1", fallback: { ...backup, maxOutputTokens: 9 } }),
+    ).toEqual({
+      conversationId: "wisp-1",
+      fallback: backup,
+    });
+    expect(() => parseApplyFallbackModelRequest({ conversationId: "wisp-1", fallback: "inherit" })).toThrow(
+      WispBackendError,
+    );
+    expect(() => parseApplyFallbackModelRequest({ conversationId: "wisp-1", fallback: null })).toThrow(
+      WispBackendError,
+    );
   });
 
   it("binds tool approval decisions to stable identifiers", () => {

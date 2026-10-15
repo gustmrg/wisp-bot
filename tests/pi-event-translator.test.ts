@@ -267,6 +267,41 @@ describe("PiEventTranslator", () => {
     expect(events.some(({ type }) => type === "assistant_message_completed")).toBe(false);
   });
 
+  it("announces the fallback model and marks only the parts it wrote", () => {
+    const events: ConversationAgentEvent[] = [];
+    const translator = new PiEventTranslator("wisp-1", (event) => events.push(event), 0);
+    translator.begin({ conversationId: "wisp-1", requestId: "request-1", text: "Search" });
+
+    translator.handle({ type: "agent_start" });
+    translator.handle({ type: "message_update", assistantMessageEvent: { type: "text_delta", delta: "Let me look." } });
+    translator.handle({ type: "tool_execution_start", toolCallId: "read-1", toolName: "read" });
+    translator.handle({ type: "tool_execution_end", toolCallId: "read-1", toolName: "read", isError: false });
+    translator.handle({ type: "model_fallback", model: "Backup" });
+    translator.handle({ type: "message_update", assistantMessageEvent: { type: "text_delta", delta: "Found it." } });
+    translator.handle({ type: "agent_settled" });
+
+    expect(events).toContainEqual({
+      type: "conversation_notice",
+      conversationId: "wisp-1",
+      requestId: "request-1",
+      kind: "fallback_started",
+    });
+    expect(events.filter((event) => event.type === "assistant_message_completed")).toEqual([
+      expect.not.objectContaining({ fallbackModel: expect.anything() }),
+      expect.objectContaining({ messageId: "request-1:assistant:2", fallbackModel: "Backup" }),
+    ]);
+    expect(events.some((event) => event.type === "conversation_error")).toBe(false);
+
+    // The next turn starts on the Wisp's own model.
+    translator.begin({ conversationId: "wisp-1", requestId: "request-2", text: "Again" });
+    translator.handle({ type: "message_update", assistantMessageEvent: { type: "text_delta", delta: "Sure." } });
+    translator.handle({ type: "agent_settled" });
+    expect(events.at(-2)).toEqual(
+      expect.objectContaining({ type: "assistant_message_completed", messageId: "request-2:assistant" }),
+    );
+    expect(events.at(-2)).not.toHaveProperty("fallbackModel");
+  });
+
   it("does not announce SDK retries for permanent HTTP failures", () => {
     const events: ConversationAgentEvent[] = [];
     const translator = new PiEventTranslator("wisp-1", (event) => events.push(event), 0);

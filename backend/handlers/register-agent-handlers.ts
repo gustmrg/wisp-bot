@@ -6,6 +6,7 @@ import {
   type ConversationModelView,
   type ModelSelection,
   type EmptyResult,
+  type WispFallback,
 } from "../../shared/contracts.js";
 import type { AgentRegistry } from "../agent-registry.js";
 import {
@@ -16,6 +17,7 @@ import {
 } from "./guarded-handlers.js";
 import {
   parseContextRequest,
+  parseApplyFallbackModelRequest,
   parseApplyModelRequest,
   parseConversationRequest,
   parseSendMessageRequest,
@@ -30,6 +32,8 @@ export class AgentIpcController {
     registry: AgentRegistry,
     private readonly saveModel: (id: string, model: ModelSelection | null) => Promise<void> = (id, model) =>
       registry.applyConversationModel(id, model),
+    private readonly saveFallback: (id: string, fallback: WispFallback) => Promise<void> = async (id, fallback) =>
+      registry.applyConversationFallback(id, fallback),
   ) {
     this.registry = registry;
   }
@@ -66,6 +70,14 @@ export class AgentIpcController {
     });
   }
 
+  async applyFallbackModel(payload: unknown): Promise<EmptyResult> {
+    return toResult(async () => {
+      const request = parseApplyFallbackModelRequest(payload);
+      await this.saveFallback(request.conversationId, request.fallback);
+      return emptyValue;
+    });
+  }
+
   async manageContext(payload: unknown): Promise<BackendResult<ContextView>> {
     return toResult(() => this.registry.manageContext(parseContextRequest(payload)));
   }
@@ -88,8 +100,9 @@ export function registerAgentHandlers(
   registry: AgentRegistry,
   authorizeSender: SenderAuthorizer,
   saveModel?: (id: string, model: ModelSelection | null) => Promise<void>,
+  saveFallback?: (id: string, fallback: WispFallback) => Promise<void>,
 ): { dispose: () => void } {
-  const controller = new AgentIpcController(registry, saveModel);
+  const controller = new AgentIpcController(registry, saveModel, saveFallback);
   // The controller already returns BackendResults, so only the sender check is added here.
   return registerAuthorizedHandlers(router, authorizeSender, [
     [WISP_IPC_CHANNELS.startConversation, (payload) => controller.start(payload)],
@@ -98,6 +111,7 @@ export function registerAgentHandlers(
     [WISP_IPC_CHANNELS.manageContext, (payload) => controller.manageContext(payload)],
     [WISP_IPC_CHANNELS.getConversationModel, (payload) => controller.getModel(payload)],
     [WISP_IPC_CHANNELS.applyModel, (payload) => controller.applyModel(payload)],
+    [WISP_IPC_CHANNELS.applyFallbackModel, (payload) => controller.applyFallbackModel(payload)],
     [WISP_IPC_CHANNELS.disposeConversation, (payload) => controller.dispose(payload)],
   ]);
 }

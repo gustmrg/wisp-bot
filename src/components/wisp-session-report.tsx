@@ -381,6 +381,7 @@ const EVENT_LABELS = {
   compaction: "Context summarized",
   retry_started: "Retry started",
   retry_finished: "Retry finished",
+  fallback: "Fallback",
 } as const;
 
 function EventList({ report }: { report: WispSessionReport }) {

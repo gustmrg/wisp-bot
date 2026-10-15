@@ -48,6 +48,7 @@ import { AUXILIARY_USAGE_ENTRY, ImageTranscriber, type TranscriptionRun } from "
 import { isPdfFile, readPdf } from "./pdf-reader.js";
 import { hashContent, TRANSCRIPTION_CACHE_DIRECTORY, TranscriptionCache } from "./transcription-cache.js";
 import { describeProviderError } from "./provider-error.js";
+import { FALLBACK_ENTRY, ModelFallback } from "./model-fallback.js";
 import type { ToolAuthorizationBroker, ToolAuthorizationRequest } from "./tool-authorization-broker.js";
 import {
   MAX_SKILL_DESCRIPTION_LENGTH,
@@ -83,6 +84,12 @@ export interface PiSessionLike {
   /** Adds a message to the model's context without starting a turn; not shown in the session's own UI. */
   appendCustomMessage?(customType: string, text: string): Promise<void>;
   dispose(): void;
+}
+
+/** A model's name for people, without control characters. */
+function displayModelName(model: { id: string; name?: string }): string {
+  const name = (model.name || model.id).replace(/[\u0000-\u001f\u007f]/gu, " ").trim();
+  return name.slice(0, 256) || model.id.slice(0, 256);
 }
 
 /** The custom message type a job's delivered result has in the conversation's session. */
@@ -131,6 +138,9 @@ export interface PiJobSessionLike {
 interface BuiltSession {
   session: AgentSession;
   sessionManager: SessionManager;
+  fallback: ModelFallback;
+  /** Listeners told the name of the fallback model when a turn moves to it. */
+  fallbackListeners: Set<(model: string) => void>;
   continuity: ContextSession;
   refreshTools: () => Promise<void>;
   snapshot: Awaited<ReturnType<IntegrationToolSource["getSnapshot"]>> | undefined;
@@ -143,6 +153,7 @@ export class SdkPiSessionFactory implements PiSessionFactory {
   private readonly toolSource?: IntegrationToolSource;
   private readonly getImageModel?: () => Promise<ModelSelection | null>;
   private readonly jobs?: JobToolHost;
+  private readonly getFallbackModel?: (conversationId: string) => Promise<ModelSelection | null>;
 
   constructor(
     modelRuntime: ModelRuntimeLike,
@@ -152,12 +163,15 @@ export class SdkPiSessionFactory implements PiSessionFactory {
     getImageModel?: () => Promise<ModelSelection | null>,
     /** Where the Wisp's jobs live; without it, Wisps have no job tools. */
     jobs?: JobToolHost,
+    /** The model a Wisp answers with when its own fails for good, or null when it has none. */
+    getFallbackModel?: (conversationId: string) => Promise<ModelSelection | null>,
   ) {
     this.modelRuntime = modelRuntime;
     this.authorizationBroker = authorizationBroker;
     this.toolSource = toolSource;
     this.getImageModel = getImageModel;
     this.jobs = jobs;
+    this.getFallbackModel = getFallbackModel;
   }
 
   async getToolRevision(conversationId: string): Promise<string | null> {
@@ -185,10 +199,8 @@ export class SdkPiSessionFactory implements PiSessionFactory {
   }
 
   async create(context: ConversationAgentContext, selection: ModelSelection): Promise<PiSessionLike> {
-    const { session, sessionManager, continuity, refreshTools, snapshot, version } = await this.build(
-      context,
-      selection,
-    );
+    const { session, sessionManager, fallback, fallbackListeners, continuity, refreshTools, snapshot, version } =
+      await this.build(context, selection);
     try {
       await context.savePiSessionIdentity?.({
         sessionId: session.sessionId,
@@ -213,6 +225,8 @@ export class SdkPiSessionFactory implements PiSessionFactory {
       continuity,
       refreshTools,
       snapshot?.revision ?? defaultToolRevision,
+      fallback,
+      fallbackListeners,
     );
   }
 
@@ -250,6 +264,20 @@ export class SdkPiSessionFactory implements PiSessionFactory {
       SettingsManager,
       VERSION,
     } = await import("@earendil-works/pi-coding-agent");
+    const fallbackListeners = new Set<(model: string) => void>();
+    let recordFallback: ((model: string) => void) | undefined;
+    const fallback = new ModelFallback({
+      pi: await import("@earendil-works/pi-ai"),
+      resolve: async () => {
+        const choice = await this.getFallbackModel?.(context.conversationId);
+        return choice ? this.resolveModel(choice) : null;
+      },
+      onFallback: (model) => {
+        const name = displayModelName(model);
+        recordFallback?.(name);
+        for (const listener of fallbackListeners) listener(name);
+      },
+    });
     let continuity: ContextSession | undefined;
     const skills = new SkillStore(path.join(context.configDirectory, SKILLS_DIRECTORY));
     // Trusted snapshot: definitions, safe metadata, active names, and revision.
@@ -276,7 +304,11 @@ export class SdkPiSessionFactory implements PiSessionFactory {
         }),
       appendSystemPromptOverride: () => [],
       extensionFactories: [
-        providerRequestExtension(context.workspaceDirectory, () => session?.thinkingLevel ?? "off"),
+        providerRequestExtension(
+          context.workspaceDirectory,
+          () => fallback.fallbackRequest?.thinkingLevel ?? session?.thinkingLevel ?? "off",
+          () => fallback.fallbackRequest?.provider,
+        ),
         {
           name: "wisp-continuity",
           hidden: true,
@@ -416,6 +448,10 @@ export class SdkPiSessionFactory implements PiSessionFactory {
       excludeTools: ["bash", "powershell"],
       thinkingLevel: selection.thinkingLevel ?? "off",
     }));
+    // Every model call of the session, compaction included, can move to the fallback; cache warming cannot.
+    session.agent.streamFunction = fallback.wrap(session.agent.streamFunction);
+    const fallbackLog = sessionManager;
+    recordFallback = (model) => fallbackLog.appendCustomEntry(FALLBACK_ENTRY, { model });
     continuity = new ContextSession(
       session,
       path.join(context.configDirectory, "context-settings.json"),
@@ -435,6 +471,8 @@ export class SdkPiSessionFactory implements PiSessionFactory {
     return {
       session,
       sessionManager,
+      fallback,
+      fallbackListeners,
       continuity,
       refreshTools: async () => assertAllowedTools(session!, await getAllowedTools()),
       snapshot,
@@ -494,7 +532,15 @@ export function sanitizeWorkspacePath(payload: unknown, workspaceDirectory: stri
   return sanitize(payload);
 }
 
-function providerRequestExtension(workspaceDirectory: string, thinkingLevel: () => ThinkingLevel): InlineExtension {
+/**
+ * Shapes each provider request. A request to the fallback model names its
+ * provider and reasoning, which may differ from the session's model.
+ */
+function providerRequestExtension(
+  workspaceDirectory: string,
+  thinkingLevel: () => ThinkingLevel,
+  fallbackProvider: () => string | undefined,
+): InlineExtension {
   return {
     name: "wisp-provider-request",
     hidden: true,
@@ -502,7 +548,7 @@ function providerRequestExtension(workspaceDirectory: string, thinkingLevel: () 
       pi.on("before_provider_request", (event, context) =>
         excludeOpenRouterReasoning(
           sanitizeWorkspacePath(event.payload, workspaceDirectory),
-          context.model?.provider,
+          fallbackProvider() ?? context.model?.provider,
           thinkingLevel(),
         ),
       );
@@ -1149,6 +1195,8 @@ function adaptSession(
   continuity: ContextSession,
   refreshTools: () => Promise<void>,
   toolRevision: string,
+  fallback: ModelFallback,
+  fallbackListeners: Set<(model: string) => void>,
 ): PiSessionLike {
   return {
     get isIdle() {
@@ -1161,9 +1209,19 @@ function adaptSession(
       return session.sessionId;
     },
     toolRevision,
-    subscribe: (listener) => session.subscribe((event: AgentSessionEvent) => listener(event as PiAgentEvent)),
+    subscribe: (listener) => {
+      const unsubscribe = session.subscribe((event: AgentSessionEvent) => listener(event as PiAgentEvent));
+      const onFallback = (model: string) => listener({ type: "model_fallback", model });
+      fallbackListeners.add(onFallback);
+      return () => {
+        fallbackListeners.delete(onFallback);
+        unsubscribe();
+      };
+    },
     manageContext: (command) => continuity.command(command),
     prompt: async (text, { signal, ...options } = {}) => {
+      // Each turn starts on the Wisp's own model.
+      fallback.reset();
       await continuity.beforePrompt();
       await refreshTools();
       // A Stop during the preparation above must not start the model run.

@@ -75,10 +75,12 @@ function completeBridge(): WispApi {
         effective: null,
         applied: null,
         pending: null,
+        fallback: "global" as const,
         status: "configuration_required" as const,
       },
     }),
     applyModel: async () => ({ ok: true, value: {} }),
+    applyFallbackModel: async () => ({ ok: true, value: {} }),
     disposeConversation: async () => ({ ok: true, value: {} }),
     subscribeToAgentEvents: () => () => undefined,
     getAiSettings: async () => {
@@ -88,6 +90,9 @@ function completeBridge(): WispApi {
       throw new Error("not called");
     },
     saveAuxiliaryModel: async () => {
+      throw new Error("not called");
+    },
+    saveFallbackModel: async () => {
       throw new Error("not called");
     },
     removeProviderCredential: async () => {

@@ -473,3 +473,59 @@ it("persists a Wisp override across restart without changing the global model or
   expect(inherited.getConversationModel("one").override).toBeNull();
   await inherited.dispose();
 });
+
+it("persists a Wisp's fallback choice across restart, and the fallback badge on the replies it wrote", async () => {
+  const directory = await mkdtemp(path.join(os.tmpdir(), "wisp-fallback-"));
+  const global = { providerId: "provider-a", modelId: "default" };
+  const backup = { providerId: "provider-b", modelId: "backup" };
+  const makeService = () => {
+    const repository = new ConversationRepository({ dataDirectory: directory });
+    const registry = new AgentRegistry(new FakeConversationAgentFactory(), () => undefined);
+    return new ConversationService(repository, registry);
+  };
+  const first = makeService();
+  await first.start(global);
+  await first.initialize({ one: chat("one"), two: chat("two") });
+  await first.applyConversationFallback("one", backup);
+  expect(first.getConversationModel("one").fallback).toEqual(backup);
+  expect(first.getConversationModel("two").fallback).toBe("global");
+
+  let sequence = 0;
+  const handle = (event: Omit<SequencedConversationAgentEvent, "sequence">) =>
+    first.handleAgentEvent({ ...event, sequence: ++sequence } as SequencedConversationAgentEvent);
+  handle({
+    type: "assistant_message_started",
+    conversationId: "one",
+    requestId: "request-1",
+    messageId: "request-1:assistant",
+    createdAt: "2026-10-15T12:00:00.000Z",
+  });
+  handle({
+    type: "assistant_text_delta",
+    conversationId: "one",
+    requestId: "request-1",
+    messageId: "request-1:assistant",
+    delta: "Hi",
+  });
+  handle({
+    type: "assistant_message_completed",
+    conversationId: "one",
+    requestId: "request-1",
+    messageId: "request-1:assistant",
+    fallbackModel: "Backup",
+  });
+  await vi.waitFor(() =>
+    expect(first.getState().chats.one?.messages).toContainEqual(
+      expect.objectContaining({ id: "request-1:assistant", text: "Hi", fallbackModel: "Backup" }),
+    ),
+  );
+  await first.dispose();
+
+  const restarted = makeService();
+  await restarted.start(global);
+  expect(restarted.getConversationModel("one").fallback).toEqual(backup);
+  expect((await restarted.getMessagePage({ conversationId: "one", page: "latest" })).messages).toContainEqual(
+    expect.objectContaining({ id: "request-1:assistant", fallbackModel: "Backup" }),
+  );
+  await restarted.dispose();
+});

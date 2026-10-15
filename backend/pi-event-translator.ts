@@ -51,7 +51,9 @@ export type PiAgentEvent =
   | { type: "auto_retry_start"; errorMessage?: string }
   | { type: "auto_retry_end"; success?: boolean; finalError?: string }
   | { type: "compaction_start" }
-  | { type: "compaction_end" };
+  | { type: "compaction_end" }
+  /** Wisp's own: the turn moved to the fallback model, named here. */
+  | { type: "model_fallback"; model: string };
 
 type EventPublisher = (event: ConversationAgentEvent) => void;
 
@@ -72,6 +74,8 @@ export class PiEventTranslator {
   private responseCharacters = 0;
   private lastErrorMessage = "";
   private retryNoticeVisible = false;
+  /** The fallback model answering the rest of the turn, if the Wisp's own failed. */
+  private fallbackModel: string | undefined;
 
   constructor(conversationId: string, publish: EventPublisher, flushDelayMs = 24) {
     this.conversationId = conversationId;
@@ -92,6 +96,7 @@ export class PiEventTranslator {
     this.responseCharacters = 0;
     this.lastErrorMessage = "";
     this.retryNoticeVisible = false;
+    this.fallbackModel = undefined;
   }
 
   handle(event: PiAgentEvent): void {
@@ -142,6 +147,12 @@ export class PiEventTranslator {
         break;
       case "compaction_start":
         this.publishNotice("compaction_started");
+        break;
+      case "model_fallback":
+        // The Wisp's own model failed before answering; its error is not this turn's.
+        this.fallbackModel = event.model;
+        this.lastErrorMessage = "";
+        this.publishNotice("fallback_started");
         break;
       case "compaction_end":
         this.publishNotice("compaction_finished");
@@ -202,6 +213,7 @@ export class PiEventTranslator {
         conversationId: this.conversationId,
         requestId: request.requestId,
         messageId: this.messageId,
+        ...this.fallbackField(),
       });
     }
     this.publish({ type: "conversation_status", conversationId: this.conversationId, status: "idle" });
@@ -240,6 +252,7 @@ export class PiEventTranslator {
       conversationId: this.conversationId,
       requestId: this.request.requestId,
       messageId: this.messageId,
+      ...this.fallbackField(),
     });
     this.messagePart += 1;
     this.messageId = assistantMessageId(this.request.requestId, this.messagePart);
@@ -322,6 +335,10 @@ export class PiEventTranslator {
       ...(phase === "completed" ? { isError: Boolean(isError) } : {}),
       ...(label ? { label } : {}),
     });
+  }
+
+  private fallbackField(): { fallbackModel?: string } {
+    return this.fallbackModel ? { fallbackModel: this.fallbackModel } : {};
   }
 
   private publishNotice(kind: Extract<ConversationAgentEvent, { type: "conversation_notice" }>["kind"]): void {

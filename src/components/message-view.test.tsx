@@ -36,6 +36,15 @@ describe("MessageView", () => {
     expect(screen.getByText("Job · Blog watch")).toBeTruthy();
   });
 
+  it("marks a Wisp's reply its fallback model wrote", () => {
+    render(
+      <MessageView
+        message={{ id: "reply", type: "incoming", text: "Hi", status: "complete", fallbackModel: "Backup" }}
+      />,
+    );
+    expect(screen.getByText("Fallback · Backup")).toBeTruthy();
+  });
+
   it("says why a reply failed beside the mark, not as something the Wisp said", () => {
     const { container } = render(
       <MessageView

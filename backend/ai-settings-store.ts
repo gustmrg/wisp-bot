@@ -5,18 +5,20 @@ import {
   type AuxiliaryModelSelections,
   type AuxiliaryTask,
   type ModelSelection,
+  type WispFallback,
 } from "../shared/contracts.js";
 import { writeFileAtomically } from "./atomic-file.js";
 
 /**
- * Version 1 gained `auxiliary` as an optional field rather than a new
- * version: earlier releases discard files whose version they do not know,
+ * Version 1 gained `auxiliary` and `fallback` as optional fields rather than a
+ * new version: earlier releases discard files whose version they do not know,
  * which would lose the main selection after a downgrade.
  */
 interface SettingsFile {
   schemaVersion: 1;
   selection: ModelSelection | null;
   auxiliary?: AuxiliaryModelSelections;
+  fallback?: ModelSelection;
 }
 
 function isId(value: unknown): value is string {
@@ -45,22 +47,32 @@ export function normalizeSelection(value: unknown): ModelSelection | null {
   };
 }
 
+/** A selection reduced to its provider and model, or null when it is invalid. */
+export function normalizeModelChoice(value: unknown): ModelSelection | null {
+  const selection = normalizeSelection(value);
+  return selection ? { providerId: selection.providerId, modelId: selection.modelId } : null;
+}
+
+/** A saved fallback choice, or undefined when it is missing or invalid: the Wisp then follows its model. */
+export function normalizeWispFallback(value: unknown): WispFallback | undefined {
+  if (value === "off" || value === "global") return value;
+  return normalizeModelChoice(value) ?? undefined;
+}
+
 /**
  * An auxiliary selection names a provider and model only; its output limit is
  * fixed by its task, and it never reasons: its tasks are short.
  */
 function normalizeAuxiliary(value: unknown): AuxiliaryModelSelections {
   const record = value && typeof value === "object" ? (value as Partial<Record<AuxiliaryTask, unknown>>) : {};
-  const selection = normalizeSelection(record.imageUnderstanding);
-  return {
-    imageUnderstanding: selection ? { providerId: selection.providerId, modelId: selection.modelId } : null,
-  };
+  return { imageUnderstanding: normalizeModelChoice(record.imageUnderstanding) };
 }
 
 export class AiSettingsStore {
   private readonly filePath: string;
   private selection: ModelSelection | null = null;
   private auxiliary: AuxiliaryModelSelections = normalizeAuxiliary(undefined);
+  private fallback: ModelSelection | null = null;
   private loaded = false;
 
   constructor(filePath: string) {
@@ -89,12 +101,29 @@ export class AiSettingsStore {
     await this.write();
   }
 
+  /**
+   * The model Wisps on the global model answer with when it fails for good. It
+   * names a provider and model only: its output limit and reasoning follow the
+   * model it stands in for.
+   */
+  async getFallback(): Promise<ModelSelection | null> {
+    await this.load();
+    return this.fallback ? { ...this.fallback } : null;
+  }
+
+  async setFallback(selection: ModelSelection | null): Promise<void> {
+    await this.load();
+    this.fallback = normalizeModelChoice(selection);
+    await this.write();
+  }
+
   private async write(): Promise<void> {
     const configured = Object.values(this.auxiliary).some(Boolean);
     const file: SettingsFile = {
       schemaVersion: 1,
       selection: this.selection,
       ...(configured ? { auxiliary: this.auxiliary } : {}),
+      ...(this.fallback ? { fallback: this.fallback } : {}),
     };
     await writeFileAtomically(this.filePath, `${JSON.stringify(file, null, 2)}\n`);
   }
@@ -106,6 +135,7 @@ export class AiSettingsStore {
       if (parsed.schemaVersion === 1) {
         this.selection = normalizeSelection(parsed.selection);
         this.auxiliary = normalizeAuxiliary(parsed.auxiliary);
+        this.fallback = normalizeModelChoice(parsed.fallback);
       }
       this.loaded = true;
     } catch (error) {

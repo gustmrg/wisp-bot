@@ -441,3 +441,59 @@ describe("ModelService auxiliary models", () => {
     await expect(service.getAuxiliaryModel("imageUnderstanding")).resolves.toBeNull();
   });
 });
+
+describe("ModelService fallback models", () => {
+  const global = { providerId: "openrouter", modelId: "model-a" };
+  const backup = { providerId: "provider-b", modelId: "model-b" };
+
+  it("saves a global fallback whose provider has a key, and turns it off", async () => {
+    const { service } = await createService();
+    await expect(service.saveFallback(backup)).rejects.toMatchObject({
+      code: "invalid_configuration",
+      message: expect.stringContaining("API key"),
+    });
+    await service.setApiKey("provider-b", "secret-key");
+    await expect(service.saveFallback({ providerId: "provider-b", modelId: "missing" })).rejects.toMatchObject({
+      code: "invalid_configuration",
+    });
+
+    const view = await service.saveFallback({ ...backup, thinkingLevel: "high" });
+    expect(view.fallback).toEqual({ selection: backup, unavailable: null });
+    expect((await service.saveFallback(null)).fallback).toEqual({ selection: null, unavailable: null });
+  });
+
+  it("gives Wisps on the global model the global fallback, and Wisps with their own model none until they choose", async () => {
+    const { service } = await createService();
+    await service.save({ selection: global, apiKey: "main-key" });
+    await service.setApiKey("provider-b", "secret-key");
+    await service.saveFallback(backup);
+    const own = { providerId: "provider-b", modelId: "vision-b" };
+
+    await expect(service.getFallbackModel(null, null)).resolves.toEqual(backup);
+    await expect(service.getFallbackModel(own, null)).resolves.toBeNull();
+    await expect(service.getFallbackModel(own, "global")).resolves.toEqual(backup);
+    await expect(service.getFallbackModel(null, "off")).resolves.toBeNull();
+    await expect(service.getFallbackModel(own, global)).resolves.toEqual(global);
+  });
+
+  it("has no fallback when it is the model that failed or cannot be used", async () => {
+    const { service, settings } = await createService();
+    await service.save({ selection: global, apiKey: "main-key" });
+    await service.setApiKey("provider-b", "secret-key");
+
+    // The model cannot stand in for itself.
+    await expect(service.getFallbackModel(null, global)).resolves.toBeNull();
+    await expect(service.getFallbackModel(backup, backup)).resolves.toBeNull();
+    // A saved model that left the catalog, or whose key is gone, is kept but not used.
+    await settings.setFallback({ providerId: "provider-b", modelId: "retired" });
+    expect((await service.getView()).fallback).toEqual({
+      selection: { providerId: "provider-b", modelId: "retired" },
+      unavailable: "model_unavailable",
+    });
+    await expect(service.getFallbackModel(null, null)).resolves.toBeNull();
+    await service.saveFallback(backup);
+    const view = await service.removeCredential("provider-b");
+    expect(view.fallback).toEqual({ selection: backup, unavailable: "missing_key" });
+    await expect(service.getFallbackModel(null, null)).resolves.toBeNull();
+  });
+});

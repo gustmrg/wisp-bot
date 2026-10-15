@@ -19,6 +19,7 @@ const sdk = vi.hoisted(() => {
     sessionId: "pi-session-id",
     messages: [],
     sessionManager: { getEntries: () => [], getBranch: () => [] },
+    agent: { streamFunction: vi.fn() },
     subscribe: vi.fn(() => () => undefined),
     prompt: vi.fn(async () => undefined),
     abort: vi.fn(async () => undefined),
@@ -931,6 +932,117 @@ describe("SdkPiSessionFactory", () => {
     } finally {
       delete session.thinkingLevel;
     }
+  });
+
+  it("answers with the Wisp's fallback model when its own fails for good, and shapes that request for its provider", async () => {
+    const pi = await import("@earendil-works/pi-ai");
+    const directory = await mkdtemp(path.join(os.tmpdir(), "wisp-pi-fallback-"));
+    const models: Record<string, object> = {
+      "anthropic/claude": {
+        provider: "anthropic",
+        id: "claude",
+        name: "Claude",
+        contextWindow: 200_000,
+        maxTokens: 8_000,
+      },
+      "openrouter/backup": {
+        provider: "openrouter",
+        id: "backup",
+        name: "Backup",
+        contextWindow: 100_000,
+        maxTokens: 4_000,
+      },
+    };
+    const runtime = {
+      hasConfiguredAuth: vi.fn(() => true),
+      getModel: vi.fn((providerId: string, modelId: string) => models[`${providerId}/${modelId}`]),
+    } as unknown as ModelRuntimeLike;
+    const context: ConversationAgentContext = {
+      conversationId: "one",
+      sessionId: "app-session",
+      name: "Atlas",
+      wispId: "one",
+      role: "",
+      soul: "",
+      workspaceDirectory: path.join(directory, "workspace"),
+      sessionDirectory: directory,
+      configDirectory: path.join(directory, "config"),
+      piSessionId: null,
+      piSessionFile: null,
+    };
+    await mkdir(context.workspaceDirectory, { recursive: true });
+    const providerRequests: Array<{ provider: string; payload: unknown }> = [];
+    const inner = vi.fn((model: { provider: string; id: string }) => {
+      const stream = pi.createAssistantMessageEventStream();
+      const base = {
+        role: "assistant" as const,
+        content: [],
+        api: "openai-completions",
+        provider: model.provider,
+        model: model.id,
+        usage: {
+          input: 0,
+          output: 0,
+          cacheRead: 0,
+          cacheWrite: 0,
+          totalTokens: 0,
+          cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+        },
+        timestamp: 0,
+      };
+      queueMicrotask(() => {
+        providerRequests.push({
+          provider: model.provider,
+          payload: beforeRequest!({ payload: {} }, { model: { provider: "anthropic" } }),
+        });
+        stream.push(
+          model.provider === "anthropic"
+            ? {
+                type: "error",
+                reason: "error",
+                error: { ...base, stopReason: "error", errorMessage: "400 Your credit balance is too low" },
+              }
+            : { type: "done", reason: "stop", message: { ...base, stopReason: "stop" } },
+        );
+        stream.end();
+      });
+      return stream;
+    });
+    sdk.session.agent.streamFunction = inner;
+    const getFallbackModel = vi.fn(async () => ({ providerId: "openrouter", modelId: "backup" }));
+    let beforeRequest:
+      | ((event: { payload: unknown }, context: { model?: { provider: string } }) => unknown)
+      | undefined;
+
+    const session = await new SdkPiSessionFactory(
+      runtime,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      getFallbackModel,
+    ).create(context, { providerId: "anthropic", modelId: "claude" });
+    const loader = sdk.loaderOptions[0] as {
+      extensionFactories: Array<{ name: string; factory: (pi: unknown) => void }>;
+    };
+    loader.extensionFactories
+      .find(({ name }) => name === "wisp-provider-request")!
+      .factory({ on: (_event: string, handler: typeof beforeRequest) => (beforeRequest = handler) });
+    const events: unknown[] = [];
+    session.subscribe((event) => events.push(event));
+
+    const wrapped = sdk.session.agent.streamFunction as unknown as typeof inner;
+    expect(wrapped).not.toBe(inner);
+    const result = await (await wrapped(models["anthropic/claude"] as { provider: string; id: string })).result();
+
+    expect(result).toMatchObject({ provider: "openrouter", stopReason: "stop" });
+    expect(getFallbackModel).toHaveBeenCalledWith("one");
+    expect(events).toContainEqual({ type: "model_fallback", model: "Backup" });
+    // The fallback's request is shaped for OpenRouter even though the session's model is Anthropic's.
+    expect(providerRequests).toEqual([
+      { provider: "anthropic", payload: {} },
+      { provider: "openrouter", payload: expect.objectContaining({ include_reasoning: false }) },
+    ]);
   });
 
   it("removes the absolute workspace path from nested provider payloads", () => {

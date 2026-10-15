@@ -3,12 +3,14 @@ import { isContextPolicy, withPolicyDefaults, type ContextRequest } from "../sha
 import {
   isThinkingLevel,
   type UsageReportRequest,
+  type ApplyFallbackModelRequest,
   type ApplyModelRequest,
   type ConversationRequest,
   type ModelSelection,
   type RemoveProviderCredentialRequest,
   type SaveAiSettingsRequest,
   type SaveAuxiliaryModelRequest,
+  type SaveFallbackModelRequest,
   type SendMessageRequest,
   type SetUserTimeZoneRequest,
 } from "../shared/contracts.js";
@@ -208,6 +210,26 @@ export function parseSaveAuxiliaryModelRequest(value: unknown): SaveAuxiliaryMod
   if (request.selection === null) return { task: request.task, selection: null };
   const { providerId, modelId } = parseModelSelection(request.selection);
   return { task: request.task, selection: { providerId, modelId } };
+}
+
+/** A fallback names a provider and model only; it takes the output limit and reasoning of the model it stands in for. */
+function parseModelChoice(value: unknown): ModelSelection {
+  const { providerId, modelId } = parseModelSelection(value);
+  return { providerId, modelId };
+}
+
+export function parseSaveFallbackModelRequest(value: unknown): SaveFallbackModelRequest {
+  const request = asRecord(value);
+  return { selection: request.selection === null ? null : parseModelChoice(request.selection) };
+}
+
+export function parseApplyFallbackModelRequest(value: unknown): ApplyFallbackModelRequest {
+  const request = asRecord(value);
+  const { fallback } = request;
+  return {
+    conversationId: parseId(request.conversationId),
+    fallback: fallback === "off" || fallback === "global" ? fallback : parseModelChoice(fallback),
+  };
 }
 
 export function parseRemoveProviderCredentialRequest(value: unknown): RemoveProviderCredentialRequest {

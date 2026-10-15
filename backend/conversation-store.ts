@@ -25,7 +25,9 @@ import type { ConversationRecord, WispRecord, WorkspaceRecords } from "./workspa
 // so reads ignore it when the Wisp has no model of its own.
 // Version 10 adds jobs and their runs; older writers leave them alone, and
 // deleting a conversation removes them through foreign keys.
-const STORE_VERSION = 10;
+// Version 11 adds each Wisp's fallback choice; older writers leave it alone,
+// and a Wisp they create has none, so it follows its model.
+const STORE_VERSION = 11;
 const MIN_READER_VERSION = 6;
 /** The first layout that stores records as columns rather than JSON. */
 const COLUMN_RECORDS_VERSION = 5;
@@ -119,6 +121,9 @@ const RECORD_SCHEMA = `
     model_id TEXT,
     model_max_output_tokens INTEGER,
     model_thinking_level TEXT,
+    fallback_mode TEXT,
+    fallback_provider_id TEXT,
+    fallback_model_id TEXT,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
     CHECK ((model_provider_id IS NULL) = (model_id IS NULL)),
@@ -278,6 +283,13 @@ const ADD_PINNED_CONVERSATIONS =
 // Builds before version 9 could not choose a Wisp's thinking level; its Wisps think "off".
 const ADD_WISP_THINKING_LEVELS = "ALTER TABLE wisps ADD COLUMN model_thinking_level TEXT;";
 
+// Builds before version 11 could not choose a Wisp's fallback; its Wisps follow their model.
+const ADD_WISP_FALLBACKS = `
+  ALTER TABLE wisps ADD COLUMN fallback_mode TEXT;
+  ALTER TABLE wisps ADD COLUMN fallback_provider_id TEXT;
+  ALTER TABLE wisps ADD COLUMN fallback_model_id TEXT;
+`;
+
 /** Tables layout 5 replaced; their rows held whole records as JSON. */
 const JSON_RECORD_TABLES = ["wisps", "conversations", "scheduled_messages", "queued_messages"];
 
@@ -331,6 +343,7 @@ function wispRecordOf(row: Row): unknown {
   const color = optional(row.color);
   const maxOutputTokens = optional(row.model_max_output_tokens);
   const thinkingLevel = optional(row.model_thinking_level);
+  const fallbackMode = optional(row.fallback_mode);
   return {
     wisp: {
       id: row.id,
@@ -358,6 +371,14 @@ function wispRecordOf(row: Row): unknown {
             ...(maxOutputTokens === undefined ? {} : { maxOutputTokens: Number(maxOutputTokens) }),
             ...(thinkingLevel === undefined ? {} : { thinkingLevel }),
           },
+    ...(fallbackMode === undefined
+      ? {}
+      : {
+          fallback:
+            fallbackMode === "model"
+              ? { providerId: row.fallback_provider_id, modelId: row.fallback_model_id }
+              : fallbackMode,
+        }),
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -536,6 +557,7 @@ export class ConversationStore {
         store.addUnreadCounts();
         store.addPinnedConversations();
         store.addWispThinkingLevels();
+        store.addWispFallbacks();
       }
       return store;
     } catch (error) {
@@ -703,13 +725,13 @@ export class ConversationStore {
   }
 
   putWisp(record: WispRecord): void {
-    const { wisp, modelOverride } = record;
+    const { wisp, modelOverride, fallback } = record;
     const { appearance } = wisp;
     this.statement(
       `INSERT INTO wisps (id, name, role, soul, body, trail, tone, eyes, eye_ink, finish, mark, color,
         storage_id, model_provider_id, model_id, model_max_output_tokens, model_thinking_level,
-        created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        fallback_mode, fallback_provider_id, fallback_model_id, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT (id) DO UPDATE SET
         name = excluded.name, role = excluded.role, soul = excluded.soul,
         body = excluded.body, trail = excluded.trail, tone = excluded.tone, eyes = excluded.eyes,
@@ -718,6 +740,8 @@ export class ConversationStore {
         model_provider_id = excluded.model_provider_id, model_id = excluded.model_id,
         model_max_output_tokens = excluded.model_max_output_tokens,
         model_thinking_level = excluded.model_thinking_level,
+        fallback_mode = excluded.fallback_mode, fallback_provider_id = excluded.fallback_provider_id,
+        fallback_model_id = excluded.fallback_model_id,
         created_at = excluded.created_at, updated_at = excluded.updated_at`,
     ).run(
       wisp.id,
@@ -737,6 +761,9 @@ export class ConversationStore {
       modelOverride?.modelId ?? null,
       modelOverride?.maxOutputTokens ?? null,
       modelOverride?.thinkingLevel ?? null,
+      fallback === undefined ? null : typeof fallback === "string" ? fallback : "model",
+      typeof fallback === "object" ? fallback.providerId : null,
+      typeof fallback === "object" ? fallback.modelId : null,
       record.createdAt,
       record.updatedAt,
     );
@@ -1103,6 +1130,20 @@ export class ConversationStore {
     this.db.exec("BEGIN IMMEDIATE");
     try {
       this.db.exec(ADD_WISP_THINKING_LEVELS);
+      this.raiseVersions();
+      this.db.exec("COMMIT");
+    } catch (error) {
+      this.db.exec("ROLLBACK");
+      throw error;
+    }
+  }
+
+  private addWispFallbacks(): void {
+    const columns = this.db.prepare("SELECT name FROM pragma_table_info('wisps')").all();
+    if (columns.some((column) => column.name === "fallback_mode")) return;
+    this.db.exec("BEGIN IMMEDIATE");
+    try {
+      this.db.exec(ADD_WISP_FALLBACKS);
       this.raiseVersions();
       this.db.exec("COMMIT");
     } catch (error) {

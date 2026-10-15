@@ -96,6 +96,25 @@ describe("AiSettingsStore", () => {
     expect(JSON.parse(await readFile(filePath, "utf8"))).toEqual({ schemaVersion: 1, selection });
   });
 
+  it("keeps the fallback model in version 1, naming only its provider and model", async () => {
+    const { filePath, store } = await createStore();
+    const selection = { providerId: "anthropic", modelId: "claude-example" };
+    const fallback = { providerId: "openrouter", modelId: "backup" };
+
+    await store.setSelection(selection);
+    await store.setFallback({ ...fallback, maxOutputTokens: 100, thinkingLevel: "high" });
+
+    const reloaded = new AiSettingsStore(filePath);
+    await expect(reloaded.getFallback()).resolves.toEqual(fallback);
+    await expect(reloaded.getSelection()).resolves.toEqual(selection);
+    expect(JSON.parse(await readFile(filePath, "utf8"))).toEqual({ schemaVersion: 1, selection, fallback });
+
+    await store.setFallback(null);
+    expect(JSON.parse(await readFile(filePath, "utf8"))).toEqual({ schemaVersion: 1, selection });
+    await writeFile(filePath, JSON.stringify({ schemaVersion: 1, selection, fallback: { providerId: "" } }));
+    await expect(new AiSettingsStore(filePath).getFallback()).resolves.toBeNull();
+  });
+
   it("reads files without auxiliary models, or with malformed ones, as off", async () => {
     const { filePath } = await createStore();
     const selection = { providerId: "anthropic", modelId: "claude-example" };

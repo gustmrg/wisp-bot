@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import type { AiSettingsView, ProviderSummary, ThinkingLevel } from "../../shared/contracts";
 import { AuxiliaryModelSettings } from "@/components/auxiliary-model-settings";
+import { FallbackModelSettings } from "@/components/fallback-model-settings";
 import { NoImageInputNote } from "@/components/no-image-input-note";
 import { SearchableCombobox } from "@/components/searchable-combobox";
 import { canChooseThinkingLevel, keepThinkingLevel, ThinkingLevelRow } from "@/components/thinking-level-select";
@@ -26,7 +27,7 @@ interface ModelSettingsSectionProps {
   onViewChange?: (view: AiSettingsView) => void;
   /** Hide the panel title when a surrounding screen already provides one. */
   showHeading?: boolean;
-  /** Show the auxiliary model pickers; first-run setup hides them. */
+  /** Show the fallback and auxiliary model pickers; first-run setup hides them. */
   showAuxiliaryModels?: boolean;
 }
 
@@ -364,6 +365,8 @@ function ModelSettingsSection({
 
           {showAuxiliaryModels ? (
             <div className="mt-6 border-t border-border pt-2">
+              {/* A server from before fallbacks reports none; it cannot save one either. */}
+              {view.fallback ? <FallbackModelSettings view={view} onViewChange={applyAuxiliaryView} /> : null}
               <AuxiliaryModelSettings view={view} onViewChange={applyAuxiliaryView} />
             </div>
           ) : null}

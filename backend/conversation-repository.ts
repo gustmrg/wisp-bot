@@ -5,8 +5,8 @@ import { randomUUID } from "node:crypto";
 import { mkdir, readFile, rename, rm } from "node:fs/promises";
 import path from "node:path";
 
-import type { ModelSelection } from "../shared/contracts.js";
-import { normalizeSelection } from "./ai-settings-store.js";
+import type { ModelSelection, WispFallback } from "../shared/contracts.js";
+import { normalizeSelection, normalizeWispFallback } from "./ai-settings-store.js";
 import type {
   Chat,
   ChatChanges,
@@ -294,6 +294,7 @@ export class ConversationRepository {
       wispId: wisp.id,
       sessionId: session.sessionId,
       modelOverride: wispRecord.modelOverride,
+      fallback: wispRecord.fallback ?? null,
       name: wisp.name,
       role: wisp.role,
       soul: wisp.soul,
@@ -637,6 +638,19 @@ export class ConversationRepository {
       if (model !== null && !normalized)
         throw new WispBackendError("invalid_request", "The model selection is invalid.");
       const record: WispRecord = { ...wispRecord, modelOverride: normalized, updatedAt: this.now().toISOString() };
+      await this.commit({ ...this.state, wisps: { ...this.state.wisps, [record.wisp.id]: record } }, (store) =>
+        store.putWisp(record),
+      );
+    });
+  }
+
+  /** Sets the fallback choice of the Wisp whose own conversation this is. */
+  async setFallback(conversationId: string, fallback: WispFallback): Promise<void> {
+    await this.enqueue(async () => {
+      const { wispRecord } = this.requireWispConversation(conversationId);
+      const normalized = normalizeWispFallback(fallback);
+      if (!normalized) throw new WispBackendError("invalid_request", "The fallback selection is invalid.");
+      const record: WispRecord = { ...wispRecord, fallback: normalized, updatedAt: this.now().toISOString() };
       await this.commit({ ...this.state, wisps: { ...this.state.wisps, [record.wisp.id]: record } }, (store) =>
         store.putWisp(record),
       );
@@ -1123,6 +1137,7 @@ export class ConversationRepository {
         wisp,
         storageId: normalizeConversationId(record.storageId),
         modelOverride: normalizeSelection(record.modelOverride),
+        ...withFallback(normalizeWispFallback(record.fallback)),
         createdAt: this.timestampOf(record.createdAt),
         updatedAt: this.timestampOf(record.updatedAt),
       };
@@ -1343,4 +1358,8 @@ function storedPageRequest(request: MessagePageRequest): StoredPageRequest {
     case "around":
       return { page: "around", messageId: request.messageId };
   }
+}
+
+function withFallback(fallback: WispFallback | undefined): { fallback?: WispFallback } {
+  return fallback === undefined ? {} : { fallback };
 }

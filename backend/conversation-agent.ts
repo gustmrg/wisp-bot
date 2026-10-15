@@ -1,5 +1,5 @@
 import type { ContextCommand, ContextView } from "../shared/context-policy.js";
-import type { ConversationAgentEvent, ModelSelection, SendMessageRequest } from "../shared/contracts.js";
+import type { ConversationAgentEvent, ModelSelection, SendMessageRequest, WispFallback } from "../shared/contracts.js";
 
 export type ConversationAgentListener = (event: ConversationAgentEvent) => void;
 
@@ -43,6 +43,8 @@ export interface ConversationAgentContext {
   /** The person's current time zone, read on every message; without it the Wisp is not told the time. */
   userTimeZone?: () => string;
   modelOverride?: ModelSelection | null;
+  /** The Wisp's saved fallback choice; null until it chooses, when it follows its model. */
+  fallback?: WispFallback | null;
   /** The conversation's workspace. */
   workspaceDirectory: string;
   /** The Wisp's session in this conversation. */

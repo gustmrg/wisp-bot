@@ -403,7 +403,7 @@ describe("ConversationRepository", () => {
     expect(await upgraded.listQueuedMessages()).toEqual([queued]);
     expect(storedRows(directory, "SELECT key, value FROM meta WHERE key LIKE '%version'")).toEqual(
       expect.arrayContaining([
-        { key: "store_version", value: "10" },
+        { key: "store_version", value: "11" },
         { key: "min_reader_version", value: "6" },
       ]),
     );
@@ -754,6 +754,7 @@ describe("ConversationRepository", () => {
     await expect(
       repository.setModelOverride("first", { providerId: "anthropic", modelId: "claude-sonnet-5" }),
     ).rejects.toBeDefined();
+    await expect(repository.setFallback("first", "off")).rejects.toBeDefined();
     await expect(
       repository.savePiSessionIdentity("first", {
         sessionId: "pi-new",
@@ -766,6 +767,7 @@ describe("ConversationRepository", () => {
     expect(repository.list()).toEqual(before);
     expect(repository.readWisps()).toEqual(wispsBefore);
     expect(repository.getAgentContext("first").modelOverride).toBeNull();
+    expect(repository.getAgentContext("first").fallback).toBeNull();
     // Nothing partial reached the disk either.
     const restored = await reload(directory);
     expect(restored.list()).toEqual(before);
@@ -791,6 +793,7 @@ describe("ConversationRepository", () => {
     await repository.update("first", { kind: "wisp", unread: true });
     await repository.markRead("first");
     await repository.setModelOverride("first", { providerId: "openrouter", modelId: "openai/gpt-oss-120b" });
+    await repository.setFallback("first", { providerId: "anthropic", modelId: "claude-sonnet-5" });
     const { sessionDirectory } = repository.getAgentContext("first");
     await repository.savePiSessionIdentity("first", {
       sessionId: "pi-first",
@@ -807,6 +810,10 @@ describe("ConversationRepository", () => {
     expect(restarted.getAgentContext("first").modelOverride).toEqual({
       providerId: "openrouter",
       modelId: "openai/gpt-oss-120b",
+    });
+    expect(restarted.getAgentContext("first").fallback).toEqual({
+      providerId: "anthropic",
+      modelId: "claude-sonnet-5",
     });
     expect(restarted.getChats().circle).toMatchObject({ memberIds: ["first"] });
     expect(restarted.getChats().first?.messages.map(({ id }) => id)).toEqual(["first:message:0", "reply", "question"]);

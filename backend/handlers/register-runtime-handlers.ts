@@ -43,8 +43,12 @@ export function registerRuntimeHandlers(
     registerScheduledMessageHandlers(router, runtime.scheduledMessages, authorizeSender),
     registerMessageQueueHandlers(router, runtime.messageQueue, authorizeSender),
     registerJobHandlers(router, runtime.jobs, authorizeSender),
-    registerAgentHandlers(router, runtime.registry, authorizeSender, (id, model) =>
-      runtime.applyConversationModel(id, model),
+    registerAgentHandlers(
+      router,
+      runtime.registry,
+      authorizeSender,
+      (id, model) => runtime.applyConversationModel(id, model),
+      (id, fallback) => runtime.applyConversationFallback(id, fallback),
     ),
   ];
   return {

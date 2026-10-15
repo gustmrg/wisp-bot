@@ -168,6 +168,9 @@ export function normalizeMessage(value: unknown, fallbackId?: string): Message {
         ? {}
         : { scheduled: normalizeScheduledOrigin(raw.scheduled) }),
       ...(raw.job === undefined || raw.type !== "incoming" ? {} : { job: normalizeJobOrigin(raw.job) }),
+      ...(raw.fallbackModel === undefined || raw.type !== "incoming"
+        ? {}
+        : { fallbackModel: string(raw.fallbackModel, 256, false) }),
       ...(raw.error === undefined || raw.type !== "incoming" ? {} : { error: normalizeMessageFailure(raw.error) }),
     };
   }

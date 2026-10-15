@@ -14,6 +14,7 @@ const WISP_IPC_CHANNELS = {
   sendMessage: "wisp:agent:send",
   abortConversation: "wisp:agent:abort",
   applyModel: "wisp:agent:apply-model",
+  applyFallbackModel: "wisp:agent:apply-fallback",
   getConversationModel: "wisp:agent:get-model",
   manageContext: "wisp:agent:context",
   disposeConversation: "wisp:agent:dispose",
@@ -38,6 +39,7 @@ const WISP_IPC_CHANNELS = {
   saveWispMcpAccess: "wisp:mcp:access:save",
   saveAiSettings: "wisp:settings:ai:save",
   saveAuxiliaryModel: "wisp:settings:ai:save-auxiliary",
+  saveFallbackModel: "wisp:settings:ai:save-fallback",
   removeProviderCredential: "wisp:settings:ai:remove-credential",
   getConversationState: "wisp:conversations:get",
   initializeConversations: "wisp:conversations:initialize",
@@ -162,6 +164,7 @@ const wispApi: WispApi = {
   abortConversation: (request) => ipcRenderer.invoke(WISP_IPC_CHANNELS.abortConversation, request),
   getConversationModel: (request) => ipcRenderer.invoke(WISP_IPC_CHANNELS.getConversationModel, request),
   applyModel: (request) => ipcRenderer.invoke(WISP_IPC_CHANNELS.applyModel, request),
+  applyFallbackModel: (request) => ipcRenderer.invoke(WISP_IPC_CHANNELS.applyFallbackModel, request),
   disposeConversation: (request) => ipcRenderer.invoke(WISP_IPC_CHANNELS.disposeConversation, request),
   subscribeToAgentEvents: (listener) => {
     const handleEvent = (_event: Electron.IpcRendererEvent, agentEvent: SequencedConversationAgentEvent): void => {
@@ -173,6 +176,7 @@ const wispApi: WispApi = {
   getAiSettings: () => ipcRenderer.invoke(WISP_IPC_CHANNELS.getAiSettings),
   saveAiSettings: (request) => ipcRenderer.invoke(WISP_IPC_CHANNELS.saveAiSettings, request),
   saveAuxiliaryModel: (request) => ipcRenderer.invoke(WISP_IPC_CHANNELS.saveAuxiliaryModel, request),
+  saveFallbackModel: (request) => ipcRenderer.invoke(WISP_IPC_CHANNELS.saveFallbackModel, request),
   removeProviderCredential: (request) => ipcRenderer.invoke(WISP_IPC_CHANNELS.removeProviderCredential, request),
   getConversationState: () => ipcRenderer.invoke(WISP_IPC_CHANNELS.getConversationState),
   initializeConversations: (request) => ipcRenderer.invoke(WISP_IPC_CHANNELS.initializeConversations, request),
