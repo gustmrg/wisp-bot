@@ -16,6 +16,7 @@ import {
   formatShortcut,
   reservedShortcutLabel,
   SCHEDULE_SEND_SHORTCUT,
+  TOGGLE_SIDEBAR_SHORTCUT,
   SHORTCUT_LABELS,
   shortcutFromEvent,
   shortcutKeys,
@@ -31,6 +32,7 @@ interface ShortcutSettingsSectionProps {
 /** Built-in keys that cannot be changed, listed so the whole keyboard map is in one place. */
 const FIXED_SHORTCUTS: ReadonlyArray<{ label: string; keys: ReadonlyArray<string> }> = [
   { label: "Search conversations", keys: shortcutKeys("Ctrl+KeyK") },
+  { label: "Collapse or expand the sidebar", keys: shortcutKeys(TOGGLE_SIDEBAR_SHORTCUT) },
   { label: "Send message", keys: ["Enter"] },
   { label: "New line", keys: ["Shift", "Enter"] },
   { label: "Schedule message", keys: shortcutKeys(SCHEDULE_SEND_SHORTCUT) },

@@ -4,6 +4,8 @@ import {
   BellOffIcon,
   MailCheckIcon,
   MailIcon,
+  PanelLeftCloseIcon,
+  PanelLeftOpenIcon,
   PinIcon,
   PinOffIcon,
   PlusIcon,
@@ -29,6 +31,7 @@ import { useTimeZone } from "@/hooks/use-time-zone";
 import { chatName } from "@/lib/chat-schema";
 import { chatActivityDate, chatActivityLabel } from "@/lib/date-dividers";
 import { sidebarLayoutStyle } from "@/lib/layout";
+import { formatShortcut, TOGGLE_SIDEBAR_SHORTCUT } from "@/lib/shortcuts";
 import { panelResizer, profileAvatar } from "@/lib/ui-classes";
 import { cn } from "@/lib/utils";
 import { wispAccent, wispAccentStyle, wispColor } from "@/lib/wisp-appearance";
@@ -40,6 +43,10 @@ interface SidebarProps {
   width: number;
   mobile?: boolean;
   hidden?: boolean;
+  /** On the desktop, folds the list to a rail of avatars. */
+  collapsed?: boolean;
+  /** Folds or unfolds the desktop list; without it there is no button to. */
+  onToggleCollapsed?: () => void;
   statuses?: Record<string, ManagedConversationStatus>;
   /** What each working conversation is doing, such as "Searching the web". */
   activity?: Record<string, string | undefined>;
@@ -68,6 +75,12 @@ interface SidebarProps {
 }
 
 // Product notification color intentionally remains explicit rather than a neutral surface token.
+/** The folded list: wide enough for an avatar and its row's padding. */
+const RAIL_WIDTH = "w-[60px]";
+
+const toolButton =
+  "flex size-[34px] flex-none items-center justify-center rounded-[10px] border-0 bg-foreground/[0.05] text-dim transition-colors duration-[120ms] hover:bg-foreground/[0.08] hover:text-foreground [&_svg]:size-4";
+
 const unreadIndicator =
   "unread-dot absolute -top-1 -right-1 size-[10px] rounded-full border-2 border-sidebar bg-[#ff3b30]";
 
@@ -111,6 +124,8 @@ function Sidebar({
   width,
   mobile = false,
   hidden = false,
+  collapsed = false,
+  onToggleCollapsed,
   statuses = {},
   activity = {},
   approvals = {},
@@ -130,6 +145,20 @@ function Sidebar({
   const [filter, setFilter] = useState<"all" | "unread" | "active">("all");
   const [menuChatId, setMenuChatId] = useState<ChatId | null>(null);
   const titleRef = useRef<HTMLHeadingElement>(null);
+  const rail = !mobile && collapsed;
+  const toggleLabel = `${rail ? "Expand" : "Collapse"} sidebar (${formatShortcut(TOGGLE_SIDEBAR_SHORTCUT)})`;
+  const toggleButton = onToggleCollapsed ? (
+    <button
+      className={cn(toolButton, "bg-transparent")}
+      type="button"
+      aria-label={rail ? "Expand sidebar" : "Collapse sidebar"}
+      aria-expanded={!rail}
+      title={toggleLabel}
+      onClick={onToggleCollapsed}
+    >
+      {rail ? <PanelLeftOpenIcon aria-hidden="true" /> : <PanelLeftCloseIcon aria-hidden="true" />}
+    </button>
+  ) : null;
   const now = useClock(30_000);
   const timeZone = useTimeZone();
   const allChatIds = Object.keys(chats);
@@ -151,9 +180,11 @@ function Sidebar({
       <aside
         hidden={hidden}
         className={cn(
-          "workspace-sidebar relative z-[2] flex min-h-0 w-(--sidebar-width) flex-none flex-col overflow-hidden bg-sidebar",
+          "workspace-sidebar relative z-[2] flex min-h-0 flex-none flex-col overflow-hidden bg-sidebar",
+          rail ? RAIL_WIDTH : "w-(--sidebar-width)",
           hidden && "hidden",
         )}
+        data-collapsed={rail || undefined}
         style={sidebarLayoutStyle(width)}
         aria-label="Conversations"
       >
@@ -195,9 +226,24 @@ function Sidebar({
               />
             ) : null}
           </>
+        ) : rail ? (
+          // The Create Wisp button, rendered further down, takes the space left below these.
+          <div className="flex flex-none flex-col items-center gap-1.5 pt-[11px] pb-[46px]">
+            {toggleButton}
+            <button
+              className={cn(toolButton, "sidebar-search")}
+              type="button"
+              aria-label="Search"
+              title="Search"
+              onClick={onOpenSearch}
+            >
+              <SearchIcon aria-hidden="true" />
+            </button>
+          </div>
         ) : (
           // The Create Wisp button, rendered further down, is placed at the end of this row.
-          <div className="flex h-[52px] flex-none items-center pt-2 pr-[50px] pl-2 pb-1">
+          <div className="flex h-[52px] flex-none items-center gap-1.5 pt-2 pr-[50px] pl-2 pb-1">
+            {toggleButton}
             <button
               className={cn(
                 "sidebar-search flex h-[34px] min-w-0 flex-1 items-center gap-2 rounded-[10px] border-0 text-left text-dim hover:text-foreground",
@@ -230,7 +276,10 @@ function Sidebar({
         ) : null}
 
         <nav
-          className="conversation-list min-h-0 flex-1 overflow-x-hidden overflow-y-auto px-2.5 [&::-webkit-scrollbar]:w-0"
+          className={cn(
+            "conversation-list min-h-0 flex-1 overflow-x-hidden overflow-y-auto [&::-webkit-scrollbar]:w-0",
+            rail ? "border-t border-border px-1.5 pt-2" : "px-2.5",
+          )}
           aria-label="Wisps and circles"
         >
           {chatIds.map((chatId) => {
@@ -252,6 +301,12 @@ function Sidebar({
                 style={color ? wispAccentStyle(color) : undefined}
                 type="button"
                 aria-current={selected ? "page" : undefined}
+                aria-label={
+                  rail
+                    ? railLabel(chatName(chat), { pendingApproval, failed, working, unread: chat.unread })
+                    : undefined
+                }
+                title={rail ? chatName(chat) : undefined}
                 key={chatId}
                 onClick={() => {
                   // The click that ends a long press opened the menu, not the conversation.
@@ -268,60 +323,66 @@ function Sidebar({
                   />
                   {chat.unread && !mobile ? <span className={unreadIndicator} aria-label="Unread activity" /> : null}
                 </span>
-                <span className="flex min-w-0 flex-1 flex-col">
-                  <span className="flex min-w-0 items-baseline gap-2">
-                    <strong className="min-w-0 overflow-hidden text-base leading-[17px] font-semibold text-ellipsis whitespace-nowrap">
-                      {chatName(chat)}
-                    </strong>
-                    {role ? <small className="conversation-role min-w-0 flex-[0_1_auto] truncate">{role}</small> : null}
-                    <span className="flex-1" />
-                    {chat.pinned ? (
-                      <span className="conversation-pin flex-none self-center text-faint">
-                        <PinIcon aria-hidden="true" className="size-3" />
-                        <span className="sr-only">Pinned</span>
-                      </span>
-                    ) : null}
-                    {activityDate ? (
-                      <time
-                        className="flex-none text-faint text-2xs leading-[17px]"
-                        dateTime={activityDate.toISOString()}
-                      >
-                        {chatActivityLabel(activityDate, now, timeZone)}
-                      </time>
-                    ) : null}
-                  </span>
-                  <span className="flex min-w-0 items-center gap-2">
-                    <span
-                      className={cn(
-                        "conversation-preview mt-px min-w-0 flex-1 overflow-hidden text-faint text-sm leading-[17px] text-ellipsis whitespace-nowrap",
-                        pendingApproval && "font-medium text-warning",
-                        failed && "text-destructive",
-                      )}
-                      data-activity={pendingApproval ? "approval" : failed ? "failed" : working ? "working" : undefined}
-                    >
-                      {pendingApproval
-                        ? "Waiting for your approval"
-                        : failed
-                          ? "The last reply failed"
-                          : working
-                            ? (activity[chatId] ?? "Working…")
-                            : messagePreview(chat.preview)}
+                {rail ? null : (
+                  <span className="flex min-w-0 flex-1 flex-col">
+                    <span className="flex min-w-0 items-baseline gap-2">
+                      <strong className="min-w-0 overflow-hidden text-base leading-[17px] font-semibold text-ellipsis whitespace-nowrap">
+                        {chatName(chat)}
+                      </strong>
+                      {role ? (
+                        <small className="conversation-role min-w-0 flex-[0_1_auto] truncate">{role}</small>
+                      ) : null}
+                      <span className="flex-1" />
+                      {chat.pinned ? (
+                        <span className="conversation-pin flex-none self-center text-faint">
+                          <PinIcon aria-hidden="true" className="size-3" />
+                          <span className="sr-only">Pinned</span>
+                        </span>
+                      ) : null}
+                      {activityDate ? (
+                        <time
+                          className="flex-none text-faint text-2xs leading-[17px]"
+                          dateTime={activityDate.toISOString()}
+                        >
+                          {chatActivityLabel(activityDate, now, timeZone)}
+                        </time>
+                      ) : null}
                     </span>
-                    {chat.unread && mobile ? (
-                      // A server that predates counts sends only `unread`: a dot then.
-                      <span className="conversation-unread-badge" data-counted={chat.unreadCount ? true : undefined}>
-                        {chat.unreadCount ? (
-                          <>
-                            <span aria-hidden="true">{chat.unreadCount > 99 ? "99+" : chat.unreadCount}</span>
-                            <span className="sr-only">{`${chat.unreadCount} unread`}</span>
-                          </>
-                        ) : (
-                          <span className="sr-only">Unread</span>
+                    <span className="flex min-w-0 items-center gap-2">
+                      <span
+                        className={cn(
+                          "conversation-preview mt-px min-w-0 flex-1 overflow-hidden text-faint text-sm leading-[17px] text-ellipsis whitespace-nowrap",
+                          pendingApproval && "font-medium text-warning",
+                          failed && "text-destructive",
                         )}
+                        data-activity={
+                          pendingApproval ? "approval" : failed ? "failed" : working ? "working" : undefined
+                        }
+                      >
+                        {pendingApproval
+                          ? "Waiting for your approval"
+                          : failed
+                            ? "The last reply failed"
+                            : working
+                              ? (activity[chatId] ?? "Working…")
+                              : messagePreview(chat.preview)}
                       </span>
-                    ) : null}
+                      {chat.unread && mobile ? (
+                        // A server that predates counts sends only `unread`: a dot then.
+                        <span className="conversation-unread-badge" data-counted={chat.unreadCount ? true : undefined}>
+                          {chat.unreadCount ? (
+                            <>
+                              <span aria-hidden="true">{chat.unreadCount > 99 ? "99+" : chat.unreadCount}</span>
+                              <span className="sr-only">{`${chat.unreadCount} unread`}</span>
+                            </>
+                          ) : (
+                            <span className="sr-only">Unread</span>
+                          )}
+                        </span>
+                      ) : null}
+                    </span>
                   </span>
-                </span>
+                )}
               </button>
             );
             if (!onChatAction) return row;
@@ -353,7 +414,16 @@ function Sidebar({
         </nav>
 
         {/* One dialog for both layouts, so a Wisp being created survives a change between them. */}
-        <div className={mobile ? "sidebar-create" : "absolute top-[11px] right-2 z-[1]"}>
+        {/* In the rail it sits below the search button, in the space the rail leaves for it. */}
+        <div
+          className={
+            mobile
+              ? "sidebar-create"
+              : rail
+                ? "absolute top-[91px] left-[13px] z-[1]"
+                : "absolute top-[11px] right-2 z-[1]"
+          }
+        >
           <CreateAgentDialog
             onCreate={onCreate}
             trigger={
@@ -362,12 +432,7 @@ function Sidebar({
                   <PlusIcon aria-hidden="true" />
                 </Button>
               ) : (
-                <button
-                  className="flex size-[34px] items-center justify-center rounded-[10px] border-0 bg-foreground/[0.05] text-dim transition-colors duration-[120ms] hover:bg-foreground/[0.08] hover:text-foreground [&_svg]:size-4"
-                  type="button"
-                  aria-label="Create Wisp"
-                  title="Create Wisp"
-                >
+                <button className={toolButton} type="button" aria-label="Create Wisp" title="Create Wisp">
                   <PlusIcon aria-hidden="true" />
                 </button>
               )
@@ -389,6 +454,7 @@ function Sidebar({
             className={cn(
               "flex min-w-0 flex-none items-center gap-[9px] rounded-[9px] border-0 bg-transparent p-1.5 text-left hover:bg-muted",
               "mt-[5px] mx-3 mb-[9px]",
+              rail && "mx-auto",
             )}
             type="button"
             aria-label="Open user settings"
@@ -398,11 +464,11 @@ function Sidebar({
             <span className={profileAvatar}>
               {currentUser.initials || <UserIcon aria-hidden="true" className="size-3.5" />}
             </span>
-            <span className="min-w-0 flex-1 truncate">{currentUser.displayName}</span>
+            {rail ? null : <span className="min-w-0 flex-1 truncate">{currentUser.displayName}</span>}
           </button>
         )}
 
-        {mobile ? null : (
+        {mobile || rail ? null : (
           <div
             className={cn(panelResizer, "-right-1")}
             role="separator"
@@ -413,6 +479,21 @@ function Sidebar({
       </aside>
     </>
   );
+}
+
+/** What a folded row says, since only its avatar shows. */
+function railLabel(
+  name: string,
+  state: { pendingApproval: boolean; failed: boolean; working: boolean; unread?: boolean },
+): string {
+  const status = state.pendingApproval
+    ? "waiting for your approval"
+    : state.failed
+      ? "the last reply failed"
+      : state.working
+        ? "working"
+        : null;
+  return [name, status, state.unread ? "unread" : null].filter(Boolean).join(", ");
 }
 
 function ConversationMenu({ chat, onAction }: { chat: ChatView; onAction: (action: ChatListAction) => void }) {

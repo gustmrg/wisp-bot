@@ -47,6 +47,8 @@ export interface AppPreferences {
   /** Desktop widths of the Wisp list and the Wisp's settings panel, as last dragged. */
   sidebarWidth: number;
   detailsWidth: number;
+  /** The desktop Wisp list is folded to a rail of avatars. */
+  sidebarCollapsed: boolean;
 }
 
 export const DEFAULT_PREFERENCES: AppPreferences = {
@@ -71,6 +73,7 @@ export const DEFAULT_PREFERENCES: AppPreferences = {
   autoReviewRules: [],
   sidebarWidth: SIDEBAR_LAYOUT.resize.defaultWidth,
   detailsWidth: DETAILS_LAYOUT.resize.defaultWidth,
+  sidebarCollapsed: false,
 };
 
 export function isRuleBehavior(value: unknown): value is RuleBehavior {
@@ -150,5 +153,6 @@ export function normalizePreferences(value: unknown): AppPreferences {
       : [],
     sidebarWidth: panelWidth(saved?.sidebarWidth, SIDEBAR_LAYOUT.resize),
     detailsWidth: panelWidth(saved?.detailsWidth, DETAILS_LAYOUT.resize),
+    sidebarCollapsed: typeof saved?.sidebarCollapsed === "boolean" ? saved.sidebarCollapsed : false,
   };
 }

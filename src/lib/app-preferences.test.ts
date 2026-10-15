@@ -44,6 +44,12 @@ describe("normalizePreferences", () => {
     });
   });
 
+  it("remembers whether the sidebar is collapsed", () => {
+    expect(normalizePreferences({ sidebarCollapsed: true }).sidebarCollapsed).toBe(true);
+    expect(normalizePreferences({ sidebarCollapsed: "yes" }).sidebarCollapsed).toBe(false);
+    expect(normalizePreferences({}).sidebarCollapsed).toBe(false);
+  });
+
   it("keeps saved panel widths within each panel's bounds", () => {
     expect(normalizePreferences({ sidebarWidth: 312.4, detailsWidth: 9000 })).toMatchObject({
       sidebarWidth: 312,

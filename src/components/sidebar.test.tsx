@@ -179,6 +179,74 @@ describe("Sidebar states", () => {
   });
 });
 
+describe("Sidebar rail", () => {
+  const chats: ChatViewCollection = {
+    atlas: wispChatView("atlas", { wisp: { name: "Atlas" }, chat: { preview: "Latest research", unread: true } }),
+  };
+
+  it("collapses from the button left of the search", async () => {
+    const user = userEvent.setup();
+    const onToggleCollapsed = vi.fn();
+    render(
+      <Sidebar
+        activeChatId=""
+        chats={chats}
+        currentUser={currentUser}
+        width={280}
+        onToggleCollapsed={onToggleCollapsed}
+        {...callbacks}
+      />,
+    );
+
+    const toggle = screen.getByRole("button", { name: "Collapse sidebar" });
+    expect(toggle).toHaveAttribute("aria-expanded", "true");
+    expect(toggle.nextElementSibling).toHaveTextContent("Search");
+    await user.click(toggle);
+    expect(onToggleCollapsed).toHaveBeenCalledOnce();
+  });
+
+  it("folds to avatars that still name each Wisp and its state", () => {
+    const { container } = render(
+      <Sidebar
+        activeChatId=""
+        chats={chats}
+        statuses={{ atlas: "working" }}
+        currentUser={currentUser}
+        width={280}
+        collapsed
+        onToggleCollapsed={vi.fn()}
+        {...callbacks}
+      />,
+    );
+
+    expect(screen.getByRole("button", { name: "Expand sidebar" })).toHaveAttribute("aria-expanded", "false");
+    expect(screen.getByRole("button", { name: "Atlas, working, unread" })).toBeVisible();
+    expect(screen.queryByText("Latest research")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Search" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "Create Wisp" })).toBeVisible();
+    expect(screen.queryByText("Ada Lovelace")).not.toBeInTheDocument();
+    expect(container.querySelector("[role=separator]")).not.toBeInTheDocument();
+  });
+
+  it("keeps the full list on mobile", () => {
+    render(
+      <Sidebar
+        activeChatId=""
+        chats={chats}
+        currentUser={currentUser}
+        width={280}
+        mobile
+        collapsed
+        onToggleCollapsed={vi.fn()}
+        {...callbacks}
+      />,
+    );
+
+    expect(screen.queryByRole("button", { name: /(Expand|Collapse) sidebar/ })).not.toBeInTheDocument();
+    expect(screen.getByText("Latest research")).toBeVisible();
+  });
+});
+
 describe("Sidebar previews", () => {
   it("previews a message with attachments by its files, without the list the Wisp reads", () => {
     const chats: ChatViewCollection = {
