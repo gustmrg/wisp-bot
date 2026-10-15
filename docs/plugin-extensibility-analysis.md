@@ -83,7 +83,7 @@ Options considered:
 
 Moving network rules into the host's `ctx.fetch` is a benefit in itself: the
 timeouts, redirect rejection, response limits, host allowlist, and error
-sanitization now repeated across `backend/plugin-adapters.ts` would apply to
+sanitization now implemented in `backend/plugins/shared.ts` would apply to
 every plugin without each one reimplementing them.
 
 ### Dynamic plugin identity
@@ -94,7 +94,8 @@ every plugin without each one reimplementing them.
   grants stay valid.
 - `PLUGIN_CATALOG` becomes the bundled catalog plus a registry of installed
   plugins.
-- `shared/tool-catalog.ts` holds static metadata per `pluginId`. Installed
+- Bundled plugins declare static tool metadata in `shared/plugin-tools/`, and
+  `shared/tool-catalog.ts` builds its plugin entries from it. Installed
   plugins supply theirs through the snapshot instead.
   `IntegrationToolSnapshot` (`backend/integration-tool-source.ts`) already
   carries dynamic definitions and metadata for MCP tools, and

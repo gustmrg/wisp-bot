@@ -20,7 +20,7 @@ import { WispBackendError } from "./backend-error.js";
 import { EncryptedCredentialStore, type EncryptionService } from "./encrypted-credential-store.js";
 import type { IntegrationToolSource, IntegrationToolSnapshot } from "./integration-tool-source.js";
 import { snapshotRevision } from "./integration-tool-source.js";
-import { PLUGIN_ADAPTERS } from "./plugin-adapters.js";
+import { PLUGIN_ADAPTERS } from "./plugins/index.js";
 import type { PluginAdapter, PluginToolSource, PluginToolSpec } from "./plugin-types.js";
 import { getToolMetadata } from "../shared/tool-catalog.js";
 import {
@@ -38,7 +38,7 @@ import {
   pluginRecord,
 } from "./plugin-validation.js";
 import type { ToolAuthorizationBroker } from "./tool-authorization-broker.js";
-import { isSharedWebTool } from "./web-tools.js";
+import { isSharedWebTool } from "./plugins/web.js";
 
 interface PluginToolBinding {
   pluginId: PluginId;

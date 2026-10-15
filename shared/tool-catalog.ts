@@ -1,4 +1,5 @@
 import { isMcpToolAlias, mcpServerAliasPrefix } from "./mcp.js";
+import { PLUGIN_TOOL_CATALOG } from "./plugin-tools/index.js";
 import type { PluginId } from "./plugins.js";
 import type { ToolActionCategory } from "./tool-policy.js";
 
@@ -72,105 +73,7 @@ export const TOOL_CATALOG: ReadonlyArray<ToolMetadata> = [
   { name: "list_jobs", label: "List jobs", activityLabel: "Checking jobs…", category: "read", jobs: true },
   { name: "update_job", label: "Update job", activityLabel: "Updating a job…", category: "schedule_job", jobs: true },
   { name: "cancel_job", label: "Cancel job", activityLabel: "Cancelling a job…", category: "schedule_job", jobs: true },
-  {
-    name: "web_read",
-    label: "Read web page",
-    activityLabel: "Reading a web page…",
-    category: "read",
-    pluginIds: ["firecrawl", "tavily", "exa"],
-  },
-  // Preserve display metadata for saved conversations using the old name.
-  {
-    name: "firecrawl_scrape",
-    label: "Read web page",
-    activityLabel: "Reading a web page…",
-    category: "read",
-    pluginId: "firecrawl",
-  },
-  {
-    name: "web_search",
-    label: "Search web",
-    activityLabel: "Searching the web…",
-    category: "search",
-    pluginIds: ["web-search", "firecrawl", "tavily", "exa"],
-  },
-  {
-    name: "linear_search_issues",
-    label: "Search Linear issues",
-    activityLabel: "Searching Linear issues…",
-    category: "search",
-    pluginId: "linear",
-  },
-  {
-    name: "linear_get_issue",
-    label: "Read Linear issue",
-    activityLabel: "Reading a Linear issue…",
-    category: "read",
-    pluginId: "linear",
-  },
-  {
-    name: "linear_list_teams",
-    label: "List Linear teams",
-    activityLabel: "Listing Linear teams…",
-    category: "read",
-    pluginId: "linear",
-  },
-  {
-    name: "linear_list_statuses",
-    label: "List Linear statuses",
-    activityLabel: "Listing Linear statuses…",
-    category: "read",
-    pluginId: "linear",
-  },
-  {
-    name: "linear_list_comments",
-    label: "List Linear comments",
-    activityLabel: "Reading Linear comments…",
-    category: "read",
-    pluginId: "linear",
-  },
-  {
-    name: "linear_list_projects",
-    label: "List Linear projects",
-    activityLabel: "Listing Linear projects…",
-    category: "read",
-    pluginId: "linear",
-  },
-  {
-    name: "linear_list_labels",
-    label: "List Linear labels",
-    activityLabel: "Listing Linear labels…",
-    category: "read",
-    pluginId: "linear",
-  },
-  {
-    name: "linear_list_users",
-    label: "List Linear users",
-    activityLabel: "Listing Linear users…",
-    category: "read",
-    pluginId: "linear",
-  },
-  {
-    name: "linear_create_issue",
-    label: "Create Linear issue",
-    activityLabel: "Creating a Linear issue…",
-    category: "external_write",
-    pluginId: "linear",
-  },
-  {
-    name: "linear_update_issue",
-    label: "Update Linear issue",
-    activityLabel: "Updating a Linear issue…",
-    category: "external_write",
-    pluginId: "linear",
-  },
-  {
-    name: "linear_add_comment",
-    label: "Comment on Linear issue",
-    activityLabel: "Commenting on a Linear issue…",
-    category: "external_write",
-    pluginId: "linear",
-  },
+  ...PLUGIN_TOOL_CATALOG,
 ];
 
 const metadataByName = new Map(TOOL_CATALOG.map((metadata) => [metadata.name, metadata]));
