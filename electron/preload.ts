@@ -113,6 +113,10 @@ const WISP_IPC_CHANNELS = {
   cancelConnection: "wisp:connections:cancel",
   answerSshPrompt: "wisp:connections:answer-ssh-prompt",
   connectionsChanged: "wisp:connections:changed",
+  getRemoteAccess: "wisp:remote-access:get",
+  saveRemoteAccess: "wisp:remote-access:save",
+  pairRemoteDevice: "wisp:remote-access:pair",
+  revokeRemoteDevice: "wisp:remote-access:revoke",
 } as const;
 
 const wispApi: WispApi = {
@@ -265,6 +269,10 @@ const wispApi: WispApi = {
     ipcRenderer.on(WISP_IPC_CHANNELS.connectionsChanged, handleView);
     return () => ipcRenderer.removeListener(WISP_IPC_CHANNELS.connectionsChanged, handleView);
   },
+  getRemoteAccess: () => ipcRenderer.invoke(WISP_IPC_CHANNELS.getRemoteAccess),
+  saveRemoteAccess: (request) => ipcRenderer.invoke(WISP_IPC_CHANNELS.saveRemoteAccess, request),
+  pairRemoteDevice: () => ipcRenderer.invoke(WISP_IPC_CHANNELS.pairRemoteDevice),
+  revokeRemoteDevice: (request) => ipcRenderer.invoke(WISP_IPC_CHANNELS.revokeRemoteDevice, request),
 };
 
 contextBridge.exposeInMainWorld("wisp", Object.freeze(wispApi));

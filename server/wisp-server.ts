@@ -9,7 +9,7 @@ import { registerRuntimeHandlers } from "../backend/handlers/register-runtime-ha
 import { parseConversationRequest } from "../backend/validators.js";
 import { createBackendRuntime, disposeWithin, type BackendRuntime } from "../backend/runtime.js";
 import type { StructuredLogger } from "../backend/structured-logger.js";
-import { startAdminSocket } from "./admin.js";
+import { startAdminSocket, type AdminHandler } from "./admin.js";
 import { createBackup } from "./backup.js";
 import { readPrivateKeyFile } from "./master-key.js";
 import { DeviceAuth } from "./device-auth.js";
@@ -63,6 +63,8 @@ export interface WispServer {
   serverId: string;
   auth: DeviceAuth;
   runtime: BackendRuntime;
+  /** Runs an administrative command (pair, devices, revoke, status, backup), as the admin socket does. */
+  admin: AdminHandler;
   /** Stops accepting requests, ends event streams, then lets agents settle before closing storage. */
   close(): Promise<void>;
 }
@@ -177,74 +179,69 @@ export async function createWispServer(options: WispServerOptions): Promise<Wisp
     const address = http.address();
     if (!address || typeof address === "string") throw new Error("The HTTP listener is unavailable.");
 
-    if (options.adminSocket ?? true) {
-      const admin = await startAdminSocket(options.dataDirectory, async (command) => {
-        switch (command.command) {
-          case "pair":
-            return auth.createPairingCode();
-          case "devices":
-            return auth.devices();
-          case "revoke": {
-            if (!auth.revoke(boundedString(command.deviceId, 64))) {
-              throw new HttpError(404, "not_found", "No paired device has that ID.");
-            }
-            return {};
+    // Reaching this handler is the authorization: the admin socket, or the
+    // stdin of a server the desktop app started, belong to the data's owner.
+    const admin: AdminHandler = async (command) => {
+      switch (command.command) {
+        case "pair":
+          return auth.createPairingCode();
+        case "devices":
+          return auth.devices();
+        case "revoke": {
+          if (!auth.revoke(boundedString(command.deviceId, 64))) {
+            throw new HttpError(404, "not_found", "No paired device has that ID.");
           }
-          case "backup": {
-            const output = boundedString(command.output, 4096);
-            if (!path.isAbsolute(output))
-              throw new HttpError(400, "invalid_request", "Give the backup file as an absolute path.");
-            if (backingUp) throw new HttpError(409, "invalid_request", "A backup is already being written.");
-            const working = Object.values(runtime.registry.statuses()).filter((status) => status === "working").length;
-            if (working > 0) {
-              throw new HttpError(
-                409,
-                "invalid_request",
-                `${working} Wisp${working === 1 ? " is" : "s are"} working. Back up when they finish.`,
-              );
-            }
-            let key: Buffer;
-            try {
-              key = readPrivateKeyFile(boundedString(command.keyFile, 4096));
-            } catch (error) {
-              throw new HttpError(
-                400,
-                "invalid_request",
-                error instanceof Error ? error.message : "The key is invalid.",
-              );
-            }
-            backingUp = true;
-            try {
-              return await createBackup({
-                dataDirectory: options.dataDirectory,
-                output,
-                key,
-                appVersion: options.appVersion,
-              });
-            } catch (error) {
-              throw new HttpError(
-                400,
-                "invalid_request",
-                error instanceof Error ? error.message : "The backup failed.",
-              );
-            } finally {
-              backingUp = false;
-            }
-          }
-          case "status":
-            return {
-              serverId: store.serverId,
-              bootId: hub.bootId,
-              version: options.appVersion,
-              port: address.port,
-              devices: auth.devices().length,
-              ...(publicOrigin ? { publicOrigin: publicOrigin.origin } : {}),
-            };
-          default:
-            throw new HttpError(400, "invalid_request", "Unknown administrative command.");
+          return {};
         }
-      });
-      cleanup.push(() => closeServer(admin));
+        case "backup": {
+          const output = boundedString(command.output, 4096);
+          if (!path.isAbsolute(output))
+            throw new HttpError(400, "invalid_request", "Give the backup file as an absolute path.");
+          if (backingUp) throw new HttpError(409, "invalid_request", "A backup is already being written.");
+          const working = Object.values(runtime.registry.statuses()).filter((status) => status === "working").length;
+          if (working > 0) {
+            throw new HttpError(
+              409,
+              "invalid_request",
+              `${working} Wisp${working === 1 ? " is" : "s are"} working. Back up when they finish.`,
+            );
+          }
+          let key: Buffer;
+          try {
+            key = readPrivateKeyFile(boundedString(command.keyFile, 4096));
+          } catch (error) {
+            throw new HttpError(400, "invalid_request", error instanceof Error ? error.message : "The key is invalid.");
+          }
+          backingUp = true;
+          try {
+            return await createBackup({
+              dataDirectory: options.dataDirectory,
+              output,
+              key,
+              appVersion: options.appVersion,
+            });
+          } catch (error) {
+            throw new HttpError(400, "invalid_request", error instanceof Error ? error.message : "The backup failed.");
+          } finally {
+            backingUp = false;
+          }
+        }
+        case "status":
+          return {
+            serverId: store.serverId,
+            bootId: hub.bootId,
+            version: options.appVersion,
+            port: address.port,
+            devices: auth.devices().length,
+            ...(publicOrigin ? { publicOrigin: publicOrigin.origin } : {}),
+          };
+        default:
+          throw new HttpError(400, "invalid_request", "Unknown administrative command.");
+      }
+    };
+    if (options.adminSocket ?? true) {
+      const socket = await startAdminSocket(options.dataDirectory, admin);
+      cleanup.push(() => closeServer(socket));
     }
 
     let closing: Promise<void> | undefined;
@@ -254,6 +251,7 @@ export async function createWispServer(options: WispServerOptions): Promise<Wisp
       serverId: store.serverId,
       auth,
       runtime,
+      admin,
       close: () => {
         closing ??= runCleanup();
         return closing;

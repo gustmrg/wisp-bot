@@ -6,6 +6,7 @@ import { createInterface } from "node:readline";
 
 import { FileLogSink } from "../backend/file-log-sink.js";
 import { CompositeLogSink, StructuredLogger } from "../backend/structured-logger.js";
+import type { AdminCommand, AdminHandler } from "./admin.js";
 import { readAppVersion } from "./app-version.js";
 import { parseServerConfig } from "./config.js";
 import { MasterKeyEncryption } from "./master-key.js";
@@ -18,12 +19,20 @@ export interface ServerBootstrap {
   localPairingCode: string;
 }
 
-/** Reads the bootstrap line; `onClose` runs when the app closes stdin, i.e. when it quits or dies. */
-function readBootstrap(onClose: () => void): Promise<ServerBootstrap> {
+/**
+ * Reads the bootstrap line; `onClose` runs when the app closes stdin, i.e.
+ * when it quits or dies. Every later line is an administrative command for
+ * `onCommand`: only the app that started this server can write them.
+ */
+function readBootstrap(onClose: () => void, onCommand: (line: string) => void): Promise<ServerBootstrap> {
   return new Promise((resolve, reject) => {
     const lines = createInterface({ input: process.stdin, crlfDelay: Number.POSITIVE_INFINITY });
     let received = false;
-    lines.once("line", (line) => {
+    lines.on("line", (line) => {
+      if (received) {
+        onCommand(line);
+        return;
+      }
       received = true;
       try {
         const value = JSON.parse(line) as Partial<ServerBootstrap>;
@@ -45,6 +54,28 @@ function readBootstrap(onClose: () => void): Promise<ServerBootstrap> {
   });
 }
 
+/** An administrative command from the desktop app, answered on stdout with the same `id`. */
+interface StdinCommand {
+  id: number;
+  command: AdminCommand;
+}
+
+function parseStdinCommand(line: string): StdinCommand | undefined {
+  try {
+    const value = JSON.parse(line) as { id?: unknown; command?: unknown };
+    const command = value.command as AdminCommand | undefined;
+    if (!Number.isSafeInteger(value.id) || !command || typeof command.command !== "string") return undefined;
+    return { id: value.id as number, command };
+  } catch {
+    return undefined;
+  }
+}
+
+/** Answers on its own stdout line, which the app tells from log lines by its event. */
+function answer(id: number, result: { ok: true; value: unknown } | { ok: false; error: string }): void {
+  process.stdout.write(`${JSON.stringify({ event: "admin_response", id, ...result })}\n`);
+}
+
 /** An explicit web root, or the `web/` folder next to an installed server package when it exists. */
 function webRootOption(configured: string | undefined): { webRoot?: string } {
   if (configured) return { webRoot: configured };
@@ -58,7 +89,29 @@ async function main(): Promise<void> {
     new CompositeLogSink([console, new FileLogSink(path.join(config.dataDirectory, "backend", "logs"))]),
   );
   let stop: (reason: string) => void = () => process.exit(0);
-  const bootstrap = config.bootstrapStdin ? await readBootstrap(() => stop("parent_closed")) : undefined;
+  // Commands that arrive before the server is ready wait for it.
+  let admin: AdminHandler | undefined;
+  const waiting: StdinCommand[] = [];
+  const run = ({ id, command }: StdinCommand, handle: AdminHandler): void => {
+    void Promise.resolve()
+      .then(() => handle(command))
+      .then(
+        (value) => answer(id, { ok: true, value: value ?? {} }),
+        (error: unknown) =>
+          answer(id, { ok: false, error: error instanceof Error ? error.message : "The command failed." }),
+      );
+  };
+  const bootstrap = config.bootstrapStdin
+    ? await readBootstrap(
+        () => stop("parent_closed"),
+        (line) => {
+          const command = parseStdinCommand(line);
+          if (!command) return;
+          if (admin) run(command, admin);
+          else waiting.push(command);
+        },
+      )
+    : undefined;
   const encryption = bootstrap
     ? new MasterKeyEncryption(bootstrap.masterKey ? Buffer.from(bootstrap.masterKey, "base64") : undefined)
     : MasterKeyEncryption.fromFile(config.keyFile);
@@ -71,8 +124,8 @@ async function main(): Promise<void> {
     port: config.port,
     allowExternalBind: config.allowExternalBind,
     ...(config.publicOrigin ? { publicOrigin: config.publicOrigin } : {}),
-    // The desktop app's own server needs no browser app.
-    ...(bootstrap ? {} : webRootOption(config.webRoot)),
+    // The desktop app's own server serves the browser app only when the app asks, for remote access.
+    ...(bootstrap ? (config.webRoot ? { webRoot: config.webRoot } : {}) : webRootOption(config.webRoot)),
     encryption,
     logger,
     agentMode: config.agentMode,
@@ -81,6 +134,8 @@ async function main(): Promise<void> {
       ? { localPairingCode: bootstrap.localPairingCode, adminSocket: false, requirePrivateDirectory: false }
       : {}),
   });
+  admin = server.admin;
+  for (const command of waiting.splice(0)) run(command, server.admin);
   logger.info("server_started", { host: config.host, port: server.port, serverId: server.serverId });
   let stopping = false;
   stop = (signal: string): void => {

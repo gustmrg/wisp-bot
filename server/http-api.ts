@@ -183,7 +183,8 @@ export function createHttpApi(options: HttpApiOptions): HttpApi {
     const { pathname, searchParams } = new URL(request.url ?? "/", "http://localhost");
     const method = request.method ?? "GET";
     if (pathname === "/health" && method === "GET") {
-      sendJson(response, 200, { ok: true, value: { status: "ok" } });
+      // The server ID lets the desktop app check that a proxy's address reaches this server.
+      sendJson(response, 200, { ok: true, value: { status: "ok", serverId: options.serverId } });
       return;
     }
     if (!pathname.startsWith(`${REMOTE_API_PREFIX}/`)) {

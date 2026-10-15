@@ -5,6 +5,7 @@ import path from "node:path";
 
 import { renderUnicodeCompact } from "uqr";
 
+import { pairingLink } from "../shared/pairing-link.js";
 import { adminRequest, ServerNotRunningError } from "./admin.js";
 import { readAppVersion } from "./app-version.js";
 import { createBackup, restoreBackup, verifyBackup } from "./backup.js";
@@ -193,14 +194,6 @@ export async function runCli(
       throw new Error(`Unknown command ${command}. Run wispctl help.`);
   }
   write(`${JSON.stringify(result, null, flags.has("--json") ? undefined : 2)}\n`);
-}
-
-/**
- * The address that pairs a device in one step. The code rides in the fragment,
- * which browsers never send, so it stays out of proxy and access logs.
- */
-export function pairingLink(publicOrigin: string, code: string): string {
-  return `${new URL(publicOrigin).origin}/#pair=${encodeURIComponent(code)}`;
 }
 
 /**

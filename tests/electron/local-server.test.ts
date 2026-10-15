@@ -1,6 +1,7 @@
 import { execFileSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { createServer as createNetServer, type AddressInfo } from "node:net";
 import os from "node:os";
 import path from "node:path";
 
@@ -28,7 +29,7 @@ afterAll(async () => {
   await Promise.all(directories.splice(0).map((directory) => rm(directory, { recursive: true, force: true })));
 });
 
-async function launcher(dataDirectory?: string, masterKey = randomBytes(32)) {
+async function launcher(dataDirectory?: string, masterKey = randomBytes(32), webRoot?: string) {
   const directory = dataDirectory ?? (await mkdtemp(path.join(os.tmpdir(), "wisp-child-")));
   if (!dataDirectory) directories.push(directory);
   return {
@@ -39,6 +40,7 @@ async function launcher(dataDirectory?: string, masterKey = randomBytes(32)) {
       dataDirectory: directory,
       agentMode: "fake",
       masterKey,
+      ...(webRoot ? { webRoot } : {}),
       logger: silent,
       execPath: process.execPath,
     }),
@@ -98,6 +100,43 @@ describe("ChildProcessLocalServer", () => {
     const second = await launcher(first.directory);
     await expect(second.server.ensureRunning()).rejects.toThrow(/already using this data directory/);
     await first.server.stop();
+  }, 60_000);
+
+  it("serves other devices on a fixed port while exposed, and pairs them through its stdin", async () => {
+    const web = await mkdtemp(path.join(os.tmpdir(), "wisp-web-"));
+    directories.push(web);
+    await writeFile(path.join(web, "index.html"), "<!doctype html><title>Wisp</title>");
+    const probe = createNetServer();
+    await new Promise<void>((resolve) => probe.listen(0, "127.0.0.1", resolve));
+    const { port } = probe.address() as AddressInfo;
+    await new Promise<void>((resolve) => probe.close(() => resolve()));
+
+    const { server } = await launcher(undefined, undefined, web);
+    await expect(server.admin({ command: "devices" })).rejects.toThrow(/not running/);
+    const exposure = { port, publicOrigin: "https://laptop.tailnet.ts.net" };
+    server.setExposure(exposure);
+    const running = await server.ensureRunning();
+    expect(running).toMatchObject({ baseUrl: `http://127.0.0.1:${port}`, exposure });
+    // The browser app, for the address the proxy serves.
+    const page = await fetch(`${running.baseUrl}/`, { headers: { host: "laptop.tailnet.ts.net" } });
+    expect(page.status).toBe(200);
+    expect(await page.text()).toContain("<title>Wisp</title>");
+
+    const { code } = (await server.admin({ command: "pair" })) as { code: string };
+    await client(running.baseUrl).pair(code, "Safari on iPhone");
+    expect(await server.admin({ command: "devices" })).toEqual([
+      expect.objectContaining({ name: "Safari on iPhone", local: false }),
+    ]);
+    await expect(server.admin({ command: "revoke", deviceId: "missing" })).rejects.toThrow(/No paired device/);
+
+    // Without an exposure it starts as before: any free port, no browser app.
+    server.setExposure(undefined);
+    await server.stop();
+    const plain = await server.ensureRunning();
+    expect(plain.baseUrl).not.toBe(running.baseUrl);
+    expect(plain.exposure).toBeUndefined();
+    expect((await fetch(`${plain.baseUrl}/`)).status).toBe(404);
+    await server.stop();
   }, 60_000);
 
   it("stops when the app that started it goes away", async () => {
