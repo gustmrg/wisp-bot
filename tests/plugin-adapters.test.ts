@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { BUILTIN_TOOL_NAMES, getToolMetadata } from "../shared/tool-catalog.js";
-import { PLUGIN_ADAPTERS } from "../backend/plugin-adapters.js";
+import { PLUGIN_ADAPTERS } from "../backend/plugins/index.js";
 import { sanitizeBackendError } from "../backend/backend-error.js";
 
 const KEY = "private-api-key-must-not-appear";
@@ -44,6 +44,8 @@ describe("built-in plugin adapters", () => {
       for (const spec of adapter.tools) {
         const metadata = getToolMetadata(spec.name);
         expect(metadata?.pluginIds ?? [metadata?.pluginId]).toContain(adapter.id);
+        expect(metadata).toMatchObject({ label: spec.label, activityLabel: spec.activityLabel, category: spec.category });
+        expect(spec.category === "external_write").toBe(spec.access === "write");
         expect(BUILTIN_TOOL_NAMES).not.toContain(spec.name);
       }
     }
