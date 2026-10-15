@@ -32,7 +32,7 @@ import { serializeWispTemplate } from "@/lib/wisp-template";
 interface DetailsPanelProps {
   mobile?: boolean;
   chat: ChatView;
-  /** On a phone, the page of a Wisp's settings shown. */
+  /** The page of a Wisp's settings shown: on a phone the page itself, on the desktop its tab and section. */
   section?: WispSettingsSection;
   /** On the desktop, the settings tab the panel opens first. */
   initialTab?: WispSettingsTab;
@@ -173,9 +173,10 @@ function DetailsPanel({
         />
       ) : chat.kind === "wisp" ? (
         <WispDetails
-          key={chat.id}
+          key={`${chat.id}:${section}`}
           chat={chat}
-          initialTab={initialTab ?? "general"}
+          initialTab={initialTab}
+          initialSection={section}
           onChangeWisp={(changes) => onChangeWisp(chat.wispId, changes)}
           onChangeNotifications={(notifyOnUpdatesEnabled) => onChange({ kind: "wisp", notifyOnUpdatesEnabled })}
           onOpenSettings={onOpenSettings}

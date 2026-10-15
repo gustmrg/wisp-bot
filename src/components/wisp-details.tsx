@@ -1,4 +1,4 @@
-import { type ReactNode, useState } from "react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 
 import type { WispChanges, WispChatView } from "@/chat-data";
 import { SettingsActions, SettingsGroup } from "@/components/settings/settings-primitives";
@@ -17,6 +17,7 @@ import { WispSkillSettings } from "@/components/wisp-skill-settings";
 import { WispWorkspaceSettings } from "@/components/wisp-workspace-settings";
 import type { IntegrationSettingsTarget } from "@/lib/plugin-access";
 import { cn } from "@/lib/utils";
+import type { WispSettingsSection } from "../../shared/app-links";
 import { sameWispAppearance } from "../../shared/wisp-appearance";
 
 const TAB_ORDER = ["general", "model", "access", "usage"] as const;
@@ -24,10 +25,28 @@ const TAB_ORDER = ["general", "model", "access", "usage"] as const;
 /** The tabs of a Wisp's settings on the desktop. */
 export type WispSettingsTab = (typeof TAB_ORDER)[number];
 
+/** The General tab's sections, which each save their own changes. */
+type GeneralSection = "context" | "skills" | "workspace" | "commands" | "jobs";
+
+/** Where each page of a phone's Wisp settings is on the desktop: a tab, and a section of General. */
+const DESKTOP_PLACES: Record<WispSettingsSection, { tab: WispSettingsTab; section?: GeneralSection }> = {
+  profile: { tab: "general" },
+  model: { tab: "model" },
+  access: { tab: "access" },
+  usage: { tab: "usage" },
+  memory: { tab: "general", section: "context" },
+  skills: { tab: "general", section: "skills" },
+  workspace: { tab: "general", section: "workspace" },
+  execution: { tab: "general", section: "commands" },
+  jobs: { tab: "general", section: "jobs" },
+};
+
 interface WispDetailsProps {
   chat: WispChatView;
   /** The tab shown first. */
   initialTab?: WispSettingsTab;
+  /** A page to show first, such as one an app link names; it picks the tab and opens its section. */
+  initialSection?: WispSettingsSection;
   generalActions?: ReactNode;
   /** Saves the Wisp's own settings. */
   onChangeWisp: (changes: WispChanges) => Promise<boolean> | void;
@@ -42,10 +61,26 @@ function draftOf(chat: WispChatView): WispSettingsDraft {
 }
 
 /** One of the General tab's sections: its panel loads the first time it is opened, and stays mounted. */
-function SettingsAccordionSection({ value, label, children }: { value: string; label: string; children: ReactNode }) {
-  const [visited, setVisited] = useState(false);
+function SettingsAccordionSection({
+  value,
+  label,
+  defaultOpen = false,
+  children,
+}: {
+  value: GeneralSection;
+  label: string;
+  defaultOpen?: boolean;
+  children: ReactNode;
+}) {
+  const [visited, setVisited] = useState(defaultOpen);
+  const itemRef = useRef<HTMLDivElement>(null);
+  // A section opened from a link is below the profile, so bring it into view.
+  useEffect(() => {
+    if (defaultOpen) itemRef.current?.scrollIntoView?.({ block: "start" });
+  }, [defaultOpen]);
   return (
     <AccordionItem
+      ref={itemRef}
       value={value}
       onOpenChange={(open) => {
         if (open) setVisited(true);
@@ -63,8 +98,12 @@ export function WispDetails({
   onChangeNotifications,
   onOpenSettings,
   generalActions,
-  initialTab = "general",
+  initialTab: tabProp,
+  initialSection,
 }: WispDetailsProps) {
+  const place = initialSection ? DESKTOP_PLACES[initialSection] : undefined;
+  const initialTab = tabProp ?? place?.tab ?? "general";
+  const openSection = place?.section;
   const [tab, setTab] = useState<string>(initialTab);
   const [slideDirection, setSlideDirection] = useState<"forward" | "back">("forward");
   const [visited, setVisited] = useState(() => new Set(["general", initialTab]));
@@ -152,20 +191,20 @@ export function WispDetails({
             />
           </SettingsGroup>
           {/* Each of these sections saves its own changes. */}
-          <Accordion multiple className="mt-4 border-t border-border">
-            <SettingsAccordionSection value="context" label="Context & memory">
+          <Accordion multiple defaultValue={openSection ? [openSection] : []} className="mt-4 border-t border-border">
+            <SettingsAccordionSection value="context" defaultOpen={openSection === "context"} label="Context & memory">
               <WispContextSettings conversationId={chat.id} />
             </SettingsAccordionSection>
-            <SettingsAccordionSection value="skills" label="Skills">
+            <SettingsAccordionSection value="skills" defaultOpen={openSection === "skills"} label="Skills">
               <WispSkillSettings conversationId={chat.id} />
             </SettingsAccordionSection>
-            <SettingsAccordionSection value="workspace" label="Workspace">
+            <SettingsAccordionSection value="workspace" defaultOpen={openSection === "workspace"} label="Workspace">
               <WispWorkspaceSettings conversationId={chat.id} onOpenSettings={onOpenSettings} />
             </SettingsAccordionSection>
-            <SettingsAccordionSection value="commands" label="Commands">
+            <SettingsAccordionSection value="commands" defaultOpen={openSection === "commands"} label="Commands">
               <WispExecutionSettings conversationId={chat.id} />
             </SettingsAccordionSection>
-            <SettingsAccordionSection value="jobs" label="Jobs">
+            <SettingsAccordionSection value="jobs" defaultOpen={openSection === "jobs"} label="Jobs">
               <WispJobSettings conversationId={chat.id} onOpenSettings={onOpenSettings} />
             </SettingsAccordionSection>
           </Accordion>

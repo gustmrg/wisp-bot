@@ -1,15 +1,26 @@
-import ReactMarkdown from "react-markdown";
+import ReactMarkdown, { defaultUrlTransform } from "react-markdown";
 import type { Components } from "react-markdown";
 import remarkBreaks from "remark-breaks";
 import remarkGfm from "remark-gfm";
 
+import { AppLinkButton } from "@/components/app-link";
 import { cn } from "@/lib/utils";
+import { parseAppLink } from "../../shared/app-links";
+
+/** Keeps the app's own `wisp://` links, which the default transform would drop as unsafe. */
+function urlTransform(url: string): string {
+  return parseAppLink(url) ? url : defaultUrlTransform(url);
+}
 
 const markdownComponents: Components = {
   // The main process opens new-window links in the system browser (web and mail links only).
-  a: ({ node: _node, ...props }) => (
-    <a className="text-blue underline underline-offset-2" {...props} target="_blank" rel="noreferrer noopener" />
-  ),
+  a: ({ node: _node, ...props }) => {
+    const link = props.href ? parseAppLink(props.href) : null;
+    if (link) return <AppLinkButton link={link}>{props.children}</AppLinkButton>;
+    return (
+      <a className="text-blue underline underline-offset-2" {...props} target="_blank" rel="noreferrer noopener" />
+    );
+  },
   blockquote: ({ node: _node, ...props }) => (
     <blockquote
       className="my-1.5 border-l-2 border-black/15 pl-2.5 text-dim first:mt-0 last:mb-0 dark:border-white/15"
@@ -75,7 +86,11 @@ const markdownComponents: Components = {
 
 function MarkdownView({ text }: { text: string }) {
   return (
-    <ReactMarkdown remarkPlugins={[remarkGfm, remarkBreaks]} components={markdownComponents}>
+    <ReactMarkdown
+      remarkPlugins={[remarkGfm, remarkBreaks]}
+      components={markdownComponents}
+      urlTransform={urlTransform}
+    >
       {text}
     </ReactMarkdown>
   );

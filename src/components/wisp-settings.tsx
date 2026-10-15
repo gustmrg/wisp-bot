@@ -25,19 +25,11 @@ import { WispIdentityFields, type WispSettingsDraft, WispSoulField } from "@/com
 import { WispSkillSettings } from "@/components/wisp-skill-settings";
 import { WispWorkspaceSettings } from "@/components/wisp-workspace-settings";
 import type { IntegrationSettingsTarget } from "@/lib/plugin-access";
+import type { WispSettingsSection } from "../../shared/app-links";
 import { sameWispAppearance } from "../../shared/wisp-appearance";
 
 /** A page of a Wisp's settings: one topic each, opened from its profile. */
-export type WispSettingsSection =
-  | "profile"
-  | "model"
-  | "access"
-  | "usage"
-  | "memory"
-  | "skills"
-  | "workspace"
-  | "execution"
-  | "jobs";
+export type { WispSettingsSection };
 
 export interface WispSettingsSectionInfo {
   section: WispSettingsSection;

@@ -118,6 +118,44 @@ describe("DetailsPanel deletion", () => {
   });
 });
 
+describe("DetailsPanel opened at a page", () => {
+  function renderAt(section: "model" | "jobs"): void {
+    mockConversationModel({ ok: false, error: { code: "not_found", message: "Missing" } });
+    Object.assign(window.wisp, {
+      getAiSettings: vi.fn(async () => ({ ok: false, error: { code: "not_found", message: "Missing" } })),
+      subscribeToAgentEvents: vi.fn(() => () => {}),
+    });
+    render(
+      <DetailsPanel
+        section={section}
+        chat={chat}
+        wisps={{ atlas: chat.wisp }}
+        width={318}
+        onChange={vi.fn()}
+        onChangeWisp={vi.fn()}
+        onClose={vi.fn()}
+        onDelete={vi.fn()}
+        onResizeStart={vi.fn()}
+      />,
+    );
+  }
+
+  it("shows the desktop tab that holds the page", () => {
+    renderAt("model");
+
+    expect(screen.getByRole("tab", { name: "Model" })).toHaveAttribute("aria-selected", "true");
+  });
+
+  it("opens the General section that holds the page", async () => {
+    renderAt("jobs");
+
+    expect(screen.getByRole("tab", { name: "General" })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("button", { name: "Jobs" })).toHaveAttribute("aria-expanded", "true");
+    expect(screen.getByRole("button", { name: "Skills" })).toHaveAttribute("aria-expanded", "false");
+    expect(await screen.findByText(/Tasks this Wisp runs on a schedule/)).toBeVisible();
+  });
+});
+
 describe("DetailsPanel on the desktop", () => {
   it("opens straight on the Wisp's settings, with who it is in the panel's header", async () => {
     const user = userEvent.setup();
