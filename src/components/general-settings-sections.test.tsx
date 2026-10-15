@@ -47,12 +47,10 @@ describe("GeneralSettingsSections auto-review", () => {
     expect(onPreferencesChange.mock.calls[0]?.[0].autoReviewRules).toEqual([]);
   });
 
-  it("disables the rules while auto-review is off and marks unavailable settings", () => {
+  it("disables the rules while auto-review is off", () => {
     renderSections({ ...DEFAULT_PREFERENCES, autoReview: false });
     for (const radio of screen.getAllByRole("radio")) expect(radio).toBeDisabled();
     expect(screen.getByText(/Wisp asks before every file change/)).toBeVisible();
-    expect(screen.getAllByText("Soon")).toHaveLength(1);
-    expect(screen.getByRole("switch", { name: "Use hardware acceleration" })).toBeDisabled();
     expect(screen.getByLabelText("Timezone")).toBeEnabled();
   });
 });

@@ -1,5 +1,4 @@
 import { useState } from "react";
-import type { ReactNode } from "react";
 import { XIcon } from "lucide-react";
 
 import { SearchableCombobox } from "@/components/searchable-combobox";
@@ -10,7 +9,6 @@ import {
   SettingsRowCopy,
   SettingsRowDescription,
   SettingsRowTitle,
-  SoonBadge,
 } from "@/components/settings/settings-primitives";
 import { Button } from "@/components/ui/button";
 import { SegmentedControl } from "@/components/ui/segmented-control";
@@ -95,16 +93,6 @@ function PreferenceSwitch({
   return <ToggleSwitch checked={checked} label={label} onChange={onChange} disabled={disabled} />;
 }
 
-/** Title of a setting whose preference is saved but not wired to the desktop yet. */
-function SoonTitle({ children, htmlFor }: { children: ReactNode; htmlFor?: string }) {
-  return (
-    <span className="flex items-center gap-1.5">
-      <SettingsRowTitle htmlFor={htmlFor}>{children}</SettingsRowTitle>
-      <SoonBadge />
-    </span>
-  );
-}
-
 interface GeneralSettingsSectionsProps {
   preferences: AppPreferences;
   onPreferencesChange: (preferences: AppPreferences) => void;
@@ -136,25 +124,6 @@ function GeneralSettingsSections({ preferences, onPreferencesChange }: GeneralSe
 
   return (
     <>
-      <SettingsGroup label="System">
-        <SettingsCard variant="stacked">
-          <SettingsRow>
-            <SettingsRowCopy>
-              <SoonTitle>Use hardware acceleration</SoonTitle>
-              <SettingsRowDescription>Wisp always uses the system default for now.</SettingsRowDescription>
-            </SettingsRowCopy>
-            <PreferenceSwitch
-              label="Use hardware acceleration"
-              checked={preferences.hardwareAcceleration}
-              disabled
-              onChange={() =>
-                onPreferencesChange({ ...preferences, hardwareAcceleration: !preferences.hardwareAcceleration })
-              }
-            />
-          </SettingsRow>
-        </SettingsCard>
-      </SettingsGroup>
-
       <SettingsGroup label="Wisp">
         <SettingsCard variant="stacked">
           <SettingsRow>
@@ -251,5 +220,5 @@ function GeneralSettingsSections({ preferences, onPreferencesChange }: GeneralSe
   );
 }
 
-export { GeneralSettingsSections, PreferenceSwitch, SettingsSelect, SoonTitle };
+export { GeneralSettingsSections, PreferenceSwitch, SettingsSelect };
 export type { SettingsOption };
