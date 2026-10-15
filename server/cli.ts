@@ -3,6 +3,8 @@ import "./node-version.js";
 
 import path from "node:path";
 
+import { renderUnicodeCompact } from "uqr";
+
 import { adminRequest, ServerNotRunningError } from "./admin.js";
 import { readAppVersion } from "./app-version.js";
 import { createBackup, restoreBackup, verifyBackup } from "./backup.js";
@@ -19,7 +21,8 @@ Commands:
                            a master key, server.env, wispctl, and a systemd user service.
                            Safe to run again; it keeps the key and settings.
   keygen --output FILE     Write a new private 32-byte key (never overwrites)
-  pair                     Print a one-time pairing code for a new device
+  pair [--no-qr]           Print a one-time pairing code for a new device, with a QR code
+                           to scan when the server has a public origin
   devices                  List paired devices
   revoke --device-id ID    Remove a device and end its sessions
   status                   Show the running server's identity
@@ -75,11 +78,12 @@ export async function runCli(
         "--no-service",
         "--no-pair",
         "--until-stdin-closes",
+        "--no-qr",
       ].includes(flag)
     ) {
       throw new Error(`Unknown option ${flag}.`);
     }
-    if (["--json", "--no-service", "--no-pair", "--until-stdin-closes"].includes(flag)) {
+    if (["--json", "--no-service", "--no-pair", "--until-stdin-closes", "--no-qr"].includes(flag)) {
       flags.set(flag, true);
       continue;
     }
@@ -148,7 +152,11 @@ export async function runCli(
       const { publicOrigin } = (await adminRequest(dataDirectory, { command: "status" })) as {
         publicOrigin?: string;
       };
-      write(describePairing(result as PairingCode, publicOrigin, output.now?.() ?? new Date()));
+      write(
+        describePairing(result as PairingCode, publicOrigin, output.now?.() ?? new Date(), {
+          qr: !flags.has("--no-qr"),
+        }),
+      );
       return;
     }
     case "status":
@@ -187,8 +195,24 @@ export async function runCli(
   write(`${JSON.stringify(result, null, flags.has("--json") ? undefined : 2)}\n`);
 }
 
-/** A pairing code as a person reads it: the code, how long it lasts, and where to enter it. */
-export function describePairing(pairing: PairingCode, publicOrigin: string | undefined, now: Date): string {
+/**
+ * The address that pairs a device in one step. The code rides in the fragment,
+ * which browsers never send, so it stays out of proxy and access logs.
+ */
+export function pairingLink(publicOrigin: string, code: string): string {
+  return `${new URL(publicOrigin).origin}/#pair=${encodeURIComponent(code)}`;
+}
+
+/**
+ * A pairing code as a person reads it: the code, how long it lasts, and where
+ * to enter it, with a QR code of the pairing link when the server has a public origin.
+ */
+export function describePairing(
+  pairing: PairingCode,
+  publicOrigin: string | undefined,
+  now: Date,
+  { qr = true }: { qr?: boolean } = {},
+): string {
   const expiresAt = new Date(pairing.expiresAt);
   const minutes = Math.max(1, Math.round((expiresAt.getTime() - now.getTime()) / 60_000));
   const until = expiresAt.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
@@ -198,11 +222,21 @@ export function describePairing(pairing: PairingCode, publicOrigin: string | und
     "",
   ];
   if (publicOrigin) {
-    lines.push(`Open ${publicOrigin} on your phone or browser and enter the code to pair.`);
+    const link = pairingLink(publicOrigin, pairing.code);
+    if (qr) {
+      // Light modules are drawn as blocks, so the code reads on a dark terminal background.
+      lines.push("Scan this with your phone to pair:", "", renderUnicodeCompact(link, { border: 2 }), "");
+    }
+    lines.push(
+      `${qr ? "Or open" : "Open"} ${link} on your phone or browser to pair,`,
+      `or open ${publicOrigin} and enter the code.`,
+      "",
+      `Anyone with this ${qr ? "QR code, link," : "link"} or code can pair: do not share it or leave it on screen.`,
+    );
   } else {
     lines.push(
       "Open this server's address on your phone or browser and enter the code to pair.",
-      "To reach it from a phone, see `wispctl setup --public-origin`.",
+      "To reach it from a phone, or pair by scanning a QR code, see `wispctl setup --public-origin`.",
     );
   }
   return `${lines.join("\n")}\n`;
