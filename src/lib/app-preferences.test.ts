@@ -44,6 +44,12 @@ describe("normalizePreferences", () => {
     });
   });
 
+  it("keeps a known reply speed and smooths replies otherwise", () => {
+    expect(normalizePreferences({ replyPace: "natural" }).replyPace).toBe("natural");
+    expect(normalizePreferences({ replyPace: "warp" }).replyPace).toBe("smooth");
+    expect(normalizePreferences({}).replyPace).toBe("smooth");
+  });
+
   it("remembers whether the sidebar is collapsed", () => {
     expect(normalizePreferences({ sidebarCollapsed: true }).sidebarCollapsed).toBe(true);
     expect(normalizePreferences({ sidebarCollapsed: "yes" }).sidebarCollapsed).toBe(false);

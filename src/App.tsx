@@ -22,6 +22,7 @@ import { usePageVisible } from "@/hooks/use-page-visible";
 import { useResizablePanel } from "@/hooks/use-resizable-panel";
 import { useScheduledMessages } from "@/hooks/use-scheduled-messages";
 import { useSetupGate } from "@/hooks/use-setup-gate";
+import { ReplyPaceProvider } from "@/hooks/use-reply-pace";
 import { TimeZoneProvider, useReportedTimeZone } from "@/hooks/use-time-zone";
 import { type UserProfileController, useUserProfile } from "@/hooks/use-user-profile";
 import { effectiveTimeZone } from "@/lib/app-preferences";
@@ -227,163 +228,168 @@ function Workspace({ userProfile }: { userProfile: UserProfileController }) {
 
   return (
     <TimeZoneProvider timeZone={timeZone}>
-      <TooltipProvider delay={300}>
-        <div className="workspace-shell relative flex h-full w-full min-h-0 min-w-0 overflow-hidden bg-background">
-          <Sidebar
-            activeChatId={workspace.activeChatId}
-            chats={workspace.chats}
-            currentUser={currentUser}
-            width={sidebarPanel.width}
-            mobile={mobile}
-            collapsed={sidebarCollapsed}
-            onToggleCollapsed={toggleSidebar}
-            hidden={mobile && (mobilePage !== "list" || detailsOpen)}
-            statuses={workspace.statuses}
-            activity={workspace.activity}
-            approvals={workspace.approvals}
-            failedChats={workspace.failedChats}
-            loading={workspace.loading}
-            error={workspace.error}
-            onCreate={async (wisp, options) => {
-              const id = await workspace.createWisp(wisp, options);
-              if (id) {
-                navigationVersion.current += 1;
-                if (mobile) setDetailsOpen(false);
-                setMobilePage("chat");
-              }
-              return id;
-            }}
-            onOpenSearch={() => showSearch(true)}
-            onOpenSettings={() => showSettings("general")}
-            onOpenApprovals={showApprovals}
-            onResolveApproval={(request, decision) => void workspace.resolveApproval(request, decision)}
-            allowAlwaysAvailable={workspace.preferences.autoReview}
-            onResizeStart={sidebarPanel.onResizeStart}
-            onSelectChat={selectChat}
-            onChatAction={applyChatAction}
-          />
-          {workspace.activeChat ? (
-            <ChatPanel
-              hidden={mobile && (mobilePage !== "chat" || detailsOpen || profileOpen)}
-              onBack={mobile ? showConversations : undefined}
-              chat={workspace.activeChat}
-              transcript={workspace.activeTranscript}
-              status={workspace.statuses[workspace.activeChat.id] ?? "configuration_required"}
-              activity={workspace.activity[workspace.activeChat.id]}
-              steps={workspace.toolActivities[workspace.activeChat.id]}
-              error={workspace.conversationErrors[workspace.activeChat.id]?.message}
-              acknowledging={Boolean(workspace.acknowledging[workspace.activeChat.id])}
-              approvals={workspace.approvals[workspace.activeChat.id] ?? []}
-              allowAlwaysAvailable={workspace.preferences.autoReview}
-              onAnswerPrompt={(messageId, answer) => void workspace.answerPrompt(messageId, answer)}
-              onAbort={() => void workspace.abortActiveChat()}
-              onLoadOlder={workspace.loadOlderMessages}
-              onLoadNewer={workspace.loadNewerMessages}
-              onShowLatest={workspace.showLatestMessages}
-              onOpenDetails={openChatDetails}
-              onConfigure={() => showSettings("model")}
-              voice={{
-                deviceId: workspace.preferences.microphone,
-                providerId: workspace.preferences.voiceProvider,
-                modelId: workspace.preferences.voiceModel,
-                language: workspace.preferences.voiceLanguage,
-                autoSend: workspace.preferences.voiceAutoSend,
-                shortcut: workspace.preferences.shortcuts.voiceInput,
-              }}
-              onConfigureVoice={() => showSettings("voice")}
-              onRetry={(messageId) => void workspace.retryMessage(messageId)}
-              onResolveApproval={(request, decision) => void workspace.resolveApproval(request, decision)}
-              onSend={(text) => void workspace.sendMessage(text)}
-              scheduledMessages={scheduledMessages}
-              messageQueue={messageQueue}
-              onNewTopic={startNewTopic}
-            />
-          ) : (
-            <main hidden={mobile} className={cn(mainPanel, "items-center justify-center text-dim", mobile && "hidden")}>
-              {workspace.loading ? "Loading conversations…" : (workspace.error ?? "Create a Wisp to get started.")}
-            </main>
-          )}
-          {mobile && profileOpen && !detailsOpen && mobilePage === "chat" && workspace.activeChat?.kind === "wisp" ? (
-            <WispProfile
-              chat={workspace.activeChat}
-              state={
-                workspace.approvals[workspace.activeChat.id]?.length
-                  ? "approval"
-                  : workspace.statuses[workspace.activeChat.id] === "working"
-                    ? "working"
-                    : "idle"
-              }
-              onBack={() => {
-                navigationVersion.current += 1;
-                setProfileOpen(false);
-              }}
-              onOpenSection={(section) => showDetails(true, section)}
-              onChangeNotifications={(notifyOnUpdatesEnabled) =>
-                void workspace.updateActiveChat({ kind: "wisp", notifyOnUpdatesEnabled })
-              }
-              onDelete={() => void deleteActiveChat()}
-            />
-          ) : null}
-          {detailsOpen && workspace.activeChat ? (
-            <DetailsPanel
-              mobile={mobile}
-              section={detailsSection}
-              backLabel={profileOpen ? "Back to profile" : undefined}
-              chat={workspace.activeChat}
-              wisps={workspace.wisps}
-              width={detailsPanel.width}
-              onChange={workspace.updateActiveChat}
-              onChangeWisp={workspace.updateWisp}
-              onOpenSettings={(target) =>
-                showSettings(
-                  target.section,
-                  target.section === "plugins" ? target.pluginId : undefined,
-                  target.section === "storage" ? target.conversationId : undefined,
-                )
-              }
-              onClose={() => showDetails(false)}
-              onDelete={() => void deleteActiveChat()}
-              onResizeStart={detailsPanel.onResizeStart}
-            />
-          ) : null}
-          {mobile && mobilePage === "approvals" ? (
-            <MobileApprovals
+      <ReplyPaceProvider pace={workspace.preferences.replyPace}>
+        <TooltipProvider delay={300}>
+          <div className="workspace-shell relative flex h-full w-full min-h-0 min-w-0 overflow-hidden bg-background">
+            <Sidebar
+              activeChatId={workspace.activeChatId}
               chats={workspace.chats}
+              currentUser={currentUser}
+              width={sidebarPanel.width}
+              mobile={mobile}
+              collapsed={sidebarCollapsed}
+              onToggleCollapsed={toggleSidebar}
+              hidden={mobile && (mobilePage !== "list" || detailsOpen)}
+              statuses={workspace.statuses}
+              activity={workspace.activity}
               approvals={workspace.approvals}
+              failedChats={workspace.failedChats}
+              loading={workspace.loading}
+              error={workspace.error}
+              onCreate={async (wisp, options) => {
+                const id = await workspace.createWisp(wisp, options);
+                if (id) {
+                  navigationVersion.current += 1;
+                  if (mobile) setDetailsOpen(false);
+                  setMobilePage("chat");
+                }
+                return id;
+              }}
+              onOpenSearch={() => showSearch(true)}
+              onOpenSettings={() => showSettings("general")}
+              onOpenApprovals={showApprovals}
+              onResolveApproval={(request, decision) => void workspace.resolveApproval(request, decision)}
               allowAlwaysAvailable={workspace.preferences.autoReview}
-              unreadCount={unreadCount}
-              onResolve={(request, decision) => void workspace.resolveApproval(request, decision)}
-              onOpenChat={selectChat}
-              onConversations={showConversations}
-              onSettings={() => showSettings("general")}
+              onResizeStart={sidebarPanel.onResizeStart}
+              onSelectChat={selectChat}
+              onChatAction={applyChatAction}
             />
-          ) : null}
-        </div>
-        <SearchDialog
-          chats={workspace.chats}
-          open={searchOpen}
-          onOpenChange={showSearch}
-          onSelectChat={selectChat}
-          onSelectMessage={selectMessage}
-        />
-        <AppSettingsDialogHost
-          ref={settingsDialog}
-          appMetadata={APP_METADATA}
-          currentUser={currentUser}
-          mobile={mobile}
-          onOpenConversations={showConversations}
-          onOpenApprovals={showApprovals}
-          navigationCounts={{ unread: unreadCount, approvals: approvalCount }}
-          wisps={wisps}
-          conversations={conversations}
-          userProfile={userProfile}
-          preferences={workspace.preferences}
-          persistenceStatus={workspace.persistenceStatus}
-          persistenceError={workspace.persistenceError}
-          onPreferencesChange={workspace.updatePreferences}
-        />
-        <UpdateToast displayName={APP_METADATA.displayName} />
-      </TooltipProvider>
+            {workspace.activeChat ? (
+              <ChatPanel
+                hidden={mobile && (mobilePage !== "chat" || detailsOpen || profileOpen)}
+                onBack={mobile ? showConversations : undefined}
+                chat={workspace.activeChat}
+                transcript={workspace.activeTranscript}
+                status={workspace.statuses[workspace.activeChat.id] ?? "configuration_required"}
+                activity={workspace.activity[workspace.activeChat.id]}
+                steps={workspace.toolActivities[workspace.activeChat.id]}
+                error={workspace.conversationErrors[workspace.activeChat.id]?.message}
+                acknowledging={Boolean(workspace.acknowledging[workspace.activeChat.id])}
+                approvals={workspace.approvals[workspace.activeChat.id] ?? []}
+                allowAlwaysAvailable={workspace.preferences.autoReview}
+                onAnswerPrompt={(messageId, answer) => void workspace.answerPrompt(messageId, answer)}
+                onAbort={() => void workspace.abortActiveChat()}
+                onLoadOlder={workspace.loadOlderMessages}
+                onLoadNewer={workspace.loadNewerMessages}
+                onShowLatest={workspace.showLatestMessages}
+                onOpenDetails={openChatDetails}
+                onConfigure={() => showSettings("model")}
+                voice={{
+                  deviceId: workspace.preferences.microphone,
+                  providerId: workspace.preferences.voiceProvider,
+                  modelId: workspace.preferences.voiceModel,
+                  language: workspace.preferences.voiceLanguage,
+                  autoSend: workspace.preferences.voiceAutoSend,
+                  shortcut: workspace.preferences.shortcuts.voiceInput,
+                }}
+                onConfigureVoice={() => showSettings("voice")}
+                onRetry={(messageId) => void workspace.retryMessage(messageId)}
+                onResolveApproval={(request, decision) => void workspace.resolveApproval(request, decision)}
+                onSend={(text) => void workspace.sendMessage(text)}
+                scheduledMessages={scheduledMessages}
+                messageQueue={messageQueue}
+                onNewTopic={startNewTopic}
+              />
+            ) : (
+              <main
+                hidden={mobile}
+                className={cn(mainPanel, "items-center justify-center text-dim", mobile && "hidden")}
+              >
+                {workspace.loading ? "Loading conversations…" : (workspace.error ?? "Create a Wisp to get started.")}
+              </main>
+            )}
+            {mobile && profileOpen && !detailsOpen && mobilePage === "chat" && workspace.activeChat?.kind === "wisp" ? (
+              <WispProfile
+                chat={workspace.activeChat}
+                state={
+                  workspace.approvals[workspace.activeChat.id]?.length
+                    ? "approval"
+                    : workspace.statuses[workspace.activeChat.id] === "working"
+                      ? "working"
+                      : "idle"
+                }
+                onBack={() => {
+                  navigationVersion.current += 1;
+                  setProfileOpen(false);
+                }}
+                onOpenSection={(section) => showDetails(true, section)}
+                onChangeNotifications={(notifyOnUpdatesEnabled) =>
+                  void workspace.updateActiveChat({ kind: "wisp", notifyOnUpdatesEnabled })
+                }
+                onDelete={() => void deleteActiveChat()}
+              />
+            ) : null}
+            {detailsOpen && workspace.activeChat ? (
+              <DetailsPanel
+                mobile={mobile}
+                section={detailsSection}
+                backLabel={profileOpen ? "Back to profile" : undefined}
+                chat={workspace.activeChat}
+                wisps={workspace.wisps}
+                width={detailsPanel.width}
+                onChange={workspace.updateActiveChat}
+                onChangeWisp={workspace.updateWisp}
+                onOpenSettings={(target) =>
+                  showSettings(
+                    target.section,
+                    target.section === "plugins" ? target.pluginId : undefined,
+                    target.section === "storage" ? target.conversationId : undefined,
+                  )
+                }
+                onClose={() => showDetails(false)}
+                onDelete={() => void deleteActiveChat()}
+                onResizeStart={detailsPanel.onResizeStart}
+              />
+            ) : null}
+            {mobile && mobilePage === "approvals" ? (
+              <MobileApprovals
+                chats={workspace.chats}
+                approvals={workspace.approvals}
+                allowAlwaysAvailable={workspace.preferences.autoReview}
+                unreadCount={unreadCount}
+                onResolve={(request, decision) => void workspace.resolveApproval(request, decision)}
+                onOpenChat={selectChat}
+                onConversations={showConversations}
+                onSettings={() => showSettings("general")}
+              />
+            ) : null}
+          </div>
+          <SearchDialog
+            chats={workspace.chats}
+            open={searchOpen}
+            onOpenChange={showSearch}
+            onSelectChat={selectChat}
+            onSelectMessage={selectMessage}
+          />
+          <AppSettingsDialogHost
+            ref={settingsDialog}
+            appMetadata={APP_METADATA}
+            currentUser={currentUser}
+            mobile={mobile}
+            onOpenConversations={showConversations}
+            onOpenApprovals={showApprovals}
+            navigationCounts={{ unread: unreadCount, approvals: approvalCount }}
+            wisps={wisps}
+            conversations={conversations}
+            userProfile={userProfile}
+            preferences={workspace.preferences}
+            persistenceStatus={workspace.persistenceStatus}
+            persistenceError={workspace.persistenceError}
+            onPreferencesChange={workspace.updatePreferences}
+          />
+          <UpdateToast displayName={APP_METADATA.displayName} />
+        </TooltipProvider>
+      </ReplyPaceProvider>
     </TimeZoneProvider>
   );
 }

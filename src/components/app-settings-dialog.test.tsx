@@ -261,7 +261,7 @@ describe("AppSettingsDialog metadata", () => {
     expect(screen.getByText(/Installing version 9\.9\.0…/)).toBeVisible();
   });
 
-  it("turns Wisp colors off from the application settings", async () => {
+  it("changes Wisp colors and reply speed from the application settings", async () => {
     const user = userEvent.setup();
     const onPreferencesChange = vi.fn();
     Object.defineProperty(window, "wisp", {
@@ -297,6 +297,9 @@ describe("AppSettingsDialog metadata", () => {
     expect(wispColors).toBeChecked();
     await user.click(wispColors);
     expect(onPreferencesChange).toHaveBeenCalledWith({ ...DEFAULT_PREFERENCES, wispColors: false });
+
+    await user.click(screen.getByRole("radio", { name: "Natural" }));
+    expect(onPreferencesChange).toHaveBeenCalledWith({ ...DEFAULT_PREFERENCES, replyPace: "natural" });
   });
 });
 

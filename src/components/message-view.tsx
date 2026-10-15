@@ -4,6 +4,7 @@ import { CalendarClockIcon, CheckIcon, CircleAlertIcon, CircleStopIcon, CopyIcon
 import type { Message, Wisp } from "@/chat-data";
 import { WispAvatar } from "@/components/chat-avatar";
 import { splitMessageAttachments } from "../../shared/workspace";
+import { useRevealedText } from "@/hooks/use-reply-pace";
 import { useTimeZone } from "@/hooks/use-time-zone";
 import { copyText } from "@/lib/clipboard";
 import { cn } from "@/lib/utils";
@@ -72,6 +73,12 @@ function MessageTools({
 }
 
 function MessageView({ message, dense = false, author, showAuthor = false, onAnswer, onRetry }: MessageViewProps) {
+  // Called before anything can return, so a reply is seen while it is still empty and streaming.
+  const reveal = useRevealedText(
+    message.type === "incoming" ? message.id : undefined,
+    message.type === "incoming" ? message.text : "",
+    message.status,
+  );
   if (message.type === "time") {
     return (
       <div className="mt-[13px] mb-[5px] flex items-center justify-center text-faint text-2xs">
@@ -153,7 +160,7 @@ function MessageView({ message, dense = false, author, showAuthor = false, onAns
       </div>
     );
   }
-  if (empty) return null;
+  if (empty || (!outgoing && !reveal.text.trim())) return null;
   return (
     <div
       className={cn(
@@ -181,7 +188,7 @@ function MessageView({ message, dense = false, author, showAuthor = false, onAns
               : "rounded-bl-[5px] border border-border bg-bubble-in text-foreground",
           )}
         >
-          {outgoing ? <OutgoingText text={message.text} /> : <MarkdownView text={message.text} />}
+          {outgoing ? <OutgoingText text={message.text} /> : <IncomingText reveal={reveal} />}
         </div>
         <MessageTools
           text={outgoing ? splitMessageAttachments(message.text).text : message.text}
@@ -254,6 +261,16 @@ function FailedNotice({ reason, onRetry }: { reason?: string; onRetry?: () => vo
         </button>
       ) : null}
     </span>
+  );
+}
+
+/** A Wisp's reply, appearing at the person's chosen pace while it arrives; a click shows the rest at once. */
+function IncomingText({ reveal }: { reveal: ReturnType<typeof useRevealedText> }) {
+  if (!reveal.revealing) return <MarkdownView text={reveal.text} />;
+  return (
+    <div data-revealing="" onClick={reveal.finish}>
+      <MarkdownView text={reveal.text} />
+    </div>
   );
 }
 

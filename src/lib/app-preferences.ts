@@ -12,6 +12,11 @@ import {
 } from "../../shared/voice";
 import { systemTimeZone } from "../../shared/time-zone";
 
+/** How a Wisp's reply appears as it arrives: at once, smoothed, or at a slower, natural pace. */
+export type ReplyPace = "instant" | "smooth" | "natural";
+
+export const REPLY_PACES: ReadonlyArray<ReplyPace> = ["instant", "smooth", "natural"];
+
 export type RuleBehavior = "allow" | "ask" | "block";
 
 export interface AutoReviewRule {
@@ -25,6 +30,8 @@ export interface AppPreferences {
   theme: ThemePreference;
   /** Each Wisp's color tints its replies, its send button and its selected conversation. */
   wispColors: boolean;
+  /** How a Wisp's reply appears as it arrives. */
+  replyPace: ReplyPace;
   /** Legacy storage only; desktop autostart registration is the source of truth. */
   launchAtLogin: boolean;
   notificationSounds: boolean;
@@ -54,6 +61,7 @@ export interface AppPreferences {
 export const DEFAULT_PREFERENCES: AppPreferences = {
   theme: "system",
   wispColors: true,
+  replyPace: "smooth",
   launchAtLogin: false,
   notificationSounds: true,
   notificationVolume: 100,
@@ -122,6 +130,7 @@ export function normalizePreferences(value: unknown): AppPreferences {
   return {
     theme: normalizeTheme(saved?.theme),
     wispColors: typeof saved?.wispColors === "boolean" ? saved.wispColors : true,
+    replyPace: REPLY_PACES.includes(saved?.replyPace as ReplyPace) ? (saved?.replyPace as ReplyPace) : "smooth",
     launchAtLogin: typeof saved?.launchAtLogin === "boolean" ? saved.launchAtLogin : false,
     notificationSounds: typeof saved?.notificationSounds === "boolean" ? saved.notificationSounds : true,
     notificationVolume:
