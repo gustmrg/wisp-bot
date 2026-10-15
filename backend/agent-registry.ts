@@ -5,7 +5,9 @@ import type {
   ModelSelection,
   SequencedConversationAgentEvent,
   SendMessageRequest,
+  WispFallback,
 } from "../shared/contracts.js";
+import { wispFallbackChoice } from "../shared/contracts.js";
 import type { ManagedConversationStatus } from "../shared/conversations.js";
 import { sanitizeBackendError, WispBackendError } from "./backend-error.js";
 import type { ConversationAgent, ConversationAgentContext, ConversationAgentFactory } from "./conversation-agent.js";
@@ -24,6 +26,7 @@ interface AgentEntry {
   effective: ModelSelection | null;
   applied: ModelSelection | null;
   pending: ModelSelection | null;
+  fallback: WispFallback;
   ready: boolean;
   modelQueue: Promise<void>;
 }
@@ -96,6 +99,7 @@ export class AgentRegistry {
       effective: context.modelOverride ?? this.model,
       applied: null,
       pending: null,
+      fallback: wispFallbackChoice(context.modelOverride ?? null, context.fallback ?? null),
       ready: false,
       modelQueue: Promise.resolve(),
       commandQueue: Promise.resolve(),
@@ -339,6 +343,7 @@ export class AgentRegistry {
       effective: entry.effective,
       applied: entry.applied,
       pending: entry.pending,
+      fallback: entry.fallback,
       status: entry.status,
     });
   }
@@ -347,6 +352,11 @@ export class AgentRegistry {
     const entry = this.require(conversationId);
     entry.override = model;
     await this.updateEntryModel(conversationId, entry);
+  }
+
+  /** Records a Wisp's fallback choice; its agent reads the fallback model when it needs one. */
+  applyConversationFallback(conversationId: string, fallback: WispFallback): void {
+    this.require(conversationId).fallback = fallback;
   }
 
   async applyModel(model: ModelSelection | null): Promise<void> {

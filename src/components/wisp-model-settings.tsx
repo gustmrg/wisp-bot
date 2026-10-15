@@ -1,8 +1,10 @@
 import { useEffect, useState } from "react";
 import { InfoIcon } from "lucide-react";
 
-import type { AiSettingsView, ConversationModelView, ThinkingLevel } from "../../shared/contracts";
+import type { AiSettingsView, ConversationModelView, ThinkingLevel, WispFallback } from "../../shared/contracts";
 import { NoImageInputNote } from "@/components/no-image-input-note";
+import { SearchableCombobox } from "@/components/searchable-combobox";
+import { SettingsRowTitle } from "@/components/settings/settings-primitives";
 import {
   canChooseThinkingLevel,
   keepThinkingLevel,
@@ -10,6 +12,14 @@ import {
   ThinkingLevelRow,
 } from "@/components/thinking-level-select";
 import { imageModelName } from "@/hooks/use-model-image-input";
+import {
+  isModelOptionValue,
+  modelName,
+  modelOptions,
+  modelOptionValue,
+  parseModelOptionValue,
+  unavailableModelOption,
+} from "@/lib/model-choice";
 import { Button } from "@/components/ui/button";
 
 export function WispModelSettings({ conversationId }: { conversationId: string }) {
@@ -75,6 +85,23 @@ export function WispModelSettings({ conversationId }: { conversationId: string }
         .find(({ id }) => id === effective.providerId)
         ?.models.find(({ id }) => id === effective.modelId)
     : undefined;
+
+  async function changeFallback(fallback: WispFallback): Promise<void> {
+    setSaving(true);
+    setSaveError("");
+    try {
+      const result = await window.wisp.applyFallbackModel({ conversationId, fallback });
+      if (!result.ok) {
+        setSaveError(result.error.message);
+        return;
+      }
+      setLoadRequest({ conversationId });
+    } catch {
+      setSaveError("Could not change the fallback model.");
+    } finally {
+      setSaving(false);
+    }
+  }
 
   async function changeThinkingLevel(level: ThinkingLevel): Promise<void> {
     if (!override) return;
@@ -147,6 +174,15 @@ export function WispModelSettings({ conversationId }: { conversationId: string }
                 />
               </section>
             ) : null}
+            {/* A server from before fallbacks reports none; it cannot save one either. */}
+            {view.fallback && catalog.fallback ? (
+              <FallbackSection
+                catalog={catalog}
+                view={view}
+                disabled={saving}
+                onChange={(fallback) => void changeFallback(fallback)}
+              />
+            ) : null}
             {!override && effective && canChooseThinkingLevel(effectiveModel) ? (
               <p className="m-0 text-xs text-dim">
                 Reasoning: {THINKING_LEVEL_LABELS[keepThinkingLevel(effective.thinkingLevel ?? "off", effectiveModel)]}{" "}
@@ -176,5 +212,83 @@ export function WispModelSettings({ conversationId }: { conversationId: string }
         )}
       </div>
     </div>
+  );
+}
+
+const FALLBACK_OFF = "off";
+const FALLBACK_GLOBAL = "global";
+
+/** Chooses what answers when the Wisp's model fails for good: nothing, the global fallback, or a model of its own. */
+function FallbackSection({
+  catalog,
+  view,
+  disabled,
+  onChange,
+}: {
+  catalog: AiSettingsView;
+  view: ConversationModelView;
+  disabled: boolean;
+  onChange: (fallback: WispFallback) => void;
+}) {
+  const { fallback, effective } = view;
+  const globalFallback = catalog.fallback.selection;
+  const value = typeof fallback === "string" ? fallback : modelOptionValue(fallback);
+  const options = [
+    { value: FALLBACK_OFF, label: "Off", description: "This Wisp stops when its model fails" },
+    {
+      value: FALLBACK_GLOBAL,
+      label: "Use the global fallback",
+      description: globalFallback ? modelName(catalog, globalFallback) : "None is set in Settings → AI Model",
+    },
+    // The Wisp's own model cannot stand in for itself.
+    ...modelOptions(catalog).filter((option) => !effective || option.value !== modelOptionValue(effective)),
+  ];
+  if (typeof fallback === "object" && !options.some((option) => option.value === value)) {
+    options.push(unavailableModelOption(catalog, fallback));
+  }
+  const note =
+    fallback !== FALLBACK_GLOBAL
+      ? null
+      : !globalFallback
+        ? "No global fallback is set, so this Wisp stops when its model fails. Choose one in Settings → AI Model."
+        : catalog.fallback.unavailable
+          ? "The global fallback cannot be used right now. Check it in Settings → AI Model."
+          : effective && modelOptionValue(globalFallback) === modelOptionValue(effective)
+            ? "The global fallback is this Wisp's own model, so it has no fallback. Choose another model."
+            : null;
+
+  return (
+    <section aria-label="Fallback model" className="flex flex-col gap-1.5 rounded-lg border border-border bg-card p-3">
+      <SettingsRowTitle htmlFor="wisp-fallback-model">Fallback model</SettingsRowTitle>
+      <SearchableCombobox
+        id="wisp-fallback-model"
+        value={value}
+        options={options}
+        disabled={disabled}
+        className="h-8 w-full text-base"
+        searchLabel="Search fallback models"
+        searchPlaceholder="Search model name or ID…"
+        emptyText="No models from providers with a saved key."
+        onChange={(next) => {
+          if (next === value) return;
+          onChange(
+            next === FALLBACK_OFF || next === FALLBACK_GLOBAL
+              ? next
+              : isModelOptionValue(next)
+                ? parseModelOptionValue(next)
+                : FALLBACK_OFF,
+          );
+        }}
+      />
+      <p className="m-0 text-xs leading-relaxed text-dim">
+        Answers when this Wisp's model fails for good, for example when the provider is out of credits. Each message
+        tries the Wisp's model first.
+      </p>
+      {note ? (
+        <p role="alert" className="m-0 text-xs leading-relaxed text-warning">
+          {note}
+        </p>
+      ) : null}
+    </section>
   );
 }

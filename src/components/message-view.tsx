@@ -1,5 +1,13 @@
 import { useState } from "react";
-import { CalendarClockIcon, CheckIcon, CircleAlertIcon, CircleStopIcon, CopyIcon, RepeatIcon } from "lucide-react";
+import {
+  CalendarClockIcon,
+  CheckIcon,
+  CircleAlertIcon,
+  CircleStopIcon,
+  CopyIcon,
+  LifeBuoyIcon,
+  RepeatIcon,
+} from "lucide-react";
 
 import type { Message, Wisp } from "@/chat-data";
 import { WispAvatar } from "@/components/chat-avatar";
@@ -204,10 +212,12 @@ function MessageView({ message, dense = false, author, showAuthor = false, onAns
       message.status === "cancelled" ||
       message.status === "failed" ||
       message.scheduled ||
-      message.job ? (
+      message.job ||
+      message.fallbackModel ? (
         <div className={cn("mt-1 flex items-center gap-2 text-2xs text-faint", outgoing && "mr-1")}>
           {message.scheduled ? <ScheduledBadge scheduledAt={message.scheduled.scheduledAt} /> : null}
           {message.job ? <JobBadge title={message.job.title} /> : null}
+          {message.fallbackModel ? <FallbackBadge model={message.fallbackModel} /> : null}
           {message.status === "queued" || message.status === "cancelled" ? (
             <span>{message.status === "queued" ? "Queued" : "Stopped"}</span>
           ) : null}
@@ -264,6 +274,19 @@ function JobBadge({ title }: { title: string }) {
         <span className="truncate">{`Job · ${title}`}</span>
       </TooltipTrigger>
       <TooltipContent>{`Sent by the job "${title}", which ran in the background`}</TooltipContent>
+    </Tooltip>
+  );
+}
+
+/** Marks a Wisp's reply that its fallback model wrote because its own model failed. */
+function FallbackBadge({ model }: { model: string }) {
+  return (
+    <Tooltip>
+      <TooltipTrigger render={<span />} className="inline-flex min-w-0 items-center gap-1" delay={300}>
+        <LifeBuoyIcon aria-hidden="true" className="size-3 flex-none" />
+        <span className="truncate">{`Fallback · ${model}`}</span>
+      </TooltipTrigger>
+      <TooltipContent>{`Answered by the fallback model ${model} because this Wisp's model failed`}</TooltipContent>
     </Tooltip>
   );
 }

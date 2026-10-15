@@ -21,6 +21,7 @@ function view(slot: AuxiliaryModelView = { selection: null, unavailable: null })
   return {
     selection: { providerId: "zai", modelId: "text-only" },
     auxiliary: { imageUnderstanding: slot },
+    fallback: { selection: null, unavailable: null },
     secureStorageAvailable: true,
     providers: [
       {

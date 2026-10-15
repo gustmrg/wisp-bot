@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import path from "node:path";
 
-import type { ModelSelection, SequencedConversationAgentEvent } from "../shared/contracts.js";
+import type { ModelSelection, SequencedConversationAgentEvent, WispFallback } from "../shared/contracts.js";
 import type { ConversationDelta } from "../shared/conversations.js";
 import type { JobsView } from "../shared/jobs.js";
 import type { McpSettingsView } from "../shared/mcp.js";
@@ -95,6 +95,8 @@ export interface BackendRuntime {
   execution: ExecutionService;
   /** Validates and saves a single Wisp's model override; null clears it. */
   applyConversationModel(conversationId: string, model: ModelSelection | null): Promise<void>;
+  /** Validates and saves a single Wisp's fallback choice. */
+  applyConversationFallback(conversationId: string, fallback: WispFallback): Promise<void>;
   /** Re-applies the saved global model, e.g. after a credential change made it usable. */
   reapplySavedModel(): Promise<void>;
   /** Rejects pending approvals, stops integrations, and disposes every agent before closing storage. */
@@ -202,6 +204,11 @@ export async function createBackendRuntime(options: BackendRuntimeOptions): Prom
     new CompositeIntegrationToolSource([pluginService, mcpService, executionService]),
     () => modelService.getAuxiliaryModel("imageUnderstanding"),
     jobHost,
+    // Read when a model fails, so a changed choice applies without rebuilding the session.
+    async (conversationId) => {
+      const { modelOverride, fallback } = conversationRepository.getAgentContext(conversationId);
+      return modelService.getFallbackModel(modelOverride ?? null, fallback ?? null);
+    },
   );
   const agentFactory: ConversationAgentFactory =
     options.agentMode === "fake"
@@ -338,6 +345,10 @@ export async function createBackendRuntime(options: BackendRuntimeOptions): Prom
         modelService.assertSupportedThinkingLevel(model);
       }
       await service.applyConversationModel(conversationId, model);
+    },
+    applyConversationFallback: async (conversationId, fallback) => {
+      if (typeof fallback === "object") await modelService.assertUsableFallback(fallback);
+      await service.applyConversationFallback(conversationId, fallback);
     },
     reapplySavedModel: async () => service.applyModel(await modelService.getSelection()),
     dispose: async () => {

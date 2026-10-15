@@ -258,6 +258,21 @@ it("hides arbitrary secrets in search arguments and provider errors, and reads s
   ).not.toMatch(/PRIVATE|outside/);
 });
 
+it("reports when the fallback model answered", () => {
+  const entries = [
+    { type: "custom", customType: "wisp:fallback", data: { model: "Backup\u0007" }, timestamp: "2026-09-01T12:00:03Z" },
+    { type: "custom", customType: "wisp:fallback", data: {}, timestamp: "2026-09-01T12:00:04Z" },
+  ] as SessionEntry[];
+  const report = buildSessionReport("session-1", entries, { workspaceDirectory: WORKSPACE, getPricing });
+  expect(report.events).toEqual([
+    {
+      kind: "fallback",
+      timestamp: "2026-09-01T12:00:03Z",
+      detail: "The model failed; the fallback model Backup answered",
+    },
+  ]);
+});
+
 it("includes cache writes in estimates and treats a missing cache-write price as unknown", () => {
   const entries = [
     messageEntry(assistantMessage({ usage: { input: 100, output: 10, cacheRead: 20, cacheWrite: 50 } })),

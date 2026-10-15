@@ -5,6 +5,7 @@ import {
   parseRemoveProviderCredentialRequest,
   parseSaveAiSettingsRequest,
   parseSaveAuxiliaryModelRequest,
+  parseSaveFallbackModelRequest,
 } from "../validators.js";
 
 export function registerModelSettingsHandlers(
@@ -29,6 +30,10 @@ export function registerModelSettingsHandlers(
         const { task, selection } = parseSaveAuxiliaryModelRequest(payload);
         return modelService.saveAuxiliary(task, selection);
       },
+    ],
+    [
+      WISP_IPC_CHANNELS.saveFallbackModel,
+      (payload) => modelService.saveFallback(parseSaveFallbackModelRequest(payload).selection),
     ],
     [
       WISP_IPC_CHANNELS.removeProviderCredential,

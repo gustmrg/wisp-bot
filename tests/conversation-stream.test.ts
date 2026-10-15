@@ -244,6 +244,47 @@ describe("conversation stream reducer", () => {
     ]);
   });
 
+  it("says the fallback model is answering, and marks the reply it wrote", () => {
+    const chats = stored(["one"]);
+    let state = createConversationRuntime(0, { one: "working" });
+    const events = [
+      { type: "conversation_notice", conversationId: "one", requestId: "request-1", kind: "fallback_started" },
+      {
+        type: "assistant_message_started",
+        conversationId: "one",
+        requestId: "request-1",
+        messageId: "request-1:assistant",
+        createdAt: "2026-08-31T23:10:00.000Z",
+      },
+      {
+        type: "assistant_text_delta",
+        conversationId: "one",
+        requestId: "request-1",
+        messageId: "request-1:assistant",
+        delta: "Hi",
+      },
+    ] as const;
+    events.forEach((event, index) => {
+      state = reduceConversationAgentEvent(state, { ...event, sequence: index + 1 }, chats);
+      if (index === 0) expect(state.activity.one).toBe("The model failed. Answering with the fallback model…");
+    });
+    state = reduceConversationAgentEvent(
+      state,
+      {
+        type: "assistant_message_completed",
+        conversationId: "one",
+        requestId: "request-1",
+        messageId: "request-1:assistant",
+        fallbackModel: "Backup",
+        sequence: 4,
+      },
+      chats,
+    );
+    expect(state.messages.one).toEqual([
+      expect.objectContaining({ id: "request-1:assistant", status: "complete", text: "Hi", fallbackModel: "Backup" }),
+    ]);
+  });
+
   it("tracks approval requests until the matching resolution arrives", () => {
     const chats = stored(["one"]);
     let state = createConversationRuntime(0, {});

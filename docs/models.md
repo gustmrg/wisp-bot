@@ -27,6 +27,28 @@ Idle Wisps switch immediately; active Wisps finish their current turn with the
 previous model. The conversation header shows the actual model and any pending
 change.
 
+## Fallback models
+
+A fallback model answers when a Wisp's model fails for good before answering,
+for example when the provider is out of credits, rejects the key, or no longer
+serves the model ([ADR 021](decisions/021-fallback-models.md)). Errors Pi
+retries, such as rate limits and server errors, and requests too large for the
+model do not move to the fallback.
+
+**Settings → AI Model → Fallback** chooses the global fallback; it is **Off**
+by default. A Wisp's **Model** tab chooses **Off**, **Use the global
+fallback**, or a model of its own. A Wisp on the global model uses the global
+fallback until it chooses; a Wisp with its own model has none until it is
+turned on. Only models from providers with a saved key are listed.
+
+Once the fallback answers, it answers for the rest of that turn; the next
+message tries the Wisp's model again. The fallback takes the output limit and
+reasoning level of the model it stands in for, reduced to what it supports.
+The Wisp's activity says when the fallback is answering, each reply it wrote
+carries a **Fallback** badge, and the session report lists the switch. A
+fallback whose key is removed or whose model leaves the catalog stays saved
+but is not used, and the setting says why.
+
 ## Auxiliary models
 
 Some models cannot see images. **Settings → AI Model → Auxiliary models →

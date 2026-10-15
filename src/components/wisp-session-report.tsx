@@ -225,7 +225,13 @@ function EventList({ report }: { report: WispSessionReport }) {
           <li key={`${event.kind}:${event.timestamp}:${index}`} className="flex min-w-0 flex-col gap-0.5">
             <span className="flex items-baseline gap-1.5">
               <span className={event.kind === "error" ? "text-destructive" : "text-foreground"}>
-                {event.kind === "error" ? "Error" : event.kind === "compaction" ? "Compaction" : "Retry"}
+                {event.kind === "error"
+                  ? "Error"
+                  : event.kind === "compaction"
+                    ? "Compaction"
+                    : event.kind === "fallback"
+                      ? "Fallback"
+                      : "Retry"}
               </span>
               <span className="ml-auto shrink-0 text-dim">{formatTimestamp(event.timestamp, timeZone)}</span>
             </span>

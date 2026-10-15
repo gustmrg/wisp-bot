@@ -35,6 +35,7 @@ const atlas = wispChat("atlas");
 const UNCONFIGURED_AI: AiSettingsView = {
   selection: null,
   auxiliary: { imageUnderstanding: { selection: null, unavailable: null } },
+  fallback: { selection: null, unavailable: null },
   secureStorageAvailable: true,
   providers: [
     {
@@ -143,20 +144,24 @@ function createApi(initialState: ConversationStateView): WispApi {
         effective: null,
         applied: null,
         pending: null,
+        fallback: "global" as const,
         status: "configuration_required" as const,
       },
     }),
     applyModel: vi.fn(async () => ({ ok: true as const, value: {} })),
+    applyFallbackModel: vi.fn(async () => ({ ok: true as const, value: {} })),
     disposeConversation: vi.fn(async () => ({ ok: true as const, value: {} })),
     subscribeToAgentEvents: vi.fn(() => () => undefined),
     getAiSettings: vi.fn(async () => ({ ok: true as const, value: CONFIGURED_AI })),
     saveAiSettings: vi.fn(async () => ({ ok: true as const, value: CONFIGURED_AI })),
     saveAuxiliaryModel: vi.fn(async () => ({ ok: true as const, value: CONFIGURED_AI })),
+    saveFallbackModel: vi.fn(async () => ({ ok: true as const, value: CONFIGURED_AI })),
     removeProviderCredential: vi.fn(async () => ({
       ok: true as const,
       value: {
         selection: null,
         auxiliary: { imageUnderstanding: { selection: null, unavailable: null } },
+        fallback: { selection: null, unavailable: null },
         secureStorageAvailable: true,
         providers: [],
         catalogError: null,

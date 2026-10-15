@@ -36,6 +36,15 @@ describe("MessageView", () => {
     expect(screen.getByText("Job · Blog watch")).toBeTruthy();
   });
 
+  it("marks a Wisp's reply its fallback model wrote", () => {
+    render(
+      <MessageView
+        message={{ id: "reply", type: "incoming", text: "Hi", status: "complete", fallbackModel: "Backup" }}
+      />,
+    );
+    expect(screen.getByText("Fallback · Backup")).toBeTruthy();
+  });
+
   it("does not mark a message typed then", () => {
     render(<MessageView message={{ id: "typed", type: "outgoing", text: "Hello", status: "complete" }} />);
     expect(screen.queryByText("Scheduled")).toBeNull();

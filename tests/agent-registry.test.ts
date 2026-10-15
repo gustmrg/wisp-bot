@@ -301,6 +301,30 @@ it("isolates overrides, keeps them when the global model changes, and restores i
   await registry.disposeAll();
 });
 
+it("reports each Wisp's fallback choice, defaulting by whether it has its own model", async () => {
+  const registry = new AgentRegistry(
+    { create: (ctx) => new FakeConversationAgent(ctx.conversationId) },
+    () => undefined,
+  );
+  const global = { providerId: "provider-a", modelId: "global" };
+  const override = { providerId: "provider-b", modelId: "override" };
+  const backup = { providerId: "provider-c", modelId: "backup" };
+  await registry.restore(
+    [
+      context("one"),
+      { ...context("two"), modelOverride: override },
+      { ...context("three"), modelOverride: override, fallback: backup },
+    ],
+    global,
+  );
+  expect(registry.getModelView("one").fallback).toBe("global");
+  expect(registry.getModelView("two").fallback).toBe("off");
+  expect(registry.getModelView("three").fallback).toEqual(backup);
+  registry.applyConversationFallback("two", "global");
+  expect(registry.getModelView("two").fallback).toBe("global");
+  await registry.disposeAll();
+});
+
 it("disables only overrides whose credentials were removed and recovers when the key returns", async () => {
   let revoked = false;
   const global = { providerId: "a", modelId: "global" };

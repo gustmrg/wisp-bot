@@ -1,4 +1,4 @@
-import type { ModelSelection } from "../shared/contracts.js";
+import type { ModelSelection, WispFallback } from "../shared/contracts.js";
 import type { Chat, ChatChanges, ChatId, Message, Wisp, WispChanges, WispId } from "../shared/conversations.js";
 import { applyWispChanges, normalizeChat, upsertNormalizedMessage } from "./conversation-normalizer.js";
 
@@ -11,6 +11,8 @@ export interface WispRecord {
    */
   storageId: string;
   modelOverride: ModelSelection | null;
+  /** The Wisp's fallback choice; absent until it chooses, when it follows its model. */
+  fallback?: WispFallback;
   createdAt: string;
   updatedAt: string;
 }

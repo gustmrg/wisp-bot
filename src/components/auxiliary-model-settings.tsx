@@ -1,7 +1,8 @@
 import { useState } from "react";
 
-import type { AiSettingsView, AuxiliaryModelView, ModelSelection } from "../../shared/contracts";
+import type { AiSettingsView, AuxiliaryModelView } from "../../shared/contracts";
 import { SearchableCombobox } from "@/components/searchable-combobox";
+import { modelOptions, modelOptionValue, parseModelOptionValue, unavailableModelOption } from "@/lib/model-choice";
 import {
   SettingsCard,
   SettingsGroup,
@@ -16,17 +17,6 @@ const OFF = "off";
 interface AuxiliaryModelSettingsProps {
   view: AiSettingsView;
   onViewChange: (view: AiSettingsView) => void;
-}
-
-/** Ids never hold control characters, so one joins provider and model into an option value. */
-function optionValue({ providerId, modelId }: ModelSelection): string {
-  return `${providerId}\u001f${modelId}`;
-}
-
-function parseOptionValue(value: string): ModelSelection | null {
-  if (value === OFF) return null;
-  const [providerId = "", modelId = ""] = value.split("\u001f");
-  return { providerId, modelId };
 }
 
 function unavailableText(slot: AuxiliaryModelView, providerName: string): string | null {
@@ -53,35 +43,21 @@ function AuxiliaryModelSettings({ view, onViewChange }: AuxiliaryModelSettingsPr
 
   const options = [
     { value: OFF, label: "Off", description: "Wisps on text-only models cannot read images" },
-    ...view.providers
-      .filter(({ credentialConfigured }) => credentialConfigured)
-      .flatMap((provider) =>
-        provider.models
-          .filter(({ input }) => input.includes("image"))
-          .map((model) => ({
-            value: optionValue({ providerId: provider.id, modelId: model.id }),
-            label: model.name,
-            description: `${provider.name} · ${model.id}`,
-          })),
-      ),
+    ...modelOptions(view, ({ input }) => input.includes("image")),
   ];
-  if (selected && !options.some(({ value }) => value === optionValue(selected))) {
-    options.push({
-      value: optionValue(selected),
-      label: `${selected.modelId} (unavailable)`,
-      description: providerName(selected.providerId),
-    });
+  if (selected && !options.some(({ value }) => value === modelOptionValue(selected))) {
+    options.push(unavailableModelOption(view, selected));
   }
 
   async function handleChange(value: string): Promise<void> {
-    if (value === (selected ? optionValue(selected) : OFF)) return;
+    if (value === (selected ? modelOptionValue(selected) : OFF)) return;
     setSaving(true);
     setError(null);
     setSaved(false);
     try {
       const result = await window.wisp.saveAuxiliaryModel({
         task: "imageUnderstanding",
-        selection: parseOptionValue(value),
+        selection: value === OFF ? null : parseModelOptionValue(value),
       });
       if (result.ok) {
         onViewChange(result.value);
@@ -119,7 +95,7 @@ function AuxiliaryModelSettings({ view, onViewChange }: AuxiliaryModelSettingsPr
           </SettingsRowCopy>
           <SearchableCombobox
             id="ai-auxiliary-image-model"
-            value={selected ? optionValue(selected) : OFF}
+            value={selected ? modelOptionValue(selected) : OFF}
             options={options}
             disabled={saving}
             className="h-8 w-[260px] max-w-[62%] text-base"

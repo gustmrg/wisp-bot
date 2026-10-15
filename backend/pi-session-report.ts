@@ -10,6 +10,7 @@ import type {
   WispSessionReport,
 } from "../shared/contracts.js";
 import { AUXILIARY_USAGE_ENTRY } from "./image-transcriber.js";
+import { FALLBACK_ENTRY } from "./model-fallback.js";
 import type { ModelPricing } from "./model-pricing-service.js";
 import { safeId } from "./pi-event-translator.js";
 import { getToolMetadata } from "../shared/tool-catalog.js";
@@ -106,6 +107,18 @@ export function buildSessionReport(
             kind: phase === "started" ? "retry_started" : "retry_finished",
             timestamp: entry.timestamp,
             detail: phase === "started" ? "Retry started" : "Retry finished",
+          });
+      }
+      if (entry.type === "custom" && entry.customType === FALLBACK_ENTRY) {
+        const model = (entry.data as { model?: unknown } | undefined)?.model;
+        if (typeof model === "string")
+          events.push({
+            kind: "fallback",
+            timestamp: entry.timestamp,
+            detail: `The model failed; the fallback model ${model
+              .replace(/[\u0000-\u001f\u007f]/gu, " ")
+              .trim()
+              .slice(0, 256)} answered`,
           });
       }
       if (entry.type === "custom" && entry.customType === AUXILIARY_USAGE_ENTRY) {

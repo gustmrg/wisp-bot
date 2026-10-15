@@ -104,6 +104,8 @@ export interface TextMessage extends MessageMetadata {
   scheduled?: ScheduledOrigin;
   /** Set on an incoming message a job's run delivered, with no request before it. */
   job?: JobOrigin;
+  /** The fallback model's name, set on a reply it wrote because the Wisp's model failed. */
+  fallbackModel?: string;
 }
 
 export interface TimeMessage extends MessageMetadata {

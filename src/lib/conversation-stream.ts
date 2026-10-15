@@ -184,7 +184,7 @@ export function reduceConversationAgentEvent(
       });
     }
     case "assistant_message_completed":
-      return finalizeAssistant(next, stored, event.conversationId, event.messageId, "complete");
+      return finalizeAssistant(next, stored, event.conversationId, event.messageId, "complete", event.fallbackModel);
     case "assistant_message_cancelled":
       return finalizeAssistant(next, stored, event.conversationId, event.messageId, "cancelled");
     case "conversation_error": {
@@ -400,6 +400,7 @@ function finalizeAssistant(
   conversationId: string,
   messageId: string,
   status: "complete" | "cancelled",
+  fallbackModel?: string,
 ): ConversationRuntimeState {
   const current = findMessage(state, stored, conversationId, messageId);
   return setRuntimeMessage(state, conversationId, {
@@ -408,6 +409,7 @@ function finalizeAssistant(
     text: current?.type === "incoming" ? current.text : "",
     status,
     ...(current?.createdAt ? { createdAt: current.createdAt } : {}),
+    ...(fallbackModel ? { fallbackModel } : {}),
   });
 }
 
@@ -477,5 +479,6 @@ function noticeLabel(
 ): string | undefined {
   if (kind === "retry_started") return "Retrying the request…";
   if (kind === "compaction_started") return "Compacting conversation context…";
+  if (kind === "fallback_started") return "The model failed. Answering with the fallback model…";
   return undefined;
 }

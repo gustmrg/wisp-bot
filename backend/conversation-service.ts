@@ -3,6 +3,7 @@ import type {
   ConversationModelView,
   ModelSelection,
   SequencedConversationAgentEvent,
+  WispFallback,
 } from "../shared/contracts.js";
 import {
   assistantMessageId,
@@ -147,6 +148,9 @@ export class ConversationService {
         status: event.type === "assistant_message_completed" ? "complete" : "cancelled",
         ...(current?.createdAt ? { createdAt: current.createdAt } : {}),
         ...this.authorOf(event.conversationId),
+        ...(event.type === "assistant_message_completed" && event.fallbackModel
+          ? { fallbackModel: event.fallbackModel }
+          : {}),
       };
       this.persistLiveMessage(event.conversationId, message);
       return;
@@ -407,6 +411,11 @@ export class ConversationService {
   async applyConversationModel(conversationId: string, model: ModelSelection | null): Promise<void> {
     await this.repository.setModelOverride(conversationId, model);
     await this.registry.applyConversationModel(conversationId, model);
+  }
+
+  async applyConversationFallback(conversationId: string, fallback: WispFallback): Promise<void> {
+    await this.repository.setFallback(conversationId, fallback);
+    this.registry.applyConversationFallback(conversationId, fallback);
   }
 
   async applyModel(model: ModelSelection | null): Promise<void> {

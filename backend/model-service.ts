@@ -9,10 +9,14 @@ import {
   type AuxiliaryModelUnavailableReason,
   type AuxiliaryModelView,
   type AuxiliaryTask,
+  type FallbackModelUnavailableReason,
+  type FallbackModelView,
   type ModelSelection,
   type ModelSummary,
   type ProviderSummary,
   type SaveAiSettingsRequest,
+  type WispFallback,
+  wispFallbackChoice,
 } from "../shared/contracts.js";
 import { WispBackendError } from "./backend-error.js";
 import { AiSettingsStore } from "./ai-settings-store.js";
@@ -70,6 +74,10 @@ export function supportedThinkingLevels(model: Pick<CatalogModel, "reasoning" | 
     if (level === "xhigh" || level === "max") return mapped !== undefined;
     return true;
   });
+}
+
+function sameModel(left: ModelSelection, right: ModelSelection): boolean {
+  return left.providerId === right.providerId && left.modelId === right.modelId;
 }
 
 function compareByName(left: { name: string }, right: { name: string }): number {
@@ -186,6 +194,7 @@ export class ModelService {
       auxiliary: {
         imageUnderstanding: this.auxiliaryView(auxiliary.imageUnderstanding, credentialProviders),
       },
+      fallback: this.fallbackView(await this.settings.getFallback(), credentialProviders),
       secureStorageAvailable: this.credentials.isSecureStorageAvailable(),
       providers,
       catalogError: errors.length > 0 ? errors.join("\n") : null,
@@ -246,6 +255,47 @@ export class ModelService {
   }
 
   /**
+   * Chooses the global fallback model, or turns it off with null. Its provider
+   * needs a saved key; a fallback never takes a key of its own.
+   */
+  async saveFallback(selection: ModelSelection | null): Promise<AiSettingsView> {
+    if (selection) await this.assertUsableFallback(selection);
+    await this.settings.setFallback(selection);
+    return this.getView();
+  }
+
+  /** Checks a fallback a person is choosing: a catalog model whose provider has a saved key. */
+  async assertUsableFallback(selection: ModelSelection): Promise<void> {
+    const reason = this.fallbackUnavailableReason(selection, await this.listCredentialProviders());
+    if (reason) {
+      throw new WispBackendError(
+        "invalid_configuration",
+        reason === "missing_key"
+          ? "Add an API key for this provider before choosing one of its models."
+          : "The selected provider and model are not available.",
+      );
+    }
+  }
+
+  /**
+   * The model a Wisp answers with when its own fails for good, or null when it
+   * has none, its saved model cannot be used, or it is the model that failed.
+   */
+  async getFallbackModel(
+    modelOverride: ModelSelection | null,
+    saved: WispFallback | null,
+  ): Promise<ModelSelection | null> {
+    const choice = wispFallbackChoice(modelOverride, saved);
+    if (choice === "off") return null;
+    const selection = choice === "global" ? await this.settings.getFallback() : choice;
+    if (!selection || this.fallbackUnavailableReason(selection, await this.listCredentialProviders())) return null;
+    const primary = modelOverride ?? (await this.settings.getSelection());
+    return primary && sameModel(primary, selection)
+      ? null
+      : { providerId: selection.providerId, modelId: selection.modelId };
+  }
+
+  /**
    * Saves a provider key outside of a model selection, for features such as
    * voice input that call the provider directly. Chat models of the same
    * provider can use the key too.
@@ -298,7 +348,7 @@ export class ModelService {
     await this.credentials.delete(providerId);
     const selection = await this.settings.getSelection();
     if (selection?.providerId === providerId) await this.settings.setSelection(null);
-    // Auxiliary selections stay saved and show as unavailable until a key returns.
+    // Auxiliary and fallback selections stay saved and show as unavailable until a key returns.
     return this.getView();
   }
 
@@ -334,13 +384,33 @@ export class ModelService {
     };
   }
 
+  private fallbackView(selection: ModelSelection | null, credentialProviders: ReadonlySet<string>): FallbackModelView {
+    return {
+      selection,
+      unavailable: selection ? this.fallbackUnavailableReason(selection, credentialProviders) : null,
+    };
+  }
+
+  private fallbackUnavailableReason(
+    selection: ModelSelection,
+    credentialProviders: ReadonlySet<string>,
+  ): FallbackModelUnavailableReason | null {
+    if (!this.catalogModel(selection)) return "model_unavailable";
+    return credentialProviders.has(selection.providerId) ? null : "missing_key";
+  }
+
+  /** The catalog model a selection names, from a provider that takes API keys. */
+  private catalogModel(selection: ModelSelection): CatalogModel | undefined {
+    return this.runtime.getProvider(selection.providerId)?.auth.apiKey
+      ? this.runtime.getModel(selection.providerId, selection.modelId)
+      : undefined;
+  }
+
   private auxiliaryUnavailableReason(
     selection: ModelSelection,
     credentialProviders: ReadonlySet<string>,
   ): AuxiliaryModelUnavailableReason | null {
-    const model = this.runtime.getProvider(selection.providerId)?.auth.apiKey
-      ? this.runtime.getModel(selection.providerId, selection.modelId)
-      : undefined;
+    const model = this.catalogModel(selection);
     if (!model) return "model_unavailable";
     if (!model.input.includes("image")) return "no_image_input";
     return credentialProviders.has(selection.providerId) ? null : "missing_key";
