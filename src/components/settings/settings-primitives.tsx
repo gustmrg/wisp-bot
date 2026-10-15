@@ -76,6 +76,27 @@ export function SettingsRowDescription({ className, ...props }: ComponentPropsWi
   return <p className={cn("m-0 text-xs leading-[1.3] text-dim", className)} {...props} />;
 }
 
+/**
+ * Buttons that act on a setting: side by side at their own width on the desktop,
+ * stacked across the panel on mobile.
+ */
+export function SettingsActions({
+  align = "start",
+  className,
+  ...props
+}: ComponentPropsWithoutRef<"div"> & { align?: "start" | "end" }) {
+  return (
+    <div
+      className={cn(
+        "flex flex-wrap gap-1.5 max-[760px]:flex-col max-[760px]:gap-2",
+        align === "end" && "justify-end",
+        className,
+      )}
+      {...props}
+    />
+  );
+}
+
 /** A labelled control with optional help text below it. The label wraps the control. */
 export function SettingsField({
   label,

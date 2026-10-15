@@ -1,7 +1,7 @@
 import { type ReactNode, useState } from "react";
 
 import type { WispChanges, WispChatView } from "@/chat-data";
-import { SettingsGroup } from "@/components/settings/settings-primitives";
+import { SettingsActions, SettingsGroup } from "@/components/settings/settings-primitives";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Button } from "@/components/ui/button";
 import { FormStatus } from "@/components/ui/form-status";
@@ -170,15 +170,15 @@ export function WispDetails({
             </SettingsAccordionSection>
           </Accordion>
           {generalActions ? (
-            <div className="mt-5 flex flex-col gap-2 border-t border-border pt-4">{generalActions}</div>
+            <SettingsActions className="mt-5 border-t border-border pt-4">{generalActions}</SettingsActions>
           ) : null}
         </div>
         {profileChanged ? (
           <footer className="flex flex-none flex-col gap-3 border-t border-border p-3.5">
             <FormStatus error={error} />
-            <div className="flex gap-2">
+            <div className="flex gap-2 min-[761px]:justify-end">
               <Button
-                className="flex-1"
+                className="max-[760px]:flex-1"
                 type="button"
                 variant="outline"
                 disabled={saving}
@@ -189,7 +189,7 @@ export function WispDetails({
               >
                 Discard
               </Button>
-              <Button className="flex-1" type="button" disabled={saving} onClick={() => void save()}>
+              <Button className="max-[760px]:flex-1" type="button" disabled={saving} onClick={() => void save()}>
                 {saving ? "Saving…" : "Save profile"}
               </Button>
             </div>

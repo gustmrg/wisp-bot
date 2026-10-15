@@ -13,6 +13,7 @@ import {
 } from "../../shared/plugins";
 import type { McpAccess, McpGrant, McpSettingsView } from "../../shared/mcp";
 import { AccessRow, InitialsBadge, type AccessOption } from "@/components/access-row";
+import { SettingsActions } from "@/components/settings/settings-primitives";
 import { PluginLogo } from "@/components/plugin-logo";
 import { Button } from "@/components/ui/button";
 import { buildAccessRequest, isPluginAvailable, type IntegrationSettingsTarget } from "@/lib/plugin-access";
@@ -186,6 +187,9 @@ function WispAccessForm({
         savedMcpGrants.find((savedGrant) => savedGrant.serverId === grant.serverId),
       ),
   );
+
+  // The footer shows only while there is something to save or report, like the profile's.
+  const unsaved = dirty || mcpDirty || saving;
 
   function changed() {
     setError("");
@@ -497,13 +501,16 @@ function WispAccessForm({
           </p>
         )}
       </div>
-      {loaded ? (
+      {loaded && (unsaved || error || saved) ? (
         <footer className="flex flex-none flex-col gap-3 border-t border-border p-3.5">
           {error ? (
-            <>
-              <p role="alert" className="text-destructive">
-                {error}
-              </p>
+            <p role="alert" className="text-destructive">
+              {error}
+            </p>
+          ) : null}
+          {saved ? <p role="status">Access settings saved for this Wisp.</p> : null}
+          <SettingsActions align="end">
+            {error ? (
               <Button
                 variant="secondary"
                 type="button"
@@ -525,12 +532,13 @@ function WispAccessForm({
               >
                 Reload access settings
               </Button>
-            </>
-          ) : null}
-          {saved ? <p role="status">Access settings saved for this Wisp.</p> : null}
-          <Button type="button" disabled={(!dirty && !mcpDirty) || saving} onClick={() => void save()}>
-            {saving ? "Saving…" : "Save access"}
-          </Button>
+            ) : null}
+            {unsaved || error ? (
+              <Button type="button" disabled={(!dirty && !mcpDirty) || saving} onClick={() => void save()}>
+                {saving ? "Saving…" : "Save access"}
+              </Button>
+            ) : null}
+          </SettingsActions>
         </footer>
       ) : null}
     </div>

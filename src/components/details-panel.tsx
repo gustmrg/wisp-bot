@@ -3,6 +3,7 @@ import { type PointerEvent as ReactPointerEvent, useEffect, useRef } from "react
 
 import type { ChatChanges, ChatView, WispChanges, WispCollection } from "@/chat-data";
 import { CircleDetails } from "@/components/circle-details";
+import { SettingsActions } from "@/components/settings/settings-primitives";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -82,7 +83,7 @@ function DetailsPanel({
   const title = mobile && chat.kind === "wisp" ? pageTitle : "Settings";
   const deleteControl = (
     <Dialog>
-      <DialogTrigger render={<Button className="w-full" variant="destructive" type="button" />}>
+      <DialogTrigger render={<Button variant="destructive" type="button" />}>
         Delete {chat.kind === "circle" ? "circle" : "Wisp"}
       </DialogTrigger>
       <DialogContent>
@@ -111,7 +112,7 @@ function DetailsPanel({
       >
         {copyFeedback.message}
       </span>
-      <Button className="w-full" variant="secondary" type="button" onClick={() => void shareTemplate()}>
+      <Button variant="secondary" type="button" onClick={() => void shareTemplate()}>
         {copyFeedback.status === "success" ? <CheckIcon /> : <Share2Icon />}
         {copyFeedback.status === "copying"
           ? "Copying template…"
@@ -189,7 +190,7 @@ function DetailsPanel({
         <div className="relative flex min-h-0 flex-1 flex-col">
           <div className="min-h-0 flex-1 overflow-y-auto p-3.5">
             <CircleDetails chat={chat} wisps={wisps} onChange={onChange} />
-            <div className="mt-[18px]">{deleteControl}</div>
+            <SettingsActions className="mt-[18px]">{deleteControl}</SettingsActions>
           </div>
         </div>
       )}

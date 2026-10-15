@@ -4,6 +4,7 @@ import { FolderOpenIcon, HardDriveIcon } from "lucide-react";
 
 import type { IntegrationSettingsTarget } from "@/lib/plugin-access";
 import { formatBytes, type WorkspaceView } from "../../shared/workspace";
+import { SettingsActions } from "@/components/settings/settings-primitives";
 import { Button } from "@/components/ui/button";
 import { Field, FieldDescription, FieldGroup, FieldLabel, FieldTitle } from "@/components/ui/field";
 import { FormStatus } from "@/components/ui/form-status";
@@ -88,16 +89,18 @@ function WorkspacePanel({
             </div>
           </Field>
           <Field>
-            <FieldLabel htmlFor={`${id}-size`}>Size</FieldLabel>
-            <WorkspaceSizeSelect
-              id={`${id}-size`}
-              conversationId={conversationId}
-              usedBytes={view.usedBytes}
-              quotaBytes={view.quotaBytes}
-              maxQuotaBytes={view.maxQuotaBytes}
-              className="w-full"
-              onResized={setView}
-            />
+            <div className="flex flex-col gap-1.5 min-[761px]:flex-row min-[761px]:items-center min-[761px]:justify-between">
+              <FieldLabel htmlFor={`${id}-size`}>Size</FieldLabel>
+              <WorkspaceSizeSelect
+                id={`${id}-size`}
+                conversationId={conversationId}
+                usedBytes={view.usedBytes}
+                quotaBytes={view.quotaBytes}
+                maxQuotaBytes={view.maxQuotaBytes}
+                className="w-full min-[761px]:w-36"
+                onResized={setView}
+              />
+            </div>
             <FieldDescription>
               {view.usedBytes > view.quotaBytes
                 ? "Holds more than this size. Nothing is deleted, but no new files fit until you free space."
@@ -108,21 +111,24 @@ function WorkspacePanel({
       ) : error ? null : (
         <FormStatus pending="Loading workspace…" />
       )}
-      {onOpenSettings ? (
-        <Button
-          className="w-full"
-          variant={percent >= 90 ? "default" : "outline"}
-          onClick={() => onOpenSettings({ section: "storage", conversationId })}
-        >
-          <HardDriveIcon aria-hidden="true" />
-          {percent >= 90 ? "Free up space" : "Inspect and clean up"}
-        </Button>
-      ) : null}
-      {screenActions ? (
-        <Button className="w-full" variant="outline" onClick={() => void openFolder()}>
-          <FolderOpenIcon aria-hidden="true" />
-          Open workspace folder
-        </Button>
+      {onOpenSettings || screenActions ? (
+        <SettingsActions>
+          {onOpenSettings ? (
+            <Button
+              variant={percent >= 90 ? "default" : "outline"}
+              onClick={() => onOpenSettings({ section: "storage", conversationId })}
+            >
+              <HardDriveIcon data-icon="inline-start" aria-hidden="true" />
+              {percent >= 90 ? "Free up space" : "Inspect and clean up"}
+            </Button>
+          ) : null}
+          {screenActions ? (
+            <Button variant="outline" onClick={() => void openFolder()}>
+              <FolderOpenIcon data-icon="inline-start" aria-hidden="true" />
+              Open workspace folder
+            </Button>
+          ) : null}
+        </SettingsActions>
       ) : null}
       <FormStatus error={error} />
       {!view && error ? (

@@ -102,7 +102,7 @@ describe("WispPluginSettings", () => {
     render(<WispPluginSettings conversationId="researcher" />);
     const search = await screen.findByRole("combobox", { name: "Search the web access" });
     expect(search).toHaveTextContent("No access");
-    expect(screen.getByRole("button", { name: "Save access" })).toBeDisabled();
+    expect(screen.queryByRole("button", { name: "Save access" })).not.toBeInTheDocument();
     await openSelect(user, search);
     expect(screen.getAllByRole("option").map((option) => option.textContent)).toEqual([
       "No access",
@@ -291,7 +291,7 @@ describe("WispPluginSettings", () => {
     await user.click(screen.getByRole("button", { name: "Reload access settings" }));
     const search = await screen.findByRole("combobox", { name: "Search the web access" });
     expect(screen.getByRole("combobox", { name: "Linear access" })).toHaveTextContent("No access");
-    expect(screen.getByRole("button", { name: "Save access" })).toBeDisabled();
+    expect(screen.queryByRole("button", { name: "Save access" })).not.toBeInTheDocument();
     await openSelect(user, search);
     await user.click(screen.getByRole("option", { name: /Brave Search/ }));
     await user.click(screen.getByRole("button", { name: "Save access" }));
