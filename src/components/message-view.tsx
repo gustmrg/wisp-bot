@@ -140,7 +140,10 @@ function MessageView({ message, dense = false, author, showAuthor = false, onAns
     return (
       <div className="mt-[13px] mb-[5px] flex animate-message-in items-center justify-center gap-1.5 text-faint text-2xs">
         {message.status === "failed" ? (
-          <FailedNotice onRetry={message.retryable ? onRetry : undefined} />
+          <FailedNotice
+            reason={message.type === "incoming" ? message.error?.message : undefined}
+            onRetry={message.retryable ? onRetry : undefined}
+          />
         ) : (
           <>
             <CircleStopIcon aria-hidden="true" className="size-3 flex-none" />
@@ -212,7 +215,10 @@ function MessageView({ message, dense = false, author, showAuthor = false, onAns
             <span>{message.status === "queued" ? "Queued" : "Stopped"}</span>
           ) : null}
           {message.status === "failed" ? (
-            <FailedNotice onRetry={!outgoing && message.retryable ? onRetry : undefined} />
+            <FailedNotice
+              reason={outgoing ? undefined : message.error?.message}
+              onRetry={!outgoing && message.retryable ? onRetry : undefined}
+            />
           ) : null}
         </div>
       ) : null}
@@ -220,12 +226,24 @@ function MessageView({ message, dense = false, author, showAuthor = false, onAns
   );
 }
 
-/** Marks a message that failed, in the error colour so it stands apart from a stopped or queued one. */
-function FailedNotice({ onRetry }: { onRetry?: () => void }) {
+/**
+ * Marks a message that failed, in the error colour so it stands apart from a
+ * stopped or queued one, with the reason on one line and in full on hover.
+ */
+function FailedNotice({ reason, onRetry }: { reason?: string; onRetry?: () => void }) {
   return (
-    <span className="inline-flex items-center gap-1.5 text-destructive">
+    <span className="inline-flex min-w-0 items-center gap-1.5 text-destructive">
       <CircleAlertIcon aria-hidden="true" className="size-3 flex-none" />
-      <span>Failed</span>
+      {reason ? (
+        <Tooltip>
+          <TooltipTrigger render={<span />} className="min-w-0 max-w-[min(520px,70vw)] truncate" delay={300}>
+            {`Failed · ${reason}`}
+          </TooltipTrigger>
+          <TooltipContent className="max-w-[360px]">{reason}</TooltipContent>
+        </Tooltip>
+      ) : (
+        <span>Failed</span>
+      )}
       {onRetry ? (
         <button
           type="button"
