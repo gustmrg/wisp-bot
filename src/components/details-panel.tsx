@@ -22,10 +22,15 @@ import { panelResizer } from "@/lib/ui-classes";
 import { cn } from "@/lib/utils";
 import { serializeWispTemplate } from "@/lib/wisp-template";
 import type { IntegrationSettingsTarget } from "@/lib/plugin-access";
+import type { WispSettingsTab } from "@/components/wisp-profile";
 
 interface DetailsPanelProps {
   mobile?: boolean;
   chat: ChatView;
+  /** The Wisp settings tab shown first. */
+  initialTab?: WispSettingsTab;
+  /** On a phone, names where the back button goes. */
+  backLabel?: string;
   wisps: WispCollection;
   width: number;
   onChange: (changes: ChatChanges) => Promise<boolean> | void;
@@ -47,6 +52,8 @@ function DetailsPanel({
   onDelete,
   onResizeStart,
   mobile = false,
+  initialTab,
+  backLabel = "Back to conversation",
 }: DetailsPanelProps) {
   const copyFeedback = useCopyFeedback(chat.id);
   const titleRef = useRef<HTMLHeadingElement>(null);
@@ -135,7 +142,7 @@ function DetailsPanel({
           variant="ghost"
           size="icon-sm"
           type="button"
-          aria-label={mobile ? "Back to conversation" : "Close details"}
+          aria-label={mobile ? backLabel : "Close details"}
           onClick={onClose}
         >
           {mobile ? <ChevronLeftIcon aria-hidden="true" /> : <XIcon />}
@@ -144,8 +151,9 @@ function DetailsPanel({
 
       {chat.kind === "wisp" ? (
         <WispDetails
-          key={chat.id}
+          key={`${chat.id}:${initialTab ?? "general"}`}
           chat={chat}
+          initialTab={initialTab}
           onChangeWisp={(changes) => onChangeWisp(chat.wispId, changes)}
           onChangeNotifications={(notifyOnUpdatesEnabled) => onChange({ kind: "wisp", notifyOnUpdatesEnabled })}
           onOpenSettings={onOpenSettings}

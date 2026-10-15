@@ -694,8 +694,13 @@ describe("Mobile workspace", () => {
     await user.click(within(list).getByRole("button", { name: /Atlas/ }));
     expect(composer).toHaveValue("Keep this draft");
     await user.click(screen.getByRole("button", { name: "Open Wisp settings" }));
-    expect(screen.getByRole("complementary", { name: "Atlas settings" })).toBeVisible();
+    // On a phone the gear opens the Wisp's profile, and Edit its settings.
+    expect(screen.getByRole("region", { name: "Atlas" })).toBeVisible();
     expect(screen.queryByRole("textbox", { name: "Message Atlas" })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Edit" }));
+    expect(screen.getByRole("complementary", { name: "Atlas settings" })).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "Back to profile" }));
+    expect(screen.getByRole("region", { name: "Atlas" })).toBeVisible();
     await user.click(screen.getByRole("button", { name: "Back to conversation" }));
     expect(composer).toHaveValue("Keep this draft");
     resize(false);
@@ -850,15 +855,20 @@ it.each([false, true])("preserves later navigation when deletion completes (mobi
   });
   await user.click(await within(list).findByRole("button", { name: /Atlas/ }));
   await user.click(screen.getByRole("button", { name: "Open Wisp settings" }));
+  if (mobile) await user.click(screen.getByRole("button", { name: "Edit" }));
   await user.click(screen.getByRole("button", { name: "Delete Wisp" }));
   await user.click(screen.getByRole("button", { name: "Confirm deletion" }));
   await waitFor(() => expect(api.deleteWisp).toHaveBeenCalledOnce());
   if (mobile) {
+    await user.click(screen.getByRole("button", { name: "Back to profile" }));
     await user.click(screen.getByRole("button", { name: "Back to conversation" }));
     await user.click(screen.getByRole("button", { name: "Back to conversations" }));
   }
   await user.click(within(list).getByRole("button", { name: /Beta/ }));
-  if (mobile) await user.click(screen.getByRole("button", { name: "Open Wisp settings" }));
+  if (mobile) {
+    await user.click(screen.getByRole("button", { name: "Open Wisp settings" }));
+    await user.click(screen.getByRole("button", { name: "Edit" }));
+  }
   const name = screen.getByRole("textbox", { name: "Name" });
   await user.clear(name);
   await user.type(name, "Unsaved Beta name");

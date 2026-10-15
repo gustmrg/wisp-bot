@@ -1,11 +1,12 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, type CSSProperties } from "react";
 import { ChevronRightIcon } from "lucide-react";
 
 import type { ChatId, ChatViewCollection } from "@/chat-data";
-import { ChatAvatar } from "@/components/chat-avatar";
+import { ChatAvatar, WispAvatar } from "@/components/chat-avatar";
 import { MobileNavigation } from "@/components/mobile-navigation";
-import { ToolApprovalCard } from "@/components/tool-approval-card";
+import { ToolApprovalCard, approvalAsk } from "@/components/tool-approval-card";
 import { chatName } from "@/lib/chat-schema";
+import { inkOn, wispColor } from "@/lib/wisp-appearance";
 import type { ToolApprovalDecision, ToolApprovalRequest } from "../../shared/tool-policy";
 
 interface MobileApprovalsProps {
@@ -20,6 +21,18 @@ interface MobileApprovalsProps {
   onSettings: () => void;
 }
 
+/** Every pending approval in conversations that still exist, the latest first. */
+export function pendingApprovals(
+  chats: ChatViewCollection,
+  approvals: Record<string, ReadonlyArray<ToolApprovalRequest>>,
+): ToolApprovalRequest[] {
+  // Requests share one timeout, so the one that expires last was asked last.
+  return Object.values(approvals)
+    .flat()
+    .filter((request) => chats[request.conversationId])
+    .sort((left, right) => Date.parse(right.expiresAt) - Date.parse(left.expiresAt));
+}
+
 /** Every pending tool approval in one place, for the mobile Approvals tab (ADR 015). */
 export function MobileApprovals({
   chats,
@@ -32,11 +45,9 @@ export function MobileApprovals({
   onSettings,
 }: MobileApprovalsProps) {
   const titleRef = useRef<HTMLHeadingElement>(null);
-  // Requests share one timeout, so the one that expires last was asked last.
-  const pending = Object.values(approvals)
-    .flat()
-    .filter((request) => chats[request.conversationId])
-    .sort((left, right) => Date.parse(right.expiresAt) - Date.parse(left.expiresAt));
+  const pending = pendingApprovals(chats, approvals);
+  // With nothing to answer, one of the Wisps keeps the empty screen company.
+  const resting = Object.values(chats).find((chat) => chat.kind === "wisp")?.wisp;
 
   useEffect(() => {
     titleRef.current?.focus();
@@ -56,16 +67,27 @@ export function MobileApprovals({
         {pending.map((request) => {
           const chat = chats[request.conversationId]!;
           const name = chatName(chat);
+          const color = chat.kind === "wisp" ? wispColor(chat.wisp.name, chat.wisp.color) : undefined;
           return (
-            <article key={request.approvalId} className="mobile-approval" aria-label={`${name}: ${request.summary}`}>
+            <article
+              key={request.approvalId}
+              className="mobile-approval"
+              aria-label={`${name}: ${request.summary}`}
+              style={color ? ({ "--wisp": color, "--wisp-ink": inkOn(color) } as CSSProperties) : undefined}
+            >
               <button
                 type="button"
                 className="mobile-approval-chat"
                 aria-label={`Open the conversation with ${name}`}
                 onClick={() => onOpenChat(chat.id)}
               >
-                <ChatAvatar chat={chat} size="sm" />
-                <strong>{name}</strong>
+                <span className="wisp-halo">
+                  <ChatAvatar chat={chat} size="sm" />
+                </span>
+                <span className="mobile-approval-who">
+                  <strong>{name}</strong>
+                  <small>{approvalAsk(request)}</small>
+                </span>
                 <ChevronRightIcon aria-hidden="true" />
               </button>
               <ToolApprovalCard
@@ -78,9 +100,16 @@ export function MobileApprovals({
           );
         })}
         {pending.length ? null : (
-          <p className="mobile-list-empty" role="status">
-            Nothing is waiting for you. When a Wisp asks to use a tool, it shows up here.
-          </p>
+          <div className="mobile-approvals-empty" role="status">
+            {resting ? (
+              <span className="wisp-halo">
+                <WispAvatar wisp={resting} size="lg" />
+              </span>
+            ) : null}
+            <p>
+              <strong>All clear.</strong> Nothing is waiting for you. When a Wisp asks to use a tool, it shows up here.
+            </p>
+          </div>
         )}
       </div>
       <MobileNavigation

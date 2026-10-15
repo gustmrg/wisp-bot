@@ -1,15 +1,18 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { ArrowDownIcon, ChevronLeftIcon, SettingsIcon } from "lucide-react";
+import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from "react";
+import { ArrowDownIcon, CheckIcon, ChevronLeftIcon, SettingsIcon, XIcon } from "lucide-react";
 
 import type { ChatView, Message } from "@/chat-data";
 import type { ManagedConversationStatus } from "../../shared/conversations";
 import type { ToolApprovalDecision, ToolApprovalRequest } from "../../shared/tool-policy";
+import { describeMcpAlias, getToolMetadata } from "../../shared/tool-catalog";
+import type { ToolActivityView } from "@/lib/conversation-stream";
 import { chatName } from "@/lib/chat-schema";
 import { withDateDividers } from "@/lib/date-dividers";
 import { isAttached, type MessageWindow } from "@/lib/message-windows";
 import { mainPanel } from "@/lib/ui-classes";
 import { cn } from "@/lib/utils";
-import { ChatAvatar } from "@/components/chat-avatar";
+import { inkOn, wispColor } from "@/lib/wisp-appearance";
+import { ChatAvatar, WispAvatar } from "@/components/chat-avatar";
 import { ChatComposer, type VoiceInputSettings } from "@/components/chat-composer";
 import { Button } from "@/components/ui/button";
 import { MessageView } from "@/components/message-view";
@@ -54,6 +57,33 @@ function atBottom(element: HTMLElement): boolean {
   return element.scrollHeight - element.scrollTop - element.clientHeight <= FOLLOW_DISTANCE;
 }
 
+/** The color a conversation takes on: its Wisp's. A circle has none. */
+function chatAccentStyle(chat: ChatView): CSSProperties | undefined {
+  if (chat.kind !== "wisp") return undefined;
+  const color = wispColor(chat.wisp.name, chat.wisp.color);
+  return { "--wisp": color, "--wisp-ink": inkOn(color) } as CSSProperties;
+}
+
+/** The soul's first paragraph, as plain text, for a Wisp to introduce itself with. */
+function soulIntro(soul: string): string {
+  const paragraph = soul
+    .split(/\n\s*\n/)
+    .map((part) => part.trim())
+    .find((part) => part && !part.startsWith("#") && !part.startsWith("---"));
+  const text = (paragraph ?? "")
+    .replace(/[*_`>#]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  return text.length > 180 ? `${text.slice(0, 177).trimEnd()}…` : text;
+}
+
+/** How many of the turn's steps show; older ones fold into a count. */
+const VISIBLE_STEPS = 4;
+
+function stepLabel(toolName: string): string {
+  return getToolMetadata(toolName)?.label ?? describeMcpAlias(toolName)?.label ?? toolName;
+}
+
 interface ChatPanelProps {
   hidden?: boolean;
   onBack?: () => void;
@@ -62,6 +92,8 @@ interface ChatPanelProps {
   transcript: MessageWindow | undefined;
   status: ManagedConversationStatus;
   activity?: string;
+  /** The tools the Wisp used in the turn it is working on. */
+  steps?: ReadonlyArray<ToolActivityView>;
   error?: string;
   acknowledging: boolean;
   approvals: ReadonlyArray<ToolApprovalRequest>;
@@ -94,6 +126,7 @@ function ChatPanel({
   transcript,
   status,
   activity,
+  steps = [],
   error,
   acknowledging,
   approvals,
@@ -134,6 +167,21 @@ function ChatPanel({
   const targetMessageId = transcript?.targetMessageId;
   const firstMessageId = messages[0]?.id;
   const lastMessage = messages.at(-1);
+  const failed = lastMessage?.type === "incoming" && lastMessage.status === "failed";
+  const subline = approvals.length
+    ? { tone: "approval", text: "Waiting for your approval" }
+    : working
+      ? { tone: "working", text: "Working…" }
+      : failed
+        ? { tone: "error", text: "Couldn't reply" }
+        : {
+            tone: undefined,
+            text: chat.kind === "wisp" ? chat.wisp.role : members.map((member) => member.name).join(", "),
+          };
+  const avatarState = approvals.length ? "approval" : working ? "working" : failed ? "error" : "idle";
+  // A Wisp with nothing said yet introduces itself.
+  const introducing =
+    chat.kind === "wisp" && Boolean(transcript) && !transcript?.loading && !messages.length && !working;
   // A complete reply part followed by more work is text the Wisp wrote before
   // using a tool, so the activity indicator stays visible below it.
   const responding =
@@ -237,8 +285,14 @@ function ChatPanel({
   }, [focusChatId]);
 
   return (
-    <main hidden={hidden} className={cn(mainPanel, "chat-panel", hidden && "hidden")}>
-      <header className="chat-header flex h-11 flex-none items-center justify-between border-b border-black/[0.035] px-3.5 dark:border-white/[0.035]">
+    <main
+      hidden={hidden}
+      className={cn(mainPanel, "chat-panel relative", hidden && "hidden")}
+      style={chatAccentStyle(chat)}
+      data-accent={chat.kind === "wisp" || undefined}
+    >
+      <div className="chat-ambient" data-tone={subline.tone} aria-hidden="true" />
+      <header className="chat-header relative flex h-[52px] flex-none items-center justify-between border-b border-black/[0.035] px-3.5 dark:border-white/[0.035]">
         {onBack ? (
           <Button
             className="chat-back"
@@ -252,11 +306,19 @@ function ChatPanel({
           </Button>
         ) : null}
         <div className="chat-heading inline-flex min-w-0 items-center gap-2 rounded-lg p-1">
-          <ChatAvatar chat={chat} size="sm" />
+          <span className="wisp-halo" data-state={avatarState}>
+            <ChatAvatar chat={chat} size="sm" state={avatarState} />
+          </span>
           <div className="min-w-0">
-            <h1 ref={titleRef} tabIndex={-1} className="block truncate font-semibold outline-none">
+            <h1 ref={titleRef} tabIndex={-1} className="block truncate font-semibold leading-tight outline-none">
               {name}
             </h1>
+            {subline.text ? (
+              <p className="chat-subline flex min-w-0 items-center gap-1.5 truncate text-xs" data-tone={subline.tone}>
+                {subline.tone === "working" ? <span className="chat-subline-pulse" aria-hidden="true" /> : null}
+                <span className="truncate">{subline.text}</span>
+              </p>
+            ) : null}
           </div>
         </div>
         <div className="flex flex-none items-center gap-2">
@@ -300,18 +362,38 @@ function ChatPanel({
             aria-live="polite"
             aria-busy={transcript?.loading ?? true}
           >
+            {introducing && chat.kind === "wisp" ? (
+              <section className="chat-intro" aria-label={`About ${name}`}>
+                <span className="chat-intro-wisp">
+                  <WispAvatar wisp={chat.wisp} size="xl" />
+                </span>
+                <h2>{`Hi, I'm ${name}`}</h2>
+                {chat.wisp.role ? <p className="chat-intro-role">{chat.wisp.role}</p> : null}
+                {soulIntro(chat.wisp.soul) ? <p>{soulIntro(chat.wisp.soul)}</p> : null}
+              </section>
+            ) : null}
             {transcriptMessages.map((message, index) => {
               const previous = transcriptMessages[index - 1];
+              // In a circle each reply carries its Wisp's name and color; consecutive ones share the name.
+              const author =
+                message.type === "incoming" && message.authorId
+                  ? members.find((member) => member.id === message.authorId)
+                  : undefined;
+              const previousAuthor = previous?.type === "incoming" ? previous.authorId : undefined;
+              const authorColor = author ? wispColor(author.name, author.color) : undefined;
               return (
                 <div
                   key={message.id ?? `${chat.id}-${message.type}-${index}`}
                   className={messageRow}
+                  style={authorColor ? ({ "--wisp": authorColor } as CSSProperties) : undefined}
                   data-message-id={message.id}
                   data-highlighted={(message.id !== undefined && message.id === targetMessageId) || undefined}
                 >
                   <MessageView
                     message={message}
                     dense={message.type === "outgoing" && previous?.type === "outgoing"}
+                    author={author}
+                    showAuthor={Boolean(author) && previousAuthor !== author?.id}
                     onAnswer={(answer) => onAnswerPrompt(message.id, answer)}
                     onRetry={() => onRetry(message.id)}
                   />
@@ -330,16 +412,45 @@ function ChatPanel({
                   />
                 ))
               : null}
+            {attached && working && steps.length ? (
+              <ol className="chat-steps" aria-label={`What ${name} has done so far`}>
+                {steps.length > VISIBLE_STEPS ? (
+                  <li className="chat-step" data-phase="completed">{`+${steps.length - VISIBLE_STEPS}`}</li>
+                ) : null}
+                {steps.slice(-VISIBLE_STEPS).map((step) => (
+                  <li
+                    key={step.toolCallId}
+                    className="chat-step"
+                    data-phase={step.phase === "completed" ? (step.isError ? "failed" : "completed") : "running"}
+                  >
+                    {step.phase !== "completed" ? (
+                      <span className="chat-step-spinner" aria-hidden="true" />
+                    ) : step.isError ? (
+                      <XIcon aria-hidden="true" />
+                    ) : (
+                      <CheckIcon aria-hidden="true" />
+                    )}
+                    {stepLabel(step.toolName)}
+                    {step.phase !== "completed" ? (
+                      <span className="sr-only">, running</span>
+                    ) : step.isError ? (
+                      <span className="sr-only">, failed</span>
+                    ) : null}
+                  </li>
+                ))}
+              </ol>
+            ) : null}
             {showActivity ? (
-              <div role="status" className="mt-3 flex items-center gap-2 text-dim text-sm">
+              <div role="status" className="chat-activity mt-3 flex items-center gap-2 text-dim text-sm">
+                {chat.kind === "wisp" ? <WispAvatar wisp={chat.wisp} size="sm" state="working" /> : null}
                 <span
                   aria-hidden="true"
-                  className="flex items-center gap-1 rounded-[16px] rounded-bl-[5px] border border-border bg-bubble-in px-3.5 py-3"
+                  className="chat-activity-bubble flex items-center gap-1 rounded-[16px] rounded-bl-[5px] border border-border bg-bubble-in px-3.5 py-3"
                 >
                   {[0, 200, 400].map((delay) => (
                     <span
                       key={delay}
-                      className="size-1.5 rounded-full bg-dim animate-typing-dot motion-reduce:animate-none"
+                      className="chat-activity-dot size-1.5 rounded-full bg-dim animate-typing-dot motion-reduce:animate-none"
                       style={{ animationDelay: `${delay}ms` }}
                     />
                   ))}

@@ -41,18 +41,20 @@ function DialogContent({
   showCloseButton = true,
   mobileFullscreen = false,
   backdropClassName,
+  viewportClassName,
   ...props
 }: DialogPrimitive.Popup.Props & {
   showCloseButton?: boolean;
   mobileFullscreen?: boolean;
   backdropClassName?: string;
+  viewportClassName?: string;
 }) {
   return (
     <DialogPortal>
       <DialogBackdrop className={backdropClassName} />
       <DialogPrimitive.Viewport
         data-mobile-fullscreen={mobileFullscreen}
-        className="dialog-viewport fixed inset-0 z-50 flex items-center justify-center p-4"
+        className={cn("dialog-viewport fixed inset-0 z-50 flex items-center justify-center p-4", viewportClassName)}
       >
         <DialogPrimitive.Popup
           data-slot="dialog-content"

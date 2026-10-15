@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
+import { useEffect, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
 import {
   BellIcon,
   BellOffIcon,
@@ -16,11 +16,13 @@ import type { ChatId, ChatListAction, ChatView, ChatViewCollection, NewWisp } fr
 import { ChatAvatar } from "@/components/chat-avatar";
 import { CreateAgentDialog } from "@/components/create-agent-dialog";
 import { MobileNavigation } from "@/components/mobile-navigation";
+import { NeedsYou } from "@/components/needs-you";
+import { WispOrbs } from "@/components/wisp-orbs";
 import { Button } from "@/components/ui/button";
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger } from "@/components/ui/context-menu";
 import type { ManagedConversationStatus } from "../../shared/conversations";
 import type { ModelSelection } from "../../shared/contracts";
-import type { ToolApprovalRequest } from "../../shared/tool-policy";
+import type { ToolApprovalDecision, ToolApprovalRequest } from "../../shared/tool-policy";
 import { messagePreview } from "../../shared/workspace";
 import type { CurrentUser } from "@/config/app-metadata";
 import { useClock } from "@/hooks/use-clock";
@@ -30,6 +32,7 @@ import { chatActivityDate, chatActivityLabel } from "@/lib/date-dividers";
 import { sidebarLayoutStyle } from "@/lib/layout";
 import { panelResizer, profileAvatar } from "@/lib/ui-classes";
 import { cn } from "@/lib/utils";
+import { inkOn, wispColor } from "@/lib/wisp-appearance";
 
 interface SidebarProps {
   activeChatId: ChatId;
@@ -40,6 +43,8 @@ interface SidebarProps {
   mobile?: boolean;
   hidden?: boolean;
   statuses?: Record<string, ManagedConversationStatus>;
+  /** What each working conversation is doing, such as "Searching the web". */
+  activity?: Record<string, string | undefined>;
   approvals?: Record<string, ReadonlyArray<ToolApprovalRequest>>;
   /** Conversations whose last reply failed while they were not open. */
   failedChats?: Record<string, boolean>;
@@ -55,6 +60,10 @@ interface SidebarProps {
   onOpenSettings: () => void;
   /** Opens the mobile Approvals tab. */
   onOpenApprovals?: () => void;
+  /** Answers an approval from the mobile list; without it the list does not offer to. */
+  onResolveApproval?: (request: ToolApprovalRequest, decision: ToolApprovalDecision) => void;
+  /** Auto-review is on, so approvals can offer a lasting Allow rule. */
+  allowAlwaysAvailable?: boolean;
   onResizeStart: (event: ReactPointerEvent<HTMLDivElement>) => void;
   onSelectChat: (chatId: ChatId) => void;
   /** Without it the list has no menu, as in component tests that do not need it. */
@@ -69,6 +78,35 @@ const stateIndicator = "absolute -right-1 -bottom-1 size-[10px] rounded-full bor
 const approvalIndicator = cn("approval-indicator", stateIndicator, "bg-[#f0a83a]");
 const errorIndicator = cn("error-indicator", stateIndicator, "bg-[#e5594d]");
 
+/** "Good morning", "Good afternoon", or "Good evening", by the hour where the person is. */
+function greeting(now: Date, timeZone: string, name: string): string {
+  const hour = Number(new Intl.DateTimeFormat("en-US", { hour: "numeric", hourCycle: "h23", timeZone }).format(now));
+  const part = hour >= 5 && hour < 12 ? "morning" : hour >= 12 && hour < 18 ? "afternoon" : "evening";
+  return name ? `Good ${part}, ${name}` : `Good ${part}`;
+}
+
+/** The colors of the Wisps that are busiest, for the light at the top of the mobile list. */
+function ambientColors(
+  chats: ChatViewCollection,
+  statuses: Record<string, ManagedConversationStatus>,
+  approvals: Record<string, ReadonlyArray<ToolApprovalRequest>>,
+): CSSProperties {
+  const ranked = Object.values(chats)
+    .flatMap((chat) => (chat.kind === "wisp" ? [chat] : []))
+    .sort(
+      (left, right) =>
+        Number(Boolean(approvals[right.id]?.length)) * 4 +
+        Number(statuses[right.id] === "working") * 2 +
+        Number(Boolean(right.unread)) -
+        (Number(Boolean(approvals[left.id]?.length)) * 4 +
+          Number(statuses[left.id] === "working") * 2 +
+          Number(Boolean(left.unread))),
+    )
+    .slice(0, 3)
+    .map((chat) => wispColor(chat.wisp.name, chat.wisp.color));
+  return Object.fromEntries(ranked.map((color, index) => [`--ambient-${index + 1}`, color])) as CSSProperties;
+}
+
 function activityTime(chat: Parameters<typeof chatActivityDate>[0] | undefined): number {
   return (chat && chatActivityDate(chat)?.getTime()) || 0;
 }
@@ -82,6 +120,7 @@ function Sidebar({
   mobile = false,
   hidden = false,
   statuses = {},
+  activity = {},
   approvals = {},
   failedChats = {},
   loading = false,
@@ -91,6 +130,8 @@ function Sidebar({
   onOpenSearch,
   onOpenSettings,
   onOpenApprovals,
+  onResolveApproval,
+  allowAlwaysAvailable = false,
   onResizeStart,
   onSelectChat,
   onChatAction,
@@ -129,28 +170,41 @@ function Sidebar({
       >
         {mobile ? (
           <>
+            <div className="mobile-list-ambient" style={ambientColors(chats, statuses, approvals)} aria-hidden="true" />
             <header className="mobile-list-header">
               <div>
+                <p className="mobile-list-greeting">{greeting(now, timeZone, currentUser.givenName)}</p>
                 <h1 ref={titleRef} tabIndex={-1}>
-                  Conversations
+                  Wisps
                 </h1>
-                <p>
-                  Your team · {allChatIds.length} {allChatIds.length === 1 ? "Wisp" : "Wisps"}
-                </p>
               </div>
             </header>
             <button
-              className={cn(
-                "sidebar-search flex h-8 flex-none items-center gap-2 rounded-lg border text-left text-dim hover:text-foreground",
-                "border-border bg-card hover:border-ring",
-                "[&_svg]:size-[13px] [&_svg]:flex-none [&_span]:flex-1",
-              )}
+              className="mobile-list-search"
               type="button"
+              aria-label="Search conversations"
+              title="Search conversations"
               onClick={onOpenSearch}
             >
               <SearchIcon aria-hidden="true" />
-              <span>Search conversations</span>
             </button>
+            <WispOrbs
+              chats={chats}
+              statuses={statuses}
+              approvals={approvals}
+              failedChats={failedChats}
+              onSelectChat={onSelectChat}
+            />
+            {onResolveApproval ? (
+              <NeedsYou
+                chats={chats}
+                approvals={approvals}
+                allowAlwaysAvailable={allowAlwaysAvailable}
+                onResolve={onResolveApproval}
+                onOpenChat={onSelectChat}
+                onOpenApprovals={onOpenApprovals}
+              />
+            ) : null}
           </>
         ) : (
           <div className={cn("flex h-11 flex-none items-center gap-1 px-2 pb-1", collapsed && "justify-center")}>
@@ -212,6 +266,8 @@ function Sidebar({
             const failed = !pendingApproval && Boolean(failedChats[chatId]);
             const working = statuses[chatId] === "working";
             const activityDate = chatActivityDate(chat);
+            const color = chat.kind === "wisp" ? wispColor(chat.wisp.name, chat.wisp.color) : undefined;
+            const role = chat.kind === "wisp" ? chat.wisp.role.trim() : "";
             const attention = pendingApproval ? "waiting for your approval" : failed ? "the last reply failed" : null;
 
             const row = (
@@ -222,6 +278,7 @@ function Sidebar({
                 )}
                 data-selected={selected}
                 data-unread={chat.unread ? true : undefined}
+                style={color ? ({ "--wisp": color, "--wisp-ink": inkOn(color) } as CSSProperties) : undefined}
                 type="button"
                 aria-current={selected ? "page" : undefined}
                 aria-label={collapsed ? (attention ? `${chatName(chat)}, ${attention}` : chatName(chat)) : undefined}
@@ -232,7 +289,10 @@ function Sidebar({
                   if (menuChatId !== chatId) onSelectChat(chatId);
                 }}
               >
-                <span className="conversation-avatar relative inline-flex flex-none">
+                <span
+                  className="conversation-avatar wisp-halo relative inline-flex flex-none"
+                  data-state={pendingApproval ? "approval" : failed ? "error" : working ? "working" : "idle"}
+                >
                   <ChatAvatar
                     chat={chat}
                     state={pendingApproval ? "approval" : failed ? "error" : working ? "working" : "idle"}
@@ -244,9 +304,13 @@ function Sidebar({
                 {collapsed ? null : (
                   <span className="flex min-w-0 flex-1 flex-col">
                     <span className="flex min-w-0 items-baseline gap-2">
-                      <strong className="min-w-0 flex-1 overflow-hidden text-base leading-[17px] font-semibold text-ellipsis whitespace-nowrap">
+                      <strong className="min-w-0 overflow-hidden text-base leading-[17px] font-semibold text-ellipsis whitespace-nowrap">
                         {chatName(chat)}
                       </strong>
+                      {role ? (
+                        <small className="conversation-role min-w-0 flex-[0_1_auto] truncate">{role}</small>
+                      ) : null}
+                      <span className="flex-1" />
                       {chat.pinned ? (
                         <span className="conversation-pin flex-none self-center text-faint">
                           <PinIcon aria-hidden="true" className="size-3" />
@@ -270,15 +334,15 @@ function Sidebar({
                           failed && "text-destructive",
                         )}
                         data-activity={
-                          pendingApproval ? "approval" : failed ? "failed" : mobile && working ? "working" : undefined
+                          pendingApproval ? "approval" : failed ? "failed" : working ? "working" : undefined
                         }
                       >
                         {pendingApproval
                           ? "Waiting for your approval"
                           : failed
                             ? "The last reply failed"
-                            : mobile && working
-                              ? "Working…"
+                            : working
+                              ? (activity[chatId] ?? "Working…")
                               : messagePreview(chat.preview)}
                       </span>
                       {chat.unread && mobile ? (

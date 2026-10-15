@@ -11,10 +11,19 @@
     padding-right: env(safe-area-inset-right, 0px);
   }
 
+  /* The whole list scrolls as one page, under a bottom bar that stays put. */
   .workspace-sidebar {
     width: 100%;
     min-width: 0;
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior: contain;
     transition: none;
+  }
+  .workspace-sidebar > .mobile-navigation {
+    position: sticky;
+    bottom: 0;
+    z-index: 2;
   }
 
   .mobile-list-header {
@@ -27,7 +36,7 @@
   }
 
   .mobile-list-header h1 {
-    font-size: 29px;
+    font-size: 32px;
     font-weight: 600;
     letter-spacing: -0.05em;
     outline: none;
@@ -36,6 +45,296 @@
     margin-top: 4px;
     color: var(--text-dim);
     font-size: 12px;
+  }
+  .mobile-list-header .mobile-list-greeting {
+    margin: 0 0 2px;
+    font-size: 14px;
+  }
+  /* The busiest Wisps' colors, as light at the top of the list. */
+  .mobile-list-ambient {
+    position: absolute;
+    inset: 0 0 auto;
+    height: 440px;
+    pointer-events: none;
+    background:
+      radial-gradient(
+        240px 200px at 12% 20%,
+        color-mix(in srgb, var(--ambient-1, transparent) 22%, transparent),
+        transparent 70%
+      ),
+      radial-gradient(
+        220px 200px at 55% 8%,
+        color-mix(in srgb, var(--ambient-2, transparent) 18%, transparent),
+        transparent 70%
+      ),
+      radial-gradient(
+        240px 220px at 96% 24%,
+        color-mix(in srgb, var(--ambient-3, transparent) 18%, transparent),
+        transparent 70%
+      );
+  }
+  .dark .mobile-list-ambient {
+    background:
+      radial-gradient(
+        240px 200px at 12% 20%,
+        color-mix(in srgb, var(--ambient-1, transparent) 26%, transparent),
+        transparent 70%
+      ),
+      radial-gradient(
+        220px 200px at 55% 8%,
+        color-mix(in srgb, var(--ambient-2, transparent) 22%, transparent),
+        transparent 70%
+      ),
+      radial-gradient(
+        240px 220px at 96% 24%,
+        color-mix(in srgb, var(--ambient-3, transparent) 22%, transparent),
+        transparent 70%
+      );
+  }
+  .mobile-list-header,
+  .mobile-list-search,
+  .wisp-orbs,
+  .needs-you,
+  .mobile-list-filters,
+  .conversation-list {
+    position: relative;
+  }
+  .mobile-list-search {
+    position: absolute;
+    top: 24px;
+    right: 75px;
+    z-index: 1;
+    display: grid;
+    place-items: center;
+    width: 44px;
+    height: 44px;
+    border: 1px solid var(--border);
+    border-radius: 50%;
+    background: color-mix(in srgb, var(--foreground) 7%, transparent);
+    color: var(--foreground);
+  }
+  .mobile-list-search svg {
+    width: 19px;
+    height: 19px;
+  }
+
+  /* ---------- Every Wisp, and what it is doing ---------- */
+  .wisp-orbs {
+    display: flex;
+    flex: none;
+    gap: 14px;
+    padding: 6px 20px 14px;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .wisp-orbs::-webkit-scrollbar {
+    display: none;
+  }
+  .wisp-orb {
+    display: flex;
+    flex: none;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    width: 64px;
+  }
+  .wisp-orb .wisp-halo {
+    width: 62px;
+    height: 62px;
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--foreground) 6%, transparent);
+  }
+  .wisp-orb .wisp-halo::before {
+    inset: -3px;
+  }
+  .wisp-orb .wisp-halo[data-state="working"]::before {
+    mask: radial-gradient(farthest-side, transparent calc(100% - 3px), #000 calc(100% - 2.5px));
+  }
+  .wisp-orb .wisp-halo[data-state="approval"]::before {
+    box-shadow:
+      inset 0 0 0 3px var(--warning-solid),
+      0 0 16px color-mix(in srgb, var(--warning-solid) 45%, transparent);
+  }
+  .wisp-orb .wisp-halo > svg,
+  .wisp-orb .wisp-halo > img {
+    width: 42px;
+    height: 42px;
+  }
+  .wisp-orb-name {
+    max-width: 100%;
+    overflow: hidden;
+    color: var(--text-dim);
+    font-size: 12px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .wisp-orb-badge {
+    position: absolute;
+    top: -2px;
+    right: -2px;
+    display: grid;
+    place-items: center;
+    width: 20px;
+    height: 20px;
+    border: 2px solid var(--sidebar-background);
+    border-radius: 50%;
+    font-size: 11px;
+    font-weight: 800;
+    line-height: 1;
+  }
+  .wisp-orb-badge[data-tone="approval"] {
+    background: var(--warning-solid);
+    color: #1a1204;
+  }
+  .wisp-orb-badge[data-tone="error"] {
+    background: var(--destructive);
+    color: #fff;
+  }
+  .wisp-orb-badge[data-tone="unread"] {
+    top: 1px;
+    right: 1px;
+    width: 15px;
+    height: 15px;
+    background: var(--wisp);
+  }
+
+  /* ---------- The approval waiting for the person ---------- */
+  .needs-you {
+    flex: none;
+    margin: 0 16px 10px;
+  }
+  .needs-you-card {
+    position: relative;
+    padding: 14px;
+    border: 1px solid color-mix(in srgb, var(--warning-solid) 30%, transparent);
+    border-radius: 20px;
+    background: linear-gradient(160deg, color-mix(in srgb, var(--warning-solid) 13%, var(--card)), var(--card));
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+  }
+  /* More waiting: the edge of another card behind this one. */
+  .needs-you-card[data-stacked] {
+    margin-bottom: 8px;
+    box-shadow:
+      0 7px 0 -3px color-mix(in srgb, var(--warning-solid) 16%, var(--card)),
+      0 7px 0 -2px color-mix(in srgb, var(--warning-solid) 30%, transparent);
+  }
+  .needs-you-summary {
+    display: flex;
+    width: 100%;
+    flex-direction: column;
+    gap: 10px;
+    text-align: left;
+  }
+  .needs-you-title {
+    display: flex;
+    width: 100%;
+    align-items: center;
+    gap: 8px;
+    color: var(--text-dim);
+    font-size: 14px;
+  }
+  .needs-you-title strong {
+    color: var(--foreground);
+  }
+  .needs-you-title > svg,
+  .needs-you-title > img {
+    width: 24px;
+    height: 24px;
+  }
+  .needs-you-title time {
+    flex: none;
+    color: var(--warning);
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+  }
+  .needs-you-detail {
+    display: -webkit-box;
+    width: 100%;
+    overflow: hidden;
+    padding: 9px 11px;
+    border-radius: 11px;
+    background: color-mix(in srgb, var(--foreground) 6%, transparent);
+    font-size: 12.5px;
+    line-height: 1.45;
+    overflow-wrap: anywhere;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+  }
+  .needs-you-actions {
+    display: flex;
+    gap: 8px;
+    margin-top: 12px;
+  }
+  .needs-you-actions [data-slot="button"] {
+    flex: 1;
+    height: 42px;
+    border-radius: 13px;
+    font-size: 14px;
+  }
+  .needs-you-actions .needs-you-allow {
+    background: var(--warning-solid);
+    color: #1a1204;
+  }
+  .needs-you-more {
+    display: flex;
+    width: 100%;
+    align-items: center;
+    justify-content: center;
+    gap: 2px;
+    min-height: 36px;
+    color: var(--warning);
+    font-size: 13px;
+  }
+  .needs-you-more svg {
+    width: 15px;
+    height: 15px;
+  }
+
+  /* The full request, from the bottom of the screen. */
+  .approval-sheet-viewport {
+    align-items: flex-end;
+    padding: 0;
+  }
+  .approval-sheet[data-slot="dialog-content"] {
+    max-width: none;
+    gap: 14px;
+    padding: 22px 18px max(18px, env(safe-area-inset-bottom, 0px));
+    border-width: 1px 0 0;
+    border-radius: 28px 28px 0 0;
+    background:
+      radial-gradient(
+        320px 160px at 10% 0,
+        color-mix(in srgb, var(--wisp, var(--warning-solid)) 18%, transparent),
+        transparent
+      ),
+      var(--card);
+  }
+  .approval-sheet-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding-right: 30px;
+  }
+  .approval-sheet-header .wisp-halo {
+    width: 46px;
+    height: 46px;
+  }
+  .approval-sheet .tool-approval-card {
+    margin: 0;
+    padding: 0;
+    border: 0;
+    background: transparent;
+  }
+  .approval-sheet .tool-approval-card > div:first-child > svg {
+    display: none;
+  }
+  .approval-sheet .tool-approval-card [data-slot="button"],
+  .mobile-approval .tool-approval-card [data-slot="button"] {
+    border-radius: 13px;
+  }
+  .approval-sheet .tool-approval-card [data-slot="button"]:last-child,
+  .mobile-approval .tool-approval-card [data-slot="button"]:last-child {
+    background: var(--warning-solid);
+    color: #1a1204;
   }
   .mobile-create-button {
     width: 44px;
@@ -74,22 +373,24 @@
     display: flex;
     flex: none;
     gap: 6px;
-    padding: 0 20px 12px;
+    padding: 6px 20px 6px;
   }
   .mobile-list-filters button {
-    min-height: 44px;
+    min-height: 34px;
     padding: 0 12px;
-    border-radius: 10px;
+    border-radius: 999px;
     color: var(--text-dim);
-    font-size: 12px;
+    font-size: 13px;
+    font-weight: 500;
   }
   .mobile-list-filters button[aria-pressed="true"] {
     color: var(--foreground);
     background: var(--muted);
   }
   .conversation-list {
+    flex: 1 0 auto;
+    overflow: visible;
     padding: 0 12px 16px;
-    overscroll-behavior: contain;
   }
   .conversation-list-item {
     min-height: 72px;
@@ -112,7 +413,7 @@
     border-color: transparent;
   }
   .conversation-list-item[data-unread="true"] time {
-    color: var(--foreground);
+    color: color-mix(in srgb, var(--wisp, var(--foreground)) 80%, var(--foreground));
     font-weight: 600;
   }
   .conversation-unread-badge {
@@ -120,8 +421,8 @@
     width: 10px;
     height: 10px;
     border-radius: 50%;
-    /* The product's unread color, as on the desktop avatar dot. */
-    background: #ff3b30;
+    /* The product's unread color, or the Wisp's own. */
+    background: var(--wisp, #ff3b30);
   }
   .conversation-unread-badge[data-counted] {
     width: auto;
@@ -129,7 +430,7 @@
     height: 20px;
     padding: 0 6px;
     border-radius: 999px;
-    color: #fff;
+    color: var(--wisp-ink, #fff);
     font-size: 12px;
     font-weight: 600;
     font-variant-numeric: tabular-nums;
@@ -139,11 +440,15 @@
   .conversation-list-item[data-selected="true"] {
     background: color-mix(in srgb, var(--foreground) 3%, transparent);
   }
+  .conversation-avatar.wisp-halo {
+    width: 50px;
+    height: 50px;
+  }
   .conversation-avatar > svg,
   .conversation-avatar > img,
   .conversation-avatar > span:first-child {
-    width: 48px;
-    height: 48px;
+    width: 38px;
+    height: 38px;
   }
   .conversation-list-item strong {
     font-size: 15px;
@@ -159,9 +464,6 @@
     line-height: 20px;
     color: var(--text-dim);
   }
-  .conversation-preview[data-activity="working"] {
-    color: var(--green);
-  }
   .conversation-preview[data-activity="approval"] {
     color: var(--warning);
   }
@@ -172,26 +474,49 @@
     line-height: 1.7;
   }
 
+  /* A pill near the bottom edge: the current tab is a filled capsule with its name. */
   .mobile-navigation {
     display: flex;
     flex: none;
-    padding: 7px 24px max(8px, env(safe-area-inset-bottom, 0px));
-    border-top: 1px solid var(--border);
-    background: var(--sidebar-background);
+    align-self: center;
+    gap: 4px;
+    margin: 6px auto max(10px, env(safe-area-inset-bottom, 0px));
+    padding: 5px;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--card) 88%, transparent);
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.18);
+    backdrop-filter: blur(16px);
+  }
+  .dark .mobile-navigation {
+    background: color-mix(in srgb, #26262c 86%, transparent);
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.55);
   }
   .mobile-navigation button {
     display: flex;
-    flex: 1;
-    flex-direction: column;
     align-items: center;
     justify-content: center;
-    gap: 4px;
-    min-height: 50px;
+    gap: 7px;
+    min-width: 54px;
+    min-height: 46px;
+    padding: 0 16px;
+    border-radius: 999px;
     color: var(--text-dim);
-    font-size: 11px;
+    font-size: 14px;
+    font-weight: 600;
   }
   .mobile-navigation button[aria-current="page"] {
-    color: var(--foreground);
+    background: var(--foreground);
+    color: var(--background);
+  }
+  /* Only the current tab shows its name; the others keep it for screen readers. */
+  .mobile-navigation button:not([aria-current="page"]) > span:nth-child(2) {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
   }
   .mobile-navigation svg {
     width: 21px;
@@ -201,18 +526,20 @@
     position: relative;
     display: inline-flex;
   }
+  .mobile-navigation-icon:has(.mobile-navigation-badge) {
+    margin-right: 8px;
+  }
   .mobile-navigation-badge {
     position: absolute;
-    top: -5px;
+    top: -7px;
     left: 13px;
     min-width: 18px;
     height: 18px;
     padding: 0 5px;
-    border: 2px solid var(--sidebar-background);
+    border: 2px solid var(--card);
     border-radius: 999px;
-    /* The product's unread color, as on the list's badge. */
-    background: #ff3b30;
-    color: #fff;
+    background: var(--foreground);
+    color: var(--background);
     font-size: 10px;
     font-weight: 700;
     line-height: 14px;
@@ -244,9 +571,61 @@
     overflow-y: auto;
     overscroll-behavior: contain;
   }
+  /* Each request is a card lit by the Wisp that asked. */
+  .mobile-approval {
+    padding: 12px 14px 14px;
+    border: 1px solid var(--border);
+    border-radius: 22px;
+    background:
+      radial-gradient(
+        260px 120px at 0 0,
+        color-mix(in srgb, var(--wisp, var(--warning-solid)) 18%, transparent),
+        transparent
+      ),
+      var(--card);
+  }
   .mobile-approval .tool-approval-card {
     width: 100%;
     margin-top: 6px;
+    padding: 0;
+    border: 0;
+    background: transparent;
+  }
+  .mobile-approval .tool-approval-card > div:first-child > svg {
+    display: none;
+  }
+  .mobile-approval-chat .wisp-halo {
+    width: 38px;
+    height: 38px;
+  }
+  .mobile-approval-who {
+    display: flex;
+    flex: 1;
+    min-width: 0;
+    flex-direction: column;
+    line-height: 1.3;
+  }
+  .mobile-approval-who small {
+    color: var(--text-dim);
+    font-size: 12.5px;
+  }
+  .mobile-approvals-empty {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    margin: 12px 4px;
+    padding: 16px;
+    border: 1px dashed var(--border);
+    border-radius: 20px;
+    color: var(--text-dim);
+    line-height: 1.55;
+  }
+  .mobile-approvals-empty strong {
+    color: var(--foreground);
+  }
+  .mobile-approvals-empty .wisp-halo {
+    width: 58px;
+    height: 58px;
   }
   .mobile-approval-chat {
     display: flex;
@@ -262,7 +641,6 @@
     text-align: left;
   }
   .mobile-approval-chat strong {
-    flex: 1;
     min-width: 0;
     overflow: hidden;
     font-weight: 600;
@@ -293,11 +671,15 @@
     flex: 1;
     gap: 9px;
   }
-  .chat-heading > svg,
-  .chat-heading > img,
-  .chat-heading > span {
-    width: 35px;
-    height: 35px;
+  .chat-heading .wisp-halo {
+    width: 42px;
+    height: 42px;
+  }
+  .chat-heading .wisp-halo > svg,
+  .chat-heading .wisp-halo > img,
+  .chat-heading .wisp-halo > span {
+    width: 32px;
+    height: 32px;
   }
   .chat-heading h1 {
     font-size: 16px;
@@ -445,6 +827,174 @@
   .composer-inline svg {
     width: 18px;
     height: 18px;
+  }
+
+  /* ---------- A Wisp's profile ---------- */
+  .wisp-profile {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    min-width: 0;
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    background: var(--background);
+    animation: var(--animate-panel-in);
+  }
+  .wisp-profile-hero {
+    display: flex;
+    flex: none;
+    flex-direction: column;
+    align-items: center;
+    padding: 8px 16px 22px;
+    border-radius: 0 0 32px 32px;
+    background: linear-gradient(180deg, color-mix(in srgb, var(--wisp) 30%, var(--background)), var(--background));
+    text-align: center;
+  }
+  .dark .wisp-profile-hero {
+    background: linear-gradient(180deg, color-mix(in srgb, var(--wisp) 34%, #0b0b0e), var(--background));
+  }
+  .wisp-profile-bar {
+    display: flex;
+    width: 100%;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .wisp-profile-bar [data-slot="button"] {
+    min-width: 44px;
+    height: 44px;
+    font-size: 15px;
+  }
+  .wisp-profile-bar svg {
+    width: 22px;
+    height: 22px;
+  }
+  /* The Wisp floats in its own light, over a soft shadow. */
+  .wisp-profile-picture {
+    position: relative;
+    display: grid;
+    place-items: center;
+    width: 150px;
+    height: 150px;
+    border-radius: 50%;
+    background: radial-gradient(circle, color-mix(in srgb, var(--wisp) 42%, transparent), transparent 66%);
+  }
+  .wisp-profile-picture::after {
+    content: "";
+    position: absolute;
+    bottom: 14px;
+    left: 50%;
+    width: 72px;
+    height: 12px;
+    border-radius: 50%;
+    background: rgba(0, 0, 0, 0.28);
+    filter: blur(3px);
+    translate: -50% 0;
+  }
+  .wisp-profile-picture > svg,
+  .wisp-profile-picture > img {
+    position: relative;
+    z-index: 1;
+    width: 104px;
+    height: 104px;
+  }
+  .wisp-profile h1 {
+    margin-top: 2px;
+    font-size: 30px;
+    font-weight: 700;
+    letter-spacing: -0.03em;
+    outline: none;
+  }
+  .wisp-profile-role {
+    color: color-mix(in srgb, var(--wisp) 70%, var(--foreground));
+    font-size: 14px;
+    font-weight: 600;
+  }
+  .wisp-profile-actions {
+    display: flex;
+    gap: 10px;
+    margin-top: 18px;
+  }
+  .wisp-profile-actions button {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    width: 72px;
+    padding: 10px 0;
+    border: 1px solid var(--border);
+    border-radius: 18px;
+    background: color-mix(in srgb, var(--foreground) 6%, transparent);
+    font-size: 12px;
+    font-weight: 600;
+  }
+  .wisp-profile-actions svg {
+    width: 20px;
+    height: 20px;
+  }
+  .wisp-profile-body {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding: 4px 16px max(24px, env(safe-area-inset-bottom, 0px));
+  }
+  .wisp-profile-card {
+    padding: 14px 16px;
+    border: 1px solid var(--border);
+    border-radius: 22px;
+    background: var(--card);
+  }
+  .wisp-profile-card h2 {
+    margin-bottom: 4px;
+    color: var(--text-dim);
+    font-size: 12px;
+    font-weight: 600;
+  }
+  .wisp-profile-soul {
+    font-size: 15px;
+    line-height: 1.55;
+    white-space: pre-line;
+  }
+  .wisp-profile-empty {
+    color: var(--text-dim);
+    font-size: 14px;
+    line-height: 1.5;
+  }
+  .wisp-profile-list {
+    display: flex;
+    flex-direction: column;
+    list-style: none;
+  }
+  .wisp-profile-card.wisp-profile-list {
+    padding: 4px 16px;
+  }
+  .wisp-profile-list li {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 0;
+    color: var(--text-dim);
+  }
+  .wisp-profile-list li + li {
+    border-top: 1px solid var(--border);
+  }
+  .wisp-profile-list li > svg {
+    flex: none;
+    width: 18px;
+    height: 18px;
+  }
+  .wisp-profile-list span {
+    display: flex;
+    min-width: 0;
+    flex-direction: column;
+    color: var(--foreground);
+    font-size: 15px;
+    line-height: 1.3;
+    overflow-wrap: anywhere;
+  }
+  .wisp-profile-list small {
+    color: var(--text-dim);
+    font-size: 12.5px;
   }
 
   .wisp-details-panel {
@@ -600,6 +1150,14 @@
     font-size: 16px;
     font-weight: 600;
   }
+  /* The overview is a page of its own, titled like the list. */
+  .mobile-settings-header[data-overview] {
+    border-bottom-color: transparent;
+  }
+  .mobile-settings-header[data-overview] h2 {
+    font-size: 30px;
+    letter-spacing: -0.04em;
+  }
   .mobile-settings-header button,
   .mobile-search-header button {
     min-width: 44px;
@@ -631,8 +1189,26 @@
   .mobile-settings-group {
     display: flex;
     flex-direction: column;
-    gap: 6px;
-    margin-top: 14px;
+    gap: 0;
+    margin-top: 18px;
+  }
+  /* A group's sections share one card, with a hairline between them. */
+  .mobile-settings-group .settings-nav-button {
+    border-width: 0 1px 1px;
+    border-radius: 0;
+  }
+  .mobile-settings-group h3 + .settings-nav-button {
+    border-top-width: 1px;
+    border-radius: 20px 20px 0 0;
+  }
+  .mobile-settings-group .settings-nav-button:last-child {
+    border-radius: 0 0 20px 20px;
+  }
+  .mobile-settings-group h3 + .settings-nav-button:last-child {
+    border-radius: 20px;
+  }
+  .mobile-settings-group .settings-nav-button svg:first-child {
+    color: var(--text-dim);
   }
   .mobile-settings-group h3 {
     margin: 0 4px 2px;
@@ -674,7 +1250,7 @@
     flex-direction: column;
     overflow: hidden;
     border: 1px solid var(--border);
-    border-radius: 13px;
+    border-radius: 22px;
     background: var(--card);
   }
   .mobile-settings-profile > button {
@@ -698,10 +1274,45 @@
   .mobile-settings-profile > button > [aria-hidden="true"]:first-child:not(.mobile-connection-dot) {
     width: 45px;
     height: 45px;
-    font-size: 13px;
+    background: linear-gradient(135deg, #3c82f6, #885cf5);
+    color: #fff;
+    font-size: 15px;
   }
   .mobile-settings-profile strong {
     font-weight: 600;
+  }
+  /* Who the Wisps are, in their colors; opens the list. */
+  .mobile-settings-wisps {
+    display: flex;
+    flex: none;
+    align-items: center;
+    gap: 10px;
+    margin-top: 10px;
+    padding: 10px 14px;
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    background: var(--card);
+    color: var(--text-dim);
+    font-size: 14px;
+    text-align: left;
+  }
+  .mobile-settings-wisps-row {
+    display: flex;
+    gap: 6px;
+  }
+  .mobile-settings-wisps .wisp-halo {
+    width: 38px;
+    height: 38px;
+  }
+  .mobile-settings-wisps .wisp-halo > svg,
+  .mobile-settings-wisps .wisp-halo > img {
+    width: 28px;
+    height: 28px;
+  }
+  .mobile-settings-wisps-count {
+    flex: 1;
+    min-width: 0;
+    text-align: right;
   }
   .mobile-connection-dot {
     display: inline-flex;

@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Message } from "@/chat-data";
 import { ChatPanel, type ChatPanelProps } from "@/components/chat-panel";
 import type { MessageWindow } from "@/lib/message-windows";
-import { wispChatView } from "@/test/chat-fixtures";
+import { circleChatView, testWisp, wispChatView } from "@/test/chat-fixtures";
 
 const ROW_HEIGHT = 40;
 const VIEWPORT_HEIGHT = 200;
@@ -284,5 +284,89 @@ describe("ChatPanel transcript", () => {
     // The latest page is a new window, so the view goes to its newest message.
     show(transcript(messages(12, 22), { epoch: 2, olderCursor: "12" }));
     expect(scroller.scrollTop).toBe(bottomOf(10));
+  });
+});
+
+describe("ChatPanel identity", () => {
+  it("takes on the Wisp's color and says what it does under its name", () => {
+    renderPanel(transcript(messages(0, 1)));
+    expect(document.querySelector("main")?.style.getPropertyValue("--wisp")).toMatch(/^#[0-9a-f]{6}$/i);
+    expect(screen.getByText("Research")).toBeInTheDocument();
+  });
+
+  it("says when the Wisp is working, waiting, or failed", () => {
+    const { show } = renderPanel(transcript(messages(0, 1)), { status: "working" });
+    expect(screen.getByText("Working…")).toBeInTheDocument();
+    show(transcript([{ id: "f", type: "incoming", text: "", status: "failed" }]), { status: "idle" });
+    expect(screen.getByText("Couldn't reply")).toBeInTheDocument();
+  });
+
+  it("introduces a Wisp with nothing said yet by its soul", () => {
+    const chat = wispChatView("atlas", {
+      wisp: { name: "Atlas", role: "Research", soul: "# Atlas\n\nCurious, **careful** with sources." },
+    });
+    renderPanel(transcript([]), { chat });
+    expect(screen.getByRole("heading", { name: "Hi, I'm Atlas" })).toBeInTheDocument();
+    expect(screen.getByText("Curious, careful with sources.")).toBeInTheDocument();
+  });
+
+  it("does not introduce the Wisp once there are messages", () => {
+    renderPanel(transcript(messages(0, 1)));
+    expect(screen.queryByRole("heading", { name: "Hi, I'm Atlas" })).not.toBeInTheDocument();
+  });
+});
+
+describe("ChatPanel circles", () => {
+  it("names the Wisp above each run of its replies", () => {
+    const crew = circleChatView("crew", [testWisp("quill", { name: "Quill" }), testWisp("forge", { name: "Forge" })], {
+      name: "Launch crew",
+    });
+    renderPanelIn(crew, [
+      { id: "1", type: "outgoing", text: "What's left?" },
+      { id: "2", type: "incoming", text: "Changelog is up.", authorId: "quill" },
+      { id: "3", type: "incoming", text: "And the blog post.", authorId: "quill" },
+      { id: "4", type: "incoming", text: "Tests are green.", authorId: "forge" },
+    ]);
+    expect(screen.getAllByText("Quill")).toHaveLength(1);
+    expect(screen.getAllByText("Forge")).toHaveLength(1);
+  });
+});
+
+function renderPanelIn(chat: ChatPanelProps["chat"], held: Message[]) {
+  return render(
+    <ChatPanel
+      chat={chat}
+      transcript={transcript(held)}
+      status="idle"
+      acknowledging={false}
+      approvals={[]}
+      onAnswerPrompt={vi.fn()}
+      onAbort={vi.fn()}
+      onLoadOlder={vi.fn()}
+      onLoadNewer={vi.fn()}
+      onShowLatest={vi.fn()}
+      onOpenDetails={vi.fn()}
+      onRetry={vi.fn()}
+      onResolveApproval={vi.fn()}
+      onSend={vi.fn()}
+    />,
+  );
+}
+
+describe("ChatPanel steps", () => {
+  it("shows the tools used in this turn while the Wisp works, and hides them after", () => {
+    const steps = [
+      { toolCallId: "1", toolName: "read", phase: "completed" as const },
+      { toolCallId: "2", toolName: "grep", phase: "completed" as const, isError: true },
+      { toolCallId: "3", toolName: "read", phase: "started" as const },
+    ];
+    const { show } = renderPanel(transcript(messages(0, 1)), { status: "working", steps });
+    const trail = screen.getByRole("list", { name: "What Atlas has done so far" });
+    expect(trail.querySelectorAll("li")).toHaveLength(3);
+    expect(trail).toHaveTextContent("Search workspace, failed");
+    expect(trail).toHaveTextContent("Read file, running");
+
+    show(transcript(messages(0, 1)), { status: "idle", steps });
+    expect(screen.queryByRole("list", { name: "What Atlas has done so far" })).not.toBeInTheDocument();
   });
 });

@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { CalendarClockIcon, CheckIcon, CircleAlertIcon, CircleStopIcon, CopyIcon, RepeatIcon } from "lucide-react";
 
-import type { Message } from "@/chat-data";
+import type { Message, Wisp } from "@/chat-data";
+import { WispAvatar } from "@/components/chat-avatar";
 import { splitMessageAttachments } from "../../shared/workspace";
 import { useTimeZone } from "@/hooks/use-time-zone";
 import { copyText } from "@/lib/clipboard";
@@ -13,6 +14,9 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 interface MessageViewProps {
   message: Message;
   dense?: boolean;
+  /** In a circle, the Wisp that wrote an incoming message, named above it when `showAuthor` is set. */
+  author?: Wisp;
+  showAuthor?: boolean;
   onAnswer?: (answer: string) => void;
   onRetry?: () => void;
 }
@@ -67,7 +71,7 @@ function MessageTools({
   );
 }
 
-function MessageView({ message, dense = false, onAnswer, onRetry }: MessageViewProps) {
+function MessageView({ message, dense = false, author, showAuthor = false, onAnswer, onRetry }: MessageViewProps) {
   if (message.type === "time") {
     return (
       <div className="mt-[13px] mb-[5px] flex items-center justify-center text-faint text-2xs">
@@ -163,15 +167,22 @@ function MessageView({ message, dense = false, onAnswer, onRetry }: MessageViewP
         dense ? "mt-2" : "mt-3",
       )}
     >
+      {author && showAuthor && !outgoing ? (
+        <span className="message-author">
+          <WispAvatar wisp={author} size="sm" />
+          {author.name}
+        </span>
+      ) : null}
       <div
         className={cn("message-row group/message-row flex max-w-full items-center", outgoing && "flex-row-reverse")}
         data-outgoing={outgoing}
+        data-authored={author && !outgoing ? true : undefined}
       >
         <div
           className={cn(
             "message-bubble max-w-[min(820px,78vw)] rounded-[16px] px-2.5 py-[7px] leading-[1.42] select-text",
             outgoing
-              ? "rounded-br-[5px] bg-bubble-out whitespace-pre-wrap text-white"
+              ? "rounded-br-[5px] bg-bubble-out whitespace-pre-wrap text-bubble-out-foreground"
               : "rounded-bl-[5px] border border-border bg-bubble-in text-foreground",
           )}
         >
@@ -235,7 +246,7 @@ function OutgoingText({ text }: { text: string }) {
       <AttachmentChips
         attachments={attachments}
         className={cn("whitespace-normal", typed && "mt-1.5")}
-        chipClassName="border-white/25 bg-white/15"
+        chipClassName="border-current/25 bg-current/10"
       />
     </>
   );

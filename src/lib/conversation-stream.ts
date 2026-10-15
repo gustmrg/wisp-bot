@@ -143,6 +143,11 @@ export function reduceConversationAgentEvent(
         ...next,
         statuses: { ...next.statuses, [event.conversationId]: event.status },
         activity: event.status === "idle" ? { ...next.activity, [event.conversationId]: undefined } : next.activity,
+        // A new turn starts its own list of steps.
+        toolActivities:
+          event.status === "working" && next.statuses[event.conversationId] !== "working"
+            ? { ...next.toolActivities, [event.conversationId]: [] }
+            : next.toolActivities,
       };
     case "assistant_message_started": {
       const outgoing = findMessage(next, stored, event.conversationId, event.requestId);

@@ -1,13 +1,15 @@
 import { createElement, useId, type CSSProperties, type ComponentProps, type ReactNode } from "react";
 
-import { DEFAULT_WISP_APPEARANCE, WISP_COLORS, type WispAppearance } from "../../shared/wisp-appearance";
+import { DEFAULT_WISP_APPEARANCE, type WispAppearance } from "../../shared/wisp-appearance";
 import { cn } from "@/lib/utils";
 import {
   BODY_GEOMETRY,
+  hashSeed,
   NO_TRAIL_OFFSET,
   TRAIL_GEOMETRY,
   luminance,
   mixColors,
+  wispColor,
   wispPalette,
 } from "@/lib/wisp-appearance";
 
@@ -26,20 +28,6 @@ interface WispProps extends ComponentProps<"svg"> {
 
 /** The size each variant is drawn at, which decides how much detail survives. */
 const PIXELS: Readonly<Record<WispSize, number>> = { sm: 24, default: 32, lg: 36, xl: 80 };
-
-function hashSeed(seed: string) {
-  let hash = 2166136261;
-  for (const character of seed) {
-    hash ^= character.charCodeAt(0);
-    hash = Math.imul(hash, 16777619);
-  }
-  return hash >>> 0;
-}
-
-function generatedColor(seed: string): string {
-  const hash = hashSeed(seed || "agent");
-  return WISP_COLORS[hash % WISP_COLORS.length]?.value ?? WISP_COLORS[0].value;
-}
 
 /** The body and trail; `extra` widens every edge, which masks use to draw outlines. */
 function WispShapes({ appearance, extra }: { appearance: WispAppearance; extra: number }): ReactNode {
@@ -149,7 +137,7 @@ function Wisp({
   const large = pixels >= 48;
   // A thin outline breaks up at small sizes, so it fills in instead.
   const finish = appearance.finish === "line" && pixels < 28 ? "solid" : appearance.finish;
-  const palette = wispPalette(color || generatedColor(name), appearance.tone);
+  const palette = wispPalette(wispColor(name, color), appearance.tone);
   const unit = 100 / pixels;
   const lineWidth = Math.max(3, 1.4 * unit);
   const lineColor = `light-dark(${palette.line.light}, ${palette.line.dark})`;
