@@ -103,7 +103,58 @@ describe("UsageSettingsSection", () => {
     const user = userEvent.setup();
     render(<UsageSettingsSection />);
     expect(await screen.findByRole("alert")).toHaveTextContent("Could not load token usage.");
-    await user.click(screen.getByRole("button", { name: "Refresh" }));
-    expect(await screen.findByRole("alert")).toHaveTextContent("Token totals are partial");
+    await user.click(screen.getByRole("button", { name: "Try again" }));
+    expect(await screen.findByText(/Token totals are partial/)).toBeVisible();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it("shortens token counts, rounds costs and sorts Wisps by cost", async () => {
+    const row = (name: string, totalTokens: number, costUsd: number | null) => ({
+      conversationId: name,
+      name,
+      sessions: 1,
+      totals: {
+        inputTokens: totalTokens,
+        outputTokens: 0,
+        cacheReadTokens: 0,
+        cacheWriteTokens: 0,
+        totalTokens,
+        costUsd,
+      },
+    });
+    const wisps = [row("Cheap", 1_234, 0.0021), row("Unpriced", 50, null), row("Busy", 12_400_000, 9.4182)];
+    const getUsageReport = vi.fn(async () => ({
+      ok: true,
+      value: {
+        ...report,
+        wisps,
+        totals: { ...report.totals, inputTokens: 12_401_284, totalTokens: 12_401_284, costUsd: null },
+      },
+    }));
+    Object.defineProperty(window, "wisp", { configurable: true, value: { getUsageReport } });
+    render(<UsageSettingsSection />);
+    expect(await screen.findByText("Busy")).toBeVisible();
+    expect(screen.getByText("$9.42+")).toBeVisible();
+    expect(screen.getByText("$9.42")).toBeVisible();
+    expect(screen.getByText("<$0.01")).toBeVisible();
+    expect(screen.getAllByText("12.4M")[0]).toBeVisible();
+    expect(screen.getAllByText("12,400,000")[0]).toHaveClass("sr-only");
+    expect(screen.getByText(/1 Wisp has an unknown cost/)).toBeVisible();
+    const names = screen.getAllByRole("rowheader").map((cell) => cell.textContent);
+    expect(names).toEqual(["Busy1 session", "Cheap1 session", "Unpriced1 session", "All Wisps"]);
+  });
+
+  it("offers all history when the period has no usage", async () => {
+    const idle = { ...report.wisps[0], totals: { ...report.totals, inputTokens: 0, outputTokens: 0, totalTokens: 0 } };
+    const getUsageReport = vi.fn(async () => ({
+      ok: true,
+      value: { ...report, period: "30d", wisps: [idle], totals: idle.totals },
+    }));
+    Object.defineProperty(window, "wisp", { configurable: true, value: { getUsageReport } });
+    const user = userEvent.setup();
+    render(<UsageSettingsSection />);
+    expect(await screen.findByText("No usage in the last 30 days")).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "Show all history" }));
+    await waitFor(() => expect(getUsageReport).toHaveBeenLastCalledWith({ period: "all" }));
   });
 });

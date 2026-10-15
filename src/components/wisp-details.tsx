@@ -208,7 +208,9 @@ export function WispDetails({
         keepMounted
         className={cn("min-h-0 overflow-y-auto p-3.5", tab === "usage" && slideClass)}
       >
-        {visited.has("usage") ? <WispSessionReportSection chatId={chat.id} active={tab === "usage"} /> : null}
+        {visited.has("usage") ? (
+          <WispSessionReportSection chatId={chat.id} active={tab === "usage"} onOpenSettings={onOpenSettings} />
+        ) : null}
       </TabsContent>
       <TabsContent
         value="access"

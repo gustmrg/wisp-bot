@@ -161,7 +161,7 @@ it("loads model and usage data lazily and keeps model details across tabs", asyn
   expect(screen.getByText("model")).toBeVisible();
   expect(screen.getByText(/set when the Wisp is created/)).toBeVisible();
   await user.click(screen.getByRole("tab", { name: "Usage" }));
-  expect(await screen.findByText(/No agent session yet/)).toBeVisible();
+  expect(await screen.findByText("No session yet")).toBeVisible();
   await user.click(screen.getByRole("tab", { name: "Model" }));
   expect(screen.getByText("Test")).toBeVisible();
   expect(getAiSettings).toHaveBeenCalledTimes(1);

@@ -61,16 +61,19 @@ describe("WispSessionReportSection", () => {
     const { rerender } = render(<WispSessionReportSection chatId="wisp-1" active={false} />);
     expect(getSessionReport).not.toHaveBeenCalled();
     rerender(<WispSessionReportSection chatId="wisp-1" active />);
-    expect(await screen.findByText("1,850")).toBeVisible();
-    expect(screen.getByText("$0.0023")).toBeVisible();
+    expect((await screen.findAllByText("1.85K"))[0]).toBeVisible();
+    expect(screen.getAllByText("<$0.01")[0]).toBeVisible();
+    expect(screen.getByText("Current session · 3 turns")).toBeVisible();
+    expect(screen.getByTitle("openai/gpt-oss-120b")).toHaveTextContent("gpt-oss-120b");
     expect(screen.queryByText("read")).not.toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "Session details" }));
-    expect(await screen.findByText("openai/gpt-oss-120b · 3 turns")).toBeVisible();
-    await user.click(screen.getByRole("button", { name: "Tool calls (1)" }));
+    await user.click(screen.getByRole("button", { name: /Tool calls/ }));
     expect(await screen.findByText("read")).toBeVisible();
+    expect(screen.getByRole("img", { name: "Completed" })).toBeInTheDocument();
     expect(screen.getByText("path: ./src/foo.ts")).toBeVisible();
-    await user.click(screen.getByRole("button", { name: "Events (1)" }));
+    await user.click(screen.getByRole("button", { name: /Events/ }));
     expect(await screen.findByText(/Context compacted/)).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "Session details" }));
+    expect(await screen.findByTitle("pi-session-1")).toBeVisible();
     expect(getSessionReport).toHaveBeenCalledWith({ conversationId: "wisp-1" });
   });
 
@@ -107,10 +110,10 @@ describe("WispSessionReportSection", () => {
     );
     render(<WispSessionReportSection chatId="wisp-1" active />);
 
-    expect(await screen.findByText(/Includes 1,000 tokens used by the image model/)).toBeVisible();
-    await user.click(screen.getByRole("button", { name: "Session details" }));
-    expect(await screen.findByText("vision · image model · 2 calls")).toBeVisible();
-    await user.click(screen.getByRole("button", { name: "Tool calls (2)" }));
+    expect(await screen.findByText("Reading images")).toBeVisible();
+    expect(screen.getByText("image model")).toBeVisible();
+    expect(screen.getByText(/^2 calls/)).toBeVisible();
+    await user.click(screen.getByRole("button", { name: /Tool calls/ }));
     expect(await screen.findByText("Read with Vision (OpenAI)")).toBeVisible();
     expect(screen.getByText("From Vision (OpenAI)'s saved transcription")).toBeVisible();
   });
@@ -119,7 +122,7 @@ describe("WispSessionReportSection", () => {
     const user = userEvent.setup();
     const getSessionReport = exposeApi(vi.fn(async () => ({ ok: true as const, value: report })));
     const { rerender } = render(<WispSessionReportSection chatId="wisp-1" />);
-    expect(await screen.findByText("1,850")).toBeVisible();
+    expect((await screen.findAllByText("1.85K"))[0]).toBeVisible();
     await user.click(screen.getByRole("button", { name: "Refresh" }));
     await waitFor(() => expect(getSessionReport).toHaveBeenCalledTimes(2));
     rerender(<WispSessionReportSection chatId="wisp-1" active={false} />);
@@ -130,7 +133,7 @@ describe("WispSessionReportSection", () => {
   it("shows an empty state when the Wisp has no session", async () => {
     exposeApi(vi.fn(async () => ({ ok: true as const, value: null })));
     render(<WispSessionReportSection chatId="wisp-1" />);
-    expect(await screen.findByText(/No agent session yet/i)).toBeVisible();
+    expect(await screen.findByText("No session yet")).toBeVisible();
   });
 
   it("shows backend errors with a retry", async () => {
@@ -146,8 +149,40 @@ describe("WispSessionReportSection", () => {
     );
     render(<WispSessionReportSection chatId="wisp-1" />);
     expect(await screen.findByRole("alert")).toHaveTextContent("Could not read session.");
-    await user.click(screen.getByRole("button", { name: "Refresh" }));
-    expect(await screen.findByText("1,850")).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "Try again" }));
+    expect((await screen.findAllByText("1.85K"))[0]).toBeVisible();
     expect(getSessionReport).toHaveBeenCalledTimes(2);
+  });
+
+  it("filters tool calls, explains unknown prices and links to Token usage", async () => {
+    const user = userEvent.setup();
+    const onOpenSettings = vi.fn();
+    const call = report.toolCalls[0]!;
+    exposeApi(
+      vi.fn(async () => ({
+        ok: true as const,
+        value: {
+          ...report,
+          totals: { ...report.totals, costUsd: null },
+          models: [{ ...report.models[0]!, costUsd: null }],
+          toolCalls: [
+            call,
+            { ...call, toolCallId: "call-2", toolName: "bash", argumentSummary: "npm test", status: "error" as const },
+            { ...call, toolCallId: "call-3", toolName: "bash", argumentSummary: "git status" },
+          ],
+        },
+      })),
+    );
+    render(<WispSessionReportSection chatId="wisp-1" onOpenSettings={onOpenSettings} />);
+    expect(await screen.findByText(/No price is available for gpt-oss-120b/)).toBeVisible();
+    await user.click(screen.getByRole("button", { name: /Tool calls/ }));
+    await user.click(await screen.findByRole("button", { name: "Failed 1" }));
+    expect(screen.getByText("npm test")).toBeVisible();
+    expect(screen.queryByText("git status")).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "bash 2" }));
+    expect(screen.getByText("git status")).toBeVisible();
+    expect(screen.queryByText("path: ./src/foo.ts")).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Compare with other Wisps in Token usage" }));
+    expect(onOpenSettings).toHaveBeenCalledWith({ section: "usage" });
   });
 });
