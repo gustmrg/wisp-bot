@@ -1,8 +1,7 @@
 import { useEffect, useId, useState } from "react";
 
 import type { ExecutionMode, SaveWispExecutionRequest, WispExecutionView } from "../../shared/execution";
-import { ConfirmAction } from "@/components/settings/settings-primitives";
-import { AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
+import { ConfirmAction, SettingsActions } from "@/components/settings/settings-primitives";
 import { Button } from "@/components/ui/button";
 import {
   Field,
@@ -26,21 +25,9 @@ const MODES: ReadonlyArray<{ value: ExecutionMode; label: string }> = [
 
 const CONTAINER_STATES = { absent: "Not created yet", stopped: "Stopped", running: "Running" } as const;
 
+/** The Commands section of a Wisp's settings. */
 export function WispExecutionSettings({ conversationId }: { conversationId: string }) {
-  const [visited, setVisited] = useState(false);
-  return (
-    <AccordionItem
-      value="commands"
-      onOpenChange={(open) => {
-        if (open) setVisited(true);
-      }}
-    >
-      <AccordionTrigger>Commands</AccordionTrigger>
-      <AccordionContent keepMounted>
-        {visited ? <ExecutionPanel key={conversationId} conversationId={conversationId} /> : null}
-      </AccordionContent>
-    </AccordionItem>
-  );
+  return <ExecutionPanel key={conversationId} conversationId={conversationId} />;
 }
 
 function ExecutionPanel({ conversationId }: { conversationId: string }) {
@@ -123,7 +110,17 @@ function ExecutionPanel({ conversationId }: { conversationId: string }) {
         only this Wisp's workspace, can reach the internet, and stops after 30 minutes without a command.
       </FieldDescription>
       {view.runtime.available ? null : <FieldError>{view.runtime.message}</FieldError>}
-      <Field>
+      <Field orientation="horizontal">
+        <FieldContent>
+          <FieldTitle>Run commands</FieldTitle>
+          {view.mode === "container" ? (
+            <FieldDescription>
+              {view.runtime.available
+                ? `${view.runtime.name === "docker" ? "Docker" : "Podman"} ${view.runtime.version} · Container: ${CONTAINER_STATES[view.container]}`
+                : `Container: ${CONTAINER_STATES[view.container]}`}
+            </FieldDescription>
+          ) : null}
+        </FieldContent>
         <SegmentedControl
           label="Run commands"
           value={view.mode}
@@ -133,13 +130,6 @@ function ExecutionPanel({ conversationId }: { conversationId: string }) {
             void save({ mode }, mode === "off" ? "Commands turned off." : "This Wisp can now run commands.")
           }
         />
-        {view.mode === "container" ? (
-          <FieldDescription>
-            {view.runtime.available
-              ? `${view.runtime.name === "docker" ? "Docker" : "Podman"} ${view.runtime.version} · Container: ${CONTAINER_STATES[view.container]}`
-              : `Container: ${CONTAINER_STATES[view.container]}`}
-          </FieldDescription>
-        ) : null}
       </Field>
       {view.mode === "container" ? (
         <>
@@ -215,15 +205,16 @@ function ExecutionPanel({ conversationId }: { conversationId: string }) {
               the repositories and permissions it needs. It is stored encrypted.
             </FieldDescription>
             {view.hasGitToken ? (
-              <ConfirmAction
-                label="Remove token"
-                confirmLabel="Remove token"
-                variant="outline"
-                className="w-full"
-                disabled={saving}
-                description="Git commands in this Wisp's container lose access to private repositories on github.com until you save a new token."
-                onConfirm={() => void save({ gitToken: null }, "Token removed.")}
-              />
+              <SettingsActions>
+                <ConfirmAction
+                  label="Remove token"
+                  confirmLabel="Remove token"
+                  variant="outline"
+                  disabled={saving}
+                  description="Git commands in this Wisp's container lose access to private repositories on github.com until you save a new token."
+                  onConfirm={() => void save({ gitToken: null }, "Token removed.")}
+                />
+              </SettingsActions>
             ) : null}
           </Field>
         </>

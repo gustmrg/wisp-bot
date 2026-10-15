@@ -5,7 +5,6 @@ import { expect, it, vi } from "vitest";
 import type { SequencedConversationAgentEvent } from "../../shared/contracts";
 import type { SkillView } from "../../shared/skills";
 import { WispSkillSettings } from "./wisp-skill-settings";
-import { Accordion } from "@/components/ui/accordion";
 
 const report: SkillView = {
   name: "weekly-report",
@@ -14,7 +13,7 @@ const report: SkillView = {
   updatedAt: "2026-10-04T12:00:00.000Z",
 };
 
-it("lists skills lazily, refreshes after a save, and deletes after confirmation", async () => {
+it("lists skills, refreshes after a save, and deletes after confirmation", async () => {
   const user = userEvent.setup();
   let listener: ((event: SequencedConversationAgentEvent) => void) | undefined;
   const listSkills = vi
@@ -35,14 +34,7 @@ it("lists skills lazily, refreshes after a save, and deletes after confirmation"
       },
     },
   });
-  render(
-    <Accordion>
-      <WispSkillSettings conversationId="one" />
-    </Accordion>,
-  );
-  expect(listSkills).not.toHaveBeenCalled();
-
-  await user.click(screen.getByRole("button", { name: "Skills" }));
+  render(<WispSkillSettings conversationId="one" />);
   expect(await screen.findByText("No skills yet.")).toBeInTheDocument();
 
   await act(async () => {
@@ -88,12 +80,7 @@ it("imports a picked SKILL.md and asks before replacing a skill with the same na
       subscribeToAgentEvents: () => () => undefined,
     },
   });
-  render(
-    <Accordion>
-      <WispSkillSettings conversationId="one" />
-    </Accordion>,
-  );
-  await user.click(screen.getByRole("button", { name: "Skills" }));
+  render(<WispSkillSettings conversationId="one" />);
   expect(await screen.findByText("No skills yet.")).toBeInTheDocument();
 
   const input = screen.getByLabelText("SKILL.md file");

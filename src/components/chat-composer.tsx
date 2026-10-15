@@ -114,6 +114,8 @@ export function ChatComposer({
   const vision = useModelVision(chat.kind === "wisp" ? chat.id : null);
   const visionHint = vision.imageInput === false ? missingVisionHint(attachments, vision.imageModel) : null;
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  // The + menu opens from the composer's edge, so it clears the box and any text above its button.
+  const boxRef = useRef<HTMLDivElement>(null);
   // Where the transcript goes: the text selected when recording started.
   const insertAt = useRef<readonly [number, number] | null>(null);
   const latest = useRef({ draft, attachments, canSend, autoSend: voice.autoSend });
@@ -483,7 +485,9 @@ export function ChatComposer({
           </PopoverTrigger>
         </ComposerTooltip>
         <PopoverContent
+          anchor={boxRef}
           align="start"
+          sideOffset={8}
           className={menuView === "actions" ? "w-56 p-1" : menuView === "new_topic" ? "w-72" : undefined}
         >
           {menuView === "actions" ? (
@@ -618,6 +622,7 @@ export function ChatComposer({
         ) : null}
       </div>
       <div
+        ref={boxRef}
         className={cn(
           "composer-box mx-auto w-full max-w-[1400px] rounded-2xl border border-border bg-muted p-1.5 transition-[border-color] duration-[120ms] focus-within:border-ring",
           recording && "border-destructive/60 focus-within:border-destructive/60",

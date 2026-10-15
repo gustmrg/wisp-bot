@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -6,6 +6,7 @@ import type { Message } from "@/chat-data";
 import { ChatPanel, type ChatPanelProps } from "@/components/chat-panel";
 import type { MessageWindow } from "@/lib/message-windows";
 import { circleChatView, testWisp, wispChatView } from "@/test/chat-fixtures";
+import type { ToolApprovalRequest } from "../../shared/tool-policy";
 
 const ROW_HEIGHT = 40;
 const VIEWPORT_HEIGHT = 200;
@@ -33,6 +34,13 @@ function rowsOf(element: Element | null): Element[] {
 
 function bottomOf(rows: number): number {
   return Math.max(0, rows * ROW_HEIGHT - viewportHeight);
+}
+
+/** Scrolls the transcript as the person does, with the wheel, rather than as content moving under it. */
+function scrollAsPerson(scroller: HTMLElement, top: number): void {
+  fireEvent.wheel(scroller);
+  scroller.scrollTop = top;
+  fireEvent.scroll(scroller);
 }
 
 // jsdom has no ResizeObserver; the tests report resizes themselves.
@@ -105,8 +113,8 @@ describe("ChatPanel transcript", () => {
       activity: "Searching the web…",
     });
 
-    expect(screen.getAllByText("Searching the web…")).toHaveLength(1);
-    expect(scroller).toContainElement(screen.getByText("Searching the web…"));
+    // The header says it too; below the messages it shows once.
+    expect(within(scroller).getAllByText("Searching the web…")).toHaveLength(1);
     expect(screen.queryByText("Atlas is working…")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Stop response" })).toBeInTheDocument();
 
@@ -125,7 +133,7 @@ describe("ChatPanel transcript", () => {
   });
 
   it("keeps the execution indicator below text the Wisp wrote before using a tool", () => {
-    renderPanel(
+    const { scroller } = renderPanel(
       transcript([
         { id: "request", type: "outgoing", text: "Search the web", status: "complete" },
         { id: "request:assistant", type: "incoming", text: "Let me look that up.", status: "complete" },
@@ -133,18 +141,18 @@ describe("ChatPanel transcript", () => {
       { status: "working", activity: "Searching the web…" },
     );
     expect(screen.getByText("Let me look that up.")).toBeInTheDocument();
-    expect(screen.getByText("Searching the web…")).toBeInTheDocument();
+    expect(within(scroller).getByText("Searching the web…")).toBeInTheDocument();
   });
 
   it("keeps the execution indicator hidden when a message is queued during the reply", () => {
-    renderPanel(
+    const { scroller } = renderPanel(
       transcript([
         { id: "reply", type: "incoming", text: "Here is what I found.", status: "streaming" },
         { id: "queued", type: "outgoing", text: "Next question", status: "queued" },
       ]),
       { status: "working", activity: "Searching the web…" },
     );
-    expect(screen.queryByText("Searching the web…")).not.toBeInTheDocument();
+    expect(within(scroller).queryByText("Searching the web…")).not.toBeInTheDocument();
     expect(screen.queryByText("Atlas is working…")).not.toBeInTheDocument();
   });
 
@@ -163,8 +171,7 @@ describe("ChatPanel transcript", () => {
     const held = transcript(messages(5, 15), { olderCursor: "5" });
     const { scroller, show, props } = renderPanel(held);
 
-    scroller.scrollTop = 60;
-    fireEvent.scroll(scroller);
+    scrollAsPerson(scroller, 60);
     expect(props.onLoadOlder).toHaveBeenCalledTimes(1);
 
     // While the page is on its way, scrolling does not ask for it again.
@@ -201,27 +208,56 @@ describe("ChatPanel transcript", () => {
     expect(scroller.scrollTop).toBe(bottomOf(11));
   });
 
-  it("keeps a reader's place when a reply arrives, and offers a way to it", async () => {
+  it("offers a way to the newest messages once the reader scrolls up, and back down hides it", () => {
+    const { scroller } = renderPanel(transcript(messages(0, 10)));
+    expect(screen.queryByRole("button", { name: "Jump to latest" })).not.toBeInTheDocument();
+
+    scrollAsPerson(scroller, 40);
+    expect(screen.getByRole("button", { name: "Jump to latest" })).toBeInTheDocument();
+
+    scrollAsPerson(scroller, bottomOf(10));
+    expect(screen.queryByRole("button", { name: "Jump to latest" })).not.toBeInTheDocument();
+  });
+
+  it("keeps a reader's place when a reply arrives, and marks the way to it", async () => {
     const user = userEvent.setup();
     const { scroller, show, props } = renderPanel(transcript(messages(0, 10)));
-    scroller.scrollTop = 40;
-    fireEvent.scroll(scroller);
-    expect(screen.queryByRole("button", { name: "Jump to latest" })).not.toBeInTheDocument();
+    scrollAsPerson(scroller, 40);
 
     show(transcript([...messages(0, 10), { id: "reply", type: "incoming", text: "Hi", status: "streaming" }]));
     expect(scroller.scrollTop).toBe(40);
 
-    await user.click(screen.getByRole("button", { name: "Jump to latest" }));
+    await user.click(screen.getByRole("button", { name: "Jump to latest, new messages below" }));
     // The window already holds the newest messages, so nothing is loaded.
     expect(props.onShowLatest).not.toHaveBeenCalled();
     expect(scroller.scrollTop).toBe(bottomOf(11));
     expect(screen.queryByRole("button", { name: "Jump to latest" })).not.toBeInTheDocument();
   });
 
-  it("always shows the person's own message", () => {
+  it("keeps following when the view moves without the person scrolling", () => {
     const { scroller, show } = renderPanel(transcript(messages(0, 10)));
+    // Content changing size moved the view away from the bottom; no wheel, key or touch did.
     scroller.scrollTop = 40;
     fireEvent.scroll(scroller);
+    expect(scroller.scrollTop).toBe(bottomOf(10));
+
+    show(transcript([...messages(0, 10), { id: "reply", type: "incoming", text: "Done", status: "complete" }]));
+    expect(scroller.scrollTop).toBe(bottomOf(11));
+  });
+
+  it("follows the reply to the person's own message even after they had scrolled up", () => {
+    const { scroller, show } = renderPanel(transcript(messages(0, 10)));
+    scrollAsPerson(scroller, 40);
+    const sent = { id: "sent", type: "outgoing" as const, text: "And then?", status: "queued" as const };
+
+    show(transcript([...messages(0, 10), sent]));
+    show(transcript([...messages(0, 10), sent, { id: "reply", type: "incoming", text: "Then", status: "streaming" }]));
+    expect(scroller.scrollTop).toBe(bottomOf(12));
+  });
+
+  it("always shows the person's own message", () => {
+    const { scroller, show } = renderPanel(transcript(messages(0, 10)));
+    scrollAsPerson(scroller, 40);
 
     show(transcript([...messages(0, 10), { id: "sent", type: "outgoing", text: "And then?", status: "queued" }]));
     expect(scroller.scrollTop).toBe(bottomOf(11));
@@ -236,8 +272,7 @@ describe("ChatPanel transcript", () => {
     expect(scroller.scrollTop).toBe(bottomOf(10));
 
     // A reader further up is left where they are.
-    scroller.scrollTop = 40;
-    fireEvent.scroll(scroller);
+    scrollAsPerson(scroller, 40);
     viewportHeight = 80;
     resized();
     expect(scroller.scrollTop).toBe(40);
@@ -275,7 +310,6 @@ describe("ChatPanel transcript", () => {
     expect(scroller.scrollTop).toBe(opened);
     // Reattaching to a visible reply must not add an execution indicator below it.
     expect(screen.queryByText("Atlas is working…")).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Jump to latest" })).not.toBeInTheDocument();
 
     show(held);
     await user.click(screen.getByRole("button", { name: "Jump to latest" }));
@@ -287,10 +321,32 @@ describe("ChatPanel transcript", () => {
   });
 });
 
+describe("ChatPanel approvals", () => {
+  it("allows every waiting approval at once from the conversation", async () => {
+    const user = userEvent.setup();
+    const approval = (approvalId: string): ToolApprovalRequest => ({
+      approvalId,
+      conversationId: "atlas",
+      toolCallId: `${approvalId}-call`,
+      toolName: "write",
+      category: "create_file",
+      scope: { kind: "workspace_path", display: `${approvalId}.txt` },
+      summary: `Create ${approvalId}.txt`,
+      expiresAt: "2026-10-11T12:01:00.000Z",
+    });
+    const { props } = renderPanel(transcript(messages(0, 2)), { approvals: [approval("one"), approval("two")] });
+
+    expect(screen.getAllByRole("region", { name: "Tool approval required" })).toHaveLength(2);
+    await user.click(screen.getByRole("button", { name: "Allow all 2 once" }));
+    expect(props.onResolveApproval).toHaveBeenCalledTimes(2);
+    expect(props.onResolveApproval).toHaveBeenCalledWith(expect.objectContaining({ approvalId: "two" }), "allow_once");
+  });
+});
+
 describe("ChatPanel identity", () => {
   it("takes on the Wisp's color and says what it does under its name", () => {
     renderPanel(transcript(messages(0, 1)));
-    expect(document.querySelector("main")?.style.getPropertyValue("--wisp")).toMatch(/^#[0-9a-f]{6}$/i);
+    expect(document.querySelector("main")?.style.getPropertyValue("--wisp")).toMatch(/#[0-9a-f]{6}/i);
     expect(screen.getByText("Research")).toBeInTheDocument();
   });
 
@@ -299,6 +355,11 @@ describe("ChatPanel identity", () => {
     expect(screen.getByText("Working…")).toBeInTheDocument();
     show(transcript([{ id: "f", type: "incoming", text: "", status: "failed" }]), { status: "idle" });
     expect(screen.getByText("Couldn't reply")).toBeInTheDocument();
+  });
+
+  it("says under its name what the Wisp is doing while it works", () => {
+    renderPanel(transcript(messages(0, 1)), { status: "working", activity: "Searching the web" });
+    expect(document.querySelector(".chat-subline")).toHaveTextContent("Searching the web");
   });
 
   it("introduces a Wisp with nothing said yet by its soul", () => {

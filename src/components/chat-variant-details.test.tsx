@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import { CircleDetails } from "@/components/circle-details";
 import { WispDetails } from "@/components/wisp-details";
+import { WispSettingsSectionContent } from "@/components/wisp-settings";
 import { circleChatView, wispChatView } from "@/test/chat-fixtures";
 
 const wisp = wispChatView("atlas", { wisp: { name: "Atlas", role: "Research", soul: "Researches" } });
@@ -11,7 +12,7 @@ const circle = circleChatView("crew", [wisp.wisp], { name: "Crew", description: 
 
 describe("variant details", () => {
   it("renders Wisp-only appearance editing and the soul", () => {
-    render(<WispDetails chat={wisp} onChangeWisp={vi.fn()} onChangeNotifications={vi.fn()} />);
+    render(<WispSettingsSectionContent chat={wisp} section="profile" onChangeWisp={vi.fn()} />);
     for (const axis of ["Wisp trail", "Wisp body", "Wisp eyes"]) {
       expect(screen.getByRole("group", { name: axis })).toBeVisible();
     }
@@ -24,10 +25,10 @@ describe("variant details", () => {
   it("previews the soul as markdown and offers templates for an empty one", async () => {
     const user = userEvent.setup();
     render(
-      <WispDetails
+      <WispSettingsSectionContent
         chat={wispChatView("nova", { wisp: { soul: "" } })}
+        section="profile"
         onChangeWisp={vi.fn()}
-        onChangeNotifications={vi.fn()}
       />,
     );
     await user.click(screen.getByRole("button", { name: "Teacher" }));
@@ -40,6 +41,38 @@ describe("variant details", () => {
   });
 
   it("keeps Wisp edits local until they are saved", async () => {
+    const user = userEvent.setup();
+    const onChange = vi.fn(async () => true);
+    render(<WispSettingsSectionContent chat={wisp} section="profile" onChangeWisp={onChange} />);
+
+    const name = screen.getByRole("textbox", { name: "Name" });
+    expect(screen.queryByRole("button", { name: "Save" })).not.toBeInTheDocument();
+
+    await user.clear(name);
+    await user.type(name, "Nova");
+
+    expect(onChange).not.toHaveBeenCalled();
+    await user.click(screen.getByRole("button", { name: "Save" }));
+
+    expect(onChange).toHaveBeenCalledOnce();
+    expect(onChange).toHaveBeenCalledWith(expect.objectContaining({ name: "Nova", role: "Research" }));
+  });
+
+  it("discards unsaved profile edits", async () => {
+    const user = userEvent.setup();
+    const onChange = vi.fn(async () => true);
+    render(<WispSettingsSectionContent chat={wisp} section="profile" onChangeWisp={onChange} />);
+
+    const name = screen.getByRole("textbox", { name: "Name" });
+    await user.type(name, " II");
+    await user.click(screen.getByRole("button", { name: "Discard" }));
+
+    expect(name).toHaveValue("Atlas");
+    expect(screen.queryByRole("button", { name: "Save" })).not.toBeInTheDocument();
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
+  it("saves the General tab's profile edits on the desktop", async () => {
     const user = userEvent.setup();
     const onChange = vi.fn(async () => true);
     const onChangeNotifications = vi.fn(async () => true);
@@ -57,20 +90,6 @@ describe("variant details", () => {
     expect(onChange).toHaveBeenCalledOnce();
     expect(onChange).toHaveBeenCalledWith(expect.objectContaining({ name: "Nova", role: "Research" }));
     expect(onChangeNotifications).not.toHaveBeenCalled();
-  });
-
-  it("discards unsaved profile edits", async () => {
-    const user = userEvent.setup();
-    const onChange = vi.fn(async () => true);
-    render(<WispDetails chat={wisp} onChangeWisp={onChange} onChangeNotifications={vi.fn()} />);
-
-    const name = screen.getByRole("textbox", { name: "Name" });
-    await user.type(name, " II");
-    await user.click(screen.getByRole("button", { name: "Discard" }));
-
-    expect(name).toHaveValue("Atlas");
-    expect(screen.queryByRole("button", { name: "Save profile" })).not.toBeInTheDocument();
-    expect(onChange).not.toHaveBeenCalled();
   });
 
   it("saves the notification setting on the Wisp's conversation", async () => {

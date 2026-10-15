@@ -1,3 +1,5 @@
+import type { CSSProperties } from "react";
+
 import {
   WISP_APPEARANCE_AXES,
   WISP_COLORS,
@@ -100,6 +102,22 @@ export function wispColor(name: string, color?: string): string {
 /** Text or icon color that reads on a fill of `color`. */
 export function inkOn(color: string): string {
   return luminance(color) > 0.3 ? "#111111" : "#ffffff";
+}
+
+/**
+ * The color a Wisp tints the interface with: its own, except that in the dark theme a near-black one is lifted
+ * to silver, as its glow would otherwise vanish into the background.
+ */
+export function wispAccent(color: string): { accent: string; ink: string } {
+  if (luminance(color) >= 0.04) return { accent: color, ink: inkOn(color) };
+  const lifted = mixColors(color, "#ffffff", 0.6);
+  return { accent: `light-dark(${color}, ${lifted})`, ink: `light-dark(${inkOn(color)}, ${inkOn(lifted)})` };
+}
+
+/** The custom properties the Wisp styles read: `--wisp`, its color, and `--wisp-ink`, what reads on it. */
+export function wispAccentStyle(color: string): CSSProperties {
+  const { accent, ink } = wispAccent(color);
+  return { "--wisp": accent, "--wisp-ink": ink } as CSSProperties;
 }
 
 export interface WispPalette {

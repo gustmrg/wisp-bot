@@ -24,6 +24,8 @@ const providers: AiSettingsView["providers"] = ["a", "b"].map((id) => ({
 
 const GIB = 1024 * 1024 * 1024;
 
+const trigger = <button type="button" aria-label="Create Wisp" />;
+
 function mockAiSettings(
   selection: AiSettingsView["selection"] = { providerId: "provider-a", modelId: "model-a" },
   setup: Partial<Record<"getWispSetup" | "setWorkspaceQuota" | "saveWispExecution", ReturnType<typeof vi.fn>>> = {},
@@ -50,7 +52,7 @@ describe("CreateAgentDialog persistence", () => {
     mockAiSettings();
     const user = userEvent.setup();
     const onCreate = vi.fn().mockResolvedValueOnce(null).mockResolvedValueOnce("atlas");
-    render(<CreateAgentDialog onCreate={onCreate} />);
+    render(<CreateAgentDialog onCreate={onCreate} trigger={trigger} />);
     await user.click(screen.getByRole("button", { name: "Create Wisp" }));
     const name = screen.getByRole("textbox", { name: "Name" });
     await user.type(name, "Atlas");
@@ -66,7 +68,7 @@ describe("CreateAgentDialog persistence", () => {
     mockAiSettings();
     const user = userEvent.setup();
     const onCreate = vi.fn().mockResolvedValue("atlas");
-    render(<CreateAgentDialog onCreate={onCreate} />);
+    render(<CreateAgentDialog onCreate={onCreate} trigger={trigger} />);
     await user.click(screen.getByRole("button", { name: "Create Wisp" }));
     await user.type(screen.getByRole("textbox", { name: "Name" }), "Atlas");
     await user.click(screen.getByRole("button", { name: "Next" }));
@@ -84,7 +86,7 @@ describe("CreateAgentDialog persistence", () => {
     mockAiSettings();
     const user = userEvent.setup();
     const onCreate = vi.fn().mockResolvedValue("atlas");
-    render(<CreateAgentDialog onCreate={onCreate} />);
+    render(<CreateAgentDialog onCreate={onCreate} trigger={trigger} />);
     await user.click(screen.getByRole("button", { name: "Create Wisp" }));
     await user.type(screen.getByRole("textbox", { name: "Name" }), "Atlas");
     await user.click(screen.getByRole("button", { name: "Next" }));
@@ -104,7 +106,7 @@ describe("CreateAgentDialog persistence", () => {
     mockAiSettings({ providerId: "provider-b", modelId: "model-b" });
     const user = userEvent.setup();
     const onCreate = vi.fn().mockResolvedValue("atlas");
-    render(<CreateAgentDialog onCreate={onCreate} />);
+    render(<CreateAgentDialog onCreate={onCreate} trigger={trigger} />);
     await user.click(screen.getByRole("button", { name: "Create Wisp" }));
     await user.type(screen.getByRole("textbox", { name: "Name" }), "Atlas");
     await user.click(screen.getByRole("button", { name: "Next" }));
@@ -117,7 +119,7 @@ describe("CreateAgentDialog persistence", () => {
   it("blocks creation until a usable global default or Wisp model exists", async () => {
     mockAiSettings(null);
     const user = userEvent.setup();
-    render(<CreateAgentDialog onCreate={vi.fn()} />);
+    render(<CreateAgentDialog onCreate={vi.fn()} trigger={trigger} />);
     await user.click(screen.getByRole("button", { name: "Create Wisp" }));
     await user.type(screen.getByRole("textbox", { name: "Name" }), "Atlas");
     expect(await screen.findByText(/needs a model before it can be created/)).toBeVisible();
@@ -134,7 +136,7 @@ describe("CreateAgentDialog persistence", () => {
     mockAiSettings();
     const user = userEvent.setup();
     const onCreate = vi.fn().mockResolvedValue("atlas");
-    render(<CreateAgentDialog onCreate={onCreate} />);
+    render(<CreateAgentDialog onCreate={onCreate} trigger={trigger} />);
     await user.click(screen.getByRole("button", { name: "Create Wisp" }));
     expect(screen.getByText("Step 1 of 3 · Appearance and name")).toBeVisible();
     expect(screen.queryByRole("textbox", { name: "Soul" })).not.toBeInTheDocument();
@@ -168,7 +170,7 @@ describe("CreateAgentDialog template import", () => {
 
   async function importTemplate(text: string, onCreate = vi.fn().mockResolvedValue("atlas")) {
     const user = userEvent.setup();
-    render(<CreateAgentDialog onCreate={onCreate} />);
+    render(<CreateAgentDialog onCreate={onCreate} trigger={trigger} />);
     await user.click(screen.getByRole("button", { name: "Create Wisp" }));
     await user.click(screen.getByRole("button", { name: "Import template" }));
     await user.click(screen.getByRole("textbox", { name: "Template" }));
@@ -235,7 +237,7 @@ describe("CreateAgentDialog workspace and commands", () => {
   async function openSetupStep() {
     const user = userEvent.setup();
     const onCreate = vi.fn().mockResolvedValue("atlas");
-    render(<CreateAgentDialog onCreate={onCreate} />);
+    render(<CreateAgentDialog onCreate={onCreate} trigger={trigger} />);
     await user.click(screen.getByRole("button", { name: "Create Wisp" }));
     await user.type(screen.getByRole("textbox", { name: "Name" }), "Atlas");
     await user.click(screen.getByRole("button", { name: "Next" }));
@@ -324,7 +326,7 @@ describe("CreateAgentDialog soul templates", () => {
   async function openSoulStep() {
     mockAiSettings();
     const user = userEvent.setup();
-    render(<CreateAgentDialog onCreate={vi.fn().mockResolvedValue("atlas")} />);
+    render(<CreateAgentDialog onCreate={vi.fn().mockResolvedValue("atlas")} trigger={trigger} />);
     await user.click(screen.getByRole("button", { name: "Create Wisp" }));
     await user.type(screen.getByRole("textbox", { name: "Name" }), "Atlas");
     await user.click(screen.getByRole("button", { name: "Next" }));
@@ -360,5 +362,31 @@ describe("CreateAgentDialog soul templates", () => {
     await user.click(await screen.findByRole("option", { name: "Formal" }));
     await user.click(screen.getByRole("button", { name: "Replace" }));
     expect((soul as HTMLTextAreaElement).value).toContain("Professional and polished");
+  });
+
+  it("shows an edited soul as custom and asks before clearing it", async () => {
+    const user = await openSoulStep();
+    const soul = screen.getByRole("textbox", { name: "Soul" });
+    await user.type(soul, "My own soul");
+    expect(screen.getByRole("combobox", { name: "Soul template" })).toHaveTextContent("Custom");
+
+    await user.click(screen.getByRole("combobox", { name: "Soul template" }));
+    await user.click(await screen.findByRole("option", { name: "Blank" }));
+    expect(screen.getByRole("alert")).toHaveTextContent("Clear the soul?");
+    expect(soul).toHaveValue("My own soul");
+
+    await user.click(screen.getByRole("button", { name: "Clear" }));
+    expect(soul).toHaveValue("");
+    expect(screen.queryByRole("combobox", { name: "Soul template" })).not.toBeInTheDocument();
+    expect(screen.getByRole("group", { name: "Soul templates" })).toBeInTheDocument();
+  });
+
+  it("clears an untouched template without asking", async () => {
+    const user = await openSoulStep();
+    await user.click(screen.getByRole("button", { name: "Friendly" }));
+    await user.click(screen.getByRole("combobox", { name: "Soul template" }));
+    await user.click(await screen.findByRole("option", { name: "Blank" }));
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(screen.getByRole("textbox", { name: "Soul" })).toHaveValue("");
   });
 });

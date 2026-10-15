@@ -1,28 +1,29 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import type { ChatListAction } from "@/chat-data";
-import { AppSettingsDialogHost } from "@/components/app-settings-dialog-host";
-import type { AppSettingsDialogHandle } from "@/components/app-settings-dialog-host";
 import type { SettingsEntrySection } from "@/components/app-settings-dialog";
+import type { AppSettingsDialogHandle } from "@/components/app-settings-dialog-host";
+import { AppSettingsDialogHost } from "@/components/app-settings-dialog-host";
 import { ChatPanel } from "@/components/chat-panel";
 import { DetailsPanel } from "@/components/details-panel";
-import { SearchDialog } from "@/components/search-dialog";
 import { MobileApprovals } from "@/components/mobile-approvals";
-import { WispProfile, type WispSettingsTab } from "@/components/wisp-profile";
+import { Onboarding, SetupStatus } from "@/components/onboarding";
+import { SearchDialog } from "@/components/search-dialog";
 import { Sidebar } from "@/components/sidebar";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { UpdateToast } from "@/components/update-toast";
+import { WispProfile } from "@/components/wisp-profile";
+import type { WispSettingsSection } from "@/components/wisp-settings";
 import { APP_METADATA } from "@/config/app-metadata";
-import { Onboarding, SetupStatus } from "@/components/onboarding";
-import { useSetupGate } from "@/hooks/use-setup-gate";
-import { useUserProfile, type UserProfileController } from "@/hooks/use-user-profile";
-import { useResizablePanel } from "@/hooks/use-resizable-panel";
+import { useWorkspaceController } from "@/features/workspace/use-workspace-controller";
 import { useMessageQueue } from "@/hooks/use-message-queue";
-import { useScheduledMessages } from "@/hooks/use-scheduled-messages";
 import { useMobileLayout } from "@/hooks/use-mobile-layout";
 import { usePageVisible } from "@/hooks/use-page-visible";
+import { useResizablePanel } from "@/hooks/use-resizable-panel";
+import { useScheduledMessages } from "@/hooks/use-scheduled-messages";
+import { useSetupGate } from "@/hooks/use-setup-gate";
 import { TimeZoneProvider, useReportedTimeZone } from "@/hooks/use-time-zone";
-import { useWorkspaceController } from "@/features/workspace/use-workspace-controller";
+import { type UserProfileController, useUserProfile } from "@/hooks/use-user-profile";
 import { effectiveTimeZone } from "@/lib/app-preferences";
 import { DETAILS_LAYOUT, SIDEBAR_LAYOUT } from "@/lib/layout";
 import { mainPanel } from "@/lib/ui-classes";
@@ -70,11 +71,10 @@ function Workspace({ userProfile }: { userProfile: UserProfileController }) {
   };
   const mobile = useMobileLayout();
   const [mobilePage, setMobilePage] = useState<"list" | "chat" | "approvals">("list");
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [detailsOpen, setDetailsOpen] = useState(false);
   // On a phone a Wisp's settings start from its profile.
   const [profileOpen, setProfileOpen] = useState(false);
-  const [detailsTab, setDetailsTab] = useState<WispSettingsTab | undefined>(undefined);
+  const [detailsSection, setDetailsSection] = useState<WispSettingsSection | undefined>(undefined);
   const [searchOpen, setSearchOpen] = useState(false);
   const settingsDialog = useRef<AppSettingsDialogHandle>(null);
   const navigationVersion = useRef(0);
@@ -90,11 +90,15 @@ function Workspace({ userProfile }: { userProfile: UserProfileController }) {
   const conversations = useMemo(() => Object.values(workspace.chats), [workspace.chats]);
   const sidebarPanel = useResizablePanel({
     ...SIDEBAR_LAYOUT.resize,
-    enabled: !mobile && !sidebarCollapsed,
+    defaultWidth: workspace.preferences.sidebarWidth,
+    enabled: !mobile,
+    onResizeEnd: (sidebarWidth) => workspace.updatePreferences({ ...workspace.preferences, sidebarWidth }),
   });
   const detailsPanel = useResizablePanel({
     ...DETAILS_LAYOUT.resize,
+    defaultWidth: workspace.preferences.detailsWidth,
     enabled: !mobile && detailsOpen && Boolean(workspace.activeChat),
+    onResizeEnd: (detailsWidth) => workspace.updatePreferences({ ...workspace.preferences, detailsWidth }),
   });
 
   useEffect(() => {
@@ -159,10 +163,16 @@ function Workspace({ userProfile }: { userProfile: UserProfileController }) {
     setMobilePage("approvals");
   }
 
-  function showDetails(open: boolean, tab?: WispSettingsTab) {
+  function showDetails(open: boolean, section?: WispSettingsSection) {
     navigationVersion.current += 1;
-    setDetailsTab(tab);
+    setDetailsSection(section);
     setDetailsOpen(open);
+  }
+
+  async function deleteActiveChat() {
+    const startedAt = navigationVersion.current;
+    const deleted = await workspace.deleteActiveChat();
+    if (deleted && startedAt === navigationVersion.current) showConversations();
   }
 
   /** The gear in a chat: a Wisp's profile on a phone, its settings otherwise. */
@@ -202,7 +212,6 @@ function Workspace({ userProfile }: { userProfile: UserProfileController }) {
           <Sidebar
             activeChatId={workspace.activeChatId}
             chats={workspace.chats}
-            collapsed={sidebarCollapsed}
             currentUser={currentUser}
             width={sidebarPanel.width}
             mobile={mobile}
@@ -213,7 +222,6 @@ function Workspace({ userProfile }: { userProfile: UserProfileController }) {
             failedChats={workspace.failedChats}
             loading={workspace.loading}
             error={workspace.error}
-            onCollapsedChange={setSidebarCollapsed}
             onCreate={async (wisp, options) => {
               const id = await workspace.createWisp(wisp, options);
               if (id) {
@@ -287,13 +295,17 @@ function Workspace({ userProfile }: { userProfile: UserProfileController }) {
                 navigationVersion.current += 1;
                 setProfileOpen(false);
               }}
-              onOpenSettings={(tab) => showDetails(true, tab)}
+              onOpenSection={(section) => showDetails(true, section)}
+              onChangeNotifications={(notifyOnUpdatesEnabled) =>
+                void workspace.updateActiveChat({ kind: "wisp", notifyOnUpdatesEnabled })
+              }
+              onDelete={() => void deleteActiveChat()}
             />
           ) : null}
           {detailsOpen && workspace.activeChat ? (
             <DetailsPanel
               mobile={mobile}
-              initialTab={detailsTab}
+              section={detailsSection}
               backLabel={profileOpen ? "Back to profile" : undefined}
               chat={workspace.activeChat}
               wisps={workspace.wisps}
@@ -308,11 +320,7 @@ function Workspace({ userProfile }: { userProfile: UserProfileController }) {
                 )
               }
               onClose={() => showDetails(false)}
-              onDelete={async () => {
-                const startedAt = navigationVersion.current;
-                const deleted = await workspace.deleteActiveChat();
-                if (deleted && startedAt === navigationVersion.current) showConversations();
-              }}
+              onDelete={() => void deleteActiveChat()}
               onResizeStart={detailsPanel.onResizeStart}
             />
           ) : null}

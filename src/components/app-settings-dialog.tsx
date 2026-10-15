@@ -2,7 +2,7 @@ import { LaunchAtLoginSetting } from "@/components/launch-at-login-setting";
 import { isBrowserApp } from "@/lib/platform";
 import { UserProfileSettings } from "@/components/user-profile-settings";
 import type { UserProfileController } from "@/hooks/use-user-profile";
-import { useEffect, useRef, useState, type CSSProperties } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   BarChart3Icon,
   BellIcon,
@@ -27,7 +27,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 
-import { GeneralSettingsSections } from "@/components/general-settings-sections";
+import { GeneralSettingsSections, PreferenceSwitch } from "@/components/general-settings-sections";
 import { NotificationSettingsSection } from "@/components/notification-settings-section";
 import { StorageSettingsSection } from "@/components/storage-settings-section";
 import { UsageSettingsSection } from "@/components/usage-settings-section";
@@ -42,7 +42,7 @@ import { RemoteAccessSettingsSection } from "@/components/remote-access-settings
 import { MobileNavigation } from "@/components/mobile-navigation";
 import { MobileSettingsProfile } from "@/components/mobile-settings-profile";
 import { WispAvatar } from "@/components/chat-avatar";
-import { wispColor } from "@/lib/wisp-appearance";
+import { wispAccentStyle, wispColor } from "@/lib/wisp-appearance";
 import { DEFAULT_WISP_APPEARANCE } from "../../shared/wisp-appearance";
 import {
   SettingsCard,
@@ -420,7 +420,7 @@ function AppSettingsDialog({
                       <span
                         key={wisp.id}
                         className="wisp-halo"
-                        style={{ "--wisp": wispColor(wisp.name, wisp.color) } as CSSProperties}
+                        style={wispAccentStyle(wispColor(wisp.name, wisp.color))}
                       >
                         <WispAvatar
                           wisp={{ ...wisp, appearance: wisp.appearance ?? DEFAULT_WISP_APPEARANCE }}
@@ -517,6 +517,19 @@ function AppSettingsDialog({
                       </SelectGroup>
                     </SelectContent>
                   </Select>
+                </SettingsRow>
+                <SettingsRow>
+                  <SettingsRowCopy>
+                    <SettingsRowTitle>Wisp colors</SettingsRowTitle>
+                    <SettingsRowDescription>
+                      Tint replies, the send button and the selected conversation with each Wisp's color.
+                    </SettingsRowDescription>
+                  </SettingsRowCopy>
+                  <PreferenceSwitch
+                    label="Wisp colors"
+                    checked={preferences.wispColors}
+                    onChange={() => onPreferencesChange({ ...preferences, wispColors: !preferences.wispColors })}
+                  />
                 </SettingsRow>
                 {browserApp ? null : <LaunchAtLoginSetting open={open} />}
               </SettingsCard>

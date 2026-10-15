@@ -21,7 +21,7 @@ import { useNotificationSounds } from "@/hooks/use-notification-sounds";
 import type { AppPreferences } from "@/lib/app-preferences";
 import type { ToolActivityView } from "@/lib/conversation-stream";
 import type { MessageWindow } from "@/lib/message-windows";
-import { applyTheme } from "@/lib/theme";
+import { applyTheme, applyWispColors } from "@/lib/theme";
 
 export interface WorkspaceController {
   wisps: WispCollection;
@@ -83,6 +83,7 @@ export function useWorkspaceController(): WorkspaceController {
   const activeTranscript = conversations.windows[activeChatId];
 
   useLayoutEffect(() => applyTheme(preferences.theme), [preferences.theme]);
+  useLayoutEffect(() => applyWispColors(preferences.wispColors), [preferences.wispColors]);
 
   // The error last seen in each conversation. A newer one marks the
   // conversation in the sidebar until it is opened.

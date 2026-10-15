@@ -8,7 +8,6 @@ import {
   InfoIcon,
   KeyRoundIcon,
   LaptopIcon,
-  LoaderCircleIcon,
   RefreshCwIcon,
   ServerIcon,
   Settings2Icon,
@@ -23,6 +22,7 @@ import {
   LOCAL_CONNECTION_ID,
   type ConnectionFailure,
   type ConnectionProfileView,
+  type ConnectionProgress,
   type ConnectionsView,
 } from "../../../shared/connections";
 import { WISP_SERVER_PACKAGE } from "../../../shared/server-package";
@@ -141,6 +141,35 @@ function FailureIcon({ failure }: { failure: ConnectionFailure | undefined }) {
 }
 
 /**
+ * The bar on top of the card: filled up to the steps done, with a shimmer
+ * over the one running, so it shows how far connecting or a setup has come.
+ */
+function ProgressBar({ progress }: { progress: ConnectionProgress }) {
+  const total = progress.steps.length;
+  if (total === 0) return null;
+  const done = progress.steps.filter(({ state }) => state === "done").length;
+  const running = progress.steps.some(({ state }) => state === "active");
+  const share = 100 / total;
+  return (
+    <div
+      aria-hidden="true"
+      className="absolute inset-x-0 top-0 h-0.5 overflow-hidden bg-[color-mix(in_srgb,var(--tone)_14%,transparent)]"
+    >
+      <div
+        className="h-full bg-[var(--tone)] transition-[width] duration-500 ease-out motion-reduce:transition-none"
+        style={{ width: `${done * share}%` }}
+      />
+      {running ? (
+        <div
+          className="connection-progress-step absolute inset-y-0"
+          style={{ left: `${done * share}%`, width: `${share}%` }}
+        />
+      ) : null}
+    </div>
+  );
+}
+
+/**
  * Shown while the chosen server is connecting, being set up, needs pairing,
  * or cannot be used. One card for every state: which server, what is
  * happening step by step, what went wrong, and what the person can do.
@@ -206,7 +235,8 @@ export function ConnectionScreen({ view }: { view: ConnectionsView }) {
 
   let tone: Tone;
   let icon: ReactNode;
-  let spinning = false;
+  // Whether the card shows how far the steps have come; only the running step spins.
+  let showProgress = false;
   let title: string;
   let text: ReactNode = status.message;
   let body: ReactNode = null;
@@ -291,8 +321,8 @@ export function ConnectionScreen({ view }: { view: ConnectionsView }) {
     // Setting the server up, or connecting to it right after.
     const update = setup.kind === "update";
     tone = "info";
-    icon = <LoaderCircleIcon aria-hidden="true" className="size-5" />;
-    spinning = true;
+    icon = <ArrowUpCircleIcon aria-hidden="true" className="size-5" />;
+    showProgress = true;
     title = update ? `Updating ${name}` : `Setting up Wisp on ${name}`;
     text = `${update && fromVersion ? `${fromVersion} → ${APP_METADATA.version}. ` : ""}This can take a few minutes; keep this app open.`;
     body = steps;
@@ -445,8 +475,13 @@ export function ConnectionScreen({ view }: { view: ConnectionsView }) {
     ) : null;
   } else {
     tone = "info";
-    icon = <LoaderCircleIcon aria-hidden="true" className="size-5" />;
-    spinning = true;
+    icon =
+      profile?.kind === "local" ? (
+        <LaptopIcon aria-hidden="true" className="size-5" />
+      ) : (
+        <ServerIcon aria-hidden="true" className="size-5" />
+      );
+    showProgress = true;
     title = profile?.kind === "local" ? "Starting Wisps on this computer" : `Connecting to ${name}`;
     text = "This usually takes a few seconds.";
     body = steps;
@@ -462,7 +497,6 @@ export function ConnectionScreen({ view }: { view: ConnectionsView }) {
     aside = useLocal;
   }
 
-  const showProgressBar = status.phase === "connecting" && (spinning || Boolean(setup));
   return (
     <main className="flex h-full min-h-0 items-start justify-center overflow-y-auto bg-background p-6 text-foreground max-[760px]:p-3">
       <div className="my-auto w-full max-w-lg">
@@ -470,9 +504,7 @@ export function ConnectionScreen({ view }: { view: ConnectionsView }) {
           className={cn("relative overflow-hidden rounded-2xl border border-border bg-card shadow-sm", TONES[tone])}
           aria-labelledby="connection-title"
         >
-          {showProgressBar ? (
-            <div aria-hidden="true" className="connection-progress absolute inset-x-0 top-0 h-0.5 overflow-hidden" />
-          ) : null}
+          {showProgress && progress ? <ProgressBar progress={progress} /> : null}
           <div className="p-6 max-[760px]:px-4 max-[760px]:py-[18px]">
             {profile ? (
               <ServerChip
@@ -485,7 +517,7 @@ export function ConnectionScreen({ view }: { view: ConnectionsView }) {
             ) : null}
             <div className="mt-[18px] flex items-start gap-3.5">
               <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-[color-mix(in_srgb,var(--tone)_14%,transparent)] text-[var(--tone)]">
-                <span className={cn("flex", spinning && "animate-spin")}>{icon}</span>
+                {icon}
               </div>
               <div className="min-w-0">
                 <h1 id="connection-title" className="m-0 text-lg leading-snug font-semibold">
@@ -505,7 +537,7 @@ export function ConnectionScreen({ view }: { view: ConnectionsView }) {
             {actions || aside ? (
               <div className="mt-5 flex flex-wrap items-center gap-2 max-[760px]:flex-col max-[760px]:items-stretch">
                 {actions}
-                {aside ? <div className="ml-auto flex max-[760px]:ml-0 max-[760px]:flex-col">{aside}</div> : null}
+                {aside}
               </div>
             ) : null}
             {actionError ? (

@@ -260,6 +260,44 @@ describe("AppSettingsDialog metadata", () => {
     expect(installing.querySelector("svg")).toHaveClass("animate-spin");
     expect(screen.getByText(/Installing version 9\.9\.0…/)).toBeVisible();
   });
+
+  it("turns Wisp colors off from the application settings", async () => {
+    const user = userEvent.setup();
+    const onPreferencesChange = vi.fn();
+    Object.defineProperty(window, "wisp", {
+      configurable: true,
+      value: {
+        subscribeToUpdateState: vi.fn(() => () => undefined),
+        getUpdateState: vi.fn(async () => ({
+          ok: true,
+          value: { phase: "idle", currentVersion: appMetadata.version },
+        })),
+      },
+    });
+    render(
+      <AppSettingsDialog
+        appMetadata={appMetadata}
+        currentUser={currentUser}
+        userProfile={{
+          profile: { preferredName: "Ada", aboutYou: "", responsePreferences: "" },
+          loading: false,
+          error: null,
+          save: vi.fn(),
+        }}
+        open
+        preferences={DEFAULT_PREFERENCES}
+        persistenceStatus="saved"
+        persistenceError={null}
+        onOpenChange={vi.fn()}
+        onPreferencesChange={onPreferencesChange}
+      />,
+    );
+
+    const wispColors = screen.getByRole("switch", { name: "Wisp colors" });
+    expect(wispColors).toBeChecked();
+    await user.click(wispColors);
+    expect(onPreferencesChange).toHaveBeenCalledWith({ ...DEFAULT_PREFERENCES, wispColors: false });
+  });
 });
 
 describe("AppSettingsDialog on mobile", () => {

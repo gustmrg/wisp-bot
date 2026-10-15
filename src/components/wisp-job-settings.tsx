@@ -1,7 +1,5 @@
-import { useState } from "react";
 import { CalendarClockIcon } from "lucide-react";
 
-import { AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Button } from "@/components/ui/button";
 import { useJobs } from "@/hooks/use-jobs";
 import { useTimeZone } from "@/hooks/use-time-zone";
@@ -16,20 +14,7 @@ export function WispJobSettings({
   conversationId: string;
   onOpenSettings?: (target: IntegrationSettingsTarget) => void;
 }) {
-  const [visited, setVisited] = useState(false);
-  return (
-    <AccordionItem
-      value="jobs"
-      onOpenChange={(open) => {
-        if (open) setVisited(true);
-      }}
-    >
-      <AccordionTrigger>Jobs</AccordionTrigger>
-      <AccordionContent keepMounted>
-        {visited ? <WispJobs conversationId={conversationId} onOpenSettings={onOpenSettings} /> : null}
-      </AccordionContent>
-    </AccordionItem>
-  );
+  return <WispJobs conversationId={conversationId} onOpenSettings={onOpenSettings} />;
 }
 
 function WispJobs({

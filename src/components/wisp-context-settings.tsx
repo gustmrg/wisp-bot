@@ -6,8 +6,7 @@ import {
   type ContextPolicy,
   type ContextView,
 } from "../../shared/context-policy";
-import { ConfirmAction } from "@/components/settings/settings-primitives";
-import { AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
+import { ConfirmAction, SettingsActions } from "@/components/settings/settings-primitives";
 import { Button } from "@/components/ui/button";
 import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel, FieldTitle } from "@/components/ui/field";
 import { FormStatus } from "@/components/ui/form-status";
@@ -28,22 +27,9 @@ const renewals = [
   { value: "compact", label: "Summarize and continue" },
 ];
 
-/** The Context & memory section of a Wisp's settings; place it inside an `Accordion`. */
+/** The Context & memory section of a Wisp's settings. */
 export function WispContextSettings({ conversationId }: { conversationId: string }) {
-  const [visited, setVisited] = useState(false);
-  return (
-    <AccordionItem
-      value="context"
-      onOpenChange={(open) => {
-        if (open) setVisited(true);
-      }}
-    >
-      <AccordionTrigger>Context & memory</AccordionTrigger>
-      <AccordionContent keepMounted>
-        {visited ? <ContextForm key={conversationId} conversationId={conversationId} /> : null}
-      </AccordionContent>
-    </AccordionItem>
-  );
+  return <ContextForm key={conversationId} conversationId={conversationId} />;
 }
 
 function ContextForm({ conversationId }: { conversationId: string }) {
@@ -152,7 +138,7 @@ function ContextForm({ conversationId }: { conversationId: string }) {
             if (value) setPolicy((current) => ({ ...current, mode: value as ContextPolicy["mode"] }));
           }}
         >
-          <SelectTrigger id={`${id}-mode`} className="w-full">
+          <SelectTrigger id={`${id}-mode`} className="w-full min-[761px]:w-60">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -181,7 +167,7 @@ function ContextForm({ conversationId }: { conversationId: string }) {
               if (value) setPolicy((current) => ({ ...current, renewal: value as ContextPolicy["renewal"] }));
             }}
           >
-            <SelectTrigger id={`${id}-renewal`} className="w-full">
+            <SelectTrigger id={`${id}-renewal`} className="w-full min-[761px]:w-60">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -199,49 +185,51 @@ function ContextForm({ conversationId }: { conversationId: string }) {
           </FieldDescription>
         </Field>
       ) : null}
-      {policy.mode === "idle" || policy.mode === "both" ? (
-        <Field>
-          <FieldLabel htmlFor={`${id}-idle`}>Inactivity (hours)</FieldLabel>
-          <Input
-            id={`${id}-idle`}
-            type="number"
-            min={1}
-            max={720}
-            value={policy.idleHours}
-            disabled={disabled}
-            onChange={(event) => setPolicy((current) => ({ ...current, idleHours: Number(event.target.value) }))}
-          />
-        </Field>
-      ) : null}
-      {policy.mode === "daily" || policy.mode === "both" ? (
-        <Field>
-          <FieldLabel htmlFor={`${id}-daily`}>Daily hour (your timezone, 0–23)</FieldLabel>
-          <Input
-            id={`${id}-daily`}
-            type="number"
-            min={0}
-            max={23}
-            value={policy.dailyHour}
-            disabled={disabled}
-            onChange={(event) => setPolicy((current) => ({ ...current, dailyHour: Number(event.target.value) }))}
-          />
-        </Field>
-      ) : null}
-      {policy.mode !== "none" ? (
-        <Field>
-          <FieldLabel htmlFor={`${id}-tokens`}>Minimum context tokens</FieldLabel>
-          <Input
-            id={`${id}-tokens`}
-            type="number"
-            min={1000}
-            max={200000}
-            step={1000}
-            value={policy.minimumTokens}
-            disabled={disabled}
-            onChange={(event) => setPolicy((current) => ({ ...current, minimumTokens: Number(event.target.value) }))}
-          />
-        </Field>
-      ) : null}
+      <div className="grid gap-3 min-[761px]:grid-cols-2">
+        {policy.mode === "idle" || policy.mode === "both" ? (
+          <Field>
+            <FieldLabel htmlFor={`${id}-idle`}>Inactivity (hours)</FieldLabel>
+            <Input
+              id={`${id}-idle`}
+              type="number"
+              min={1}
+              max={720}
+              value={policy.idleHours}
+              disabled={disabled}
+              onChange={(event) => setPolicy((current) => ({ ...current, idleHours: Number(event.target.value) }))}
+            />
+          </Field>
+        ) : null}
+        {policy.mode === "daily" || policy.mode === "both" ? (
+          <Field>
+            <FieldLabel htmlFor={`${id}-daily`}>Daily hour (your timezone, 0–23)</FieldLabel>
+            <Input
+              id={`${id}-daily`}
+              type="number"
+              min={0}
+              max={23}
+              value={policy.dailyHour}
+              disabled={disabled}
+              onChange={(event) => setPolicy((current) => ({ ...current, dailyHour: Number(event.target.value) }))}
+            />
+          </Field>
+        ) : null}
+        {policy.mode !== "none" ? (
+          <Field>
+            <FieldLabel htmlFor={`${id}-tokens`}>Minimum context tokens</FieldLabel>
+            <Input
+              id={`${id}-tokens`}
+              type="number"
+              min={1000}
+              max={200000}
+              step={1000}
+              value={policy.minimumTokens}
+              disabled={disabled}
+              onChange={(event) => setPolicy((current) => ({ ...current, minimumTokens: Number(event.target.value) }))}
+            />
+          </Field>
+        ) : null}
+      </div>
       <Field>
         <FieldLabel htmlFor={`${id}-memory`}>Saved memory</FieldLabel>
         <Textarea
@@ -257,32 +245,33 @@ function ContextForm({ conversationId }: { conversationId: string }) {
           Memory is stored locally and included in model requests. Starting a new topic keeps it.
         </FieldDescription>
       </Field>
-      <Button
-        className="w-full"
-        disabled={disabled || !dirty || !isContextPolicy(policy)}
-        onClick={() => void run({ action: "save", policy, memory })}
-      >
-        Save context settings
-      </Button>
+      <SettingsActions align="end">
+        <Button
+          disabled={disabled || !dirty || !isContextPolicy(policy)}
+          onClick={() => void run({ action: "save", policy, memory })}
+        >
+          Save context settings
+        </Button>
+      </SettingsActions>
       <div className="flex flex-col gap-2 border-t border-border pt-3">
         <FieldTitle>Active context: approximately {view.tokens.toLocaleString()} tokens</FieldTitle>
-        <Button
-          className="w-full"
-          variant="outline"
-          disabled={disabled || view.tokens === 0}
-          onClick={() => void run({ action: "compact" })}
-        >
-          Summarize context
-        </Button>
-        <ConfirmAction
-          label="Start new topic"
-          confirmLabel="Start fresh context"
-          variant="outline"
-          className="w-full"
-          disabled={disabled}
-          description="The next message will start without the current conversation context. Chat history and saved memory remain available."
-          onConfirm={() => void run({ action: "new_topic" })}
-        />
+        <SettingsActions>
+          <Button
+            variant="outline"
+            disabled={disabled || view.tokens === 0}
+            onClick={() => void run({ action: "compact" })}
+          >
+            Summarize context
+          </Button>
+          <ConfirmAction
+            label="Start new topic"
+            confirmLabel="Start fresh context"
+            variant="outline"
+            disabled={disabled}
+            description="The next message will start without the current conversation context. Chat history and saved memory remain available."
+            onConfirm={() => void run({ action: "new_topic" })}
+          />
+        </SettingsActions>
         {view.summary ? (
           <details className="text-sm">
             <summary className="cursor-pointer text-xs text-dim">View continuity summary</summary>

@@ -1,30 +1,33 @@
-import { WispJobSettings } from "@/components/wisp-job-settings";
-import { WispContextSettings } from "@/components/wisp-context-settings";
-import { useState, type ReactNode } from "react";
+import { type ReactNode, useState } from "react";
 
 import type { WispChanges, WispChatView } from "@/chat-data";
+import { SettingsActions, SettingsGroup } from "@/components/settings/settings-primitives";
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
+import { Button } from "@/components/ui/button";
+import { FormStatus } from "@/components/ui/form-status";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { WispContextSettings } from "@/components/wisp-context-settings";
+import { WispExecutionSettings } from "@/components/wisp-execution-settings";
+import { WispJobSettings } from "@/components/wisp-job-settings";
 import { WispModelSettings } from "@/components/wisp-model-settings";
 import { WispPluginSettings } from "@/components/wisp-plugin-settings";
-import { WispSettingsFields, type WispSettingsDraft } from "@/components/wisp-settings-fields";
 import { WispSessionReportSection } from "@/components/wisp-session-report";
+import { WispBehaviorFields, WispIdentityFields, type WispSettingsDraft } from "@/components/wisp-settings-fields";
 import { WispSkillSettings } from "@/components/wisp-skill-settings";
 import { WispWorkspaceSettings } from "@/components/wisp-workspace-settings";
-import { WispExecutionSettings } from "@/components/wisp-execution-settings";
-import { SettingsGroup } from "@/components/settings/settings-primitives";
-import { Accordion } from "@/components/ui/accordion";
-import { FormStatus } from "@/components/ui/form-status";
-import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { Button } from "@/components/ui/button";
+import type { IntegrationSettingsTarget } from "@/lib/plugin-access";
 import { cn } from "@/lib/utils";
 import { sameWispAppearance } from "../../shared/wisp-appearance";
-import type { IntegrationSettingsTarget } from "@/lib/plugin-access";
 
 const TAB_ORDER = ["general", "model", "access", "usage"] as const;
+
+/** The tabs of a Wisp's settings on the desktop. */
+export type WispSettingsTab = (typeof TAB_ORDER)[number];
 
 interface WispDetailsProps {
   chat: WispChatView;
   /** The tab shown first. */
-  initialTab?: (typeof TAB_ORDER)[number];
+  initialTab?: WispSettingsTab;
   generalActions?: ReactNode;
   /** Saves the Wisp's own settings. */
   onChangeWisp: (changes: WispChanges) => Promise<boolean> | void;
@@ -36,6 +39,22 @@ interface WispDetailsProps {
 function draftOf(chat: WispChatView): WispSettingsDraft {
   const { id: _id, ...wisp } = chat.wisp;
   return { ...wisp, notifyOnUpdatesEnabled: chat.notifyOnUpdatesEnabled };
+}
+
+/** One of the General tab's sections: its panel loads the first time it is opened, and stays mounted. */
+function SettingsAccordionSection({ value, label, children }: { value: string; label: string; children: ReactNode }) {
+  const [visited, setVisited] = useState(false);
+  return (
+    <AccordionItem
+      value={value}
+      onOpenChange={(open) => {
+        if (open) setVisited(true);
+      }}
+    >
+      <AccordionTrigger>{label}</AccordionTrigger>
+      <AccordionContent keepMounted>{visited ? children : null}</AccordionContent>
+    </AccordionItem>
+  );
 }
 
 export function WispDetails({
@@ -52,7 +71,6 @@ export function WispDetails({
   const [draft, setDraft] = useState(() => draftOf(chat));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
-  const slideClass = slideDirection === "forward" ? "animate-tab-forward" : "animate-tab-back";
   const { wisp } = chat;
   const wispChanged =
     draft.name !== wisp.name ||
@@ -62,6 +80,7 @@ export function WispDetails({
     !sameWispAppearance(draft.appearance, wisp.appearance);
   const notificationsChanged = draft.notifyOnUpdatesEnabled !== chat.notifyOnUpdatesEnabled;
   const profileChanged = wispChanged || notificationsChanged;
+  const slideClass = slideDirection === "forward" ? "animate-tab-forward" : "animate-tab-back";
 
   async function save() {
     const name = draft.name.trim() || "Untitled";
@@ -98,8 +117,8 @@ export function WispDetails({
       value={tab}
       onValueChange={(value) => {
         if (typeof value !== "string") return;
-        const nextIndex = TAB_ORDER.indexOf(value as (typeof TAB_ORDER)[number]);
-        const currentIndex = TAB_ORDER.indexOf(tab as (typeof TAB_ORDER)[number]);
+        const nextIndex = TAB_ORDER.indexOf(value as WispSettingsTab);
+        const currentIndex = TAB_ORDER.indexOf(tab as WispSettingsTab);
         if (nextIndex >= 0 && currentIndex >= 0 && nextIndex !== currentIndex) {
           setSlideDirection(nextIndex > currentIndex ? "forward" : "back");
         }
@@ -123,29 +142,43 @@ export function WispDetails({
       >
         <div className="min-h-0 flex-1 overflow-y-auto p-3.5">
           <SettingsGroup label="Profile" className="[&>h3]:mt-0">
-            <WispSettingsFields
+            <WispIdentityFields
+              settings={draft}
+              onChange={(changes) => setDraft((current) => ({ ...current, ...changes }))}
+            />
+            <WispBehaviorFields
               settings={draft}
               onChange={(changes) => setDraft((current) => ({ ...current, ...changes }))}
             />
           </SettingsGroup>
           {/* Each of these sections saves its own changes. */}
           <Accordion multiple className="mt-4 border-t border-border">
-            <WispContextSettings conversationId={chat.id} />
-            <WispSkillSettings conversationId={chat.id} />
-            <WispWorkspaceSettings conversationId={chat.id} onOpenSettings={onOpenSettings} />
-            <WispExecutionSettings conversationId={chat.id} />
-            <WispJobSettings conversationId={chat.id} onOpenSettings={onOpenSettings} />
+            <SettingsAccordionSection value="context" label="Context & memory">
+              <WispContextSettings conversationId={chat.id} />
+            </SettingsAccordionSection>
+            <SettingsAccordionSection value="skills" label="Skills">
+              <WispSkillSettings conversationId={chat.id} />
+            </SettingsAccordionSection>
+            <SettingsAccordionSection value="workspace" label="Workspace">
+              <WispWorkspaceSettings conversationId={chat.id} onOpenSettings={onOpenSettings} />
+            </SettingsAccordionSection>
+            <SettingsAccordionSection value="commands" label="Commands">
+              <WispExecutionSettings conversationId={chat.id} />
+            </SettingsAccordionSection>
+            <SettingsAccordionSection value="jobs" label="Jobs">
+              <WispJobSettings conversationId={chat.id} onOpenSettings={onOpenSettings} />
+            </SettingsAccordionSection>
           </Accordion>
           {generalActions ? (
-            <div className="mt-5 flex flex-col gap-2 border-t border-border pt-4">{generalActions}</div>
+            <SettingsActions className="mt-5 border-t border-border pt-4">{generalActions}</SettingsActions>
           ) : null}
         </div>
         {profileChanged ? (
           <footer className="flex flex-none flex-col gap-3 border-t border-border p-3.5">
             <FormStatus error={error} />
-            <div className="flex gap-2">
+            <div className="flex gap-2 min-[761px]:justify-end">
               <Button
-                className="flex-1"
+                className="max-[760px]:flex-1"
                 type="button"
                 variant="outline"
                 disabled={saving}
@@ -156,7 +189,7 @@ export function WispDetails({
               >
                 Discard
               </Button>
-              <Button className="flex-1" type="button" disabled={saving} onClick={() => void save()}>
+              <Button className="max-[760px]:flex-1" type="button" disabled={saving} onClick={() => void save()}>
                 {saving ? "Saving…" : "Save profile"}
               </Button>
             </div>

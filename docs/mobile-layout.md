@@ -21,8 +21,8 @@ the Wisp, or one derived from its name:
   replies and its typing bubble are tinted with its color, and the composer's
   main button (voice or send) is filled with it. The person's own messages are
   neutral so the Wisp's color stands out. Under the name, the header shows the
-  Wisp's role, or "Working…", "Waiting for your approval", or "Couldn't
-  reply". A Wisp with nothing said yet introduces itself with the first
+  Wisp's role, or what it is doing ("Searching the web", or "Working…" when
+  that is not known), "Waiting for your approval", or "Couldn't reply". A Wisp with nothing said yet introduces itself with the first
   paragraph of its soul. While it works, the tools it has used in this turn
   show as a trail of steps, each checked, failed, or still running.
 - **Circles.** Each run of replies is named by the Wisp that wrote it and
@@ -35,8 +35,11 @@ The bottom bar has Wisps, Approvals, and Settings (see
 bottom edge; only the current tab shows its name. Wisps shows how many
 conversations are unread and Approvals how many tool approvals are pending.
 The Approvals screen lists every pending approval, the latest first, each in
-a card lit by the Wisp that asked and saying what it wants to do. An approval
-answered there, from the list, or in the chat leaves all of them.
+a card lit by the Wisp that asked and saying what it wants to do. With more
+than one waiting, "Allow all N once" above them answers every one a tap may
+answer; jobs and skills still need their own review. The chat offers the same
+above its approval cards. An approval answered there, from the list, or in the
+chat leaves all of them.
 
 ## Conversation list
 
@@ -77,12 +80,14 @@ until it is chosen again.
 
 ## A Wisp's profile
 
-On a phone, the gear in a Wisp's conversation opens its profile: the Wisp
-large in its own light, its name, role, and soul, the model it runs on,
-whether it notifies, and its jobs. Chat goes back to the conversation; Model,
-Access, and Usage open that tab of its settings, and Edit opens General.
-Settings opened from the profile go back to it. A circle's gear still opens
-its settings.
+On a phone, the "…" in a Wisp's conversation opens its profile: the Wisp
+large in its own light, its name, role, and soul, a switch for its
+notifications, and a list of what it knows and does (Memory, Skills,
+Workspace, Commands, Jobs). Chat goes back to the conversation; Edit, Model,
+Access, Usage, and each row of the list open one page of its settings, titled,
+with a way back to the profile. Edit only edits the appearance, name, role,
+and soul. Share as template and Delete end the profile. A circle's "…" still
+opens its settings.
 
 ## Settings
 
@@ -111,6 +116,21 @@ the main button, now a calendar, schedules it. A long press on the send button
 draft right away. The layout respects safe areas and follows the visual
 viewport height when the software keyboard opens. It does not focus the
 composer merely because a conversation was opened.
+
+## On the desktop
+
+The desktop shares the Wisps' colors, state rings, the chat's light, the
+step trail, and the introduction of a new Wisp. Its sidebar lists only the
+conversations, without the row of Wisps, and creates a Wisp from the button
+beside Search. It lists no approvals: a Wisp waiting for one is marked in its
+row, and the approval is answered in the conversation. The conversation reads as one centered
+column. A gear button opens a side panel on the Wisp's settings; who the Wisp
+is sits in the panel's header, as tall as the conversation's own top bar, and
+General, Model, Access, and Usage tabs carry the rest. A circle's gear opens
+its settings directly.
+
+In the dark theme a near-black Wisp lends the interface a silver tint instead
+of its own color, so its glow and accents still show on the dark background.
 
 ## Scope
 

@@ -44,11 +44,6 @@
     transparent 72%
   );
 }
-/* The ring says it; the dots that used to are kept for the collapsed sidebar's labels only. */
-.wisp-halo > .approval-indicator,
-.wisp-halo > .error-indicator {
-  display: none;
-}
 
 @keyframes wisp-halo-spin {
   to {
@@ -59,12 +54,17 @@
 /* ---------- Conversation list ---------- */
 
 .conversation-avatar.wisp-halo {
-  width: 38px;
-  height: 38px;
+  width: 44px;
+  height: 44px;
+}
+/* In the list the Wisp stands alone: no disc of its color behind it. The ring for its state stays. */
+.conversation-avatar.wisp-halo,
+.conversation-avatar.wisp-halo[data-state="error"] {
+  background: none;
 }
 .conversation-avatar.wisp-halo > svg {
-  width: 28px;
-  height: 28px;
+  width: 34px;
+  height: 34px;
 }
 .conversation-role {
   margin-left: -4px;
@@ -79,7 +79,8 @@
 .conversation-preview[data-activity="working"] {
   color: color-mix(in srgb, var(--wisp, var(--blue)) 72%, var(--foreground));
 }
-.conversation-list-item[style][data-selected="true"] {
+/* With Wisp colors off, the selected conversation keeps the neutral background. */
+:root:not([data-wisp-colors="off"]) .conversation-list-item[style][data-selected="true"] {
   background: color-mix(in srgb, var(--wisp) 13%, var(--sidebar-background));
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--wisp) 24%, transparent);
 }
@@ -125,6 +126,23 @@
   width: 26px;
   height: 26px;
 }
+/* On the desktop the Wisp stands alone in the header: no disc, and no ring, since the subline says what it is doing. */
+@media (min-width: 761px) {
+  .chat-heading .wisp-halo,
+  .chat-heading .wisp-halo[data-state="error"] {
+    width: 32px;
+    height: 32px;
+    background: none;
+  }
+  .chat-heading .wisp-halo::before {
+    display: none;
+  }
+  .chat-heading .wisp-halo > svg,
+  .chat-heading .wisp-halo > span {
+    width: 32px;
+    height: 32px;
+  }
+}
 .chat-subline {
   margin-top: 1px;
   color: var(--text-dim);
@@ -155,27 +173,44 @@
   }
 }
 
-/* A Wisp's replies, and its typing bubble, take a tint of its color. */
-.chat-panel[data-accent] .message-row[data-outgoing="false"] .message-bubble,
-.chat-panel[data-accent] .chat-activity-bubble {
+/* A Wisp's replies, and its typing bubble, take a tint of its color, unless Wisp colors are off. */
+:root:not([data-wisp-colors="off"]) .chat-panel[data-accent] .message-row[data-outgoing="false"] .message-bubble,
+:root:not([data-wisp-colors="off"]) .chat-panel[data-accent] .chat-activity-bubble {
   border-color: color-mix(in srgb, var(--wisp) 24%, transparent);
   background: color-mix(in srgb, var(--wisp) 9%, var(--background));
 }
-.dark .chat-panel[data-accent] .message-row[data-outgoing="false"] .message-bubble,
-.dark .chat-panel[data-accent] .chat-activity-bubble {
+:root.dark:not([data-wisp-colors="off"]) .chat-panel[data-accent] .message-row[data-outgoing="false"] .message-bubble,
+:root.dark:not([data-wisp-colors="off"]) .chat-panel[data-accent] .chat-activity-bubble {
   background: color-mix(in srgb, var(--wisp) 11%, #141418);
 }
-.chat-panel[data-accent] .chat-activity-dot {
+:root:not([data-wisp-colors="off"]) .chat-panel[data-accent] .chat-activity-dot {
   background: var(--wisp);
 }
 
 /* The main button of a Wisp's composer is in its color; stop and recording keep theirs. */
-.chat-panel[data-accent] .composer-primary:is([data-variant="voice"], [data-variant="send"]) {
+:root:not([data-wisp-colors="off"])
+  .chat-panel[data-accent]
+  .composer-primary:is([data-variant="voice"], [data-variant="send"]) {
   background: var(--wisp);
   color: var(--wisp-ink);
 }
-.dark .chat-panel[data-accent] .composer-primary:is([data-variant="voice"], [data-variant="send"]):enabled {
+:root.dark:not([data-wisp-colors="off"])
+  .chat-panel[data-accent]
+  .composer-primary:is([data-variant="voice"], [data-variant="send"]):enabled {
   box-shadow: 0 0 18px color-mix(in srgb, var(--wisp) 40%, transparent);
+}
+
+/* The way back to the newest messages carries a dot when something new arrived below. */
+.chat-jump[data-unseen]::after {
+  content: "";
+  position: absolute;
+  top: 1px;
+  right: 1px;
+  width: 9px;
+  height: 9px;
+  border: 2px solid var(--background);
+  border-radius: 50%;
+  background: var(--wisp, var(--blue));
 }
 
 /* A Wisp with nothing said yet introduces itself. */
@@ -229,7 +264,11 @@
 .chat-panel .tool-approval-card {
   border-radius: 18px;
 }
-.chat-panel .tool-approval-card [data-slot="button"]:last-child {
+.chat-panel .allow-all-approvals {
+  border-radius: 18px;
+}
+.chat-panel .tool-approval-card [data-slot="button"]:last-child,
+.allow-all-approvals [data-slot="button"] {
   background: var(--warning-solid);
   color: #1a1204;
 }
@@ -294,4 +333,558 @@
   border-right-color: transparent;
   border-radius: 50%;
   animation: wisp-halo-spin 0.8s linear infinite;
+}
+
+/* ---------- Approvals and the row of Wisps, shared by the phone list and the desktop sidebar ---------- */
+
+/* ---------- Every Wisp, and what it is doing ---------- */
+.wisp-orbs {
+  display: flex;
+  flex: none;
+  gap: 14px;
+  padding: 6px 20px 14px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.wisp-orbs::-webkit-scrollbar {
+  display: none;
+}
+.wisp-orb {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  width: 64px;
+}
+.wisp-orb .wisp-halo {
+  width: 62px;
+  height: 62px;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--foreground) 6%, transparent);
+}
+.wisp-orb .wisp-halo::before {
+  inset: -3px;
+}
+.wisp-orb .wisp-halo[data-state="working"]::before {
+  mask: radial-gradient(farthest-side, transparent calc(100% - 3px), #000 calc(100% - 2.5px));
+}
+.wisp-orb .wisp-halo[data-state="approval"]::before {
+  box-shadow:
+    inset 0 0 0 3px var(--warning-solid),
+    0 0 16px color-mix(in srgb, var(--warning-solid) 45%, transparent);
+}
+.wisp-orb .wisp-halo > svg,
+.wisp-orb .wisp-halo > img {
+  width: 42px;
+  height: 42px;
+}
+.wisp-orb-name {
+  max-width: 100%;
+  overflow: hidden;
+  color: var(--text-dim);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.wisp-orb-badge {
+  position: absolute;
+  top: -2px;
+  right: -2px;
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border: 2px solid var(--sidebar-background);
+  border-radius: 50%;
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1;
+}
+.wisp-orb-badge[data-tone="approval"] {
+  background: var(--warning-solid);
+  color: #1a1204;
+}
+.wisp-orb-badge[data-tone="error"] {
+  background: var(--destructive);
+  color: #fff;
+}
+.wisp-orb-badge[data-tone="unread"] {
+  top: 1px;
+  right: 1px;
+  width: 15px;
+  height: 15px;
+  background: var(--wisp);
+}
+
+/* ---------- The approval waiting for the person ---------- */
+.needs-you {
+  flex: none;
+  margin: 0 16px 10px;
+}
+.needs-you-card {
+  position: relative;
+  padding: 14px;
+  border: 1px solid color-mix(in srgb, var(--warning-solid) 30%, transparent);
+  border-radius: 20px;
+  background: linear-gradient(160deg, color-mix(in srgb, var(--warning-solid) 13%, var(--card)), var(--card));
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+}
+/* More waiting: the edge of another card behind this one. */
+.needs-you-card[data-stacked] {
+  margin-bottom: 8px;
+  box-shadow:
+    0 7px 0 -3px color-mix(in srgb, var(--warning-solid) 16%, var(--card)),
+    0 7px 0 -2px color-mix(in srgb, var(--warning-solid) 30%, transparent);
+}
+.needs-you-summary {
+  display: flex;
+  width: 100%;
+  flex-direction: column;
+  gap: 10px;
+  text-align: left;
+}
+.needs-you-title {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-dim);
+  font-size: 14px;
+}
+.needs-you-title strong {
+  color: var(--foreground);
+}
+.needs-you-title > svg,
+.needs-you-title > img {
+  width: 24px;
+  height: 24px;
+}
+.needs-you-title time {
+  flex: none;
+  color: var(--warning);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.needs-you-detail {
+  display: -webkit-box;
+  width: 100%;
+  overflow: hidden;
+  padding: 9px 11px;
+  border-radius: 11px;
+  background: color-mix(in srgb, var(--foreground) 6%, transparent);
+  font-size: 12.5px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+.needs-you-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+}
+.needs-you-actions [data-slot="button"] {
+  flex: 1;
+  height: 42px;
+  border-radius: 13px;
+  font-size: 14px;
+}
+.needs-you-actions .needs-you-allow {
+  background: var(--warning-solid);
+  color: #1a1204;
+}
+.needs-you-more {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  min-height: 36px;
+  color: var(--warning);
+  font-size: 13px;
+}
+.needs-you-more svg {
+  width: 15px;
+  height: 15px;
+}
+
+.approval-sheet-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding-right: 30px;
+}
+.approval-sheet-header .wisp-halo {
+  width: 46px;
+  height: 46px;
+}
+.approval-sheet .tool-approval-card {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+.approval-sheet .tool-approval-card > div:first-child > svg {
+  display: none;
+}
+.approval-sheet .tool-approval-card [data-slot="button"],
+.mobile-approval .tool-approval-card [data-slot="button"] {
+  border-radius: 13px;
+}
+.approval-sheet .tool-approval-card [data-slot="button"]:last-child,
+.mobile-approval .tool-approval-card [data-slot="button"]:last-child {
+  background: var(--warning-solid);
+  color: #1a1204;
+}
+
+/* Each request is a card lit by the Wisp that asked. */
+.mobile-approval {
+  padding: 12px 14px 14px;
+  border: 1px solid var(--border);
+  border-radius: 22px;
+  background:
+    radial-gradient(
+      260px 120px at 0 0,
+      color-mix(in srgb, var(--wisp, var(--warning-solid)) 18%, transparent),
+      transparent
+    ),
+    var(--card);
+}
+.mobile-approvals-list .allow-all-approvals {
+  width: 100%;
+  margin-top: 0;
+  border-radius: 14px;
+}
+.mobile-approval .tool-approval-card {
+  width: 100%;
+  margin-top: 6px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+.mobile-approval .tool-approval-card > div:first-child > svg {
+  display: none;
+}
+.mobile-approval-chat .wisp-halo {
+  width: 38px;
+  height: 38px;
+}
+.mobile-approval-who {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  flex-direction: column;
+  line-height: 1.3;
+}
+.mobile-approval-who small {
+  color: var(--text-dim);
+  font-size: 12.5px;
+}
+.mobile-approvals-empty {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin: 12px 4px;
+  padding: 16px;
+  border: 1px dashed var(--border);
+  border-radius: 20px;
+  color: var(--text-dim);
+  line-height: 1.55;
+}
+.mobile-approvals-empty strong {
+  color: var(--foreground);
+}
+.mobile-approvals-empty .wisp-halo {
+  width: 58px;
+  height: 58px;
+}
+.mobile-approval-chat {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  min-height: 44px;
+  padding: 4px 2px;
+  border: 0;
+  background: transparent;
+  color: var(--foreground);
+  font-size: 14px;
+  text-align: left;
+}
+.mobile-approval-chat strong {
+  min-width: 0;
+  overflow: hidden;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mobile-approval-chat > svg:last-child {
+  width: 16px;
+  height: 16px;
+  color: var(--text-dim);
+}
+
+/* ---------- A Wisp's profile ---------- */
+.wisp-profile {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  background: var(--background);
+  animation: var(--animate-panel-in);
+}
+.wisp-profile-hero {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  align-items: center;
+  padding: 8px 16px 22px;
+  border-radius: 0 0 32px 32px;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--wisp) 30%, var(--background)), var(--background));
+  text-align: center;
+}
+.dark .wisp-profile-hero {
+  background: linear-gradient(180deg, color-mix(in srgb, var(--wisp) 34%, #0b0b0e), var(--background));
+}
+.wisp-profile-bar {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: space-between;
+}
+.wisp-profile-bar [data-slot="button"] {
+  min-width: 44px;
+  height: 44px;
+  font-size: 15px;
+}
+.wisp-profile-bar svg {
+  width: 22px;
+  height: 22px;
+}
+/* The Wisp floats in its own light, over a soft shadow. */
+.wisp-profile-picture {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 150px;
+  height: 150px;
+  border-radius: 50%;
+  background: radial-gradient(circle, color-mix(in srgb, var(--wisp) 42%, transparent), transparent 66%);
+}
+.wisp-profile-picture::after {
+  content: "";
+  position: absolute;
+  bottom: 14px;
+  left: 50%;
+  width: 72px;
+  height: 12px;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.28);
+  filter: blur(3px);
+  translate: -50% 0;
+}
+.wisp-profile-picture > svg,
+.wisp-profile-picture > img {
+  position: relative;
+  z-index: 1;
+  width: 104px;
+  height: 104px;
+}
+.wisp-profile h1 {
+  margin-top: 2px;
+  font-size: 30px;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  outline: none;
+}
+.wisp-profile-role {
+  color: color-mix(in srgb, var(--wisp) 70%, var(--foreground));
+  font-size: 14px;
+  font-weight: 600;
+}
+.wisp-profile-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 18px;
+}
+.wisp-profile-actions button {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  width: 64px;
+  padding: 10px 0;
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  background: color-mix(in srgb, var(--foreground) 6%, transparent);
+  font-size: 12px;
+  font-weight: 600;
+}
+.wisp-profile-actions svg {
+  width: 20px;
+  height: 20px;
+}
+.wisp-profile-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px 16px max(24px, env(safe-area-inset-bottom, 0px));
+}
+.wisp-profile-card {
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: 22px;
+  background: var(--card);
+}
+.wisp-profile-card h2 {
+  margin-bottom: 4px;
+  color: var(--text-dim);
+  font-size: 12px;
+  font-weight: 600;
+}
+.wisp-profile-soul {
+  font-size: 15px;
+  line-height: 1.55;
+  white-space: pre-line;
+}
+.wisp-profile-empty {
+  color: var(--text-dim);
+  font-size: 14px;
+  line-height: 1.5;
+}
+.wisp-profile-list {
+  display: flex;
+  flex-direction: column;
+  list-style: none;
+}
+.wisp-profile-card.wisp-profile-list {
+  padding: 4px 16px;
+}
+.wisp-profile-list li {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 0;
+  color: var(--text-dim);
+}
+.wisp-profile-list li + li {
+  border-top: 1px solid var(--border);
+}
+.wisp-profile-list li > svg {
+  flex: none;
+  width: 18px;
+  height: 18px;
+}
+.wisp-profile-list span {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  color: var(--foreground);
+  font-size: 15px;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+.wisp-profile-list small {
+  color: var(--text-dim);
+  font-size: 12.5px;
+}
+
+/* A row of the profile opens a page of the Wisp's settings. */
+.wisp-profile-list button {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 12px;
+  border: 0;
+  background: transparent;
+  color: var(--text-dim);
+  text-align: left;
+}
+.wisp-profile-list button > svg {
+  flex: none;
+  width: 18px;
+  height: 18px;
+}
+.wisp-profile-list button > span {
+  flex: 1;
+}
+.wisp-profile-list .wisp-profile-chevron {
+  width: 16px;
+  height: 16px;
+  color: var(--text-faint);
+}
+.wisp-profile-card.wisp-profile-toggle {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.wisp-profile-toggle > span {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  font-size: 15px;
+  line-height: 1.3;
+}
+.wisp-profile-toggle small {
+  color: var(--text-dim);
+  font-size: 12.5px;
+}
+.wisp-profile-end {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.wisp-profile-end-button {
+  display: flex;
+  height: 44px;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: 0;
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--foreground) 6%, transparent);
+  font-size: 14px;
+  font-weight: 600;
+}
+.wisp-profile-end-button > span {
+  flex: none !important;
+}
+.wisp-profile-end-button svg {
+  width: 17px;
+  height: 17px;
+}
+.wisp-profile-end-button:last-child {
+  background: color-mix(in srgb, var(--destructive) 14%, transparent);
+  color: var(--destructive);
+}
+
+/* A key that does the same as the control beside it. */
+.wisp-kbd {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 4px;
+  padding: 0 5px;
+  border-radius: 5px;
+  background: color-mix(in srgb, var(--foreground) 7%, transparent);
+  box-shadow: inset 0 -1px 0 color-mix(in srgb, var(--foreground) 10%, transparent);
+  color: inherit;
+  font: inherit;
+  font-size: 10.5px;
+  line-height: 17px;
+  opacity: 0.75;
+}
+
+/* On the desktop the conversation reads as one centered column, composer included. */
+@media (min-width: 761px) {
+  .chat-panel .chat-messages {
+    max-width: 880px;
+  }
+  .chat-panel .chat-composer {
+    width: 100%;
+    max-width: 904px;
+    margin: 0 auto;
+  }
 }

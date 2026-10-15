@@ -46,8 +46,8 @@ function AvatarEditor({ wisp, onChange }: AvatarEditorProps) {
   }
 
   return (
-    <div>
-      <div className="mb-2 flex justify-center pt-5 pb-3 [&>img]:size-20! [&>img]:overflow-visible [&>svg]:size-20! [&>svg]:overflow-visible">
+    <div className="avatar-editor">
+      <div className="avatar-editor-preview mb-2 flex justify-center pt-5 pb-3 [&>img]:size-20! [&>img]:overflow-visible [&>svg]:size-20! [&>svg]:overflow-visible">
         <WispAvatar wisp={wisp} size="xl" />
       </div>
       <section className="px-1 pb-3" aria-label="Wisp appearance">

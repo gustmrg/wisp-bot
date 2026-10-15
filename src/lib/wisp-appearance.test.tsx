@@ -9,7 +9,14 @@ import {
   type WispAppearance,
 } from "../../shared/wisp-appearance";
 import { Wisp } from "@/components/wisp";
-import { AVATAR_COLORS, appearanceOptions, luminance, randomAppearance, wispPalette } from "@/lib/wisp-appearance";
+import {
+  AVATAR_COLORS,
+  appearanceOptions,
+  luminance,
+  randomAppearance,
+  wispAccent,
+  wispPalette,
+} from "@/lib/wisp-appearance";
 
 const AXES = Object.keys(WISP_APPEARANCE_AXES) as Array<keyof WispAppearance>;
 
@@ -75,6 +82,14 @@ describe("Wisp appearance registry", () => {
     }
     expect(wispPalette("#262626", "vivid").needsRing).toBe(true);
     expect(wispPalette("#3c82f6", "vivid").needsRing).toBe(false);
+  });
+
+  it("lifts a near-black Wisp's accent in the dark theme, where its glow would not show", () => {
+    expect(wispAccent("#3c82f6")).toEqual({ accent: "#3c82f6", ink: "#ffffff" });
+    expect(wispAccent("#262626")).toEqual({
+      accent: "light-dark(#262626, #a8a8a8)",
+      ink: "light-dark(#ffffff, #111111)",
+    });
   });
 
   it("generates appearances from the axes and the palette", () => {

@@ -4,7 +4,6 @@ import { expect, it, vi } from "vitest";
 
 import type { WispExecutionView } from "../../shared/execution";
 import { WispExecutionSettings } from "./wisp-execution-settings";
-import { Accordion } from "@/components/ui/accordion";
 
 const VIEW: WispExecutionView = {
   mode: "off",
@@ -45,12 +44,7 @@ function install(view: WispExecutionView) {
 it("turns commands on, saves a token without echoing it, and keeps other settings", async () => {
   const user = userEvent.setup();
   const save = install(VIEW);
-  render(
-    <Accordion>
-      <WispExecutionSettings conversationId="one" />
-    </Accordion>,
-  );
-  await user.click(screen.getByRole("button", { name: "Commands" }));
+  render(<WispExecutionSettings conversationId="one" />);
 
   await user.click(await screen.findByRole("radio", { name: "In a container" }));
   expect(save).toHaveBeenLastCalledWith({ conversationId: "one", mode: "container", image: null, localNetwork: false });
@@ -80,12 +74,7 @@ it("turns commands on, saves a token without echoing it, and keeps other setting
 it("asks before removing a saved token", async () => {
   const user = userEvent.setup();
   const save = install({ ...VIEW, mode: "container", hasGitToken: true });
-  render(
-    <Accordion>
-      <WispExecutionSettings conversationId="one" />
-    </Accordion>,
-  );
-  await user.click(screen.getByRole("button", { name: "Commands" }));
+  render(<WispExecutionSettings conversationId="one" />);
 
   await user.click(await screen.findByRole("button", { name: "Remove token" }));
   expect(save).not.toHaveBeenCalled();
@@ -102,14 +91,8 @@ it("asks before removing a saved token", async () => {
 });
 
 it("explains a missing container program and does not offer to turn commands on", async () => {
-  const user = userEvent.setup();
   install({ ...VIEW, runtime: { available: false, message: "Install Docker or Podman on the server." } });
-  render(
-    <Accordion>
-      <WispExecutionSettings conversationId="one" />
-    </Accordion>,
-  );
-  await user.click(screen.getByRole("button", { name: "Commands" }));
+  render(<WispExecutionSettings conversationId="one" />);
 
   expect(await screen.findByText("Install Docker or Podman on the server.")).toBeInTheDocument();
   expect(screen.getByRole("radio", { name: "In a container" })).toBeDisabled();

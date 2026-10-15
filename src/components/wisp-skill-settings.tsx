@@ -6,27 +6,14 @@ import type { SkillView } from "../../shared/skills";
 
 /** Same bound the backend applies to a whole SKILL.md. */
 const MAX_SKILL_FILE_BYTES = 64 * 1024;
-import { ConfirmAction } from "@/components/settings/settings-primitives";
-import { AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
+import { ConfirmAction, SettingsActions } from "@/components/settings/settings-primitives";
 import { Button } from "@/components/ui/button";
 import { FieldDescription, FieldGroup, FieldTitle } from "@/components/ui/field";
 import { FormStatus } from "@/components/ui/form-status";
 
+/** The Skills section of a Wisp's settings. */
 export function WispSkillSettings({ conversationId }: { conversationId: string }) {
-  const [visited, setVisited] = useState(false);
-  return (
-    <AccordionItem
-      value="skills"
-      onOpenChange={(open) => {
-        if (open) setVisited(true);
-      }}
-    >
-      <AccordionTrigger>Skills</AccordionTrigger>
-      <AccordionContent keepMounted>
-        {visited ? <SkillPanel key={conversationId} conversationId={conversationId} /> : null}
-      </AccordionContent>
-    </AccordionItem>
-  );
+  return <SkillPanel key={conversationId} conversationId={conversationId} />;
 }
 
 function SkillPanel({ conversationId }: { conversationId: string }) {
@@ -194,20 +181,35 @@ function SkillPanel({ conversationId }: { conversationId: string }) {
           </div>
         </div>
       ) : null}
-      <Button className="w-full" variant="outline" disabled={busy} onClick={() => fileInput.current?.click()}>
-        <FileUpIcon aria-hidden="true" />
-        Import SKILL.md
-      </Button>
-      {screenActions ? (
-        <Button className="w-full" variant="outline" onClick={() => void openFolder()}>
-          <FolderOpenIcon aria-hidden="true" />
-          Open skills folder
+      <SettingsActions>
+        <Button variant="outline" disabled={busy} onClick={() => fileInput.current?.click()}>
+          <FileUpIcon data-icon="inline-start" aria-hidden="true" />
+          Import SKILL.md
         </Button>
-      ) : null}
-      <Button className="w-full" variant="ghost" onClick={() => void load()}>
-        <RefreshCwIcon aria-hidden="true" />
-        {skills === null && error ? "Retry" : "Reload skills"}
-      </Button>
+        {screenActions ? (
+          <Button variant="outline" onClick={() => void openFolder()}>
+            <FolderOpenIcon data-icon="inline-start" aria-hidden="true" />
+            Open skills folder
+          </Button>
+        ) : null}
+        {skills === null && error ? (
+          <Button variant="ghost" onClick={() => void load()}>
+            <RefreshCwIcon data-icon="inline-start" aria-hidden="true" />
+            Retry
+          </Button>
+        ) : (
+          // An icon beside the other actions on the desktop; spelled out on mobile, where actions stack.
+          <Button
+            variant="ghost"
+            className="min-[761px]:w-8 min-[761px]:px-0"
+            title="Reload skills"
+            onClick={() => void load()}
+          >
+            <RefreshCwIcon aria-hidden="true" />
+            <span className="min-[761px]:sr-only">Reload skills</span>
+          </Button>
+        )}
+      </SettingsActions>
       <FormStatus error={error} />
     </FieldGroup>
   );

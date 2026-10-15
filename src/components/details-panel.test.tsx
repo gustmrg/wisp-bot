@@ -12,6 +12,7 @@ const chat = wispChatView("atlas", {
 function renderDetails(onDelete = vi.fn()): void {
   render(
     <DetailsPanel
+      initialTab="general"
       chat={chat}
       wisps={{ atlas: chat.wisp }}
       width={318}
@@ -34,7 +35,11 @@ function setClipboard(writeText: ((text: string) => Promise<void>) | undefined):
 function mockConversationModel(result: unknown): void {
   Object.defineProperty(window, "wisp", {
     configurable: true,
-    value: { getConversationModel: vi.fn(async () => result) },
+    value: {
+      getConversationModel: vi.fn(async () => result),
+      getJobs: vi.fn(async () => ({ ok: true, value: { jobs: [] } })),
+      subscribeToJobs: vi.fn(() => () => {}),
+    },
   });
 }
 
@@ -110,5 +115,42 @@ describe("DetailsPanel deletion", () => {
     await user.click(screen.getByRole("button", { name: "Confirm deletion" }));
 
     expect(onDelete).toHaveBeenCalledOnce();
+  });
+});
+
+describe("DetailsPanel on the desktop", () => {
+  it("opens straight on the Wisp's settings, with who it is in the panel's header", async () => {
+    const user = userEvent.setup();
+    Object.defineProperty(window, "wisp", {
+      configurable: true,
+      value: {
+        getAiSettings: vi.fn(async () => ({ ok: false, error: { message: "No settings yet" } })),
+        getConversationModel: vi.fn(async () => ({ ok: false, error: { message: "No model yet" } })),
+        subscribeToAgentEvents: vi.fn(() => () => undefined),
+      },
+    });
+    render(
+      <DetailsPanel
+        chat={chat}
+        wisps={{ atlas: chat.wisp }}
+        width={318}
+        onChange={vi.fn()}
+        onChangeWisp={vi.fn()}
+        onClose={vi.fn()}
+        onDelete={vi.fn()}
+        onResizeStart={vi.fn()}
+      />,
+    );
+    // The conversation's own header names the Wisp; the panel says what it is.
+    expect(screen.getByRole("heading", { name: "Settings" })).toBeVisible();
+    expect(screen.getByRole("textbox", { name: "Name" })).toHaveValue("Atlas");
+    expect(screen.queryByRole("button", { name: "Back to profile" })).not.toBeInTheDocument();
+
+    // The tabs carry the navigation; switching them stays inside the panel.
+    await user.click(screen.getByRole("tab", { name: "Model" }));
+    expect(screen.getByRole("tab", { name: "Model" })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("heading", { name: "Settings" })).toBeVisible();
+    await user.click(screen.getByRole("tab", { name: "General" }));
+    expect(screen.getByRole("textbox", { name: "Name" })).toHaveValue("Atlas");
   });
 });

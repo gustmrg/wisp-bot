@@ -9,8 +9,6 @@ interface ResizablePanelLayout {
 
 type SidebarLayoutStyle = CSSProperties & {
   "--sidebar-width": string;
-  "--sidebar-min-width": string;
-  "--sidebar-mobile-expanded-width": string;
 };
 
 type DetailsLayoutStyle = CSSProperties & {
@@ -25,21 +23,13 @@ const SIDEBAR_LAYOUT = {
     maxWidth: 400,
     direction: 1,
   },
-  responsive: {
-    collapsedWidth: 68,
-    mobileExpandedWidth: 220,
-  },
 } as const satisfies {
   readonly resize: ResizablePanelLayout;
-  readonly responsive: {
-    readonly collapsedWidth: number;
-    readonly mobileExpandedWidth: number;
-  };
 };
 
 const DETAILS_LAYOUT = {
   resize: {
-    defaultWidth: 318,
+    defaultWidth: 400,
     minWidth: 280,
     maxWidth: 480,
     direction: -1,
@@ -48,12 +38,8 @@ const DETAILS_LAYOUT = {
   readonly resize: ResizablePanelLayout;
 };
 
-function sidebarLayoutStyle(width: number, collapsed: boolean): SidebarLayoutStyle {
-  return {
-    "--sidebar-width": `${collapsed ? SIDEBAR_LAYOUT.responsive.collapsedWidth : width}px`,
-    "--sidebar-min-width": `${SIDEBAR_LAYOUT.responsive.collapsedWidth}px`,
-    "--sidebar-mobile-expanded-width": `${SIDEBAR_LAYOUT.responsive.mobileExpandedWidth}px`,
-  };
+function sidebarLayoutStyle(width: number): SidebarLayoutStyle {
+  return { "--sidebar-width": `${width}px` };
 }
 
 function detailsLayoutStyle(width: number): DetailsLayoutStyle {

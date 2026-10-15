@@ -89,6 +89,34 @@ describe("useResizablePanel", () => {
     act(() => handle.dispatchEvent(pointerEvent("pointerup")));
   });
 
+  it("reports the final width once a drag ends", () => {
+    const onResizeEnd = vi.fn();
+    const { result } = renderHook(() =>
+      useResizablePanel({ defaultWidth: 400, minWidth: 280, maxWidth: 480, direction: -1, onResizeEnd }),
+    );
+    const { handle } = resizeHandle();
+    startResize(result.current.onResizeStart, handle);
+
+    act(() => handle.dispatchEvent(pointerEvent("pointermove", 80)));
+    act(() => handle.dispatchEvent(pointerEvent("pointermove", 60)));
+    expect(onResizeEnd).not.toHaveBeenCalled();
+
+    act(() => handle.dispatchEvent(pointerEvent("pointerup")));
+    expect(onResizeEnd).toHaveBeenCalledExactlyOnceWith(440);
+  });
+
+  it("does not report a click that leaves the width unchanged", () => {
+    const onResizeEnd = vi.fn();
+    const { result } = renderHook(() =>
+      useResizablePanel({ defaultWidth: 280, minWidth: 220, maxWidth: 400, direction: 1, onResizeEnd }),
+    );
+    const { handle } = resizeHandle();
+    startResize(result.current.onResizeStart, handle);
+
+    act(() => handle.dispatchEvent(pointerEvent("pointerup")));
+    expect(onResizeEnd).not.toHaveBeenCalled();
+  });
+
   it.each(["pointerup", "pointercancel", "lostpointercapture"])("cleans up after %s", (eventType) => {
     const { result } = renderHook(() =>
       useResizablePanel({ defaultWidth: 280, minWidth: 220, maxWidth: 400, direction: 1 }),

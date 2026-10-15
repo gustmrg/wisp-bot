@@ -1,19 +1,18 @@
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
-
-import type { ConnectionsView } from "../shared/connections";
-import type { AiSettingsView, UpdateState, WispApi } from "../shared/contracts";
-import {
-  chatSummary,
-  type Chat,
-  type ConversationDelta,
-  type ConversationStateView,
-  type Wisp,
-} from "../shared/conversations";
 import App from "@/App";
 import { LEGACY_STORAGE_KEY } from "@/hooks/use-conversations";
 import { MOBILE_LAYOUT_QUERY } from "@/hooks/use-mobile-layout";
+import type { ConnectionsView } from "../shared/connections";
+import type { AiSettingsView, UpdateState, WispApi } from "../shared/contracts";
+import {
+  type Chat,
+  type ConversationDelta,
+  type ConversationStateView,
+  chatSummary,
+  type Wisp,
+} from "../shared/conversations";
 import { DEFAULT_WISP_APPEARANCE } from "../shared/wisp-appearance";
 
 /** A Wisp's own conversation; `wispNamed` gives the Wisp itself. */
@@ -582,7 +581,10 @@ describe("App", () => {
     render(<App />);
     await screen.findByRole("textbox", { name: "Message Atlas" });
     await user.click(screen.getByRole("button", { name: "Open Wisp settings" }));
-    const name = screen.getByRole("textbox", { name: "Name" });
+    // The panel opens straight on the Wisp's settings, with who it is in its header.
+    const panel = screen.getByRole("complementary", { name: "Atlas settings" });
+    expect(within(panel).getByRole("heading", { name: "Settings" })).toBeVisible();
+    const name = within(panel).getByRole("textbox", { name: "Name" });
     await user.clear(name);
     await user.type(name, "Unsaved Atlas name");
     const list = screen.getByRole("navigation", { name: "Wisps and circles" });
@@ -855,12 +857,16 @@ it.each([false, true])("preserves later navigation when deletion completes (mobi
   });
   await user.click(await within(list).findByRole("button", { name: /Atlas/ }));
   await user.click(screen.getByRole("button", { name: "Open Wisp settings" }));
-  if (mobile) await user.click(screen.getByRole("button", { name: "Edit" }));
-  await user.click(screen.getByRole("button", { name: "Delete Wisp" }));
+  if (mobile) {
+    // The profile deletes the Wisp.
+    await user.click(screen.getByRole("button", { name: "Delete Atlas…" }));
+  } else {
+    // The General tab's actions delete it.
+    await user.click(screen.getByRole("button", { name: "Delete Wisp" }));
+  }
   await user.click(screen.getByRole("button", { name: "Confirm deletion" }));
   await waitFor(() => expect(api.deleteWisp).toHaveBeenCalledOnce());
   if (mobile) {
-    await user.click(screen.getByRole("button", { name: "Back to profile" }));
     await user.click(screen.getByRole("button", { name: "Back to conversation" }));
     await user.click(screen.getByRole("button", { name: "Back to conversations" }));
   }

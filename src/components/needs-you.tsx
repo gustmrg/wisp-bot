@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { useClock } from "@/hooks/use-clock";
 import { chatName } from "@/lib/chat-schema";
-import { inkOn, wispColor } from "@/lib/wisp-appearance";
+import { wispAccentStyle, wispColor } from "@/lib/wisp-appearance";
 import type { ToolApprovalDecision, ToolApprovalRequest } from "../../shared/tool-policy";
 
 interface NeedsYouProps {
@@ -19,13 +19,14 @@ interface NeedsYouProps {
   allowAlwaysAvailable: boolean;
   onResolve: (request: ToolApprovalRequest, decision: ToolApprovalDecision) => void;
   onOpenChat: (chatId: ChatId) => void;
+  /** Opens the Approvals tab, where the rest wait; without it they are not pointed to. */
   onOpenApprovals?: () => void;
 }
 
 function accentStyle(chat: ChatView): CSSProperties | undefined {
   if (chat.kind !== "wisp") return undefined;
   const color = wispColor(chat.wisp.name, chat.wisp.color);
-  return { "--wisp": color, "--wisp-ink": inkOn(color) } as CSSProperties;
+  return wispAccentStyle(color);
 }
 
 /**

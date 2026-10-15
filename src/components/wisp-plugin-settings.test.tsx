@@ -1,8 +1,9 @@
 import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
-
+import { wispChatView } from "@/test/chat-fixtures";
 import type { BackendResult } from "../../shared/contracts";
+import type { McpGrant, McpServerSummary } from "../../shared/mcp";
 import {
   PLUGIN_CATALOG,
   type PluginGrant,
@@ -11,10 +12,8 @@ import {
   type WebProviders,
   type WispPluginAccessView,
 } from "../../shared/plugins";
-import type { McpGrant, McpServerSummary } from "../../shared/mcp";
-import { WispPluginSettings } from "./wisp-plugin-settings";
 import { WispDetails } from "./wisp-details";
-import { wispChatView } from "@/test/chat-fixtures";
+import { WispPluginSettings } from "./wisp-plugin-settings";
 
 const NO_PROVIDERS: WebProviders = { search: null, read: null };
 
@@ -103,7 +102,7 @@ describe("WispPluginSettings", () => {
     render(<WispPluginSettings conversationId="researcher" />);
     const search = await screen.findByRole("combobox", { name: "Search the web access" });
     expect(search).toHaveTextContent("No access");
-    expect(screen.getByRole("button", { name: "Save access" })).toBeDisabled();
+    expect(screen.queryByRole("button", { name: "Save access" })).not.toBeInTheDocument();
     await openSelect(user, search);
     expect(screen.getAllByRole("option").map((option) => option.textContent)).toEqual([
       "No access",
@@ -292,7 +291,7 @@ describe("WispPluginSettings", () => {
     await user.click(screen.getByRole("button", { name: "Reload access settings" }));
     const search = await screen.findByRole("combobox", { name: "Search the web access" });
     expect(screen.getByRole("combobox", { name: "Linear access" })).toHaveTextContent("No access");
-    expect(screen.getByRole("button", { name: "Save access" })).toBeDisabled();
+    expect(screen.queryByRole("button", { name: "Save access" })).not.toBeInTheDocument();
     await openSelect(user, search);
     await user.click(screen.getByRole("option", { name: /Brave Search/ }));
     await user.click(screen.getByRole("button", { name: "Save access" }));

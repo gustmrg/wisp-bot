@@ -11,6 +11,7 @@ describe("normalizePreferences", () => {
     expect(
       normalizePreferences({
         theme: "dark",
+        wispColors: false,
         launchAtLogin: true,
         notificationSounds: false,
         microphone: "studio-mic",
@@ -27,6 +28,7 @@ describe("normalizePreferences", () => {
     ).toEqual({
       ...DEFAULT_PREFERENCES,
       theme: "dark",
+      wispColors: false,
       launchAtLogin: true,
       notificationSounds: false,
       microphone: "studio-mic",
@@ -39,6 +41,17 @@ describe("normalizePreferences", () => {
       timezone: "UTC",
       autoReview: false,
       autoReviewRules: [{ id: "rule-1", action: "Read files", behavior: "ask", scope: "workspace" }],
+    });
+  });
+
+  it("keeps saved panel widths within each panel's bounds", () => {
+    expect(normalizePreferences({ sidebarWidth: 312.4, detailsWidth: 9000 })).toMatchObject({
+      sidebarWidth: 312,
+      detailsWidth: 480,
+    });
+    expect(normalizePreferences({ sidebarWidth: 10, detailsWidth: "wide" })).toMatchObject({
+      sidebarWidth: 220,
+      detailsWidth: 400,
     });
   });
 
