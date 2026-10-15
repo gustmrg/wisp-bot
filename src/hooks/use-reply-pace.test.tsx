@@ -24,6 +24,16 @@ describe("advanceReveal", () => {
     expect(advanceReveal(text, step.shown, step.carry, 20, "natural").shown).toBe(step.shown);
   });
 
+  it("keeps the natural pace over many frames, however long the words", () => {
+    const text = "extraordinarily ".repeat(200);
+    let shown = 0;
+    let carry = 0;
+    for (let frame = 0; frame < 60; frame += 1) ({ shown, carry } = advanceReveal(text, shown, carry, 33, "natural"));
+    // About two seconds: the pace, give or take the word being finished.
+    expect(shown).toBeGreaterThan(NATURAL_RATE * 1.98 - 16);
+    expect(shown).toBeLessThan(NATURAL_RATE * 1.98 + 16);
+  });
+
   it("never splits an emoji", () => {
     const text = "a😀b";
     expect(advanceReveal(text, 0, 0, 1_000 / 90 / 0.5, "smooth").shown).not.toBe(2);

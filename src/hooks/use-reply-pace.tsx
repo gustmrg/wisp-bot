@@ -57,7 +57,8 @@ export function advanceReveal(
   // Never split a character made of two code units, such as an emoji.
   const unit = text.charCodeAt(next - 1);
   if (next < text.length && unit >= 0xd800 && unit <= 0xdbff) next += 1;
-  return { shown: next, carry: Math.max(0, budget - (next - shown)) };
+  // A word end shown ahead of its time leaves the carry negative, so the next word waits for it.
+  return { shown: next, carry: budget - (next - shown) };
 }
 
 /**
