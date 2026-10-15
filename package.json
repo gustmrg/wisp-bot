@@ -40,7 +40,8 @@
     "dev:web": "vite --config vite.web.config.mts --configLoader bundle",
     "smoke:pi": "npm run build:electron && node scripts/pi-live-smoke.mjs",
     "preview": "vite preview",
-    "ui:add": "cross-env npm_config_allow_scripts= shadcn add"
+    "ui:add": "cross-env npm_config_allow_scripts= shadcn add",
+    "guide": "node scripts/build-app-guide.mjs"
   },
   "dependencies": {
     "@base-ui/react": "^1.7.0",

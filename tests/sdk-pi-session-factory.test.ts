@@ -35,6 +35,7 @@ const sdk = vi.hoisted(() => {
       "search_history",
       "use_skill",
       "save_skill",
+      "wisp_help",
     ]),
     setActiveToolsByName: vi.fn(),
     dispose: vi.fn(),
@@ -115,6 +116,7 @@ describe("SdkPiSessionFactory", () => {
       "search_history",
       "use_skill",
       "save_skill",
+      "wisp_help",
     ]);
     sdk.session.setActiveToolsByName.mockReset();
     sdk.loaderOptions.length = 0;
@@ -163,7 +165,18 @@ describe("SdkPiSessionFactory", () => {
         agentDir: context.configDirectory,
         model,
         modelRuntime: runtime,
-        tools: ["read", "grep", "find", "ls", "edit", "write", "search_history", "use_skill", "save_skill"],
+        tools: [
+          "read",
+          "grep",
+          "find",
+          "ls",
+          "edit",
+          "write",
+          "search_history",
+          "use_skill",
+          "save_skill",
+          "wisp_help",
+        ],
         excludeTools: ["bash", "powershell"],
         thinkingLevel: "off",
         customTools: expect.arrayContaining([
@@ -186,6 +199,7 @@ describe("SdkPiSessionFactory", () => {
       "search_history",
       "use_skill",
       "save_skill",
+      "wisp_help",
     ]);
     expect(sdk.loaderOptions[0]).toEqual(
       expect.objectContaining({
@@ -613,7 +627,18 @@ describe("SdkPiSessionFactory", () => {
     };
     const factory = new SdkPiSessionFactory(runtime, undefined, toToolSource(pluginTools));
     const session = await factory.create(context, { providerId: "provider", modelId: "model" });
-    const builtins = ["read", "grep", "find", "ls", "edit", "write", "search_history", "use_skill", "save_skill"];
+    const builtins = [
+      "read",
+      "grep",
+      "find",
+      "ls",
+      "edit",
+      "write",
+      "search_history",
+      "use_skill",
+      "save_skill",
+      "wisp_help",
+    ];
     expect(sdk.createAgentSession).toHaveBeenLastCalledWith(
       expect.objectContaining({
         tools: [...builtins, "web_search", "linear_get_issue"],

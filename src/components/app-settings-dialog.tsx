@@ -62,26 +62,14 @@ import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectVa
 import { normalizeTheme } from "@/lib/theme";
 import { cn } from "@/lib/utils";
 import { WISP_RELEASES_URL, WISP_REPOSITORY_URL, type UpdateState } from "../../shared/contracts";
+import type { AppSettingsSection } from "../../shared/app-links";
 import type { PluginId } from "../../shared/plugins";
 import type { WispOption } from "@/lib/plugin-access";
 import type { ChatView } from "@/chat-data";
 
-type SettingsSection =
-  | "general"
-  | "notifications"
-  | "connections"
-  | "remote-access"
-  | "model"
-  | "voice"
-  | "plugins"
-  | "mcp"
-  | "shortcuts"
-  | "about"
-  | "usage"
-  | "storage"
-  | "jobs";
+type SettingsSection = AppSettingsSection;
 /** Sections other parts of the app can open the dialog at. */
-export type SettingsEntrySection = "general" | "model" | "voice" | "plugins" | "mcp" | "storage" | "jobs";
+export type SettingsEntrySection = AppSettingsSection;
 
 /** Navigation order; entries without a section are announced but not available yet. */
 const NAV_ITEMS: ReadonlyArray<

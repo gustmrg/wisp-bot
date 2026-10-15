@@ -7,7 +7,15 @@
   },
   "files": {
     "ignoreUnknown": true,
-    "includes": ["**", "!!node_modules", "!!dist", "!!dist-electron", "!!dist-server", "!!dist-web"]
+    "includes": [
+      "**",
+      "!!node_modules",
+      "!!dist",
+      "!!dist-electron",
+      "!!dist-server",
+      "!!dist-web",
+      "!backend/app-guide-content.ts"
+    ]
   },
   "formatter": {
     "enabled": true,

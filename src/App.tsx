@@ -4,6 +4,7 @@ import type { ChatListAction } from "@/chat-data";
 import type { SettingsEntrySection } from "@/components/app-settings-dialog";
 import type { AppSettingsDialogHandle } from "@/components/app-settings-dialog-host";
 import { AppSettingsDialogHost } from "@/components/app-settings-dialog-host";
+import { AppLinkProvider } from "@/components/app-link";
 import { ChatPanel } from "@/components/chat-panel";
 import { DetailsPanel } from "@/components/details-panel";
 import { MobileApprovals } from "@/components/mobile-approvals";
@@ -29,6 +30,7 @@ import { DETAILS_LAYOUT, SIDEBAR_LAYOUT } from "@/lib/layout";
 import { matchesShortcut, TOGGLE_SIDEBAR_SHORTCUT } from "@/lib/shortcuts";
 import { mainPanel } from "@/lib/ui-classes";
 import { cn } from "@/lib/utils";
+import type { AppLink } from "../shared/app-links";
 import type { PluginId } from "../shared/plugins";
 
 export default function App() {
@@ -189,6 +191,15 @@ function Workspace({ userProfile }: { userProfile: UserProfileController }) {
     settingsDialog.current?.open(section, pluginId, storageConversationId);
   }
 
+  /** A `wisp://` link in a reply: a settings panel, or a page of the open Wisp's settings. */
+  function openAppLink(link: AppLink) {
+    if (link.scope === "settings") showSettings(link.section);
+    else if (workspace.activeChat?.kind === "wisp") {
+      setProfileOpen(false);
+      showDetails(true, link.section);
+    }
+  }
+
   function showSearch(open: boolean) {
     navigationVersion.current += 1;
     setSearchOpen(open);
@@ -263,41 +274,43 @@ function Workspace({ userProfile }: { userProfile: UserProfileController }) {
             onChatAction={applyChatAction}
           />
           {workspace.activeChat ? (
-            <ChatPanel
-              hidden={mobile && (mobilePage !== "chat" || detailsOpen || profileOpen)}
-              onBack={mobile ? showConversations : undefined}
-              chat={workspace.activeChat}
-              transcript={workspace.activeTranscript}
-              status={workspace.statuses[workspace.activeChat.id] ?? "configuration_required"}
-              activity={workspace.activity[workspace.activeChat.id]}
-              steps={workspace.toolActivities[workspace.activeChat.id]}
-              error={workspace.conversationErrors[workspace.activeChat.id]?.message}
-              acknowledging={Boolean(workspace.acknowledging[workspace.activeChat.id])}
-              approvals={workspace.approvals[workspace.activeChat.id] ?? []}
-              allowAlwaysAvailable={workspace.preferences.autoReview}
-              onAnswerPrompt={(messageId, answer) => void workspace.answerPrompt(messageId, answer)}
-              onAbort={() => void workspace.abortActiveChat()}
-              onLoadOlder={workspace.loadOlderMessages}
-              onLoadNewer={workspace.loadNewerMessages}
-              onShowLatest={workspace.showLatestMessages}
-              onOpenDetails={openChatDetails}
-              onConfigure={() => showSettings("model")}
-              voice={{
-                deviceId: workspace.preferences.microphone,
-                providerId: workspace.preferences.voiceProvider,
-                modelId: workspace.preferences.voiceModel,
-                language: workspace.preferences.voiceLanguage,
-                autoSend: workspace.preferences.voiceAutoSend,
-                shortcut: workspace.preferences.shortcuts.voiceInput,
-              }}
-              onConfigureVoice={() => showSettings("voice")}
-              onRetry={(messageId) => void workspace.retryMessage(messageId)}
-              onResolveApproval={(request, decision) => void workspace.resolveApproval(request, decision)}
-              onSend={(text) => void workspace.sendMessage(text)}
-              scheduledMessages={scheduledMessages}
-              messageQueue={messageQueue}
-              onNewTopic={startNewTopic}
-            />
+            <AppLinkProvider value={openAppLink}>
+              <ChatPanel
+                hidden={mobile && (mobilePage !== "chat" || detailsOpen || profileOpen)}
+                onBack={mobile ? showConversations : undefined}
+                chat={workspace.activeChat}
+                transcript={workspace.activeTranscript}
+                status={workspace.statuses[workspace.activeChat.id] ?? "configuration_required"}
+                activity={workspace.activity[workspace.activeChat.id]}
+                steps={workspace.toolActivities[workspace.activeChat.id]}
+                error={workspace.conversationErrors[workspace.activeChat.id]?.message}
+                acknowledging={Boolean(workspace.acknowledging[workspace.activeChat.id])}
+                approvals={workspace.approvals[workspace.activeChat.id] ?? []}
+                allowAlwaysAvailable={workspace.preferences.autoReview}
+                onAnswerPrompt={(messageId, answer) => void workspace.answerPrompt(messageId, answer)}
+                onAbort={() => void workspace.abortActiveChat()}
+                onLoadOlder={workspace.loadOlderMessages}
+                onLoadNewer={workspace.loadNewerMessages}
+                onShowLatest={workspace.showLatestMessages}
+                onOpenDetails={openChatDetails}
+                onConfigure={() => showSettings("model")}
+                voice={{
+                  deviceId: workspace.preferences.microphone,
+                  providerId: workspace.preferences.voiceProvider,
+                  modelId: workspace.preferences.voiceModel,
+                  language: workspace.preferences.voiceLanguage,
+                  autoSend: workspace.preferences.voiceAutoSend,
+                  shortcut: workspace.preferences.shortcuts.voiceInput,
+                }}
+                onConfigureVoice={() => showSettings("voice")}
+                onRetry={(messageId) => void workspace.retryMessage(messageId)}
+                onResolveApproval={(request, decision) => void workspace.resolveApproval(request, decision)}
+                onSend={(text) => void workspace.sendMessage(text)}
+                scheduledMessages={scheduledMessages}
+                messageQueue={messageQueue}
+                onNewTopic={startNewTopic}
+              />
+            </AppLinkProvider>
           ) : (
             <main hidden={mobile} className={cn(mainPanel, "items-center justify-center text-dim", mobile && "hidden")}>
               {workspace.loading ? "Loading conversations…" : (workspace.error ?? "Create a Wisp to get started.")}
