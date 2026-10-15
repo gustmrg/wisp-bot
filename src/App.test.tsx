@@ -78,6 +78,7 @@ function conversationState(initialized: boolean, chats: Record<string, Chat> = {
   };
 }
 
+const remoteAccessOff = { enabled: false, automatic: false, port: 8787, webAppAvailable: true, devices: [] };
 const localConnections: ConnectionsView = {
   activeId: "local",
   profiles: [{ id: "local", kind: "local", name: "This computer", paired: true }],
@@ -334,6 +335,13 @@ function createApi(initialState: ConversationStateView): WispApi {
     cancelConnection: async () => ({ ok: true as const, value: localConnections }),
     answerSshPrompt: async () => ({ ok: true as const, value: localConnections }),
     subscribeToConnections: () => () => undefined,
+    getRemoteAccess: async () => ({ ok: true as const, value: remoteAccessOff }),
+    saveRemoteAccess: async () => ({ ok: true as const, value: remoteAccessOff }),
+    pairRemoteDevice: async () => ({
+      ok: true as const,
+      value: { code: "ABCDE-FGHJK", expiresAt: "2026-10-14T12:00:00.000Z", link: "https://a.ts.net/#pair=ABCDE-FGHJK" },
+    }),
+    revokeRemoteDevice: async () => ({ ok: true as const, value: remoteAccessOff }),
   };
 }
 

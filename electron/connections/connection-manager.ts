@@ -24,7 +24,7 @@ import {
 } from "../../shared/connections.js";
 import { WISP_IPC_CHANNELS, type BackendResult } from "../../shared/contracts.js";
 import type { DeviceCredentials, HostRequest, HostResponse } from "../../shared/remote-protocol.js";
-import type { LocalServer } from "../local-server/local-server.js";
+import type { LocalServer, LocalServerExposure } from "../local-server/local-server.js";
 import {
   advance,
   connectSteps,
@@ -38,7 +38,10 @@ import type { InstallStep } from "./ssh-install.js";
 
 export interface ConnectionManagerOptions {
   store: ConnectionStore;
-  /** The Wisp server on this computer, started only while it is the chosen connection. */
+  /**
+   * The Wisp server on this computer, started only while it is the chosen
+   * connection, or for as long as the app runs while remote access is on.
+   */
   localServer: LocalServer;
   openSshTunnel(profile: SshConnectionProfile, signal: AbortSignal): Promise<RemoteTransport>;
   /** Installs and starts the Wisp server on the machine behind an SSH profile; reports progress lines. */
@@ -62,6 +65,9 @@ export interface ConnectionManagerOptions {
 // sshd gives up on a login after two minutes by default.
 const SSH_PROMPT_TIMEOUT_MS = 120_000;
 const MAX_SSH_ANSWER = 1024;
+// While remote access is on, a local server that stopped starts again after this long, or longer after a failed start.
+const LOCAL_RESTART_DELAY_MS = 2_000;
+const LOCAL_RETRY_DELAY_MS = 30_000;
 
 const OPERATIONS_BY_CHANNEL = new Map<string, string>(
   Object.entries(WISP_IPC_CHANNELS).map(([operation, channel]) => [channel, operation]),
@@ -94,6 +100,11 @@ export class ConnectionManager {
   /** Questions OpenSSH is waiting on, oldest first; the renderer shows one at a time. */
   private sshPrompts: Array<{ view: SshPromptView; finish: (answer: string | undefined) => void }> = [];
   private sshPromptCount = 0;
+  private started = false;
+  /** Set while remote access is on: the local server then runs whichever connection is chosen. */
+  private exposure: LocalServerExposure | undefined;
+  private watchedLocalExit: Promise<void> | undefined;
+  private localRestart: ReturnType<typeof setTimeout> | undefined;
 
   constructor(private readonly options: ConnectionManagerOptions) {}
 
@@ -105,11 +116,30 @@ export class ConnectionManager {
   start(): Promise<void> {
     return this.serialized(async () => {
       const { store } = this.options;
+      this.started = true;
       if (!store.hasChoice && !(await this.options.hasLocalData())) {
         this.setStatus({ profileId: LOCAL_CONNECTION_ID, phase: "choosing" });
-        return;
+      } else {
+        await this.open(store.active.id, undefined, false);
       }
-      await this.open(store.active.id, undefined, false);
+      this.keepLocalServerRunning();
+    });
+  }
+
+  /**
+   * Sets how Wisps on this computer are exposed for remote access. While they
+   * are, the local server keeps running whichever connection is chosen, until
+   * the app quits. A running server changes without restarting, so nothing
+   * reconnects; rejects when it cannot, such as when the port is taken.
+   */
+  setLocalExposure(exposure: LocalServerExposure | undefined): Promise<void> {
+    return this.serialized(async () => {
+      this.exposure = exposure;
+      await this.options.localServer.setExposure(exposure);
+      if (!this.started || this.disposed) return;
+      // Turned off while a server is chosen: Wisps on this computer stop, as they did before.
+      if (!exposure && this.status.profileId !== LOCAL_CONNECTION_ID) await this.options.localServer.stop();
+      this.keepLocalServerRunning();
     });
   }
 
@@ -367,6 +397,7 @@ export class ConnectionManager {
   /** Disconnects and stops the local server; Wisps on other servers keep running. */
   dispose(): Promise<void> {
     this.disposed = true;
+    clearTimeout(this.localRestart);
     this.installation?.controller.abort();
     for (const pending of [...this.sshPrompts]) pending.finish(undefined);
     return this.serialized(async () => {
@@ -383,8 +414,8 @@ export class ConnectionManager {
     setup?: ConnectionProgress,
   ): Promise<void> {
     await this.close();
-    // Wisps on this computer run only while it is chosen.
-    if (id !== LOCAL_CONNECTION_ID) await this.options.localServer.stop();
+    // Wisps on this computer run only while it is chosen, or while remote access is on.
+    if (id !== LOCAL_CONNECTION_ID && !this.exposure) await this.options.localServer.stop();
     if (this.disposed) return;
     const { store } = this.options;
     const profile = store.get(id) ?? store.active;
@@ -509,6 +540,32 @@ export class ConnectionManager {
     this.session = session;
     // This app pairs with its own server by itself; other servers only on request.
     session.start(pairingCode, local || userInitiated);
+  }
+
+  /** While remote access is on, starts the local server, and starts it again whenever it stops. */
+  private keepLocalServerRunning(): void {
+    if (!this.exposure || !this.started || this.disposed) return;
+    clearTimeout(this.localRestart);
+    this.options.localServer.ensureRunning().then(
+      (running) => {
+        if (this.watchedLocalExit === running.exited) return;
+        this.watchedLocalExit = running.exited;
+        void running.exited.then(() => this.restartLocalServer(LOCAL_RESTART_DELAY_MS));
+      },
+      (error: unknown) => {
+        this.options.logger.warn("local_server_unavailable", {
+          message: error instanceof Error ? error.message : "unknown",
+        });
+        this.restartLocalServer(LOCAL_RETRY_DELAY_MS);
+      },
+    );
+  }
+
+  private restartLocalServer(delayMs: number): void {
+    if (!this.exposure || this.disposed) return;
+    clearTimeout(this.localRestart);
+    this.localRestart = setTimeout(() => this.keepLocalServerRunning(), delayMs);
+    this.localRestart.unref?.();
   }
 
   private async close(): Promise<void> {

@@ -109,6 +109,10 @@ const REQUIRED_WISP_METHODS = [
   "cancelConnection",
   "answerSshPrompt",
   "subscribeToConnections",
+  "getRemoteAccess",
+  "saveRemoteAccess",
+  "pairRemoteDevice",
+  "revokeRemoteDevice",
 ] as const satisfies ReadonlyArray<keyof WispApi>;
 
 export function isWispBridgeAvailable(value: unknown): value is WispApi {

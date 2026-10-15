@@ -3,12 +3,25 @@ import { randomInt } from "node:crypto";
 import { createInterface } from "node:readline";
 
 import type { StructuredLogger } from "../../backend/structured-logger.js";
+import type { AdminCommand } from "../../server/admin.js";
 
 const START_TIMEOUT_MS = 30_000;
 // The server gives agents ten seconds to settle before it exits.
 const STOP_TIMEOUT_MS = 12_000;
 const KILL_TIMEOUT_MS = 2_000;
 const CODE_ALPHABET = "ABCDEFGHJKMNPQRSTVWXYZ23456789";
+const ADMIN_TIMEOUT_MS = 30_000;
+
+/**
+ * How other devices reach the server while remote access to this computer is
+ * on: besides its own port, it listens on a fixed loopback port that a private
+ * HTTPS proxy such as Tailscale Serve forwards to, and serves the browser app.
+ */
+export interface LocalServerExposure {
+  port: number;
+  /** The exact HTTPS origin the proxy serves, such as https://laptop.tailnet.ts.net. */
+  publicOrigin: string;
+}
 
 /** A Wisp server on this computer, reached like any other server. */
 export interface LocalServer {
@@ -16,6 +29,15 @@ export interface LocalServer {
   ensureRunning(): Promise<RunningLocalServer>;
   /** Lets running Wisps settle, then stops the server. */
   stop(): Promise<void>;
+  /**
+   * Exposes the server for remote access, or stops exposing it. A running
+   * server changes without restarting, so this app stays connected; rejects
+   * when it cannot, such as when another program uses the port. Every later
+   * start applies it too.
+   */
+  setExposure(exposure: LocalServerExposure | undefined): Promise<void>;
+  /** Runs an administrative command, such as `pair`, `devices`, or `revoke`, on the running server. */
+  admin(command: AdminCommand): Promise<unknown>;
 }
 
 export interface RunningLocalServer {
@@ -34,6 +56,8 @@ export interface ChildProcessLocalServerOptions {
   agentMode: "pi" | "fake";
   /** The credential key, kept by the app in the system keychain; without it credentials cannot be saved. */
   masterKey?: Buffer;
+  /** The browser app's built files, served to other devices while the server is exposed. */
+  webRoot?: string;
   logger: Pick<StructuredLogger, "info" | "warn">;
   /** Electron's executable, run as Node. */
   execPath?: string;
@@ -48,10 +72,39 @@ export interface ChildProcessLocalServerOptions {
  */
 export class ChildProcessLocalServer implements LocalServer {
   private running: { child: ChildProcessWithoutNullStreams; ready: Promise<RunningLocalServer> } | undefined;
+  /** A stop in progress; a start waits for it, since both servers would want the same data directory. */
+  private stopping: Promise<void> | undefined;
+  private exposure: LocalServerExposure | undefined;
+  private adminRequests = 0;
+  private readonly pendingAdmin = new Map<
+    number,
+    { resolve: (value: unknown) => void; reject: (error: Error) => void }
+  >();
 
   constructor(private readonly options: ChildProcessLocalServerOptions) {}
 
+  async setExposure(exposure: LocalServerExposure | undefined): Promise<void> {
+    this.exposure = exposure;
+    const running = this.running;
+    if (!running || running.child.exitCode !== null || running.child.signalCode !== null) return;
+    await running.ready;
+    if (this.running === running) await this.send(running.child, this.exposeCommand());
+  }
+
+  private exposeCommand(): AdminCommand {
+    const { exposure } = this;
+    return exposure
+      ? {
+          command: "expose",
+          port: exposure.port,
+          publicOrigin: exposure.publicOrigin,
+          ...(this.options.webRoot ? { webRoot: this.options.webRoot } : {}),
+        }
+      : { command: "expose" };
+  }
+
   ensureRunning(): Promise<RunningLocalServer> {
+    if (this.stopping) return this.stopping.then(() => this.ensureRunning());
     if (this.running && this.running.child.exitCode === null && this.running.child.signalCode === null) {
       return this.running.ready;
     }
@@ -102,15 +155,32 @@ export class ChildProcessLocalServer implements LocalServer {
       }, START_TIMEOUT_MS);
       const lines = createInterface({ input: child.stdout, crlfDelay: Number.POSITIVE_INFINITY });
       lines.on("line", (line) => {
-        let event: { event?: string; port?: number } | undefined;
+        let event: AdminResponse & { event?: string; port?: number };
         try {
-          event = JSON.parse(line) as { event?: string; port?: number };
+          event = JSON.parse(line) as typeof event;
         } catch {
+          return;
+        }
+        if (event?.event === "admin_response") {
+          this.settleAdmin(event);
           return;
         }
         if (event?.event === "server_started" && typeof event.port === "number") {
           clearTimeout(timer);
-          resolve({ baseUrl: `http://127.0.0.1:${event.port}`, localPairingCode, exited });
+          const running = { baseUrl: `http://127.0.0.1:${event.port}`, localPairingCode, exited };
+          if (!this.exposure) {
+            resolve(running);
+            return;
+          }
+          // A server that restarted is exposed again before anyone uses it. Without the
+          // port it still serves this app; remote access then reports why.
+          this.send(child, this.exposeCommand()).then(
+            () => resolve(running),
+            (error: Error) => {
+              options.logger.warn("local_server_expose_failed", { message: error.message });
+              resolve(running);
+            },
+          );
         }
       });
       void exited.then(() => {
@@ -126,6 +196,10 @@ export class ChildProcessLocalServer implements LocalServer {
       });
     });
     void exited.then(() => {
+      for (const [id, pending] of this.pendingAdmin) {
+        this.pendingAdmin.delete(id);
+        pending.reject(new Error("Wisps on this computer stopped."));
+      }
       if (child.exitCode !== 0)
         options.logger.warn("local_server_exited", { code: child.exitCode, signal: child.signalCode });
     });
@@ -133,11 +207,56 @@ export class ChildProcessLocalServer implements LocalServer {
     return ready;
   }
 
+  async admin(command: AdminCommand): Promise<unknown> {
+    const running = this.running;
+    if (!running) throw new Error("Wisps on this computer are not running.");
+    await running.ready;
+    return this.send(running.child, command);
+  }
+
+  private send(child: ChildProcessWithoutNullStreams, command: AdminCommand): Promise<unknown> {
+    const id = ++this.adminRequests;
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        this.pendingAdmin.delete(id);
+        reject(new Error("Wisps on this computer did not answer."));
+      }, ADMIN_TIMEOUT_MS);
+      this.pendingAdmin.set(id, {
+        resolve: (value) => {
+          clearTimeout(timer);
+          resolve(value);
+        },
+        reject: (error) => {
+          clearTimeout(timer);
+          reject(error);
+        },
+      });
+      child.stdin.write(`${JSON.stringify({ id, command })}\n`);
+    });
+  }
+
+  private settleAdmin(response: AdminResponse): void {
+    const pending = typeof response.id === "number" ? this.pendingAdmin.get(response.id) : undefined;
+    if (!pending) return;
+    this.pendingAdmin.delete(response.id as number);
+    if (response.ok) pending.resolve(response.value);
+    else pending.reject(new Error(typeof response.error === "string" ? response.error : "The command failed."));
+  }
+
   async stop(): Promise<void> {
     const running = this.running;
     this.running = undefined;
     if (!running || running.child.exitCode !== null || running.child.signalCode !== null) return;
-    const { child } = running;
+    const stopping = this.stopChild(running.child);
+    this.stopping = stopping;
+    try {
+      await stopping;
+    } finally {
+      if (this.stopping === stopping) this.stopping = undefined;
+    }
+  }
+
+  private async stopChild(child: ChildProcessWithoutNullStreams): Promise<void> {
     const exited = new Promise<void>((resolve) => child.once("exit", () => resolve()));
     // Closing stdin asks the server to shut down cleanly.
     child.stdin.end();
@@ -147,6 +266,14 @@ export class ChildProcessLocalServer implements LocalServer {
     child.kill("SIGKILL");
     await exited;
   }
+}
+
+/** An answer to an administrative command, on its own stdout line. */
+interface AdminResponse {
+  id?: unknown;
+  ok?: boolean;
+  value?: unknown;
+  error?: unknown;
 }
 
 async function settles(promise: Promise<void>, timeoutMs: number): Promise<boolean> {

@@ -1,9 +1,17 @@
 import { describe, expect, it } from "vitest";
 
+import type { RemoteAccessView } from "../shared/remote-access";
 import type { ConnectionsView } from "../shared/connections.js";
 import type { WispApi } from "../shared/contracts.js";
 import { isWispBridgeAvailable } from "../src/lib/wisp-bridge.js";
 
+const remoteAccess: RemoteAccessView = {
+  enabled: false,
+  automatic: false,
+  port: 8787,
+  webAppAvailable: true,
+  devices: [],
+};
 const connections: ConnectionsView = {
   activeId: "local",
   profiles: [{ id: "local", kind: "local", name: "This computer", paired: true }],
@@ -231,6 +239,13 @@ function completeBridge(): WispApi {
     cancelConnection: async () => ({ ok: true, value: connections }),
     answerSshPrompt: async () => ({ ok: true, value: connections }),
     subscribeToConnections: () => () => undefined,
+    getRemoteAccess: async () => ({ ok: true, value: remoteAccess }),
+    saveRemoteAccess: async () => ({ ok: true, value: remoteAccess }),
+    pairRemoteDevice: async () => ({
+      ok: true,
+      value: { code: "ABCDE-FGHJK", expiresAt: "2026-10-14T12:00:00.000Z", link: "https://a.ts.net/#pair=ABCDE-FGHJK" },
+    }),
+    revokeRemoteDevice: async () => ({ ok: true, value: remoteAccess }),
   };
 }
 

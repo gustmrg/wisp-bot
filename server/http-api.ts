@@ -99,6 +99,12 @@ export interface HttpApi {
   ): Promise<HostResponse>;
   /** Ends every open event stream, e.g. on shutdown. */
   closeStreams(): void;
+  /**
+   * Serves another public origin, and the browser app, alongside the ones the
+   * server started with; undefined goes back to those. The desktop app's
+   * server uses it while remote access to its computer is on.
+   */
+  setPublicAccess(access: { publicOrigin: string; webRoot?: string } | undefined): void;
 }
 
 type DistributiveOmit<T, K extends keyof T> = T extends unknown ? Omit<T, K> : never;
@@ -126,12 +132,14 @@ export function createHttpApi(options: HttpApiOptions): HttpApi {
   auth.onRevoke((deviceId) => {
     for (const [response, owner] of streams) if (owner === deviceId) response.end();
   });
+  let publicOrigin = options.publicOrigin;
+  let webRoot = options.webRoot;
+  let publicAccess: URL | undefined;
 
   /** The origin the browser sees for this request: the public HTTPS origin, or a loopback address. */
   const ownOrigin = (request: IncomingMessage): string => {
     const host = request.headers.host ?? "";
-    if (options.publicOrigin && hostNameOf(host) === new URL(options.publicOrigin).hostname)
-      return options.publicOrigin;
+    if (publicOrigin && hostNameOf(host) === new URL(publicOrigin).hostname) return publicOrigin;
     return `http://${host}`;
   };
 
@@ -169,11 +177,17 @@ export function createHttpApi(options: HttpApiOptions): HttpApi {
   };
 
   const checkCaller = (request: IncomingMessage): void => {
-    if (!options.allowedHostNames.has(hostNameOf(request.headers.host))) {
+    const hostName = hostNameOf(request.headers.host);
+    if (!options.allowedHostNames.has(hostName) && hostName !== publicAccess?.hostname) {
       throw new HttpError(403, "forbidden", "This host name is not served here.");
     }
     const origin = request.headers.origin;
-    if (origin !== undefined && !options.allowedOrigins.has(origin) && origin !== ownOrigin(request)) {
+    if (
+      origin !== undefined &&
+      !options.allowedOrigins.has(origin) &&
+      origin !== publicAccess?.origin &&
+      origin !== ownOrigin(request)
+    ) {
       throw new HttpError(403, "forbidden", "This origin may not call the Wisp server.");
     }
   };
@@ -183,12 +197,13 @@ export function createHttpApi(options: HttpApiOptions): HttpApi {
     const { pathname, searchParams } = new URL(request.url ?? "/", "http://localhost");
     const method = request.method ?? "GET";
     if (pathname === "/health" && method === "GET") {
-      sendJson(response, 200, { ok: true, value: { status: "ok" } });
+      // The server ID lets the desktop app check that a proxy's address reaches this server.
+      sendJson(response, 200, { ok: true, value: { status: "ok", serverId: options.serverId } });
       return;
     }
     if (!pathname.startsWith(`${REMOTE_API_PREFIX}/`)) {
-      if (options.webRoot && (method === "GET" || method === "HEAD")) {
-        await serveWeb(response, options.webRoot, pathname, method === "HEAD");
+      if (webRoot && (method === "GET" || method === "HEAD")) {
+        await serveWeb(response, webRoot, pathname, method === "HEAD");
         return;
       }
       throw new HttpError(404, "not_found", "Not found.");
@@ -380,6 +395,11 @@ export function createHttpApi(options: HttpApiOptions): HttpApi {
     closeStreams() {
       for (const response of streams.keys()) response.end();
       streams.clear();
+    },
+    setPublicAccess(access) {
+      publicAccess = access ? new URL(access.publicOrigin) : undefined;
+      publicOrigin = access?.publicOrigin ?? options.publicOrigin;
+      webRoot = access?.webRoot ?? options.webRoot;
     },
   };
 }

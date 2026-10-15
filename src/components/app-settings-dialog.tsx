@@ -23,6 +23,7 @@ import {
   RefreshCwIcon,
   ServerIcon,
   SettingsIcon,
+  SmartphoneIcon,
   type LucideIcon,
 } from "lucide-react";
 
@@ -37,6 +38,7 @@ import { McpSettingsSection } from "@/components/mcp-settings-section";
 import { ShortcutSettingsSection } from "@/components/shortcut-settings-section";
 import { VoiceSettingsSection } from "@/components/voice-settings-section";
 import { ConnectionSettingsSection } from "@/components/connection-settings-section";
+import { RemoteAccessSettingsSection } from "@/components/remote-access-settings-section";
 import { MobileNavigation } from "@/components/mobile-navigation";
 import { MobileSettingsProfile } from "@/components/mobile-settings-profile";
 import { WispAvatar } from "@/components/chat-avatar";
@@ -68,6 +70,7 @@ type SettingsSection =
   | "general"
   | "notifications"
   | "connections"
+  | "remote-access"
   | "model"
   | "voice"
   | "plugins"
@@ -100,6 +103,13 @@ const NAV_ITEMS: ReadonlyArray<
     label: "Connections",
     description: "Where your Wisps run",
     icon: CableIcon,
+  },
+  {
+    section: "remote-access",
+    panelId: "remote-access-settings-panel",
+    label: "Remote access",
+    description: "Use this computer's Wisps from your phone",
+    icon: SmartphoneIcon,
   },
   {
     section: "model",
@@ -175,7 +185,7 @@ const NAV_ITEMS: ReadonlyArray<
 
 /** How the mobile overview groups the sections, under the profile card. */
 const MOBILE_NAV_GROUPS: ReadonlyArray<{ label: string; sections: ReadonlyArray<SettingsSection> }> = [
-  { label: "Account and server", sections: ["general", "connections"] },
+  { label: "Account and server", sections: ["general", "connections", "remote-access"] },
   { label: "Wisps", sections: ["model", "voice", "plugins", "mcp", "jobs"] },
   { label: "Notifications and input", sections: ["notifications", "shortcuts"] },
   { label: "Storage and data", sections: ["storage", "usage"] },
@@ -248,10 +258,16 @@ function AppSettingsDialog({
   }, [open, initialSection]);
   const showOverview = mobile && !mobileSectionOpen;
   const mobileHeadingRef = useRef<HTMLHeadingElement>(null);
+  // Updates, launch at login, and remote access belong to the desktop app.
+  const browserApp = isBrowserApp();
+  const navItems = browserApp
+    ? NAV_ITEMS.filter((item) => !("section" in item) || item.section !== "remote-access")
+    : NAV_ITEMS;
   const sectionTitles = {
     general: "General",
     notifications: "Notifications",
     connections: "Connections",
+    "remote-access": "Remote access",
     model: "AI Model",
     voice: "Voice input",
     shortcuts: "Shortcuts",
@@ -312,8 +328,6 @@ function AppSettingsDialog({
       </button>
     );
   }
-  // Updates and launch at login belong to the desktop app.
-  const browserApp = isBrowserApp();
   const [updateState, setUpdateState] = useState<UpdateState>({
     phase: "idle",
     currentVersion: appMetadata.version,
@@ -429,16 +443,16 @@ function AppSettingsDialog({
                   aria-labelledby={`settings-group-${group.sections[0]}`}
                 >
                   <h3 id={`settings-group-${group.sections[0]}`}>{group.label}</h3>
-                  {NAV_ITEMS.filter((item) => "section" in item && group.sections.includes(item.section)).map(
-                    renderNavItem,
-                  )}
+                  {navItems
+                    .filter((item) => "section" in item && group.sections.includes(item.section))
+                    .map(renderNavItem)}
                 </div>
               ))}
             </>
           ) : (
             <>
               <strong className="mx-2 mb-[15px] mt-0 text-lg">Settings</strong>
-              {NAV_ITEMS.map(renderNavItem)}
+              {navItems.map(renderNavItem)}
             </>
           )}
         </nav>
@@ -460,6 +474,7 @@ function AppSettingsDialog({
         ) : null}
         {section === "mcp" && open && !showOverview ? <McpSettingsSection wisps={wisps} /> : null}
         {section === "connections" && open && !showOverview ? <ConnectionSettingsSection /> : null}
+        {section === "remote-access" && open && !showOverview && !browserApp ? <RemoteAccessSettingsSection /> : null}
         <section
           className="overflow-y-auto px-[30px] py-6 max-[620px]:px-4 max-[620px]:py-5 [&>*]:max-w-[760px]"
           id="general-settings-panel"

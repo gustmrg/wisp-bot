@@ -1,7 +1,8 @@
 import { randomBytes } from "node:crypto";
 
 import { StructuredLogger } from "../../backend/structured-logger.js";
-import type { LocalServer, RunningLocalServer } from "../../electron/local-server/local-server.js";
+import type { LocalServer, LocalServerExposure, RunningLocalServer } from "../../electron/local-server/local-server.js";
+import type { AdminCommand } from "../../server/admin.js";
 import { MasterKeyEncryption } from "../../server/master-key.js";
 import { createWispServer, type WispServer } from "../../server/wisp-server.js";
 
@@ -13,11 +14,32 @@ export class InProcessLocalServer implements LocalServer {
   server: WispServer | undefined;
   private running: { info: RunningLocalServer; exit: () => void } | undefined;
   private starting: Promise<RunningLocalServer> | undefined;
+  private exposure: LocalServerExposure | undefined;
 
   constructor(
     private readonly dataDirectory: string,
     readonly key: Buffer = randomBytes(32),
   ) {}
+
+  /** The port remote access is exposed on, as a proxy such as Tailscale Serve would forward to. */
+  get exposedPort(): number | undefined {
+    return this.exposure?.port;
+  }
+
+  async setExposure(exposure: LocalServerExposure | undefined): Promise<void> {
+    this.exposure = exposure;
+    if (this.server) await this.server.admin(this.exposeCommand());
+  }
+
+  private exposeCommand(): AdminCommand {
+    const { exposure } = this;
+    return exposure ? { command: "expose", ...exposure } : { command: "expose" };
+  }
+
+  async admin(command: AdminCommand): Promise<unknown> {
+    if (!this.server) throw new Error("Wisps on this computer are not running.");
+    return this.server.admin(command);
+  }
 
   ensureRunning(): Promise<RunningLocalServer> {
     if (this.running) return Promise.resolve(this.running.info);
@@ -42,6 +64,7 @@ export class InProcessLocalServer implements LocalServer {
         exit = resolve;
       });
       this.server = server;
+      if (this.exposure) await server.admin(this.exposeCommand()).catch(() => undefined);
       this.running = { info: { baseUrl: server.url, localPairingCode, exited }, exit };
       return this.running.info;
     })().finally(() => {

@@ -4,10 +4,15 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: Version to release (patch, minor, major, beta, or an exact version such as 1.2.3 or 1.3.0-beta.1). Betas run from any branch; other releases only from main.
+        description: Version to release (patch, minor, major, beta, or an exact version such as 1.2.3 or 1.3.0-beta.1). Releases and betas run from main.
         required: true
         type: string
         default: patch
+      preview_branch:
+        description: Allow a beta from a branch other than main, to preview that branch on its own.
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -24,9 +29,10 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.bump.outputs.version }}
+      previous: ${{ steps.bump.outputs.previous }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 22.19.0
           cache: npm
@@ -35,31 +41,32 @@ jobs:
         name: Resolve release version
         env:
           REQUESTED_VERSION: ${{ inputs.version }}
+          PREVIEW_BRANCH: ${{ inputs.preview_branch }}
         run: |
+          TAGS="$(git ls-remote --tags origin)"
           if [[ "$REQUESTED_VERSION" == beta ]]; then
-            # The next minor version's next beta: 0.18.0 leads to 0.19.0-beta.1,
-            # then 0.19.0-beta.2, so every beta sorts above the latest release.
-            BASE="$(node -p "const [major, minor] = require('./package.json').version.split('-')[0].split('.').map(Number); [major, minor + 1, 0].join('.')")"
-            LAST="$(git ls-remote --tags origin | sed -nE "s#^.*refs/tags/v${BASE//./\\.}-beta\.([0-9]+)\$#\1#p" | sort -n | tail -n 1)"
-            REQUESTED_VERSION="$BASE-beta.$(( ${LAST:-0} + 1 ))"
+            REQUESTED_VERSION="$(node scripts/release-version.mjs next-beta "$(node -p "require('./package.json').version")" <<<"$TAGS")"
           fi
           npm version "$REQUESTED_VERSION" --no-git-tag-version --allow-same-version
           VERSION="$(node -p "require('./package.json').version")"
-          # The app follows the beta channel only for versions named -beta.N.
-          if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-beta\.[0-9]+)?$ ]]; then
-            echo "::error::$VERSION is neither a release (1.2.3) nor a beta (1.3.0-beta.1)."
-            exit 1
+          if [[ "$GITHUB_REF" != refs/heads/main ]]; then
+            if [[ "$VERSION" != *-* ]]; then
+              echo "::error::Only betas are released from $GITHUB_REF_NAME. Release $VERSION from main."
+              exit 1
+            fi
+            # A beta from main carries every fix merged so far; one from a
+            # branch carries only that branch.
+            if [[ "$PREVIEW_BRANCH" != true ]]; then
+              echo "::error::Betas run from main. To preview $GITHUB_REF_NAME on its own, run again with preview_branch checked."
+              exit 1
+            fi
           fi
-          if [[ "$VERSION" != *-* && "$GITHUB_REF" != refs/heads/main ]]; then
-            echo "::error::Only betas are released from $GITHUB_REF_NAME. Release $VERSION from main."
-            exit 1
-          fi
-          if git ls-remote --exit-code --tags origin "refs/tags/v$VERSION" >/dev/null; then
-            echo "::error::Tag v$VERSION already exists."
-            exit 1
-          fi
+          # Fails unless every install can update to the version, and names
+          # the tag the release notes start from.
+          PREVIOUS="$(node scripts/release-version.mjs check "$VERSION" <<<"$TAGS")"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-          echo "Releasing v$VERSION from $GITHUB_REF_NAME at $GITHUB_SHA."
+          echo "previous=$PREVIOUS" >> "$GITHUB_OUTPUT"
+          echo "Releasing v$VERSION from $GITHUB_REF_NAME at $GITHUB_SHA, with notes since ${PREVIOUS:-the first commit}."
       - run: npm run lint
       - run: npm run format:check
       - run: npm run typecheck
@@ -67,7 +74,7 @@ jobs:
       - run: npm run build
       - run: npm run audit:prod
       - run: npm sbom --omit=dev --sbom-format=cyclonedx > wisp-bot-sbom.cdx.json
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: sbom
           path: wisp-bot-sbom.cdx.json
@@ -87,8 +94,8 @@ jobs:
             builder-args: --linux AppImage deb --x64
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 22.19.0
           cache: npm
@@ -97,8 +104,16 @@ jobs:
       - name: Build and package
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
-        run: npm run build && npx electron-builder ${{ matrix.builder-args }} --publish never
-      - uses: actions/upload-artifact@v4
+          VERSION: ${{ needs.prepare.outputs.version }}
+        run: |
+          # Betas wear the amber dev icon so they are told apart from the stable
+          # app once installed. electron-builder converts the PNG for each platform.
+          ICON_ARGS=()
+          if [[ "$VERSION" == *-* ]]; then
+            ICON_ARGS=(-c.mac.icon=build/icon-mac-dev.png -c.linux.icon=build/icon-mac-dev.png)
+          fi
+          npm run build && npx electron-builder ${{ matrix.builder-args }} "${ICON_ARGS[@]}" --publish never
+      - uses: actions/upload-artifact@v7
         with:
           name: desktop-${{ matrix.name }}
           path: |
@@ -121,8 +136,8 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 22.19.0
       - name: Commit and tag the version
@@ -144,7 +159,7 @@ jobs:
             # main during the run makes this fail rather than overwrite it.
             git push --atomic origin "HEAD:refs/heads/main" "refs/tags/v$VERSION"
           fi
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           path: artifacts
           merge-multiple: true
@@ -154,12 +169,14 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: v${{ needs.prepare.outputs.version }}
+          PREVIOUS: ${{ needs.prepare.outputs.previous }}
         run: |
           # Prerelease versions (1.2.0-beta.1) feed only the beta update channel
           # and must not become the latest release.
-          FLAGS=()
+          FLAGS=(--generate-notes)
           if [[ "$TAG" == *-* ]]; then FLAGS+=(--prerelease); fi
-          gh release create "$TAG" --verify-tag --title "Wisp Bot $TAG" --generate-notes "${FLAGS[@]}"
+          if [[ -n "$PREVIOUS" ]]; then FLAGS+=(--notes-start-tag "$PREVIOUS"); fi
+          gh release create "$TAG" --verify-tag --title "Wisp Bot $TAG" "${FLAGS[@]}"
           gh release upload "$TAG" --clobber artifacts/*
 
   # Publishes the headless server to npm at the version just tagged. The
@@ -174,10 +191,10 @@ jobs:
       contents: read
       id-token: write # trusted publishing and provenance
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: v${{ needs.prepare.outputs.version }}
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 22.19.0
           cache: npm

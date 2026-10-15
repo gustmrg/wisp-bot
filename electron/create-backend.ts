@@ -29,6 +29,8 @@ import { openSshTunnel } from "./connections/ssh-tunnel.js";
 import { registerLaunchAtLoginHandlers } from "./ipc/register-launch-at-login-handlers.js";
 import { registerUpdateHandlers } from "./ipc/register-update-handlers.js";
 import type { LocalServer } from "./local-server/local-server.js";
+import { RemoteAccessService } from "./local-server/remote-access.js";
+import { locateTailscale, Tailscale } from "./local-server/tailscale.js";
 
 /** What the local server may ask the app to do on this computer's screen. */
 export interface HostActions {
@@ -49,6 +51,12 @@ export interface BackendHost {
   hostActions: HostActions;
   /** The Wisp server on this computer. */
   localServer: LocalServer;
+  /** Whether the local server can serve the browser app to other devices, for remote access. */
+  webAppAvailable?: boolean;
+  /** Checks that a remote access address reaches this computer; tests substitute a fake. */
+  fetch?: typeof fetch;
+  /** Sets up Tailscale Serve for remote access; tests substitute a fake, never the real CLI. */
+  tailscale?: Pick<Tailscale, "detect" | "serve" | "unserve">;
   /** Encrypts pairing credentials; the system keychain in the app. */
   encryption: EncryptionService;
   logger: StructuredLogger;
@@ -84,6 +92,8 @@ export interface BackendHost {
 export interface Backend {
   /** Removes IPC handlers, disconnects, and stops the local server after its Wisps settle. */
   dispose(): Promise<void>;
+  /** Whether remote access to this computer is on: the app then keeps running with every window closed. */
+  remoteAccess: Pick<RemoteAccessService, "enabled" | "subscribe">;
 }
 
 /**
@@ -122,6 +132,16 @@ export async function createBackend(host: BackendHost): Promise<Backend> {
     logger: host.logger,
     hasLocalData: () => hasLocalData(host.connectionsDirectory),
   });
+  const remoteAccess = new RemoteAccessService({
+    directory: host.connectionsDirectory,
+    localServer: host.localServer,
+    webAppAvailable: host.webAppAvailable ?? false,
+    apply: (exposure) => manager.setLocalExposure(exposure),
+    fetch: host.fetch ?? fetch,
+    tailscale: host.tailscale ?? new Tailscale({ locate: () => locateTailscale() }),
+  });
+  await remoteAccess.load();
+  await manager.setLocalExposure(remoteAccess.exposure());
   const unsubscribeUpdateState = host.updateService.subscribe((state) =>
     broadcast(WISP_IPC_CHANNELS.updateState, state),
   );
@@ -174,6 +194,10 @@ export async function createBackend(host: BackendHost): Promise<Backend> {
       [WISP_IPC_CHANNELS.cancelServerInstall, () => manager.cancelInstall()],
       [WISP_IPC_CHANNELS.cancelConnection, () => manager.cancel()],
       [WISP_IPC_CHANNELS.answerSshPrompt, (payload) => manager.answerSshPrompt(payload)],
+      [WISP_IPC_CHANNELS.getRemoteAccess, () => remoteAccess.view()],
+      [WISP_IPC_CHANNELS.saveRemoteAccess, (payload) => remoteAccess.save(payload)],
+      [WISP_IPC_CHANNELS.pairRemoteDevice, () => remoteAccess.pair()],
+      [WISP_IPC_CHANNELS.revokeRemoteDevice, (payload) => remoteAccess.revoke(payload)],
     ]),
   ];
   try {
@@ -186,6 +210,7 @@ export async function createBackend(host: BackendHost): Promise<Backend> {
   }
 
   return {
+    remoteAccess,
     dispose: async () => {
       // Stop accepting renderer requests before the backend winds down.
       for (const registration of handlers) registration.dispose();

@@ -39,6 +39,12 @@ import type {
 } from "./conversations.js";
 import type { JobRequest, JobRunsView, JobsView } from "./jobs.js";
 import type {
+  RemoteAccessPairing,
+  RemoteAccessView,
+  RevokeRemoteDeviceRequest,
+  SaveRemoteAccessRequest,
+} from "./remote-access.js";
+import type {
   MessageQueueView,
   QueuedMessageRequest,
   QueueMessageRequest,
@@ -190,6 +196,10 @@ export const WISP_IPC_CHANNELS = {
   cancelConnection: "wisp:connections:cancel",
   answerSshPrompt: "wisp:connections:answer-ssh-prompt",
   connectionsChanged: "wisp:connections:changed",
+  getRemoteAccess: "wisp:remote-access:get",
+  saveRemoteAccess: "wisp:remote-access:save",
+  pairRemoteDevice: "wisp:remote-access:pair",
+  revokeRemoteDevice: "wisp:remote-access:revoke",
 } as const;
 
 export const WISP_REPOSITORY_URL = "https://github.com/gustmrg/wisp-bot";
@@ -666,4 +676,12 @@ export interface WispApi {
   /** Answers the question OpenSSH asks while connecting, shown in `ConnectionsView.sshPrompt`. */
   answerSshPrompt(request: AnswerSshPromptRequest): Promise<BackendResult<ConnectionsView>>;
   subscribeToConnections(listener: (view: ConnectionsView) => void): () => void;
+  /** Remote access to Wisps on this computer, with the devices paired with them. Desktop app only. */
+  getRemoteAccess(): Promise<BackendResult<RemoteAccessView>>;
+  /** Turns remote access on or off, or changes its port or origin; Wisps on this computer restart. */
+  saveRemoteAccess(request: SaveRemoteAccessRequest): Promise<BackendResult<RemoteAccessView>>;
+  /** A one-time pairing code and link for a new device, while remote access is on. */
+  pairRemoteDevice(): Promise<BackendResult<RemoteAccessPairing>>;
+  /** Removes a device paired with Wisps on this computer and ends its sessions. */
+  revokeRemoteDevice(request: RevokeRemoteDeviceRequest): Promise<BackendResult<RemoteAccessView>>;
 }

@@ -48,7 +48,92 @@ crash. The key is random and kept encrypted by the system keychain
 earlier versions encrypted with the keychain directly, keeping each original as
 `*.keychain-backup`. The local server starts only while **This computer** is
 the chosen connection and stops, after its Wisps settle, when you switch away
-or quit. Disabling Electron's `RunAsNode` fuse would break this mode.
+or quit, unless [remote access](#remote-access-to-this-computer) is on.
+Disabling Electron's `RunAsNode` fuse would break this mode.
+
+Later stdin lines are administrative commands, the same ones `admin.sock`
+serves plus `expose`, which opens or closes the remote access port, each
+answered on its own stdout line: the desktop app's server opens no admin
+socket, so only the app that started it can pair and revoke devices.
+
+### Remote access to this computer
+
+**Settings → Remote access** lets your phone or other devices pair with the
+Wisps on this computer, the same way they pair with a Wisp server. It is
+separate from **Connections**, which chooses where this app's Wisps run.
+
+With Tailscale installed and signed in on this computer, turning remote
+access on takes one click: Wisp runs
+`tailscale serve --bg --yes --https=443 http://127.0.0.1:<port>` itself and
+takes the address from `tailscale status --json` (`Self.DNSName`). It looks
+for the CLI on `PATH` and where each platform installs it, since apps started
+from a desktop do not get a shell's `PATH`: the app bundle and Homebrew on
+macOS, `Program Files` on Windows, and `/usr/bin`, `/usr/local/bin`, or
+`/snap/bin` on Linux. Wisp:
+
+- never uses Funnel;
+- never replaces a serve already at `https://<machine>/`: it uses one that
+  already forwards to Wisp's port, and refuses anything else;
+- records whether it added the serve, and removes only that one when remote
+  access is turned off (`tailscale serve --https=443 --set-path=/ off`), and
+  only while it still forwards to Wisp's port. Changing the port moves it.
+
+When Tailscale cannot do it, the section says what to do: install Tailscale or
+sign in; turn on Serve or HTTPS certificates for the tailnet at the link
+Tailscale gives; or, on Linux, run `sudo tailscale set --operator=$USER` once
+so Wisp may change Tailscale's settings. Nothing changes until then.
+
+Without Tailscale, or with **Set it up by hand**, the section walks through
+three steps instead: run the `tailscale serve` command it shows, enter the
+address Tailscale gives this computer, and turn remote access on. Wisp then
+leaves Tailscale's settings to you.
+
+Either way, before it turns on, the app requests `<address>/health` and
+compares the server ID there with its own server's; when the address does not
+lead to this computer's server, nothing changes and the section says what to
+fix (Tailscale not reachable, nothing forwarded to the port, or another Wisp
+server behind it). After that, a switch turns remote access on and off, and
+**Edit** changes the address or port, checked the same way. While remote
+access is on:
+
+- The local server keeps running whichever connection is chosen, and the app
+  keeps running in the tray with every window closed. **Quit Wisp** in the tray
+  menu, or quitting the app, stops it after its Wisps settle, as before; it
+  never outlives the app. The app starts it again if it stops.
+- The server opens a second loopback port (8787 unless you pick another) and
+  serves the browser app; the app keeps using the server's own port. It still
+  listens on loopback only. Reach it through a private HTTPS proxy, never by
+  publishing the port:
+
+  ```sh
+  tailscale serve --bg http://127.0.0.1:8787
+  tailscale serve status        # shows https://<machine>.<tailnet>.ts.net
+  ```
+
+  The server then accepts that host name, as a `--public-origin` would, marks
+  session cookies `Secure`, and puts it in pairing links. Only an exact HTTPS origin is accepted. Do not use Funnel.
+- **Show QR code**, under **Pair a device**, shows a QR code of
+  `<address>/#pair=<code>` and the code. They are the code from `wispctl pair`,
+  with the same rules: single-use, valid for 10 minutes, and limited to ten
+  failed attempts a minute. A device paired this way acts for this computer's owner and reaches
+  everything the browser app does, but never opens folders or file pickers
+  here: only this computer's own app is a local device.
+- While the QR code is on screen, the section watches for the device that
+  scans it, then closes the QR code and lists it under **Paired devices**.
+  **Revoke** signs a device out and ends its sessions. This computer's own app
+  pairs by itself and is never listed.
+
+Turning remote access on or off, or changing its address or port, opens or
+closes that second port through an administrative command, without
+restarting the server: the app stays connected and Wisps keep working. Turning
+it off returns to the default: no second port, no browser app, and the server
+stops when another connection is chosen. Devices stay paired, but cannot reach the server
+until remote access is on again. The setting is kept in `remote-access.json`
+in the app's data directory.
+
+On Linux, the tray needs a desktop with a system tray (StatusNotifier); without
+one, closing the last window leaves Wisp running with no icon. Launching Wisp
+again opens its window.
 
 ## Install
 
@@ -302,18 +387,35 @@ wispctl status
 ```
 
 In a terminal, `wispctl pair` prints the code, how long it lasts in local time,
-and where to enter it, with the server's `--public-origin` address when it has
-one:
+and where to enter it. When the server has a `--public-origin`, it also draws a
+QR code of a pairing link, `<public origin>/#pair=<code>`; scanning it opens
+the browser app, which asks only for a name for the device and pairs:
 
 ```text
 Pairing code: KD7QX-M2PZR
 Valid for 10 minutes (until 17:28).
 
-Open https://<machine>.<tailnet>.ts.net on your phone or browser and enter the code to pair.
+Scan this with your phone to pair:
+
+█████████████████████████████
+██ ▄▄▄▄▄ █▀█ █▄ █ ▄ ▄▄▄▄▄ ██
+…
+
+Or open https://<machine>.<tailnet>.ts.net/#pair=KD7QX-M2PZR on your phone or browser to pair,
+or open https://<machine>.<tailnet>.ts.net and enter the code.
+
+Anyone with this QR code, link, or code can pair: do not share it or leave it on screen.
 ```
 
+The QR code and the link are the code itself: they are single-use, expire with
+it, and count toward the same limit on failed attempts. The code rides in the
+link's fragment, which browsers never send, so it stays out of proxy and access
+logs; the app removes it from the address and history as soon as it opens. A
+code that expired or was already used is refused with a message, and the app
+asks for a code by hand. `--no-qr` leaves the QR code out.
+
 When stdout is not a terminal, or with `--json`, `pair` and `devices` print
-JSON instead, so scripts can read them; the desktop app pairs over SSH with
+JSON instead, with no QR code, so scripts can read them; the desktop app pairs over SSH with
 `wispctl pair --json`:
 
 ```json
@@ -349,7 +451,8 @@ On a phone:
 
 1. Install the Tailscale app and sign in to the same tailnet.
 2. Open the server's address in Safari (iPhone) or Chrome (Android).
-3. Run `wispctl pair` on the server and enter the code.
+3. Run `wispctl pair` on the server and scan its QR code with the camera, or
+   enter the code.
 4. Install it: **Share → Add to Home Screen** in Safari, or **Install app** in
    Chrome. It then opens full screen, like an app, with no account or app
    store.
@@ -397,7 +500,7 @@ The API mirrors the desktop bridge, so a client implements it mechanically:
   overall time limit so large files can finish over slow links; a connection
   that sends nothing for two minutes is closed.
 - `POST /api/v1/auth/logout` revokes the calling device.
-- `GET /health` reports liveness without authentication.
+- `GET /health` reports liveness and the server ID without authentication.
 
 Authenticated requests carry `Authorization: Bearer <accessToken>`, or, for
 the browser app, the session cookies described below. An event stream is
