@@ -80,6 +80,21 @@ export interface JobOrigin {
   title: string;
 }
 
+/** Why a Wisp's reply failed, kept apart from what it wrote before failing. */
+export interface MessageFailure {
+  /** A `BackendErrorCode`; stored as any short string so codes added later still load. */
+  code: string;
+  /** The reason as shown to the person. */
+  message: string;
+}
+
+export const MESSAGE_FAILURE_MAX_LENGTH = 2_000;
+
+/** The part of an error a failed reply keeps: never its raw detail. */
+export function messageFailure(error: { code: string; message: string }): MessageFailure {
+  return { code: error.code, message: error.message.slice(0, MESSAGE_FAILURE_MAX_LENGTH) };
+}
+
 /** Where a message the backend sent on the person's behalf came from. */
 export interface ScheduledOrigin {
   scheduledMessageId: string;
@@ -104,6 +119,11 @@ export interface TextMessage extends MessageMetadata {
   scheduled?: ScheduledOrigin;
   /** Set on an incoming message a job's run delivered, with no request before it. */
   job?: JobOrigin;
+  /**
+   * Why a failed reply failed. Replies that failed before this was stored
+   * carry the reason as their text instead.
+   */
+  error?: MessageFailure;
 }
 
 export interface TimeMessage extends MessageMetadata {

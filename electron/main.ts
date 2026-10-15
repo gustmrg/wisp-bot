@@ -15,7 +15,8 @@ import { hostname } from "node:os";
 import path from "node:path";
 import { LaunchAtLoginService } from "./backend/launch-at-login-service.js";
 
-import { WISP_RELEASES_URL } from "../shared/contracts.js";
+import { WISP_IPC_CHANNELS, WISP_RELEASES_URL, type SystemNotificationTarget } from "../shared/contracts.js";
+import type { ConversationStateView } from "../shared/conversations.js";
 import { selectAgentMode } from "../backend/agent-mode.js";
 import { WispBackendError } from "../backend/backend-error.js";
 import { FileLogSink } from "../backend/file-log-sink.js";
@@ -31,6 +32,8 @@ import { createBackend } from "./create-backend.js";
 import { loadOrCreateLocalMasterKey, migrateKeychainCredentials } from "./local-server/local-credentials.js";
 import { ChildProcessLocalServer } from "./local-server/local-server.js";
 import { RemoteAccessTray } from "./remote-access-tray.js";
+import { createElectronNotificationHost } from "./system-notification-host.js";
+import { SystemNotifier } from "./system-notifications.js";
 import { MasterKeyEncryption } from "../server/master-key.js";
 import {
   isAllowedExternalUrl,
@@ -57,6 +60,10 @@ let fatalErrorHandled = false;
 let showWindow: (() => void) | undefined;
 // While remote access is on, the app keeps running in the tray with every window closed.
 let keepRunningWithoutWindows = false;
+// Native notifications and the badge, fed everything pushed to windows.
+let notifier: SystemNotifier | undefined;
+// A notification clicked while no window was open, for the window it opens.
+let pendingNotificationTarget: SystemNotificationTarget | null = null;
 
 // Packaged and unpackaged builds share the package name, so Electron hands both
 // the same userData directory and dev work would mutate the installed app's
@@ -71,6 +78,9 @@ function isolateDevData(): void {
 }
 
 isolateDevData();
+// Windows shows notifications only for an app with an identity: the installer's, or this executable in development.
+if (process.platform === "win32")
+  app.setAppUserModelId(app.isPackaged ? "com.gustavomiranda.wispbot" : process.execPath);
 
 // Both instances would share the same userData stores and safeStorage key, so a
 // second launch (e.g. from a terminal, which bypasses LaunchServices activation)
@@ -141,6 +151,8 @@ async function createWindow(target: RendererTarget): Promise<void> {
     if (!isAllowedRendererUrl(navigationUrl, target)) event.preventDefault();
   });
 
+  // A taskbar button flashed for an approval stops once the person comes back.
+  window.on("focus", () => window.flashFrame(false));
   nativeTheme.on("updated", syncWindowBackground);
   window.once("closed", () => {
     nativeTheme.off("updated", syncWindowBackground);
@@ -149,6 +161,8 @@ async function createWindow(target: RendererTarget): Promise<void> {
   try {
     if (target.kind === "development") await window.loadURL(target.url);
     else await window.loadFile(target.filePath);
+    // The Windows overlay belongs to a window, so a new one shows the badge again.
+    notifier?.reapplyBadge();
   } catch (error) {
     if (!window.isDestroyed()) window.destroy();
     throw error;
@@ -174,9 +188,24 @@ function handleFatalStartupError(error: unknown): void {
 }
 
 function broadcast(channel: string, payload: unknown): void {
+  notifier?.handlePush(channel, payload);
   for (const window of BrowserWindow.getAllWindows()) {
     if (!window.isDestroyed()) window.webContents.send(channel, payload);
   }
+}
+
+/** Shows the app on the conversation a clicked notification is about, opening a window if none is open. */
+function openNotificationTarget(target: SystemNotificationTarget): void {
+  const window = BrowserWindow.getAllWindows().find((candidate) => !candidate.isDestroyed());
+  if (!window) {
+    pendingNotificationTarget = target;
+    showWindow?.();
+    return;
+  }
+  if (window.isMinimized()) window.restore();
+  window.show();
+  window.focus();
+  window.webContents.send(WISP_IPC_CHANNELS.openNotificationTarget, target);
 }
 
 async function bootstrap(): Promise<void> {
@@ -239,6 +268,15 @@ async function bootstrap(): Promise<void> {
       logger,
     );
   }
+  let loadConversationState = async (): Promise<ConversationStateView | undefined> => undefined;
+  const systemNotifier = new SystemNotifier(
+    createElectronNotificationHost({
+      iconPath: trayIconPath,
+      open: openNotificationTarget,
+      loadState: () => loadConversationState(),
+    }),
+  );
+  notifier = systemNotifier;
   const webAppAvailable = existsSync(path.join(webAppPath, "index.html"));
   const backend = await createBackend({
     launchAtLoginService: new LaunchAtLoginService({
@@ -295,7 +333,17 @@ async function bootstrap(): Promise<void> {
     appVersion: app.getVersion(),
     // The helper is a shell script; on Windows, SSH keeps running in BatchMode.
     startSshAskpass: async () => (process.platform === "win32" ? undefined : SshAskpass.start()),
+    systemNotifications: {
+      notifier: systemNotifier,
+      takeTarget: () => {
+        const target = pendingNotificationTarget;
+        pendingNotificationTarget = null;
+        return target;
+      },
+    },
   });
+  loadConversationState = () => backend.loadConversationState();
+  void systemNotifier.refresh();
   let backendDisposed = false;
   let backendDisposing = false;
   app.on("before-quit", (event) => {

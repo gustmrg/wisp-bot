@@ -200,6 +200,11 @@ export const WISP_IPC_CHANNELS = {
   saveRemoteAccess: "wisp:remote-access:save",
   pairRemoteDevice: "wisp:remote-access:pair",
   revokeRemoteDevice: "wisp:remote-access:revoke",
+  configureSystemNotifications: "wisp:system-notifications:configure",
+  setNotificationFocus: "wisp:system-notifications:set-focus",
+  testSystemNotification: "wisp:system-notifications:test",
+  takeNotificationTarget: "wisp:system-notifications:take-target",
+  openNotificationTarget: "wisp:system-notifications:open",
 } as const;
 
 export const WISP_REPOSITORY_URL = "https://github.com/gustmrg/wisp-bot";
@@ -521,6 +526,45 @@ export interface LaunchAtLoginState {
   reason?: string;
 }
 
+/** What a native notification is about; the same events notification sounds play for. */
+export type SystemNotificationKind = "finished" | "needs-input" | "error";
+
+/** Which Wisp updates show a native notification. */
+export interface SystemNotificationSettings {
+  enabled: boolean;
+  onCompletion: boolean;
+  onApproval: boolean;
+  onError: boolean;
+}
+
+/** The conversation open in the app, and whether its window has focus: its updates need no notification. */
+export interface NotificationFocusRequest {
+  conversationId: string | null;
+}
+
+export interface TestSystemNotificationRequest {
+  kind: SystemNotificationKind;
+}
+
+/** Where clicking a native notification takes the person. */
+export interface SystemNotificationTarget {
+  conversationId: string;
+  approvalId?: string;
+}
+
+/** Native notifications and the dock or taskbar badge. Desktop app only. */
+export interface SystemNotificationsApi {
+  configure(settings: SystemNotificationSettings): Promise<EmptyResult>;
+  setFocus(request: NotificationFocusRequest): Promise<EmptyResult>;
+  /** Shows a sample notification, whatever the settings say. */
+  test(request: TestSystemNotificationRequest): Promise<EmptyResult>;
+  /**
+   * Calls `listener` when the person clicks a notification, including one
+   * clicked while no window was open, which opened this one.
+   */
+  subscribeToOpen(listener: (target: SystemNotificationTarget) => void): () => void;
+}
+
 export interface WispApi {
   getLaunchAtLoginState(): Promise<BackendResult<LaunchAtLoginState>>;
   setLaunchAtLogin(enabled: boolean): Promise<BackendResult<LaunchAtLoginState>>;
@@ -684,4 +728,6 @@ export interface WispApi {
   pairRemoteDevice(): Promise<BackendResult<RemoteAccessPairing>>;
   /** Removes a device paired with Wisps on this computer and ends its sessions. */
   revokeRemoteDevice(request: RevokeRemoteDeviceRequest): Promise<BackendResult<RemoteAccessView>>;
+  /** Absent in the browser app, which has no native notifications. */
+  systemNotifications?: SystemNotificationsApi;
 }

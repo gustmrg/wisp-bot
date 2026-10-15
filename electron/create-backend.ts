@@ -16,6 +16,7 @@ import { RUNTIME_OPERATIONS } from "../backend/handlers/register-runtime-handler
 import type { StructuredLogger } from "../backend/structured-logger.js";
 import type { RemoteTransport } from "../client/remote-session.js";
 import type { SshConnectionProfile } from "../shared/connections.js";
+import type { ConversationStateView } from "../shared/conversations.js";
 import type { HostRequest, HostResponse } from "../shared/remote-protocol.js";
 import type { LaunchAtLoginService } from "./backend/launch-at-login-service.js";
 import type { UpdateService } from "./backend/update-service.js";
@@ -27,6 +28,10 @@ import { installRemoteServer, type InstallStep } from "./connections/ssh-install
 import { testSshConnection } from "./connections/ssh-test.js";
 import { openSshTunnel } from "./connections/ssh-tunnel.js";
 import { registerLaunchAtLoginHandlers } from "./ipc/register-launch-at-login-handlers.js";
+import {
+  registerSystemNotificationHandlers,
+  type SystemNotificationHandlers,
+} from "./ipc/register-system-notification-handlers.js";
 import { registerUpdateHandlers } from "./ipc/register-update-handlers.js";
 import type { LocalServer } from "./local-server/local-server.js";
 import { RemoteAccessService } from "./local-server/remote-access.js";
@@ -81,6 +86,8 @@ export interface BackendHost {
     interaction: SshInteraction | undefined,
   ) => Promise<void>;
   testSshConnection?: typeof testSshConnection;
+  /** Native notifications and the badge, configured by the renderer. */
+  systemNotifications?: SystemNotificationHandlers;
   /** Opens an SSH tunnel to a server; tests substitute a fake. */
   openSshTunnel?: (
     profile: SshConnectionProfile,
@@ -94,6 +101,8 @@ export interface Backend {
   dispose(): Promise<void>;
   /** Whether remote access to this computer is on: the app then keeps running with every window closed. */
   remoteAccess: Pick<RemoteAccessService, "enabled" | "subscribe">;
+  /** The active connection's conversations, or undefined while it has none to give. */
+  loadConversationState(): Promise<ConversationStateView | undefined>;
 }
 
 /**
@@ -152,6 +161,9 @@ export async function createBackend(host: BackendHost): Promise<Backend> {
   const handlers = [
     registerLaunchAtLoginHandlers(ipcMain, host.launchAtLoginService, authorize),
     registerUpdateHandlers(ipcMain, host.updateService, authorize, host.openReleasesPage),
+    ...(host.systemNotifications
+      ? [registerSystemNotificationHandlers(ipcMain, host.systemNotifications, authorize)]
+      : []),
     registerAuthorizedHandlers(
       ipcMain,
       authorize,
@@ -211,6 +223,10 @@ export async function createBackend(host: BackendHost): Promise<Backend> {
 
   return {
     remoteAccess,
+    loadConversationState: async () => {
+      const result = await manager.dispatch(WISP_IPC_CHANNELS.getConversationState, undefined);
+      return result.ok ? (result.value as ConversationStateView) : undefined;
+    },
     dispose: async () => {
       // Stop accepting renderer requests before the backend winds down.
       for (const registration of handlers) registration.dispose();
