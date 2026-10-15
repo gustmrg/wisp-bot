@@ -278,7 +278,7 @@ function Sidebar({
         <nav
           className={cn(
             "conversation-list min-h-0 flex-1 overflow-x-hidden overflow-y-auto [&::-webkit-scrollbar]:w-0",
-            rail ? "border-t border-border px-1.5 pt-2" : "px-2.5",
+            rail ? "border-t border-border px-1 pt-2" : "px-2.5",
           )}
           aria-label="Wisps and circles"
         >
@@ -295,7 +295,11 @@ function Sidebar({
 
             const row = (
               <button
-                className="conversation-list-item group/item relative mb-1 flex w-full min-w-0 items-center gap-[9px] rounded-[10px] border-0 bg-transparent p-2 text-left hover:bg-muted data-[selected=true]:bg-accent"
+                className={cn(
+                  "conversation-list-item group/item relative mb-1 flex w-full min-w-0 items-center gap-[9px] rounded-[10px] border-0 bg-transparent text-left hover:bg-muted data-[selected=true]:bg-accent",
+                  // The rail leaves just enough room for the 44px avatar, centered.
+                  rail ? "justify-center p-1" : "p-2",
+                )}
                 data-selected={selected}
                 data-unread={chat.unread ? true : undefined}
                 style={color ? wispAccentStyle(color) : undefined}
