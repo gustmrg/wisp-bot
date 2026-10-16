@@ -9,6 +9,7 @@ import { DetailsPanel } from "@/components/details-panel";
 import { MobileApprovals } from "@/components/mobile-approvals";
 import { Onboarding, SetupStatus } from "@/components/onboarding";
 import { SearchDialog } from "@/components/search-dialog";
+import { SplashOverlay, SplashScreen } from "@/components/splash-screen";
 import { Sidebar } from "@/components/sidebar";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { UpdateToast } from "@/components/update-toast";
@@ -36,7 +37,7 @@ import type { PluginId } from "../shared/plugins";
 export default function App() {
   const userProfile = useUserProfile();
   const setup = useSetupGate(userProfile);
-  if (setup.phase === "checking") return <SetupStatus />;
+  if (setup.phase === "checking") return <SplashScreen />;
   if (setup.phase === "error") return <SetupStatus message={setup.message} onRetry={setup.retry} />;
   if (setup.phase === "onboarding") {
     return <Onboarding required={setup.required} userProfile={userProfile} onComplete={setup.complete} />;
@@ -312,7 +313,7 @@ function Workspace({ userProfile }: { userProfile: UserProfileController }) {
                 hidden={mobile}
                 className={cn(mainPanel, "items-center justify-center text-dim", mobile && "hidden")}
               >
-                {workspace.loading ? "Loading conversations…" : (workspace.error ?? "Create a Wisp to get started.")}
+                {workspace.loading ? null : (workspace.error ?? "Create a Wisp to get started.")}
               </main>
             )}
             {mobile && profileOpen && !detailsOpen && mobilePage === "chat" && workspace.activeChat?.kind === "wisp" ? (
@@ -394,6 +395,8 @@ function Workspace({ userProfile }: { userProfile: UserProfileController }) {
             onPreferencesChange={workspace.updatePreferences}
           />
           <UpdateToast displayName={APP_METADATA.displayName} />
+          {/* The splash from opening stays until the Wisps have loaded. */}
+          <SplashOverlay ready={!workspace.loading} />
         </TooltipProvider>
       </ReplyPaceProvider>
     </TimeZoneProvider>
