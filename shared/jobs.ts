@@ -2,7 +2,7 @@ import type { SessionReportUsage } from "./contracts.js";
 import type { ChatId } from "./conversations.js";
 import type { Schedule } from "./schedule.js";
 
-/** Jobs a single Wisp may hold at once. */
+/** Jobs a single Wisp may hold at once; finished jobs do not count. */
 export const MAX_JOBS_PER_WISP = 20;
 /** Runs kept for each job; older records are removed as new ones arrive. */
 export const MAX_JOB_RUNS_KEPT = 50;
@@ -106,6 +106,15 @@ export interface JobRun {
 /** How late a run started, in milliseconds. */
 export function jobRunLateness(run: Pick<JobRun, "scheduledAt" | "startedAt">): number {
   return Math.max(0, Date.parse(run.startedAt) - Date.parse(run.scheduledAt));
+}
+
+/**
+ * A job whose schedule has ended after a run that did not fail. It stays
+ * stored but is no longer listed; one whose last run failed stays listed
+ * until it is deleted.
+ */
+export function isJobFinished(job: Pick<Job, "nextRunAt" | "paused" | "lastRun">): boolean {
+  return !job.nextRunAt && !job.paused && job.lastRun !== undefined && job.lastRun.status !== "failed";
 }
 
 export interface JobsView {

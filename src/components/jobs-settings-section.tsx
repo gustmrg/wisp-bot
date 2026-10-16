@@ -15,7 +15,7 @@ import { useJobs, type JobsController } from "@/hooks/use-jobs";
 import { useTimeZone } from "@/hooks/use-time-zone";
 import type { WispOption } from "@/lib/plugin-access";
 import { cn } from "@/lib/utils";
-import type { Job, JobRun, JobRunStatus, JobRunTrigger } from "../../shared/jobs";
+import { isJobFinished, type Job, type JobRun, type JobRunStatus, type JobRunTrigger } from "../../shared/jobs";
 import { describeSchedule } from "../../shared/schedule";
 
 const STATUS_LABELS: Record<JobRunStatus, string> = {
@@ -49,13 +49,15 @@ function errorText(code: string | undefined): string | undefined {
 /**
  * Every Wisp's jobs (ADR 019): when they run next, how their last run went,
  * and their recent runs. People pause, resume, run and delete jobs here; only
- * Wisps create or change them, when asked in their conversation.
+ * Wisps create or change them, when asked in their conversation. Finished
+ * jobs stay stored but are not listed.
  */
 export function JobsSettingsSection({ wisps = [] }: { wisps?: ReadonlyArray<WispOption> }) {
   const controller = useJobs();
   const wispsById = new Map(wisps.map((wisp) => [wisp.id, wisp]));
+  const listed = controller.jobs.filter((job) => !isJobFinished(job));
   const groups = new Map<string, Job[]>();
-  for (const job of controller.jobs) groups.set(job.conversationId, [...(groups.get(job.conversationId) ?? []), job]);
+  for (const job of listed) groups.set(job.conversationId, [...(groups.get(job.conversationId) ?? []), job]);
   return (
     <section
       id="jobs-settings-panel"
@@ -69,9 +71,9 @@ export function JobsSettingsSection({ wisps = [] }: { wisps?: ReadonlyArray<Wisp
         Tasks your Wisps run on a schedule in the background, sending you only their results. To create or change a job,
         ask a Wisp, for example: “Every weekday at 9:00, look for new openings and send me a summary.”
       </p>
-      {controller.jobs.length === 0 ? (
+      {listed.length === 0 ? (
         <p role="status" className="mx-0.5 text-xs text-dim">
-          {controller.available ? "No jobs yet." : "Loading jobs…"}
+          {!controller.available ? "Loading jobs…" : controller.jobs.length ? "No scheduled jobs." : "No jobs yet."}
         </p>
       ) : (
         [...groups].map(([conversationId, jobs]) => {
@@ -142,7 +144,10 @@ function JobRow({ job, controller }: { job: Job; controller: JobsController }) {
       : "Paused"
     : job.nextRunAt
       ? `Next run ${format(job.nextRunAt)}`
-      : "Finished: its schedule has ended";
+      : job.lastRun?.status === "failed"
+        ? "Failed, will not run again"
+        : "Its schedule has ended";
+  const failedForGood = !job.nextRunAt && job.lastRun?.status === "failed";
   const last = job.lastRun
     ? `Last run ${format(job.lastRun.endedAt)}: ${STATUS_LABELS[job.lastRun.status]}${
         job.lastRun.errorCode ? `, ${errorText(job.lastRun.errorCode)}` : ""
@@ -155,7 +160,9 @@ function JobRow({ job, controller }: { job: Job; controller: JobsController }) {
         <SettingsRowCopy className="min-w-[200px]">
           <SettingsRowTitle>{job.title}</SettingsRowTitle>
           <SettingsRowDescription>{describeSchedule(job.schedule, job.timeZone)}</SettingsRowDescription>
-          <SettingsRowDescription className={cn(job.paused?.reason === "failures" && "text-destructive")}>
+          <SettingsRowDescription
+            className={cn((job.paused?.reason === "failures" || failedForGood) && "text-destructive")}
+          >
             {next}
           </SettingsRowDescription>
           <SettingsRowDescription className={cn(job.lastRun?.status === "failed" && "text-destructive")}>

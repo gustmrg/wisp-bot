@@ -71,6 +71,31 @@ describe("JobsSettingsSection", () => {
     expect(screen.getByText(/^Last run .*: Delivered$/)).toBeVisible();
   });
 
+  it("hides finished jobs but keeps those that failed for good", async () => {
+    const { nextRunAt: _nextRunAt, ...ended } = JOB;
+    stub([
+      { ...ended, id: "done", title: "Done reminder" },
+      {
+        ...ended,
+        id: "broken",
+        title: "Broken reminder",
+        lastRun: { runId: "run-4", status: "failed", endedAt: "2026-10-11T13:02:00.000Z", errorCode: "timed_out" },
+      },
+    ]);
+    render(<JobsSettingsSection wisps={[{ id: "atlas", name: "Atlas" }]} />);
+    expect(await screen.findByText("Broken reminder")).toBeVisible();
+    expect(screen.queryByText("Done reminder")).toBeNull();
+    expect(screen.getByText("Failed, will not run again")).toBeVisible();
+  });
+
+  it("says there are no scheduled jobs when every job has finished", async () => {
+    const { nextRunAt: _nextRunAt, ...ended } = JOB;
+    stub([ended]);
+    render(<JobsSettingsSection wisps={[{ id: "atlas", name: "Atlas" }]} />);
+    expect(await screen.findByText("No scheduled jobs.")).toBeVisible();
+    expect(screen.queryByText("Job openings")).toBeNull();
+  });
+
   it("pauses, runs, shows the runs of, and deletes a job", async () => {
     const api = stub([JOB]);
     const user = userEvent.setup();
