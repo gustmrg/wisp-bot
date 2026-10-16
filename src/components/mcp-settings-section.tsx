@@ -106,11 +106,11 @@ function emptyDraft(preset?: McpPreset): McpDraft {
     return {
       name: preset.name,
       endpoint: preset.endpoint,
-      authMode: "header",
-      headerName: preset.credentialHeader.name,
+      authMode: preset.auth.mode,
+      headerName: preset.auth.mode === "header" ? preset.auth.header.name : "",
       headerValue: "",
       extraHeaders: [],
-      toolsets: presetToolsetsFromHeader(preset, undefined),
+      toolsets: preset.toolsets ? presetToolsetsFromHeader(preset.toolsets, undefined) : [],
       enabled: true,
     };
   }
@@ -133,15 +133,17 @@ function draftFrom(server: McpServerSummary, preset?: McpPreset): McpDraft {
     authMode: server.authMode,
     headerName: server.headerName ?? "",
     headerValue: "",
-    extraHeaders: headerRows(server.extraHeaders, preset?.toolsetHeader),
-    toolsets: preset ? presetToolsetsFromHeader(preset, server.extraHeaders?.[preset.toolsetHeader]) : [],
+    extraHeaders: headerRows(server.extraHeaders, preset?.toolsets?.header),
+    toolsets: preset?.toolsets
+      ? presetToolsetsFromHeader(preset.toolsets, server.extraHeaders?.[preset.toolsets.header])
+      : [],
     enabled: server.enabled,
   };
 }
 
 /** The credential as the header expects it; a pasted value that already has the prefix is kept. */
 function presetCredential(preset: McpPreset, value: string): string {
-  const prefix = preset.credentialHeader.valuePrefix;
+  const prefix = preset.auth.mode === "header" ? preset.auth.header.valuePrefix : "";
   const trimmed = value.trim();
   return trimmed.toLowerCase().startsWith(prefix.toLowerCase()) ? trimmed : `${prefix}${trimmed}`;
 }
@@ -337,6 +339,7 @@ export function McpServerForm({
   wisps,
   index,
   initialMessage,
+  signInOnOpen = false,
   onSaved,
   onCreated,
   onBack,
@@ -344,14 +347,19 @@ export function McpServerForm({
   server?: McpServerSummary;
   /** Adds a connection from this preset; ignored when a server is shown. */
   newPreset?: McpPresetId;
+  /** Starts the browser sign-in as soon as the saved connection opens, after a one-step Connect. */
+  signInOnOpen?: boolean;
   backLabel?: string;
   secureStorageAvailable: boolean;
   wisps: ReadonlyArray<WispOption>;
   index: McpAccessIndex;
   initialMessage: string;
   onSaved: (view: McpSettingsView) => void;
-  /** Receives the view after an add; the section opens the new server to choose Wisp access. */
-  onCreated: (view: McpSettingsView) => void;
+  /**
+   * Receives the view after an add; the section opens the new server to choose
+   * Wisp access, and starts its sign-in when `signIn` is set.
+   */
+  onCreated: (view: McpSettingsView, options?: { signIn?: boolean }) => void;
   onBack: () => void;
 }) {
   const formId = useId();
@@ -359,7 +367,9 @@ export function McpServerForm({
   const preset = presetId ? MCP_PRESETS[presetId] : undefined;
   const [draft, setDraft] = useState<McpDraft>(server ? draftFrom(server, preset) : emptyDraft(preset));
   const timeZone = useTimeZone();
-  const [operation, setOperation] = useState<"save" | "test" | "remove" | "refresh" | "signin" | null>(null);
+  const [operation, setOperation] = useState<
+    "save" | "test" | "remove" | "refresh" | "signin" | "connect" | "toggle" | null
+  >(null);
   const [error, setError] = useState("");
   const [message, setMessage] = useState(initialMessage);
   const [cancellingSignIn, setCancellingSignIn] = useState(false);
@@ -368,6 +378,14 @@ export function McpServerForm({
   const signingIn = operation === "signin" || Boolean(server?.signInPending);
   const busy = operation !== null || signingIn;
   const isNew = !server;
+  // A preset that signs in through the browser has nothing to fill in: it connects in one step.
+  const signInPreset = preset?.auth.mode === "oauth";
+  const editable = !signInPreset || Boolean(preset?.toolsets);
+
+  // biome-ignore lint/correctness/useExhaustiveDependencies: runs once, for the Connect that opened this form.
+  useEffect(() => {
+    if (signInOnOpen && server?.authMode === "oauth" && !server.signInPending) void run("signin");
+  }, []);
 
   function reset() {
     setDraft(server ? draftFrom(server, preset) : emptyDraft(preset));
@@ -401,7 +419,7 @@ export function McpServerForm({
       const name = row.name.trim();
       if (name) headers[name] = row.value.trim();
     }
-    if (preset) headers[preset.toolsetHeader] = presetToolsetHeaderValue(preset, draft.toolsets);
+    if (preset?.toolsets) headers[preset.toolsets.header] = presetToolsetHeaderValue(preset.toolsets, draft.toolsets);
     return headers;
   }
 
@@ -441,8 +459,8 @@ export function McpServerForm({
     setError("");
   }
 
-  async function run(action: "save" | "test" | "remove" | "refresh" | "signin") {
-    if (!server && (action === "remove" || action === "refresh" || action === "signin")) return;
+  async function run(action: "save" | "test" | "remove" | "refresh" | "signin" | "connect" | "toggle") {
+    if (!server && (action === "remove" || action === "refresh" || action === "signin" || action === "toggle")) return;
     setOperation(action);
     setError("");
     setMessage("");
@@ -454,6 +472,26 @@ export function McpServerForm({
           return;
         }
         setMessage(result.value.message);
+        return;
+      }
+      if (action === "toggle" && server) {
+        // Nothing else to save on a sign-in preset: the switch applies at once, keeping access and tokens.
+        const result = await window.wisp.saveMcpServer({ ...saveRequest(), enabled: !draft.enabled });
+        if (!result.ok) {
+          setError(result.error.message);
+          return;
+        }
+        setDraft((current) => ({ ...current, enabled: !current.enabled }));
+        onSaved(result.value);
+        return;
+      }
+      if (action === "connect") {
+        const result = await window.wisp.saveMcpServer({ ...saveRequest(), enabled: true });
+        if (!result.ok) {
+          setError(result.error.message);
+          return;
+        }
+        onCreated(result.value, { signIn: true });
         return;
       }
       if (action === "save") {
@@ -492,7 +530,15 @@ export function McpServerForm({
         close();
         return;
       }
-      setMessage(action === "refresh" ? "Tools refreshed." : "Signed in.");
+      setMessage(
+        action === "refresh"
+          ? "Tools refreshed."
+          : signInPreset && wisps.length
+            ? `Connected to ${preset!.name}. Choose which Wisps can use it.`
+            : signInPreset
+              ? `Connected to ${preset!.name}.`
+              : "Signed in.",
+      );
     } catch {
       setError(
         action === "test"
@@ -503,7 +549,9 @@ export function McpServerForm({
               ? "Could not refresh tools."
               : action === "signin"
                 ? "Sign-in did not complete."
-                : "Could not save the connection.",
+                : action === "connect"
+                  ? `Could not connect ${preset?.name ?? "the connection"}.`
+                  : "Could not save the connection.",
       );
     } finally {
       setOperation(null);
@@ -562,70 +610,76 @@ export function McpServerForm({
         )}
         {preset ? (
           <>
-            <Field>
-              <FieldLabel htmlFor={`${formId}-credential`}>{preset.credentialLabel}</FieldLabel>
-              <Input
-                id={`${formId}-credential`}
-                type="password"
-                value={draft.headerValue}
-                disabled={busy || !secureStorageAvailable}
-                placeholder={server?.headerConfigured ? "Saved — enter a replacement" : "Paste your token"}
-                autoComplete="new-password"
-                spellCheck={false}
-                onChange={(event) => {
-                  setDraft({ ...draft, headerValue: event.target.value });
-                  setError("");
-                }}
-              />
-              <FieldDescription>
-                {server?.headerConfigured ? "Leave blank to keep the saved token. " : ""}
-                {preset.credentialHelp} Encrypted on this device and never shown to Wisps.{" "}
-                <a
-                  href={preset.credentialHelpUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="inline-flex items-center gap-1 text-primary underline-offset-4 hover:underline"
-                >
-                  Create a token
-                  <ExternalLinkIcon className="size-3" aria-hidden="true" />
-                </a>
-              </FieldDescription>
-            </Field>
-            <fieldset className="m-0 flex min-w-0 flex-col gap-2 border-0 p-0">
-              <legend className="mb-1 p-0 font-medium">Toolsets</legend>
-              <div className="grid grid-cols-1 gap-x-4 gap-y-2 @min-[560px]:grid-cols-2">
-                {preset.toolsets.map((toolset) => (
-                  <label key={toolset.id} className="flex min-w-0 cursor-pointer items-start gap-2">
-                    <Checkbox.Root
-                      className="mt-px inline-flex size-4 flex-none items-center justify-center rounded-[4px] border border-border bg-background focus-visible:outline-2 focus-visible:outline-blue focus-visible:outline-offset-2 data-checked:border-foreground data-checked:bg-foreground data-checked:text-background data-disabled:opacity-50 [&_svg]:size-3"
-                      checked={draft.toolsets.includes(toolset.id)}
-                      disabled={busy}
-                      onCheckedChange={(checked) => {
-                        setDraft({
-                          ...draft,
-                          toolsets: checked
-                            ? [...draft.toolsets, toolset.id]
-                            : draft.toolsets.filter((id) => id !== toolset.id),
-                        });
-                        setError("");
-                      }}
-                    >
-                      <Checkbox.Indicator>
-                        <CheckIcon aria-hidden="true" />
-                      </Checkbox.Indicator>
-                    </Checkbox.Root>
-                    <span className="min-w-0">
-                      <span className="block">{toolset.label}</span>
-                      <span className="block text-dim">{toolset.description}</span>
-                    </span>
-                  </label>
-                ))}
-              </div>
-              <p className="m-0 text-dim">
-                Fewer toolsets keep the Wisp's tool list short. Changing them keeps Wisp access and finds the tools
-                again.
-              </p>
-            </fieldset>
+            {preset.auth.mode === "header" ? (
+              <Field>
+                <FieldLabel htmlFor={`${formId}-credential`}>{preset.auth.label}</FieldLabel>
+                <Input
+                  id={`${formId}-credential`}
+                  type="password"
+                  value={draft.headerValue}
+                  disabled={busy || !secureStorageAvailable}
+                  placeholder={server?.headerConfigured ? "Saved — enter a replacement" : "Paste your token"}
+                  autoComplete="new-password"
+                  spellCheck={false}
+                  onChange={(event) => {
+                    setDraft({ ...draft, headerValue: event.target.value });
+                    setError("");
+                  }}
+                />
+                <FieldDescription>
+                  {server?.headerConfigured ? "Leave blank to keep the saved token. " : ""}
+                  {preset.auth.help} Encrypted on this device and never shown to Wisps.{" "}
+                  <a
+                    href={preset.auth.helpUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex items-center gap-1 text-primary underline-offset-4 hover:underline"
+                  >
+                    Create a token
+                    <ExternalLinkIcon className="size-3" aria-hidden="true" />
+                  </a>
+                </FieldDescription>
+              </Field>
+            ) : (
+              <p className="m-0 text-dim">{preset.auth.help}</p>
+            )}
+            {preset.toolsets ? (
+              <fieldset className="m-0 flex min-w-0 flex-col gap-2 border-0 p-0">
+                <legend className="mb-1 p-0 font-medium">Toolsets</legend>
+                <div className="grid grid-cols-1 gap-x-4 gap-y-2 @min-[560px]:grid-cols-2">
+                  {preset.toolsets.options.map((toolset) => (
+                    <label key={toolset.id} className="flex min-w-0 cursor-pointer items-start gap-2">
+                      <Checkbox.Root
+                        className="mt-px inline-flex size-4 flex-none items-center justify-center rounded-[4px] border border-border bg-background focus-visible:outline-2 focus-visible:outline-blue focus-visible:outline-offset-2 data-checked:border-foreground data-checked:bg-foreground data-checked:text-background data-disabled:opacity-50 [&_svg]:size-3"
+                        checked={draft.toolsets.includes(toolset.id)}
+                        disabled={busy}
+                        onCheckedChange={(checked) => {
+                          setDraft({
+                            ...draft,
+                            toolsets: checked
+                              ? [...draft.toolsets, toolset.id]
+                              : draft.toolsets.filter((id) => id !== toolset.id),
+                          });
+                          setError("");
+                        }}
+                      >
+                        <Checkbox.Indicator>
+                          <CheckIcon aria-hidden="true" />
+                        </Checkbox.Indicator>
+                      </Checkbox.Root>
+                      <span className="min-w-0">
+                        <span className="block">{toolset.label}</span>
+                        <span className="block text-dim">{toolset.description}</span>
+                      </span>
+                    </label>
+                  ))}
+                </div>
+                <p className="m-0 text-dim">
+                  Fewer toolsets keep the Wisp's tool list short. Changing them keeps Wisp access and finds the tools
+                  again.
+                </p>
+              </fieldset>
+            ) : null}
           </>
         ) : (
           <>
@@ -785,16 +839,22 @@ export function McpServerForm({
             <SettingsRowCopy>
               <SettingsRowTitle>Enabled</SettingsRowTitle>
               <SettingsRowDescription>
-                {preset
-                  ? `Disabling blocks ${preset.name} for every Wisp but keeps their access choices. Replacing the token removes ${preset.name} from every Wisp.`
-                  : "Disabling blocks this server for every Wisp while keeping grants. Changing the endpoint or credentials revokes Wisp access."}
+                {signInPreset
+                  ? `Disabling blocks ${preset!.name} for every Wisp but keeps their access choices. Signing in with another account removes ${preset!.name} from every Wisp.`
+                  : preset
+                    ? `Disabling blocks ${preset.name} for every Wisp but keeps their access choices. Replacing the token removes ${preset.name} from every Wisp.`
+                    : "Disabling blocks this server for every Wisp while keeping grants. Changing the endpoint or credentials revokes Wisp access."}
               </SettingsRowDescription>
             </SettingsRowCopy>
             <ToggleSwitch
               checked={draft.enabled}
               label={`Enable ${server?.name ?? "this server"}`}
-              disabled={busy}
+              disabled={busy || (signInPreset && !server)}
               onChange={() => {
+                if (signInPreset && !editable) {
+                  void run("toggle");
+                  return;
+                }
                 setDraft({ ...draft, enabled: !draft.enabled });
                 setError("");
               }}
@@ -823,16 +883,34 @@ export function McpServerForm({
         {message ? <p role="status">{message}</p> : null}
         {server?.signInUrl ? <ManualSignIn server={server} signInUrl={server.signInUrl} onSaved={onSaved} /> : null}
         <div className="flex flex-wrap gap-2">
-          <Button variant="secondary" type="button" disabled={busy || !canTest} onClick={() => void run("test")}>
-            {operation === "test" ? "Testing…" : "Test connection"}
-          </Button>
-          <Button type="button" disabled={busy || !canSave} onClick={() => void run("save")}>
-            {operation === "save" ? "Saving…" : "Save connection"}
-          </Button>
+          {signInPreset && isNew ? (
+            <Button type="button" disabled={busy || !secureStorageAvailable} onClick={() => void run("connect")}>
+              {operation === "connect" ? "Connecting…" : "Connect"}
+            </Button>
+          ) : null}
+          {signInPreset ? null : (
+            <Button variant="secondary" type="button" disabled={busy || !canTest} onClick={() => void run("test")}>
+              {operation === "test" ? "Testing…" : "Test connection"}
+            </Button>
+          )}
+          {editable && !(signInPreset && isNew) ? (
+            <Button type="button" disabled={busy || !canSave} onClick={() => void run("save")}>
+              {operation === "save" ? "Saving…" : "Save connection"}
+            </Button>
+          ) : null}
           {server && server.authMode === "oauth" ? (
             <>
-              <Button variant="secondary" type="button" disabled={busy} onClick={() => void run("signin")}>
-                {signingIn ? "Waiting for browser…" : "Sign in"}
+              <Button
+                variant={signInPreset && server.state === "needs_sign_in" ? "default" : "secondary"}
+                type="button"
+                disabled={busy}
+                onClick={() => void run("signin")}
+              >
+                {signingIn
+                  ? "Waiting for browser…"
+                  : signInPreset && server.state !== "needs_sign_in"
+                    ? "Sign in again"
+                    : "Sign in"}
               </Button>
               {signingIn ? (
                 <Button

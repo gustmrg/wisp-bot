@@ -17,6 +17,31 @@ export interface McpPresetToolset {
   default: boolean;
 }
 
+/** A token the user pastes, sent in a header. */
+export interface McpPresetTokenAuth {
+  mode: "header";
+  /** Header that carries the credential, with the prefix its value needs. */
+  header: { name: string; valuePrefix: string };
+  label: string;
+  helpUrl: string;
+  help: string;
+}
+
+/** A browser sign-in; the user approves access on the provider's site. */
+export interface McpPresetSignInAuth {
+  mode: "oauth";
+  /** What the user approves, shown before the browser opens. */
+  help: string;
+}
+
+/** Toolsets the user picks, sent as a comma-separated list in a header. */
+export interface McpPresetToolsets {
+  header: string;
+  /** Always sent; the user cannot turn these off. */
+  required: ReadonlyArray<string>;
+  options: ReadonlyArray<McpPresetToolset>;
+}
+
 export interface McpPreset {
   id: McpPresetId;
   name: string;
@@ -24,16 +49,8 @@ export interface McpPreset {
   description: string;
   /** Shown as a tag on the plugin card. */
   category: string;
-  /** Header that carries the credential, with the prefix its value needs. */
-  credentialHeader: { name: string; valuePrefix: string };
-  credentialLabel: string;
-  credentialHelpUrl: string;
-  credentialHelp: string;
-  /** Additional header that selects toolsets, as a comma-separated list. */
-  toolsetHeader: string;
-  /** Always sent; the user cannot turn these off. */
-  requiredToolsets: ReadonlyArray<string>;
-  toolsets: ReadonlyArray<McpPresetToolset>;
+  auth: McpPresetTokenAuth | McpPresetSignInAuth;
+  toolsets?: McpPresetToolsets;
 }
 
 export const GITHUB_MCP_PRESET: McpPreset = {
@@ -42,26 +59,30 @@ export const GITHUB_MCP_PRESET: McpPreset = {
   endpoint: "https://api.githubcopilot.com/mcp/",
   description: "Work with repositories, issues, and pull requests on GitHub.",
   category: "Development",
-  credentialHeader: { name: "Authorization", valuePrefix: "Bearer " },
-  credentialLabel: "Personal access token",
-  credentialHelpUrl: "https://github.com/settings/personal-access-tokens/new",
-  credentialHelp:
-    "A fine-grained token limited to the repositories and permissions your Wisps need. Organizations can restrict which tokens work.",
-  toolsetHeader: "X-MCP-Toolsets",
-  requiredToolsets: ["context"],
-  toolsets: [
-    { id: "repos", label: "Repositories", description: "Files, branches, commits, and code search", default: true },
-    { id: "issues", label: "Issues", description: "Read, create, and comment on issues", default: true },
-    { id: "pull_requests", label: "Pull requests", description: "Read, create, review, and merge", default: true },
-    { id: "users", label: "Users", description: "Search users", default: true },
-    { id: "labels", label: "Labels", description: "Repository labels", default: false },
-    { id: "actions", label: "Actions", description: "Workflows, runs, and logs", default: false },
-    { id: "notifications", label: "Notifications", description: "Your GitHub notifications", default: false },
-    { id: "discussions", label: "Discussions", description: "Repository discussions", default: false },
-    { id: "projects", label: "Projects", description: "GitHub Projects", default: false },
-    { id: "code_security", label: "Code scanning", description: "Code scanning alerts", default: false },
-    { id: "dependabot", label: "Dependabot", description: "Dependabot alerts", default: false },
-  ],
+  auth: {
+    mode: "header",
+    header: { name: "Authorization", valuePrefix: "Bearer " },
+    label: "Personal access token",
+    helpUrl: "https://github.com/settings/personal-access-tokens/new",
+    help: "A fine-grained token limited to the repositories and permissions your Wisps need. Organizations can restrict which tokens work.",
+  },
+  toolsets: {
+    header: "X-MCP-Toolsets",
+    required: ["context"],
+    options: [
+      { id: "repos", label: "Repositories", description: "Files, branches, commits, and code search", default: true },
+      { id: "issues", label: "Issues", description: "Read, create, and comment on issues", default: true },
+      { id: "pull_requests", label: "Pull requests", description: "Read, create, review, and merge", default: true },
+      { id: "users", label: "Users", description: "Search users", default: true },
+      { id: "labels", label: "Labels", description: "Repository labels", default: false },
+      { id: "actions", label: "Actions", description: "Workflows, runs, and logs", default: false },
+      { id: "notifications", label: "Notifications", description: "Your GitHub notifications", default: false },
+      { id: "discussions", label: "Discussions", description: "Repository discussions", default: false },
+      { id: "projects", label: "Projects", description: "GitHub Projects", default: false },
+      { id: "code_security", label: "Code scanning", description: "Code scanning alerts", default: false },
+      { id: "dependabot", label: "Dependabot", description: "Dependabot alerts", default: false },
+    ],
+  },
 };
 
 export const MCP_PRESETS: Readonly<Record<McpPresetId, McpPreset>> = { github: GITHUB_MCP_PRESET };
@@ -71,15 +92,14 @@ export function isMcpPresetId(value: unknown): value is McpPresetId {
 }
 
 /** The toolset header value for a selection; required toolsets come first. */
-export function presetToolsetHeaderValue(preset: McpPreset, selected: ReadonlyArray<string>): string {
-  const known = new Set(preset.toolsets.map(({ id }) => id));
-  const chosen = preset.toolsets.map(({ id }) => id).filter((id) => selected.includes(id) && known.has(id));
-  return [...preset.requiredToolsets, ...chosen].join(",");
+export function presetToolsetHeaderValue(toolsets: McpPresetToolsets, selected: ReadonlyArray<string>): string {
+  const chosen = toolsets.options.map(({ id }) => id).filter((id) => selected.includes(id));
+  return [...toolsets.required, ...chosen].join(",");
 }
 
 /** The selected toolsets read back from a saved header value; unknown entries are ignored. */
-export function presetToolsetsFromHeader(preset: McpPreset, value: string | undefined): string[] {
-  if (value === undefined) return preset.toolsets.filter((toolset) => toolset.default).map(({ id }) => id);
+export function presetToolsetsFromHeader(toolsets: McpPresetToolsets, value: string | undefined): string[] {
+  if (value === undefined) return toolsets.options.filter((toolset) => toolset.default).map(({ id }) => id);
   const entries = value.split(",").map((entry) => entry.trim());
-  return preset.toolsets.map(({ id }) => id).filter((id) => entries.includes(id));
+  return toolsets.options.map(({ id }) => id).filter((id) => entries.includes(id));
 }

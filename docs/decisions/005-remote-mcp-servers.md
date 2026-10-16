@@ -127,6 +127,15 @@ same grants and approvals; annotations stay untrusted, so read tools are not
 allowed automatically. The user chose one connection with per-tool **Always
 allow** over a read-only connection plus a write connection.
 
+A preset authenticates either with a token the user pastes into a header
+(GitHub) or with a browser sign-in (OAuth). A sign-in preset has nothing to
+fill in, so its plugin page offers one **Connect** action: it saves the
+connection and starts the sign-in at once, in the same flow as **Sign in**,
+including the relay and the pasted redirect for a server on another computer.
+If the sign-in does not finish, the plugin stays connected as "Needs sign-in"
+until the user signs in from its page. Its **Enabled** switch saves at once,
+since there is no form to save. Toolsets are optional for any preset.
+
 A preset also brings an application-owned skill (the plugin's skill), offered
 to Wisps with access to an enabled connection that has discovered tools. See
 the amendment to [ADR 008](008-wisp-skills.md).

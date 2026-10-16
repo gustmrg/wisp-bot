@@ -100,6 +100,8 @@ export function PluginSettingsSection({
   const [listError, setListError] = useState("");
   /** Plugin connected in this visit; its manage view prompts for Wisp access. */
   const [justConnected, setJustConnected] = useState<SettingsPluginId | null>(null);
+  /** A plugin that signs in through the browser, connected in one step: its sign-in starts when it opens. */
+  const [signInOnOpen, setSignInOnOpen] = useState<McpPresetId | null>(null);
   const index = useWispAccessIndex(wisps);
   const mcpIndex = useMcpAccessIndex(wisps, mcpView ? mcpServersKey(mcpView.servers) : "");
 
@@ -219,18 +221,24 @@ export function PluginSettingsSection({
               wisps={wisps}
               index={mcpIndex}
               initialMessage={
-                justConnected === editingPreset.id
+                // A sign-in plugin is connected only once its sign-in completes; the form says so then.
+                justConnected === editingPreset.id && editingPreset.auth.mode === "header"
                   ? wisps.length
                     ? `Connected to ${editingPreset.name}. Choose which Wisps can use it.`
                     : `Connected to ${editingPreset.name}.`
                   : ""
               }
+              signInOnOpen={signInOnOpen === editingPreset.id}
               onSaved={setMcpView}
-              onCreated={(next) => {
+              onCreated={(next, options) => {
                 setJustConnected(editingPreset.id);
+                setSignInOnOpen(options?.signIn ? editingPreset.id : null);
                 setMcpView(next);
               }}
-              onBack={() => setEditing(null)}
+              onBack={() => {
+                setSignInOnOpen(null);
+                setEditing(null);
+              }}
             />
           ) : editingPlugin ? (
             connected(editingPlugin) ? (

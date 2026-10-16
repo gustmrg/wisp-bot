@@ -7,7 +7,9 @@ search and page reading). Connections are configured globally in
 **Access** tab. Connecting a plugin grants no Wisp access automatically.
 
 **GitHub** is also listed under Plugins but runs over a remote MCP connection;
-see [GitHub](#github). For dynamically discovered integrations, see
+see [GitHub](#github). Plugins of this kind that sign in through the browser
+have no form: **Connect** opens the provider's page to approve access, and
+**Sign in again** on the plugin's page repeats it. For dynamically discovered integrations, see
 [remote MCP servers](mcp-servers.md).
 
 ## Connecting a plugin
