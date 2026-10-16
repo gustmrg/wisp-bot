@@ -132,13 +132,15 @@ constitute live authenticated verification against the bundled providers.
 
 ## Amendment (2026-10-16): plugins that run over MCP
 
-**Settings → Plugins** also lists GitHub, which is not a bundled adapter: it is
-a remote MCP connection made from a preset ([ADR 005](005-remote-mcp-servers.md)),
+**Settings → Plugins** also lists GitHub and Atlassian, which are not bundled
+adapters: each is a remote MCP connection made from a preset ([ADR 005](005-remote-mcp-servers.md)),
 presented like any other plugin: the card, form, and messages do not mention
 MCP, servers, or endpoints, because users configure a plugin, not how it
-connects. Its form asks only for the token and toolsets, and the card's
-**Enabled** switch enables the connection. In a Wisp's **Access** tab it is listed under **Apps** with the
-MCP access levels (**Use with approval**, **Use without asking**) instead of
-read and write, because its tools are discovered from the server rather than
-fixed by an adapter. Its grants, credentials, and revocation stay in
+connects. GitHub's form asks only for the token and toolsets; Atlassian signs
+in through the browser with a single **Connect**. The card's **Enabled**
+switch enables the connection. In a Wisp's **Access** tab they are listed
+under **Apps** with the MCP access levels (**Use with approval**, **Use
+without asking**) instead of read and write, because their tools are
+discovered from the server rather than fixed by an adapter. Their grants,
+credentials, and revocation stay in
 `McpService`; `PluginService` and `plugins.json` are unchanged.

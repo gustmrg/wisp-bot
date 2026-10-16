@@ -64,7 +64,7 @@ device and sent as text, so import works with a server on another computer.
 ## Amendment (2026-10-16): skills that come with integrations
 
 An integration can bring an application-owned skill, starting with the GitHub
-plugin, which runs over an MCP connection ([ADR 005](005-remote-mcp-servers.md)). It reaches the Wisp through
+and Atlassian plugins, which run over MCP connections ([ADR 005](005-remote-mcp-servers.md)). It reaches the Wisp through
 the integration tool snapshot, so it follows the Wisp's access: it is offered
 only while the Wisp can use the connection, and a grant change rebuilds the
 session at the next message like any snapshot change.

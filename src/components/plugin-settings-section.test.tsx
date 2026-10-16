@@ -119,7 +119,7 @@ function setup({
       subscribeToMcpSettings: vi.fn(() => () => undefined),
       removeMcpServer: vi.fn(),
       refreshMcpTools: vi.fn(),
-      startMcpSignIn: vi.fn(),
+      startMcpSignIn: vi.fn(async () => ({ ok: true, value: mcpView })),
       cancelMcpSignIn: vi.fn(),
       getPluginSettings,
       savePluginSettings,
@@ -488,5 +488,32 @@ describe("PluginSettingsSection GitHub", () => {
       enabled: false,
     });
     expect(await screen.findByRole("switch", { name: "Enable GitHub" })).not.toBeChecked();
+  });
+});
+
+describe("PluginSettingsSection Atlassian", () => {
+  it("connects Atlassian with a browser sign-in and nothing to fill in", async () => {
+    const api = setup();
+    const user = userEvent.setup();
+    render(<PluginSettingsSection />);
+
+    const available = within(await screen.findByRole("region", { name: "Available" }));
+    const atlassian = await available.findByRole("button", { name: "Connect Atlassian" });
+    expect(atlassian).toHaveTextContent("Productivity");
+    expect(atlassian).not.toHaveTextContent(/MCP|server/i);
+    await user.click(atlassian);
+    expect(screen.getByText(/You sign in to Atlassian in your browser/)).toBeVisible();
+    expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Connect" }));
+
+    await waitFor(() => expect(api.saveMcpServer).toHaveBeenCalledTimes(1));
+    expect(api.saveMcpServer.mock.calls[0]?.[0]).toEqual({
+      name: "Atlassian",
+      endpoint: "https://mcp.atlassian.com/v1/mcp",
+      authMode: "oauth",
+      preset: "atlassian",
+      enabled: true,
+    });
+    await waitFor(() => expect(window.wisp.startMcpSignIn).toHaveBeenCalledTimes(1));
   });
 });

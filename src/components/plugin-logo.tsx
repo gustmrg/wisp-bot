@@ -6,6 +6,7 @@ import linearLogo from "@/assets/plugins/linear.svg";
 import tavilyLogo from "@/assets/plugins/tavily.svg";
 import exaLogo from "@/assets/plugins/exa.png";
 import githubLogo from "@/assets/plugins/github.svg";
+import atlassianLogo from "@/assets/plugins/atlassian.svg";
 import { cn } from "@/lib/utils";
 
 const logos: Record<PluginId | McpPresetId, string> = {
@@ -15,6 +16,7 @@ const logos: Record<PluginId | McpPresetId, string> = {
   tavily: tavilyLogo,
   exa: exaLogo,
   github: githubLogo,
+  atlassian: atlassianLogo,
 };
 
 export function PluginLogo({

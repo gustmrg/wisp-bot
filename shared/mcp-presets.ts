@@ -6,7 +6,7 @@
  * mentioning MCP: the user configures a plugin, not a server. Wisps with
  * access to the connection also receive the plugin's skill.
  */
-export const MCP_PRESET_IDS = ["github"] as const;
+export const MCP_PRESET_IDS = ["github", "atlassian"] as const;
 export type McpPresetId = (typeof MCP_PRESET_IDS)[number];
 
 export interface McpPresetToolset {
@@ -85,7 +85,22 @@ export const GITHUB_MCP_PRESET: McpPreset = {
   },
 };
 
-export const MCP_PRESETS: Readonly<Record<McpPresetId, McpPreset>> = { github: GITHUB_MCP_PRESET };
+export const ATLASSIAN_MCP_PRESET: McpPreset = {
+  id: "atlassian",
+  name: "Atlassian",
+  endpoint: "https://mcp.atlassian.com/v1/mcp",
+  description: "Work with Jira issues and Confluence pages on your Atlassian sites.",
+  category: "Productivity",
+  auth: {
+    mode: "oauth",
+    help: "You sign in to Atlassian in your browser and choose the site to allow. Wisps act as you, with your Jira and Confluence permissions. Site admins can restrict which apps may connect.",
+  },
+};
+
+export const MCP_PRESETS: Readonly<Record<McpPresetId, McpPreset>> = {
+  github: GITHUB_MCP_PRESET,
+  atlassian: ATLASSIAN_MCP_PRESET,
+};
 
 export function isMcpPresetId(value: unknown): value is McpPresetId {
   return typeof value === "string" && (MCP_PRESET_IDS as ReadonlyArray<string>).includes(value);

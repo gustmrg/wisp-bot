@@ -6,11 +6,12 @@ search and page reading). Connections are configured globally in
 **Settings → Plugins**; each Wisp receives access independently through its
 **Access** tab. Connecting a plugin grants no Wisp access automatically.
 
-**GitHub** is also listed under Plugins but runs over a remote MCP connection;
-see [GitHub](#github). Plugins of this kind that sign in through the browser
+**GitHub** and **Atlassian** (Jira and Confluence) are also listed under
+Plugins but run over a remote MCP connection; see [GitHub](#github) and
+[Atlassian](#atlassian). Plugins of this kind that sign in through the browser
 have no form: **Connect** opens the provider's page to approve access, and
-**Sign in again** on the plugin's page repeats it. For dynamically discovered integrations, see
-[remote MCP servers](mcp-servers.md).
+**Sign in again** on the plugin's page repeats it. For dynamically discovered
+integrations, see [remote MCP servers](mcp-servers.md).
 
 ## Connecting a plugin
 
@@ -190,6 +191,32 @@ commands. It is not one of the Wisp's own skills: it is not
 listed in its Skills settings, does not count toward its limit, and
 disappears when the Wisp loses access. A skill of the Wisp's own with the same
 name is used instead. Like every skill, it grants nothing.
+
+## Atlassian
+
+**Settings → Plugins → Atlassian → Connect** connects
+[Atlassian's official MCP server](https://support.atlassian.com/atlassian-rovo-mcp-server/)
+(`https://mcp.atlassian.com/v1/mcp`) for Jira and Confluence. There is nothing
+to fill in: your browser opens Atlassian's sign-in, where you choose the site
+to allow and approve access. Wisps then act as you, with your own Jira and
+Confluence permissions; no API token or administrator is needed unless your
+site's admins restrict which apps may connect.
+
+With a [server on another computer](remote-server.md#oauth-sign-in-from-another-computer),
+the desktop app opens the sign-in in its own browser and passes the result to
+the server. In the browser app or on a phone, open the sign-in page from the
+plugin and paste back the address the browser lands on.
+
+Atlassian decides which tools the connection offers; Wisps see them all, so
+choose **Use with approval** unless a Wisp should change issues and pages
+without asking. If the sign-in expires or is revoked on Atlassian's side, the
+plugin shows **Needs sign-in** until you sign in again.
+
+Wisps with access also see an **atlassian** skill: find the site's cloud ID
+first, search with JQL and CQL and small limits, look up issue types and
+required fields before creating an issue, change status only through the
+issue's transitions, and never delete or move issues unless asked. Like the
+GitHub skill, it is not one of the Wisp's own skills and grants nothing.
 
 ## Revocation and key changes
 
