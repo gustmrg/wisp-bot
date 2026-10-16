@@ -10,6 +10,10 @@ export function addTotals(target: WispUsageRow["totals"], source: WispSessionRep
     target[key] += source[key];
   }
   target.costUsd = target.costUsd === null || source.costUsd === null ? null : target.costUsd + source.costUsd;
+  target.cacheSavingsUsd =
+    target.cacheSavingsUsd === null || source.cacheSavingsUsd === null
+      ? null
+      : target.cacheSavingsUsd + source.cacheSavingsUsd;
 }
 
 export function createUsageReport(
@@ -24,6 +28,6 @@ export function createUsageReport(
     pricingUpdatedAt,
     incomplete: false,
     wisps: [],
-    totals: { ...emptyUsage(), costUsd: 0 },
+    totals: { ...emptyUsage(), costUsd: 0, cacheSavingsUsd: 0 },
   };
 }

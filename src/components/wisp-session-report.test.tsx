@@ -16,6 +16,7 @@ const report: WispSessionReport = {
     cacheWriteTokens: 0,
     totalTokens: 1_850,
     costUsd: 0.0023,
+    cacheSavingsUsd: null,
   },
   models: [
     {
@@ -64,6 +65,8 @@ describe("WispSessionReportSection", () => {
     expect((await screen.findAllByText("1.85K"))[0]).toBeVisible();
     expect(screen.getAllByText("<$0.01")[0]).toBeVisible();
     expect(screen.getByText("Current session · 3 turns")).toBeVisible();
+    expect(screen.getByText("6.3%")).toBeVisible();
+    expect(screen.getByText("Cache savings").nextElementSibling).toHaveTextContent("Unknown");
     expect(screen.getByTitle("openai/gpt-oss-120b")).toHaveTextContent("gpt-oss-120b");
     expect(screen.queryByText("read")).not.toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: /Tool calls/ }));

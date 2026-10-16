@@ -17,6 +17,7 @@ const report: UsageReport = {
     cacheWriteTokens: 0,
     totalTokens: 120,
     costUsd: null,
+    cacheSavingsUsd: null,
   },
   wisps: [
     {
@@ -30,6 +31,7 @@ const report: UsageReport = {
         cacheWriteTokens: 0,
         totalTokens: 120,
         costUsd: null,
+        cacheSavingsUsd: null,
       },
     },
   ],
@@ -120,6 +122,7 @@ describe("UsageSettingsSection", () => {
         cacheWriteTokens: 0,
         totalTokens,
         costUsd,
+        cacheSavingsUsd: costUsd === null ? null : 0.5,
       },
     });
     const wisps = [row("Cheap", 1_234, 0.0021), row("Unpriced", 50, null), row("Busy", 12_400_000, 9.4182)];
@@ -128,7 +131,14 @@ describe("UsageSettingsSection", () => {
       value: {
         ...report,
         wisps,
-        totals: { ...report.totals, inputTokens: 12_401_284, totalTokens: 12_401_284, costUsd: null },
+        totals: {
+          ...report.totals,
+          inputTokens: 12_401_284,
+          cacheReadTokens: 12_401_284 * 3,
+          totalTokens: 12_401_284,
+          costUsd: null,
+          cacheSavingsUsd: null,
+        },
       },
     }));
     Object.defineProperty(window, "wisp", { configurable: true, value: { getUsageReport } });
@@ -140,8 +150,36 @@ describe("UsageSettingsSection", () => {
     expect(screen.getAllByText("12.4M")[0]).toBeVisible();
     expect(screen.getAllByText("12,400,000")[0]).toHaveClass("sr-only");
     expect(screen.getByText(/1 Wisp has an unknown cost/)).toBeVisible();
+    // Savings known for two Wisps are a floor for the total.
+    expect(screen.getByText("$1.00+")).toBeVisible();
     const names = screen.getAllByRole("rowheader").map((cell) => cell.textContent);
     expect(names).toEqual(["Busy1 session", "Cheap1 session", "Unpriced1 session", "All Wisps"]);
+  });
+
+  it("splits input into cached and uncached, with the cache hit rate and savings", async () => {
+    const totals = {
+      inputTokens: 1_000,
+      outputTokens: 4_000,
+      cacheReadTokens: 98_000,
+      cacheWriteTokens: 1_000,
+      totalTokens: 104_000,
+      costUsd: 0.5,
+      cacheSavingsUsd: 3.25,
+    };
+    const getUsageReport = vi.fn(async () => ({
+      ok: true,
+      value: { ...report, totals, wisps: [{ ...report.wisps[0], totals }] },
+    }));
+    Object.defineProperty(window, "wisp", { configurable: true, value: { getUsageReport } });
+    render(<UsageSettingsSection />);
+    expect(await screen.findByText("Research Wisp")).toBeVisible();
+    expect(screen.getByRole("columnheader", { name: "Cached input" })).toBeVisible();
+    expect(screen.getByRole("columnheader", { name: "Uncached input" })).toBeVisible();
+    expect(screen.queryByText(/Cache write/)).not.toBeInTheDocument();
+    // Cache writes count as uncached input.
+    expect(screen.getAllByTitle("2,000 tokens")[0]).toBeVisible();
+    expect(screen.getByText("98%")).toBeVisible();
+    expect(screen.getByText("$3.25")).toBeVisible();
   });
 
   it("offers all history when the period has no usage", async () => {

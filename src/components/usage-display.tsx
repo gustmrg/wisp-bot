@@ -1,12 +1,28 @@
 import { cn } from "@/lib/utils";
-import type { SessionReportUsage } from "../../shared/contracts";
+import type { SessionReportTotals, SessionReportUsage } from "../../shared/contracts";
 
-const TOKEN_KINDS = [
-  { key: "inputTokens", label: "Input", color: "bg-chart-1" },
-  { key: "outputTokens", label: "Output", color: "bg-chart-2" },
-  { key: "cacheReadTokens", label: "Cache read", color: "bg-chart-3" },
-  { key: "cacheWriteTokens", label: "Cache write", color: "bg-chart-4" },
-] as const;
+/**
+ * Input split by whether it came from the provider's cache. Few providers
+ * report cache writes, so a write counts as uncached input: it was processed in full.
+ */
+export function inputSplit(totals: SessionReportUsage): { cached: number; uncached: number } {
+  return { cached: totals.cacheReadTokens, uncached: totals.inputTokens + totals.cacheWriteTokens };
+}
+
+/** The share of input served from cache, or null with no input. */
+export function cacheHitRate(totals: SessionReportUsage): number | null {
+  const { cached, uncached } = inputSplit(totals);
+  return cached + uncached > 0 ? cached / (cached + uncached) : null;
+}
+
+function tokenParts(totals: SessionReportUsage) {
+  const { cached, uncached } = inputSplit(totals);
+  return [
+    { key: "cached", label: "Cached input", color: "bg-chart-3", value: cached },
+    { key: "uncached", label: "Uncached input", color: "bg-chart-1", value: uncached },
+    { key: "output", label: "Output", color: "bg-chart-2", value: totals.outputTokens },
+  ];
+}
 
 /**
  * A stacked bar of how the total splits into token kinds, with a legend carrying the same numbers.
@@ -15,7 +31,7 @@ const TOKEN_KINDS = [
 export function TokenMix({ totals, compact = false }: { totals: SessionReportUsage; compact?: boolean }) {
   if (!totals.totalTokens) return null;
   const share = (value: number) => Math.round((value / totals.totalTokens) * 100);
-  const parts = TOKEN_KINDS.map((kind) => ({ ...kind, value: totals[kind.key] }));
+  const parts = tokenParts(totals);
   return (
     <div className="space-y-2.5">
       <div
@@ -36,7 +52,7 @@ export function TokenMix({ totals, compact = false }: { totals: SessionReportUsa
       <ul
         className={cn(
           "m-0 grid list-none gap-x-4 gap-y-2 p-0 text-xs",
-          compact ? "grid-cols-2" : "grid-cols-4 @max-[28rem]:grid-cols-2",
+          compact ? "grid-cols-2" : "grid-cols-3 @max-[28rem]:grid-cols-2",
         )}
       >
         {parts.map((part) => (
@@ -57,6 +73,43 @@ export function TokenMix({ totals, compact = false }: { totals: SessionReportUsa
       </ul>
     </div>
   );
+}
+
+/**
+ * How much of the input came from cache, and what that saved. `pricedSavings`
+ * is shown as a floor ("$1.20+") when part of the savings is unknown.
+ */
+export function CacheStats({
+  totals,
+  pricedSavings = 0,
+  compact = false,
+}: {
+  totals: SessionReportTotals;
+  pricedSavings?: number;
+  compact?: boolean;
+}) {
+  const hitRate = cacheHitRate(totals);
+  if (hitRate === null) return null;
+  return (
+    <dl className={cn("m-0 grid grid-cols-2 gap-x-4 gap-y-1 text-xs", !compact && "@[28rem]:max-w-80")}>
+      <div className="flex min-w-0 flex-col">
+        <dt className="text-dim">Cache hit rate</dt>
+        <dd className="m-0 font-medium tabular-nums">{formatPercent(hitRate)}</dd>
+      </div>
+      <div className="flex min-w-0 flex-col">
+        <dt className="text-dim">Cache savings</dt>
+        <dd className={cn("m-0 font-medium tabular-nums", totals.cacheSavingsUsd === null && "font-normal text-dim")}>
+          {totals.cacheSavingsUsd === null && pricedSavings > 0
+            ? `${formatUsd(pricedSavings)}+`
+            : formatUsd(totals.cacheSavingsUsd)}
+        </dd>
+      </div>
+    </dl>
+  );
+}
+
+function formatPercent(value: number): string {
+  return new Intl.NumberFormat("en-US", { style: "percent", maximumFractionDigits: 1 }).format(value);
 }
 
 /** A token count shortened for reading (12.4M), with the exact count for screen readers and on hover. */

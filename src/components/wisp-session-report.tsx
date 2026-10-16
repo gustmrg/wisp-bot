@@ -13,7 +13,7 @@ import type { SessionReportToolCall, WispSessionReport } from "../../shared/cont
 import { SettingsCard, SettingsGroup } from "@/components/settings/settings-primitives";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Button } from "@/components/ui/button";
-import { formatUsd, plural, TokenCount, TokenMix } from "@/components/usage-display";
+import { CacheStats, formatUsd, plural, TokenCount, TokenMix } from "@/components/usage-display";
 import { useTimeZone } from "@/hooks/use-time-zone";
 import type { IntegrationSettingsTarget } from "@/lib/plugin-access";
 import { cn } from "@/lib/utils";
@@ -189,13 +189,14 @@ function SessionSummary({ report }: { report: WispSessionReport }) {
             </p>
           </div>
           <div className="text-right">
-            <p className="m-0 text-xs text-dim">Total tokens</p>
+            <p className="m-0 text-xs text-dim">Processed tokens</p>
             <p className="m-0 text-md font-semibold tabular-nums">
               <TokenCount value={report.totals.totalTokens} />
             </p>
           </div>
         </div>
         <TokenMix totals={report.totals} compact />
+        <CacheStats totals={report.totals} compact />
       </SettingsCard>
       {report.totals.costUsd === null ? (
         <div

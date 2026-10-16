@@ -91,6 +91,7 @@ describe("buildSessionReport", () => {
       cacheWriteTokens: 0,
       totalTokens: 1_850,
       costUsd: (1_500 / 1_000_000) * 1.5 + (250 / 1_000_000) * 3 + (100 / 1_000_000) * 0.15,
+      cacheSavingsUsd: (100 / 1_000_000) * (1.5 - 0.15),
     });
     expect(report.models).toHaveLength(1);
     expect(report.models[0]).toMatchObject({
@@ -285,6 +286,43 @@ it("includes cache writes in estimates and treats a missing cache-write price as
     getPricing: () => ({ ...PRICING, cacheWritePerMillionTokens: 2 }),
   });
   expect(priced.totals.costUsd).toBeCloseTo(0.000283);
+});
+
+it("estimates cache savings net of the cache-write premium, using catalog prices for other providers", () => {
+  const entries = [
+    messageEntry(assistantMessage({ usage: { input: 100, output: 10, cacheRead: 2_000, cacheWrite: 1_000 } })),
+    messageEntry(
+      assistantMessage({
+        provider: "opencode-go",
+        model: "deepseek-v4.1-flash",
+        usage: { input: 50, output: 5, cacheRead: 10_000, cacheWrite: 0, cost: { total: 0.0001 } },
+      }),
+    ),
+  ];
+  const catalog = { inputPerMillionTokens: 0.15, outputPerMillionTokens: 0.6, cacheReadPerMillionTokens: 0.003 };
+  const report = buildSessionReport("session-1", entries, {
+    workspaceDirectory: WORKSPACE,
+    getPricing: (providerId, modelId) =>
+      getPricing(providerId, modelId) && { ...PRICING, cacheWritePerMillionTokens: 1.875 },
+    getCatalogPricing: (providerId) =>
+      providerId === "opencode-go" ? { ...catalog, cacheWritePerMillionTokens: 0.15 } : null,
+  });
+  expect(report.totals.cacheSavingsUsd).toBeCloseTo(
+    (2_000 / 1_000_000) * (1.5 - 0.15) - (1_000 / 1_000_000) * (1.875 - 1.5) + (10_000 / 1_000_000) * (0.15 - 0.003),
+    12,
+  );
+  // Catalog prices are for savings only; cost keeps the cost Pi recorded.
+  expect(report.models.find((model) => model.modelId === "deepseek-v4.1-flash")?.costUsd).toBeCloseTo(0.0001);
+});
+
+it("leaves cache savings unknown only when a model with cache traffic has no price", () => {
+  const unpriced = (usage: Record<string, number>) =>
+    buildSessionReport("session-1", [messageEntry(assistantMessage({ model: "unknown/model-x", usage }))], {
+      workspaceDirectory: WORKSPACE,
+      getPricing,
+    }).totals.cacheSavingsUsd;
+  expect(unpriced({ input: 100, output: 10, cacheRead: 50, cacheWrite: 0 })).toBeNull();
+  expect(unpriced({ input: 100, output: 10, cacheRead: 0, cacheWrite: 0 })).toBe(0);
 });
 
 it("includes summarization usage and keeps unknown summary prices unknown", () => {

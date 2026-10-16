@@ -8,17 +8,19 @@ import { WispBackendError } from "./backend-error.js";
 import type { ConversationRepository } from "./conversation-repository.js";
 import type { ModelPricingService } from "./model-pricing-service.js";
 import { addTotals, createUsageReport } from "./usage-report.js";
-import { buildSessionReport, emptyUsage } from "./pi-session-report.js";
+import { buildSessionReport, emptyUsage, type SessionPricingLookup } from "./pi-session-report.js";
 
 const MAX_SESSION_FILE_BYTES = 25 * 1024 * 1024;
 
 export class SessionReportService {
   private readonly repository: ConversationRepository;
   private readonly pricing: ModelPricingService;
+  private readonly catalogPricing: SessionPricingLookup | undefined;
 
-  constructor(repository: ConversationRepository, pricing: ModelPricingService) {
+  constructor(repository: ConversationRepository, pricing: ModelPricingService, catalogPricing?: SessionPricingLookup) {
     this.repository = repository;
     this.pricing = pricing;
+    this.catalogPricing = catalogPricing;
   }
 
   async getSessionReport(conversationId: string): Promise<WispSessionReport | null> {
@@ -33,6 +35,7 @@ export class SessionReportService {
     return buildSessionReport(context.piSessionId ?? context.sessionId, entries, {
       workspaceDirectory: context.workspaceDirectory,
       getPricing: (providerId, modelId) => this.pricing.getPricing(providerId, modelId),
+      getCatalogPricing: this.catalogPricing,
     });
   }
 
@@ -45,7 +48,7 @@ export class SessionReportService {
         conversationId: context.conversationId,
         name: context.name,
         sessions: 0,
-        totals: { ...emptyUsage(), costUsd: 0 },
+        totals: { ...emptyUsage(), costUsd: 0, cacheSavingsUsd: 0 },
       };
       let files: string[];
       try {
@@ -53,6 +56,7 @@ export class SessionReportService {
       } catch {
         report.incomplete = true;
         row.totals.costUsd = null;
+        row.totals.cacheSavingsUsd = null;
         rows.push(row);
         continue;
       }
@@ -67,12 +71,14 @@ export class SessionReportService {
           const session = buildSessionReport("usage", filtered, {
             workspaceDirectory: context.workspaceDirectory,
             getPricing: (provider, model) => this.pricing.getPricing(provider, model),
+            getCatalogPricing: this.catalogPricing,
           });
           if (session.turns > 0) row.sessions += 1;
           addTotals(row.totals, session.totals);
         } catch {
           report.incomplete = true;
           row.totals.costUsd = null;
+          row.totals.cacheSavingsUsd = null;
         }
       }
       rows.push(row);
