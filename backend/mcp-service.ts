@@ -16,6 +16,7 @@ import {
   type McpSettingsView,
   type WispMcpAccessView,
 } from "../shared/mcp.js";
+import { isMcpPresetId, type McpPresetId } from "../shared/mcp-presets.js";
 import { registerDynamicToolMetadata, unregisterDynamicToolMetadata } from "../shared/tool-catalog.js";
 import { writeFileAtomically } from "./atomic-file.js";
 import { WispBackendError } from "./backend-error.js";
@@ -34,8 +35,9 @@ import {
   withFileReferenceHints,
 } from "./mcp-file-arguments.js";
 import { McpOAuthProvider } from "./mcp-oauth.js";
+import { PLUGIN_SKILLS } from "./plugin-skills.js";
 import { McpSecretStore } from "./mcp-secret-store.js";
-import type { IntegrationToolSnapshot, SnapshotToolMetadata } from "./integration-tool-source.js";
+import type { IntegrationSkill, IntegrationToolSnapshot, SnapshotToolMetadata } from "./integration-tool-source.js";
 import {
   invalidMcpRequest,
   MAX_TOOL_DESCRIPTION_CHARACTERS,
@@ -43,6 +45,7 @@ import {
   MAX_TOOL_SNAPSHOT_TOOLS,
   mcpRecord,
   parseMcpConversation,
+  parseMcpExtraHeaders,
   parseSaveMcpServer,
   parseSaveWispMcpAccess,
   parseTestMcpConnection,
@@ -73,6 +76,9 @@ interface McpServerRecord {
   /** Bumped whenever endpoint, authentication, or account identity changes. */
   configGeneration: number;
   headerName?: string;
+  /** Non-secret headers sent with every request; changing them re-discovers tools but keeps grants. */
+  extraHeaders?: Record<string, string>;
+  preset?: McpPresetId;
   snapshot?: { discoveredAt: string; tools: McpToolRecord[] };
   lastConnection?: { state: "connected" | "unavailable"; at: string; message?: string };
 }
@@ -181,6 +187,8 @@ export class McpService {
           enabled: server.enabled,
           headerConfigured: headerConfigured.has(server.serverId),
           ...(server.headerName ? { headerName: server.headerName } : {}),
+          ...(server.extraHeaders ? { extraHeaders: { ...server.extraHeaders } } : {}),
+          ...(server.preset ? { preset: server.preset } : {}),
           ...(this.isSignInPending(server.serverId) ? { signInPending: true } : {}),
           state: this.connectionState(server, signedIn.has(server.serverId)),
           lastDiscoveredAt: server.snapshot?.discoveredAt ?? null,
@@ -224,6 +232,19 @@ export class McpService {
           this.cancelServer(request.serverId);
           await this.closeServerClients(request.serverId);
         }
+        if (request.extraHeaders !== undefined && !sameHeaders(existing.extraHeaders, request.extraHeaders)) {
+          // Options such as toolsets change the tools, not who the server
+          // acts as: grants stay, but clients reconnect and tools are
+          // discovered again.
+          existing.extraHeaders = Object.keys(request.extraHeaders).length ? { ...request.extraHeaders } : undefined;
+          if (!identityChanged) {
+            existing.configGeneration += 1;
+            delete existing.snapshot;
+            delete existing.lastConnection;
+            this.cancelServer(request.serverId);
+            await this.closeServerClients(request.serverId);
+          }
+        }
         if (request.authMode === "none") {
           existing.headerName = undefined;
           await this.secrets.delete(request.serverId).catch(() => undefined);
@@ -244,6 +265,10 @@ export class McpService {
           enabled: request.enabled,
           configGeneration: 1,
           ...(request.headerName ? { headerName: request.headerName } : {}),
+          ...(request.extraHeaders && Object.keys(request.extraHeaders).length
+            ? { extraHeaders: { ...request.extraHeaders } }
+            : {}),
+          ...(request.preset ? { preset: request.preset } : {}),
         };
       }
       await this.commit(next);
@@ -290,7 +315,8 @@ export class McpService {
       saved.endpoint === request.endpoint &&
       saved.authMode === request.authMode &&
       request.headerValue === undefined &&
-      (request.headerName === undefined || request.headerName === saved.headerName);
+      (request.headerName === undefined || request.headerName === saved.headerName) &&
+      (request.extraHeaders === undefined || sameHeaders(saved.extraHeaders, request.extraHeaders));
     const savedGeneration = saved?.configGeneration;
     const controller = new AbortController();
     this.running.set(controller, { conversationId: "", sessionId: "", serverId: request.serverId ?? "" });
@@ -403,7 +429,7 @@ export class McpService {
       // completed exchange must not be cut short after credentials were stored.
       const outcome = await connection.connect(
         endpoint,
-        { mode: "oauth", provider },
+        { mode: "oauth", provider, ...(server.extraHeaders ? { extraHeaders: server.extraHeaders } : {}) },
         {
           allowInteractiveSignIn: true,
         },
@@ -532,8 +558,11 @@ export class McpService {
     const metadata: SnapshotToolMetadata[] = [];
     const activeNames: string[] = [];
     const fingerprints: string[] = [];
+    const skills = new Map<string, IntegrationSkill>();
     for (const server of Object.values(this.state.servers)) {
       if (!server.enabled || this.access(sessionId, server.serverId) === "none" || !server.snapshot) continue;
+      const skill = server.preset ? PLUGIN_SKILLS[server.preset] : undefined;
+      if (skill) skills.set(skill.name, skill);
       fingerprints.push(
         server.serverId,
         String(server.configGeneration),
@@ -556,6 +585,7 @@ export class McpService {
       definitions,
       metadata,
       activeNames,
+      ...(skills.size ? { skills: [...skills.values()] } : {}),
       revision: createHash("sha256")
         .update(JSON.stringify([sessionId, fingerprints]))
         .digest("hex"),
@@ -790,6 +820,11 @@ export class McpService {
   }
 
   private async serverAuth(server: McpServerRecord): Promise<McpConnectionAuth> {
+    const auth = await this.savedAuth(server);
+    return server.extraHeaders ? { ...auth, extraHeaders: server.extraHeaders } : auth;
+  }
+
+  private async savedAuth(server: McpServerRecord): Promise<McpConnectionAuth> {
     if (server.authMode === "none") return { mode: "none" };
     if (server.authMode === "header") {
       const secret = await this.secrets.read(server.serverId);
@@ -808,6 +843,20 @@ export class McpService {
   }
 
   private async draftAuth(
+    server: McpServerRecord | undefined,
+    request: {
+      authMode: McpAuthMode;
+      headerName?: string;
+      headerValue?: string;
+      extraHeaders?: Readonly<Record<string, string>>;
+    },
+  ): Promise<McpConnectionAuth> {
+    const auth = await this.draftCredentials(server, request);
+    const extraHeaders = request.extraHeaders ?? server?.extraHeaders;
+    return extraHeaders && Object.keys(extraHeaders).length ? { ...auth, extraHeaders } : auth;
+  }
+
+  private async draftCredentials(
     server: McpServerRecord | undefined,
     request: { authMode: McpAuthMode; headerName?: string; headerValue?: string },
   ): Promise<McpConnectionAuth> {
@@ -1169,6 +1218,16 @@ function prunedAlwaysAllowed(state: McpState): McpState["alwaysAllowed"] {
   return pruned;
 }
 
+/** Header sets compare by name and value; an empty set equals none. */
+function sameHeaders(
+  saved: Readonly<Record<string, string>> | undefined,
+  requested: Readonly<Record<string, string>>,
+): boolean {
+  const a = Object.entries(saved ?? {}).sort(([x], [y]) => x.localeCompare(y));
+  const b = Object.entries(requested).sort(([x], [y]) => x.localeCompare(y));
+  return JSON.stringify(a) === JSON.stringify(b);
+}
+
 function normalizeState(value: unknown): McpState {
   // Version 1 predates always-allowed tools and migrates with none.
   const raw = mcpRecord(value, ["schemaVersion", "revision", "servers", "grants", "alwaysAllowed"]);
@@ -1186,6 +1245,8 @@ function normalizeState(value: unknown): McpState {
       "enabled",
       "configGeneration",
       "headerName",
+      "extraHeaders",
+      "preset",
       "snapshot",
       "lastConnection",
     ]);
@@ -1240,6 +1301,8 @@ function normalizeState(value: unknown): McpState {
       enabled: record.enabled === true,
       configGeneration: typeof record.configGeneration === "number" ? record.configGeneration : 1,
       ...(typeof record.headerName === "string" ? { headerName: record.headerName } : {}),
+      ...(record.extraHeaders === undefined ? {} : { extraHeaders: { ...parseMcpExtraHeaders(record.extraHeaders) } }),
+      ...(isMcpPresetId(record.preset) ? { preset: record.preset } : {}),
       ...(snapshot ? { snapshot } : {}),
       ...(lastConnection ? { lastConnection } : {}),
     };

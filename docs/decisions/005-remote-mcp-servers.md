@@ -98,6 +98,39 @@ reintroduce trust in server-supplied annotations:
 - Access forms list always-allowed tools and can remove them but never add
   them, and the list is part of the access revision.
 
+### Amendment (2026-10-16): additional headers and presets
+
+Some servers take options in headers, such as GitHub's `X-MCP-Toolsets`. A
+connection can now carry up to 8 **additional headers**, sent with every
+request in every authentication mode:
+
+- They are configuration, not secrets: stored in `mcp-servers.json` and shown
+  in the view. Names that look like credentials are refused so a token is not
+  stored there by mistake, and headers owned by the transport or protocol are
+  refused. The authentication header wins over an additional header of the
+  same name.
+- Changing them is not an identity change. It bumps the configuration
+  generation (closing clients and failing approvals in flight), drops the tool
+  snapshot, and discovers again, but keeps grants and enablement: the server
+  still acts as the same account.
+
+A **preset** adds a known server with its endpoint, authentication, and
+options filled in; the first is GitHub's official server with a personal
+access token and toolset selection. A preset is recorded on the connection
+when it is added and never changes. Preset connections are presented as
+plugins: they are managed in **Settings → Plugins** and listed with the apps in
+a Wisp's **Access** tab, not under MCP servers, because users look for GitHub
+among the plugins. Only the presentation moves; storage, grants, and the
+access levels stay those of MCP (see the amendment to
+[ADR 004](004-wisp-plugins.md)). Its tools are ordinary MCP tools with the
+same grants and approvals; annotations stay untrusted, so read tools are not
+allowed automatically. The user chose one connection with per-tool **Always
+allow** over a read-only connection plus a write connection.
+
+A preset also brings an application-owned skill (the plugin's skill), offered
+to Wisps with access to an enabled connection that has discovered tools. See
+the amendment to [ADR 008](008-wisp-skills.md).
+
 Endpoint URLs must be HTTPS without embedded credentials. Authentication
 secrets stay in the main process and never appear in IPC responses, activity
 events, reports, or model context. Safe tool identity is persisted with session

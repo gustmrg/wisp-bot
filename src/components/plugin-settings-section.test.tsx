@@ -12,6 +12,7 @@ import {
   type SaveWispPluginAccessRequest,
   type WispPluginAccessView,
 } from "../../shared/plugins";
+import type { McpServerSummary, McpSettingsView, SaveMcpServerRequest } from "../../shared/mcp";
 import { PluginSettingsSection } from "./plugin-settings-section";
 import type { BackendResult } from "../../shared/contracts";
 
@@ -21,6 +22,7 @@ function setup({
   configured = [] as ReadonlyArray<PluginId>,
   secureStorageAvailable = true,
   access = {} as Record<string, Partial<WispPluginAccessView>>,
+  mcpServers = [] as McpServerSummary[],
 } = {}) {
   let view: PluginSettingsView = {
     secureStorageAvailable,
@@ -76,9 +78,49 @@ function setup({
     ok: true,
     value: { ...request, webProviders: request.webProviders ?? NO_PROVIDERS },
   }));
+  let mcpView: McpSettingsView = { secureStorageAvailable, servers: mcpServers };
+  const getMcpSettings = vi.fn(async () => ({ ok: true, value: mcpView }));
+  const saveMcpServer = vi.fn(async (request: SaveMcpServerRequest): Promise<BackendResult<McpSettingsView>> => {
+    const saved: McpServerSummary = {
+      serverId: request.serverId ?? "github-1",
+      name: request.name,
+      endpoint: request.endpoint,
+      authMode: request.authMode,
+      enabled: request.enabled ?? true,
+      state: "connected",
+      headerConfigured: true,
+      ...(request.headerName ? { headerName: request.headerName } : {}),
+      ...(request.extraHeaders ? { extraHeaders: request.extraHeaders } : {}),
+      preset: request.preset ?? mcpView.servers.find(({ serverId }) => serverId === request.serverId)?.preset,
+      lastDiscoveredAt: null,
+      tools: [],
+    };
+    mcpView = {
+      ...mcpView,
+      servers: [...mcpView.servers.filter(({ serverId }) => serverId !== saved.serverId), saved],
+    };
+    return { ok: true, value: mcpView };
+  });
+  const testMcpConnection = vi.fn(async (_request: Record<string, unknown>) => ({
+    ok: true,
+    value: { message: "Connected. 3 tools available." },
+  }));
+  const getWispMcpAccess = vi.fn(async ({ conversationId }: { conversationId: string }) => ({
+    ok: true,
+    value: { conversationId, revision: `${conversationId}-mcp`, grants: [] },
+  }));
   Object.defineProperty(window, "wisp", {
     configurable: true,
     value: {
+      getMcpSettings,
+      saveMcpServer,
+      testMcpConnection,
+      getWispMcpAccess,
+      subscribeToMcpSettings: vi.fn(() => () => undefined),
+      removeMcpServer: vi.fn(),
+      refreshMcpTools: vi.fn(),
+      startMcpSignIn: vi.fn(),
+      cancelMcpSignIn: vi.fn(),
       getPluginSettings,
       savePluginSettings,
       savePluginDefaults,
@@ -89,6 +131,9 @@ function setup({
     },
   });
   return {
+    getMcpSettings,
+    saveMcpServer,
+    testMcpConnection,
     getPluginSettings,
     savePluginSettings,
     savePluginDefaults,
@@ -323,5 +368,120 @@ describe("PluginSettingsSection", () => {
     await user.click(screen.getByRole("button", { name: "Back to plugins" }));
     expect(await screen.findByRole("button", { name: "Manage Tavily" })).toHaveTextContent("1 Wisp with access");
     expect(screen.getByRole("button", { name: "Manage Brave Search" })).toHaveTextContent("0 Wisps with access");
+  });
+});
+
+describe("PluginSettingsSection GitHub", () => {
+  const githubServer: McpServerSummary = {
+    serverId: "github-1",
+    name: "GitHub",
+    endpoint: "https://api.githubcopilot.com/mcp/",
+    authMode: "header",
+    enabled: true,
+    state: "connected",
+    headerConfigured: true,
+    headerName: "Authorization",
+    extraHeaders: { "X-MCP-Toolsets": "context,issues,actions" },
+    preset: "github",
+    lastDiscoveredAt: null,
+    tools: [],
+  };
+
+  it("lists GitHub as an available plugin that runs over MCP", async () => {
+    setup();
+    render(<PluginSettingsSection />);
+    const available = within(await screen.findByRole("region", { name: "Available" }));
+    const github = await available.findByRole("button", { name: "Connect GitHub" });
+    expect(github).toHaveTextContent("Development");
+    expect(github).toHaveTextContent("MCP");
+  });
+
+  it("adds GitHub with a token and the default toolsets, then asks for Wisp access", async () => {
+    const api = setup();
+    const user = userEvent.setup();
+    render(<PluginSettingsSection wisps={WISPS} />);
+
+    await user.click(await screen.findByRole("button", { name: "Connect GitHub" }));
+    expect(screen.queryByLabelText("Endpoint URL")).not.toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /Create a token/ })).toHaveAttribute(
+      "href",
+      "https://github.com/settings/personal-access-tokens/new",
+    );
+    await user.type(screen.getByLabelText("Personal access token"), "github_pat_test");
+    await user.click(screen.getByRole("checkbox", { name: /Actions/ }));
+    await user.click(screen.getByRole("checkbox", { name: /Users/ }));
+    await user.click(screen.getByRole("button", { name: "Save connection" }));
+
+    await waitFor(() => expect(api.saveMcpServer).toHaveBeenCalledTimes(1));
+    expect(api.saveMcpServer.mock.calls[0]?.[0]).toEqual({
+      name: "GitHub",
+      endpoint: "https://api.githubcopilot.com/mcp/",
+      authMode: "header",
+      headerName: "Authorization",
+      headerValue: "Bearer github_pat_test",
+      extraHeaders: { "X-MCP-Toolsets": "context,repos,issues,pull_requests,actions" },
+      preset: "github",
+      enabled: true,
+    });
+    expect(await screen.findByText("Connected to GitHub. Choose which Wisps can use it.")).toBeVisible();
+    expect(screen.getByRole("heading", { name: "GitHub" })).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "Back to plugins" }));
+    const connected = within(await screen.findByRole("region", { name: "Connected" }));
+    expect(connected.getByRole("button", { name: "Manage GitHub" })).toHaveTextContent("0 Wisps with access");
+    expect(screen.queryByRole("button", { name: "Connect GitHub" })).not.toBeInTheDocument();
+  });
+
+  it("keeps a pasted Bearer prefix and tests without the preset", async () => {
+    const api = setup();
+    const user = userEvent.setup();
+    render(<PluginSettingsSection />);
+
+    await user.click(await screen.findByRole("button", { name: "Connect GitHub" }));
+    await user.type(screen.getByLabelText("Personal access token"), "Bearer github_pat_test");
+    await user.click(screen.getByRole("button", { name: "Test connection" }));
+
+    await waitFor(() => expect(api.testMcpConnection).toHaveBeenCalledTimes(1));
+    const payload = api.testMcpConnection.mock.calls[0]?.[0] as Record<string, unknown>;
+    expect(payload).not.toHaveProperty("preset");
+    expect(payload).toMatchObject({ headerValue: "Bearer github_pat_test" });
+  });
+
+  it("edits the saved toolsets without sending the token again", async () => {
+    const api = setup({ mcpServers: [githubServer] });
+    const user = userEvent.setup();
+    render(<PluginSettingsSection initialPluginId="github" />);
+
+    expect(await screen.findByRole("checkbox", { name: /Issues/ })).toBeChecked();
+    expect(screen.getByRole("checkbox", { name: /Repositories/ })).not.toBeChecked();
+    await user.click(screen.getByRole("checkbox", { name: /Repositories/ }));
+    await user.click(screen.getByRole("button", { name: "Save connection" }));
+
+    await waitFor(() => expect(api.saveMcpServer).toHaveBeenCalledTimes(1));
+    const payload = api.saveMcpServer.mock.calls[0]?.[0] as unknown as Record<string, unknown>;
+    expect(payload).toMatchObject({
+      serverId: "github-1",
+      extraHeaders: { "X-MCP-Toolsets": "context,repos,issues,actions" },
+    });
+    expect(payload).not.toHaveProperty("headerValue");
+    expect(payload).not.toHaveProperty("preset");
+  });
+
+  it("turns GitHub off from its card, keeping the saved token and headers", async () => {
+    const api = setup({ mcpServers: [githubServer] });
+    const user = userEvent.setup();
+    render(<PluginSettingsSection />);
+
+    await user.click(await screen.findByRole("switch", { name: "Enable GitHub" }));
+
+    await waitFor(() => expect(api.saveMcpServer).toHaveBeenCalledTimes(1));
+    expect(api.saveMcpServer.mock.calls[0]?.[0]).toEqual({
+      serverId: "github-1",
+      name: "GitHub",
+      endpoint: "https://api.githubcopilot.com/mcp/",
+      authMode: "header",
+      headerName: "Authorization",
+      enabled: false,
+    });
+    expect(await screen.findByRole("switch", { name: "Enable GitHub" })).not.toBeChecked();
   });
 });

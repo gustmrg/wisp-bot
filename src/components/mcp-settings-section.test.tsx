@@ -88,6 +88,54 @@ describe("McpSettingsSection", () => {
   });
 });
 
+describe("McpSettingsSection plugins", () => {
+  it("leaves connections made from a preset to Settings → Plugins", async () => {
+    setup({
+      secureStorageAvailable: true,
+      servers: [
+        {
+          serverId: "github-1",
+          name: "GitHub",
+          endpoint: "https://api.githubcopilot.com/mcp/",
+          authMode: "header",
+          enabled: true,
+          state: "connected",
+          headerConfigured: true,
+          headerName: "Authorization",
+          preset: "github",
+          lastDiscoveredAt: null,
+          tools: [],
+        },
+      ],
+    });
+    render(<McpSettingsSection />);
+
+    expect(await screen.findByText("No MCP servers connected yet.")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /GitHub/ })).not.toBeInTheDocument();
+  });
+});
+
+describe("McpSettingsSection additional headers", () => {
+  it("sends the headers added to a custom server", async () => {
+    const user = userEvent.setup();
+    const { saveMcpServer } = setup({ secureStorageAvailable: true, servers: [] });
+    render(<McpSettingsSection />);
+
+    await user.click(await screen.findByRole("button", { name: "Add MCP server" }));
+    await user.type(await screen.findByLabelText("Name"), "Test Server");
+    await user.type(screen.getByLabelText("Endpoint URL"), "https://api.example.com/mcp");
+    await user.click(screen.getByRole("button", { name: "Add header" }));
+    await user.type(screen.getByLabelText("Header 1 name"), "X-Option");
+    await user.type(screen.getByLabelText("Header 1 value"), "fast");
+    await user.click(screen.getByRole("button", { name: "Add header" }));
+    await user.click(screen.getByRole("button", { name: "Remove header 2" }));
+    await user.click(screen.getByRole("button", { name: "Save connection" }));
+
+    await waitFor(() => expect(saveMcpServer).toHaveBeenCalledTimes(1));
+    expect(saveMcpServer.mock.calls[0]?.[0]).toMatchObject({ extraHeaders: { "X-Option": "fast" } });
+  });
+});
+
 describe("McpSettingsSection drill-in", () => {
   const oauthServer: McpSettingsView = {
     secureStorageAvailable: true,

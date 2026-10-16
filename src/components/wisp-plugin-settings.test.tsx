@@ -1,4 +1,4 @@
-import { act, render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { wispChatView } from "@/test/chat-fixtures";
@@ -174,6 +174,41 @@ describe("WispPluginSettings", () => {
     });
   });
 
+  it("lists GitHub with the apps and links to it in Settings → Plugins", async () => {
+    const github: McpServerSummary = {
+      serverId: "github-1",
+      name: "GitHub",
+      endpoint: "https://api.githubcopilot.com/mcp/",
+      authMode: "header",
+      enabled: false,
+      state: "configured",
+      headerConfigured: true,
+      headerName: "Authorization",
+      preset: "github",
+      lastDiscoveredAt: null,
+      tools: [],
+    };
+    const api = setup({ mcpServers: [github], mcpGrants: [{ serverId: "github-1", access: "use_with_approval" }] });
+    const onOpenSettings = vi.fn();
+    const user = userEvent.setup();
+    render(<WispPluginSettings conversationId="researcher" onOpenSettings={onOpenSettings} />);
+
+    const apps = within(await screen.findByRole("region", { name: "Apps" }));
+    expect(apps.getByRole("combobox", { name: "GitHub access" })).toBeVisible();
+    expect(screen.getByText(/No MCP servers connected yet/)).toBeVisible();
+    expect(screen.queryByText(/Unavailable:.*GitHub/)).not.toBeInTheDocument();
+    await user.click(apps.getByRole("button", { name: "Manage GitHub" }));
+    expect(onOpenSettings).toHaveBeenLastCalledWith({ section: "plugins", pluginId: "github" });
+    await openSelect(user, apps.getByRole("combobox", { name: "GitHub access" }));
+    await user.click(screen.getByRole("option", { name: "No access" }));
+    await user.click(screen.getByRole("button", { name: "Save access" }));
+    expect(api.saveWispMcpAccess).toHaveBeenCalledWith({
+      conversationId: "researcher",
+      revision: "mcp-original-revision",
+      grants: [{ serverId: "github-1", access: "none", alwaysAllowedTools: [] }],
+    });
+  });
+
   it("saves read and write access for apps alongside web choices", async () => {
     const api = setup();
     const user = userEvent.setup();
@@ -243,7 +278,7 @@ describe("WispPluginSettings", () => {
     expect(screen.queryByRole("combobox", { name: "Linear access" })).not.toBeInTheDocument();
     expect(screen.queryByRole("combobox", { name: "Read web pages access" })).not.toBeInTheDocument();
     expect(screen.getByText(/Read web pages: no connected plugin provides this/)).toBeVisible();
-    expect(screen.getByText(/Unavailable: Linear \(turned off\), Firecrawl, Tavily, Exa/)).toBeVisible();
+    expect(screen.getByText(/Unavailable: Linear \(turned off\), Firecrawl, Tavily, Exa, GitHub/)).toBeVisible();
     await user.click(screen.getByRole("button", { name: "Set up plugins" }));
     expect(onOpenSettings).toHaveBeenLastCalledWith({ section: "plugins" });
     await user.click(screen.getByRole("button", { name: "Add an MCP server" }));

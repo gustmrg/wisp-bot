@@ -155,6 +155,27 @@ describe("CompositeIntegrationToolSource", () => {
     expect(snapshot.metadata).toHaveLength(1);
   });
 
+  it("merges integration skills, keeping the first source's skill for a name", async () => {
+    const composite = new CompositeIntegrationToolSource([
+      sourceSnapshot({ skills: [{ name: "github", description: "First", instructions: "1" }] }),
+      sourceSnapshot({}),
+      sourceSnapshot({
+        skills: [
+          { name: "github", description: "Second", instructions: "2" },
+          { name: "jira", description: "Jira", instructions: "3" },
+        ],
+      }),
+    ]);
+    const snapshot = await composite.getSnapshot("wisp-1");
+    expect(snapshot.skills?.map(({ name, description }) => [name, description])).toEqual([
+      ["github", "First"],
+      ["jira", "Jira"],
+    ]);
+    expect(
+      (await new CompositeIntegrationToolSource([sourceSnapshot({})]).getSnapshot("wisp-1")).skills,
+    ).toBeUndefined();
+  });
+
   it("rejects name collisions between sources instead of shadowing", async () => {
     const definition = { name: "mcp_a_search" } as unknown as ToolDefinition;
     const composite = new CompositeIntegrationToolSource([

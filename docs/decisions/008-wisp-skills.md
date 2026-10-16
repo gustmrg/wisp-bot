@@ -61,6 +61,23 @@ the user chose the file, so no approval card is shown, but a name that is
 already taken is replaced only after the user confirms. The file is read on the
 device and sent as text, so import works with a server on another computer.
 
+## Amendment (2026-10-16): skills that come with integrations
+
+An integration can bring an application-owned skill, starting with the GitHub
+plugin, which runs over an MCP connection ([ADR 005](005-remote-mcp-servers.md)). It reaches the Wisp through
+the integration tool snapshot, so it follows the Wisp's access: it is offered
+only while the Wisp can use the connection, and a grant change rebuilds the
+session at the next message like any snapshot change.
+
+- It is listed under **Available skills** after the Wisp's own skills and
+  loaded with `use_skill`; jobs can include it like any skill.
+- It lives in the application, not in the Wisp's skills folder: the Wisp
+  cannot save over it, it does not count toward the 50-skill limit, and it is
+  not listed in **Skills** settings. It changes only with an app update.
+- A Wisp's own skill with the same name takes precedence, so the user can
+  replace it.
+- It grants no tools or permissions, like every skill.
+
 ## Deferred
 
 Suggesting skills when the Wisp notices a repeated workflow, periodic review of

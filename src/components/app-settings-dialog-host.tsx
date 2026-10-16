@@ -1,6 +1,6 @@
 import { forwardRef, useImperativeHandle, useState } from "react";
 
-import type { PluginId } from "../../shared/plugins";
+import type { SettingsPluginId } from "@/lib/plugin-access";
 
 import {
   AppSettingsDialog,
@@ -9,7 +9,7 @@ import {
 } from "@/components/app-settings-dialog";
 
 export interface AppSettingsDialogHandle {
-  open(section: SettingsEntrySection, pluginId?: PluginId, storageConversationId?: string): void;
+  open(section: SettingsEntrySection, pluginId?: SettingsPluginId, storageConversationId?: string): void;
 }
 
 type AppSettingsDialogHostProps = Omit<
@@ -25,7 +25,7 @@ type AppSettingsDialogHostProps = Omit<
 export const AppSettingsDialogHost = forwardRef<AppSettingsDialogHandle, AppSettingsDialogHostProps>(
   function AppSettingsDialogHost({ onOpenConversations, onOpenApprovals, ...dialogProps }, ref) {
     const [section, setSection] = useState<SettingsEntrySection | null>(null);
-    const [pluginId, setPluginId] = useState<PluginId | undefined>();
+    const [pluginId, setPluginId] = useState<SettingsPluginId | undefined>();
     const [storageConversationId, setStorageConversationId] = useState<string | undefined>();
     useImperativeHandle(
       ref,

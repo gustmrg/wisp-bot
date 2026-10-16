@@ -6,5 +6,6 @@ Bundled locally for offline display. Original assets:
 - Firecrawl: https://www.firecrawl.dev/brand/firecrawl-logo.png (https://www.firecrawl.dev/brand)
 - Tavily: https://tavily.com/icon.svg
 - Exa: https://exa.ai/images/favicon-32x32.png
+- GitHub: the `mark-github` octicon (https://primer.style/octicons, https://github.com/logos)
 
 These logos identify their respective services; trademarks belong to their owners.

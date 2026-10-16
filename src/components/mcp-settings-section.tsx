@@ -1,3 +1,4 @@
+import { Checkbox } from "@base-ui/react/checkbox";
 import { useEffect, useId, useState } from "react";
 
 import type {
@@ -7,7 +8,23 @@ import type {
   McpSettingsView,
   SaveMcpServerRequest,
 } from "../../shared/mcp";
-import { ChevronLeftIcon, Plus, RefreshCw, ServerIcon, Settings2 } from "lucide-react";
+import {
+  MCP_PRESETS,
+  presetToolsetHeaderValue,
+  presetToolsetsFromHeader,
+  type McpPreset,
+  type McpPresetId,
+} from "../../shared/mcp-presets";
+import {
+  CheckIcon,
+  ChevronLeftIcon,
+  ExternalLinkIcon,
+  Plus,
+  RefreshCw,
+  ServerIcon,
+  Settings2,
+  XIcon,
+} from "lucide-react";
 import {
   McpWispAccessPanel,
   countWispsWithMcpAccess,
@@ -15,6 +32,7 @@ import {
   useMcpAccessIndex,
   type McpAccessIndex,
 } from "@/components/mcp-wisp-access";
+import { PluginLogo } from "@/components/plugin-logo";
 import {
   ConfirmAction,
   SettingsCard,
@@ -56,28 +74,76 @@ function stateTone(server: McpServerSummary): StatusTone {
   return "muted";
 }
 
+interface HeaderRow {
+  /** Stable key for the list; never sent. */
+  key: number;
+  name: string;
+  value: string;
+}
+
 interface McpDraft {
   name: string;
   endpoint: string;
   authMode: McpAuthMode;
   headerName: string;
   headerValue: string;
+  extraHeaders: HeaderRow[];
+  /** Selected optional toolsets, for preset connections. */
+  toolsets: string[];
   enabled: boolean;
 }
 
-function emptyDraft(): McpDraft {
-  return { name: "", endpoint: "", authMode: "none", headerName: "", headerValue: "", enabled: true };
+let nextHeaderKey = 0;
+
+function headerRows(headers: Readonly<Record<string, string>> | undefined, skip?: string): HeaderRow[] {
+  return Object.entries(headers ?? {})
+    .filter(([name]) => name !== skip)
+    .map(([name, value]) => ({ key: nextHeaderKey++, name, value }));
 }
 
-function draftFrom(server: McpServerSummary): McpDraft {
+function emptyDraft(preset?: McpPreset): McpDraft {
+  if (preset) {
+    return {
+      name: preset.name,
+      endpoint: preset.endpoint,
+      authMode: "header",
+      headerName: preset.credentialHeader.name,
+      headerValue: "",
+      extraHeaders: [],
+      toolsets: presetToolsetsFromHeader(preset, undefined),
+      enabled: true,
+    };
+  }
+  return {
+    name: "",
+    endpoint: "",
+    authMode: "none",
+    headerName: "",
+    headerValue: "",
+    extraHeaders: [],
+    toolsets: [],
+    enabled: true,
+  };
+}
+
+function draftFrom(server: McpServerSummary, preset?: McpPreset): McpDraft {
   return {
     name: server.name,
     endpoint: server.endpoint,
     authMode: server.authMode,
     headerName: server.headerName ?? "",
     headerValue: "",
+    extraHeaders: headerRows(server.extraHeaders, preset?.toolsetHeader),
+    toolsets: preset ? presetToolsetsFromHeader(preset, server.extraHeaders?.[preset.toolsetHeader]) : [],
     enabled: server.enabled,
   };
+}
+
+/** The credential as the header expects it; a pasted value that already has the prefix is kept. */
+function presetCredential(preset: McpPreset, value: string): string {
+  const prefix = preset.credentialHeader.valuePrefix;
+  const trimmed = value.trim();
+  return trimmed.toLowerCase().startsWith(prefix.toLowerCase()) ? trimmed : `${prefix}${trimmed}`;
 }
 
 export function McpSettingsSection({ wisps = NO_WISPS }: { wisps?: ReadonlyArray<WispOption> }) {
@@ -89,6 +155,8 @@ export function McpSettingsSection({ wisps = NO_WISPS }: { wisps?: ReadonlyArray
   /** Server added in this visit; its form prompts for Wisp access. */
   const [justAdded, setJustAdded] = useState<string | null>(null);
   const index = useMcpAccessIndex(wisps, view ? mcpServersKey(view.servers) : "");
+  // Connections made from a preset are plugins and are managed in Settings → Plugins.
+  const customServers = view?.servers.filter((server) => !server.preset) ?? [];
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: attempt explicitly retries a failed load.
   useEffect(() => {
@@ -146,8 +214,8 @@ export function McpSettingsSection({ wisps = NO_WISPS }: { wisps?: ReadonlyArray
           ) : null}
           {editing && (editing === "new" || view.servers.some((candidate) => candidate.serverId === editing)) ? (
             <McpServerForm
-              key={editing === "new" ? "new" : editing}
-              server={editing === "new" ? undefined : view.servers.find((candidate) => candidate.serverId === editing)}
+              key={editing}
+              server={view.servers.find((candidate) => candidate.serverId === editing)}
               secureStorageAvailable={view.secureStorageAvailable}
               wisps={wisps}
               index={index}
@@ -171,9 +239,9 @@ export function McpSettingsSection({ wisps = NO_WISPS }: { wisps?: ReadonlyArray
             />
           ) : (
             <>
-              {view.servers.length === 0 ? <p className="text-xs text-dim">No MCP servers connected yet.</p> : null}
+              {customServers.length === 0 ? <p className="text-xs text-dim">No MCP servers connected yet.</p> : null}
               <div className="grid grid-cols-1 gap-x-7 gap-y-1 @min-[560px]:grid-cols-2">
-                {view.servers.map((server) => (
+                {customServers.map((server) => (
                   <McpServerCard
                     key={server.serverId}
                     server={server}
@@ -204,6 +272,15 @@ export function McpSettingsSection({ wisps = NO_WISPS }: { wisps?: ReadonlyArray
   );
 }
 
+function McpServerIcon({ presetId }: { presetId?: McpPresetId }) {
+  if (presetId) return <PluginLogo pluginId={presetId} />;
+  return (
+    <span className="flex size-9 flex-none items-center justify-center rounded-lg bg-muted">
+      <ServerIcon className="size-4 text-dim" aria-hidden="true" />
+    </span>
+  );
+}
+
 function McpServerCard({
   server,
   wispCount,
@@ -220,9 +297,7 @@ function McpServerCard({
       aria-label={server ? `Manage ${server.name}` : "Add MCP server"}
       className="group flex w-full min-w-0 items-center gap-3 rounded-xl px-4 py-4 text-left outline-none transition-colors hover:bg-popover focus-visible:ring-2 focus-visible:ring-ring"
     >
-      <span className="flex size-9 flex-none items-center justify-center rounded-lg bg-muted">
-        <ServerIcon className="size-4 text-dim" aria-hidden="true" />
-      </span>
+      <McpServerIcon />
       {server ? (
         <span className="min-w-0 flex-1">
           <span className="block text-base font-medium">{server.name}</span>
@@ -252,9 +327,12 @@ function McpServerCard({
 /**
  * Add/manage form for one MCP server, rendered in place of the server list.
  * Lives inside the settings dialog instead of stacking a second modal on top.
+ * Settings → Plugins renders it for connections made from a preset.
  */
-function McpServerForm({
+export function McpServerForm({
   server,
+  newPreset,
+  backLabel = "Back to MCP servers",
   secureStorageAvailable,
   wisps,
   index,
@@ -264,6 +342,9 @@ function McpServerForm({
   onBack,
 }: {
   server?: McpServerSummary;
+  /** Adds a connection from this preset; ignored when a server is shown. */
+  newPreset?: McpPresetId;
+  backLabel?: string;
   secureStorageAvailable: boolean;
   wisps: ReadonlyArray<WispOption>;
   index: McpAccessIndex;
@@ -274,7 +355,9 @@ function McpServerForm({
   onBack: () => void;
 }) {
   const formId = useId();
-  const [draft, setDraft] = useState<McpDraft>(server ? draftFrom(server) : emptyDraft());
+  const presetId = server ? server.preset : newPreset;
+  const preset = presetId ? MCP_PRESETS[presetId] : undefined;
+  const [draft, setDraft] = useState<McpDraft>(server ? draftFrom(server, preset) : emptyDraft(preset));
   const timeZone = useTimeZone();
   const [operation, setOperation] = useState<"save" | "test" | "remove" | "refresh" | "signin" | null>(null);
   const [error, setError] = useState("");
@@ -287,7 +370,7 @@ function McpServerForm({
   const isNew = !server;
 
   function reset() {
-    setDraft(server ? draftFrom(server) : emptyDraft());
+    setDraft(server ? draftFrom(server, preset) : emptyDraft(preset));
     setError("");
     setMessage("");
   }
@@ -311,13 +394,34 @@ function McpServerForm({
     }
   }
 
+  /** Additional headers as sent: the rows with a name, plus a preset's toolset selection. */
+  function extraHeaders(): Record<string, string> {
+    const headers: Record<string, string> = {};
+    for (const row of draft.extraHeaders) {
+      const name = row.name.trim();
+      if (name) headers[name] = row.value.trim();
+    }
+    if (preset) headers[preset.toolsetHeader] = presetToolsetHeaderValue(preset, draft.toolsets);
+    return headers;
+  }
+
   function saveRequest() {
+    const headerValue =
+      draft.authMode === "header" && draft.headerValue.trim()
+        ? preset
+          ? presetCredential(preset, draft.headerValue)
+          : draft.headerValue
+        : undefined;
+    const headers = extraHeaders();
     const request: Omit<SaveMcpServerRequest, "enabled" | "serverId"> & { serverId?: string; enabled?: boolean } = {
       name: draft.name.trim(),
       endpoint: draft.endpoint.trim(),
       authMode: draft.authMode,
       ...(draft.authMode === "header" && draft.headerName.trim() ? { headerName: draft.headerName.trim() } : {}),
-      ...(draft.authMode === "header" && draft.headerValue ? { headerValue: draft.headerValue } : {}),
+      ...(headerValue !== undefined ? { headerValue } : {}),
+      // A saved server always sends its headers, so removing the last one is saved too.
+      ...(server || Object.keys(headers).length ? { extraHeaders: headers } : {}),
+      ...(isNew && preset ? { preset: preset.id } : {}),
     };
     if (!isNew && server) request.serverId = server.serverId;
     return request;
@@ -325,8 +429,16 @@ function McpServerForm({
 
   /** The test endpoint accepts a narrower payload than the save endpoint. */
   function testRequest() {
-    const { name: _name, ...request } = saveRequest();
+    const { name: _name, preset: _preset, ...request } = saveRequest();
     return request;
+  }
+
+  function updateHeader(key: number, change: Partial<Pick<HeaderRow, "name" | "value">>) {
+    setDraft({
+      ...draft,
+      extraHeaders: draft.extraHeaders.map((row) => (row.key === key ? { ...row, ...change } : row)),
+    });
+    setError("");
   }
 
   async function run(action: "save" | "test" | "remove" | "refresh" | "signin") {
@@ -409,16 +521,18 @@ function McpServerForm({
   return (
     <div className="flex flex-col gap-2">
       <div className="flex items-center gap-2">
-        <Button variant="ghost" size="icon" type="button" aria-label="Back to MCP servers" onClick={close}>
+        <Button variant="ghost" size="icon" type="button" aria-label={backLabel} onClick={close}>
           <ChevronLeftIcon aria-hidden="true" />
         </Button>
-        <span className="flex size-9 flex-none items-center justify-center rounded-lg bg-muted">
-          <ServerIcon className="size-4 text-dim" aria-hidden="true" />
-        </span>
-        <h3 className="m-0 text-md font-medium">{server ? server.name : "Add MCP server"}</h3>
+        <McpServerIcon presetId={preset?.id} />
+        <h3 className="m-0 text-md font-medium">
+          {server ? server.name : preset ? `Add ${preset.name}` : "Add MCP server"}
+        </h3>
       </div>
       <p className="mb-1 mt-0 text-xs text-dim">
-        Remote servers only. Local stdio servers and command-based configuration are not supported.
+        {preset
+          ? `${preset.description} Wisps with access also get instructions for using it well.`
+          : "Remote servers only. Local stdio servers and command-based configuration are not supported."}
       </p>
       <div className="flex flex-col gap-3 text-xs">
         {server ? (
@@ -444,75 +558,16 @@ function McpServerForm({
             }}
           />
         </Field>
-        <Field>
-          <FieldLabel htmlFor={`${formId}-endpoint`}>Endpoint URL</FieldLabel>
-          <Input
-            id={`${formId}-endpoint`}
-            type="url"
-            value={draft.endpoint}
-            disabled={busy}
-            placeholder="https://example.com/mcp"
-            autoComplete="off"
-            spellCheck={false}
-            onChange={(event) => {
-              setDraft({ ...draft, endpoint: event.target.value });
-              setError("");
-            }}
-          />
-          <FieldDescription>Only HTTPS endpoints are allowed.</FieldDescription>
-        </Field>
-        <Field>
-          <FieldLabel htmlFor={`${formId}-auth`}>Authentication</FieldLabel>
-          <Select
-            items={AUTH_MODE_OPTIONS}
-            value={draft.authMode}
-            disabled={busy}
-            onValueChange={(value) => {
-              if (value === null) return;
-              setDraft({ ...draft, authMode: value as McpAuthMode });
-              setError("");
-              setMessage("");
-            }}
-          >
-            <SelectTrigger id={`${formId}-auth`} className="w-full">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent align="start" alignItemWithTrigger={false}>
-              <SelectGroup>
-                {AUTH_MODE_OPTIONS.map((option) => (
-                  <SelectItem key={option.value} value={option.value}>
-                    {option.label}
-                  </SelectItem>
-                ))}
-              </SelectGroup>
-            </SelectContent>
-          </Select>
-        </Field>
-        {draft.authMode === "header" ? (
+        {preset ? (
           <>
             <Field>
-              <FieldLabel htmlFor={`${formId}-header-name`}>Header name</FieldLabel>
+              <FieldLabel htmlFor={`${formId}-credential`}>{preset.credentialLabel}</FieldLabel>
               <Input
-                id={`${formId}-header-name`}
-                value={draft.headerName}
-                disabled={busy}
-                placeholder="Authorization"
-                autoComplete="off"
-                spellCheck={false}
-                onChange={(event) => {
-                  setDraft({ ...draft, headerName: event.target.value });
-                  setError("");
-                }}
-              />
-            </Field>
-            <Field>
-              <FieldLabel htmlFor={`${formId}-header-value`}>Header value</FieldLabel>
-              <Input
-                id={`${formId}-header-value`}
+                id={`${formId}-credential`}
                 type="password"
                 value={draft.headerValue}
                 disabled={busy || !secureStorageAvailable}
-                placeholder={server?.headerConfigured ? "Saved — enter a replacement" : "Enter secret value"}
+                placeholder={server?.headerConfigured ? "Saved — enter a replacement" : "Paste your token"}
                 autoComplete="new-password"
                 spellCheck={false}
                 onChange={(event) => {
@@ -521,19 +576,208 @@ function McpServerForm({
                 }}
               />
               <FieldDescription>
-                {server?.headerConfigured ? "Leave blank to keep the saved value. " : ""}
-                Values are encrypted on this device and never shown to Wisps.
+                {server?.headerConfigured ? "Leave blank to keep the saved token. " : ""}
+                {preset.credentialHelp} Encrypted on this device and never shown to Wisps.{" "}
+                <a
+                  href={preset.credentialHelpUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex items-center gap-1 text-primary underline-offset-4 hover:underline"
+                >
+                  Create a token
+                  <ExternalLinkIcon className="size-3" aria-hidden="true" />
+                </a>
               </FieldDescription>
             </Field>
+            <fieldset className="m-0 flex min-w-0 flex-col gap-2 border-0 p-0">
+              <legend className="mb-1 p-0 font-medium">Toolsets</legend>
+              <div className="grid grid-cols-1 gap-x-4 gap-y-2 @min-[560px]:grid-cols-2">
+                {preset.toolsets.map((toolset) => (
+                  <label key={toolset.id} className="flex min-w-0 cursor-pointer items-start gap-2">
+                    <Checkbox.Root
+                      className="mt-px inline-flex size-4 flex-none items-center justify-center rounded-[4px] border border-border bg-background focus-visible:outline-2 focus-visible:outline-blue focus-visible:outline-offset-2 data-checked:border-foreground data-checked:bg-foreground data-checked:text-background data-disabled:opacity-50 [&_svg]:size-3"
+                      checked={draft.toolsets.includes(toolset.id)}
+                      disabled={busy}
+                      onCheckedChange={(checked) => {
+                        setDraft({
+                          ...draft,
+                          toolsets: checked
+                            ? [...draft.toolsets, toolset.id]
+                            : draft.toolsets.filter((id) => id !== toolset.id),
+                        });
+                        setError("");
+                      }}
+                    >
+                      <Checkbox.Indicator>
+                        <CheckIcon aria-hidden="true" />
+                      </Checkbox.Indicator>
+                    </Checkbox.Root>
+                    <span className="min-w-0">
+                      <span className="block">{toolset.label}</span>
+                      <span className="block text-dim">{toolset.description}</span>
+                    </span>
+                  </label>
+                ))}
+              </div>
+              <p className="m-0 text-dim">
+                Fewer toolsets keep the Wisp's tool list short. Changing them keeps Wisp access and finds the tools
+                again.
+              </p>
+            </fieldset>
           </>
-        ) : null}
-        {draft.authMode === "oauth" ? (
-          <p className="text-dim">
-            {server
-              ? "Use Sign in to connect through your browser. Token renewal never removes Wisp access; replacing the account does."
-              : "Save the connection first, then use Sign in to connect through your browser."}
-          </p>
-        ) : null}
+        ) : (
+          <>
+            <Field>
+              <FieldLabel htmlFor={`${formId}-endpoint`}>Endpoint URL</FieldLabel>
+              <Input
+                id={`${formId}-endpoint`}
+                type="url"
+                value={draft.endpoint}
+                disabled={busy}
+                placeholder="https://example.com/mcp"
+                autoComplete="off"
+                spellCheck={false}
+                onChange={(event) => {
+                  setDraft({ ...draft, endpoint: event.target.value });
+                  setError("");
+                }}
+              />
+              <FieldDescription>Only HTTPS endpoints are allowed.</FieldDescription>
+            </Field>
+            <Field>
+              <FieldLabel htmlFor={`${formId}-auth`}>Authentication</FieldLabel>
+              <Select
+                items={AUTH_MODE_OPTIONS}
+                value={draft.authMode}
+                disabled={busy}
+                onValueChange={(value) => {
+                  if (value === null) return;
+                  setDraft({ ...draft, authMode: value as McpAuthMode });
+                  setError("");
+                  setMessage("");
+                }}
+              >
+                <SelectTrigger id={`${formId}-auth`} className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent align="start" alignItemWithTrigger={false}>
+                  <SelectGroup>
+                    {AUTH_MODE_OPTIONS.map((option) => (
+                      <SelectItem key={option.value} value={option.value}>
+                        {option.label}
+                      </SelectItem>
+                    ))}
+                  </SelectGroup>
+                </SelectContent>
+              </Select>
+            </Field>
+            {draft.authMode === "header" ? (
+              <>
+                <Field>
+                  <FieldLabel htmlFor={`${formId}-header-name`}>Header name</FieldLabel>
+                  <Input
+                    id={`${formId}-header-name`}
+                    value={draft.headerName}
+                    disabled={busy}
+                    placeholder="Authorization"
+                    autoComplete="off"
+                    spellCheck={false}
+                    onChange={(event) => {
+                      setDraft({ ...draft, headerName: event.target.value });
+                      setError("");
+                    }}
+                  />
+                </Field>
+                <Field>
+                  <FieldLabel htmlFor={`${formId}-header-value`}>Header value</FieldLabel>
+                  <Input
+                    id={`${formId}-header-value`}
+                    type="password"
+                    value={draft.headerValue}
+                    disabled={busy || !secureStorageAvailable}
+                    placeholder={server?.headerConfigured ? "Saved — enter a replacement" : "Enter secret value"}
+                    autoComplete="new-password"
+                    spellCheck={false}
+                    onChange={(event) => {
+                      setDraft({ ...draft, headerValue: event.target.value });
+                      setError("");
+                    }}
+                  />
+                  <FieldDescription>
+                    {server?.headerConfigured ? "Leave blank to keep the saved value. " : ""}
+                    Values are encrypted on this device and never shown to Wisps.
+                  </FieldDescription>
+                </Field>
+              </>
+            ) : null}
+            {draft.authMode === "oauth" ? (
+              <p className="text-dim">
+                {server
+                  ? "Use Sign in to connect through your browser. Token renewal never removes Wisp access; replacing the account does."
+                  : "Save the connection first, then use Sign in to connect through your browser."}
+              </p>
+            ) : null}
+            <fieldset className="m-0 flex min-w-0 flex-col gap-2 border-0 p-0">
+              <legend className="mb-1 p-0 font-medium">Additional headers</legend>
+              {draft.extraHeaders.map((row, index) => (
+                <div key={row.key} className="flex min-w-0 gap-2">
+                  <Input
+                    aria-label={`Header ${index + 1} name`}
+                    className="min-w-0 flex-1"
+                    value={row.name}
+                    disabled={busy}
+                    placeholder="X-Option"
+                    autoComplete="off"
+                    spellCheck={false}
+                    onChange={(event) => updateHeader(row.key, { name: event.target.value })}
+                  />
+                  <Input
+                    aria-label={`Header ${index + 1} value`}
+                    className="min-w-0 flex-1"
+                    value={row.value}
+                    disabled={busy}
+                    autoComplete="off"
+                    spellCheck={false}
+                    onChange={(event) => updateHeader(row.key, { value: event.target.value })}
+                  />
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    type="button"
+                    aria-label={`Remove header ${index + 1}`}
+                    disabled={busy}
+                    onClick={() => {
+                      setDraft({ ...draft, extraHeaders: draft.extraHeaders.filter(({ key }) => key !== row.key) });
+                      setError("");
+                    }}
+                  >
+                    <XIcon aria-hidden="true" />
+                  </Button>
+                </div>
+              ))}
+              <div>
+                <Button
+                  variant="secondary"
+                  type="button"
+                  disabled={busy || draft.extraHeaders.length >= 8}
+                  onClick={() =>
+                    setDraft({
+                      ...draft,
+                      extraHeaders: [...draft.extraHeaders, { key: nextHeaderKey++, name: "", value: "" }],
+                    })
+                  }
+                >
+                  <Plus aria-hidden="true" className="mr-1 size-3" />
+                  Add header
+                </Button>
+              </div>
+              <p className="m-0 text-dim">
+                Sent with every request, for options such as which tools a server offers. They are not encrypted: put
+                secrets in the authentication header.
+              </p>
+            </fieldset>
+          </>
+        )}
         <SettingsCard>
           <SettingsRow className="min-h-0">
             <SettingsRowCopy>

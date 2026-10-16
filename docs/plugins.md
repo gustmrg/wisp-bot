@@ -6,7 +6,9 @@ search and page reading). Connections are configured globally in
 **Settings → Plugins**; each Wisp receives access independently through its
 **Access** tab. Connecting a plugin grants no Wisp access automatically.
 
-For dynamically discovered integrations, see [remote MCP servers](mcp-servers.md).
+**GitHub** is also listed under Plugins but runs over a remote MCP connection;
+see [GitHub](#github). For dynamically discovered integrations, see
+[remote MCP servers](mcp-servers.md).
 
 ## Connecting a plugin
 
@@ -153,6 +155,39 @@ attachments, documents, project updates, and administrative operations are
 not included, and it never deletes anything. Wisps that need them can use
 Linear's official MCP server (`https://mcp.linear.app/mcp`) as a
 [remote MCP server](mcp-servers.md), where every call is approved separately.
+
+## GitHub
+
+**Settings → Plugins → GitHub** connects
+[GitHub's official MCP server](https://github.com/github/github-mcp-server)
+(`https://api.githubcopilot.com/mcp/`) without filling in the endpoint or
+headers. Enter a personal access token (a fine-grained token limited to the
+repositories and permissions your Wisps need) and choose the toolsets:
+Repositories, Issues, Pull requests, and Users are selected by default, and
+Labels, Actions, Notifications, Discussions, Projects, Code scanning, and
+Dependabot can be added. The token is sent as `Authorization: Bearer …` and
+the toolsets as `X-MCP-Toolsets` (with `context` always included). Fewer
+toolsets keep the Wisp's tool list short; GitHub's limit of tools per request
+matters for some models. It does not need a browser sign-in, so it also works
+with a [server on another computer](remote-server.md).
+
+It is listed with the other plugins, with an **Enabled** switch and the
+number of Wisps that can use it, and with the apps in each Wisp's **Access**
+tab. Underneath it is an MCP connection, so access uses the MCP levels (**Use
+with approval** or **Use without asking**) and approvals, and **Always allow
+this tool** works as described in [remote MCP servers](mcp-servers.md).
+Only one GitHub connection is offered. Organizations can restrict personal
+access tokens, and on Copilot Business or Enterprise plans the "MCP servers in
+Copilot" policy must be on.
+
+Wisps with access to GitHub also see a **github** skill under their available
+skills: instructions that come with the plugin, such as passing the repository
+explicitly, searching with qualifiers, never merging or closing without being
+asked, and making code changes in the Wisp's container when it can run
+commands. It is not one of the Wisp's own skills: it is not
+listed in its Skills settings, does not count toward its limit, and
+disappears when the Wisp loses access. A skill of the Wisp's own with the same
+name is used instead. Like every skill, it grants nothing.
 
 ## Revocation and key changes
 

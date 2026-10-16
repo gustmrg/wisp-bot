@@ -1,4 +1,4 @@
-import { useEffect, useId, useState } from "react";
+import { useEffect, useId, useState, type ReactNode } from "react";
 
 import {
   PLUGIN_CATEGORIES,
@@ -9,7 +9,11 @@ import {
   type PluginSummary,
   type WebCapability,
 } from "../../shared/plugins";
+import type { McpServerSummary, McpSettingsView } from "../../shared/mcp";
+import { MCP_PRESETS, isMcpPresetId, type McpPreset, type McpPresetId } from "../../shared/mcp-presets";
 import { ChevronLeftIcon, ExternalLinkIcon, Plus } from "lucide-react";
+import { McpServerForm } from "@/components/mcp-settings-section";
+import { countWispsWithMcpAccess, mcpServersKey, useMcpAccessIndex } from "@/components/mcp-wisp-access";
 import { PluginLogo } from "@/components/plugin-logo";
 import {
   PluginWispAccessPanel,
@@ -33,7 +37,7 @@ import { Field, FieldDescription, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ToggleSwitch } from "@/components/ui/toggle-switch";
-import { isPluginAvailable, type WispOption } from "@/lib/plugin-access";
+import { isPluginAvailable, type SettingsPluginId, type WispOption } from "@/lib/plugin-access";
 
 const NO_WISPS: ReadonlyArray<WispOption> = [];
 
@@ -51,10 +55,23 @@ function pluginTags(pluginId: PluginId): string[] {
   return WEB_CAPABILITIES.filter(({ id }) => entry.capabilities.includes(id)).map(({ shortName }) => shortName);
 }
 
-function PluginTags({ pluginId }: { pluginId: PluginId }) {
+/** Plugins that run over an MCP connection show where their tools come from. */
+function presetTags(preset: McpPreset): string[] {
+  return [preset.category, "MCP"];
+}
+
+/** The enabled line of a connected card; an MCP connection also reports when it cannot be reached. */
+function presetStatus(server: McpServerSummary): { tone: StatusTone; label: string } {
+  if (!server.enabled) return { tone: "muted", label: "Disabled" };
+  if (server.state === "needs_sign_in") return { tone: "warning", label: "Needs sign-in" };
+  if (server.state === "unavailable") return { tone: "danger", label: "Unavailable" };
+  return { tone: "success", label: "Enabled" };
+}
+
+function PluginTags({ tags }: { tags: ReadonlyArray<string> }) {
   return (
     <span className="mt-1.5 flex flex-wrap gap-1">
-      {pluginTags(pluginId).map((tag) => (
+      {tags.map((tag) => (
         <span key={tag} className="rounded-full bg-muted px-1.5 py-px text-2xs leading-4 text-dim">
           {tag}
         </span>
@@ -69,19 +86,22 @@ export function PluginSettingsSection({
   onOpenMcpSettings,
 }: {
   wisps?: ReadonlyArray<WispOption>;
-  initialPluginId?: PluginId;
+  initialPluginId?: SettingsPluginId;
   onOpenMcpSettings?: () => void;
 }) {
   const [view, setView] = useState<PluginSettingsView | null>(null);
   const [error, setError] = useState("");
   const [attempt, setAttempt] = useState(0);
+  /** Connections behind the plugins that run over MCP; null until loaded or when they cannot be. */
+  const [mcpView, setMcpView] = useState<McpSettingsView | null>(null);
   /** Drill-in editor for one plugin ID, or null for the plugin list. */
-  const [editing, setEditing] = useState<PluginId | null>(initialPluginId ?? null);
-  const [toggling, setToggling] = useState<PluginId | null>(null);
+  const [editing, setEditing] = useState<SettingsPluginId | null>(initialPluginId ?? null);
+  const [toggling, setToggling] = useState<SettingsPluginId | null>(null);
   const [listError, setListError] = useState("");
   /** Plugin connected in this visit; its manage view prompts for Wisp access. */
-  const [justConnected, setJustConnected] = useState<PluginId | null>(null);
+  const [justConnected, setJustConnected] = useState<SettingsPluginId | null>(null);
   const index = useWispAccessIndex(wisps);
+  const mcpIndex = useMcpAccessIndex(wisps, mcpView ? mcpServersKey(mcpView.servers) : "");
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: attempt explicitly retries a failed load.
   useEffect(() => {
@@ -102,6 +122,45 @@ export function PluginSettingsSection({
     };
   }, [attempt]);
 
+  // MCP plugins load on their own, so a failure there leaves the bundled plugins usable.
+  useEffect(() => {
+    let cancelled = false;
+    void window.wisp
+      .getMcpSettings()
+      .then((result) => {
+        if (!cancelled && result.ok) setMcpView(result.value);
+      })
+      .catch(() => undefined);
+    const unsubscribe = window.wisp.subscribeToMcpSettings((next) => setMcpView(next));
+    return () => {
+      cancelled = true;
+      unsubscribe();
+    };
+  }, []);
+
+  async function togglePreset(server: McpServerSummary) {
+    if (!server.preset) return;
+    setToggling(server.preset);
+    setListError("");
+    try {
+      // Saving without a credential or headers keeps the saved ones, so access is kept too.
+      const result = await window.wisp.saveMcpServer({
+        serverId: server.serverId,
+        name: server.name,
+        endpoint: server.endpoint,
+        authMode: server.authMode,
+        ...(server.headerName ? { headerName: server.headerName } : {}),
+        enabled: !server.enabled,
+      });
+      if (result.ok) setMcpView(result.value);
+      else setListError(result.error.message);
+    } catch {
+      setListError(`Could not update ${server.name}.`);
+    } finally {
+      setToggling(null);
+    }
+  }
+
   async function toggle(plugin: PluginSummary) {
     setToggling(plugin.id);
     setListError("");
@@ -119,6 +178,11 @@ export function PluginSettingsSection({
   // With unreadable credentials nothing reports as configured, but every plugin must stay manageable.
   const connected = (plugin: PluginSummary) => plugin.configured || Boolean(view?.credentialError);
   const editingPlugin = editing ? view?.plugins.find(({ id }) => id === editing) : undefined;
+  const presetServer = (presetId: McpPresetId) => mcpView?.servers.find((server) => server.preset === presetId);
+  const presets = mcpView ? Object.values(MCP_PRESETS) : [];
+  const connectedPresets = presets.filter(({ id }) => presetServer(id));
+  const availablePresets = presets.filter(({ id }) => !presetServer(id));
+  const editingPreset = editing && isMcpPresetId(editing) && mcpView ? MCP_PRESETS[editing] : undefined;
 
   return (
     <section
@@ -145,7 +209,30 @@ export function PluginSettingsSection({
               {view.credentialError}
             </p>
           ) : null}
-          {editingPlugin ? (
+          {editingPreset && mcpView ? (
+            <McpServerForm
+              key={`${editingPreset.id}:${presetServer(editingPreset.id)?.serverId ?? "new"}`}
+              server={presetServer(editingPreset.id)}
+              newPreset={editingPreset.id}
+              backLabel="Back to plugins"
+              secureStorageAvailable={mcpView.secureStorageAvailable}
+              wisps={wisps}
+              index={mcpIndex}
+              initialMessage={
+                justConnected === editingPreset.id
+                  ? wisps.length
+                    ? `Connected to ${editingPreset.name}. Choose which Wisps can use it.`
+                    : `Connected to ${editingPreset.name}.`
+                  : ""
+              }
+              onSaved={setMcpView}
+              onCreated={(next) => {
+                setJustConnected(editingPreset.id);
+                setMcpView(next);
+              }}
+              onBack={() => setEditing(null)}
+            />
+          ) : editingPlugin ? (
             connected(editingPlugin) ? (
               <PluginManageView
                 key={editingPlugin.id}
@@ -183,47 +270,73 @@ export function PluginSettingsSection({
                   {listError}
                 </p>
               ) : null}
-              {view.plugins.some(connected) ? (
+              {view.plugins.some(connected) || connectedPresets.length ? (
                 <section aria-label="Connected" className="mb-6">
                   <h3 className="mb-3 mt-2 border-b border-border pb-3 text-md font-medium">Connected</h3>
                   <div className="grid grid-cols-1 gap-x-7 gap-y-1 @min-[560px]:grid-cols-2">
                     {view.plugins.filter(connected).map((plugin) => (
                       <ConnectedPluginCard
                         key={plugin.id}
-                        plugin={plugin}
+                        pluginId={plugin.id}
+                        name={plugin.name}
+                        enabled={plugin.enabled}
+                        status={
+                          plugin.enabled ? { tone: "success", label: "Enabled" } : { tone: "muted", label: "Disabled" }
+                        }
+                        tags={pluginTags(plugin.id)}
                         wispCount={wisps.length ? countWispsWithAccess(index, plugin.id) : undefined}
                         busy={toggling === plugin.id}
                         onToggle={() => void toggle(plugin)}
                         onSelect={() => setEditing(plugin.id)}
                       />
                     ))}
+                    {connectedPresets.map((preset) => {
+                      const server = presetServer(preset.id)!;
+                      return (
+                        <ConnectedPluginCard
+                          key={preset.id}
+                          pluginId={preset.id}
+                          name={preset.name}
+                          enabled={server.enabled}
+                          status={presetStatus(server)}
+                          tags={presetTags(preset)}
+                          wispCount={wisps.length ? countWispsWithMcpAccess(mcpIndex, server.serverId) : undefined}
+                          busy={toggling === preset.id}
+                          onToggle={() => void togglePreset(server)}
+                          onSelect={() => setEditing(preset.id)}
+                        />
+                      );
+                    })}
                   </div>
                 </section>
               ) : null}
               <DefaultProviders view={view} onSaved={setView} />
-              {view.plugins.some((plugin) => !connected(plugin)) ? (
+              {view.plugins.some((plugin) => !connected(plugin)) || availablePresets.length ? (
                 <section aria-label="Available" className="mb-6">
                   <h3 className="mb-3 mt-7 border-b border-border pb-3 text-md font-medium">Available</h3>
                   <div className="grid grid-cols-1 gap-x-7 gap-y-1 @min-[560px]:grid-cols-2">
                     {view.plugins
                       .filter((plugin) => !connected(plugin))
                       .map((plugin) => (
-                        <button
+                        <AvailablePluginCard
                           key={plugin.id}
-                          type="button"
-                          onClick={() => setEditing(plugin.id)}
-                          aria-label={`Connect ${plugin.name}`}
-                          className="group flex w-full min-w-0 items-center gap-3 rounded-xl px-4 py-4 text-left outline-none transition-colors hover:bg-popover focus-visible:ring-2 focus-visible:ring-ring"
-                        >
-                          <PluginLogo pluginId={plugin.id} />
-                          <span className="min-w-0 flex-1">
-                            <span className="block text-base font-medium">{plugin.name}</span>
-                            <span className="mt-1 block text-sm leading-relaxed text-dim">{plugin.description}</span>
-                            <PluginTags pluginId={plugin.id} />
-                          </span>
-                          <Plus className="size-5 shrink-0 text-dim group-hover:text-foreground" aria-hidden="true" />
-                        </button>
+                          pluginId={plugin.id}
+                          name={plugin.name}
+                          description={plugin.description}
+                          tags={pluginTags(plugin.id)}
+                          onSelect={() => setEditing(plugin.id)}
+                        />
                       ))}
+                    {availablePresets.map((preset) => (
+                      <AvailablePluginCard
+                        key={preset.id}
+                        pluginId={preset.id}
+                        name={preset.name}
+                        description={preset.description}
+                        tags={presetTags(preset)}
+                        onSelect={() => setEditing(preset.id)}
+                      />
+                    ))}
                   </div>
                 </section>
               ) : null}
@@ -256,14 +369,53 @@ export function PluginSettingsSection({
   );
 }
 
+function AvailablePluginCard({
+  pluginId,
+  name,
+  description,
+  tags,
+  onSelect,
+}: {
+  pluginId: SettingsPluginId;
+  name: string;
+  description: ReactNode;
+  tags: ReadonlyArray<string>;
+  onSelect: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onSelect}
+      aria-label={`Connect ${name}`}
+      className="group flex w-full min-w-0 items-center gap-3 rounded-xl px-4 py-4 text-left outline-none transition-colors hover:bg-popover focus-visible:ring-2 focus-visible:ring-ring"
+    >
+      <PluginLogo pluginId={pluginId} />
+      <span className="min-w-0 flex-1">
+        <span className="block text-base font-medium">{name}</span>
+        <span className="mt-1 block text-sm leading-relaxed text-dim">{description}</span>
+        <PluginTags tags={tags} />
+      </span>
+      <Plus className="size-5 shrink-0 text-dim group-hover:text-foreground" aria-hidden="true" />
+    </button>
+  );
+}
+
 function ConnectedPluginCard({
-  plugin,
+  pluginId,
+  name,
+  enabled,
+  status,
+  tags,
   wispCount,
   busy,
   onToggle,
   onSelect,
 }: {
-  plugin: PluginSummary;
+  pluginId: SettingsPluginId;
+  name: string;
+  enabled: boolean;
+  status: { tone: StatusTone; label: string };
+  tags: ReadonlyArray<string>;
   wispCount?: number;
   busy: boolean;
   onToggle: () => void;
@@ -274,21 +426,21 @@ function ConnectedPluginCard({
       <button
         type="button"
         onClick={onSelect}
-        aria-label={`Manage ${plugin.name}`}
+        aria-label={`Manage ${name}`}
         className="flex min-w-0 flex-1 items-center gap-3 rounded-lg text-left outline-none focus-visible:ring-2 focus-visible:ring-ring"
       >
-        <PluginLogo pluginId={plugin.id} />
+        <PluginLogo pluginId={pluginId} />
         <span className="min-w-0 flex-1">
-          <span className="block text-base font-medium">{plugin.name}</span>
+          <span className="block text-base font-medium">{name}</span>
           <span className="mt-1 flex items-center gap-1.5 text-xs text-dim">
-            <StatusDot tone={plugin.enabled ? "success" : "muted"} />
-            {plugin.enabled ? "Enabled" : "Disabled"}
+            <StatusDot tone={status.tone} />
+            {status.label}
             {wispCount !== undefined ? ` · ${wispCount === 1 ? "1 Wisp" : `${wispCount} Wisps`} with access` : ""}
           </span>
-          <PluginTags pluginId={plugin.id} />
+          <PluginTags tags={tags} />
         </span>
       </button>
-      <ToggleSwitch checked={plugin.enabled} label={`Enable ${plugin.name}`} disabled={busy} onChange={onToggle} />
+      <ToggleSwitch checked={enabled} label={`Enable ${name}`} disabled={busy} onChange={onToggle} />
     </div>
   );
 }

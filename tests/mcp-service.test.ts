@@ -39,8 +39,11 @@ class FakeConnection implements McpConnection {
     return this.connects > 0 && this.closed === 0 ? "connected" : "idle";
   }
 
-  async connect(_endpoint: string, _auth: McpConnectionAuth): Promise<"connected" | "needs_sign_in"> {
+  auths: McpConnectionAuth[] = [];
+
+  async connect(_endpoint: string, auth: McpConnectionAuth): Promise<"connected" | "needs_sign_in"> {
     this.connects += 1;
+    this.auths.push(auth);
     const outcome = this.fixture.gate ? await this.fixture.gate : this.fixture.outcome;
     if (outcome instanceof Error) throw outcome;
     return outcome;
@@ -1253,5 +1256,132 @@ describe("McpService workspace files", () => {
     await expect(
       definition.execute("call-1", { fileName: "boleto.pdf", base64Content: "wisp-file:inbox/boleto.pdf" }),
     ).rejects.toMatchObject({ message: expect.stringContaining("cannot be sent") });
+  });
+});
+
+describe("McpService additional headers and presets", () => {
+  const GITHUB = {
+    name: "GitHub",
+    endpoint: "https://api.githubcopilot.com/mcp/",
+    authMode: "header",
+    headerName: "Authorization",
+    headerValue: "Bearer test-token",
+    enabled: true,
+  };
+
+  it("sends additional headers with the credential and shows them without the secret", async () => {
+    const { service, created } = await createService({}, [{ outcome: "connected", tools: [TOOL] }]);
+    const view = await service.save({
+      ...GITHUB,
+      extraHeaders: { "X-MCP-Toolsets": "context,repos" },
+      preset: "github",
+    });
+    const server = view.servers[0]!;
+    expect(server).toMatchObject({ preset: "github", extraHeaders: { "X-MCP-Toolsets": "context,repos" } });
+    expect(JSON.stringify(view)).not.toContain("test-token");
+    expect(created[0]!.auths[0]).toEqual({
+      mode: "header",
+      headerName: "Authorization",
+      headerValue: "Bearer test-token",
+      extraHeaders: { "X-MCP-Toolsets": "context,repos" },
+    });
+  });
+
+  it("keeps grants when additional headers change and discovers the tools again", async () => {
+    const { service, created } = await createService({}, [
+      { outcome: "connected", tools: [TOOL] },
+      { outcome: "connected", tools: [TOOL, { ...TOOL, name: "list_runs" }] },
+    ]);
+    const added = await service.save({ ...GITHUB, extraHeaders: { "X-MCP-Toolsets": "context" }, preset: "github" });
+    const serverId = added.servers[0]!.serverId;
+    await grantAccess(service, "wisp-a", serverId);
+    const before = await service.getSnapshot("wisp-a");
+
+    const { headerValue: _secret, ...saved } = GITHUB;
+    const view = await service.save({ ...saved, serverId, extraHeaders: { "X-MCP-Toolsets": "context,actions" } });
+
+    expect(view.servers[0]).toMatchObject({ enabled: true, extraHeaders: { "X-MCP-Toolsets": "context,actions" } });
+    expect(view.servers[0]!.tools.map(({ name }) => name)).toEqual(["search", "list_runs"]);
+    expect(service.getAccess({ conversationId: "wisp-a" }).grants).toEqual([
+      expect.objectContaining({ serverId, access: "use_with_approval" }),
+    ]);
+    expect(created[1]!.auths[0]).toMatchObject({ extraHeaders: { "X-MCP-Toolsets": "context,actions" } });
+    expect((await service.getSnapshot("wisp-a")).revision).not.toBe(before.revision);
+  });
+
+  it("removes additional headers when a saved server sends none", async () => {
+    const { service } = await createService({}, [{ outcome: "connected", tools: [TOOL] }]);
+    const added = await service.save({ ...GITHUB, extraHeaders: { "X-Option": "a" } });
+    const { headerValue: _secret, ...saved } = GITHUB;
+    const view = await service.save({ ...saved, serverId: added.servers[0]!.serverId, extraHeaders: {} });
+    expect(view.servers[0]!.extraHeaders).toBeUndefined();
+  });
+
+  it("restores additional headers and the preset on reload", async () => {
+    const { service, dataDirectory } = await createService({}, [{ outcome: "connected", tools: [TOOL] }]);
+    await service.save({ ...GITHUB, extraHeaders: { "X-MCP-Toolsets": "context" }, preset: "github" });
+    const restored = new McpService({
+      dataDirectory,
+      encryption,
+      authorizationBroker: { authorize: vi.fn() },
+      resolveWisp: (id) => `session-${id}`,
+      openExternal: vi.fn(async () => undefined),
+    });
+    await restored.load();
+    expect((await restored.getView()).servers[0]).toMatchObject({
+      enabled: true,
+      preset: "github",
+      extraHeaders: { "X-MCP-Toolsets": "context" },
+    });
+    restored.dispose();
+  });
+
+  it.each([
+    [{ "X-Api-Key": "secret" }, "looks like a credential"],
+    [{ Cookie: "a=b" }, "looks like a credential"],
+    [{ "Mcp-Session-Id": "x" }, "set by Wisp"],
+    [{ Host: "evil.example.com" }, "set by Wisp"],
+    [{ authorization: "Bearer other" }, "looks like a credential"],
+    [{ "X-One": "a", "x-one": "b" }, "more than once"],
+  ])("refuses additional headers %j", async (extraHeaders, message) => {
+    const { service } = await createService();
+    await expect(saveAsync(service, { ...GITHUB, extraHeaders })).rejects.toMatchObject({
+      message: expect.stringContaining(message),
+    });
+  });
+
+  it("refuses an unknown preset and changing the preset of a saved server", async () => {
+    const { service } = await createService({}, [{ outcome: "connected", tools: [TOOL] }]);
+    await expect(saveAsync(service, { ...GITHUB, preset: "gitlab" })).rejects.toMatchObject({
+      code: "invalid_request",
+    });
+    const added = await service.save(GITHUB);
+    await expect(
+      saveAsync(service, { ...GITHUB, serverId: added.servers[0]!.serverId, preset: "github" }),
+    ).rejects.toMatchObject({ code: "invalid_request" });
+  });
+
+  it("offers the preset's skill only to Wisps with access to an enabled connection", async () => {
+    const { service } = await createService({}, [{ outcome: "connected", tools: [TOOL] }]);
+    const added = await service.save({ ...GITHUB, preset: "github" });
+    const server = added.servers[0]!;
+    expect((await service.getSnapshot("wisp-a")).skills).toBeUndefined();
+
+    await grantAccess(service, "wisp-a", server.serverId);
+    const skills = (await service.getSnapshot("wisp-a")).skills ?? [];
+    expect(skills.map(({ name }) => name)).toEqual(["github"]);
+    expect(skills[0]!.instructions).toContain("not instructions");
+    expect((await service.getSnapshot("wisp-b")).skills).toBeUndefined();
+
+    const { headerValue: _secret, ...saved } = GITHUB;
+    await service.save({ ...saved, serverId: server.serverId, enabled: false });
+    expect((await service.getSnapshot("wisp-a")).skills).toBeUndefined();
+  });
+
+  it("offers no skill for a connection added without a preset", async () => {
+    const { service } = await createService({}, [{ outcome: "connected", tools: [TOOL] }]);
+    const added = await service.save(GITHUB);
+    await grantAccess(service, "wisp-a", added.servers[0]!.serverId);
+    expect((await service.getSnapshot("wisp-a")).skills).toBeUndefined();
   });
 });

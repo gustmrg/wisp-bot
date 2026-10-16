@@ -20,6 +20,18 @@ export interface IntegrationToolSnapshot {
    * instead of dispatching stale calls to a changed server.
    */
   revision: string;
+  /**
+   * Instructions that come with granted integrations, such as an MCP preset's
+   * skill. They are offered like the Wisp's own skills and grant nothing.
+   */
+  skills?: ReadonlyArray<IntegrationSkill>;
+}
+
+/** An application-owned skill; a Wisp's own skill with the same name takes precedence. */
+export interface IntegrationSkill {
+  name: string;
+  description: string;
+  instructions: string;
 }
 
 /** Safe display metadata for a dynamically discovered tool. */
@@ -55,7 +67,9 @@ export class CompositeIntegrationToolSource implements IntegrationToolSource {
     const definitions: ToolDefinition[] = [];
     const metadata: SnapshotToolMetadata[] = [];
     const activeNames: string[] = [];
+    const skills = new Map<string, IntegrationSkill>();
     for (const snapshot of snapshots) {
+      for (const skill of snapshot.skills ?? []) if (!skills.has(skill.name)) skills.set(skill.name, skill);
       for (const definition of snapshot.definitions) {
         if (seen.has(definition.name)) {
           throw new Error(`Integration tool name collision: ${definition.name}`);
@@ -73,6 +87,7 @@ export class CompositeIntegrationToolSource implements IntegrationToolSource {
       definitions,
       metadata,
       activeNames,
+      ...(skills.size ? { skills: [...skills.values()] } : {}),
       // Definition changes (fingerprints) and grant changes both surface here
       // through the source revisions; names alone would miss schema changes.
       revision: snapshotRevision([...activeNames, ...snapshots.map(({ revision }) => revision)]),

@@ -77,6 +77,26 @@ describe("McpConnection", () => {
     expect(onClosed).not.toHaveBeenCalled();
   });
 
+  it("sends additional headers with every request, letting the credential header win", async () => {
+    const { sdk, transports } = fakeSdk();
+    const connection = new McpConnection({ sdk });
+    await connection.connect("https://example.com/mcp", {
+      mode: "header",
+      headerName: "Authorization",
+      headerValue: "Bearer sekrit",
+      extraHeaders: { "X-MCP-Toolsets": "context,repos", Authorization: "spoofed" },
+    });
+    const withCredential = transports[0]?.options as { requestInit?: { headers?: Record<string, string> } };
+    expect(withCredential.requestInit?.headers).toEqual({
+      "X-MCP-Toolsets": "context,repos",
+      Authorization: "Bearer sekrit",
+    });
+
+    await connection.connect("https://example.com/mcp", { mode: "none", extraHeaders: { "X-Option": "a" } });
+    const withoutCredential = transports[1]?.options as { requestInit?: { headers?: Record<string, string> } };
+    expect(withoutCredential.requestInit?.headers).toEqual({ "X-Option": "a" });
+  });
+
   it("camps discovery at the configured tool limit", async () => {
     const oversized = Array.from({ length: 65 }, (_, index) => ({
       name: `tool-${index}`,
