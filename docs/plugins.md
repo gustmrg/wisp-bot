@@ -2,8 +2,8 @@
 
 Wisp ships with bundled integrations: **Brave Search** (web search),
 **Linear**, **Firecrawl**, **Tavily**, and **Exa** (the latter three support web
-search and page reading), and **Google Calendar**, which signs in with your
-own Google OAuth client. Connections are configured globally in
+search and page reading), and **Google Calendar** and **Gmail**, which sign in
+with your own Google OAuth client. Connections are configured globally in
 **Settings → Plugins**; each Wisp receives access independently through its
 **Access** tab. Connecting a plugin grants no Wisp access automatically.
 
@@ -239,14 +239,17 @@ project and client can serve every Google plugin.
 1. In the [Google Cloud console](https://console.cloud.google.com/), create a
    project, or choose one.
 2. Under **APIs & Services → Library**, enable the API of each plugin you use:
-   **Google Calendar API** for Google Calendar.
+   **Google Calendar API** for Google Calendar, **Gmail API** for Gmail.
 3. Under **Google Auth Platform**, configure the consent screen: an app name
    and your email under **Branding**, then the user type under **Audience**:
    **External** for a personal Gmail account, or **Internal** for a Google
    Workspace organization.
-4. Under **Data access**, add the plugin's scopes. Google Calendar uses
+4. Under **Data access**, add the plugins' scopes. Google Calendar uses
    `https://www.googleapis.com/auth/calendar.events` and
-   `https://www.googleapis.com/auth/calendar.calendarlist.readonly`.
+   `https://www.googleapis.com/auth/calendar.calendarlist.readonly`; Gmail uses
+   `https://www.googleapis.com/auth/gmail.readonly` and
+   `https://www.googleapis.com/auth/gmail.compose`. Google lists the Gmail
+   scopes as restricted, which matters only for apps published to others.
 5. For an **External** app, under **Audience**, select **Publish app** so its
    status is **In production**. While it is in **Testing**, Google ends the
    sign-in after 7 days and Wisp asks you to sign in again. For your own use the
@@ -283,6 +286,27 @@ organizers are emailed only when the Wisp is asked to (`notifyAttendees`,
 The plugin cannot delete events or change calendar settings or sharing: its
 scopes cover events and the calendar list only. Event descriptions are written
 by other people and reach the Wisp as data, not instructions.
+
+## Gmail
+
+With **Read only**, a Wisp can search your mail with Gmail's search syntax
+(`gmail_search_messages`, for example `from:ana@example.com newer_than:7d`),
+read a message or a whole thread as text (`gmail_read_message`,
+`gmail_read_thread`; HTML mail is converted to text, and attachments are listed
+by name but never read), and list your labels and drafts
+(`gmail_list_labels`, `gmail_list_drafts`).
+
+With **Read and write**, it can write drafts: a new email or a reply that joins
+the original thread and goes to its sender (`gmail_create_draft`), and rewrite
+a draft (`gmail_update_draft`). Each draft asks for approval unless you allowed
+it without asking.
+
+**Wisps never send email.** The plugin has no tool that sends, so you review
+every draft in Gmail and send it yourself. Google has no scope that allows
+writing drafts without also allowing sending, so `gmail.compose` is requested;
+the limit is in Wisp, not in Google's permission. The plugin cannot delete
+mail, change labels, or read attachments. Email contents are written by other
+people and reach the Wisp as data, not instructions.
 
 ## Revocation and key changes
 

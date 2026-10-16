@@ -278,7 +278,11 @@ describe("WispPluginSettings", () => {
     expect(screen.queryByRole("combobox", { name: "Linear access" })).not.toBeInTheDocument();
     expect(screen.queryByRole("combobox", { name: "Read web pages access" })).not.toBeInTheDocument();
     expect(screen.getByText(/Read web pages: no connected plugin provides this/)).toBeVisible();
-    expect(screen.getByText(/Unavailable: Linear \(turned off\), Firecrawl, Tavily, Exa, Google Calendar, GitHub, Atlassian\./)).toBeVisible();
+    expect(
+      screen.getByText(
+        /Unavailable: Linear \(turned off\), Firecrawl, Tavily, Exa, Google Calendar, Gmail, GitHub, Atlassian\./,
+      ),
+    ).toBeVisible();
     await user.click(screen.getByRole("button", { name: "Set up plugins" }));
     expect(onOpenSettings).toHaveBeenLastCalledWith({ section: "plugins" });
     await user.click(screen.getByRole("button", { name: "Add an MCP server" }));

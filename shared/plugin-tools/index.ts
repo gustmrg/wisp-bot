@@ -1,5 +1,6 @@
 import { PLUGIN_CATALOG, WEB_CAPABILITIES } from "../plugins.js";
 import type { ToolMetadata } from "../tool-catalog.js";
+import { GMAIL_TOOL_METADATA } from "./gmail.js";
 import { GOOGLE_CALENDAR_TOOL_METADATA } from "./google-calendar.js";
 import { LINEAR_TOOL_METADATA } from "./linear.js";
 import { FIRECRAWL_SCRAPE_METADATA, WEB_READ_METADATA, WEB_SEARCH_METADATA } from "./web.js";
@@ -21,4 +22,5 @@ export const PLUGIN_TOOL_CATALOG: ReadonlyArray<ToolMetadata> = [
   ...Object.values(GOOGLE_CALENDAR_TOOL_METADATA).map(
     (metadata): ToolMetadata => ({ ...metadata, pluginId: "google-calendar" }),
   ),
+  ...Object.values(GMAIL_TOOL_METADATA).map((metadata): ToolMetadata => ({ ...metadata, pluginId: "gmail" })),
 ];

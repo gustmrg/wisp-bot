@@ -1,6 +1,7 @@
 import type { PluginAdapter } from "../plugin-types.js";
 import { webSearch } from "./brave.js";
 import { exa } from "./exa.js";
+import { gmail } from "./gmail.js";
 import { googleCalendar } from "./google-calendar.js";
 import { firecrawl } from "./firecrawl.js";
 import { linear } from "./linear.js";
@@ -15,4 +16,5 @@ export const PLUGIN_ADAPTERS: ReadonlyArray<PluginAdapter> = [
   tavily,
   exa,
   googleCalendar,
+  gmail,
 ];

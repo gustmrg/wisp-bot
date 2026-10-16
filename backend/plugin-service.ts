@@ -129,6 +129,7 @@ function defaultState(): PluginState {
       tavily: false,
       exa: false,
       "google-calendar": false,
+      gmail: false,
     },
     grants: {},
     webProviders: {},
