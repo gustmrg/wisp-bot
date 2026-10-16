@@ -122,7 +122,14 @@ function defaultState(): PluginState {
   return {
     schemaVersion: 1,
     revision: randomUUID(),
-    enabled: { "web-search": false, linear: false, firecrawl: false, tavily: false, exa: false },
+    enabled: {
+      "web-search": false,
+      linear: false,
+      firecrawl: false,
+      tavily: false,
+      exa: false,
+      "google-calendar": false,
+    },
     grants: {},
     webProviders: {},
     defaultProviders: {},

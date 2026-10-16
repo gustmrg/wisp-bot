@@ -1,8 +1,9 @@
 # Bundled plugins
 
-Wisp ships with five bundled integrations: **Brave Search** (web search),
+Wisp ships with bundled integrations: **Brave Search** (web search),
 **Linear**, **Firecrawl**, **Tavily**, and **Exa** (the latter three support web
-search and page reading). Connections are configured globally in
+search and page reading), and **Google Calendar**, which signs in with your
+own Google OAuth client. Connections are configured globally in
 **Settings → Plugins**; each Wisp receives access independently through its
 **Access** tab. Connecting a plugin grants no Wisp access automatically.
 
@@ -228,6 +229,61 @@ required fields before creating an issue, change status only through the
 issue's transitions, and never delete or move issues unless asked. Like the
 GitHub skill, it is not one of the Wisp's own skills and grants nothing.
 
+## Setting up a Google OAuth client
+
+Google's plugins sign in with an OAuth client from **your own** Google Cloud
+project: Google does not let apps register themselves, and a client shipped
+with Wisp would need Google's app verification. You do this once; the same
+project and client can serve every Google plugin.
+
+1. In the [Google Cloud console](https://console.cloud.google.com/), create a
+   project, or choose one.
+2. Under **APIs & Services → Library**, enable the API of each plugin you use:
+   **Google Calendar API** for Google Calendar.
+3. Under **Google Auth Platform**, configure the consent screen: an app name
+   and your email under **Branding**, then the user type under **Audience**:
+   **External** for a personal Gmail account, or **Internal** for a Google
+   Workspace organization.
+4. Under **Data access**, add the plugin's scopes. Google Calendar uses
+   `https://www.googleapis.com/auth/calendar.events` and
+   `https://www.googleapis.com/auth/calendar.calendarlist.readonly`.
+5. For an **External** app, under **Audience**, select **Publish app** so its
+   status is **In production**. While it is in **Testing**, Google ends the
+   sign-in after 7 days and Wisp asks you to sign in again. For your own use the
+   app does not need Google's verification: when you sign in, Google warns that
+   it has not verified the app; continue through **Advanced**.
+6. Under **Clients**, create a client of type **Desktop app**, and copy its
+   **Client ID** and **Client secret**.
+7. In Wisp, open **Settings → Plugins**, choose the plugin, paste the client ID
+   and secret, and select **Connect**.
+
+A Desktop app client accepts sign-in redirects to `http://127.0.0.1` on any
+port, which is how Wisp receives them, also through the desktop app when the
+server runs on [another computer](remote-server.md#oauth-sign-in-from-another-computer).
+The client secret of a Desktop app is not confidential, but Wisp stores it
+encrypted with the tokens anyway and never shows it to Wisps.
+
+## Google Calendar
+
+With **Read only**, a Wisp can list your calendars
+(`google_calendar_list_calendars`), list and search events in a time range
+with recurring events expanded (`google_calendar_list_events`), read one event
+with its description, attendees, and meeting link
+(`google_calendar_get_event`), and check busy times across up to 10 calendars
+for up to 31 days (`google_calendar_free_busy`).
+
+With **Read and write**, it can also create events
+(`google_calendar_create_event`), change them
+(`google_calendar_update_event`, only the fields given), and accept, decline,
+or tentatively accept invitations (`google_calendar_respond_to_event`). Each
+change asks for approval unless you allowed it without asking. Attendees and
+organizers are emailed only when the Wisp is asked to (`notifyAttendees`,
+`notifyOrganizer`); by default Google sends nothing.
+
+The plugin cannot delete events or change calendar settings or sharing: its
+scopes cover events and the calendar list only. Event descriptions are written
+by other people and reach the Wisp as data, not instructions.
+
 ## Revocation and key changes
 
 Disabling a plugin blocks all Wisps but retains their grants. Replacing a key
@@ -238,7 +294,7 @@ Linear before retrying a write whose outcome is uncertain.
 
 ## Extension boundary
 
-These five bundled plugins plus remote MCP servers are the supported
+These bundled plugins plus remote MCP servers are the supported
 integrations. Arbitrary plugin installation, custom endpoints, and multiple
 accounts per plugin are not available yet. See
 [ADR 004](decisions/004-wisp-plugins.md) for the connection model, adapter

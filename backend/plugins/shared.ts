@@ -90,6 +90,8 @@ export async function requestJson(
   url: string,
   init: RequestInit,
   signal?: AbortSignal,
+  /** What to check when the provider refuses the credential (HTTP 401 or 403). */
+  authHint = "Check the API key and its permissions.",
 ): Promise<Fields> {
   const controller = new AbortController();
   const combinedSignal = signal ? AbortSignal.any([signal, controller.signal]) : controller.signal;
@@ -101,7 +103,7 @@ export async function requestJson(
       await response.body?.cancel().catch(() => undefined);
       const hint =
         response.status === 401 || response.status === 403
-          ? " Check the API key and its permissions."
+          ? ` ${authHint}`
           : response.status === 429
             ? " Rate limit reached."
             : "";

@@ -1,4 +1,4 @@
-export const PLUGIN_IDS = ["web-search", "linear", "firecrawl", "tavily", "exa"] as const;
+export const PLUGIN_IDS = ["web-search", "linear", "firecrawl", "tavily", "exa", "google-calendar"] as const;
 export type PluginId = (typeof PLUGIN_IDS)[number];
 export type PluginAccess = "none" | "read" | "write";
 
@@ -40,6 +40,10 @@ export interface PluginSignInInfo {
   /** Step-by-step setup guide for the client. */
   setupUrl: string;
 }
+
+/** The Google plugins' setup guide; each plugin signs in with an OAuth client the user creates. */
+const GOOGLE_SETUP_URL =
+  "https://github.com/gustmrg/wisp-bot/blob/main/docs/plugins.md#setting-up-a-google-oauth-client";
 
 // The "web-search" ID predates the other web providers and is kept so saved grants stay valid.
 export const PLUGIN_CATALOG: ReadonlyArray<PluginCatalogEntry> = [
@@ -92,6 +96,21 @@ export const PLUGIN_CATALOG: ReadonlyArray<PluginCatalogEntry> = [
     description: "Find relevant sources and read web pages with Exa.",
     supportsWrite: false,
     capabilities: ["search", "read"],
+  },
+  {
+    id: "google-calendar",
+    name: "Google Calendar",
+    category: "productivity",
+    credentialLabel: "Google Cloud credentials",
+    credentialUrl: "https://console.cloud.google.com/apis/credentials",
+    description: "See your calendars and availability, and create and update events.",
+    supportsWrite: true,
+    capabilities: [],
+    signIn: {
+      clientHelp:
+        "Google Calendar signs in with an OAuth client you create in your own Google Cloud project: a Desktop app client, with the Google Calendar API turned on.",
+      setupUrl: GOOGLE_SETUP_URL,
+    },
   },
 ];
 
