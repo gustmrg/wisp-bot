@@ -34,6 +34,7 @@ import {
 } from "./ipc/register-system-notification-handlers.js";
 import { registerUpdateHandlers } from "./ipc/register-update-handlers.js";
 import type { LocalServer } from "./local-server/local-server.js";
+import { OAuthRedirectRelay } from "./oauth-redirect-relay.js";
 import { RemoteAccessService } from "./local-server/remote-access.js";
 import { locateTailscale, Tailscale } from "./local-server/tailscale.js";
 
@@ -124,6 +125,8 @@ export async function createBackend(host: BackendHost): Promise<Backend> {
     ask: (prompt, signal) => manager.askSsh(prompt, signal),
     logger: host.logger,
   };
+  // Receives OAuth redirects here for a server on another computer.
+  const oauthRelay = new OAuthRedirectRelay({ openExternal: host.hostActions.openExternal });
   const openTunnel = host.openSshTunnel ?? ((profile, signal) => openSshTunnel(profile, { signal, interaction }));
   const install =
     host.installServer ??
@@ -132,8 +135,9 @@ export async function createBackend(host: BackendHost): Promise<Backend> {
   const manager = new ConnectionManager({
     store,
     localServer: host.localServer,
-    onHostRequest: (request) => runHostAction(host.hostActions, request),
+    onHostRequest: (request) => runHostAction(host.hostActions, oauthRelay, request),
     selectFiles: () => host.hostActions.selectFiles(),
+    onSessionClosed: () => oauthRelay.closeAll(),
     openSshTunnel: (profile, signal) => openTunnel(profile, signal, interaction),
     installServer: (profile, onProgress, signal) => install(profile, onProgress, signal, interaction),
     deviceName: host.deviceName,
@@ -233,6 +237,7 @@ export async function createBackend(host: BackendHost): Promise<Backend> {
       unsubscribeUpdateState();
       sshTestController.abort();
       await manager.dispose();
+      oauthRelay.closeAll();
       await askpass?.close();
     },
   };
@@ -251,11 +256,28 @@ async function hasLocalData(userData: string): Promise<boolean> {
   return false;
 }
 
-async function runHostAction(actions: HostActions, request: HostRequest): Promise<HostResponse> {
-  if (request.kind === "openPath") await actions.openPath(request.path);
-  else if (request.kind === "openExternal") await actions.openExternal(request.url);
-  else return { ok: true, value: await actions.selectFiles() };
-  return { ok: true };
+async function runHostAction(
+  actions: HostActions,
+  relay: OAuthRedirectRelay,
+  request: HostRequest,
+): Promise<HostResponse> {
+  switch (request.kind) {
+    case "openPath":
+      await actions.openPath(request.path);
+      return { ok: true };
+    case "openExternal":
+      await actions.openExternal(request.url);
+      return { ok: true };
+    case "selectFiles":
+      return { ok: true, value: await actions.selectFiles() };
+    case "oauthListen":
+      return { ok: true, value: await relay.listen() };
+    case "oauthRedirect":
+      return { ok: true, value: [await relay.redirect(request.listenerId, request.url, request.state)] };
+    case "oauthClose":
+      relay.close(request.listenerId);
+      return { ok: true };
+  }
 }
 
 function connectionId(payload: unknown): string {

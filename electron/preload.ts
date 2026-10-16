@@ -34,6 +34,7 @@ const WISP_IPC_CHANNELS = {
   refreshMcpTools: "wisp:mcp:refresh",
   startMcpSignIn: "wisp:mcp:sign-in",
   cancelMcpSignIn: "wisp:mcp:sign-in:cancel",
+  finishMcpSignIn: "wisp:mcp:sign-in:finish",
   mcpSettingsChanged: "wisp:mcp:changed",
   getWispMcpAccess: "wisp:mcp:access:get",
   saveWispMcpAccess: "wisp:mcp:access:save",
@@ -150,6 +151,7 @@ const wispApi: WispApi = {
   refreshMcpTools: (request) => ipcRenderer.invoke(WISP_IPC_CHANNELS.refreshMcpTools, request),
   startMcpSignIn: (request) => ipcRenderer.invoke(WISP_IPC_CHANNELS.startMcpSignIn, request),
   cancelMcpSignIn: (request) => ipcRenderer.invoke(WISP_IPC_CHANNELS.cancelMcpSignIn, request),
+  finishMcpSignIn: (request) => ipcRenderer.invoke(WISP_IPC_CHANNELS.finishMcpSignIn, request),
   getWispMcpAccess: (request) => ipcRenderer.invoke(WISP_IPC_CHANNELS.getWispMcpAccess, request),
   saveWispMcpAccess: (request) => ipcRenderer.invoke(WISP_IPC_CHANNELS.saveWispMcpAccess, request),
   subscribeToMcpSettings: (listener) => {

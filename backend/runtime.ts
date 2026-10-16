@@ -21,6 +21,7 @@ import { JobRunner } from "./job-runner.js";
 import { JobScheduler, type JobRunOutcome } from "./job-scheduler.js";
 import type { JobToolHost } from "./job-tools.js";
 import { McpService } from "./mcp-service.js";
+import type { McpSignInBrowser } from "./mcp-oauth.js";
 import { MessageQueue } from "./message-queue.js";
 import { MessageScheduler } from "./message-scheduler.js";
 import { catalogModelPricing, ModelPricingService } from "./model-pricing-service.js";
@@ -55,6 +56,8 @@ export interface BackendRuntimeOptions {
   /** The principal that should own a new tool approval prompt, or null when none can answer it. */
   selectApprovalWindowId: () => number | null;
   openExternal: (url: string) => Promise<void>;
+  /** Where the browser of an MCP sign-in runs for the device that asked; defaults to this computer. */
+  signInBrowser?: () => Promise<McpSignInBrowser>;
   /** Opens a backend-owned local folder in the system file manager. */
   openPath: (directory: string) => Promise<void>;
   /** Shows a native multi-file picker; resolves with absolute paths, empty when dismissed. */
@@ -182,6 +185,7 @@ export async function createBackendRuntime(options: BackendRuntimeOptions): Prom
     resolveWisp,
     resolveWorkspaceDirectory: (id) => conversationRepository.getWorkspaceDirectory(id),
     openExternal: options.openExternal,
+    ...(options.signInBrowser ? { signInBrowser: options.signInBrowser } : {}),
     clientVersion: options.appVersion,
     onSettingsChanged: options.onMcpSettingsChanged,
   });

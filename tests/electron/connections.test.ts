@@ -9,6 +9,8 @@ import path from "node:path";
 import type { IpcMainInvokeEvent } from "electron";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import type { McpConnectionAuth } from "../../backend/mcp-bridge.js";
+import type { McpOAuthProvider } from "../../backend/mcp-oauth.js";
 import { StructuredLogger } from "../../backend/structured-logger.js";
 import { RemoteClient } from "../../client/remote-client.js";
 import { LaunchAtLoginService } from "../../electron/backend/launch-at-login-service.js";
@@ -27,6 +29,7 @@ import { createWispServer, type WispServer } from "../../server/wisp-server.js";
 import type { ConnectionsView } from "../../shared/connections.js";
 import { WISP_IPC_CHANNELS, type BackendResult } from "../../shared/contracts.js";
 import type { ConversationStateView } from "../../shared/conversations.js";
+import type { McpSettingsView } from "../../shared/mcp.js";
 import type { RemoteAccessPairing, RemoteAccessView } from "../../shared/remote-access.js";
 import type { DeviceCredentials } from "../../shared/remote-protocol.js";
 import { DEFAULT_WISP_APPEARANCE } from "../../shared/wisp-appearance.js";
@@ -192,6 +195,57 @@ async function desktop(
   };
 }
 
+/**
+ * Stands in for the MCP SDK on the server: starts a browser sign-in through
+ * the real OAuth provider, waits for the redirect, and stores a token as the
+ * code exchange would. No MCP or OAuth server is contacted.
+ */
+class BrowserSignInConnection {
+  private status: "connected" | "idle" = "idle";
+
+  get connectionStatus(): "connected" | "idle" {
+    return this.status;
+  }
+
+  async connect(
+    _endpoint: string,
+    auth: McpConnectionAuth,
+    options: { allowInteractiveSignIn?: boolean } = {},
+  ): Promise<"connected" | "needs_sign_in"> {
+    const provider = (auth as { provider: McpOAuthProvider }).provider;
+    provider.setInteractiveSignIn(options.allowInteractiveSignIn === true);
+    const state = provider.state();
+    provider.saveCodeVerifier("verifier");
+    try {
+      const redirect = encodeURIComponent(provider.redirectUrl);
+      await provider.redirectToAuthorization(
+        new URL(`https://auth.example.com/authorize?state=${state}&redirect_uri=${redirect}`),
+      );
+    } catch {
+      return "needs_sign_in";
+    } finally {
+      provider.setInteractiveSignIn(false);
+    }
+    const callback = await provider.waitForCallback().catch(() => undefined);
+    if (callback?.get("code") !== "relayed-code") return "needs_sign_in";
+    provider.saveTokens({ access_token: "relayed-token", token_type: "Bearer" });
+    this.status = "connected";
+    return "connected";
+  }
+
+  async listTools() {
+    return [{ name: "search", description: "Search", inputSchema: { type: "object" } }];
+  }
+
+  async callTool() {
+    return { content: [] };
+  }
+
+  async close() {
+    this.status = "idle";
+  }
+}
+
 describe("desktop connections", () => {
   it("runs nothing on a new installation until this computer or a server is chosen", async () => {
     const app = await desktop(undefined, undefined, { choose: false });
@@ -338,6 +392,101 @@ describe("desktop connections", () => {
     expect(await app.chats()).toEqual(["local"]);
     // The server kept its Wisp.
     expect(Object.keys(server.runtime.conversations.getState().chats)).toEqual(["remote"]);
+  });
+
+  it("signs in to an MCP server for a server on another computer through this app's browser", async () => {
+    const { server, directory: serverDirectory } = await startServer();
+    (server.runtime.mcp as unknown as { options: { createConnection: () => unknown } }).options.createConnection = () =>
+      new BrowserSignInConnection();
+    const app = await desktop();
+    await app.waitForPhase("local");
+    const added = await app.invoke<ConnectionsView>(WISP_IPC_CHANNELS.saveConnection, {
+      kind: "url",
+      name: "Home server",
+      url: server.url,
+    });
+    const remote = added.profiles.find((profile) => profile.kind === "url")!;
+    const { code } = (await adminRequest(serverDirectory, { command: "pair" })) as { code: string };
+    await app.invoke(WISP_IPC_CHANNELS.activateConnection, { id: remote.id, pairingCode: code });
+    await app.waitForPhase("connected");
+    // The paired device is this app on another computer, not the server's own.
+    expect(server.auth.devices()).toEqual([expect.objectContaining({ local: false })]);
+
+    const saved = await app.invoke<McpSettingsView>(WISP_IPC_CHANNELS.saveMcpServer, {
+      name: "Docs",
+      endpoint: "https://mcp.example.com/mcp",
+      authMode: "oauth",
+      enabled: true,
+    });
+    const serverId = saved.servers[0]!.serverId;
+    const signIn = app.call<McpSettingsView>(WISP_IPC_CHANNELS.startMcpSignIn, { serverId });
+
+    // This app opens the page in its own browser, for a redirect to its own loopback.
+    await vi.waitFor(() => expect(app.hostActions.openExternal).toHaveBeenCalledTimes(1), { timeout: 8_000 });
+    const page = new URL(app.hostActions.openExternal.mock.calls[0]![0] as string);
+    const redirect = new URL(page.searchParams.get("redirect_uri")!);
+    expect(redirect.hostname).toBe("127.0.0.1");
+    const state = page.searchParams.get("state")!;
+    // A forged redirect is refused; the real one completes the sign-in on the server.
+    expect((await fetch(`${redirect}?code=relayed-code&state=forged`)).status).toBe(400);
+    expect((await fetch(`${redirect}?code=relayed-code&state=${state}`)).status).toBe(200);
+
+    const result = await signIn;
+    expect(result).toMatchObject({ ok: true, value: { servers: [expect.objectContaining({ state: "connected" })] } });
+    await vi.waitFor(async () =>
+      expect(
+        await (
+          server.runtime.mcp as unknown as { secrets: { oauthTokens(id: string): Promise<unknown> } }
+        ).secrets.oauthTokens(serverId),
+      ).toMatchObject({ accessToken: "relayed-token" }),
+    );
+    // The listener on this computer served one redirect and closed.
+    await vi.waitFor(() => expect(fetch(`${redirect}?code=relayed-code&state=${state}`)).rejects.toThrow());
+  });
+
+  it("ends a relayed sign-in when this app leaves the server", async () => {
+    const { server, directory: serverDirectory } = await startServer();
+    (server.runtime.mcp as unknown as { options: { createConnection: () => unknown } }).options.createConnection = () =>
+      new BrowserSignInConnection();
+    const app = await desktop();
+    await app.waitForPhase("local");
+    const added = await app.invoke<ConnectionsView>(WISP_IPC_CHANNELS.saveConnection, {
+      kind: "url",
+      name: "Home server",
+      url: server.url,
+    });
+    const remote = added.profiles.find((profile) => profile.kind === "url")!;
+    const { code } = (await adminRequest(serverDirectory, { command: "pair" })) as { code: string };
+    await app.invoke(WISP_IPC_CHANNELS.activateConnection, { id: remote.id, pairingCode: code });
+    await app.waitForPhase("connected");
+    const saved = await app.invoke<McpSettingsView>(WISP_IPC_CHANNELS.saveMcpServer, {
+      name: "Docs",
+      endpoint: "https://mcp.example.com/mcp",
+      authMode: "oauth",
+      enabled: true,
+    });
+    const serverId = saved.servers[0]!.serverId;
+    const signIn = app.call<McpSettingsView>(WISP_IPC_CHANNELS.startMcpSignIn, { serverId });
+    signIn.catch(() => undefined);
+    await vi.waitFor(() => expect(app.hostActions.openExternal).toHaveBeenCalledTimes(1), { timeout: 8_000 });
+    const page = new URL(app.hostActions.openExternal.mock.calls[0]![0] as string);
+    const redirect = page.searchParams.get("redirect_uri")!;
+
+    await app.invoke(WISP_IPC_CHANNELS.activateConnection, { id: "local" });
+    await app.waitForPhase("local");
+    // Nothing on this computer still listens for the redirect, and the server stored nothing.
+    await expect(fetch(`${redirect}?code=relayed-code&state=${page.searchParams.get("state")}`)).rejects.toThrow();
+    await vi.waitFor(
+      async () => expect((await server.runtime.mcp.getView()).servers[0]?.signInPending).toBeUndefined(),
+      {
+        timeout: 8_000,
+      },
+    );
+    expect(
+      await (
+        server.runtime.mcp as unknown as { secrets: { oauthTokens(id: string): Promise<unknown> } }
+      ).secrets.oauthTokens(serverId),
+    ).toBeUndefined();
   });
 
   it("reopens the last connection on restart without starting Wisps on this computer", async () => {

@@ -50,6 +50,12 @@ export interface McpServerSummary {
   preset?: McpPresetId;
   /** A browser sign-in is waiting; it can be cancelled from any window. */
   signInPending?: boolean;
+  /**
+   * The sign-in page to open by hand while a sign-in waits for its result to be
+   * pasted back: set when the device that started it cannot receive the browser's
+   * redirect, such as the browser app or a phone.
+   */
+  signInUrl?: string;
   lastDiscoveredAt: string | null;
   tools: ReadonlyArray<McpToolSummary>;
 }
@@ -79,6 +85,13 @@ export interface SaveMcpServerRequest {
 
 export interface McpServerRequest {
   serverId: string;
+}
+
+/** Completes a waiting sign-in with the address the browser was sent back to. */
+export interface FinishMcpSignInRequest {
+  serverId: string;
+  /** The `http://127.0.0.1:…/callback?code=…&state=…` address that failed to load. */
+  redirectUrl: string;
 }
 
 export interface TestMcpConnectionRequest {

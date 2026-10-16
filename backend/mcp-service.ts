@@ -34,7 +34,7 @@ import {
   planFileArguments,
   withFileReferenceHints,
 } from "./mcp-file-arguments.js";
-import { McpOAuthProvider } from "./mcp-oauth.js";
+import { McpOAuthProvider, type McpSignInBrowser } from "./mcp-oauth.js";
 import { PLUGIN_SKILLS } from "./plugin-skills.js";
 import { McpSecretStore } from "./mcp-secret-store.js";
 import type { IntegrationSkill, IntegrationToolSnapshot, SnapshotToolMetadata } from "./integration-tool-source.js";
@@ -49,6 +49,7 @@ import {
   parseSaveMcpServer,
   parseSaveWispMcpAccess,
   parseTestMcpConnection,
+  parseFinishMcpSignIn,
   parseMcpServerRequest,
   TOOL_NAME_PATTERN,
 } from "./mcp-validation.js";
@@ -103,6 +104,11 @@ export interface McpServiceOptions {
   /** The conversation's workspace, where file references are resolved; without it no file can be sent. */
   resolveWorkspaceDirectory?: (conversationId: string) => string;
   openExternal: (url: string) => Promise<void>;
+  /**
+   * Where the browser of an interactive sign-in runs, decided for the device
+   * that started it; called within that operation. Defaults to this computer.
+   */
+  signInBrowser?: () => Promise<McpSignInBrowser>;
   /** The application version advertised to MCP servers. */
   clientVersion?: string;
   createConnection?: (options: McpConnectionOptions) => McpConnection;
@@ -190,6 +196,7 @@ export class McpService {
           ...(server.extraHeaders ? { extraHeaders: { ...server.extraHeaders } } : {}),
           ...(server.preset ? { preset: server.preset } : {}),
           ...(this.isSignInPending(server.serverId) ? { signInPending: true } : {}),
+          ...this.manualSignIn(server.serverId),
           state: this.connectionState(server, signedIn.has(server.serverId)),
           lastDiscoveredAt: server.snapshot?.discoveredAt ?? null,
           tools: (server.snapshot?.tools ?? []).map((tool) => ({
@@ -419,6 +426,10 @@ export class McpService {
     try {
       // Every window learns a sign-in is waiting and can offer to cancel it.
       await this.publishAndView();
+      const browser = (await this.options.signInBrowser?.()) ?? { kind: "local" };
+      // A manual sign-in shows its page in every window once the URL exists.
+      provider.setSignInBrowser(browser, () => void this.publishAndView().catch(() => undefined));
+      controller.signal.throwIfAborted();
       await provider.loadPersistedTokens();
       await provider.loadPersistedClientInformation();
       await provider.ensureCallbackServer();
@@ -483,6 +494,21 @@ export class McpService {
     }
     signIn.cancelledByUser = true;
     signIn.controller.abort();
+    return this.getView();
+  }
+
+  /**
+   * Completes a waiting sign-in with the address its browser was redirected
+   * to, for devices that cannot receive the redirect. Like cancel, it never
+   * waits on the mutation queue; the waiting sign-in commits the result.
+   */
+  async finishSignIn(value: unknown): Promise<McpSettingsView> {
+    const { serverId, redirectUrl } = parseFinishMcpSignIn(value);
+    const signIn = this.activeSignIns.get(serverId);
+    if (!signIn) {
+      throw new WispBackendError("not_found", "No sign-in is in progress for this connection.");
+    }
+    signIn.provider.finishWithRedirect(redirectUrl);
     return this.getView();
   }
 
@@ -1075,6 +1101,12 @@ export class McpService {
   }
 
   /** A cancelled sign-in is no longer waiting, even while its flow unwinds. */
+  /** The page of a waiting manual sign-in, for windows that must open it by hand. */
+  private manualSignIn(serverId: string): { signInUrl?: string } {
+    const url = this.isSignInPending(serverId) ? this.activeSignIns.get(serverId)?.provider.manualSignInUrl : undefined;
+    return url ? { signInUrl: url } : {};
+  }
+
   private isSignInPending(serverId: string): boolean {
     const signIn = this.activeSignIns.get(serverId);
     return signIn !== undefined && !signIn.controller.signal.aborted;

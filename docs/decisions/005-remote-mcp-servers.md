@@ -139,6 +139,36 @@ a server is removed. MCP results are bounded, `isError` results surface as
 failed tool calls, and images, audio, and resources are reported as unsupported
 instead of fetched.
 
+### Amendment (2026-10-16): OAuth sign-in with a server on another computer
+
+The loopback callback only works where the browser runs. With the server on
+another computer (such as a Raspberry Pi used from the desktop app), the
+browser and the server are on different machines. The server now picks the
+sign-in browser for the device that started the sign-in:
+
+- **Local device**: unchanged. The server listens on its loopback and asks the
+  app to open the browser.
+- **Desktop app elsewhere**: the app listens on its own loopback and relays the
+  redirect's query string through host requests (`oauthListen`,
+  `oauthRedirect`, `oauthClose`), which a server may now send to that device.
+  The client picks the port and answers before discovery and registration, so
+  the redirect URI registered with the authorization server is the one that
+  listens; no port has to be free on both computers. The app validates
+  `state`, and the server validates it again. The PKCE verifier and tokens
+  never leave the server.
+- **Anything else** (browser app, phones, older apps that refuse the relay):
+  the view exposes the authorization URL while the sign-in waits, and
+  `finishMcpSignIn` accepts the redirect address the user pastes. It must have
+  the callback path and this flow's `state`; anything else is refused without
+  ending the sign-in. The server's own listener stays up, so a browser on the
+  server's computer still works.
+
+Cancelling, timeouts, configuration changes, and disconnects end the relay
+listener as well as the flow: the server closes it, pending host requests fail
+when their device's last event stream closes, the app closes its listeners when
+it leaves the server, and every listener closes on its own after 10 minutes.
+Device code flow is not added; it waits for a provider that needs it.
+
 ## Lifecycle
 
 Connections are established lazily with bounded deadlines, per Wisp and

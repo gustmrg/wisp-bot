@@ -15,6 +15,7 @@ const REQUIRED_WISP_METHODS = [
   "refreshMcpTools",
   "startMcpSignIn",
   "cancelMcpSignIn",
+  "finishMcpSignIn",
   "getWispMcpAccess",
   "saveWispMcpAccess",
   "subscribeToMcpSettings",

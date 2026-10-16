@@ -211,6 +211,17 @@ export function parseMcpServerRequest(value: unknown): { serverId: string } {
   return { serverId: parseMcpServerId(mcpRecord(value, ["serverId"]).serverId) };
 }
 
+const MAX_REDIRECT_URL_LENGTH = 8192;
+
+export function parseFinishMcpSignIn(value: unknown): { serverId: string; redirectUrl: string } {
+  const record = mcpRecord(value, ["serverId", "redirectUrl"]);
+  const redirectUrl = typeof record.redirectUrl === "string" ? record.redirectUrl.trim() : "";
+  if (!redirectUrl || redirectUrl.length > MAX_REDIRECT_URL_LENGTH) {
+    throw new WispBackendError("invalid_request", "Paste the address of the page the sign-in sent you to.");
+  }
+  return { serverId: parseMcpServerId(record.serverId), redirectUrl };
+}
+
 export function parseTestMcpConnection(value: unknown): {
   serverId?: string;
   endpoint: string;

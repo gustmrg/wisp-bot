@@ -23,7 +23,12 @@ import {
   type SshPromptView,
 } from "../../shared/connections.js";
 import { WISP_IPC_CHANNELS, type BackendResult } from "../../shared/contracts.js";
-import type { DeviceCredentials, HostRequest, HostResponse } from "../../shared/remote-protocol.js";
+import {
+  REMOTE_HOST_REQUESTS,
+  type DeviceCredentials,
+  type HostRequest,
+  type HostResponse,
+} from "../../shared/remote-protocol.js";
 import type { LocalServer, LocalServerExposure } from "../local-server/local-server.js";
 import {
   advance,
@@ -54,6 +59,8 @@ export interface ConnectionManagerOptions {
   onHostRequest(request: HostRequest): Promise<HostResponse>;
   /** Shows a native multi-file picker; resolves with absolute paths, empty when dismissed. */
   selectFiles(): Promise<ReadonlyArray<string>>;
+  /** The app left a server; what it was doing for that server, such as a sign-in, ends. */
+  onSessionClosed?(): void;
   deviceName: string;
   /** Sends a push channel payload to every renderer window. */
   broadcast(channel: string, payload: unknown): void;
@@ -530,9 +537,12 @@ export class ConnectionManager {
           this.options.broadcast(WISP_IPC_CHANNELS[type], payload);
         }
       },
-      // Only the local server sends these, and only to the app that started it.
+      // Only the local server asks for screen actions, and only of the app that
+      // started it; any server may relay a sign-in through this app.
       onHostRequest: (request) =>
-        local ? this.options.onHostRequest(request) : Promise.resolve({ ok: false, message: "Not available." }),
+        local || REMOTE_HOST_REQUESTS.has(request.kind)
+          ? this.options.onHostRequest(request)
+          : Promise.resolve({ ok: false, message: "Not available." }),
       onReset: () => {
         if (this.session === session) this.setStatus({ ...this.status }, true);
       },
@@ -572,6 +582,7 @@ export class ConnectionManager {
     const session = this.session;
     this.session = undefined;
     await session?.stop();
+    if (session) this.options.onSessionClosed?.();
   }
 
   private setStatus(next: Omit<ConnectionStatus, "epoch" | "progress" | "retry">, reset = false): void {

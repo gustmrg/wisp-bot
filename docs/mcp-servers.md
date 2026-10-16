@@ -19,7 +19,11 @@ embedded credentials) with three authentication modes:
   and coming back, and before the browser has opened; cancelling never changes
   grants or stored credentials. Removing the connection or changing its
   endpoint or authentication ends a waiting sign-in, and credentials from a
-  sign-in that finished for the old configuration are discarded.
+  sign-in that finished for the old configuration are discarded. With a
+  [server on another computer](remote-server.md#oauth-sign-in-from-another-computer),
+  the desktop app receives the redirect on its own computer and relays it; the
+  browser app and phones open the sign-in page and paste back the address the
+  browser lands on.
 
 A connection can also send **additional headers** with every request, such
 as a server's option selectors (at most 8). They are stored as plain

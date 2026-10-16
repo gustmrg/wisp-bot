@@ -89,14 +89,18 @@ export interface HttpApi {
   handle(request: IncomingMessage, response: ServerResponse): void;
   /**
    * Asks the device behind the current operation to do something on its
-   * screen. Only a local device can: on another computer, a server path or a
-   * loopback sign-in callback means nothing.
+   * screen. Only a local device can: on another computer a server path means
+   * nothing. `device` instead asks that device wherever it runs, for requests
+   * that carry everything they need, such as an OAuth redirect relay.
    */
   requestHost(
     request: DistributiveOmit<HostRequest, "id">,
     timeoutMs: number,
     unsupported: string,
+    options?: { device?: string },
   ): Promise<HostResponse>;
+  /** The device behind the current operation; undefined outside an operation. */
+  callerDevice(): { deviceId: string; local: boolean } | undefined;
   /** Ends every open event stream, e.g. on shutdown. */
   closeStreams(): void;
   /**
@@ -344,15 +348,29 @@ export function createHttpApi(options: HttpApiOptions): HttpApi {
       clearInterval(heartbeat);
       subscription.unsubscribe();
       streams.delete(response);
+      // Nothing can answer this device's requests once its last stream is gone.
+      if (![...streams.values()].includes(deviceId)) {
+        for (const [id, pending] of hostRequests) {
+          if (pending.deviceId !== deviceId) continue;
+          hostRequests.delete(id);
+          pending.resolve({ ok: false, message: "The app disconnected." });
+        }
+      }
     };
     response.once("close", cleanup);
     request.once("close", cleanup);
   };
 
   return {
-    async requestHost(request, timeoutMs, unsupported) {
+    callerDevice() {
       const deviceId = caller.getStore()?.deviceId;
-      if (!deviceId || !auth.isLocal(deviceId)) throw new WispBackendError("unsupported", unsupported);
+      return deviceId ? { deviceId, local: auth.isLocal(deviceId) } : undefined;
+    },
+    async requestHost(request, timeoutMs, unsupported, requestOptions) {
+      const deviceId = requestOptions?.device ?? caller.getStore()?.deviceId;
+      if (!deviceId || (!requestOptions?.device && !auth.isLocal(deviceId))) {
+        throw new WispBackendError("unsupported", unsupported);
+      }
       const targets = [...streams].filter(([, owner]) => owner === deviceId).map(([response]) => response);
       if (targets.length === 0) {
         throw new WispBackendError("unavailable", "Wisp is not connected to the app on this computer.", true);
@@ -434,7 +452,7 @@ function parseHostResponse(body: Record<string, unknown>): HostResponse {
   if (
     !Array.isArray(value) ||
     value.length > 100 ||
-    !value.every((item) => typeof item === "string" && item.length < 4096)
+    !value.every((item) => typeof item === "string" && item.length < 16_384)
   ) {
     throw invalidRequest();
   }

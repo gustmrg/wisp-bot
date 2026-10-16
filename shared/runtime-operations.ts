@@ -32,6 +32,7 @@ export const RUNTIME_OPERATIONS = [
   "refreshMcpTools",
   "startMcpSignIn",
   "cancelMcpSignIn",
+  "finishMcpSignIn",
   "getWispMcpAccess",
   "saveWispMcpAccess",
   "getConversationState",

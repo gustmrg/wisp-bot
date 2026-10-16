@@ -5,7 +5,7 @@ import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { getToolMetadata, resetDynamicToolMetadata } from "../shared/tool-catalog.js";
-import { McpOAuthProvider } from "../backend/mcp-oauth.js";
+import { McpOAuthProvider, type McpSignInBrowser } from "../backend/mcp-oauth.js";
 import { McpSecretStore } from "../backend/mcp-secret-store.js";
 import { McpService } from "../backend/mcp-service.js";
 import type { McpConnection, McpConnectionAuth, McpConnectionOptions } from "../backend/mcp-bridge.js";
@@ -81,6 +81,7 @@ function fakeOAuthProvider(): Record<string, unknown> {
     loadPersistedTokens: async () => undefined,
     loadPersistedClientInformation: async () => undefined,
     ensureCallbackServer: async () => "http://127.0.0.1:9/callback",
+    setSignInBrowser: () => undefined,
     cancelSignIn(this: { cancelled: number }) {
       this.cancelled += 1;
     },
@@ -998,7 +999,10 @@ class BrowserSignInConnection implements McpConnection {
   }
 }
 
-async function createBrowserSignInService(gates: { discovery?: Promise<void>; listTools?: Promise<void> } = {}) {
+async function createBrowserSignInService(
+  gates: { discovery?: Promise<void>; listTools?: Promise<void> } = {},
+  signInBrowser?: () => Promise<McpSignInBrowser>,
+) {
   const dataDirectory = await mkdtemp(path.join(os.tmpdir(), "wisp-mcp-"));
   const opened: string[] = [];
   const published: Array<boolean | undefined> = [];
@@ -1011,6 +1015,7 @@ async function createBrowserSignInService(gates: { discovery?: Promise<void>; li
       opened.push(url);
     },
     createConnection: () => new BrowserSignInConnection(gates) as unknown as McpConnection,
+    ...(signInBrowser ? { signInBrowser } : {}),
     onSettingsChanged: (view) => published.push(view.servers[0]?.signInPending),
   });
   await service.load();
@@ -1119,6 +1124,88 @@ describe("McpService interactive sign-in lifecycle", () => {
     // Tokens issued for the old endpoint must never be sent to the new one.
     expect(await secrets.oauthTokens(serverId)).toBeUndefined();
     expect((await service.getView()).servers[0]?.tools).toHaveLength(0);
+  });
+});
+
+describe("McpService sign-in from another computer", () => {
+  it("lets a device that cannot receive the redirect finish the sign-in by pasting it", async () => {
+    const { service, serverId, opened, secrets } = await createBrowserSignInService({}, async () => ({
+      kind: "manual",
+    }));
+    const pending = service.startSignIn({ serverId });
+    let signInUrl: string | undefined;
+    await vi.waitFor(async () => {
+      signInUrl = (await service.getView()).servers[0]?.signInUrl;
+      expect(signInUrl).toBeDefined();
+    });
+    // The page is shown to open by hand; nothing opens a browser on the server's computer.
+    expect(opened).toEqual([]);
+    const state = new URL(signInUrl!).searchParams.get("state");
+    const active = (service as unknown as { activeSignIns: Map<string, { provider: McpOAuthProvider }> }).activeSignIns;
+    const redirect = active.get(serverId)!.provider.redirectUrl;
+
+    // An address from another sign-in, or not a sign-in result at all, is refused and the sign-in keeps waiting.
+    await expect(
+      service.finishSignIn({ serverId, redirectUrl: `${redirect}?code=abc&state=other` }),
+    ).rejects.toMatchObject({ code: "invalid_request" });
+    await expect(
+      service.finishSignIn({ serverId, redirectUrl: "https://example.com/somewhere" }),
+    ).rejects.toMatchObject({ code: "invalid_request" });
+    expect((await service.getView()).servers[0]?.signInPending).toBe(true);
+
+    await service.finishSignIn({ serverId, redirectUrl: `${redirect}?code=abc&state=${state}` });
+    const view = await pending;
+    expect(view.servers[0]).toMatchObject({ tools: [expect.anything()] });
+    expect(view.servers[0]?.signInUrl).toBeUndefined();
+    await vi.waitFor(async () =>
+      expect(await secrets.oauthTokens(serverId)).toMatchObject({ accessToken: "exchanged-token" }),
+    );
+  });
+
+  it("relays the redirect through the app on the user's computer and closes its listener", async () => {
+    const relay = {
+      port: 45_678,
+      waitForRedirect: vi.fn(async (url: string, state: string) => {
+        expect(new URL(url).searchParams.get("state")).toBe(state);
+        return `code=abc&state=${state}`;
+      }),
+      close: vi.fn(),
+    };
+    const { service, serverId, opened, secrets } = await createBrowserSignInService({}, async () => ({
+      kind: "relay",
+      relay,
+    }));
+
+    const view = await service.startSignIn({ serverId });
+    expect(view.servers[0]?.tools).toHaveLength(1);
+    expect(relay.waitForRedirect).toHaveBeenCalledTimes(1);
+    expect(opened).toEqual([]);
+    expect(relay.close).toHaveBeenCalled();
+    await vi.waitFor(async () =>
+      expect(await secrets.oauthTokens(serverId)).toMatchObject({ accessToken: "exchanged-token" }),
+    );
+  });
+
+  it("ends the sign-in when the app on the user's computer gives up", async () => {
+    const relay = {
+      port: 45_679,
+      waitForRedirect: vi.fn(async () => {
+        throw new Error("The app disconnected.");
+      }),
+      close: vi.fn(),
+    };
+    const { service, serverId } = await createBrowserSignInService({}, async () => ({ kind: "relay", relay }));
+
+    await expect(service.startSignIn({ serverId })).rejects.toMatchObject({ code: "configuration_required" });
+    expect(relay.close).toHaveBeenCalled();
+    expect((await service.getView()).servers[0]?.signInPending).toBeUndefined();
+  });
+
+  it("refuses to finish a sign-in that is not waiting", async () => {
+    const { service, serverId } = await createBrowserSignInService();
+    await expect(
+      service.finishSignIn({ serverId, redirectUrl: "http://127.0.0.1:1/callback?code=a&state=b" }),
+    ).rejects.toMatchObject({ code: "not_found" });
   });
 });
 

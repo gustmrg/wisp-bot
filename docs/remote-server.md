@@ -28,13 +28,41 @@ tool policy, and approvals. Its data directory has the desktop's layout under
 └── admin.sock                # Owner-only administrative socket
 ```
 
-A few actions need a screen on the server's computer: opening a Wisp's
-folder, picking files to attach, and signing in to an MCP server with OAuth
-(its callback must reach a browser on the same machine). The server asks the
-desktop app that started it to do these, through `hostRequest` events; for any
-other device, opening folders and signing in return an `unsupported` error.
-Other devices attach files by picking them on their own screen and uploading
-them. Updates and launch at login are desktop-only and are not offered.
+A few actions need a screen on the server's computer: opening a Wisp's folder
+and picking files to attach. The server asks the desktop app that started it
+to do these, through `hostRequest` events; for any other device, opening
+folders returns an `unsupported` error, and other devices attach files by
+picking them on their own screen and uploading them. Updates and launch at
+login are desktop-only and are not offered.
+
+Signing in to an MCP server with OAuth works from any device; see
+[OAuth sign-in from another computer](#oauth-sign-in-from-another-computer).
+
+### OAuth sign-in from another computer
+
+An OAuth sign-in redirects the browser to `http://127.0.0.1:<port>/callback`,
+which only reaches a listener on the computer the browser runs on. The server
+chooses how to receive it for the device that started the sign-in:
+
+- **The desktop app on the server's computer**: the server listens on its own
+  loopback and the app opens the browser, as on a single computer.
+- **The desktop app on another computer**: the server asks the app, through
+  `oauthListen`, `oauthRedirect`, and `oauthClose` host requests, to listen on
+  that computer's loopback and open the browser there. The app checks the
+  flow's `state` and returns only the redirect's query string; the server
+  checks the state again and exchanges the code with its PKCE verifier, which
+  never leaves the server, and keeps the tokens in its secret store. The app's
+  listener accepts loopback connections only, serves one redirect, and closes
+  when the sign-in ends, is cancelled, or times out, when the app leaves the
+  server, and on its own after 10 minutes.
+- **The browser app, a phone, or an older desktop app**: the sign-in form
+  shows **Open the sign-in page**. After approving, the browser lands on a
+  `http://127.0.0.1:…/callback?code=…&state=…` address that does not load;
+  pasting it into **Address after sign-in** finishes the sign-in. An address
+  from another sign-in, or anything that is not a sign-in result, is refused.
+
+A host request that its device cannot answer in time, or whose device
+disconnects, fails, and the sign-in ends without storing credentials.
 
 ## On this computer
 
@@ -309,9 +337,11 @@ system keychain; without one, the app pairs again after every restart.
 
 Attaching files works on any server: the app opens this computer's file picker
 and uploads the files into the Wisp's workspace `inbox/` folder, with the same
-workspace size limit and 20 files per message. Opening a Wisp's folder and
-signing in to an MCP server with OAuth need a screen on the server's computer
-and are not available on a server on another machine.
+workspace size limit and 20 files per message. Opening a Wisp's folder needs a
+screen on the server's computer and is not available on a server on another
+machine. Signing in to an MCP server with OAuth opens this computer's browser
+and relays the result to the server; see
+[OAuth sign-in from another computer](#oauth-sign-in-from-another-computer).
 
 **Settings → Connections** has a short **How to set up a Wisp server** guide
 that summarizes this page. When pairing over SSH fails, the app says what is
@@ -463,9 +493,11 @@ The browser app is the same Wisp with a few differences:
   that server and **Sign out of this browser**, which revokes the device.
 - Attaching files uses the browser's file picker and uploads the files to the
   server.
-- Opening a Wisp's folder, signing in to an MCP server with OAuth, updates,
-  and launch at login belong to the desktop app and are hidden or report that
-  they are unavailable.
+- Opening a Wisp's folder, updates, and launch at login belong to the desktop
+  app and are hidden or report that they are unavailable.
+- Signing in to an MCP server with OAuth shows the sign-in page to open and a
+  field for the address the browser lands on afterwards; see
+  [OAuth sign-in from another computer](#oauth-sign-in-from-another-computer).
 - Voice input works over HTTPS. iPhones record `audio/mp4`, which the voice
   providers accept.
 - A service worker caches only the app's files, never conversations or API

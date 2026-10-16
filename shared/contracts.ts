@@ -14,6 +14,7 @@ import type {
   McpConnectionResult,
   SaveMcpServerRequest,
   McpServerRequest,
+  FinishMcpSignInRequest,
   TestMcpConnectionRequest,
   WispMcpAccessView,
   SaveWispMcpAccessRequest,
@@ -118,6 +119,7 @@ export const WISP_IPC_CHANNELS = {
   refreshMcpTools: "wisp:mcp:refresh",
   startMcpSignIn: "wisp:mcp:sign-in",
   cancelMcpSignIn: "wisp:mcp:sign-in:cancel",
+  finishMcpSignIn: "wisp:mcp:sign-in:finish",
   mcpSettingsChanged: "wisp:mcp:changed",
   getWispMcpAccess: "wisp:mcp:access:get",
   saveWispMcpAccess: "wisp:mcp:access:save",
@@ -639,6 +641,7 @@ export interface WispApi {
   refreshMcpTools(request: McpServerRequest): Promise<BackendResult<McpSettingsView>>;
   startMcpSignIn(request: McpServerRequest): Promise<BackendResult<McpSettingsView>>;
   cancelMcpSignIn(request: McpServerRequest): Promise<BackendResult<McpSettingsView>>;
+  finishMcpSignIn(request: FinishMcpSignInRequest): Promise<BackendResult<McpSettingsView>>;
   getWispMcpAccess(request: ConversationRequest): Promise<BackendResult<WispMcpAccessView>>;
   saveWispMcpAccess(request: SaveWispMcpAccessRequest): Promise<BackendResult<WispMcpAccessView>>;
   subscribeToMcpSettings(listener: (view: McpSettingsView) => void): () => void;

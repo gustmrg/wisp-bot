@@ -17,6 +17,7 @@ import { boundedString, HttpError } from "./errors.js";
 import { EventHub } from "./event-hub.js";
 import { createHttpApi, OWNER_PRINCIPAL_ID, type HttpApi, type OperationListener } from "./http-api.js";
 import { InstanceLock } from "./instance-lock.js";
+import { openOAuthRelay } from "./oauth-relay.js";
 import { ServerStore } from "./server-store.js";
 
 const LOOPBACK_HOSTS = new Set(["127.0.0.1", "::1", "localhost"]);
@@ -101,9 +102,10 @@ export async function createWispServer(options: WispServerOptions): Promise<Wisp
       request: Parameters<HttpApi["requestHost"]>[0],
       timeoutMs: number,
       unsupported: string,
+      requestOptions?: Parameters<HttpApi["requestHost"]>[3],
     ): Promise<ReadonlyArray<string>> => {
       if (!api) throw new WispBackendError("unavailable", "The server is starting.", true);
-      const answer = await api.requestHost(request, timeoutMs, unsupported);
+      const answer = await api.requestHost(request, timeoutMs, unsupported, requestOptions);
       if (!answer.ok) throw new WispBackendError("internal_error", answer.message);
       return answer.value ?? [];
     };
@@ -122,6 +124,22 @@ export async function createWispServer(options: WispServerOptions): Promise<Wisp
           30_000,
           "Signing in to an MCP server needs a browser on the server's computer.",
         );
+      },
+      // A sign-in started from this computer's app uses this computer's browser.
+      // The desktop app on another computer receives the redirect on its own
+      // loopback; devices that cannot (the browser app, an older app) get a
+      // page to open and paste the redirect back from.
+      signInBrowser: async () => {
+        const device = api?.callerDevice();
+        if (!device || device.local) return { kind: "local" };
+        try {
+          const relay = await openOAuthRelay((request, timeoutMs) =>
+            askHost(request, timeoutMs, "This device cannot receive the sign-in.", { device: device.deviceId }),
+          );
+          return { kind: "relay", relay };
+        } catch {
+          return { kind: "manual" };
+        }
       },
       openPath: async (directory) => {
         await askHost(
