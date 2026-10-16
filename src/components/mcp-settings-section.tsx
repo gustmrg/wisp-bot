@@ -834,33 +834,36 @@ export function McpServerForm({
             </fieldset>
           </>
         )}
-        <SettingsCard>
-          <SettingsRow className="min-h-0">
-            <SettingsRowCopy>
-              <SettingsRowTitle>Enabled</SettingsRowTitle>
-              <SettingsRowDescription>
-                {signInPreset
-                  ? `Disabling blocks ${preset!.name} for every Wisp but keeps their access choices. Signing in with another account removes ${preset!.name} from every Wisp.`
-                  : preset
-                    ? `Disabling blocks ${preset.name} for every Wisp but keeps their access choices. Replacing the token removes ${preset.name} from every Wisp.`
-                    : "Disabling blocks this server for every Wisp while keeping grants. Changing the endpoint or credentials revokes Wisp access."}
-              </SettingsRowDescription>
-            </SettingsRowCopy>
-            <ToggleSwitch
-              checked={draft.enabled}
-              label={`Enable ${server?.name ?? "this server"}`}
-              disabled={busy || (signInPreset && !server)}
-              onChange={() => {
-                if (signInPreset && !editable) {
-                  void run("toggle");
-                  return;
-                }
-                setDraft({ ...draft, enabled: !draft.enabled });
-                setError("");
-              }}
-            />
-          </SettingsRow>
-        </SettingsCard>
+        {/* A sign-in plugin is enabled when it connects; until then there is nothing to switch. */}
+        {signInPreset && isNew ? null : (
+          <SettingsCard>
+            <SettingsRow className="min-h-0">
+              <SettingsRowCopy>
+                <SettingsRowTitle>Enabled</SettingsRowTitle>
+                <SettingsRowDescription>
+                  {signInPreset
+                    ? `Disabling blocks ${preset!.name} for every Wisp but keeps their access choices. Signing in with another account removes ${preset!.name} from every Wisp.`
+                    : preset
+                      ? `Disabling blocks ${preset.name} for every Wisp but keeps their access choices. Replacing the token removes ${preset.name} from every Wisp.`
+                      : "Disabling blocks this server for every Wisp while keeping grants. Changing the endpoint or credentials revokes Wisp access."}
+                </SettingsRowDescription>
+              </SettingsRowCopy>
+              <ToggleSwitch
+                checked={draft.enabled}
+                label={`Enable ${server?.name ?? "this server"}`}
+                disabled={busy}
+                onChange={() => {
+                  if (signInPreset && !editable) {
+                    void run("toggle");
+                    return;
+                  }
+                  setDraft({ ...draft, enabled: !draft.enabled });
+                  setError("");
+                }}
+              />
+            </SettingsRow>
+          </SettingsCard>
+        )}
         {server && server.tools.length ? (
           <details className="rounded-[10px] bg-popover p-3">
             <summary className="cursor-pointer">Reviewed tools ({server.tools.length})</summary>

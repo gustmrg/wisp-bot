@@ -101,6 +101,7 @@ describe("PluginSettingsSection plugins that sign in through the browser", () =>
     expect(screen.queryByLabelText(/token/i)).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Test connection" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Save connection" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("switch")).not.toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Connect" }));
 
     expect(api.saveMcpServer).toHaveBeenCalledWith({
