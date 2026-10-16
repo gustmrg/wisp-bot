@@ -1,5 +1,5 @@
 import { Checkbox } from "@base-ui/react/checkbox";
-import { useEffect, useId, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 
 import type {
   McpAuthMode,
@@ -382,9 +382,14 @@ export function McpServerForm({
   const signInPreset = preset?.auth.mode === "oauth";
   const editable = !signInPreset || Boolean(preset?.toolsets);
 
+  // Effects can run twice for one form (React's development checks), and a
+  // second sign-in would be refused as already in progress: start it once.
+  const signInStarted = useRef(false);
   // biome-ignore lint/correctness/useExhaustiveDependencies: runs once, for the Connect that opened this form.
   useEffect(() => {
-    if (signInOnOpen && server?.authMode === "oauth" && !server.signInPending) void run("signin");
+    if (signInStarted.current || !signInOnOpen || server?.authMode !== "oauth" || server.signInPending) return;
+    signInStarted.current = true;
+    void run("signin");
   }, []);
 
   function reset() {
@@ -461,6 +466,8 @@ export function McpServerForm({
 
   async function run(action: "save" | "test" | "remove" | "refresh" | "signin" | "connect" | "toggle") {
     if (!server && (action === "remove" || action === "refresh" || action === "signin" || action === "toggle")) return;
+    // One sign-in at a time; the button is disabled while one waits, from any window.
+    if (action === "signin" && signingIn) return;
     setOperation(action);
     setError("");
     setMessage("");

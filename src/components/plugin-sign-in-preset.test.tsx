@@ -1,3 +1,4 @@
+import { StrictMode } from "react";
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
@@ -119,6 +120,22 @@ describe("PluginSettingsSection plugins that sign in through the browser", () =>
     expect(await screen.findByRole("status")).toHaveTextContent("Connected to Docs. Choose which Wisps can use it.");
     expect(screen.getByRole("button", { name: "Sign in again" })).toBeEnabled();
     expect(api.startMcpSignIn).toHaveBeenCalledTimes(1);
+  });
+
+  it("starts the sign-in once under React's development checks and keeps Sign in disabled while it waits", async () => {
+    const api = setup();
+    const user = userEvent.setup();
+    render(
+      <StrictMode>
+        <PluginSettingsSection />
+      </StrictMode>,
+    );
+
+    await user.click(await screen.findByRole("button", { name: "Connect Docs" }));
+    await user.click(screen.getByRole("button", { name: "Connect" }));
+    expect(await screen.findByRole("button", { name: "Waiting for browser…" })).toBeDisabled();
+    expect(api.startMcpSignIn).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
 
   it("offers to sign in when the connection needs it and lets the user cancel", async () => {
