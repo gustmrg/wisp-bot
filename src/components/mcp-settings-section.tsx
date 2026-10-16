@@ -543,21 +543,23 @@ export function McpServerForm({
             {server.tools.length ? ` · ${server.tools.length} tool${server.tools.length === 1 ? "" : "s"}` : ""}
           </p>
         ) : null}
-        <Field>
-          <FieldLabel htmlFor={`${formId}-name`}>Name</FieldLabel>
-          <Input
-            id={`${formId}-name`}
-            value={draft.name}
-            disabled={busy}
-            placeholder="Linear MCP"
-            autoComplete="off"
-            spellCheck={false}
-            onChange={(event) => {
-              setDraft({ ...draft, name: event.target.value });
-              setError("");
-            }}
-          />
-        </Field>
+        {preset ? null : (
+          <Field>
+            <FieldLabel htmlFor={`${formId}-name`}>Name</FieldLabel>
+            <Input
+              id={`${formId}-name`}
+              value={draft.name}
+              disabled={busy}
+              placeholder="Linear MCP"
+              autoComplete="off"
+              spellCheck={false}
+              onChange={(event) => {
+                setDraft({ ...draft, name: event.target.value });
+                setError("");
+              }}
+            />
+          </Field>
+        )}
         {preset ? (
           <>
             <Field>
@@ -783,8 +785,9 @@ export function McpServerForm({
             <SettingsRowCopy>
               <SettingsRowTitle>Enabled</SettingsRowTitle>
               <SettingsRowDescription>
-                Disabling blocks this server for every Wisp while keeping grants. Changing the endpoint or credentials
-                revokes Wisp access.
+                {preset
+                  ? `Disabling blocks ${preset.name} for every Wisp but keeps their access choices. Replacing the token removes ${preset.name} from every Wisp.`
+                  : "Disabling blocks this server for every Wisp while keeping grants. Changing the endpoint or credentials revokes Wisp access."}
               </SettingsRowDescription>
             </SettingsRowCopy>
             <ToggleSwitch

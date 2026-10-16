@@ -55,9 +55,9 @@ function pluginTags(pluginId: PluginId): string[] {
   return WEB_CAPABILITIES.filter(({ id }) => entry.capabilities.includes(id)).map(({ shortName }) => shortName);
 }
 
-/** Plugins that run over an MCP connection show where their tools come from. */
+/** Plugins that run over MCP look like any other plugin; how they connect is not the user's concern. */
 function presetTags(preset: McpPreset): string[] {
-  return [preset.category, "MCP"];
+  return [preset.category];
 }
 
 /** The enabled line of a connected card; an MCP connection also reports when it cannot be reached. */

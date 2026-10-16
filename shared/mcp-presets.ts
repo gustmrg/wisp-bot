@@ -2,7 +2,8 @@
  * Plugins that run over a remote MCP connection. A preset fills in a known
  * server's endpoint, authentication, and options so the user only supplies a
  * credential; the result is an ordinary MCP connection with the same grants and
- * approvals, shown in Settings → Plugins instead of MCP servers. Wisps with
+ * approvals, shown in Settings → Plugins instead of MCP servers and without
+ * mentioning MCP: the user configures a plugin, not a server. Wisps with
  * access to the connection also receive the plugin's skill.
  */
 export const MCP_PRESET_IDS = ["github"] as const;
@@ -39,13 +40,13 @@ export const GITHUB_MCP_PRESET: McpPreset = {
   id: "github",
   name: "GitHub",
   endpoint: "https://api.githubcopilot.com/mcp/",
-  description: "Repositories, issues, and pull requests through GitHub's official MCP server.",
+  description: "Work with repositories, issues, and pull requests on GitHub.",
   category: "Development",
   credentialHeader: { name: "Authorization", valuePrefix: "Bearer " },
   credentialLabel: "Personal access token",
   credentialHelpUrl: "https://github.com/settings/personal-access-tokens/new",
   credentialHelp:
-    "A fine-grained token limited to the repositories and permissions your Wisps need. Organizations can restrict tokens and MCP use.",
+    "A fine-grained token limited to the repositories and permissions your Wisps need. Organizations can restrict which tokens work.",
   toolsetHeader: "X-MCP-Toolsets",
   requiredToolsets: ["context"],
   toolsets: [

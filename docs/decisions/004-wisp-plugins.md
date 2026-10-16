@@ -134,9 +134,10 @@ constitute live authenticated verification against the bundled providers.
 
 **Settings → Plugins** also lists GitHub, which is not a bundled adapter: it is
 a remote MCP connection made from a preset ([ADR 005](005-remote-mcp-servers.md)),
-tagged **MCP** on its card. Its form is the MCP connection form with the
-endpoint and headers filled in, and the card's **Enabled** switch enables the
-connection. In a Wisp's **Access** tab it is listed under **Apps** with the
+presented like any other plugin: the card, form, and messages do not mention
+MCP, servers, or endpoints, because users configure a plugin, not how it
+connects. Its form asks only for the token and toolsets, and the card's
+**Enabled** switch enables the connection. In a Wisp's **Access** tab it is listed under **Apps** with the
 MCP access levels (**Use with approval**, **Use without asking**) instead of
 read and write, because its tools are discovered from the server rather than
 fixed by an adapter. Its grants, credentials, and revocation stay in

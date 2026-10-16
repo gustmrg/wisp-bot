@@ -387,13 +387,18 @@ describe("PluginSettingsSection GitHub", () => {
     tools: [],
   };
 
-  it("lists GitHub as an available plugin that runs over MCP", async () => {
+  it("lists GitHub like any other plugin, without mentioning how it connects", async () => {
+    const user = userEvent.setup();
     setup();
     render(<PluginSettingsSection />);
     const available = within(await screen.findByRole("region", { name: "Available" }));
     const github = await available.findByRole("button", { name: "Connect GitHub" });
     expect(github).toHaveTextContent("Development");
-    expect(github).toHaveTextContent("MCP");
+    expect(github).not.toHaveTextContent(/MCP|server/i);
+    await user.click(github);
+    const form = screen.getByRole("heading", { name: "Add GitHub" }).closest("div")!.parentElement!;
+    expect(form).not.toHaveTextContent(/MCP|server|endpoint/i);
+    expect(screen.queryByLabelText("Name")).not.toBeInTheDocument();
   });
 
   it("adds GitHub with a token and the default toolsets, then asks for Wisp access", async () => {
