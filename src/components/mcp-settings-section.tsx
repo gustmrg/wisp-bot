@@ -32,6 +32,7 @@ import {
   useMcpAccessIndex,
   type McpAccessIndex,
 } from "@/components/mcp-wisp-access";
+import { ManualSignInForm } from "@/components/manual-sign-in";
 import { PluginLogo } from "@/components/plugin-logo";
 import {
   ConfirmAction,
@@ -963,11 +964,7 @@ export function McpServerForm({
   );
 }
 
-/**
- * A sign-in this device cannot receive the browser's redirect for, such as the
- * browser app or a phone: the user opens the page, approves, and pastes back
- * the address the browser could not load.
- */
+/** Finishes an MCP sign-in this device cannot receive the browser's redirect for. */
 function ManualSignIn({
   server,
   signInUrl,
@@ -977,75 +974,16 @@ function ManualSignIn({
   signInUrl: string;
   onSaved: (view: McpSettingsView) => void;
 }) {
-  const formId = useId();
-  const [redirectUrl, setRedirectUrl] = useState("");
-  const [finishing, setFinishing] = useState(false);
-  const [error, setError] = useState("");
-
-  async function finish() {
-    setFinishing(true);
-    setError("");
-    try {
-      const result = await window.wisp.finishMcpSignIn({ serverId: server.serverId, redirectUrl: redirectUrl.trim() });
-      if (result.ok) onSaved(result.value);
-      else setError(result.error.message);
-    } catch {
-      setError("Could not finish the sign-in.");
-    } finally {
-      setFinishing(false);
-    }
-  }
-
   return (
-    <form
-      aria-label="Finish sign-in"
-      className="flex flex-col gap-2 rounded-[10px] bg-popover p-3"
-      onSubmit={(event) => {
-        event.preventDefault();
-        if (redirectUrl.trim() && !finishing) void finish();
+    <ManualSignInForm
+      signInUrl={signInUrl}
+      onFinish={async (redirectUrl) => {
+        const result = await window.wisp.finishMcpSignIn({ serverId: server.serverId, redirectUrl });
+        if (!result.ok) return result.error.message;
+        onSaved(result.value);
+        return undefined;
       }}
-    >
-      <p className="m-0">
-        <a
-          href={signInUrl}
-          target="_blank"
-          rel="noreferrer"
-          className="inline-flex items-center gap-1 font-medium text-primary underline-offset-4 hover:underline"
-        >
-          Open the sign-in page
-          <ExternalLinkIcon className="size-3" aria-hidden="true" />
-        </a>
-      </p>
-      <p className="m-0 text-dim">
-        After you approve, the browser goes to an address starting with http://127.0.0.1 that does not load. Copy that
-        address from the address bar and paste it here.
-      </p>
-      <Field>
-        <FieldLabel htmlFor={`${formId}-redirect`}>Address after sign-in</FieldLabel>
-        <Input
-          id={`${formId}-redirect`}
-          value={redirectUrl}
-          disabled={finishing}
-          placeholder="http://127.0.0.1:…/callback?code=…"
-          autoComplete="off"
-          spellCheck={false}
-          onChange={(event) => {
-            setRedirectUrl(event.target.value);
-            setError("");
-          }}
-        />
-      </Field>
-      {error ? (
-        <p role="alert" className="m-0 text-destructive">
-          {error}
-        </p>
-      ) : null}
-      <div>
-        <Button type="submit" disabled={finishing || !redirectUrl.trim()}>
-          {finishing ? "Finishing…" : "Finish sign-in"}
-        </Button>
-      </div>
-    </form>
+    />
   );
 }
 

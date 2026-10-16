@@ -26,6 +26,19 @@ export interface PluginCatalogEntry {
   supportsWrite: boolean;
   /** Shared web capabilities this plugin can provide. */
   capabilities: ReadonlyArray<WebCapability>;
+  /**
+   * Set for plugins that sign in through the browser with the user's own OAuth
+   * client instead of an API key. `credentialLabel` and `credentialUrl` then
+   * name the client and the page that creates it.
+   */
+  signIn?: PluginSignInInfo;
+}
+
+export interface PluginSignInInfo {
+  /** What the user creates for the client, shown above the client fields. */
+  clientHelp: string;
+  /** Step-by-step setup guide for the client. */
+  setupUrl: string;
 }
 
 // The "web-search" ID predates the other web providers and is kept so saved grants stay valid.
@@ -98,6 +111,14 @@ export interface PluginSummary {
   supportsWrite: boolean;
   configured: boolean;
   enabled: boolean;
+  /** A sign-in plugin's account, such as an email address, when the provider reports one. */
+  account?: string;
+  /** A sign-in plugin whose access was revoked or expired: its tools stay off until it signs in again. */
+  needsSignIn?: boolean;
+  /** A browser sign-in is waiting; it can be cancelled from any window. */
+  signInPending?: boolean;
+  /** The sign-in page to open by hand while a sign-in waits for its result to be pasted back. */
+  signInUrl?: string;
 }
 
 export interface PluginSettingsView {
@@ -120,6 +141,18 @@ export interface SavePluginDefaultsRequest {
 }
 export interface TestPluginConnectionRequest extends PluginRequest {
   apiKey?: string;
+}
+/**
+ * Signs a plugin in through the browser. The OAuth client is required for the
+ * first sign-in and replaces the saved one when given; omit it to sign in again.
+ */
+export interface StartPluginSignInRequest extends PluginRequest {
+  clientId?: string;
+  clientSecret?: string;
+}
+/** Completes a waiting sign-in with the address the browser was redirected to. */
+export interface FinishPluginSignInRequest extends PluginRequest {
+  redirectUrl: string;
 }
 export interface PluginConnectionResult {
   message: string;

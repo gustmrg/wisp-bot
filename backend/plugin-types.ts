@@ -1,6 +1,7 @@
 import type { ToolDefinition } from "@earendil-works/pi-coding-agent" with { "resolution-mode": "import" };
 import type { PluginToolMetadata } from "../shared/plugin-tools/types.js";
 import type { PluginId } from "../shared/plugins.js";
+import type { PluginOAuthConfig } from "./plugin-oauth.js";
 
 /** A bundled plugin tool; its name, labels and category come from the shared plugin tool metadata. */
 export interface PluginToolSpec extends PluginToolMetadata {
@@ -8,13 +9,16 @@ export interface PluginToolSpec extends PluginToolMetadata {
   parameters: ToolDefinition["parameters"];
   access: "read" | "write";
   summarize: (params: unknown) => string;
-  execute: (apiKey: string, params: unknown, signal?: AbortSignal) => Promise<string>;
+  /** `credential` is the API key, or the access token of a plugin that signs in. */
+  execute: (credential: string, params: unknown, signal?: AbortSignal) => Promise<string>;
 }
 
 export interface PluginAdapter {
   id: PluginId;
   tools: ReadonlyArray<PluginToolSpec>;
-  testConnection: (apiKey: string, signal?: AbortSignal) => Promise<string>;
+  testConnection: (credential: string, signal?: AbortSignal) => Promise<string>;
+  /** Present for plugins that sign in through the browser with the user's OAuth client. */
+  oauth?: PluginOAuthConfig;
 }
 
 export interface PluginToolSource {

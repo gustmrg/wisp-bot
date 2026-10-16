@@ -14,6 +14,7 @@ import { MCP_PRESETS, isMcpPresetId, type McpPreset, type McpPresetId } from "..
 import { ChevronLeftIcon, ExternalLinkIcon, Plus } from "lucide-react";
 import { McpServerForm } from "@/components/mcp-settings-section";
 import { countWispsWithMcpAccess, mcpServersKey, useMcpAccessIndex } from "@/components/mcp-wisp-access";
+import { ManualSignInForm } from "@/components/manual-sign-in";
 import { PluginLogo } from "@/components/plugin-logo";
 import {
   PluginWispAccessPanel,
@@ -43,6 +44,7 @@ const NO_WISPS: ReadonlyArray<WispOption> = [];
 
 function pluginStatus(plugin: PluginSummary): { tone: StatusTone; label: string } {
   if (!plugin.configured) return { tone: "muted", label: "Not connected" };
+  if (plugin.needsSignIn) return { tone: "warning", label: "Needs sign-in" };
   return plugin.enabled
     ? { tone: "success", label: "Connected · enabled" }
     : { tone: "muted", label: "Connected · disabled" };
@@ -123,6 +125,16 @@ export function PluginSettingsSection({
       cancelled = true;
     };
   }, [attempt]);
+
+  // Sign-ins started here or in another window report their progress.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: attempt reloads the subscription with the view.
+  useEffect(() => {
+    if (!view) return;
+    const unsubscribe = window.wisp.subscribeToPluginSettings((next) => setView(next));
+    return () => {
+      unsubscribe();
+    };
+  }, [attempt, Boolean(view)]);
 
   // MCP plugins load on their own, so a failure there leaves the bundled plugins usable.
   useEffect(() => {
@@ -258,6 +270,21 @@ export function PluginSettingsSection({
                 onSaved={setView}
                 onBack={() => setEditing(null)}
               />
+            ) : pluginCatalogEntry(editingPlugin.id).signIn ? (
+              <section aria-label={editingPlugin.name} className="flex flex-col gap-2">
+                <PluginHeader plugin={editingPlugin} busy={false} onBack={() => setEditing(null)} />
+                <PluginSignIn
+                  plugin={editingPlugin}
+                  secureStorageAvailable={view.secureStorageAvailable}
+                  requireClient
+                  onSignedIn={(next) => {
+                    setJustConnected(editingPlugin.id);
+                    setView(next);
+                    index.reload();
+                  }}
+                  onChanged={setView}
+                />
+              </section>
             ) : (
               <PluginConnectForm
                 key={editingPlugin.id}
@@ -289,7 +316,11 @@ export function PluginSettingsSection({
                         name={plugin.name}
                         enabled={plugin.enabled}
                         status={
-                          plugin.enabled ? { tone: "success", label: "Enabled" } : { tone: "muted", label: "Disabled" }
+                          plugin.needsSignIn && plugin.enabled
+                            ? { tone: "warning", label: "Needs sign-in" }
+                            : plugin.enabled
+                              ? { tone: "success", label: "Enabled" }
+                              : { tone: "muted", label: "Disabled" }
                         }
                         tags={pluginTags(plugin.id)}
                         wispCount={wisps.length ? countWispsWithAccess(index, plugin.id) : undefined}
@@ -679,6 +710,7 @@ function PluginManageView({
   const key = apiKey.trim();
   const busy = operation !== null;
   const status = pluginStatus(plugin);
+  const signIn = pluginCatalogEntry(plugin.id).signIn;
 
   async function run(action: "toggle" | "test" | "replace" | "remove") {
     setOperation(action);
@@ -764,73 +796,85 @@ function PluginManageView({
         {isPluginAvailable(plugin) ? (
           <PluginWispAccessPanel plugin={plugin} plugins={view.plugins} wisps={wisps} index={index} />
         ) : null}
-        <SettingsGroup label="API key">
-          {replacing ? (
-            <form
-              className="flex flex-col gap-3"
-              onSubmit={(event) => {
-                event.preventDefault();
-                if (key && view.secureStorageAvailable && !busy) void run("replace");
-              }}
-            >
-              <Field>
-                <FieldLabel
-                  htmlFor={`${formId}-key`}
-                >{`New ${pluginCatalogEntry(plugin.id).credentialLabel}`}</FieldLabel>
-                <Input
-                  id={`${formId}-key`}
-                  type="password"
-                  autoComplete="new-password"
-                  spellCheck={false}
-                  value={apiKey}
-                  disabled={busy || !view.secureStorageAvailable}
-                  placeholder="Enter API key"
-                  onChange={(event) => {
-                    setApiKey(event.target.value);
-                    setError("");
-                    setMessage("");
-                  }}
-                />
-              </Field>
-              {key && plugin.configured ? (
-                <p className="text-warning">
-                  Replacing the key removes {plugin.name} from every Wisp, because the new key may belong to a different
-                  account.
-                </p>
-              ) : null}
-              <p className="text-dim">
-                <KeyLink pluginId={plugin.id} />
-              </p>
-              <div className="flex flex-wrap gap-2">
-                <Button type="submit" disabled={busy || !key || !view.secureStorageAvailable}>
-                  {operation === "replace" ? "Testing…" : "Test and replace key"}
-                </Button>
-                {plugin.configured ? (
-                  <Button
-                    variant="ghost"
-                    type="button"
-                    disabled={busy}
-                    onClick={() => {
-                      setReplacing(false);
-                      setApiKey("");
+        {signIn ? (
+          <PluginAccount
+            plugin={plugin}
+            secureStorageAvailable={view.secureStorageAvailable}
+            onSaved={(next) => {
+              index.reload();
+              onSaved(next);
+            }}
+            onChanged={onSaved}
+          />
+        ) : (
+          <SettingsGroup label="API key">
+            {replacing ? (
+              <form
+                className="flex flex-col gap-3"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  if (key && view.secureStorageAvailable && !busy) void run("replace");
+                }}
+              >
+                <Field>
+                  <FieldLabel
+                    htmlFor={`${formId}-key`}
+                  >{`New ${pluginCatalogEntry(plugin.id).credentialLabel}`}</FieldLabel>
+                  <Input
+                    id={`${formId}-key`}
+                    type="password"
+                    autoComplete="new-password"
+                    spellCheck={false}
+                    value={apiKey}
+                    disabled={busy || !view.secureStorageAvailable}
+                    placeholder="Enter API key"
+                    onChange={(event) => {
+                      setApiKey(event.target.value);
+                      setError("");
+                      setMessage("");
                     }}
-                  >
-                    Cancel
-                  </Button>
+                  />
+                </Field>
+                {key && plugin.configured ? (
+                  <p className="text-warning">
+                    Replacing the key removes {plugin.name} from every Wisp, because the new key may belong to a
+                    different account.
+                  </p>
                 ) : null}
+                <p className="text-dim">
+                  <KeyLink pluginId={plugin.id} />
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  <Button type="submit" disabled={busy || !key || !view.secureStorageAvailable}>
+                    {operation === "replace" ? "Testing…" : "Test and replace key"}
+                  </Button>
+                  {plugin.configured ? (
+                    <Button
+                      variant="ghost"
+                      type="button"
+                      disabled={busy}
+                      onClick={() => {
+                        setReplacing(false);
+                        setApiKey("");
+                      }}
+                    >
+                      Cancel
+                    </Button>
+                  ) : null}
+                </div>
+              </form>
+            ) : (
+              <div className="flex flex-wrap gap-2">
+                <Button variant="secondary" type="button" disabled={busy} onClick={() => void run("test")}>
+                  {operation === "test" ? "Testing…" : "Test connection"}
+                </Button>
+                <Button variant="secondary" type="button" disabled={busy} onClick={() => setReplacing(true)}>
+                  Replace key
+                </Button>
               </div>
-            </form>
-          ) : (
-            <div className="flex flex-wrap gap-2">
-              <Button variant="secondary" type="button" disabled={busy} onClick={() => void run("test")}>
-                {operation === "test" ? "Testing…" : "Test connection"}
-              </Button>
-              <Button variant="secondary" type="button" disabled={busy} onClick={() => setReplacing(true)}>
-                Replace key
-              </Button>
-            </div>
-          )}
-        </SettingsGroup>
+            )}
+          </SettingsGroup>
+        )}
         {plugin.configured ? (
           <div>
             <ConfirmAction
@@ -839,12 +883,274 @@ function PluginManageView({
               pendingLabel="Removing…"
               pending={operation === "remove"}
               disabled={busy}
-              description={`Removes the saved ${plugin.name} key and every Wisp's access to it.`}
+              description={
+                signIn
+                  ? `Signs ${plugin.name} out on this device and removes every Wisp's access to it.`
+                  : `Removes the saved ${plugin.name} key and every Wisp's access to it.`
+              }
               onConfirm={() => void run("remove")}
             />
           </div>
         ) : null}
       </div>
     </section>
+  );
+}
+
+/** A sign-in plugin's account: sign in again, use another OAuth client, or test the connection. */
+function PluginAccount({
+  plugin,
+  secureStorageAvailable,
+  onSaved,
+  onChanged,
+}: {
+  plugin: PluginSummary;
+  secureStorageAvailable: boolean;
+  /** A completed sign-in, which may have changed every Wisp's access. */
+  onSaved: (view: PluginSettingsView) => void;
+  onChanged: (view: PluginSettingsView) => void;
+}) {
+  const [replacingClient, setReplacingClient] = useState(false);
+  const [testing, setTesting] = useState(false);
+  const [message, setMessage] = useState("");
+  const [error, setError] = useState("");
+
+  async function test() {
+    setTesting(true);
+    setMessage("");
+    setError("");
+    try {
+      const result = await window.wisp.testPluginConnection({ pluginId: plugin.id });
+      if (result.ok) setMessage(result.value.message);
+      else setError(result.error.message);
+    } catch {
+      setError("Could not test the connection.");
+    } finally {
+      setTesting(false);
+    }
+  }
+
+  return (
+    <SettingsGroup label="Account">
+      <div className="flex flex-col gap-3">
+        <p className="m-0">
+          {plugin.account ? `Signed in as ${plugin.account}.` : "Signed in."}
+          {plugin.needsSignIn ? " Its access expired or was revoked: sign in again to turn it back on." : ""}
+        </p>
+        {error ? (
+          <p role="alert" className="m-0 text-destructive">
+            {error}
+          </p>
+        ) : null}
+        {message ? <p role="status">{message}</p> : null}
+        {replacingClient ? (
+          <p className="m-0 text-warning">
+            Signing in with another client or account removes {plugin.name} from every Wisp.
+          </p>
+        ) : null}
+        <PluginSignIn
+          key={replacingClient ? "client" : "again"}
+          plugin={plugin}
+          secureStorageAvailable={secureStorageAvailable}
+          requireClient={replacingClient}
+          onSignedIn={(next) => {
+            setReplacingClient(false);
+            setMessage(`Signed in to ${plugin.name}.`);
+            onSaved(next);
+          }}
+          onChanged={onChanged}
+          extraActions={
+            <>
+              <Button
+                variant="secondary"
+                type="button"
+                disabled={testing || plugin.signInPending || plugin.needsSignIn}
+                onClick={() => void test()}
+              >
+                {testing ? "Testing…" : "Test connection"}
+              </Button>
+              <Button
+                variant="ghost"
+                type="button"
+                disabled={plugin.signInPending}
+                onClick={() => setReplacingClient((current) => !current)}
+              >
+                {replacingClient ? "Keep the current client" : "Use another OAuth client"}
+              </Button>
+            </>
+          }
+        />
+      </div>
+    </SettingsGroup>
+  );
+}
+
+/**
+ * Signs a plugin in through the browser. With `requireClient` it asks for the
+ * user's OAuth client first (the first connection, or a replacement); without
+ * it, it signs in again with the saved one. A waiting sign-in started here or
+ * in another window can be cancelled, or finished with a pasted address.
+ */
+function PluginSignIn({
+  plugin,
+  secureStorageAvailable,
+  requireClient,
+  onSignedIn,
+  onChanged,
+  extraActions,
+}: {
+  plugin: PluginSummary;
+  secureStorageAvailable: boolean;
+  requireClient: boolean;
+  onSignedIn: (view: PluginSettingsView) => void;
+  onChanged: (view: PluginSettingsView) => void;
+  extraActions?: ReactNode;
+}) {
+  const formId = useId();
+  const entry = pluginCatalogEntry(plugin.id);
+  const [clientId, setClientId] = useState("");
+  const [clientSecret, setClientSecret] = useState("");
+  const [signingIn, setSigningIn] = useState(false);
+  const [cancelling, setCancelling] = useState(false);
+  const [error, setError] = useState("");
+  const [message, setMessage] = useState("");
+  const waiting = signingIn || Boolean(plugin.signInPending);
+  const clientReady = clientId.trim() !== "" && clientSecret.trim() !== "";
+
+  async function signIn() {
+    if (waiting) return;
+    setSigningIn(true);
+    setError("");
+    setMessage("");
+    try {
+      const result = await window.wisp.startPluginSignIn({
+        pluginId: plugin.id,
+        ...(requireClient ? { clientId: clientId.trim(), clientSecret: clientSecret.trim() } : {}),
+      });
+      if (result.ok) {
+        setClientSecret("");
+        onSignedIn(result.value);
+      } else if (result.error.code === "aborted") setMessage(result.error.message);
+      else setError(result.error.message);
+    } catch {
+      setError("Sign-in did not complete.");
+    } finally {
+      setSigningIn(false);
+    }
+  }
+
+  async function cancel() {
+    setCancelling(true);
+    try {
+      const result = await window.wisp.cancelPluginSignIn({ pluginId: plugin.id });
+      if (result.ok) onChanged(result.value);
+    } catch {
+      // The waiting sign-in reports the outcome either way.
+    } finally {
+      setCancelling(false);
+    }
+  }
+
+  return (
+    <div className="flex flex-col gap-3 text-xs">
+      <form
+        aria-label={requireClient ? `Connect ${plugin.name}` : `Sign in to ${plugin.name}`}
+        className="flex flex-col gap-3"
+        onSubmit={(event) => {
+          event.preventDefault();
+          if (!requireClient || clientReady) void signIn();
+        }}
+      >
+        {requireClient ? (
+          <>
+            <p className="m-0 text-dim">
+              {entry.signIn?.clientHelp}{" "}
+              <a
+                href={entry.signIn?.setupUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center gap-1 text-primary underline-offset-4 hover:underline"
+              >
+                Setup guide
+                <ExternalLinkIcon className="size-3" aria-hidden="true" />
+              </a>
+            </p>
+            <Field>
+              <FieldLabel htmlFor={`${formId}-client-id`}>Client ID</FieldLabel>
+              <Input
+                id={`${formId}-client-id`}
+                value={clientId}
+                disabled={waiting || !secureStorageAvailable}
+                autoComplete="off"
+                spellCheck={false}
+                onChange={(event) => {
+                  setClientId(event.target.value);
+                  setError("");
+                }}
+              />
+            </Field>
+            <Field>
+              <FieldLabel htmlFor={`${formId}-client-secret`}>Client secret</FieldLabel>
+              <Input
+                id={`${formId}-client-secret`}
+                type="password"
+                value={clientSecret}
+                disabled={waiting || !secureStorageAvailable}
+                autoComplete="new-password"
+                spellCheck={false}
+                onChange={(event) => {
+                  setClientSecret(event.target.value);
+                  setError("");
+                }}
+              />
+              <FieldDescription>
+                <a
+                  href={entry.credentialUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex items-center gap-1 text-primary underline-offset-4 hover:underline"
+                >
+                  Open {entry.credentialLabel}
+                  <ExternalLinkIcon className="size-3" aria-hidden="true" />
+                </a>{" "}
+                · Encrypted on this device and never shown to Wisps.
+              </FieldDescription>
+            </Field>
+          </>
+        ) : null}
+        {error ? (
+          <p role="alert" className="m-0 text-destructive">
+            {error}
+          </p>
+        ) : null}
+        {message ? <p role="status">{message}</p> : null}
+        <div className="flex flex-wrap gap-2">
+          <Button
+            type="submit"
+            variant={requireClient || plugin.needsSignIn ? "default" : "secondary"}
+            disabled={waiting || !secureStorageAvailable || (requireClient && !clientReady)}
+          >
+            {waiting ? "Waiting for browser…" : requireClient ? "Connect" : "Sign in again"}
+          </Button>
+          {waiting ? (
+            <Button variant="secondary" type="button" disabled={cancelling} onClick={() => void cancel()}>
+              {cancelling ? "Cancelling…" : "Cancel sign-in"}
+            </Button>
+          ) : null}
+          {extraActions}
+        </div>
+      </form>
+      {plugin.signInUrl ? (
+        <ManualSignInForm
+          signInUrl={plugin.signInUrl}
+          onFinish={async (redirectUrl) => {
+            const result = await window.wisp.finishPluginSignIn({ pluginId: plugin.id, redirectUrl });
+            if (!result.ok) return result.error.message;
+            onChanged(result.value);
+            return undefined;
+          }}
+        />
+      ) : null}
+    </div>
   );
 }

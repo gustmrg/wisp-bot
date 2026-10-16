@@ -63,6 +63,7 @@ function setup(servers: McpServerSummary[] = []) {
   Object.defineProperty(window, "wisp", {
     configurable: true,
     value: {
+      subscribeToPluginSettings: vi.fn(() => () => undefined),
       getPluginSettings: vi.fn(async () => ({
         ok: true,
         value: { secureStorageAvailable: true, plugins: [], defaultProviders: { search: null, read: null } },

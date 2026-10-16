@@ -112,6 +112,7 @@ function setup({
   Object.defineProperty(window, "wisp", {
     configurable: true,
     value: {
+      subscribeToPluginSettings: vi.fn(() => () => undefined),
       getMcpSettings,
       saveMcpServer,
       testMcpConnection,

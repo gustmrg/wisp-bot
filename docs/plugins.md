@@ -24,6 +24,16 @@ key** (each form links to the provider page that issues it), and select
 **Connect**. Connecting tests the key first and saves it only if the test
 succeeds. Each plugin supports one connection on this device.
 
+Plugins that sign in through the browser ask instead for an **OAuth client**
+you create with the provider (each form links to its setup guide): enter its
+client ID and secret and select **Connect**. The browser opens the provider's
+page to approve access; with a server on another computer the desktop app
+opens it and passes the result back, and in the browser app you paste back the
+address the browser lands on. The plugin's page then shows the account, **Sign
+in again** (also when its access expired or was revoked, which turns its tools
+off until then), **Use another OAuth client**, which removes the plugin from
+every Wisp, **Test connection**, and **Remove connection**.
+
 A connected plugin's page has **Test connection** for the saved key, **Replace
 key** (which also tests the new key before saving it), and **Remove
 connection**. Right after connecting, the same page lists your Wisps so you can

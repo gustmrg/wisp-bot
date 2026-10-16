@@ -5,6 +5,7 @@ import type { ModelSelection, SequencedConversationAgentEvent, WispFallback } fr
 import type { ConversationDelta } from "../shared/conversations.js";
 import type { JobsView } from "../shared/jobs.js";
 import type { McpSettingsView } from "../shared/mcp.js";
+import type { PluginSettingsView } from "../shared/plugins.js";
 import type { MessageQueueView } from "../shared/message-queue.js";
 import type { ScheduledMessagesView } from "../shared/scheduled-messages.js";
 import type { AgentMode } from "./agent-mode.js";
@@ -68,6 +69,8 @@ export interface BackendRuntimeOptions {
   onConversationChanged: (delta: ConversationDelta) => void;
   /** Receives the sanitized MCP view after health or settings changes; secrets never leave the backend. */
   onMcpSettingsChanged: (view: McpSettingsView) => void;
+  /** Receives plugin settings after changes another window should see, such as a sign-in. */
+  onPluginSettingsChanged?: (view: PluginSettingsView) => void;
   /** Receives every scheduled message after any change, including sends. */
   onScheduledMessagesChanged: (view: ScheduledMessagesView) => void;
   /** Receives every queued message after any change, including a Wisp taking one. */
@@ -176,6 +179,9 @@ export async function createBackendRuntime(options: BackendRuntimeOptions): Prom
     encryption,
     authorizationBroker: toolAuthorizationBroker,
     resolveWisp,
+    openExternal: options.openExternal,
+    ...(options.signInBrowser ? { signInBrowser: options.signInBrowser } : {}),
+    ...(options.onPluginSettingsChanged ? { onSettingsChanged: options.onPluginSettingsChanged } : {}),
   });
   await pluginService.load();
   const mcpService = new McpService({

@@ -21,6 +21,16 @@ import { EncryptedCredentialStore, type EncryptionService } from "./encrypted-cr
 import type { IntegrationToolSource, IntegrationToolSnapshot } from "./integration-tool-source.js";
 import { snapshotRevision } from "./integration-tool-source.js";
 import { PLUGIN_ADAPTERS } from "./plugins/index.js";
+import { OAuthRedirectReceiver, type SignInBrowser } from "./oauth-redirect.js";
+import {
+  authorizationUrl,
+  createPkce,
+  exchangeCode,
+  PluginSignInRequiredError,
+  refreshTokens,
+  revokeToken,
+  type PluginOAuthConfig,
+} from "./plugin-oauth.js";
 import type { PluginAdapter, PluginToolSource, PluginToolSpec } from "./plugin-types.js";
 import { getToolMetadata } from "../shared/tool-catalog.js";
 import {
@@ -34,6 +44,8 @@ import {
   parseSavePluginSettings,
   parseSaveWispPluginAccess,
   parseTestPluginConnection,
+  parseStartPluginSignIn,
+  parseFinishPluginSignIn,
   parseWebProviders,
   pluginRecord,
 } from "./plugin-validation.js";
@@ -69,7 +81,42 @@ export interface PluginServiceOptions {
   authorizationBroker: Pick<ToolAuthorizationBroker, "authorize">;
   resolveWisp: (conversationId: string) => string;
   adapters?: ReadonlyArray<PluginAdapter>;
+  /** Opens the system browser for a sign-in on this computer. */
+  openExternal?: (url: string) => Promise<void>;
+  /**
+   * Where the browser of a plugin sign-in runs, decided for the device that
+   * started it; called within that operation. Defaults to this computer.
+   */
+  signInBrowser?: () => Promise<SignInBrowser>;
+  /** Sends OAuth token requests; injected so tests never reach a provider. */
+  fetch?: typeof fetch;
+  /** Observes settings changes, such as a sign-in starting or ending; secrets never reach the view. */
+  onSettingsChanged?: (view: PluginSettingsView) => void;
 }
+
+/** A plugin signed in through the browser: tokens plus the user's OAuth client. */
+interface PluginOAuthCredential {
+  type: "oauth";
+  access: string;
+  refresh: string;
+  expires: number;
+  clientId: string;
+  clientSecret?: string;
+  scope?: string;
+  account?: string;
+  /** The refresh token was refused; tools stay off until the user signs in again. */
+  signInRequired?: boolean;
+}
+
+interface ActivePluginSignIn {
+  controller: AbortController;
+  receiver: OAuthRedirectReceiver;
+  /** Set only by an explicit cancel, so its outcome reads as a cancellation. */
+  cancelledByUser: boolean;
+}
+
+/** Renew an access token this long before it expires. */
+const TOKEN_REFRESH_MARGIN_MS = 60_000;
 
 function defaultState(): PluginState {
   return {
@@ -91,6 +138,11 @@ export class PluginService implements PluginToolSource, IntegrationToolSource {
   private mutation = Promise.resolve();
   private disposed = false;
   private readonly running = new Map<AbortController, { pluginId: PluginId; sessionId?: string }>();
+  private readonly activeSignIns = new Map<PluginId, ActivePluginSignIn>();
+  /** One token renewal per plugin at a time; every caller waits on it. */
+  private readonly refreshing = new Map<PluginId, Promise<string>>();
+  /** Bumped when a plugin's connection is removed, so a sign-in in flight cannot restore it. */
+  private readonly generations = new Map<PluginId, number>();
 
   constructor(private readonly options: PluginServiceOptions) {
     this.filePath = path.join(options.dataDirectory, "plugins.json");
@@ -177,9 +229,16 @@ export class PluginService implements PluginToolSource, IntegrationToolSource {
 
   async getView(): Promise<PluginSettingsView> {
     let configured = new Set<string>();
+    const signIns = new Map<string, PluginOAuthCredential>();
     let credentialError: string | undefined;
     try {
-      configured = new Set((await this.credentials.list()).map(({ providerId }) => providerId));
+      const listed = await this.credentials.list();
+      configured = new Set(listed.map(({ providerId }) => providerId));
+      for (const { providerId, type } of listed) {
+        if (type !== "oauth") continue;
+        const credential = await this.readOAuth(providerId as PluginId);
+        if (credential) signIns.set(providerId, credential);
+      }
     } catch {
       credentialError =
         "Saved plugin credentials are unavailable. Plugin access is disabled until secure storage can be read again.";
@@ -197,11 +256,20 @@ export class PluginService implements PluginToolSource, IntegrationToolSource {
     return {
       secureStorageAvailable: this.credentials.isSecureStorageAvailable(),
       ...(credentialError ? { credentialError } : {}),
-      plugins: PLUGIN_CATALOG.map((plugin) => ({
-        ...plugin,
-        enabled: this.state.enabled[plugin.id],
-        configured: configured.has(plugin.id),
-      })),
+      plugins: PLUGIN_CATALOG.map((plugin) => {
+        const signedIn = signIns.get(plugin.id);
+        const signIn = this.activeSignIns.get(plugin.id);
+        const signInUrl = signIn?.receiver.manualSignInUrl;
+        return {
+          ...plugin,
+          enabled: this.state.enabled[plugin.id],
+          configured: configured.has(plugin.id),
+          ...(signedIn?.account ? { account: signedIn.account } : {}),
+          ...(signedIn?.signInRequired ? { needsSignIn: true } : {}),
+          ...(signIn && !signIn.controller.signal.aborted ? { signInPending: true } : {}),
+          ...(signInUrl ? { signInUrl } : {}),
+        };
+      }),
       defaultProviders,
     };
   }
@@ -231,9 +299,17 @@ export class PluginService implements PluginToolSource, IntegrationToolSource {
     const request = parseSavePluginSettings(value);
     return this.enqueue(async () => {
       const { pluginId, apiKey, enabled } = request;
-      const existing = enabled || apiKey ? await this.readKey(pluginId) : undefined;
-      if (enabled && !apiKey && !existing)
-        throw new WispBackendError("configuration_required", "Add an API key before enabling this plugin.");
+      if (apiKey && this.adapter(pluginId).oauth)
+        throw new WispBackendError("invalid_request", "This plugin signs in through the browser.");
+      const credential = enabled || apiKey ? await this.credentials.read(pluginId) : undefined;
+      const existing = credential?.type === "api_key" ? credential.key : undefined;
+      if (enabled && !apiKey && !credential)
+        throw new WispBackendError(
+          "configuration_required",
+          this.adapter(pluginId).oauth
+            ? "Connect this plugin before enabling it."
+            : "Add an API key before enabling this plugin.",
+        );
       if (apiKey && apiKey !== existing) {
         if (!this.credentials.isSecureStorageAvailable())
           throw new WispBackendError(
@@ -250,18 +326,147 @@ export class PluginService implements PluginToolSource, IntegrationToolSource {
       next.enabled[pluginId] = enabled;
       await this.commit(next);
       if (enabledChanged) this.cancelPlugin(pluginId);
-      return this.getView();
+      return this.publishAndView();
     });
   }
 
   remove(value: unknown): Promise<PluginSettingsView> {
     const { pluginId } = parsePluginRequest(value);
+    // A sign-in in flight must not restore the connection being removed.
+    this.generations.set(pluginId, this.generation(pluginId) + 1);
+    this.activeSignIns.get(pluginId)?.controller.abort();
     return this.enqueue(async () => {
       await this.commit(this.withoutPluginAccess(pluginId));
       this.cancelPlugin(pluginId);
+      const signedIn = await this.readOAuth(pluginId).catch(() => undefined);
       await this.credentials.delete(pluginId);
-      return this.getView();
+      const oauth = this.adapters.find(({ id }) => id === pluginId)?.oauth;
+      if (signedIn && oauth) void revokeToken(this.fetch, oauth, signedIn.refresh || signedIn.access);
+      return this.publishAndView();
     });
+  }
+
+  /**
+   * Signs a plugin in through the browser with the user's OAuth client and
+   * stores its tokens. The browser runs where the device that asked is (see
+   * SignInBrowser), and the wait happens outside the mutation queue: it can
+   * take minutes of human time. Signing in with another client or account
+   * revokes every Wisp's access, as replacing an API key does.
+   */
+  async startSignIn(value: unknown): Promise<PluginSettingsView> {
+    const request = parseStartPluginSignIn(value);
+    const { pluginId } = request;
+    this.assertLive();
+    const oauth = this.adapter(pluginId).oauth;
+    if (!oauth) throw new WispBackendError("invalid_request", "This plugin uses an API key, not a sign-in.");
+    if (this.activeSignIns.has(pluginId))
+      throw new WispBackendError("invalid_request", "A sign-in for this plugin is already in progress.");
+    if (!this.credentials.isSecureStorageAvailable())
+      throw new WispBackendError(
+        "secure_storage_unavailable",
+        "Secure credential storage is unavailable on this device.",
+      );
+    const saved = await this.readOAuth(pluginId);
+    const client = request.clientId
+      ? { clientId: request.clientId, ...(request.clientSecret ? { clientSecret: request.clientSecret } : {}) }
+      : saved
+        ? { clientId: saved.clientId, ...(saved.clientSecret ? { clientSecret: saved.clientSecret } : {}) }
+        : undefined;
+    if (!client) throw new WispBackendError("configuration_required", "Enter the OAuth client ID and secret.");
+    const name = pluginCatalogName(pluginId);
+    const generation = this.generation(pluginId);
+    const controller = new AbortController();
+    const receiver = new OAuthRedirectReceiver({
+      openExternal:
+        this.options.openExternal ??
+        (async () => {
+          throw new WispBackendError("unsupported", "This device cannot open a browser.");
+        }),
+    });
+    const signIn: ActivePluginSignIn = { controller, receiver, cancelledByUser: false };
+    // An abort ends the browser wait at once: a cancel, a removal, or shutdown.
+    controller.signal.addEventListener("abort", () => receiver.cancel(), { once: true });
+    this.activeSignIns.set(pluginId, signIn);
+    try {
+      this.publish();
+      const browser = (await this.options.signInBrowser?.()) ?? { kind: "local" };
+      receiver.setBrowser(browser, () => this.publish());
+      controller.signal.throwIfAborted();
+      const redirectUri = await receiver.ensureListening();
+      const pkce = createPkce();
+      await receiver.open(authorizationUrl(oauth, client, redirectUri, pkce));
+      const params = await receiver.wait();
+      const failure = params.get("error");
+      if (failure) {
+        throw new WispBackendError(
+          "configuration_required",
+          failure === "access_denied"
+            ? `${name} was not allowed. Connect again and allow access.`
+            : `${name} could not sign in. Check the OAuth client and try again.`,
+        );
+      }
+      const code = params.get("code");
+      if (!code) throw new WispBackendError("configuration_required", "The sign-in returned no authorization code.");
+      const tokens = await exchangeCode(
+        this.fetch,
+        oauth,
+        client,
+        { code, redirectUri, verifier: pkce.verifier },
+        controller.signal,
+      );
+      const account = await oauth.account?.(tokens.access, this.fetch, controller.signal).catch(() => undefined);
+      await this.enqueue(async () => {
+        if (controller.signal.aborted || this.generation(pluginId) !== generation)
+          throw new WispBackendError("aborted", "The sign-in was cancelled.");
+        const current = await this.readOAuth(pluginId);
+        // Another client or account may reach other data: revoke grants before storing it.
+        const sameIdentity =
+          current !== undefined &&
+          current.clientId === client.clientId &&
+          account !== undefined &&
+          current.account === account;
+        const next = sameIdentity ? structuredClone(this.state) : this.withoutPluginAccess(pluginId);
+        next.enabled[pluginId] = true;
+        await this.commit(next);
+        if (!sameIdentity) this.cancelPlugin(pluginId);
+        const credential: PluginOAuthCredential = {
+          type: "oauth",
+          ...tokens,
+          ...client,
+          ...(account ? { account } : {}),
+        };
+        // Stored as an OAuth credential; its client and account ride along as extra fields.
+        await this.credentials.modify(pluginId, async () => ({ ...credential }));
+      });
+    } catch (error) {
+      if (signIn.cancelledByUser) throw new WispBackendError("aborted", "The sign-in was cancelled.");
+      if (error instanceof WispBackendError) throw error;
+      throw safePluginError(error, controller.signal);
+    } finally {
+      this.activeSignIns.delete(pluginId);
+      receiver.dispose();
+      this.publish();
+    }
+    return this.getView();
+  }
+
+  /** Cancels a waiting sign-in; never waits on the mutation queue. */
+  async cancelSignIn(value: unknown): Promise<PluginSettingsView> {
+    const { pluginId } = parsePluginRequest(value);
+    const signIn = this.activeSignIns.get(pluginId);
+    if (!signIn) throw new WispBackendError("not_found", "No sign-in is in progress for this plugin.");
+    signIn.cancelledByUser = true;
+    signIn.controller.abort();
+    return this.getView();
+  }
+
+  /** Completes a waiting sign-in with the address its browser was redirected to. */
+  async finishSignIn(value: unknown): Promise<PluginSettingsView> {
+    const { pluginId, redirectUrl } = parseFinishPluginSignIn(value);
+    const signIn = this.activeSignIns.get(pluginId);
+    if (!signIn) throw new WispBackendError("not_found", "No sign-in is in progress for this plugin.");
+    signIn.receiver.finishWithRedirect(redirectUrl);
+    return this.getView();
   }
 
   async testConnection(value: unknown): Promise<PluginConnectionResult> {
@@ -270,8 +475,16 @@ export class PluginService implements PluginToolSource, IntegrationToolSource {
     const controller = new AbortController();
     this.running.set(controller, { pluginId: request.pluginId });
     try {
-      const apiKey = request.apiKey ?? (await this.readKey(request.pluginId));
-      if (!apiKey) throw new WispBackendError("configuration_required", "Add an API key to test this plugin.");
+      if (request.apiKey && this.adapter(request.pluginId).oauth)
+        throw new WispBackendError("invalid_request", "This plugin signs in through the browser.");
+      const apiKey = request.apiKey ?? (await this.credentialFor(request.pluginId));
+      if (!apiKey)
+        throw new WispBackendError(
+          "configuration_required",
+          this.adapter(request.pluginId).oauth
+            ? "Connect this plugin to test it."
+            : "Add an API key to test this plugin.",
+        );
       controller.signal.throwIfAborted();
       return { message: await this.adapter(request.pluginId).testConnection(apiKey, controller.signal) };
     } catch (error) {
@@ -313,7 +526,7 @@ export class PluginService implements PluginToolSource, IntegrationToolSource {
         ({ pluginId, access }) => accessRank(access) > accessRank(this.access(sessionId, pluginId)),
       );
       if (increases.length) {
-        const configured = new Set((await this.credentials.list()).map(({ providerId }) => providerId));
+        const configured = await this.readyPlugins();
         if (increases.some(({ pluginId }) => !this.state.enabled[pluginId] || !configured.has(pluginId)))
           throw new WispBackendError(
             "configuration_required",
@@ -456,7 +669,7 @@ export class PluginService implements PluginToolSource, IntegrationToolSource {
       return [];
     let configured: Set<string>;
     try {
-      configured = new Set((await this.credentials.list()).map(({ providerId }) => providerId));
+      configured = await this.readyPlugins();
     } catch {
       // Optional integrations must not prevent the Wisp's built-in tools from starting.
       configured = new Set();
@@ -489,6 +702,7 @@ export class PluginService implements PluginToolSource, IntegrationToolSource {
   dispose(): void {
     this.disposed = true;
     for (const controller of this.running.keys()) controller.abort();
+    for (const signIn of this.activeSignIns.values()) signIn.controller.abort();
   }
 
   private async execute(
@@ -526,7 +740,7 @@ export class PluginService implements PluginToolSource, IntegrationToolSource {
           combinedSignal,
         );
       }
-      const apiKey = await this.readKey(pluginId);
+      const apiKey = await this.credentialFor(pluginId);
       combinedSignal.throwIfAborted();
       this.assertAccess(conversationId, sessionId, pluginId, tool.access);
       if (!apiKey) throw new WispBackendError("configuration_required", "This plugin is not connected.");
@@ -540,7 +754,7 @@ export class PluginService implements PluginToolSource, IntegrationToolSource {
       if (!(error instanceof WispBackendError) && dispatched && tool.access === "write" && combinedSignal.aborted) {
         throw new WispBackendError(
           "aborted",
-          "The plugin action was interrupted. Check Linear before repeating it; the change may already have been applied.",
+          `The plugin action was interrupted. Check ${pluginCatalogName(pluginId)} before repeating it; the change may already have been applied.`,
         );
       }
       throw safePluginError(error, combinedSignal);
@@ -611,9 +825,104 @@ export class PluginService implements PluginToolSource, IntegrationToolSource {
       throw new WispBackendError("invalid_request", "Plugin access has changed. Reload access settings before saving.");
   }
 
-  private async readKey(pluginId: PluginId): Promise<string | undefined> {
+  /**
+   * The API key, or a current access token for a plugin that signs in,
+   * renewed shortly before it expires. A refused renewal marks the plugin as
+   * needing sign-in and turns its tools off until the user signs in again.
+   */
+  private async credentialFor(pluginId: PluginId): Promise<string | undefined> {
     const credential = await this.credentials.read(pluginId);
-    return credential?.type === "api_key" ? credential.key : undefined;
+    if (!credential) return undefined;
+    if (credential.type === "api_key") return credential.key;
+    const oauth = this.adapters.find(({ id }) => id === pluginId)?.oauth;
+    const signedIn = asOAuthCredential(credential);
+    if (!oauth || !signedIn) return undefined;
+    if (signedIn.signInRequired) throw new PluginSignInRequiredError(pluginCatalogName(pluginId));
+    if (signedIn.expires - TOKEN_REFRESH_MARGIN_MS > Date.now()) return signedIn.access;
+    let renewal = this.refreshing.get(pluginId);
+    if (!renewal) {
+      renewal = this.renew(pluginId, oauth, signedIn).finally(() => this.refreshing.delete(pluginId));
+      this.refreshing.set(pluginId, renewal);
+    }
+    return renewal;
+  }
+
+  private async renew(pluginId: PluginId, oauth: PluginOAuthConfig, signedIn: PluginOAuthCredential): Promise<string> {
+    const name = pluginCatalogName(pluginId);
+    const client = {
+      clientId: signedIn.clientId,
+      ...(signedIn.clientSecret ? { clientSecret: signedIn.clientSecret } : {}),
+    };
+    // Not tied to the Wisp that asked: other calls wait on the same renewal.
+    const sameSignIn = (current: PluginOAuthCredential | undefined) =>
+      current?.refresh === signedIn.refresh && current.clientId === signedIn.clientId;
+    try {
+      const tokens = await refreshTokens(
+        this.fetch,
+        oauth,
+        client,
+        signedIn.refresh,
+        name,
+        AbortSignal.timeout(30_000),
+      );
+      await this.credentials.modify(pluginId, async (current) => {
+        const stored = current ? asOAuthCredential(current) : undefined;
+        // A newer sign-in or a removal while renewing wins.
+        return stored && sameSignIn(stored) ? { ...stored, ...tokens } : undefined;
+      });
+      return tokens.access;
+    } catch (error) {
+      if (error instanceof PluginSignInRequiredError) {
+        await this.credentials
+          .modify(pluginId, async (current) => {
+            const stored = current ? asOAuthCredential(current) : undefined;
+            return stored && sameSignIn(stored) ? { ...stored, signInRequired: true } : undefined;
+          })
+          .catch(() => undefined);
+        this.publish();
+      }
+      throw error;
+    }
+  }
+
+  private async readOAuth(pluginId: PluginId): Promise<PluginOAuthCredential | undefined> {
+    const credential = await this.credentials.read(pluginId);
+    return credential ? asOAuthCredential(credential) : undefined;
+  }
+
+  /** Plugins whose credential works: an API key, or a sign-in that does not need renewing by the user. */
+  private async readyPlugins(): Promise<Set<string>> {
+    const ready = new Set<string>();
+    for (const { providerId, type } of await this.credentials.list()) {
+      if (type !== "oauth") {
+        ready.add(providerId);
+        continue;
+      }
+      const signedIn = await this.readOAuth(providerId as PluginId);
+      if (signedIn && !signedIn.signInRequired) ready.add(providerId);
+    }
+    return ready;
+  }
+
+  private generation(pluginId: PluginId): number {
+    return this.generations.get(pluginId) ?? 0;
+  }
+
+  private get fetch(): typeof fetch {
+    return this.options.fetch ?? globalThis.fetch;
+  }
+
+  private publish(): void {
+    if (!this.options.onSettingsChanged) return;
+    void this.getView()
+      .then((view) => this.options.onSettingsChanged?.(view))
+      .catch(() => undefined);
+  }
+
+  private async publishAndView(): Promise<PluginSettingsView> {
+    const view = await this.getView();
+    this.options.onSettingsChanged?.(view);
+    return view;
   }
 
   private adapter(pluginId: PluginId): PluginAdapter {
@@ -680,6 +989,17 @@ function prunedAlwaysAllowed(state: PluginState): PluginState["alwaysAllowed"] {
     if (kept.length) setOwn(pruned, sessionId, Object.fromEntries(kept) as AlwaysAllowedMap);
   }
   return pruned;
+}
+
+function pluginCatalogName(pluginId: PluginId): string {
+  return PLUGIN_CATALOG.find(({ id }) => id === pluginId)?.name ?? pluginId;
+}
+
+/** The stored shape of a plugin sign-in; other OAuth shapes are not this service's. */
+function asOAuthCredential(credential: { type: string }): PluginOAuthCredential | undefined {
+  if (credential.type !== "oauth" || typeof (credential as { clientId?: unknown }).clientId !== "string")
+    return undefined;
+  return credential as PluginOAuthCredential;
 }
 
 function accessRank(access: PluginAccess): number {

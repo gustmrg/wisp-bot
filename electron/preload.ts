@@ -25,6 +25,10 @@ const WISP_IPC_CHANNELS = {
   savePluginDefaults: "wisp:plugins:defaults:save",
   removePlugin: "wisp:plugins:remove",
   testPluginConnection: "wisp:plugins:test",
+  startPluginSignIn: "wisp:plugins:sign-in",
+  cancelPluginSignIn: "wisp:plugins:sign-in:cancel",
+  finishPluginSignIn: "wisp:plugins:sign-in:finish",
+  pluginSettingsChanged: "wisp:plugins:changed",
   getWispPluginAccess: "wisp:plugins:access:get",
   saveWispPluginAccess: "wisp:plugins:access:save",
   getMcpSettings: "wisp:mcp:get",
@@ -142,6 +146,15 @@ const wispApi: WispApi = {
   savePluginDefaults: (request) => ipcRenderer.invoke(WISP_IPC_CHANNELS.savePluginDefaults, request),
   removePlugin: (request) => ipcRenderer.invoke(WISP_IPC_CHANNELS.removePlugin, request),
   testPluginConnection: (request) => ipcRenderer.invoke(WISP_IPC_CHANNELS.testPluginConnection, request),
+  startPluginSignIn: (request) => ipcRenderer.invoke(WISP_IPC_CHANNELS.startPluginSignIn, request),
+  cancelPluginSignIn: (request) => ipcRenderer.invoke(WISP_IPC_CHANNELS.cancelPluginSignIn, request),
+  finishPluginSignIn: (request) => ipcRenderer.invoke(WISP_IPC_CHANNELS.finishPluginSignIn, request),
+  subscribeToPluginSettings: (listener) => {
+    const handleSettings = (_event: Electron.IpcRendererEvent, view: Parameters<typeof listener>[0]): void =>
+      listener(view);
+    ipcRenderer.on(WISP_IPC_CHANNELS.pluginSettingsChanged, handleSettings);
+    return () => ipcRenderer.removeListener(WISP_IPC_CHANNELS.pluginSettingsChanged, handleSettings);
+  },
   getWispPluginAccess: (request) => ipcRenderer.invoke(WISP_IPC_CHANNELS.getWispPluginAccess, request),
   saveWispPluginAccess: (request) => ipcRenderer.invoke(WISP_IPC_CHANNELS.saveWispPluginAccess, request),
   getMcpSettings: () => ipcRenderer.invoke(WISP_IPC_CHANNELS.getMcpSettings),

@@ -154,6 +154,7 @@ export async function createWispServer(options: WispServerOptions): Promise<Wisp
       onAgentEvent: (event) => hub.publish("agentEvent", event),
       onConversationChanged: (delta) => hub.publish("conversationChanged", delta),
       onMcpSettingsChanged: (view) => hub.publish("mcpSettingsChanged", view),
+      onPluginSettingsChanged: (view) => hub.publish("pluginSettingsChanged", view),
       onScheduledMessagesChanged: (view) => hub.publish("scheduledMessagesChanged", view),
       onMessageQueueChanged: (view) => hub.publish("messageQueueChanged", view),
       onJobsChanged: (view) => hub.publish("jobsChanged", view),

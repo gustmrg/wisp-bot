@@ -43,6 +43,7 @@ const PUSH_OPERATIONS = new Set([
   "agentEvent",
   "conversationChanged",
   "mcpSettingsChanged",
+  "pluginSettingsChanged",
   "scheduledMessagesChanged",
   "messageQueueChanged",
   "jobsChanged",

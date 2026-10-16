@@ -1,6 +1,7 @@
 import type { SequencedConversationAgentEvent } from "./contracts.js";
 import type { ConversationDelta } from "./conversations.js";
 import type { McpSettingsView } from "./mcp.js";
+import type { PluginSettingsView } from "./plugins.js";
 import type { MessageQueueView } from "./message-queue.js";
 import type { JobsView } from "./jobs.js";
 import type { ScheduledMessagesView } from "./scheduled-messages.js";
@@ -95,6 +96,7 @@ export interface RemoteEventPayloads {
   agentEvent: SequencedConversationAgentEvent;
   conversationChanged: ConversationDelta;
   mcpSettingsChanged: McpSettingsView;
+  pluginSettingsChanged: PluginSettingsView;
   scheduledMessagesChanged: ScheduledMessagesView;
   messageQueueChanged: MessageQueueView;
   jobsChanged: JobsView;

@@ -109,6 +109,10 @@ function createApi(initialState: ConversationStateView): WispApi {
       value: { secureStorageAvailable: true, plugins: [], defaultProviders: { search: null, read: null } },
     }),
     testPluginConnection: async () => ({ ok: true, value: { message: "Connected" } }),
+    startPluginSignIn: async () => ({ ok: false, error: { code: "unsupported", message: "", retryable: false } }),
+    cancelPluginSignIn: async () => ({ ok: false, error: { code: "unsupported", message: "", retryable: false } }),
+    finishPluginSignIn: async () => ({ ok: false, error: { code: "unsupported", message: "", retryable: false } }),
+    subscribeToPluginSettings: () => () => undefined,
     getWispPluginAccess: async ({ conversationId }) => ({
       ok: true,
       value: { conversationId, grants: [], revision: "test-revision", webProviders: { search: null, read: null } },

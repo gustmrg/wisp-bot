@@ -34,6 +34,7 @@ describe("AppSettingsDialog metadata", () => {
     Object.defineProperty(window, "wisp", {
       configurable: true,
       value: {
+        subscribeToPluginSettings: vi.fn(() => () => undefined),
         subscribeToUpdateState: vi.fn(() => () => undefined),
         getUpdateState: vi.fn(async () => ({
           ok: true,
@@ -89,6 +90,7 @@ describe("AppSettingsDialog metadata", () => {
     Object.defineProperty(window, "wisp", {
       configurable: true,
       value: {
+        subscribeToPluginSettings: vi.fn(() => () => undefined),
         subscribeToUpdateState: vi.fn(() => () => undefined),
         getUpdateState: vi.fn(async () => ({
           ok: true,
@@ -135,6 +137,7 @@ describe("AppSettingsDialog metadata", () => {
     Object.defineProperty(window, "wisp", {
       configurable: true,
       value: {
+        subscribeToPluginSettings: vi.fn(() => () => undefined),
         subscribeToUpdateState: vi.fn(() => () => undefined),
         getUpdateState: vi.fn(async () => ({
           ok: true,
@@ -197,6 +200,7 @@ describe("AppSettingsDialog metadata", () => {
     Object.defineProperty(window, "wisp", {
       configurable: true,
       value: {
+        subscribeToPluginSettings: vi.fn(() => () => undefined),
         subscribeToUpdateState: vi.fn((listener: (state: UpdateState) => void) => {
           push = listener;
           return () => undefined;
@@ -267,6 +271,7 @@ describe("AppSettingsDialog metadata", () => {
     Object.defineProperty(window, "wisp", {
       configurable: true,
       value: {
+        subscribeToPluginSettings: vi.fn(() => () => undefined),
         subscribeToUpdateState: vi.fn(() => () => undefined),
         getUpdateState: vi.fn(async () => ({
           ok: true,
@@ -309,6 +314,7 @@ describe("AppSettingsDialog on mobile", () => {
     Object.defineProperty(window, "wisp", {
       configurable: true,
       value: {
+        subscribeToPluginSettings: vi.fn(() => () => undefined),
         subscribeToUpdateState: vi.fn(() => () => undefined),
         getUpdateState: vi.fn(async () => ({ ok: true, value: { phase: "idle", currentVersion: "9.8.7" } })),
       },

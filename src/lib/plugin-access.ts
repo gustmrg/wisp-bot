@@ -36,7 +36,8 @@ export type IntegrationSettingsTarget =
   | { section: "usage" };
 
 export function isPluginAvailable(plugin: PluginSummary | undefined): boolean {
-  return Boolean(plugin?.configured && plugin.enabled);
+  // A sign-in plugin whose access expired cannot be granted until it signs in again.
+  return Boolean(plugin?.configured && plugin.enabled && !plugin.needsSignIn);
 }
 
 /**

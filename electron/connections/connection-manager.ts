@@ -83,6 +83,7 @@ const PUSHED = new Set([
   "agentEvent",
   "conversationChanged",
   "mcpSettingsChanged",
+  "pluginSettingsChanged",
   "scheduledMessagesChanged",
   "messageQueueChanged",
   "jobsChanged",

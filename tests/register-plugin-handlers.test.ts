@@ -23,13 +23,16 @@ describe("plugin IPC", () => {
       saveDefaults: vi.fn(),
       testConnection: vi.fn(),
       saveAccess: vi.fn(),
+      startSignIn: vi.fn(),
+      cancelSignIn: vi.fn(),
+      finishSignIn: vi.fn(),
     };
     const registered = registerPluginHandlers(
       ipc as never,
       service as unknown as PluginService,
       (event) => event.sender.id === 10,
     );
-    expect(handlers.size).toBe(7);
+    expect(handlers.size).toBe(10);
     for (const handler of handlers.values())
       await expect(handler({ sender: { id: 20 } }, {})).resolves.toMatchObject({
         ok: false,

@@ -23,6 +23,7 @@ type Handler = (event: IpcMainInvokeEvent, payload?: unknown) => Promise<Backend
 const PUSH_CHANNELS = new Set<string>([
   WISP_IPC_CHANNELS.agentEvent,
   WISP_IPC_CHANNELS.mcpSettingsChanged,
+  WISP_IPC_CHANNELS.pluginSettingsChanged,
   WISP_IPC_CHANNELS.updateState,
   WISP_IPC_CHANNELS.conversationChanged,
   WISP_IPC_CHANNELS.scheduledMessagesChanged,
