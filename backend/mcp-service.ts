@@ -174,7 +174,8 @@ export class McpService {
       for (const server of Object.values(this.state.servers)) {
         const secret = await this.secrets.read(server.serverId).catch(() => undefined);
         if (secret?.type === "header") headerConfigured.add(server.serverId);
-        if (secret?.type === "oauth") signedIn.add(server.serverId);
+        // A client registration is saved before the browser opens; only a token means signed in.
+        if (secret?.type === "oauth" && secret.accessToken !== "") signedIn.add(server.serverId);
       }
     } catch {
       credentialError =

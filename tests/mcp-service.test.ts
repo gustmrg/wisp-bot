@@ -1201,6 +1201,16 @@ describe("McpService sign-in from another computer", () => {
     expect((await service.getView()).servers[0]?.signInPending).toBeUndefined();
   });
 
+  it("still needs sign-in when a sign-in registered the client but was cancelled before a token", async () => {
+    const { service, serverId, secrets } = await createBrowserSignInService();
+    // Registration happens before the browser opens, so a cancelled sign-in can leave it behind.
+    await (
+      secrets as unknown as { setOAuthClientRegistration(id: string, value: { clientId: string }): Promise<void> }
+    ).setOAuthClientRegistration(serverId, { clientId: "registered-client" });
+
+    expect((await service.getView()).servers[0]?.state).toBe("needs_sign_in");
+  });
+
   it("refuses to finish a sign-in that is not waiting", async () => {
     const { service, serverId } = await createBrowserSignInService();
     await expect(
