@@ -39,6 +39,11 @@ export type SessionPricingLookup = (providerId: string, modelId: string) => Mode
 export interface BuildSessionReportOptions {
   workspaceDirectory: string;
   getPricing: SessionPricingLookup;
+  /**
+   * Prices from the model catalog, for models `getPricing` does not cover.
+   * Used only for cache savings; cost keeps the cost Pi recorded with each turn.
+   */
+  getCatalogPricing?: SessionPricingLookup;
   now?: () => Date;
 }
 
@@ -201,7 +206,11 @@ export function buildSessionReport(
     generatedAt: now().toISOString(),
     ...(piVersion ? { piVersion } : {}),
     turns,
-    totals: { ...totals, costUsd: normalCost === null || compactionCost === null ? null : normalCost + compactionCost },
+    totals: {
+      ...totals,
+      costUsd: normalCost === null || compactionCost === null ? null : normalCost + compactionCost,
+      cacheSavingsUsd: estimateCacheSavings(usageByModel, options),
+    },
     compactionUsage,
     ...(auxiliaryUsage.totalTokens > 0 ? { auxiliaryUsage } : {}),
     models: summarizeModelUsage(usageByModel, options.getPricing),
@@ -382,6 +391,30 @@ function costForUsage(usage: SessionReportUsage, pricing: ModelPricing | null): 
     (usage.cacheReadTokens / 1_000_000) * pricing.cacheReadPerMillionTokens +
     (usage.cacheWriteTokens / 1_000_000) * (pricing.cacheWritePerMillionTokens ?? 0)
   );
+}
+
+/**
+ * What cache reads saved against full input price, less the premium paid to
+ * write the cache. Compaction is left out: Pi does not record its model.
+ */
+function estimateCacheSavings(
+  usageByModel: Map<string, ModelUsageBucket>,
+  options: Pick<BuildSessionReportOptions, "getPricing" | "getCatalogPricing">,
+): number | null {
+  let total = 0;
+  for (const bucket of usageByModel.values()) {
+    const { cacheReadTokens, cacheWriteTokens } = bucket.usage;
+    if (cacheReadTokens === 0 && cacheWriteTokens === 0) continue;
+    const pricing =
+      options.getPricing(bucket.providerId, bucket.modelId) ??
+      options.getCatalogPricing?.(bucket.providerId, bucket.modelId) ??
+      null;
+    if (!pricing || (cacheWriteTokens > 0 && pricing.cacheWritePerMillionTokens === undefined)) return null;
+    total +=
+      (cacheReadTokens / 1_000_000) * (pricing.inputPerMillionTokens - pricing.cacheReadPerMillionTokens) -
+      (cacheWriteTokens / 1_000_000) * ((pricing.cacheWritePerMillionTokens ?? 0) - pricing.inputPerMillionTokens);
+  }
+  return total;
 }
 
 function summarizeWorkspacePath(value: string, workspaceDirectory: string): string {

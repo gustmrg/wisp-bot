@@ -17,6 +17,27 @@ export interface ModelPricing {
   cacheWritePerMillionTokens?: number;
 }
 
+/**
+ * A model catalog's base rates (USD per million tokens) as pricing. A catalog
+ * lists cache writes at 0 when the provider does not charge them apart, so
+ * those writes count at the input price.
+ */
+export function catalogModelPricing(cost: {
+  input: number;
+  output: number;
+  cacheRead: number;
+  cacheWrite: number;
+}): ModelPricing | null {
+  const rates = [cost.input, cost.output, cost.cacheRead, cost.cacheWrite];
+  if (!rates.every((rate) => Number.isFinite(rate) && rate >= 0)) return null;
+  return {
+    inputPerMillionTokens: cost.input,
+    outputPerMillionTokens: cost.output,
+    cacheReadPerMillionTokens: cost.cacheRead,
+    cacheWritePerMillionTokens: cost.cacheWrite > 0 ? cost.cacheWrite : cost.input,
+  };
+}
+
 interface PersistedPricingCache {
   schemaVersion: typeof CACHE_SCHEMA_VERSION;
   cachedAt: number;

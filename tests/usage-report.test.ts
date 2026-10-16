@@ -78,6 +78,8 @@ describe("usage history", () => {
     const all = await service.getUsageReport({ period: "all" });
     expect(all.totals.totalTokens).toBe(4050);
     expect(all.totals.costUsd).toBeCloseTo(0.00453);
+    // Each turn: 100 cached tokens save $0.9/M, 50 written cost $1/M over input.
+    expect(all.totals.cacheSavingsUsd).toBeCloseTo(3 * (0.00009 - 0.00005), 12);
     expect(all.wisps.map((row) => row.sessions)).toEqual([2, 1]);
     expect(JSON.stringify(all)).not.toContain("PRIVATE");
     expect(all.pricingUpdatedAt).not.toBeNull();
@@ -101,6 +103,7 @@ describe("usage history", () => {
     expect(report.incomplete).toBe(true);
     expect(report.totals.totalTokens).toBe(1350);
     expect(report.totals.costUsd).toBeNull();
+    expect(report.totals.cacheSavingsUsd).toBeNull();
   });
 
   it("returns no activity before Pi writes its first message", async () => {

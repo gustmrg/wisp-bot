@@ -16,6 +16,7 @@ const REPORT: WispSessionReport = {
     cacheWriteTokens: 0,
     totalTokens: 1_200,
     costUsd: null,
+    cacheSavingsUsd: null,
   },
   models: [
     {

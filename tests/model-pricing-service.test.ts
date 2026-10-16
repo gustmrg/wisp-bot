@@ -4,7 +4,7 @@ import path from "node:path";
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { ModelPricingService } from "../backend/model-pricing-service.js";
+import { catalogModelPricing, ModelPricingService } from "../backend/model-pricing-service.js";
 
 const OPENROUTER_PAYLOAD = {
   data: [
@@ -154,5 +154,20 @@ describe("ModelPricingService", () => {
 
     expect(fetchModels).toHaveBeenCalledTimes(1);
     expect(service.getPricing("openrouter", "openai/gpt-oss-120b")?.inputPerMillionTokens).toBe(1.5);
+  });
+});
+
+describe("catalogModelPricing", () => {
+  it("reads catalog rates and counts uncharged cache writes at the input price", () => {
+    expect(catalogModelPricing({ input: 0.15, output: 0.6, cacheRead: 0.003, cacheWrite: 0 })).toEqual({
+      inputPerMillionTokens: 0.15,
+      outputPerMillionTokens: 0.6,
+      cacheReadPerMillionTokens: 0.003,
+      cacheWritePerMillionTokens: 0.15,
+    });
+    expect(
+      catalogModelPricing({ input: 3, output: 15, cacheRead: 0.3, cacheWrite: 3.75 })?.cacheWritePerMillionTokens,
+    ).toBe(3.75);
+    expect(catalogModelPricing({ input: Number.NaN, output: 1, cacheRead: 0, cacheWrite: 0 })).toBeNull();
   });
 });

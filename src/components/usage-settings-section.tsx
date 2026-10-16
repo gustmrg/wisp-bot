@@ -4,7 +4,7 @@ import { ChartColumnIcon, CircleAlertIcon, RefreshCwIcon, TriangleAlertIcon } fr
 
 import { Wisp } from "@/components/wisp";
 import { SettingsCard, SettingsGroup } from "@/components/settings/settings-primitives";
-import { formatUsd, plural, TokenCount, TokenMix } from "@/components/usage-display";
+import { CacheStats, formatUsd, inputSplit, plural, TokenCount, TokenMix } from "@/components/usage-display";
 import { Button } from "@/components/ui/button";
 import { SegmentedControl } from "@/components/ui/segmented-control";
 import { useTimeZone } from "@/hooks/use-time-zone";
@@ -145,6 +145,10 @@ export function UsageSettingsSection({ wisps = [] }: { wisps?: ReadonlyArray<Wis
                 with each turn for other providers. Provider routing and other charges may differ from your bill.
                 Unknown means pricing or history is unavailable.
               </p>
+              <p className="m-0">
+                Uncached input includes tokens written to the cache, which few providers report. Cache savings compare
+                cached input with its full input price, less any extra charge for writing the cache.
+              </p>
               <p className="m-0">History includes saved sessions for existing Wisps, across app restarts.</p>
             </div>
           </details>
@@ -163,6 +167,7 @@ function UsageSummary({ report }: { report: UsageReport }) {
   const unpriced = report.wisps.filter((wisp) => wisp.totals.costUsd === null).length;
   // With a Wisp missing prices the total is unknown; the priced part is still a floor worth showing.
   const pricedCost = report.wisps.reduce((sum, wisp) => sum + (wisp.totals.costUsd ?? 0), 0);
+  const pricedSavings = report.wisps.reduce((sum, wisp) => sum + (wisp.totals.cacheSavingsUsd ?? 0), 0);
   const sessions = report.wisps.reduce((sum, wisp) => sum + wisp.sessions, 0);
   const active = report.wisps.filter((wisp) => wisp.totals.totalTokens > 0).length;
   return (
@@ -183,13 +188,14 @@ function UsageSummary({ report }: { report: UsageReport }) {
             </p>
           </div>
           <dl className="m-0 @max-[28rem]:w-full @[28rem]:text-right">
-            <dt className="text-xs text-dim">Total tokens</dt>
+            <dt className="text-xs text-dim">Processed tokens</dt>
             <dd className="m-0 text-xl font-semibold tabular-nums">
               <TokenCount value={totals.totalTokens} />
             </dd>
           </dl>
         </div>
         <TokenMix totals={totals} />
+        <CacheStats totals={totals} pricedSavings={pricedSavings} />
         {totals.costUsd === null && unpriced > 0 && pricedCost > 0 ? (
           <p className="m-0 text-xs text-dim">
             Cost covers priced usage only. {plural(unpriced, "Wisp")} {unpriced === 1 ? "has" : "have"} an unknown cost.
@@ -212,7 +218,7 @@ function UsageTable({ report, wispsById }: { report: UsageReport; wispsById: Map
         <caption className="sr-only">Token usage and estimated USD by Wisp</caption>
         <thead>
           <tr className="text-dim">
-            {["Wisp", "Input", "Output", "Cache read / write", "Total", "Est. USD"].map((heading) => (
+            {["Wisp", "Cached input", "Uncached input", "Output", "Total", "Est. USD"].map((heading) => (
               <th
                 scope="col"
                 key={heading}
@@ -267,14 +273,14 @@ function UsageTable({ report, wispsById }: { report: UsageReport; wispsById: Map
 function UsageCells({ totals, topCost }: { totals: Totals; topCost?: number }) {
   return (
     <>
-      <td data-label="Input" className="px-3">
-        <TokenCount value={totals.inputTokens} />
+      <td data-label="Cached input" className="px-3">
+        <TokenCount value={inputSplit(totals).cached} />
+      </td>
+      <td data-label="Uncached input" className="px-3">
+        <TokenCount value={inputSplit(totals).uncached} />
       </td>
       <td data-label="Output" className="px-3">
         <TokenCount value={totals.outputTokens} />
-      </td>
-      <td data-label="Cache read / write" className="whitespace-nowrap px-3">
-        <TokenCount value={totals.cacheReadTokens} /> / <TokenCount value={totals.cacheWriteTokens} />
       </td>
       <td data-label="Total" className="px-3">
         <TokenCount value={totals.totalTokens} />

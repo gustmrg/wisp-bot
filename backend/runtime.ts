@@ -23,7 +23,7 @@ import type { JobToolHost } from "./job-tools.js";
 import { McpService } from "./mcp-service.js";
 import { MessageQueue } from "./message-queue.js";
 import { MessageScheduler } from "./message-scheduler.js";
-import { ModelPricingService } from "./model-pricing-service.js";
+import { catalogModelPricing, ModelPricingService } from "./model-pricing-service.js";
 import { ModelService } from "./model-service.js";
 import { PiConversationAgentFactory, SdkPiSessionFactory } from "./pi-conversation-agent.js";
 import { PluginService } from "./plugin-service.js";
@@ -296,6 +296,10 @@ export async function createBackendRuntime(options: BackendRuntimeOptions): Prom
   const sessionReportService = new SessionReportService(
     conversationRepository,
     new ModelPricingService({ cacheFilePath: path.join(dataDirectory, "model-pricing.json") }),
+    (providerId, modelId) => {
+      const model = modelService.getModelRuntime().getModel(providerId, modelId);
+      return model ? catalogModelPricing(model.cost) : null;
+    },
   );
   const storage = new StorageService({
     listWorkspaces: () => conversationRepository.listWorkspaceFolders(),

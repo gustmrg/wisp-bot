@@ -486,6 +486,13 @@ export interface SessionReportUsage {
   totalTokens: number;
 }
 
+/**
+ * Token totals with estimated USD. `cacheSavingsUsd` is what cache reads saved
+ * against paying full input price, net of the premium some providers charge to
+ * write the cache; null when a model with cache traffic has no price.
+ */
+export type SessionReportTotals = SessionReportUsage & { costUsd: number | null; cacheSavingsUsd: number | null };
+
 export interface SessionReportModelUsage {
   providerId: string;
   modelId: string;
@@ -520,7 +527,7 @@ export interface WispSessionReport {
   generatedAt: string;
   piVersion?: string;
   turns: number;
-  totals: SessionReportUsage & { costUsd: number | null };
+  totals: SessionReportTotals;
   models: ReadonlyArray<SessionReportModelUsage>;
   toolCalls: ReadonlyArray<SessionReportToolCall>;
   events: ReadonlyArray<SessionReportEvent>;
@@ -536,7 +543,7 @@ export interface WispUsageRow {
   conversationId: string;
   name: string;
   sessions: number;
-  totals: SessionReportUsage & { costUsd: number | null };
+  totals: SessionReportTotals;
 }
 
 export interface UsageReport {
@@ -546,7 +553,7 @@ export interface UsageReport {
   pricingUpdatedAt: string | null;
   incomplete: boolean;
   wisps: ReadonlyArray<WispUsageRow>;
-  totals: SessionReportUsage & { costUsd: number | null };
+  totals: SessionReportTotals;
 }
 
 export type UpdatePhase =
