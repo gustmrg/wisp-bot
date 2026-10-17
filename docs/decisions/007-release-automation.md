@@ -32,7 +32,7 @@ The persistence compatibility rules in ADR 002 still apply.
 
 - A failed release changes nothing in the repository. The version in `package.json` changes only together with a published release.
 - macOS users must remove the quarantine attribute on every download and update by hand. Linux users get in-place updates.
-- Because the workflow pushes to `main`, `main` must accept pushes from `github-actions[bot]`. A branch protection rule that blocks this has to exempt the workflow, for example through a GitHub App token as other projects do.
+- Because the workflow pushes to `main`, and the `main` ruleset only takes pull requests, the release job pushes with the write deploy key in the `RELEASE_DEPLOY_KEY` secret. Deploy keys are the ruleset's only bypass actor. That push, unlike one made with `GITHUB_TOKEN`, triggers CI on the version commit.
 - Restoring signing for macOS or Windows needs a new ADR that sets up the credential custody ADR 002 described.
 
 ## Alternatives considered

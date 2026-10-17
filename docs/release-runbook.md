@@ -30,6 +30,8 @@ Linux packages are unsigned. The updater checks each download against the SHA-51
    6. publishes the draft, which is when installs can see the update.
 4. Download the artifacts and check them against `SHA256SUMS.txt`.
 
+`main` only takes pull requests. The release job pushes with the write deploy key stored in the `RELEASE_DEPLOY_KEY` secret, and **Deploy keys** are the only bypass actor of the `main` ruleset. If that secret or the bypass is missing, the push is rejected with `GH013: Repository rule violations` and nothing is committed or tagged. To rotate the key, add a new write deploy key, replace the secret, then delete the old key.
+
 Nothing is committed or tagged until all checks and both packaging jobs pass, so a failed run leaves the repository unchanged. Fix the cause on `main` and run the workflow again. If someone pushes to `main` during the run, the atomic push fails. Run the workflow again to release the newer commit.
 
 ## Publish a beta
