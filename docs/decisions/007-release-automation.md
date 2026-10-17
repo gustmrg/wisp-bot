@@ -22,7 +22,7 @@ As of 2026-10-09, new macOS releases target Apple Silicon (arm64) only, with an 
 
 Windows is deferred, and its electron-builder and Azure Trusted Signing configuration has been removed. A Windows build will need it added back.
 
-One manual **Desktop release** dispatch from `main` takes a version (`patch`, `minor`, `major`, or an exact version). It runs every quality gate against the bumped tree and packages both platforms. Only then does it commit `chore(release): prepare vX.Y.Z`, push that commit and the tag atomically, and publish the GitHub release. The workflow pushes straight to `main` with `GITHUB_TOKEN`. It does not open a release pull request.
+One manual **Desktop release** dispatch from `main` takes a version (`patch`, `minor`, `major`, or an exact version). It runs every quality gate against the bumped tree and packages both platforms. Only then does it commit `chore(release): prepare vX.Y.Z`, push that commit and the tag atomically, and draft the GitHub release. The draft is published once npm serves the matching `@gustmrg/wisp-server`, so the updater never offers a version a server cannot install. The workflow pushes straight to `main` with `GITHUB_TOKEN`. It does not open a release pull request.
 
 Releases go out to everyone at once, with no staged rollout. Prerelease versions are published as GitHub prereleases and feed only the `beta` channel. Downgrades stay disabled, and rollback means fixing forward, as ADR 002 already required.
 

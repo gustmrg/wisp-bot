@@ -23,10 +23,11 @@ Linux packages are unsigned. The updater checks each download against the SHA-51
    While a beta is out, a release must sort above it, or beta installs would never update to it. With `0.19.0-beta.2` out, `patch` (`0.18.1`) fails and names `0.19.0` instead, so release `minor`.
 3. The workflow:
    1. resolves the version on top of `main`, and fails if its tag already exists or if any install already runs a higher version;
-   2. runs lint, formatting, typecheck, tests, build, the production audit, and the SBOM against the bumped tree;
-   3. packages macOS (on `macos-14`) and Linux (on `ubuntu-latest`) in parallel;
-   4. commits `chore(release): prepare vX.Y.Z` to `main` and pushes it with the `vX.Y.Z` tag in one atomic push;
-   5. publishes the GitHub release with notes generated since the previous release, every artifact, both update feeds, the SBOM, and `SHA256SUMS.txt`.
+   2. runs lint, formatting, typecheck, tests, build, the production audit, and the SBOM against the bumped tree, while it packages macOS (on `macos-14`) and Linux (on `ubuntu-latest`) at the same time;
+   3. commits `chore(release): prepare vX.Y.Z` to `main` and pushes it with the `vX.Y.Z` tag in one atomic push;
+   4. drafts the GitHub release with notes generated since the previous release, every artifact, both update feeds, the SBOM, and `SHA256SUMS.txt`;
+   5. publishes the server to npm and waits until npm serves it (see [The server package on npm](#the-server-package-on-npm));
+   6. publishes the draft, which is when installs can see the update.
 4. Download the artifacts and check them against `SHA256SUMS.txt`.
 
 Nothing is committed or tagged until all checks and both packaging jobs pass, so a failed run leaves the repository unchanged. Fix the cause on `main` and run the workflow again. If someone pushes to `main` during the run, the atomic push fails. Run the workflow again to release the newer commit.
@@ -52,11 +53,11 @@ To package locally, `npm run dist` builds installers for the current OS and `npm
 
 `@gustmrg/wisp-server` is the headless server that `npx @gustmrg/wisp-server setup` installs, and that the desktop app installs on a machine over SSH. The app always installs its own version, so every release publishes the matching one; a version missing from npm makes **Install the Wisp server** fail with "is not published on npm".
 
-The last job, **publish-server**, builds `npm run package:server` from the release tag, updates npm to 11.5.1 or later, and runs `npm publish --provenance`. Prereleases (`-beta.1`) get the `beta` dist-tag, so `npx @gustmrg/wisp-server` never runs one. The package's page on npm shows `server/README.md`.
+The **publish-server** job builds `npm run package:server` from the release tag, updates npm to 11.5.1 or later, and runs `npm publish --provenance`. Prereleases (`-beta.1`) get the `beta` dist-tag, so `npx @gustmrg/wisp-server` never runs one. The package's page on npm shows `server/README.md`.
 
 npm takes a few minutes to process a new version, and until then installing it fails with `ETARGET`. So the job then waits, for up to 10 minutes, until npm serves the version and its dist-tag points to it. The release is done only when that step passes; until then, do not update servers from the app.
 
-The job runs after the GitHub release is out. If it fails, fix the cause and re-run only that job. A re-run skips the publish when the version is already on npm, since npm refuses a version published twice, and only waits for it.
+The job runs while the GitHub release is still a draft, which the updater does not see, and the last job, **publish-release**, publishes the draft only after it passes. So no install updates to a version whose server npm cannot serve yet. If the job fails, the tag and the draft stay as they are: fix the cause and re-run the failed jobs. A re-run skips the publish when the version is already on npm, since npm refuses a version published twice, and only waits for it.
 
 ### Authentication
 
