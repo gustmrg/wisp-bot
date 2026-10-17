@@ -148,7 +148,11 @@ jobs:
     permissions:
       contents: write
     steps:
+      # main only takes pull requests. This deploy key is the ruleset's one
+      # bypass actor, so the version commit can still reach main.
       - uses: actions/checkout@v7
+        with:
+          ssh-key: ${{ secrets.RELEASE_DEPLOY_KEY }}
       - uses: actions/setup-node@v7
         with:
           node-version: 22.19.0
