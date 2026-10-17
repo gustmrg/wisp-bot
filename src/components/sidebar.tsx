@@ -281,7 +281,8 @@ function Sidebar({
           {chatIds.map((chatId) => {
             const chat = chats[chatId];
             if (!chat) return null;
-            const selected = chatId === activeChatId;
+            // On a phone the list is its own page, so no conversation is open beside it.
+            const selected = !mobile && chatId === activeChatId;
             const pendingApproval = Boolean(approvals[chatId]?.length);
             const failed = !pendingApproval && Boolean(failedChats[chatId]);
             const working = statuses[chatId] === "working";

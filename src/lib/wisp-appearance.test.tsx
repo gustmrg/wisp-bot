@@ -12,6 +12,7 @@ import { Wisp } from "@/components/wisp";
 import {
   AVATAR_COLORS,
   appearanceOptions,
+  isNeutralColor,
   luminance,
   randomAppearance,
   wispAccent,
@@ -90,6 +91,13 @@ describe("Wisp appearance registry", () => {
       accent: "light-dark(#262626, #a8a8a8)",
       ink: "light-dark(#ffffff, #111111)",
     });
+  });
+
+  it("tells the grays of the palette from its hues", () => {
+    expect(WISP_COLORS.filter((color) => isNeutralColor(color.value)).map((color) => color.id)).toEqual([
+      "charcoal",
+      "gray",
+    ]);
   });
 
   it("generates appearances from the axes and the palette", () => {

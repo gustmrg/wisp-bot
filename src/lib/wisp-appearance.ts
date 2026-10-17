@@ -114,6 +114,12 @@ export function wispAccent(color: string): { accent: string; ink: string } {
   return { accent: `light-dark(${color}, ${lifted})`, ink: `light-dark(${inkOn(color)}, ${inkOn(lifted)})` };
 }
 
+/** True for a gray, from near-black to near-white, which has no hue to tint a button with. */
+export function isNeutralColor(color: string): boolean {
+  const values = channels(color);
+  return Math.max(...values) - Math.min(...values) < 16;
+}
+
 /** The custom properties the Wisp styles read: `--wisp`, its color, and `--wisp-ink`, what reads on it. */
 export function wispAccentStyle(color: string): CSSProperties {
   const { accent, ink } = wispAccent(color);

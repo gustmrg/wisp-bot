@@ -1,9 +1,9 @@
 import { type ReactNode, useEffect, useState } from "react";
 import {
+  ChartColumnIcon,
   CheckIcon,
   CircleAlertIcon,
   CircleDashedIcon,
-  MessageCircleIcon,
   RefreshCwIcon,
   TriangleAlertIcon,
   XIcon,
@@ -88,7 +88,7 @@ function SessionReportContent({
     return (
       <SettingsCard className="flex flex-col items-center gap-1.5 px-5 py-7 text-center">
         <span className="mb-1 grid size-10 place-items-center rounded-full bg-muted text-dim">
-          <MessageCircleIcon aria-hidden="true" className="size-[18px]" />
+          <ChartColumnIcon aria-hidden="true" className="size-[18px]" />
         </span>
         <p role="status" className="m-0 text-sm font-semibold">
           No session yet

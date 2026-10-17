@@ -350,6 +350,15 @@ describe("ChatPanel identity", () => {
     expect(screen.getByText("Research")).toBeInTheDocument();
   });
 
+  it("keeps the default composer button for a gray Wisp", () => {
+    const { show } = renderPanel(transcript(messages(0, 1)), {
+      chat: wispChatView("atlas", { wisp: { name: "Atlas", color: "#262626" } }),
+    });
+    expect(document.querySelector("main")).toHaveAttribute("data-neutral-accent");
+    show(transcript(messages(0, 1)), { chat: wispChatView("atlas", { wisp: { name: "Atlas", color: "#3c82f6" } }) });
+    expect(document.querySelector("main")).not.toHaveAttribute("data-neutral-accent");
+  });
+
   it("says when the Wisp is working, waiting, or failed", () => {
     const { show } = renderPanel(transcript(messages(0, 1)), { status: "working" });
     expect(screen.getByText("Working…")).toBeInTheDocument();
