@@ -56,7 +56,7 @@ export function SplashScreen({ leaving = false }: { leaving?: boolean }) {
       )}
       style={{ transitionDuration: `${SPLASH_FADE_MS}ms` }}
     >
-      <img src={`${import.meta.env.BASE_URL}favicon.svg`} alt="" width={64} height={64} draggable={false} />
+      <img src={`${import.meta.env.BASE_URL}apple-touch-icon.png`} alt="" width={64} height={64} draggable={false} />
       {slow && !leaving ? (
         <div className="absolute top-[calc(50%+56px)] right-4 left-4 flex flex-col items-center gap-2 text-center">
           <p className="m-0 text-sm text-dim">Taking longer than usual…</p>
