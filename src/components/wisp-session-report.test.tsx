@@ -188,4 +188,53 @@ describe("WispSessionReportSection", () => {
     await user.click(screen.getByRole("button", { name: "Compare with other Wisps in Token usage" }));
     expect(onOpenSettings).toHaveBeenCalledWith({ section: "usage" });
   });
+
+  it("names tools readably and shows what each command ran and how it ended", async () => {
+    const user = userEvent.setup();
+    const call = { argumentSummary: "", status: "completed" as const, timestamp: "2026-09-01T10:00:00.000Z" };
+    exposeApi(
+      vi.fn(async () => ({
+        ok: true as const,
+        value: {
+          ...report,
+          toolCalls: [
+            {
+              ...call,
+              toolCallId: "call-1",
+              toolName: "run_command",
+              toolLabel: "Run command",
+              commandOutline: "cd · npm run build",
+              purpose: "Build the app",
+              commandResult: { exitCode: 0, durationMs: 4_210 },
+            },
+            {
+              ...call,
+              toolCallId: "call-2",
+              toolName: "run_command",
+              toolLabel: "Run command",
+              commandOutline: "npm test",
+              commandResult: { stopped: "timeout" as const },
+              status: "error" as const,
+            },
+            {
+              ...call,
+              toolCallId: "call-3",
+              toolName: "mcp_75b04d98ed1b_get_me",
+              toolLabel: "GitHub · Get me",
+            },
+          ],
+        },
+      })),
+    );
+    render(<WispSessionReportSection chatId="wisp-1" />);
+    await user.click(await screen.findByRole("button", { name: /Tool calls/ }));
+
+    expect(screen.getByText("Build the app")).toBeVisible();
+    expect(screen.getByText("cd · npm run build")).toBeVisible();
+    expect(screen.getByText("· exit 0 · 4.2s")).toBeVisible();
+    expect(screen.getByText("· timed out")).toBeVisible();
+    expect(screen.getByText("GitHub · Get me")).toHaveAttribute("title", "mcp_75b04d98ed1b_get_me");
+    await user.click(screen.getByRole("button", { name: "Run command 2" }));
+    expect(screen.queryByText("GitHub · Get me")).not.toBeInTheDocument();
+  });
 });

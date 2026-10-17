@@ -12,9 +12,14 @@ import {
   type McpGrant,
   type McpSettingsView,
   type WispMcpAccessView,
+  mcpServerAliasPrefix,
 } from "../shared/mcp.js";
 import { GITHUB_MCP_PRESET } from "../shared/mcp-presets/index.js";
-import { registerDynamicToolMetadata, unregisterDynamicToolMetadata } from "../shared/tool-catalog.js";
+import {
+  describeMcpAlias,
+  registerDynamicToolMetadata,
+  unregisterDynamicToolMetadata,
+} from "../shared/tool-catalog.js";
 import { writeFileAtomically } from "./atomic-file.js";
 import { WispBackendError } from "./backend-error.js";
 import type { EncryptionService } from "./encrypted-credential-store.js";
@@ -583,6 +588,21 @@ export class McpService {
         .update(JSON.stringify([sessionId, fingerprints]))
         .digest("hex"),
     };
+  }
+
+  /**
+   * A readable name for a tool alias, with the name of the connection it
+   * belongs to ("GitHub · Get file contents"). Undefined when no connection
+   * has the alias's prefix, for example after it was removed.
+   */
+  describeTool(alias: string): string | undefined {
+    const server = Object.values(this.state.servers).find(({ serverId }) =>
+      alias.startsWith(`${mcpServerAliasPrefix(serverId)}_`),
+    );
+    if (!server) return undefined;
+    const tool = server.snapshot?.tools.find((candidate) => candidate.alias === alias);
+    const label = tool ? humanizeToolName(tool.label) : describeMcpAlias(alias)?.label;
+    return label ? `${server.name} · ${label}` : server.name;
   }
 
   /**
@@ -1203,4 +1223,12 @@ function safeMcpError(error: unknown, signal?: AbortSignal): WispBackendError {
   if (error instanceof WispBackendError) return error;
   if (signal?.aborted) return new WispBackendError("aborted", "The MCP request was cancelled.");
   return new WispBackendError("internal_error", "The MCP server could not complete the request.", true);
+}
+
+/** `get_file_contents` → `Get file contents`. */
+function humanizeToolName(name: string): string {
+  return name
+    .replaceAll(/[_.-]+/g, " ")
+    .trim()
+    .replace(/^./, (character) => character.toUpperCase());
 }

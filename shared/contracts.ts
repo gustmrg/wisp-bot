@@ -514,7 +514,15 @@ export interface SessionReportModelUsage {
 export interface SessionReportToolCall {
   toolCallId: string;
   toolName: string;
+  /** A readable name for the tool, with the connection it came from for MCP tools; absent from older servers. */
+  toolLabel?: string;
   argumentSummary: string;
+  /** For commands: the programs run, without their arguments (`git clone · npm install`). */
+  commandOutline?: string;
+  /** For commands: what the Wisp said the command was for. */
+  purpose?: string;
+  /** For commands: how the command ended. */
+  commandResult?: { exitCode?: number; durationMs?: number; stopped?: "timeout" | "aborted" };
   status: "completed" | "error" | "pending";
   timestamp: string;
   /** The image model that read images or scanned pages for this call; `fromCache` when nothing was sent again. */

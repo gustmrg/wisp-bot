@@ -158,7 +158,7 @@ function SessionReportContent({
         </Accordion>
         <p className="m-0 text-xs leading-relaxed text-dim">
           Costs are estimates based on available model prices. Argument text and provider error details are hidden for
-          privacy. Shows the latest 50 tool calls and events.
+          privacy; commands show only the programs they ran. Shows the latest 50 tool calls and events.
         </p>
         {onOpenSettings ? (
           <Button
@@ -297,13 +297,20 @@ function ToolCallList({ toolCalls }: { toolCalls: ReadonlyArray<SessionReportToo
   if (toolCalls.length === 0) return <p className="m-0 text-xs text-dim">No tool calls recorded.</p>;
   const failed = toolCalls.filter((call) => call.status === "error").length;
   const counts = new Map<string, number>();
-  for (const call of toolCalls) counts.set(call.toolName, (counts.get(call.toolName) ?? 0) + 1);
+  const labels = new Map<string, string>();
+  for (const call of toolCalls) {
+    counts.set(call.toolName, (counts.get(call.toolName) ?? 0) + 1);
+    labels.set(call.toolName, toolCallLabel(call));
+  }
   const topTools = [...counts].sort((a, b) => b[1] - a[1]).slice(0, TOOL_FILTERS_SHOWN);
   const filters: Array<{ filter: ToolFilter; label: string }> = [
     { filter: { kind: "all" }, label: `All ${toolCalls.length}` },
     ...(failed ? [{ filter: { kind: "failed" } as const, label: `Failed ${failed}` }] : []),
     ...(counts.size > 1
-      ? topTools.map(([name, count]) => ({ filter: { kind: "tool", name } as const, label: `${name} ${count}` }))
+      ? topTools.map(([name, count]) => ({
+          filter: { kind: "tool", name } as const,
+          label: `${labels.get(name) ?? name} ${count}`,
+        }))
       : []),
   ];
   const sameFilter = (a: ToolFilter, b: ToolFilter) =>
@@ -341,8 +348,19 @@ function ToolCallList({ toolCalls }: { toolCalls: ReadonlyArray<SessionReportToo
             className="grid min-w-0 grid-cols-[16px_minmax(0,1fr)_auto] gap-x-2 gap-y-0.5 rounded-md px-1 py-1"
           >
             <ToolStatus status={toolCall.status} />
-            <span className="min-w-0 break-all font-mono">{toolCall.toolName}</span>
+            <span className="min-w-0 break-words" title={toolCall.toolName}>
+              {toolCallLabel(toolCall)}
+              {toolCall.commandResult ? (
+                <span className="text-dim"> · {describeCommandResult(toolCall.commandResult)}</span>
+              ) : null}
+            </span>
             <span className="whitespace-nowrap text-dim">{formatTimestamp(toolCall.timestamp, timeZone)}</span>
+            {toolCall.purpose ? (
+              <span className="col-start-2 col-end-4 break-words text-dim">{toolCall.purpose}</span>
+            ) : null}
+            {toolCall.commandOutline ? (
+              <span className="col-start-2 col-end-4 break-all font-mono text-dim">{toolCall.commandOutline}</span>
+            ) : null}
             {toolCall.argumentSummary ? (
               <span className="col-start-2 col-end-4 break-all text-dim">{toolCall.argumentSummary}</span>
             ) : null}
@@ -358,6 +376,30 @@ function ToolCallList({ toolCalls }: { toolCalls: ReadonlyArray<SessionReportToo
       </ul>
     </div>
   );
+}
+
+/** The tool's readable name; servers from before readable names send only the raw one. */
+function toolCallLabel(toolCall: SessionReportToolCall): string {
+  return toolCall.toolLabel ?? toolCall.toolName;
+}
+
+function describeCommandResult(result: NonNullable<SessionReportToolCall["commandResult"]>): string {
+  const ending =
+    result.stopped === "timeout"
+      ? "timed out"
+      : result.stopped === "aborted"
+        ? "stopped"
+        : result.exitCode !== undefined
+          ? `exit ${result.exitCode}`
+          : "";
+  const duration = result.durationMs === undefined ? "" : formatDuration(result.durationMs);
+  return [ending, duration].filter(Boolean).join(" · ");
+}
+
+function formatDuration(milliseconds: number): string {
+  if (milliseconds < 60_000) return `${(milliseconds / 1000).toFixed(1)}s`;
+  const seconds = Math.round(milliseconds / 1000);
+  return `${Math.floor(seconds / 60)}m ${seconds % 60}s`;
 }
 
 function ToolStatus({ status }: { status: SessionReportToolCall["status"] }) {

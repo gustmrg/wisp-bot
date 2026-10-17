@@ -79,9 +79,10 @@ type RunCommand = {
   name: string;
   execute: (
     id: string,
-    params: { command: string; timeout?: number },
+    params: { command: string; timeout?: number; description?: string },
     signal?: AbortSignal,
-  ) => Promise<{ content: Array<{ type: string; text?: string }> }>;
+  ) => Promise<{ content: Array<{ type: string; text?: string }>; details?: Record<string, unknown> }>;
+  parameters: { properties: Record<string, { type?: string }>; required?: string[] };
 };
 
 async function runCommandTool(service: ExecutionService): Promise<RunCommand> {
@@ -202,6 +203,20 @@ describe("ExecutionService", () => {
     // The server's environment is never handed to the container.
     expect(manager.exec.mock.calls[0]![3]).not.toHaveProperty("env");
     expect(result.content[0]?.text).toContain("On branch main");
+  });
+
+  it("takes a description of the command and records how it ended", async () => {
+    const { service, manager } = await setup();
+    await service.save({ conversationId: "atlas", mode: "container", image: null, localNetwork: false });
+    const tool = await runCommandTool(service);
+    expect(tool.parameters.properties.description).toMatchObject({ type: "string" });
+    expect(tool.parameters.required).toEqual(["command"]);
+
+    manager.exec.mockResolvedValueOnce({ exitCode: 2 });
+    const result = await tool.execute("call-1", { command: "npm test", description: "Run the tests" });
+
+    expect(manager.exec).toHaveBeenCalledWith(expect.anything(), "npm test", "/workspace", expect.anything());
+    expect(result.details?.commandResult).toEqual({ exitCode: 2, durationMs: expect.any(Number) });
   });
 
   it("gives git the GitHub plugin's token when no token is saved for the Wisp", async () => {
