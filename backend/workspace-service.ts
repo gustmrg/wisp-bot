@@ -41,11 +41,14 @@ export interface MeasuredFile {
 
 /**
  * Logical size and file count under a folder. Symlinks are neither followed
- * nor counted; a missing folder is empty, but unreadable ones mark the result
- * partial instead of reading as zero. `onFile` sees every file counted.
+ * nor counted, and a file hard-linked in several places (as pnpm links its
+ * store into node_modules) counts once, where it is first met. A missing
+ * folder is empty, but unreadable ones mark the result partial instead of
+ * reading as zero. `onFile` sees every file counted.
  */
 export async function measureTree(directory: string, onFile?: (file: MeasuredFile) => void): Promise<TreeMeasurement> {
   const total: TreeMeasurement = { bytes: 0, files: 0, partial: false };
+  const linked = new Set<string>();
   const pending = [directory];
   while (pending.length) {
     const current = pending.pop()!;
@@ -61,10 +64,16 @@ export async function measureTree(directory: string, onFile?: (file: MeasuredFil
       if (entry.isDirectory()) pending.push(entryPath);
       else if (entry.isFile()) {
         try {
-          const info = await lstat(entryPath);
-          total.bytes += info.size;
+          const info = await lstat(entryPath, { bigint: true });
+          if (info.nlink > 1n) {
+            const identity = `${info.dev}:${info.ino}`;
+            if (linked.has(identity)) continue;
+            linked.add(identity);
+          }
+          const size = Number(info.size);
+          total.bytes += size;
           total.files += 1;
-          onFile?.({ path: entryPath, size: info.size, modifiedAt: info.mtime });
+          onFile?.({ path: entryPath, size, modifiedAt: info.mtime });
         } catch (error) {
           // A file removed during the scan is gone, not unreadable.
           if ((error as NodeJS.ErrnoException).code !== "ENOENT") total.partial = true;

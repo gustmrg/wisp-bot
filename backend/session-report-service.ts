@@ -16,11 +16,18 @@ export class SessionReportService {
   private readonly repository: ConversationRepository;
   private readonly pricing: ModelPricingService;
   private readonly catalogPricing: SessionPricingLookup | undefined;
+  private readonly describeMcpTool: ((alias: string) => string | undefined) | undefined;
 
-  constructor(repository: ConversationRepository, pricing: ModelPricingService, catalogPricing?: SessionPricingLookup) {
+  constructor(
+    repository: ConversationRepository,
+    pricing: ModelPricingService,
+    catalogPricing?: SessionPricingLookup,
+    describeMcpTool?: (alias: string) => string | undefined,
+  ) {
     this.repository = repository;
     this.pricing = pricing;
     this.catalogPricing = catalogPricing;
+    this.describeMcpTool = describeMcpTool;
   }
 
   async getSessionReport(conversationId: string): Promise<WispSessionReport | null> {
@@ -36,6 +43,7 @@ export class SessionReportService {
       workspaceDirectory: context.workspaceDirectory,
       getPricing: (providerId, modelId) => this.pricing.getPricing(providerId, modelId),
       getCatalogPricing: this.catalogPricing,
+      describeMcpTool: this.describeMcpTool,
     });
   }
 

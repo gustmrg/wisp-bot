@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { type ReactNode, useState } from "react";
 
 import { SettingsCard, SettingsGroup } from "@/components/settings/settings-primitives";
 import { Button } from "@/components/ui/button";
@@ -141,10 +141,11 @@ export function StorageOverview({ summary }: { summary: StorageSummary }) {
   );
 }
 
-type LargestKind = "workspaces" | "folders" | "files";
+type LargestKind = "folders" | "files";
 
 interface LargestRow {
   key: string;
+  conversationId: string;
   name: string;
   context: string;
   size: number;
@@ -153,16 +154,6 @@ interface LargestRow {
 }
 
 function largestRows(summary: StorageSummary, kind: LargestKind): LargestRow[] {
-  if (kind === "workspaces") {
-    return summary.workspaces.slice(0, LARGEST_SHOWN).map((workspace) => ({
-      key: workspace.conversationId,
-      name: workspace.name,
-      context: `${workspace.kind === "circle" ? "Circle" : "Wisp"} · ${countFiles(workspace.fileCount)}`,
-      size: workspace.usedBytes,
-      action: "Inspect",
-      target: { conversationId: workspace.conversationId },
-    }));
-  }
   if (kind === "folders") {
     return summary.workspaces
       .flatMap((workspace) =>
@@ -170,6 +161,7 @@ function largestRows(summary: StorageSummary, kind: LargestKind): LargestRow[] {
           .filter(({ type }) => type === "directory")
           .map((folder) => ({
             key: `${workspace.conversationId}/${folder.path}`,
+            conversationId: workspace.conversationId,
             name: `${folder.path}/`,
             context: `${workspace.name} · ${countFiles(folder.fileCount)}`,
             size: folder.size,
@@ -187,6 +179,7 @@ function largestRows(summary: StorageSummary, kind: LargestKind): LargestRow[] {
         const folder = slash === -1 ? "" : file.path.slice(0, slash);
         return {
           key: `${workspace.conversationId}/${file.path}`,
+          conversationId: workspace.conversationId,
           name: file.path.slice(slash + 1),
           context: folder ? `${workspace.name} › ${folder}` : workspace.name,
           size: file.size,
@@ -199,8 +192,8 @@ function largestRows(summary: StorageSummary, kind: LargestKind): LargestRow[] {
     .slice(0, LARGEST_SHOWN);
 }
 
+// Workspaces are compared in their own list, so this one looks inside them.
 const KIND_OPTIONS = [
-  { value: "workspaces", label: "Workspaces" },
   { value: "folders", label: "Folders" },
   { value: "files", label: "Files" },
 ] as const;
@@ -208,14 +201,17 @@ const KIND_OPTIONS = [
 export function LargestConsumers({
   summary,
   onInspect,
+  avatar,
 }: {
   summary: StorageSummary;
   onInspect: (target: InspectTarget) => void;
+  /** The picture of the Wisp or circle a row belongs to; rows are numbered without it. */
+  avatar?: (conversationId: string) => ReactNode;
 }) {
-  const [kind, setKind] = useState<LargestKind>("workspaces");
+  const [kind, setKind] = useState<LargestKind>("folders");
   const rows = largestRows(summary, kind);
   // Servers before folder and file details leave them out of every workspace.
-  const unsupported = kind !== "workspaces" && summary.workspaces.every((workspace) => !workspace.folders);
+  const unsupported = summary.workspaces.every((workspace) => !workspace.folders);
   const top = rows[0]?.size ?? 0;
   return (
     <SettingsGroup label="Largest">
@@ -232,9 +228,11 @@ export function LargestConsumers({
             {rows.map((row, index) => (
               <li
                 key={row.key}
-                className="grid grid-cols-[1.25rem_minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1.5 border-border px-3.5 py-2.5 not-first:border-t sm:grid-cols-[1.25rem_minmax(0,1fr)_8rem_5rem_auto]"
+                className="grid grid-cols-[2rem_minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1.5 border-border px-3.5 py-2.5 not-first:border-t sm:grid-cols-[2rem_minmax(0,1fr)_8rem_5rem_auto]"
               >
-                <span className="text-xs text-dim tabular-nums">{index + 1}</span>
+                <span className="flex justify-center text-xs text-dim tabular-nums">
+                  {avatar?.(row.conversationId) ?? index + 1}
+                </span>
                 <span className="min-w-0">
                   <strong className="block truncate text-sm font-medium">{row.name}</strong>
                   <small className="block truncate text-xs text-dim">{row.context}</small>

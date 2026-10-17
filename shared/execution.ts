@@ -66,3 +66,12 @@ export function isContainerImage(value: string): boolean {
 export function isGitToken(value: string): boolean {
   return value.length > 0 && value.length <= MAX_GIT_TOKEN_LENGTH && /^[\x21-\x7e]+$/.test(value);
 }
+
+/** Longest description a Wisp can give a command, shown in its usage report. */
+export const MAX_COMMAND_DESCRIPTION_LENGTH = 120;
+
+/** How a command ended, kept in its tool result's details under `commandResult`. */
+export interface CommandResultDetails {
+  exitCode?: number;
+  durationMs?: number;
+}

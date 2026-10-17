@@ -108,7 +108,8 @@ export function StorageSettingsSection({
       </h2>
       <p className="mb-4 text-xs leading-relaxed text-dim">
         Files in workspaces on <strong className="font-medium text-foreground">{connectionName}</strong>. Sizes are the
-        length of the files, not the space they take on disk. Conversations, settings and sessions are not counted.
+        length of the files, not the space they take on disk; a file linked in several places counts once.
+        Conversations, settings and sessions are not counted.
       </p>
 
       {inspected && inspecting ? (
@@ -149,8 +150,6 @@ export function StorageSettingsSection({
                   Some folders could not be read, so the totals shown are a minimum.
                 </p>
               ) : null}
-
-              <LargestConsumers summary={summary} onInspect={setInspecting} />
 
               <SettingsGroup label="Workspaces">
                 <div className="mb-2 flex flex-wrap items-center gap-2">
@@ -194,6 +193,21 @@ export function StorageSettingsSection({
                 )}
               </SettingsGroup>
 
+              <LargestConsumers
+                summary={summary}
+                onInspect={setInspecting}
+                avatar={(conversationId) => {
+                  const workspace = summary.workspaces.find((candidate) => candidate.conversationId === conversationId);
+                  return workspace ? (
+                    <WorkspaceAvatar
+                      workspace={workspace}
+                      conversation={conversationsById.get(conversationId)}
+                      size="sm"
+                    />
+                  ) : null;
+                }}
+              />
+
               <ArchiveList archives={summary.archives} onDeleted={() => setRefreshCount((count) => count + 1)} />
             </div>
           ) : state.loading && !state.error ? (
@@ -205,6 +219,21 @@ export function StorageSettingsSection({
       )}
     </section>
   );
+}
+
+/** The picture of a workspace's Wisp or circle; a removed Wisp's falls back to the Wisp drawn for its name. */
+function WorkspaceAvatar({
+  workspace,
+  conversation,
+  size = "default",
+}: {
+  workspace: StorageWorkspace;
+  conversation?: ChatView;
+  size?: "sm" | "default";
+}) {
+  if (conversation) return <ChatAvatar chat={conversation} size={size} />;
+  if (workspace.kind !== "wisp") return null;
+  return <Wisp aria-hidden="true" className={size === "sm" ? "size-6 flex-none" : "flex-none"} name={workspace.name} />;
 }
 
 function WorkspaceRow({
@@ -225,11 +254,7 @@ function WorkspaceRow({
   const full = workspace.usedBytes >= workspace.quotaBytes;
   return (
     <SettingsRow className="flex-wrap">
-      {conversation ? (
-        <ChatAvatar chat={conversation} />
-      ) : workspace.kind === "wisp" ? (
-        <Wisp aria-hidden="true" className="flex-none" name={workspace.name} />
-      ) : null}
+      <WorkspaceAvatar workspace={workspace} conversation={conversation} />
       <SettingsRowCopy className="min-w-48 flex-1">
         <span className="flex min-w-0 items-center gap-2">
           <SettingsRowTitle className="truncate">{workspace.name}</SettingsRowTitle>

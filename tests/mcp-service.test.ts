@@ -582,6 +582,19 @@ describe("McpService", () => {
     expect(asked).toEqual(["call-1", "call-4"]);
   });
 
+  it("describes a tool alias with its connection's name until the connection is removed", async () => {
+    const connections = [{ outcome: "connected" as const, tools: [{ ...TOOL, name: "get_file_contents" }] }];
+    const { service } = await createService({}, connections);
+    const { serverId, server } = await addServer(service);
+    await grantAccess(service, "wisp-a", serverId);
+    const alias = (await service.getSnapshot("wisp-a")).activeNames[0]!;
+
+    expect(service.describeTool(alias)).toBe(`${server.name} · Get file contents`);
+    expect(service.describeTool("mcp_000000000000_search")).toBeUndefined();
+    await service.remove({ serverId });
+    expect(service.describeTool(alias)).toBeUndefined();
+  });
+
   it("drops tools from the snapshot when the server is disabled and unregisters labels on removal", async () => {
     const connections = [{ outcome: "connected" as const, tools: [TOOL] }];
     const { service } = await createService({}, connections);

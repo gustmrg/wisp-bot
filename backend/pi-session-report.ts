@@ -13,7 +13,10 @@ import { AUXILIARY_USAGE_ENTRY } from "./image-transcriber.js";
 import { FALLBACK_ENTRY } from "./model-fallback.js";
 import type { ModelPricing } from "./model-pricing-service.js";
 import { safeId } from "./pi-event-translator.js";
-import { getToolMetadata } from "../shared/tool-catalog.js";
+import type { CommandResultDetails } from "../shared/execution.js";
+import { describeMcpAlias, getToolMetadata } from "../shared/tool-catalog.js";
+import { outlineCommand } from "./command-outline.js";
+import { RUN_COMMAND_TOOL } from "./execution-service.js";
 
 const ALLOWED_ARGUMENT_KEYS = [
   "path",
@@ -44,6 +47,8 @@ export interface BuildSessionReportOptions {
    * Used only for cache savings; cost keeps the cost Pi recorded with each turn.
    */
   getCatalogPricing?: SessionPricingLookup;
+  /** A readable name for an MCP tool alias, with its connection's name; undefined when no connection has it. */
+  describeMcpTool?: (alias: string) => string | undefined;
   now?: () => Date;
 }
 
@@ -176,7 +181,10 @@ export function buildSessionReport(
         const toolCall: SessionReportToolCall = {
           toolCallId: safeId(typeof block.id === "string" ? block.id : "tool-call"),
           toolName: block.name,
-          argumentSummary: summarizeToolArguments(block.arguments, options.workspaceDirectory),
+          toolLabel: toolLabel(block.name, options),
+          ...(block.name === RUN_COMMAND_TOOL
+            ? { argumentSummary: "", ...summarizeCommand(block.arguments) }
+            : { argumentSummary: summarizeToolArguments(block.arguments, options.workspaceDirectory) }),
           status: "pending",
           timestamp: entry.timestamp,
         };
@@ -191,10 +199,12 @@ export function buildSessionReport(
       const existing = index === undefined ? undefined : toolCalls[index];
       if (existing && index !== undefined) {
         const imageModel = imageModelOf(toolResult.details);
+        const commandResult = existing.toolName === RUN_COMMAND_TOOL ? commandResultOf(toolResult) : undefined;
         toolCalls[index] = {
           ...existing,
           status: toolResult.isError ? "error" : "completed",
           ...(imageModel ? { imageModel } : {}),
+          ...(commandResult ? { commandResult } : {}),
         };
       }
     }
@@ -231,6 +241,57 @@ export function summarizeToolArguments(args: unknown, workspaceDirectory: string
     parts.push(`${key}: ${key === "path" ? summarizeWorkspacePath(value, workspaceDirectory) : "[value hidden]"}`);
   }
   return truncate(parts.join("; "), MAX_ARGUMENT_SUMMARY_CHARACTERS);
+}
+
+function toolLabel(name: string, options: BuildSessionReportOptions): string | undefined {
+  if (name.startsWith("mcp_")) return options.describeMcpTool?.(name) ?? describeMcpAlias(name)?.label;
+  return getToolMetadata(name)?.label;
+}
+
+const MAX_PURPOSE_CHARACTERS = 120;
+const SECRET_LIKE_PATTERN = /sk-|key[=_-]|token[=_-]|secret[=_-]|bearer|passw/i;
+
+/** What a command ran and what the Wisp said it was for; never its arguments. */
+function summarizeCommand(args: unknown): Pick<SessionReportToolCall, "commandOutline" | "purpose"> {
+  if (!args || typeof args !== "object" || Array.isArray(args)) return {};
+  const { command, description } = args as Record<string, unknown>;
+  const commandOutline = typeof command === "string" ? outlineCommand(command) : "";
+  const purpose =
+    typeof description === "string"
+      ? truncate(
+          description
+            .replace(/[\u0000-\u001f\u007f]+/gu, " ")
+            .replace(/\s+/g, " ")
+            .trim(),
+          MAX_PURPOSE_CHARACTERS,
+        )
+      : "";
+  return {
+    ...(commandOutline ? { commandOutline } : {}),
+    ...(purpose && !SECRET_LIKE_PATTERN.test(purpose) ? { purpose } : {}),
+  };
+}
+
+/**
+ * How a command ended: from the details the run_command tool records, or,
+ * for sessions from before it did, from the status line Pi appends to the
+ * output. Nothing else of the output is read.
+ */
+function commandResultOf(toolResult: ToolResultSessionMessage): SessionReportToolCall["commandResult"] {
+  const recorded = (toolResult.details as { commandResult?: CommandResultDetails } | undefined)?.commandResult;
+  const result: NonNullable<SessionReportToolCall["commandResult"]> = {};
+  if (recorded && typeof recorded === "object") {
+    if (Number.isInteger(recorded.exitCode)) result.exitCode = recorded.exitCode;
+    if (typeof recorded.durationMs === "number" && Number.isFinite(recorded.durationMs) && recorded.durationMs >= 0)
+      result.durationMs = Math.round(recorded.durationMs);
+  }
+  const text = toolResult.content.flatMap((block) => (block.type === "text" ? [block.text] : [])).at(-1) ?? "";
+  const status = text.trimEnd().split("\n").at(-1)?.trim() ?? "";
+  const exited = /^Command exited with code (\d{1,3})$/.exec(status);
+  if (exited && result.exitCode === undefined) result.exitCode = Number(exited[1]);
+  if (/^Command timed out after \d+ seconds$/.test(status)) result.stopped = "timeout";
+  if (status === "Command aborted") result.stopped = "aborted";
+  return Object.keys(result).length ? result : undefined;
 }
 
 function tokenCount(value: number | undefined): number {

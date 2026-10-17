@@ -311,6 +311,7 @@ export async function createBackendRuntime(options: BackendRuntimeOptions): Prom
       const model = modelService.getModelRuntime().getModel(providerId, modelId);
       return model ? catalogModelPricing(model.cost) : null;
     },
+    (alias) => mcpService.describeTool(alias),
   );
   const storage = new StorageService({
     listWorkspaces: () => conversationRepository.listWorkspaceFolders(),

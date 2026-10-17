@@ -10,6 +10,8 @@ import {
   EXECUTION_MODES,
   isContainerImage,
   isGitToken,
+  MAX_COMMAND_DESCRIPTION_LENGTH,
+  type CommandResultDetails,
   type ContainerRuntimeStatus,
   type ExecutionMode,
   type SaveWispExecutionRequest,
@@ -245,13 +247,30 @@ export class ExecutionService implements IntegrationToolSource {
         signal,
       );
       await assertRoomToRun(wisp);
-      return base.execute(toolCallId, params, signal, onUpdate, ctx);
+      const startedAt = performance.now();
+      const result = await base.execute(toolCallId, params, signal, onUpdate, ctx);
+      const exitCode = (result.structuredContent as { exit_code?: unknown } | undefined)?.exit_code;
+      // Kept with the session so its report can tell how each command ended.
+      const commandResult: CommandResultDetails = {
+        ...(typeof exitCode === "number" ? { exitCode } : {}),
+        durationMs: Math.round(performance.now() - startedAt),
+      };
+      return { ...result, details: { ...result.details, commandResult } };
+    };
+    // Plain JSON Schema, like the process tool's, with a description the usage report can show.
+    const parameters = JSON.parse(JSON.stringify(base.parameters)) as { properties: Record<string, unknown> };
+    parameters.properties.description = {
+      type: "string",
+      maxLength: MAX_COMMAND_DESCRIPTION_LENGTH,
+      description:
+        "A few words on what the command does, shown to the user in the Wisp's usage report (for example: Run the test suite). Never include secrets.",
     };
     return {
       ...base,
       name: RUN_COMMAND_TOOL,
       label: "Run command",
       description: runCommandDescription(settings.localNetwork),
+      parameters,
       promptSnippet: "Run bash commands in this Wisp's Linux container",
       promptGuidelines: undefined,
       execute,

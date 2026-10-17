@@ -1,4 +1,4 @@
-import { chmod, mkdir, mkdtemp, readdir, readFile, rm, stat, symlink, writeFile } from "node:fs/promises";
+import { chmod, link, mkdir, mkdtemp, readdir, readFile, rm, stat, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
@@ -309,6 +309,21 @@ describe("measureDirectory", () => {
 
     expect(await measureDirectory(workspace)).toBe(3);
     expect(await measureDirectory(path.join(root, "missing"))).toBe(0);
+  });
+
+  it("counts a file hard-linked in several places once", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "wisp-measure-"));
+    directories.push(root);
+    const store = path.join(root, ".home", "store");
+    const project = path.join(root, "project", "node_modules");
+    await mkdir(store, { recursive: true });
+    await mkdir(project, { recursive: true });
+    await writeFile(path.join(store, "pkg"), "x".repeat(100), "utf8");
+    await link(path.join(store, "pkg"), path.join(project, "pkg"));
+    await link(path.join(store, "pkg"), path.join(store, "pkg-bin"));
+    await writeFile(path.join(project, "own.txt"), "abc", "utf8");
+
+    expect(await measureDirectory(root)).toBe(103);
   });
 
   it("refuses to report a lower bound when part of the folder cannot be read", async () => {

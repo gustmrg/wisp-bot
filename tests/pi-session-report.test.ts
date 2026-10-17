@@ -75,6 +75,86 @@ describe("buildSessionReport", () => {
     expect(JSON.stringify(report)).not.toContain("PRIVATE");
   });
 
+  it("outlines commands and how they ended without their arguments or output", () => {
+    const entries = [
+      messageEntry(
+        assistantMessage({
+          content: [
+            {
+              type: "toolCall",
+              id: "cmd-1",
+              name: "run_command",
+              arguments: { command: "cd PRIVATE && npm run build -- --token PRIVATE", description: "Build the app" },
+            },
+            { type: "toolCall", id: "cmd-2", name: "run_command", arguments: { command: "npm test PRIVATE" } },
+            { type: "toolCall", id: "cmd-3", name: "run_command", arguments: { command: "sleep 999" } },
+          ],
+        }),
+      ),
+      messageEntry({
+        role: "toolResult",
+        toolCallId: "cmd-1",
+        toolName: "run_command",
+        content: [{ type: "text", text: "PRIVATE OUTPUT" }],
+        details: { commandResult: { exitCode: 0, durationMs: 4_210 } },
+        isError: false,
+      }),
+      // Sessions from before commands recorded their result still show the exit code Pi reported.
+      messageEntry({
+        role: "toolResult",
+        toolCallId: "cmd-2",
+        toolName: "run_command",
+        content: [{ type: "text", text: "PRIVATE OUTPUT\n\nCommand exited with code 1" }],
+        isError: true,
+      }),
+      messageEntry({
+        role: "toolResult",
+        toolCallId: "cmd-3",
+        toolName: "run_command",
+        content: [{ type: "text", text: "Command timed out after 60 seconds" }],
+        isError: true,
+      }),
+    ];
+    const report = buildSessionReport("session-1", entries, { workspaceDirectory: WORKSPACE, getPricing });
+
+    expect(report.toolCalls).toEqual([
+      expect.objectContaining({
+        toolLabel: "Run command",
+        argumentSummary: "",
+        commandOutline: "cd · npm run build",
+        purpose: "Build the app",
+        commandResult: { exitCode: 0, durationMs: 4_210 },
+        status: "completed",
+      }),
+      expect.objectContaining({ commandOutline: "npm test", commandResult: { exitCode: 1 }, status: "error" }),
+      expect.objectContaining({ commandOutline: "sleep", commandResult: { stopped: "timeout" } }),
+    ]);
+    expect(report.toolCalls[1]).not.toHaveProperty("purpose");
+    expect(JSON.stringify(report)).not.toContain("PRIVATE");
+  });
+
+  it("names MCP tools after their connection, falling back to the alias for removed ones", () => {
+    const entries = [
+      { type: "custom", customType: "wisp:mcp-tools", data: { tools: [{ name: "mcp_75b04d98ed1b_get_me" }] } },
+      messageEntry(
+        assistantMessage({
+          content: [
+            { type: "toolCall", id: "mcp-1", name: "mcp_75b04d98ed1b_get_me", arguments: {} },
+            { type: "toolCall", id: "read-1", name: "read", arguments: {} },
+          ],
+        }),
+      ),
+    ] as unknown as SessionEntry[];
+    const named = buildSessionReport("session-1", entries, {
+      workspaceDirectory: WORKSPACE,
+      getPricing,
+      describeMcpTool: (alias) => (alias === "mcp_75b04d98ed1b_get_me" ? "GitHub · Get me" : undefined),
+    });
+    expect(named.toolCalls.map(({ toolLabel }) => toolLabel)).toEqual(["GitHub · Get me", "Read file"]);
+    const removed = buildSessionReport("session-1", entries, { workspaceDirectory: WORKSPACE, getPricing });
+    expect(removed.toolCalls[0]?.toolLabel).toBe("Get me");
+  });
+
   it("aggregates token usage per model and for the whole session", () => {
     const entries = [
       messageEntry(assistantMessage()),
