@@ -22,10 +22,10 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  # Resolves the next version on top of the chosen branch and runs every
-  # quality gate against the bumped tree. Nothing is committed or tagged until
-  # packaging succeeds, so a failed run leaves the repository untouched.
-  prepare:
+  # Resolves the next version on top of the chosen branch. The quality gates
+  # and packaging both start from it and run in parallel. Nothing is committed
+  # or tagged until both succeed, so a failed run leaves the repository untouched.
+  version:
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.bump.outputs.version }}
@@ -35,8 +35,6 @@ jobs:
       - uses: actions/setup-node@v7
         with:
           node-version: 22.19.0
-          cache: npm
-      - run: npm ci
       - id: bump
         name: Resolve release version
         env:
@@ -67,6 +65,19 @@ jobs:
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "previous=$PREVIOUS" >> "$GITHUB_OUTPUT"
           echo "Releasing v$VERSION from $GITHUB_REF_NAME at $GITHUB_SHA, with notes since ${PREVIOUS:-the first commit}."
+
+  # Runs every quality gate against the bumped tree.
+  verify:
+    needs: version
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22.19.0
+          cache: npm
+      - run: npm ci
+      - run: npm version "${{ needs.version.outputs.version }}" --no-git-tag-version --allow-same-version
       - run: npm run lint
       - run: npm run format:check
       - run: npm run typecheck
@@ -81,7 +92,7 @@ jobs:
           retention-days: 30
 
   package:
-    needs: prepare
+    needs: version
     strategy:
       fail-fast: true
       matrix:
@@ -100,11 +111,11 @@ jobs:
           node-version: 22.19.0
           cache: npm
       - run: npm ci
-      - run: npm version "${{ needs.prepare.outputs.version }}" --no-git-tag-version --allow-same-version
+      - run: npm version "${{ needs.version.outputs.version }}" --no-git-tag-version --allow-same-version
       - name: Build and package
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
-          VERSION: ${{ needs.prepare.outputs.version }}
+          VERSION: ${{ needs.version.outputs.version }}
         run: |
           # Betas wear the amber dev icon so they are told apart from the stable
           # app once installed. electron-builder converts the PNG for each platform.
@@ -127,11 +138,12 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
-  # Commits the version bump, tags it, and publishes the release only after
-  # every gate and both packaging jobs have passed. A release moves main with
-  # it; a beta's commit is kept by its tag alone, so no branch takes its version.
+  # Commits the version bump, tags it, and uploads the release as a draft only
+  # after every gate and both packaging jobs have passed. A release moves main
+  # with it; a beta's commit is kept by its tag alone, so no branch takes its
+  # version. The draft stays hidden from the updater until the server is on npm.
   release:
-    needs: [prepare, package]
+    needs: [version, verify, package]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -142,7 +154,7 @@ jobs:
           node-version: 22.19.0
       - name: Commit and tag the version
         env:
-          VERSION: ${{ needs.prepare.outputs.version }}
+          VERSION: ${{ needs.version.outputs.version }}
         run: |
           npm version "$VERSION" --no-git-tag-version --allow-same-version
           git config user.name "github-actions[bot]"
@@ -165,15 +177,15 @@ jobs:
           merge-multiple: true
       - name: Generate checksums
         run: node scripts/checksums.mjs artifacts
-      - name: Publish GitHub release
+      - name: Draft GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG: v${{ needs.prepare.outputs.version }}
-          PREVIOUS: ${{ needs.prepare.outputs.previous }}
+          TAG: v${{ needs.version.outputs.version }}
+          PREVIOUS: ${{ needs.version.outputs.previous }}
         run: |
           # Prerelease versions (1.2.0-beta.1) feed only the beta update channel
           # and must not become the latest release.
-          FLAGS=(--generate-notes)
+          FLAGS=(--draft --generate-notes)
           if [[ "$TAG" == *-* ]]; then FLAGS+=(--prerelease); fi
           if [[ -n "$PREVIOUS" ]]; then FLAGS+=(--notes-start-tag "$PREVIOUS"); fi
           gh release create "$TAG" --verify-tag --title "Wisp Bot $TAG" "${FLAGS[@]}"
@@ -182,10 +194,11 @@ jobs:
   # Publishes the headless server to npm at the version just tagged. The
   # desktop app installs exactly its own version on a remote machine, and
   # `npx @gustmrg/wisp-server setup` runs this package, so every release needs it.
-  # Re-run this job alone if it fails; npm refuses a version published twice.
+  # Re-run this job if it fails; npm refuses a version published twice, and the
+  # release stays a draft until it passes.
   # It authenticates with the package's npm trusted publisher (OIDC).
   publish-server:
-    needs: [prepare, release]
+    needs: [version, release]
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -193,7 +206,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: v${{ needs.prepare.outputs.version }}
+          ref: v${{ needs.version.outputs.version }}
       - uses: actions/setup-node@v7
         with:
           node-version: 22.19.0
@@ -206,7 +219,7 @@ jobs:
       - name: Publish to npm
         working-directory: release/server
         env:
-          VERSION: ${{ needs.prepare.outputs.version }}
+          VERSION: ${{ needs.version.outputs.version }}
         run: |
           # A prerelease must not become what `npx @gustmrg/wisp-server` runs.
           TAG=latest
@@ -224,7 +237,7 @@ jobs:
       # cannot install it on a server, so the release is not done yet.
       - name: Wait until npm serves the version
         env:
-          VERSION: ${{ needs.prepare.outputs.version }}
+          VERSION: ${{ needs.version.outputs.version }}
         run: |
           TAG=latest
           if [[ "$VERSION" == *-* ]]; then TAG=beta; fi
@@ -243,3 +256,21 @@ jobs:
             echo "Waiting for npm (version: ${found:-none}, $TAG: ${tagged:-none})…"
             sleep 15
           done
+
+  # Publishes the draft once npm serves the matching server, so no updated app
+  # meets a version it cannot install on a server.
+  publish-release:
+    needs: [version, publish-server]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: v${{ needs.version.outputs.version }}
+        run: |
+          FLAGS=(--draft=false)
+          if [[ "$TAG" != *-* ]]; then FLAGS+=(--latest); fi
+          gh release edit "$TAG" "${FLAGS[@]}"
