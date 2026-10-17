@@ -135,6 +135,28 @@ it("shows each workspace with its Wisp's or circle's picture", async () => {
   expect(row("Nova").querySelectorAll('[data-slot="wisp"]')).toHaveLength(1);
 });
 
+it("lists workspaces before the largest folders and files, which show their Wisp's picture", async () => {
+  const user = userEvent.setup();
+  install();
+  render(<StorageSettingsSection conversations={[wispChatView("a", { wisp: { name: "Atlas", color: "#5b8def" } })]} />);
+
+  const workspaces = await screen.findByRole("region", { name: "Workspaces" });
+  const largest = screen.getByRole("region", { name: "Largest" });
+  expect(workspaces.compareDocumentPosition(largest) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  // Workspaces are compared in their own list, so Largest looks inside them.
+  expect(within(largest).queryByRole("radio", { name: "Workspaces" })).not.toBeInTheDocument();
+  expect(within(largest).getByRole("radio", { name: "Folders" })).toBeChecked();
+  const rows = within(largest).getAllByRole("listitem");
+  expect(rows.map((item) => item.textContent)).toEqual([
+    expect.stringContaining("inbox/"),
+    expect.stringContaining("papers/"),
+  ]);
+  for (const item of rows) expect(item.querySelectorAll('[data-slot="wisp"]')).toHaveLength(1);
+
+  await user.click(within(largest).getByRole("radio", { name: "Files" }));
+  expect(within(largest).getAllByRole("listitem")[0]!.querySelectorAll('[data-slot="wisp"]')).toHaveLength(1);
+});
+
 it("starts filtered to a workspace and can show all", async () => {
   const user = userEvent.setup();
   install();
