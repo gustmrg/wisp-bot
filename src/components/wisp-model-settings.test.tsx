@@ -68,13 +68,13 @@ function api(
 }
 
 describe("WispModelSettings", () => {
-  it("shows the applied model read-only with a notice that it is fixed at creation", async () => {
+  it("shows the applied model read-only, noting that it follows the global model", async () => {
     api(baseView);
     render(<WispModelSettings conversationId="wisp-one" />);
 
     expect(await screen.findByText("Provider a")).toBeVisible();
     expect(screen.getByText("model-a")).toBeVisible();
-    expect(screen.getByText(/set when the Wisp is created/)).toBeVisible();
+    expect(screen.queryByText(/set when the Wisp is created/)).not.toBeInTheDocument();
     expect(screen.getByText(/follows the global model/)).toBeVisible();
     expect(screen.queryByRole("combobox", { name: "Reasoning" })).not.toBeInTheDocument();
     expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();
@@ -91,7 +91,7 @@ describe("WispModelSettings", () => {
     expect(screen.queryByText(/follows the global model/)).not.toBeInTheDocument();
   });
 
-  it("changes the reasoning level of a Wisp with its own model, warning about cost", async () => {
+  it("changes the reasoning level of a Wisp with its own model, explaining the cost on hover", async () => {
     const user = userEvent.setup();
     const override: ModelSelection = { providerId: "provider-b", modelId: "model-b", maxOutputTokens: 500 };
     const applyModel = api(
@@ -105,6 +105,9 @@ describe("WispModelSettings", () => {
     const select = await screen.findByRole("combobox", { name: "Reasoning" });
     expect(select).toHaveTextContent("Off");
     expect(screen.queryByText(/Reasoning uses more tokens/)).not.toBeInTheDocument();
+    await user.hover(screen.getByRole("button", { name: "About reasoning cost" }));
+    expect(await screen.findByText(/Reasoning uses more tokens/)).toBeVisible();
+    await user.unhover(screen.getByRole("button", { name: "About reasoning cost" }));
     await user.click(select);
     expect(screen.queryByRole("option", { name: "Medium" })).not.toBeInTheDocument();
     await user.click(await screen.findByRole("option", { name: "High" }));

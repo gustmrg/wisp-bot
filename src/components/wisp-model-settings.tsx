@@ -1,5 +1,4 @@
 import { useEffect, useState } from "react";
-import { InfoIcon } from "lucide-react";
 
 import type { AiSettingsView, ConversationModelView, ThinkingLevel, WispFallback } from "../../shared/contracts";
 import { NoImageInputNote } from "@/components/no-image-input-note";
@@ -156,6 +155,11 @@ export function WispModelSettings({ conversationId }: { conversationId: string }
               ) : (
                 <p className="m-0 mt-1.5 text-dim">Not configured</p>
               )}
+              {!override ? (
+                <p className="m-0 mt-1.5 text-xs leading-relaxed text-dim">
+                  This Wisp follows the global model — changes in Settings → AI Model also apply here.
+                </p>
+              ) : null}
               {view.pending ? (
                 <p className="m-0 mt-2.5 break-all border-t border-border pt-2 text-xs text-dim">
                   Switches to {view.pending.modelId} after this turn
@@ -192,15 +196,6 @@ export function WispModelSettings({ conversationId }: { conversationId: string }
             {saveError ? (
               <p role="alert" className="m-0 text-destructive">
                 {saveError}
-              </p>
-            ) : null}
-            <p className="m-0 flex items-start gap-2 rounded-lg border border-border bg-muted/60 p-2.5 leading-relaxed text-dim">
-              <InfoIcon aria-hidden="true" className="mt-0.5 size-3.5 flex-none" />
-              <span>The model is set when the Wisp is created and can't be changed for now.</span>
-            </p>
-            {!view.override ? (
-              <p className="m-0 text-xs text-dim">
-                This Wisp follows the global model — changes in Settings → AI Model also apply here.
               </p>
             ) : null}
             {applied && appliedProvider && !appliedProvider.credentialConfigured ? (

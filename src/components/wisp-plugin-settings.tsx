@@ -20,7 +20,7 @@ import type {
   WispToolPolicyView,
   WorkspaceFileCategory,
 } from "../../shared/tool-policy";
-import { AccessRow, InitialsBadge, type AccessOption } from "@/components/access-row";
+import { AccessRow, McpServerBadge, type AccessOption } from "@/components/access-row";
 import { SettingsActions } from "@/components/settings/settings-primitives";
 import { PluginLogo } from "@/components/plugin-logo";
 import { Button } from "@/components/ui/button";
@@ -380,7 +380,7 @@ function WispAccessForm({
       <AccessRow
         key={server.serverId}
         id={`${formId}-mcp-${server.serverId}`}
-        icon={server.preset ? <PluginLogo pluginId={server.preset} size="sm" /> : <InitialsBadge name={server.name} />}
+        icon={server.preset ? <PluginLogo pluginId={server.preset} size="sm" /> : <McpServerBadge />}
         label={server.name}
         value={access}
         options={MCP_ACCESS_OPTIONS.map((option) => ({
