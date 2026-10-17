@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
+import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import {
   BellIcon,
   BellOffIcon,
@@ -34,7 +34,7 @@ import { sidebarLayoutStyle } from "@/lib/layout";
 import { formatShortcut, TOGGLE_SIDEBAR_SHORTCUT } from "@/lib/shortcuts";
 import { panelResizer, profileAvatar } from "@/lib/ui-classes";
 import { cn } from "@/lib/utils";
-import { wispAccent, wispAccentStyle, wispColor } from "@/lib/wisp-appearance";
+import { wispAccentStyle, wispColor } from "@/lib/wisp-appearance";
 
 interface SidebarProps {
   activeChatId: ChatId;
@@ -87,28 +87,6 @@ function greeting(now: Date, timeZone: string, name: string): string {
   const hour = Number(new Intl.DateTimeFormat("en-US", { hour: "numeric", hourCycle: "h23", timeZone }).format(now));
   const part = hour >= 5 && hour < 12 ? "morning" : hour >= 12 && hour < 18 ? "afternoon" : "evening";
   return name ? `Good ${part}, ${name}` : `Good ${part}`;
-}
-
-/** The colors of the Wisps that are busiest, for the light at the top of the mobile list. */
-function ambientColors(
-  chats: ChatViewCollection,
-  statuses: Record<string, ManagedConversationStatus>,
-  approvals: Record<string, ReadonlyArray<ToolApprovalRequest>>,
-): CSSProperties {
-  const ranked = Object.values(chats)
-    .flatMap((chat) => (chat.kind === "wisp" ? [chat] : []))
-    .sort(
-      (left, right) =>
-        Number(Boolean(approvals[right.id]?.length)) * 4 +
-        Number(statuses[right.id] === "working") * 2 +
-        Number(Boolean(right.unread)) -
-        (Number(Boolean(approvals[left.id]?.length)) * 4 +
-          Number(statuses[left.id] === "working") * 2 +
-          Number(Boolean(left.unread))),
-    )
-    .slice(0, 3)
-    .map((chat) => wispAccent(wispColor(chat.wisp.name, chat.wisp.color)).accent);
-  return Object.fromEntries(ranked.map((color, index) => [`--ambient-${index + 1}`, color])) as CSSProperties;
 }
 
 function activityTime(chat: Parameters<typeof chatActivityDate>[0] | undefined): number {
@@ -187,7 +165,6 @@ function Sidebar({
       >
         {mobile ? (
           <>
-            <div className="mobile-list-ambient" style={ambientColors(chats, statuses, approvals)} aria-hidden="true" />
             <header className="mobile-list-header">
               <div>
                 <p className="mobile-list-greeting">{greeting(now, timeZone, currentUser.givenName)}</p>
