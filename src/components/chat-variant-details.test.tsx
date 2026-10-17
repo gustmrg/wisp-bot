@@ -159,7 +159,7 @@ it("loads model and usage data lazily and keeps model details across tabs", asyn
   await user.click(screen.getByRole("tab", { name: "Model" }));
   expect(await screen.findByText("Test")).toBeVisible();
   expect(screen.getByText("model")).toBeVisible();
-  expect(screen.getByText(/set when the Wisp is created/)).toBeVisible();
+  expect(screen.getByText(/follows the global model/)).toBeVisible();
   await user.click(screen.getByRole("tab", { name: "Usage" }));
   expect(await screen.findByText("No session yet")).toBeVisible();
   await user.click(screen.getByRole("tab", { name: "Model" }));

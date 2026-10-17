@@ -220,7 +220,9 @@ function ModelSettingsSection({
               <SettingsRow>
                 <SettingsRowCopy>
                   <SettingsRowTitle htmlFor="ai-provider">Provider</SettingsRowTitle>
-                  <SettingsRowDescription>Select the service that will run your Wisps.</SettingsRowDescription>
+                  <SettingsRowDescription>
+                    Runs every Wisp that follows the global model. Wisps with their own model keep it.
+                  </SettingsRowDescription>
                 </SettingsRowCopy>
                 <Select items={providerItems} value={providerId} onValueChange={handleProviderChange}>
                   <SelectTrigger id="ai-provider" className="w-[220px] max-w-[55%]">

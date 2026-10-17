@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { ServerIcon } from "lucide-react";
 
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
@@ -65,14 +66,11 @@ export function AccessRow({
   );
 }
 
-/** Initials badge for connections without a bundled logo, sized like a small plugin logo. */
-export function InitialsBadge({ name }: { name: string }) {
+/** Server badge for MCP connections without a bundled logo, sized like a small plugin logo. */
+export function McpServerBadge() {
   return (
-    <span
-      aria-hidden="true"
-      className="flex size-7 flex-none items-center justify-center rounded-lg bg-muted text-2xs font-medium"
-    >
-      {name.slice(0, 2).toUpperCase()}
+    <span aria-hidden="true" className="flex size-7 flex-none items-center justify-center rounded-lg bg-muted">
+      <ServerIcon className="size-3.5 text-dim" />
     </span>
   );
 }

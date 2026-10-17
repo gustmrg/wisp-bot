@@ -1,4 +1,4 @@
-import { HourglassIcon } from "lucide-react";
+import { InfoIcon } from "lucide-react";
 
 import type { ModelSummary, ThinkingLevel } from "../../shared/contracts";
 import {
@@ -8,6 +8,7 @@ import {
   SettingsRowTitle,
 } from "@/components/settings/settings-primitives";
 import { cn } from "@/lib/utils";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 export const THINKING_LEVEL_LABELS: Record<ThinkingLevel, string> = {
@@ -35,13 +36,23 @@ export function keepThinkingLevel(level: ThinkingLevel, model: ModelSummary | un
   return levels.includes("off") ? "off" : (levels[0] ?? "off");
 }
 
-/** Says that reasoning costs more and answers slower, wherever a level other than "off" is chosen. */
-export function ThinkingCostNote() {
+/** An (i) beside the Reasoning title that says, on hover or tap, that reasoning costs more and answers slower. */
+function ThinkingCostInfo() {
   return (
-    <span className="flex items-center gap-1 text-xs text-warning [&_svg]:size-3 [&_svg]:flex-none">
-      <HourglassIcon aria-hidden="true" />
-      Reasoning uses more tokens and makes replies slower; higher levels cost more.
-    </span>
+    <Popover>
+      <PopoverTrigger
+        type="button"
+        openOnHover
+        delay={150}
+        aria-label="About reasoning cost"
+        className="inline-flex size-5 flex-none items-center justify-center rounded-full text-dim outline-none hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50 [&_svg]:size-3.5"
+      >
+        <InfoIcon aria-hidden="true" />
+      </PopoverTrigger>
+      <PopoverContent align="start" className="w-64 p-2.5 text-xs leading-relaxed">
+        Reasoning uses more tokens and makes replies slower; higher levels cost more.
+      </PopoverContent>
+    </Popover>
   );
 }
 
@@ -59,13 +70,13 @@ interface ThinkingLevelRowProps {
 /** A settings row that chooses how much a reasoning model thinks, listing only the levels it supports. */
 export function ThinkingLevelRow({ id, model, value, onChange, disabled, stacked, className }: ThinkingLevelRowProps) {
   const levels = model.thinkingLevels;
-  const title = <SettingsRowTitle htmlFor={id}>Reasoning</SettingsRowTitle>;
-  const copy = (
-    <>
-      <SettingsRowDescription>How much the model thinks before it answers.</SettingsRowDescription>
-      {value !== "off" ? <ThinkingCostNote /> : null}
-    </>
+  const title = (
+    <span className="flex items-center gap-1">
+      <SettingsRowTitle htmlFor={id}>Reasoning</SettingsRowTitle>
+      <ThinkingCostInfo />
+    </span>
   );
+  const copy = <SettingsRowDescription>How much the model thinks before it answers.</SettingsRowDescription>;
   const select = (
     <Select
       items={levels.map((level) => ({ value: level, label: THINKING_LEVEL_LABELS[level] }))}
