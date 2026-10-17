@@ -1,4 +1,4 @@
-import type { McpPresetId } from "./mcp-presets.js";
+import type { McpPresetId } from "./mcp-presets/index.js";
 
 /**
  * Remote MCP server connections. The first release supports Streamable HTTP

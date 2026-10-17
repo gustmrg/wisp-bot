@@ -5,9 +5,6 @@ import path from "node:path";
 import type { ToolDefinition } from "@earendil-works/pi-coding-agent" with { "resolution-mode": "import" };
 
 import {
-  disambiguateMcpAlias,
-  MCP_ACCESS_LEVELS,
-  mcpToolAlias,
   type McpAccess,
   type McpAuthMode,
   type McpConnectionResult,
@@ -16,18 +13,11 @@ import {
   type McpSettingsView,
   type WispMcpAccessView,
 } from "../shared/mcp.js";
-import { isMcpPresetId, type McpPresetId } from "../shared/mcp-presets.js";
 import { registerDynamicToolMetadata, unregisterDynamicToolMetadata } from "../shared/tool-catalog.js";
 import { writeFileAtomically } from "./atomic-file.js";
 import { WispBackendError } from "./backend-error.js";
 import type { EncryptionService } from "./encrypted-credential-store.js";
-import {
-  McpConnection,
-  convertMcpToolResult,
-  type McpConnectionAuth,
-  type McpConnectionOptions,
-  type McpSdkTool,
-} from "./mcp-bridge.js";
+import { McpConnection, type McpConnectionAuth, type McpConnectionOptions, type McpSdkTool } from "./mcp-bridge.js";
 import {
   describeFileArguments,
   expandFileArguments,
@@ -35,66 +25,35 @@ import {
   withFileReferenceHints,
 } from "./mcp-file-arguments.js";
 import { McpOAuthProvider, type McpSignInBrowser } from "./mcp-oauth.js";
-import { PLUGIN_SKILLS } from "./plugin-skills.js";
+import { PLUGIN_SKILLS } from "./plugin-skills/index.js";
 import { McpSecretStore } from "./mcp-secret-store.js";
+import {
+  type AlwaysAllowedTools,
+  defaultState,
+  type McpServerRecord,
+  type McpState,
+  normalizeState,
+  prunedAlwaysAllowed,
+} from "./mcp-state.js";
+import {
+  buildToolSnapshot,
+  convertResult,
+  type McpToolRecord,
+  summarizeArguments,
+  toolInputSchema,
+  validateToolArguments,
+} from "./mcp-tools.js";
 import type { IntegrationSkill, IntegrationToolSnapshot, SnapshotToolMetadata } from "./integration-tool-source.js";
 import {
   invalidMcpRequest,
-  MAX_TOOL_DESCRIPTION_CHARACTERS,
-  MAX_TOOL_SCHEMA_JSON_BYTES,
-  MAX_TOOL_SNAPSHOT_TOOLS,
-  mcpRecord,
   parseMcpConversation,
-  parseMcpExtraHeaders,
   parseSaveMcpServer,
   parseSaveWispMcpAccess,
   parseTestMcpConnection,
   parseFinishMcpSignIn,
   parseMcpServerRequest,
-  TOOL_NAME_PATTERN,
 } from "./mcp-validation.js";
 import type { ToolAuthorizationBroker } from "./tool-authorization-broker.js";
-
-const MAX_ARGUMENT_JSON_BYTES = 200_000;
-const MAX_SUMMARY_ARGUMENT_CHARACTERS = 60;
-const SECRET_KEY_PATTERN = /token|secret|password|authorization|credential|api[-_]?key/i;
-
-interface McpToolRecord {
-  name: string;
-  alias: string;
-  label: string;
-  description: string;
-  fingerprint: string;
-  inputSchema: unknown;
-}
-
-interface McpServerRecord {
-  serverId: string;
-  name: string;
-  endpoint: string;
-  authMode: McpAuthMode;
-  enabled: boolean;
-  /** Bumped whenever endpoint, authentication, or account identity changes. */
-  configGeneration: number;
-  headerName?: string;
-  /** Non-secret headers sent with every request; changing them re-discovers tools but keeps grants. */
-  extraHeaders?: Record<string, string>;
-  preset?: McpPresetId;
-  snapshot?: { discoveredAt: string; tools: McpToolRecord[] };
-  lastConnection?: { state: "connected" | "unavailable"; at: string; message?: string };
-}
-
-/** Tool name → fingerprint of the definition the user always allowed. */
-type AlwaysAllowedTools = Record<string, string>;
-
-interface McpState {
-  schemaVersion: 2;
-  revision: string;
-  servers: Record<string, McpServerRecord>;
-  grants: Record<string, Record<string, McpAccess>>;
-  /** Per Wisp and server; pruned on every commit to granted, unchanged tools. */
-  alwaysAllowed: Record<string, Record<string, AlwaysAllowedTools>>;
-}
 
 export interface McpServiceOptions {
   dataDirectory: string;
@@ -465,7 +424,7 @@ export class McpService {
           await this.discardSignInCredentials(serverId);
           throw error;
         }
-        current.snapshot = { discoveredAt: new Date().toISOString(), tools: this.buildSnapshot(tools, serverId) };
+        current.snapshot = { discoveredAt: new Date().toISOString(), tools: buildToolSnapshot(tools, serverId) };
         current.lastConnection = { state: "connected", at: new Date().toISOString() };
         await this.commit(this.state);
         this.registerSnapshotMetadata();
@@ -914,7 +873,7 @@ export class McpService {
 
   /** Stores a discovered tool set; callers hold the mutation queue. */
   private async applySnapshot(server: McpServerRecord, tools: ReadonlyArray<McpSdkTool>): Promise<void> {
-    const snapshot = this.buildSnapshot(tools, server.serverId);
+    const snapshot = buildToolSnapshot(tools, server.serverId);
     server.snapshot = { discoveredAt: new Date().toISOString(), tools: snapshot };
     server.lastConnection = { state: "connected", at: new Date().toISOString() };
     await this.commit(this.state);
@@ -989,41 +948,6 @@ export class McpService {
     if (server.lastConnection?.state === "unavailable") return "unavailable";
     if (server.lastConnection?.state === "connected") return "connected";
     return "configured";
-  }
-
-  private buildSnapshot(tools: ReadonlyArray<McpSdkTool>, serverId: string): McpToolRecord[] {
-    const records: McpToolRecord[] = [];
-    const seenNames = new Set<string>();
-    const usedAliases = new Set<string>();
-    for (const tool of tools) {
-      if (!tool || typeof tool.name !== "string" || !TOOL_NAME_PATTERN.test(tool.name)) continue;
-      if (seenNames.has(tool.name)) continue;
-      const schema = boundedSchema(tool.inputSchema);
-      if (schema === undefined) continue;
-      seenNames.add(tool.name);
-      // Distinct names like "search.users" and "search_users" normalize onto
-      // the same slug; keep both with a stable, name-derived suffix.
-      let alias = mcpToolAlias(serverId, tool.name);
-      if (usedAliases.has(alias)) {
-        alias = disambiguateMcpAlias(alias, tool.name);
-        if (usedAliases.has(alias)) continue;
-      }
-      usedAliases.add(alias);
-      const description = boundedText(tool.description ?? "", MAX_TOOL_DESCRIPTION_CHARACTERS);
-      records.push({
-        name: tool.name,
-        alias,
-        label: boundedText(tool.name, 60),
-        description,
-        fingerprint: createHash("sha256")
-          .update(JSON.stringify([tool.name, description, schema]))
-          .digest("hex"),
-        inputSchema: schema,
-      });
-      if (records.length >= MAX_TOOL_SNAPSHOT_TOOLS) break;
-    }
-    if (!records.length) throw new WispBackendError("invalid_configuration", "This server exposes no usable tools.");
-    return records;
   }
 
   private registerSnapshotMetadata(): void {
@@ -1227,30 +1151,6 @@ export class McpService {
   }
 }
 
-function defaultState(): McpState {
-  return { schemaVersion: 2, revision: randomUUID(), servers: {}, grants: {}, alwaysAllowed: {} };
-}
-
-/**
- * Keeps only tools still granted and unchanged: a removed or re-identified
- * connection, revoked access, or a new tool definition drops the permission,
- * so a changed tool always asks again.
- */
-function prunedAlwaysAllowed(state: McpState): McpState["alwaysAllowed"] {
-  const pruned: McpState["alwaysAllowed"] = {};
-  for (const [sessionId, servers] of Object.entries(state.alwaysAllowed)) {
-    for (const [serverId, tools] of Object.entries(servers)) {
-      const server = state.servers[serverId];
-      if (!server || (state.grants[sessionId]?.[serverId] ?? "none") === "none") continue;
-      const kept = Object.entries(tools).filter(([name, fingerprint]) =>
-        server.snapshot?.tools.some((tool) => tool.name === name && tool.fingerprint === fingerprint),
-      );
-      if (kept.length) (pruned[sessionId] ??= {})[serverId] = Object.fromEntries(kept);
-    }
-  }
-  return pruned;
-}
-
 /** Header sets compare by name and value; an empty set equals none. */
 function sameHeaders(
   saved: Readonly<Record<string, string>> | undefined,
@@ -1259,203 +1159,6 @@ function sameHeaders(
   const a = Object.entries(saved ?? {}).sort(([x], [y]) => x.localeCompare(y));
   const b = Object.entries(requested).sort(([x], [y]) => x.localeCompare(y));
   return JSON.stringify(a) === JSON.stringify(b);
-}
-
-function normalizeState(value: unknown): McpState {
-  // Version 1 predates always-allowed tools and migrates with none.
-  const raw = mcpRecord(value, ["schemaVersion", "revision", "servers", "grants", "alwaysAllowed"]);
-  if (raw.schemaVersion !== 1 && raw.schemaVersion !== 2) throw invalidMcpRequest();
-  const normalized = defaultState();
-  if (typeof raw.revision === "string" && /^[a-f0-9-]{36}$/.test(raw.revision)) normalized.revision = raw.revision;
-  const servers = mcpRecord(raw.servers);
-  for (const [serverId, entry] of Object.entries(servers)) {
-    if (!/^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$/.test(serverId)) throw invalidMcpRequest();
-    const record = mcpRecord(entry, [
-      "serverId",
-      "name",
-      "endpoint",
-      "authMode",
-      "enabled",
-      "configGeneration",
-      "headerName",
-      "extraHeaders",
-      "preset",
-      "snapshot",
-      "lastConnection",
-    ]);
-    if (record.serverId !== serverId) throw invalidMcpRequest();
-    const snapshotRaw = record.snapshot;
-    let snapshot: McpServerRecord["snapshot"];
-    if (snapshotRaw && typeof snapshotRaw === "object" && !Array.isArray(snapshotRaw)) {
-      const snapshotRecord = mcpRecord(snapshotRaw, ["discoveredAt", "tools"]);
-      if (typeof snapshotRecord.discoveredAt !== "string" || !Array.isArray(snapshotRecord.tools))
-        throw invalidMcpRequest();
-      const tools: McpToolRecord[] = [];
-      for (const tool of snapshotRecord.tools) {
-        const toolRecord = mcpRecord(tool, ["name", "alias", "label", "description", "fingerprint", "inputSchema"]);
-        if (
-          typeof toolRecord.name !== "string" ||
-          typeof toolRecord.alias !== "string" ||
-          typeof toolRecord.label !== "string" ||
-          typeof toolRecord.description !== "string" ||
-          typeof toolRecord.fingerprint !== "string"
-        )
-          throw invalidMcpRequest();
-        tools.push({
-          name: toolRecord.name,
-          alias: toolRecord.alias,
-          label: toolRecord.label,
-          description: toolRecord.description,
-          fingerprint: toolRecord.fingerprint,
-          inputSchema: toolRecord.inputSchema,
-        });
-      }
-      snapshot = { discoveredAt: snapshotRecord.discoveredAt, tools };
-    }
-    let lastConnection: McpServerRecord["lastConnection"];
-    if (record.lastConnection && typeof record.lastConnection === "object") {
-      const connectionRecord = mcpRecord(record.lastConnection, ["state", "at", "message"]);
-      if (
-        (connectionRecord.state !== "connected" && connectionRecord.state !== "unavailable") ||
-        typeof connectionRecord.at !== "string"
-      )
-        throw invalidMcpRequest();
-      lastConnection = {
-        state: connectionRecord.state,
-        at: connectionRecord.at,
-        ...(typeof connectionRecord.message === "string" ? { message: connectionRecord.message } : {}),
-      };
-    }
-    normalized.servers[serverId] = {
-      serverId,
-      name: typeof record.name === "string" ? record.name : serverId,
-      endpoint: typeof record.endpoint === "string" ? record.endpoint : "",
-      authMode: record.authMode === "oauth" || record.authMode === "header" ? record.authMode : "none",
-      enabled: record.enabled === true,
-      configGeneration: typeof record.configGeneration === "number" ? record.configGeneration : 1,
-      ...(typeof record.headerName === "string" ? { headerName: record.headerName } : {}),
-      ...(record.extraHeaders === undefined ? {} : { extraHeaders: { ...parseMcpExtraHeaders(record.extraHeaders) } }),
-      ...(isMcpPresetId(record.preset) ? { preset: record.preset } : {}),
-      ...(snapshot ? { snapshot } : {}),
-      ...(lastConnection ? { lastConnection } : {}),
-    };
-  }
-  const grants = mcpRecord(raw.grants);
-  for (const [sessionId, value] of Object.entries(grants)) {
-    if (!/^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$/.test(sessionId)) throw invalidMcpRequest();
-    const sessionGrants = mcpRecord(value);
-    const normalizedGrants: Record<string, McpAccess> = {};
-    for (const [serverId, access] of Object.entries(sessionGrants)) {
-      if (typeof access !== "string" || !(MCP_ACCESS_LEVELS as ReadonlyArray<string>).includes(access))
-        throw invalidMcpRequest();
-      normalizedGrants[serverId] = access as McpAccess;
-    }
-    normalized.grants[sessionId] = normalizedGrants;
-  }
-  if (raw.schemaVersion === 2) {
-    for (const [sessionId, value] of Object.entries(mcpRecord(raw.alwaysAllowed))) {
-      if (!/^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$/.test(sessionId)) throw invalidMcpRequest();
-      for (const [serverId, tools] of Object.entries(mcpRecord(value))) {
-        for (const [name, fingerprint] of Object.entries(mcpRecord(tools))) {
-          if (typeof fingerprint !== "string") throw invalidMcpRequest();
-          ((normalized.alwaysAllowed[sessionId] ??= {})[serverId] ??= {})[name] = fingerprint;
-        }
-      }
-    }
-  }
-  normalized.alwaysAllowed = prunedAlwaysAllowed(normalized);
-  return normalized;
-}
-
-function toolInputSchema(schema: unknown): Record<string, unknown> {
-  if (
-    schema &&
-    typeof schema === "object" &&
-    !Array.isArray(schema) &&
-    (schema as { type?: unknown }).type === "object"
-  ) {
-    return schema as Record<string, unknown>;
-  }
-  return { type: "object", properties: {}, additionalProperties: false };
-}
-
-/** Minimal validation against the reviewed schema; dispatch uses the original name. */
-function validateToolArguments(tool: McpToolRecord, args: unknown): Record<string, unknown> {
-  const json = JSON.stringify(args ?? {});
-  if (json === undefined || Buffer.byteLength(json) > MAX_ARGUMENT_JSON_BYTES) {
-    throw new WispBackendError("invalid_request", "The tool arguments are too large.");
-  }
-  if (!args || typeof args !== "object" || Array.isArray(args)) {
-    throw new WispBackendError("invalid_request", "The tool arguments must be an object.");
-  }
-  const schema = tool.inputSchema as { required?: unknown } | undefined;
-  const required = Array.isArray(schema?.required) ? (schema!.required as unknown[]) : [];
-  const record = args as Record<string, unknown>;
-  for (const key of required) {
-    if (typeof key === "string" && !(key in record)) {
-      throw new WispBackendError("invalid_request", `The tool arguments are missing "${key}".`);
-    }
-  }
-  return record;
-}
-
-function summarizeArguments(args: Record<string, unknown>): string {
-  const parts: string[] = [];
-  for (const [key, value] of Object.entries(args)) {
-    if (parts.length >= 6) {
-      parts.push("…");
-      break;
-    }
-    const display = SECRET_KEY_PATTERN.test(key)
-      ? "[redacted]"
-      : typeof value === "string"
-        ? truncate(value, MAX_SUMMARY_ARGUMENT_CHARACTERS)
-        : typeof value === "number" || typeof value === "boolean"
-          ? String(value)
-          : Array.isArray(value) || (value && typeof value === "object")
-            ? "[structured value]"
-            : "null";
-    parts.push(`${key}: ${display}`);
-  }
-  return parts.join(", ") || "no arguments";
-}
-
-function convertResult(result: unknown): string {
-  const converted = convertMcpToolResult(result);
-  if (converted.isError) {
-    // An MCP isError result must surface as a failed tool call, never as
-    // successful activity in Pi.
-    throw new WispBackendError("internal_error", boundedErrorText(converted.text), false);
-  }
-  return converted.text;
-}
-
-function boundedSchema(schema: unknown): unknown {
-  if (!schema || typeof schema !== "object" || Array.isArray(schema)) return undefined;
-  let json: string;
-  try {
-    json = JSON.stringify(schema);
-  } catch {
-    return undefined;
-  }
-  if (json === undefined || Buffer.byteLength(json) > MAX_TOOL_SCHEMA_JSON_BYTES) return undefined;
-  return schema;
-}
-
-function boundedText(value: string, maxLength: number): string {
-  const normalized = value
-    .replaceAll(/[\r\n\t]+/g, " ")
-    .replaceAll(/\s+/g, " ")
-    .trim();
-  return normalized.slice(0, maxLength);
-}
-
-function boundedErrorText(value: string): string {
-  return truncate(value, 500) || "The MCP tool reported an error.";
-}
-
-function truncate(value: string, maxLength: number): string {
-  return value.length <= maxLength ? value : `${value.slice(0, maxLength)}…`;
 }
 
 function safeMcpError(error: unknown, signal?: AbortSignal): WispBackendError {

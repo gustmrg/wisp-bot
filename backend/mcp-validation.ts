@@ -1,5 +1,5 @@
 import { MCP_ACCESS_LEVELS, MCP_AUTH_MODES, type McpAccess, type McpAuthMode, type McpGrant } from "../shared/mcp.js";
-import { isMcpPresetId, type McpPresetId } from "../shared/mcp-presets.js";
+import { isMcpPresetId, type McpPresetId } from "../shared/mcp-presets/index.js";
 import { WispBackendError } from "./backend-error.js";
 
 /**

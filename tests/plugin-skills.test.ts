@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import { PLUGIN_SKILLS } from "../backend/plugin-skills.js";
-import { MCP_PRESET_IDS } from "../shared/mcp-presets.js";
+import { PLUGIN_SKILLS } from "../backend/plugin-skills/index.js";
+import { MCP_PRESET_IDS } from "../shared/mcp-presets/index.js";
 
 describe("PLUGIN_SKILLS", () => {
   it.each(MCP_PRESET_IDS)("gives the %s plugin a skill named after it", (id) => {
