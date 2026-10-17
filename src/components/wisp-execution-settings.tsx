@@ -34,7 +34,6 @@ function ExecutionPanel({ conversationId }: { conversationId: string }) {
   const id = useId();
   const [view, setView] = useState<WispExecutionView | null>(null);
   const [image, setImage] = useState("");
-  const [token, setToken] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useTransientMessage();
@@ -179,30 +178,13 @@ function ExecutionPanel({ conversationId }: { conversationId: string }) {
             </FieldDescription>
           </Field>
           <Field>
-            <FieldLabel htmlFor={`${id}-token`}>GitHub token</FieldLabel>
-            <div className="flex gap-2">
-              <Input
-                id={`${id}-token`}
-                className="min-w-0"
-                type="password"
-                autoComplete="new-password"
-                value={token}
-                placeholder={view.hasGitToken ? "Saved — enter a replacement" : "Fine-grained token"}
-                disabled={saving}
-                onChange={(event) => setToken(event.currentTarget.value)}
-              />
-              <Button
-                type="button"
-                variant="outline"
-                disabled={saving || !token.trim()}
-                onClick={() => void save({ gitToken: token.trim() }, "Token saved.").then(() => setToken(""))}
-              >
-                Save
-              </Button>
-            </div>
+            <FieldTitle>GitHub</FieldTitle>
             <FieldDescription>
-              Used by git for github.com. The Wisp can do whatever the token allows, including pushing, so limit it to
-              the repositories and permissions it needs. It is stored encrypted.
+              {view.hasGitToken
+                ? "git uses a token saved for this Wisp, instead of the GitHub plugin's."
+                : view.gitHubPlugin
+                  ? "git uses the GitHub plugin's token for github.com, so the Wisp can clone and push whatever the token allows."
+                  : "To use private repositories, add the GitHub plugin in Settings → Plugins and give this Wisp access to it."}
             </FieldDescription>
             {view.hasGitToken ? (
               <SettingsActions>
@@ -211,7 +193,11 @@ function ExecutionPanel({ conversationId }: { conversationId: string }) {
                   confirmLabel="Remove token"
                   variant="outline"
                   disabled={saving}
-                  description="Git commands in this Wisp's container lose access to private repositories on github.com until you save a new token."
+                  description={
+                    view.gitHubPlugin
+                      ? "git in this Wisp's container uses the GitHub plugin's token instead."
+                      : "git in this Wisp's container loses access to private repositories on github.com until the Wisp has access to the GitHub plugin."
+                  }
                   onConfirm={() => void save({ gitToken: null }, "Token removed.")}
                 />
               </SettingsActions>

@@ -211,6 +211,7 @@ export async function createBackendRuntime(options: BackendRuntimeOptions): Prom
     authorizationBroker: toolAuthorizationBroker,
     manager: containerManager,
     runtime: containerRuntime,
+    gitHubToken: (id) => mcpService.gitHubToken(id),
   });
   const sessionFactory = new SdkPiSessionFactory(
     modelService.getModelRuntime(),

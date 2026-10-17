@@ -66,10 +66,14 @@ and approving each `npm test` makes development impractical.
   `HTTPS_PROXY`, which curl, git, npm and pip honour; anything else (git over
   SSH, raw TCP) cannot leave. Each Wisp has its own network, so Wisps cannot
   reach each other's containers.
-- **Git:** a GitHub token per Wisp, stored encrypted like other keys. It
-  reaches a command through the container program's environment, never its
-  arguments, and git's credential helper hands it to github.com. Pushing is
-  not approved separately: the token's scope is the authorization, so the user
+- **Git:** git uses the token of the GitHub plugin when the Wisp has access
+  to an enabled GitHub plugin, so the user enters one token for both the
+  plugin's tools and git. A token saved for the Wisp itself (from before this
+  change) takes precedence until it is removed. The token reaches a command
+  through the container program's environment, never its arguments, and git's
+  credential helper hands it to github.com. Neither pushing nor other use of
+  the token from a command is approved separately, even when the plugin's
+  tools ask for approval: the token's scope is the authorization, so the user
   limits it to the repositories and permissions the Wisp needs.
 - **Size:** checked between commands. A command is refused while the workspace
   holds more than its size; a running command cannot be stopped from writing

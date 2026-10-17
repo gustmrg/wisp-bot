@@ -54,7 +54,7 @@ const RUN_COMMAND_DESCRIPTION: ReadonlyArray<string> = [
   `The working directory is ${CONTAINER_WORKSPACE}, which holds the same files as the workspace file tools; paths in commands use ${CONTAINER_WORKSPACE}.`,
   "Use it for git, builds, tests, package installs and other command-line work. git, curl, python3, node, npm, build-essential, ripgrep and jq are installed when the default image is used.",
   "Commands run as a regular user without sudo, so system packages cannot be installed; install tools into the home folder (pip --user, npm -g, downloads into ~/.local/bin). The home folder is inside the workspace and is kept; anything outside the workspace can disappear when the container is recreated.",
-  "git over HTTPS to github.com uses the GitHub token configured for this Wisp, when there is one; never print or store the token.",
+  "git over HTTPS to github.com uses the token of the GitHub plugin, when this Wisp has access to it; never print or store the token.",
   "Each call starts a fresh shell in the working directory; use cd within the command. Processes left running in the background are stopped when the command ends; start servers, watchers and other long-running commands with the process tool instead. Output is truncated to the last lines; optionally give a timeout in seconds.",
 ];
 
@@ -96,6 +96,8 @@ export interface ExecutionServiceOptions {
   authorizationBroker: Pick<ToolAuthorizationBroker, "authorize">;
   manager: ContainerManager;
   runtime: { status(): Promise<ContainerRuntimeStatus>; cli(): Promise<ContainerCli | null> };
+  /** The GitHub plugin's token, when the Wisp has access to the plugin. */
+  gitHubToken?: (conversationId: string) => Promise<string | undefined>;
 }
 
 /**
@@ -115,13 +117,14 @@ export class ExecutionService implements IntegrationToolSource {
 
   async getView(conversationId: string): Promise<WispExecutionView> {
     const wisp = this.options.resolveWisp(conversationId);
-    const [settings, runtime, container, hasGitToken] = await Promise.all([
+    const [settings, runtime, container, hasGitToken, gitHubPlugin] = await Promise.all([
       readSettings(wisp.configDirectory),
       this.options.runtime.status(),
       this.options.manager.state(wisp.storageId),
       this.hasGitToken(wisp.storageId),
+      this.pluginGitToken(conversationId).then(Boolean),
     ]);
-    return { ...settings, defaultImage: SANDBOX_IMAGE, hasGitToken, runtime, container };
+    return { ...settings, defaultImage: SANDBOX_IMAGE, hasGitToken, gitHubPlugin, runtime, container };
   }
 
   /** Whether the server can run commands at all, before any Wisp is involved. */
@@ -203,9 +206,16 @@ export class ExecutionService implements IntegrationToolSource {
     }
   }
 
-  private async gitToken(storageId: string): Promise<string | undefined> {
+  /** A token saved for the Wisp itself comes first; otherwise git uses the GitHub plugin's. */
+  private async gitToken(conversationId: string, storageId: string): Promise<string | undefined> {
     const credential = await this.credentials.read(storageId).catch(() => undefined);
-    return credential?.type === "api_key" ? credential.key : undefined;
+    if (credential?.type === "api_key") return credential.key;
+    return this.pluginGitToken(conversationId);
+  }
+
+  private async pluginGitToken(conversationId: string): Promise<string | undefined> {
+    const token = await this.options.gitHubToken?.(conversationId).catch(() => undefined);
+    return token && isGitToken(token) ? token : undefined;
   }
 
   private async createRunCommandTool(
@@ -221,7 +231,7 @@ export class ExecutionService implements IntegrationToolSource {
           onData,
           ...(signal ? { signal } : {}),
           ...(timeout === undefined ? {} : { timeout }),
-          ...(await this.gitToken(wisp.storageId).then((gitToken) => (gitToken ? { gitToken } : {}))),
+          ...(await this.gitToken(conversationId, wisp.storageId).then((gitToken) => (gitToken ? { gitToken } : {}))),
         }),
     };
     const base = createBashToolDefinition(wisp.workspaceDirectory, { operations, exposeSessionEnvironment: false });
@@ -271,7 +281,7 @@ export class ExecutionService implements IntegrationToolSource {
   private createProcessTool(conversationId: string, wisp: ExecutionWisp, settings: ExecutionSettings): ToolDefinition {
     const spec = containerSpec(wisp, settings);
     const run = async (action: ProcessAction, args: ReadonlyArray<string>, signal: AbortSignal | undefined) => {
-      const gitToken = action === "start" ? await this.gitToken(wisp.storageId) : undefined;
+      const gitToken = action === "start" ? await this.gitToken(conversationId, wisp.storageId) : undefined;
       return this.options.manager.processScript(spec, action, args, {
         ...(signal ? { signal } : {}),
         ...(gitToken ? { gitToken } : {}),
