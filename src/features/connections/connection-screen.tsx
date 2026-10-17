@@ -26,6 +26,7 @@ import {
   type ConnectionsView,
 } from "../../../shared/connections";
 import { WISP_SERVER_PACKAGE } from "../../../shared/server-package";
+import { AppBackdrop } from "./app-backdrop";
 import { ConnectionSteps, formatDuration, hostOf, useNow } from "./connection-steps";
 import { ConnectionsPanel } from "./connections-panel";
 import { UpdateServerDialog, compareVersions } from "./update-server-dialog";
@@ -499,9 +500,10 @@ export function ConnectionScreen({ view }: { view: ConnectionsView }) {
 
   return (
     <main className="flex h-full min-h-0 items-start justify-center overflow-y-auto bg-background p-6 text-foreground max-[760px]:p-3">
-      <div className="my-auto w-full max-w-lg">
+      <AppBackdrop />
+      <div className="relative my-auto w-full max-w-lg">
         <section
-          className={cn("relative overflow-hidden rounded-2xl border border-border bg-card shadow-sm", TONES[tone])}
+          className={cn("relative overflow-hidden rounded-2xl border border-border bg-card shadow-lg", TONES[tone])}
           aria-labelledby="connection-title"
         >
           {showProgress && progress ? <ProgressBar progress={progress} /> : null}

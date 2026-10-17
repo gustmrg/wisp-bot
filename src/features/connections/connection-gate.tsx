@@ -20,6 +20,7 @@ import { useMobileLayout } from "@/hooks/use-mobile-layout";
 import { cn } from "@/lib/utils";
 import { LOCAL_CONNECTION_ID, type ConnectionsView } from "../../../shared/connections";
 import { ActiveConnectionContext } from "./active-connection";
+import { AppBackdrop } from "./app-backdrop";
 import {
   activeName,
   activeProfile,
@@ -158,8 +159,9 @@ function FirstRunChoice({ view }: { view: ConnectionsView }) {
     "flex w-full items-start gap-3 rounded-xl border border-border p-4 text-left outline-none transition-colors hover:bg-popover focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50";
   return (
     <main className="flex h-full min-h-0 items-start justify-center overflow-y-auto bg-background p-6 text-foreground max-[620px]:p-3">
+      <AppBackdrop />
       <section
-        className="my-auto w-full max-w-lg rounded-2xl border border-border bg-card p-6 shadow-sm"
+        className="relative my-auto w-full max-w-lg rounded-2xl border border-border bg-card p-6 shadow-lg"
         aria-labelledby="first-run-title"
       >
         <h1 id="first-run-title" className="m-0 text-lg font-semibold">
