@@ -116,7 +116,8 @@ reports the credential problem without exposing its contents.
 Add another supported integration by extending the shared catalog/tool metadata,
 implementing a typed backend adapter, and adding its configuration UI and tests.
 The service supplies credential storage, per-Wisp authorization, and cancellation.
-Arbitrary plugin installation, custom endpoints, OAuth for bundled plugins, and
+Arbitrary plugin installation, custom endpoints, OAuth for bundled plugins (see
+the amendment below), and
 multiple accounts are deferred. Remote MCP connections are covered separately
 by [ADR 005](005-remote-mcp-servers.md). Pi's automatic discovery of project extensions, skills, prompts,
 and context files remains disabled; these bundled tools do not enable shell or
@@ -129,3 +130,47 @@ checks adapter requests, input/response limits, sanitized errors, encrypted
 persistence, denial and isolation of grants, revocation around approvals, Pi
 tool availability, IPC validation, and settings interactions. These tests do not
 constitute live authenticated verification against the bundled providers.
+
+## Amendment (2026-10-16): plugins that run over MCP
+
+**Settings → Plugins** also lists GitHub and Atlassian, which are not bundled
+adapters: each is a remote MCP connection made from a preset ([ADR 005](005-remote-mcp-servers.md)),
+presented like any other plugin: the card, form, and messages do not mention
+MCP, servers, or endpoints, because users configure a plugin, not how it
+connects. GitHub's form asks only for the token and toolsets; Atlassian signs
+in through the browser with a single **Connect**. The card's **Enabled**
+switch enables the connection. In a Wisp's **Access** tab they are listed
+under **Apps** with the MCP access levels (**Use with approval**, **Use
+without asking**) instead of read and write, because their tools are
+discovered from the server rather than fixed by an adapter. Their grants,
+credentials, and revocation stay in
+`McpService`; `PluginService` and `plugins.json` are unchanged.
+
+## Amendment (2026-10-16): bundled plugins that sign in through the browser
+
+Some services, such as Google's, take neither an API key nor dynamic client
+registration: they need an OAuth client registered by someone. Shipping one
+with Wisp would require the provider's app verification (Gmail's read scopes
+are restricted), so a bundled plugin may instead sign in with **the user's own
+OAuth client**:
+
+- The plugin's adapter declares its OAuth endpoints and scopes. Its connect
+  form asks for the client ID and secret, then **Connect** signs in through
+  the browser with PKCE, using the same sign-in browser as MCP connections
+  (this computer, the desktop app's loopback relay for a server on another
+  computer, or a pasted redirect; see [ADR 005](005-remote-mcp-servers.md)).
+- The client, tokens, and the signed-in account are stored as one OAuth
+  credential in `plugin-credentials.enc.json`, only once the sign-in
+  completes. Every requested scope must be granted; a sign-in without a
+  refresh token is refused.
+- Access tokens are renewed shortly before they expire, once per plugin for
+  concurrent calls. A refused renewal marks the plugin as needing sign-in: its
+  tools turn off and its card says so until the user signs in again. Grants
+  are kept for that.
+- Signing in again with the same client and account keeps every Wisp's access.
+  Another client or account revokes it, like replacing an API key. Removing
+  the connection revokes the provider's grant on a best-effort basis, and a
+  sign-in in flight cannot bring a removed connection back.
+- Plugin settings are now pushed to every window (`pluginSettingsChanged`), so
+  a waiting sign-in can be cancelled or finished from any of them.
+

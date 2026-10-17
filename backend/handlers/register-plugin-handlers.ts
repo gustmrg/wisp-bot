@@ -13,6 +13,9 @@ export function registerPluginHandlers(
     [WISP_IPC_CHANNELS.savePluginDefaults, (payload) => service.saveDefaults(payload)],
     [WISP_IPC_CHANNELS.removePlugin, (payload) => service.remove(payload)],
     [WISP_IPC_CHANNELS.testPluginConnection, (payload) => service.testConnection(payload)],
+    [WISP_IPC_CHANNELS.startPluginSignIn, (payload) => service.startSignIn(payload)],
+    [WISP_IPC_CHANNELS.cancelPluginSignIn, (payload) => service.cancelSignIn(payload)],
+    [WISP_IPC_CHANNELS.finishPluginSignIn, (payload) => service.finishSignIn(payload)],
     [WISP_IPC_CHANNELS.getWispPluginAccess, (payload) => service.getAccess(payload)],
     [WISP_IPC_CHANNELS.saveWispPluginAccess, (payload) => service.saveAccess(payload)],
   ]);

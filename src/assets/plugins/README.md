@@ -6,5 +6,9 @@ Bundled locally for offline display. Original assets:
 - Firecrawl: https://www.firecrawl.dev/brand/firecrawl-logo.png (https://www.firecrawl.dev/brand)
 - Tavily: https://tavily.com/icon.svg
 - Exa: https://exa.ai/images/favicon-32x32.png
+- GitHub: the `mark-github` octicon (https://primer.style/octicons, https://github.com/logos)
+- Google Calendar: the current multicolor Google Calendar logo, from SVG Logos (`google-calendar`, https://api.iconify.design/logos/google-calendar.svg)
+- Gmail: the current multicolor Gmail logo, from SVG Logos (`google-gmail`, https://api.iconify.design/logos/google-gmail.svg)
+- Atlassian: the Simple Icons `atlassian` path (https://simpleicons.org, https://atlassian.design/foundations/logos) in Atlassian blue
 
 These logos identify their respective services; trademarks belong to their owners.

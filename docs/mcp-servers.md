@@ -19,7 +19,21 @@ embedded credentials) with three authentication modes:
   and coming back, and before the browser has opened; cancelling never changes
   grants or stored credentials. Removing the connection or changing its
   endpoint or authentication ends a waiting sign-in, and credentials from a
-  sign-in that finished for the old configuration are discarded.
+  sign-in that finished for the old configuration are discarded. With a
+  [server on another computer](remote-server.md#oauth-sign-in-from-another-computer),
+  the desktop app receives the redirect on its own computer and relays it; the
+  browser app and phones open the sign-in page and paste back the address the
+  browser lands on.
+
+A connection can also send **additional headers** with every request, such
+as a server's option selectors (at most 8). They are stored as plain
+configuration and shown in the form, so they are not for secrets: names that
+look like credentials (containing `auth`, `token`, `key`, `secret`,
+`password`, `session`, or `cookie`) are refused and belong in the
+authentication header, and headers the transport sets itself (`Host`,
+`Content-Type`, `Mcp-Session-Id`, and the like) cannot be configured.
+Changing them keeps every Wisp's access, reconnects, and discovers the tools
+again.
 
 Local stdio servers are rejected at every boundary, along with resources,
 prompts, embedded MCP UI, server-requested sampling, and long-running tasks;
@@ -35,6 +49,14 @@ That is a per-server bound, not a per-Wisp one: a Wisp's built-in, plugin, and
 granted MCP tools are all sent to the model together, and some models accept
 fewer (OpenAI models reject more than 128). When a model refuses the request
 for that reason, the chat says so and points to the Access tab.
+
+## Plugins that run over MCP
+
+Some plugins in **Settings → Plugins**, starting with
+[GitHub](plugins.md#github), are MCP connections with the endpoint and
+headers filled in. They are listed under Plugins, not here, and appear with the
+apps in each Wisp's **Access** tab, but access, approvals, and **Always allow
+this tool** work as described below.
 
 ## Per-Wisp access
 

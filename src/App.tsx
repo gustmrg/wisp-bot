@@ -32,7 +32,7 @@ import { DETAILS_LAYOUT, SIDEBAR_LAYOUT } from "@/lib/layout";
 import { matchesShortcut, TOGGLE_SIDEBAR_SHORTCUT } from "@/lib/shortcuts";
 import { mainPanel } from "@/lib/ui-classes";
 import { cn } from "@/lib/utils";
-import type { PluginId } from "../shared/plugins";
+import type { SettingsPluginId } from "@/lib/plugin-access";
 
 export default function App() {
   const userProfile = useUserProfile();
@@ -195,7 +195,7 @@ function Workspace({ userProfile }: { userProfile: UserProfileController }) {
     } else showDetails(true);
   }
 
-  function showSettings(section: SettingsEntrySection, pluginId?: PluginId, storageConversationId?: string) {
+  function showSettings(section: SettingsEntrySection, pluginId?: SettingsPluginId, storageConversationId?: string) {
     navigationVersion.current += 1;
     settingsDialog.current?.open(section, pluginId, storageConversationId);
   }

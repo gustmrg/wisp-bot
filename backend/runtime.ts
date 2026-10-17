@@ -5,6 +5,7 @@ import type { ModelSelection, SequencedConversationAgentEvent, WispFallback } fr
 import type { ConversationDelta } from "../shared/conversations.js";
 import type { JobsView } from "../shared/jobs.js";
 import type { McpSettingsView } from "../shared/mcp.js";
+import type { PluginSettingsView } from "../shared/plugins.js";
 import type { MessageQueueView } from "../shared/message-queue.js";
 import type { ScheduledMessagesView } from "../shared/scheduled-messages.js";
 import type { AgentMode } from "./agent-mode.js";
@@ -21,6 +22,7 @@ import { JobRunner } from "./job-runner.js";
 import { JobScheduler, type JobRunOutcome } from "./job-scheduler.js";
 import type { JobToolHost } from "./job-tools.js";
 import { McpService } from "./mcp-service.js";
+import type { McpSignInBrowser } from "./mcp-oauth.js";
 import { MessageQueue } from "./message-queue.js";
 import { MessageScheduler } from "./message-scheduler.js";
 import { catalogModelPricing, ModelPricingService } from "./model-pricing-service.js";
@@ -55,6 +57,8 @@ export interface BackendRuntimeOptions {
   /** The principal that should own a new tool approval prompt, or null when none can answer it. */
   selectApprovalWindowId: () => number | null;
   openExternal: (url: string) => Promise<void>;
+  /** Where the browser of an MCP sign-in runs for the device that asked; defaults to this computer. */
+  signInBrowser?: () => Promise<McpSignInBrowser>;
   /** Opens a backend-owned local folder in the system file manager. */
   openPath: (directory: string) => Promise<void>;
   /** Shows a native multi-file picker; resolves with absolute paths, empty when dismissed. */
@@ -65,6 +69,8 @@ export interface BackendRuntimeOptions {
   onConversationChanged: (delta: ConversationDelta) => void;
   /** Receives the sanitized MCP view after health or settings changes; secrets never leave the backend. */
   onMcpSettingsChanged: (view: McpSettingsView) => void;
+  /** Receives plugin settings after changes another window should see, such as a sign-in. */
+  onPluginSettingsChanged?: (view: PluginSettingsView) => void;
   /** Receives every scheduled message after any change, including sends. */
   onScheduledMessagesChanged: (view: ScheduledMessagesView) => void;
   /** Receives every queued message after any change, including a Wisp taking one. */
@@ -173,6 +179,9 @@ export async function createBackendRuntime(options: BackendRuntimeOptions): Prom
     encryption,
     authorizationBroker: toolAuthorizationBroker,
     resolveWisp,
+    openExternal: options.openExternal,
+    ...(options.signInBrowser ? { signInBrowser: options.signInBrowser } : {}),
+    ...(options.onPluginSettingsChanged ? { onSettingsChanged: options.onPluginSettingsChanged } : {}),
   });
   await pluginService.load();
   const mcpService = new McpService({
@@ -182,6 +191,7 @@ export async function createBackendRuntime(options: BackendRuntimeOptions): Prom
     resolveWisp,
     resolveWorkspaceDirectory: (id) => conversationRepository.getWorkspaceDirectory(id),
     openExternal: options.openExternal,
+    ...(options.signInBrowser ? { signInBrowser: options.signInBrowser } : {}),
     clientVersion: options.appVersion,
     onSettingsChanged: options.onMcpSettingsChanged,
   });

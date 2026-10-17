@@ -5,6 +5,8 @@ import type {
   SavePluginDefaultsRequest,
   SavePluginSettingsRequest,
   TestPluginConnectionRequest,
+  StartPluginSignInRequest,
+  FinishPluginSignInRequest,
   PluginConnectionResult,
   WispPluginAccessView,
   SaveWispPluginAccessRequest,
@@ -14,6 +16,7 @@ import type {
   McpConnectionResult,
   SaveMcpServerRequest,
   McpServerRequest,
+  FinishMcpSignInRequest,
   TestMcpConnectionRequest,
   WispMcpAccessView,
   SaveWispMcpAccessRequest,
@@ -109,6 +112,10 @@ export const WISP_IPC_CHANNELS = {
   savePluginDefaults: "wisp:plugins:defaults:save",
   removePlugin: "wisp:plugins:remove",
   testPluginConnection: "wisp:plugins:test",
+  startPluginSignIn: "wisp:plugins:sign-in",
+  cancelPluginSignIn: "wisp:plugins:sign-in:cancel",
+  finishPluginSignIn: "wisp:plugins:sign-in:finish",
+  pluginSettingsChanged: "wisp:plugins:changed",
   getWispPluginAccess: "wisp:plugins:access:get",
   saveWispPluginAccess: "wisp:plugins:access:save",
   getMcpSettings: "wisp:mcp:get",
@@ -118,6 +125,7 @@ export const WISP_IPC_CHANNELS = {
   refreshMcpTools: "wisp:mcp:refresh",
   startMcpSignIn: "wisp:mcp:sign-in",
   cancelMcpSignIn: "wisp:mcp:sign-in:cancel",
+  finishMcpSignIn: "wisp:mcp:sign-in:finish",
   mcpSettingsChanged: "wisp:mcp:changed",
   getWispMcpAccess: "wisp:mcp:access:get",
   saveWispMcpAccess: "wisp:mcp:access:save",
@@ -630,6 +638,10 @@ export interface WispApi {
   savePluginDefaults(request: SavePluginDefaultsRequest): Promise<BackendResult<PluginSettingsView>>;
   removePlugin(request: PluginRequest): Promise<BackendResult<PluginSettingsView>>;
   testPluginConnection(request: TestPluginConnectionRequest): Promise<BackendResult<PluginConnectionResult>>;
+  startPluginSignIn(request: StartPluginSignInRequest): Promise<BackendResult<PluginSettingsView>>;
+  cancelPluginSignIn(request: PluginRequest): Promise<BackendResult<PluginSettingsView>>;
+  finishPluginSignIn(request: FinishPluginSignInRequest): Promise<BackendResult<PluginSettingsView>>;
+  subscribeToPluginSettings(listener: (view: PluginSettingsView) => void): () => void;
   getWispPluginAccess(request: ConversationRequest): Promise<BackendResult<WispPluginAccessView>>;
   saveWispPluginAccess(request: SaveWispPluginAccessRequest): Promise<BackendResult<WispPluginAccessView>>;
   getMcpSettings(): Promise<BackendResult<McpSettingsView>>;
@@ -639,6 +651,7 @@ export interface WispApi {
   refreshMcpTools(request: McpServerRequest): Promise<BackendResult<McpSettingsView>>;
   startMcpSignIn(request: McpServerRequest): Promise<BackendResult<McpSettingsView>>;
   cancelMcpSignIn(request: McpServerRequest): Promise<BackendResult<McpSettingsView>>;
+  finishMcpSignIn(request: FinishMcpSignInRequest): Promise<BackendResult<McpSettingsView>>;
   getWispMcpAccess(request: ConversationRequest): Promise<BackendResult<WispMcpAccessView>>;
   saveWispMcpAccess(request: SaveWispMcpAccessRequest): Promise<BackendResult<WispMcpAccessView>>;
   subscribeToMcpSettings(listener: (view: McpSettingsView) => void): () => void;

@@ -547,6 +547,72 @@ describe("SdkPiSessionFactory", () => {
     });
   });
 
+  it("offers skills that come with granted integrations after the Wisp's own", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "wisp-pi-integration-skills-"));
+    const runtime = {
+      hasConfiguredAuth: vi.fn(() => true),
+      getModel: vi.fn(() => ({ provider: "provider", id: "model" })),
+    } as unknown as ModelRuntimeLike;
+    const context: ConversationAgentContext = {
+      conversationId: "one",
+      sessionId: "app-session",
+      name: "Atlas",
+      wispId: "one",
+      role: "Research",
+      soul: "",
+      workspaceDirectory: path.join(directory, "workspace"),
+      sessionDirectory: directory,
+      configDirectory: path.join(directory, "config"),
+      piSessionId: null,
+      piSessionFile: null,
+    };
+    await mkdir(context.workspaceDirectory, { recursive: true });
+    await mkdir(path.join(context.configDirectory, "skills", "linear"), { recursive: true });
+    await writeFile(
+      path.join(context.configDirectory, "skills", "linear", "SKILL.md"),
+      "---\nname: linear\ndescription: My own Linear steps.\n---\n\nUse my labels.\n",
+    );
+    const toolSource: IntegrationToolSource = {
+      getSnapshot: async () => ({
+        definitions: [],
+        metadata: [],
+        activeNames: [],
+        revision: "r",
+        skills: [
+          { name: "github", description: "Works with GitHub.", instructions: "Pass owner and repo." },
+          { name: "linear", description: "Bundled Linear steps.", instructions: "Bundled." },
+        ],
+      }),
+    };
+    await new SdkPiSessionFactory(runtime, { authorize: vi.fn(async () => undefined) }, toolSource).create(context, {
+      providerId: "provider",
+      modelId: "model",
+    });
+
+    const options = sdk.createAgentSession.mock.calls[0]?.[0] as {
+      customTools: Array<{ name: string; execute: (...args: unknown[]) => Promise<unknown> }>;
+    };
+    const useSkill = options.customTools.find((candidate) => candidate.name === "use_skill")!;
+    const loader = sdk.loaderOptions[0] as {
+      extensionFactories: Array<{ name: string; factory: (pi: unknown) => void }>;
+    };
+    let beforeStart: ((event: { systemPrompt: string }) => Promise<{ systemPrompt: string } | undefined>) | undefined;
+    loader.extensionFactories
+      .find(({ name }) => name === "wisp-continuity")!
+      .factory({ on: (_event: string, handler: typeof beforeStart) => (beforeStart = handler) });
+
+    const prompt = await beforeStart!({ systemPrompt: "base" });
+    expect(prompt?.systemPrompt).toBe(
+      "base\n\n## Available skills\nLoad one with use_skill before following it.\n- linear: My own Linear steps.\n- github: Works with GitHub.",
+    );
+    await expect(useSkill.execute("tool-1", { name: "github" })).resolves.toMatchObject({
+      content: [{ text: expect.stringContaining("Pass owner and repo.") }],
+    });
+    await expect(useSkill.execute("tool-2", { name: "linear" })).resolves.toMatchObject({
+      content: [{ text: expect.stringContaining("Use my labels.") }],
+    });
+  });
+
   it("does not start the model run once the send was stopped during preparation", async () => {
     const directory = await mkdtemp(path.join(os.tmpdir(), "wisp-pi-stopped-"));
     const context: ConversationAgentContext = {

@@ -98,6 +98,48 @@ reintroduce trust in server-supplied annotations:
 - Access forms list always-allowed tools and can remove them but never add
   them, and the list is part of the access revision.
 
+### Amendment (2026-10-16): additional headers and presets
+
+Some servers take options in headers, such as GitHub's `X-MCP-Toolsets`. A
+connection can now carry up to 8 **additional headers**, sent with every
+request in every authentication mode:
+
+- They are configuration, not secrets: stored in `mcp-servers.json` and shown
+  in the view. Names that look like credentials are refused so a token is not
+  stored there by mistake, and headers owned by the transport or protocol are
+  refused. The authentication header wins over an additional header of the
+  same name.
+- Changing them is not an identity change. It bumps the configuration
+  generation (closing clients and failing approvals in flight), drops the tool
+  snapshot, and discovers again, but keeps grants and enablement: the server
+  still acts as the same account.
+
+A **preset** adds a known server with its endpoint, authentication, and
+options filled in; the first is GitHub's official server with a personal
+access token and toolset selection. A preset is recorded on the connection
+when it is added and never changes. Preset connections are presented as
+plugins: they are managed in **Settings → Plugins** and listed with the apps in
+a Wisp's **Access** tab, not under MCP servers, because users look for GitHub
+among the plugins. Only the presentation moves; storage, grants, and the
+access levels stay those of MCP (see the amendment to
+[ADR 004](004-wisp-plugins.md)). Its tools are ordinary MCP tools with the
+same grants and approvals; annotations stay untrusted, so read tools are not
+allowed automatically. The user chose one connection with per-tool **Always
+allow** over a read-only connection plus a write connection.
+
+A preset authenticates either with a token the user pastes into a header
+(GitHub) or with a browser sign-in (OAuth). A sign-in preset has nothing to
+fill in, so its plugin page offers one **Connect** action: it saves the
+connection and starts the sign-in at once, in the same flow as **Sign in**,
+including the relay and the pasted redirect for a server on another computer.
+If the sign-in does not finish, the plugin stays connected as "Needs sign-in"
+until the user signs in from its page. Its **Enabled** switch saves at once,
+since there is no form to save. Toolsets are optional for any preset.
+
+A preset also brings an application-owned skill (the plugin's skill), offered
+to Wisps with access to an enabled connection that has discovered tools. See
+the amendment to [ADR 008](008-wisp-skills.md).
+
 Endpoint URLs must be HTTPS without embedded credentials. Authentication
 secrets stay in the main process and never appear in IPC responses, activity
 events, reports, or model context. Safe tool identity is persisted with session
@@ -105,6 +147,36 @@ history (`wisp:mcp-tools` entries) so reports keep identifying past calls after
 a server is removed. MCP results are bounded, `isError` results surface as
 failed tool calls, and images, audio, and resources are reported as unsupported
 instead of fetched.
+
+### Amendment (2026-10-16): OAuth sign-in with a server on another computer
+
+The loopback callback only works where the browser runs. With the server on
+another computer (such as a Raspberry Pi used from the desktop app), the
+browser and the server are on different machines. The server now picks the
+sign-in browser for the device that started the sign-in:
+
+- **Local device**: unchanged. The server listens on its loopback and asks the
+  app to open the browser.
+- **Desktop app elsewhere**: the app listens on its own loopback and relays the
+  redirect's query string through host requests (`oauthListen`,
+  `oauthRedirect`, `oauthClose`), which a server may now send to that device.
+  The client picks the port and answers before discovery and registration, so
+  the redirect URI registered with the authorization server is the one that
+  listens; no port has to be free on both computers. The app validates
+  `state`, and the server validates it again. The PKCE verifier and tokens
+  never leave the server.
+- **Anything else** (browser app, phones, older apps that refuse the relay):
+  the view exposes the authorization URL while the sign-in waits, and
+  `finishMcpSignIn` accepts the redirect address the user pastes. It must have
+  the callback path and this flow's `state`; anything else is refused without
+  ending the sign-in. The server's own listener stays up, so a browser on the
+  server's computer still works.
+
+Cancelling, timeouts, configuration changes, and disconnects end the relay
+listener as well as the flow: the server closes it, pending host requests fail
+when their device's last event stream closes, the app closes its listeners when
+it leaves the server, and every listener closes on its own after 10 minutes.
+Device code flow is not added; it waits for a provider that needs it.
 
 ## Lifecycle
 

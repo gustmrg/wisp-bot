@@ -38,10 +38,14 @@ export interface McpSdkModuleShape {
   ) => unknown;
 }
 
-export type McpConnectionAuth =
+export type McpConnectionAuth = (
   | { mode: "none" }
   | { mode: "header"; headerName: string; headerValue: string }
-  | { mode: "oauth"; provider: unknown };
+  | { mode: "oauth"; provider: unknown }
+) & {
+  /** Non-secret headers sent with every request; the authentication header wins on a clash. */
+  extraHeaders?: Readonly<Record<string, string>>;
+};
 
 export interface McpConnectionOptions {
   /** The application version advertised to the server during initialization. */
@@ -133,8 +137,12 @@ export class McpConnection {
             this.options.onClosed?.();
           }
         };
+        const headers = {
+          ...auth.extraHeaders,
+          ...(auth.mode === "header" ? { [auth.headerName]: auth.headerValue } : {}),
+        };
         const transport = new sdk.StreamableHTTPClientTransport(new URL(endpoint), {
-          ...(auth.mode === "header" ? { requestInit: { headers: { [auth.headerName]: auth.headerValue } } } : {}),
+          ...(Object.keys(headers).length ? { requestInit: { headers } } : {}),
           ...(auth.mode === "oauth" ? { authProvider: auth.provider } : {}),
           ...(this.options.fetch ? { fetch: this.options.fetch } : {}),
         });

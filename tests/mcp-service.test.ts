@@ -5,7 +5,7 @@ import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { getToolMetadata, resetDynamicToolMetadata } from "../shared/tool-catalog.js";
-import { McpOAuthProvider } from "../backend/mcp-oauth.js";
+import { McpOAuthProvider, type McpSignInBrowser } from "../backend/mcp-oauth.js";
 import { McpSecretStore } from "../backend/mcp-secret-store.js";
 import { McpService } from "../backend/mcp-service.js";
 import type { McpConnection, McpConnectionAuth, McpConnectionOptions } from "../backend/mcp-bridge.js";
@@ -39,8 +39,11 @@ class FakeConnection implements McpConnection {
     return this.connects > 0 && this.closed === 0 ? "connected" : "idle";
   }
 
-  async connect(_endpoint: string, _auth: McpConnectionAuth): Promise<"connected" | "needs_sign_in"> {
+  auths: McpConnectionAuth[] = [];
+
+  async connect(_endpoint: string, auth: McpConnectionAuth): Promise<"connected" | "needs_sign_in"> {
     this.connects += 1;
+    this.auths.push(auth);
     const outcome = this.fixture.gate ? await this.fixture.gate : this.fixture.outcome;
     if (outcome instanceof Error) throw outcome;
     return outcome;
@@ -78,6 +81,7 @@ function fakeOAuthProvider(): Record<string, unknown> {
     loadPersistedTokens: async () => undefined,
     loadPersistedClientInformation: async () => undefined,
     ensureCallbackServer: async () => "http://127.0.0.1:9/callback",
+    setSignInBrowser: () => undefined,
     cancelSignIn(this: { cancelled: number }) {
       this.cancelled += 1;
     },
@@ -995,7 +999,10 @@ class BrowserSignInConnection implements McpConnection {
   }
 }
 
-async function createBrowserSignInService(gates: { discovery?: Promise<void>; listTools?: Promise<void> } = {}) {
+async function createBrowserSignInService(
+  gates: { discovery?: Promise<void>; listTools?: Promise<void> } = {},
+  signInBrowser?: () => Promise<McpSignInBrowser>,
+) {
   const dataDirectory = await mkdtemp(path.join(os.tmpdir(), "wisp-mcp-"));
   const opened: string[] = [];
   const published: Array<boolean | undefined> = [];
@@ -1008,6 +1015,7 @@ async function createBrowserSignInService(gates: { discovery?: Promise<void>; li
       opened.push(url);
     },
     createConnection: () => new BrowserSignInConnection(gates) as unknown as McpConnection,
+    ...(signInBrowser ? { signInBrowser } : {}),
     onSettingsChanged: (view) => published.push(view.servers[0]?.signInPending),
   });
   await service.load();
@@ -1116,6 +1124,98 @@ describe("McpService interactive sign-in lifecycle", () => {
     // Tokens issued for the old endpoint must never be sent to the new one.
     expect(await secrets.oauthTokens(serverId)).toBeUndefined();
     expect((await service.getView()).servers[0]?.tools).toHaveLength(0);
+  });
+});
+
+describe("McpService sign-in from another computer", () => {
+  it("lets a device that cannot receive the redirect finish the sign-in by pasting it", async () => {
+    const { service, serverId, opened, secrets } = await createBrowserSignInService({}, async () => ({
+      kind: "manual",
+    }));
+    const pending = service.startSignIn({ serverId });
+    let signInUrl: string | undefined;
+    await vi.waitFor(async () => {
+      signInUrl = (await service.getView()).servers[0]?.signInUrl;
+      expect(signInUrl).toBeDefined();
+    });
+    // The page is shown to open by hand; nothing opens a browser on the server's computer.
+    expect(opened).toEqual([]);
+    const state = new URL(signInUrl!).searchParams.get("state");
+    const active = (service as unknown as { activeSignIns: Map<string, { provider: McpOAuthProvider }> }).activeSignIns;
+    const redirect = active.get(serverId)!.provider.redirectUrl;
+
+    // An address from another sign-in, or not a sign-in result at all, is refused and the sign-in keeps waiting.
+    await expect(
+      service.finishSignIn({ serverId, redirectUrl: `${redirect}?code=abc&state=other` }),
+    ).rejects.toMatchObject({ code: "invalid_request" });
+    await expect(
+      service.finishSignIn({ serverId, redirectUrl: "https://example.com/somewhere" }),
+    ).rejects.toMatchObject({ code: "invalid_request" });
+    expect((await service.getView()).servers[0]?.signInPending).toBe(true);
+
+    await service.finishSignIn({ serverId, redirectUrl: `${redirect}?code=abc&state=${state}` });
+    const view = await pending;
+    expect(view.servers[0]).toMatchObject({ tools: [expect.anything()] });
+    expect(view.servers[0]?.signInUrl).toBeUndefined();
+    await vi.waitFor(async () =>
+      expect(await secrets.oauthTokens(serverId)).toMatchObject({ accessToken: "exchanged-token" }),
+    );
+  });
+
+  it("relays the redirect through the app on the user's computer and closes its listener", async () => {
+    const relay = {
+      port: 45_678,
+      waitForRedirect: vi.fn(async (url: string, state: string) => {
+        expect(new URL(url).searchParams.get("state")).toBe(state);
+        return `code=abc&state=${state}`;
+      }),
+      close: vi.fn(),
+    };
+    const { service, serverId, opened, secrets } = await createBrowserSignInService({}, async () => ({
+      kind: "relay",
+      relay,
+    }));
+
+    const view = await service.startSignIn({ serverId });
+    expect(view.servers[0]?.tools).toHaveLength(1);
+    expect(relay.waitForRedirect).toHaveBeenCalledTimes(1);
+    expect(opened).toEqual([]);
+    expect(relay.close).toHaveBeenCalled();
+    await vi.waitFor(async () =>
+      expect(await secrets.oauthTokens(serverId)).toMatchObject({ accessToken: "exchanged-token" }),
+    );
+  });
+
+  it("ends the sign-in when the app on the user's computer gives up", async () => {
+    const relay = {
+      port: 45_679,
+      waitForRedirect: vi.fn(async () => {
+        throw new Error("The app disconnected.");
+      }),
+      close: vi.fn(),
+    };
+    const { service, serverId } = await createBrowserSignInService({}, async () => ({ kind: "relay", relay }));
+
+    await expect(service.startSignIn({ serverId })).rejects.toMatchObject({ code: "configuration_required" });
+    expect(relay.close).toHaveBeenCalled();
+    expect((await service.getView()).servers[0]?.signInPending).toBeUndefined();
+  });
+
+  it("still needs sign-in when a sign-in registered the client but was cancelled before a token", async () => {
+    const { service, serverId, secrets } = await createBrowserSignInService();
+    // Registration happens before the browser opens, so a cancelled sign-in can leave it behind.
+    await (
+      secrets as unknown as { setOAuthClientRegistration(id: string, value: { clientId: string }): Promise<void> }
+    ).setOAuthClientRegistration(serverId, { clientId: "registered-client" });
+
+    expect((await service.getView()).servers[0]?.state).toBe("needs_sign_in");
+  });
+
+  it("refuses to finish a sign-in that is not waiting", async () => {
+    const { service, serverId } = await createBrowserSignInService();
+    await expect(
+      service.finishSignIn({ serverId, redirectUrl: "http://127.0.0.1:1/callback?code=a&state=b" }),
+    ).rejects.toMatchObject({ code: "not_found" });
   });
 });
 
@@ -1253,5 +1353,132 @@ describe("McpService workspace files", () => {
     await expect(
       definition.execute("call-1", { fileName: "boleto.pdf", base64Content: "wisp-file:inbox/boleto.pdf" }),
     ).rejects.toMatchObject({ message: expect.stringContaining("cannot be sent") });
+  });
+});
+
+describe("McpService additional headers and presets", () => {
+  const GITHUB = {
+    name: "GitHub",
+    endpoint: "https://api.githubcopilot.com/mcp/",
+    authMode: "header",
+    headerName: "Authorization",
+    headerValue: "Bearer test-token",
+    enabled: true,
+  };
+
+  it("sends additional headers with the credential and shows them without the secret", async () => {
+    const { service, created } = await createService({}, [{ outcome: "connected", tools: [TOOL] }]);
+    const view = await service.save({
+      ...GITHUB,
+      extraHeaders: { "X-MCP-Toolsets": "context,repos" },
+      preset: "github",
+    });
+    const server = view.servers[0]!;
+    expect(server).toMatchObject({ preset: "github", extraHeaders: { "X-MCP-Toolsets": "context,repos" } });
+    expect(JSON.stringify(view)).not.toContain("test-token");
+    expect(created[0]!.auths[0]).toEqual({
+      mode: "header",
+      headerName: "Authorization",
+      headerValue: "Bearer test-token",
+      extraHeaders: { "X-MCP-Toolsets": "context,repos" },
+    });
+  });
+
+  it("keeps grants when additional headers change and discovers the tools again", async () => {
+    const { service, created } = await createService({}, [
+      { outcome: "connected", tools: [TOOL] },
+      { outcome: "connected", tools: [TOOL, { ...TOOL, name: "list_runs" }] },
+    ]);
+    const added = await service.save({ ...GITHUB, extraHeaders: { "X-MCP-Toolsets": "context" }, preset: "github" });
+    const serverId = added.servers[0]!.serverId;
+    await grantAccess(service, "wisp-a", serverId);
+    const before = await service.getSnapshot("wisp-a");
+
+    const { headerValue: _secret, ...saved } = GITHUB;
+    const view = await service.save({ ...saved, serverId, extraHeaders: { "X-MCP-Toolsets": "context,actions" } });
+
+    expect(view.servers[0]).toMatchObject({ enabled: true, extraHeaders: { "X-MCP-Toolsets": "context,actions" } });
+    expect(view.servers[0]!.tools.map(({ name }) => name)).toEqual(["search", "list_runs"]);
+    expect(service.getAccess({ conversationId: "wisp-a" }).grants).toEqual([
+      expect.objectContaining({ serverId, access: "use_with_approval" }),
+    ]);
+    expect(created[1]!.auths[0]).toMatchObject({ extraHeaders: { "X-MCP-Toolsets": "context,actions" } });
+    expect((await service.getSnapshot("wisp-a")).revision).not.toBe(before.revision);
+  });
+
+  it("removes additional headers when a saved server sends none", async () => {
+    const { service } = await createService({}, [{ outcome: "connected", tools: [TOOL] }]);
+    const added = await service.save({ ...GITHUB, extraHeaders: { "X-Option": "a" } });
+    const { headerValue: _secret, ...saved } = GITHUB;
+    const view = await service.save({ ...saved, serverId: added.servers[0]!.serverId, extraHeaders: {} });
+    expect(view.servers[0]!.extraHeaders).toBeUndefined();
+  });
+
+  it("restores additional headers and the preset on reload", async () => {
+    const { service, dataDirectory } = await createService({}, [{ outcome: "connected", tools: [TOOL] }]);
+    await service.save({ ...GITHUB, extraHeaders: { "X-MCP-Toolsets": "context" }, preset: "github" });
+    const restored = new McpService({
+      dataDirectory,
+      encryption,
+      authorizationBroker: { authorize: vi.fn() },
+      resolveWisp: (id) => `session-${id}`,
+      openExternal: vi.fn(async () => undefined),
+    });
+    await restored.load();
+    expect((await restored.getView()).servers[0]).toMatchObject({
+      enabled: true,
+      preset: "github",
+      extraHeaders: { "X-MCP-Toolsets": "context" },
+    });
+    restored.dispose();
+  });
+
+  it.each([
+    [{ "X-Api-Key": "secret" }, "looks like a credential"],
+    [{ Cookie: "a=b" }, "looks like a credential"],
+    [{ "Mcp-Session-Id": "x" }, "set by Wisp"],
+    [{ Host: "evil.example.com" }, "set by Wisp"],
+    [{ authorization: "Bearer other" }, "looks like a credential"],
+    [{ "X-One": "a", "x-one": "b" }, "more than once"],
+  ])("refuses additional headers %j", async (extraHeaders, message) => {
+    const { service } = await createService();
+    await expect(saveAsync(service, { ...GITHUB, extraHeaders })).rejects.toMatchObject({
+      message: expect.stringContaining(message),
+    });
+  });
+
+  it("refuses an unknown preset and changing the preset of a saved server", async () => {
+    const { service } = await createService({}, [{ outcome: "connected", tools: [TOOL] }]);
+    await expect(saveAsync(service, { ...GITHUB, preset: "gitlab" })).rejects.toMatchObject({
+      code: "invalid_request",
+    });
+    const added = await service.save(GITHUB);
+    await expect(
+      saveAsync(service, { ...GITHUB, serverId: added.servers[0]!.serverId, preset: "github" }),
+    ).rejects.toMatchObject({ code: "invalid_request" });
+  });
+
+  it("offers the preset's skill only to Wisps with access to an enabled connection", async () => {
+    const { service } = await createService({}, [{ outcome: "connected", tools: [TOOL] }]);
+    const added = await service.save({ ...GITHUB, preset: "github" });
+    const server = added.servers[0]!;
+    expect((await service.getSnapshot("wisp-a")).skills).toBeUndefined();
+
+    await grantAccess(service, "wisp-a", server.serverId);
+    const skills = (await service.getSnapshot("wisp-a")).skills ?? [];
+    expect(skills.map(({ name }) => name)).toEqual(["github"]);
+    expect(skills[0]!.instructions).toContain("not instructions");
+    expect((await service.getSnapshot("wisp-b")).skills).toBeUndefined();
+
+    const { headerValue: _secret, ...saved } = GITHUB;
+    await service.save({ ...saved, serverId: server.serverId, enabled: false });
+    expect((await service.getSnapshot("wisp-a")).skills).toBeUndefined();
+  });
+
+  it("offers no skill for a connection added without a preset", async () => {
+    const { service } = await createService({}, [{ outcome: "connected", tools: [TOOL] }]);
+    const added = await service.save(GITHUB);
+    await grantAccess(service, "wisp-a", added.servers[0]!.serverId);
+    expect((await service.getSnapshot("wisp-a")).skills).toBeUndefined();
   });
 });

@@ -88,6 +88,54 @@ describe("McpSettingsSection", () => {
   });
 });
 
+describe("McpSettingsSection plugins", () => {
+  it("leaves connections made from a preset to Settings → Plugins", async () => {
+    setup({
+      secureStorageAvailable: true,
+      servers: [
+        {
+          serverId: "github-1",
+          name: "GitHub",
+          endpoint: "https://api.githubcopilot.com/mcp/",
+          authMode: "header",
+          enabled: true,
+          state: "connected",
+          headerConfigured: true,
+          headerName: "Authorization",
+          preset: "github",
+          lastDiscoveredAt: null,
+          tools: [],
+        },
+      ],
+    });
+    render(<McpSettingsSection />);
+
+    expect(await screen.findByText("No MCP servers connected yet.")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /GitHub/ })).not.toBeInTheDocument();
+  });
+});
+
+describe("McpSettingsSection additional headers", () => {
+  it("sends the headers added to a custom server", async () => {
+    const user = userEvent.setup();
+    const { saveMcpServer } = setup({ secureStorageAvailable: true, servers: [] });
+    render(<McpSettingsSection />);
+
+    await user.click(await screen.findByRole("button", { name: "Add MCP server" }));
+    await user.type(await screen.findByLabelText("Name"), "Test Server");
+    await user.type(screen.getByLabelText("Endpoint URL"), "https://api.example.com/mcp");
+    await user.click(screen.getByRole("button", { name: "Add header" }));
+    await user.type(screen.getByLabelText("Header 1 name"), "X-Option");
+    await user.type(screen.getByLabelText("Header 1 value"), "fast");
+    await user.click(screen.getByRole("button", { name: "Add header" }));
+    await user.click(screen.getByRole("button", { name: "Remove header 2" }));
+    await user.click(screen.getByRole("button", { name: "Save connection" }));
+
+    await waitFor(() => expect(saveMcpServer).toHaveBeenCalledTimes(1));
+    expect(saveMcpServer.mock.calls[0]?.[0]).toMatchObject({ extraHeaders: { "X-Option": "fast" } });
+  });
+});
+
 describe("McpSettingsSection drill-in", () => {
   const oauthServer: McpSettingsView = {
     secureStorageAvailable: true,
@@ -115,6 +163,10 @@ describe("McpSettingsSection drill-in", () => {
           settleSignIn = resolve;
         }),
     );
+    const finishMcpSignIn = vi.fn(async (_request: { serverId: string; redirectUrl: string }) => ({
+      ok: false,
+      error: { code: "invalid_request", message: "The sign-in response could not be verified.", retryable: false },
+    }));
     Object.defineProperty(window, "wisp", {
       configurable: true,
       value: {
@@ -125,10 +177,11 @@ describe("McpSettingsSection drill-in", () => {
         refreshMcpTools: vi.fn(),
         startMcpSignIn,
         cancelMcpSignIn,
+        finishMcpSignIn,
         subscribeToMcpSettings: vi.fn(() => () => undefined),
       },
     });
-    return { cancelMcpSignIn, startMcpSignIn, settle: (result: unknown) => settleSignIn?.(result) };
+    return { cancelMcpSignIn, startMcpSignIn, finishMcpSignIn, settle: (result: unknown) => settleSignIn?.(result) };
   }
 
   it("opens the server form in place and returns to the list without stacking a dialog", async () => {
@@ -162,6 +215,37 @@ describe("McpSettingsSection drill-in", () => {
     expect(await screen.findByRole("status")).toHaveTextContent("The sign-in was cancelled.");
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
     expect(await screen.findByRole("button", { name: "Sign in" })).toBeEnabled();
+  });
+
+  it("finishes a sign-in this device cannot receive with the pasted address", async () => {
+    const user = userEvent.setup();
+    const { finishMcpSignIn } = setupWithServer();
+    let pushView: ((view: McpSettingsView) => void) | undefined;
+    window.wisp.subscribeToMcpSettings = vi.fn((listener: (view: McpSettingsView) => void) => {
+      pushView = listener;
+      return () => undefined;
+    });
+    render(<McpSettingsSection />);
+
+    await user.click(await screen.findByRole("button", { name: "Manage Linear MCP" }));
+    await user.click(await screen.findByRole("button", { name: "Sign in" }));
+    expect(screen.queryByRole("form", { name: "Finish sign-in" })).not.toBeInTheDocument();
+    const signInUrl = "https://auth.example.com/authorize?state=abc";
+    act(() =>
+      pushView?.({ ...oauthServer, servers: [{ ...oauthServer.servers[0]!, signInPending: true, signInUrl }] }),
+    );
+
+    const form = await screen.findByRole("form", { name: "Finish sign-in" });
+    expect(screen.getByRole("link", { name: /Open the sign-in page/ })).toHaveAttribute("href", signInUrl);
+    await user.type(screen.getByLabelText("Address after sign-in"), " http://127.0.0.1:5000/callback?code=x&state=y ");
+    await user.click(screen.getByRole("button", { name: "Finish sign-in" }));
+
+    expect(finishMcpSignIn).toHaveBeenCalledWith({
+      serverId: "server-1",
+      redirectUrl: "http://127.0.0.1:5000/callback?code=x&state=y",
+    });
+    expect(await screen.findByRole("alert")).toHaveTextContent("The sign-in response could not be verified.");
+    expect(form).toBeInTheDocument();
   });
 
   it("keeps a waiting sign-in cancellable after leaving the form and returning", async () => {

@@ -5,9 +5,6 @@ import path from "node:path";
 import type { ToolDefinition } from "@earendil-works/pi-coding-agent" with { "resolution-mode": "import" };
 
 import {
-  disambiguateMcpAlias,
-  MCP_ACCESS_LEVELS,
-  mcpToolAlias,
   type McpAccess,
   type McpAuthMode,
   type McpConnectionResult,
@@ -20,74 +17,43 @@ import { registerDynamicToolMetadata, unregisterDynamicToolMetadata } from "../s
 import { writeFileAtomically } from "./atomic-file.js";
 import { WispBackendError } from "./backend-error.js";
 import type { EncryptionService } from "./encrypted-credential-store.js";
-import {
-  McpConnection,
-  convertMcpToolResult,
-  type McpConnectionAuth,
-  type McpConnectionOptions,
-  type McpSdkTool,
-} from "./mcp-bridge.js";
+import { McpConnection, type McpConnectionAuth, type McpConnectionOptions, type McpSdkTool } from "./mcp-bridge.js";
 import {
   describeFileArguments,
   expandFileArguments,
   planFileArguments,
   withFileReferenceHints,
 } from "./mcp-file-arguments.js";
-import { McpOAuthProvider } from "./mcp-oauth.js";
+import { McpOAuthProvider, type McpSignInBrowser } from "./mcp-oauth.js";
+import { PLUGIN_SKILLS } from "./plugin-skills/index.js";
 import { McpSecretStore } from "./mcp-secret-store.js";
-import type { IntegrationToolSnapshot, SnapshotToolMetadata } from "./integration-tool-source.js";
+import {
+  type AlwaysAllowedTools,
+  defaultState,
+  type McpServerRecord,
+  type McpState,
+  normalizeState,
+  prunedAlwaysAllowed,
+} from "./mcp-state.js";
+import {
+  buildToolSnapshot,
+  convertResult,
+  type McpToolRecord,
+  summarizeArguments,
+  toolInputSchema,
+  validateToolArguments,
+} from "./mcp-tools.js";
+import type { IntegrationSkill, IntegrationToolSnapshot, SnapshotToolMetadata } from "./integration-tool-source.js";
 import {
   invalidMcpRequest,
-  MAX_TOOL_DESCRIPTION_CHARACTERS,
-  MAX_TOOL_SCHEMA_JSON_BYTES,
-  MAX_TOOL_SNAPSHOT_TOOLS,
-  mcpRecord,
   parseMcpConversation,
   parseSaveMcpServer,
   parseSaveWispMcpAccess,
   parseTestMcpConnection,
+  parseFinishMcpSignIn,
   parseMcpServerRequest,
-  TOOL_NAME_PATTERN,
 } from "./mcp-validation.js";
 import type { ToolAuthorizationBroker } from "./tool-authorization-broker.js";
-
-const MAX_ARGUMENT_JSON_BYTES = 200_000;
-const MAX_SUMMARY_ARGUMENT_CHARACTERS = 60;
-const SECRET_KEY_PATTERN = /token|secret|password|authorization|credential|api[-_]?key/i;
-
-interface McpToolRecord {
-  name: string;
-  alias: string;
-  label: string;
-  description: string;
-  fingerprint: string;
-  inputSchema: unknown;
-}
-
-interface McpServerRecord {
-  serverId: string;
-  name: string;
-  endpoint: string;
-  authMode: McpAuthMode;
-  enabled: boolean;
-  /** Bumped whenever endpoint, authentication, or account identity changes. */
-  configGeneration: number;
-  headerName?: string;
-  snapshot?: { discoveredAt: string; tools: McpToolRecord[] };
-  lastConnection?: { state: "connected" | "unavailable"; at: string; message?: string };
-}
-
-/** Tool name → fingerprint of the definition the user always allowed. */
-type AlwaysAllowedTools = Record<string, string>;
-
-interface McpState {
-  schemaVersion: 2;
-  revision: string;
-  servers: Record<string, McpServerRecord>;
-  grants: Record<string, Record<string, McpAccess>>;
-  /** Per Wisp and server; pruned on every commit to granted, unchanged tools. */
-  alwaysAllowed: Record<string, Record<string, AlwaysAllowedTools>>;
-}
 
 export interface McpServiceOptions {
   dataDirectory: string;
@@ -97,6 +63,11 @@ export interface McpServiceOptions {
   /** The conversation's workspace, where file references are resolved; without it no file can be sent. */
   resolveWorkspaceDirectory?: (conversationId: string) => string;
   openExternal: (url: string) => Promise<void>;
+  /**
+   * Where the browser of an interactive sign-in runs, decided for the device
+   * that started it; called within that operation. Defaults to this computer.
+   */
+  signInBrowser?: () => Promise<McpSignInBrowser>;
   /** The application version advertised to MCP servers. */
   clientVersion?: string;
   createConnection?: (options: McpConnectionOptions) => McpConnection;
@@ -162,7 +133,8 @@ export class McpService {
       for (const server of Object.values(this.state.servers)) {
         const secret = await this.secrets.read(server.serverId).catch(() => undefined);
         if (secret?.type === "header") headerConfigured.add(server.serverId);
-        if (secret?.type === "oauth") signedIn.add(server.serverId);
+        // A client registration is saved before the browser opens; only a token means signed in.
+        if (secret?.type === "oauth" && secret.accessToken !== "") signedIn.add(server.serverId);
       }
     } catch {
       credentialError =
@@ -181,7 +153,10 @@ export class McpService {
           enabled: server.enabled,
           headerConfigured: headerConfigured.has(server.serverId),
           ...(server.headerName ? { headerName: server.headerName } : {}),
+          ...(server.extraHeaders ? { extraHeaders: { ...server.extraHeaders } } : {}),
+          ...(server.preset ? { preset: server.preset } : {}),
           ...(this.isSignInPending(server.serverId) ? { signInPending: true } : {}),
+          ...this.manualSignIn(server.serverId),
           state: this.connectionState(server, signedIn.has(server.serverId)),
           lastDiscoveredAt: server.snapshot?.discoveredAt ?? null,
           tools: (server.snapshot?.tools ?? []).map((tool) => ({
@@ -224,6 +199,19 @@ export class McpService {
           this.cancelServer(request.serverId);
           await this.closeServerClients(request.serverId);
         }
+        if (request.extraHeaders !== undefined && !sameHeaders(existing.extraHeaders, request.extraHeaders)) {
+          // Options such as toolsets change the tools, not who the server
+          // acts as: grants stay, but clients reconnect and tools are
+          // discovered again.
+          existing.extraHeaders = Object.keys(request.extraHeaders).length ? { ...request.extraHeaders } : undefined;
+          if (!identityChanged) {
+            existing.configGeneration += 1;
+            delete existing.snapshot;
+            delete existing.lastConnection;
+            this.cancelServer(request.serverId);
+            await this.closeServerClients(request.serverId);
+          }
+        }
         if (request.authMode === "none") {
           existing.headerName = undefined;
           await this.secrets.delete(request.serverId).catch(() => undefined);
@@ -244,6 +232,10 @@ export class McpService {
           enabled: request.enabled,
           configGeneration: 1,
           ...(request.headerName ? { headerName: request.headerName } : {}),
+          ...(request.extraHeaders && Object.keys(request.extraHeaders).length
+            ? { extraHeaders: { ...request.extraHeaders } }
+            : {}),
+          ...(request.preset ? { preset: request.preset } : {}),
         };
       }
       await this.commit(next);
@@ -290,7 +282,8 @@ export class McpService {
       saved.endpoint === request.endpoint &&
       saved.authMode === request.authMode &&
       request.headerValue === undefined &&
-      (request.headerName === undefined || request.headerName === saved.headerName);
+      (request.headerName === undefined || request.headerName === saved.headerName) &&
+      (request.extraHeaders === undefined || sameHeaders(saved.extraHeaders, request.extraHeaders));
     const savedGeneration = saved?.configGeneration;
     const controller = new AbortController();
     this.running.set(controller, { conversationId: "", sessionId: "", serverId: request.serverId ?? "" });
@@ -393,6 +386,10 @@ export class McpService {
     try {
       // Every window learns a sign-in is waiting and can offer to cancel it.
       await this.publishAndView();
+      const browser = (await this.options.signInBrowser?.()) ?? { kind: "local" };
+      // A manual sign-in shows its page in every window once the URL exists.
+      provider.setSignInBrowser(browser, () => void this.publishAndView().catch(() => undefined));
+      controller.signal.throwIfAborted();
       await provider.loadPersistedTokens();
       await provider.loadPersistedClientInformation();
       await provider.ensureCallbackServer();
@@ -403,7 +400,7 @@ export class McpService {
       // completed exchange must not be cut short after credentials were stored.
       const outcome = await connection.connect(
         endpoint,
-        { mode: "oauth", provider },
+        { mode: "oauth", provider, ...(server.extraHeaders ? { extraHeaders: server.extraHeaders } : {}) },
         {
           allowInteractiveSignIn: true,
         },
@@ -427,7 +424,7 @@ export class McpService {
           await this.discardSignInCredentials(serverId);
           throw error;
         }
-        current.snapshot = { discoveredAt: new Date().toISOString(), tools: this.buildSnapshot(tools, serverId) };
+        current.snapshot = { discoveredAt: new Date().toISOString(), tools: buildToolSnapshot(tools, serverId) };
         current.lastConnection = { state: "connected", at: new Date().toISOString() };
         await this.commit(this.state);
         this.registerSnapshotMetadata();
@@ -457,6 +454,21 @@ export class McpService {
     }
     signIn.cancelledByUser = true;
     signIn.controller.abort();
+    return this.getView();
+  }
+
+  /**
+   * Completes a waiting sign-in with the address its browser was redirected
+   * to, for devices that cannot receive the redirect. Like cancel, it never
+   * waits on the mutation queue; the waiting sign-in commits the result.
+   */
+  async finishSignIn(value: unknown): Promise<McpSettingsView> {
+    const { serverId, redirectUrl } = parseFinishMcpSignIn(value);
+    const signIn = this.activeSignIns.get(serverId);
+    if (!signIn) {
+      throw new WispBackendError("not_found", "No sign-in is in progress for this connection.");
+    }
+    signIn.provider.finishWithRedirect(redirectUrl);
     return this.getView();
   }
 
@@ -532,8 +544,11 @@ export class McpService {
     const metadata: SnapshotToolMetadata[] = [];
     const activeNames: string[] = [];
     const fingerprints: string[] = [];
+    const skills = new Map<string, IntegrationSkill>();
     for (const server of Object.values(this.state.servers)) {
       if (!server.enabled || this.access(sessionId, server.serverId) === "none" || !server.snapshot) continue;
+      const skill = server.preset ? PLUGIN_SKILLS[server.preset] : undefined;
+      if (skill) skills.set(skill.name, skill);
       fingerprints.push(
         server.serverId,
         String(server.configGeneration),
@@ -556,6 +571,7 @@ export class McpService {
       definitions,
       metadata,
       activeNames,
+      ...(skills.size ? { skills: [...skills.values()] } : {}),
       revision: createHash("sha256")
         .update(JSON.stringify([sessionId, fingerprints]))
         .digest("hex"),
@@ -790,6 +806,11 @@ export class McpService {
   }
 
   private async serverAuth(server: McpServerRecord): Promise<McpConnectionAuth> {
+    const auth = await this.savedAuth(server);
+    return server.extraHeaders ? { ...auth, extraHeaders: server.extraHeaders } : auth;
+  }
+
+  private async savedAuth(server: McpServerRecord): Promise<McpConnectionAuth> {
     if (server.authMode === "none") return { mode: "none" };
     if (server.authMode === "header") {
       const secret = await this.secrets.read(server.serverId);
@@ -808,6 +829,20 @@ export class McpService {
   }
 
   private async draftAuth(
+    server: McpServerRecord | undefined,
+    request: {
+      authMode: McpAuthMode;
+      headerName?: string;
+      headerValue?: string;
+      extraHeaders?: Readonly<Record<string, string>>;
+    },
+  ): Promise<McpConnectionAuth> {
+    const auth = await this.draftCredentials(server, request);
+    const extraHeaders = request.extraHeaders ?? server?.extraHeaders;
+    return extraHeaders && Object.keys(extraHeaders).length ? { ...auth, extraHeaders } : auth;
+  }
+
+  private async draftCredentials(
     server: McpServerRecord | undefined,
     request: { authMode: McpAuthMode; headerName?: string; headerValue?: string },
   ): Promise<McpConnectionAuth> {
@@ -838,7 +873,7 @@ export class McpService {
 
   /** Stores a discovered tool set; callers hold the mutation queue. */
   private async applySnapshot(server: McpServerRecord, tools: ReadonlyArray<McpSdkTool>): Promise<void> {
-    const snapshot = this.buildSnapshot(tools, server.serverId);
+    const snapshot = buildToolSnapshot(tools, server.serverId);
     server.snapshot = { discoveredAt: new Date().toISOString(), tools: snapshot };
     server.lastConnection = { state: "connected", at: new Date().toISOString() };
     await this.commit(this.state);
@@ -913,41 +948,6 @@ export class McpService {
     if (server.lastConnection?.state === "unavailable") return "unavailable";
     if (server.lastConnection?.state === "connected") return "connected";
     return "configured";
-  }
-
-  private buildSnapshot(tools: ReadonlyArray<McpSdkTool>, serverId: string): McpToolRecord[] {
-    const records: McpToolRecord[] = [];
-    const seenNames = new Set<string>();
-    const usedAliases = new Set<string>();
-    for (const tool of tools) {
-      if (!tool || typeof tool.name !== "string" || !TOOL_NAME_PATTERN.test(tool.name)) continue;
-      if (seenNames.has(tool.name)) continue;
-      const schema = boundedSchema(tool.inputSchema);
-      if (schema === undefined) continue;
-      seenNames.add(tool.name);
-      // Distinct names like "search.users" and "search_users" normalize onto
-      // the same slug; keep both with a stable, name-derived suffix.
-      let alias = mcpToolAlias(serverId, tool.name);
-      if (usedAliases.has(alias)) {
-        alias = disambiguateMcpAlias(alias, tool.name);
-        if (usedAliases.has(alias)) continue;
-      }
-      usedAliases.add(alias);
-      const description = boundedText(tool.description ?? "", MAX_TOOL_DESCRIPTION_CHARACTERS);
-      records.push({
-        name: tool.name,
-        alias,
-        label: boundedText(tool.name, 60),
-        description,
-        fingerprint: createHash("sha256")
-          .update(JSON.stringify([tool.name, description, schema]))
-          .digest("hex"),
-        inputSchema: schema,
-      });
-      if (records.length >= MAX_TOOL_SNAPSHOT_TOOLS) break;
-    }
-    if (!records.length) throw new WispBackendError("invalid_configuration", "This server exposes no usable tools.");
-    return records;
   }
 
   private registerSnapshotMetadata(): void {
@@ -1026,6 +1026,12 @@ export class McpService {
   }
 
   /** A cancelled sign-in is no longer waiting, even while its flow unwinds. */
+  /** The page of a waiting manual sign-in, for windows that must open it by hand. */
+  private manualSignIn(serverId: string): { signInUrl?: string } {
+    const url = this.isSignInPending(serverId) ? this.activeSignIns.get(serverId)?.provider.manualSignInUrl : undefined;
+    return url ? { signInUrl: url } : {};
+  }
+
   private isSignInPending(serverId: string): boolean {
     const signIn = this.activeSignIns.get(serverId);
     return signIn !== undefined && !signIn.controller.signal.aborted;
@@ -1145,221 +1151,14 @@ export class McpService {
   }
 }
 
-function defaultState(): McpState {
-  return { schemaVersion: 2, revision: randomUUID(), servers: {}, grants: {}, alwaysAllowed: {} };
-}
-
-/**
- * Keeps only tools still granted and unchanged: a removed or re-identified
- * connection, revoked access, or a new tool definition drops the permission,
- * so a changed tool always asks again.
- */
-function prunedAlwaysAllowed(state: McpState): McpState["alwaysAllowed"] {
-  const pruned: McpState["alwaysAllowed"] = {};
-  for (const [sessionId, servers] of Object.entries(state.alwaysAllowed)) {
-    for (const [serverId, tools] of Object.entries(servers)) {
-      const server = state.servers[serverId];
-      if (!server || (state.grants[sessionId]?.[serverId] ?? "none") === "none") continue;
-      const kept = Object.entries(tools).filter(([name, fingerprint]) =>
-        server.snapshot?.tools.some((tool) => tool.name === name && tool.fingerprint === fingerprint),
-      );
-      if (kept.length) (pruned[sessionId] ??= {})[serverId] = Object.fromEntries(kept);
-    }
-  }
-  return pruned;
-}
-
-function normalizeState(value: unknown): McpState {
-  // Version 1 predates always-allowed tools and migrates with none.
-  const raw = mcpRecord(value, ["schemaVersion", "revision", "servers", "grants", "alwaysAllowed"]);
-  if (raw.schemaVersion !== 1 && raw.schemaVersion !== 2) throw invalidMcpRequest();
-  const normalized = defaultState();
-  if (typeof raw.revision === "string" && /^[a-f0-9-]{36}$/.test(raw.revision)) normalized.revision = raw.revision;
-  const servers = mcpRecord(raw.servers);
-  for (const [serverId, entry] of Object.entries(servers)) {
-    if (!/^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$/.test(serverId)) throw invalidMcpRequest();
-    const record = mcpRecord(entry, [
-      "serverId",
-      "name",
-      "endpoint",
-      "authMode",
-      "enabled",
-      "configGeneration",
-      "headerName",
-      "snapshot",
-      "lastConnection",
-    ]);
-    if (record.serverId !== serverId) throw invalidMcpRequest();
-    const snapshotRaw = record.snapshot;
-    let snapshot: McpServerRecord["snapshot"];
-    if (snapshotRaw && typeof snapshotRaw === "object" && !Array.isArray(snapshotRaw)) {
-      const snapshotRecord = mcpRecord(snapshotRaw, ["discoveredAt", "tools"]);
-      if (typeof snapshotRecord.discoveredAt !== "string" || !Array.isArray(snapshotRecord.tools))
-        throw invalidMcpRequest();
-      const tools: McpToolRecord[] = [];
-      for (const tool of snapshotRecord.tools) {
-        const toolRecord = mcpRecord(tool, ["name", "alias", "label", "description", "fingerprint", "inputSchema"]);
-        if (
-          typeof toolRecord.name !== "string" ||
-          typeof toolRecord.alias !== "string" ||
-          typeof toolRecord.label !== "string" ||
-          typeof toolRecord.description !== "string" ||
-          typeof toolRecord.fingerprint !== "string"
-        )
-          throw invalidMcpRequest();
-        tools.push({
-          name: toolRecord.name,
-          alias: toolRecord.alias,
-          label: toolRecord.label,
-          description: toolRecord.description,
-          fingerprint: toolRecord.fingerprint,
-          inputSchema: toolRecord.inputSchema,
-        });
-      }
-      snapshot = { discoveredAt: snapshotRecord.discoveredAt, tools };
-    }
-    let lastConnection: McpServerRecord["lastConnection"];
-    if (record.lastConnection && typeof record.lastConnection === "object") {
-      const connectionRecord = mcpRecord(record.lastConnection, ["state", "at", "message"]);
-      if (
-        (connectionRecord.state !== "connected" && connectionRecord.state !== "unavailable") ||
-        typeof connectionRecord.at !== "string"
-      )
-        throw invalidMcpRequest();
-      lastConnection = {
-        state: connectionRecord.state,
-        at: connectionRecord.at,
-        ...(typeof connectionRecord.message === "string" ? { message: connectionRecord.message } : {}),
-      };
-    }
-    normalized.servers[serverId] = {
-      serverId,
-      name: typeof record.name === "string" ? record.name : serverId,
-      endpoint: typeof record.endpoint === "string" ? record.endpoint : "",
-      authMode: record.authMode === "oauth" || record.authMode === "header" ? record.authMode : "none",
-      enabled: record.enabled === true,
-      configGeneration: typeof record.configGeneration === "number" ? record.configGeneration : 1,
-      ...(typeof record.headerName === "string" ? { headerName: record.headerName } : {}),
-      ...(snapshot ? { snapshot } : {}),
-      ...(lastConnection ? { lastConnection } : {}),
-    };
-  }
-  const grants = mcpRecord(raw.grants);
-  for (const [sessionId, value] of Object.entries(grants)) {
-    if (!/^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$/.test(sessionId)) throw invalidMcpRequest();
-    const sessionGrants = mcpRecord(value);
-    const normalizedGrants: Record<string, McpAccess> = {};
-    for (const [serverId, access] of Object.entries(sessionGrants)) {
-      if (typeof access !== "string" || !(MCP_ACCESS_LEVELS as ReadonlyArray<string>).includes(access))
-        throw invalidMcpRequest();
-      normalizedGrants[serverId] = access as McpAccess;
-    }
-    normalized.grants[sessionId] = normalizedGrants;
-  }
-  if (raw.schemaVersion === 2) {
-    for (const [sessionId, value] of Object.entries(mcpRecord(raw.alwaysAllowed))) {
-      if (!/^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,127}$/.test(sessionId)) throw invalidMcpRequest();
-      for (const [serverId, tools] of Object.entries(mcpRecord(value))) {
-        for (const [name, fingerprint] of Object.entries(mcpRecord(tools))) {
-          if (typeof fingerprint !== "string") throw invalidMcpRequest();
-          ((normalized.alwaysAllowed[sessionId] ??= {})[serverId] ??= {})[name] = fingerprint;
-        }
-      }
-    }
-  }
-  normalized.alwaysAllowed = prunedAlwaysAllowed(normalized);
-  return normalized;
-}
-
-function toolInputSchema(schema: unknown): Record<string, unknown> {
-  if (
-    schema &&
-    typeof schema === "object" &&
-    !Array.isArray(schema) &&
-    (schema as { type?: unknown }).type === "object"
-  ) {
-    return schema as Record<string, unknown>;
-  }
-  return { type: "object", properties: {}, additionalProperties: false };
-}
-
-/** Minimal validation against the reviewed schema; dispatch uses the original name. */
-function validateToolArguments(tool: McpToolRecord, args: unknown): Record<string, unknown> {
-  const json = JSON.stringify(args ?? {});
-  if (json === undefined || Buffer.byteLength(json) > MAX_ARGUMENT_JSON_BYTES) {
-    throw new WispBackendError("invalid_request", "The tool arguments are too large.");
-  }
-  if (!args || typeof args !== "object" || Array.isArray(args)) {
-    throw new WispBackendError("invalid_request", "The tool arguments must be an object.");
-  }
-  const schema = tool.inputSchema as { required?: unknown } | undefined;
-  const required = Array.isArray(schema?.required) ? (schema!.required as unknown[]) : [];
-  const record = args as Record<string, unknown>;
-  for (const key of required) {
-    if (typeof key === "string" && !(key in record)) {
-      throw new WispBackendError("invalid_request", `The tool arguments are missing "${key}".`);
-    }
-  }
-  return record;
-}
-
-function summarizeArguments(args: Record<string, unknown>): string {
-  const parts: string[] = [];
-  for (const [key, value] of Object.entries(args)) {
-    if (parts.length >= 6) {
-      parts.push("…");
-      break;
-    }
-    const display = SECRET_KEY_PATTERN.test(key)
-      ? "[redacted]"
-      : typeof value === "string"
-        ? truncate(value, MAX_SUMMARY_ARGUMENT_CHARACTERS)
-        : typeof value === "number" || typeof value === "boolean"
-          ? String(value)
-          : Array.isArray(value) || (value && typeof value === "object")
-            ? "[structured value]"
-            : "null";
-    parts.push(`${key}: ${display}`);
-  }
-  return parts.join(", ") || "no arguments";
-}
-
-function convertResult(result: unknown): string {
-  const converted = convertMcpToolResult(result);
-  if (converted.isError) {
-    // An MCP isError result must surface as a failed tool call, never as
-    // successful activity in Pi.
-    throw new WispBackendError("internal_error", boundedErrorText(converted.text), false);
-  }
-  return converted.text;
-}
-
-function boundedSchema(schema: unknown): unknown {
-  if (!schema || typeof schema !== "object" || Array.isArray(schema)) return undefined;
-  let json: string;
-  try {
-    json = JSON.stringify(schema);
-  } catch {
-    return undefined;
-  }
-  if (json === undefined || Buffer.byteLength(json) > MAX_TOOL_SCHEMA_JSON_BYTES) return undefined;
-  return schema;
-}
-
-function boundedText(value: string, maxLength: number): string {
-  const normalized = value
-    .replaceAll(/[\r\n\t]+/g, " ")
-    .replaceAll(/\s+/g, " ")
-    .trim();
-  return normalized.slice(0, maxLength);
-}
-
-function boundedErrorText(value: string): string {
-  return truncate(value, 500) || "The MCP tool reported an error.";
-}
-
-function truncate(value: string, maxLength: number): string {
-  return value.length <= maxLength ? value : `${value.slice(0, maxLength)}…`;
+/** Header sets compare by name and value; an empty set equals none. */
+function sameHeaders(
+  saved: Readonly<Record<string, string>> | undefined,
+  requested: Readonly<Record<string, string>>,
+): boolean {
+  const a = Object.entries(saved ?? {}).sort(([x], [y]) => x.localeCompare(y));
+  const b = Object.entries(requested).sort(([x], [y]) => x.localeCompare(y));
+  return JSON.stringify(a) === JSON.stringify(b);
 }
 
 function safeMcpError(error: unknown, signal?: AbortSignal): WispBackendError {

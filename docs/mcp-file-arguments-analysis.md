@@ -20,7 +20,7 @@ to write them out as tool-call arguments.
 | Attachments | `messageWithAttachments` in `shared/workspace.ts` copies files into the workspace and adds their paths to the message | The model knows where the file is, not what bytes it holds |
 | PDF reading | `withDocumentReading` and `backend/pdf-reader.ts` | Returns text and page images for understanding; the original bytes never reach the model |
 | MCP dispatch | `executeTool` in `backend/mcp-service.ts` calls `connection.callTool(tool.name, args)` | Arguments are exactly the JSON the model produced; the host never transforms them |
-| Argument limit | `MAX_ARGUMENT_JSON_BYTES = 200_000` in `backend/mcp-service.ts` | Larger payloads are refused |
+| Argument limit | `MAX_ARGUMENT_JSON_BYTES = 200_000` in `backend/mcp-tools.ts` | Larger payloads are refused |
 | Shell | `excludeTools: ["bash", "powershell"]` in `backend/pi-conversation-agent.ts` | Intentional; Wisps cannot run scripts |
 
 ## Why a shell or an encoding tool would not fix it

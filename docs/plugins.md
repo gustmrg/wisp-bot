@@ -1,12 +1,18 @@
 # Bundled plugins
 
-Wisp ships with five bundled integrations: **Brave Search** (web search),
+Wisp ships with bundled integrations: **Brave Search** (web search),
 **Linear**, **Firecrawl**, **Tavily**, and **Exa** (the latter three support web
-search and page reading). Connections are configured globally in
+search and page reading), and **Google Calendar** and **Gmail**, which sign in
+with your own Google OAuth client. Connections are configured globally in
 **Settings → Plugins**; each Wisp receives access independently through its
 **Access** tab. Connecting a plugin grants no Wisp access automatically.
 
-For dynamically discovered integrations, see [remote MCP servers](mcp-servers.md).
+**GitHub** and **Atlassian** (Jira and Confluence) are also listed under
+Plugins but run over a remote MCP connection; see [GitHub](#github) and
+[Atlassian](#atlassian). Plugins of this kind that sign in through the browser
+have no form: **Connect** opens the provider's page to approve access, and
+**Sign in again** on the plugin's page repeats it. For dynamically discovered
+integrations, see [remote MCP servers](mcp-servers.md).
 
 ## Connecting a plugin
 
@@ -18,6 +24,16 @@ personal API key**, **Firecrawl API key**, **Tavily API key**, or **Exa API
 key** (each form links to the provider page that issues it), and select
 **Connect**. Connecting tests the key first and saves it only if the test
 succeeds. Each plugin supports one connection on this device.
+
+Plugins that sign in through the browser ask instead for an **OAuth client**
+you create with the provider (each form links to its setup guide): enter its
+client ID and secret and select **Connect**. The browser opens the provider's
+page to approve access; with a server on another computer the desktop app
+opens it and passes the result back, and in the browser app you paste back the
+address the browser lands on. The plugin's page then shows the account, **Sign
+in again** (also when its access expired or was revoked, which turns its tools
+off until then), **Use another OAuth client**, which removes the plugin from
+every Wisp, **Test connection**, and **Remove connection**.
 
 A connected plugin's page has **Test connection** for the saved key, **Replace
 key** (which also tests the new key before saving it), and **Remove
@@ -154,6 +170,144 @@ not included, and it never deletes anything. Wisps that need them can use
 Linear's official MCP server (`https://mcp.linear.app/mcp`) as a
 [remote MCP server](mcp-servers.md), where every call is approved separately.
 
+## GitHub
+
+**Settings → Plugins → GitHub** connects
+[GitHub's official MCP server](https://github.com/github/github-mcp-server)
+(`https://api.githubcopilot.com/mcp/`) without filling in the endpoint or
+headers. Enter a personal access token (a fine-grained token limited to the
+repositories and permissions your Wisps need) and choose the toolsets:
+Repositories, Issues, Pull requests, and Users are selected by default, and
+Labels, Actions, Notifications, Discussions, Projects, Code scanning, and
+Dependabot can be added. The token is sent as `Authorization: Bearer …` and
+the toolsets as `X-MCP-Toolsets` (with `context` always included). Fewer
+toolsets keep the Wisp's tool list short; GitHub's limit of tools per request
+matters for some models. It does not need a browser sign-in, so it also works
+with a [server on another computer](remote-server.md).
+
+It is listed with the other plugins, with an **Enabled** switch and the
+number of Wisps that can use it, and with the apps in each Wisp's **Access**
+tab. Underneath it is an MCP connection, so access uses the MCP levels (**Use
+with approval** or **Use without asking**) and approvals, and **Always allow
+this tool** works as described in [remote MCP servers](mcp-servers.md).
+Only one GitHub connection is offered. Organizations can restrict personal
+access tokens, and on Copilot Business or Enterprise plans the "MCP servers in
+Copilot" policy must be on.
+
+Wisps with access to GitHub also see a **github** skill under their available
+skills: instructions that come with the plugin, such as passing the repository
+explicitly, searching with qualifiers, never merging or closing without being
+asked, and making code changes in the Wisp's container when it can run
+commands. It is not one of the Wisp's own skills: it is not
+listed in its Skills settings, does not count toward its limit, and
+disappears when the Wisp loses access. A skill of the Wisp's own with the same
+name is used instead. Like every skill, it grants nothing.
+
+## Atlassian
+
+**Settings → Plugins → Atlassian → Connect** connects
+[Atlassian's official MCP server](https://support.atlassian.com/atlassian-rovo-mcp-server/)
+(`https://mcp.atlassian.com/v1/mcp`) for Jira and Confluence. There is nothing
+to fill in: your browser opens Atlassian's sign-in, where you choose the site
+to allow and approve access. Wisps then act as you, with your own Jira and
+Confluence permissions; no API token or administrator is needed unless your
+site's admins restrict which apps may connect.
+
+With a [server on another computer](remote-server.md#oauth-sign-in-from-another-computer),
+the desktop app opens the sign-in in its own browser and passes the result to
+the server. In the browser app or on a phone, open the sign-in page from the
+plugin and paste back the address the browser lands on.
+
+Atlassian decides which tools the connection offers; Wisps see them all, so
+choose **Use with approval** unless a Wisp should change issues and pages
+without asking. If the sign-in expires or is revoked on Atlassian's side, the
+plugin shows **Needs sign-in** until you sign in again.
+
+Wisps with access also see an **atlassian** skill: find the site's cloud ID
+first, search with JQL and CQL and small limits, look up issue types and
+required fields before creating an issue, change status only through the
+issue's transitions, and never delete or move issues unless asked. Like the
+GitHub skill, it is not one of the Wisp's own skills and grants nothing.
+
+## Setting up a Google OAuth client
+
+Google's plugins sign in with an OAuth client from **your own** Google Cloud
+project: Google does not let apps register themselves, and a client shipped
+with Wisp would need Google's app verification. You do this once; the same
+project and client can serve every Google plugin.
+
+1. In the [Google Cloud console](https://console.cloud.google.com/), create a
+   project, or choose one.
+2. Under **APIs & Services → Library**, enable the API of each plugin you use:
+   **Google Calendar API** for Google Calendar, **Gmail API** for Gmail.
+3. Under **Google Auth Platform**, configure the consent screen: an app name
+   and your email under **Branding**, then the user type under **Audience**:
+   **External** for a personal Gmail account, or **Internal** for a Google
+   Workspace organization.
+4. Under **Data access**, add the plugins' scopes. Google Calendar uses
+   `https://www.googleapis.com/auth/calendar.events` and
+   `https://www.googleapis.com/auth/calendar.calendarlist.readonly`; Gmail uses
+   `https://www.googleapis.com/auth/gmail.readonly` and
+   `https://www.googleapis.com/auth/gmail.compose`. Google lists the Gmail
+   scopes as restricted, which matters only for apps published to others.
+5. For an **External** app, under **Audience**, select **Publish app** so its
+   status is **In production**. While it is in **Testing**, Google ends the
+   sign-in after 7 days and Wisp asks you to sign in again. For your own use the
+   app does not need Google's verification: when you sign in, Google warns that
+   it has not verified the app; continue through **Advanced**.
+6. Under **Clients**, create a client of type **Desktop app**, and copy its
+   **Client ID** and **Client secret**.
+7. In Wisp, open **Settings → Plugins**, choose the plugin, paste the client ID
+   and secret, and select **Connect**.
+
+A Desktop app client accepts sign-in redirects to `http://127.0.0.1` on any
+port, which is how Wisp receives them, also through the desktop app when the
+server runs on [another computer](remote-server.md#oauth-sign-in-from-another-computer).
+The client secret of a Desktop app is not confidential, but Wisp stores it
+encrypted with the tokens anyway and never shows it to Wisps.
+
+## Google Calendar
+
+With **Read only**, a Wisp can list your calendars
+(`google_calendar_list_calendars`), list and search events in a time range
+with recurring events expanded (`google_calendar_list_events`), read one event
+with its description, attendees, and meeting link
+(`google_calendar_get_event`), and check busy times across up to 10 calendars
+for up to 31 days (`google_calendar_free_busy`).
+
+With **Read and write**, it can also create events
+(`google_calendar_create_event`), change them
+(`google_calendar_update_event`, only the fields given), and accept, decline,
+or tentatively accept invitations (`google_calendar_respond_to_event`). Each
+change asks for approval unless you allowed it without asking. Attendees and
+organizers are emailed only when the Wisp is asked to (`notifyAttendees`,
+`notifyOrganizer`); by default Google sends nothing.
+
+The plugin cannot delete events or change calendar settings or sharing: its
+scopes cover events and the calendar list only. Event descriptions are written
+by other people and reach the Wisp as data, not instructions.
+
+## Gmail
+
+With **Read only**, a Wisp can search your mail with Gmail's search syntax
+(`gmail_search_messages`, for example `from:ana@example.com newer_than:7d`),
+read a message or a whole thread as text (`gmail_read_message`,
+`gmail_read_thread`; HTML mail is converted to text, and attachments are listed
+by name but never read), and list your labels and drafts
+(`gmail_list_labels`, `gmail_list_drafts`).
+
+With **Read and write**, it can write drafts: a new email or a reply that joins
+the original thread and goes to its sender (`gmail_create_draft`), and rewrite
+a draft (`gmail_update_draft`). Each draft asks for approval unless you allowed
+it without asking.
+
+**Wisps never send email.** The plugin has no tool that sends, so you review
+every draft in Gmail and send it yourself. Google has no scope that allows
+writing drafts without also allowing sending, so `gmail.compose` is requested;
+the limit is in Wisp, not in Google's permission. The plugin cannot delete
+mail, change labels, or read attachments. Email contents are written by other
+people and reach the Wisp as data, not instructions.
+
 ## Revocation and key changes
 
 Disabling a plugin blocks all Wisps but retains their grants. Replacing a key
@@ -164,7 +318,7 @@ Linear before retrying a write whose outcome is uncertain.
 
 ## Extension boundary
 
-These five bundled plugins plus remote MCP servers are the supported
+These bundled plugins plus remote MCP servers are the supported
 integrations. Arbitrary plugin installation, custom endpoints, and multiple
 accounts per plugin are not available yet. See
 [ADR 004](decisions/004-wisp-plugins.md) for the connection model, adapter

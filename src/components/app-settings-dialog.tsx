@@ -63,7 +63,7 @@ import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectVa
 import { normalizeTheme } from "@/lib/theme";
 import { cn } from "@/lib/utils";
 import { WISP_RELEASES_URL, WISP_REPOSITORY_URL, type UpdateState } from "../../shared/contracts";
-import type { PluginId } from "../../shared/plugins";
+import type { SettingsPluginId } from "@/lib/plugin-access";
 import type { WispOption } from "@/lib/plugin-access";
 import type { ChatView } from "@/chat-data";
 
@@ -224,7 +224,7 @@ interface AppSettingsDialogProps {
   open: boolean;
   initialSection?: SettingsEntrySection;
   /** Plugin to open directly when the dialog starts at Plugins. */
-  initialPluginId?: PluginId;
+  initialPluginId?: SettingsPluginId;
   /** Workspace to show when the dialog starts at Storage. */
   initialStorageConversationId?: string;
   /** Wisps that Plugins can give access to. */

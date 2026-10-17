@@ -1,6 +1,7 @@
 import type { SequencedConversationAgentEvent } from "./contracts.js";
 import type { ConversationDelta } from "./conversations.js";
 import type { McpSettingsView } from "./mcp.js";
+import type { PluginSettingsView } from "./plugins.js";
 import type { MessageQueueView } from "./message-queue.js";
 import type { JobsView } from "./jobs.js";
 import type { ScheduledMessagesView } from "./scheduled-messages.js";
@@ -64,20 +65,38 @@ export interface DeviceCredentials {
 
 /**
  * Something the server needs a screen for, asked of the desktop app running
- * on the same computer: a server only sends these to a local device.
+ * on the same computer: a server only sends these to a local device. The
+ * `oauth*` requests relay an OAuth redirect through the desktop app that
+ * started a sign-in, wherever it runs:
+ *
+ * - `oauthListen` opens a loopback listener there; it answers `[listenerId, port]`.
+ * - `oauthRedirect` opens the browser at `url` and answers `[query]`, the
+ *   redirect's query string, once a redirect with `state` arrives.
+ * - `oauthClose` stops the listener; a pending `oauthRedirect` fails.
  */
 export type HostRequest =
   | { id: string; kind: "openPath"; path: string }
   | { id: string; kind: "openExternal"; url: string }
-  | { id: string; kind: "selectFiles" };
+  | { id: string; kind: "selectFiles" }
+  | { id: string; kind: "oauthListen" }
+  | { id: string; kind: "oauthRedirect"; listenerId: string; url: string; state: string }
+  | { id: string; kind: "oauthClose"; listenerId: string };
 
-/** The answer to a host request: `selectFiles` returns absolute paths; the others return nothing. */
+/** Requests a desktop app answers for a server on another computer too. */
+export const REMOTE_HOST_REQUESTS: ReadonlySet<HostRequest["kind"]> = new Set([
+  "oauthListen",
+  "oauthRedirect",
+  "oauthClose",
+]);
+
+/** The answer to a host request: `selectFiles` returns absolute paths, `oauth*` the values above; the others nothing. */
 export type HostResponse = { ok: true; value?: ReadonlyArray<string> } | { ok: false; message: string };
 
 export interface RemoteEventPayloads {
   agentEvent: SequencedConversationAgentEvent;
   conversationChanged: ConversationDelta;
   mcpSettingsChanged: McpSettingsView;
+  pluginSettingsChanged: PluginSettingsView;
   scheduledMessagesChanged: ScheduledMessagesView;
   messageQueueChanged: MessageQueueView;
   jobsChanged: JobsView;

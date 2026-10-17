@@ -8,6 +8,8 @@ import {
   type SavePluginDefaultsRequest,
   type SavePluginSettingsRequest,
   type TestPluginConnectionRequest,
+  type StartPluginSignInRequest,
+  type FinishPluginSignInRequest,
   type SaveWispPluginAccessRequest,
   type WebProviders,
 } from "../shared/plugins.js";
@@ -48,6 +50,41 @@ export function parseTestPluginConnection(value: unknown): TestPluginConnectionR
   const raw = pluginRecord(value, ["pluginId", "apiKey"]);
   const apiKey = parseKey(raw.apiKey);
   return { pluginId: parsePluginId(raw.pluginId), ...(apiKey === undefined ? {} : { apiKey }) };
+}
+
+const MAX_CLIENT_FIELD = 512;
+const MAX_REDIRECT_URL_LENGTH = 8192;
+
+function clientField(value: unknown, message: string): string | undefined {
+  if (value === undefined) return undefined;
+  if (
+    typeof value !== "string" ||
+    !value.trim() ||
+    value.length > MAX_CLIENT_FIELD ||
+    /[\u0000-\u001f\s]/.test(value.trim())
+  )
+    throw new WispBackendError("invalid_request", message);
+  return value.trim();
+}
+
+export function parseStartPluginSignIn(value: unknown): StartPluginSignInRequest {
+  const raw = pluginRecord(value, ["pluginId", "clientId", "clientSecret"]);
+  const clientId = clientField(raw.clientId, "Enter the OAuth client ID.");
+  const clientSecret = clientField(raw.clientSecret, "Enter the OAuth client secret.");
+  if (clientSecret && !clientId) throw new WispBackendError("invalid_request", "Enter the OAuth client ID.");
+  return {
+    pluginId: parsePluginId(raw.pluginId),
+    ...(clientId ? { clientId } : {}),
+    ...(clientSecret ? { clientSecret } : {}),
+  };
+}
+
+export function parseFinishPluginSignIn(value: unknown): FinishPluginSignInRequest {
+  const raw = pluginRecord(value, ["pluginId", "redirectUrl"]);
+  const redirectUrl = typeof raw.redirectUrl === "string" ? raw.redirectUrl.trim() : "";
+  if (!redirectUrl || redirectUrl.length > MAX_REDIRECT_URL_LENGTH)
+    throw new WispBackendError("invalid_request", "Paste the address of the page the sign-in sent you to.");
+  return { pluginId: parsePluginId(raw.pluginId), redirectUrl };
 }
 
 export function parsePluginConversation(value: unknown): { conversationId: string } {

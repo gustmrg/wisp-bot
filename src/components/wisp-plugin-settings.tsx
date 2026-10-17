@@ -11,7 +11,8 @@ import {
   type PluginSettingsView,
   type WebProviders,
 } from "../../shared/plugins";
-import type { McpAccess, McpGrant, McpSettingsView } from "../../shared/mcp";
+import type { McpAccess, McpGrant, McpServerSummary, McpSettingsView } from "../../shared/mcp";
+import { MCP_PRESETS } from "../../shared/mcp-presets";
 import { getToolMetadata } from "../../shared/tool-catalog";
 import type {
   ToolPolicyBehavior,
@@ -369,6 +370,90 @@ function WispAccessForm({
     );
   }
 
+  /** One MCP connection; a plugin's connection links to Settings → Plugins instead of MCP servers. */
+  function mcpRow(server: McpServerSummary) {
+    const serverAvailable = server.enabled && server.state !== "needs_sign_in";
+    const grant = mcpGrants.find(({ serverId }) => serverId === server.serverId);
+    const access = grant?.access ?? "none";
+    const alwaysAllowed = access === "use_with_approval" ? (grant?.alwaysAllowedTools ?? []) : [];
+    return (
+      <AccessRow
+        key={server.serverId}
+        id={`${formId}-mcp-${server.serverId}`}
+        icon={server.preset ? <PluginLogo pluginId={server.preset} size="sm" /> : <InitialsBadge name={server.name} />}
+        label={server.name}
+        value={access}
+        options={MCP_ACCESS_OPTIONS.map((option) => ({
+          ...option,
+          disabled: !serverAvailable && option.value !== "none",
+        }))}
+        disabled={saving}
+        onChange={(value) => {
+          setMcpGrants((current) =>
+            current.map((grant) =>
+              grant.serverId === server.serverId ? { ...grant, access: value as McpAccess } : grant,
+            ),
+          );
+          changed();
+        }}
+        notice={
+          <>
+            {server.tools.length} reviewed tool{server.tools.length === 1 ? "" : "s"}
+            {access !== "none" && server.tools.length
+              ? `: ${server.tools
+                  .slice(0, MAX_PREVIEW_TOOLS)
+                  .map(({ label }) => label)
+                  .join(", ")}${
+                  server.tools.length > MAX_PREVIEW_TOOLS ? ` + ${server.tools.length - MAX_PREVIEW_TOOLS} more` : ""
+                }.`
+              : "."}
+            {!serverAvailable ? (
+              <>
+                {" "}
+                {server.state === "needs_sign_in"
+                  ? "Sign in to this server first."
+                  : server.preset
+                    ? `${server.name} is disabled for every Wisp.`
+                    : "This server is disabled for every Wisp."}{" "}
+                <SettingsLink
+                  target={server.preset ? { section: "plugins", pluginId: server.preset } : { section: "mcp" }}
+                  label={server.preset ? `Manage ${server.name}` : "Manage MCP servers"}
+                  onOpenSettings={onOpenSettings}
+                />{" "}
+                You can still remove existing access.
+              </>
+            ) : null}
+            <AlwaysAllowedChips
+              names={alwaysAllowed}
+              label={(name) => server.tools.find((tool) => tool.name === name)?.label ?? name}
+              disabled={saving}
+              onRemove={(name) => {
+                setMcpGrants((current) =>
+                  current.map((entry) =>
+                    entry.serverId === server.serverId
+                      ? {
+                          ...entry,
+                          alwaysAllowedTools: (entry.alwaysAllowedTools ?? []).filter((tool) => tool !== name),
+                        }
+                      : entry,
+                  ),
+                );
+                changed();
+              }}
+            />
+          </>
+        }
+      />
+    );
+  }
+
+  // Connections made from a preset are plugins: listed with the apps, under their logo.
+  const presetRows = mcpView?.servers.filter((server) => server.preset).map(mcpRow) ?? [];
+  const customServers = mcpView?.servers.filter((server) => !server.preset) ?? [];
+  const missingPresets = mcpView
+    ? Object.values(MCP_PRESETS).filter(({ id }) => !mcpView.servers.some((server) => server.preset === id))
+    : [];
+
   const webRows = WEB_CAPABILITIES.flatMap((capability) => {
     const current = providers[capability.id];
     // Saved choices stay listed while unavailable so the row does not vanish mid-edit.
@@ -481,6 +566,8 @@ function WispAccessForm({
   const unavailable = PLUGIN_CATALOG.filter(
     ({ id }) => !available(id) && !Object.values(savedProviders).includes(id) && !appRows.some((row) => row.key === id),
   );
+  const unavailableEntries = [...unavailable, ...missingPresets];
+  const onlyUnavailable = unavailableEntries.length === 1 ? unavailableEntries[0] : undefined;
   const missingCapabilities = WEB_CAPABILITIES.filter(
     ({ id }) => webRows.length > 0 && !webRows.some((row) => row.key === id),
   );
@@ -570,23 +657,28 @@ function WispAccessForm({
                 ))}
               </AccessSection>
             ) : null}
-            {appRows.length ? <AccessSection label="Apps">{appRows}</AccessSection> : null}
-            {unavailable.length ? (
+            {appRows.length || presetRows.length ? (
+              <AccessSection label="Apps">
+                {appRows}
+                {presetRows}
+              </AccessSection>
+            ) : null}
+            {unavailable.length || missingPresets.length ? (
               <p className="leading-relaxed text-dim">
                 Unavailable:{" "}
-                {unavailable.map(({ id, name }) => (plugin(id)?.configured ? `${name} (turned off)` : name)).join(", ")}
+                {[
+                  ...unavailable.map(({ id, name }) => (plugin(id)?.configured ? `${name} (turned off)` : name)),
+                  ...missingPresets.map(({ name }) => name),
+                ].join(", ")}
                 .{" "}
                 <SettingsLink
-                  target={{
-                    section: "plugins",
-                    ...(unavailable.length === 1 ? { pluginId: unavailable[0]!.id } : {}),
-                  }}
-                  label={unavailable.length === 1 ? `Set up ${unavailable[0]!.name}` : "Set up plugins"}
+                  target={{ section: "plugins", ...(onlyUnavailable ? { pluginId: onlyUnavailable.id } : {}) }}
+                  label={onlyUnavailable ? `Set up ${onlyUnavailable.name}` : "Set up plugins"}
                   onOpenSettings={onOpenSettings}
                 />
               </p>
             ) : null}
-            {mcpView.servers.length === 0 ? (
+            {customServers.length === 0 ? (
               <section aria-label="MCP servers" className="flex flex-col gap-1.5">
                 <h3 className="font-semibold">MCP servers</h3>
                 <p className="leading-relaxed text-dim">
@@ -595,85 +687,7 @@ function WispAccessForm({
                 </p>
               </section>
             ) : (
-              <AccessSection label="MCP servers">
-                {mcpView.servers.map((server) => {
-                  const serverAvailable = server.enabled && server.state !== "needs_sign_in";
-                  const grant = mcpGrants.find(({ serverId }) => serverId === server.serverId);
-                  const access = grant?.access ?? "none";
-                  const alwaysAllowed = access === "use_with_approval" ? (grant?.alwaysAllowedTools ?? []) : [];
-                  return (
-                    <AccessRow
-                      key={server.serverId}
-                      id={`${formId}-mcp-${server.serverId}`}
-                      icon={<InitialsBadge name={server.name} />}
-                      label={server.name}
-                      value={access}
-                      options={MCP_ACCESS_OPTIONS.map((option) => ({
-                        ...option,
-                        disabled: !serverAvailable && option.value !== "none",
-                      }))}
-                      disabled={saving}
-                      onChange={(value) => {
-                        setMcpGrants((current) =>
-                          current.map((grant) =>
-                            grant.serverId === server.serverId ? { ...grant, access: value as McpAccess } : grant,
-                          ),
-                        );
-                        changed();
-                      }}
-                      notice={
-                        <>
-                          {server.tools.length} reviewed tool{server.tools.length === 1 ? "" : "s"}
-                          {access !== "none" && server.tools.length
-                            ? `: ${server.tools
-                                .slice(0, MAX_PREVIEW_TOOLS)
-                                .map(({ label }) => label)
-                                .join(", ")}${
-                                server.tools.length > MAX_PREVIEW_TOOLS
-                                  ? ` + ${server.tools.length - MAX_PREVIEW_TOOLS} more`
-                                  : ""
-                              }.`
-                            : "."}
-                          {!serverAvailable ? (
-                            <>
-                              {" "}
-                              {server.state === "needs_sign_in"
-                                ? "Sign in to this server first."
-                                : "This server is disabled for every Wisp."}{" "}
-                              <SettingsLink
-                                target={{ section: "mcp" }}
-                                label="Manage MCP servers"
-                                onOpenSettings={onOpenSettings}
-                              />{" "}
-                              You can still remove existing access.
-                            </>
-                          ) : null}
-                          <AlwaysAllowedChips
-                            names={alwaysAllowed}
-                            label={(name) => server.tools.find((tool) => tool.name === name)?.label ?? name}
-                            disabled={saving}
-                            onRemove={(name) => {
-                              setMcpGrants((current) =>
-                                current.map((entry) =>
-                                  entry.serverId === server.serverId
-                                    ? {
-                                        ...entry,
-                                        alwaysAllowedTools: (entry.alwaysAllowedTools ?? []).filter(
-                                          (tool) => tool !== name,
-                                        ),
-                                      }
-                                    : entry,
-                                ),
-                              );
-                              changed();
-                            }}
-                          />
-                        </>
-                      }
-                    />
-                  );
-                })}
-              </AccessSection>
+              <AccessSection label="MCP servers">{customServers.map(mcpRow)}</AccessSection>
             )}
             <p className="leading-relaxed text-dim">
               With approval, MCP tool calls ask first, with a preview of the arguments, unless you chose Always allow

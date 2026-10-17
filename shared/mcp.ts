@@ -1,3 +1,5 @@
+import type { McpPresetId } from "./mcp-presets/index.js";
+
 /**
  * Remote MCP server connections. The first release supports Streamable HTTP
  * endpoints only; local stdio servers are rejected at every boundary.
@@ -42,8 +44,18 @@ export interface McpServerSummary {
   headerConfigured: boolean;
   /** Header name is configuration, not a secret, and is safe to display. */
   headerName?: string;
+  /** Non-secret headers sent with every request, such as option selectors. */
+  extraHeaders?: Readonly<Record<string, string>>;
+  /** The preset this connection was added from; fixed for its lifetime. */
+  preset?: McpPresetId;
   /** A browser sign-in is waiting; it can be cancelled from any window. */
   signInPending?: boolean;
+  /**
+   * The sign-in page to open by hand while a sign-in waits for its result to be
+   * pasted back: set when the device that started it cannot receive the browser's
+   * redirect, such as the browser app or a phone.
+   */
+  signInUrl?: string;
   lastDiscoveredAt: string | null;
   tools: ReadonlyArray<McpToolSummary>;
 }
@@ -65,10 +77,21 @@ export interface SaveMcpServerRequest {
   headerName?: string;
   /** Omit to keep the saved header value when editing. */
   headerValue?: string;
+  /** Non-secret headers; omit to keep the saved ones when editing. Credentials belong in the authentication header. */
+  extraHeaders?: Readonly<Record<string, string>>;
+  /** Only when adding: the preset the connection comes from. */
+  preset?: McpPresetId;
 }
 
 export interface McpServerRequest {
   serverId: string;
+}
+
+/** Completes a waiting sign-in with the address the browser was sent back to. */
+export interface FinishMcpSignInRequest {
+  serverId: string;
+  /** The `http://127.0.0.1:…/callback?code=…&state=…` address that failed to load. */
+  redirectUrl: string;
 }
 
 export interface TestMcpConnectionRequest {
@@ -78,6 +101,8 @@ export interface TestMcpConnectionRequest {
   authMode: McpAuthMode;
   headerName?: string;
   headerValue?: string;
+  /** Omit to test with the saved connection's headers. */
+  extraHeaders?: Readonly<Record<string, string>>;
 }
 
 export interface McpConnectionResult {

@@ -12,6 +12,7 @@ import {
   type WebProviders,
   type WispPluginAccessView,
 } from "../../shared/plugins";
+import type { McpPresetId } from "../../shared/mcp-presets";
 import type { WispAppearance } from "../../shared/wisp-appearance";
 
 /** A Wisp that can receive plugin access from Settings. */
@@ -24,15 +25,19 @@ export interface WispOption {
 }
 
 /** Where the Access tab sends the user to connect or fix a service. */
+/** A plugin in Settings → Plugins: a bundled plugin or one that runs over an MCP connection. */
+export type SettingsPluginId = PluginId | McpPresetId;
+
 export type IntegrationSettingsTarget =
-  | { section: "plugins"; pluginId?: PluginId }
+  | { section: "plugins"; pluginId?: SettingsPluginId }
   | { section: "mcp" }
   | { section: "storage"; conversationId: string }
   | { section: "jobs" }
   | { section: "usage" };
 
 export function isPluginAvailable(plugin: PluginSummary | undefined): boolean {
-  return Boolean(plugin?.configured && plugin.enabled);
+  // A sign-in plugin whose access expired cannot be granted until it signs in again.
+  return Boolean(plugin?.configured && plugin.enabled && !plugin.needsSignIn);
 }
 
 /**

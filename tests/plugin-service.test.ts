@@ -228,7 +228,10 @@ describe("plugin service", () => {
     expect(view.plugins.filter(({ id }) => id === "tavily" || id === "exa")).toHaveLength(2);
     expect(
       view.plugins.every(({ id, enabled, configured }) =>
-        id === "tavily" || id === "exa" ? !enabled && !configured : enabled && configured,
+        // The Google plugins were never connected here; they sign in instead of taking a key.
+        id === "tavily" || id === "exa" || id === "google-calendar" || id === "gmail"
+          ? !enabled && !configured
+          : enabled && configured,
       ),
     ).toBe(true);
     await reopened.save({ pluginId: "tavily", enabled: true, apiKey: "tavily-key" });
