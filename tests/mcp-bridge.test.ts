@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import {
   McpConnection,
+  McpSessionExpiredError,
   convertMcpToolResult,
   type McpSdkClient,
   type McpSdkModuleShape,
@@ -158,6 +159,18 @@ describe("McpConnection", () => {
     expect(onClosed).toHaveBeenCalledTimes(1);
     // Calls on a closed connection fail instead of silently reconnecting.
     await expect(connection.callTool("search", {})).rejects.toMatchObject({ code: "tool_blocked" });
+  });
+
+  it("drops a session the server no longer knows so the pool can reopen it", async () => {
+    const { sdk, clients } = fakeSdk();
+    const connection = new McpConnection({ sdk });
+    await connection.connect("https://example.com/mcp", { mode: "none" });
+    clients[0]!.callTool = vi.fn(async () => {
+      throw Object.assign(new Error("Error POSTing to endpoint: session not found"), { status: 404 });
+    });
+    await expect(connection.callTool("search", {})).rejects.toBeInstanceOf(McpSessionExpiredError);
+    expect(connection.connectionStatus).not.toBe("connected");
+    expect(clients[0]!.close).toHaveBeenCalled();
   });
 
   it("dispatches calls with a timeout and surfaces aborts", async () => {

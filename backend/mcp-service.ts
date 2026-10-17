@@ -17,7 +17,13 @@ import { registerDynamicToolMetadata, unregisterDynamicToolMetadata } from "../s
 import { writeFileAtomically } from "./atomic-file.js";
 import { WispBackendError } from "./backend-error.js";
 import type { EncryptionService } from "./encrypted-credential-store.js";
-import { McpConnection, type McpConnectionAuth, type McpConnectionOptions, type McpSdkTool } from "./mcp-bridge.js";
+import {
+  McpConnection,
+  McpSessionExpiredError,
+  type McpConnectionAuth,
+  type McpConnectionOptions,
+  type McpSdkTool,
+} from "./mcp-bridge.js";
 import {
   describeFileArguments,
   expandFileArguments,
@@ -688,7 +694,11 @@ export class McpService {
       if (files.length) await expandFileArguments(files, workspaceDirectory!);
       const connection = await this.pooledConnection(sessionId, serverId);
       dispatched = true;
-      const result = await connection.callTool(tool.name, args, { signal: combinedSignal });
+      const result = await connection.callTool(tool.name, args, { signal: combinedSignal }).catch(async (error) => {
+        if (!(error instanceof McpSessionExpiredError)) throw error;
+        const fresh = await this.pooledConnection(sessionId, serverId);
+        return fresh.callTool(tool.name, args, { signal: combinedSignal });
+      });
       const converted = convertResult(result);
       combinedSignal.throwIfAborted();
       await this.noteConnection(this.state.servers[serverId], "connected");

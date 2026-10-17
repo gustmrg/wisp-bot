@@ -213,6 +213,12 @@ export class McpConnection {
         },
       );
     } catch (error) {
+      if (isSessionExpired(error)) {
+        // The server dropped our session (typically a restart). Closing lets
+        // the pool open a fresh one; the request was refused before it ran.
+        await this.close();
+        throw new McpSessionExpiredError();
+      }
       throw toToolError(error, options.signal);
     }
   }
@@ -333,6 +339,23 @@ async function refreshOrSignIn(
   } finally {
     provider?.setInteractiveSignIn?.(false);
   }
+}
+
+/**
+ * The server no longer knows this connection's session. The request never ran,
+ * so repeating it on a new session is safe.
+ */
+export class McpSessionExpiredError extends WispBackendError {
+  constructor() {
+    super("internal_error", "The MCP session expired.", true);
+    this.name = "McpSessionExpiredError";
+  }
+}
+
+function isSessionExpired(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  const { status } = error as { status?: unknown };
+  return status === 404 && /session not found/i.test(error.message);
 }
 
 function isSignInRequired(error: unknown): boolean {
