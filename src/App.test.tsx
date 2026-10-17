@@ -383,6 +383,31 @@ describe("App", () => {
     expect(api.initializeConversations).toHaveBeenCalledWith({ chats: {} });
   });
 
+  it("keeps the opening splash until the Wisps have loaded", async () => {
+    const api = createApi(conversationState(true, { atlas }));
+    let finishLoading: () => void = () => undefined;
+    const loaded = new Promise<void>((resolve) => {
+      finishLoading = resolve;
+    });
+    const getConversationState = api.getConversationState;
+    api.getConversationState = vi.fn(async () => {
+      await loaded;
+      return getConversationState();
+    });
+    exposeApi(api);
+
+    render(<App />);
+
+    expect(screen.getByRole("status", { name: "Opening Wisp" })).toBeInTheDocument();
+    await waitFor(() => expect(api.getConversationState).toHaveBeenCalled());
+    expect(screen.getByRole("status", { name: "Opening Wisp" })).toBeInTheDocument();
+    expect(screen.queryByText("Loading Wisp…")).not.toBeInTheDocument();
+
+    finishLoading();
+    await waitFor(() => expect(screen.queryByRole("status", { name: "Opening Wisp" })).not.toBeInTheDocument());
+    expect(screen.getByRole("button", { name: /Atlas/ })).toBeInTheDocument();
+  });
+
   it("ignores invalid legacy JSON during backend initialization", async () => {
     window.localStorage.setItem(LEGACY_STORAGE_KEY, "{invalid json");
     const api = createApi(conversationState(false));

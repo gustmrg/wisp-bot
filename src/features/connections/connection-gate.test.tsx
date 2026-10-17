@@ -175,7 +175,9 @@ describe("ConnectionGate", () => {
         <App onMount={() => undefined} />
       </ConnectionGate>,
     );
-    expect(await screen.findByRole("status")).toHaveTextContent(
+    // The banner shows once the opening splash has given way to the app.
+    await screen.findByRole("button", { name: "Dismiss" });
+    expect(screen.getByRole("status")).toHaveTextContent(
       /Home server runs Wisp server 0\.0\.1, older than this app.*Update it so every feature works/,
     );
     await userEvent.click(screen.getByRole("button", { name: "Dismiss" }));
@@ -210,7 +212,8 @@ describe("ConnectionGate", () => {
         <App onMount={() => undefined} />
       </ConnectionGate>,
     );
-    expect(await screen.findByRole("status")).toHaveTextContent(/newer than this app/);
+    await screen.findByRole("button", { name: "Dismiss" });
+    expect(screen.getByRole("status")).toHaveTextContent(/newer than this app/);
     expect(screen.queryByRole("button", { name: "Update server" })).toBeNull();
 
     await push({

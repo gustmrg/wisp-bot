@@ -209,13 +209,11 @@ function Onboarding({
   );
 }
 
-function SetupStatus({ message, onRetry }: { message?: string; onRetry?: () => void }) {
+function SetupStatus({ message, onRetry }: { message: string; onRetry?: () => void }) {
   return (
     <OnboardingShell>
-      <div className="flex flex-col gap-4 p-6" role={message ? "alert" : "status"}>
-        <p className={message ? "m-0 text-base text-destructive" : "m-0 text-base text-dim"}>
-          {message ?? "Loading Wisp…"}
-        </p>
+      <div className="flex flex-col gap-4 p-6" role="alert">
+        <p className="m-0 text-base text-destructive">{message}</p>
         {onRetry ? (
           <div className="flex justify-end">
             <Button type="button" onClick={onRetry}>
