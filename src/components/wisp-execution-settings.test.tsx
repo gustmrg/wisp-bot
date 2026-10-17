@@ -11,6 +11,7 @@ const VIEW: WispExecutionView = {
   localNetwork: false,
   defaultImage: "wisp-sandbox:abc",
   hasGitToken: false,
+  gitHubPlugin: false,
   runtime: { available: true, name: "docker", version: "29.8.1" },
   container: "absent",
 };
@@ -41,7 +42,7 @@ function install(view: WispExecutionView) {
   return saveWispExecution;
 }
 
-it("turns commands on, saves a token without echoing it, and keeps other settings", async () => {
+it("turns commands on, points to the GitHub plugin, and keeps other settings", async () => {
   const user = userEvent.setup();
   const save = install(VIEW);
   render(<WispExecutionSettings conversationId="one" />);
@@ -50,19 +51,9 @@ it("turns commands on, saves a token without echoing it, and keeps other setting
   expect(save).toHaveBeenLastCalledWith({ conversationId: "one", mode: "container", image: null, localNetwork: false });
   expect(await screen.findByText("Docker 29.8.1 · Container: Not created yet")).toBeInTheDocument();
 
-  const token = screen.getByLabelText("GitHub token");
-  expect(token).toHaveAttribute("type", "password");
-  await user.type(token, "github_pat_x");
-  await user.click(screen.getAllByRole("button", { name: "Save" })[1]!);
-  expect(save).toHaveBeenLastCalledWith({
-    conversationId: "one",
-    mode: "container",
-    image: null,
-    localNetwork: false,
-    gitToken: "github_pat_x",
-  });
-  expect(await screen.findByRole("button", { name: "Remove token" })).toBeInTheDocument();
-  expect(screen.getByLabelText("GitHub token")).toHaveValue("");
+  expect(screen.getByText(/add the GitHub plugin in Settings → Plugins/)).toBeInTheDocument();
+  expect(screen.queryByLabelText("GitHub token")).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "Remove token" })).not.toBeInTheDocument();
 
   const local = screen.getByRole("switch", { name: "Allow local network" });
   expect(local).toHaveAttribute("aria-checked", "false");
@@ -71,7 +62,14 @@ it("turns commands on, saves a token without echoing it, and keeps other setting
   expect(await screen.findByRole("switch", { name: "Allow local network" })).toHaveAttribute("aria-checked", "true");
 });
 
-it("asks before removing a saved token", async () => {
+it("says when git uses the GitHub plugin's token", async () => {
+  install({ ...VIEW, mode: "container", gitHubPlugin: true });
+  render(<WispExecutionSettings conversationId="one" />);
+
+  expect(await screen.findByText(/git uses the GitHub plugin's token/)).toBeInTheDocument();
+});
+
+it("asks before removing a token saved for the Wisp itself", async () => {
   const user = userEvent.setup();
   const save = install({ ...VIEW, mode: "container", hasGitToken: true });
   render(<WispExecutionSettings conversationId="one" />);

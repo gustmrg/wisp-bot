@@ -133,7 +133,8 @@ export function CreateWispSetupSection({ view, loadError, unsupported, draft, on
       ) : null}
       {commands ? (
         <p className="m-0 px-3.5 pb-3 text-xs text-dim">
-          The image, local network access and a GitHub token can be set later in the Wisp's settings.
+          The image and local network access can be set later in the Wisp's settings. git uses the GitHub plugin's token
+          once the Wisp has access to it.
         </p>
       ) : null}
     </SettingsCard>

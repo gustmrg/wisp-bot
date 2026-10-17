@@ -22,7 +22,12 @@ const encryption = {
   decrypt: (value: Buffer) => value.toString().split("").reverse().join(""),
 };
 
-async function setup(options: { runtime?: ContainerRuntimeStatus } = {}) {
+async function setup(
+  options: {
+    runtime?: ContainerRuntimeStatus;
+    gitHubToken?: (conversationId: string) => Promise<string | undefined>;
+  } = {},
+) {
   const root = await mkdtemp(path.join(os.tmpdir(), "wisp-execution-"));
   directories.push(root);
   const wisp = {
@@ -65,6 +70,7 @@ async function setup(options: { runtime?: ContainerRuntimeStatus } = {}) {
       status: async () => options.runtime ?? { available: true, name: "docker", version: "29.0.0" },
       cli: async () => null,
     },
+    ...(options.gitHubToken ? { gitHubToken: options.gitHubToken } : {}),
   });
   return { root, wisp, manager, authorize, service };
 }
@@ -92,6 +98,7 @@ describe("ExecutionService", () => {
       localNetwork: false,
       defaultImage: SANDBOX_IMAGE,
       hasGitToken: false,
+      gitHubPlugin: false,
       runtime: { available: true, name: "docker", version: "29.0.0" },
       container: "absent",
     });
@@ -195,6 +202,52 @@ describe("ExecutionService", () => {
     // The server's environment is never handed to the container.
     expect(manager.exec.mock.calls[0]![3]).not.toHaveProperty("env");
     expect(result.content[0]?.text).toContain("On branch main");
+  });
+
+  it("gives git the GitHub plugin's token when no token is saved for the Wisp", async () => {
+    const gitHubToken = vi.fn(async (conversationId: string) =>
+      conversationId === "atlas" ? "github_pat_plugin" : undefined,
+    );
+    const { service, manager } = await setup({ gitHubToken });
+    await service.save({ conversationId: "atlas", mode: "container", image: null, localNetwork: false });
+    await expect(service.getView("atlas")).resolves.toMatchObject({ hasGitToken: false, gitHubPlugin: true });
+    const tool = await runCommandTool(service);
+
+    await tool.execute("call-1", { command: "git clone https://github.com/owner/private" });
+
+    expect(gitHubToken).toHaveBeenCalledWith("atlas");
+    expect(manager.exec.mock.calls[0]![3]).toMatchObject({ gitToken: "github_pat_plugin" });
+  });
+
+  it("prefers a token saved for the Wisp over the plugin's", async () => {
+    const { service, manager } = await setup({ gitHubToken: async () => "github_pat_plugin" });
+    await service.save({
+      conversationId: "atlas",
+      mode: "container",
+      image: null,
+      localNetwork: false,
+      gitToken: "ghp_own",
+    });
+    const tool = await runCommandTool(service);
+
+    await tool.execute("call-1", { command: "git fetch" });
+
+    expect(manager.exec.mock.calls[0]![3]).toMatchObject({ gitToken: "ghp_own" });
+  });
+
+  it("runs commands without a token when the plugin's cannot be read", async () => {
+    const { service, manager } = await setup({
+      gitHubToken: async () => {
+        throw new Error("secure storage unavailable");
+      },
+    });
+    await service.save({ conversationId: "atlas", mode: "container", image: null, localNetwork: false });
+    await expect(service.getView("atlas")).resolves.toMatchObject({ gitHubPlugin: false });
+    const tool = await runCommandTool(service);
+
+    await tool.execute("call-1", { command: "git status" });
+
+    expect(manager.exec.mock.calls[0]![3]).not.toHaveProperty("gitToken");
   });
 
   it("refuses commands that would wipe the workspace, without running them", async () => {

@@ -13,6 +13,7 @@ import {
   type McpSettingsView,
   type WispMcpAccessView,
 } from "../shared/mcp.js";
+import { GITHUB_MCP_PRESET } from "../shared/mcp-presets/index.js";
 import { registerDynamicToolMetadata, unregisterDynamicToolMetadata } from "../shared/tool-catalog.js";
 import { writeFileAtomically } from "./atomic-file.js";
 import { WispBackendError } from "./backend-error.js";
@@ -582,6 +583,33 @@ export class McpService {
         .update(JSON.stringify([sessionId, fingerprints]))
         .digest("hex"),
     };
+  }
+
+  /**
+   * The GitHub plugin's token for a Wisp with access to an enabled GitHub
+   * connection, so git in its container acts as the same account. Undefined
+   * when the Wisp has no such access or the token cannot be read.
+   */
+  async gitHubToken(conversationId: string): Promise<string | undefined> {
+    if (this.disposed) return undefined;
+    let sessionId: string;
+    try {
+      sessionId = this.options.resolveWisp(conversationId);
+    } catch {
+      return undefined;
+    }
+    const prefix = GITHUB_MCP_PRESET.auth.mode === "header" ? GITHUB_MCP_PRESET.auth.header.valuePrefix : "";
+    for (const server of Object.values(this.state.servers)) {
+      if (server.preset !== "github" || !server.enabled || server.authMode !== "header") continue;
+      if (this.access(sessionId, server.serverId) === "none") continue;
+      const secret = await this.secrets.read(server.serverId).catch(() => undefined);
+      if (secret?.type !== "header") continue;
+      const token = secret.headerValue.startsWith(prefix)
+        ? secret.headerValue.slice(prefix.length)
+        : secret.headerValue;
+      if (token) return token;
+    }
+    return undefined;
   }
 
   dispose(): void {
