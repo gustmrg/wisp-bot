@@ -81,8 +81,10 @@
 }
 /* With Wisp colors off, the selected conversation keeps the neutral background. */
 :root:not([data-wisp-colors="off"]) .conversation-list-item[style][data-selected="true"] {
-  background: color-mix(in srgb, var(--wisp) 13%, var(--sidebar-background));
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--wisp) 24%, transparent);
+  background: color-mix(in srgb, var(--wisp) 20%, var(--sidebar-background));
+}
+:root.dark:not([data-wisp-colors="off"]) .conversation-list-item[style][data-selected="true"] {
+  background: color-mix(in srgb, var(--wisp) 26%, var(--sidebar-background));
 }
 
 /* ---------- Chat ---------- */
@@ -358,10 +360,12 @@
   gap: 6px;
   width: 64px;
 }
-.wisp-orb .wisp-halo {
+/* Like the list below, the orbs show the Wisp alone: no disc of its color behind it. The ring for its state stays. */
+.wisp-orb .wisp-halo,
+.wisp-orb .wisp-halo[data-state="error"] {
   width: 62px;
   height: 62px;
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--foreground) 6%, transparent);
+  background: none;
 }
 .wisp-orb .wisp-halo::before {
   inset: -3px;

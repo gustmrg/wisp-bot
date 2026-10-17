@@ -50,47 +50,6 @@
     margin: 0 0 2px;
     font-size: 14px;
   }
-  /* The busiest Wisps' colors, as light at the top of the list. */
-  .mobile-list-ambient {
-    position: absolute;
-    inset: 0 0 auto;
-    height: 440px;
-    pointer-events: none;
-    background:
-      radial-gradient(
-        240px 200px at 12% 20%,
-        color-mix(in srgb, var(--ambient-1, transparent) 22%, transparent),
-        transparent 70%
-      ),
-      radial-gradient(
-        220px 200px at 55% 8%,
-        color-mix(in srgb, var(--ambient-2, transparent) 18%, transparent),
-        transparent 70%
-      ),
-      radial-gradient(
-        240px 220px at 96% 24%,
-        color-mix(in srgb, var(--ambient-3, transparent) 18%, transparent),
-        transparent 70%
-      );
-  }
-  .dark .mobile-list-ambient {
-    background:
-      radial-gradient(
-        240px 200px at 12% 20%,
-        color-mix(in srgb, var(--ambient-1, transparent) 26%, transparent),
-        transparent 70%
-      ),
-      radial-gradient(
-        220px 200px at 55% 8%,
-        color-mix(in srgb, var(--ambient-2, transparent) 22%, transparent),
-        transparent 70%
-      ),
-      radial-gradient(
-        240px 220px at 96% 24%,
-        color-mix(in srgb, var(--ambient-3, transparent) 22%, transparent),
-        transparent 70%
-      );
-  }
   .mobile-list-header,
   .mobile-list-search,
   .wisp-orbs,
