@@ -11,7 +11,7 @@ import { withDateDividers } from "@/lib/date-dividers";
 import { isAttached, type MessageWindow } from "@/lib/message-windows";
 import { mainPanel } from "@/lib/ui-classes";
 import { cn } from "@/lib/utils";
-import { wispAccentStyle, wispColor } from "@/lib/wisp-appearance";
+import { isNeutralColor, wispAccentStyle, wispColor } from "@/lib/wisp-appearance";
 import { ChatAvatar, WispAvatar } from "@/components/chat-avatar";
 import { ChatComposer, type VoiceInputSettings } from "@/components/chat-composer";
 import { Button } from "@/components/ui/button";
@@ -330,6 +330,9 @@ function ChatPanel({
       className={cn(mainPanel, "chat-panel relative", hidden && "hidden")}
       style={chatAccentStyle(chat)}
       data-accent={chat.kind === "wisp" || undefined}
+      data-neutral-accent={
+        (chat.kind === "wisp" && isNeutralColor(wispColor(chat.wisp.name, chat.wisp.color))) || undefined
+      }
     >
       <div className="chat-ambient" data-tone={subline.tone} aria-hidden="true" />
       <header className="chat-header relative flex h-[52px] flex-none items-center justify-between border-b border-black/[0.035] px-3.5 dark:border-white/[0.035]">

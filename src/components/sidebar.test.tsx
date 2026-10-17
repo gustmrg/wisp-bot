@@ -245,6 +245,21 @@ describe("Sidebar rail", () => {
     expect(screen.queryByRole("button", { name: /(Expand|Collapse) sidebar/ })).not.toBeInTheDocument();
     expect(screen.getByText("Latest research")).toBeVisible();
   });
+
+  it("marks the open conversation only beside it, on the desktop", () => {
+    const { rerender } = render(
+      <Sidebar activeChatId="atlas" chats={chats} currentUser={currentUser} width={280} {...callbacks} />,
+    );
+    const list = () => screen.getByRole("navigation", { name: "Wisps and circles" });
+    expect(within(list()).getByRole("button", { name: /Atlas/ })).toHaveAttribute("aria-current", "page");
+
+    rerender(
+      <Sidebar mobile activeChatId="atlas" chats={chats} currentUser={currentUser} width={280} {...callbacks} />,
+    );
+    const atlas = within(list()).getByRole("button", { name: /Atlas/ });
+    expect(atlas).not.toHaveAttribute("aria-current");
+    expect(atlas).toHaveAttribute("data-selected", "false");
+  });
 });
 
 describe("Sidebar previews", () => {
