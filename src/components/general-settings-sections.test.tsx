@@ -49,8 +49,31 @@ describe("GeneralSettingsSections auto-review", () => {
 
   it("disables the rules while auto-review is off", () => {
     renderSections({ ...DEFAULT_PREFERENCES, autoReview: false });
-    for (const radio of screen.getAllByRole("radio")) expect(radio).toBeDisabled();
+    for (const name of ["When Wisp wants to create files", "When Wisp wants to modify files"]) {
+      for (const radio of within(screen.getByRole("radiogroup", { name })).getAllByRole("radio")) {
+        expect(radio).toBeDisabled();
+      }
+    }
     expect(screen.getByText(/Wisp asks before every file change/)).toBeVisible();
     expect(screen.getByLabelText("Timezone")).toBeEnabled();
+    expect(screen.getByRole("radio", { name: "24-hour" })).toBeEnabled();
+  });
+});
+
+describe("GeneralSettingsSections time format", () => {
+  it("follows the system by default and stores a fixed 24-hour or 12-hour choice", async () => {
+    const user = userEvent.setup();
+    const onPreferencesChange = renderSections(DEFAULT_PREFERENCES);
+    const format = within(screen.getByRole("radiogroup", { name: "Time format" }));
+    expect(format.getByRole("radio", { name: "Auto" })).toBeChecked();
+    expect(screen.getByText(/Follows your system's language/)).toBeVisible();
+
+    await user.click(format.getByRole("radio", { name: "12-hour" }));
+    expect(onPreferencesChange).toHaveBeenLastCalledWith(expect.objectContaining({ timeFormat: "12h" }));
+  });
+
+  it("shows how times read with a fixed format", () => {
+    renderSections({ ...DEFAULT_PREFERENCES, timeFormat: "24h" });
+    expect(screen.getByText("Times read like 21:05.")).toBeVisible();
   });
 });

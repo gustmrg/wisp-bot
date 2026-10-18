@@ -237,7 +237,7 @@ function Workspace({ userProfile }: { userProfile: UserProfileController }) {
   }, [mobile, toggleSidebar]);
 
   return (
-    <TimeZoneProvider timeZone={timeZone}>
+    <TimeZoneProvider timeZone={timeZone} timeFormat={workspace.preferences.timeFormat}>
       <ReplyPaceProvider pace={workspace.preferences.replyPace}>
         <TooltipProvider delay={300}>
           <div className="workspace-shell relative flex h-full w-full min-h-0 min-w-0 overflow-hidden bg-background">

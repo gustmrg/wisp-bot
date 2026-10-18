@@ -1,3 +1,4 @@
+import { formatClockTime, type TimeFormat } from "@/lib/clock-time";
 import { systemTimeZone, zonedDayNumber, zonedParts, zonedTime } from "../../shared/time-zone";
 
 /** A suggested send time in the schedule menu. */
@@ -30,9 +31,14 @@ function morningOf(now: Date, daysAhead: number, timeZone: string): Date {
   return zonedTime({ ...today, day: today.day + daysAhead, hour: MORNING_HOUR, minute: 0 }, timeZone);
 }
 
-/** "Today, 3:30 PM", "Tomorrow, 9:00 AM", or "Mon, Oct 12, 9:00 AM", in `timeZone`. */
-export function formatScheduledTime(at: Date, now: Date, timeZone: string = systemTimeZone()): string {
-  const time = at.toLocaleTimeString([], { hour: "numeric", minute: "2-digit", timeZone });
+/** "Today, 03:30 PM", "Tomorrow, 09:00 AM", or "Mon, Oct 12, 09:00 AM", in `timeZone`. */
+export function formatScheduledTime(
+  at: Date,
+  now: Date,
+  timeZone: string = systemTimeZone(),
+  timeFormat: TimeFormat = "auto",
+): string {
+  const time = formatClockTime(at, timeZone, timeFormat);
   const days = zonedDayNumber(at, timeZone) - zonedDayNumber(now, timeZone);
   if (days === 0) return `Today, ${time}`;
   if (days === 1) return `Tomorrow, ${time}`;

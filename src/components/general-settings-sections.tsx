@@ -15,6 +15,7 @@ import { SegmentedControl } from "@/components/ui/segmented-control";
 import { ToggleSwitch } from "@/components/ui/toggle-switch";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import type { AppPreferences, AutoReviewRule, RuleBehavior } from "@/lib/app-preferences";
+import { clockTimeOptions, type TimeFormat } from "@/lib/clock-time";
 import { settingsSelect } from "@/lib/ui-classes";
 import { withWorkspaceFileBehavior, workspaceFileBehavior, type WorkspaceFileCategory } from "../../shared/tool-policy";
 import { systemTimeZone } from "../../shared/time-zone";
@@ -23,6 +24,11 @@ const RULE_BEHAVIORS: ReadonlyArray<{ value: RuleBehavior; label: string }> = [
   { value: "allow", label: "Allow" },
   { value: "ask", label: "Ask" },
   { value: "block", label: "Block" },
+];
+const TIME_FORMAT_OPTIONS: ReadonlyArray<{ value: TimeFormat; label: string }> = [
+  { value: "auto", label: "Auto" },
+  { value: "24h", label: "24-hour" },
+  { value: "12h", label: "12-hour" },
 ];
 const FILE_CATEGORIES: ReadonlyArray<{ value: WorkspaceFileCategory; label: string; description: string }> = [
   { value: "create_file", label: "Create files", description: "New files in the workspace." },
@@ -98,6 +104,11 @@ interface GeneralSettingsSectionsProps {
   onPreferencesChange: (preferences: AppPreferences) => void;
 }
 
+/** An afternoon time in `format`, so the choice shows how both halves of the day read. */
+function sampleTime(format: TimeFormat): string {
+  return new Date(2000, 0, 1, 21, 5).toLocaleTimeString([], clockTimeOptions(format));
+}
+
 function GeneralSettingsSections({ preferences, onPreferencesChange }: GeneralSettingsSectionsProps) {
   const [detectedTimezone] = useState(systemTimeZone);
   const [ruleNotice, setRuleNotice] = useState("");
@@ -141,6 +152,22 @@ function GeneralSettingsSections({ preferences, onPreferencesChange }: GeneralSe
               searchPlaceholder="Search city or timezone…"
               emptyText="No timezones found."
               onChange={(timezone) => onPreferencesChange({ ...preferences, timezone })}
+            />
+          </SettingsRow>
+          <SettingsRow>
+            <SettingsRowCopy>
+              <SettingsRowTitle>Time format</SettingsRowTitle>
+              <SettingsRowDescription>
+                {preferences.timeFormat === "auto"
+                  ? `Follows your system's language, like ${sampleTime("auto")}.`
+                  : `Times read like ${sampleTime(preferences.timeFormat)}.`}
+              </SettingsRowDescription>
+            </SettingsRowCopy>
+            <SegmentedControl
+              label="Time format"
+              value={preferences.timeFormat}
+              options={TIME_FORMAT_OPTIONS}
+              onChange={(timeFormat) => onPreferencesChange({ ...preferences, timeFormat })}
             />
           </SettingsRow>
           <SettingsRow>
