@@ -202,7 +202,6 @@ export async function createBackendRuntime(options: BackendRuntimeOptions): Prom
   const containerManager = new ContainerManager({ cli: () => containerRuntime.cli(), dataDirectory });
   const executionService = new ExecutionService({
     dataDirectory,
-    encryption,
     resolveWisp: (id) => {
       const { workspaceDirectory, configDirectory } = conversationRepository.getAgentContext(id);
       return { storageId: conversationRepository.getWispStorageId(id), workspaceDirectory, configDirectory };

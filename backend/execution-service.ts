@@ -2,7 +2,7 @@ import type { BashOperations, ToolDefinition } from "@earendil-works/pi-coding-a
   "resolution-mode": "import",
 };
 import { randomUUID } from "node:crypto";
-import { readFile } from "node:fs/promises";
+import { readFile, rm } from "node:fs/promises";
 import path from "node:path";
 
 import {
@@ -28,7 +28,6 @@ import {
   type ContainerSpec,
   type ProcessAction,
 } from "./container-manager.js";
-import { EncryptedCredentialStore, type EncryptionService } from "./encrypted-credential-store.js";
 import {
   snapshotRevision,
   type IntegrationToolSnapshot,
@@ -41,6 +40,8 @@ export const RUN_COMMAND_TOOL = "run_command";
 export const PROCESS_TOOL = "process";
 /** File inside a Wisp's config directory that holds where its commands run. */
 export const EXECUTION_SETTINGS_FILE = "execution-settings.json";
+/** Where GitHub tokens saved for each Wisp were kept, before git used only the GitHub plugin's; removed on start. */
+const LEGACY_CREDENTIALS_FILE = "execution-credentials.enc.json";
 
 function runCommandDescription(localNetwork: boolean): string {
   return [
@@ -91,7 +92,6 @@ export interface ExecutionWisp {
 
 export interface ExecutionServiceOptions {
   dataDirectory: string;
-  encryption: EncryptionService;
   /** A Wisp's own conversation; throws for circles and unknown conversations. */
   resolveWisp: (conversationId: string) => ExecutionWisp;
   listWispStorageIds: () => ReadonlySet<string>;
@@ -108,25 +108,17 @@ export interface ExecutionServiceOptions {
  * excluded: commands never run on the server itself.
  */
 export class ExecutionService implements IntegrationToolSource {
-  private readonly credentials: EncryptedCredentialStore;
-
-  constructor(private readonly options: ExecutionServiceOptions) {
-    this.credentials = new EncryptedCredentialStore(
-      path.join(options.dataDirectory, "execution-credentials.enc.json"),
-      options.encryption,
-    );
-  }
+  constructor(private readonly options: ExecutionServiceOptions) {}
 
   async getView(conversationId: string): Promise<WispExecutionView> {
     const wisp = this.options.resolveWisp(conversationId);
-    const [settings, runtime, container, hasGitToken, gitHubPlugin] = await Promise.all([
+    const [settings, runtime, container, gitHubPlugin] = await Promise.all([
       readSettings(wisp.configDirectory),
       this.options.runtime.status(),
       this.options.manager.state(wisp.storageId),
-      this.hasGitToken(wisp.storageId),
-      this.pluginGitToken(conversationId).then(Boolean),
+      this.gitToken(conversationId).then(Boolean),
     ]);
-    return { ...settings, defaultImage: SANDBOX_IMAGE, hasGitToken, gitHubPlugin, runtime, container };
+    return { ...settings, defaultImage: SANDBOX_IMAGE, gitHubPlugin, runtime, container };
   }
 
   /** Whether the server can run commands at all, before any Wisp is involved. */
@@ -139,19 +131,9 @@ export class ExecutionService implements IntegrationToolSource {
     if (request.image !== null && !isContainerImage(request.image)) {
       throw new WispBackendError("invalid_request", "Enter an image name such as node:22 or ghcr.io/owner/image:tag.");
     }
-    if (typeof request.gitToken === "string" && !isGitToken(request.gitToken)) {
-      throw new WispBackendError("invalid_request", "The GitHub token has unexpected characters.");
-    }
     const wisp = this.options.resolveWisp(request.conversationId);
     const previous = await readSettings(wisp.configDirectory);
     const next: ExecutionSettings = { mode: request.mode, image: request.image, localNetwork: request.localNetwork };
-    if (request.gitToken === null) await this.credentials.delete(wisp.storageId);
-    else if (request.gitToken !== undefined) {
-      if (!this.credentials.isSecureStorageAvailable()) {
-        throw new WispBackendError("secure_storage_unavailable", "Secure storage is not available to save the token.");
-      }
-      await this.credentials.setApiKey(wisp.storageId, request.gitToken);
-    }
     if (previous.mode !== next.mode || previous.image !== next.image || previous.localNetwork !== next.localNetwork) {
       await writeFileAtomically(
         path.join(wisp.configDirectory, EXECUTION_SETTINGS_FILE),
@@ -191,31 +173,14 @@ export class ExecutionService implements IntegrationToolSource {
     };
   }
 
-  /** Removes containers whose Wisp was deleted. */
+  /** Removes containers whose Wisp was deleted, and the tokens once saved for each Wisp. */
   async reconcile(): Promise<void> {
     await this.options.manager.reconcile(this.options.listWispStorageIds());
-    const known = this.options.listWispStorageIds();
-    for (const { providerId } of await this.credentials.list().catch(() => [])) {
-      if (!known.has(providerId)) await this.credentials.delete(providerId).catch(() => undefined);
-    }
+    await rm(path.join(this.options.dataDirectory, LEGACY_CREDENTIALS_FILE), { force: true });
   }
 
-  private async hasGitToken(storageId: string): Promise<boolean> {
-    try {
-      return Boolean(await this.credentials.read(storageId));
-    } catch {
-      return false;
-    }
-  }
-
-  /** A token saved for the Wisp itself comes first; otherwise git uses the GitHub plugin's. */
-  private async gitToken(conversationId: string, storageId: string): Promise<string | undefined> {
-    const credential = await this.credentials.read(storageId).catch(() => undefined);
-    if (credential?.type === "api_key") return credential.key;
-    return this.pluginGitToken(conversationId);
-  }
-
-  private async pluginGitToken(conversationId: string): Promise<string | undefined> {
+  /** The GitHub plugin's token, which the git gateway adds for this Wisp. */
+  private async gitToken(conversationId: string): Promise<string | undefined> {
     const token = await this.options.gitHubToken?.(conversationId).catch(() => undefined);
     return token && isGitToken(token) ? token : undefined;
   }
@@ -233,7 +198,7 @@ export class ExecutionService implements IntegrationToolSource {
           onData,
           ...(signal ? { signal } : {}),
           ...(timeout === undefined ? {} : { timeout }),
-          ...(await this.gitToken(conversationId, wisp.storageId).then((gitToken) => (gitToken ? { gitToken } : {}))),
+          ...(await this.gitToken(conversationId).then((gitToken) => (gitToken ? { gitToken } : {}))),
         }),
     };
     const base = createBashToolDefinition(wisp.workspaceDirectory, { operations, exposeSessionEnvironment: false });
@@ -300,7 +265,7 @@ export class ExecutionService implements IntegrationToolSource {
   private createProcessTool(conversationId: string, wisp: ExecutionWisp, settings: ExecutionSettings): ToolDefinition {
     const spec = containerSpec(wisp, settings);
     const run = async (action: ProcessAction, args: ReadonlyArray<string>, signal: AbortSignal | undefined) => {
-      const gitToken = action === "start" ? await this.gitToken(conversationId, wisp.storageId) : undefined;
+      const gitToken = action === "start" ? await this.gitToken(conversationId) : undefined;
       return this.options.manager.processScript(spec, action, args, {
         ...(signal ? { signal } : {}),
         ...(gitToken ? { gitToken } : {}),

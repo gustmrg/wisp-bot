@@ -16,12 +16,6 @@ afterEach(async () => {
   await Promise.all(directories.splice(0).map((directory) => rm(directory, { recursive: true, force: true })));
 });
 
-const encryption = {
-  isAvailable: () => true,
-  encrypt: (value: string) => Buffer.from(value.split("").reverse().join("")),
-  decrypt: (value: Buffer) => value.toString().split("").reverse().join(""),
-};
-
 async function setup(
   options: {
     runtime?: ContainerRuntimeStatus;
@@ -58,7 +52,6 @@ async function setup(
   const authorize = vi.fn(async () => undefined);
   const service = new ExecutionService({
     dataDirectory: root,
-    encryption,
     resolveWisp: (id) => {
       if (id !== "atlas") throw new Error("not a Wisp");
       return wisp;
@@ -98,7 +91,6 @@ describe("ExecutionService", () => {
       image: null,
       localNetwork: false,
       defaultImage: SANDBOX_IMAGE,
-      hasGitToken: false,
       gitHubPlugin: false,
       runtime: { available: true, name: "docker", version: "29.0.0" },
       container: "absent",
@@ -154,33 +146,9 @@ describe("ExecutionService", () => {
     }
   });
 
-  it("keeps the GitHub token encrypted and never returns it", async () => {
-    const { service, root } = await setup();
-    const view = await service.save({
-      conversationId: "atlas",
-      mode: "container",
-      image: null,
-      localNetwork: false,
-      gitToken: "ghp_secret",
-    });
-    expect(view.hasGitToken).toBe(true);
-    expect(JSON.stringify(view)).not.toContain("ghp_secret");
-    expect(await readFile(path.join(root, "execution-credentials.enc.json"), "utf8")).not.toContain("ghp_secret");
-
-    await expect(
-      service.save({ conversationId: "atlas", mode: "container", image: null, localNetwork: false, gitToken: null }),
-    ).resolves.toMatchObject({ hasGitToken: false });
-  });
-
   it("runs a command in the container after authorizing it, with the token and the container path", async () => {
-    const { service, manager, authorize, wisp } = await setup();
-    await service.save({
-      conversationId: "atlas",
-      mode: "container",
-      image: null,
-      localNetwork: false,
-      gitToken: "ghp_secret",
-    });
+    const { service, manager, authorize, wisp } = await setup({ gitHubToken: async () => "ghp_secret" });
+    await service.save({ conversationId: "atlas", mode: "container", image: null, localNetwork: false });
     const tool = await runCommandTool(service);
 
     const result = await tool.execute("call-1", { command: "git status" });
@@ -219,35 +187,19 @@ describe("ExecutionService", () => {
     expect(result.details?.commandResult).toEqual({ exitCode: 2, durationMs: expect.any(Number) });
   });
 
-  it("gives git the GitHub plugin's token when no token is saved for the Wisp", async () => {
+  it("gives git the GitHub plugin's token when the Wisp has access to the plugin", async () => {
     const gitHubToken = vi.fn(async (conversationId: string) =>
       conversationId === "atlas" ? "github_pat_plugin" : undefined,
     );
     const { service, manager } = await setup({ gitHubToken });
     await service.save({ conversationId: "atlas", mode: "container", image: null, localNetwork: false });
-    await expect(service.getView("atlas")).resolves.toMatchObject({ hasGitToken: false, gitHubPlugin: true });
+    await expect(service.getView("atlas")).resolves.toMatchObject({ gitHubPlugin: true });
     const tool = await runCommandTool(service);
 
     await tool.execute("call-1", { command: "git clone https://github.com/owner/private" });
 
     expect(gitHubToken).toHaveBeenCalledWith("atlas");
     expect(manager.exec.mock.calls[0]![3]).toMatchObject({ gitToken: "github_pat_plugin" });
-  });
-
-  it("prefers a token saved for the Wisp over the plugin's", async () => {
-    const { service, manager } = await setup({ gitHubToken: async () => "github_pat_plugin" });
-    await service.save({
-      conversationId: "atlas",
-      mode: "container",
-      image: null,
-      localNetwork: false,
-      gitToken: "ghp_own",
-    });
-    const tool = await runCommandTool(service);
-
-    await tool.execute("call-1", { command: "git fetch" });
-
-    expect(manager.exec.mock.calls[0]![3]).toMatchObject({ gitToken: "ghp_own" });
   });
 
   it("runs commands without a token when the plugin's cannot be read", async () => {
@@ -294,18 +246,14 @@ describe("ExecutionService", () => {
     expect(manager.exec).not.toHaveBeenCalled();
   });
 
-  it("forgets the tokens and containers of deleted Wisps", async () => {
-    const { service, manager } = await setup();
-    await service.save({
-      conversationId: "atlas",
-      mode: "container",
-      image: null,
-      localNetwork: false,
-      gitToken: "ghp_secret",
-    });
+  it("removes the containers of deleted Wisps and the tokens once saved for each Wisp", async () => {
+    const { service, manager, root } = await setup();
+    const legacy = path.join(root, "execution-credentials.enc.json");
+    await writeFile(legacy, "{}");
     await service.reconcile();
     expect(manager.reconcile).toHaveBeenCalledWith(new Set(["s1"]));
-    await expect(service.getView("atlas")).resolves.toMatchObject({ hasGitToken: true });
+    await expect(readFile(legacy)).rejects.toMatchObject({ code: "ENOENT" });
+    await service.reconcile();
   });
 });
 
@@ -315,14 +263,8 @@ type ProcessTool = {
 
 describe("process tool", () => {
   async function processSetup() {
-    const context = await setup();
-    await context.service.save({
-      conversationId: "atlas",
-      mode: "container",
-      image: null,
-      localNetwork: false,
-      gitToken: "ghp_secret",
-    });
+    const context = await setup({ gitHubToken: async () => "ghp_secret" });
+    await context.service.save({ conversationId: "atlas", mode: "container", image: null, localNetwork: false });
     const snapshot = await context.service.getSnapshot("atlas");
     const tool = snapshot.definitions.find(({ name }) => name === PROCESS_TOOL) as unknown as ProcessTool;
     const text = async (params: Record<string, unknown>) => (await tool.execute("call", params)).content[0]!.text;

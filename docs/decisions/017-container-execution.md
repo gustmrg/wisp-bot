@@ -69,8 +69,8 @@ and approving each `npm test` makes development impractical.
   reach each other's containers.
 - **Git:** git uses the token of the GitHub plugin when the Wisp has access
   to an enabled GitHub plugin, so the user enters one token for both the
-  plugin's tools and git. A token saved for the Wisp itself (from before this
-  change) takes precedence until it is removed. The token never enters the
+  plugin's tools and git; tokens once saved for each Wisp are removed on
+  start (SWE-181), so there is one token to manage. The token never enters the
   container: git sends github.com requests to a gateway in the egress proxy,
   which adds the token (see the amendment below). Neither pushing nor
   fetching is approved separately, even when the plugin's tools ask for
