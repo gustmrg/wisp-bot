@@ -130,8 +130,7 @@ describe("plugins that connect to the user's own server", () => {
     const save = (endpoint: string) =>
       service.save({ pluginId: "home-assistant", enabled: true, apiKey: "ha-token", endpoint });
     const access = () =>
-      service.getAccess({ conversationId: "one" }).grants.find(({ pluginId }) => pluginId === "home-assistant")
-        ?.access;
+      service.getAccess({ conversationId: "one" }).grants.find(({ pluginId }) => pluginId === "home-assistant")?.access;
     await save("http://homeassistant.local:8123");
     await grant();
     await call();
