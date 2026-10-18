@@ -39,17 +39,85 @@ function parseKey(value: unknown): string | undefined {
   return value.trim();
 }
 
-export function parseSavePluginSettings(value: unknown): SavePluginSettingsRequest {
-  const raw = pluginRecord(value, ["pluginId", "enabled", "apiKey"]);
-  if (typeof raw.enabled !== "boolean") throw invalidPluginRequest();
+/**
+ * A key with the instance address it belongs to. Plugins that connect to an
+ * instance take both together; other plugins take no address.
+ */
+function parseConnection(pluginId: PluginId, raw: Record<string, unknown>): { apiKey?: string; endpoint?: string } {
   const apiKey = parseKey(raw.apiKey);
-  return { pluginId: parsePluginId(raw.pluginId), enabled: raw.enabled, ...(apiKey === undefined ? {} : { apiKey }) };
+  const needsEndpoint = Boolean(pluginCatalogEntry(pluginId).serverAddress);
+  if (raw.endpoint !== undefined && (!needsEndpoint || apiKey === undefined)) throw invalidPluginRequest();
+  if (apiKey === undefined) return {};
+  if (!needsEndpoint) return { apiKey };
+  if (raw.endpoint === undefined) throw new WispBackendError("invalid_request", "Enter the address of the server.");
+  return { apiKey, endpoint: parsePluginEndpoint(raw.endpoint) };
+}
+
+export function parseSavePluginSettings(value: unknown): SavePluginSettingsRequest {
+  const raw = pluginRecord(value, ["pluginId", "enabled", "apiKey", "endpoint"]);
+  if (typeof raw.enabled !== "boolean") throw invalidPluginRequest();
+  const pluginId = parsePluginId(raw.pluginId);
+  return { pluginId, enabled: raw.enabled, ...parseConnection(pluginId, raw) };
 }
 
 export function parseTestPluginConnection(value: unknown): TestPluginConnectionRequest {
-  const raw = pluginRecord(value, ["pluginId", "apiKey"]);
-  const apiKey = parseKey(raw.apiKey);
-  return { pluginId: parsePluginId(raw.pluginId), ...(apiKey === undefined ? {} : { apiKey }) };
+  const raw = pluginRecord(value, ["pluginId", "apiKey", "endpoint"]);
+  const pluginId = parsePluginId(raw.pluginId);
+  return { pluginId, ...parseConnection(pluginId, raw) };
+}
+
+const LOCAL_SUFFIXES = [".local", ".lan", ".home", ".internal", ".home.arpa", ".ts.net"];
+
+/** Hosts on this network or a tailnet, where HTTP does not cross the internet. */
+export function isLocalHost(hostname: string): boolean {
+  const host = hostname.toLowerCase().replace(/^\[|\]$/g, "");
+  if (host === "localhost" || LOCAL_SUFFIXES.some((suffix) => host.endsWith(suffix))) return true;
+  // A single-label name, such as "homeassistant", only resolves on the local network.
+  if (/^[a-z0-9-]+$/.test(host) && !/^\d+$/.test(host)) return true;
+  const ipv4 = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(host);
+  if (ipv4) {
+    const [a, b] = [Number(ipv4[1]), Number(ipv4[2])];
+    return (
+      a === 10 ||
+      a === 127 ||
+      (a === 172 && b >= 16 && b <= 31) ||
+      (a === 192 && b === 168) ||
+      (a === 169 && b === 254) ||
+      // Tailscale and other carrier-grade NAT addresses.
+      (a === 100 && b >= 64 && b <= 127)
+    );
+  }
+  return host === "::1" || /^f[cd][0-9a-f]{0,2}:/.test(host) || /^fe[89ab][0-9a-f]?:/.test(host);
+}
+
+/**
+ * The address of a plugin's own server: HTTPS anywhere, or HTTP on a local
+ * network or tailnet, without credentials, query, or fragment. Returned
+ * without a trailing slash so API paths can be appended.
+ */
+export function parsePluginEndpoint(value: unknown): string {
+  const invalid = () =>
+    new WispBackendError(
+      "invalid_request",
+      "Enter the server address, such as http://homeassistant.local:8123 or https://home.example.com.",
+    );
+  if (typeof value !== "string" || !value.trim() || value.length > 2_000) throw invalid();
+  let url: URL;
+  try {
+    url = new URL(value.trim());
+  } catch {
+    throw invalid();
+  }
+  if (url.protocol !== "https:" && url.protocol !== "http:") throw invalid();
+  if (url.username || url.password)
+    throw new WispBackendError("invalid_request", "The server address must not contain a user name or password.");
+  if (url.search || url.hash) throw invalid();
+  if (url.protocol === "http:" && !isLocalHost(url.hostname))
+    throw new WispBackendError(
+      "invalid_request",
+      "Use HTTPS for a server outside your local network; HTTP would send the token unencrypted.",
+    );
+  return `${url.origin}${url.pathname.replace(/\/+$/, "")}`;
 }
 
 const MAX_CLIENT_FIELD = 512;

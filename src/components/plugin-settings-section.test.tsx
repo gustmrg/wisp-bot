@@ -204,6 +204,22 @@ describe("PluginSettingsSection", () => {
     expect(manage.getByRole("status")).toHaveTextContent(`Connected to ${name}.`);
   });
 
+  it("connects Home Assistant with the server address and the token together", async () => {
+    const api = setup();
+    const user = userEvent.setup();
+    render(<PluginSettingsSection />);
+    const form = await openPlugin("Home Assistant");
+    expect(form.getByRole("link", { name: "Create a long-lived access token" })).toBeVisible();
+    await user.type(form.getByLabelText("Long-lived access token"), "ha-token");
+    // The token alone is not enough.
+    expect(form.getByRole("button", { name: "Connect" })).toBeDisabled();
+    await user.type(form.getByLabelText("Home Assistant address"), "http://homeassistant.local:8123");
+    await user.click(form.getByRole("button", { name: "Connect" }));
+    const request = { pluginId: "home-assistant", apiKey: "ha-token", endpoint: "http://homeassistant.local:8123" };
+    expect(api.testPluginConnection).toHaveBeenCalledWith(request);
+    expect(api.savePluginSettings).toHaveBeenCalledWith({ ...request, enabled: true });
+  });
+
   it("does not save a key that fails the connection test", async () => {
     const api = setup();
     api.testPluginConnection.mockResolvedValueOnce({

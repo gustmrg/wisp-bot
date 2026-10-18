@@ -228,8 +228,8 @@ describe("plugin service", () => {
     expect(view.plugins.filter(({ id }) => id === "tavily" || id === "exa")).toHaveLength(2);
     expect(
       view.plugins.every(({ id, enabled, configured }) =>
-        // The Google plugins were never connected here; they sign in instead of taking a key.
-        id === "tavily" || id === "exa" || id === "google-calendar" || id === "gmail"
+        // The Google plugins and Home Assistant were never connected here.
+        id === "tavily" || id === "exa" || id === "google-calendar" || id === "gmail" || id === "home-assistant"
           ? !enabled && !configured
           : enabled && configured,
       ),

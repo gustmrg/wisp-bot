@@ -9,14 +9,17 @@ export interface PluginToolSpec extends PluginToolMetadata {
   parameters: ToolDefinition["parameters"];
   access: "read" | "write";
   summarize: (params: unknown) => string;
-  /** `credential` is the API key, or the access token of a plugin that signs in. */
-  execute: (credential: string, params: unknown, signal?: AbortSignal) => Promise<string>;
+  /**
+   * `credential` is the API key, or the access token of a plugin that signs in.
+   * `endpoint` is the instance address of a plugin that connects to one.
+   */
+  execute: (credential: string, params: unknown, signal?: AbortSignal, endpoint?: string) => Promise<string>;
 }
 
 export interface PluginAdapter {
   id: PluginId;
   tools: ReadonlyArray<PluginToolSpec>;
-  testConnection: (credential: string, signal?: AbortSignal) => Promise<string>;
+  testConnection: (credential: string, signal?: AbortSignal, endpoint?: string) => Promise<string>;
   /** Present for plugins that sign in through the browser with the user's OAuth client. */
   oauth?: PluginOAuthConfig;
 }

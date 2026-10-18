@@ -6,6 +6,7 @@ import {
   pluginCatalogEntry,
   type PluginId,
   type PluginSettingsView,
+  type PluginServerAddressInfo,
   type PluginSummary,
   type WebCapability,
 } from "../../shared/plugins";
@@ -593,9 +594,42 @@ function KeyLink({ pluginId }: { pluginId: PluginId }) {
       rel="noreferrer"
       className="inline-flex items-center gap-1 text-primary underline-offset-4 hover:underline"
     >
-      Get a {entry.name} API key
+      {entry.serverAddress ? `Create a ${entry.credentialLabel.toLowerCase()}` : `Get a ${entry.name} API key`}
       <ExternalLinkIcon className="size-3" aria-hidden="true" />
     </a>
+  );
+}
+
+/** The address of the user's own server, for a plugin that connects to one. */
+function PluginAddressField({
+  id,
+  info,
+  value,
+  disabled,
+  onChange,
+}: {
+  id: string;
+  info: PluginServerAddressInfo;
+  value: string;
+  disabled: boolean;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <Field>
+      <FieldLabel htmlFor={id}>{info.label}</FieldLabel>
+      <Input
+        id={id}
+        type="url"
+        inputMode="url"
+        autoComplete="off"
+        spellCheck={false}
+        value={value}
+        disabled={disabled}
+        placeholder={info.placeholder}
+        onChange={(event) => onChange(event.target.value)}
+      />
+      <FieldDescription>{info.help}</FieldDescription>
+    </Field>
   );
 }
 
@@ -613,20 +647,29 @@ function PluginConnectForm({
 }) {
   const formId = useId();
   const [apiKey, setApiKey] = useState("");
+  const [address, setAddress] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const key = apiKey.trim();
+  const serverAddress = pluginCatalogEntry(plugin.id).serverAddress;
+  const endpoint = serverAddress ? { endpoint: address.trim() } : {};
+  const ready = Boolean(key && (!serverAddress || address.trim()));
 
   async function connect() {
     setBusy(true);
     setError("");
     try {
-      const tested = await window.wisp.testPluginConnection({ pluginId: plugin.id, apiKey: key });
+      const tested = await window.wisp.testPluginConnection({ pluginId: plugin.id, apiKey: key, ...endpoint });
       if (!tested.ok) {
         setError(tested.error.message);
         return;
       }
-      const result = await window.wisp.savePluginSettings({ pluginId: plugin.id, enabled: true, apiKey: key });
+      const result = await window.wisp.savePluginSettings({
+        pluginId: plugin.id,
+        enabled: true,
+        apiKey: key,
+        ...endpoint,
+      });
       if (!result.ok) {
         setError(result.error.message);
         return;
@@ -647,9 +690,21 @@ function PluginConnectForm({
         className="flex flex-col gap-3 text-xs"
         onSubmit={(event) => {
           event.preventDefault();
-          if (key && secureStorageAvailable && !busy) void connect();
+          if (ready && secureStorageAvailable && !busy) void connect();
         }}
       >
+        {serverAddress ? (
+          <PluginAddressField
+            id={`${formId}-address`}
+            info={serverAddress}
+            value={address}
+            disabled={busy || !secureStorageAvailable}
+            onChange={(value) => {
+              setAddress(value);
+              setError("");
+            }}
+          />
+        ) : null}
         <Field>
           <FieldLabel htmlFor={`${formId}-key`}>{pluginCatalogEntry(plugin.id).credentialLabel}</FieldLabel>
           <Input
@@ -659,7 +714,7 @@ function PluginConnectForm({
             spellCheck={false}
             value={apiKey}
             disabled={busy || !secureStorageAvailable}
-            placeholder="Enter API key"
+            placeholder={serverAddress ? "Enter token" : "Enter API key"}
             onChange={(event) => {
               setApiKey(event.target.value);
               setError("");
@@ -675,7 +730,7 @@ function PluginConnectForm({
           </p>
         ) : null}
         <div>
-          <Button type="submit" disabled={busy || !key || !secureStorageAvailable}>
+          <Button type="submit" disabled={busy || !ready || !secureStorageAvailable}>
             {busy ? "Connecting…" : "Connect"}
           </Button>
         </div>
@@ -703,6 +758,7 @@ function PluginManageView({
 }) {
   const formId = useId();
   const [apiKey, setApiKey] = useState("");
+  const [address, setAddress] = useState(plugin.endpoint ?? "");
   const [replacing, setReplacing] = useState(!plugin.configured);
   const [operation, setOperation] = useState<"toggle" | "test" | "replace" | "remove" | null>(null);
   const [error, setError] = useState("");
@@ -711,6 +767,10 @@ function PluginManageView({
   const busy = operation !== null;
   const status = pluginStatus(plugin);
   const signIn = pluginCatalogEntry(plugin.id).signIn;
+  const serverAddress = pluginCatalogEntry(plugin.id).serverAddress;
+  // The address is replaced together with the key, since both identify the account.
+  const endpoint = serverAddress ? { endpoint: address.trim() } : {};
+  const ready = Boolean(key && (!serverAddress || address.trim()));
 
   async function run(action: "toggle" | "test" | "replace" | "remove") {
     setOperation(action);
@@ -724,7 +784,7 @@ function PluginManageView({
         return;
       }
       if (action === "replace") {
-        const tested = await window.wisp.testPluginConnection({ pluginId: plugin.id, apiKey: key });
+        const tested = await window.wisp.testPluginConnection({ pluginId: plugin.id, apiKey: key, ...endpoint });
         if (!tested.ok) {
           setError(tested.error.message);
           return;
@@ -734,7 +794,7 @@ function PluginManageView({
         action === "remove"
           ? await window.wisp.removePlugin({ pluginId: plugin.id })
           : action === "replace"
-            ? await window.wisp.savePluginSettings({ pluginId: plugin.id, enabled: true, apiKey: key })
+            ? await window.wisp.savePluginSettings({ pluginId: plugin.id, enabled: true, apiKey: key, ...endpoint })
             : await window.wisp.savePluginSettings({ pluginId: plugin.id, enabled: !plugin.enabled });
       if (!result.ok) {
         setError(result.error.message);
@@ -771,6 +831,7 @@ function PluginManageView({
           <StatusDot tone={status.tone} />
           {status.label}
         </p>
+        {plugin.endpoint ? <p className="text-dim break-all">{plugin.endpoint}</p> : null}
         <SettingsCard>
           <SettingsRow className="min-h-0">
             <SettingsRowCopy>
@@ -813,9 +874,22 @@ function PluginManageView({
                 className="flex flex-col gap-3"
                 onSubmit={(event) => {
                   event.preventDefault();
-                  if (key && view.secureStorageAvailable && !busy) void run("replace");
+                  if (ready && view.secureStorageAvailable && !busy) void run("replace");
                 }}
               >
+                {serverAddress ? (
+                  <PluginAddressField
+                    id={`${formId}-address`}
+                    info={serverAddress}
+                    value={address}
+                    disabled={busy || !view.secureStorageAvailable}
+                    onChange={(value) => {
+                      setAddress(value);
+                      setError("");
+                      setMessage("");
+                    }}
+                  />
+                ) : null}
                 <Field>
                   <FieldLabel
                     htmlFor={`${formId}-key`}
@@ -827,7 +901,7 @@ function PluginManageView({
                     spellCheck={false}
                     value={apiKey}
                     disabled={busy || !view.secureStorageAvailable}
-                    placeholder="Enter API key"
+                    placeholder={serverAddress ? "Enter token" : "Enter API key"}
                     onChange={(event) => {
                       setApiKey(event.target.value);
                       setError("");
@@ -845,7 +919,7 @@ function PluginManageView({
                   <KeyLink pluginId={plugin.id} />
                 </p>
                 <div className="flex flex-wrap gap-2">
-                  <Button type="submit" disabled={busy || !key || !view.secureStorageAvailable}>
+                  <Button type="submit" disabled={busy || !ready || !view.secureStorageAvailable}>
                     {operation === "replace" ? "Testing…" : "Test and replace key"}
                   </Button>
                   {plugin.configured ? (
@@ -856,6 +930,7 @@ function PluginManageView({
                       onClick={() => {
                         setReplacing(false);
                         setApiKey("");
+                        setAddress(plugin.endpoint ?? "");
                       }}
                     >
                       Cancel
