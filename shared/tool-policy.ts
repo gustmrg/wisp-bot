@@ -9,6 +9,10 @@
  *
  * "schedule_job" creates a job, or changes what one does (ADR 019). It always
  * asks, like skills: approving the card authorizes the job's tools for its runs.
+ *
+ * "manage_wisp" creates, changes or deletes another Wisp (ADR 024). It always
+ * asks, like skills: a soul becomes another agent's standing instructions, and
+ * deleting a Wisp removes its conversation.
  */
 export type ToolActionCategory =
   | "read"
@@ -19,6 +23,7 @@ export type ToolActionCategory =
   | "integration_call"
   | "save_skill"
   | "schedule_job"
+  | "manage_wisp"
   | "container_command"
   | "shell";
 export type ToolPolicyBehavior = "allow" | "ask" | "block";
@@ -140,10 +145,12 @@ export interface ToolApprovalRequest {
   toolCallId: string;
   toolName: string;
   category: ToolActionCategory;
-  scope: { kind: "workspace_path" | "integration" | "skill" | "container" | "job"; display: string };
+  scope: { kind: "workspace_path" | "integration" | "skill" | "container" | "job" | "wisp"; display: string };
   summary: string;
   /** What a job will do, shown for job approvals. */
   job?: JobApprovalDetails;
+  /** The Wisp to create, change or delete, shown for Wisp approvals. */
+  wisp?: WispApprovalDetails;
   /** Exact content to review, shown for skill changes; bounded and stripped of control characters. */
   preview?: string;
   /** The integration can remember this tool for this Wisp, so the card offers "Always allow". */
@@ -164,6 +171,19 @@ export interface JobApprovalDetails {
   skills: ReadonlyArray<string>;
   /** Tool names; the card shows their labels. */
   tools: ReadonlyArray<string>;
+}
+
+/** A Wisp as its approval card shows it (ADR 024). */
+export interface WispApprovalDetails {
+  action: "create" | "update" | "delete";
+  /** The Wisp's name; for an update, its name before the change. */
+  name: string;
+  /** Fields set by a create or changed by an update; a delete has none. */
+  changes?: {
+    name?: string;
+    role?: string;
+    soul?: string;
+  };
 }
 
 /**

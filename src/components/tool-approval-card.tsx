@@ -3,7 +3,12 @@ import { ShieldAlertIcon } from "lucide-react";
 
 import { getToolMetadata } from "../../shared/tool-catalog";
 import { isWorkspaceFileCategory } from "../../shared/tool-policy";
-import type { JobApprovalDetails, ToolApprovalDecision, ToolApprovalRequest } from "../../shared/tool-policy";
+import type {
+  JobApprovalDetails,
+  ToolApprovalDecision,
+  ToolApprovalRequest,
+  WispApprovalDetails,
+} from "../../shared/tool-policy";
 import { useTimeZone } from "@/hooks/use-time-zone";
 import { Button } from "@/components/ui/button";
 import { useClock } from "@/hooks/use-clock";
@@ -32,6 +37,12 @@ function approvalAsk(request: ToolApprovalRequest): string {
       return "wants to save a skill";
     case "schedule_job":
       return "wants to schedule a job";
+    case "manage_wisp":
+      return request.wisp?.action === "delete"
+        ? "wants to delete a Wisp"
+        : request.wisp?.action === "update"
+          ? "wants to change a Wisp"
+          : "wants to create a Wisp";
     case "container_command":
     case "shell":
       return "wants to run a command";
@@ -43,9 +54,9 @@ function approvalAsk(request: ToolApprovalRequest): string {
   }
 }
 
-/** Jobs and skills are read in full before they are approved, so they have no one-tap answer. */
+/** Jobs, skills and Wisp changes are read in full before they are approved, so they have no one-tap answer. */
 function needsReview(request: ToolApprovalRequest): boolean {
-  return request.category === "save_skill" || request.category === "schedule_job";
+  return request.category === "save_skill" || request.category === "schedule_job" || request.category === "manage_wisp";
 }
 
 function remainingLabel(seconds: number): string {
@@ -91,13 +102,50 @@ function JobDetails({ job }: { job: JobApprovalDetails }) {
   );
 }
 
+/** The Wisp to create, change or delete, as its approval card shows it (ADR 024). */
+function WispDetails({ wisp }: { wisp: WispApprovalDetails }) {
+  const changes = wisp.changes ?? {};
+  return (
+    <dl className="my-2 grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1 text-sm">
+      <dt className="text-dim">Wisp</dt>
+      <dd className="m-0 break-words font-medium">{wisp.name}</dd>
+      {changes.name !== undefined && wisp.action === "update" ? (
+        <>
+          <dt className="text-dim">New name</dt>
+          <dd className="m-0 break-words">{changes.name}</dd>
+        </>
+      ) : null}
+      {changes.role !== undefined ? (
+        <>
+          <dt className="text-dim">{wisp.action === "update" ? "New role" : "Role"}</dt>
+          <dd className="m-0 break-words">{changes.role || "None"}</dd>
+        </>
+      ) : null}
+      {changes.soul !== undefined ? (
+        <>
+          <dt className="col-span-2 mt-1 text-dim">{wisp.action === "update" ? "New soul" : "Soul"}</dt>
+          <dd className="col-span-2 m-0">
+            <pre
+              className="max-h-64 overflow-y-auto whitespace-pre-wrap break-words rounded-md border border-border bg-background/60 p-2 font-mono text-xs text-foreground"
+              aria-label="Wisp soul"
+            >
+              {changes.soul || "(empty)"}
+            </pre>
+          </dd>
+        </>
+      ) : null}
+    </dl>
+  );
+}
+
 function ToolApprovalCard({ request, wispName, onResolve }: ToolApprovalCardProps) {
   const now = useClock(1_000);
   const integration = request.scope.kind === "integration";
   const skill = request.category === "save_skill" && request.scope.kind === "skill";
   const job = request.category === "schedule_job" && request.scope.kind === "job" ? request.job : undefined;
-  // Skills and jobs are approved one at a time; no lasting rule covers them.
-  const reviewed = skill || Boolean(job);
+  const wisp = request.category === "manage_wisp" && request.scope.kind === "wisp" ? request.wisp : undefined;
+  // Skills, jobs and Wisp changes are approved one at a time; no lasting rule covers them.
+  const reviewed = skill || Boolean(job) || Boolean(wisp);
   const fileCategory = !integration && isWorkspaceFileCategory(request.category) ? request.category : null;
   const alwaysAllowTool = integration && request.alwaysAllowTool === true;
   const alwaysAllowIntegration = integration && request.alwaysAllowIntegration === true;
@@ -116,15 +164,21 @@ function ToolApprovalCard({ request, wispName, onResolve }: ToolApprovalCardProp
         <div className="min-w-0 flex-1">
           <div className="flex items-baseline gap-2">
             <strong className="min-w-0 flex-1 text-sm">
-              {job
-                ? "Approve job?"
-                : skill
-                  ? "Approve skill?"
-                  : integration
-                    ? "Approve integration change?"
-                    : request.category === "shell" || request.category === "container_command"
-                      ? "Approve command?"
-                      : "Approve file change?"}
+              {wisp
+                ? wisp.action === "delete"
+                  ? `Delete ${wisp.name}?`
+                  : wisp.action === "update"
+                    ? "Approve Wisp change?"
+                    : "Approve new Wisp?"
+                : job
+                  ? "Approve job?"
+                  : skill
+                    ? "Approve skill?"
+                    : integration
+                      ? "Approve integration change?"
+                      : request.category === "shell" || request.category === "container_command"
+                        ? "Approve command?"
+                        : "Approve file change?"}
             </strong>
             {Number.isNaN(remaining) ? null : (
               <time
@@ -136,7 +190,13 @@ function ToolApprovalCard({ request, wispName, onResolve }: ToolApprovalCardProp
               </time>
             )}
           </div>
-          {job ? <JobDetails job={job} /> : <p className="my-1 break-words text-sm text-dim">{request.summary}</p>}
+          {job ? (
+            <JobDetails job={job} />
+          ) : wisp && wisp.action !== "delete" ? (
+            <WispDetails wisp={wisp} />
+          ) : (
+            <p className="my-1 break-words text-sm text-dim">{request.summary}</p>
+          )}
           {skill && request.preview ? (
             <pre
               className="my-2 max-h-64 overflow-y-auto whitespace-pre-wrap break-words rounded-md border border-border bg-background/60 p-2 font-mono text-xs text-foreground"
@@ -146,7 +206,18 @@ function ToolApprovalCard({ request, wispName, onResolve }: ToolApprovalCardProp
             </pre>
           ) : null}
           <small className="text-faint">
-            {job ? (
+            {wisp ? (
+              wisp.action === "delete" ? (
+                <>
+                  {wispName} wants to permanently delete {wisp.name}, including its conversation history and settings.
+                  This action cannot be undone.
+                </>
+              ) : wisp.action === "update" ? (
+                <>{wisp.name} follows these changes from its next message. You can edit it again in its settings.</>
+              ) : (
+                <>The new Wisp gets its own conversation. You can edit or delete it in its settings.</>
+              )
+            ) : job ? (
               <>
                 {wispName} will run this job in the background with no one present, using only these tools, and send you
                 its results here. You can pause or delete it in Settings → Jobs.
@@ -193,9 +264,15 @@ function ToolApprovalCard({ request, wispName, onResolve }: ToolApprovalCardProp
             Always allow all of {request.scope.display}
           </Button>
         ) : null}
-        <Button type="button" size="sm" onClick={() => onResolve("allow_once")}>
-          Allow once
-        </Button>
+        {wisp?.action === "delete" ? (
+          <Button type="button" size="sm" variant="destructive" onClick={() => onResolve("allow_once")}>
+            Confirm deletion
+          </Button>
+        ) : (
+          <Button type="button" size="sm" onClick={() => onResolve("allow_once")}>
+            {wisp ? (wisp.action === "create" ? "Create" : "Apply changes") : "Allow once"}
+          </Button>
+        )}
       </div>
       {fileCategory ? (
         <p className="m-0 mt-2 text-right text-xs text-faint">

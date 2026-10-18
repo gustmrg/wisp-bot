@@ -126,6 +126,14 @@ them. `save_skill` always asks and shows the exact instructions; rules and
 auto-review cannot allow it, and its card offers no lasting decision. Skill
 instructions are treated as user-provided context and never grant tools.
 
+Every Wisp can create, change and delete the person's other Wisps
+([ADR 024](decisions/024-chief-and-wisp-tools.md)). `create_wisp`,
+`update_wisp` and `delete_wisp` always ask, like `save_skill`: the card shows
+the name, role and soul, or for a deletion repeats the warning of the
+settings' delete button. Rules, auto-review and **Allow everything** cannot
+allow them, their cards offer no lasting decision, a Wisp cannot change or
+delete itself, and job runs never get these tools.
+
 ## Commands
 
 A Wisp runs commands only when **Wisp settings → General → Commands** is set

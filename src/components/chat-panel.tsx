@@ -7,6 +7,7 @@ import type { ToolApprovalDecision, ToolApprovalRequest } from "../../shared/too
 import { describeMcpAlias, getToolMetadata } from "../../shared/tool-catalog";
 import type { ToolActivityView } from "@/lib/conversation-stream";
 import { chatName } from "@/lib/chat-schema";
+import { conversationStarters } from "@/lib/conversation-starters";
 import { withDateDividers } from "@/lib/date-dividers";
 import { isAttached, type MessageWindow } from "@/lib/message-windows";
 import { mainPanel } from "@/lib/ui-classes";
@@ -66,19 +67,6 @@ function chatAccentStyle(chat: ChatView): CSSProperties | undefined {
   return wispAccentStyle(color);
 }
 
-/** The soul's first paragraph, as plain text, for a Wisp to introduce itself with. */
-function soulIntro(soul: string): string {
-  const paragraph = soul
-    .split(/\n\s*\n/)
-    .map((part) => part.trim())
-    .find((part) => part && !part.startsWith("#") && !part.startsWith("---"));
-  const text = (paragraph ?? "")
-    .replace(/[*_`>#]/g, "")
-    .replace(/\s+/g, " ")
-    .trim();
-  return text.length > 180 ? `${text.slice(0, 177).trimEnd()}…` : text;
-}
-
 /** How many of the turn's steps show; older ones fold into a count. */
 const VISIBLE_STEPS = 4;
 
@@ -117,6 +105,8 @@ interface ChatPanelProps {
   messageQueue?: MessageQueueController;
   /** Starts a new topic in a Wisp; resolves with an error message, or null. */
   onNewTopic?: (conversationId: string) => Promise<string | null>;
+  /** The person has no other Wisp, so an empty conversation suggests building the team first. */
+  soleWisp?: boolean;
 }
 
 function ChatPanel({
@@ -145,6 +135,7 @@ function ChatPanel({
   scheduledMessages,
   messageQueue,
   onNewTopic,
+  soleWisp = false,
 }: ChatPanelProps) {
   const transcriptRef = useRef<HTMLDivElement>(null);
   const messagesRef = useRef<HTMLDivElement>(null);
@@ -183,9 +174,10 @@ function ChatPanel({
             text: chat.kind === "wisp" ? chat.wisp.role : members.map((member) => member.name).join(", "),
           };
   const avatarState = approvals.length ? "approval" : working ? "working" : failed ? "error" : "idle";
-  // A Wisp with nothing said yet introduces itself.
+  // A Wisp with nothing said yet introduces itself and offers first messages to send.
   const introducing =
     chat.kind === "wisp" && Boolean(transcript) && !transcript?.loading && !messages.length && !working;
+  const startersReady = status === "idle" && !acknowledging;
   // A complete reply part followed by more work is text the Wisp wrote before
   // using a tool, so the activity indicator stays visible below it.
   const responding =
@@ -432,7 +424,15 @@ function ChatPanel({
                 </span>
                 <h2>{`Hi, I'm ${name}`}</h2>
                 {chat.wisp.role ? <p className="chat-intro-role">{chat.wisp.role}</p> : null}
-                {soulIntro(chat.wisp.soul) ? <p>{soulIntro(chat.wisp.soul)}</p> : null}
+                <ul className="chat-starters" aria-label="Suggested messages">
+                  {conversationStarters({ soleWisp }).map((starter) => (
+                    <li key={starter}>
+                      <button type="button" disabled={!startersReady} onClick={() => onSend(starter)}>
+                        {starter}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
               </section>
             ) : null}
             {transcriptMessages.map((message, index) => {

@@ -36,6 +36,7 @@ export function createWebWispApi(options: WebApiOptions): WispApi {
   const listeners = {
     agentEvent: new Set<Listener<unknown>>(),
     conversationChanged: new Set<Listener<unknown>>(),
+    wispsChanged: new Set<Listener<unknown>>(),
     mcpSettingsChanged: new Set<Listener<unknown>>(),
     pluginSettingsChanged: new Set<Listener<unknown>>(),
     scheduledMessagesChanged: new Set<Listener<unknown>>(),
@@ -168,6 +169,7 @@ export function createWebWispApi(options: WebApiOptions): WispApi {
   const api: Record<string, unknown> = {
     subscribeToAgentEvents: subscribe(listeners.agentEvent),
     subscribeToConversationChanges: subscribe(listeners.conversationChanged),
+    subscribeToWisps: subscribe(listeners.wispsChanged),
     subscribeToMcpSettings: subscribe(listeners.mcpSettingsChanged),
     subscribeToPluginSettings: subscribe(listeners.pluginSettingsChanged),
     subscribeToScheduledMessages: subscribe(listeners.scheduledMessagesChanged),

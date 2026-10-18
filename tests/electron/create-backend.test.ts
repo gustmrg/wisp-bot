@@ -26,6 +26,7 @@ const PUSH_CHANNELS = new Set<string>([
   WISP_IPC_CHANNELS.pluginSettingsChanged,
   WISP_IPC_CHANNELS.updateState,
   WISP_IPC_CHANNELS.conversationChanged,
+  WISP_IPC_CHANNELS.wispsChanged,
   WISP_IPC_CHANNELS.scheduledMessagesChanged,
   WISP_IPC_CHANNELS.messageQueueChanged,
   WISP_IPC_CHANNELS.jobsChanged,

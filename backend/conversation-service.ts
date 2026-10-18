@@ -23,6 +23,8 @@ import {
   type OutgoingMessage,
   type Wisp,
   type WispChanges,
+  type WispCollection,
+  type WispsView,
 } from "../shared/conversations.js";
 import type { QueuedMessage } from "../shared/message-queue.js";
 import type { ToolApprovalRequest } from "../shared/tool-policy.js";
@@ -37,6 +39,8 @@ export interface ConversationServiceOptions {
   logger?: Pick<StructuredLogger, "warn">;
   /** Called after conversations were deleted or replaced, which also removes their scheduled messages. */
   onConversationsRemoved?: () => void;
+  /** Receives the Wisps and conversation summaries after a Wisp was created, changed or deleted. */
+  onWispsChanged?: (view: WispsView) => void;
 }
 
 /**
@@ -53,6 +57,7 @@ export class ConversationService {
   private readonly onConversationChanged: (delta: ConversationDelta) => void;
   private readonly logger: Pick<StructuredLogger, "warn"> | undefined;
   private readonly onConversationsRemoved: () => void;
+  private readonly onWispsChanged: (view: WispsView) => void;
 
   constructor(
     repository: ConversationRepository,
@@ -66,6 +71,7 @@ export class ConversationService {
     this.onConversationChanged = options.onConversationChanged ?? (() => undefined);
     this.logger = options.logger;
     this.onConversationsRemoved = options.onConversationsRemoved ?? (() => undefined);
+    this.onWispsChanged = options.onWispsChanged ?? (() => undefined);
   }
 
   async start(model: ModelSelection | null): Promise<void> {
@@ -225,6 +231,7 @@ export class ConversationService {
       await this.repository.deleteWisp(wisp.id).catch(() => undefined);
       throw error;
     }
+    this.publishWisps();
     return this.getState();
   }
 
@@ -233,6 +240,7 @@ export class ConversationService {
     if (changes.name !== undefined || changes.role !== undefined || changes.soul !== undefined) {
       await this.registry.updateContext(this.repository.getAgentContext(wispId));
     }
+    this.publishWisps();
     return this.getState();
   }
 
@@ -249,7 +257,24 @@ export class ConversationService {
       throw error;
     }
     this.onConversationsRemoved();
+    this.publishWisps();
     return this.getState();
+  }
+
+  /** The Wisps as they are stored now. */
+  readWisps(): Readonly<WispCollection> {
+    return this.repository.readWisps();
+  }
+
+  /** Tells every device the Wisps changed; the device that asked also gets the state in its reply. */
+  private publishWisps(): void {
+    this.onWispsChanged({
+      wisps: this.repository.readWisps(),
+      chats: Object.fromEntries(
+        Object.entries(this.repository.readChats()).map(([id, chat]) => [id, chatSummary(chat)]),
+      ),
+      statuses: this.registry.statuses(),
+    });
   }
 
   /** Creates a circle; a Wisp's own conversation is created with the Wisp. */

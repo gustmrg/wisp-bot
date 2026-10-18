@@ -371,13 +371,36 @@ describe("ChatPanel identity", () => {
     expect(document.querySelector(".chat-subline")).toHaveTextContent("Searching the web");
   });
 
-  it("introduces a Wisp with nothing said yet by its soul", () => {
-    const chat = wispChatView("atlas", {
-      wisp: { name: "Atlas", role: "Research", soul: "# Atlas\n\nCurious, **careful** with sources." },
-    });
-    renderPanel(transcript([]), { chat });
+  it("introduces a Wisp with nothing said yet and sends a suggested first message", async () => {
+    const { props } = renderPanel(transcript([]));
     expect(screen.getByRole("heading", { name: "Hi, I'm Atlas" })).toBeInTheDocument();
-    expect(screen.getByText("Curious, careful with sources.")).toBeInTheDocument();
+    const starters = within(screen.getByRole("list", { name: "Suggested messages" })).getAllByRole("button");
+    expect(starters.map((button) => button.textContent)).toEqual([
+      "What can you help me with?",
+      "Help me plan my week",
+      "Every morning, send me a short summary of the news",
+      "How can I connect you to my email or calendar?",
+    ]);
+    await userEvent.click(starters[1]!);
+    expect(props.onSend).toHaveBeenCalledWith("Help me plan my week");
+  });
+
+  it("suggests building the team first when the Wisp is the person's only one", () => {
+    renderPanel(transcript([]), { soleWisp: true });
+    const starters = within(screen.getByRole("list", { name: "Suggested messages" })).getAllByRole("button");
+    expect(starters.map((button) => button.textContent)).toEqual([
+      "Help me build a team of Wisps",
+      "Create an assistant Wisp for me",
+      "What can you help me with?",
+      "Help me plan my week",
+    ]);
+  });
+
+  it("offers no suggestion to send until the Wisp can take a message", () => {
+    renderPanel(transcript([]), { status: "configuration_required" });
+    for (const button of within(screen.getByRole("list", { name: "Suggested messages" })).getAllByRole("button")) {
+      expect(button).toBeDisabled();
+    }
   });
 
   it("does not introduce the Wisp once there are messages", () => {

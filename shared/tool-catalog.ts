@@ -15,6 +15,8 @@ export interface ToolMetadata {
   mcpServerId?: string;
   /** Manages the Wisp's jobs (ADR 019); offered only where jobs can run. */
   jobs?: boolean;
+  /** Creates, changes or deletes Wisps (ADR 024); offered only where the backend can manage them. */
+  wisps?: boolean;
 }
 
 export interface DynamicToolMetadataInput {
@@ -73,6 +75,28 @@ export const TOOL_CATALOG: ReadonlyArray<ToolMetadata> = [
   { name: "list_jobs", label: "List jobs", activityLabel: "Checking jobs…", category: "read", jobs: true },
   { name: "update_job", label: "Update job", activityLabel: "Updating a job…", category: "schedule_job", jobs: true },
   { name: "cancel_job", label: "Cancel job", activityLabel: "Cancelling a job…", category: "schedule_job", jobs: true },
+  { name: "list_wisps", label: "List Wisps", activityLabel: "Checking your Wisps…", category: "read", wisps: true },
+  {
+    name: "create_wisp",
+    label: "Create Wisp",
+    activityLabel: "Creating a Wisp…",
+    category: "manage_wisp",
+    wisps: true,
+  },
+  {
+    name: "update_wisp",
+    label: "Update Wisp",
+    activityLabel: "Updating a Wisp…",
+    category: "manage_wisp",
+    wisps: true,
+  },
+  {
+    name: "delete_wisp",
+    label: "Delete Wisp",
+    activityLabel: "Deleting a Wisp…",
+    category: "manage_wisp",
+    wisps: true,
+  },
   ...PLUGIN_TOOL_CATALOG,
 ];
 
@@ -128,7 +152,8 @@ function boundedText(value: string, maxLength: number): string {
 
 /** Tools every Wisp has. Container tools are not: only Wisps whose commands run in a container get them. */
 export const BUILTIN_TOOL_NAMES = TOOL_CATALOG.filter(
-  ({ pluginId, pluginIds, category, jobs }) => !pluginId && !pluginIds && category !== "container_command" && !jobs,
+  ({ pluginId, pluginIds, category, jobs, wisps }) =>
+    !pluginId && !pluginIds && category !== "container_command" && !jobs && !wisps,
 ).map(({ name }) => name);
 
 export function getToolMetadata(name: string): ToolMetadata | undefined {

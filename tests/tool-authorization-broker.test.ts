@@ -670,6 +670,64 @@ describe("tool policy", () => {
     });
   });
 
+  it("always asks for Wisp changes, even in risk mode, and refuses lasting decisions", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "wisp-policy-wisp-"));
+    const store = new ToolPolicyStore(path.join(directory, "policy.json"));
+    await store.save({ autoReview: true, rules: [{ id: "a", action: "manage_wisp", behavior: "allow" }] });
+    const events: ConversationAgentEvent[] = [];
+    const broker = new ToolAuthorizationBroker(store, (event) => events.push(event), {
+      createId: () => "approval-wisp",
+      selectWindowId: () => 7,
+      wispPolicies: {
+        get: () => ({ files: {}, allowEverything: true }),
+        save: async (_id, policy) => policy,
+        setFileBehavior: async () => undefined,
+      },
+    });
+    expect(evaluateToolPolicy(store.get(), "manage_wisp", "wisp")).toBe("ask");
+    expect(evaluateToolPolicy(store.get(), "manage_wisp", "workspace_path")).toBe("block");
+    const authorization = broker.authorize({
+      conversationId: "one",
+      toolCallId: "tool-1",
+      toolName: "create_wisp",
+      category: "manage_wisp",
+      scope: { kind: "wisp", value: "Quill" },
+      summary: "Create the Wisp Quill",
+      wisp: { action: "create", name: "Quill", changes: { name: "Quill", role: "", soul: "# Quill\u0007" } },
+    });
+    expect(events[0]).toMatchObject({
+      type: "tool_approval_requested",
+      request: {
+        category: "manage_wisp",
+        scope: { kind: "wisp" },
+        wisp: { action: "create", name: "Quill", changes: { name: "Quill", role: "", soul: "# Quill" } },
+      },
+    });
+    const decision = { approvalId: "approval-wisp", conversationId: "one", toolCallId: "tool-1" };
+    await expect(broker.resolve({ ...decision, decision: "block" }, 7)).rejects.toMatchObject({
+      code: "invalid_request",
+    });
+    await expect(broker.resolve({ ...decision, decision: "allow_always" }, 7)).rejects.toMatchObject({
+      code: "invalid_request",
+    });
+    await broker.resolve({ ...decision, decision: "allow_once" }, 7);
+    await expect(authorization).resolves.toBeUndefined();
+
+    // A job's run never changes Wisps, whatever was approved with it.
+    await broker.runUnattended({ conversationId: "one", approvedTools: new Set(["delete_wisp"]) }, async () => {
+      await expect(
+        broker.authorize({
+          conversationId: "one",
+          toolCallId: "tool-2",
+          toolName: "delete_wisp",
+          category: "manage_wisp",
+          scope: { kind: "wisp", value: "Quill" },
+          summary: "Delete the Wisp Quill",
+        }),
+      ).rejects.toMatchObject({ code: "tool_blocked" });
+    });
+  });
+
   it("cancels a pending approval when the tool execution is aborted", async () => {
     const directory = await mkdtemp(path.join(os.tmpdir(), "wisp-approval-abort-"));
     const events: ConversationAgentEvent[] = [];

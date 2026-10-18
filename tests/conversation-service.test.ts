@@ -10,7 +10,7 @@ import { ConversationRepository } from "../backend/conversation-repository.js";
 import { ConversationService } from "../backend/conversation-service.js";
 import { FakeConversationAgent, FakeConversationAgentFactory } from "../backend/fake-conversation-agent.js";
 import type { SequencedConversationAgentEvent } from "../shared/contracts.js";
-import type { Chat, ConversationDelta, Wisp } from "../shared/conversations.js";
+import type { Chat, ConversationDelta, Wisp, WispsView } from "../shared/conversations.js";
 import { DEFAULT_WISP_APPEARANCE } from "../shared/wisp-appearance.js";
 
 function chat(id: string, circle = false): Chat {
@@ -66,6 +66,30 @@ describe("ConversationService", () => {
 
     expect(disposedWithWorkspace).toContain("two");
     expect(registry.list()).toEqual(["one"]);
+    await service.dispose();
+  });
+
+  it("tells every device when a Wisp is created, changed or deleted", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "wisp-service-wisps-"));
+    const repository = new ConversationRepository({ dataDirectory: directory });
+    const registry = new AgentRegistry(new FakeConversationAgentFactory(), () => undefined);
+    const onWispsChanged = vi.fn<(view: WispsView) => void>();
+    const service = new ConversationService(repository, registry, () => [], { onWispsChanged });
+    await service.start(null);
+    await service.initialize({});
+
+    await service.createWisp(newWisp("two"), { notifyOnUpdatesEnabled: true });
+    expect(onWispsChanged).toHaveBeenLastCalledWith({
+      wisps: { two: newWisp("two") },
+      chats: { two: expect.objectContaining({ kind: "wisp", wispId: "two" }) },
+      statuses: { two: "configuration_required" },
+    });
+    expect(onWispsChanged.mock.lastCall![0].chats.two).not.toHaveProperty("messages");
+    await service.updateWisp("two", { role: "Writing" });
+    expect(onWispsChanged.mock.lastCall![0].wisps.two).toMatchObject({ role: "Writing" });
+    await service.deleteWisp("two");
+    expect(onWispsChanged).toHaveBeenLastCalledWith({ wisps: {}, chats: {}, statuses: {} });
+    expect(onWispsChanged).toHaveBeenCalledTimes(3);
     await service.dispose();
   });
 

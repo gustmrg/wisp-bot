@@ -39,6 +39,7 @@ import type {
   MarkConversationUnreadRequest,
   UpdateConversationRequest,
   UpdateWispRequest,
+  WispsView,
 } from "./conversations.js";
 import type { JobRequest, JobRunsView, JobsView } from "./jobs.js";
 import type {
@@ -138,6 +139,7 @@ export const WISP_IPC_CHANNELS = {
   createWisp: "wisp:wisps:create",
   updateWisp: "wisp:wisps:update",
   deleteWisp: "wisp:wisps:delete",
+  wispsChanged: "wisp:wisps:changed",
   createConversation: "wisp:conversations:create",
   updateConversation: "wisp:conversations:update",
   deleteConversation: "wisp:conversations:delete",
@@ -696,6 +698,8 @@ export interface WispApi {
   searchMessages(request: SearchMessagesRequest): Promise<BackendResult<ReadonlyArray<MessageSearchHit>>>;
   /** Pushes what changed after the backend persists agent-driven changes (replies, statuses, context notices). */
   subscribeToConversationChanges(listener: (delta: ConversationDelta) => void): () => void;
+  /** Pushes the Wisps and conversation summaries after a Wisp was created, changed or deleted, by anyone. */
+  subscribeToWisps(listener: (view: WispsView) => void): () => void;
   /** Every scheduled message, soonest first. */
   getScheduledMessages(): Promise<BackendResult<ScheduledMessagesView>>;
   /** Schedules a message the backend sends to a Wisp later, even with no app open. */

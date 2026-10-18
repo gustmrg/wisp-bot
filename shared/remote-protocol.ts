@@ -1,5 +1,5 @@
 import type { SequencedConversationAgentEvent } from "./contracts.js";
-import type { ConversationDelta } from "./conversations.js";
+import type { ConversationDelta, WispsView } from "./conversations.js";
 import type { McpSettingsView } from "./mcp.js";
 import type { PluginSettingsView } from "./plugins.js";
 import type { MessageQueueView } from "./message-queue.js";
@@ -95,6 +95,7 @@ export type HostResponse = { ok: true; value?: ReadonlyArray<string> } | { ok: f
 export interface RemoteEventPayloads {
   agentEvent: SequencedConversationAgentEvent;
   conversationChanged: ConversationDelta;
+  wispsChanged: WispsView;
   mcpSettingsChanged: McpSettingsView;
   pluginSettingsChanged: PluginSettingsView;
   scheduledMessagesChanged: ScheduledMessagesView;

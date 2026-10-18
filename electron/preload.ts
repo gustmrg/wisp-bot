@@ -51,6 +51,7 @@ const WISP_IPC_CHANNELS = {
   createWisp: "wisp:wisps:create",
   updateWisp: "wisp:wisps:update",
   deleteWisp: "wisp:wisps:delete",
+  wispsChanged: "wisp:wisps:changed",
   createConversation: "wisp:conversations:create",
   updateConversation: "wisp:conversations:update",
   deleteConversation: "wisp:conversations:delete",
@@ -212,6 +213,12 @@ const wispApi: WispApi = {
       listener(delta);
     ipcRenderer.on(WISP_IPC_CHANNELS.conversationChanged, handleDelta);
     return () => ipcRenderer.removeListener(WISP_IPC_CHANNELS.conversationChanged, handleDelta);
+  },
+  subscribeToWisps: (listener) => {
+    const handleView = (_event: Electron.IpcRendererEvent, view: Parameters<typeof listener>[0]): void =>
+      listener(view);
+    ipcRenderer.on(WISP_IPC_CHANNELS.wispsChanged, handleView);
+    return () => ipcRenderer.removeListener(WISP_IPC_CHANNELS.wispsChanged, handleView);
   },
   getScheduledMessages: () => ipcRenderer.invoke(WISP_IPC_CHANNELS.getScheduledMessages),
   scheduleMessage: (request) => ipcRenderer.invoke(WISP_IPC_CHANNELS.scheduleMessage, request),
