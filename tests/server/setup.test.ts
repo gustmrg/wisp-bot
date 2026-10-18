@@ -123,8 +123,31 @@ describe("runSetup", () => {
         ["WISP_DATA_DIR", paths.defaultDataDirectory],
         ["WISP_MASTER_KEY_FILE", paths.keyFile],
         ["WISP_PORT", "8787"],
+        ["WISP_WEB", "0"],
       ]),
     );
+    expect(result.web).toBe(false);
+  });
+
+  it("serves the browser app when asked to, and keeps that setting on later runs", async () => {
+    const { host, paths } = await machine();
+    expect(await runSetup({ ...options, pair: false, web: true }, host)).toMatchObject({ web: true });
+    expect(parseEnvFile(await readFile(paths.envFile, "utf8")).get("WISP_WEB")).toBe("1");
+
+    expect(await runSetup({ ...options, pair: false }, host)).toMatchObject({ web: true });
+    const result = await runSetup({ ...options, pair: false, web: false }, host);
+    expect(result).toMatchObject({ web: false, service: "restarted" });
+    expect(parseEnvFile(await readFile(paths.envFile, "utf8")).get("WISP_WEB")).toBe("0");
+  });
+
+  it("keeps serving the browser app on a server set up before the setting existed", async () => {
+    const { host, paths } = await machine();
+    await runSetup({ ...options, pair: false }, host);
+    const env = await readFile(paths.envFile, "utf8");
+    await writeFile(paths.envFile, env.replace("WISP_WEB=0\n", ""));
+
+    expect(await runSetup({ ...options, pair: false }, host)).toMatchObject({ web: true });
+    expect(parseEnvFile(await readFile(paths.envFile, "utf8")).get("WISP_WEB")).toBe("1");
   });
 
   it("is safe to run again: keeps the key, skips the install, and leaves a healthy service alone", async () => {
@@ -371,6 +394,7 @@ describe("setup files", () => {
       wispctl: "/w",
       dataDirectory: "/d",
       port: 8787,
+      web: true,
       service: "started",
       pairingCode: "ABCDE-FGHJK",
       warnings: [],
@@ -379,5 +403,23 @@ describe("setup files", () => {
     expect(text).toContain("Back up /k");
     expect(text).toContain("ABCDE-FGHJK");
     expect(text).toContain("tailscale serve");
+  });
+
+  it("points to --web when the server does not serve the browser app", () => {
+    const text = describeSetup({
+      version: "1.2.3",
+      installDir: "/i",
+      keyFile: "/k",
+      keyCreated: false,
+      envFile: "/e",
+      wispctl: "/w",
+      dataDirectory: "/d",
+      port: 8787,
+      web: false,
+      service: "unchanged",
+      warnings: [],
+    });
+    expect(text).toContain("wispctl setup --web");
+    expect(text).not.toContain("tailscale serve");
   });
 });

@@ -10,6 +10,8 @@ services:
     environment:
       WISP_MASTER_KEY_FILE: /run/secrets/wisp_master_key
       # WISP_PUBLIC_ORIGIN: https://machine.tailnet-name.ts.net
+      # Serve the browser app, to use Wisp in a browser or install it on a phone:
+      # WISP_WEB: "1"
     secrets:
       - wisp_master_key
     volumes:

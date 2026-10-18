@@ -40,7 +40,7 @@ interface Harness {
 
 async function start(
   existing?: Pick<Harness, "directory" | "key">,
-  options: { publicOrigin?: string } = {},
+  options: { publicOrigin?: string; webRoot?: string } = {},
 ): Promise<Harness> {
   const directory = existing?.directory ?? (await mkdtemp(path.join(os.tmpdir(), "wisp-server-")));
   if (!existing) directories.push(directory);
@@ -434,14 +434,14 @@ describe("Wisp server", () => {
     await cli("devices");
     expect(JSON.parse(output.pop()!)).toEqual([expect.objectContaining({ name: "From CLI" })]);
     await cli("status");
-    expect(JSON.parse(output.pop()!)).toMatchObject({ serverId: harness.server.serverId, devices: 1 });
+    expect(JSON.parse(output.pop()!)).toMatchObject({ serverId: harness.server.serverId, devices: 1, web: false });
     await expect(
       runCli(["status", "--data-dir", path.join(harness.directory, "missing")], () => undefined),
     ).rejects.toThrow(/No Wisp server is running/);
   });
 
   it("prints pair and devices for people in a terminal, and JSON when asked", async () => {
-    const harness = await start(undefined, { publicOrigin: "https://wisp.example.ts.net" });
+    const harness = await start(undefined, { publicOrigin: "https://wisp.example.ts.net", webRoot: os.tmpdir() });
     const output: string[] = [];
     const cli = (...args: string[]) =>
       runCli([...args, "--data-dir", harness.directory], (text) => output.push(text), { terminal: true });
