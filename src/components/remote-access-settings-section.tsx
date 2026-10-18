@@ -15,6 +15,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ToggleSwitch } from "@/components/ui/toggle-switch";
 import { CopyCommand } from "@/features/connections/connection-screen";
+import { useTimeFormat, useTimeZone } from "@/hooks/use-time-zone";
+import { formatClockTime } from "@/lib/clock-time";
 import type { BackendResult } from "../../shared/contracts";
 import {
   DEFAULT_REMOTE_ACCESS_PORT,
@@ -476,7 +478,9 @@ function SetupSteps({ view, busy, error, onSubmit, onCancel, onAutomatic }: Setu
 }
 
 function PairingCode({ pairing, onDone }: { pairing: RemoteAccessPairing; onDone: () => void }) {
-  const until = new Date(pairing.expiresAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+  const timeZone = useTimeZone();
+  const timeFormat = useTimeFormat();
+  const until = formatClockTime(new Date(pairing.expiresAt), timeZone, timeFormat);
   return (
     <SettingsCard className="flex items-start gap-4 p-4 max-[520px]:flex-col">
       <QrCode value={pairing.link} label="QR code that pairs a device with this computer" />

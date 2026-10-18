@@ -10,7 +10,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import type { MessageQueueController } from "@/hooks/use-message-queue";
 import type { ScheduledMessagesController } from "@/hooks/use-scheduled-messages";
-import { useTimeZone } from "@/hooks/use-time-zone";
+import { useTimeFormat, useTimeZone } from "@/hooks/use-time-zone";
 import { formatScheduledTime } from "@/lib/scheduled-time";
 import type { QueuedMessage } from "../../shared/message-queue";
 import type { ScheduledMessage } from "../../shared/scheduled-messages";
@@ -37,6 +37,7 @@ export function PendingMessagesBar({ queued, scheduled, queue, schedule }: Pendi
   const [busyId, setBusyId] = useState<string | null>(null);
   const [error, setError] = useState("");
   const timeZone = useTimeZone();
+  const timeFormat = useTimeFormat();
   if (!queued.length && !scheduled.length) return null;
   const now = new Date();
 
@@ -79,7 +80,7 @@ export function PendingMessagesBar({ queued, scheduled, queue, schedule }: Pendi
           <PendingRow
             key={message.id}
             icon={<CalendarClockIcon aria-hidden="true" />}
-            label={formatScheduledTime(new Date(message.nextRunAt), now, timeZone)}
+            label={formatScheduledTime(new Date(message.nextRunAt), now, timeZone, timeFormat)}
             text={message.text}
           >
             <BarAction

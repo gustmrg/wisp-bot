@@ -14,7 +14,8 @@ import { SettingsCard, SettingsGroup } from "@/components/settings/settings-prim
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Button } from "@/components/ui/button";
 import { CacheStats, formatUsd, plural, TokenCount, TokenMix } from "@/components/usage-display";
-import { useTimeZone } from "@/hooks/use-time-zone";
+import { useTimeFormat, useTimeZone } from "@/hooks/use-time-zone";
+import { clockTimeOptions, type TimeFormat } from "@/lib/clock-time";
 import type { IntegrationSettingsTarget } from "@/lib/plugin-access";
 import { cn } from "@/lib/utils";
 
@@ -293,6 +294,7 @@ type ToolFilter = { kind: "all" } | { kind: "failed" } | { kind: "tool"; name: s
 
 function ToolCallList({ toolCalls }: { toolCalls: ReadonlyArray<SessionReportToolCall> }) {
   const timeZone = useTimeZone();
+  const timeFormat = useTimeFormat();
   const [filter, setFilter] = useState<ToolFilter>({ kind: "all" });
   if (toolCalls.length === 0) return <p className="m-0 text-xs text-dim">No tool calls recorded.</p>;
   const failed = toolCalls.filter((call) => call.status === "error").length;
@@ -354,7 +356,9 @@ function ToolCallList({ toolCalls }: { toolCalls: ReadonlyArray<SessionReportToo
                 <span className="text-dim"> · {describeCommandResult(toolCall.commandResult)}</span>
               ) : null}
             </span>
-            <span className="whitespace-nowrap text-dim">{formatTimestamp(toolCall.timestamp, timeZone)}</span>
+            <span className="whitespace-nowrap text-dim">
+              {formatTimestamp(toolCall.timestamp, timeZone, timeFormat)}
+            </span>
             {toolCall.purpose ? (
               <span className="col-start-2 col-end-4 break-words text-dim">{toolCall.purpose}</span>
             ) : null}
@@ -429,6 +433,7 @@ const EVENT_LABELS = {
 
 function EventList({ report }: { report: WispSessionReport }) {
   const timeZone = useTimeZone();
+  const timeFormat = useTimeFormat();
   if (report.events.length === 0) return <p className="m-0 text-xs text-dim">No events recorded.</p>;
   return (
     <ul className="m-0 flex list-none flex-col gap-1.5 p-0 text-xs">
@@ -438,7 +443,7 @@ function EventList({ report }: { report: WispSessionReport }) {
             <span className={event.kind === "error" ? "text-destructive" : "text-foreground"}>
               {EVENT_LABELS[event.kind]}
             </span>
-            <span className="ml-auto shrink-0 text-dim">{formatTimestamp(event.timestamp, timeZone)}</span>
+            <span className="ml-auto shrink-0 text-dim">{formatTimestamp(event.timestamp, timeZone, timeFormat)}</span>
           </span>
           <span className="break-all text-dim">{event.detail}</span>
         </li>
@@ -525,8 +530,8 @@ function shortModelId(modelId: string): string {
   return modelId.split("/").pop() || modelId;
 }
 
-function formatTimestamp(value: string, timeZone: string): string {
+function formatTimestamp(value: string, timeZone: string, timeFormat: TimeFormat): string {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "";
-  return date.toLocaleString("en-US", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", timeZone });
+  return date.toLocaleString("en-US", { month: "short", day: "numeric", ...clockTimeOptions(timeFormat), timeZone });
 }

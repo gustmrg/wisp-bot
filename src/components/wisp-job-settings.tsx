@@ -2,7 +2,8 @@ import { CalendarClockIcon } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { useJobs } from "@/hooks/use-jobs";
-import { useTimeZone } from "@/hooks/use-time-zone";
+import { useTimeFormat, useTimeZone } from "@/hooks/use-time-zone";
+import { clockTimeOptions } from "@/lib/clock-time";
 import type { IntegrationSettingsTarget } from "@/lib/plugin-access";
 import { isJobFinished } from "../../shared/jobs";
 import { describeSchedule } from "../../shared/schedule";
@@ -27,6 +28,7 @@ function WispJobs({
 }) {
   const { available, jobs } = useJobs();
   const timeZone = useTimeZone();
+  const timeFormat = useTimeFormat();
   const own = jobs.filter((job) => job.conversationId === conversationId && !isJobFinished(job));
   return (
     <div className="flex flex-col gap-3">
@@ -48,8 +50,7 @@ function WispJobs({
                         weekday: "short",
                         month: "short",
                         day: "numeric",
-                        hour: "numeric",
-                        minute: "2-digit",
+                        ...clockTimeOptions(timeFormat),
                       })}`
                     : job.lastRun?.status === "failed"
                       ? "Failed, will not run again"

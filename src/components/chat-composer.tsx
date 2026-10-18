@@ -21,7 +21,7 @@ import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger } 
 import { Popover, PopoverContent, PopoverTitle, PopoverTrigger } from "@/components/ui/popover";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useModelVision } from "@/hooks/use-model-image-input";
-import { useTimeZone } from "@/hooks/use-time-zone";
+import { useTimeFormat, useTimeZone } from "@/hooks/use-time-zone";
 import { useVoiceInput } from "@/hooks/use-voice-input";
 import { DEFAULT_PREFERENCES } from "@/lib/app-preferences";
 import { formatScheduledTime, schedulePresets } from "@/lib/scheduled-time";
@@ -107,6 +107,7 @@ export function ChatComposer({
   // A long press opens the send button's menu; the tap that ends it must not also send.
   const sendMenuOpen = useRef(false);
   const timeZone = useTimeZone();
+  const timeFormat = useTimeFormat();
   // Attaching picks files on this computer, so a server elsewhere cannot use them.
   const working = status === "working";
   const needsConfiguration = status === "configuration_required";
@@ -380,7 +381,7 @@ export function ChatComposer({
     }
     if (primary === "schedule" && scheduledAt) {
       return (
-        <ComposerTooltip message={`Schedule for ${formatScheduledTime(scheduledAt, now, timeZone)}`}>
+        <ComposerTooltip message={`Schedule for ${formatScheduledTime(scheduledAt, now, timeZone, timeFormat)}`}>
           <button
             type="submit"
             className={cn(PRIMARY_BUTTON, "bg-blue text-white")}
@@ -431,7 +432,7 @@ export function ChatComposer({
             <ContextMenuItem key={preset.label} onClick={() => void schedule(preset.at)}>
               <CalendarClockIcon aria-hidden="true" />
               <span className="flex-1">{preset.label}</span>
-              <span className="text-xs text-dim">{formatScheduledTime(preset.at, now, timeZone)}</span>
+              <span className="text-xs text-dim">{formatScheduledTime(preset.at, now, timeZone, timeFormat)}</span>
             </ContextMenuItem>
           ))}
           <ContextMenuItem onClick={() => openSchedulePicker("now")}>
@@ -645,7 +646,7 @@ export function ChatComposer({
                 {scheduledAt ? (
                   <span className="flex h-6 items-center gap-1.5 rounded-full bg-blue/15 pr-0.5 pl-2 text-xs font-medium text-blue [&_svg]:size-3.5">
                     <CalendarClockIcon aria-hidden="true" />
-                    {formatScheduledTime(scheduledAt, now, timeZone)}
+                    {formatScheduledTime(scheduledAt, now, timeZone, timeFormat)}
                     <ComposerTooltip message="Send normally instead">
                       <button
                         type="button"

@@ -4,7 +4,8 @@ import { ShieldAlertIcon } from "lucide-react";
 import { getToolMetadata } from "../../shared/tool-catalog";
 import { isWorkspaceFileCategory } from "../../shared/tool-policy";
 import type { JobApprovalDetails, ToolApprovalDecision, ToolApprovalRequest } from "../../shared/tool-policy";
-import { useTimeZone } from "@/hooks/use-time-zone";
+import { useTimeFormat, useTimeZone } from "@/hooks/use-time-zone";
+import { clockTimeOptions } from "@/lib/clock-time";
 import { Button } from "@/components/ui/button";
 import { useClock } from "@/hooks/use-clock";
 import { cn } from "@/lib/utils";
@@ -55,14 +56,14 @@ function remainingLabel(seconds: number): string {
 /** Everything a job may do while no one is present, as its approval card shows it (ADR 019). */
 function JobDetails({ job }: { job: JobApprovalDetails }) {
   const timeZone = useTimeZone();
+  const timeFormat = useTimeFormat();
   const nextRun = job.nextRunAt
     ? new Date(job.nextRunAt).toLocaleString([], {
         timeZone,
         weekday: "short",
         month: "short",
         day: "numeric",
-        hour: "numeric",
-        minute: "2-digit",
+        ...clockTimeOptions(timeFormat),
       })
     : "None";
   const tools = job.tools.map((name) => getToolMetadata(name)?.label ?? name);
