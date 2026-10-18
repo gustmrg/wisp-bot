@@ -229,7 +229,7 @@ describe("plugin service", () => {
     expect(
       view.plugins.every(({ id, enabled, configured }) =>
         // The Google plugins were never connected here; they sign in instead of taking a key.
-        id === "tavily" || id === "exa" || id === "google-calendar" || id === "gmail"
+        id === "tavily" || id === "exa" || id === "google-calendar" || id === "gmail" || id === "google-drive"
           ? !enabled && !configured
           : enabled && configured,
       ),

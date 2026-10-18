@@ -2,8 +2,8 @@
 
 Wisp ships with bundled integrations: **Brave Search** (web search),
 **Linear**, **Firecrawl**, **Tavily**, and **Exa** (the latter three support web
-search and page reading), and **Google Calendar** and **Gmail**, which sign in
-with your own Google OAuth client. Connections are configured globally in
+search and page reading), and **Google Calendar**, **Gmail**, and **Google
+Drive**, which sign in with your own Google OAuth client. Connections are configured globally in
 **Settings → Plugins**; each Wisp receives access independently through its
 **Access** tab. Connecting a plugin grants no Wisp access automatically.
 
@@ -239,7 +239,8 @@ project and client can serve every Google plugin.
 1. In the [Google Cloud console](https://console.cloud.google.com/), create a
    project, or choose one.
 2. Under **APIs & Services → Library**, enable the API of each plugin you use:
-   **Google Calendar API** for Google Calendar, **Gmail API** for Gmail.
+   **Google Calendar API** for Google Calendar, **Gmail API** for Gmail,
+   **Google Drive API** for Google Drive.
 3. Under **Google Auth Platform**, configure the consent screen: an app name
    and your email under **Branding**, then the user type under **Audience**:
    **External** for a personal Gmail account, or **Internal** for a Google
@@ -248,8 +249,11 @@ project and client can serve every Google plugin.
    `https://www.googleapis.com/auth/calendar.events` and
    `https://www.googleapis.com/auth/calendar.calendarlist.readonly`; Gmail uses
    `https://www.googleapis.com/auth/gmail.readonly` and
-   `https://www.googleapis.com/auth/gmail.compose`. Google lists the Gmail
-   scopes as restricted, which matters only for apps published to others.
+   `https://www.googleapis.com/auth/gmail.compose`; Google Drive uses
+   `https://www.googleapis.com/auth/drive.readonly` and
+   `https://www.googleapis.com/auth/drive.file`. Google lists the Gmail and
+   `drive.readonly` scopes as restricted, which matters only for apps published
+   to others.
 5. For an **External** app, under **Audience**, select **Publish app** so its
    status is **In production**. While it is in **Testing**, Google ends the
    sign-in after 7 days and Wisp asks you to sign in again. For your own use the
@@ -325,3 +329,28 @@ accounts per plugin are not available yet. See
 boundaries, and validation scope. A possible direction for user-written,
 installable plugins is described in the
 [plugin extensibility analysis](plugin-extensibility-analysis.md).
+
+## Google Drive
+
+With **Read only**, a Wisp can search your Drive, including shared drives and
+files shared with you, by words in the name or content, type, folder, or
+modification date, and list a folder (`google_drive_search_files`); read a
+file's details (`google_drive_get_file`); and read a file as text
+(`google_drive_read_file`). Google Docs and Slides are read as plain text, a
+Google Sheet as CSV of its first sheet, and text files such as `.txt`, `.md`,
+`.csv`, or `.json` directly; long files are truncated. PDFs, images, and other
+files are not read, only described.
+
+With **Read and write**, it can create files: a Google Doc from plain text, a
+Google Sheet from CSV, or a text file whose type follows its extension
+(`google_drive_create_file`); create folders (`google_drive_create_folder`);
+and rename or rewrite the files it created (`google_drive_update_file`). Each
+change asks for approval unless you allowed it without asking.
+
+**Wisps change only the files they create.** Writing uses the `drive.file`
+scope, which Google limits to files and folders created with your OAuth
+client, so a Wisp cannot edit, move, delete, or reshare your own files, even
+with write access; it can add files only to My Drive or to folders it created.
+Files created with one OAuth client cannot be changed after you switch to a
+client from another Google Cloud project. File contents are written by other
+people and reach the Wisp as data, not instructions.

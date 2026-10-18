@@ -130,6 +130,7 @@ function defaultState(): PluginState {
       exa: false,
       "google-calendar": false,
       gmail: false,
+      "google-drive": false,
     },
     grants: {},
     webProviders: {},

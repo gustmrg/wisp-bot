@@ -1,4 +1,13 @@
-export const PLUGIN_IDS = ["web-search", "linear", "firecrawl", "tavily", "exa", "google-calendar", "gmail"] as const;
+export const PLUGIN_IDS = [
+  "web-search",
+  "linear",
+  "firecrawl",
+  "tavily",
+  "exa",
+  "google-calendar",
+  "gmail",
+  "google-drive",
+] as const;
 export type PluginId = (typeof PLUGIN_IDS)[number];
 export type PluginAccess = "none" | "read" | "write";
 
@@ -124,6 +133,21 @@ export const PLUGIN_CATALOG: ReadonlyArray<PluginCatalogEntry> = [
     signIn: {
       clientHelp:
         "Gmail signs in with an OAuth client you create in your own Google Cloud project: a Desktop app client, with the Gmail API turned on. Wisps can write drafts but never send email.",
+      setupUrl: GOOGLE_SETUP_URL,
+    },
+  },
+  {
+    id: "google-drive",
+    name: "Google Drive",
+    category: "productivity",
+    credentialLabel: "Google Cloud credentials",
+    credentialUrl: "https://console.cloud.google.com/apis/credentials",
+    description: "Search and read your files, and create documents and files of your own.",
+    supportsWrite: true,
+    capabilities: [],
+    signIn: {
+      clientHelp:
+        "Google Drive signs in with an OAuth client you create in your own Google Cloud project: a Desktop app client, with the Google Drive API turned on. Wisps can read your files but change only the ones they create.",
       setupUrl: GOOGLE_SETUP_URL,
     },
   },
