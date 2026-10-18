@@ -60,7 +60,10 @@ and approving each `npm test` makes development impractical.
   Wisp's container sits on a network of its own, which a shared egress proxy
   container (Node, run from the sandbox image) is also on as `wisp-egress`. A
   blocked Wisp's network is `--internal`, with no route out, so the proxy is
-  its only way out. The proxy resolves each
+  its only way out. The proxy also has a network of its own with a route out:
+  on Podman, an internal network's DNS does not answer for outside names, so a
+  proxy only on blocked Wisps' networks could not resolve anything. The proxy
+  resolves each
   destination itself, refuses it if any answer is a private, loopback,
   link-local, CGNAT, multicast or reserved address (IPv4 and IPv6), and
   connects to the address it checked. Wisp containers get `HTTP_PROXY` and

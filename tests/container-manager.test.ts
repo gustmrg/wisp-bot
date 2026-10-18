@@ -415,7 +415,8 @@ describe("ContainerManager with the local network blocked", () => {
         SANDBOX_IMAGE,
       ]),
     );
-    expect(proxyRun).not.toContain("--network");
+    expect(proxyRun).toEqual(expect.arrayContaining(["--network", manager.proxyNetworkName()]));
+    expect(cli.networks.get(manager.proxyNetworkName())).toEqual({ internal: false });
     expect(await readFile(script, "utf8")).toBe(EGRESS_PROXY_SCRIPT);
     expect(cli.calls).toContainEqual({ args: ["network", "connect", "--alias", "wisp-egress", network, proxy] });
     const wispRun = cli.calls.find(({ args }) => args[0] === "run" && args.includes(name))!.args;
@@ -435,7 +436,9 @@ describe("ContainerManager with the local network blocked", () => {
     cli.streams[1]!.finish(0);
     await second;
     expect(cli.calls.filter(({ args }) => args[0] === "run")).toHaveLength(2);
-    expect(cli.calls.filter(({ args }) => args[0] === "network" && args[1] === "create")).toHaveLength(1);
+    expect(
+      cli.calls.filter(({ args }) => args[0] === "network" && args[1] === "create" && args.at(-1) === network),
+    ).toHaveLength(1);
     expect(cli.calls.filter(({ args }) => args[0] === "network" && args[1] === "connect")).toHaveLength(1);
   });
 
@@ -484,7 +487,7 @@ describe("ContainerManager with the local network blocked", () => {
     expect([...cli.containers.get(manager.proxyName())!.networks!.keys()]).toEqual([manager.networkName("s1")]);
   });
 
-  it("removes a Wisp's network with its container, and orphan networks but never the proxy", async () => {
+  it("removes a Wisp's network with its container, and orphan networks but never the proxy or its network", async () => {
     const { cli, manager, spec } = await setup();
     const running = manager.exec({ ...spec, localNetwork: false }, "true", "/workspace", { onData: () => undefined });
     await finishNext(cli);
@@ -492,11 +495,11 @@ describe("ContainerManager with the local network blocked", () => {
     cli.networks.set(manager.networkName("gone"), { internal: true });
 
     await manager.reconcile(new Set(["s1"]));
-    expect([...cli.networks.keys()]).toEqual([manager.networkName("s1")]);
+    expect([...cli.networks.keys()].sort()).toEqual([manager.networkName("s1"), manager.proxyNetworkName()].sort());
     expect(cli.containers.has(manager.proxyName())).toBe(true);
 
     await manager.remove("s1");
-    expect(cli.networks.size).toBe(0);
+    expect([...cli.networks.keys()]).toEqual([manager.proxyNetworkName()]);
     expect(cli.calls).toContainEqual({
       args: ["network", "disconnect", "-f", manager.networkName("s1"), manager.proxyName()],
     });

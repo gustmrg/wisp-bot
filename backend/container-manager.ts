@@ -206,6 +206,15 @@ export class ContainerManager {
     return `wisp-egress-${this.installation}`;
   }
 
+  /**
+   * The proxy's own network, with a route out. Podman's DNS does not answer for
+   * outside names on an internal network, so a proxy on only blocked Wisps'
+   * networks could resolve nothing. Not prefixed like Wisp networks either.
+   */
+  proxyNetworkName(): string {
+    return `wisp-egress-net-${this.installation}`;
+  }
+
   async state(storageId: string): Promise<ContainerState> {
     const cli = await this.options.cli();
     if (!cli) return "absent";
@@ -545,6 +554,7 @@ export class ContainerManager {
       }
       if (!ready) {
         if (inspected.exitCode === 0) await cli.run(["rm", "-f", proxy]);
+        await this.ensureProxyNetwork(cli);
         const created = await cli.run(this.proxyArgs(cli, proxy, fingerprint, script));
         if (created.exitCode !== 0) {
           throw new WispBackendError(
@@ -603,6 +613,19 @@ export class ContainerManager {
       await this.tellGateway(cli, address, gitToken);
       this.gatewayTokens.set(network, told.join(" "));
     });
+  }
+
+  private async ensureProxyNetwork(cli: ContainerCli): Promise<void> {
+    const network = this.proxyNetworkName();
+    if ((await cli.run(["network", "inspect", network])).exitCode === 0) return;
+    const created = await cli.run(["network", "create", "--label", `wisp.installation=${this.installation}`, network]);
+    if (created.exitCode !== 0) {
+      throw new WispBackendError(
+        "internal_error",
+        `The network proxy's network could not be created: ${firstLine(created.stderr)}`,
+        true,
+      );
+    }
   }
 
   /** When the proxy started and its address on each network it is on; null when it does not exist. */
@@ -674,6 +697,8 @@ export class ContainerManager {
       "--security-opt=no-new-privileges",
       `--pids-limit=${PROXY_PROCESS_LIMIT}`,
       `--memory=${PROXY_MEMORY}`,
+      "--network",
+      this.proxyNetworkName(),
       "--mount",
       `type=bind,source=${script},target=${PROXY_SCRIPT_TARGET},readonly`,
       "-e",
