@@ -17,13 +17,18 @@ export function googleOAuth(scopes: ReadonlyArray<string>, account: PluginOAuthC
   };
 }
 
+/** What to check when Google refuses a plugin's request (HTTP 401 or 403). */
+export function googleAuthHint(api: string): string {
+  return `Check that the ${api} is enabled in your Google Cloud project and that access was allowed; sign in again if it was revoked.`;
+}
+
 /** A Google API request with the plugin's access token. */
 export function googleRequest(
   provider: string,
   api: string,
   accessToken: string,
   url: string,
-  init: { method?: string; body?: unknown } = {},
+  init: { method?: string; body?: unknown; authHint?: string } = {},
   signal?: AbortSignal,
 ): Promise<Fields> {
   return requestJson(
@@ -39,6 +44,6 @@ export function googleRequest(
       ...(init.body === undefined ? {} : { body: JSON.stringify(init.body) }),
     },
     signal,
-    `Check that the ${api} is enabled in your Google Cloud project and that access was allowed; sign in again if it was revoked.`,
+    init.authHint ?? googleAuthHint(api),
   );
 }
