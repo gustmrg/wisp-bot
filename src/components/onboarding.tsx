@@ -196,7 +196,8 @@ function Onboarding({
           <StepCount index={index} total={steps.length} />
           <h1 className="m-0 text-lg font-semibold">{name ? `You’re all set, ${name}` : "You’re all set"}</h1>
           <p className="m-0 text-base leading-relaxed text-dim">
-            Create your first Wisp to start a conversation. You can change these choices anytime in Settings.
+            If you have no Wisps yet, Chief will help you build your team. You can change these choices anytime in
+            Settings.
           </p>
         </header>
         <div className="flex justify-end">

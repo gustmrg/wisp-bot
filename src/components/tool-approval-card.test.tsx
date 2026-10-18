@@ -46,6 +46,66 @@ describe("ToolApprovalCard", () => {
     expect(onResolve).toHaveBeenCalledWith("allow_once");
   });
 
+  it("shows the Wisp to create in full and creates it only once", async () => {
+    const user = userEvent.setup();
+    const onResolve = vi.fn();
+    render(
+      <ToolApprovalCard
+        request={{
+          approvalId: "approval-wisp",
+          conversationId: "chief",
+          toolCallId: "tool-wisp",
+          toolName: "create_wisp",
+          category: "manage_wisp",
+          scope: { kind: "wisp", display: "Quill" },
+          summary: 'Create the Wisp "Quill"',
+          wisp: { action: "create", name: "Quill", changes: { name: "Quill", role: "Writing", soul: "# Quill" } },
+          expiresAt: "2026-10-11T12:01:00.000Z",
+        }}
+        wispName="Chief"
+        onResolve={onResolve}
+      />,
+    );
+
+    expect(screen.getByText("Approve new Wisp?")).toBeVisible();
+    expect(screen.getByText("Quill")).toBeVisible();
+    expect(screen.getByText("Writing")).toBeVisible();
+    expect(screen.getByLabelText("Wisp soul")).toHaveTextContent("# Quill");
+    expect(screen.queryByRole("button", { name: /Always/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /block/i })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Create" }));
+    expect(onResolve).toHaveBeenCalledWith("allow_once");
+  });
+
+  it("asks to confirm deleting a Wisp, as deleting it from its settings does", async () => {
+    const user = userEvent.setup();
+    const onResolve = vi.fn();
+    render(
+      <ToolApprovalCard
+        request={{
+          approvalId: "approval-delete",
+          conversationId: "chief",
+          toolCallId: "tool-delete",
+          toolName: "delete_wisp",
+          category: "manage_wisp",
+          scope: { kind: "wisp", display: "Quill" },
+          summary: 'Delete the Wisp "Quill"',
+          wisp: { action: "delete", name: "Quill" },
+          expiresAt: "2026-10-11T12:01:00.000Z",
+        }}
+        wispName="Chief"
+        onResolve={onResolve}
+      />,
+    );
+
+    expect(screen.getByText("Delete Quill?")).toBeVisible();
+    expect(screen.getByText(/This action cannot be undone/)).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "Deny" }));
+    expect(onResolve).toHaveBeenLastCalledWith("deny");
+    await user.click(screen.getByRole("button", { name: "Confirm deletion" }));
+    expect(onResolve).toHaveBeenLastCalledWith("allow_once");
+  });
+
   it("describes an integration write and allows denying it", async () => {
     const user = userEvent.setup();
     const onResolve = vi.fn();

@@ -43,6 +43,8 @@ Options:
 Options of setup:
   --port PORT              Port the server listens on (default 8787)
   --public-origin URL      The https address of a private proxy such as Tailscale Serve
+  --web, --no-web          Serve the browser app, to use Wisp in a browser or install it on a
+                           phone (default: off on a new server; kept as it was on an update)
   --package SPEC           npm package to install (default: this version)
   --no-service             Only install the files; do not set up the service
   --no-pair                Do not print a pairing code
@@ -80,11 +82,15 @@ export async function runCli(
         "--no-pair",
         "--until-stdin-closes",
         "--no-qr",
+        "--web",
+        "--no-web",
       ].includes(flag)
     ) {
       throw new Error(`Unknown option ${flag}.`);
     }
-    if (["--json", "--no-service", "--no-pair", "--until-stdin-closes", "--no-qr"].includes(flag)) {
+    if (
+      ["--json", "--no-service", "--no-pair", "--until-stdin-closes", "--no-qr", "--web", "--no-web"].includes(flag)
+    ) {
       flags.set(flag, true);
       continue;
     }
@@ -121,6 +127,7 @@ export async function runCli(
             ...(flags.has("--package") ? { packageSpec: option("--package") } : {}),
             ...(flags.has("--port") ? { port: Number(option("--port")) } : {}),
             ...(flags.has("--public-origin") ? { publicOrigin: option("--public-origin") } : {}),
+            ...(flags.has("--web") || flags.has("--no-web") ? { web: !flags.has("--no-web") } : {}),
             ...(flags.has("--data-dir") ? { dataDirectory: dataDirectory } : {}),
           },
           // Progress goes to stderr, so `--json` leaves stdout for the result alone.
@@ -149,13 +156,15 @@ export async function runCli(
         write(describeDevices(result as DeviceView[]));
         return;
       }
-      // Only for the address to open; an older server leaves it out.
-      const { publicOrigin } = (await adminRequest(dataDirectory, { command: "status" })) as {
+      // Only for the address to open; an older server leaves it out, and always serves the browser app.
+      const { publicOrigin, web } = (await adminRequest(dataDirectory, { command: "status" })) as {
         publicOrigin?: string;
+        web?: boolean;
       };
       write(
         describePairing(result as PairingCode, publicOrigin, output.now?.() ?? new Date(), {
           qr: !flags.has("--no-qr"),
+          web: web !== false,
         }),
       );
       return;
@@ -198,13 +207,14 @@ export async function runCli(
 
 /**
  * A pairing code as a person reads it: the code, how long it lasts, and where
- * to enter it, with a QR code of the pairing link when the server has a public origin.
+ * to enter it, with a QR code of the pairing link when the server has a public
+ * origin and serves the browser app the link opens.
  */
 export function describePairing(
   pairing: PairingCode,
   publicOrigin: string | undefined,
   now: Date,
-  { qr = true }: { qr?: boolean } = {},
+  { qr = true, web = true }: { qr?: boolean; web?: boolean } = {},
 ): string {
   const expiresAt = new Date(pairing.expiresAt);
   const minutes = Math.max(1, Math.round((expiresAt.getTime() - now.getTime()) / 60_000));
@@ -214,7 +224,12 @@ export function describePairing(
     `Valid for ${minutes} minute${minutes === 1 ? "" : "s"} (until ${until}).`,
     "",
   ];
-  if (publicOrigin) {
+  if (!web) {
+    lines.push(
+      "Enter the code in the Wisp app when it connects to this server.",
+      "This server does not serve the browser app; to pair a phone's browser, see `wispctl setup --web`.",
+    );
+  } else if (publicOrigin) {
     const link = pairingLink(publicOrigin, pairing.code);
     if (qr) {
       // Light modules are drawn as blocks, so the code reads on a dark terminal background.

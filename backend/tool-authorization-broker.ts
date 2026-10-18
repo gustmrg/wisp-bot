@@ -12,6 +12,7 @@ import {
   type ToolActionCategory,
   type JobApprovalDetails,
   type ToolApprovalRequest,
+  type WispApprovalDetails,
   type ToolPolicyBehavior,
   type ToolPolicySettings,
   type SaveWispToolPolicyRequest,
@@ -38,11 +39,13 @@ export interface ToolAuthorizationRequest {
   toolName: string;
   category: ToolActionCategory;
   summary: string;
-  scope: { kind: "workspace_path" | "integration" | "skill" | "container" | "job"; value: string };
+  scope: { kind: "workspace_path" | "integration" | "skill" | "container" | "job" | "wisp"; value: string };
   /** Content the user must see to decide; only sent for skill changes. */
   preview?: string;
   /** The job the user must see to decide; only sent for job approvals. */
   job?: JobApprovalDetails;
+  /** The Wisp the user must see to decide; only sent for Wisp approvals. */
+  wisp?: WispApprovalDetails;
   /**
    * The user already always allowed this integration tool, or the whole
    * integration, for this Wisp. Honored for integration calls and external
@@ -214,11 +217,12 @@ export class ToolAuthorizationBroker {
     }
     const unattended = this.unattended.getStore();
     if (unattended) {
-      // Skill and job changes are reviewed one by one, so no grant covers them.
+      // Skill, job and Wisp changes are reviewed one by one, so no grant covers them.
       const approved =
         unattended.conversationId === action.conversationId &&
         action.category !== "save_skill" &&
         action.category !== "schedule_job" &&
+        action.category !== "manage_wisp" &&
         unattended.approvedTools.has(action.toolName);
       if (approved) {
         this.auditDecision(actionId, action, behavior, "allow", "user", "allowed");
@@ -260,6 +264,7 @@ export class ToolAuthorizationBroker {
       summary: sanitizeSummary(action.summary),
       ...(action.preview ? { preview: sanitizePreview(action.preview) } : {}),
       ...(action.job && action.category === "schedule_job" ? { job: sanitizeJob(action.job) } : {}),
+      ...(action.wisp && action.category === "manage_wisp" ? { wisp: sanitizeWisp(action.wisp) } : {}),
       ...(rememberApproval ? { alwaysAllowTool: true } : {}),
       ...(rememberIntegration ? { alwaysAllowIntegration: true } : {}),
       expiresAt,
@@ -311,6 +316,9 @@ export class ToolAuthorizationBroker {
     }
     if (request.decision === "block" && category === "schedule_job") {
       throw new WispBackendError("invalid_request", "Jobs can only be allowed once or denied.");
+    }
+    if (request.decision === "block" && category === "manage_wisp") {
+      throw new WispBackendError("invalid_request", "Wisp changes can only be allowed once or denied.");
     }
     // Claim the approval before awaiting anything, so a repeated decision, an
     // expiry, or a cancellation during the policy write cannot settle it twice.
@@ -508,6 +516,11 @@ export function evaluateToolPolicy(
     // user; no rule or auto-review setting can approve or suppress the prompt.
     return scopeKind === "skill" ? "ask" : "block";
   }
+  if (category === "manage_wisp") {
+    // A soul becomes another Wisp's standing instructions, and a deleted Wisp
+    // takes its conversation with it, so the user reviews every change.
+    return scopeKind === "wisp" ? "ask" : "block";
+  }
   if (category !== "create_file" && category !== "modify_file") return "block";
   if (!settings.autoReview || scopeKind !== "workspace_path") return "ask";
   return workspaceFileBehavior(settings.rules, category);
@@ -545,6 +558,24 @@ function sanitizeJob(job: JobApprovalDetails): JobApprovalDetails {
     instructions: sanitizePreview(job.instructions),
     skills: job.skills.slice(0, 50).map(sanitizeSummary),
     tools: job.tools.slice(0, 100).map(sanitizeSummary),
+  };
+}
+
+function sanitizeWisp(wisp: WispApprovalDetails): WispApprovalDetails {
+  const changes = wisp.changes;
+  return {
+    action: wisp.action,
+    name: sanitizeSummary(wisp.name),
+    ...(changes
+      ? {
+          changes: {
+            ...(changes.name !== undefined ? { name: sanitizeSummary(changes.name) } : {}),
+            // A role may be cleared, which the summary's fallback text would hide.
+            ...(changes.role !== undefined ? { role: changes.role.trim() ? sanitizeSummary(changes.role) : "" } : {}),
+            ...(changes.soul !== undefined ? { soul: sanitizePreview(changes.soul) } : {}),
+          },
+        }
+      : {}),
   };
 }
 

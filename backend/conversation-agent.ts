@@ -26,6 +26,15 @@ export interface ConversationAgent {
    * starting a turn, so the person can follow up on it (ADR 019).
    */
   rememberJobResult?(text: string): Promise<void>;
+  /**
+   * Hands a follow-up to the turn running now, which reads it before its next
+   * model call and answers it as `request.requestId` from then on (it emits
+   * `follow_up_taken`). Resolves false when no turn can take it, so it waits
+   * for the next turn instead.
+   */
+  steer?(request: SendMessageRequest): Promise<boolean>;
+  /** Takes back the follow-ups handed to the running turn that it has not read, oldest first. */
+  withdrawFollowUps?(): string[];
 }
 
 /** One Wisp's agent in one conversation: who the Wisp is, and where its files and session live. */

@@ -42,6 +42,7 @@ const MAX_STREAM_BACKLOG_BYTES = 8 * 1024 * 1024;
 const PUSH_OPERATIONS = new Set([
   "agentEvent",
   "conversationChanged",
+  "wispsChanged",
   "mcpSettingsChanged",
   "pluginSettingsChanged",
   "scheduledMessagesChanged",

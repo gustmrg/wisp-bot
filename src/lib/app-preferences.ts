@@ -1,3 +1,4 @@
+import { TIME_FORMATS, type TimeFormat } from "@/lib/clock-time";
 import { DEFAULT_SHORTCUTS, normalizeShortcuts, type ShortcutPreferences } from "@/lib/shortcuts";
 import { DETAILS_LAYOUT, SIDEBAR_LAYOUT, type ResizablePanelLayout } from "@/lib/layout";
 import { normalizeTheme, type ThemePreference } from "@/lib/theme";
@@ -53,6 +54,8 @@ export interface AppPreferences {
   voiceAutoSend: boolean;
   shortcuts: ShortcutPreferences;
   timezone: string;
+  /** Clock times in the locale's convention, or always 24-hour or AM/PM. */
+  timeFormat: TimeFormat;
   autoReview: boolean;
   autoReviewRules: AutoReviewRule[];
   /** Desktop widths of the Wisp list and the Wisp's settings panel, as last dragged. */
@@ -84,6 +87,7 @@ export const DEFAULT_PREFERENCES: AppPreferences = {
   voiceAutoSend: false,
   shortcuts: DEFAULT_SHORTCUTS,
   timezone: "auto",
+  timeFormat: "auto",
   autoReview: true,
   autoReviewRules: [],
   sidebarWidth: SIDEBAR_LAYOUT.resize.defaultWidth,
@@ -160,6 +164,7 @@ export function normalizePreferences(value: unknown): AppPreferences {
     voiceAutoSend: typeof saved?.voiceAutoSend === "boolean" ? saved.voiceAutoSend : false,
     shortcuts: normalizeShortcuts(saved?.shortcuts),
     timezone,
+    timeFormat: TIME_FORMATS.includes(saved?.timeFormat as TimeFormat) ? (saved?.timeFormat as TimeFormat) : "auto",
     autoReview: typeof saved?.autoReview === "boolean" ? saved.autoReview : true,
     autoReviewRules: Array.isArray(saved?.autoReviewRules)
       ? saved.autoReviewRules.filter(isAutoReviewRule).map((rule) => ({

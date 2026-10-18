@@ -118,14 +118,19 @@ async function main(): Promise<void> {
   if (!encryption.isAvailable()) {
     logger.warn("master_key_missing", { detail: "Provider credentials cannot be saved without --key-file." });
   }
+  // The desktop app's own server serves the browser app only while it is exposed for remote access;
+  // any other server only when asked to.
+  const web: { webRoot?: string } = bootstrap || !config.web ? {} : webRootOption(config.webRoot);
+  if (config.web && !bootstrap && !web.webRoot) {
+    logger.warn("web_app_missing", { detail: "WISP_WEB is on, but no browser app was found; set --web-root." });
+  }
   const server = await createWispServer({
     dataDirectory: config.dataDirectory,
     host: config.host,
     port: config.port,
     allowExternalBind: config.allowExternalBind,
     ...(config.publicOrigin ? { publicOrigin: config.publicOrigin } : {}),
-    // The desktop app's own server serves the browser app only while it is exposed for remote access.
-    ...(bootstrap ? {} : webRootOption(config.webRoot)),
+    ...web,
     encryption,
     logger,
     agentMode: config.agentMode,

@@ -21,6 +21,7 @@ describe("normalizePreferences", () => {
         voiceAutoSend: true,
         shortcuts: { voiceInput: "Ctrl+Shift+KeyM" },
         timezone: "UTC",
+        timeFormat: "24h",
         autoReview: false,
         autoReviewRules: [{ id: "rule-1", action: "Read files", behavior: "ask" }],
       }),
@@ -37,9 +38,16 @@ describe("normalizePreferences", () => {
       voiceAutoSend: true,
       shortcuts: { voiceInput: "Ctrl+Shift+KeyM" },
       timezone: "UTC",
+      timeFormat: "24h",
       autoReview: false,
       autoReviewRules: [{ id: "rule-1", action: "Read files", behavior: "ask", scope: "workspace" }],
     });
+  });
+
+  it("keeps a known time format and follows the system otherwise", () => {
+    expect(normalizePreferences({ timeFormat: "12h" }).timeFormat).toBe("12h");
+    expect(normalizePreferences({ timeFormat: "military" }).timeFormat).toBe("auto");
+    expect(normalizePreferences({}).timeFormat).toBe("auto");
   });
 
   it("keeps a known reply speed and smooths replies otherwise", () => {

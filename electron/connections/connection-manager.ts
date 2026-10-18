@@ -82,6 +82,7 @@ const OPERATIONS_BY_CHANNEL = new Map<string, string>(
 const PUSHED = new Set([
   "agentEvent",
   "conversationChanged",
+  "wispsChanged",
   "mcpSettingsChanged",
   "pluginSettingsChanged",
   "scheduledMessagesChanged",

@@ -205,6 +205,16 @@ export interface ConversationStateView {
 }
 
 /**
+ * The Wisps and every conversation's summary, pushed after a Wisp was created,
+ * changed or deleted, so every device sees it, including changes a Wisp made (ADR 024).
+ */
+export interface WispsView {
+  wisps: WispCollection;
+  chats: ChatSummaryCollection;
+  statuses: Record<ChatId, ManagedConversationStatus>;
+}
+
+/**
  * One conversation's change: its summary and the messages the change touched,
  * as stored. A renderer applies it to the message window it holds, if any.
  */

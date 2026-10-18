@@ -7,6 +7,8 @@ export interface ServerConfig {
   port: number;
   allowExternalBind: boolean;
   publicOrigin?: string;
+  /** Serve the browser app, which phones install as a PWA; off by default. */
+  web: boolean;
   /** The browser app's files; defaults to the `web/` folder of an installed server package. */
   webRoot?: string;
   keyFile?: string;
@@ -36,11 +38,16 @@ export function defaultDataDirectory(env: NodeJS.ProcessEnv = process.env): stri
 export function parseServerConfig(args: readonly string[], env: NodeJS.ProcessEnv = process.env): ServerConfig {
   const values = new Map<keyof ServerConfig, string>();
   let allowExternalBind = env.WISP_ALLOW_EXTERNAL_BIND === "1";
+  let web = env.WISP_WEB === "1";
   let bootstrapStdin = false;
   for (let index = 0; index < args.length; index++) {
     const flag = args[index]!;
     if (flag === "--allow-external-bind") {
       allowExternalBind = true;
+      continue;
+    }
+    if (flag === "--web") {
+      web = true;
       continue;
     }
     if (flag === "--bootstrap-stdin") {
@@ -67,6 +74,7 @@ export function parseServerConfig(args: readonly string[], env: NodeJS.ProcessEn
     host: pick("host", "WISP_HOST") ?? "127.0.0.1",
     port,
     allowExternalBind,
+    web,
     ...(publicOrigin ? { publicOrigin } : {}),
     ...(webRoot ? { webRoot: path.resolve(webRoot) } : {}),
     ...(keyFile ? { keyFile: path.resolve(keyFile) } : {}),

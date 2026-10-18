@@ -260,6 +260,7 @@ export function reduceConversationAgentEvent(
           ),
         },
       };
+    case "follow_up_taken":
     case "job_message_delivered":
       // The message itself arrives with the conversation's changes.
       return next;

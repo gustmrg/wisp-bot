@@ -8,6 +8,7 @@ import exaLogo from "@/assets/plugins/exa.png";
 import githubLogo from "@/assets/plugins/github.svg";
 import googleCalendarLogo from "@/assets/plugins/google-calendar.svg";
 import gmailLogo from "@/assets/plugins/gmail.svg";
+import googleDriveLogo from "@/assets/plugins/google-drive.svg";
 import homeAssistantLogo from "@/assets/plugins/home-assistant.svg";
 import atlassianLogo from "@/assets/plugins/atlassian.svg";
 import { cn } from "@/lib/utils";
@@ -20,6 +21,7 @@ const logos: Record<PluginId | McpPresetId, string> = {
   exa: exaLogo,
   "google-calendar": googleCalendarLogo,
   gmail: gmailLogo,
+  "google-drive": googleDriveLogo,
   "home-assistant": homeAssistantLogo,
   github: githubLogo,
   atlassian: atlassianLogo,

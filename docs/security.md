@@ -126,6 +126,14 @@ them. `save_skill` always asks and shows the exact instructions; rules and
 auto-review cannot allow it, and its card offers no lasting decision. Skill
 instructions are treated as user-provided context and never grant tools.
 
+Every Wisp can create, change and delete the person's other Wisps
+([ADR 024](decisions/024-chief-and-wisp-tools.md)). `create_wisp`,
+`update_wisp` and `delete_wisp` always ask, like `save_skill`: the card shows
+the name, role and soul, or for a deletion repeats the warning of the
+settings' delete button. Rules, auto-review and **Allow everything** cannot
+allow them, their cards offer no lasting decision, a Wisp cannot change or
+delete itself, and job runs never get these tools.
+
 ## Commands
 
 A Wisp runs commands only when **Wisp settings → General → Commands** is set
@@ -141,9 +149,10 @@ only way out is an egress proxy that refuses private, loopback, link-local and
 other non-public addresses after resolving them itself. Commands run without approval cards: the container is
 the boundary, a Block rule for `container_command` stops them all, and the
 audit log records each one without its text. Commands that would wipe the
-workspace are refused. A Wisp's GitHub token is stored encrypted and reaches
-git through the container program's environment, never a command line; it
-lets the Wisp push whatever the token allows. A misled Wisp can send its
+workspace are refused. The GitHub token never enters the container: git
+reaches github.com through a gateway in the egress proxy that carries only
+git's own protocol and adds the token there, so a Wisp can clone and push what
+the token allows but cannot read it or call the GitHub API with it. A misled Wisp can send its
 workspace contents over the network, so secrets do not belong in a workspace.
 
 ## Prohibited patterns

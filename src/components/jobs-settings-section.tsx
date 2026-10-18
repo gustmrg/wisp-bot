@@ -12,7 +12,8 @@ import {
 } from "@/components/settings/settings-primitives";
 import { Button } from "@/components/ui/button";
 import { useJobs, type JobsController } from "@/hooks/use-jobs";
-import { useTimeZone } from "@/hooks/use-time-zone";
+import { useTimeFormat, useTimeZone } from "@/hooks/use-time-zone";
+import { clockTimeOptions } from "@/lib/clock-time";
 import type { WispOption } from "@/lib/plugin-access";
 import { cn } from "@/lib/utils";
 import { isJobFinished, type Job, type JobRun, type JobRunStatus, type JobRunTrigger } from "../../shared/jobs";
@@ -110,6 +111,7 @@ export function JobsSettingsSection({ wisps = [] }: { wisps?: ReadonlyArray<Wisp
 
 function JobRow({ job, controller }: { job: Job; controller: JobsController }) {
   const timeZone = useTimeZone();
+  const timeFormat = useTimeFormat();
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
@@ -121,8 +123,7 @@ function JobRow({ job, controller }: { job: Job; controller: JobsController }) {
       weekday: "short",
       month: "short",
       day: "numeric",
-      hour: "numeric",
-      minute: "2-digit",
+      ...clockTimeOptions(timeFormat),
     });
 
   async function act(action: (jobId: string) => Promise<string | null>) {

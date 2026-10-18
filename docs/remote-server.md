@@ -9,8 +9,8 @@ Run the server by itself on a Linux machine (`npx @gustmrg/wisp-server setup`)
 and Wisps keep working when no client is connected: closing a client only
 closes its connection. The desktop
 app connects to such a server over SSH or a private HTTPS address; see
-[Connect the desktop app](#connect-the-desktop-app). The server also serves
-the app to browsers, which you can install on a phone; see
+[Connect the desktop app](#connect-the-desktop-app). When asked to, the server
+also serves the app to browsers, which you can install on a phone; see
 [Use Wisp in a browser or on your phone](#use-wisp-in-a-browser-or-on-your-phone).
 
 ## What runs where
@@ -202,6 +202,7 @@ npx @gustmrg/wisp-server@latest setup
 | --- | --- |
 | `--port PORT` | The port the server listens on (default `8787`) |
 | `--public-origin URL` | The `https://` address of a private proxy; see [browser or phone](#use-wisp-in-a-browser-or-on-your-phone) |
+| `--web`, `--no-web` | Serve the browser app, or stop serving it; see [browser or phone](#use-wisp-in-a-browser-or-on-your-phone) |
 | `--data-dir DIR` | Where the server keeps its data (default `~/.local/share/wisp`) |
 | `--package SPEC` | Install this npm package, tarball, or folder instead of the matching version |
 | `--no-service` | Only install the files, and print the command that starts the server |
@@ -240,7 +241,8 @@ use the same names:
 | `--host` | `WISP_HOST` | `127.0.0.1` |
 | `--allow-external-bind` | `WISP_ALLOW_EXTERNAL_BIND=1` | off |
 | `--public-origin` | `WISP_PUBLIC_ORIGIN` | none |
-| `--web-root` | `WISP_WEB_ROOT` | the package's `web/` folder |
+| `--web` | `WISP_WEB=1` | off |
+| `--web-root` | `WISP_WEB_ROOT` | the package's `web/` folder, used with `WISP_WEB=1` |
 
 The server listens on loopback only. Reach it through an SSH tunnel or a
 private HTTPS proxy such as Tailscale Serve; never publish the port. Binding
@@ -283,7 +285,11 @@ docker compose -f deploy/docker/compose.yaml exec wisp wispctl pair
 ```
 
 The compose file publishes the port on host loopback only and keeps data in the
-`wisp-data` volume.
+`wisp-data` volume. To serve the browser app, uncomment `WISP_WEB` in it.
+
+Images built before `WISP_WEB` existed always served the browser app. Docker
+runs no setup that could keep it on, so after rebuilding from a newer checkout
+the browser app answers 404 until you set `WISP_WEB: "1"`.
 
 ## Connect the desktop app
 
@@ -417,8 +423,8 @@ wispctl status
 ```
 
 In a terminal, `wispctl pair` prints the code, how long it lasts in local time,
-and where to enter it. When the server has a `--public-origin`, it also draws a
-QR code of a pairing link, `<public origin>/#pair=<code>`; scanning it opens
+and where to enter it. When the server has a `--public-origin` and serves the
+browser app, it also draws a QR code of a pairing link, `<public origin>/#pair=<code>`; scanning it opens
 the browser app, which asks only for a name for the device and pairs:
 
 ```text
@@ -461,9 +467,15 @@ a minute, pairing pauses for a minute.
 
 ## Use Wisp in a browser or on your phone
 
-The server serves the same app as the desktop, on every path outside the API.
-Open its address in a browser, pair once with a code from `wispctl pair`, and
-use the Wisps on the server. Browsers need HTTPS for the microphone and for
+With `WISP_WEB=1`, the server serves the same app as the desktop, on every path
+outside the API. Open its address in a browser, pair once with a code from
+`wispctl pair`, and use the Wisps on the server.
+
+The browser app is off on a new server: the desktop app needs only the API.
+Turn it on with `wispctl setup --web`, and off again with `--no-web`. A server
+set up before this setting existed keeps serving it when setup runs again.
+With it off, every path outside the API answers 404, and `wispctl pair` prints
+only the code, since a pairing link would open nothing. Browsers need HTTPS for the microphone and for
 installing the app, so reach the server through a private HTTPS proxy such as
 Tailscale Serve:
 

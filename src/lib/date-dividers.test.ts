@@ -103,6 +103,13 @@ describe("chatActivityDate", () => {
 });
 
 describe("chatActivityLabel", () => {
+  it("pads the hour and follows a fixed 24-hour or 12-hour choice", () => {
+    const morning = new Date("2026-09-11T08:05:00");
+    const zone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    expect(chatActivityLabel(morning, now, zone, "24h")).toBe("08:05");
+    expect(chatActivityLabel(morning, now, zone, "12h")).toMatch(/^08:05\s?[AaPp]/);
+  });
+
   it("counts recent activity in minutes instead of showing a frozen 'Now'", () => {
     expect(chatActivityLabel(new Date("2026-09-11T14:59:40"), now)).toBe("Now");
     expect(chatActivityLabel(new Date("2026-09-11T14:55:00"), now)).toBe("5m");
@@ -110,9 +117,7 @@ describe("chatActivityLabel", () => {
 
   it("shows the time today, then day names, then dates", () => {
     const earlierToday = new Date("2026-09-11T09:30:00");
-    expect(chatActivityLabel(earlierToday, now)).toBe(
-      earlierToday.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }),
-    );
+    expect(chatActivityLabel(earlierToday, now)).toMatch(/^09:30/);
     expect(chatActivityLabel(new Date("2026-09-10T22:10:00"), now)).toBe("Yesterday");
     const threeDaysAgo = new Date("2026-09-08T08:00:00");
     expect(chatActivityLabel(threeDaysAgo, now)).toBe(threeDaysAgo.toLocaleDateString([], { weekday: "short" }));

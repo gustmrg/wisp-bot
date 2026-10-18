@@ -44,6 +44,7 @@ export type PiAgentEvent =
         error?: PiAssistantMessageSnapshot;
       };
     }
+  | { type: "message_start"; message?: { role?: string } }
   | { type: "message_end"; message?: PiAssistantMessageSnapshot }
   | { type: "tool_execution_start"; toolCallId: string; toolName: string }
   | { type: "tool_execution_update"; toolCallId: string; toolName: string; partialResult?: unknown }
@@ -161,6 +162,40 @@ export class PiEventTranslator {
         this.finish();
         break;
     }
+  }
+
+  /**
+   * Ends the reply to the current request where the turn read a follow-up,
+   * and answers the follow-up with the rest of the turn.
+   */
+  takeFollowUp(followUp: SendMessageRequest): void {
+    const request = this.request;
+    if (!request || this.failed || this.cancelled) return;
+    this.flush();
+    // A part without text is hidden in the transcript, so closing it leaves nothing behind.
+    if (this.messageStarted) {
+      this.publish({
+        type: "assistant_message_completed",
+        conversationId: this.conversationId,
+        requestId: request.requestId,
+        messageId: this.messageId,
+        ...this.fallbackField(),
+      });
+    }
+    this.publish({
+      type: "follow_up_taken",
+      conversationId: this.conversationId,
+      requestId: request.requestId,
+      followUpId: followUp.requestId,
+    });
+    this.request = followUp;
+    this.messagePart = 1;
+    this.messageId = assistantMessageId(followUp.requestId);
+    this.messageStarted = false;
+    this.messageHasText = false;
+    this.responseCharacters = 0;
+    this.lastErrorMessage = "";
+    this.startMessage();
   }
 
   markCancelled(): void {

@@ -137,7 +137,7 @@ function createApi(initialState: ConversationStateView): WispApi {
     subscribeToMcpSettings: () => () => undefined,
     startConversation: vi.fn(async () => ({ ok: true as const, value: {} })),
     sendMessage: vi.fn(async () => ({ ok: true as const, value: {} })),
-    abortConversation: vi.fn(async () => ({ ok: true as const, value: {} })),
+    abortConversation: vi.fn(async () => ({ ok: true as const, value: { followUps: [] } })),
     manageContext: async () => ({
       ok: false as const,
       error: { code: "configuration_required" as const, message: "Configure a model", retryable: false },
@@ -215,6 +215,7 @@ function createApi(initialState: ConversationStateView): WispApi {
       return { ok: true as const, value: { chat: chatSummary(updated), added: [], updated: [] } };
     }),
     subscribeToConversationChanges: vi.fn(() => () => undefined),
+    subscribeToWisps: vi.fn(() => () => undefined),
     getConversationMessages: vi.fn(async ({ conversationId }) => ({
       ok: true as const,
       value: { messages: state.chats[conversationId]?.messages ?? [], olderCursor: null, newerCursor: null },
@@ -295,7 +296,6 @@ function createApi(initialState: ConversationStateView): WispApi {
         image: null,
         localNetwork: false,
         defaultImage: "wisp-sandbox:test",
-        hasGitToken: false,
         gitHubPlugin: false,
         runtime: { available: false as const, message: "none" },
         container: "absent" as const,
@@ -308,7 +308,6 @@ function createApi(initialState: ConversationStateView): WispApi {
         image: null,
         localNetwork: false,
         defaultImage: "wisp-sandbox:test",
-        hasGitToken: false,
         gitHubPlugin: false,
         runtime: { available: false as const, message: "none" },
         container: "absent" as const,
@@ -990,8 +989,36 @@ describe("Onboarding", () => {
 
     expect(await screen.findByRole("heading", { name: "You’re all set, Ada" })).toBeVisible();
     await user.click(screen.getByRole("button", { name: "Get started" }));
-    expect(await screen.findByText("Create a Wisp to get started.")).toBeVisible();
+    // With no Wisps yet, the person starts talking with Chief, who suggests building the team.
+    expect(await screen.findByRole("heading", { name: "Hi, I'm Chief" })).toBeVisible();
+    expect(api.createWisp).toHaveBeenCalledTimes(1);
+    expect(api.createWisp).toHaveBeenCalledWith(
+      expect.objectContaining({
+        wisp: expect.objectContaining({ name: "Chief", role: "Builds your team" }),
+        notifyOnUpdatesEnabled: true,
+      }),
+    );
+    expect(await screen.findByRole("button", { name: "Help me build a team of Wisps" })).toBeVisible();
     expect(screen.getByRole("button", { name: "Open user settings" })).toHaveTextContent("Ada");
+  });
+
+  it("creates no Chief when the person already has Wisps", async () => {
+    const user = userEvent.setup();
+    const api = createApi(conversationState(true, { atlas: wispChat("atlas") }));
+    api.getUserProfile = async () => ({
+      ok: true,
+      value: { preferredName: "", aboutYou: "", responsePreferences: "" },
+    });
+    exposeApi(api);
+    render(<App />);
+
+    await user.type(await screen.findByRole("textbox", { name: "What should Wisps call you?" }), "Ada");
+    await user.click(screen.getByRole("button", { name: "Continue" }));
+    await user.click(await screen.findByRole("button", { name: "Get started" }));
+    expect(await screen.findByRole("button", { name: "Open user settings" })).toHaveTextContent("Ada");
+    // The workspace has loaded its Wisps, so Chief would have been asked for by now.
+    expect((await screen.findAllByText("Atlas")).length).toBeGreaterThan(0);
+    expect(api.createWisp).not.toHaveBeenCalled();
   });
 
   it("only asks for what is missing", async () => {

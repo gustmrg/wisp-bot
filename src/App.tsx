@@ -28,6 +28,7 @@ import { useSystemNotifications } from "@/hooks/use-system-notifications";
 import { TimeZoneProvider, useReportedTimeZone } from "@/hooks/use-time-zone";
 import { type UserProfileController, useUserProfile } from "@/hooks/use-user-profile";
 import { effectiveTimeZone } from "@/lib/app-preferences";
+import { CHIEF_WISP } from "@/lib/chief-wisp";
 import { DETAILS_LAYOUT, SIDEBAR_LAYOUT } from "@/lib/layout";
 import { matchesShortcut, TOGGLE_SIDEBAR_SHORTCUT } from "@/lib/shortcuts";
 import { mainPanel } from "@/lib/ui-classes";
@@ -42,7 +43,7 @@ export default function App() {
   if (setup.phase === "onboarding") {
     return <Onboarding required={setup.required} userProfile={userProfile} onComplete={setup.complete} />;
   }
-  return <Workspace userProfile={userProfile} />;
+  return <Workspace userProfile={userProfile} startWithChief={setup.onboarded} />;
 }
 
 /** Starts a new topic in a Wisp; resolves with an error message, or null. */
@@ -55,7 +56,14 @@ async function startNewTopic(conversationId: string): Promise<string | null> {
   }
 }
 
-function Workspace({ userProfile }: { userProfile: UserProfileController }) {
+function Workspace({
+  userProfile,
+  startWithChief = false,
+}: {
+  userProfile: UserProfileController;
+  /** Onboarding just finished: a person with no Wisps yet starts talking with Chief. */
+  startWithChief?: boolean;
+}) {
   const workspace = useWorkspaceController();
   const timeZone = effectiveTimeZone(workspace.preferences);
   useReportedTimeZone(timeZone);
@@ -104,6 +112,17 @@ function Workspace({ userProfile }: { userProfile: UserProfileController }) {
     enabled: !mobile && detailsOpen && Boolean(workspace.activeChat),
     onResizeEnd: (detailsWidth) => workspace.updatePreferences({ ...workspace.preferences, detailsWidth }),
   });
+
+  // Asked once per launch; Chief is an ordinary Wisp, so one the person deleted is not created again.
+  const chiefRequested = useRef(false);
+  const { createWisp: createWorkspaceWisp, loading: workspaceLoading } = workspace;
+  useEffect(() => {
+    if (!startWithChief || workspaceLoading || chiefRequested.current || wisps.length > 0) return;
+    chiefRequested.current = true;
+    void createWorkspaceWisp(CHIEF_WISP, { notifyOnUpdatesEnabled: true, model: null }).then((id) => {
+      if (id) setMobilePage("chat");
+    });
+  }, [startWithChief, workspaceLoading, wisps.length, createWorkspaceWisp]);
 
   useEffect(() => {
     if (!workspace.activeChat) {
@@ -237,7 +256,7 @@ function Workspace({ userProfile }: { userProfile: UserProfileController }) {
   }, [mobile, toggleSidebar]);
 
   return (
-    <TimeZoneProvider timeZone={timeZone}>
+    <TimeZoneProvider timeZone={timeZone} timeFormat={workspace.preferences.timeFormat}>
       <ReplyPaceProvider pace={workspace.preferences.replyPace}>
         <TooltipProvider delay={300}>
           <div className="workspace-shell relative flex h-full w-full min-h-0 min-w-0 overflow-hidden bg-background">
@@ -286,7 +305,7 @@ function Workspace({ userProfile }: { userProfile: UserProfileController }) {
                 acknowledging={Boolean(workspace.acknowledging[workspace.activeChat.id])}
                 approvals={workspace.approvals[workspace.activeChat.id] ?? []}
                 onAnswerPrompt={(messageId, answer) => void workspace.answerPrompt(messageId, answer)}
-                onAbort={() => void workspace.abortActiveChat()}
+                onAbort={() => workspace.abortActiveChat()}
                 onLoadOlder={workspace.loadOlderMessages}
                 onLoadNewer={workspace.loadNewerMessages}
                 onShowLatest={workspace.showLatestMessages}
@@ -307,6 +326,7 @@ function Workspace({ userProfile }: { userProfile: UserProfileController }) {
                 scheduledMessages={scheduledMessages}
                 messageQueue={messageQueue}
                 onNewTopic={startNewTopic}
+                soleWisp={wisps.length === 1}
               />
             ) : (
               <main

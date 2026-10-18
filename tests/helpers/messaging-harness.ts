@@ -46,7 +46,7 @@ export function wisp(id: string): Record<string, unknown> {
  * `setTimeout`/`clearTimeout`.
  */
 export async function setupMessaging(
-  options: { model?: ModelSelection | null; directory?: string; latencyMs?: number } = {},
+  options: { model?: ModelSelection | null; directory?: string; latencyMs?: number; steering?: boolean } = {},
 ) {
   const directory = options.directory ?? (await mkdtemp(path.join(os.tmpdir(), "wisp-messaging-")));
   let now = START;
@@ -54,10 +54,13 @@ export async function setupMessaging(
   let scheduler: MessageScheduler | undefined;
   const repository = new ConversationRepository({ dataDirectory: directory });
   const registry = new AgentRegistry(
-    new FakeConversationAgentFactory({ latencyMs: options.latencyMs ?? 0 }),
+    new FakeConversationAgentFactory({ latencyMs: options.latencyMs ?? 0, steering: options.steering ?? false }),
     (event) => service.handleAgentEvent(event),
     undefined,
-    { onAvailable: (conversationId) => queue?.pump(conversationId) },
+    {
+      onAvailable: (conversationId) => queue?.pump(conversationId),
+      onTurnStarted: (conversationId) => void queue?.offerFollowUps(conversationId),
+    },
   );
   const removed = vi.fn();
   const service: ConversationService = new ConversationService(repository, registry, () => [], {
@@ -66,6 +69,7 @@ export async function setupMessaging(
       scheduler?.refresh();
       queue?.refresh();
     },
+    onFollowUpTaken: (_conversationId, queuedMessageId) => queue?.followUpTaken(queuedMessageId),
   });
   await service.start(options.model === undefined ? MODEL : options.model);
   if (!repository.isInitialized()) await service.initialize({ one: wisp("one") });
@@ -76,6 +80,9 @@ export async function setupMessaging(
     repository,
     isAvailable: (conversationId) => registry.isAvailable(conversationId),
     deliverNext: (conversationId, onTaken) => service.deliverNextQueued(conversationId, onTaken),
+    steer: (message) =>
+      registry.steer({ conversationId: message.conversationId, requestId: message.id, text: message.text }),
+    withdrawFollowUps: (conversationId) => registry.withdrawFollowUps(conversationId),
     onChanged: (view) => queueViews.push(view),
     now: () => now,
     createId: () => `queued-${(queueIds += 1)}`,

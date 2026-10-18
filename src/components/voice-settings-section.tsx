@@ -11,7 +11,7 @@ import {
   SettingsRowTitle,
 } from "@/components/settings/settings-primitives";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { SecretInput } from "@/components/ui/secret-input";
 import type { AppPreferences } from "@/lib/app-preferences";
 import { formatShortcut } from "@/lib/shortcuts";
 import { notifyProviderCredentialsChanged } from "@/lib/voice-credentials";
@@ -270,9 +270,8 @@ function VoiceSettingsSection({ active, preferences, onPreferencesChange }: Voic
                 ) : null}
               </div>
               <div className="flex gap-2">
-                <Input
+                <SecretInput
                   id="voice-api-key"
-                  type="password"
                   autoComplete="new-password"
                   value={apiKey}
                   disabled={view ? !view.secureStorageAvailable : true}

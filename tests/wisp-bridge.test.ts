@@ -140,6 +140,7 @@ function completeBridge(): WispApi {
       throw new Error("not called");
     },
     subscribeToConversationChanges: () => () => undefined,
+    subscribeToWisps: () => () => undefined,
     getConversationMessages: async () => ({ ok: true, value: { messages: [], olderCursor: null, newerCursor: null } }),
     searchMessages: async () => ({ ok: true, value: [] }),
     getScheduledMessages: async () => ({ ok: true, value: { messages: [] } }),
@@ -211,7 +212,6 @@ function completeBridge(): WispApi {
         image: null,
         localNetwork: false,
         defaultImage: "wisp-sandbox:test",
-        hasGitToken: false,
         gitHubPlugin: false,
         runtime: { available: false, message: "none" },
         container: "absent",
@@ -224,7 +224,6 @@ function completeBridge(): WispApi {
         image: null,
         localNetwork: false,
         defaultImage: "wisp-sandbox:test",
-        hasGitToken: false,
         gitHubPlugin: false,
         runtime: { available: false, message: "none" },
         container: "absent",

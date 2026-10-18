@@ -25,10 +25,15 @@ class FakeCli implements ContainerCli {
     finish: (code: number | null) => void;
     killed: boolean;
   }> = [];
-  readonly containers = new Map<string, { running: boolean; spec: string; networks?: Set<string> }>();
+  readonly containers = new Map<
+    string,
+    { running: boolean; spec: string; startedAt?: string; networks?: Map<string, string> }
+  >();
   readonly images = new Set<string>();
   readonly networks = new Map<string, { internal: boolean }>();
   createFails = false;
+  private starts = 0;
+  private addresses = 0;
 
   constructor(readonly name: "docker" | "podman" = "docker") {}
 
@@ -43,16 +48,17 @@ class FakeCli implements ContainerCli {
         const container = this.containers.get(name);
         if (!container) return fail();
         if (rest[1]!.includes("NetworkSettings")) {
-          return ok(
-            JSON.stringify(Object.fromEntries([...(container.networks ?? [])].map((network) => [network, {}]))),
+          const networks = Object.fromEntries(
+            [...(container.networks ?? [])].map(([network, address]) => [network, { IPAddress: address }]),
           );
+          return ok(`${JSON.stringify(container.startedAt)} ${JSON.stringify(networks)}`);
         }
         return ok(
           rest[1]!.includes("wisp.spec") ? `${container.running} ${container.spec}` : String(container.running),
         );
       }
       case "start":
-        this.containers.get(name)!.running = true;
+        Object.assign(this.containers.get(name)!, { running: true, startedAt: `start-${++this.starts}` });
         return ok();
       case "stop":
         for (const stopped of rest.slice(2)) {
@@ -77,20 +83,24 @@ class FakeCli implements ContainerCli {
         this.containers.set(rest[rest.indexOf("--name") + 1]!, {
           running: true,
           spec: label.slice("wisp.spec=".length),
+          startedAt: `start-${++this.starts}`,
         });
         return ok("id");
       }
       case "network": {
         const [action, ...network] = rest;
         switch (action) {
-          case "inspect":
-            return this.networks.has(name) ? ok("[]") : fail();
+          case "inspect": {
+            const found = this.networks.get(name);
+            return found ? ok(`${found.internal}\n`) : fail();
+          }
           case "create":
             this.networks.set(name, { internal: network.includes("--internal") });
             return ok();
           case "connect": {
             const container = this.containers.get(name)!;
-            container.networks = new Set([...(container.networks ?? []), network.at(-2)!]);
+            container.networks = new Map(container.networks ?? []);
+            container.networks.set(network.at(-2)!, `172.30.${++this.addresses}.2`);
             return ok();
           }
           case "disconnect":
@@ -158,6 +168,16 @@ async function setup(options: { cli?: FakeCli; idleMs?: number } = {}) {
   return { root, cli, manager, spec, name: manager.containerName("s1") };
 }
 
+/** What the manager told the git gateway, in order. */
+function gatewayCalls(cli: FakeCli, manager: ContainerManager): Array<{ address: string; token: string | null }> {
+  return cli.calls
+    .filter(({ args }) => args[0] === "exec" && args.includes(manager.proxyName()) && args.at(-1) === "control")
+    .map(({ args, input }) => {
+      expect(args).toEqual(["exec", "-i", manager.proxyName(), "node", "/opt/wisp/egress-proxy.cjs", "control"]);
+      return JSON.parse(input!) as { address: string; token: string | null };
+    });
+}
+
 async function finishNext(cli: FakeCli, code = 0) {
   await vi.waitFor(() => expect(cli.streams.length).toBeGreaterThan(0));
   cli.streams.at(-1)!.finish(code);
@@ -177,7 +197,7 @@ describe("ContainerManager", () => {
     const build = cli.calls.find(({ args }) => args[0] === "build")!;
     expect(build.input).toBe(SANDBOX_DOCKERFILE);
     expect(build.args).toContain(SANDBOX_IMAGE);
-    const run = cli.calls.find(({ args }) => args[0] === "run")!.args;
+    const run = cli.calls.find(({ args }) => args[0] === "run" && args.includes(name))!.args;
     expect(run).toEqual(
       expect.arrayContaining([
         "--user",
@@ -208,7 +228,8 @@ describe("ContainerManager", () => {
     await vi.waitFor(() => expect(cli.streams).toHaveLength(2));
     cli.streams[1]!.finish(0);
     await second;
-    expect(cli.calls.filter(({ args }) => args[0] === "run")).toHaveLength(1);
+    const wispRuns = () => cli.calls.filter(({ args }) => args[0] === "run" && args.includes(name));
+    expect(wispRuns()).toHaveLength(1);
 
     cli.images.add("node:22");
     const changed = manager.exec({ ...spec, image: "node:22" }, "true", "/workspace", { onData: () => undefined });
@@ -216,19 +237,61 @@ describe("ContainerManager", () => {
     cli.streams[2]!.finish(0);
     await changed;
     expect(cli.calls.filter(({ args }) => args[0] === "rm")).toEqual([{ args: ["rm", "-f", name] }]);
-    expect(cli.calls.filter(({ args }) => args[0] === "run")).toHaveLength(2);
+    expect(wispRuns()).toHaveLength(2);
   });
 
-  it("passes the git token through the environment, never as an argument", async () => {
-    const { cli, manager, spec } = await setup();
+  it("never gives the container the git token, only the gateway, on standard input", async () => {
+    const { cli, manager, spec, name } = await setup();
     const running = manager.exec(spec, "git push", "/workspace", { onData: () => undefined, gitToken: "ghp_secret" });
     await finishNext(cli);
     await running;
 
+    const wispRun = cli.calls.find(({ args }) => args[0] === "run" && args.includes(name))!.args;
+    expect(wispRun).toEqual(
+      expect.arrayContaining([
+        "GIT_CONFIG_KEY_0=url.http://wisp-egress:3129/.insteadOf",
+        "GIT_CONFIG_VALUE_0=https://github.com/",
+      ]),
+    );
+    expect(wispRun.join(" ")).not.toContain("credential");
     const stream = cli.streams[0]!;
-    expect(stream.env).toEqual({ WISP_GIT_TOKEN: "ghp_secret" });
-    expect(stream.args).toContain("WISP_GIT_TOKEN");
-    expect(JSON.stringify([...cli.calls.map(({ args }) => args), stream.args])).not.toContain("ghp_secret");
+    expect(stream.env).toBeUndefined();
+    const everything = JSON.stringify([...cli.calls.map(({ args, env }) => ({ args, env })), stream.args]);
+    expect(everything).not.toContain("ghp_secret");
+    expect(gatewayCalls(cli, manager)).toEqual([{ address: "172.30.1.2", token: "ghp_secret" }]);
+  });
+
+  it("tells the gateway again only when the token or the proxy changed", async () => {
+    const { cli, manager, spec } = await setup();
+    const run = async (gitToken?: string) => {
+      const count = cli.streams.length;
+      const running = manager.exec(spec, "git fetch", "/workspace", {
+        onData: () => undefined,
+        ...(gitToken ? { gitToken } : {}),
+      });
+      await vi.waitFor(() => expect(cli.streams).toHaveLength(count + 1));
+      cli.streams.at(-1)!.finish(0);
+      await running;
+    };
+
+    await run("one");
+    await run("one");
+    expect(gatewayCalls(cli, manager)).toHaveLength(1);
+    await run("two");
+    await run();
+    expect(gatewayCalls(cli, manager).slice(1)).toEqual([
+      { address: "172.30.1.2", token: "two" },
+      { address: "172.30.1.2", token: null },
+    ]);
+
+    // A restarted proxy has forgotten its tokens.
+    cli.containers.get(manager.proxyName())!.running = false;
+    await run();
+    expect(gatewayCalls(cli, manager).at(-1)).toEqual({ address: "172.30.1.2", token: null });
+    expect(gatewayCalls(cli, manager)).toHaveLength(4);
+
+    await manager.remove("s1");
+    expect(gatewayCalls(cli, manager)).toHaveLength(5);
   });
 
   it("kills the command's processes on cancel and reports it as aborted", async () => {
@@ -312,11 +375,12 @@ describe("ContainerManager background processes", () => {
 
     expect(result).toEqual({ exitCode: 0, stdout: "" });
     expect(cli.containers.get(name)?.running).toBe(true);
-    const call = cli.calls.find(({ args }) => args[0] === "exec")!;
-    expect(call.args.slice(0, 6)).toEqual(["exec", "-e", "WISP_GIT_TOKEN", "-w", "/workspace", name]);
+    const call = cli.calls.find(({ args }) => args[0] === "exec" && args.includes(name))!;
+    expect(call.args.slice(0, 4)).toEqual(["exec", "-w", "/workspace", name]);
     expect(call.args.slice(-4)).toEqual(["wisp-start", "abcd1234", "npm run dev", "8"]);
     expect(call.args[call.args.length - 5]).toContain("setsid");
-    expect(call.env).toEqual({ WISP_GIT_TOKEN: "t0k" });
+    expect(call.env).toBeUndefined();
+    expect(gatewayCalls(cli, manager)).toEqual([{ address: "172.30.1.2", token: "t0k" }]);
   });
 
   it("answers from a stopped container without starting it", async () => {
@@ -351,7 +415,8 @@ describe("ContainerManager with the local network blocked", () => {
         SANDBOX_IMAGE,
       ]),
     );
-    expect(proxyRun).not.toContain("--network");
+    expect(proxyRun).toEqual(expect.arrayContaining(["--network", manager.proxyNetworkName()]));
+    expect(cli.networks.get(manager.proxyNetworkName())).toEqual({ internal: false });
     expect(await readFile(script, "utf8")).toBe(EGRESS_PROXY_SCRIPT);
     expect(cli.calls).toContainEqual({ args: ["network", "connect", "--alias", "wisp-egress", network, proxy] });
     const wispRun = cli.calls.find(({ args }) => args[0] === "run" && args.includes(name))!.args;
@@ -361,6 +426,8 @@ describe("ContainerManager with the local network blocked", () => {
         network,
         "HTTPS_PROXY=http://wisp-egress:3128",
         "https_proxy=http://wisp-egress:3128",
+        // The git gateway is on the Wisp's network, not behind the proxy.
+        "NO_PROXY=localhost,127.0.0.1,::1,wisp-egress",
       ]),
     );
 
@@ -369,19 +436,40 @@ describe("ContainerManager with the local network blocked", () => {
     cli.streams[1]!.finish(0);
     await second;
     expect(cli.calls.filter(({ args }) => args[0] === "run")).toHaveLength(2);
-    expect(cli.calls.filter(({ args }) => args[0] === "network" && args[1] === "create")).toHaveLength(1);
+    expect(
+      cli.calls.filter(({ args }) => args[0] === "network" && args[1] === "create" && args.at(-1) === network),
+    ).toHaveLength(1);
     expect(cli.calls.filter(({ args }) => args[0] === "network" && args[1] === "connect")).toHaveLength(1);
   });
 
-  it("gives an allowed Wisp the default network and no proxy", async () => {
+  it("gives an allowed Wisp a network of its own with a route out, the git gateway and no proxy", async () => {
     const { cli, manager, spec, name } = await setup();
+    const network = manager.networkName("s1");
     const running = manager.exec(spec, "true", "/workspace", { onData: () => undefined });
     await finishNext(cli);
     await running;
+    expect(cli.networks.get(network)).toEqual({ internal: false });
     const wispRun = cli.calls.find(({ args }) => args[0] === "run" && args.includes(name))!.args;
-    expect(wispRun).not.toContain("--network");
+    expect(wispRun).toEqual(expect.arrayContaining(["--network", network]));
     expect(wispRun.join(" ")).not.toContain("PROXY");
-    expect(cli.containers.has(manager.proxyName())).toBe(false);
+    expect([...cli.containers.get(manager.proxyName())!.networks!.keys()]).toEqual([network]);
+  });
+
+  it("recreates a network left from other settings, so a blocked Wisp never keeps a route out", async () => {
+    const { cli, manager, spec, name } = await setup();
+    const network = manager.networkName("s1");
+    const allowed = manager.exec(spec, "true", "/workspace", { onData: () => undefined });
+    await finishNext(cli);
+    await allowed;
+
+    // As if the setting changed while the server could not remove the old network.
+    cli.containers.delete(name);
+    const blocked = manager.exec({ ...spec, localNetwork: false }, "true", "/workspace", { onData: () => undefined });
+    await vi.waitFor(() => expect(cli.streams).toHaveLength(2));
+    cli.streams[1]!.finish(0);
+    await blocked;
+    expect(cli.networks.get(network)).toEqual({ internal: true });
+    expect(cli.calls).toContainEqual({ args: ["network", "rm", network] });
   });
 
   it("reattaches a recreated proxy to the Wisp's network", async () => {
@@ -396,10 +484,10 @@ describe("ContainerManager with the local network blocked", () => {
     await vi.waitFor(() => expect(cli.streams).toHaveLength(2));
     cli.streams[1]!.finish(0);
     await second;
-    expect(cli.containers.get(manager.proxyName())!.networks).toEqual(new Set([manager.networkName("s1")]));
+    expect([...cli.containers.get(manager.proxyName())!.networks!.keys()]).toEqual([manager.networkName("s1")]);
   });
 
-  it("removes a Wisp's network with its container, and orphan networks but never the proxy", async () => {
+  it("removes a Wisp's network with its container, and orphan networks but never the proxy or its network", async () => {
     const { cli, manager, spec } = await setup();
     const running = manager.exec({ ...spec, localNetwork: false }, "true", "/workspace", { onData: () => undefined });
     await finishNext(cli);
@@ -407,11 +495,11 @@ describe("ContainerManager with the local network blocked", () => {
     cli.networks.set(manager.networkName("gone"), { internal: true });
 
     await manager.reconcile(new Set(["s1"]));
-    expect([...cli.networks.keys()]).toEqual([manager.networkName("s1")]);
+    expect([...cli.networks.keys()].sort()).toEqual([manager.networkName("s1"), manager.proxyNetworkName()].sort());
     expect(cli.containers.has(manager.proxyName())).toBe(true);
 
     await manager.remove("s1");
-    expect(cli.networks.size).toBe(0);
+    expect([...cli.networks.keys()]).toEqual([manager.proxyNetworkName()]);
     expect(cli.calls).toContainEqual({
       args: ["network", "disconnect", "-f", manager.networkName("s1"), manager.proxyName()],
     });

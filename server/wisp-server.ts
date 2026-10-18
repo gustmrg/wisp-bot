@@ -153,6 +153,7 @@ export async function createWispServer(options: WispServerOptions): Promise<Wisp
         askHost({ kind: "selectFiles" }, 30 * 60_000, "This device sends attached files to the server instead."),
       onAgentEvent: (event) => hub.publish("agentEvent", event),
       onConversationChanged: (delta) => hub.publish("conversationChanged", delta),
+      onWispsChanged: (view) => hub.publish("wispsChanged", view),
       onMcpSettingsChanged: (view) => hub.publish("mcpSettingsChanged", view),
       onPluginSettingsChanged: (view) => hub.publish("pluginSettingsChanged", view),
       onScheduledMessagesChanged: (view) => hub.publish("scheduledMessagesChanged", view),
@@ -311,6 +312,8 @@ export async function createWispServer(options: WispServerOptions): Promise<Wisp
             version: options.appVersion,
             port: address.port,
             devices: auth.devices().length,
+            // Whether the browser app answers at the public origin, so a pairing link opens it.
+            web: Boolean(exposed?.webRoot ?? options.webRoot),
             ...(exposed
               ? { publicOrigin: exposed.origin, exposedPort: exposed.port }
               : publicOrigin

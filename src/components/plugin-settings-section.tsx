@@ -37,6 +37,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Field, FieldDescription, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import { SecretInput } from "@/components/ui/secret-input";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ToggleSwitch } from "@/components/ui/toggle-switch";
 import { isPluginAvailable, type SettingsPluginId, type WispOption } from "@/lib/plugin-access";
@@ -707,9 +708,8 @@ function PluginConnectForm({
         ) : null}
         <Field>
           <FieldLabel htmlFor={`${formId}-key`}>{pluginCatalogEntry(plugin.id).credentialLabel}</FieldLabel>
-          <Input
+          <SecretInput
             id={`${formId}-key`}
-            type="password"
             autoComplete="new-password"
             spellCheck={false}
             value={apiKey}
@@ -894,9 +894,8 @@ function PluginManageView({
                   <FieldLabel
                     htmlFor={`${formId}-key`}
                   >{`New ${pluginCatalogEntry(plugin.id).credentialLabel}`}</FieldLabel>
-                  <Input
+                  <SecretInput
                     id={`${formId}-key`}
-                    type="password"
                     autoComplete="new-password"
                     spellCheck={false}
                     value={apiKey}
@@ -1166,9 +1165,8 @@ function PluginSignIn({
             </Field>
             <Field>
               <FieldLabel htmlFor={`${formId}-client-secret`}>Client secret</FieldLabel>
-              <Input
+              <SecretInput
                 id={`${formId}-client-secret`}
-                type="password"
                 value={clientSecret}
                 disabled={waiting || !secureStorageAvailable}
                 autoComplete="new-password"

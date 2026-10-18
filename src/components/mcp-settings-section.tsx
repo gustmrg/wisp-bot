@@ -47,6 +47,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Field, FieldDescription, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import { SecretInput } from "@/components/ui/secret-input";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ToggleSwitch } from "@/components/ui/toggle-switch";
 import { useTimeZone } from "@/hooks/use-time-zone";
@@ -54,11 +55,17 @@ import type { WispOption } from "@/lib/plugin-access";
 
 const NO_WISPS: ReadonlyArray<WispOption> = [];
 
-const AUTH_MODE_OPTIONS: ReadonlyArray<{ value: McpAuthMode; label: string }> = [
+/** The form's authentication choices; a bearer token is saved as an `Authorization` header. */
+type McpAuthChoice = McpAuthMode | "bearer";
+
+const AUTH_MODE_OPTIONS: ReadonlyArray<{ value: McpAuthChoice; label: string }> = [
   { value: "none", label: "No authentication" },
-  { value: "header", label: "Authentication header" },
+  { value: "bearer", label: "Bearer token" },
+  { value: "header", label: "Custom header" },
   { value: "oauth", label: "Browser sign-in (OAuth)" },
 ];
+
+const BEARER_HEADER = { name: "Authorization", valuePrefix: "Bearer " };
 
 const STATE_LABELS: Record<McpConnectionState, string> = {
   configured: "Configured",
@@ -85,7 +92,7 @@ interface HeaderRow {
 interface McpDraft {
   name: string;
   endpoint: string;
-  authMode: McpAuthMode;
+  authMode: McpAuthChoice;
   headerName: string;
   headerValue: string;
   extraHeaders: HeaderRow[];
@@ -127,11 +134,15 @@ function emptyDraft(preset?: McpPreset): McpDraft {
   };
 }
 
+function savedAuthChoice(server: McpServerSummary, preset?: McpPreset): McpAuthChoice {
+  return server.authMode === "header" && server.headerBearer && !preset ? "bearer" : server.authMode;
+}
+
 function draftFrom(server: McpServerSummary, preset?: McpPreset): McpDraft {
   return {
     name: server.name,
     endpoint: server.endpoint,
-    authMode: server.authMode,
+    authMode: savedAuthChoice(server, preset),
     headerName: server.headerName ?? "",
     headerValue: "",
     extraHeaders: headerRows(server.extraHeaders, preset?.toolsets?.header),
@@ -143,8 +154,7 @@ function draftFrom(server: McpServerSummary, preset?: McpPreset): McpDraft {
 }
 
 /** The credential as the header expects it; a pasted value that already has the prefix is kept. */
-function presetCredential(preset: McpPreset, value: string): string {
-  const prefix = preset.auth.mode === "header" ? preset.auth.header.valuePrefix : "";
+function prefixedCredential(prefix: string, value: string): string {
   const trimmed = value.trim();
   return trimmed.toLowerCase().startsWith(prefix.toLowerCase()) ? trimmed : `${prefix}${trimmed}`;
 }
@@ -430,18 +440,25 @@ export function McpServerForm({
   }
 
   function saveRequest() {
+    const bearer = draft.authMode === "bearer";
+    const headerName = bearer ? BEARER_HEADER.name : draft.authMode === "header" ? draft.headerName.trim() : "";
+    const prefix = bearer
+      ? BEARER_HEADER.valuePrefix
+      : preset?.auth.mode === "header"
+        ? preset.auth.header.valuePrefix
+        : undefined;
     const headerValue =
-      draft.authMode === "header" && draft.headerValue.trim()
-        ? preset
-          ? presetCredential(preset, draft.headerValue)
+      headerName && draft.headerValue.trim()
+        ? prefix !== undefined
+          ? prefixedCredential(prefix, draft.headerValue)
           : draft.headerValue
         : undefined;
     const headers = extraHeaders();
     const request: Omit<SaveMcpServerRequest, "enabled" | "serverId"> & { serverId?: string; enabled?: boolean } = {
       name: draft.name.trim(),
       endpoint: draft.endpoint.trim(),
-      authMode: draft.authMode,
-      ...(draft.authMode === "header" && draft.headerName.trim() ? { headerName: draft.headerName.trim() } : {}),
+      authMode: draft.authMode === "bearer" ? "header" : draft.authMode,
+      ...(headerName ? { headerName } : {}),
       ...(headerValue !== undefined ? { headerValue } : {}),
       // A saved server always sends its headers, so removing the last one is saved too.
       ...(server || Object.keys(headers).length ? { extraHeaders: headers } : {}),
@@ -567,12 +584,16 @@ export function McpServerForm({
   }
 
   const endpoint = draft.endpoint.trim();
+  // Switching between a bearer token and a custom header needs the credential entered again.
+  const savedCredential = Boolean(server?.headerConfigured) && draft.authMode === savedAuthChoice(server!, preset);
   const canTest = endpoint !== "" && (draft.authMode !== "header" || draft.headerName.trim() !== "");
   const canSave =
     draft.name.trim() !== "" &&
     endpoint !== "" &&
-    (draft.authMode !== "header" ||
-      (draft.headerName.trim() !== "" && (draft.headerValue !== "" || Boolean(server?.headerConfigured))));
+    (draft.authMode === "bearer"
+      ? draft.headerValue.trim() !== "" || savedCredential
+      : draft.authMode !== "header" ||
+        (draft.headerName.trim() !== "" && (draft.headerValue !== "" || savedCredential)));
 
   return (
     <div className="flex flex-col gap-2">
@@ -621,9 +642,8 @@ export function McpServerForm({
             {preset.auth.mode === "header" ? (
               <Field>
                 <FieldLabel htmlFor={`${formId}-credential`}>{preset.auth.label}</FieldLabel>
-                <Input
+                <SecretInput
                   id={`${formId}-credential`}
-                  type="password"
                   value={draft.headerValue}
                   disabled={busy || !secureStorageAvailable}
                   placeholder={server?.headerConfigured ? "Saved — enter a replacement" : "Paste your token"}
@@ -716,7 +736,7 @@ export function McpServerForm({
                 disabled={busy}
                 onValueChange={(value) => {
                   if (value === null) return;
-                  setDraft({ ...draft, authMode: value as McpAuthMode });
+                  setDraft({ ...draft, authMode: value as McpAuthChoice });
                   setError("");
                   setMessage("");
                 }}
@@ -735,6 +755,28 @@ export function McpServerForm({
                 </SelectContent>
               </Select>
             </Field>
+            {draft.authMode === "bearer" ? (
+              <Field>
+                <FieldLabel htmlFor={`${formId}-token`}>Token</FieldLabel>
+                <SecretInput
+                  id={`${formId}-token`}
+                  value={draft.headerValue}
+                  disabled={busy || !secureStorageAvailable}
+                  placeholder={savedCredential ? "Saved — enter a replacement" : "Paste your token"}
+                  autoComplete="new-password"
+                  spellCheck={false}
+                  onChange={(event) => {
+                    setDraft({ ...draft, headerValue: event.target.value });
+                    setError("");
+                  }}
+                />
+                <FieldDescription>
+                  {savedCredential ? "Leave blank to keep the saved token. " : ""}
+                  Sent as <code>Authorization: Bearer</code> followed by the token. Encrypted on this device and never
+                  shown to Wisps.
+                </FieldDescription>
+              </Field>
+            ) : null}
             {draft.authMode === "header" ? (
               <>
                 <Field>
@@ -743,7 +785,7 @@ export function McpServerForm({
                     id={`${formId}-header-name`}
                     value={draft.headerName}
                     disabled={busy}
-                    placeholder="Authorization"
+                    placeholder="X-API-Key"
                     autoComplete="off"
                     spellCheck={false}
                     onChange={(event) => {
@@ -754,12 +796,11 @@ export function McpServerForm({
                 </Field>
                 <Field>
                   <FieldLabel htmlFor={`${formId}-header-value`}>Header value</FieldLabel>
-                  <Input
+                  <SecretInput
                     id={`${formId}-header-value`}
-                    type="password"
                     value={draft.headerValue}
                     disabled={busy || !secureStorageAvailable}
-                    placeholder={server?.headerConfigured ? "Saved — enter a replacement" : "Enter secret value"}
+                    placeholder={savedCredential ? "Saved — enter a replacement" : "Enter secret value"}
                     autoComplete="new-password"
                     spellCheck={false}
                     onChange={(event) => {
@@ -768,8 +809,8 @@ export function McpServerForm({
                     }}
                   />
                   <FieldDescription>
-                    {server?.headerConfigured ? "Leave blank to keep the saved value. " : ""}
-                    Values are encrypted on this device and never shown to Wisps.
+                    {savedCredential ? "Leave blank to keep the saved value. " : ""}
+                    Sent exactly as entered. Encrypted on this device and never shown to Wisps.
                   </FieldDescription>
                 </Field>
               </>
