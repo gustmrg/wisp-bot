@@ -7,7 +7,8 @@ export type SetupGate =
   | { phase: "checking" }
   | { phase: "error"; message: string; retry: () => void }
   | { phase: "onboarding"; required: SetupRequirement[]; complete: () => void }
-  | { phase: "ready" };
+  /** `onboarded` when the person went through onboarding in this launch. */
+  | { phase: "ready"; onboarded: boolean };
 
 /**
  * Decides once per launch whether the minimum setup is in place. Settings
@@ -16,6 +17,7 @@ export type SetupGate =
  */
 export function useSetupGate(userProfile: UserProfileController): SetupGate {
   const [phase, setPhase] = useState<"checking" | "onboarding" | "ready">("checking");
+  const [onboarded, setOnboarded] = useState(false);
   const [required, setRequired] = useState<SetupRequirement[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
@@ -47,8 +49,17 @@ export function useSetupGate(userProfile: UserProfileController): SetupGate {
     };
   }, [phase, profileLoading, profile, attempt]);
 
-  if (phase === "ready") return { phase };
-  if (phase === "onboarding") return { phase, required, complete: () => setPhase("ready") };
+  if (phase === "ready") return { phase, onboarded };
+  if (phase === "onboarding") {
+    return {
+      phase,
+      required,
+      complete: () => {
+        setOnboarded(true);
+        setPhase("ready");
+      },
+    };
+  }
   if (error) return { phase: "error", message: error, retry: () => setAttempt((value) => value + 1) };
   return { phase: "checking" };
 }

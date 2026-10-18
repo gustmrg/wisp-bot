@@ -24,6 +24,7 @@ import { WispBackendError } from "./backend-error.js";
 import { normalizeUserName } from "./conversation-agent.js";
 import type { IntegrationSkill, IntegrationToolSource } from "./integration-tool-source.js";
 import { createJobTools, JOB_INSTRUCTIONS, JOB_TOOL_NAMES, type JobToolHost } from "./job-tools.js";
+import { createWispTools, WISP_INSTRUCTIONS, WISP_TOOL_NAMES, type WispToolHost } from "./wisp-tools.js";
 import type {
   ConversationAgent,
   ConversationAgentContext,
@@ -111,6 +112,7 @@ export const TOOLS_NEVER_IN_JOB_RUNS: ReadonlySet<string> = new Set([
   "save_skill",
   "search_history",
   ...JOB_TOOL_NAMES,
+  ...WISP_TOOL_NAMES,
 ]);
 
 /** What makes a job run's session differ from the conversation's. */
@@ -158,6 +160,7 @@ export class SdkPiSessionFactory implements PiSessionFactory {
   private readonly getImageModel?: () => Promise<ModelSelection | null>;
   private readonly jobs?: JobToolHost;
   private readonly getFallbackModel?: (conversationId: string) => Promise<ModelSelection | null>;
+  private readonly wisps?: WispToolHost;
 
   constructor(
     modelRuntime: ModelRuntimeLike,
@@ -169,6 +172,8 @@ export class SdkPiSessionFactory implements PiSessionFactory {
     jobs?: JobToolHost,
     /** The model a Wisp answers with when its own fails for good, or null when it has none. */
     getFallbackModel?: (conversationId: string) => Promise<ModelSelection | null>,
+    /** Where the person's Wisps live; without it, Wisps have no Wisp tools. */
+    wisps?: WispToolHost,
   ) {
     this.modelRuntime = modelRuntime;
     this.authorizationBroker = authorizationBroker;
@@ -176,6 +181,7 @@ export class SdkPiSessionFactory implements PiSessionFactory {
     this.getImageModel = getImageModel;
     this.jobs = jobs;
     this.getFallbackModel = getFallbackModel;
+    this.wisps = wisps;
   }
 
   async getToolRevision(conversationId: string): Promise<string | null> {
@@ -296,6 +302,8 @@ export class SdkPiSessionFactory implements PiSessionFactory {
     const jobSkills = job ? await loadJobSkills(findSkill, job.skills) : [];
     // A job's own runs never manage jobs.
     const jobTools = this.jobs && !job ? [...JOB_TOOL_NAMES] : [];
+    // Nor do they manage Wisps.
+    const wispTools = this.wisps && !job ? [...WISP_TOOL_NAMES] : [];
     const resourceLoader = new DefaultResourceLoader({
       cwd: context.workspaceDirectory,
       agentDir: context.configDirectory,
@@ -309,6 +317,7 @@ export class SdkPiSessionFactory implements PiSessionFactory {
           runsCommands: runsCommands && (!job || job.tools.includes(RUN_COMMAND_TOOL)),
           ...(job ? { job: { skills: jobSkills } } : {}),
           jobs: jobTools.length > 0,
+          wisps: wispTools.length > 0,
         }),
       appendSystemPromptOverride: () => [],
       extensionFactories: [
@@ -402,7 +411,7 @@ export class SdkPiSessionFactory implements PiSessionFactory {
         ...BUILTIN_TOOL_NAMES,
         ...new Set((current?.activeNames ?? []).filter((name) => registeredIntegrationNames.has(name))),
       ];
-      if (!job) return [...allowed, ...jobTools];
+      if (!job) return [...allowed, ...jobTools, ...wispTools];
       // A run offers only the job's tools the Wisp still has, and the tools only runs have.
       const offered = allowed.filter((name) => job.tools.includes(name) && !TOOLS_NEVER_IN_JOB_RUNS.has(name));
       return [...offered, ...runToolNames];
@@ -422,7 +431,7 @@ export class SdkPiSessionFactory implements PiSessionFactory {
       }),
       // Pi treats this as a permanent registry allowlist, including after reload.
       // Current Wisp grants are applied below before the session can be used.
-      tools: [...BUILTIN_TOOL_NAMES, ...registeredIntegrationNames, ...runToolNames, ...jobTools],
+      tools: [...BUILTIN_TOOL_NAMES, ...registeredIntegrationNames, ...runToolNames, ...jobTools, ...wispTools],
       customTools: [
         ...confinedTools,
         ...integrationDefinitions,
@@ -453,6 +462,9 @@ export class SdkPiSessionFactory implements PiSessionFactory {
               availableTools: async () =>
                 (await getAllowedTools()).filter((name) => !TOOLS_NEVER_IN_JOB_RUNS.has(name)),
             })
+          : []),
+        ...(this.wisps && wispTools.length
+          ? createWispTools({ host: this.wisps, context, authorizationBroker: this.authorizationBroker })
           : []),
       ] as unknown as ToolDefinition[],
       excludeTools: ["bash", "powershell"],
@@ -988,7 +1000,7 @@ export class PiConversationAgentFactory implements ConversationAgentFactory {
 
 function buildSystemPrompt(
   context: ConversationAgentContext,
-  options: { runsCommands: boolean; job?: { skills: ReadonlyArray<SkillDraft> }; jobs?: boolean },
+  options: { runsCommands: boolean; job?: { skills: ReadonlyArray<SkillDraft> }; jobs?: boolean; wisps?: boolean },
 ): string {
   const soul = context.soul.trim() || "Help the user inspect and understand their workspace.";
   const userName = normalizeUserName(context.userName);
@@ -1059,6 +1071,7 @@ function buildSystemPrompt(
     "The user reviews every skill in an approval card that shows its exact content, so do not repeat the skill's content in your reply or ask for confirmation in the chat; call save_skill directly. After it is saved, confirm in one short sentence.",
     "",
     ...(options.jobs ? [JOB_INSTRUCTIONS, ""] : []),
+    ...(options.wisps ? [WISP_INSTRUCTIONS, ""] : []),
     ...(options.job
       ? jobRunInstructions(options.job.skills)
       : [

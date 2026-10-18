@@ -870,6 +870,46 @@ describe("SdkPiSessionFactory", () => {
     expect(runPrompt).not.toContain("## Jobs");
   });
 
+  it("offers the Wisp tools in the conversation only, never in a job's runs", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "wisp-pi-wisp-tools-"));
+    const context: ConversationAgentContext = {
+      conversationId: "chief",
+      sessionId: "chief-session",
+      name: "Chief",
+      wispId: "chief",
+      role: "Team builder",
+      soul: "Build the team.",
+      workspaceDirectory: directory,
+      sessionDirectory: directory,
+      configDirectory: path.join(directory, "config"),
+    };
+    const runtime = {
+      hasConfiguredAuth: () => true,
+      getModel: () => ({ provider: "provider", id: "model" }),
+    } as unknown as ModelRuntimeLike;
+    const host = { list: vi.fn(() => []), create: vi.fn(), update: vi.fn(), delete: vi.fn() };
+    const factory = new SdkPiSessionFactory(runtime, undefined, undefined, undefined, undefined, undefined, host);
+    const wispTools = ["list_wisps", "create_wisp", "update_wisp", "delete_wisp"];
+
+    await factory.create(context, { providerId: "provider", modelId: "model" });
+    const options = sdk.createAgentSession.mock.calls.at(-1)?.[0] as { customTools: { name: string }[] };
+    expect(options.customTools.map(({ name }) => name)).toEqual(expect.arrayContaining(wispTools));
+    expect(sdk.session.setActiveToolsByName.mock.calls.at(-1)?.[0]).toEqual(expect.arrayContaining(wispTools));
+    const prompt = (sdk.loaderOptions.at(-1) as { systemPromptOverride: () => string }).systemPromptOverride();
+    expect(prompt).toContain("## Wisps");
+
+    await factory.createJobSession(
+      context,
+      { providerId: "provider", modelId: "model" },
+      { runId: "run-1", runDirectory: directory, tools: wispTools, skills: [], runTools: [] },
+    );
+    const runOptions = sdk.createAgentSession.mock.calls.at(-1)?.[0] as { customTools: { name: string }[] };
+    expect(runOptions.customTools.map(({ name }) => name)).not.toContain("create_wisp");
+    expect(sdk.session.setActiveToolsByName).toHaveBeenLastCalledWith([]);
+    const runPrompt = (sdk.loaderOptions.at(-1) as { systemPromptOverride: () => string }).systemPromptOverride();
+    expect(runPrompt).not.toContain("## Wisps");
+  });
+
   it("rejects missing credentials and unavailable models without selecting a fallback", () => {
     const missingAuth = {
       hasConfiguredAuth: () => false,

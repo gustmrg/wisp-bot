@@ -140,6 +140,7 @@ function completeBridge(): WispApi {
       throw new Error("not called");
     },
     subscribeToConversationChanges: () => () => undefined,
+    subscribeToWisps: () => () => undefined,
     getConversationMessages: async () => ({ ok: true, value: { messages: [], olderCursor: null, newerCursor: null } }),
     searchMessages: async () => ({ ok: true, value: [] }),
     getScheduledMessages: async () => ({ ok: true, value: { messages: [] } }),

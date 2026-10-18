@@ -7,7 +7,7 @@ import type {
   SequencedConversationAgentEvent,
   WispFallback,
 } from "../shared/contracts.js";
-import type { ConversationDelta } from "../shared/conversations.js";
+import type { ConversationDelta, Wisp, WispsView } from "../shared/conversations.js";
 import type { JobsView } from "../shared/jobs.js";
 import type { McpSettingsView } from "../shared/mcp.js";
 import type { PluginSettingsView } from "../shared/plugins.js";
@@ -15,8 +15,9 @@ import type { MessageQueueView } from "../shared/message-queue.js";
 import type { ScheduledMessagesView } from "../shared/scheduled-messages.js";
 import type { AgentMode } from "./agent-mode.js";
 import { AgentRegistry } from "./agent-registry.js";
-import { sanitizeBackendError } from "./backend-error.js";
+import { sanitizeBackendError, WispBackendError } from "./backend-error.js";
 import type { ConversationAgentFactory } from "./conversation-agent.js";
+import { normalizeWisp, normalizeWispChanges } from "./conversation-normalizer.js";
 import { ConversationRepository } from "./conversation-repository.js";
 import { ConversationService } from "./conversation-service.js";
 import type { EncryptionService } from "./encrypted-credential-store.js";
@@ -37,6 +38,7 @@ import { PluginService } from "./plugin-service.js";
 import { SessionReportService } from "./session-report-service.js";
 import type { StructuredLogger } from "./structured-logger.js";
 import { WispToolPolicyStore } from "./wisp-tool-policy-store.js";
+import type { WispToolHost } from "./wisp-tools.js";
 import { ToolAuditStore } from "./tool-audit-store.js";
 import { ToolAuthorizationBroker } from "./tool-authorization-broker.js";
 import { ToolPolicyStore } from "./tool-policy-store.js";
@@ -72,6 +74,8 @@ export interface BackendRuntimeOptions {
   onAgentEvent: (event: SequencedConversationAgentEvent) => void;
   /** Receives what changed after agent-driven changes are persisted. */
   onConversationChanged: (delta: ConversationDelta) => void;
+  /** Receives the Wisps and conversation summaries after a Wisp was created, changed or deleted. */
+  onWispsChanged?: (view: WispsView) => void;
   /** Receives the sanitized MCP view after health or settings changes; secrets never leave the backend. */
   onMcpSettingsChanged: (view: McpSettingsView) => void;
   /** Receives plugin settings after changes another window should see, such as a sign-in. */
@@ -148,6 +152,32 @@ export async function createBackendRuntime(options: BackendRuntimeOptions): Prom
     delete: (jobId) => requireJobs().delete(jobId),
     recordChange: (job, change) =>
       service.addJobCard(job.conversationId, jobCardItems(job, change), `job-card-${randomUUID()}`),
+  };
+  // The Wisp tools reach the conversation service, which is created after the session factory.
+  const requireConversations = (): ConversationService => {
+    if (!conversationService) throw new Error("Conversations are not ready.");
+    return conversationService;
+  };
+  const storedWisp = (wispId: string): Wisp => {
+    const wisp = requireConversations().readWisps()[wispId];
+    if (!wisp) throw new WispBackendError("not_found", "The Wisp was not found.");
+    return wisp;
+  };
+  const wispHost: WispToolHost = {
+    list: () => Object.values(requireConversations().readWisps()),
+    create: async (wisp) => {
+      // A Wisp's own conversation shares its ID; normalizing checks it as the IPC handler does.
+      const created = normalizeWisp({ ...wisp, id: randomUUID() });
+      await requireConversations().createWisp(created, { notifyOnUpdatesEnabled: true, model: null });
+      return storedWisp(created.id);
+    },
+    update: async (wispId, changes) => {
+      await requireConversations().updateWisp(wispId, normalizeWispChanges(changes));
+      return storedWisp(wispId);
+    },
+    delete: async (wispId) => {
+      await requireConversations().deleteWisp(wispId);
+    },
   };
   const publishAgentEvent = (event: SequencedConversationAgentEvent): void => {
     conversationService?.handleAgentEvent(event);
@@ -230,6 +260,7 @@ export async function createBackendRuntime(options: BackendRuntimeOptions): Prom
       const { modelOverride, fallback } = conversationRepository.getAgentContext(conversationId);
       return modelService.getFallbackModel(modelOverride ?? null, fallback ?? null);
     },
+    wispHost,
   );
   const agentFactory: ConversationAgentFactory =
     options.agentMode === "fake"
@@ -254,6 +285,7 @@ export async function createBackendRuntime(options: BackendRuntimeOptions): Prom
     {
       logger,
       onConversationChanged: options.onConversationChanged,
+      ...(options.onWispsChanged ? { onWispsChanged: options.onWispsChanged } : {}),
       onConversationsRemoved: () => {
         messageScheduler?.refresh();
         jobScheduler?.refresh();

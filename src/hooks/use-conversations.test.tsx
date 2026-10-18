@@ -15,6 +15,7 @@ import type {
   Message,
   MessagePage,
   MessagePageRequest,
+  WispsView,
 } from "../../shared/conversations";
 import type { MessageQueueView } from "../../shared/message-queue";
 import { testWisp } from "@/test/chat-fixtures";
@@ -85,6 +86,7 @@ function installBridge(
   };
   const agentListeners = new Set<(event: SequencedConversationAgentEvent) => void>();
   const deltaListeners = new Set<(delta: ConversationDelta) => void>();
+  const wispsListeners = new Set<(view: WispsView) => void>();
   const api = {
     getConversationState: vi.fn(async () => ({ ok: true as const, value: state })),
     initializeConversations: vi.fn(),
@@ -122,6 +124,10 @@ function installBridge(
       deltaListeners.add(listener);
       return () => deltaListeners.delete(listener);
     }),
+    subscribeToWisps: vi.fn((listener: (view: WispsView) => void) => {
+      wispsListeners.add(listener);
+      return () => wispsListeners.delete(listener);
+    }),
   };
   (window as unknown as { wisp: WispApi }).wisp = api as unknown as WispApi;
   let sequence = 0;
@@ -132,6 +138,11 @@ function installBridge(
       sequence += 1;
       act(() => {
         for (const listener of agentListeners) listener({ ...event, sequence });
+      });
+    },
+    pushWisps(view: WispsView) {
+      act(() => {
+        for (const listener of wispsListeners) listener(view);
       });
     },
     push(conversationId: string, changes: Partial<Pick<ConversationDelta, "added" | "updated">>, preview = "Ready") {
@@ -177,6 +188,26 @@ async function startTurn(bridge: ReturnType<typeof installBridge>) {
 }
 
 describe("useConversations", () => {
+  it("shows a Wisp another device or a Wisp created, and forgets one deleted", async () => {
+    const bridge = installBridge({ atlas: [] });
+    const hook = await start("atlas");
+
+    bridge.pushWisps({
+      wisps: { atlas: testWisp("atlas"), quill: testWisp("quill", { name: "Quill" }) },
+      chats: { atlas: wisp("atlas"), quill: wisp("quill") },
+      statuses: { atlas: "idle", quill: "idle" },
+    });
+    expect(hook.result.current.chats.quill?.kind === "wisp" && hook.result.current.chats.quill.wisp.name).toBe("Quill");
+
+    bridge.pushWisps({
+      wisps: { quill: testWisp("quill") },
+      chats: { quill: wisp("quill") },
+      statuses: { quill: "idle" },
+    });
+    expect(hook.result.current.chats.atlas).toBeUndefined();
+    expect(hook.result.current.windows.atlas).toBeUndefined();
+  });
+
   it("queues a message on the backend, which adds it to the transcript when the Wisp takes it", async () => {
     const bridge = installBridge({ atlas: [] });
     bridge.api.queueMessage.mockResolvedValue({ ok: true, value: { messages: [] } });

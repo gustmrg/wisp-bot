@@ -22,6 +22,7 @@ import {
   type Wisp,
   type WispChanges,
   type WispCollection,
+  type WispsView,
 } from "../../shared/conversations";
 import type { ChatViewCollection } from "@/chat-data";
 import { chatViews } from "@/lib/chat-schema";
@@ -212,21 +213,29 @@ export function useConversations(): ConversationsController {
     [replaceWindows],
   );
 
-  const replaceState = useCallback(
-    (next: ConversationStateView): void => {
-      // The full state still carries transcripts; the renderer keeps only summaries and loads pages on demand.
-      const summaries = Object.fromEntries(Object.entries(next.chats).map(([id, chat]) => [id, chatSummary(chat)]));
-      replaceChats(summaries);
+  // Takes the Wisps and conversation summaries as given, from a mutation's reply or a backend push.
+  const replaceWisps = useCallback(
+    (next: WispsView): void => {
+      replaceChats(next.chats);
       setWisps(next.wisps);
       dropWindows(
         [...Object.keys(windowsRef.current), ...loadsRef.current.keys()].filter(
-          (conversationId) => !summaries[conversationId],
+          (conversationId) => !next.chats[conversationId],
         ),
       );
-      replaceRuntime(reconcileConversationRuntime(runtimeRef.current, summaries, next.statuses));
-      setPendingAcknowledgements((current) => retainPendingConversations(current, summaries));
+      replaceRuntime(reconcileConversationRuntime(runtimeRef.current, next.chats, next.statuses));
+      setPendingAcknowledgements((current) => retainPendingConversations(current, next.chats));
     },
     [dropWindows, replaceChats, replaceRuntime],
+  );
+
+  const replaceState = useCallback(
+    (next: ConversationStateView): void => {
+      // The full state still carries transcripts; the renderer keeps only summaries and loads pages on demand.
+      const chats = Object.fromEntries(Object.entries(next.chats).map(([id, chat]) => [id, chatSummary(chat)]));
+      replaceWisps({ wisps: next.wisps, chats, statuses: next.statuses });
+    },
+    [replaceWisps],
   );
 
   // Merges one conversation's change, from a single-chat response or a backend
@@ -398,6 +407,10 @@ export function useConversations(): ConversationsController {
       // bootstrap snapshot is already reflected in that snapshot.
       if (readyRef.current) applyDelta(delta);
     });
+    // A Wisp created, changed or deleted by another device or by a Wisp.
+    const unsubscribeWisps = window.wisp.subscribeToWisps((view) => {
+      if (readyRef.current) replaceWisps(view);
+    });
     void (async () => {
       try {
         const next = await bootstrapConversationState(window.wisp, window.localStorage);
@@ -433,8 +446,9 @@ export function useConversations(): ConversationsController {
       readyRef.current = false;
       unsubscribe();
       unsubscribeChanges();
+      unsubscribeWisps();
     };
-  }, [applyDelta, replaceRuntime, replaceState]);
+  }, [applyDelta, replaceRuntime, replaceState, replaceWisps]);
 
   /** Sends the way servers without a message queue expect: saved to the transcript, then sent. */
   const sendDirectly = useCallback(
