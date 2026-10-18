@@ -49,6 +49,14 @@ describe("wispctl output for people", () => {
     expect(text).toContain("wispctl setup --public-origin");
   });
 
+  it("leaves the link and QR code out when the server does not serve the browser app", () => {
+    const text = describePairing(pairing, "https://box.tailnet.ts.net", now, { web: false });
+    expect(text).not.toContain("#pair=");
+    expect(text).not.toContain("▄");
+    expect(text).toContain("Enter the code in the Wisp app");
+    expect(text).toContain("wispctl setup --web");
+  });
+
   it("lists devices with the IDs revoke takes", () => {
     const text = describeDevices([
       { id: "d1", name: "Desktop", createdAt: now.toISOString(), lastSeenAt: now.toISOString(), local: true },

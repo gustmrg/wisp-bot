@@ -16,12 +16,17 @@ interface PendingMessage {
 export interface FakeConversationAgentOptions {
   latencyMs?: number;
   responseFor?: (request: SendMessageRequest) => string;
+  /** Let a running turn take follow-ups, which it reads, like Pi, once its wait is over. */
+  steering?: boolean;
 }
 
 export class FakeConversationAgent implements ConversationAgent {
   private readonly conversationId: string;
   private readonly latencyMs: number;
   private readonly responseFor: (request: SendMessageRequest) => string;
+  private readonly steering: boolean;
+  /** Follow-ups handed to the running turn, oldest first. */
+  private followUps: SendMessageRequest[] = [];
   private readonly listeners = new Set<ConversationAgentListener>();
   private readonly queue: PendingMessage[] = [];
   private activeAbortController: AbortController | undefined;
@@ -36,6 +41,7 @@ export class FakeConversationAgent implements ConversationAgent {
     this.conversationId = conversationId;
     this.latencyMs = options.latencyMs ?? 0;
     this.responseFor = options.responseFor ?? ((request) => `Fake response to: ${request.text}`);
+    this.steering = options.steering ?? false;
   }
 
   async start(): Promise<void> {
@@ -63,6 +69,17 @@ export class FakeConversationAgent implements ConversationAgent {
       this.queue.push({ request, resolve, reject });
       void this.processQueue();
     });
+  }
+
+  async steer(request: SendMessageRequest): Promise<boolean> {
+    if (!this.steering || this.disposed || !this.activeAbortController || this.activeAbortController.signal.aborted)
+      return false;
+    this.followUps.push(request);
+    return true;
+  }
+
+  withdrawFollowUps(): string[] {
+    return this.followUps.splice(0).map(({ requestId }) => requestId);
   }
 
   async abort(): Promise<void> {
@@ -169,19 +186,39 @@ export class FakeConversationAgent implements ConversationAgent {
       return;
     }
 
-    this.emit({
-      type: "assistant_text_delta",
-      conversationId: this.conversationId,
-      requestId: request.requestId,
-      messageId,
-      delta: this.responseFor(request),
-    });
-    this.emit({
-      type: "assistant_message_completed",
-      conversationId: this.conversationId,
-      requestId: request.requestId,
-      messageId,
-    });
+    let current = request;
+    for (;;) {
+      const currentMessageId = `${current.requestId}:assistant`;
+      this.emit({
+        type: "assistant_text_delta",
+        conversationId: this.conversationId,
+        requestId: current.requestId,
+        messageId: currentMessageId,
+        delta: this.responseFor(current),
+      });
+      this.emit({
+        type: "assistant_message_completed",
+        conversationId: this.conversationId,
+        requestId: current.requestId,
+        messageId: currentMessageId,
+      });
+      const followUp = this.followUps.shift();
+      if (!followUp) break;
+      this.emit({
+        type: "follow_up_taken",
+        conversationId: this.conversationId,
+        requestId: current.requestId,
+        followUpId: followUp.requestId,
+      });
+      this.emit({
+        type: "assistant_message_started",
+        conversationId: this.conversationId,
+        requestId: followUp.requestId,
+        messageId: `${followUp.requestId}:assistant`,
+        createdAt: new Date().toISOString(),
+      });
+      current = followUp;
+    }
     this.emit({ type: "conversation_status", conversationId: this.conversationId, status: "idle" });
     this.activeAbortController = undefined;
   }

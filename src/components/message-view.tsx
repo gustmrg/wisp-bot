@@ -13,7 +13,8 @@ import type { Message, Wisp } from "@/chat-data";
 import { WispAvatar } from "@/components/chat-avatar";
 import { splitMessageAttachments } from "../../shared/workspace";
 import { useRevealedText } from "@/hooks/use-reply-pace";
-import { useTimeZone } from "@/hooks/use-time-zone";
+import { useTimeFormat, useTimeZone } from "@/hooks/use-time-zone";
+import { clockTimeOptions, formatClockTime } from "@/lib/clock-time";
 import { copyText } from "@/lib/clipboard";
 import { cn } from "@/lib/utils";
 import { AttachmentChips } from "@/components/attachment-chips";
@@ -43,9 +44,8 @@ function MessageTools({
 }) {
   const [copied, setCopied] = useState(false);
   const timeZone = useTimeZone();
-  const time = createdAt
-    ? new Date(createdAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit", timeZone })
-    : legacyTime;
+  const timeFormat = useTimeFormat();
+  const time = createdAt ? formatClockTime(new Date(createdAt), timeZone, timeFormat) : legacyTime;
   if (!time && !text) return null;
 
   function copyMessage() {
@@ -329,12 +329,12 @@ function FallbackBadge({ model }: { model: string }) {
 /** Marks a message the backend sent from a scheduled message rather than one typed then. */
 function ScheduledBadge({ scheduledAt }: { scheduledAt: string }) {
   const timeZone = useTimeZone();
+  const timeFormat = useTimeFormat();
   const when = new Date(scheduledAt).toLocaleString([], {
     timeZone,
     month: "short",
     day: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
+    ...clockTimeOptions(timeFormat),
   });
   return (
     <Tooltip>

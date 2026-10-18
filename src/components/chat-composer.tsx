@@ -21,7 +21,7 @@ import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger } 
 import { Popover, PopoverContent, PopoverTitle, PopoverTrigger } from "@/components/ui/popover";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useModelVision } from "@/hooks/use-model-image-input";
-import { useTimeZone } from "@/hooks/use-time-zone";
+import { useTimeFormat, useTimeZone } from "@/hooks/use-time-zone";
 import { useVoiceInput } from "@/hooks/use-voice-input";
 import { DEFAULT_PREFERENCES } from "@/lib/app-preferences";
 import { formatScheduledTime, schedulePresets } from "@/lib/scheduled-time";
@@ -29,10 +29,16 @@ import { formatShortcut, matchesShortcut, SCHEDULE_SEND_SHORTCUT } from "@/lib/s
 import { cn } from "@/lib/utils";
 import { readComposerDraft, saveComposerDraft } from "@/lib/composer-drafts";
 import type { ManagedConversationStatus } from "../../shared/conversations";
+import type { QueuedMessage } from "../../shared/message-queue";
 import type { ChatView } from "@/chat-data";
 import { chatName } from "@/lib/chat-schema";
 import type { VoiceLanguage, VoiceProviderId } from "../../shared/voice";
-import { attachmentsNeedingVision, messageWithAttachments, type WorkspaceAttachment } from "../../shared/workspace";
+import {
+  attachmentsNeedingVision,
+  messageWithAttachments,
+  splitMessageAttachments,
+  type WorkspaceAttachment,
+} from "../../shared/workspace";
 
 export interface VoiceInputSettings {
   deviceId: string;
@@ -66,7 +72,8 @@ export interface ChatComposerProps {
   /** Listen for the voice input shortcut; off while the composer is not on screen. */
   voiceShortcutEnabled?: boolean;
   onConfigureVoice?: () => void;
-  onAbort: () => void;
+  /** Stops the response; follow-ups it resolves with, never read by the Wisp, go back into the draft. */
+  onAbort: () => Promise<ReadonlyArray<QueuedMessage> | null> | void;
   onSend: (text: string) => void;
   /** Schedules the draft instead of sending it; resolves with an error message, or null. Absent when unavailable. */
   onSchedule?: (text: string, at: Date) => Promise<string | null>;
@@ -107,6 +114,7 @@ export function ChatComposer({
   // A long press opens the send button's menu; the tap that ends it must not also send.
   const sendMenuOpen = useRef(false);
   const timeZone = useTimeZone();
+  const timeFormat = useTimeFormat();
   // Attaching picks files on this computer, so a server elsewhere cannot use them.
   const working = status === "working";
   const needsConfiguration = status === "configuration_required";
@@ -147,6 +155,23 @@ export function ChatComposer({
     setAttachments([]);
     setAttachError("");
     onSend(messageWithAttachments(text, files));
+  }
+
+  async function stop(): Promise<void> {
+    const followUps = await onAbort();
+    if (!followUps?.length) return;
+    // What the person wrote while the Wisp worked comes back to be sent again, changed, or dropped.
+    const returned = followUps.map(({ text }) => splitMessageAttachments(text));
+    const current = latest.current;
+    setDraft([current.draft.trim(), ...returned.map(({ text }) => text.trim())].filter(Boolean).join("\n\n"));
+    setAttachments([
+      ...current.attachments,
+      ...returned
+        .flatMap(({ attachments: files }) => files)
+        .filter((file) => !current.attachments.some(({ path }) => path === file.path))
+        .map((file) => ({ ...file, size: 0 })),
+    ]);
+    textareaRef.current?.focus();
   }
 
   const hasDraft = Boolean(draft.trim() || attachments.length);
@@ -371,7 +396,7 @@ export function ChatComposer({
             className={PRIMARY_BUTTON}
             data-variant={primary}
             aria-label="Stop response"
-            onClick={onAbort}
+            onClick={() => void stop()}
           >
             <SquareIcon aria-hidden="true" fill="currentColor" />
           </button>
@@ -380,7 +405,7 @@ export function ChatComposer({
     }
     if (primary === "schedule" && scheduledAt) {
       return (
-        <ComposerTooltip message={`Schedule for ${formatScheduledTime(scheduledAt, now, timeZone)}`}>
+        <ComposerTooltip message={`Schedule for ${formatScheduledTime(scheduledAt, now, timeZone, timeFormat)}`}>
           <button
             type="submit"
             className={cn(PRIMARY_BUTTON, "bg-blue text-white")}
@@ -431,7 +456,7 @@ export function ChatComposer({
             <ContextMenuItem key={preset.label} onClick={() => void schedule(preset.at)}>
               <CalendarClockIcon aria-hidden="true" />
               <span className="flex-1">{preset.label}</span>
-              <span className="text-xs text-dim">{formatScheduledTime(preset.at, now, timeZone)}</span>
+              <span className="text-xs text-dim">{formatScheduledTime(preset.at, now, timeZone, timeFormat)}</span>
             </ContextMenuItem>
           ))}
           <ContextMenuItem onClick={() => openSchedulePicker("now")}>
@@ -645,7 +670,7 @@ export function ChatComposer({
                 {scheduledAt ? (
                   <span className="flex h-6 items-center gap-1.5 rounded-full bg-blue/15 pr-0.5 pl-2 text-xs font-medium text-blue [&_svg]:size-3.5">
                     <CalendarClockIcon aria-hidden="true" />
-                    {formatScheduledTime(scheduledAt, now, timeZone)}
+                    {formatScheduledTime(scheduledAt, now, timeZone, timeFormat)}
                     <ComposerTooltip message="Send normally instead">
                       <button
                         type="button"
@@ -705,7 +730,12 @@ export function ChatComposer({
               />
               {showInlineStop ? (
                 <ComposerTooltip message="Stop response">
-                  <button type="button" className={INLINE_BUTTON} aria-label="Stop response" onClick={onAbort}>
+                  <button
+                    type="button"
+                    className={INLINE_BUTTON}
+                    aria-label="Stop response"
+                    onClick={() => void stop()}
+                  >
                     <SquareIcon aria-hidden="true" fill="currentColor" className="size-3! text-foreground" />
                   </button>
                 </ComposerTooltip>

@@ -138,6 +138,95 @@ describe("MessageQueue", () => {
     await harness.close();
   });
 
+  describe("follow-ups", () => {
+    async function working() {
+      const harness = await setupMessaging({ latencyMs: 1_000, steering: true });
+      await harness.queue.enqueue("one", "First");
+      await vi.waitFor(() => expect(harness.registry.statuses().one).toBe("working"));
+      return harness;
+    }
+
+    it("hands a message sent while the Wisp works to its running turn, which answers it next", async () => {
+      const harness = await working();
+      const view = await harness.queue.enqueue("one", "Also this");
+      expect(view.messages).toEqual([expect.objectContaining({ id: "queued-2", followUp: true })]);
+
+      await harness.advance(1_000);
+      await vi.waitFor(async () => {
+        expect(summary(await harness.transcript())).toEqual([
+          "outgoing:First:complete",
+          "incoming:Fake response to: First:complete",
+          "outgoing:Also this:complete",
+          "incoming:Fake response to: Also this:complete",
+        ]);
+      });
+      expect((await harness.queue.getView()).messages).toEqual([]);
+      expect(harness.queueViews.at(-1)).toEqual({ messages: [] });
+      // The follow-up was answered in the same turn, never sent as a request of its own.
+      expect(() => harness.registry.send({ conversationId: "one", requestId: "queued-2", text: "Again" })).toThrow(
+        /already been accepted/,
+      );
+      await harness.close();
+    });
+
+    it("gives back the follow-ups a stopped turn never read, out of the queue", async () => {
+      const harness = await working();
+      await harness.queue.enqueue("one", "Also this");
+      await harness.queue.enqueue("one", "And this");
+
+      const returned = await harness.queue.returnFollowUps(await harness.registry.abort("one"));
+      expect(returned.map(({ text }) => text)).toEqual(["Also this", "And this"]);
+      expect((await harness.queue.getView()).messages).toEqual([]);
+
+      await harness.advance(1_000);
+      await vi.waitFor(async () => {
+        expect(summary(await harness.transcript())).toEqual(["outgoing:First:complete", "incoming::cancelled"]);
+      });
+      await harness.close();
+    });
+
+    it("hands a changed follow-up over again, and drops a cancelled one", async () => {
+      const harness = await working();
+      await harness.queue.enqueue("one", "Also this");
+      await harness.queue.enqueue("one", "Never mind");
+      await harness.queue.update("queued-2", "Also this, changed");
+      const view = await harness.queue.cancel("queued-3");
+      expect(view.messages).toEqual([
+        expect.objectContaining({ id: "queued-2", text: "Also this, changed", followUp: true }),
+      ]);
+
+      await harness.advance(1_000);
+      await vi.waitFor(async () => {
+        expect(summary(await harness.transcript())).toEqual([
+          "outgoing:First:complete",
+          "incoming:Fake response to: First:complete",
+          "outgoing:Also this, changed:complete",
+          "incoming:Fake response to: Also this, changed:complete",
+        ]);
+      });
+      await harness.close();
+    });
+
+    it("leaves a scheduled message, and what comes after it, for the next turn", async () => {
+      const harness = await working();
+      await harness.queue.enqueue("one", "Scheduled", {
+        scheduled: { scheduledMessageId: "scheduled-1", scheduledAt: "2026-10-06T12:00:00.000Z", timeZone: "UTC" },
+      });
+      const view = await harness.queue.enqueue("one", "After it");
+      expect(view.messages.map(({ followUp }) => followUp)).toEqual([undefined, undefined]);
+      await harness.close();
+    });
+
+    it("waits for the next turn when the Wisp's agent cannot take follow-ups", async () => {
+      const harness = await setupMessaging({ latencyMs: 1_000 });
+      await harness.queue.enqueue("one", "First");
+      await vi.waitFor(() => expect(harness.registry.statuses().one).toBe("working"));
+      const view = await harness.queue.enqueue("one", "Second");
+      expect(view.messages).toEqual([expect.not.objectContaining({ followUp: true })]);
+      await harness.close();
+    });
+  });
+
   it("skips stored records it cannot read", () => {
     expect(normalizeQueuedMessage({ id: "x", conversationId: "one", text: " " })).toBeUndefined();
   });

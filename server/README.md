@@ -6,8 +6,8 @@ keep working with you across days.
 
 Run the server on a Linux machine you own, such as a home server or a
 Raspberry Pi, and your Wisps keep working when no client is connected. The
-desktop app connects to it over SSH or a private HTTPS address, and the server
-also serves the app to browsers, which you can install on a phone.
+desktop app connects to it over SSH or a private HTTPS address. With `--web`,
+the server also serves the app to browsers, which you can install on a phone.
 
 ## Requirements
 
@@ -50,6 +50,7 @@ The desktop app can also do this for you: add the machine under
 | --- | --- |
 | `--port PORT` | The port the server listens on (default `8787`) |
 | `--public-origin URL` | The `https://` address of a private proxy such as Tailscale Serve |
+| `--web`, `--no-web` | Serve the browser app, or stop serving it (off on a new server) |
 | `--data-dir DIR` | Where the server keeps its data (default `~/.local/share/wisp`) |
 | `--package SPEC` | Install this npm package, tarball, or folder instead of the matching version |
 | `--no-service` | Only install the files, and print the command that starts the server |
@@ -65,11 +66,12 @@ anything; choose a free one with `--port`.
 - **Desktop app:** in **Settings → Connections**, add the machine with the
   SSH option and the server's port. The app pairs itself over SSH.
 - **Browser or phone:** expose the server on your
-  [Tailscale](https://tailscale.com) tailnet, then give the server its address:
+  [Tailscale](https://tailscale.com) tailnet, then turn the browser app on and
+  give the server its address:
 
   ```sh
   tailscale serve --bg http://127.0.0.1:8787
-  wispctl setup --public-origin https://<machine>.<tailnet>.ts.net
+  wispctl setup --web --public-origin https://<machine>.<tailnet>.ts.net
   ```
 
   Open that address, and enter a code from `wispctl pair`. Do not use
@@ -88,7 +90,8 @@ wispctl help                     Show every command and option
 ```
 
 In a terminal, `pair` and `devices` print text to read, and `pair` draws a QR
-code to scan when the server has a public origin (`--no-qr` leaves it out);
+code to scan when the server has a public origin and serves the browser app
+(`--no-qr` leaves it out);
 piped, or with `--json`, they print JSON.
 
 The service is a regular systemd user unit:

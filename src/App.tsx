@@ -256,7 +256,7 @@ function Workspace({
   }, [mobile, toggleSidebar]);
 
   return (
-    <TimeZoneProvider timeZone={timeZone}>
+    <TimeZoneProvider timeZone={timeZone} timeFormat={workspace.preferences.timeFormat}>
       <ReplyPaceProvider pace={workspace.preferences.replyPace}>
         <TooltipProvider delay={300}>
           <div className="workspace-shell relative flex h-full w-full min-h-0 min-w-0 overflow-hidden bg-background">
@@ -305,7 +305,7 @@ function Workspace({
                 acknowledging={Boolean(workspace.acknowledging[workspace.activeChat.id])}
                 approvals={workspace.approvals[workspace.activeChat.id] ?? []}
                 onAnswerPrompt={(messageId, answer) => void workspace.answerPrompt(messageId, answer)}
-                onAbort={() => void workspace.abortActiveChat()}
+                onAbort={() => workspace.abortActiveChat()}
                 onLoadOlder={workspace.loadOlderMessages}
                 onLoadNewer={workspace.loadNewerMessages}
                 onShowLatest={workspace.showLatestMessages}

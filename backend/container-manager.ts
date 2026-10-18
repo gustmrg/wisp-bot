@@ -6,7 +6,13 @@ import path from "node:path";
 import { CONTAINER_HOME, CONTAINER_IDLE_MS, CONTAINER_WORKSPACE, type ContainerState } from "../shared/execution.js";
 import { WispBackendError } from "./backend-error.js";
 import type { ContainerCli } from "./container-cli.js";
-import { EGRESS_PROXY_HOST, EGRESS_PROXY_PORT, EGRESS_PROXY_SCRIPT, EGRESS_PROXY_SCRIPT_HASH } from "./egress-proxy.js";
+import {
+  EGRESS_GIT_PORT,
+  EGRESS_PROXY_HOST,
+  EGRESS_PROXY_PORT,
+  EGRESS_PROXY_SCRIPT,
+  EGRESS_PROXY_SCRIPT_HASH,
+} from "./egress-proxy.js";
 
 /**
  * The Wisp sandbox image, built on the server from this file the first time a
@@ -25,8 +31,12 @@ RUN apt-get update \\
 export const SANDBOX_IMAGE = `wisp-sandbox:${createHash("sha256").update(SANDBOX_DOCKERFILE).digest("hex").slice(0, 12)}`;
 
 /** Bumped when the way containers are created changes, so existing ones are recreated. */
-const CONTAINER_LAYOUT_VERSION = 2;
+const CONTAINER_LAYOUT_VERSION = 3;
 const PROXY_URL = `http://${EGRESS_PROXY_HOST}:${EGRESS_PROXY_PORT}`;
+/** git sends github.com requests to the gateway in the egress proxy, which adds the token. */
+const GIT_GATEWAY_URL = `http://${EGRESS_PROXY_HOST}:${EGRESS_GIT_PORT}/`;
+/** Hosts reached without the proxy; the git gateway is on the Wisp's own network. */
+const NO_PROXY = `localhost,127.0.0.1,::1,${EGRESS_PROXY_HOST}`;
 const PROXY_SCRIPT_TARGET = "/opt/wisp/egress-proxy.cjs";
 const PROXY_MEMORY = "256m";
 const PROXY_PROCESS_LIMIT = 128;
@@ -49,9 +59,6 @@ const PATH_IN_CONTAINER = [
   "/sbin",
   "/bin",
 ].join(":");
-/** Git asks this helper for GitHub credentials; it answers with the token passed to each command, if any. */
-const GIT_CREDENTIAL_HELPER =
-  '!f() { test "$1" = get && test -n "$WISP_GIT_TOKEN" && echo username=x-access-token && echo "password=$WISP_GIT_TOKEN"; }; f';
 /**
  * Runs the command in its own process group and records the group, so a
  * cancellation can kill everything it started. Whatever the command left
@@ -151,6 +158,7 @@ export interface ContainerExecOptions {
   signal?: AbortSignal;
   /** Seconds, as the shell tool takes them. */
   timeout?: number;
+  /** Handed to the git gateway, never to the container; leaving it out takes the Wisp's token away. */
   gitToken?: string;
 }
 
@@ -176,6 +184,8 @@ export class ContainerManager {
   private readonly active = new Map<string, number>();
   private readonly preparing = new Map<string, Promise<void>>();
   private readonly images = new Map<string, Promise<void>>();
+  /** What the git gateway last got for each Wisp network, so it is told again only after a change. */
+  private readonly gatewayTokens = new Map<string, string>();
   private disposed = false;
 
   constructor(private readonly options: ContainerManagerOptions) {
@@ -194,6 +204,15 @@ export class ContainerManager {
   /** Not prefixed like Wisp containers, so cleaning up deleted Wisps never matches it. */
   proxyName(): string {
     return `wisp-egress-${this.installation}`;
+  }
+
+  /**
+   * The proxy's own network, with a route out. Podman's DNS does not answer for
+   * outside names on an internal network, so a proxy on only blocked Wisps'
+   * networks could resolve nothing. Not prefixed like Wisp networks either.
+   */
+  proxyNetworkName(): string {
+    return `wisp-egress-net-${this.installation}`;
   }
 
   async state(storageId: string): Promise<ContainerState> {
@@ -216,27 +235,11 @@ export class ContainerManager {
     const cli = await this.requireCli();
     this.begin(spec.storageId);
     try {
-      await abortable(this.ensureRunning(cli, spec, options.onData), options.signal);
+      await abortable(this.ensureRunning(cli, spec, options.onData, options.gitToken), options.signal);
       const name = this.containerName(spec.storageId);
       const execId = randomUUID();
-      const args = [
-        "exec",
-        ...(options.gitToken ? ["-e", "WISP_GIT_TOKEN"] : []),
-        "-w",
-        cwd,
-        name,
-        "bash",
-        "-c",
-        RUN_SCRIPT,
-        "wisp-run",
-        execId,
-        command,
-      ];
-      // The token reaches the program through its environment, never its arguments, which other users can list.
-      const child = cli.stream(args, {
-        onData: options.onData,
-        ...(options.gitToken ? { env: { WISP_GIT_TOKEN: options.gitToken } } : {}),
-      });
+      const args = ["exec", "-w", cwd, name, "bash", "-c", RUN_SCRIPT, "wisp-run", execId, command];
+      const child = cli.stream(args, { onData: options.onData });
       let stopped: "aborted" | "timeout" | undefined;
       const stop = (reason: "aborted" | "timeout") => {
         if (stopped) return;
@@ -277,26 +280,25 @@ export class ContainerManager {
     this.begin(spec.storageId);
     try {
       if (action === "start") {
-        await abortable(this.ensureRunning(cli, spec, options.onData ?? (() => undefined)), options.signal);
+        await abortable(
+          this.ensureRunning(cli, spec, options.onData ?? (() => undefined), options.gitToken),
+          options.signal,
+        );
       } else if ((await this.state(spec.storageId)) !== "running") {
         return null;
       }
       const result = await abortable(
-        cli.run(
-          [
-            "exec",
-            ...(options.gitToken ? ["-e", "WISP_GIT_TOKEN"] : []),
-            "-w",
-            CONTAINER_WORKSPACE,
-            this.containerName(spec.storageId),
-            "bash",
-            "-c",
-            PROCESS_SCRIPTS[action],
-            `wisp-${action}`,
-            ...args,
-          ],
-          options.gitToken ? { env: { WISP_GIT_TOKEN: options.gitToken } } : {},
-        ),
+        cli.run([
+          "exec",
+          "-w",
+          CONTAINER_WORKSPACE,
+          this.containerName(spec.storageId),
+          "bash",
+          "-c",
+          PROCESS_SCRIPTS[action],
+          `wisp-${action}`,
+          ...args,
+        ]),
         options.signal,
       );
       return { exitCode: result.exitCode, stdout: result.stdout };
@@ -344,6 +346,11 @@ export class ContainerManager {
   }
 
   private async removeNetwork(cli: ContainerCli, network: string): Promise<void> {
+    // The proxy's address on this network may be given to another Wisp's network later; it must not keep this token.
+    const proxy = await this.inspectProxyNetworks(cli);
+    const address = proxy?.networks[network];
+    if (address) await this.tellGateway(cli, address, undefined).catch(() => undefined);
+    this.gatewayTokens.delete(network);
     // The proxy is attached to every Wisp network; a network in use cannot be removed.
     await cli.run(["network", "disconnect", "-f", network, this.proxyName()]);
     await cli.run(["network", "rm", network]);
@@ -384,13 +391,18 @@ export class ContainerManager {
     return cli;
   }
 
-  private ensureRunning(cli: ContainerCli, spec: ContainerSpec, onData: (data: Buffer) => void): Promise<void> {
+  private ensureRunning(
+    cli: ContainerCli,
+    spec: ContainerSpec,
+    onData: (data: Buffer) => void,
+    gitToken: string | undefined,
+  ): Promise<void> {
     return this.serialized(spec.storageId, async () => {
       if (this.disposed) throw new WispBackendError("unavailable", "The Wisp server is shutting down.", true);
       const name = this.containerName(spec.storageId);
       const fingerprint = this.fingerprint(cli, spec);
-      // Before the Wisp's container: it is created on this network, and needs the proxy running to go anywhere.
-      if (!spec.localNetwork) await this.ensureEgress(cli, spec.storageId, onData);
+      // Before the Wisp's container: it is created on this network, and needs the proxy for git and, when blocked, to go anywhere.
+      await this.ensureEgress(cli, spec, gitToken, onData);
       const inspected = await cli.run([
         "inspect",
         "--format",
@@ -451,19 +463,19 @@ export class ContainerManager {
       `--pids-limit=${PROCESS_LIMIT}`,
       `--memory=${memory}b`,
       `--cpus=${cpus}`,
+      "--network",
+      this.networkName(spec.storageId),
       ...(spec.localNetwork
         ? []
         : [
-            "--network",
-            this.networkName(spec.storageId),
             ...["HTTP_PROXY", "HTTPS_PROXY", "http_proxy", "https_proxy"].flatMap((variable) => [
               "-e",
               `${variable}=${PROXY_URL}`,
             ]),
             "-e",
-            "NO_PROXY=localhost,127.0.0.1,::1",
+            `NO_PROXY=${NO_PROXY}`,
             "-e",
-            "no_proxy=localhost,127.0.0.1,::1",
+            `no_proxy=${NO_PROXY}`,
             // Node's own fetch honours the variables above only when asked to.
             "-e",
             "NODE_USE_ENV_PROXY=1",
@@ -480,12 +492,13 @@ export class ContainerManager {
       `PATH=${PATH_IN_CONTAINER}`,
       "-e",
       `NPM_CONFIG_PREFIX=${CONTAINER_HOME}/.npm-global`,
+      // git reaches github.com through the gateway, which adds the token; the token never enters the container.
       "-e",
       "GIT_CONFIG_COUNT=1",
       "-e",
-      "GIT_CONFIG_KEY_0=credential.https://github.com.helper",
+      `GIT_CONFIG_KEY_0=url.${GIT_GATEWAY_URL}.insteadOf`,
       "-e",
-      `GIT_CONFIG_VALUE_0=${GIT_CREDENTIAL_HELPER}`,
+      "GIT_CONFIG_VALUE_0=https://github.com/",
       "--entrypoint",
       "sleep",
       spec.image,
@@ -509,10 +522,17 @@ export class ContainerManager {
   }
 
   /**
-   * Makes sure the shared egress proxy runs, the Wisp's network exists, and
-   * the proxy is on it under the name Wisp containers use for it.
+   * Makes sure the shared egress proxy runs, the Wisp's network exists (with
+   * no route out when its local network is blocked), the proxy is on it under
+   * the name Wisp containers use for it, and its git gateway has the Wisp's
+   * token for requests arriving on that network.
    */
-  private ensureEgress(cli: ContainerCli, storageId: string, onData: (data: Buffer) => void): Promise<void> {
+  private ensureEgress(
+    cli: ContainerCli,
+    spec: ContainerSpec,
+    gitToken: string | undefined,
+    onData: (data: Buffer) => void,
+  ): Promise<void> {
     return this.serialized(EGRESS_KEY, async () => {
       await this.ensureImage(cli, SANDBOX_IMAGE, onData);
       const script = await this.writeProxyScript();
@@ -534,6 +554,7 @@ export class ContainerManager {
       }
       if (!ready) {
         if (inspected.exitCode === 0) await cli.run(["rm", "-f", proxy]);
+        await this.ensureProxyNetwork(cli);
         const created = await cli.run(this.proxyArgs(cli, proxy, fingerprint, script));
         if (created.exitCode !== 0) {
           throw new WispBackendError(
@@ -543,12 +564,20 @@ export class ContainerManager {
           );
         }
       }
-      const network = this.networkName(storageId);
-      if ((await cli.run(["network", "inspect", network])).exitCode !== 0) {
+      const network = this.networkName(spec.storageId);
+      const internal = !spec.localNetwork;
+      const existing = await cli.run(["network", "inspect", "--format", "{{.Internal}}", network]);
+      const matches = existing.exitCode === 0 && existing.stdout.trim() === String(internal);
+      if (existing.exitCode === 0 && !matches) {
+        // Left from other settings: a blocked Wisp must never sit on a network with a route out.
+        await cli.run(["rm", "-f", this.containerName(spec.storageId)]);
+        await this.removeNetwork(cli, network);
+      }
+      if (!matches) {
         const created = await cli.run([
           "network",
           "create",
-          "--internal",
+          ...(internal ? ["--internal"] : []),
           "--label",
           `wisp.installation=${this.installation}`,
           network,
@@ -561,8 +590,8 @@ export class ContainerManager {
           );
         }
       }
-      const attached = await cli.run(["inspect", "--format", "{{json .NetworkSettings.Networks}}", proxy]);
-      if (!attached.stdout.includes(`"${network}"`)) {
+      let attached = await this.inspectProxyNetworks(cli);
+      if (!attached?.networks[network]) {
         const connected = await cli.run(["network", "connect", "--alias", EGRESS_PROXY_HOST, network, proxy]);
         if (connected.exitCode !== 0) {
           throw new WispBackendError(
@@ -571,8 +600,76 @@ export class ContainerManager {
             true,
           );
         }
+        attached = await this.inspectProxyNetworks(cli);
       }
+      const address = attached?.networks[network];
+      if (!attached || !address) {
+        throw new WispBackendError("internal_error", "The network proxy has no address on the Wisp's network.", true);
+      }
+      // A restarted proxy has forgotten every token, so its start time is part of what it was told.
+      const told = [attached.startedAt, address, gitToken ? createHash("sha256").update(gitToken).digest("hex") : ""];
+      if (this.gatewayTokens.get(network) === told.join(" ")) return;
+      this.gatewayTokens.delete(network);
+      await this.tellGateway(cli, address, gitToken);
+      this.gatewayTokens.set(network, told.join(" "));
     });
+  }
+
+  private async ensureProxyNetwork(cli: ContainerCli): Promise<void> {
+    const network = this.proxyNetworkName();
+    if ((await cli.run(["network", "inspect", network])).exitCode === 0) return;
+    const created = await cli.run(["network", "create", "--label", `wisp.installation=${this.installation}`, network]);
+    if (created.exitCode !== 0) {
+      throw new WispBackendError(
+        "internal_error",
+        `The network proxy's network could not be created: ${firstLine(created.stderr)}`,
+        true,
+      );
+    }
+  }
+
+  /** When the proxy started and its address on each network it is on; null when it does not exist. */
+  private async inspectProxyNetworks(
+    cli: ContainerCli,
+  ): Promise<{ startedAt: string; networks: Record<string, string> } | null> {
+    const inspected = await cli.run([
+      "inspect",
+      "--format",
+      // Both as JSON: Podman writes the start time with spaces in it.
+      "{{json .State.StartedAt}} {{json .NetworkSettings.Networks}}",
+      this.proxyName(),
+    ]);
+    if (inspected.exitCode !== 0) return null;
+    const match = /^("(?:[^"\\]|\\.)*") (.*)$/s.exec(inspected.stdout.trim());
+    if (!match) return null;
+    try {
+      const parsed = JSON.parse(match[2]!) as Record<string, { IPAddress?: unknown }> | null;
+      const networks: Record<string, string> = {};
+      for (const [name, settings] of Object.entries(parsed ?? {})) {
+        if (typeof settings?.IPAddress === "string" && settings.IPAddress) networks[name] = settings.IPAddress;
+      }
+      return { startedAt: JSON.parse(match[1]!) as string, networks };
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Gives the git gateway the token for requests arriving on one of the
+   * proxy's addresses, or takes it away. The token goes to the proxy's control
+   * socket on standard input, never in arguments or the environment.
+   */
+  private async tellGateway(cli: ContainerCli, address: string, gitToken: string | undefined): Promise<void> {
+    const told = await cli.run(["exec", "-i", this.proxyName(), "node", PROXY_SCRIPT_TARGET, "control"], {
+      input: JSON.stringify({ address, token: gitToken ?? null }),
+    });
+    if (told.exitCode !== 0) {
+      throw new WispBackendError(
+        "internal_error",
+        `The git gateway could not be given the Wisp's GitHub token: ${firstLine(told.stderr)}`,
+        true,
+      );
+    }
   }
 
   private proxyArgs(cli: ContainerCli, name: string, fingerprint: string, script: string): string[] {
@@ -600,10 +697,14 @@ export class ContainerManager {
       "--security-opt=no-new-privileges",
       `--pids-limit=${PROXY_PROCESS_LIMIT}`,
       `--memory=${PROXY_MEMORY}`,
+      "--network",
+      this.proxyNetworkName(),
       "--mount",
       `type=bind,source=${script},target=${PROXY_SCRIPT_TARGET},readonly`,
       "-e",
       `WISP_EGRESS_PORT=${EGRESS_PROXY_PORT}`,
+      "-e",
+      `WISP_GIT_PORT=${EGRESS_GIT_PORT}`,
       "--entrypoint",
       "node",
       SANDBOX_IMAGE,

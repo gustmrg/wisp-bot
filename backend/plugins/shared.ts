@@ -93,6 +93,22 @@ export async function requestJson(
   /** What to check when the provider refuses the credential (HTTP 401 or 403). */
   authHint = "Check the API key and its permissions.",
 ): Promise<Fields> {
+  const body = await requestText(provider, url, init, signal, authHint);
+  try {
+    return object(JSON.parse(body));
+  } catch {
+    throw new PluginRequestError(`${provider} request failed. Check the connection.`);
+  }
+}
+
+/** The response body as text, with the same limits and error handling as `requestJson`. */
+export async function requestText(
+  provider: string,
+  url: string,
+  init: RequestInit,
+  signal?: AbortSignal,
+  authHint = "Check the API key and its permissions.",
+): Promise<string> {
   const controller = new AbortController();
   const combinedSignal = signal ? AbortSignal.any([signal, controller.signal]) : controller.signal;
   const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
@@ -143,12 +159,12 @@ export async function requestJson(
       combinedSignal.removeEventListener("abort", cancelReader);
       reader.releaseLock();
     }
-    return object(JSON.parse(body));
+    return body;
   } catch (error) {
     if (signal?.aborted) throw new PluginRequestError(`${provider} request cancelled.`, "aborted");
     if (controller.signal.aborted) throw new PluginRequestError(`${provider} request timed out.`);
     if (error instanceof PluginRequestError) throw error;
-    // Fetch/JSON errors can contain URLs, provider payloads, or credentials.
+    // Fetch errors can contain URLs, provider payloads, or credentials.
     throw new PluginRequestError(`${provider} request failed. Check the connection.`);
   } finally {
     clearTimeout(timeout);

@@ -88,6 +88,112 @@ describe("McpSettingsSection", () => {
   });
 });
 
+describe("McpSettingsSection authentication", () => {
+  async function chooseAuth(user: ReturnType<typeof userEvent.setup>, label: string) {
+    act(() => screen.getByRole("combobox", { name: "Authentication" }).focus());
+    await user.keyboard("{Enter}");
+    await user.click(await screen.findByRole("option", { name: label }));
+  }
+
+  it("sends a bearer token as the Authorization header, adding the scheme once", async () => {
+    const user = userEvent.setup();
+    const { saveMcpServer, testMcpConnection } = setup({ secureStorageAvailable: true, servers: [] });
+    render(<McpSettingsSection />);
+
+    await user.click(await screen.findByRole("button", { name: "Add MCP server" }));
+    await user.type(await screen.findByLabelText("Name"), "Test Server");
+    await user.type(screen.getByLabelText("Endpoint URL"), "https://api.example.com/mcp");
+    await chooseAuth(user, "Bearer token");
+    expect(screen.queryByLabelText("Header name")).not.toBeInTheDocument();
+    await user.type(screen.getByLabelText("Token"), "abc123");
+    await user.click(screen.getByRole("button", { name: "Test connection" }));
+    await waitFor(() => expect(testMcpConnection).toHaveBeenCalledTimes(1));
+    expect(testMcpConnection.mock.calls[0]?.[0]).toMatchObject({
+      authMode: "header",
+      headerName: "Authorization",
+      headerValue: "Bearer abc123",
+    });
+
+    await user.clear(screen.getByLabelText("Token"));
+    await user.type(screen.getByLabelText("Token"), "Bearer abc123");
+    await user.click(screen.getByRole("button", { name: "Save connection" }));
+    await waitFor(() => expect(saveMcpServer).toHaveBeenCalledTimes(1));
+    expect(saveMcpServer.mock.calls[0]?.[0]).toMatchObject({
+      authMode: "header",
+      headerName: "Authorization",
+      headerValue: "Bearer abc123",
+    });
+  });
+
+  it("sends a custom header exactly as entered", async () => {
+    const user = userEvent.setup();
+    const { saveMcpServer } = setup({ secureStorageAvailable: true, servers: [] });
+    render(<McpSettingsSection />);
+
+    await user.click(await screen.findByRole("button", { name: "Add MCP server" }));
+    await user.type(await screen.findByLabelText("Name"), "Test Server");
+    await user.type(screen.getByLabelText("Endpoint URL"), "https://api.example.com/mcp");
+    await chooseAuth(user, "Custom header");
+    await user.type(screen.getByLabelText("Header name"), "X-API-Key");
+    await user.type(screen.getByLabelText("Header value"), "abc123");
+    await user.click(screen.getByRole("button", { name: "Save connection" }));
+
+    await waitFor(() => expect(saveMcpServer).toHaveBeenCalledTimes(1));
+    expect(saveMcpServer.mock.calls[0]?.[0]).toMatchObject({
+      authMode: "header",
+      headerName: "X-API-Key",
+      headerValue: "abc123",
+    });
+  });
+
+  it("opens a saved bearer token as one, and asks for the credential again when switching", async () => {
+    const user = userEvent.setup();
+    setup({
+      secureStorageAvailable: true,
+      servers: [
+        {
+          serverId: "server-1",
+          name: "Bearer Server",
+          endpoint: "https://api.example.com/mcp",
+          authMode: "header",
+          enabled: true,
+          state: "connected",
+          headerConfigured: true,
+          headerName: "Authorization",
+          headerBearer: true,
+          lastDiscoveredAt: null,
+          tools: [],
+        },
+      ],
+    });
+    render(<McpSettingsSection />);
+
+    await user.click(await screen.findByRole("button", { name: "Manage Bearer Server" }));
+    expect(screen.getByRole("combobox", { name: "Authentication" })).toHaveTextContent("Bearer token");
+    expect(screen.getByLabelText("Token")).toHaveAttribute("placeholder", "Saved — enter a replacement");
+    expect(screen.getByRole("button", { name: "Save connection" })).toBeEnabled();
+
+    await chooseAuth(user, "Custom header");
+    await user.type(screen.getByLabelText("Header name"), "X-API-Key");
+    expect(screen.getByRole("button", { name: "Save connection" })).toBeDisabled();
+  });
+
+  it("reveals the value being typed", async () => {
+    const user = userEvent.setup();
+    setup({ secureStorageAvailable: true, servers: [] });
+    render(<McpSettingsSection />);
+
+    await user.click(await screen.findByRole("button", { name: "Add MCP server" }));
+    await chooseAuth(user, "Bearer token");
+    const token = screen.getByLabelText("Token");
+    expect(token).toHaveAttribute("type", "password");
+    await user.click(screen.getByRole("button", { name: "Show value" }));
+    expect(token).toHaveAttribute("type", "text");
+    await user.click(screen.getByRole("button", { name: "Hide value" }));
+    expect(token).toHaveAttribute("type", "password");
+  });
+});
+
 describe("McpSettingsSection plugins", () => {
   it("leaves connections made from a preset to Settings → Plugins", async () => {
     setup({

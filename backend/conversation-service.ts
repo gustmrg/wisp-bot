@@ -39,6 +39,8 @@ export interface ConversationServiceOptions {
   logger?: Pick<StructuredLogger, "warn">;
   /** Called after conversations were deleted or replaced, which also removes their scheduled messages. */
   onConversationsRemoved?: () => void;
+  /** Called once a follow-up the running turn read has left the queue for the transcript. */
+  onFollowUpTaken?: (conversationId: string, queuedMessageId: string) => void;
   /** Receives the Wisps and conversation summaries after a Wisp was created, changed or deleted. */
   onWispsChanged?: (view: WispsView) => void;
 }
@@ -57,6 +59,7 @@ export class ConversationService {
   private readonly onConversationChanged: (delta: ConversationDelta) => void;
   private readonly logger: Pick<StructuredLogger, "warn"> | undefined;
   private readonly onConversationsRemoved: () => void;
+  private readonly onFollowUpTaken: (conversationId: string, queuedMessageId: string) => void;
   private readonly onWispsChanged: (view: WispsView) => void;
 
   constructor(
@@ -71,6 +74,7 @@ export class ConversationService {
     this.onConversationChanged = options.onConversationChanged ?? (() => undefined);
     this.logger = options.logger;
     this.onConversationsRemoved = options.onConversationsRemoved ?? (() => undefined);
+    this.onFollowUpTaken = options.onFollowUpTaken ?? (() => undefined);
     this.onWispsChanged = options.onWispsChanged ?? (() => undefined);
   }
 
@@ -162,9 +166,44 @@ export class ConversationService {
       this.persistLiveMessage(event.conversationId, message);
       return;
     }
+    if (event.type === "follow_up_taken") {
+      this.takeFollowUp(event.conversationId, event.requestId, event.followUpId);
+      return;
+    }
     if (event.type === "conversation_error" && event.requestId) {
       this.persistRequestFailure(event.conversationId, event.requestId, event.error, event.messageId, event.createdAt);
     }
+  }
+
+  /**
+   * Moves a follow-up the running turn just read from the queue into the
+   * transcript, after what the turn wrote so far. Like a queued message it
+   * stays queued until its reply starts, so a turn that never gets there
+   * leaves it failed, ready to retry.
+   */
+  private takeFollowUp(conversationId: string, requestId: string, followUpId: string): void {
+    // A turn that answered with tools alone never started a reply; it is answered all the same.
+    this.persistOutgoingStatus(conversationId, requestId, "complete");
+    void this.repository
+      .takeQueuedMessage(
+        conversationId,
+        (queued) => ({
+          id: queued.id,
+          type: "outgoing",
+          text: queued.text,
+          createdAt: new Date().toISOString(),
+          status: "queued",
+        }),
+        followUpId,
+      )
+      .then(
+        (taken) => {
+          if (taken) this.publish(conversationId, changesOf(taken.change));
+          else this.logger?.warn("follow_up_missing", { conversationId, messageId: followUpId });
+          this.onFollowUpTaken(conversationId, followUpId);
+        },
+        (error) => this.reportPersistenceFailure(conversationId, followUpId, error),
+      );
   }
 
   /**

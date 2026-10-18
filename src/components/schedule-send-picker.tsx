@@ -4,7 +4,7 @@ import { useId, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Field, FieldError, FieldLabel } from "@/components/ui/field";
-import { useTimeZone } from "@/hooks/use-time-zone";
+import { useTimeFormat, useTimeZone } from "@/hooks/use-time-zone";
 import {
   formatScheduledTime,
   fromDateTimeLocalValue,
@@ -28,6 +28,7 @@ export function ScheduleSendPicker({
   onPick,
 }: ScheduleSendPickerProps) {
   const timeZone = useTimeZone();
+  const timeFormat = useTimeFormat();
   const customId = useId();
   const [now] = useState(() => new Date());
   const [custom, setCustom] = useState(() =>
@@ -49,7 +50,7 @@ export function ScheduleSendPicker({
               onClick={() => onPick(preset.at)}
             >
               <span>{preset.label}</span>
-              <span className="text-xs text-dim">{formatScheduledTime(preset.at, now, timeZone)}</span>
+              <span className="text-xs text-dim">{formatScheduledTime(preset.at, now, timeZone, timeFormat)}</span>
             </button>
           ))}
       <form

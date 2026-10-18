@@ -50,6 +50,7 @@ import type {
 } from "./remote-access.js";
 import type {
   MessageQueueView,
+  QueuedMessage,
   QueuedMessageRequest,
   QueueMessageRequest,
   UpdateQueuedMessageRequest,
@@ -397,6 +398,11 @@ export type BackendResult<T> = { ok: true; value: T } | { ok: false; error: Back
 
 export type EmptyResult = BackendResult<Record<string, never>>;
 
+/** What a Stop gave back: follow-ups handed to the stopped turn that it never read, oldest first. */
+export interface AbortConversationView {
+  followUps: ReadonlyArray<QueuedMessage>;
+}
+
 export type ConversationStatus = "configuration_required" | "idle" | "working" | "disposed";
 
 export type ConversationAgentEvent =
@@ -477,6 +483,17 @@ export type ConversationAgentEvent =
       approvalId: string;
       toolCallId: string;
       decision: "allow_once" | "allow_always" | "allow_integration" | "deny" | "block" | "expired";
+    }
+  | {
+      /**
+       * The running turn read a follow-up the person sent while it worked. The
+       * reply to `requestId` ends here, the follow-up joins the transcript, and
+       * the rest of the turn answers it as `followUpId`.
+       */
+      type: "follow_up_taken";
+      conversationId: string;
+      requestId: string;
+      followUpId: string;
     }
   | {
       /** A job's run added its message to the conversation; it notifies like a reply. */
@@ -668,7 +685,7 @@ export interface WispApi {
   manageContext(request: ContextRequest): Promise<BackendResult<ContextView>>;
   startConversation(request: ConversationRequest): Promise<EmptyResult>;
   sendMessage(request: SendMessageRequest): Promise<EmptyResult>;
-  abortConversation(request: ConversationRequest): Promise<EmptyResult>;
+  abortConversation(request: ConversationRequest): Promise<BackendResult<AbortConversationView>>;
   applyModel(request: ApplyModelRequest): Promise<EmptyResult>;
   applyFallbackModel(request: ApplyFallbackModelRequest): Promise<EmptyResult>;
   getConversationModel(request: ConversationRequest): Promise<BackendResult<ConversationModelView>>;

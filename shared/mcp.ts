@@ -44,6 +44,8 @@ export interface McpServerSummary {
   headerConfigured: boolean;
   /** Header name is configuration, not a secret, and is safe to display. */
   headerName?: string;
+  /** The saved header is `Authorization: Bearer …`; only the scheme is reported, never the token. */
+  headerBearer?: boolean;
   /** Non-secret headers sent with every request, such as option selectors. */
   extraHeaders?: Readonly<Record<string, string>>;
   /** The preset this connection was added from; fixed for its lifetime. */

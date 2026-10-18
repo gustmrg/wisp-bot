@@ -845,15 +845,21 @@ export class ConversationRepository {
   }
 
   /**
-   * Moves a Wisp's oldest queued message into its transcript, as `toMessage`
-   * writes it, in one transaction: it is never in both places, nor in neither.
+   * Moves a Wisp's oldest queued message, or the one with `queuedMessageId`,
+   * into its transcript, as `toMessage` writes it, in one transaction: it is
+   * never in both places, nor in neither.
    */
   async takeQueuedMessage(
     conversationId: string,
     toMessage: (queued: QueuedMessage) => OutgoingMessage & { id: string },
+    queuedMessageId?: string,
   ): Promise<{ queued: QueuedMessage; change: MessageChange } | undefined> {
     return this.enqueue(async () => {
-      const queued = (await this.readQueuedMessages()).find((message) => message.conversationId === conversationId);
+      const queued = (await this.readQueuedMessages()).find(
+        (message) =>
+          message.conversationId === conversationId &&
+          (queuedMessageId === undefined || message.id === queuedMessageId),
+      );
       if (!queued) return undefined;
       const change = await this.applyAppend(conversationId, toMessage(queued), (store) =>
         store.deleteQueuedMessage(queued.id),

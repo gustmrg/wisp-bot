@@ -1,3 +1,4 @@
+import { formatClockTime, type TimeFormat } from "@/lib/clock-time";
 import type { ChatSummary, Message } from "../../shared/conversations";
 import { systemTimeZone, zonedDayNumber, zonedParts } from "../../shared/time-zone";
 
@@ -53,12 +54,17 @@ export function chatActivityDate(chat: Pick<ChatSummary, "lastActivityAt">): Dat
 }
 
 // Compact recency label for conversation lists, computed at render time so it never goes stale.
-export function chatActivityLabel(date: Date, now: Date = new Date(), timeZone: string = systemTimeZone()): string {
+export function chatActivityLabel(
+  date: Date,
+  now: Date = new Date(),
+  timeZone: string = systemTimeZone(),
+  timeFormat: TimeFormat = "auto",
+): string {
   const elapsed = now.getTime() - date.getTime();
   if (elapsed < MINUTE_MS) return "Now";
   if (elapsed < 60 * MINUTE_MS) return `${Math.floor(elapsed / MINUTE_MS)}m`;
   const dayDiff = zonedDayNumber(now, timeZone) - zonedDayNumber(date, timeZone);
-  if (dayDiff === 0) return date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit", timeZone });
+  if (dayDiff === 0) return formatClockTime(date, timeZone, timeFormat);
   if (dayDiff === 1) return "Yesterday";
   if (dayDiff < 7) return date.toLocaleDateString([], { weekday: "short", timeZone });
   return shortDate(date, timeZone, zonedParts(date, timeZone).year !== zonedParts(now, timeZone).year);
