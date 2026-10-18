@@ -5,6 +5,7 @@ import type { ToolDefinition } from "@earendil-works/pi-coding-agent" with { "re
 import {
   PLUGIN_CATALOG,
   PLUGIN_IDS,
+  pluginCatalogEntry,
   WEB_CAPABILITIES,
   type PluginAccess,
   type PluginGrant,
@@ -94,6 +95,19 @@ export interface PluginServiceOptions {
   onSettingsChanged?: (view: PluginSettingsView) => void;
 }
 
+/** An API key, with the instance address of a plugin that connects to one. */
+interface PluginApiKeyCredential {
+  type: "api_key";
+  key?: string;
+  endpoint?: string;
+}
+
+/** The key and address a plugin's tools run with. */
+interface PluginConnection {
+  credential: string;
+  endpoint?: string;
+}
+
 /** A plugin signed in through the browser: tokens plus the user's OAuth client. */
 interface PluginOAuthCredential {
   type: "oauth";
@@ -131,6 +145,7 @@ function defaultState(): PluginState {
       "google-calendar": false,
       gmail: false,
       "google-drive": false,
+      "home-assistant": false,
     },
     grants: {},
     webProviders: {},
@@ -239,11 +254,16 @@ export class PluginService implements PluginToolSource, IntegrationToolSource {
   async getView(): Promise<PluginSettingsView> {
     let configured = new Set<string>();
     const signIns = new Map<string, PluginOAuthCredential>();
+    const endpoints = new Map<string, string>();
     let credentialError: string | undefined;
     try {
       const listed = await this.credentials.list();
       configured = new Set(listed.map(({ providerId }) => providerId));
       for (const { providerId, type } of listed) {
+        if (type === "api_key" && PLUGIN_CATALOG.some(({ id, serverAddress }) => id === providerId && serverAddress)) {
+          const { endpoint } = ((await this.credentials.read(providerId)) ?? {}) as PluginApiKeyCredential;
+          if (endpoint) endpoints.set(providerId, endpoint);
+        }
         if (type !== "oauth") continue;
         const credential = await this.readOAuth(providerId as PluginId);
         if (credential) signIns.set(providerId, credential);
@@ -273,6 +293,7 @@ export class PluginService implements PluginToolSource, IntegrationToolSource {
           ...plugin,
           enabled: this.state.enabled[plugin.id],
           configured: configured.has(plugin.id),
+          ...(endpoints.has(plugin.id) ? { endpoint: endpoints.get(plugin.id) } : {}),
           ...(signedIn?.account ? { account: signedIn.account } : {}),
           ...(signedIn?.signInRequired ? { needsSignIn: true } : {}),
           ...(signIn && !signIn.controller.signal.aborted ? { signInPending: true } : {}),
@@ -307,11 +328,11 @@ export class PluginService implements PluginToolSource, IntegrationToolSource {
   save(value: unknown): Promise<PluginSettingsView> {
     const request = parseSavePluginSettings(value);
     return this.enqueue(async () => {
-      const { pluginId, apiKey, enabled } = request;
+      const { pluginId, apiKey, endpoint, enabled } = request;
       if (apiKey && this.adapter(pluginId).oauth)
         throw new WispBackendError("invalid_request", "This plugin signs in through the browser.");
       const credential = enabled || apiKey ? await this.credentials.read(pluginId) : undefined;
-      const existing = credential?.type === "api_key" ? credential.key : undefined;
+      const existing = credential?.type === "api_key" ? (credential as PluginApiKeyCredential) : undefined;
       if (enabled && !apiKey && !credential)
         throw new WispBackendError(
           "configuration_required",
@@ -319,16 +340,17 @@ export class PluginService implements PluginToolSource, IntegrationToolSource {
             ? "Connect this plugin before enabling it."
             : "Add an API key before enabling this plugin.",
         );
-      if (apiKey && apiKey !== existing) {
+      if (apiKey && (apiKey !== existing?.key || endpoint !== existing?.endpoint)) {
         if (!this.credentials.isSecureStorageAvailable())
           throw new WispBackendError(
             "secure_storage_unavailable",
             "Secure credential storage is unavailable on this device.",
           );
-        // A different key may identify a different account. Revoke old grants before changing it.
+        // A different key or server may identify a different account. Revoke old grants before changing it.
         await this.commit(this.withoutPluginAccess(pluginId));
         this.cancelPlugin(pluginId);
-        await this.credentials.setApiKey(pluginId, apiKey);
+        const next: PluginApiKeyCredential = { type: "api_key", key: apiKey, ...(endpoint ? { endpoint } : {}) };
+        await this.credentials.modify(pluginId, async () => ({ ...next }));
       }
       const next = structuredClone(this.state);
       const enabledChanged = next.enabled[pluginId] !== enabled;
@@ -486,8 +508,10 @@ export class PluginService implements PluginToolSource, IntegrationToolSource {
     try {
       if (request.apiKey && this.adapter(request.pluginId).oauth)
         throw new WispBackendError("invalid_request", "This plugin signs in through the browser.");
-      const apiKey = request.apiKey ?? (await this.credentialFor(request.pluginId));
-      if (!apiKey)
+      const connection = request.apiKey
+        ? { credential: request.apiKey, ...(request.endpoint ? { endpoint: request.endpoint } : {}) }
+        : await this.connectionFor(request.pluginId);
+      if (!connection)
         throw new WispBackendError(
           "configuration_required",
           this.adapter(request.pluginId).oauth
@@ -495,7 +519,13 @@ export class PluginService implements PluginToolSource, IntegrationToolSource {
             : "Add an API key to test this plugin.",
         );
       controller.signal.throwIfAborted();
-      return { message: await this.adapter(request.pluginId).testConnection(apiKey, controller.signal) };
+      return {
+        message: await this.adapter(request.pluginId).testConnection(
+          connection.credential,
+          controller.signal,
+          ...endpointArgument(connection),
+        ),
+      };
     } catch (error) {
       throw safePluginError(error, controller.signal);
     } finally {
@@ -749,12 +779,12 @@ export class PluginService implements PluginToolSource, IntegrationToolSource {
           combinedSignal,
         );
       }
-      const apiKey = await this.credentialFor(pluginId);
+      const connection = await this.connectionFor(pluginId);
       combinedSignal.throwIfAborted();
       this.assertAccess(conversationId, sessionId, pluginId, tool.access);
-      if (!apiKey) throw new WispBackendError("configuration_required", "This plugin is not connected.");
+      if (!connection) throw new WispBackendError("configuration_required", "This plugin is not connected.");
       dispatched = true;
-      const result = await tool.execute(apiKey, params, combinedSignal);
+      const result = await tool.execute(connection.credential, params, combinedSignal, ...endpointArgument(connection));
       combinedSignal.throwIfAborted();
       return Buffer.byteLength(result) <= 64_000
         ? result
@@ -839,10 +869,20 @@ export class PluginService implements PluginToolSource, IntegrationToolSource {
    * renewed shortly before it expires. A refused renewal marks the plugin as
    * needing sign-in and turns its tools off until the user signs in again.
    */
-  private async credentialFor(pluginId: PluginId): Promise<string | undefined> {
+  private async connectionFor(pluginId: PluginId): Promise<PluginConnection | undefined> {
     const credential = await this.credentials.read(pluginId);
     if (!credential) return undefined;
-    if (credential.type === "api_key") return credential.key;
+    if (credential.type === "api_key") {
+      const { key, endpoint } = credential as PluginApiKeyCredential;
+      // A plugin that connects to an instance cannot run without its address.
+      if (!key || (pluginCatalogEntry(pluginId).serverAddress && !endpoint)) return undefined;
+      return { credential: key, ...(endpoint ? { endpoint } : {}) };
+    }
+    const access = await this.accessTokenFor(pluginId, credential);
+    return access ? { credential: access } : undefined;
+  }
+
+  private async accessTokenFor(pluginId: PluginId, credential: { type: string }): Promise<string | undefined> {
     const oauth = this.adapters.find(({ id }) => id === pluginId)?.oauth;
     const signedIn = asOAuthCredential(credential);
     if (!oauth || !signedIn) return undefined;
@@ -998,6 +1038,11 @@ function prunedAlwaysAllowed(state: PluginState): PluginState["alwaysAllowed"] {
     if (kept.length) setOwn(pruned, sessionId, Object.fromEntries(kept) as AlwaysAllowedMap);
   }
   return pruned;
+}
+
+/** The address argument, passed only to plugins that connect to a server. */
+function endpointArgument({ endpoint }: PluginConnection): [] | [string] {
+  return endpoint ? [endpoint] : [];
 }
 
 function pluginCatalogName(pluginId: PluginId): string {

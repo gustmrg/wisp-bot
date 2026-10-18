@@ -7,6 +7,7 @@ export const PLUGIN_IDS = [
   "google-calendar",
   "gmail",
   "google-drive",
+  "home-assistant",
 ] as const;
 export type PluginId = (typeof PLUGIN_IDS)[number];
 export type PluginAccess = "none" | "read" | "write";
@@ -14,6 +15,7 @@ export type PluginAccess = "none" | "read" | "write";
 export const PLUGIN_CATEGORIES = [
   { id: "web", name: "Web & research" },
   { id: "productivity", name: "Productivity" },
+  { id: "home", name: "Smart home" },
 ] as const;
 
 /** Web capabilities shared by several providers; each Wisp picks one provider per capability. */
@@ -41,6 +43,17 @@ export interface PluginCatalogEntry {
    * name the client and the page that creates it.
    */
   signIn?: PluginSignInInfo;
+  /**
+   * Set for plugins that connect to the user's own instance, such as a Home
+   * Assistant server: the form asks for its address with the key.
+   */
+  serverAddress?: PluginServerAddressInfo;
+}
+
+export interface PluginServerAddressInfo {
+  label: string;
+  placeholder: string;
+  help: string;
 }
 
 export interface PluginSignInInfo {
@@ -151,6 +164,21 @@ export const PLUGIN_CATALOG: ReadonlyArray<PluginCatalogEntry> = [
       setupUrl: GOOGLE_SETUP_URL,
     },
   },
+  {
+    id: "home-assistant",
+    name: "Home Assistant",
+    category: "home",
+    credentialLabel: "Long-lived access token",
+    credentialUrl: "https://www.home-assistant.io/docs/authentication/#your-account-profile",
+    description: "See your home's devices and sensors, and control lights, switches, scenes, and more.",
+    supportsWrite: true,
+    capabilities: [],
+    serverAddress: {
+      label: "Home Assistant address",
+      placeholder: "http://homeassistant.local:8123",
+      help: "HTTPS, or HTTP on your local network or tailnet.",
+    },
+  },
 ];
 
 export function pluginCatalogEntry(pluginId: PluginId): PluginCatalogEntry {
@@ -169,6 +197,8 @@ export interface PluginSummary {
   supportsWrite: boolean;
   configured: boolean;
   enabled: boolean;
+  /** The instance address of a plugin that connects to one. */
+  endpoint?: string;
   /** A sign-in plugin's account, such as an email address, when the provider reports one. */
   account?: string;
   /** A sign-in plugin whose access was revoked or expired: its tools stay off until it signs in again. */
@@ -193,12 +223,15 @@ export interface PluginRequest {
 export interface SavePluginSettingsRequest extends PluginRequest {
   enabled: boolean;
   apiKey?: string;
+  /** Required with the key by a plugin that connects to an instance; replaced together with it. */
+  endpoint?: string;
 }
 export interface SavePluginDefaultsRequest {
   defaultProviders: WebProviders;
 }
 export interface TestPluginConnectionRequest extends PluginRequest {
   apiKey?: string;
+  endpoint?: string;
 }
 /**
  * Signs a plugin in through the browser. The OAuth client is required for the

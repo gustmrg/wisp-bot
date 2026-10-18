@@ -3,6 +3,7 @@ import type { ToolMetadata } from "../tool-catalog.js";
 import { GMAIL_TOOL_METADATA } from "./gmail.js";
 import { GOOGLE_CALENDAR_TOOL_METADATA } from "./google-calendar.js";
 import { GOOGLE_DRIVE_TOOL_METADATA } from "./google-drive.js";
+import { HOME_ASSISTANT_TOOL_METADATA } from "./home-assistant.js";
 import { LINEAR_TOOL_METADATA } from "./linear.js";
 import { FIRECRAWL_SCRAPE_METADATA, WEB_READ_METADATA, WEB_SEARCH_METADATA } from "./web.js";
 
@@ -26,5 +27,8 @@ export const PLUGIN_TOOL_CATALOG: ReadonlyArray<ToolMetadata> = [
   ...Object.values(GMAIL_TOOL_METADATA).map((metadata): ToolMetadata => ({ ...metadata, pluginId: "gmail" })),
   ...Object.values(GOOGLE_DRIVE_TOOL_METADATA).map(
     (metadata): ToolMetadata => ({ ...metadata, pluginId: "google-drive" }),
+  ),
+  ...Object.values(HOME_ASSISTANT_TOOL_METADATA).map(
+    (metadata): ToolMetadata => ({ ...metadata, pluginId: "home-assistant" }),
   ),
 ];

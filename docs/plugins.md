@@ -2,8 +2,9 @@
 
 Wisp ships with bundled integrations: **Brave Search** (web search),
 **Linear**, **Firecrawl**, **Tavily**, and **Exa** (the latter three support web
-search and page reading), and **Google Calendar**, **Gmail**, and **Google
-Drive**, which sign in with your own Google OAuth client. Connections are configured globally in
+search and page reading), **Google Calendar**, **Gmail**, and **Google
+Drive**, which sign in with your own Google OAuth client, and **Home
+Assistant**, which connects to your own server. Connections are configured globally in
 **Settings → Plugins**; each Wisp receives access independently through its
 **Access** tab. Connecting a plugin grants no Wisp access automatically.
 
@@ -24,6 +25,11 @@ personal API key**, **Firecrawl API key**, **Tavily API key**, or **Exa API
 key** (each form links to the provider page that issues it), and select
 **Connect**. Connecting tests the key first and saves it only if the test
 succeeds. Each plugin supports one connection on this device.
+
+**Home Assistant** also asks for the address of your server with its
+**long-lived access token**. Both are tested and saved together, and replacing
+the key asks for the address again, prefilled. See
+[Home Assistant](#home-assistant).
 
 Plugins that sign in through the browser ask instead for an **OAuth client**
 you create with the provider (each form links to its setup guide): enter its
@@ -312,11 +318,61 @@ the limit is in Wisp, not in Google's permission. The plugin cannot delete
 mail, change labels, or read attachments. Email contents are written by other
 people and reach the Wisp as data, not instructions.
 
+## Home Assistant
+
+Connect with your server's address and a long-lived access token. Create the
+token in Home Assistant under your profile, on the **Security** tab, at the
+bottom under **Long-lived access tokens**. Home Assistant tokens cannot be
+limited: they can do anything their user can. Consider creating a dedicated
+user for Wisp, and remember that a Wisp with write access can control every
+device that user can.
+
+The address may use HTTPS anywhere, such as through Home Assistant Cloud or a
+reverse proxy, or plain HTTP on your local network or tailnet:
+`http://homeassistant.local:8123`, a private IP address such as
+`192.168.1.10`, a Tailscale address or `*.ts.net` name, or a single-word host
+name. HTTP to any other address is refused because the token would cross the
+internet unencrypted. The address is checked from the computer that runs the
+Wisp server, so with a [server on another computer](remote-server.md) it must
+be reachable from there.
+
+With **Read only**, a Wisp can list devices, sensors, scenes, and scripts with
+their state and area (`home_assistant_list_entities`), filtered by domain such
+as `light`, area such as `Kitchen`, or words in the name; read one entity's
+state and attributes (`home_assistant_get_state`); and see how it changed over
+the last hours, up to a week (`home_assistant_get_history`).
+
+Areas come from Home Assistant's template API, which may be limited to
+administrators. When the token cannot use it, entities are listed without
+their areas and filtering by area is unavailable; everything else works.
+
+With **Read and write**, it can:
+
+- control ordinary devices (`home_assistant_control`): turn lights, switches,
+  fans, media players, climate, and humidifiers on or off, or toggle them; set
+  a light's brightness, a thermostat's temperature, or a media player's
+  volume; open, close, or stop blinds and shades;
+- control what secures your home (`home_assistant_control_secure`): lock,
+  unlock, or open locks, arm or disarm alarms, and open, close, or stop garage
+  doors, gates, and doors. A lock or alarm code is sent only when you give it,
+  and never appears on the approval card;
+- activate scenes (`home_assistant_run_scene`) and run scripts
+  (`home_assistant_run_script`).
+
+Each action asks for approval unless you allowed it without asking. Because
+**Always allow this action** is remembered per tool, allowing lights does not
+allow locks, alarms, or doors. **Always allow all** of the plugin's actions
+covers them too. The plugin calls only these actions: it cannot restart Home
+Assistant, change its configuration, or call other services. Scripts can do
+anything they were written to do, so allow them with care. Names, states, and
+attributes come from devices and integrations and reach the Wisp as data, not
+instructions.
+
 ## Revocation and key changes
 
 Disabling a plugin blocks all Wisps but retains their grants. Replacing a key
-with a different key or removing its connection clears every Wisp's grants for
-that plugin. Revocation blocks new calls and cancels pending
+with a different key, or a Home Assistant address with a different one, or
+removing its connection clears every Wisp's grants for that plugin. Revocation blocks new calls and cancels pending
 approvals/requests; it cannot undo a change already accepted by Linear. Check
 Linear before retrying a write whose outcome is uncertain.
 

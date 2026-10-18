@@ -174,3 +174,30 @@ OAuth client**:
 - Plugin settings are now pushed to every window (`pluginSettingsChanged`), so
   a waiting sign-in can be cancelled or finished from any of them.
 
+## Amendment (2026-10-17): plugins that connect to the user's own server
+
+Home Assistant runs on the user's own server, so its plugin needs an address
+as well as a key. A remote MCP connection was considered, since Home Assistant
+ships an MCP server, but MCP presets have a fixed endpoint, MCP requires
+HTTPS while most Home Assistant servers use HTTP on the local network, and
+MCP access has no read level, so reading a sensor would need approval. The
+plugin uses Home Assistant's REST API instead:
+
+- A catalog entry may declare a **server address**. Its form asks for the
+  address with the key; both are tested and saved together, and the address
+  is stored with the key in `plugin-credentials.enc.json`. The view shows the
+  address so the form can prefill it, but never the key.
+- The address must use HTTPS, or HTTP on a local network or tailnet
+  (`localhost`, `.local`, `.lan`, `.home.arpa`, `.internal`, `.ts.net`,
+  single-word host names, private, link-local, and carrier-grade NAT IPv4
+  addresses, and loopback, unique-local, and link-local IPv6). It must not
+  contain credentials, a query, or a fragment.
+- A different address revokes every Wisp's access, like a different key: it
+  may be another home.
+- Adapters receive the address with the key; other plugins are unchanged.
+- The plugin calls a fixed set of services rather than any service. Locks,
+  alarms, garage doors, gates, and doors have their own write tool, so
+  always allowing one tool for other devices never covers them. Always
+  allowing every action of the plugin does cover them; the user chose not to
+  add an exception there.
+

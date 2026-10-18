@@ -4,6 +4,7 @@ import { exa } from "./exa.js";
 import { gmail } from "./gmail.js";
 import { googleCalendar } from "./google-calendar.js";
 import { googleDrive } from "./google-drive.js";
+import { homeAssistant } from "./home-assistant.js";
 import { firecrawl } from "./firecrawl.js";
 import { linear } from "./linear.js";
 import { tavily } from "./tavily.js";
@@ -19,4 +20,5 @@ export const PLUGIN_ADAPTERS: ReadonlyArray<PluginAdapter> = [
   googleCalendar,
   gmail,
   googleDrive,
+  homeAssistant,
 ];
