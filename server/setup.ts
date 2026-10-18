@@ -19,6 +19,8 @@ export interface SetupOptions {
   packageSpec?: string;
   port?: number;
   publicOrigin?: string;
+  /** Serve the browser app. Left out, a new server does not and an existing one keeps its setting. */
+  web?: boolean;
   dataDirectory?: string;
   /** Install and start the systemd user service. Off, only the files are written. */
   service: boolean;
@@ -38,6 +40,7 @@ export interface SetupResult {
   dataDirectory: string;
   port: number;
   publicOrigin?: string;
+  web: boolean;
   service: "started" | "restarted" | "unchanged" | "skipped";
   /** The command that starts the server by hand, when no service was installed. */
   startCommand?: string;
@@ -210,6 +213,8 @@ export async function runSetup(options: SetupOptions, host: SetupHost): Promise<
   const port = options.port ?? Number(current.get("WISP_PORT") ?? DEFAULT_PORT);
   if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error("The port must be between 1 and 65535.");
   const wantedOrigin = publicOrigin ?? current.get("WISP_PUBLIC_ORIGIN");
+  // Servers set up before WISP_WEB existed always served the browser app; they keep doing so.
+  const web = options.web ?? (existingEnv === undefined ? false : (current.get("WISP_WEB") ?? "1") === "1");
   const address = probeAddress(current.get("WISP_HOST"));
 
   // 3. The master key. Never replaced: saved credentials could not be read without it.
@@ -230,6 +235,7 @@ export async function runSetup(options: SetupOptions, host: SetupHost): Promise<
     WISP_DATA_DIR: dataDirectory,
     WISP_MASTER_KEY_FILE: keyFile,
     WISP_PORT: String(port),
+    WISP_WEB: web ? "1" : "0",
     ...(wantedOrigin ? { WISP_PUBLIC_ORIGIN: wantedOrigin } : {}),
   });
   changed = (await writeIfChanged(paths.envFile, env, 0o600)) || changed;
@@ -258,13 +264,14 @@ export async function runSetup(options: SetupOptions, host: SetupHost): Promise<
     dataDirectory,
     port,
     ...(wantedOrigin ? { publicOrigin: wantedOrigin } : {}),
+    web,
     warnings,
   };
   if (!options.service) {
     return {
       ...base,
       service: "skipped",
-      startCommand: `WISP_MASTER_KEY_FILE=${shellQuote(keyFile)} WISP_DATA_DIR=${shellQuote(dataDirectory)} WISP_PORT=${port} ${shellQuote(host.nodePath)} ${shellQuote(paths.mainScript)}`,
+      startCommand: `WISP_MASTER_KEY_FILE=${shellQuote(keyFile)} WISP_DATA_DIR=${shellQuote(dataDirectory)} WISP_PORT=${port}${web ? " WISP_WEB=1" : ""} ${shellQuote(host.nodePath)} ${shellQuote(paths.mainScript)}`,
     };
   }
 
@@ -340,7 +347,13 @@ export function describeSetup(result: SetupResult): string {
   } else if (result.service !== "skipped") {
     lines.push("Run `wispctl pair` for a pairing code.");
   }
-  if (!result.publicOrigin) {
+  if (!result.web) {
+    lines.push(
+      "",
+      "To use Wisp in a browser or install it on a phone, serve the browser app:",
+      "  wispctl setup --web",
+    );
+  } else if (!result.publicOrigin) {
     lines.push(
       "",
       "For a browser or phone, expose it on your tailnet and set the address:",

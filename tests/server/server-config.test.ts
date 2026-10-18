@@ -11,7 +11,14 @@ describe("parseServerConfig", () => {
       port: 8787,
       agentMode: "pi",
       allowExternalBind: false,
+      web: false,
     });
+  });
+
+  it("serves the browser app only when asked to", () => {
+    expect(parseServerConfig([], { WISP_WEB: "1" }).web).toBe(true);
+    expect(parseServerConfig([], { WISP_WEB: "0" }).web).toBe(false);
+    expect(parseServerConfig(["--web"], {}).web).toBe(true);
   });
 
   it("prefers flags over environment variables", () => {

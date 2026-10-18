@@ -311,6 +311,8 @@ export async function createWispServer(options: WispServerOptions): Promise<Wisp
             version: options.appVersion,
             port: address.port,
             devices: auth.devices().length,
+            // Whether the browser app answers at the public origin, so a pairing link opens it.
+            web: Boolean(exposed?.webRoot ?? options.webRoot),
             ...(exposed
               ? { publicOrigin: exposed.origin, exposedPort: exposed.port }
               : publicOrigin
