@@ -139,12 +139,16 @@ export class McpService {
 
   async getView(): Promise<McpSettingsView> {
     let headerConfigured = new Set<string>();
+    const headerBearer = new Set<string>();
     let signedIn = new Set<string>();
     let credentialError: string | undefined;
     try {
       for (const server of Object.values(this.state.servers)) {
         const secret = await this.secrets.read(server.serverId).catch(() => undefined);
         if (secret?.type === "header") headerConfigured.add(server.serverId);
+        if (secret?.type === "header" && isBearerHeader(secret.headerName, secret.headerValue)) {
+          headerBearer.add(server.serverId);
+        }
         // A client registration is saved before the browser opens; only a token means signed in.
         if (secret?.type === "oauth" && secret.accessToken !== "") signedIn.add(server.serverId);
       }
@@ -165,6 +169,7 @@ export class McpService {
           enabled: server.enabled,
           headerConfigured: headerConfigured.has(server.serverId),
           ...(server.headerName ? { headerName: server.headerName } : {}),
+          ...(headerBearer.has(server.serverId) ? { headerBearer: true } : {}),
           ...(server.extraHeaders ? { extraHeaders: { ...server.extraHeaders } } : {}),
           ...(server.preset ? { preset: server.preset } : {}),
           ...(this.isSignInPending(server.serverId) ? { signInPending: true } : {}),
@@ -1207,6 +1212,11 @@ export class McpService {
       );
     }
   }
+}
+
+/** A bearer token, which the settings form edits without the header name or scheme. */
+function isBearerHeader(headerName: string, headerValue: string): boolean {
+  return headerName.toLowerCase() === "authorization" && /^bearer\s/i.test(headerValue);
 }
 
 /** Header sets compare by name and value; an empty set equals none. */

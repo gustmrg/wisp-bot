@@ -861,6 +861,30 @@ describe("McpService", () => {
     expect((await service.getView()).servers).toHaveLength(1);
   });
 
+  it("reports a bearer token header by its scheme only", async () => {
+    const { service } = await createService();
+    await service.save({
+      name: "Bearer server",
+      endpoint: "https://b.example.com/mcp",
+      authMode: "header",
+      headerName: "Authorization",
+      headerValue: "Bearer sekrit-token",
+    });
+    await service.save({
+      name: "Basic server",
+      endpoint: "https://c.example.com/mcp",
+      authMode: "header",
+      headerName: "Authorization",
+      headerValue: "Basic sekrit-basic",
+    });
+    const view = await service.getView();
+    expect(view.servers.map((server) => [server.name, server.headerBearer])).toEqual([
+      ["Basic server", undefined],
+      ["Bearer server", true],
+    ]);
+    expect(JSON.stringify(view)).not.toContain("sekrit");
+  });
+
   it("stores header secrets in the dedicated MCP store and never returns them in views", async () => {
     const { service, dataDirectory } = await createService();
     await service.save({
