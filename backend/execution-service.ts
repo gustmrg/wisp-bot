@@ -56,7 +56,7 @@ const RUN_COMMAND_DESCRIPTION: ReadonlyArray<string> = [
   `The working directory is ${CONTAINER_WORKSPACE}, which holds the same files as the workspace file tools; paths in commands use ${CONTAINER_WORKSPACE}.`,
   "Use it for git, builds, tests, package installs and other command-line work. git, curl, python3, node, npm, build-essential, ripgrep and jq are installed when the default image is used.",
   "Commands run as a regular user without sudo, so system packages cannot be installed; install tools into the home folder (pip --user, npm -g, downloads into ~/.local/bin). The home folder is inside the workspace and is kept; anything outside the workspace can disappear when the container is recreated.",
-  "git over HTTPS to github.com uses the token of the GitHub plugin, when this Wisp has access to it; never print or store the token.",
+  "git over HTTPS to github.com goes through a gateway on the server, which adds the GitHub plugin's token when this Wisp has access to it; the token is not in the container, and the gateway carries only git, so use the GitHub tools for issues, pull requests and other API calls.",
   "Each call starts a fresh shell in the working directory; use cd within the command. Processes left running in the background are stopped when the command ends; start servers, watchers and other long-running commands with the process tool instead. Output is truncated to the last lines; optionally give a timeout in seconds.",
 ];
 

@@ -56,10 +56,11 @@ and approving each `npm test` makes development impractical.
   never the command). A short list of commands that would wipe the workspace
   or fork-bomb is refused outright; it guards against mistakes, not attacks.
 - **Network:** the internet is open; data, packages and repositories are
-  there. The local network is blocked unless the Wisp is allowed it. A blocked
-  Wisp's container sits on its own `--internal` network with no route out; its
-  only way out is a shared egress proxy container (Node, run from the sandbox
-  image) that is also on that network as `wisp-egress`. The proxy resolves each
+  there. The local network is blocked unless the Wisp is allowed it. Each
+  Wisp's container sits on a network of its own, which a shared egress proxy
+  container (Node, run from the sandbox image) is also on as `wisp-egress`. A
+  blocked Wisp's network is `--internal`, with no route out, so the proxy is
+  its only way out. The proxy resolves each
   destination itself, refuses it if any answer is a private, loopback,
   link-local, CGNAT, multicast or reserved address (IPv4 and IPv6), and
   connects to the address it checked. Wisp containers get `HTTP_PROXY` and
@@ -69,12 +70,12 @@ and approving each `npm test` makes development impractical.
 - **Git:** git uses the token of the GitHub plugin when the Wisp has access
   to an enabled GitHub plugin, so the user enters one token for both the
   plugin's tools and git. A token saved for the Wisp itself (from before this
-  change) takes precedence until it is removed. The token reaches a command
-  through the container program's environment, never its arguments, and git's
-  credential helper hands it to github.com. Neither pushing nor other use of
-  the token from a command is approved separately, even when the plugin's
-  tools ask for approval: the token's scope is the authorization, so the user
-  limits it to the repositories and permissions the Wisp needs.
+  change) takes precedence until it is removed. The token never enters the
+  container: git sends github.com requests to a gateway in the egress proxy,
+  which adds the token (see the amendment below). Neither pushing nor
+  fetching is approved separately, even when the plugin's tools ask for
+  approval: the token's scope is the authorization, so the user limits it to
+  the repositories and permissions the Wisp needs.
 - **Size:** checked between commands. A command is refused while the workspace
   holds more than its size; a running command cannot be stopped from writing
   past it.
@@ -93,7 +94,8 @@ and approving each `npm test` makes development impractical.
 
 - A Wisp can do development work: clone, branch, edit, build, test, push.
 - **Accepted risk:** a Wisp misled by content it read can send its workspace
-  contents anywhere, or push what its token allows. Secrets do not belong in a
+  contents anywhere, or clone and push what its token allows. It cannot read
+  the token or use it for anything but git. Secrets do not belong in a
   workspace, and tokens should be narrow.
 - A Wisp allowed the local network can reach devices and services on the
   server's network, including the server's other interfaces. Blocked Wisps
@@ -102,6 +104,53 @@ and approving each `npm test` makes development impractical.
 - Whoever runs the Wisp server needs Docker or Podman. Membership in the
   `docker` group is root-equivalent on that machine; rootless Podman avoids it.
   Only the server talks to the container program; Wisps never see its socket.
+
+## Amendment: the GitHub token stays out of the container (2026-10-18)
+
+Until this change the token reached each command as `WISP_GIT_TOKEN` and a
+credential helper handed it to git. A Wisp could read it (`env`,
+`/proc/*/environ`, `git credential fill`), background processes kept it for
+their lifetime, and every package script a command ran inherited it. Read
+from inside the container, the plugin's token, which also needs issue and pull
+request permissions for the plugin's tools, reached the whole GitHub API
+without the plugin's approvals. Tracked as SWE-172.
+
+- **The gateway.** git in every Wisp container has
+  `url.http://wisp-egress:3129/.insteadOf https://github.com/`, so it sends
+  github.com requests over plain HTTP to a second port of the egress proxy.
+  Remotes keep their github.com address. The gateway carries only git's smart
+  HTTP protocol for one repository (`info/refs` for upload-pack and
+  receive-pack, `git-upload-pack`, `git-receive-pack`) and git LFS's batch and
+  lock check; anything else, the GitHub API included, is refused. It drops the
+  client's own credentials and cookies, adds
+  `Authorization: Basic x-access-token:<token>`, sends the request to
+  `https://github.com`, streams both bodies, and keeps a moved repository's
+  redirect on the gateway. Without a token it sends the request as it is, so
+  public repositories still work.
+- **Which Wisp is asking.** Each Wisp reaches the proxy only over its own
+  network, so the proxy's address a request arrives on tells which Wisp sent
+  it; there is no secret in the container. Wisps allowed the local network now
+  also get a network of their own, with a route out, instead of the default
+  one.
+- **Where the token is.** In the proxy's memory, keyed by that address. The
+  server tells the proxy before a command or background process starts, when
+  the token, the proxy or its address changed, by running
+  `node egress-proxy.cjs control` in the proxy container with the token on
+  standard input; that reaches an abstract Unix socket only the proxy's own
+  processes can reach. Removing a Wisp's network takes its token away first.
+  A Wisp that loses access to the plugin loses the token at its next command.
+- **Rejected:** intercepting TLS with a per-Wisp CA (the same result with far
+  more machinery); a credential broker the container asks (`git credential
+  fill` would still reveal the token); short-lived GitHub App tokens (a heavier
+  setup for the user; a fine-grained token with an expiry is recommended
+  instead); the `gh` CLI in the image (the plugin's tools already cover the
+  API, with approvals); keeping the token in the server and reaching it from
+  the proxy over a Unix socket mounted from the host (Docker Desktop cannot
+  mount host sockets into containers on macOS).
+- **Not covered:** a remote with credentials in its URL
+  (`https://x-access-token:...@github.com/...`) does not match the rewrite;
+  tokens a Wisp already wrote into its workspace stay valid until the user
+  replaces the token.
 
 ## Deferred: SSH mode
 
@@ -154,5 +203,7 @@ Tracked in Linear as SWE-135.
 - **Blocking private ranges with firewall rules:** needs root on the server and
   differs between Docker, Podman and macOS; an internal network plus a proxy
   works the same everywhere.
-- **A token approval on every push:** a credential helper cannot tell a push
-  from a fetch reliably, and the user chose to rely on the token's scope.
+- **A token approval on every push:** the user chose to rely on the token's
+  scope. (A credential helper could not tell a push from a fetch; the gateway
+  can, by `git-receive-pack`, should pushes need a record or an approval
+  later.)
