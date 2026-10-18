@@ -26,8 +26,6 @@ export interface WispExecutionView {
   /** Whether commands may reach local and private network addresses; the internet is always reachable. */
   localNetwork: boolean;
   defaultImage: string;
-  /** Whether a GitHub token is saved for this Wisp itself; the token never leaves the backend. */
-  hasGitToken: boolean;
   /** Whether git can use the GitHub plugin's token: the Wisp has access to an enabled GitHub plugin. */
   gitHubPlugin: boolean;
   runtime: ContainerRuntimeStatus;
@@ -46,8 +44,6 @@ export interface SaveWispExecutionRequest {
   mode: ExecutionMode;
   image: string | null;
   localNetwork: boolean;
-  /** A new token replaces the saved one, null removes it, and leaving it out keeps it. */
-  gitToken?: string | null;
 }
 
 /**

@@ -65,7 +65,6 @@ import { WORKSPACE_QUOTA_PRESETS, type SetWorkspaceQuotaRequest } from "../share
 import {
   EXECUTION_MODES,
   isContainerImage,
-  isGitToken,
   type ExecutionMode,
   type SaveWispExecutionRequest,
 } from "../shared/execution.js";
@@ -142,19 +141,15 @@ export function parseSetWorkspaceQuotaRequest(value: unknown): SetWorkspaceQuota
 
 export function parseSaveWispExecutionRequest(value: unknown): SaveWispExecutionRequest {
   const request = asRecord(value);
-  const { mode, image, localNetwork, gitToken } = request;
+  const { mode, image, localNetwork } = request;
   if (typeof localNetwork !== "boolean") throw invalidRequest();
   if (typeof mode !== "string" || !EXECUTION_MODES.includes(mode as ExecutionMode)) throw invalidRequest();
   if (image !== null && (typeof image !== "string" || !isContainerImage(image))) throw invalidRequest();
-  if (gitToken !== undefined && gitToken !== null && (typeof gitToken !== "string" || !isGitToken(gitToken))) {
-    throw invalidRequest();
-  }
   return {
     conversationId: parseId(request.conversationId),
     mode: mode as ExecutionMode,
     image,
     localNetwork,
-    ...(gitToken === undefined ? {} : { gitToken }),
   };
 }
 

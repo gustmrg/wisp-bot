@@ -1,4 +1,4 @@
-import { render, screen, within } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, it, vi } from "vitest";
 
@@ -10,7 +10,6 @@ const VIEW: WispExecutionView = {
   image: null,
   localNetwork: false,
   defaultImage: "wisp-sandbox:abc",
-  hasGitToken: false,
   gitHubPlugin: false,
   runtime: { available: true, name: "docker", version: "29.8.1" },
   container: "absent",
@@ -19,18 +18,12 @@ const VIEW: WispExecutionView = {
 function install(view: WispExecutionView) {
   let current = view;
   const saveWispExecution = vi.fn(
-    async (request: {
-      mode: WispExecutionView["mode"];
-      image: string | null;
-      localNetwork: boolean;
-      gitToken?: string | null;
-    }) => {
+    async (request: { mode: WispExecutionView["mode"]; image: string | null; localNetwork: boolean }) => {
       current = {
         ...current,
         mode: request.mode,
         image: request.image,
         localNetwork: request.localNetwork,
-        ...(request.gitToken === undefined ? {} : { hasGitToken: request.gitToken !== null }),
       };
       return { ok: true as const, value: current };
     },
@@ -62,30 +55,11 @@ it("turns commands on, points to the GitHub plugin, and keeps other settings", a
   expect(await screen.findByRole("switch", { name: "Allow local network" })).toHaveAttribute("aria-checked", "true");
 });
 
-it("says when git uses the GitHub plugin's token", async () => {
+it("says when git uses the GitHub plugin's token, and that the Wisp never sees it", async () => {
   install({ ...VIEW, mode: "container", gitHubPlugin: true });
   render(<WispExecutionSettings conversationId="one" />);
 
-  expect(await screen.findByText(/git uses the GitHub plugin's token/)).toBeInTheDocument();
-});
-
-it("asks before removing a token saved for the Wisp itself", async () => {
-  const user = userEvent.setup();
-  const save = install({ ...VIEW, mode: "container", hasGitToken: true });
-  render(<WispExecutionSettings conversationId="one" />);
-
-  await user.click(await screen.findByRole("button", { name: "Remove token" }));
-  expect(save).not.toHaveBeenCalled();
-  const confirm = screen.getByRole("group", { name: "Remove token" });
-  await user.click(within(confirm).getByRole("button", { name: "Remove token" }));
-  expect(save).toHaveBeenLastCalledWith({
-    conversationId: "one",
-    mode: "container",
-    image: null,
-    localNetwork: false,
-    gitToken: null,
-  });
-  expect(await screen.findByText("Token removed.")).toBeInTheDocument();
+  expect(await screen.findByText(/adds the GitHub plugin's token/)).toHaveTextContent("without ever seeing it");
 });
 
 it("explains a missing container program and does not offer to turn commands on", async () => {

@@ -2,27 +2,50 @@ import { createHash } from "node:crypto";
 
 /** Port the egress proxy listens on inside its container. */
 export const EGRESS_PROXY_PORT = 3128;
+/** Port of the git gateway, in the same proxy container. */
+export const EGRESS_GIT_PORT = 3129;
 /** The name Wisp containers reach the proxy by on their network. */
 export const EGRESS_PROXY_HOST = "wisp-egress";
 
 /**
- * The egress proxy, run with Node in the sandbox image. Wisp containers whose
- * local network is blocked sit on a network with no route out; this proxy is
- * their only way to the internet. It resolves each destination itself and
- * refuses private, loopback, link-local, multicast and other non-public
- * addresses, then connects to the address it checked, so a name cannot
- * resolve to a public address for the check and a private one for the
- * connection. It handles CONNECT (HTTPS, and anything tunnelled) and plain
- * HTTP requests, and logs nothing about them.
+ * The egress proxy, run with Node in the sandbox image. It serves three
+ * things:
  *
- * `WISP_EGRESS_ALLOW` lists extra CIDR ranges to allow; only tests set it.
+ * - **The egress proxy.** Wisp containers whose local network is blocked sit
+ *   on a network with no route out; this proxy is their only way to the
+ *   internet. It resolves each destination itself and refuses private,
+ *   loopback, link-local, multicast and other non-public addresses, then
+ *   connects to the address it checked, so a name cannot resolve to a public
+ *   address for the check and a private one for the connection. It handles
+ *   CONNECT (HTTPS, and anything tunnelled) and plain HTTP requests, and logs
+ *   nothing about them.
+ * - **The git gateway.** git in every Wisp container sends github.com
+ *   requests here over plain HTTP. Only git's smart HTTP protocol (and git
+ *   LFS's batch and lock check) is carried; the gateway adds the Wisp's
+ *   GitHub token and sends the request to github.com over HTTPS. The token
+ *   never enters a Wisp's container, and the GitHub API cannot be reached
+ *   with it. Each Wisp reaches the proxy only over its own network, so the
+ *   address a request arrives on tells which Wisp sent it.
+ * - **The control socket**, an abstract Unix socket that only processes in
+ *   the proxy's own container can reach. The server runs
+ *   `node <script> control` in the container with `{ address, token }` on
+ *   stdin to set (or, with a null token, forget) the token for requests
+ *   arriving on that address.
+ *
+ * `WISP_EGRESS_ALLOW` lists extra CIDR ranges to allow, `WISP_GIT_UPSTREAM`
+ * replaces github.com and `WISP_EGRESS_CONTROL` names the control socket; only
+ * tests set them.
  */
 export const EGRESS_PROXY_SCRIPT = String.raw`"use strict";
 const http = require("node:http");
+const https = require("node:https");
 const net = require("node:net");
 const dns = require("node:dns").promises;
 
 const PORT = Number(process.env.WISP_EGRESS_PORT || 3128);
+const GIT_PORT = Number(process.env.WISP_GIT_PORT || 3129);
+const GIT_UPSTREAM = new URL(process.env.WISP_GIT_UPSTREAM || "https://github.com");
+const CONTROL = "\0" + (process.env.WISP_EGRESS_CONTROL || "wisp-egress-control");
 const IDLE_MS = 10 * 60 * 1000;
 const blocked = new net.BlockList();
 for (const [address, prefix] of [
@@ -132,7 +155,114 @@ server.on("connect", async (request, client, head) => {
   client.on("close", () => upstream.destroy());
 });
 
-server.listen(PORT, () => console.log("listening " + server.address().port));
+/** The GitHub token for requests arriving on each of the proxy's addresses, one per Wisp network. */
+const gitTokens = new Map();
+const GIT_PATH = /^\/[A-Za-z0-9][A-Za-z0-9-]{0,38}\/([A-Za-z0-9._-]{1,100})\/(info\/refs|git-upload-pack|git-receive-pack|info\/lfs\/objects\/batch|info\/lfs\/locks\/verify)$/;
+const GIT_REQUEST_HEADERS = ["accept", "accept-encoding", "content-encoding", "content-length", "content-type", "git-protocol", "user-agent"];
+const HOP_HEADERS = ["connection", "keep-alive", "transfer-encoding"];
+const GIT_REFUSED = "The Wisp git gateway carries only git over HTTPS to github.com. Use the GitHub plugin's tools for anything else.\n";
+
+function unmapped(address) {
+  return address && address.startsWith("::ffff:") ? address.slice(7) : address || "";
+}
+
+/** Whether a request is part of git's smart HTTP protocol, or git LFS's batch and lock check, for one repository. */
+function isGitRequest(method, url) {
+  const match = GIT_PATH.exec(url.pathname);
+  if (!match || match[1] === "." || match[1] === "..") return false;
+  if (match[2] === "info/refs") return method === "GET" && /^\?service=git-(upload|receive)-pack$/.test(url.search);
+  return method === "POST" && url.search === "";
+}
+
+const gitServer = http.createServer((request, response) => {
+  let url;
+  try {
+    url = new URL(request.url, "http://gateway");
+  } catch {
+    url = null;
+  }
+  if (!url || !request.url.startsWith("/") || request.url.startsWith("//") || !isGitRequest(request.method, url)) {
+    request.resume();
+    response.writeHead(403, { "content-type": "text/plain" }).end(GIT_REFUSED);
+    return;
+  }
+  const headers = {};
+  for (const name of GIT_REQUEST_HEADERS) if (request.headers[name] !== undefined) headers[name] = request.headers[name];
+  const token = gitTokens.get(unmapped(request.socket.localAddress));
+  if (token) headers.authorization = "Basic " + Buffer.from("x-access-token:" + token).toString("base64");
+  const upstream = (GIT_UPSTREAM.protocol === "https:" ? https : http).request(
+    {
+      protocol: GIT_UPSTREAM.protocol,
+      hostname: GIT_UPSTREAM.hostname,
+      port: GIT_UPSTREAM.port || undefined,
+      method: request.method,
+      path: GIT_UPSTREAM.pathname.replace(/\/$/, "") + url.pathname + url.search,
+      headers,
+    },
+    (reply) => {
+      const replyHeaders = { ...reply.headers };
+      for (const name of HOP_HEADERS) delete replyHeaders[name];
+      // A moved repository redirects to github.com; keep git on the gateway, or it would lose the token.
+      const host = request.headers.host;
+      const location = replyHeaders.location;
+      if (typeof location === "string" && location.startsWith(GIT_UPSTREAM.origin + "/") && /^[A-Za-z0-9.-]+(:\d+)?$/.test(host || "")) {
+        replyHeaders.location = "http://" + host + location.slice(GIT_UPSTREAM.origin.length);
+      }
+      response.writeHead(reply.statusCode || 502, replyHeaders);
+      reply.pipe(response);
+    },
+  );
+  upstream.setTimeout(IDLE_MS, () => upstream.destroy());
+  upstream.on("error", () => {
+    if (response.headersSent) return response.destroy();
+    response.writeHead(502, { "content-type": "text/plain" }).end("github.com could not be reached.\n");
+  });
+  request.pipe(upstream);
+});
+
+const control = net.createServer({ allowHalfOpen: true }, (socket) => {
+  let input = "";
+  socket.setEncoding("utf8");
+  socket.on("error", () => undefined);
+  socket.on("data", (chunk) => {
+    input += chunk;
+    if (input.length > 4096) socket.destroy();
+  });
+  socket.on("end", () => {
+    try {
+      const { address, token } = JSON.parse(input);
+      if (typeof address !== "string" || !net.isIP(address)) throw new Error("address");
+      if (token === null) gitTokens.delete(address);
+      else if (typeof token === "string" && /^[\x21-\x7e]{1,512}$/.test(token)) gitTokens.set(address, token);
+      else throw new Error("token");
+      socket.end("ok\n");
+    } catch {
+      socket.end("invalid\n");
+    }
+  });
+});
+
+if ((process.argv || [])[2] === "control") {
+  let input = "";
+  process.stdin.setEncoding("utf8");
+  process.stdin.on("data", (chunk) => (input += chunk));
+  process.stdin.on("end", () => {
+    let reply = "";
+    const socket = net.connect(CONTROL, () => socket.end(input));
+    socket.setEncoding("utf8");
+    socket.on("data", (chunk) => (reply += chunk));
+    socket.on("error", () => process.exit(1));
+    socket.on("close", () => process.exit(reply === "ok\n" ? 0 : 1));
+  });
+} else {
+  let pending = 3;
+  const ready = () => {
+    if (--pending === 0) console.log("listening " + server.address().port + " git " + gitServer.address().port);
+  };
+  control.listen(CONTROL, ready);
+  gitServer.listen(GIT_PORT, ready);
+  server.listen(PORT, ready);
+}
 `;
 
 export const EGRESS_PROXY_SCRIPT_HASH = createHash("sha256").update(EGRESS_PROXY_SCRIPT).digest("hex").slice(0, 12);

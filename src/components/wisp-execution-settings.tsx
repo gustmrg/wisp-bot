@@ -1,7 +1,6 @@
 import { useEffect, useId, useState } from "react";
 
 import type { ExecutionMode, SaveWispExecutionRequest, WispExecutionView } from "../../shared/execution";
-import { ConfirmAction, SettingsActions } from "@/components/settings/settings-primitives";
 import { Button } from "@/components/ui/button";
 import {
   Field,
@@ -180,28 +179,10 @@ function ExecutionPanel({ conversationId }: { conversationId: string }) {
           <Field>
             <FieldTitle>GitHub</FieldTitle>
             <FieldDescription>
-              {view.hasGitToken
-                ? "git uses a token saved for this Wisp, instead of the GitHub plugin's."
-                : view.gitHubPlugin
-                  ? "git uses the GitHub plugin's token for github.com, so the Wisp can clone and push whatever the token allows."
-                  : "To use private repositories, add the GitHub plugin in Settings → Plugins and give this Wisp access to it."}
+              {view.gitHubPlugin
+                ? "git reaches github.com through the server, which adds the GitHub plugin's token, so the Wisp can clone and push whatever the token allows without ever seeing it."
+                : "To use private repositories, add the GitHub plugin in Settings → Plugins and give this Wisp access to it."}
             </FieldDescription>
-            {view.hasGitToken ? (
-              <SettingsActions>
-                <ConfirmAction
-                  label="Remove token"
-                  confirmLabel="Remove token"
-                  variant="outline"
-                  disabled={saving}
-                  description={
-                    view.gitHubPlugin
-                      ? "git in this Wisp's container uses the GitHub plugin's token instead."
-                      : "git in this Wisp's container loses access to private repositories on github.com until the Wisp has access to the GitHub plugin."
-                  }
-                  onConfirm={() => void save({ gitToken: null }, "Token removed.")}
-                />
-              </SettingsActions>
-            ) : null}
           </Field>
         </>
       ) : null}
