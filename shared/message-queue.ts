@@ -17,6 +17,12 @@ export interface QueuedMessage {
   createdAt: string;
   /** Set when a scheduled message queued it. */
   scheduled?: ScheduledOrigin;
+  /**
+   * Handed to the Wisp's running turn, which reads it before its next step
+   * instead of after it finishes. Never stored: a message still waiting when
+   * the turn ends is sent like any other.
+   */
+  followUp?: true;
 }
 
 export interface MessageQueueView {

@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { ConnectionsView } from "../../shared/connections";
 import type { WispApi } from "../../shared/contracts";
+import { messageWithAttachments } from "../../shared/workspace";
 import type { ChatView } from "@/chat-data";
 import { circleChatView, wispChatView } from "@/test/chat-fixtures";
 import { ChatComposer } from "@/components/chat-composer";
@@ -381,6 +382,28 @@ describe("ChatComposer", () => {
     expect(screen.getByRole("status")).toBeEmptyDOMElement();
     screen.getByRole("button", { name: "Stop response" }).click();
     expect(onAbort).toHaveBeenCalledOnce();
+  });
+
+  it("puts follow-ups the stopped turn never read back into the draft, after what is typed", async () => {
+    const user = userEvent.setup();
+    const onAbort = vi.fn(async () => [
+      {
+        id: "q1",
+        conversationId: "steer",
+        createdAt: "2026-10-18T12:00:00.000Z",
+        text: messageWithAttachments("Only the summary", [{ path: "inbox/notes.md" }]),
+        followUp: true as const,
+      },
+      { id: "q2", conversationId: "steer", createdAt: "2026-10-18T12:00:01.000Z", text: "In Portuguese" },
+    ]);
+    render(<ChatComposer {...defaultProps} chat={wisp("steer", "Steer")} status="working" onAbort={onAbort} />);
+    const input = screen.getByRole("textbox", { name: "Message Steer" });
+    await user.type(input, "Draft");
+
+    await user.click(screen.getByRole("button", { name: "Stop response" }));
+
+    await waitFor(() => expect(input).toHaveValue("Draft\n\nOnly the summary\n\nIn Portuguese"));
+    expect(screen.getByText("notes.md")).toBeInTheDocument();
   });
 
   it("keeps draft updates below unrelated siblings", async () => {

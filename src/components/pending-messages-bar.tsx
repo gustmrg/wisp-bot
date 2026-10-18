@@ -1,4 +1,12 @@
-import { CalendarClockIcon, HourglassIcon, PaperclipIcon, PencilIcon, SendIcon, XIcon } from "lucide-react";
+import {
+  CalendarClockIcon,
+  CornerDownRightIcon,
+  HourglassIcon,
+  PaperclipIcon,
+  PencilIcon,
+  SendIcon,
+  XIcon,
+} from "lucide-react";
 import type { ReactNode } from "react";
 import { useState } from "react";
 
@@ -17,7 +25,7 @@ import type { ScheduledMessage } from "../../shared/scheduled-messages";
 import { messagePreview, messageWithAttachments, splitMessageAttachments } from "../../shared/workspace";
 
 interface PendingMessagesBarProps {
-  /** Messages waiting for the Wisp to be free, next first. */
+  /** Messages waiting for the Wisp, next first: follow-ups its running turn reads before its next step, then the rest. */
   queued: ReadonlyArray<QueuedMessage>;
   /** Messages scheduled for later, soonest first. */
   scheduled: ReadonlyArray<ScheduledMessage>;
@@ -55,9 +63,9 @@ export function PendingMessagesBar({ queued, scheduled, queue, schedule }: Pendi
         {queued.map((message, index) => (
           <PendingRow
             key={message.id}
-            icon={<HourglassIcon aria-hidden="true" />}
-            label={index === 0 ? "Next" : "Queued"}
-            note={message.scheduled ? "Scheduled" : undefined}
+            icon={message.followUp ? <CornerDownRightIcon aria-hidden="true" /> : <HourglassIcon aria-hidden="true" />}
+            label={message.followUp ? "Follow-up" : index === 0 ? "Next" : "Queued"}
+            note={message.scheduled ? "Scheduled" : message.followUp ? "Read before the next step" : undefined}
             text={message.text}
           >
             <BarAction

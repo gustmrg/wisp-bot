@@ -17,6 +17,13 @@ export interface MessageQueueOptions {
    * has left the queue, and resolves after the Wisp has answered it.
    */
   deliverNext: (conversationId: string, onTaken: () => void) => Promise<QueuedMessage | undefined>;
+  /**
+   * Hands a message to the Wisp's running turn as a follow-up; see
+   * `AgentRegistry.steer`. Resolves false when no turn can take it.
+   */
+  steer?: (message: QueuedMessage) => Promise<boolean>;
+  /** Takes back the follow-ups handed to the Wisp's running turn that it has not read; see `AgentRegistry`. */
+  withdrawFollowUps?: (conversationId: string) => string[];
   /** Receives every queued message after any change, including a message being taken. */
   onChanged: (view: MessageQueueView) => void;
   logger?: Pick<StructuredLogger, "warn">;
@@ -34,18 +41,26 @@ export class MessageQueue {
   private readonly repository: MessageQueueOptions["repository"];
   private readonly isAvailable: MessageQueueOptions["isAvailable"];
   private readonly deliverNext: MessageQueueOptions["deliverNext"];
+  private readonly steer: NonNullable<MessageQueueOptions["steer"]>;
+  private readonly withdrawFollowUps: NonNullable<MessageQueueOptions["withdrawFollowUps"]>;
   private readonly onChanged: MessageQueueOptions["onChanged"];
   private readonly logger: MessageQueueOptions["logger"];
   private readonly now: () => Date;
   private readonly createId: () => string;
   /** Wisps answering a message from the queue; each takes one at a time. */
   private readonly delivering = new Set<string>();
+  /** Messages handed to their Wisp's running turn and not read yet. */
+  private readonly followUps = new Set<string>();
+  /** Wisps whose waiting messages are being handed to their running turn; one pass at a time. */
+  private readonly steering = new Map<string, Promise<void>>();
   private disposed = false;
 
   constructor(options: MessageQueueOptions) {
     this.repository = options.repository;
     this.isAvailable = options.isAvailable;
     this.deliverNext = options.deliverNext;
+    this.steer = options.steer ?? (async () => false);
+    this.withdrawFollowUps = options.withdrawFollowUps ?? (() => []);
     this.onChanged = options.onChanged;
     this.logger = options.logger;
     this.now = options.now ?? (() => new Date());
@@ -61,7 +76,10 @@ export class MessageQueue {
   }
 
   async getView(): Promise<MessageQueueView> {
-    return { messages: await this.repository.listQueuedMessages() };
+    const messages = await this.repository.listQueuedMessages();
+    return {
+      messages: messages.map((message) => (this.followUps.has(message.id) ? { ...message, followUp: true } : message)),
+    };
   }
 
   /**
@@ -82,19 +100,100 @@ export class MessageQueue {
       ...(options.scheduled ? { scheduled: options.scheduled } : {}),
     };
     await this.repository.addQueuedMessage(message, options.scheduled ? undefined : MAX_QUEUED_MESSAGES_PER_WISP);
-    const view = await this.changed();
     this.pump(conversationId);
-    return view;
-  }
-
-  async update(queuedMessageId: string, text: string): Promise<MessageQueueView> {
-    const previous = await this.repository.changeQueuedMessage(queuedMessageId, (current) => ({ ...current, text }));
-    if (!previous) throw alreadySent();
+    await this.offerFollowUps(conversationId);
     return this.changed();
   }
 
+  async update(queuedMessageId: string, text: string): Promise<MessageQueueView> {
+    return this.change(queuedMessageId, (current) => ({ ...current, text }));
+  }
+
   async cancel(queuedMessageId: string): Promise<MessageQueueView> {
-    const previous = await this.repository.changeQueuedMessage(queuedMessageId, () => null);
+    return this.change(queuedMessageId, () => null);
+  }
+
+  /**
+   * Hands the Wisp's waiting messages to its running turn, oldest first, so
+   * it reads them before its next step. Scheduled messages are tasks of their
+   * own and wait for the turn to end, and so does everything after one.
+   */
+  async offerFollowUps(conversationId: string): Promise<void> {
+    const previous = this.steering.get(conversationId) ?? Promise.resolve();
+    const pass = previous.then(async () => {
+      if (this.disposed || this.isAvailable(conversationId)) return;
+      const waiting = (await this.repository.listQueuedMessages()).filter(
+        (message) => message.conversationId === conversationId,
+      );
+      let offered = false;
+      for (const message of waiting) {
+        if (this.followUps.has(message.id)) continue;
+        if (message.scheduled) break;
+        this.followUps.add(message.id);
+        let taken = false;
+        try {
+          taken = await this.steer(message);
+        } catch (error) {
+          this.logger?.warn("follow_up_steer_failed", { conversationId, code: sanitizeBackendError(error).code });
+        }
+        if (!taken) {
+          this.followUps.delete(message.id);
+          break;
+        }
+        offered = true;
+      }
+      if (offered) await this.changed();
+    });
+    const settled = pass.catch((error) =>
+      this.logger?.warn("follow_up_offer_failed", { conversationId, code: sanitizeBackendError(error).code }),
+    );
+    this.steering.set(conversationId, settled);
+    await settled;
+    if (this.steering.get(conversationId) === settled) this.steering.delete(conversationId);
+  }
+
+  /** Called once the running turn read a follow-up and it left the queue for the transcript. */
+  followUpTaken(queuedMessageId: string): void {
+    this.followUps.delete(queuedMessageId);
+    this.refresh();
+  }
+
+  /**
+   * Removes follow-ups a stopped turn never read, so the person can send them
+   * again, and answers them oldest first. Those already gone are left out.
+   */
+  async returnFollowUps(queuedMessageIds: ReadonlyArray<string>): Promise<QueuedMessage[]> {
+    const returned: QueuedMessage[] = [];
+    for (const id of queuedMessageIds) {
+      this.followUps.delete(id);
+      const message = await this.repository.changeQueuedMessage(id, () => null);
+      if (message) returned.push(message);
+    }
+    if (queuedMessageIds.length) await this.changed();
+    return returned;
+  }
+
+  /**
+   * Changes or removes a waiting message. One the running turn holds is taken
+   * back from it first, with the ones after it, which are handed over again
+   * in order once the change is made.
+   */
+  private async change(
+    queuedMessageId: string,
+    change: (current: QueuedMessage) => QueuedMessage | null,
+  ): Promise<MessageQueueView> {
+    let conversationId: string | undefined;
+    if (this.followUps.has(queuedMessageId)) {
+      conversationId = (await this.repository.listQueuedMessages()).find(
+        ({ id }) => id === queuedMessageId,
+      )?.conversationId;
+      if (conversationId) {
+        await this.steering.get(conversationId);
+        for (const id of this.withdrawFollowUps(conversationId)) this.followUps.delete(id);
+      }
+    }
+    const previous = await this.repository.changeQueuedMessage(queuedMessageId, change);
+    if (conversationId) await this.offerFollowUps(conversationId);
     if (!previous) throw alreadySent();
     return this.changed();
   }
@@ -102,6 +201,8 @@ export class MessageQueue {
   /** Hands the Wisp its next message if it is free; call whenever it may have become free. */
   pump(conversationId: string): void {
     if (this.disposed || this.delivering.has(conversationId) || !this.isAvailable(conversationId)) return;
+    // The turn that held follow-ups has ended and gave back those it did not read; they are sent like the rest.
+    void this.forgetFollowUps(conversationId);
     this.delivering.add(conversationId);
     void (async () => {
       let delivered = false;
@@ -118,6 +219,16 @@ export class MessageQueue {
       // The Wisp is free again only after its reply, so look for the next message then.
       if (delivered) this.pump(conversationId);
     })();
+  }
+
+  private async forgetFollowUps(conversationId: string): Promise<void> {
+    if (!this.followUps.size) return;
+    const waiting = await this.repository.listQueuedMessages();
+    let forgot = false;
+    for (const message of waiting) {
+      if (message.conversationId === conversationId && this.followUps.delete(message.id)) forgot = true;
+    }
+    if (forgot) this.refresh();
   }
 
   /** Publishes the current queue after a change made elsewhere, such as a deleted Wisp. */

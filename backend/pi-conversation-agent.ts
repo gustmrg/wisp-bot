@@ -74,6 +74,10 @@ export interface PiSessionLike {
   manageContext?(command: ContextCommand): Promise<ContextView>;
   /** Must not start the model run once `signal` is aborted. */
   prompt(text: string, options?: { expandPromptTemplates?: boolean; signal?: AbortSignal }): Promise<void>;
+  /** Adds a message, verbatim, that the running turn reads before its next model call. */
+  steer?(text: string): void;
+  /** Drops the messages handed to the running turn that it has not read. */
+  clearQueue?(): void;
   abort(): Promise<void>;
   waitForIdle(): Promise<void>;
   reload(): Promise<void>;
@@ -583,6 +587,10 @@ export class PiConversationAgent implements ConversationAgent {
   private sendCancellation: AbortController | null = null;
   private configured = false;
   private modelMutation: Promise<void> = Promise.resolve();
+  /** Follow-ups handed to the running turn, oldest first, until it reads them. */
+  private followUps: SendMessageRequest[] = [];
+  /** Whether the running turn's own message has started, so later user messages are its follow-ups. */
+  private promptStarted = false;
 
   constructor(
     context: ConversationAgentContext,
@@ -618,24 +626,48 @@ export class PiConversationAgent implements ConversationAgent {
         throw new WispBackendError("configuration_required", "Choose a provider and model before sending a message.");
       }
       this.translator.begin(request);
+      this.promptStarted = false;
       await this.promptSession(this.session, request, cancellation.signal);
     } finally {
+      // Pi would add follow-ups left unread to the next prompt; they are sent as messages of their own instead.
+      this.withdrawFollowUps();
       this.sending = false;
       this.sendCancellation = null;
       await this.applyPendingModel();
     }
   }
 
+  async steer(request: SendMessageRequest): Promise<boolean> {
+    const session = this.session;
+    if (this.disposed || !this.sending || !session?.steer || session.isIdle) return false;
+    const text = this.promptText(request);
+    this.followUps.push(request);
+    session.steer(text);
+    return true;
+  }
+
+  withdrawFollowUps(): string[] {
+    if (!this.followUps.length) return [];
+    const withdrawn = this.followUps.map(({ requestId }) => requestId);
+    this.followUps = [];
+    this.session?.clearQueue?.();
+    return withdrawn;
+  }
+
+  /** The text the model reads for a message: the person's words, after a note of when they were sent. */
+  private promptText(request: SendMessageRequest): string {
+    const timeZone = this.context.userTimeZone?.();
+    return request.scheduled
+      ? `${scheduledMessageNote(request.scheduled, new Date())}\n\n${request.text}`
+      : timeZone
+        ? `${currentTimeNote(new Date(), timeZone)}\n\n${request.text}`
+        : request.text;
+  }
+
   private async promptSession(session: PiSessionLike, request: SendMessageRequest, signal: AbortSignal): Promise<void> {
     try {
       signal.throwIfAborted();
-      const timeZone = this.context.userTimeZone?.();
-      const text = request.scheduled
-        ? `${scheduledMessageNote(request.scheduled, new Date())}\n\n${request.text}`
-        : timeZone
-          ? `${currentTimeNote(new Date(), timeZone)}\n\n${request.text}`
-          : request.text;
-      await session.prompt(text, { expandPromptTemplates: false, signal });
+      await session.prompt(this.promptText(request), { expandPromptTemplates: false, signal });
       this.translator.finish();
     } catch (error) {
       if (signal.aborted) {
@@ -831,6 +863,12 @@ export class PiConversationAgent implements ConversationAgent {
     this.unsubscribeSession?.();
     this.session = session;
     this.unsubscribeSession = session.subscribe((event) => {
+      if (event.type === "message_start" && event.message?.role === "user") {
+        // The turn's own message comes first; each later one is the oldest follow-up, which Pi hands over in order.
+        const followUp = this.promptStarted ? this.followUps.shift() : undefined;
+        this.promptStarted = true;
+        if (followUp) this.translator.takeFollowUp(followUp);
+      }
       this.translator.handle(event);
       if (event.type === "agent_settled") void this.applyPendingModel();
     });
@@ -1246,6 +1284,14 @@ function adaptSession(
       // A Stop during the preparation above must not start the model run.
       signal?.throwIfAborted();
       await session.prompt(text, options);
+    },
+    // Straight to the agent's queue, in step with clearQueue: AgentSession.steer would first run
+    // input handlers and expand commands, which a prompt here never does either.
+    steer: (text) => {
+      session.agent.steer({ role: "user", content: [{ type: "text", text }], timestamp: Date.now() });
+    },
+    clearQueue: () => {
+      session.clearQueue();
     },
     abort: () => {
       session.abortCompaction();

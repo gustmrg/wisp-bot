@@ -3,6 +3,7 @@ import { ArrowDownIcon, CheckIcon, ChevronLeftIcon, SettingsIcon, XIcon } from "
 
 import type { ChatView, Message } from "@/chat-data";
 import type { ManagedConversationStatus } from "../../shared/conversations";
+import type { QueuedMessage } from "../../shared/message-queue";
 import type { ToolApprovalDecision, ToolApprovalRequest } from "../../shared/tool-policy";
 import { describeMcpAlias, getToolMetadata } from "../../shared/tool-catalog";
 import type { ToolActivityView } from "@/lib/conversation-stream";
@@ -100,7 +101,8 @@ interface ChatPanelProps {
   acknowledging: boolean;
   approvals: ReadonlyArray<ToolApprovalRequest>;
   onAnswerPrompt: (messageId: string | undefined, answer: string) => void;
-  onAbort: () => void;
+  /** Stops the response; may resolve with follow-ups it never read, which go back to the composer. */
+  onAbort: () => Promise<ReadonlyArray<QueuedMessage> | null> | void;
   onLoadOlder: () => void;
   onLoadNewer: () => void;
   onShowLatest: () => void;

@@ -13,6 +13,7 @@ import {
 import type { ChatListAction, ChatView, ChatViewCollection } from "@/chat-data";
 import type { ToolApprovalDecision, ToolApprovalRequest } from "../../../shared/tool-policy";
 import type { BackendError, ModelSelection } from "../../../shared/contracts";
+import type { QueuedMessage } from "../../../shared/message-queue";
 import { usePersistedPreferences } from "@/features/persistence/use-persisted-preferences";
 import type { PersistenceStatus } from "@/features/persistence/storage-policy";
 import { createChatIdFactory, selectActiveChatId, unseenFailures } from "@/features/workspace/workspace-actions";
@@ -66,7 +67,8 @@ export interface WorkspaceController {
   sendMessage: (text: string) => Promise<boolean>;
   answerPrompt: (messageId: string | undefined, answer: string) => Promise<boolean>;
   retryMessage: (messageId: string | undefined) => Promise<boolean>;
-  abortActiveChat: () => Promise<boolean>;
+  /** Stops the active Wisp's turn; resolves with the follow-ups it never read, or null. */
+  abortActiveChat: () => Promise<ReadonlyArray<QueuedMessage> | null>;
   resolveApproval: (request: ToolApprovalRequest, decision: ToolApprovalDecision) => Promise<boolean>;
   updatePreferences: (preferences: AppPreferences) => void;
 }
@@ -256,7 +258,8 @@ export function useWorkspaceController(): WorkspaceController {
   );
 
   const abortActiveChat = useCallback(
-    (): Promise<boolean> => (activeChatId ? conversations.abort(activeChatId) : Promise.resolve(false)),
+    (): Promise<ReadonlyArray<QueuedMessage> | null> =>
+      activeChatId ? conversations.abort(activeChatId) : Promise.resolve(null),
     [activeChatId, conversations.abort],
   );
 

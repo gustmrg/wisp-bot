@@ -1,7 +1,12 @@
 import { randomUUID } from "node:crypto";
 import path from "node:path";
 
-import type { ModelSelection, SequencedConversationAgentEvent, WispFallback } from "../shared/contracts.js";
+import type {
+  AbortConversationView,
+  ModelSelection,
+  SequencedConversationAgentEvent,
+  WispFallback,
+} from "../shared/contracts.js";
 import type { ConversationDelta } from "../shared/conversations.js";
 import type { JobsView } from "../shared/jobs.js";
 import type { McpSettingsView } from "../shared/mcp.js";
@@ -104,6 +109,8 @@ export interface BackendRuntime {
   applyConversationModel(conversationId: string, model: ModelSelection | null): Promise<void>;
   /** Validates and saves a single Wisp's fallback choice. */
   applyConversationFallback(conversationId: string, fallback: WispFallback): Promise<void>;
+  /** Stops a Wisp's turn and gives back the follow-ups it never read, out of the queue. */
+  abortConversation(conversationId: string): Promise<AbortConversationView>;
   /** Re-applies the saved global model, e.g. after a credential change made it usable. */
   reapplySavedModel(): Promise<void>;
   /** Rejects pending approvals, stops integrations, and disposes every agent before closing storage. */
@@ -226,7 +233,7 @@ export async function createBackendRuntime(options: BackendRuntimeOptions): Prom
   );
   const agentFactory: ConversationAgentFactory =
     options.agentMode === "fake"
-      ? new FakeConversationAgentFactory({ latencyMs: 350 })
+      ? new FakeConversationAgentFactory({ latencyMs: 350, steering: true })
       : new PiConversationAgentFactory(sessionFactory);
   const registry = new AgentRegistry(
     agentFactory,
@@ -235,6 +242,7 @@ export async function createBackendRuntime(options: BackendRuntimeOptions): Prom
     {
       validateModel: (selection) => modelService.validateConversationSelection(selection),
       onAvailable: (conversationId) => messageQueue?.pump(conversationId),
+      onTurnStarted: (conversationId) => void messageQueue?.offerFollowUps(conversationId),
       isWorkspaceLocked: (conversationId) => storageService?.isCleaning(conversationId) ?? false,
     },
   );
@@ -253,6 +261,7 @@ export async function createBackendRuntime(options: BackendRuntimeOptions): Prom
         // A deleted Wisp's container goes with it.
         void executionService.reconcile().catch(() => undefined);
       },
+      onFollowUpTaken: (_conversationId, queuedMessageId) => messageQueue?.followUpTaken(queuedMessageId),
     },
   );
   conversationService = service;
@@ -263,6 +272,9 @@ export async function createBackendRuntime(options: BackendRuntimeOptions): Prom
     repository: conversationRepository,
     isAvailable: (conversationId) => registry.isAvailable(conversationId),
     deliverNext: (conversationId, onTaken) => service.deliverNextQueued(conversationId, onTaken),
+    steer: (message) =>
+      registry.steer({ conversationId: message.conversationId, requestId: message.id, text: message.text }),
+    withdrawFollowUps: (conversationId) => registry.withdrawFollowUps(conversationId),
     onChanged: options.onMessageQueueChanged,
     logger,
   });
@@ -369,6 +381,9 @@ export async function createBackendRuntime(options: BackendRuntimeOptions): Prom
       if (typeof fallback === "object") await modelService.assertUsableFallback(fallback);
       await service.applyConversationFallback(conversationId, fallback);
     },
+    abortConversation: async (conversationId) => ({
+      followUps: await queue.returnFollowUps(await registry.abort(conversationId)),
+    }),
     reapplySavedModel: async () => service.applyModel(await modelService.getSelection()),
     dispose: async () => {
       // Stop new work and integrations first, then the agents, which may still be settling their last turn.

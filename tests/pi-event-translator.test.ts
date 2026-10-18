@@ -27,6 +27,37 @@ describe("PiEventTranslator", () => {
     translator.dispose();
   });
 
+  it("answers a follow-up with the rest of the turn, even when the reply before it used tools alone", () => {
+    const events: ConversationAgentEvent[] = [];
+    const translator = new PiEventTranslator("wisp-1", (event) => events.push(event), 0);
+    translator.begin({ conversationId: "wisp-1", requestId: "r1", text: "Look it up" });
+    translator.handle({ type: "agent_start" });
+    translator.handle({ type: "tool_execution_start", toolCallId: "read-1", toolName: "read" });
+    translator.handle({ type: "tool_execution_end", toolCallId: "read-1", toolName: "read", isError: false });
+    translator.takeFollowUp({ conversationId: "wisp-1", requestId: "r2", text: "Only the summary" });
+    translator.handle({ type: "message_update", assistantMessageEvent: { type: "text_delta", delta: "Summary" } });
+    translator.handle({ type: "agent_settled" });
+
+    expect(
+      events
+        .filter(({ type }) => type !== "conversation_status")
+        .map((event) => `${event.type}:${"requestId" in event ? event.requestId : ""}`),
+    ).toEqual([
+      "assistant_message_started:r1",
+      "tool_activity:r1",
+      "tool_activity:r1",
+      // Empty, so hidden in the transcript; the request still counts as answered.
+      "assistant_message_completed:r1",
+      "follow_up_taken:r1",
+      "assistant_message_started:r2",
+      "assistant_text_delta:r2",
+      "assistant_message_completed:r2",
+    ]);
+    expect(events).toContainEqual(
+      expect.objectContaining({ type: "follow_up_taken", requestId: "r1", followUpId: "r2" }),
+    );
+  });
+
   it("coalesces text, filters thinking and unsafe tools, and preserves lifecycle order", () => {
     const events: ConversationAgentEvent[] = [];
     const translator = new PiEventTranslator("wisp-1", (event) => events.push(event), 100);
