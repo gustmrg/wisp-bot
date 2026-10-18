@@ -17,6 +17,7 @@ import {
 } from "@/components/settings/settings-primitives";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { SecretInput } from "@/components/ui/secret-input";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { notifyProviderCredentialsChanged } from "@/lib/voice-credentials";
 import { voiceProvider } from "../../shared/voice";
@@ -331,9 +332,8 @@ function ModelSettingsSection({
                     />
                   ) : null}
                 </div>
-                <Input
+                <SecretInput
                   id="ai-api-key"
-                  type="password"
                   autoComplete="new-password"
                   value={apiKey}
                   disabled={!view.secureStorageAvailable}
