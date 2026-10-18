@@ -209,7 +209,7 @@ function GeneralSettingsSections({ preferences, onPreferencesChange }: GeneralSe
           ) : null}
         </SettingsCard>
         <p className="mx-0.5 mt-[7px] text-dim text-xs leading-[1.45]">
-          Rules are enforced in the desktop backend before Pi can create or modify a file. Shell execution remains
+          Rules are enforced in the desktop backend before the Wisp can create or modify a file. Shell execution remains
           blocked.
         </p>
         <span className="sr-only" role="status">
