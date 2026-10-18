@@ -42,6 +42,23 @@ const queued: QueuedMessage[] = [
 ];
 
 describe("PendingMessagesBar", () => {
+  it("marks follow-ups the Wisp's running turn reads before its next step", () => {
+    const followUp: QueuedMessage = { ...queued[0]!, id: "queued-0", text: "Only the summary", followUp: true };
+    render(
+      <PendingMessagesBar
+        queued={[followUp, queued[0]!]}
+        scheduled={[]}
+        queue={queueActions()}
+        schedule={controller()}
+      />,
+    );
+
+    expect(screen.getAllByRole("listitem").map((row) => row.textContent)).toEqual([
+      expect.stringContaining("Follow-upRead before the next stepOnly the summary"),
+      expect.stringContaining("QueuedNext question"),
+    ]);
+  });
+
   it("lists queued messages first, marks the next one, and edits or removes them", async () => {
     const user = userEvent.setup();
     const actions = queueActions();

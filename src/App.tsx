@@ -286,7 +286,7 @@ function Workspace({ userProfile }: { userProfile: UserProfileController }) {
                 acknowledging={Boolean(workspace.acknowledging[workspace.activeChat.id])}
                 approvals={workspace.approvals[workspace.activeChat.id] ?? []}
                 onAnswerPrompt={(messageId, answer) => void workspace.answerPrompt(messageId, answer)}
-                onAbort={() => void workspace.abortActiveChat()}
+                onAbort={() => workspace.abortActiveChat()}
                 onLoadOlder={workspace.loadOlderMessages}
                 onLoadNewer={workspace.loadNewerMessages}
                 onShowLatest={workspace.showLatestMessages}

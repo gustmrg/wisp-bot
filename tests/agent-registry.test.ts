@@ -221,6 +221,37 @@ describe("AgentRegistry", () => {
     await registry.disposeAll();
   });
 
+  it("fails a turn that took a follow-up as that follow-up, and stops it from being sent again", async () => {
+    const events: SequencedConversationAgentEvent[] = [];
+    const factory: ConversationAgentFactory = {
+      create: (agentContext) =>
+        new FakeConversationAgent(agentContext.conversationId, {
+          latencyMs: 200,
+          steering: true,
+          responseFor: (request) => {
+            if (request.requestId === "r2") throw new Error("raw failure");
+            return "ok";
+          },
+        }),
+    };
+    const registry = new AgentRegistry(factory, (event) => events.push(event));
+    await registry.restore([context("one")], { providerId: "test", modelId: "test" });
+
+    expect(await registry.steer({ conversationId: "one", requestId: "early", text: "Nothing runs" })).toBe(false);
+    const turn = registry.dispatch({ conversationId: "one", requestId: "r1", text: "First" });
+    await vi.waitFor(() => expect(registry.statuses().one).toBe("working"), { interval: 5 });
+    expect(await registry.steer({ conversationId: "one", requestId: "r2", text: "Also this" })).toBe(true);
+    await turn;
+
+    expect(events.filter((event) => event.type === "conversation_error").map(({ requestId }) => requestId)).toEqual([
+      "r2",
+    ]);
+    expect(() => registry.send({ conversationId: "one", requestId: "r2", text: "Again" })).toThrow(
+      /already been accepted/,
+    );
+    await registry.disposeAll();
+  });
+
   it("aborts timed-out work and publishes one retryable error terminal", async () => {
     vi.useFakeTimers();
     const events: SequencedConversationAgentEvent[] = [];

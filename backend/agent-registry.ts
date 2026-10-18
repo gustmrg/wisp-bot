@@ -23,7 +23,9 @@ interface AgentEntry {
   suppressedCancellationIds: Set<string>;
   /** Approval cards waiting for the person; the request deadline is paused while any wait. */
   pendingApprovals: Set<string>;
-  deadline?: { pause(): void; resume(): void };
+  /** A request whose turn went on to answer a follow-up, mapped to that follow-up. */
+  followedBy: Map<string, string>;
+  deadline?: { pause(): void; resume(): void; restart(): void };
   disposed: boolean;
   override: ModelSelection | null;
   effective: ModelSelection | null;
@@ -46,6 +48,8 @@ export interface AgentRegistryOptions {
   onAvailable?: (conversationId: string) => void;
   /** Whether files are being removed from the conversation's workspace; nothing runs there meanwhile. */
   isWorkspaceLocked?: (conversationId: string) => boolean;
+  /** Called when a conversation's turn starts running, so follow-ups waiting for it can be handed over. */
+  onTurnStarted?: (conversationId: string) => void;
 }
 
 type EventPublisher = (event: SequencedConversationAgentEvent) => void;
@@ -59,6 +63,7 @@ export class AgentRegistry {
   private readonly validateModel: (model: ModelSelection) => Promise<void>;
   private readonly onAvailable: (conversationId: string) => void;
   private readonly isWorkspaceLocked: (conversationId: string) => boolean;
+  private readonly onTurnStarted: (conversationId: string) => void;
   private model: ModelSelection | null = null;
   private eventSequence = 0;
   private activeAgents = 0;
@@ -77,6 +82,7 @@ export class AgentRegistry {
     this.validateModel = options.validateModel ?? (async () => undefined);
     this.onAvailable = options.onAvailable ?? (() => undefined);
     this.isWorkspaceLocked = options.isWorkspaceLocked ?? (() => false);
+    this.onTurnStarted = options.onTurnStarted ?? (() => undefined);
   }
 
   async restore(contexts: ReadonlyArray<ConversationAgentContext>, model: ModelSelection | null): Promise<void> {
@@ -111,6 +117,7 @@ export class AgentRegistry {
       acceptedRequestIds: new Set(),
       suppressedCancellationIds: new Set(),
       pendingApprovals: new Set(),
+      followedBy: new Map(),
       disposed: false,
     };
     entry.unsubscribe = agent.subscribe((event) => {
@@ -119,9 +126,17 @@ export class AgentRegistry {
       }
       if (event.type === "conversation_status") {
         if (event.status === "configuration_required") entry.ready = false;
+        const previous = entry.status;
         entry.status = entry.ready || event.status === "disposed" ? event.status : "configuration_required";
         this.publishEvent({ ...event, status: entry.status });
+        if (entry.status === "working" && previous !== "working") this.onTurnStarted(conversationId);
         return;
+      }
+      if (event.type === "follow_up_taken") {
+        entry.followedBy.set(event.requestId, event.followUpId);
+        rememberRequestId(entry.acceptedRequestIds, event.followUpId);
+        // The follow-up gets the time a request of its own would.
+        entry.deadline?.restart();
       }
       if (event.type === "conversation_model_changed") {
         entry.applied = event.applied;
@@ -247,12 +262,13 @@ export class AgentRegistry {
       expire = () => {
         timedOut = true;
         timeout = undefined;
-        entry.suppressedCancellationIds.add(request.requestId);
+        const answering = answeringRequestId(entry, request.requestId);
+        entry.suppressedCancellationIds.add(answering);
         reject(new WispBackendError("aborted", "The model request timed out.", true));
         void entry.agent
           .abort()
           .catch(() => undefined)
-          .finally(() => entry.suppressedCancellationIds.delete(request.requestId));
+          .finally(() => entry.suppressedCancellationIds.delete(answering));
       };
     });
     const arm = () => {
@@ -269,6 +285,14 @@ export class AgentRegistry {
       resume: () => {
         if (timeout === undefined && !timedOut) arm();
       },
+      restart: () => {
+        if (timedOut) return;
+        const paused = timeout === undefined;
+        if (timeout !== undefined) clearTimeout(timeout);
+        timeout = undefined;
+        remaining = this.executionTimeoutMs;
+        if (!paused) arm();
+      },
     };
     if (!entry.pendingApprovals.size) arm();
     try {
@@ -276,7 +300,7 @@ export class AgentRegistry {
     } finally {
       entry.deadline = undefined;
       if (timeout !== undefined) clearTimeout(timeout);
-      if (!timedOut) entry.suppressedCancellationIds.delete(request.requestId);
+      if (!timedOut) entry.suppressedCancellationIds.delete(answeringRequestId(entry, request.requestId));
     }
   }
 
@@ -286,16 +310,44 @@ export class AgentRegistry {
     return this.send(request)
       .catch((error) => {
         if (this.entries.get(request.conversationId) !== entry) return;
-        if (entry.reportedRequestErrors.has(request.requestId)) return;
+        // A turn that took follow-ups fails as the last one it was answering.
+        const requestId = answeringRequestId(entry, request.requestId);
+        if (entry.reportedRequestErrors.has(requestId)) return;
         this.publishEvent({
           type: "conversation_error",
           conversationId: request.conversationId,
-          requestId: request.requestId,
+          requestId,
           createdAt: new Date().toISOString(),
           error: sanitizeBackendError(error),
         });
       })
-      .finally(() => entry.reportedRequestErrors.delete(request.requestId));
+      .finally(() => {
+        let requestId: string | undefined = request.requestId;
+        while (requestId) {
+          entry.reportedRequestErrors.delete(requestId);
+          const next = entry.followedBy.get(requestId);
+          entry.followedBy.delete(requestId);
+          requestId = next;
+        }
+      });
+  }
+
+  /**
+   * Hands a follow-up to the conversation's running turn; see
+   * `ConversationAgent.steer`. Resolves false when nothing is running that
+   * can take it.
+   */
+  async steer(request: SendMessageRequest): Promise<boolean> {
+    const entry = this.entries.get(request.conversationId);
+    if (!entry || entry.disposed || !entry.ready || entry.status !== "working" || !entry.agent.steer) return false;
+    if (entry.acceptedRequestIds.has(request.requestId)) return false;
+    return entry.agent.steer(request);
+  }
+
+  /** Takes back the follow-ups handed to the running turn that it has not read, oldest first. */
+  withdrawFollowUps(conversationId: string): string[] {
+    const entry = this.entries.get(conversationId);
+    return entry?.agent.withdrawFollowUps?.() ?? [];
   }
 
   /**
@@ -317,8 +369,13 @@ export class AgentRegistry {
     return operation;
   }
 
-  async abort(conversationId: string): Promise<void> {
-    await this.require(conversationId).agent.abort();
+  /** Stops the running turn. Resolves with the follow-ups it was handed and never read, oldest first. */
+  async abort(conversationId: string): Promise<string[]> {
+    const { agent } = this.require(conversationId);
+    // Taken back first, so the turn cannot read one while it stops.
+    const followUps = agent.withdrawFollowUps?.() ?? [];
+    await agent.abort();
+    return followUps;
   }
 
   async updateContext(context: ConversationAgentContext): Promise<void> {
@@ -474,6 +531,13 @@ export class AgentRegistry {
     this.activeAgents -= 1;
     this.activeWaiters.shift()?.();
   }
+}
+
+/** The request a turn started for `requestId` answers now, after the follow-ups it took. */
+function answeringRequestId(entry: AgentEntry, requestId: string): string {
+  let current = requestId;
+  for (let next = entry.followedBy.get(current); next; next = entry.followedBy.get(current)) current = next;
+  return current;
 }
 
 function rememberRequestId(requestIds: Set<string>, requestId: string): void {

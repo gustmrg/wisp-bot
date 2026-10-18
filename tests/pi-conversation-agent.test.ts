@@ -13,6 +13,9 @@ class MockPiSession implements PiSessionLike {
   readonly prompts: string[] = [];
   readonly models: unknown[] = [];
   readonly thinkingLevels: ThinkingLevel[] = [];
+  /** Follow-ups handed to the running turn and not read yet. */
+  steered: string[] = [];
+  clearCount = 0;
   abortCount = 0;
   disposeCount = 0;
   reloadCount = 0;
@@ -34,12 +37,29 @@ class MockPiSession implements PiSessionLike {
     this.prompts.push(text);
     this.isIdle = false;
     this.emit({ type: "agent_start" });
+    this.emit({ type: "message_start", message: { role: "user" } });
     this.emit({ type: "message_update", assistantMessageEvent: { type: "text_delta", delta: `reply:${text}` } });
     await new Promise<void>((resolve) => {
       this.releasePrompt = resolve;
     });
     this.isIdle = true;
     this.emit({ type: "agent_settled" });
+  }
+
+  steer(text: string): void {
+    this.steered.push(text);
+  }
+
+  clearQueue(): void {
+    this.clearCount += 1;
+    this.steered = [];
+  }
+
+  /** The running turn reads its oldest follow-up, as Pi does between steps, and answers it. */
+  readFollowUp(): void {
+    const text = this.steered.shift();
+    this.emit({ type: "message_start", message: { role: "user" } });
+    this.emit({ type: "message_update", assistantMessageEvent: { type: "text_delta", delta: `reply:${text}` } });
   }
 
   finishPrompt(): void {
@@ -186,6 +206,65 @@ describe("PiConversationAgent", () => {
     expect(sessions.get("one")?.abortCount).toBe(1);
     expect(sessions.get("one")?.disposeCount).toBe(1);
     expect(events).toHaveBeenCalledWith(expect.objectContaining({ type: "assistant_message_cancelled" }));
+  });
+
+  it("hands follow-ups to the running turn, which answers each after what it wrote so far", async () => {
+    const sessions = new Map<string, MockPiSession>();
+    const agent = new PiConversationAgent(context("one"), factoryFor(sessions), { flushDelayMs: 0 });
+    const events: Array<Record<string, unknown>> = [];
+    agent.subscribe((event) => events.push(event));
+    await agent.start();
+    await agent.applyModel(selection());
+    expect(await agent.steer({ conversationId: "one", requestId: "r0", text: "Too early" })).toBe(false);
+
+    const prompt = agent.send({ conversationId: "one", requestId: "r1", text: "First" });
+    await vi.waitFor(() => expect(sessions.get("one")?.isIdle).toBe(false));
+    const session = sessions.get("one")!;
+    expect(await agent.steer({ conversationId: "one", requestId: "r2", text: "Also this" })).toBe(true);
+    expect(session.steered).toEqual(["Also this"]);
+    session.readFollowUp();
+    session.finishPrompt();
+    await prompt;
+
+    expect(
+      events
+        .filter(({ type }) => type !== "conversation_status" && type !== "conversation_model_changed")
+        .map((event) => [event.type, event.requestId, event.messageId ?? event.followUpId ?? event.delta]),
+    ).toEqual([
+      ["assistant_message_started", "r1", "r1:assistant"],
+      ["assistant_text_delta", "r1", "r1:assistant"],
+      ["assistant_message_completed", "r1", "r1:assistant"],
+      ["follow_up_taken", "r1", "r2"],
+      ["assistant_message_started", "r2", "r2:assistant"],
+      ["assistant_text_delta", "r2", "r2:assistant"],
+      ["assistant_message_completed", "r2", "r2:assistant"],
+    ]);
+    expect(events.find((event) => event.type === "assistant_text_delta" && event.requestId === "r2")).toMatchObject({
+      delta: "reply:Also this",
+    });
+  });
+
+  it("gives back follow-ups the turn did not read, and never leaves them for the next prompt", async () => {
+    const sessions = new Map<string, MockPiSession>();
+    const agent = new PiConversationAgent(context("one"), factoryFor(sessions), { flushDelayMs: 0 });
+    await agent.start();
+    await agent.applyModel(selection());
+    const first = agent.send({ conversationId: "one", requestId: "r1", text: "First" });
+    await vi.waitFor(() => expect(sessions.get("one")?.isIdle).toBe(false));
+    const session = sessions.get("one")!;
+    await agent.steer({ conversationId: "one", requestId: "r2", text: "Also this" });
+    await agent.steer({ conversationId: "one", requestId: "r3", text: "And this" });
+
+    expect(agent.withdrawFollowUps()).toEqual(["r2", "r3"]);
+    expect(session.steered).toEqual([]);
+
+    // One the turn ends without reading is dropped from Pi's queue; the queue sends it on its own.
+    await agent.steer({ conversationId: "one", requestId: "r4", text: "Late" });
+    session.finishPrompt();
+    await first;
+    expect(session.steered).toEqual([]);
+    expect(session.clearCount).toBe(2);
+    expect(agent.withdrawFollowUps()).toEqual([]);
   });
 
   it("reloads an open session when its identity changes", async () => {

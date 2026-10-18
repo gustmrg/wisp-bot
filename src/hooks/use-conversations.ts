@@ -26,6 +26,7 @@ import {
 import type { ChatViewCollection } from "@/chat-data";
 import { chatViews } from "@/lib/chat-schema";
 import type { ToolApprovalDecision, ToolApprovalRequest } from "../../shared/tool-policy";
+import type { QueuedMessage } from "../../shared/message-queue";
 import { LEGACY_CONVERSATIONS_STORAGE_KEY, MAX_LEGACY_BLOB_BYTES } from "@/features/persistence/storage-policy";
 import { LOCAL_CONNECTION_ID } from "../../shared/connections";
 import {
@@ -149,7 +150,8 @@ export interface ConversationsController {
   loadNewerMessages: (conversationId: string) => void;
   sendMessage: (conversationId: string, text: string) => Promise<boolean>;
   retryMessage: (conversationId: string, requestId: string) => Promise<boolean>;
-  abort: (conversationId: string) => Promise<boolean>;
+  /** Stops the Wisp's turn; resolves with the follow-ups it never read, or null when it could not stop. */
+  abort: (conversationId: string) => Promise<ReadonlyArray<QueuedMessage> | null>;
   resolveApproval: (request: ToolApprovalRequest, decision: ToolApprovalDecision) => Promise<boolean>;
 }
 
@@ -525,11 +527,12 @@ export function useConversations(): ConversationsController {
     [sendMessage],
   );
 
-  const abort = useCallback(async (conversationId: string): Promise<boolean> => {
+  const abort = useCallback(async (conversationId: string): Promise<ReadonlyArray<QueuedMessage> | null> => {
     const result = await window.wisp.abortConversation({ conversationId });
-    if (result.ok) return true;
+    // An older server answers without follow-ups.
+    if (result.ok) return result.value.followUps ?? [];
     setError(result.error.message);
-    return false;
+    return null;
   }, []);
 
   const resolveApproval = useCallback(

@@ -137,7 +137,7 @@ function createApi(initialState: ConversationStateView): WispApi {
     subscribeToMcpSettings: () => () => undefined,
     startConversation: vi.fn(async () => ({ ok: true as const, value: {} })),
     sendMessage: vi.fn(async () => ({ ok: true as const, value: {} })),
-    abortConversation: vi.fn(async () => ({ ok: true as const, value: {} })),
+    abortConversation: vi.fn(async () => ({ ok: true as const, value: { followUps: [] } })),
     manageContext: async () => ({
       ok: false as const,
       error: { code: "configuration_required" as const, message: "Configure a model", retryable: false },

@@ -2,6 +2,7 @@ import type { ContextView } from "../../shared/context-policy.js";
 
 import {
   WISP_IPC_CHANNELS,
+  type AbortConversationView,
   type BackendResult,
   type ConversationModelView,
   type ModelSelection,
@@ -34,6 +35,10 @@ export class AgentIpcController {
       registry.applyConversationModel(id, model),
     private readonly saveFallback: (id: string, fallback: WispFallback) => Promise<void> = async (id, fallback) =>
       registry.applyConversationFallback(id, fallback),
+    private readonly stop: (id: string) => Promise<AbortConversationView> = async (id) => {
+      await registry.abort(id);
+      return { followUps: [] };
+    },
   ) {
     this.registry = registry;
   }
@@ -54,11 +59,10 @@ export class AgentIpcController {
     });
   }
 
-  async abort(payload: unknown): Promise<EmptyResult> {
+  async abort(payload: unknown): Promise<BackendResult<AbortConversationView>> {
     return toResult(async () => {
       const { conversationId } = parseConversationRequest(payload);
-      await this.registry.abort(conversationId);
-      return emptyValue;
+      return this.stop(conversationId);
     });
   }
 
@@ -101,8 +105,9 @@ export function registerAgentHandlers(
   authorizeSender: SenderAuthorizer,
   saveModel?: (id: string, model: ModelSelection | null) => Promise<void>,
   saveFallback?: (id: string, fallback: WispFallback) => Promise<void>,
+  stop?: (id: string) => Promise<AbortConversationView>,
 ): { dispose: () => void } {
-  const controller = new AgentIpcController(registry, saveModel, saveFallback);
+  const controller = new AgentIpcController(registry, saveModel, saveFallback, stop);
   // The controller already returns BackendResults, so only the sender check is added here.
   return registerAuthorizedHandlers(router, authorizeSender, [
     [WISP_IPC_CHANNELS.startConversation, (payload) => controller.start(payload)],
