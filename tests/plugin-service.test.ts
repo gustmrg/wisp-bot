@@ -197,7 +197,7 @@ describe("plugin service", () => {
     expect(executeExa).not.toHaveBeenCalled();
   });
 
-  it("preserves all prior connections and grants when settings predate Tavily and Exa", async () => {
+  it("preserves all prior connections and grants when settings predate Tavily, Exa and DeepSeek", async () => {
     const { service, options, dataDirectory } = await setup();
     for (const pluginId of ["web-search", "linear", "firecrawl"] as const)
       await service.save({ pluginId, enabled: true, apiKey: `${pluginId}-key` });
@@ -214,6 +214,7 @@ describe("plugin service", () => {
     const state = JSON.parse(await readFile(file, "utf8"));
     delete state.enabled.tavily;
     delete state.enabled.exa;
+    delete state.enabled.deepseek;
     await writeFile(file, JSON.stringify(state));
     const reopened = new PluginService(options);
     await reopened.load();
@@ -225,12 +226,13 @@ describe("plugin service", () => {
       "web_read",
     ]);
     const view = await reopened.getView();
-    expect(view.plugins.filter(({ id }) => id === "tavily" || id === "exa")).toHaveLength(2);
+    expect(view.plugins.filter(({ id }) => id === "tavily" || id === "exa" || id === "deepseek")).toHaveLength(3);
     expect(
       view.plugins.every(({ id, enabled, configured }) =>
         // The Google plugins and Home Assistant were never connected here; they sign in or take a server address.
         id === "tavily" ||
         id === "exa" ||
+        id === "deepseek" ||
         id === "google-calendar" ||
         id === "gmail" ||
         id === "google-drive" ||

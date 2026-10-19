@@ -120,9 +120,11 @@ export async function requestText(
       const hint =
         response.status === 401 || response.status === 403
           ? ` ${authHint}`
-          : response.status === 429
-            ? " Rate limit reached."
-            : "";
+          : response.status === 402
+            ? " Check the account balance or credits."
+            : response.status === 429
+              ? " Rate limit reached."
+              : "";
       throw new PluginRequestError(
         `${provider} request failed (HTTP ${response.status}).${hint}`,
         response.status === 401 || response.status === 403 ? "invalid_configuration" : "internal_error",

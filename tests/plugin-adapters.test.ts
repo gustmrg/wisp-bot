@@ -852,7 +852,90 @@ describe("Exa", () => {
   });
 });
 
-describe.each(["tavily", "exa"] as const)("%s web adapter boundaries", (id) => {
+describe("DeepSeek", () => {
+  const adapter = PLUGIN_ADAPTERS.find(({ id }) => id === "deepseek")!;
+  const search = adapter.tools.find(({ name }) => name === "web_search")!;
+  const read = adapter.tools.find(({ name }) => name === "web_read")!;
+
+  it("searches with a bearer key and prefers model-oriented summaries for snippets", async () => {
+    const fetchMock = mockJson({
+      results: [
+        { title: "Example", url: "https://example.com", snippet: "Short", summary: "Longer summary", rerank_score: 2 },
+        { title: "Fallback", url: "https://example.org", snippet: "Short only", summary: "" },
+        { title: "Ignored" },
+      ],
+    });
+    const result = JSON.parse(await search.execute(KEY, { query: "a query", count: 2 }));
+    expect(fetchMock.mock.calls[0]?.[0]).toBe("https://api.deepseek.com/v1/tools/search");
+    expect(fetchMock.mock.calls[0]?.[1]).toMatchObject({
+      method: "POST",
+      headers: { Authorization: `Bearer ${KEY}` },
+      redirect: "error",
+    });
+    expect(requestBody(fetchMock)).toEqual({ query: "a query", count: 2 });
+    expect(result).toEqual({
+      provider: "deepseek",
+      query: "a query",
+      results: [
+        { title: "Example", url: "https://example.com", snippet: "Longer summary" },
+        { title: "Fallback", url: "https://example.org", snippet: "Short only" },
+      ],
+      moreResultsAvailable: null,
+    });
+  });
+
+  it("rejects queries over DeepSeek's 128-character limit before fetching", async () => {
+    const fetchMock = mockJson({ results: [] });
+    await expect(search.execute(KEY, { query: "x".repeat(129) })).rejects.toMatchObject({
+      code: "invalid_request",
+      message: expect.stringContaining("at most 128 characters"),
+    });
+    expect(fetchMock).not.toHaveBeenCalled();
+    await search.execute(KEY, { query: "é".repeat(128) });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("reads one page as Markdown and bounds its length", async () => {
+    const fetchMock = mockJson({ title: "Example", content: "x".repeat(20_001) });
+    const result = JSON.parse(await read.execute(KEY, { url: "https://example.com" }));
+    expect(fetchMock.mock.calls[0]?.[0]).toBe("https://api.deepseek.com/v1/tools/fetch");
+    expect(requestBody(fetchMock)).toEqual({ url: "https://example.com/" });
+    expect(result).toMatchObject({
+      provider: "deepseek",
+      url: "https://example.com",
+      title: "Example",
+      truncated: true,
+    });
+    expect(result.markdown).toBe(`${"x".repeat(20_000)}… [truncated]`);
+    mockJson({ title: "", content: "Body" });
+    expect(JSON.parse(await read.execute(KEY, { url: "https://example.com" })).title).toBeNull();
+  });
+
+  it("reports pages DeepSeek cannot fetch without exposing provider details", async () => {
+    mockJson({ error: { message: KEY } }, 404);
+    const error = await read.execute(KEY, { url: "https://example.com" }).catch((error: unknown) => error);
+    expect(JSON.stringify(sanitizeBackendError(error))).not.toContain(KEY);
+    mockJson({ title: "Empty", content: "  " });
+    await expect(read.execute(KEY, { url: "https://example.com" })).rejects.toThrow(
+      "DeepSeek could not read this page. Check the URL and its accessibility.",
+    );
+  });
+
+  it("explains insufficient balance", async () => {
+    mockJson({ error: KEY }, 402);
+    await expect(search.execute(KEY, { query: "example" })).rejects.toThrow("Check the account balance or credits.");
+  });
+
+  it("tests credentials with one search result", async () => {
+    const fetchMock = mockJson({ results: [] });
+    await expect(adapter.testConnection(KEY)).resolves.toBe("Connected to DeepSeek.");
+    expect(requestBody(fetchMock)).toEqual({ query: "DeepSeek", count: 1 });
+    mockJson({ error: KEY });
+    await expect(adapter.testConnection(KEY)).rejects.toThrow("DeepSeek returned an invalid search result.");
+  });
+});
+
+describe.each(["tavily", "exa", "deepseek"] as const)("%s web adapter boundaries", (id) => {
   const adapter = PLUGIN_ADAPTERS.find((item) => item.id === id)!;
   const search = adapter.tools.find(({ name }) => name === "web_search")!;
   const read = adapter.tools.find(({ name }) => name === "web_read")!;
@@ -886,7 +969,7 @@ describe.each(["tavily", "exa"] as const)("%s web adapter boundaries", (id) => {
     const fetchMock = mockJson({ results: [] });
     const result = JSON.parse(await search.execute(KEY, { query: "example" }));
     expect(result.results).toEqual([]);
-    expect(requestBody(fetchMock)[id === "tavily" ? "max_results" : "numResults"]).toBe(5);
+    expect(requestBody(fetchMock)[{ tavily: "max_results", exa: "numResults", deepseek: "count" }[id]]).toBe(5);
     mockJson({ error: KEY });
     await expect(search.execute(KEY, { query: "example" })).rejects.toThrow("invalid search result");
     mockJson({ results: [{}] });

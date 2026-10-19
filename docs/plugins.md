@@ -1,8 +1,8 @@
 # Bundled plugins
 
 Wisp ships with bundled integrations: **Brave Search** (web search),
-**Linear**, **Firecrawl**, **Tavily**, and **Exa** (the latter three support web
-search and page reading), **Google Calendar**, **Gmail**, and **Google
+**Linear**, **Firecrawl**, **Tavily**, **Exa**, and **DeepSeek** (the latter
+four support web search and page reading), **Google Calendar**, **Gmail**, and **Google
 Drive**, which sign in with your own Google OAuth client, and **Home
 Assistant**, which connects to your own server. Connections are configured globally in
 **Settings → Plugins**; each Wisp receives access independently through its
@@ -21,8 +21,8 @@ Open **Settings → Plugins**. Connected plugins are listed first, with an
 **Enabled** switch and the number of Wisps that can use them; the rest are
 listed under **Available** with what they provide (search, page reading, or
 their category). Select a plugin, enter its **Brave Search API key**, **Linear
-personal API key**, **Firecrawl API key**, **Tavily API key**, or **Exa API
-key** (each form links to the provider page that issues it), and select
+personal API key**, **Firecrawl API key**, **Tavily API key**, **Exa API
+key**, or **DeepSeek API key** (each form links to the provider page that issues it), and select
 **Connect**. Connecting tests the key first and saves it only if the test
 succeeds. Each plugin supports one connection on this device.
 
@@ -52,6 +52,8 @@ give them access without opening each one.
 - Tavily testing checks API-key usage without searching or extracting a page.
 - Exa testing performs one search with one result and no content extraction;
   this can consume search credits.
+- DeepSeek testing performs one search with one result; a search that returns
+  results is billed.
 
 A successful connection test does not guarantee access to every resource or
 permission to write.
@@ -84,6 +86,7 @@ the provider a Wisp already uses.
 | Firecrawl | Web & research | `none`, `read` | `web_search`, `web_read` |
 | Tavily | Web & research | `none`, `read` | `web_search`, `web_read` |
 | Exa | Web & research | `none`, `read` | `web_search`, `web_read` |
+| DeepSeek | Web & research | `none`, `read` | `web_search`, `web_read` |
 
 ## Shared web tools
 
@@ -94,7 +97,7 @@ provider-independent tools backed by their connected, enabled, and granted plugi
   `results` (titles, URLs, snippets), and `moreResultsAvailable`. Queries are
   limited to 500 characters and 75 words; `count` is 1–10 (default 5).
   Search uses the provider chosen for that Wisp. Firecrawl,
-  Tavily, and Exa report `moreResultsAvailable` as `null` because their APIs
+  Tavily, Exa, and DeepSeek report `moreResultsAvailable` as `null` because their APIs
   do not indicate additional results.
 - `web_read({ url })` reads one HTTP(S) URL as Markdown or plain text,
   returning `provider`, `url`, `title`, `markdown`, and `truncated`. URLs are
@@ -113,7 +116,7 @@ reading can consume provider credits. Brave Search provides search only.
 
 Wisps whose access was saved before per-capability choices existed keep their
 grants and use the first granted, connected provider in catalog order (Brave
-Search → Firecrawl → Tavily → Exa) until their access is saved again. Updating
+Search → Firecrawl → Tavily → Exa → DeepSeek) until their access is saved again. Updating
 from an older version preserves existing connections and grants; newly added
 plugins start disabled with no Wisp access.
 
@@ -146,6 +149,15 @@ and bounded highlights for snippets. `web_read` uses the
 without HTML tags, and bounded crawl time and content length. Both adapters
 use fixed API endpoints and the same request limits and sanitized errors as
 the other bundled plugins. Page content and highlights can consume credits.
+
+DeepSeek-backed `web_search` uses the
+[Search API](https://api-docs.deepseek.com/guides/search/) and returns its
+model-oriented summary as the snippet, falling back to the short snippet. The
+API accepts queries of at most 128 characters, so longer queries are rejected
+before any request with a message asking for a shorter one. `web_read` uses the
+Fetch API, which returns the page as Markdown; pages DeepSeek's security policy
+blocks fail with HTTP 403. Each successful search or fetch is billed per
+request, and an account without balance fails with HTTP 402.
 
 ## Linear
 

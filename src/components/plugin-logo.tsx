@@ -5,6 +5,7 @@ import firecrawlLogo from "@/assets/plugins/firecrawl.png";
 import linearLogo from "@/assets/plugins/linear.svg";
 import tavilyLogo from "@/assets/plugins/tavily.svg";
 import exaLogo from "@/assets/plugins/exa.png";
+import deepseekLogo from "@/assets/plugins/deepseek.svg";
 import githubLogo from "@/assets/plugins/github.svg";
 import googleCalendarLogo from "@/assets/plugins/google-calendar.svg";
 import gmailLogo from "@/assets/plugins/gmail.svg";
@@ -19,6 +20,7 @@ const logos: Record<PluginId | McpPresetId, string> = {
   linear: linearLogo,
   tavily: tavilyLogo,
   exa: exaLogo,
+  deepseek: deepseekLogo,
   "google-calendar": googleCalendarLogo,
   gmail: gmailLogo,
   "google-drive": googleDriveLogo,
