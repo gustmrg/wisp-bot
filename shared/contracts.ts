@@ -1,3 +1,4 @@
+import type { ClaudeCodeStatusView } from "./claude-code.js";
 import type { ContextRequest, ContextView } from "./context-policy.js";
 import type {
   PluginSettingsView,
@@ -328,6 +329,8 @@ export interface AiSettingsView {
   fallback: FallbackModelView;
   secureStorageAvailable: boolean;
   providers: ReadonlyArray<ProviderSummary>;
+  /** Whether this server's Claude Code can run Wisps (ADR 026); missing from servers before Claude Code. */
+  claudeCode?: ClaudeCodeStatusView;
   /** Set when the model catalog could not be fully loaded or refreshed and the built-in list is shown. */
   catalogError: string | null;
 }

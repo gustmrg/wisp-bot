@@ -98,7 +98,7 @@ function createSession(options: { answer?: (process: FakeProcess, text: string) 
     processes.push(process);
     return process;
   };
-  const onSessionReplaced = vi.fn(async () => undefined);
+  const onSessionSaved = vi.fn(async () => undefined);
   const session = new ClaudeCodeSession({
     query,
     queryOptions: async (launch) => {
@@ -111,12 +111,12 @@ function createSession(options: { answer?: (process: FakeProcess, text: string) 
     thinkingLevel: "off",
     toolNames: ["read", "run_command"],
     toolRevision: "rev-1",
-    onSessionReplaced,
+    onSessionSaved,
     recentTranscript: async () => "user: earlier question",
   });
   const events: PiAgentEvent[] = [];
   session.subscribe((event) => events.push(event));
-  return { session, processes, launches, events, onSessionReplaced };
+  return { session, processes, launches, events, onSessionSaved };
 }
 
 afterEach(() => {
@@ -125,11 +125,13 @@ afterEach(() => {
 
 describe("ClaudeCodeSession", () => {
   it("runs a turn as Pi's agent events and keeps one process across turns", async () => {
-    const { session, processes, launches, events } = createSession();
+    const { session, processes, launches, events, onSessionSaved } = createSession();
 
     await session.prompt("hello");
     await session.prompt("again");
 
+    // A new session is saved for resuming once a turn in it succeeded, and only then.
+    expect(onSessionSaved.mock.calls).toEqual([[SESSION]]);
     expect(processes).toHaveLength(1);
     expect(processes[0]!.sent).toEqual(["hello", "again"]);
     expect(launches).toEqual([{ sessionId: SESSION, resume: false, model: "sonnet" }]);
@@ -185,7 +187,7 @@ describe("ClaudeCodeSession", () => {
 
   it("replaces a session that no longer exists and sends the message again", async () => {
     let first = true;
-    const { session, processes, launches, onSessionReplaced } = createSession({
+    const { session, processes, launches, onSessionSaved } = createSession({
       answer: (process, text) => {
         if (first) {
           first = false;
@@ -210,7 +212,7 @@ describe("ClaudeCodeSession", () => {
     const replacement = launches[1]!;
     expect(replacement.sessionId).not.toBe(SESSION);
     expect(replacement).toMatchObject({ resume: false, recoveredContext: "user: earlier question" });
-    expect(onSessionReplaced).toHaveBeenCalledWith(replacement.sessionId);
+    expect(onSessionSaved).toHaveBeenCalledWith(replacement.sessionId);
     expect(session.sessionId).toBe(replacement.sessionId);
   });
 

@@ -42,8 +42,12 @@ export interface ClaudeCodeSessionOptions {
   thinkingLevel: ThinkingLevel;
   toolNames: ReadonlyArray<string>;
   toolRevision: string;
-  /** Saves the Claude Code session ID after a new session replaced one that no longer existed. */
-  onSessionReplaced?: (sessionId: string) => Promise<void>;
+  /**
+   * Saves the Claude Code session ID once a turn in it succeeded, so it is
+   * resumed later: a new session's, or a replacement for one Claude Code no
+   * longer had. A session that never answered is never resumed.
+   */
+  onSessionSaved?: (sessionId: string) => Promise<void>;
   /** The latest of the Wisp's own messages, to carry into a replaced session. */
   recentTranscript?: () => Promise<string>;
   /** Told the outcome of each turn: usage, plan usage, the model the alias resolved to. */
@@ -156,7 +160,10 @@ export class ClaudeCodeSession implements PiSessionLike {
         result = await this.send(turn, message);
       }
       if (!result.ok && !turn.aborted) throw describeFailure(result);
-      if (result.ok) this.resume = true;
+      if (result.ok && !this.resume) {
+        this.resume = true;
+        await this.options.onSessionSaved?.(this.sessionIdValue);
+      }
       this.emit({ type: "agent_end" });
       this.emit({ type: "agent_settled" });
     } finally {
@@ -321,7 +328,6 @@ export class ClaudeCodeSession implements PiSessionLike {
     this.sessionIdValue = randomUUID();
     this.resume = false;
     this.recoveredContext = await this.options.recentTranscript?.().catch(() => undefined);
-    await this.options.onSessionReplaced?.(this.sessionIdValue);
   }
 
   private scheduleIdleClose(): void {

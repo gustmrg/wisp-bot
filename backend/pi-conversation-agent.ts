@@ -105,6 +105,12 @@ export interface PiSessionFactory {
   create(context: ConversationAgentContext, selection: ModelSelection): Promise<PiSessionLike>;
   /** Current integration tool snapshot revision for this Wisp, or null. */
   getToolRevision(conversationId: string): Promise<string | null>;
+  /**
+   * Whether one session can switch between two selections' models. When it
+   * cannot, as between Pi and Claude Code (ADR 026), the session closes and
+   * the next message opens one for the new model. Missing means always.
+   */
+  sameRuntime?(current: ModelSelection, next: ModelSelection): boolean;
 }
 
 /** Tools a job run is never offered, even when the job lists them (ADR 019). */
@@ -139,6 +145,28 @@ export interface PiJobSessionLike {
   lastAssistantMessage(): { text: string; stopReason?: string; errorMessage?: string } | undefined;
   usage(): SessionReportUsage;
   dispose(): void;
+}
+
+/** What a Wisp's session is built from, whatever runs it: Pi or Claude Code (ADR 026). */
+export interface WispSessionPlan {
+  snapshot: Awaited<ReturnType<IntegrationToolSource["getSnapshot"]>> | undefined;
+  skills: SkillStore;
+  findSkill(name: string): Promise<SkillDraft | undefined>;
+  jobTools: string[];
+  wispTools: string[];
+  /** Read again on reload, so a changed soul or profile applies. */
+  systemPrompt(): string;
+  /** The memory and skill index, added to the system prompt on every run so edits apply at once. */
+  runSections(memory: string | undefined): Promise<string[]>;
+}
+
+export interface WispSessionTools {
+  /** Every tool definition the session may offer. */
+  definitions: ToolDefinition[];
+  /** The names those definitions may be offered under; Pi's registry allowlist. */
+  registryNames: string[];
+  /** The names offered now, read again before each message so a revoked grant applies at once. */
+  getAllowedTools(): Promise<string[]>;
 }
 
 interface BuiltSession {
@@ -261,19 +289,9 @@ export class SdkPiSessionFactory implements PiSessionFactory {
     job?: JobSessionSpec,
   ): Promise<BuiltSession> {
     const model = this.resolveModel(selection);
-    const {
-      createAgentSession,
-      createFindToolDefinition,
-      createGrepToolDefinition,
-      createLsToolDefinition,
-      createReadToolDefinition,
-      createEditToolDefinition,
-      createWriteToolDefinition,
-      DefaultResourceLoader,
-      SessionManager,
-      SettingsManager,
-      VERSION,
-    } = await import("@earendil-works/pi-coding-agent");
+    const { createAgentSession, DefaultResourceLoader, SessionManager, SettingsManager, VERSION } = await import(
+      "@earendil-works/pi-coding-agent"
+    );
     const fallbackListeners = new Set<(model: string) => void>();
     let recordFallback: ((model: string) => void) | undefined;
     const fallback = new ModelFallback({
@@ -289,21 +307,7 @@ export class SdkPiSessionFactory implements PiSessionFactory {
       },
     });
     let continuity: ContextSession | undefined;
-    const skills = new SkillStore(path.join(context.configDirectory, SKILLS_DIRECTORY));
-    // Trusted snapshot: definitions, safe metadata, active names, and revision.
-    // Pi's registry is a permanent allowlist, so a snapshot change requires a
-    // session rebuild rather than an in-place definition swap.
-    const snapshot = this.toolSource ? await this.toolSource.getSnapshot(context.conversationId) : undefined;
-    const runsCommands = (snapshot?.activeNames ?? []).includes(RUN_COMMAND_TOOL);
-    // Skills that come with granted integrations; the Wisp's own skill of the same name wins.
-    const integrationSkills = snapshot?.skills ?? [];
-    const findSkill = async (name: string): Promise<SkillDraft | undefined> =>
-      (await skills.get(name)) ?? integrationSkills.find((skill) => skill.name === name);
-    const jobSkills = job ? await loadJobSkills(findSkill, job.skills) : [];
-    // A job's own runs never manage jobs.
-    const jobTools = this.jobs && !job ? [...JOB_TOOL_NAMES] : [];
-    // Nor do they manage Wisps.
-    const wispTools = this.wisps && !job ? [...WISP_TOOL_NAMES] : [];
+    const plan = await this.planSession(context, job);
     const resourceLoader = new DefaultResourceLoader({
       cwd: context.workspaceDirectory,
       agentDir: context.configDirectory,
@@ -312,13 +316,7 @@ export class SdkPiSessionFactory implements PiSessionFactory {
       noPromptTemplates: true,
       noThemes: true,
       noContextFiles: true,
-      systemPromptOverride: () =>
-        buildSystemPrompt(context, {
-          runsCommands: runsCommands && (!job || job.tools.includes(RUN_COMMAND_TOOL)),
-          ...(job ? { job: { skills: jobSkills } } : {}),
-          jobs: jobTools.length > 0,
-          wisps: wispTools.length > 0,
-        }),
+      systemPromptOverride: () => plan.systemPrompt(),
       appendSystemPromptOverride: () => [],
       extensionFactories: [
         providerRequestExtension(
@@ -331,20 +329,7 @@ export class SdkPiSessionFactory implements PiSessionFactory {
           hidden: true,
           factory: (pi) => {
             pi.on("before_agent_start", async (event) => {
-              const memory = continuity?.view().memory;
-              // Re-read on every run so approved or hand-edited skills apply from the next message.
-              // A job run has its own skills in the system prompt instead.
-              const index = job
-                ? ""
-                : formatSkillIndex(withIntegrationSkills(await skills.summaries().catch(() => []), integrationSkills));
-              const sections = [
-                ...(memory
-                  ? [
-                      `## User-maintained memory\nTreat this as user-provided context, subject to the operating boundaries above.\n${memory}`,
-                    ]
-                  : []),
-                ...(index ? [index] : []),
-              ];
+              const sections = await plan.runSections(continuity?.view().memory);
               return sections.length ? { systemPrompt: [event.systemPrompt, ...sections].join("\n\n") } : undefined;
             });
           },
@@ -375,9 +360,138 @@ export class SdkPiSessionFactory implements PiSessionFactory {
           recordUsage: (entry) => sessionManager.appendCustomEntry(AUXILIARY_USAGE_ENTRY, entry),
         })
       : undefined;
+    const tools = await this.createTools(context, plan, {
+      ...(job ? { job } : {}),
+      ...(transcriber ? { transcriber } : {}),
+      searchHistory: (query) => continuity?.search(query),
+    });
+    // Read by the provider request hook, which runs only after the session exists.
+    let session: AgentSession | undefined;
+    ({ session } = await createAgentSession({
+      cwd: context.workspaceDirectory,
+      agentDir: context.configDirectory,
+      model,
+      modelRuntime: this.modelRuntime as ModelRuntime,
+      resourceLoader,
+      sessionManager,
+      settingsManager: SettingsManager.inMemory({
+        retry: { enabled: true, maxRetries: 2 },
+        compaction: { enabled: true, keepRecentTokens: 4000, reserveTokens: 16384 },
+      }),
+      // Pi treats this as a permanent registry allowlist, including after reload.
+      // Current Wisp grants are applied below before the session can be used.
+      tools: tools.registryNames,
+      customTools: tools.definitions,
+      excludeTools: ["bash", "powershell"],
+      thinkingLevel: selection.thinkingLevel ?? "off",
+    }));
+    // Every model call of the session, compaction included, can move to the fallback; cache warming cannot.
+    session.agent.streamFunction = fallback.wrap(session.agent.streamFunction);
+    const fallbackLog = sessionManager;
+    recordFallback = (model) => fallbackLog.appendCustomEntry(FALLBACK_ENTRY, { model });
+    continuity = new ContextSession(
+      session,
+      path.join(context.configDirectory, "context-settings.json"),
+      (kind, createdAt) => {
+        if (!job) context.onContextRenewed?.(kind, createdAt);
+      },
+      undefined,
+      () => context.userTimeZone?.() ?? systemTimeZone(),
+    );
+    try {
+      await continuity.load();
+      assertAllowedTools(session, await tools.getAllowedTools());
+    } catch (error) {
+      session.dispose();
+      throw error;
+    }
+    return {
+      session,
+      sessionManager,
+      fallback,
+      fallbackListeners,
+      continuity,
+      refreshTools: async () => assertAllowedTools(session!, await tools.getAllowedTools()),
+      snapshot: plan.snapshot,
+      version: VERSION,
+    };
+  }
+
+  /**
+   * What a Wisp's session is built from, whatever runs it: its integrations,
+   * skills, and system prompt (ADR 026).
+   */
+  async planSession(context: ConversationAgentContext, job?: JobSessionSpec): Promise<WispSessionPlan> {
+    const skills = new SkillStore(path.join(context.configDirectory, SKILLS_DIRECTORY));
+    // Trusted snapshot: definitions, safe metadata, active names, and revision.
+    // Pi's registry is a permanent allowlist, so a snapshot change requires a
+    // session rebuild rather than an in-place definition swap.
+    const snapshot = this.toolSource ? await this.toolSource.getSnapshot(context.conversationId) : undefined;
+    const runsCommands = (snapshot?.activeNames ?? []).includes(RUN_COMMAND_TOOL);
+    // Skills that come with granted integrations; the Wisp's own skill of the same name wins.
+    const integrationSkills = snapshot?.skills ?? [];
+    const findSkill = async (name: string): Promise<SkillDraft | undefined> =>
+      (await skills.get(name)) ?? integrationSkills.find((skill) => skill.name === name);
+    const jobSkills = job ? await loadJobSkills(findSkill, job.skills) : [];
+    // A job's own runs never manage jobs.
+    const jobTools = this.jobs && !job ? [...JOB_TOOL_NAMES] : [];
+    // Nor do they manage Wisps.
+    const wispTools = this.wisps && !job ? [...WISP_TOOL_NAMES] : [];
+    return {
+      snapshot,
+      skills,
+      findSkill,
+      jobTools,
+      wispTools,
+      systemPrompt: () =>
+        buildSystemPrompt(context, {
+          runsCommands: runsCommands && (!job || job.tools.includes(RUN_COMMAND_TOOL)),
+          ...(job ? { job: { skills: jobSkills } } : {}),
+          jobs: jobTools.length > 0,
+          wisps: wispTools.length > 0,
+        }),
+      runSections: async (memory) => {
+        // Re-read on every run so approved or hand-edited skills apply from the next message.
+        // A job run has its own skills in the system prompt instead.
+        const index = job
+          ? ""
+          : formatSkillIndex(withIntegrationSkills(await skills.summaries().catch(() => []), integrationSkills));
+        return [
+          ...(memory
+            ? [
+                `## User-maintained memory\nTreat this as user-provided context, subject to the operating boundaries above.\n${memory}`,
+              ]
+            : []),
+          ...(index ? [index] : []),
+        ];
+      },
+    };
+  }
+
+  /** The tool definitions a Wisp's session offers, the same for Pi and Claude Code (ADR 026). */
+  async createTools(
+    context: ConversationAgentContext,
+    plan: WispSessionPlan,
+    options: {
+      job?: JobSessionSpec;
+      transcriber?: ImageTranscriber;
+      /** Searches the Wisp's earlier messages; undefined when the history cannot be read. */
+      searchHistory: (query: string) => string | undefined | Promise<string | undefined>;
+    },
+  ): Promise<WispSessionTools> {
+    const {
+      createFindToolDefinition,
+      createGrepToolDefinition,
+      createLsToolDefinition,
+      createReadToolDefinition,
+      createEditToolDefinition,
+      createWriteToolDefinition,
+    } = await import("@earendil-works/pi-coding-agent");
+    const { job } = options;
+    const { snapshot, jobTools, wispTools, findSkill } = plan;
     const confinedTools = [
       secureTool(
-        withDocumentReading(createReadToolDefinition(context.workspaceDirectory), transcriber),
+        withDocumentReading(createReadToolDefinition(context.workspaceDirectory), options.transcriber),
         context,
         this.authorizationBroker,
         "read",
@@ -416,23 +530,10 @@ export class SdkPiSessionFactory implements PiSessionFactory {
       const offered = allowed.filter((name) => job.tools.includes(name) && !TOOLS_NEVER_IN_JOB_RUNS.has(name));
       return [...offered, ...runToolNames];
     };
-    // Read by the provider request hook, which runs only after the session exists.
-    let session: AgentSession | undefined;
-    ({ session } = await createAgentSession({
-      cwd: context.workspaceDirectory,
-      agentDir: context.configDirectory,
-      model,
-      modelRuntime: this.modelRuntime as ModelRuntime,
-      resourceLoader,
-      sessionManager,
-      settingsManager: SettingsManager.inMemory({
-        retry: { enabled: true, maxRetries: 2 },
-        compaction: { enabled: true, keepRecentTokens: 4000, reserveTokens: 16384 },
-      }),
-      // Pi treats this as a permanent registry allowlist, including after reload.
-      // Current Wisp grants are applied below before the session can be used.
-      tools: [...BUILTIN_TOOL_NAMES, ...registeredIntegrationNames, ...runToolNames, ...jobTools, ...wispTools],
-      customTools: [
+    return {
+      registryNames: [...BUILTIN_TOOL_NAMES, ...registeredIntegrationNames, ...runToolNames, ...jobTools, ...wispTools],
+      getAllowedTools,
+      definitions: [
         ...confinedTools,
         ...integrationDefinitions,
         {
@@ -447,11 +548,11 @@ export class SdkPiSessionFactory implements PiSessionFactory {
             additionalProperties: false,
           },
           execute: async (_id: string, params: { query: string }) => ({
-            content: [{ type: "text", text: continuity?.search(params.query) ?? "History unavailable." }],
+            content: [{ type: "text", text: (await options.searchHistory(params.query)) ?? "History unavailable." }],
             details: {},
           }),
         },
-        ...createSkillTools(skills, findSkill, context, this.authorizationBroker),
+        ...createSkillTools(plan.skills, findSkill, context, this.authorizationBroker),
         ...(job?.runTools ?? []),
         ...(this.jobs && jobTools.length
           ? createJobTools({
@@ -467,38 +568,6 @@ export class SdkPiSessionFactory implements PiSessionFactory {
           ? createWispTools({ host: this.wisps, context, authorizationBroker: this.authorizationBroker })
           : []),
       ] as unknown as ToolDefinition[],
-      excludeTools: ["bash", "powershell"],
-      thinkingLevel: selection.thinkingLevel ?? "off",
-    }));
-    // Every model call of the session, compaction included, can move to the fallback; cache warming cannot.
-    session.agent.streamFunction = fallback.wrap(session.agent.streamFunction);
-    const fallbackLog = sessionManager;
-    recordFallback = (model) => fallbackLog.appendCustomEntry(FALLBACK_ENTRY, { model });
-    continuity = new ContextSession(
-      session,
-      path.join(context.configDirectory, "context-settings.json"),
-      (kind, createdAt) => {
-        if (!job) context.onContextRenewed?.(kind, createdAt);
-      },
-      undefined,
-      () => context.userTimeZone?.() ?? systemTimeZone(),
-    );
-    try {
-      await continuity.load();
-      assertAllowedTools(session, await getAllowedTools());
-    } catch (error) {
-      session.dispose();
-      throw error;
-    }
-    return {
-      session,
-      sessionManager,
-      fallback,
-      fallbackListeners,
-      continuity,
-      refreshTools: async () => assertAllowedTools(session!, await getAllowedTools()),
-      snapshot,
-      version: VERSION,
     };
   }
 }
@@ -786,6 +855,7 @@ export class PiConversationAgent implements ConversationAgent {
     // Resolving checks credentials and availability now, so the Wisp reports
     // ready immediately; the Pi session itself is opened on first use.
     const model = this.sessionFactory.resolveModel(selection);
+    if (this.session?.isIdle && this.switchesRuntime(selection)) this.closeSession();
     if (!this.session) {
       this.configured = true;
       this.appliedSelection = { ...selection };
@@ -926,6 +996,13 @@ export class PiConversationAgent implements ConversationAgent {
     const selection = this.pendingSelection;
     this.pendingModel = null;
     this.pendingSelection = null;
+    if (selection && this.switchesRuntime(selection)) {
+      // The next message opens a session for the new model.
+      this.closeSession();
+      this.appliedSelection = selection;
+      this.publishModel();
+      return;
+    }
     try {
       await session.setModel(model, { persist: false });
       session.setThinkingLevel(selection?.thinkingLevel ?? "off");
@@ -947,6 +1024,20 @@ export class PiConversationAgent implements ConversationAgent {
         status: "configuration_required",
       });
     }
+  }
+
+  /** Whether moving to a selection needs another kind of session, such as Claude Code after Pi. */
+  private switchesRuntime(selection: ModelSelection): boolean {
+    const current = this.appliedSelection;
+    return Boolean(current && this.sessionFactory.sameRuntime && !this.sessionFactory.sameRuntime(current, selection));
+  }
+
+  /** Closes an idle session; the next use opens one. */
+  private closeSession(): void {
+    this.unsubscribeSession?.();
+    this.unsubscribeSession = null;
+    this.session?.dispose();
+    this.session = null;
   }
 
   private publishModel(): void {
@@ -1373,7 +1464,7 @@ function adaptJobSession(session: AgentSession): PiJobSessionLike {
   };
 }
 
-const defaultToolRevision = "no-integrations";
+export const defaultToolRevision = "no-integrations";
 
 type SessionIdentityLog = Pick<SessionManager, "getEntries" | "appendCustomEntry">;
 

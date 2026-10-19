@@ -34,6 +34,10 @@ import { MessageScheduler } from "./message-scheduler.js";
 import { catalogModelPricing, ModelPricingService } from "./model-pricing-service.js";
 import { ModelService } from "./model-service.js";
 import { PiConversationAgentFactory, SdkPiSessionFactory } from "./pi-conversation-agent.js";
+import { ClaudeCodeSessionFactory } from "./claude-code/claude-code-session-factory.js";
+import { ClaudeCodeStatusService } from "./claude-code/claude-code-status.js";
+import { RoutingSessionFactory } from "./claude-code/routing-session-factory.js";
+import { formatHistorySearch, recentTranscript } from "./claude-code/conversation-history.js";
 import { PluginService } from "./plugin-service.js";
 import { SessionReportService } from "./session-report-service.js";
 import type { StructuredLogger } from "./structured-logger.js";
@@ -123,10 +127,15 @@ export interface BackendRuntime {
 
 export async function createBackendRuntime(options: BackendRuntimeOptions): Promise<BackendRuntime> {
   const { dataDirectory, encryption, logger } = options;
+  // Whether this server's `claude` can run Claude Code Wisps (ADR 026); the fake agent mode never runs it.
+  const claudeCodeStatus = new ClaudeCodeStatusService(
+    options.agentMode === "fake" ? { find: async () => undefined } : {},
+  );
   const modelService = await ModelService.create({
     dataDirectory,
     encryption,
     ...(options.allowModelNetwork === undefined ? {} : { allowModelNetwork: options.allowModelNetwork }),
+    claudeCode: claudeCodeStatus,
   });
   const toolPolicyStore = new ToolPolicyStore(path.join(dataDirectory, "tool-policy.json"));
   await toolPolicyStore.load();
@@ -249,7 +258,7 @@ export async function createBackendRuntime(options: BackendRuntimeOptions): Prom
     runtime: containerRuntime,
     gitHubToken: (id) => mcpService.gitHubToken(id),
   });
-  const sessionFactory = new SdkPiSessionFactory(
+  const piSessionFactory = new SdkPiSessionFactory(
     modelService.getModelRuntime(),
     toolAuthorizationBroker,
     new CompositeIntegrationToolSource([pluginService, mcpService, executionService]),
@@ -261,6 +270,17 @@ export async function createBackendRuntime(options: BackendRuntimeOptions): Prom
       return modelService.getFallbackModel(modelOverride ?? null, fallback ?? null);
     },
     wispHost,
+  );
+  const sessionFactory = new RoutingSessionFactory(
+    piSessionFactory,
+    new ClaudeCodeSessionFactory({
+      pi: piSessionFactory,
+      status: claudeCodeStatus,
+      recentTranscript: async (conversationId) =>
+        recentTranscript(await conversationRepository.getMessagePage({ conversationId, page: "latest" })),
+      searchHistory: async (conversationId, query) =>
+        formatHistorySearch(conversationId, await conversationRepository.searchMessages(query)),
+    }),
   );
   const agentFactory: ConversationAgentFactory =
     options.agentMode === "fake"
@@ -324,7 +344,7 @@ export async function createBackendRuntime(options: BackendRuntimeOptions): Prom
   scheduler.start();
 
   const jobRunner = new JobRunner({
-    sessionFactory,
+    sessionFactory: piSessionFactory,
     getContext: (conversationId) => conversationRepository.getAgentContext(conversationId),
     getSelection: async (context) => context.modelOverride ?? (await modelService.getSelection()),
     runUnattended: (grant, run) => toolAuthorizationBroker.runUnattended(grant, run),

@@ -18,9 +18,14 @@ import {
   type WispFallback,
   wispFallbackChoice,
 } from "../shared/contracts.js";
+import { CLAUDE_CODE_PROVIDER, type ClaudeCodeStatusView } from "../shared/claude-code.js";
 import { WispBackendError } from "./backend-error.js";
 import { AiSettingsStore } from "./ai-settings-store.js";
 import { EncryptedCredentialStore, type EncryptionService } from "./encrypted-credential-store.js";
+import { CLAUDE_CODE_MODELS, CLAUDE_CODE_PROVIDER_NAME, claudeCodeModel } from "./claude-code/claude-code-models.js";
+import { claudeCodeUnavailableMessage, type ClaudeCodeStatusService } from "./claude-code/claude-code-status.js";
+
+type ClaudeCodeStatusSource = Pick<ClaudeCodeStatusService, "current" | "refresh">;
 
 const MAX_API_KEY_LENGTH = 20_000;
 const MODEL_REFRESH_TIMEOUT_MS = 10_000;
@@ -44,6 +49,8 @@ interface ModelServiceOptions {
   credentials: EncryptedCredentialStore;
   /** The runtime's catalog refresh; absent for runtimes that cannot refresh. */
   refresh?: (options: { allowNetwork: boolean; signal: AbortSignal }) => Promise<ModelRefreshResult>;
+  /** Whether Claude Code can run Wisps; without it, the `claude-code` provider is not offered (ADR 026). */
+  claudeCode?: ClaudeCodeStatusSource;
 }
 
 export interface CreateModelServiceOptions {
@@ -51,6 +58,7 @@ export interface CreateModelServiceOptions {
   encryption: EncryptionService;
   /** Allow the runtime to use the network for model catalogs. Defaults to true. */
   allowModelNetwork?: boolean;
+  claudeCode?: ClaudeCodeStatusSource;
 }
 
 function describeRefreshFailure(result: ModelRefreshResult): string | null {
@@ -92,12 +100,14 @@ export class ModelService {
   private catalogRefreshError: string | null = null;
   private networkRefreshError: string | null = null;
   private networkRefresh: AbortController | undefined;
+  private readonly claudeCode: ClaudeCodeStatusSource | undefined;
 
   constructor(options: ModelServiceOptions) {
     this.runtime = options.runtime;
     this.settings = options.settings;
     this.credentials = options.credentials;
     this.refreshRuntime = options.refresh;
+    this.claudeCode = options.claudeCode;
   }
 
   static async create(options: CreateModelServiceOptions): Promise<ModelService> {
@@ -121,6 +131,7 @@ export class ModelService {
       credentials,
       settings: new AiSettingsStore(path.join(options.dataDirectory, "ai-settings.json")),
       refresh: (refreshOptions) => runtime.refresh(refreshOptions),
+      ...(options.claudeCode ? { claudeCode: options.claudeCode } : {}),
     });
     // Restore saved credentials and cached catalog entries offline, so the app
     // is usable without waiting on the network. The availability pass that
@@ -180,9 +191,32 @@ export class ModelService {
       .filter((provider) => provider.models.length > 0)
       .sort(compareByName);
 
+    const claudeCode = await this.claudeCodeStatus();
+    if (claudeCode) {
+      providers.push({
+        id: CLAUDE_CODE_PROVIDER,
+        name: CLAUDE_CODE_PROVIDER_NAME,
+        credentialConfigured: claudeCode.state === "ready",
+        models: CLAUDE_CODE_MODELS.map((model) => ({
+          id: model.id,
+          name: model.name,
+          reasoning: model.reasoning,
+          thinkingLevels: supportedThinkingLevels(model),
+          input: [...model.input],
+          contextWindow: model.contextWindow,
+          maxOutputTokens: model.maxTokens,
+        })),
+      });
+      providers.sort(compareByName);
+    }
+
     const savedSelection = await this.settings.getSelection();
     const selection =
-      savedSelection && this.isValidSelection(savedSelection) && credentialProviders.has(savedSelection.providerId)
+      savedSelection &&
+      this.isValidSelection(savedSelection) &&
+      (savedSelection.providerId === CLAUDE_CODE_PROVIDER
+        ? claudeCode?.state === "ready"
+        : credentialProviders.has(savedSelection.providerId))
         ? savedSelection
         : null;
     const errors = [this.catalogRefreshError, this.networkRefreshError, this.runtime.getError()].filter(
@@ -197,6 +231,7 @@ export class ModelService {
       fallback: this.fallbackView(await this.settings.getFallback(), credentialProviders),
       secureStorageAvailable: this.credentials.isSecureStorageAvailable(),
       providers,
+      ...(claudeCode ? { claudeCode } : {}),
       catalogError: errors.length > 0 ? errors.join("\n") : null,
     };
   }
@@ -205,6 +240,14 @@ export class ModelService {
     const { selection } = request;
     this.assertValidSelection(selection);
     this.assertSupportedThinkingLevel(selection);
+
+    if (selection.providerId === CLAUDE_CODE_PROVIDER) {
+      // Claude Code signs in on its own; Wisp never takes a key for it.
+      if (request.apiKey !== undefined) throw new WispBackendError("invalid_request", "Claude Code takes no API key.");
+      await this.assertClaudeCodeReady("invalid_configuration");
+      await this.settings.setSelection(selection);
+      return this.getView();
+    }
 
     const apiKey = request.apiKey?.trim();
     if (apiKey !== undefined && (!apiKey || apiKey.length > MAX_API_KEY_LENGTH)) {
@@ -359,12 +402,19 @@ export class ModelService {
   async getSelection(): Promise<ModelSelection | null> {
     const selection = await this.settings.getSelection();
     if (!selection || !this.isValidSelection(selection)) return null;
+    if (selection.providerId === CLAUDE_CODE_PROVIDER) {
+      return (await this.claudeCodeStatus())?.state === "ready" ? selection : null;
+    }
     const credential = await this.credentials.read(selection.providerId);
     return credential?.type === "api_key" ? selection : null;
   }
 
   async validateConversationSelection(selection: ModelSelection): Promise<void> {
     this.assertValidSelection(selection);
+    if (selection.providerId === CLAUDE_CODE_PROVIDER) {
+      await this.assertClaudeCodeReady("configuration_required");
+      return;
+    }
     const credential = await this.credentials.read(selection.providerId);
     if (credential?.type !== "api_key") {
       throw new WispBackendError(
@@ -416,7 +466,30 @@ export class ModelService {
     return credentialProviders.has(selection.providerId) ? null : "missing_key";
   }
 
+  /** The latest Claude Code status, checking again when it is stale; undefined without Claude Code support. */
+  private async claudeCodeStatus(): Promise<ClaudeCodeStatusView | undefined> {
+    if (!this.claudeCode) return undefined;
+    try {
+      return await this.claudeCode.refresh();
+    } catch {
+      return this.claudeCode.current() ?? { state: "checking" };
+    }
+  }
+
+  private async assertClaudeCodeReady(code: "invalid_configuration" | "configuration_required"): Promise<void> {
+    const status = await this.claudeCodeStatus();
+    const unavailable =
+      status?.state === "checking" ? claudeCodeUnavailableMessage(undefined) : claudeCodeUnavailableMessage(status);
+    if (!status || unavailable) {
+      throw new WispBackendError(code, unavailable ?? "Claude Code is not available on this server.");
+    }
+  }
+
   private isValidSelection(selection: ModelSelection): boolean {
+    if (selection.providerId === CLAUDE_CODE_PROVIDER) {
+      // Claude Code manages its own output limit, so a saved one is not checked.
+      return Boolean(this.claudeCode && claudeCodeModel(selection.modelId));
+    }
     const provider = this.runtime.getProvider(selection.providerId);
     const model = this.runtime.getModel(selection.providerId, selection.modelId);
     const maxOutputTokens = selection.maxOutputTokens;
@@ -445,7 +518,10 @@ export class ModelService {
   assertSupportedThinkingLevel(selection: ModelSelection): void {
     const level = selection.thinkingLevel;
     if (!level || level === "off") return;
-    const model = this.runtime.getModel(selection.providerId, selection.modelId);
+    const model =
+      selection.providerId === CLAUDE_CODE_PROVIDER
+        ? claudeCodeModel(selection.modelId)
+        : this.runtime.getModel(selection.providerId, selection.modelId);
     if (model && !supportedThinkingLevels(model).includes(level)) {
       throw new WispBackendError("invalid_configuration", "The selected model does not support this reasoning level.");
     }

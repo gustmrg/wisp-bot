@@ -188,6 +188,39 @@ describe("PiConversationAgent", () => {
     expect(sessions.get("two")?.models).toEqual([]);
   });
 
+  it("opens a new session when the model moves to another runtime, such as Claude Code", async () => {
+    const sessions: MockPiSession[] = [];
+    const factory: PiSessionFactory = {
+      ...rebuildingFactory(sessions, []),
+      sameRuntime: (current, next) => (current.providerId === "claude-code") === (next.providerId === "claude-code"),
+    };
+    const agent = new PiConversationAgent(context("one"), factory, { flushDelayMs: 0 });
+    await agent.start();
+    await agent.applyModel(selection());
+    const first = agent.send({ conversationId: "one", requestId: "r1", text: "Hello" });
+    await vi.waitFor(() => expect(sessions[0]?.isIdle).toBe(false));
+
+    // A change during a turn applies after it: the session closes rather than switching models.
+    await agent.applyModel({ providerId: "claude-code", modelId: "sonnet" });
+    sessions[0]!.finishPrompt();
+    await first;
+    expect(sessions[0]!.models).toEqual([]);
+    expect(sessions[0]!.disposeCount).toBe(1);
+
+    const second = agent.send({ conversationId: "one", requestId: "r2", text: "Again" });
+    await vi.waitFor(() => expect(sessions[1]?.isIdle).toBe(false));
+    sessions[1]!.finishPrompt();
+    await second;
+    expect(sessions[1]!.prompts).toEqual(["Again"]);
+
+    // An idle session closes at once; a model of the same runtime switches in place.
+    await agent.applyModel(selection("model-2"));
+    expect(sessions[1]!.disposeCount).toBe(1);
+    await agent.applyModel(selection("model-3"));
+    expect(sessions).toHaveLength(2);
+    await agent.dispose();
+  });
+
   it("aborts active work and disposes the Pi session exactly once", async () => {
     const sessions = new Map<string, MockPiSession>();
     const agent = new PiConversationAgent(context("one"), factoryFor(sessions), { flushDelayMs: 0 });

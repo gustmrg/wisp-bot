@@ -2,17 +2,13 @@ import { execFile } from "node:child_process";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 
+import type { ClaudeCodeStatusView } from "../../shared/claude-code.js";
 import { claudeCodeEnvironment, parseClaudeCodeAuthStatus, type ClaudeCodeAuthStatus } from "./claude-code-launch.js";
 
 const COMMAND_TIMEOUT_MS = 10_000;
 
 /** Whether this server can run Claude Code Wisps, and why not when it cannot (ADR 026). */
-export type ClaudeCodeStatus =
-  | { state: "missing" }
-  | { state: "outdated"; version: string; minimumVersion: string }
-  | { state: "signed_out"; version: string }
-  /** `billing` says who pays: the person's Claude plan, or their Anthropic API account. */
-  | { state: "ready"; version: string; billing: "subscription" | "api"; plan?: string };
+export type ClaudeCodeStatus = Exclude<ClaudeCodeStatusView, { state: "checking" }>;
 
 /** Runs `claude` with arguments and resolves with its output; rejects when it cannot run. */
 export type ClaudeCodeRunner = (args: ReadonlyArray<string>) => Promise<{ stdout: string; exitCode: number }>;
