@@ -14,14 +14,28 @@ and refreshes it over the network in the background (for at most ten seconds),
 so an offline or slow connection never delays the window; a refresh failure is
 shown in these settings.
 
+These settings pick a provider first and then one of its models, because the
+provider also decides which API key the page edits, and every provider in the
+catalog is listed whether or not it has a key yet. The other model pickers
+(Wisp creation, a Wisp's **Model** tab, fallback and image understanding) choose
+among models that can already run, so they list the models of every provider
+with a saved key in one searchable list, each with its provider and ID.
+
+Model pickers show the logo of the lab that made each model, which is not
+always the provider serving it (Claude through OpenRouter shows Anthropic's).
+The lab comes from the model family or vendor prefix in the model ID, or from
+the provider when a lab runs it; models from other labs and routers that pick
+the model themselves show no logo.
+
 ## Models per Wisp
 
-When creating a Wisp, the **Model** section can select another provider/model
-and output-token limit for that Wisp, or keep **Use global model** to inherit
-the default. Overrides are saved locally with the Wisp and restored on restart;
-a Wisp's **Model** tab shows the selection read-only. An invalid override
-requires configuration; it does not silently use a different provider. Removing
-a provider key disables affected Wisps until the key is restored.
+When creating a Wisp, the **Model** picker keeps **Use the global model** to
+inherit the default, or selects a model for that Wisp. A Wisp's **Model** tab
+shows the model in use and changes it at once, with the output-token limit
+under **Advanced**; a template's limit is kept on creation. Overrides are saved
+locally with the Wisp and restored on restart. An invalid override requires
+configuration; it does not silently use a different provider. Removing a
+provider key disables affected Wisps until the key is restored.
 
 Idle Wisps switch immediately; active Wisps finish their current turn with the
 previous model. The conversation header shows the actual model and any pending
