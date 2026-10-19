@@ -14,7 +14,7 @@ const base = {
   executable: "/home/person/.local/bin/claude",
   model: "sonnet",
   systemPrompt: "Your name is Lumen.",
-  sessionId: "550e8400-e29b-41d4-a716-446655440000",
+  session: { id: "550e8400-e29b-41d4-a716-446655440000", resume: false },
   wispTools,
   authorize: vi.fn(async () => ({ behavior: "deny" as const, message: "no" })),
   environment: { HOME: "/home/person", PATH: "/usr/bin" },
@@ -22,7 +22,7 @@ const base = {
 
 describe("claudeCodeQueryOptions", () => {
   it("runs restricted with only Wisp's tools, no settings, hooks off, and the person's binary", () => {
-    const options = claudeCodeQueryOptions({ ...base, resume: false });
+    const options = claudeCodeQueryOptions(base);
 
     expect(options).toMatchObject({
       cwd: "/data/workspaces/w1",
@@ -47,17 +47,22 @@ describe("claudeCodeQueryOptions", () => {
     expect(JSON.stringify(options)).not.toMatch(/bypass|dangerously/i);
   });
 
-  it("starts a session with its ID and resumes it later", () => {
-    expect(claudeCodeQueryOptions({ ...base, resume: false })).toMatchObject({ sessionId: base.sessionId });
-    expect(claudeCodeQueryOptions({ ...base, resume: false }).resume).toBeUndefined();
-    expect(claudeCodeQueryOptions({ ...base, resume: true, effort: "high" })).toMatchObject({
-      resume: base.sessionId,
+  it("starts a session with its ID, resumes it later, and keeps none for a job run", () => {
+    const id = base.session.id;
+    expect(claudeCodeQueryOptions(base)).toMatchObject({ sessionId: id });
+    expect(claudeCodeQueryOptions(base).resume).toBeUndefined();
+    expect(claudeCodeQueryOptions({ ...base, session: { id, resume: true }, effort: "high" })).toMatchObject({
+      resume: id,
       effort: "high",
     });
+    const job = claudeCodeQueryOptions({ ...base, session: null });
+    expect(job.persistSession).toBe(false);
+    expect(job.sessionId).toBeUndefined();
+    expect(job.resume).toBeUndefined();
   });
 
   it("rebuilds the system prompt per request and carries a replaced session's latest messages", () => {
-    const options = claudeCodeQueryOptions({ ...base, resume: false, recoveredContext: "user: earlier question" });
+    const options = claudeCodeQueryOptions({ ...base, recoveredContext: "user: earlier question" });
 
     expect(options.extraArgs).toEqual({ restricted: null, "system-prompt-snapshot": "off" });
     expect(options.systemPrompt.append).toMatch(/^Your name is Lumen\.\n\n## Earlier in this conversation\n/);
@@ -65,7 +70,7 @@ describe("claudeCodeQueryOptions", () => {
   });
 
   it("offers Claude's WebSearch only when it is the Wisp's search provider", () => {
-    expect(claudeCodeQueryOptions({ ...base, resume: false, webSearch: true }).tools).toEqual(["WebSearch"]);
+    expect(claudeCodeQueryOptions({ ...base, webSearch: true }).tools).toEqual(["WebSearch"]);
   });
 });
 

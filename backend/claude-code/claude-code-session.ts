@@ -234,6 +234,7 @@ export class ClaudeCodeSession implements RuntimeSession {
       usage: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, totalTokens: 0 },
       estimatedCostUsd: null,
       errors: [],
+      reply: "",
     };
     if (turn.aborted) return stopped;
     const process = await this.ensureProcess();
@@ -367,7 +368,7 @@ export class ClaudeCodeSession implements RuntimeSession {
 }
 
 /** A failed turn as an error the person can act on; Claude Code's own text stays in the detail. */
-function describeFailure(result: ClaudeCodeTurnResult): WispBackendError {
+export function describeFailure(result: ClaudeCodeTurnResult): WispBackendError {
   const text = result.errors.join("\n");
   if (/log ?in|logged out|not authenticated|oauth|authentication/i.test(text)) {
     return new WispBackendError(

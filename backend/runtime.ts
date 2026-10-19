@@ -352,7 +352,7 @@ export async function createBackendRuntime(options: BackendRuntimeOptions): Prom
   scheduler.start();
 
   const jobRunner = new JobRunner({
-    sessionFactory: piSessionFactory,
+    sessionFactory,
     getContext: (conversationId) => conversationRepository.getAgentContext(conversationId),
     getSelection: async (context) => context.modelOverride ?? (await modelService.getSelection()),
     runUnattended: (grant, run) => toolAuthorizationBroker.runUnattended(grant, run),

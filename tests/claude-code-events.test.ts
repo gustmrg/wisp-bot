@@ -80,6 +80,7 @@ describe("ClaudeCodeEventConverter", () => {
         usage: { inputTokens: 2, outputTokens: 9, cacheReadTokens: 649, cacheWriteTokens: 2277, totalTokens: 2937 },
         estimatedCostUsd: 0.00046659,
         errors: [],
+        reply: "",
       },
     ]);
     expect(converter.model).toBe("claude-sonnet-5-5");

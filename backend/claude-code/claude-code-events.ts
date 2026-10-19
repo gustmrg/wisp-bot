@@ -31,6 +31,8 @@ export interface ClaudeCodeTurnResult {
   estimatedCostUsd: number | null;
   /** Claude Code's error texts, for logs and for telling failures apart; never shown as is. */
   errors: string[];
+  /** The turn's final reply, when it succeeded; a job run delivers it. */
+  reply: string;
 }
 
 type Json = Record<string, unknown>;
@@ -222,9 +224,11 @@ export class ClaudeCodeEventConverter {
 
   private result(event: Json): ClaudeCodeTurnResult {
     const cost = event.total_cost_usd;
+    const ok = event.subtype === "success" && event.is_error !== true;
     return {
       sessionId: typeof event.session_id === "string" ? event.session_id : "",
-      ok: event.subtype === "success" && event.is_error !== true,
+      ok,
+      reply: ok && typeof event.result === "string" ? event.result : "",
       usage: usageOf(event.usage),
       estimatedCostUsd: typeof cost === "number" && Number.isFinite(cost) ? cost : null,
       errors: Array.isArray(event.errors)

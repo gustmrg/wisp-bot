@@ -8,7 +8,7 @@ import { isTimeZone } from "../shared/time-zone.js";
 import { WispBackendError } from "./backend-error.js";
 import type { ConversationAgentContext } from "./conversation-agent.js";
 import type { JobRunContext, JobRunOutcome } from "./job-scheduler.js";
-import type { PiJobSessionLike } from "./pi-session-factory.js";
+import type { RuntimeJobSession } from "./runtime-session.js";
 import type { JobSessionSpec } from "./wisp-session-plan.js";
 import { sanitizeErrorMessage } from "./pi-event-translator.js";
 import { describeProviderError } from "./provider-error.js";
@@ -23,7 +23,7 @@ export interface JobSessionFactory {
     context: ConversationAgentContext,
     selection: ModelSelection,
     job: JobSessionSpec,
-  ): Promise<PiJobSessionLike>;
+  ): Promise<RuntimeJobSession>;
 }
 
 export interface JobRunnerOptions {

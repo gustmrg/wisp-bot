@@ -11,7 +11,7 @@ import type {
   ModelRuntime,
   SessionManager,
 } from "@earendil-works/pi-coding-agent" with { "resolution-mode": "import" };
-import type { ModelSelection, SessionReportUsage, ThinkingLevel } from "../shared/contracts.js";
+import type { ModelSelection, ThinkingLevel } from "../shared/contracts.js";
 import { WispBackendError } from "./backend-error.js";
 import type { IntegrationToolSource } from "./integration-tool-source.js";
 import type { JobToolHost } from "./job-tools.js";
@@ -24,7 +24,7 @@ import { AUXILIARY_USAGE_ENTRY, ImageTranscriber } from "./image-transcriber.js"
 import { TRANSCRIPTION_CACHE_DIRECTORY, TranscriptionCache } from "./transcription-cache.js";
 import { FALLBACK_ENTRY, ModelFallback } from "./model-fallback.js";
 import type { ToolAuthorizationBroker } from "./tool-authorization-broker.js";
-import type { RuntimeModel, RuntimeSession, RuntimeSessionFactory } from "./runtime-session.js";
+import type { RuntimeJobSession, RuntimeModel, RuntimeSession, RuntimeSessionFactory } from "./runtime-session.js";
 import {
   BlockMutationAuthorizer,
   defaultToolRevision,
@@ -38,18 +38,6 @@ const DEFAULT_MAX_OUTPUT_TOKENS = 32_768;
 function displayModelName(model: { id: string; name?: string }): string {
   const name = (model.name || model.id).replace(/[\u0000-\u001f\u007f]/gu, " ").trim();
   return name.slice(0, 256) || model.id.slice(0, 256);
-}
-
-/** A job run's own session: no conversation history, and it never becomes the conversation's session. */
-export interface PiJobSessionLike {
-  readonly sessionFile: string | undefined;
-  /** The names of the tools the run is offered. */
-  getActiveToolNames(): string[];
-  prompt(text: string, signal: AbortSignal): Promise<void>;
-  /** The run's last assistant message, if the model answered. */
-  lastAssistantMessage(): { text: string; stopReason?: string; errorMessage?: string } | undefined;
-  usage(): SessionReportUsage;
-  dispose(): void;
 }
 
 interface BuiltSession {
@@ -156,7 +144,7 @@ export class SdkPiSessionFactory implements RuntimeSessionFactory {
     context: ConversationAgentContext,
     selection: ModelSelection,
     job: JobSessionSpec,
-  ): Promise<PiJobSessionLike> {
+  ): Promise<RuntimeJobSession> {
     const { session, sessionManager, snapshot, version } = await this.build(context, selection, job);
     recordSessionIdentity(sessionManager, version, snapshot?.metadata ?? []);
     return adaptJobSession(session);
@@ -440,7 +428,7 @@ function adaptSession(
   };
 }
 
-function adaptJobSession(session: AgentSession): PiJobSessionLike {
+function adaptJobSession(session: AgentSession): RuntimeJobSession {
   return {
     get sessionFile() {
       return session.sessionFile;

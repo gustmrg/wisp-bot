@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import { RoutingSessionFactory } from "../backend/claude-code/routing-session-factory.js";
 import type { ConversationAgentContext } from "../backend/conversation-agent.js";
+import type { JobSessionFactory } from "../backend/job-runner.js";
 import type { RuntimeSessionFactory } from "../backend/runtime-session.js";
 
 describe("RoutingSessionFactory", () => {
@@ -10,11 +11,13 @@ describe("RoutingSessionFactory", () => {
   const pi = {
     resolveModel: vi.fn(() => ({ id: "gpt" })),
     create: vi.fn(async () => piSession),
+    createJobSession: vi.fn(async () => ({ kind: "pi-job" })),
     getToolRevision: vi.fn(async () => "rev-1"),
-  } as unknown as RuntimeSessionFactory;
+  } as unknown as RuntimeSessionFactory & JobSessionFactory;
   const claudeCode = {
     resolveModel: vi.fn(() => ({ id: "sonnet" })),
     create: vi.fn(async () => claudeSession),
+    createJobSession: vi.fn(async () => ({ kind: "claude-code-job" })),
   };
   const factory = new RoutingSessionFactory(pi, claudeCode as never);
   const context = { conversationId: "c1" } as ConversationAgentContext;
@@ -27,6 +30,13 @@ describe("RoutingSessionFactory", () => {
     expect(factory.resolveModel(claude)).toEqual({ id: "sonnet" });
     expect(factory.resolveModel(openai)).toEqual({ id: "gpt" });
     await expect(factory.getToolRevision("c1")).resolves.toBe("rev-1");
+  });
+
+  it("runs a Wisp's jobs on the same runtime as its conversations", async () => {
+    const job = { runId: "r1", runDirectory: "/runs", tools: [], skills: [], runTools: [] };
+
+    await expect(factory.createJobSession(context, claude, job)).resolves.toEqual({ kind: "claude-code-job" });
+    await expect(factory.createJobSession(context, openai, job)).resolves.toEqual({ kind: "pi-job" });
   });
 
   it("tells when a model change needs another kind of session", () => {

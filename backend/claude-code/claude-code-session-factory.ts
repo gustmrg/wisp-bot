@@ -6,10 +6,11 @@ import type { ModelSelection } from "../../shared/contracts.js";
 import { writeFileAtomically } from "../atomic-file.js";
 import { WispBackendError } from "../backend-error.js";
 import type { ConversationAgentContext } from "../conversation-agent.js";
-import { defaultToolRevision, type WispSessionBuilder } from "../wisp-session-plan.js";
-import { claudeCodeQueryOptions } from "./claude-code-launch.js";
+import { defaultToolRevision, type JobSessionSpec, type WispSessionBuilder } from "../wisp-session-plan.js";
+import { ClaudeCodeJobSession } from "./claude-code-job-session.js";
+import { claudeCodeQueryOptions, type ClaudeCodeQueryOptions } from "./claude-code-launch.js";
 import { claudeCodeModel, type ClaudeCodeModel } from "./claude-code-models.js";
-import { ClaudeCodeSession, type ClaudeCodeQuery } from "./claude-code-session.js";
+import { claudeCodeEffort, ClaudeCodeSession, type ClaudeCodeQuery } from "./claude-code-session.js";
 import { claudeCodeUnavailableMessage, type ClaudeCodeStatusService } from "./claude-code-status.js";
 import { createWispMcpServer, type WispMcpTool } from "./wisp-mcp-server.js";
 
@@ -46,6 +47,24 @@ async function readMemory(configDirectory: string): Promise<string | undefined> 
   }
 }
 
+/** What a process of a conversation or of a job run starts with. */
+interface ProcessLaunch {
+  model: string;
+  effort?: ClaudeCodeQueryOptions["effort"];
+  /** Null for a job run, which Claude Code keeps no session of. */
+  session: { id: string; resume: boolean } | null;
+  recoveredContext?: string;
+}
+
+/** What every Claude Code process of a Wisp shares: its query function, tools, and options. */
+interface Prepared {
+  model: ClaudeCodeModel;
+  query: ClaudeCodeQuery;
+  toolNames: string[];
+  toolRevision: string;
+  queryOptions: (launch: ProcessLaunch) => Promise<ClaudeCodeQueryOptions>;
+}
+
 /** Sessions for Wisps on the `claude-code` provider (ADR 026). */
 export class ClaudeCodeSessionFactory {
   private readonly options: ClaudeCodeSessionFactoryOptions;
@@ -64,6 +83,54 @@ export class ClaudeCodeSessionFactory {
   }
 
   async create(context: ConversationAgentContext, selection: ModelSelection): Promise<ClaudeCodeSession> {
+    const prepared = await this.prepare(context, selection);
+    const identity = await this.readSession(context);
+    return new ClaudeCodeSession({
+      query: prepared.query,
+      sessionId: identity.sessionId,
+      resume: identity.resume,
+      model: prepared.model.id,
+      thinkingLevel: selection.thinkingLevel ?? "off",
+      toolNames: prepared.toolNames,
+      toolRevision: prepared.toolRevision,
+      queryOptions: (launch) =>
+        prepared.queryOptions({
+          model: launch.model,
+          ...(launch.effort ? { effort: launch.effort } : {}),
+          session: { id: launch.sessionId, resume: launch.resume },
+          ...(launch.recoveredContext ? { recoveredContext: launch.recoveredContext } : {}),
+        }),
+      onSessionSaved: (sessionId) => this.writeSession(context, sessionId),
+      ...(this.options.recentTranscript
+        ? { recentTranscript: () => this.options.recentTranscript!(context.conversationId) }
+        : {}),
+    });
+  }
+
+  /**
+   * One run of a job (ADR 019): the Wisp's identity, memory, and the job's
+   * tools and skills, in a Claude Code process that keeps no session.
+   */
+  async createJobSession(
+    context: ConversationAgentContext,
+    selection: ModelSelection,
+    job: JobSessionSpec,
+  ): Promise<ClaudeCodeJobSession> {
+    const prepared = await this.prepare(context, selection, job);
+    const effort = claudeCodeEffort(selection.thinkingLevel ?? "off");
+    return new ClaudeCodeJobSession({
+      query: prepared.query,
+      toolNames: prepared.toolNames,
+      queryOptions: () =>
+        prepared.queryOptions({ model: prepared.model.id, ...(effort ? { effort } : {}), session: null }),
+    });
+  }
+
+  private async prepare(
+    context: ConversationAgentContext,
+    selection: ModelSelection,
+    job?: JobSessionSpec,
+  ): Promise<Prepared> {
     const status = await this.options.status.refresh();
     const unavailable = claudeCodeUnavailableMessage(status);
     const executable = this.options.status.executable();
@@ -71,24 +138,21 @@ export class ClaudeCodeSessionFactory {
       throw new WispBackendError("configuration_required", unavailable ?? claudeCodeUnavailableMessage(undefined)!);
     }
     const model = this.resolveModel(selection);
-    const plan = await this.options.builder.plan(context);
+    const plan = await this.options.builder.plan(context, job);
     const tools = await this.options.builder.tools(context, plan, {
+      ...(job ? { job } : {}),
       searchHistory: (query) => this.options.searchHistory?.(context.conversationId, query),
     });
     const { validateToolArguments } = await import("@earendil-works/pi-ai");
     const query =
       this.options.query ?? ((await import("@anthropic-ai/claude-agent-sdk")).query as unknown as ClaudeCodeQuery);
-    const identity = await this.readSession(context);
     const offered = async (): Promise<ReadonlyArray<WispMcpTool>> => {
       const allowed = new Set(await tools.getAllowedTools());
       return tools.definitions.filter(({ name }) => allowed.has(name)) as unknown as WispMcpTool[];
     };
-    return new ClaudeCodeSession({
+    return {
+      model,
       query,
-      sessionId: identity.sessionId,
-      resume: identity.resume,
-      model: model.id,
-      thinkingLevel: selection.thinkingLevel ?? "off",
       toolNames: await tools.getAllowedTools(),
       toolRevision: plan.snapshot?.revision ?? defaultToolRevision,
       queryOptions: async (launch) =>
@@ -101,8 +165,7 @@ export class ClaudeCodeSessionFactory {
             plan.systemPrompt(),
             ...(await plan.runSections(await readMemory(context.configDirectory))),
           ].join("\n\n"),
-          sessionId: launch.sessionId,
-          resume: launch.resume,
+          session: launch.session,
           ...(launch.recoveredContext ? { recoveredContext: launch.recoveredContext } : {}),
           // A server instance connects once, so each process gets its own.
           wispTools: createWispMcpServer({
@@ -114,11 +177,7 @@ export class ClaudeCodeSessionFactory {
           authorize: async () => ({ behavior: "deny", message: "This Wisp cannot use that tool." }),
           environment: this.options.environment ?? process.env,
         }),
-      onSessionSaved: (sessionId) => this.writeSession(context, sessionId),
-      ...(this.options.recentTranscript
-        ? { recentTranscript: () => this.options.recentTranscript!(context.conversationId) }
-        : {}),
-    });
+    };
   }
 
   private async readSession(context: ConversationAgentContext): Promise<{ sessionId: string; resume: boolean }> {

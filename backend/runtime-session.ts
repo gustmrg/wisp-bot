@@ -4,7 +4,7 @@
  */
 
 import type { ContextCommand, ContextView } from "../shared/context-policy.js";
-import type { ModelSelection, ThinkingLevel } from "../shared/contracts.js";
+import type { ModelSelection, SessionReportUsage, ThinkingLevel } from "../shared/contracts.js";
 import type { ConversationAgentContext } from "./conversation-agent.js";
 import type { ModelRuntimeLike } from "./model-service.js";
 import type { PiAgentEvent } from "./pi-event-translator.js";
@@ -52,4 +52,16 @@ export interface RuntimeSessionFactory {
    * the next message opens one for the new model. Missing means always.
    */
   sameRuntime?(current: ModelSelection, next: ModelSelection): boolean;
+}
+
+/** A job run's own session: no conversation history, and it never becomes the conversation's session. */
+export interface RuntimeJobSession {
+  readonly sessionFile: string | undefined;
+  /** The names of the tools the run is offered. */
+  getActiveToolNames(): string[];
+  prompt(text: string, signal: AbortSignal): Promise<void>;
+  /** The run's last assistant message, if the model answered. */
+  lastAssistantMessage(): { text: string; stopReason?: string; errorMessage?: string } | undefined;
+  usage(): SessionReportUsage;
+  dispose(): void;
 }

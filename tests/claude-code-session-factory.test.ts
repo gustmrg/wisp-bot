@@ -59,6 +59,8 @@ async function setup(status: ClaudeCodeStatusView = READY) {
     launches.push(options);
     const outbox: unknown[] = [];
     let wake: (() => void) | undefined;
+    // Like Claude Code, the process ends once its input has ended and the last turn is answered.
+    let inputEnded = false;
     void (async () => {
       for await (const _message of prompt) {
         outbox.push({
@@ -69,6 +71,8 @@ async function setup(status: ClaudeCodeStatusView = READY) {
         });
         wake?.();
       }
+      inputEnded = true;
+      wake?.();
     })();
     return {
       interrupt: async () => undefined,
@@ -77,6 +81,7 @@ async function setup(status: ClaudeCodeStatusView = READY) {
         while (true) {
           const next = outbox.shift();
           if (next) yield next;
+          else if (inputEnded) return;
           else await new Promise<void>((resolve) => (wake = resolve));
         }
       },
@@ -93,7 +98,7 @@ async function setup(status: ClaudeCodeStatusView = READY) {
     query,
     environment: { HOME: "/home/person", PATH: "/usr/bin", ANTHROPIC_API_KEY: "sk-ant-secret" },
   });
-  return { factory, context, launches, root };
+  return { factory, context, launches, root, builder };
 }
 
 describe("ClaudeCodeSessionFactory", () => {
@@ -158,5 +163,21 @@ describe("ClaudeCodeSessionFactory", () => {
     second.dispose();
     expect(launches[1]).toMatchObject({ resume: saved.sessionId });
     expect(launches[1]!.sessionId).toBeUndefined();
+  });
+
+  it("runs a job with the job's plan and tools in a process that keeps no session", async () => {
+    const { factory, context, launches, root, builder } = await setup();
+    const job = { runId: "run-1", runDirectory: path.join(root, "jobs"), tools: ["read"], skills: [], runTools: [] };
+
+    const run = await factory.createJobSession(context, { providerId: "claude-code", modelId: "haiku" }, job);
+    expect(launches).toHaveLength(0);
+    await run.prompt("Report.", new AbortController().signal);
+    run.dispose();
+
+    expect(builder.plan).toHaveBeenCalledWith(context, job);
+    expect(builder.tools).toHaveBeenCalledWith(context, expect.anything(), expect.objectContaining({ job }));
+    expect(launches[0]).toMatchObject({ model: "haiku", persistSession: false });
+    expect(launches[0]!.sessionId).toBeUndefined();
+    await expect(readFile(path.join(root, "claude-code-session.json"), "utf8")).rejects.toThrow();
   });
 });
