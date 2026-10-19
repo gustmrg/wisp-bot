@@ -42,6 +42,7 @@ function api(
   auxiliary?: AiSettingsView["auxiliary"],
   catalog = providers,
   fallback: AiSettingsView["fallback"] = { selection: null, unavailable: null },
+  contextTokens = 0,
 ) {
   const applyModel = vi.fn(async () => ({ ok: true, value: {} }));
   const applyFallbackModel = vi.fn(async () => ({ ok: true, value: {} }));
@@ -61,6 +62,7 @@ function api(
         },
       })),
       getConversationModel: vi.fn(async () => ({ ok: true, value: view })),
+      manageContext: vi.fn(async () => ({ ok: true, value: { tokens: contextTokens } })),
       subscribeToAgentEvents: vi.fn(() => () => undefined),
     },
   });
@@ -68,7 +70,7 @@ function api(
 }
 
 describe("WispModelSettings", () => {
-  it("shows the applied model read-only, noting that it follows the global model", async () => {
+  it("shows the applied model, noting that it follows the global model", async () => {
     api(baseView);
     render(<WispModelSettings conversationId="wisp-one" />);
 
@@ -116,6 +118,154 @@ describe("WispModelSettings", () => {
       conversationId: "wisp-one",
       model: { ...override, thinkingLevel: "high" },
     });
+  });
+
+  it("lets a Wisp on the global model choose a model of its own", async () => {
+    const user = userEvent.setup();
+    const applyModel = api(baseView);
+    render(<WispModelSettings conversationId="wisp-one" />);
+
+    const select = await screen.findByRole("combobox", { name: "Model" });
+    expect(select).toHaveTextContent("Use the global model");
+    // Its limit belongs to a model of its own.
+    expect(screen.queryByRole("button", { name: "Advanced" })).not.toBeInTheDocument();
+    await user.click(select);
+    await user.click(await screen.findByRole("option", { name: /^Model b/ }));
+
+    expect(applyModel).toHaveBeenCalledWith({
+      conversationId: "wisp-one",
+      model: { providerId: "provider-b", modelId: "model-b" },
+    });
+  });
+
+  it("lets a Wisp with its own model follow the global model again", async () => {
+    const user = userEvent.setup();
+    const override: ModelSelection = { providerId: "provider-b", modelId: "model-b" };
+    const applyModel = api({ ...baseView, override, effective: override, applied: override });
+    render(<WispModelSettings conversationId="wisp-one" />);
+
+    await user.click(await screen.findByRole("combobox", { name: "Model" }));
+    await user.click(await screen.findByRole("option", { name: /Use the global model.*Model a/ }));
+
+    expect(applyModel).toHaveBeenCalledWith({ conversationId: "wisp-one", model: null });
+  });
+
+  it("keeps the reasoning level and the limit when the new model allows them", async () => {
+    const user = userEvent.setup();
+    const override: ModelSelection = {
+      providerId: "provider-b",
+      modelId: "model-b",
+      maxOutputTokens: 500,
+      thinkingLevel: "high",
+    };
+    const view = { ...baseView, override, effective: override, applied: override };
+    const applyModel = api(view, true, undefined, reasoningProviders);
+    const { unmount } = render(<WispModelSettings conversationId="wisp-one" />);
+
+    await user.click(await screen.findByRole("combobox", { name: "Model" }));
+    await user.click(await screen.findByRole("option", { name: /^Model a/ }));
+    expect(applyModel).toHaveBeenCalledWith({
+      conversationId: "wisp-one",
+      model: { providerId: "provider-a", modelId: "model-a", maxOutputTokens: 500, thinkingLevel: "high" },
+    });
+    unmount();
+
+    // A model that answers less, and cannot reason, drops both.
+    const smaller = providers.map((provider) =>
+      provider.id === "provider-a"
+        ? { ...provider, models: provider.models.map((model) => ({ ...model, maxOutputTokens: 100 })) }
+        : provider,
+    );
+    const applyToSmaller = api(view, true, undefined, smaller);
+    render(<WispModelSettings conversationId="wisp-one" />);
+    await user.click(await screen.findByRole("combobox", { name: "Model" }));
+    await user.click(await screen.findByRole("option", { name: /^Model a/ }));
+    expect(applyToSmaller).toHaveBeenCalledWith({
+      conversationId: "wisp-one",
+      model: { providerId: "provider-a", modelId: "model-a" },
+    });
+  });
+
+  it("marks models that cannot see images or hold the conversation before one is chosen", async () => {
+    const user = userEvent.setup();
+    const catalog = providers.map((provider) =>
+      provider.id === "provider-a"
+        ? { ...provider, models: provider.models.map((model) => ({ ...model, input: ["text", "image"] as const })) }
+        : { ...provider, models: provider.models.map((model) => ({ ...model, contextWindow: 5000 })) },
+    );
+    api(baseView, true, undefined, catalog, undefined, 8000);
+    render(<WispModelSettings conversationId="wisp-one" />);
+
+    await user.click(await screen.findByRole("combobox", { name: "Model" }));
+    expect(
+      await screen.findByRole("option", { name: /^Model b.*No image input · Too small for this conversation/ }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: /^Model a/ })).not.toHaveTextContent(/No image input|Too small/);
+  });
+
+  it("warns when the conversation is larger than the Wisp's model can hold", async () => {
+    const override: ModelSelection = { providerId: "provider-b", modelId: "model-b" };
+    api(
+      { ...baseView, override, effective: override, applied: override },
+      true,
+      undefined,
+      providers,
+      undefined,
+      20000,
+    );
+    render(<WispModelSettings conversationId="wisp-one" />);
+
+    expect(await screen.findByText(/larger than this model's context window/)).toBeVisible();
+  });
+
+  it("sets a Wisp's maximum output tokens under Advanced", async () => {
+    const user = userEvent.setup();
+    const override: ModelSelection = { providerId: "provider-b", modelId: "model-b" };
+    const applyModel = api({ ...baseView, override, effective: override, applied: override });
+    render(<WispModelSettings conversationId="wisp-one" />);
+
+    expect(await screen.findByRole("combobox", { name: "Model" })).toBeVisible();
+    expect(screen.queryByRole("spinbutton", { name: "Maximum output tokens" })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Advanced" }));
+    const field = await screen.findByRole("spinbutton", { name: "Maximum output tokens" });
+    await user.type(field, "2000");
+    expect(screen.getByText(/must be a whole number between 1 and 1,000/)).toBeVisible();
+    await user.tab();
+    expect(applyModel).not.toHaveBeenCalled();
+
+    await user.clear(field);
+    await user.type(field, "800{Enter}");
+    expect(applyModel).toHaveBeenCalledTimes(1);
+    expect(applyModel).toHaveBeenCalledWith({
+      conversationId: "wisp-one",
+      model: { ...override, maxOutputTokens: 800 },
+    });
+  });
+
+  it("opens Advanced when the Wisp has a limit, and clearing it goes back to automatic", async () => {
+    const user = userEvent.setup();
+    const override: ModelSelection = { providerId: "provider-b", modelId: "model-b", maxOutputTokens: 500 };
+    const applyModel = api({ ...baseView, override, effective: override, applied: override });
+    render(<WispModelSettings conversationId="wisp-one" />);
+
+    const field = await screen.findByRole("spinbutton", { name: "Maximum output tokens" });
+    expect(field).toHaveValue(500);
+    await user.clear(field);
+    await user.tab();
+
+    expect(applyModel).toHaveBeenCalledWith({
+      conversationId: "wisp-one",
+      model: { providerId: "provider-b", modelId: "model-b" },
+    });
+  });
+
+  it("warns when the Wisp's own fallback is its model", async () => {
+    const override: ModelSelection = { providerId: "provider-b", modelId: "model-b" };
+    api({ ...baseView, override, effective: override, applied: override, fallback: override });
+    render(<WispModelSettings conversationId="wisp-one" />);
+
+    expect(await screen.findByRole("combobox", { name: "Fallback model" })).toHaveTextContent("Model b");
+    expect(screen.getByRole("alert")).toHaveTextContent(/fallback is this Wisp's own model/);
   });
 
   it("shows the global reasoning level for a Wisp that follows the global model", async () => {

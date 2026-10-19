@@ -1,6 +1,13 @@
 import { useEffect, useState } from "react";
 
-import type { AiSettingsView, ConversationModelView, ThinkingLevel, WispFallback } from "../../shared/contracts";
+import type {
+  AiSettingsView,
+  ConversationModelView,
+  ModelSelection,
+  ThinkingLevel,
+  WispFallback,
+} from "../../shared/contracts";
+import { AdvancedSettings } from "@/components/advanced-settings";
 import { NoImageInputNote } from "@/components/no-image-input-note";
 import { SearchableCombobox } from "@/components/searchable-combobox";
 import { SettingsRowTitle } from "@/components/settings/settings-primitives";
@@ -12,6 +19,8 @@ import {
 } from "@/components/thinking-level-select";
 import { imageModelName } from "@/hooks/use-model-image-input";
 import {
+  catalogModel,
+  invalidMaxOutputTokens,
   isModelOptionValue,
   modelName,
   modelOptions,
@@ -20,6 +29,7 @@ import {
   unavailableModelOption,
 } from "@/lib/model-choice";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 
 export function WispModelSettings({ conversationId }: { conversationId: string }) {
   const [catalog, setCatalog] = useState<AiSettingsView | null>(null);
@@ -28,6 +38,21 @@ export function WispModelSettings({ conversationId }: { conversationId: string }
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState("");
   const [loadRequest, setLoadRequest] = useState({ conversationId });
+  // How large the conversation is, to warn about models with a smaller context window.
+  const [contextTokens, setContextTokens] = useState<number | null>(null);
+  useEffect(() => {
+    let active = true;
+    void window.wisp
+      .manageContext({ conversationId, command: { action: "get" } })
+      .then((result) => {
+        if (active && result.ok) setContextTokens(result.value.tokens);
+      })
+      .catch(() => undefined);
+    return () => {
+      active = false;
+    };
+  }, [conversationId]);
+
   useEffect(() => {
     let active = true;
     setError("");
@@ -73,17 +98,28 @@ export function WispModelSettings({ conversationId }: { conversationId: string }
 
   const applied = view?.applied ?? null;
   const appliedProvider = applied ? catalog?.providers.find(({ id }) => id === applied.providerId) : undefined;
-  const appliedModel = applied ? appliedProvider?.models.find(({ id }) => id === applied.modelId) : undefined;
+  const appliedModel = applied && catalog ? catalogModel(catalog, applied) : undefined;
   const override = view?.override ?? null;
-  const overrideModel = override
-    ? catalog?.providers.find(({ id }) => id === override.providerId)?.models.find(({ id }) => id === override.modelId)
-    : undefined;
+  const overrideModel = override && catalog ? catalogModel(catalog, override) : undefined;
   const effective = view?.effective ?? null;
-  const effectiveModel = effective
-    ? catalog?.providers
-        .find(({ id }) => id === effective.providerId)
-        ?.models.find(({ id }) => id === effective.modelId)
-    : undefined;
+  const effectiveModel = effective && catalog ? catalogModel(catalog, effective) : undefined;
+
+  async function saveModel(model: ModelSelection | null, failure: string): Promise<void> {
+    setSaving(true);
+    setSaveError("");
+    try {
+      const result = await window.wisp.applyModel({ conversationId, model });
+      if (!result.ok) {
+        setSaveError(result.error.message);
+        return;
+      }
+      setLoadRequest({ conversationId });
+    } catch {
+      setSaveError(failure);
+    } finally {
+      setSaving(false);
+    }
+  }
 
   async function changeFallback(fallback: WispFallback): Promise<void> {
     setSaving(true);
@@ -105,23 +141,10 @@ export function WispModelSettings({ conversationId }: { conversationId: string }
   async function changeThinkingLevel(level: ThinkingLevel): Promise<void> {
     if (!override) return;
     const { thinkingLevel: _previous, ...model } = override;
-    setSaving(true);
-    setSaveError("");
-    try {
-      const result = await window.wisp.applyModel({
-        conversationId,
-        model: level === "off" ? model : { ...model, thinkingLevel: level },
-      });
-      if (!result.ok) {
-        setSaveError(result.error.message);
-        return;
-      }
-      setLoadRequest({ conversationId });
-    } catch {
-      setSaveError("Could not change the reasoning level.");
-    } finally {
-      setSaving(false);
-    }
+    await saveModel(
+      level === "off" ? model : { ...model, thinkingLevel: level },
+      "Could not change the reasoning level.",
+    );
   }
 
   return (
@@ -166,6 +189,13 @@ export function WispModelSettings({ conversationId }: { conversationId: string }
                 </p>
               ) : null}
             </section>
+            <ModelSection
+              catalog={catalog}
+              view={view}
+              contextTokens={contextTokens}
+              disabled={saving}
+              onChange={(model) => void saveModel(model, "Could not change this Wisp's model.")}
+            />
             {override && canChooseThinkingLevel(overrideModel) ? (
               <section aria-label="Reasoning" className="rounded-lg border border-border bg-card p-3">
                 <ThinkingLevelRow
@@ -210,6 +240,165 @@ export function WispModelSettings({ conversationId }: { conversationId: string }
   );
 }
 
+const GLOBAL_MODEL = "global";
+
+/** Chooses the model this Wisp answers with: the global model, or one of its own. */
+function ModelSection({
+  catalog,
+  view,
+  contextTokens,
+  disabled,
+  onChange,
+}: {
+  catalog: AiSettingsView;
+  view: ConversationModelView;
+  contextTokens: number | null;
+  disabled: boolean;
+  onChange: (model: ModelSelection | null) => void;
+}) {
+  const { override, effective, applied } = view;
+  const value = override ? modelOptionValue(override) : GLOBAL_MODEL;
+  const readsImages = applied ? (catalogModel(catalog, applied)?.input.includes("image") ?? false) : false;
+  const tooSmall = (selection: ModelSelection | null) => {
+    const model = selection ? catalogModel(catalog, selection) : undefined;
+    return Boolean(contextTokens && model && model.contextWindow < contextTokens);
+  };
+  // Shown before choosing, since the switch takes effect at once.
+  const warnings = (selection: ModelSelection | null) => {
+    const model = selection ? catalogModel(catalog, selection) : undefined;
+    return [
+      readsImages && model && !model.input.includes("image") ? "No image input" : null,
+      tooSmall(selection) ? "Too small for this conversation" : null,
+    ].filter((warning) => warning !== null);
+  };
+  const describe = (description: string, selection: ModelSelection | null) =>
+    [description, ...warnings(selection)].join(" · ");
+  const globalModel = catalog.selection;
+  const options = [
+    {
+      value: GLOBAL_MODEL,
+      label: "Use the global model",
+      description: globalModel
+        ? describe(modelName(catalog, globalModel), globalModel)
+        : "None is set in Settings → AI Model",
+    },
+    ...modelOptions(catalog).map((option) => ({
+      ...option,
+      description: describe(option.description, parseModelOptionValue(option.value)),
+    })),
+  ];
+  if (override && !options.some((option) => option.value === value)) {
+    options.push(unavailableModelOption(catalog, override));
+  }
+
+  function choose(next: string): void {
+    if (next === value) return;
+    if (next === GLOBAL_MODEL) {
+      onChange(null);
+      return;
+    }
+    if (!isModelOptionValue(next)) return;
+    const selection = parseModelOptionValue(next);
+    const model = catalogModel(catalog, selection);
+    // Keeps the reasoning the Wisp answers with now and its own limit, where the new model allows them.
+    const level = keepThinkingLevel(effective?.thinkingLevel ?? "off", model);
+    const limit = override?.maxOutputTokens;
+    onChange({
+      ...selection,
+      ...(limit !== undefined && model && limit <= model.maxOutputTokens ? { maxOutputTokens: limit } : {}),
+      ...(level === "off" ? {} : { thinkingLevel: level }),
+    });
+  }
+
+  return (
+    <section aria-label="Model" className="flex flex-col gap-1.5 rounded-lg border border-border bg-card p-3">
+      <SettingsRowTitle htmlFor="wisp-model">Model</SettingsRowTitle>
+      <SearchableCombobox
+        id="wisp-model"
+        value={value}
+        options={options}
+        disabled={disabled}
+        className="h-8 w-full text-base"
+        searchLabel="Search models"
+        searchPlaceholder="Search model name or ID…"
+        emptyText="No models from providers with a saved key."
+        onChange={choose}
+      />
+      {tooSmall(effective) ? (
+        <p role="alert" className="m-0 text-xs leading-relaxed text-warning">
+          This conversation is larger than this model's context window. Summarize it or start a new topic in Context
+          &amp; memory.
+        </p>
+      ) : null}
+      {override ? (
+        <AdvancedSettings defaultOpen={override.maxOutputTokens !== undefined}>
+          <MaxOutputTokensField
+            key={`${modelOptionValue(override)}:${override.maxOutputTokens ?? ""}`}
+            override={override}
+            modelMax={catalogModel(catalog, override)?.maxOutputTokens}
+            disabled={disabled}
+            onChange={onChange}
+          />
+        </AdvancedSettings>
+      ) : null}
+    </section>
+  );
+}
+
+/** The Wisp's own limit on each answer, saved when the field is left; empty uses the automatic limit. */
+function MaxOutputTokensField({
+  override,
+  modelMax,
+  disabled,
+  onChange,
+}: {
+  override: ModelSelection;
+  modelMax: number | undefined;
+  disabled: boolean;
+  onChange: (model: ModelSelection) => void;
+}) {
+  const saved = override.maxOutputTokens?.toString() ?? "";
+  const [value, setValue] = useState(saved);
+  const invalid = invalidMaxOutputTokens(value, modelMax);
+
+  function commit(): void {
+    const next = value.trim();
+    if (invalid || next === saved) return;
+    const { maxOutputTokens: _previous, ...model } = override;
+    onChange(next ? { ...model, maxOutputTokens: Number(next) } : model);
+  }
+
+  return (
+    <div className="flex flex-col gap-1.5">
+      <SettingsRowTitle htmlFor="wisp-max-output-tokens">Maximum output tokens</SettingsRowTitle>
+      <Input
+        id="wisp-max-output-tokens"
+        type="number"
+        min={1}
+        max={modelMax ?? 1_000_000}
+        step={1}
+        value={value}
+        placeholder="Automatic"
+        disabled={disabled}
+        className="h-8 w-full text-base"
+        onChange={(event) => setValue(event.currentTarget.value)}
+        onBlur={commit}
+        onKeyDown={(event) => {
+          if (event.key === "Enter") event.currentTarget.blur();
+        }}
+      />
+      <p className="m-0 text-xs leading-relaxed text-dim">
+        Leave empty to use the safe automatic limit of up to 32,768 tokens.
+      </p>
+      {invalid ? (
+        <p role="alert" className="m-0 text-xs text-destructive">
+          Maximum output tokens must be a whole number between 1 and {(modelMax ?? 1_000_000).toLocaleString()}.
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
 const FALLBACK_OFF = "off";
 const FALLBACK_GLOBAL = "global";
 
@@ -239,11 +428,15 @@ function FallbackSection({
     ...modelOptions(catalog).filter((option) => !effective || option.value !== modelOptionValue(effective)),
   ];
   if (typeof fallback === "object" && !options.some((option) => option.value === value)) {
-    options.push(unavailableModelOption(catalog, fallback));
+    options.push(
+      modelOptions(catalog).find((option) => option.value === value) ?? unavailableModelOption(catalog, fallback),
+    );
   }
   const note =
     fallback !== FALLBACK_GLOBAL
-      ? null
+      ? typeof fallback === "object" && effective && value === modelOptionValue(effective)
+        ? "The fallback is this Wisp's own model, so it has no fallback. Choose another model."
+        : null
       : !globalFallback
         ? "No global fallback is set, so this Wisp stops when its model fails. Choose one in Settings → AI Model."
         : catalog.fallback.unavailable

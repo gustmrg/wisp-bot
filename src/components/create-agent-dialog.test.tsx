@@ -92,12 +92,13 @@ describe("CreateAgentDialog persistence", () => {
     await user.click(screen.getByRole("button", { name: "Next" }));
     await screen.findByText("Global default · Provider a model-a");
     await user.click(screen.getByRole("switch", { name: "Choose model for this Wisp" }));
-    await user.type(screen.getByRole("spinbutton", { name: "Maximum output tokens" }), "512");
+    // The limit is set later, under Advanced in the Wisp's Model tab.
+    expect(screen.queryByRole("spinbutton", { name: "Maximum output tokens" })).not.toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Create Wisp" }));
     await waitFor(() =>
       expect(onCreate).toHaveBeenCalledWith(expect.objectContaining({ name: "Atlas" }), {
         notifyOnUpdatesEnabled: true,
-        model: { providerId: "provider-a", modelId: "model-a", maxOutputTokens: 512 },
+        model: { providerId: "provider-a", modelId: "model-a" },
       }),
     );
   });
@@ -189,7 +190,8 @@ describe("CreateAgentDialog template import", () => {
     expect(screen.getByRole("textbox", { name: "Name" })).toHaveValue("Atlas");
     await user.click(screen.getByRole("button", { name: "Next" }));
     expect(screen.getByRole("textbox", { name: "Soul" })).toHaveValue("Careful researcher");
-    expect(screen.getByRole("spinbutton", { name: "Maximum output tokens" })).toHaveValue(512);
+    // The field is gone from creation, but the template's limit is kept.
+    expect(screen.queryByRole("spinbutton", { name: "Maximum output tokens" })).not.toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Create Wisp" }));
     await waitFor(() =>
       expect(onCreate).toHaveBeenCalledWith(expect.objectContaining(wisp), {

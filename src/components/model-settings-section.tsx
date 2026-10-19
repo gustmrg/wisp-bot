@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import type { AiSettingsView, ProviderSummary, ThinkingLevel } from "../../shared/contracts";
+import { AdvancedSettings } from "@/components/advanced-settings";
 import { AuxiliaryModelSettings } from "@/components/auxiliary-model-settings";
 import { FallbackModelSettings } from "@/components/fallback-model-settings";
 import { NoImageInputNote } from "@/components/no-image-input-note";
@@ -19,6 +20,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { SecretInput } from "@/components/ui/secret-input";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { invalidMaxOutputTokens } from "@/lib/model-choice";
 import { notifyProviderCredentialsChanged } from "@/lib/voice-credentials";
 import { voiceProvider } from "../../shared/voice";
 
@@ -175,19 +177,14 @@ function ModelSettingsSection({
   const modelItems = provider?.models.map(({ id, name }) => ({ value: id, label: name, description: id })) ?? [];
   const model = provider?.models.find(({ id }) => id === modelId);
   const effectiveThinkingLevel = keepThinkingLevel(thinkingLevel, model);
-  const parsedMaxOutputTokens = maxOutputTokens ? Number(maxOutputTokens) : undefined;
-  const invalidMaxOutputTokens =
-    parsedMaxOutputTokens !== undefined &&
-    (!Number.isSafeInteger(parsedMaxOutputTokens) ||
-      parsedMaxOutputTokens < 1 ||
-      parsedMaxOutputTokens > (model?.maxOutputTokens ?? 1_000_000));
+  const maxOutputTokensInvalid = invalidMaxOutputTokens(maxOutputTokens, model?.maxOutputTokens);
   const requiresKey = Boolean(provider && !provider.credentialConfigured && !apiKey.trim());
   const saveDisabled =
     saving ||
     !providerId ||
     !modelId ||
     requiresKey ||
-    invalidMaxOutputTokens ||
+    maxOutputTokensInvalid ||
     (!view?.secureStorageAvailable && !provider?.credentialConfigured);
 
   return (
@@ -270,29 +267,6 @@ function ModelSettingsSection({
                   }}
                 />
               </SettingsRow>
-              <SettingsRow>
-                <SettingsRowCopy>
-                  <SettingsRowTitle htmlFor="ai-max-output-tokens">Maximum output tokens</SettingsRowTitle>
-                  <SettingsRowDescription>
-                    Leave empty to use the safe automatic limit of up to 32,768 tokens.
-                  </SettingsRowDescription>
-                </SettingsRowCopy>
-                <Input
-                  id="ai-max-output-tokens"
-                  type="number"
-                  min={1}
-                  max={model?.maxOutputTokens ?? 1_000_000}
-                  step={1}
-                  value={maxOutputTokens}
-                  placeholder="Automatic"
-                  className="w-[160px] max-w-[45%]"
-                  onChange={(event) => {
-                    setMaxOutputTokens(event.currentTarget.value);
-                    setError(null);
-                    setSaved(false);
-                  }}
-                />
-              </SettingsRow>
               {canChooseThinkingLevel(model) ? (
                 <ThinkingLevelRow
                   id="ai-thinking-level"
@@ -306,6 +280,39 @@ function ModelSettingsSection({
                 />
               ) : null}
             </SettingsCard>
+            <AdvancedSettings defaultOpen={Boolean(maxOutputTokens)} className="mt-1.5">
+              <SettingsCard>
+                <SettingsRow>
+                  <SettingsRowCopy>
+                    <SettingsRowTitle htmlFor="ai-max-output-tokens">Maximum output tokens</SettingsRowTitle>
+                    <SettingsRowDescription>
+                      Leave empty to use the safe automatic limit of up to 32,768 tokens.
+                    </SettingsRowDescription>
+                  </SettingsRowCopy>
+                  <Input
+                    id="ai-max-output-tokens"
+                    type="number"
+                    min={1}
+                    max={model?.maxOutputTokens ?? 1_000_000}
+                    step={1}
+                    value={maxOutputTokens}
+                    placeholder="Automatic"
+                    className="w-[160px] max-w-[45%]"
+                    onChange={(event) => {
+                      setMaxOutputTokens(event.currentTarget.value);
+                      setError(null);
+                      setSaved(false);
+                    }}
+                  />
+                </SettingsRow>
+              </SettingsCard>
+              {maxOutputTokensInvalid ? (
+                <p role="alert" className="m-0 mt-1.5 px-0.5 text-xs text-destructive">
+                  Maximum output tokens must be a whole number between 1 and{" "}
+                  {(model?.maxOutputTokens ?? 1_000_000).toLocaleString()}.
+                </p>
+              ) : null}
+            </AdvancedSettings>
           </SettingsGroup>
 
           <SettingsGroup label="Credential">
