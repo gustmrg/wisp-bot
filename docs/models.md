@@ -65,6 +65,10 @@ password or token.
   Claude Code keeps its summary to itself, so none is shown.
 - **Jobs:** scheduled jobs run on Claude Code too, one turn each, and Claude
   Code keeps nothing from them.
+- **Fallback:** when Claude Code is signed out or the plan's usage limit is
+  reached, the Wisp's [fallback model](#fallback-models) answers that turn,
+  told the latest messages of the conversation. Other failures do not move
+  to the fallback.
 
 ## Models per Wisp
 

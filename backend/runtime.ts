@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { rm } from "node:fs/promises";
 import path from "node:path";
 
 import type {
@@ -36,7 +37,7 @@ import { ModelService } from "./model-service.js";
 import { SdkPiSessionFactory } from "./pi-session-factory.js";
 import { WispConversationAgentFactory } from "./wisp-conversation-agent.js";
 import { WispSessionBuilder } from "./wisp-session-plan.js";
-import { ClaudeCodeSessionFactory } from "./claude-code/claude-code-session-factory.js";
+import { CLAUDE_CODE_FALLBACK_DIRECTORY, ClaudeCodeSessionFactory } from "./claude-code/claude-code-session-factory.js";
 import { ClaudeCodeStatusService } from "./claude-code/claude-code-status.js";
 import { RoutingSessionFactory } from "./claude-code/routing-session-factory.js";
 import { formatHistorySearch, recentTranscript } from "./claude-code/conversation-history.js";
@@ -261,17 +262,18 @@ export async function createBackendRuntime(options: BackendRuntimeOptions): Prom
     gitHubToken: (id) => mcpService.gitHubToken(id),
   });
   const toolSource = new CompositeIntegrationToolSource([pluginService, mcpService, executionService]);
+  // Read when a model fails, so a changed choice applies without rebuilding the session.
+  const fallbackModel = async (conversationId: string) => {
+    const { modelOverride, fallback } = conversationRepository.getAgentContext(conversationId);
+    return modelService.getFallbackModel(modelOverride ?? null, fallback ?? null);
+  };
   const piSessionFactory = new SdkPiSessionFactory(
     modelService.getModelRuntime(),
     toolAuthorizationBroker,
     toolSource,
     () => modelService.getAuxiliaryModel("imageUnderstanding"),
     jobHost,
-    // Read when a model fails, so a changed choice applies without rebuilding the session.
-    async (conversationId) => {
-      const { modelOverride, fallback } = conversationRepository.getAgentContext(conversationId);
-      return modelService.getFallbackModel(modelOverride ?? null, fallback ?? null);
-    },
+    fallbackModel,
     wispHost,
   );
   const sessionFactory = new RoutingSessionFactory(
@@ -288,6 +290,27 @@ export async function createBackendRuntime(options: BackendRuntimeOptions): Prom
         recentTranscript(await conversationRepository.getMessagePage({ conversationId, page: "latest" })),
       searchHistory: async (conversationId, query) =>
         formatHistorySearch(conversationId, await conversationRepository.searchMessages(query)),
+      // A Pi session of its own, so the conversation's Pi session and identity stay as they are.
+      fallback: async (context) => {
+        const choice = await fallbackModel(context.conversationId);
+        if (!choice) return null;
+        const model = piSessionFactory.resolveModel(choice);
+        // Each fallback turn starts fresh; it is told the latest messages instead.
+        const sessionDirectory = path.join(context.sessionDirectory, CLAUDE_CODE_FALLBACK_DIRECTORY);
+        await rm(sessionDirectory, { recursive: true, force: true });
+        const session = await piSessionFactory.create(
+          {
+            ...context,
+            sessionDirectory,
+            piSessionId: null,
+            piSessionFile: null,
+            savePiSessionIdentity: undefined,
+            onContextRenewed: undefined,
+          },
+          choice,
+        );
+        return { name: model.name || model.id, session };
+      },
     }),
   );
   const agentFactory: ConversationAgentFactory =

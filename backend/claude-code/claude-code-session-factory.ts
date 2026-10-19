@@ -8,6 +8,7 @@ import { WispBackendError } from "../backend-error.js";
 import { systemTimeZone } from "../../shared/time-zone.js";
 import { CONTEXT_SETTINGS_FILE, loadContextSettings, saveContextSettings } from "../context-session.js";
 import type { ConversationAgentContext } from "../conversation-agent.js";
+import type { RuntimeSession } from "../runtime-session.js";
 import { defaultToolRevision, type JobSessionSpec, type WispSessionBuilder } from "../wisp-session-plan.js";
 import { ClaudeCodeJobSession } from "./claude-code-job-session.js";
 import { claudeCodeQueryOptions, type ClaudeCodeQueryOptions } from "./claude-code-launch.js";
@@ -24,6 +25,9 @@ import { createWispMcpServer, type WispMcpTool } from "./wisp-mcp-server.js";
 /** Claude Code's session for a Wisp in a conversation, kept with the Wisp's session there. */
 const SESSION_FILE = "claude-code-session.json";
 
+/** Where the Pi sessions of a Claude Code Wisp's fallback model live, inside its session folder. */
+export const CLAUDE_CODE_FALLBACK_DIRECTORY = "claude-code-fallback";
+
 export interface ClaudeCodeSessionFactoryOptions {
   /** Builds the Wisp's system prompt and tools, the same as for a Pi session. */
   builder: Pick<WispSessionBuilder, "plan" | "tools">;
@@ -36,6 +40,8 @@ export interface ClaudeCodeSessionFactoryOptions {
   recentTranscript?: (conversationId: string) => Promise<string>;
   /** `search_history` for a Claude Code Wisp: Claude Code keeps its own history, so the Wisp's transcript is searched. */
   searchHistory?: (conversationId: string, query: string) => Promise<string>;
+  /** A session on the Wisp's fallback model for a turn Claude Code failed for good (ADR 021), or null. */
+  fallback?: (context: ConversationAgentContext) => Promise<{ name: string; session: RuntimeSession } | null>;
 }
 
 /** The memory the person keeps for the Wisp, as Pi's sessions read it; none when the settings cannot be read. */
@@ -109,6 +115,7 @@ export class ClaudeCodeSessionFactory {
           ...(launch.recoveredContext ? { recoveredContext: launch.recoveredContext } : {}),
         }),
       onSessionSaved: (session) => this.writeSession(context, session),
+      ...(this.options.fallback ? { fallback: () => this.options.fallback!(context) } : {}),
       ...(this.options.recentTranscript
         ? { recentTranscript: () => this.options.recentTranscript!(context.conversationId) }
         : {}),

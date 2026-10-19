@@ -263,6 +263,13 @@ that would prompt.
 - **Fallback** ([ADR 021](021-fallback-models.md)): when Claude Code fails
   for good (signed out, plan limit reached), the turn moves to the Wisp's Pi
   fallback model, if it has one.
+  - The fallback runs in a Pi session of its own, kept apart from the Wisp's
+    Pi session, and is closed after the turn; the next message tries Claude
+    Code again.
+  - It has none of Claude Code's history, so it is told the latest messages
+    of the Wisp's transcript, as when a lost session is replaced.
+  - Other failures, such as an overloaded API or a crashed process, fail the
+    turn, which can be sent again.
 - **Context** ([context and memory](../context-and-memory.md)): the Context
   tab works as on Pi, with the same policy and memory file.
   - **Compact** sends `/compact`, which Claude Code runs through the SDK like
@@ -293,8 +300,6 @@ second external agent, such as Codex, needs the same integration.
 
 ## Open for implementation
 
-- Tell a missing session apart from other `error_during_execution` results by
-  its error text.
 - Confirm how a steering follow-up shows in the messages, to emit
   `follow_up_taken`.
 

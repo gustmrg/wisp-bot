@@ -9,9 +9,11 @@ import {
   type ClaudeCodeSavedSession,
   type ClaudeCodeContextHooks,
   type ClaudeCodeContextState,
+  type ClaudeCodeSessionOptions,
 } from "../backend/claude-code/claude-code-session.js";
 import type { ClaudeCodeQueryOptions } from "../backend/claude-code/claude-code-launch.js";
 import type { PiAgentEvent } from "../backend/pi-event-translator.js";
+import type { RuntimeSession } from "../backend/runtime-session.js";
 import { DEFAULT_CONTEXT_POLICY, type ContextPolicy } from "../shared/context-policy.js";
 
 const SESSION = "550e8400-e29b-41d4-a716-446655440000";
@@ -97,6 +99,7 @@ function createSession(
     state?: ClaudeCodeContextState;
     resume?: boolean;
     now?: () => Date;
+    fallback?: ClaudeCodeSessionOptions["fallback"];
   } = {},
 ) {
   const processes: FakeProcess[] = [];
@@ -128,6 +131,7 @@ function createSession(
     ...(options.context ? { context: options.context } : {}),
     ...(options.state ? { state: options.state } : {}),
     ...(options.now ? { now: options.now } : {}),
+    ...(options.fallback ? { fallback: options.fallback } : {}),
   });
   const events: PiAgentEvent[] = [];
   session.subscribe((event) => events.push(event));
@@ -295,6 +299,90 @@ describe("ClaudeCodeSession", () => {
     session.dispose();
     await expect(running).rejects.toMatchObject({ code: "disposed" });
     await expect(session.prompt("third")).rejects.toMatchObject({ code: "disposed" });
+  });
+});
+
+/** The fallback model's session: it answers with Pi's events, or waits until aborted. */
+function fakeFallback(answer: "reply" | "wait" = "reply") {
+  const listeners = new Set<(event: PiAgentEvent) => void>();
+  const prompts: string[] = [];
+  let release: (() => void) | undefined;
+  const session = {
+    subscribe: (listener: (event: PiAgentEvent) => void) => {
+      listeners.add(listener);
+      return () => listeners.delete(listener);
+    },
+    prompt: vi.fn(async (text: string) => {
+      prompts.push(text);
+      const emit = (event: unknown) => listeners.forEach((listener) => listener(event as PiAgentEvent));
+      emit({ type: "agent_start" });
+      emit({ type: "message_update", text: "from the fallback" });
+      if (answer === "wait") await new Promise<void>((resolve) => (release = resolve));
+      emit({ type: "agent_end" });
+      emit({ type: "agent_settled" });
+    }),
+    abort: vi.fn(async () => release?.()),
+    dispose: vi.fn(),
+  } as unknown as RuntimeSession;
+  return { session, prompts, fallback: vi.fn(async () => ({ name: "GPT-5", session })) };
+}
+
+const signedOut = (process: FakeProcess) =>
+  process.push(
+    result({ subtype: "error_during_execution", is_error: true, errors: ["Not logged in · Please run /login"] }),
+  );
+
+describe("ClaudeCodeSession fallback", () => {
+  it("answers a turn Claude Code failed for good on the fallback model, told the latest messages", async () => {
+    const backup = fakeFallback();
+    const { session, events } = createSession({ answer: signedOut, fallback: backup.fallback });
+
+    await session.prompt("hello");
+
+    expect(events.map(({ type }) => type)).toEqual([
+      "agent_start",
+      "model_fallback",
+      "message_update",
+      "agent_end",
+      "agent_settled",
+    ]);
+    expect(events[1]).toEqual({ type: "model_fallback", model: "GPT-5" });
+    expect(backup.prompts[0]).toContain("user: earlier question");
+    expect(backup.prompts[0]!.endsWith("hello")).toBe(true);
+    expect(backup.session.dispose).toHaveBeenCalled();
+    expect(session.isIdle).toBe(true);
+  });
+
+  it("fails the turn when the Wisp has no fallback", async () => {
+    const { session } = createSession({ answer: signedOut, fallback: async () => null });
+
+    await expect(session.prompt("hello")).rejects.toMatchObject({ code: "configuration_required" });
+  });
+
+  it("keeps a failure that may pass on its own on Claude Code", async () => {
+    const backup = fakeFallback();
+    const { session } = createSession({
+      answer: (process) =>
+        process.push(result({ subtype: "error_during_execution", is_error: true, errors: ["Overloaded"] })),
+      fallback: backup.fallback,
+    });
+
+    await expect(session.prompt("hello")).rejects.toMatchObject({ code: "unavailable", retryable: true });
+    expect(backup.fallback).not.toHaveBeenCalled();
+  });
+
+  it("stops the fallback model's reply", async () => {
+    const backup = fakeFallback("wait");
+    const { session, events } = createSession({ answer: signedOut, fallback: backup.fallback });
+
+    const turn = session.prompt("hello");
+    await vi.waitFor(() => expect(events.some(({ type }) => type === "message_update")).toBe(true));
+    await session.abort();
+    await turn;
+
+    expect(backup.session.abort).toHaveBeenCalled();
+    expect(backup.session.dispose).toHaveBeenCalled();
+    expect(session.isIdle).toBe(true);
   });
 });
 
