@@ -1,7 +1,9 @@
 import { randomUUID } from "node:crypto";
 
+import { shouldRenewContext, type ContextCommand, type ContextView } from "../../shared/context-policy.js";
 import type { ThinkingLevel } from "../../shared/contracts.js";
 import { WispBackendError } from "../backend-error.js";
+import type { ContextSettings } from "../context-session.js";
 import type { RuntimeSession } from "../runtime-session.js";
 import type { PiAgentEvent } from "../pi-event-translator.js";
 import { ClaudeCodeEventConverter, isMissingSession, type ClaudeCodeTurnResult } from "./claude-code-events.js";
@@ -42,18 +44,45 @@ export interface ClaudeCodeSessionOptions {
   thinkingLevel: ThinkingLevel;
   toolNames: ReadonlyArray<string>;
   toolRevision: string;
+  /** What an earlier process of this session reported, for automatic context renewal. */
+  state?: ClaudeCodeContextState;
   /**
-   * Saves the Claude Code session ID once a turn in it succeeded, so it is
-   * resumed later: a new session's, or a replacement for one Claude Code no
-   * longer had. A session that never answered is never resumed.
+   * Saves the session after each successful turn and context renewal. The ID
+   * is null until a turn in the current session succeeded, so a session that
+   * never answered is never resumed.
    */
-  onSessionSaved?: (sessionId: string) => Promise<void>;
+  onSessionSaved?: (saved: ClaudeCodeSavedSession) => Promise<void>;
+  /** The Wisp's context policy and memory, shared with Pi; without it, context cannot be managed. */
+  context?: ClaudeCodeContextHooks;
+  now?: () => Date;
   /** The latest of the Wisp's own messages, to carry into a replaced session. */
   recentTranscript?: () => Promise<string>;
   /** Told the outcome of each turn: usage, plan usage, the model the alias resolved to. */
   onTurnResult?: (result: ClaudeCodeTurnResult, converter: ClaudeCodeEventConverter) => void;
   idleMs?: number;
 }
+
+/** When the conversation was last active and renewed, and how large its context is. */
+export interface ClaudeCodeContextState {
+  lastActivityAt: string | null;
+  lastRenewedAt: string | null;
+  tokens: number;
+}
+
+export interface ClaudeCodeSavedSession extends ClaudeCodeContextState {
+  sessionId: string | null;
+}
+
+export interface ClaudeCodeContextHooks {
+  load(): Promise<ContextSettings>;
+  save(settings: ContextSettings): Promise<void>;
+  /** The person's time zone, where the daily renewal hour is read. */
+  timeZone(): string;
+  /** Tells the conversation its context was renewed, as Pi's sessions do. */
+  onRenewed(kind: "compacted" | "new_topic", at: string): void;
+}
+
+const EMPTY_STATE: ClaudeCodeContextState = { lastActivityAt: null, lastRenewedAt: null, tokens: 0 };
 
 /** Claude Code's effort for a Wisp's reasoning level; "off" leaves the model's default. */
 export function claudeCodeEffort(level: ThinkingLevel): ClaudeCodeQueryOptions["effort"] {
@@ -111,6 +140,8 @@ export class ClaudeCodeSession implements RuntimeSession {
   private notes: string[] = [];
   /** What a replacement for a session that no longer existed should know, until a process starts with it. */
   private recoveredContext: string | undefined;
+  private state: ClaudeCodeContextState;
+  private readonly now: () => Date;
   private disposed = false;
 
   constructor(options: ClaudeCodeSessionOptions) {
@@ -121,6 +152,8 @@ export class ClaudeCodeSession implements RuntimeSession {
     this.resume = options.resume;
     this.model = options.model;
     this.thinkingLevel = options.thinkingLevel;
+    this.state = { ...(options.state ?? EMPTY_STATE) };
+    this.now = options.now ?? (() => new Date());
   }
 
   get sessionId(): string {
@@ -140,19 +173,12 @@ export class ClaudeCodeSession implements RuntimeSession {
     this.assertOpen();
     if (this.turn) throw new WispBackendError("invalid_request", "The conversation is already processing a request.");
     options.signal?.throwIfAborted();
-    let finish!: () => void;
-    const turn: Turn = {
-      aborted: false,
-      answered: false,
-      settle: undefined,
-      finished: new Promise<void>((resolve) => (finish = resolve)),
-    };
-    this.turn = turn;
+    const { turn, end } = this.beginTurn();
     const message = this.notes.length ? `${this.notes.join("\n\n")}\n\n${text}` : text;
     this.notes = [];
-    clearTimeout(this.idleTimer);
     this.emit({ type: "agent_start" });
     try {
+      await this.renewIfDue(turn);
       let result = await this.send(turn, message);
       if (isMissingSession(result) && !turn.answered && !turn.aborted) {
         // Claude Code deletes sessions unused for a while; start a new one that knows the latest messages.
@@ -160,17 +186,55 @@ export class ClaudeCodeSession implements RuntimeSession {
         result = await this.send(turn, message);
       }
       if (!result.ok && !turn.aborted) throw describeFailure(result);
-      if (result.ok && !this.resume) {
+      if (result.ok) {
         this.resume = true;
-        await this.options.onSessionSaved?.(this.sessionIdValue);
+        this.state.lastActivityAt = this.now().toISOString();
+        this.state.tokens = this.process?.converter.contextTokens ?? this.state.tokens;
+        await this.saveSession();
       }
       this.emit({ type: "agent_end" });
       this.emit({ type: "agent_settled" });
     } finally {
-      this.turn = null;
-      finish();
-      this.scheduleIdleClose();
+      end();
     }
+  }
+
+  /**
+   * The context view and commands Pi sessions offer (ADR 026). Claude Code
+   * keeps its own summary, so none is shown; compacting asks Claude Code to
+   * `/compact`, and a new topic starts a new Claude Code session.
+   */
+  async manageContext(command: ContextCommand): Promise<ContextView> {
+    this.assertOpen();
+    const context = this.options.context;
+    if (!context) throw new WispBackendError("configuration_required", "Configure a model before managing context.");
+    if (command.action !== "get") {
+      if (this.turn) {
+        throw new WispBackendError("invalid_request", "Wait for the Wisp to finish before changing its context.");
+      }
+      if (command.action === "save") {
+        await context.save({ policy: command.policy, memory: command.memory });
+        // The memory is part of the system prompt, which the next process reads.
+        this.closeIdleProcess();
+      } else {
+        const { turn, end } = this.beginTurn();
+        try {
+          if (command.action === "compact") await this.compact(turn);
+          else await this.startNewTopic();
+        } finally {
+          end();
+        }
+      }
+    }
+    const settings = await context.load();
+    return {
+      policy: settings.policy,
+      memory: settings.memory,
+      summary: null,
+      lastRenewedAt: this.state.lastRenewedAt,
+      lastActivityAt: this.state.lastActivityAt,
+      tokens: this.state.tokens,
+    };
   }
 
   async abort(): Promise<void> {
@@ -329,6 +393,73 @@ export class ClaudeCodeSession implements RuntimeSession {
     this.sessionIdValue = randomUUID();
     this.resume = false;
     this.recoveredContext = await this.options.recentTranscript?.().catch(() => undefined);
+  }
+
+  /** Holds the session for a turn, or for a context command, until `end`. */
+  private beginTurn(): { turn: Turn; end: () => void } {
+    let finish!: () => void;
+    const turn: Turn = {
+      aborted: false,
+      answered: false,
+      settle: undefined,
+      finished: new Promise<void>((resolve) => (finish = resolve)),
+    };
+    this.turn = turn;
+    clearTimeout(this.idleTimer);
+    return {
+      turn,
+      end: () => {
+        this.turn = null;
+        finish();
+        this.scheduleIdleClose();
+      },
+    };
+  }
+
+  /** Renews the context before a message, under the same policy as Pi's sessions. */
+  private async renewIfDue(turn: Turn): Promise<void> {
+    const context = this.options.context;
+    if (!context) return;
+    const { policy } = await context.load();
+    if (!shouldRenewContext(policy, this.state.lastActivityAt, this.state.tokens, this.now(), context.timeZone())) {
+      return;
+    }
+    if (policy.renewal === "compact") await this.compact(turn);
+    else await this.startNewTopic();
+  }
+
+  /** Asks Claude Code to summarize the conversation so far and continue from the summary. */
+  private async compact(turn: Turn): Promise<void> {
+    // Nothing was said yet in this session, so there is nothing to summarize.
+    if (!this.resume) return;
+    const result = await this.send(turn, "/compact");
+    if (turn.aborted) return;
+    if (!result.ok) throw describeFailure(result);
+    this.state.tokens = this.process?.converter.contextTokens ?? this.state.tokens;
+    this.renewed("compacted");
+    await this.saveSession();
+  }
+
+  /** Starts a new Claude Code session; the Wisp's transcript keeps the old messages. */
+  private async startNewTopic(): Promise<void> {
+    this.closeProcess();
+    this.sessionIdValue = randomUUID();
+    this.resume = false;
+    this.recoveredContext = undefined;
+    this.state.tokens = 0;
+    this.renewed("new_topic");
+    await this.saveSession();
+  }
+
+  private renewed(kind: "compacted" | "new_topic"): void {
+    const at = this.now().toISOString();
+    this.state.lastRenewedAt = at;
+    this.state.lastActivityAt = at;
+    this.options.context?.onRenewed(kind, at);
+  }
+
+  private async saveSession(): Promise<void> {
+    await this.options.onSessionSaved?.({ sessionId: this.resume ? this.sessionIdValue : null, ...this.state });
   }
 
   private scheduleIdleClose(): void {

@@ -5,19 +5,24 @@ import path from "node:path";
 import type { ModelSelection } from "../../shared/contracts.js";
 import { writeFileAtomically } from "../atomic-file.js";
 import { WispBackendError } from "../backend-error.js";
+import { systemTimeZone } from "../../shared/time-zone.js";
+import { CONTEXT_SETTINGS_FILE, loadContextSettings, saveContextSettings } from "../context-session.js";
 import type { ConversationAgentContext } from "../conversation-agent.js";
 import { defaultToolRevision, type JobSessionSpec, type WispSessionBuilder } from "../wisp-session-plan.js";
 import { ClaudeCodeJobSession } from "./claude-code-job-session.js";
 import { claudeCodeQueryOptions, type ClaudeCodeQueryOptions } from "./claude-code-launch.js";
 import { claudeCodeModel, type ClaudeCodeModel } from "./claude-code-models.js";
-import { claudeCodeEffort, ClaudeCodeSession, type ClaudeCodeQuery } from "./claude-code-session.js";
+import {
+  claudeCodeEffort,
+  ClaudeCodeSession,
+  type ClaudeCodeQuery,
+  type ClaudeCodeSavedSession,
+} from "./claude-code-session.js";
 import { claudeCodeUnavailableMessage, type ClaudeCodeStatusService } from "./claude-code-status.js";
 import { createWispMcpServer, type WispMcpTool } from "./wisp-mcp-server.js";
 
 /** Claude Code's session for a Wisp in a conversation, kept with the Wisp's session there. */
 const SESSION_FILE = "claude-code-session.json";
-const CONTEXT_SETTINGS_FILE = "context-settings.json";
-const MAX_MEMORY_LENGTH = 8_000;
 
 export interface ClaudeCodeSessionFactoryOptions {
   /** Builds the Wisp's system prompt and tools, the same as for a Pi session. */
@@ -33,15 +38,10 @@ export interface ClaudeCodeSessionFactoryOptions {
   searchHistory?: (conversationId: string, query: string) => Promise<string>;
 }
 
-/** The memory the person keeps for the Wisp, as the Pi session reads it. */
-async function readMemory(configDirectory: string): Promise<string | undefined> {
+/** The memory the person keeps for the Wisp, as Pi's sessions read it; none when the settings cannot be read. */
+async function readMemory(settingsPath: string): Promise<string | undefined> {
   try {
-    const data = JSON.parse(await readFile(path.join(configDirectory, CONTEXT_SETTINGS_FILE), "utf8")) as {
-      memory?: unknown;
-    };
-    return typeof data.memory === "string" && data.memory.length <= MAX_MEMORY_LENGTH && data.memory
-      ? data.memory
-      : undefined;
+    return (await loadContextSettings(settingsPath)).memory || undefined;
   } catch {
     return undefined;
   }
@@ -84,11 +84,19 @@ export class ClaudeCodeSessionFactory {
 
   async create(context: ConversationAgentContext, selection: ModelSelection): Promise<ClaudeCodeSession> {
     const prepared = await this.prepare(context, selection);
-    const identity = await this.readSession(context);
+    const saved = await this.readSession(context);
+    const settingsPath = path.join(context.configDirectory, CONTEXT_SETTINGS_FILE);
     return new ClaudeCodeSession({
       query: prepared.query,
-      sessionId: identity.sessionId,
-      resume: identity.resume,
+      sessionId: saved.sessionId ?? randomUUID(),
+      resume: saved.sessionId !== null,
+      state: { lastActivityAt: saved.lastActivityAt, lastRenewedAt: saved.lastRenewedAt, tokens: saved.tokens },
+      context: {
+        load: () => loadContextSettings(settingsPath),
+        save: (settings) => saveContextSettings(settingsPath, settings),
+        timeZone: () => context.userTimeZone?.() ?? systemTimeZone(),
+        onRenewed: (kind, at) => context.onContextRenewed?.(kind, at),
+      },
       model: prepared.model.id,
       thinkingLevel: selection.thinkingLevel ?? "off",
       toolNames: prepared.toolNames,
@@ -100,7 +108,7 @@ export class ClaudeCodeSessionFactory {
           session: { id: launch.sessionId, resume: launch.resume },
           ...(launch.recoveredContext ? { recoveredContext: launch.recoveredContext } : {}),
         }),
-      onSessionSaved: (sessionId) => this.writeSession(context, sessionId),
+      onSessionSaved: (session) => this.writeSession(context, session),
       ...(this.options.recentTranscript
         ? { recentTranscript: () => this.options.recentTranscript!(context.conversationId) }
         : {}),
@@ -146,6 +154,7 @@ export class ClaudeCodeSessionFactory {
     const { validateToolArguments } = await import("@earendil-works/pi-ai");
     const query =
       this.options.query ?? ((await import("@anthropic-ai/claude-agent-sdk")).query as unknown as ClaudeCodeQuery);
+    const settingsPath = path.join(context.configDirectory, CONTEXT_SETTINGS_FILE);
     const offered = async (): Promise<ReadonlyArray<WispMcpTool>> => {
       const allowed = new Set(await tools.getAllowedTools());
       return tools.definitions.filter(({ name }) => allowed.has(name)) as unknown as WispMcpTool[];
@@ -161,10 +170,7 @@ export class ClaudeCodeSessionFactory {
           executable,
           model: launch.model,
           ...(launch.effort ? { effort: launch.effort } : {}),
-          systemPrompt: [
-            plan.systemPrompt(),
-            ...(await plan.runSections(await readMemory(context.configDirectory))),
-          ].join("\n\n"),
+          systemPrompt: [plan.systemPrompt(), ...(await plan.runSections(await readMemory(settingsPath)))].join("\n\n"),
           session: launch.session,
           ...(launch.recoveredContext ? { recoveredContext: launch.recoveredContext } : {}),
           // A server instance connects once, so each process gets its own.
@@ -180,25 +186,30 @@ export class ClaudeCodeSessionFactory {
     };
   }
 
-  private async readSession(context: ConversationAgentContext): Promise<{ sessionId: string; resume: boolean }> {
+  /** The saved session, or a new one's state; the ID is null until a turn in the session succeeded. */
+  private async readSession(context: ConversationAgentContext): Promise<ClaudeCodeSavedSession> {
+    let data: Record<string, unknown> = {};
     try {
-      const data = JSON.parse(await readFile(path.join(context.sessionDirectory, SESSION_FILE), "utf8")) as {
-        sessionId?: unknown;
-      };
-      if (typeof data.sessionId === "string" && /^[0-9a-f-]{36}$/i.test(data.sessionId)) {
-        return { sessionId: data.sessionId, resume: true };
-      }
+      const parsed: unknown = JSON.parse(await readFile(path.join(context.sessionDirectory, SESSION_FILE), "utf8"));
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) data = parsed as Record<string, unknown>;
     } catch {
       // A new session.
     }
-    // Saved once a turn in it succeeds.
-    return { sessionId: randomUUID(), resume: false };
+    const timestamp = (value: unknown) =>
+      typeof value === "string" && Number.isFinite(Date.parse(value)) ? value : null;
+    return {
+      sessionId: typeof data.sessionId === "string" && /^[0-9a-f-]{36}$/i.test(data.sessionId) ? data.sessionId : null,
+      lastActivityAt: timestamp(data.lastActivityAt),
+      lastRenewedAt: timestamp(data.lastRenewedAt),
+      tokens:
+        typeof data.tokens === "number" && Number.isSafeInteger(data.tokens) && data.tokens >= 0 ? data.tokens : 0,
+    };
   }
 
-  private async writeSession(context: ConversationAgentContext, sessionId: string): Promise<void> {
+  private async writeSession(context: ConversationAgentContext, session: ClaudeCodeSavedSession): Promise<void> {
     await writeFileAtomically(
       path.join(context.sessionDirectory, SESSION_FILE),
-      `${JSON.stringify({ sessionId }, null, 2)}\n`,
+      `${JSON.stringify(session, null, 2)}\n`,
     );
   }
 }

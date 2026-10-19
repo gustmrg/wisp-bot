@@ -6,9 +6,13 @@ import {
   type ClaudeCodeLaunch,
   type ClaudeCodeQuery,
   type ClaudeCodeQueryHandle,
+  type ClaudeCodeSavedSession,
+  type ClaudeCodeContextHooks,
+  type ClaudeCodeContextState,
 } from "../backend/claude-code/claude-code-session.js";
 import type { ClaudeCodeQueryOptions } from "../backend/claude-code/claude-code-launch.js";
 import type { PiAgentEvent } from "../backend/pi-event-translator.js";
+import { DEFAULT_CONTEXT_POLICY, type ContextPolicy } from "../shared/context-policy.js";
 
 const SESSION = "550e8400-e29b-41d4-a716-446655440000";
 
@@ -86,7 +90,15 @@ const result = (overrides: Record<string, unknown> = {}) => ({
   ...overrides,
 });
 
-function createSession(options: { answer?: (process: FakeProcess, text: string) => void } = {}) {
+function createSession(
+  options: {
+    answer?: (process: FakeProcess, text: string) => void;
+    context?: ClaudeCodeContextHooks;
+    state?: ClaudeCodeContextState;
+    resume?: boolean;
+    now?: () => Date;
+  } = {},
+) {
   const processes: FakeProcess[] = [];
   const launches: ClaudeCodeLaunch[] = [];
   const query: ClaudeCodeQuery = ({ prompt, options: queryOptions }) => {
@@ -98,7 +110,7 @@ function createSession(options: { answer?: (process: FakeProcess, text: string) 
     processes.push(process);
     return process;
   };
-  const onSessionSaved = vi.fn(async () => undefined);
+  const onSessionSaved = vi.fn(async (_saved: ClaudeCodeSavedSession) => undefined);
   const session = new ClaudeCodeSession({
     query,
     queryOptions: async (launch) => {
@@ -106,13 +118,16 @@ function createSession(options: { answer?: (process: FakeProcess, text: string) 
       return { model: launch.model } as ClaudeCodeQueryOptions;
     },
     sessionId: SESSION,
-    resume: false,
+    resume: options.resume ?? false,
     model: "sonnet",
     thinkingLevel: "off",
     toolNames: ["read", "run_command"],
     toolRevision: "rev-1",
     onSessionSaved,
     recentTranscript: async () => "user: earlier question",
+    ...(options.context ? { context: options.context } : {}),
+    ...(options.state ? { state: options.state } : {}),
+    ...(options.now ? { now: options.now } : {}),
   });
   const events: PiAgentEvent[] = [];
   session.subscribe((event) => events.push(event));
@@ -129,9 +144,9 @@ describe("ClaudeCodeSession", () => {
 
     await session.prompt("hello");
     await session.prompt("again");
-
+    // Each successful turn saves the session, so it is resumed later.
     // A new session is saved for resuming once a turn in it succeeded, and only then.
-    expect(onSessionSaved.mock.calls).toEqual([[SESSION]]);
+    expect(onSessionSaved.mock.calls.map(([saved]) => saved.sessionId)).toEqual([SESSION, SESSION]);
     expect(processes).toHaveLength(1);
     expect(processes[0]!.sent).toEqual(["hello", "again"]);
     expect(launches).toEqual([{ sessionId: SESSION, resume: false, model: "sonnet" }]);
@@ -212,7 +227,7 @@ describe("ClaudeCodeSession", () => {
     const replacement = launches[1]!;
     expect(replacement.sessionId).not.toBe(SESSION);
     expect(replacement).toMatchObject({ resume: false, recoveredContext: "user: earlier question" });
-    expect(onSessionSaved).toHaveBeenCalledWith(replacement.sessionId);
+    expect(onSessionSaved).toHaveBeenCalledWith(expect.objectContaining({ sessionId: replacement.sessionId }));
     expect(session.sessionId).toBe(replacement.sessionId);
   });
 
@@ -280,6 +295,120 @@ describe("ClaudeCodeSession", () => {
     session.dispose();
     await expect(running).rejects.toMatchObject({ code: "disposed" });
     await expect(session.prompt("third")).rejects.toMatchObject({ code: "disposed" });
+  });
+});
+
+describe("ClaudeCodeSession context", () => {
+  const NOW = new Date("2026-10-20T12:00:00Z");
+
+  function contextHooks(policy: Partial<ContextPolicy> = {}) {
+    let settings = { policy: { ...DEFAULT_CONTEXT_POLICY, ...policy }, memory: "Prefers short answers." };
+    const renewed: string[] = [];
+    const hooks: ClaudeCodeContextHooks = {
+      load: async () => settings,
+      save: async (next) => {
+        settings = next;
+      },
+      timeZone: () => "UTC",
+      onRenewed: (kind) => renewed.push(kind),
+    };
+    return { hooks, renewed };
+  }
+
+  /** Answers messages with text, and `/compact` the way Claude Code does. */
+  const answerWithCompaction = (process: FakeProcess, text: string) => {
+    if (text === "/compact") {
+      process.push(
+        { type: "system", subtype: "status", status: "compacting" },
+        { type: "system", subtype: "compact_boundary", compact_metadata: { trigger: "manual", post_tokens: 900 } },
+        result({ result: "" }),
+      );
+      return;
+    }
+    process.push(
+      {
+        type: "stream_event",
+        parent_tool_use_id: null,
+        event: { type: "message_start", message: { usage: { input_tokens: 20, cache_read_input_tokens: 15_000 } } },
+      },
+      delta(`echo:${text}`),
+      result(),
+    );
+  };
+
+  it("shows the policy, memory, and context size, and saves new settings for the next process", async () => {
+    const { hooks } = contextHooks();
+    const { session, processes } = createSession({ context: hooks, now: () => NOW, answer: answerWithCompaction });
+    await session.prompt("hello");
+
+    const view = await session.manageContext({ action: "get" });
+    expect(view).toEqual({
+      policy: DEFAULT_CONTEXT_POLICY,
+      memory: "Prefers short answers.",
+      summary: null,
+      lastRenewedAt: null,
+      lastActivityAt: NOW.toISOString(),
+      tokens: 15_020,
+    });
+
+    const saved = await session.manageContext({
+      action: "save",
+      policy: { ...DEFAULT_CONTEXT_POLICY, mode: "none" },
+      memory: "Answers in Portuguese.",
+    });
+    expect(saved).toMatchObject({ memory: "Answers in Portuguese.", policy: { mode: "none" } });
+    // The memory is in the system prompt, which the next process reads.
+    expect(processes[0]!.closed).toBe(true);
+  });
+
+  it("compacts through Claude Code's /compact and starts a new topic as a new session", async () => {
+    const { hooks, renewed } = contextHooks();
+    const { session, processes, launches, onSessionSaved } = createSession({
+      context: hooks,
+      now: () => NOW,
+      answer: answerWithCompaction,
+    });
+    await session.prompt("hello");
+
+    const compacted = await session.manageContext({ action: "compact" });
+    expect(processes[0]!.sent).toEqual(["hello", "/compact"]);
+    expect(compacted).toMatchObject({ tokens: 900, lastRenewedAt: NOW.toISOString() });
+
+    const fresh = await session.manageContext({ action: "new_topic" });
+    expect(fresh.tokens).toBe(0);
+    expect(renewed).toEqual(["compacted", "new_topic"]);
+    // A new topic is not resumed until a turn in it succeeds.
+    expect(onSessionSaved.mock.calls.at(-1)![0]).toMatchObject({ sessionId: null, tokens: 0 });
+    await session.prompt("new subject");
+    expect(launches.at(-1)).toMatchObject({ resume: false });
+    expect(launches.at(-1)!.sessionId).not.toBe(SESSION);
+  });
+
+  it("renews the context before a message once the policy says so", async () => {
+    const { hooks, renewed } = contextHooks({ mode: "idle", idleHours: 24, minimumTokens: 12_000, renewal: "compact" });
+    const { session, processes } = createSession({
+      context: hooks,
+      now: () => NOW,
+      resume: true,
+      // Two days idle with a large context.
+      state: { lastActivityAt: "2026-10-18T12:00:00Z", lastRenewedAt: null, tokens: 40_000 },
+      answer: answerWithCompaction,
+    });
+
+    await session.prompt("Good morning");
+
+    expect(processes[0]!.sent).toEqual(["/compact", "Good morning"]);
+    expect(renewed).toEqual(["compacted"]);
+  });
+
+  it("refuses context changes while a turn runs", async () => {
+    const { hooks } = contextHooks();
+    const { session } = createSession({ context: hooks, answer: () => undefined });
+    const running = session.prompt("first");
+
+    await expect(session.manageContext({ action: "new_topic" })).rejects.toMatchObject({ code: "invalid_request" });
+    session.dispose();
+    await running.catch(() => undefined);
   });
 });
 

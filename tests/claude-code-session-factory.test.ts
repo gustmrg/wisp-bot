@@ -13,6 +13,7 @@ import { ClaudeCodeSessionFactory } from "../backend/claude-code/claude-code-ses
 import type { ClaudeCodeStatusService } from "../backend/claude-code/claude-code-status.js";
 import type { ConversationAgentContext } from "../backend/conversation-agent.js";
 import type { ClaudeCodeStatusView } from "../shared/claude-code.js";
+import { DEFAULT_CONTEXT_POLICY } from "../shared/context-policy.js";
 
 const directories: string[] = [];
 
@@ -41,7 +42,7 @@ async function setup(status: ClaudeCodeStatusView = READY) {
     sessionDirectory: root,
     configDirectory: root,
   } as ConversationAgentContext;
-  await writeFile(path.join(root, "context-settings.json"), JSON.stringify({ memory: "Prefers short answers." }));
+  await writeFile(path.join(root, "context-settings.json"), JSON.stringify({ policy: DEFAULT_CONTEXT_POLICY, memory: "Prefers short answers." }));
   const builder = {
     plan: vi.fn(async () => ({
       snapshot: { revision: "rev-7" },

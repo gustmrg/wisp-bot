@@ -59,6 +59,12 @@ password or token.
   after that starts a new Claude Code conversation that is told the latest
   messages. The Wisp's own transcript stays the record that is shown, searched,
   and backed up.
+- **Context:** the Wisp's **Context** tab works as on Pi: **Compact** asks
+  Claude Code to summarize the conversation, **New topic** starts a new Claude
+  Code conversation, and the renewal policy and memory apply the same way.
+  Claude Code keeps its summary to itself, so none is shown.
+- **Jobs:** scheduled jobs run on Claude Code too, one turn each, and Claude
+  Code keeps nothing from them.
 
 ## Models per Wisp
 

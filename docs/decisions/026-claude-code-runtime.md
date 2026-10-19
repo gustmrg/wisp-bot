@@ -263,9 +263,17 @@ that would prompt.
 - **Fallback** ([ADR 021](021-fallback-models.md)): when Claude Code fails
   for good (signed out, plan limit reached), the turn moves to the Wisp's Pi
   fallback model, if it has one.
-- **Context commands:** **New topic** starts a new Claude Code session.
-  Claude Code compacts on its own; manual **Compact** is not offered.
-  `search_history` reads the Wisp's own transcript.
+- **Context** ([context and memory](../context-and-memory.md)): the Context
+  tab works as on Pi, with the same policy and memory file.
+  - **Compact** sends `/compact`, which Claude Code runs through the SDK like
+    its own command (verified: the conversation continued with what was said
+    before).
+  - **New topic** starts a new Claude Code session.
+  - Automatic renewal follows the Wisp's policy before a message, from the
+    last activity and the context size Claude Code reported, which are kept
+    with the session.
+  - Claude Code keeps its own summary, so none is shown.
+  - `search_history` reads the Wisp's own transcript.
 
 ### Why the SDK, not the CLI or ACP
 

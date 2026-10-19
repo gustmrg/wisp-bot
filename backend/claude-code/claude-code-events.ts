@@ -78,6 +78,15 @@ export class ClaudeCodeEventConverter {
   private planUsageValue: ClaudeCodePlanUsage | undefined;
   private modelValue: string | undefined;
   private capabilitiesValue: ReadonlySet<string> = new Set();
+  private contextTokensValue: number | undefined;
+
+  /**
+   * How many tokens the conversation's context holds: the input of the latest
+   * model call, or what a compaction left. Undefined until Claude Code says.
+   */
+  get contextTokens(): number | undefined {
+    return this.contextTokensValue;
+  }
 
   /** The latest plan usage Claude Code reported. */
   get planUsage(): ClaudeCodePlanUsage | undefined {
@@ -125,6 +134,11 @@ export class ClaudeCodeEventConverter {
   private streamEvent(event: Json | undefined): PiAgentEvent[] {
     if (!event) return [];
     if (event.type === "message_start") {
+      const usage = record(record(event.message)?.usage);
+      if (usage) {
+        this.contextTokensValue =
+          count(usage.input_tokens) + count(usage.cache_read_input_tokens) + count(usage.cache_creation_input_tokens);
+      }
       const events: PiAgentEvent[] = [];
       if (this.retrying) {
         this.retrying = false;
@@ -202,8 +216,11 @@ export class ClaudeCodeEventConverter {
         ];
       case "status":
         return event.status === "compacting" ? [{ type: "compaction_start" }] : [];
-      case "compact_boundary":
+      case "compact_boundary": {
+        const after = record(event.compact_metadata)?.post_tokens;
+        if (typeof after === "number" && Number.isFinite(after)) this.contextTokensValue = after;
         return [{ type: "compaction_end" }];
+      }
       default:
         return [];
     }
