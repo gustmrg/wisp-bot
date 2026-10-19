@@ -1,4 +1,5 @@
 import type { AiSettingsView, ModelSelection } from "../../shared/contracts";
+import { modelLabLogo } from "@/lib/model-lab";
 
 /** Ids never hold control characters, so one joins provider and model into an option value. */
 export function modelOptionValue({ providerId, modelId }: ModelSelection): string {
@@ -18,7 +19,7 @@ export function isModelOptionValue(value: string): boolean {
 export function modelOptions(
   view: AiSettingsView,
   include: (model: AiSettingsView["providers"][number]["models"][number]) => boolean = () => true,
-): Array<{ value: string; label: string; description: string }> {
+): Array<{ value: string; label: string; description: string; iconSrc: string | undefined }> {
   return view.providers
     .filter(({ credentialConfigured }) => credentialConfigured)
     .flatMap((provider) =>
@@ -26,6 +27,7 @@ export function modelOptions(
         value: modelOptionValue({ providerId: provider.id, modelId: model.id }),
         label: model.name,
         description: `${provider.name} · ${model.id}`,
+        iconSrc: modelLabLogo({ providerId: provider.id, modelId: model.id }),
       })),
     );
 }
@@ -34,9 +36,10 @@ export function modelOptions(
 export function unavailableModelOption(
   view: AiSettingsView,
   selection: ModelSelection,
-): { value: string; label: string; description: string } {
+): { value: string; label: string; description: string; iconSrc: string | undefined } {
   return {
     value: modelOptionValue(selection),
+    iconSrc: modelLabLogo(selection),
     label: `${selection.modelId} (unavailable)`,
     description: view.providers.find(({ id }) => id === selection.providerId)?.name ?? selection.providerId,
   };

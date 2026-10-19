@@ -2,6 +2,7 @@ import { useRef, useState } from "react";
 import { Combobox } from "@base-ui/react/combobox";
 import { CheckIcon, ChevronDownIcon, SearchIcon } from "lucide-react";
 
+import { LogoTile } from "@/components/logo-tile";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { settingsSelect } from "@/lib/ui-classes";
@@ -12,6 +13,8 @@ interface SearchableOption {
   label: string;
   /** Secondary line shown under the label and matched by search. */
   description?: string;
+  /** Image shown before the label, such as the logo of whoever made a model. */
+  iconSrc?: string;
 }
 
 interface SearchableComboboxProps {
@@ -46,6 +49,8 @@ function SearchableCombobox({
   const inputRef = useRef<HTMLInputElement>(null);
   const { contains } = Combobox.useFilter({ sensitivity: "base" });
   const selectedOption = options.find((option) => option.value === value) ?? null;
+  // Options without an icon keep the space so labels stay aligned.
+  const hasIcons = options.some((option) => option.iconSrc);
 
   return (
     <Combobox.Root
@@ -74,8 +79,11 @@ function SearchableCombobox({
           />
         }
       >
-        <span className="min-w-0 truncate">
-          <Combobox.Value />
+        <span className="flex min-w-0 items-center gap-2">
+          {selectedOption?.iconSrc ? <LogoTile src={selectedOption.iconSrc} className="size-5" /> : null}
+          <span className="min-w-0 truncate">
+            <Combobox.Value />
+          </span>
         </span>
         <ChevronDownIcon aria-hidden="true" className="size-3.5 shrink-0 text-dim" />
       </Combobox.Trigger>
@@ -104,6 +112,7 @@ function SearchableCombobox({
                   value={option}
                   className="flex cursor-default items-center gap-4 rounded-md px-2 py-1.5 text-base outline-none data-highlighted:bg-accent data-highlighted:text-accent-foreground"
                 >
+                  {hasIcons ? <LogoTile src={option.iconSrc} className="-mr-1.5 size-6" /> : null}
                   <span className="min-w-0 flex-1 break-words">
                     {option.label}
                     {option.description ? (

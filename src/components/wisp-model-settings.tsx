@@ -8,6 +8,7 @@ import type {
   WispFallback,
 } from "../../shared/contracts";
 import { AdvancedSettings } from "@/components/advanced-settings";
+import { LogoTile } from "@/components/logo-tile";
 import { NoImageInputNote } from "@/components/no-image-input-note";
 import { SearchableCombobox } from "@/components/searchable-combobox";
 import { SettingsRowTitle } from "@/components/settings/settings-primitives";
@@ -28,6 +29,7 @@ import {
   parseModelOptionValue,
   unavailableModelOption,
 } from "@/lib/model-choice";
+import { modelLabLogo } from "@/lib/model-lab";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
@@ -167,10 +169,17 @@ export function WispModelSettings({ conversationId }: { conversationId: string }
               <h3 className="m-0 text-2xs font-medium uppercase tracking-wide text-dim">Current model</h3>
               {applied ? (
                 <>
-                  <p className="m-0 mt-1.5 break-words text-base leading-snug font-semibold">
-                    {appliedProvider?.name ?? applied.providerId}
-                  </p>
-                  <p className="m-0 break-all text-dim text-sm leading-snug">{applied.modelId}</p>
+                  <div className="mt-1.5 flex items-center gap-2.5">
+                    <LogoTile src={modelLabLogo(applied)} className="size-8 rounded-lg p-1 empty:hidden" />
+                    <div className="min-w-0">
+                      <p className="m-0 break-words text-base leading-snug font-semibold">
+                        {appliedModel?.name ?? applied.modelId}
+                      </p>
+                      <p className="m-0 break-all text-dim text-sm leading-snug">
+                        {appliedProvider?.name ?? applied.providerId} · {applied.modelId}
+                      </p>
+                    </div>
+                  </div>
                   {appliedModel && !appliedModel.input.includes("image") ? (
                     <NoImageInputNote className="mt-1.5" imageModel={imageModelName(catalog)} />
                   ) : null}
@@ -185,7 +194,7 @@ export function WispModelSettings({ conversationId }: { conversationId: string }
               ) : null}
               {view.pending ? (
                 <p className="m-0 mt-2.5 break-all border-t border-border pt-2 text-xs text-dim">
-                  Switches to {view.pending.modelId} after this turn
+                  Switches to {modelName(catalog, view.pending)} after this turn
                 </p>
               ) : null}
             </section>
@@ -281,6 +290,7 @@ function ModelSection({
       description: globalModel
         ? describe(modelName(catalog, globalModel), globalModel)
         : "None is set in Settings → AI Model",
+      iconSrc: globalModel ? modelLabLogo(globalModel) : undefined,
     },
     ...modelOptions(catalog).map((option) => ({
       ...option,
@@ -423,6 +433,7 @@ function FallbackSection({
       value: FALLBACK_GLOBAL,
       label: "Use the global fallback",
       description: globalFallback ? modelName(catalog, globalFallback) : "None is set in Settings → AI Model",
+      iconSrc: globalFallback ? modelLabLogo(globalFallback) : undefined,
     },
     // The Wisp's own model cannot stand in for itself.
     ...modelOptions(catalog).filter((option) => !effective || option.value !== modelOptionValue(effective)),

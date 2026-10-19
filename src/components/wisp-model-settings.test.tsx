@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import type { AiSettingsView, ConversationModelView, ModelSelection } from "../../shared/contracts";
@@ -74,8 +74,9 @@ describe("WispModelSettings", () => {
     api(baseView);
     render(<WispModelSettings conversationId="wisp-one" />);
 
-    expect(await screen.findByText("Provider a")).toBeVisible();
-    expect(screen.getByText("model-a")).toBeVisible();
+    const current = await screen.findByRole("region", { name: "Current model" });
+    expect(within(current).getByText("Model a")).toBeVisible();
+    expect(within(current).getByText("Provider a · model-a")).toBeVisible();
     expect(screen.queryByText(/set when the Wisp is created/)).not.toBeInTheDocument();
     expect(screen.getByText(/follows the global model/)).toBeVisible();
     expect(screen.queryByRole("combobox", { name: "Reasoning" })).not.toBeInTheDocument();
@@ -88,8 +89,9 @@ describe("WispModelSettings", () => {
     api({ ...baseView, override, effective: override, applied: override });
     render(<WispModelSettings conversationId="wisp-one" />);
 
-    expect(await screen.findByText("Provider b")).toBeVisible();
-    expect(screen.getByText("model-b")).toBeVisible();
+    const current = await screen.findByRole("region", { name: "Current model" });
+    expect(within(current).getByText("Model b")).toBeVisible();
+    expect(within(current).getByText("Provider b · model-b")).toBeVisible();
     expect(screen.queryByText(/follows the global model/)).not.toBeInTheDocument();
   });
 
@@ -136,6 +138,33 @@ describe("WispModelSettings", () => {
       conversationId: "wisp-one",
       model: { providerId: "provider-b", modelId: "model-b" },
     });
+  });
+
+  it("shows the logo of the lab that made each model it knows", async () => {
+    const user = userEvent.setup();
+    const catalog = providers.map((provider) =>
+      provider.id === "provider-a"
+        ? {
+            ...provider,
+            models: provider.models.map((model) => ({
+              ...model,
+              id: "anthropic/claude-opus-4.5",
+              name: "Claude Opus 4.5",
+            })),
+          }
+        : provider,
+    );
+    const claude: ModelSelection = { providerId: "provider-a", modelId: "anthropic/claude-opus-4.5" };
+    api({ ...baseView, override: claude, effective: claude, applied: claude }, true, undefined, catalog);
+    render(<WispModelSettings conversationId="wisp-one" />);
+
+    const select = await screen.findByRole("combobox", { name: "Model" });
+    expect(select).toHaveTextContent("Claude Opus 4.5");
+    expect(select.querySelector("img")).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "Current model" }).querySelector("img")).toBeInTheDocument();
+    await user.click(select);
+    expect((await screen.findByRole("option", { name: /^Claude Opus 4.5/ })).querySelector("img")).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: /^Model b/ }).querySelector("img")).not.toBeInTheDocument();
   });
 
   it("lets a Wisp with its own model follow the global model again", async () => {
