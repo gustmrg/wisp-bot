@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import type { ThinkingLevel } from "../../shared/contracts.js";
 import { WispBackendError } from "../backend-error.js";
-import type { PiSessionLike } from "../pi-conversation-agent.js";
+import type { RuntimeSession } from "../runtime-session.js";
 import type { PiAgentEvent } from "../pi-event-translator.js";
 import { ClaudeCodeEventConverter, isMissingSession, type ClaudeCodeTurnResult } from "./claude-code-events.js";
 import { claudeCodeUserMessage, type ClaudeCodeQueryOptions } from "./claude-code-launch.js";
@@ -94,7 +94,7 @@ interface Turn {
  * identity closes the idle process; the next message resumes the session
  * with the new options.
  */
-export class ClaudeCodeSession implements PiSessionLike {
+export class ClaudeCodeSession implements RuntimeSession {
   readonly sessionFile = undefined;
   readonly toolRevision: string;
   private readonly options: ClaudeCodeSessionOptions;

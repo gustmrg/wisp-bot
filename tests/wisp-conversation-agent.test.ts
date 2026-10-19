@@ -2,10 +2,11 @@ import { describe, expect, it, vi } from "vitest";
 
 import type { ModelSelection, ThinkingLevel } from "../shared/contracts.js";
 import type { ConversationAgentContext } from "../backend/conversation-agent.js";
-import { PiConversationAgent, type PiSessionFactory, type PiSessionLike } from "../backend/pi-conversation-agent.js";
+import type { RuntimeSessionFactory, RuntimeSession } from "../backend/runtime-session.js";
+import { WispConversationAgent } from "../backend/wisp-conversation-agent.js";
 import type { PiAgentEvent } from "../backend/pi-event-translator.js";
 
-class MockPiSession implements PiSessionLike {
+class MockPiSession implements RuntimeSession {
   isIdle = true;
   readonly sessionFile: string;
   readonly sessionId: string;
@@ -121,7 +122,7 @@ function selection(modelId = "model-1"): ModelSelection {
   return { providerId: "provider", modelId };
 }
 
-function factoryFor(sessions: Map<string, MockPiSession>): PiSessionFactory {
+function factoryFor(sessions: Map<string, MockPiSession>): RuntimeSessionFactory {
   return {
     resolveModel: (model) => ({ provider: model.providerId, id: model.modelId }) as never,
     create: async (agentContext) => {
@@ -133,7 +134,7 @@ function factoryFor(sessions: Map<string, MockPiSession>): PiSessionFactory {
   };
 }
 
-function rebuildingFactory(sessions: MockPiSession[], revisions: Array<string | null>): PiSessionFactory {
+function rebuildingFactory(sessions: MockPiSession[], revisions: Array<string | null>): RuntimeSessionFactory {
   return {
     resolveModel: (model) => ({ provider: model.providerId, id: model.modelId }) as never,
     create: async (agentContext) => {
@@ -146,9 +147,9 @@ function rebuildingFactory(sessions: MockPiSession[], revisions: Array<string | 
   };
 }
 
-describe("PiConversationAgent", () => {
+describe("WispConversationAgent", () => {
   it("requires explicit configuration before sending", async () => {
-    const agent = new PiConversationAgent(context("one"), factoryFor(new Map()));
+    const agent = new WispConversationAgent(context("one"), factoryFor(new Map()));
     await agent.start();
 
     await expect(agent.send({ conversationId: "one", requestId: "r1", text: "Hello" })).rejects.toMatchObject({
@@ -166,8 +167,8 @@ describe("PiConversationAgent", () => {
   it("keeps separate Wisp histories and stages model changes until idle", async () => {
     const sessions = new Map<string, MockPiSession>();
     const factory = factoryFor(sessions);
-    const one = new PiConversationAgent(context("one"), factory, { flushDelayMs: 0 });
-    const two = new PiConversationAgent(context("two"), factory, { flushDelayMs: 0 });
+    const one = new WispConversationAgent(context("one"), factory, { flushDelayMs: 0 });
+    const two = new WispConversationAgent(context("two"), factory, { flushDelayMs: 0 });
     await Promise.all([one.start(), two.start(), one.applyModel(selection()), two.applyModel(selection())]);
 
     const firstPrompt = one.send({ conversationId: "one", requestId: "one-1", text: "First" });
@@ -190,11 +191,11 @@ describe("PiConversationAgent", () => {
 
   it("opens a new session when the model moves to another runtime, such as Claude Code", async () => {
     const sessions: MockPiSession[] = [];
-    const factory: PiSessionFactory = {
+    const factory: RuntimeSessionFactory = {
       ...rebuildingFactory(sessions, []),
       sameRuntime: (current, next) => (current.providerId === "claude-code") === (next.providerId === "claude-code"),
     };
-    const agent = new PiConversationAgent(context("one"), factory, { flushDelayMs: 0 });
+    const agent = new WispConversationAgent(context("one"), factory, { flushDelayMs: 0 });
     await agent.start();
     await agent.applyModel(selection());
     const first = agent.send({ conversationId: "one", requestId: "r1", text: "Hello" });
@@ -223,7 +224,7 @@ describe("PiConversationAgent", () => {
 
   it("aborts active work and disposes the Pi session exactly once", async () => {
     const sessions = new Map<string, MockPiSession>();
-    const agent = new PiConversationAgent(context("one"), factoryFor(sessions), { flushDelayMs: 0 });
+    const agent = new WispConversationAgent(context("one"), factoryFor(sessions), { flushDelayMs: 0 });
     const events = vi.fn();
     agent.subscribe(events);
     await agent.start();
@@ -243,7 +244,7 @@ describe("PiConversationAgent", () => {
 
   it("hands follow-ups to the running turn, which answers each after what it wrote so far", async () => {
     const sessions = new Map<string, MockPiSession>();
-    const agent = new PiConversationAgent(context("one"), factoryFor(sessions), { flushDelayMs: 0 });
+    const agent = new WispConversationAgent(context("one"), factoryFor(sessions), { flushDelayMs: 0 });
     const events: Array<Record<string, unknown>> = [];
     agent.subscribe((event) => events.push(event));
     await agent.start();
@@ -279,7 +280,7 @@ describe("PiConversationAgent", () => {
 
   it("gives back follow-ups the turn did not read, and never leaves them for the next prompt", async () => {
     const sessions = new Map<string, MockPiSession>();
-    const agent = new PiConversationAgent(context("one"), factoryFor(sessions), { flushDelayMs: 0 });
+    const agent = new WispConversationAgent(context("one"), factoryFor(sessions), { flushDelayMs: 0 });
     await agent.start();
     await agent.applyModel(selection());
     const first = agent.send({ conversationId: "one", requestId: "r1", text: "First" });
@@ -303,7 +304,7 @@ describe("PiConversationAgent", () => {
   it("reloads an open session when its identity changes", async () => {
     const sessions = new Map<string, MockPiSession>();
     const initialContext = context("one");
-    const agent = new PiConversationAgent(initialContext, factoryFor(sessions), { flushDelayMs: 0 });
+    const agent = new WispConversationAgent(initialContext, factoryFor(sessions), { flushDelayMs: 0 });
     await agent.start();
     await agent.applyModel(selection());
     const send = agent.send({ conversationId: "one", requestId: "r1", text: "Hello" });
@@ -328,7 +329,7 @@ describe("PiConversationAgent", () => {
   it("defers opening the Pi session until the Wisp is first used", async () => {
     const sessions = new Map<string, MockPiSession>();
     const initialContext = context("one");
-    const agent = new PiConversationAgent(initialContext, factoryFor(sessions), { flushDelayMs: 0 });
+    const agent = new WispConversationAgent(initialContext, factoryFor(sessions), { flushDelayMs: 0 });
     const events = vi.fn();
     agent.subscribe(events);
     await agent.start();
@@ -360,7 +361,7 @@ describe("PiConversationAgent", () => {
     factory.resolveModel = () => {
       throw Object.assign(new Error("no key"), { code: "configuration_required" });
     };
-    const agent = new PiConversationAgent(context("one"), factory);
+    const agent = new WispConversationAgent(context("one"), factory);
     await agent.start();
 
     await expect(agent.applyModel(selection())).rejects.toMatchObject({ code: "configuration_required" });
@@ -374,7 +375,7 @@ describe("PiConversationAgent", () => {
 
 it("reports the model actually used while an override waits for the active turn", async () => {
   const sessions = new Map<string, MockPiSession>();
-  const agent = new PiConversationAgent(context("one"), factoryFor(sessions));
+  const agent = new WispConversationAgent(context("one"), factoryFor(sessions));
   const events = vi.fn();
   agent.subscribe(events);
   await agent.start();
@@ -405,7 +406,7 @@ it("opens the session at the chosen thinking level and changes it with the model
   const sessions = new Map<string, MockPiSession>();
   const created: ModelSelection[] = [];
   const factory = factoryFor(sessions);
-  const agent = new PiConversationAgent(context("one"), {
+  const agent = new WispConversationAgent(context("one"), {
     ...factory,
     create: async (agentContext, chosen) => {
       created.push(chosen);
@@ -435,7 +436,7 @@ it("rebuilds the session at the next message when the tool snapshot changes, pre
   // The fetch after the first session opens returns a changed revision, forcing one rebuild.
   const factory = rebuildingFactory(created, ["rev-1", "rev-2", "rev-2"]);
   const agentContext = context("one");
-  const agent = new PiConversationAgent(agentContext, factory, { flushDelayMs: 0 });
+  const agent = new WispConversationAgent(agentContext, factory, { flushDelayMs: 0 });
   const events = vi.fn();
   agent.subscribe(events);
   await agent.start();
@@ -472,7 +473,7 @@ it("does not rebuild while the previous tool revision is still current", async (
   const created: MockPiSession[] = [];
   const factory = rebuildingFactory(created, ["rev-1", "rev-1"]);
   const agentContext = context("one");
-  const agent = new PiConversationAgent(agentContext, factory, { flushDelayMs: 0 });
+  const agent = new WispConversationAgent(agentContext, factory, { flushDelayMs: 0 });
   await agent.start();
   await agent.applyModel(selection());
 
@@ -502,7 +503,7 @@ it("cancels a message whose session is still opening instead of sending it", asy
     await opening.promise;
     return create(...args);
   };
-  const agent = new PiConversationAgent(context("one"), factory, { flushDelayMs: 0 });
+  const agent = new WispConversationAgent(context("one"), factory, { flushDelayMs: 0 });
   const events = vi.fn();
   agent.subscribe(events);
   await agent.start();
@@ -544,8 +545,8 @@ class RenewingPiSession extends MockPiSession {
 
 it("stops a context renewal that runs before the prompt and reports a cancellation", async () => {
   const session = new RenewingPiSession("one");
-  const factory: PiSessionFactory = { ...factoryFor(new Map()), create: async () => session };
-  const agent = new PiConversationAgent(context("one"), factory, { flushDelayMs: 0 });
+  const factory: RuntimeSessionFactory = { ...factoryFor(new Map()), create: async () => session };
+  const agent = new WispConversationAgent(context("one"), factory, { flushDelayMs: 0 });
   const events = vi.fn();
   agent.subscribe(events);
   await agent.start();
@@ -574,7 +575,7 @@ it("tells the model when a message was scheduled, without changing what the user
   vi.useFakeTimers({ toFake: ["Date"], now: new Date("2026-10-07T12:00:00.000Z") });
   try {
     const sessions = new Map<string, MockPiSession>();
-    const agent = new PiConversationAgent(context("one"), factoryFor(sessions), { flushDelayMs: 0 });
+    const agent = new WispConversationAgent(context("one"), factoryFor(sessions), { flushDelayMs: 0 });
     await agent.start();
     await agent.applyModel(selection());
     const send = agent.send({
@@ -604,7 +605,7 @@ it("tells the model the user's local time before each message they send", async 
   try {
     const sessions = new Map<string, MockPiSession>();
     let timeZone = "America/Sao_Paulo";
-    const agent = new PiConversationAgent({ ...context("one"), userTimeZone: () => timeZone }, factoryFor(sessions), {
+    const agent = new WispConversationAgent({ ...context("one"), userTimeZone: () => timeZone }, factoryFor(sessions), {
       flushDelayMs: 0,
     });
     await agent.start();

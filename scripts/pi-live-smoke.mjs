@@ -17,9 +17,8 @@ async function run() {
   let agent;
   try {
     const { ModelRuntime } = await import("@earendil-works/pi-coding-agent");
-    const { PiConversationAgent, SdkPiSessionFactory } = await import(
-      "../dist-electron/backend/pi-conversation-agent.js"
-    );
+    const { WispConversationAgent } = await import("../dist-electron/backend/wisp-conversation-agent.js");
+    const { SdkPiSessionFactory } = await import("../dist-electron/backend/pi-session-factory.js");
     const workspaceDirectory = path.join(smokeDirectory, "workspace");
     const sessionDirectory = path.join(smokeDirectory, "sessions");
     const configDirectory = path.join(smokeDirectory, "config");
@@ -36,7 +35,7 @@ async function run() {
       refreshOnCreate: false,
     });
     await runtime.setRuntimeApiKey(providerId, apiKey);
-    agent = new PiConversationAgent(
+    agent = new WispConversationAgent(
       {
         conversationId: "live-smoke",
         sessionId: "live-smoke-session",

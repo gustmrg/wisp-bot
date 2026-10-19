@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import { RoutingSessionFactory } from "../backend/claude-code/routing-session-factory.js";
 import type { ConversationAgentContext } from "../backend/conversation-agent.js";
-import type { PiSessionFactory } from "../backend/pi-conversation-agent.js";
+import type { RuntimeSessionFactory } from "../backend/runtime-session.js";
 
 describe("RoutingSessionFactory", () => {
   const piSession = { kind: "pi" };
@@ -11,7 +11,7 @@ describe("RoutingSessionFactory", () => {
     resolveModel: vi.fn(() => ({ id: "gpt" })),
     create: vi.fn(async () => piSession),
     getToolRevision: vi.fn(async () => "rev-1"),
-  } as unknown as PiSessionFactory;
+  } as unknown as RuntimeSessionFactory;
   const claudeCode = {
     resolveModel: vi.fn(() => ({ id: "sonnet" })),
     create: vi.fn(async () => claudeSession),

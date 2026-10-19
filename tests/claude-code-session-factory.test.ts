@@ -42,13 +42,13 @@ async function setup(status: ClaudeCodeStatusView = READY) {
     configDirectory: root,
   } as ConversationAgentContext;
   await writeFile(path.join(root, "context-settings.json"), JSON.stringify({ memory: "Prefers short answers." }));
-  const pi = {
-    planSession: vi.fn(async () => ({
+  const builder = {
+    plan: vi.fn(async () => ({
       snapshot: { revision: "rev-7" },
       systemPrompt: () => "You are Lumen, a Wisp.",
       runSections: async (memory: string | undefined) => (memory ? [`## Memory\n${memory}`] : []),
     })),
-    createTools: vi.fn(async () => ({
+    tools: vi.fn(async () => ({
       definitions: [tool("read"), tool("run_command")],
       registryNames: ["read", "run_command"],
       getAllowedTools: async () => ["read"],
@@ -88,7 +88,7 @@ async function setup(status: ClaudeCodeStatusView = READY) {
     executable: () => "/usr/local/bin/claude",
   } as unknown as ClaudeCodeStatusService;
   const factory = new ClaudeCodeSessionFactory({
-    pi: pi as never,
+    builder: builder as never,
     status: statusService,
     query,
     environment: { HOME: "/home/person", PATH: "/usr/bin", ANTHROPIC_API_KEY: "sk-ant-secret" },

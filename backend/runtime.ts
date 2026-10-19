@@ -33,7 +33,9 @@ import { MessageQueue } from "./message-queue.js";
 import { MessageScheduler } from "./message-scheduler.js";
 import { catalogModelPricing, ModelPricingService } from "./model-pricing-service.js";
 import { ModelService } from "./model-service.js";
-import { PiConversationAgentFactory, SdkPiSessionFactory } from "./pi-conversation-agent.js";
+import { SdkPiSessionFactory } from "./pi-session-factory.js";
+import { WispConversationAgentFactory } from "./wisp-conversation-agent.js";
+import { WispSessionBuilder } from "./wisp-session-plan.js";
 import { ClaudeCodeSessionFactory } from "./claude-code/claude-code-session-factory.js";
 import { ClaudeCodeStatusService } from "./claude-code/claude-code-status.js";
 import { RoutingSessionFactory } from "./claude-code/routing-session-factory.js";
@@ -258,10 +260,11 @@ export async function createBackendRuntime(options: BackendRuntimeOptions): Prom
     runtime: containerRuntime,
     gitHubToken: (id) => mcpService.gitHubToken(id),
   });
+  const toolSource = new CompositeIntegrationToolSource([pluginService, mcpService, executionService]);
   const piSessionFactory = new SdkPiSessionFactory(
     modelService.getModelRuntime(),
     toolAuthorizationBroker,
-    new CompositeIntegrationToolSource([pluginService, mcpService, executionService]),
+    toolSource,
     () => modelService.getAuxiliaryModel("imageUnderstanding"),
     jobHost,
     // Read when a model fails, so a changed choice applies without rebuilding the session.
@@ -274,7 +277,12 @@ export async function createBackendRuntime(options: BackendRuntimeOptions): Prom
   const sessionFactory = new RoutingSessionFactory(
     piSessionFactory,
     new ClaudeCodeSessionFactory({
-      pi: piSessionFactory,
+      builder: new WispSessionBuilder({
+        authorizationBroker: toolAuthorizationBroker,
+        toolSource,
+        jobs: jobHost,
+        wisps: wispHost,
+      }),
       status: claudeCodeStatus,
       recentTranscript: async (conversationId) =>
         recentTranscript(await conversationRepository.getMessagePage({ conversationId, page: "latest" })),
@@ -285,7 +293,7 @@ export async function createBackendRuntime(options: BackendRuntimeOptions): Prom
   const agentFactory: ConversationAgentFactory =
     options.agentMode === "fake"
       ? new FakeConversationAgentFactory({ latencyMs: 350, steering: true })
-      : new PiConversationAgentFactory(sessionFactory);
+      : new WispConversationAgentFactory(sessionFactory);
   const registry = new AgentRegistry(
     agentFactory,
     publishAgentEvent,

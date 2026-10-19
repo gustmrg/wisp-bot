@@ -114,13 +114,17 @@ every boundary it has on Pi.**
   - Claude Code reports no context window or output limit for an alias, so
     those fields stay empty for this provider; Claude Code manages both
     itself.
-- The conversation agent stays the same for every Wisp. It works through a
-  Pi-shaped session (`PiSessionLike`): `prompt`, `steer`, `abort`, `setModel`,
-  and Pi's agent events. `ClaudeCodeSession`
-  (`backend/claude-code/claude-code-session.ts`) is such a session, and a
-  routing session factory gives it to Wisps on `claude-code`. Follow-ups,
-  cancellation, model changes, and the event translator are shared with Pi
-  rather than written again.
+- The conversation agent stays the same for every Wisp
+  (`WispConversationAgent`, `backend/wisp-conversation-agent.ts`). It works
+  through a runtime session (`RuntimeSession`, `backend/runtime-session.ts`):
+  `prompt`, `steer`, `abort`, `setModel`, and Pi's agent events.
+  `ClaudeCodeSession` (`backend/claude-code/claude-code-session.ts`) is such a
+  session, as Pi's is (`backend/pi-session-factory.ts`), and a routing session
+  factory gives it to Wisps on `claude-code`. Follow-ups, cancellation, model
+  changes, and the event translator are shared rather than written again.
+- What a Wisp's session runs with, its system prompt, skills, memory, and
+  tools, comes from one builder (`WispSessionBuilder`,
+  `backend/wisp-session-plan.ts`) for both runtimes.
 - `@anthropic-ai/claude-agent-sdk` becomes a dependency, without its optional
   platform binaries. Its peers are already in Wisp: `@anthropic-ai/sdk`,
   `@modelcontextprotocol/sdk` 1.x, and `zod` 4, through Pi and the MCP client.

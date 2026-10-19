@@ -6,7 +6,7 @@ import type { ModelSelection } from "../../shared/contracts.js";
 import { writeFileAtomically } from "../atomic-file.js";
 import { WispBackendError } from "../backend-error.js";
 import type { ConversationAgentContext } from "../conversation-agent.js";
-import { defaultToolRevision, type SdkPiSessionFactory } from "../pi-conversation-agent.js";
+import { defaultToolRevision, type WispSessionBuilder } from "../wisp-session-plan.js";
 import { claudeCodeQueryOptions } from "./claude-code-launch.js";
 import { claudeCodeModel, type ClaudeCodeModel } from "./claude-code-models.js";
 import { ClaudeCodeSession, type ClaudeCodeQuery } from "./claude-code-session.js";
@@ -19,8 +19,8 @@ const CONTEXT_SETTINGS_FILE = "context-settings.json";
 const MAX_MEMORY_LENGTH = 8_000;
 
 export interface ClaudeCodeSessionFactoryOptions {
-  /** Builds the Wisp's system prompt and tools exactly as for a Pi session. */
-  pi: Pick<SdkPiSessionFactory, "planSession" | "createTools">;
+  /** Builds the Wisp's system prompt and tools, the same as for a Pi session. */
+  builder: Pick<WispSessionBuilder, "plan" | "tools">;
   status: ClaudeCodeStatusService;
   /** The Agent SDK's `query`; injected by tests. */
   query?: ClaudeCodeQuery;
@@ -71,8 +71,8 @@ export class ClaudeCodeSessionFactory {
       throw new WispBackendError("configuration_required", unavailable ?? claudeCodeUnavailableMessage(undefined)!);
     }
     const model = this.resolveModel(selection);
-    const plan = await this.options.pi.planSession(context);
-    const tools = await this.options.pi.createTools(context, plan, {
+    const plan = await this.options.builder.plan(context);
+    const tools = await this.options.builder.tools(context, plan, {
       searchHistory: (query) => this.options.searchHistory?.(context.conversationId, query),
     });
     const { validateToolArguments } = await import("@earendil-works/pi-ai");

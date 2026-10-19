@@ -10,7 +10,7 @@ import { snapshotRevision } from "../backend/integration-tool-source.js";
 import { mcpToolAlias } from "../shared/mcp.js";
 import { registerDynamicToolMetadata, resetDynamicToolMetadata } from "../shared/tool-catalog.js";
 import type { ModelRuntimeLike } from "../backend/model-service.js";
-import { SdkPiSessionFactory } from "../backend/pi-conversation-agent.js";
+import { SdkPiSessionFactory } from "../backend/pi-session-factory.js";
 import type { PluginToolSource } from "../backend/plugin-types.js";
 import { PluginService } from "../backend/plugin-service.js";
 
