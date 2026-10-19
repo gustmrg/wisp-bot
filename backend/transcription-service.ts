@@ -14,7 +14,7 @@ const TRANSCRIPTION_TIMEOUT_MS = 60_000;
 
 type VoiceCredentials = Pick<
   ModelService,
-  "getApiKey" | "setApiKey" | "listCredentialProviders" | "isSecureStorageAvailable"
+  "getApiKey" | "setApiKey" | "listApiKeyProviders" | "isSecureStorageAvailable"
 >;
 
 interface TranscriptionServiceOptions {
@@ -51,7 +51,8 @@ export class TranscriptionService {
   }
 
   async getView(): Promise<VoiceSettingsView> {
-    const configured = await this.credentials.listCredentialProviders();
+    // Transcription needs a key: a subscription sign-in for the same provider does not reach it.
+    const configured = await this.credentials.listApiKeyProviders();
     return {
       secureStorageAvailable: this.credentials.isSecureStorageAvailable(),
       providers: VOICE_PROVIDERS.map((provider) => ({

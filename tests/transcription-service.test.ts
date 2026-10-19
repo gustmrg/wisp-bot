@@ -13,7 +13,7 @@ function createService(options: { keys?: Record<string, string>; response?: Resp
   const credentials = {
     getApiKey: vi.fn(async (providerId: string) => keys.get(providerId)),
     setApiKey: vi.fn(async (providerId: string, apiKey: string) => void keys.set(providerId, apiKey)),
-    listCredentialProviders: vi.fn(async () => new Set(keys.keys())),
+    listApiKeyProviders: vi.fn(async () => new Set(keys.keys())),
     isSecureStorageAvailable: () => true,
   };
   const service = new TranscriptionService({ credentials, fetch: fetch as unknown as typeof globalThis.fetch });

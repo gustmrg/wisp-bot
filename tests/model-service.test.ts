@@ -497,3 +497,209 @@ describe("ModelService fallback models", () => {
     await expect(service.getFallbackModel(null, null)).resolves.toBeNull();
   });
 });
+
+describe("ModelService subscription sign-in", () => {
+  const AUTH_URL = "https://auth.openai.test/authorize?state=abc";
+  const REDIRECT = "http://127.0.0.1:1455/auth/callback?code=the-code&state=abc";
+
+  function chatModel(provider: string) {
+    return {
+      id: `${provider}-chat`,
+      name: `${provider} chat`,
+      api: "test",
+      provider,
+      baseUrl: "https://example.test",
+      reasoning: false,
+      input: ["text"],
+      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+      contextWindow: 100_000,
+      maxTokens: 10_000,
+    };
+  }
+
+  /**
+   * A runtime whose providers sign in like Pi's: the login reports the page,
+   * waits for the browser or a pasted redirect, and stores the credential.
+   */
+  function createSignInRuntime(credentials: EncryptedCredentialStore) {
+    const models = [chatModel("openai"), chatModel("anthropic")];
+    const oauth = { name: "Subscription", isSubscription: true, loginLabel: "Sign in with ChatGPT" };
+    const providers = [
+      { id: "openai", name: "OpenAI", auth: { apiKey: {}, oauth } },
+      { id: "anthropic", name: "Anthropic", auth: { apiKey: {}, oauth: { ...oauth, loginLabel: undefined } } },
+    ];
+    let completeInBrowser: (() => void) | undefined;
+    const runtime = {
+      getProviders: () => providers,
+      getProvider: (providerId: string) => providers.find(({ id }) => id === providerId),
+      getModels: (providerId?: string) => models.filter((model) => !providerId || model.provider === providerId),
+      getModel: (providerId: string, modelId: string) =>
+        models.find((model) => model.provider === providerId && model.id === modelId),
+      getError: vi.fn(() => undefined),
+      setRuntimeApiKey: vi.fn(async () => undefined),
+      removeRuntimeApiKey: vi.fn(async () => undefined),
+      logout: vi.fn(async (providerId: string) => credentials.delete(providerId)),
+      login: vi.fn(
+        async (
+          providerId: string,
+          _type: "oauth",
+          interaction: Parameters<ModelRuntimeLike["login"]>[2],
+          options?: Parameters<ModelRuntimeLike["login"]>[3],
+        ) => {
+          interaction.notify({ type: "auth_url", url: AUTH_URL });
+          const browser = new Promise<string>((resolve) => {
+            completeInBrowser = () => resolve(REDIRECT);
+          });
+          const redirect = await Promise.race([
+            browser,
+            interaction.prompt({ type: "manual_code", message: "Paste the address" }),
+          ]);
+          if (redirect !== REDIRECT) throw new Error("OAuth state mismatch");
+          const credential = {
+            type: "oauth" as const,
+            access: "access-token",
+            refresh: "refresh-token",
+            expires: Date.now() + 60_000,
+            deviceId: options?.getDeviceId?.(),
+          };
+          await credentials.modify(providerId, async () => credential);
+          return credential;
+        },
+      ),
+    };
+    return { runtime, completeInBrowser: () => completeInBrowser?.() };
+  }
+
+  async function createSignInService(options: { browser?: "local" | "manual" } = {}) {
+    const directory = await mkdtemp(path.join(tmpdir(), "wisp-model-sign-in-"));
+    directories.push(directory);
+    const credentials = new EncryptedCredentialStore(
+      path.join(directory, "credentials.enc.json"),
+      new TestEncryption(),
+    );
+    const { runtime, completeInBrowser } = createSignInRuntime(credentials);
+    const openExternal = vi.fn(async (_url: string) => undefined);
+    const service = new ModelService({
+      runtime: runtime as unknown as ModelRuntimeLike,
+      credentials,
+      settings: new AiSettingsStore(path.join(directory, "settings.json")),
+      openExternal,
+      signInBrowser: async () => ({ kind: options.browser ?? "local" }),
+    });
+    return { service, runtime, credentials, openExternal, completeInBrowser };
+  }
+
+  async function waitForSignInToEnd(service: ModelService) {
+    await vi.waitFor(async () => expect((await service.getView()).providerSignIn).toBeNull());
+  }
+
+  it("offers a subscription sign-in only for providers Wisp allows", async () => {
+    const { service } = await createSignInService();
+
+    const view = await service.getView();
+
+    expect(view.providers.find(({ id }) => id === "openai")?.subscriptionSignIn).toEqual({
+      label: "Sign in with ChatGPT",
+    });
+    // Pi's Claude sign-in poses as Claude Code, which Anthropic does not allow for other apps.
+    expect(view.providers.find(({ id }) => id === "anthropic")?.subscriptionSignIn).toBeUndefined();
+    await expect(service.startSignIn("anthropic")).rejects.toMatchObject({ code: "invalid_request" });
+  });
+
+  it("opens the browser here and uses the subscription once the sign-in completes", async () => {
+    const { service, runtime, credentials, openExternal, completeInBrowser } = await createSignInService();
+
+    const started = await service.startSignIn("openai");
+
+    expect(openExternal).toHaveBeenCalledWith(AUTH_URL);
+    expect(started.providerSignIn).toEqual({ providerId: "openai", status: "waiting" });
+    completeInBrowser();
+    await waitForSignInToEnd(service);
+
+    const credential = await credentials.read("openai");
+    expect(credential).toMatchObject({ type: "oauth", access: "access-token" });
+    // The installation ID is a stable UUID the provider sees as this app's host.
+    expect((credential as { deviceId?: string }).deviceId).toMatch(/^[0-9a-f-]{36}$/);
+    expect(runtime.removeRuntimeApiKey).toHaveBeenCalledWith("openai");
+    const view = await service.save({ selection: { providerId: "openai", modelId: "openai-chat" } });
+    expect(view.providers.find(({ id }) => id === "openai")).toMatchObject({
+      credentialConfigured: true,
+      credentialKind: "subscription",
+    });
+    await expect(service.getSelection()).resolves.toEqual({ providerId: "openai", modelId: "openai-chat" });
+    await expect(
+      service.validateConversationSelection({ providerId: "openai", modelId: "openai-chat" }),
+    ).resolves.toBeUndefined();
+    // Voice input needs a key; the sign-in does not count as one.
+    await expect(service.listApiKeyProviders()).resolves.toEqual(new Set());
+  });
+
+  it("shows the page and takes the pasted address when the browser runs elsewhere", async () => {
+    const { service, credentials, openExternal } = await createSignInService({ browser: "manual" });
+
+    const started = await service.startSignIn("openai");
+
+    expect(openExternal).not.toHaveBeenCalled();
+    expect(started.providerSignIn).toEqual({ providerId: "openai", status: "waiting", signInUrl: AUTH_URL });
+    const finished = await service.finishSignIn("openai", REDIRECT);
+    expect(finished.providerSignIn).toBeNull();
+    expect(finished.providers.find(({ id }) => id === "openai")?.credentialKind).toBe("subscription");
+    await expect(credentials.read("openai")).resolves.toMatchObject({ type: "oauth" });
+  });
+
+  it("reports a failed sign-in and lets the person try again", async () => {
+    const { service, credentials } = await createSignInService({ browser: "manual" });
+    await service.startSignIn("openai");
+
+    await expect(
+      service.finishSignIn("openai", "http://127.0.0.1:1455/auth/callback?code=x&state=other"),
+    ).rejects.toMatchObject({ code: "configuration_required", message: "OAuth state mismatch" });
+
+    expect((await service.getView()).providerSignIn).toEqual({
+      providerId: "openai",
+      status: "failed",
+      error: "OAuth state mismatch",
+    });
+    await expect(credentials.read("openai")).resolves.toBeUndefined();
+    await expect(service.startSignIn("openai")).resolves.toMatchObject({
+      providerSignIn: { status: "waiting", signInUrl: AUTH_URL },
+    });
+  });
+
+  it("cancels a waiting sign-in without connecting", async () => {
+    const { service, credentials } = await createSignInService();
+    await service.startSignIn("openai");
+    await expect(service.startSignIn("openai")).rejects.toMatchObject({ code: "invalid_request" });
+
+    const view = await service.cancelSignIn("openai");
+
+    expect(view.providerSignIn).toBeNull();
+    await expect(credentials.read("openai")).resolves.toBeUndefined();
+  });
+
+  it("signs out through the runtime and clears a selection that used the sign-in", async () => {
+    const { service, runtime, credentials, completeInBrowser } = await createSignInService();
+    await service.startSignIn("openai");
+    completeInBrowser();
+    await waitForSignInToEnd(service);
+    await service.save({ selection: { providerId: "openai", modelId: "openai-chat" } });
+
+    const view = await service.removeCredential("openai");
+
+    expect(runtime.logout).toHaveBeenCalledWith("openai");
+    expect(view.selection).toBeNull();
+    await expect(credentials.read("openai")).resolves.toBeUndefined();
+  });
+
+  it("does not accept a stored sign-in for a provider Wisp does not offer one for", async () => {
+    const { service, credentials } = await createSignInService();
+    await credentials.modify("anthropic", async () => ({ type: "oauth", access: "a", refresh: "r", expires: 1 }));
+
+    await expect(
+      service.save({ selection: { providerId: "anthropic", modelId: "anthropic-chat" } }),
+    ).rejects.toMatchObject({ code: "invalid_configuration" });
+    await expect(
+      service.validateConversationSelection({ providerId: "anthropic", modelId: "anthropic-chat" }),
+    ).rejects.toMatchObject({ code: "configuration_required" });
+  });
+});

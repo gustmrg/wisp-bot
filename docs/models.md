@@ -1,9 +1,9 @@
 # AI models
 
 Wisp conversations run on the [Pi agent runtime](decisions/001-agent-runtime.md)
-with a provider API key configured in the app. Only API-key authentication is
-offered; keys are encrypted at rest and never returned to the renderer (see
-[security](security.md)).
+with a provider API key or, for OpenAI, a ChatGPT subscription sign-in
+configured in the app. Credentials are encrypted at rest and never returned to
+the renderer (see [security](security.md)).
 
 ## Global model and provider keys
 
@@ -13,6 +13,30 @@ installed catalog are available. The app starts from the catalog cached on disk
 and refreshes it over the network in the background (for at most ten seconds),
 so an offline or slow connection never delays the window; a refresh failure is
 shown in these settings.
+
+## Subscription sign-in
+
+For OpenAI, **Settings → AI Model → Credential → Sign in with ChatGPT** uses the
+person's ChatGPT plan instead of an API key: requests count against the plan's
+usage limits rather than being billed per token
+([ADR 025](decisions/025-provider-subscription-sign-in.md)). Other providers'
+subscription sign-ins that Pi has are not offered, because they sign in as
+another vendor's own client; Claude subscriptions are tracked in SWE-182.
+
+- In the desktop app on the server's computer, the system browser opens and the
+  sign-in completes on its own.
+- In the browser app, on a phone, or in a desktop app connected to a remote
+  server, settings show **Open the sign-in page**. After approving, the browser
+  goes to an address starting with `http://127.0.0.1:1455` that does not load;
+  paste it into **Address after sign-in**.
+- A provider keeps one credential: signing in replaces its API key, and
+  entering a key replaces the sign-in. **Sign out** removes the sign-in, and
+  Wisps on that provider stop until it is restored.
+- The backend stores the tokens encrypted and refreshes them. Voice input still
+  needs an OpenAI API key.
+- Only one sign-in can run at a time, and it is cancelled after ten minutes.
+  Pi listens on port 1455 on the server's computer, so an unfinished Codex CLI
+  login there blocks it.
 
 ## Models per Wisp
 

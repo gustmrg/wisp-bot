@@ -135,6 +135,9 @@ export const WISP_IPC_CHANNELS = {
   saveAuxiliaryModel: "wisp:settings:ai:save-auxiliary",
   saveFallbackModel: "wisp:settings:ai:save-fallback",
   removeProviderCredential: "wisp:settings:ai:remove-credential",
+  startProviderSignIn: "wisp:settings:ai:sign-in",
+  cancelProviderSignIn: "wisp:settings:ai:sign-in:cancel",
+  finishProviderSignIn: "wisp:settings:ai:sign-in:finish",
   getConversationState: "wisp:conversations:get",
   initializeConversations: "wisp:conversations:initialize",
   createWisp: "wisp:wisps:create",
@@ -279,7 +282,27 @@ export interface ProviderSummary {
   id: string;
   name: string;
   credentialConfigured: boolean;
+  /**
+   * How the saved credential pays for requests: an API key billed per token,
+   * or a sign-in billed to the person's subscription. Missing without one.
+   */
+  credentialKind?: "api_key" | "subscription";
+  /** Set when the provider can be used through a subscription sign-in, with its button label. */
+  subscriptionSignIn?: { label: string };
   models: ReadonlyArray<ModelSummary>;
+}
+
+/** A provider subscription sign-in that is open, or the last one that failed. */
+export interface ProviderSignInView {
+  providerId: string;
+  status: "waiting" | "failed";
+  /**
+   * While waiting on a device whose browser cannot reach the server: the page
+   * to open there. The person then pastes the address the browser lands on.
+   */
+  signInUrl?: string;
+  /** Why the sign-in failed. */
+  error?: string;
 }
 
 /** Tasks a separately chosen model does for Wisps whose own model cannot. */
@@ -328,6 +351,8 @@ export interface AiSettingsView {
   fallback: FallbackModelView;
   secureStorageAvailable: boolean;
   providers: ReadonlyArray<ProviderSummary>;
+  /** A subscription sign-in in progress or the last one that failed; missing from servers before sign-ins. */
+  providerSignIn?: ProviderSignInView | null;
   /** Set when the model catalog could not be fully loaded or refreshed and the built-in list is shown. */
   catalogError: string | null;
 }
@@ -350,6 +375,16 @@ export interface SaveFallbackModelRequest {
 
 export interface RemoveProviderCredentialRequest {
   providerId: string;
+}
+
+export interface ProviderSignInRequest {
+  providerId: string;
+}
+
+export interface FinishProviderSignInRequest {
+  providerId: string;
+  /** The address the browser was sent to after the sign-in. */
+  redirectUrl: string;
 }
 
 export interface ApplyModelRequest extends ConversationRequest {
@@ -696,6 +731,9 @@ export interface WispApi {
   saveAuxiliaryModel(request: SaveAuxiliaryModelRequest): Promise<BackendResult<AiSettingsView>>;
   saveFallbackModel(request: SaveFallbackModelRequest): Promise<BackendResult<AiSettingsView>>;
   removeProviderCredential(request: RemoveProviderCredentialRequest): Promise<BackendResult<AiSettingsView>>;
+  startProviderSignIn(request: ProviderSignInRequest): Promise<BackendResult<AiSettingsView>>;
+  cancelProviderSignIn(request: ProviderSignInRequest): Promise<BackendResult<AiSettingsView>>;
+  finishProviderSignIn(request: FinishProviderSignInRequest): Promise<BackendResult<AiSettingsView>>;
   getConversationState(): Promise<BackendResult<ConversationStateView>>;
   initializeConversations(request: InitializeConversationsRequest): Promise<BackendResult<ConversationStateView>>;
   createWisp(request: CreateWispRequest): Promise<BackendResult<ConversationStateView>>;

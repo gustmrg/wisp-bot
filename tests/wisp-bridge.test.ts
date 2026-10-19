@@ -103,6 +103,15 @@ function completeBridge(): WispApi {
     removeProviderCredential: async () => {
       throw new Error("not called");
     },
+    startProviderSignIn: async () => {
+      throw new Error("not called");
+    },
+    cancelProviderSignIn: async () => {
+      throw new Error("not called");
+    },
+    finishProviderSignIn: async () => {
+      throw new Error("not called");
+    },
     getConversationState: async () => {
       throw new Error("not called");
     },

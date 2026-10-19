@@ -127,6 +127,8 @@ export async function createBackendRuntime(options: BackendRuntimeOptions): Prom
     dataDirectory,
     encryption,
     ...(options.allowModelNetwork === undefined ? {} : { allowModelNetwork: options.allowModelNetwork }),
+    openExternal: options.openExternal,
+    ...(options.signInBrowser ? { signInBrowser: options.signInBrowser } : {}),
   });
   const toolPolicyStore = new ToolPolicyStore(path.join(dataDirectory, "tool-policy.json"));
   await toolPolicyStore.load();
