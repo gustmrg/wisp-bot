@@ -9,14 +9,15 @@ import {
   SettingsRowDescription,
   SettingsRowTitle,
 } from "@/components/settings/settings-primitives";
-import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ToggleSwitch } from "@/components/ui/toggle-switch";
+import { invalidMaxOutputTokens } from "@/lib/model-choice";
 
 export interface WispModelDraft {
   useGlobal: boolean;
   providerId: string;
   modelId: string;
+  /** Only a template sets it; the Wisp's Model tab changes it afterwards. */
   maxOutputTokens: string;
   thinkingLevel: ThinkingLevel;
 }
@@ -70,13 +71,6 @@ export function wispModelDraftFromTemplate(
   };
 }
 
-function invalidMaxOutputTokens(draft: WispModelDraft, modelMax: number | undefined): boolean {
-  const value = draft.maxOutputTokens.trim();
-  if (!value) return false;
-  const parsed = Number(value);
-  return !Number.isSafeInteger(parsed) || parsed < 1 || parsed > (modelMax ?? 1_000_000);
-}
-
 /** A new Wisp needs a model it can run: the global default or its own, with a saved provider key. */
 export function isWispModelDraftInvalid(draft: WispModelDraft, view: AiSettingsView | null): boolean {
   if (!view) return true;
@@ -85,7 +79,7 @@ export function isWispModelDraftInvalid(draft: WispModelDraft, view: AiSettingsV
   const provider = view.providers.find(({ id }) => id === draft.providerId);
   if (!provider?.credentialConfigured) return true;
   const model = provider.models.find(({ id }) => id === draft.modelId);
-  return invalidMaxOutputTokens(draft, model?.maxOutputTokens);
+  return invalidMaxOutputTokens(draft.maxOutputTokens, model?.maxOutputTokens);
 }
 
 function globalSummary(view: AiSettingsView | null): string {
@@ -238,25 +232,6 @@ function CreateWispModelSection({ view, loadError, draft, onChange, notice }: Cr
               </SelectContent>
             </Select>
           </SettingsRow>
-          <SettingsRow className="min-h-0 p-[11px]">
-            <SettingsRowCopy>
-              <SettingsRowTitle htmlFor="create-wisp-max-output-tokens">Maximum output tokens</SettingsRowTitle>
-              <SettingsRowDescription>
-                Leave empty to use the safe automatic limit of up to 32,768 tokens.
-              </SettingsRowDescription>
-            </SettingsRowCopy>
-            <Input
-              id="create-wisp-max-output-tokens"
-              type="number"
-              min={1}
-              max={model?.maxOutputTokens ?? 1_000_000}
-              step={1}
-              value={draft.maxOutputTokens}
-              placeholder="Automatic"
-              className="w-[160px] max-w-[45%]"
-              onChange={(event) => onChange({ ...draft, maxOutputTokens: event.currentTarget.value })}
-            />
-          </SettingsRow>
           {canChooseThinkingLevel(model) ? (
             <ThinkingLevelRow
               id="create-wisp-thinking-level"
@@ -269,11 +244,6 @@ function CreateWispModelSection({ view, loadError, draft, onChange, notice }: Cr
           {provider && !provider.credentialConfigured ? (
             <p role="alert" className="m-0 px-3.5 pb-3 text-xs text-destructive">
               No API key saved for {provider.name} yet. Add one in Settings → AI Model before creating this Wisp.
-            </p>
-          ) : null}
-          {invalidMaxOutputTokens(draft, model?.maxOutputTokens) ? (
-            <p role="alert" className="m-0 px-3.5 pb-3 text-xs text-destructive">
-              Maximum output tokens must be a whole number between 1 and {model?.maxOutputTokens ?? 1_000_000}.
             </p>
           ) : null}
         </>

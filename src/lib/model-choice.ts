@@ -42,10 +42,25 @@ export function unavailableModelOption(
   };
 }
 
+/** A model's catalog entry, or undefined when the catalog no longer lists it. */
+export function catalogModel(
+  view: AiSettingsView,
+  selection: ModelSelection,
+): AiSettingsView["providers"][number]["models"][number] | undefined {
+  return view.providers
+    .find(({ id }) => id === selection.providerId)
+    ?.models.find(({ id }) => id === selection.modelId);
+}
+
+/** An entered maximum output tokens that is not a whole number from 1 to the model's limit; empty means automatic. */
+export function invalidMaxOutputTokens(value: string, modelMax: number | undefined): boolean {
+  const trimmed = value.trim();
+  if (!trimmed) return false;
+  const parsed = Number(trimmed);
+  return !Number.isSafeInteger(parsed) || parsed < 1 || parsed > (modelMax ?? 1_000_000);
+}
+
 /** The catalog name of a model, or its ID when the catalog no longer lists it. */
 export function modelName(view: AiSettingsView, selection: ModelSelection): string {
-  return (
-    view.providers.find(({ id }) => id === selection.providerId)?.models.find(({ id }) => id === selection.modelId)
-      ?.name ?? selection.modelId
-  );
+  return catalogModel(view, selection)?.name ?? selection.modelId;
 }

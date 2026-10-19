@@ -126,6 +126,7 @@ describe("DetailsPanel on the desktop", () => {
       value: {
         getAiSettings: vi.fn(async () => ({ ok: false, error: { message: "No settings yet" } })),
         getConversationModel: vi.fn(async () => ({ ok: false, error: { message: "No model yet" } })),
+        manageContext: vi.fn(async () => ({ ok: true, value: { tokens: 0 } })),
         subscribeToAgentEvents: vi.fn(() => () => undefined),
       },
     });

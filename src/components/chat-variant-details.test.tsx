@@ -146,6 +146,7 @@ it("loads model and usage data lazily and keeps model details across tabs", asyn
           status: "idle",
         },
       })),
+      manageContext: vi.fn(async () => ({ ok: true, value: { tokens: 0 } })),
       subscribeToAgentEvents: vi.fn(() => () => undefined),
     },
   });
@@ -177,6 +178,7 @@ it("supports keyboard navigation between settings tabs", async () => {
     value: {
       getAiSettings: vi.fn(async () => ({ ok: false, error: { message: "No settings yet" } })),
       getConversationModel: vi.fn(async () => ({ ok: false, error: { message: "No model yet" } })),
+      manageContext: vi.fn(async () => ({ ok: true, value: { tokens: 0 } })),
       subscribeToAgentEvents: vi.fn(() => () => undefined),
     },
   });
