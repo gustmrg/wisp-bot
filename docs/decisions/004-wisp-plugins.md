@@ -1,16 +1,16 @@
 # ADR 004: Plugin connections and per-Wisp access
 
 - Status: Accepted
-- Date: 2026-09-07 (updated 2026-10-04 to include Tavily and Exa and per-capability web providers; updated 2026-10-09 to extend Linear coverage)
+- Date: 2026-09-07 (updated 2026-10-04 to include Tavily and Exa and per-capability web providers; updated 2026-10-09 to extend Linear coverage; updated 2026-10-19 to include DeepSeek)
 - Decision owners: Wisp product and security boundary
-- Scope: Bundled Brave Search, Linear, Firecrawl, Tavily, and Exa integrations
+- Scope: Bundled Brave Search, Linear, Firecrawl, Tavily, Exa, and DeepSeek integrations
 
 ## Decision
 
 Configure plugin connections globally in **Settings → Plugins**, then grant each
 Wisp access independently through its **Access** tab. A saved connection does not
 grant access automatically. The catalog contains Brave Search, Linear,
-Firecrawl, Tavily, and Exa, with one API-key connection per plugin on the device.
+Firecrawl, Tavily, Exa, and DeepSeek, with one API-key connection per plugin on the device.
 
 The connection form accepts a new key without reading the saved secret back.
 **Connect** and **Replace key** test an entered key and persist it only after
@@ -19,7 +19,8 @@ disabling a connected plugin applies immediately.
 Brave testing performs one search request; Linear testing reads the authenticated
 viewer. Firecrawl tests credit usage; Tavily tests API-key usage without a paid
 search or extraction. Exa tests one search result without content extraction,
-which can consume credits. A successful connection test does not guarantee access to every resource
+which can consume credits. DeepSeek tests one search result, which is billed
+when results come back. A successful connection test does not guarantee access to every resource
 or permission to write.
 
 ## Capabilities and endpoints
@@ -31,6 +32,7 @@ or permission to write.
 | Firecrawl | `none`, `read` | `web_search` and `web_read`: search for sources and read a web page as bounded Markdown; no browser interaction or arbitrary POST |
 | Tavily | `none`, `read` | `web_search` and `web_read`: basic search with source snippets and single-page Markdown extraction |
 | Exa | `none`, `read` | `web_search` and `web_read`: automatic search with bounded highlights and single-page content retrieval |
+| DeepSeek | `none`, `read` | `web_search` and `web_read`: search with model-oriented summaries (queries up to 128 characters) and single-page Markdown fetch |
 
 Brave calls `GET https://api.search.brave.com/res/v1/web/search` with the API key
 in `X-Subscription-Token`, following the [Web Search documentation](https://api-dashboard.search.brave.com/documentation/services/web-search).
@@ -42,6 +44,9 @@ with a Bearer API key, returning sources or page Markdown with response size lim
 Tavily calls `POST https://api.tavily.com/search` and `/extract`, with its API
 key in `Authorization: Bearer`; testing uses `GET /usage`. Exa calls
 `POST https://api.exa.ai/search` and `/contents`, with its key in `x-api-key`.
+DeepSeek calls `POST https://api.deepseek.com/v1/tools/search` and
+`/v1/tools/fetch` with a Bearer API key, following the
+[Search & Fetch guide](https://api-docs.deepseek.com/guides/search/).
 See [Tavily's API reference](https://docs.tavily.com/documentation/api-reference/endpoint/search)
 and [Exa's API reference](https://exa.ai/docs/reference/search).
 
@@ -52,7 +57,7 @@ per plugin. A chosen provider that is turned off or disconnected makes the
 capability unavailable rather than falling back to another provider; removing
 a connection clears it from every Wisp's choices. Wisps saved before explicit
 choices existed use the first granted, connected provider in catalog order
-(Brave → Firecrawl → Tavily → Exa) until their access is saved again.
+(Brave → Firecrawl → Tavily → Exa → DeepSeek) until their access is saved again.
 A global default provider per capability only orders the choices in the Access
 tab; it never grants or changes a Wisp's provider. Shared web tools are
 registered once, and failed requests are never retried automatically against
@@ -84,7 +89,7 @@ issue content is model input, not authorization or executable instructions.
   `EncryptedCredentialStore`, separately from model credentials. Secure storage
   must be available to persist new keys. Corrupt plugin configuration recovers
   with plugins disabled and access denied.
-- Settings written before Firecrawl, Tavily, or Exa are loaded with those
+- Settings written before Firecrawl, Tavily, Exa, or DeepSeek are loaded with those
   missing plugins disabled, preserving existing connections and grants.
 - Grants are keyed by the Wisp's immutable application session ID. Deleting and
   recreating a conversation with the same visible ID cannot inherit old grants.

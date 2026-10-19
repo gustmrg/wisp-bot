@@ -183,6 +183,7 @@ describe("PluginSettingsSection", () => {
   it.each([
     ["tavily", "Tavily"],
     ["exa", "Exa"],
+    ["deepseek", "DeepSeek"],
   ] as const)("connects %s by testing the key before saving it", async (pluginId, name) => {
     const api = setup();
     const user = userEvent.setup();

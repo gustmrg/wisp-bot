@@ -142,6 +142,7 @@ function defaultState(): PluginState {
       firecrawl: false,
       tavily: false,
       exa: false,
+      deepseek: false,
       "google-calendar": false,
       gmail: false,
       "google-drive": false,
