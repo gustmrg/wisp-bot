@@ -61,6 +61,8 @@ export interface ClaudeCodeSessionOptions {
    * Code failed for good before answering (ADR 021); null when it has none.
    */
   fallback?: () => Promise<{ name: string; session: RuntimeSession } | null>;
+  /** Told when the fallback model answers a turn, for the session report. */
+  onFallback?: (model: string) => void;
   now?: () => Date;
   /** The latest of the Wisp's own messages, to carry into a replaced session. */
   recentTranscript?: () => Promise<string>;
@@ -518,6 +520,7 @@ export class ClaudeCodeSession implements RuntimeSession {
     }
     const transcript = await this.options.recentTranscript?.().catch(() => undefined);
     this.emit({ type: "model_fallback", model: fallback.name });
+    this.options.onFallback?.(fallback.name);
     // The conversation agent already started and ends this turn, and has its message.
     let prompted = false;
     const forward = fallback.session.subscribe((event) => {

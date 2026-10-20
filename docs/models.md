@@ -56,7 +56,10 @@ password or token.
   in the Wisp's **Access** tab, **Search the web** can be **Claude (included
   in your plan)**, which needs no search plugin
   ([plugins](plugins.md#per-wisp-access)).
-- **Usage:** replies count against the plan's usage limits.
+- **Usage:** replies count against the plan's usage limits. The Wisp's
+  session report and **Token usage** count their tokens. Turns on a plan
+  cost nothing more and carry a **Claude plan** badge. Claude Code's status
+  shows the plan's 5-hour and weekly usage once one is three-quarters used.
 - **History:** Claude Code keeps its own conversation under `~/.claude/` on
   that computer and deletes conversations unused for 30 days. The next message
   after that starts a new Claude Code conversation that is told the latest

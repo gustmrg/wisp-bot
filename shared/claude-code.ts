@@ -12,7 +12,26 @@ export type ClaudeCodeStatusView =
   | { state: "outdated"; version: string; minimumVersion: string }
   | { state: "signed_out"; version: string }
   /** `billing` says who pays: the person's Claude plan, or their Anthropic API account. */
-  | { state: "ready"; version: string; billing: "subscription" | "api"; plan?: string };
+  | {
+      state: "ready";
+      version: string;
+      billing: "subscription" | "api";
+      plan?: string;
+      planUsage?: ClaudeCodePlanUsageView;
+    };
+
+/**
+ * How much of the plan's usage limits the latest Claude Code turn reported
+ * as used, for each window: a fraction from 0 to 1, and when it resets.
+ */
+export interface ClaudeCodePlanUsageView {
+  /** Claude Code refused a request because a limit was reached. */
+  limited: boolean;
+  windows: ReadonlyArray<{ window: "five_hour" | "seven_day"; utilization: number; resetsAt: string }>;
+}
+
+/** From this share of a window on, the plan's usage is shown. */
+export const CLAUDE_CODE_PLAN_USAGE_SHOWN_FROM = 0.75;
 
 /** Why Claude Code cannot run a Wisp now, in words the person can act on; undefined when it can. */
 export function claudeCodeUnavailableMessage(status: ClaudeCodeStatusView | undefined): string | undefined {

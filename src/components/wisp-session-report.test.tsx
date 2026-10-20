@@ -121,6 +121,29 @@ describe("WispSessionReportSection", () => {
     expect(screen.getByText("From Vision (OpenAI)'s saved transcription")).toBeVisible();
   });
 
+  it("marks turns a Claude plan paid for", async () => {
+    exposeApi(
+      vi.fn(async () => ({
+        ok: true as const,
+        value: {
+          ...report,
+          models: [
+            {
+              ...report.models[0]!,
+              providerId: "claude-code",
+              modelId: "claude-sonnet-5-5",
+              costUsd: 0,
+              plan: true as const,
+            },
+          ],
+        },
+      })),
+    );
+    render(<WispSessionReportSection chatId="wisp-1" active />);
+
+    expect(await screen.findByText("Claude plan")).toBeVisible();
+  });
+
   it("refreshes on demand and when returning to Usage", async () => {
     const user = userEvent.setup();
     const getSessionReport = exposeApi(vi.fn(async () => ({ ok: true as const, value: report })));

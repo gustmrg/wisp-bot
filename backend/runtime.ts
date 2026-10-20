@@ -1,5 +1,4 @@
 import { randomUUID } from "node:crypto";
-import { rm } from "node:fs/promises";
 import path from "node:path";
 
 import type {
@@ -37,7 +36,8 @@ import { ModelService } from "./model-service.js";
 import { SdkPiSessionFactory } from "./pi-session-factory.js";
 import { WispConversationAgentFactory } from "./wisp-conversation-agent.js";
 import { WispSessionBuilder } from "./wisp-session-plan.js";
-import { CLAUDE_CODE_FALLBACK_DIRECTORY, ClaudeCodeSessionFactory } from "./claude-code/claude-code-session-factory.js";
+import { ClaudeCodeSessionFactory } from "./claude-code/claude-code-session-factory.js";
+import { CLAUDE_CODE_FALLBACK_DIRECTORY } from "./claude-code/claude-code-usage-log.js";
 import { ClaudeCodeStatusService } from "./claude-code/claude-code-status.js";
 import { RoutingSessionFactory } from "./claude-code/routing-session-factory.js";
 import { formatHistorySearch, recentTranscript } from "./claude-code/conversation-history.js";
@@ -296,9 +296,12 @@ export async function createBackendRuntime(options: BackendRuntimeOptions): Prom
         const choice = await fallbackModel(context.conversationId);
         if (!choice) return null;
         const model = piSessionFactory.resolveModel(choice);
-        // Each fallback turn starts fresh; it is told the latest messages instead.
-        const sessionDirectory = path.join(context.sessionDirectory, CLAUDE_CODE_FALLBACK_DIRECTORY);
-        await rm(sessionDirectory, { recursive: true, force: true });
+        // Each fallback turn starts fresh in a folder of its own, which the session report reads.
+        const sessionDirectory = path.join(
+          context.sessionDirectory,
+          CLAUDE_CODE_FALLBACK_DIRECTORY,
+          `${new Date().toISOString().replace(/[:.]/g, "-")}-${randomUUID().slice(0, 8)}`,
+        );
         const session = await piSessionFactory.create(
           {
             ...context,

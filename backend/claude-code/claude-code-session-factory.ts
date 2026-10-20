@@ -21,6 +21,8 @@ import {
   type ClaudeCodeSavedSession,
 } from "./claude-code-session.js";
 import { claudeCodeUnavailableMessage, type ClaudeCodeStatusService } from "./claude-code-status.js";
+import type { ClaudeCodeEventConverter, ClaudeCodeTurnResult } from "./claude-code-events.js";
+import { appendClaudeCodeUsage, claudeCodeFallbackEntry, claudeCodeUsageEntry } from "./claude-code-usage-log.js";
 import { createWispMcpServer, type WispMcpTool } from "./wisp-mcp-server.js";
 
 /** Claude Code's own web search tool. */
@@ -28,9 +30,6 @@ const CLAUDE_CODE_WEB_SEARCH_TOOL = "WebSearch";
 
 /** Claude Code's session for a Wisp in a conversation, kept with the Wisp's session there. */
 const SESSION_FILE = "claude-code-session.json";
-
-/** Where the Pi sessions of a Claude Code Wisp's fallback model live, inside its session folder. */
-export const CLAUDE_CODE_FALLBACK_DIRECTORY = "claude-code-fallback";
 
 export interface ClaudeCodeSessionFactoryOptions {
   /** Builds the Wisp's system prompt and tools, the same as for a Pi session. */
@@ -80,6 +79,8 @@ interface Prepared {
 /** Sessions for Wisps on the `claude-code` provider (ADR 026). */
 export class ClaudeCodeSessionFactory {
   private readonly options: ClaudeCodeSessionFactoryOptions;
+  /** Claude Code's cumulative cost estimate per process, by the process's converter. */
+  private readonly processCosts = new WeakMap<ClaudeCodeEventConverter, number>();
 
   constructor(options: ClaudeCodeSessionFactoryOptions) {
     this.options = options;
@@ -121,6 +122,8 @@ export class ClaudeCodeSessionFactory {
           ...(launch.recoveredContext ? { recoveredContext: launch.recoveredContext } : {}),
         }),
       onSessionSaved: (session) => this.writeSession(context, session),
+      onTurnResult: (result, converter) => this.recordTurn(context, prepared.model.id, result, converter),
+      onFallback: (model) => this.appendUsage(context, claudeCodeFallbackEntry(model, new Date())),
       ...(this.options.fallback ? { fallback: () => this.options.fallback!(context) } : {}),
       ...(this.options.recentTranscript
         ? { recentTranscript: () => this.options.recentTranscript!(context.conversationId) }
@@ -206,6 +209,32 @@ export class ClaudeCodeSessionFactory {
           environment: this.options.environment ?? process.env,
         }),
     };
+  }
+
+  /**
+   * Records a turn's usage for the session report, and the plan's usage for
+   * the status. Claude Code's cost estimate adds up over a process's turns,
+   * so a turn's cost is what it added.
+   */
+  private recordTurn(
+    context: ConversationAgentContext,
+    alias: string,
+    result: ClaudeCodeTurnResult,
+    converter: ClaudeCodeEventConverter,
+  ): void {
+    this.options.status.recordPlanUsage(converter.planUsage);
+    const status = this.options.status.current();
+    const billing = status?.state === "ready" ? status.billing : "subscription";
+    const previous = this.processCosts.get(converter) ?? 0;
+    const cost = result.estimatedCostUsd === null ? null : Math.max(0, result.estimatedCostUsd - previous);
+    if (result.estimatedCostUsd !== null) this.processCosts.set(converter, result.estimatedCostUsd);
+    if (result.usage.totalTokens === 0 && result.ok === false) return;
+    this.appendUsage(context, claudeCodeUsageEntry(result, converter.model ?? alias, billing, cost, new Date()));
+  }
+
+  private appendUsage(context: ConversationAgentContext, entry: object): void {
+    // The report misses a turn it could not record; the conversation goes on.
+    void appendClaudeCodeUsage(context.sessionDirectory, entry).catch(() => undefined);
   }
 
   /** The saved session, or a new one's state; the ID is null until a turn in the session succeeded. */

@@ -278,6 +278,22 @@ async function run() {
       c.close();
     }
 
+    if (wanted("plan")) {
+      const c = conversation(workspace, { tools: [] });
+      c.send("Reply 'ok'.");
+      await c.result(1);
+      const info = c.events.find((event) => event.type === "rate_limit_event")?.rate_limit_info;
+      if (process.env.WISP_CLAUDE_CODE_SMOKE_TRACE) console.log(JSON.stringify(info));
+      // The session reads the plan's usage from these windows.
+      const windows = info?.unifiedWindows ?? {};
+      check(
+        "reports the plan's 5-hour and 7-day usage",
+        ["five_hour", "seven_day"].every((name) => typeof windows[name]?.utilization === "number"),
+        info ? Object.keys(info).join(",") : "no rate_limit_event",
+      );
+      c.close();
+    }
+
     if (wanted("missing")) {
       const c = conversation(workspace, { tools: [], resume: randomUUID() });
       c.send("Hello");

@@ -26,7 +26,9 @@ import { notifyProviderCredentialsChanged } from "@/lib/voice-credentials";
 import { voiceProvider } from "../../shared/voice";
 import {
   CLAUDE_CODE_PROVIDER,
+  CLAUDE_CODE_PLAN_USAGE_SHOWN_FROM,
   claudeCodeUnavailableMessage,
+  type ClaudeCodePlanUsageView,
   type ClaudeCodeStatusView,
 } from "../../shared/claude-code";
 
@@ -474,9 +476,35 @@ function ClaudeCodeStatusCard({
               Wisp never asks for your Claude password or token: Claude Code keeps its own sign-in.
             </p>
           )}
+          {ready?.planUsage ? <ClaudePlanUsage usage={ready.planUsage} /> : null}
         </div>
       </SettingsCard>
     </SettingsGroup>
+  );
+}
+
+const PLAN_WINDOW_NAMES = { five_hour: "5-hour", seven_day: "Weekly" } as const;
+
+/** The plan's usage limits the latest turn reported, shown once one is nearly used up. */
+function ClaudePlanUsage({ usage }: { usage: ClaudeCodePlanUsageView }) {
+  const shown = usage.windows.filter(
+    ({ utilization }) => usage.limited || utilization >= CLAUDE_CODE_PLAN_USAGE_SHOWN_FROM,
+  );
+  if (!shown.length) return null;
+  return (
+    <ul aria-label="Claude plan usage" className="m-0 list-none space-y-0.5 p-0 text-xs leading-relaxed text-warning">
+      {shown.map(({ window, utilization, resetsAt }) => (
+        <li key={window}>
+          {PLAN_WINDOW_NAMES[window]} limit {Math.round(utilization * 100)}% used, resets{" "}
+          {new Date(resetsAt).toLocaleString([], {
+            ...(window === "seven_day" ? { weekday: "short" as const } : {}),
+            hour: "numeric",
+            minute: "2-digit",
+          })}
+          .
+        </li>
+      ))}
+    </ul>
   );
 }
 

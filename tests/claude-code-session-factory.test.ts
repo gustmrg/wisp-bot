@@ -75,12 +75,23 @@ async function setup(status: ClaudeCodeStatusView = READY, options: { webSearch?
     let inputEnded = false;
     void (async () => {
       for await (const _message of prompt) {
-        outbox.push({
-          type: "result",
-          subtype: "success",
-          is_error: false,
-          session_id: options.sessionId ?? options.resume,
-        });
+        outbox.push(
+          {
+            type: "rate_limit_event",
+            rate_limit_info: {
+              status: "allowed",
+              unifiedWindows: { five_hour: { utilization: 0.8, resetsAt: 1792471200 } },
+            },
+          },
+          {
+            type: "result",
+            subtype: "success",
+            is_error: false,
+            session_id: options.sessionId ?? options.resume,
+            usage: { input_tokens: 10, output_tokens: 5, cache_read_input_tokens: 100 },
+            total_cost_usd: 0.01,
+          },
+        );
         wake?.();
       }
       inputEnded = true;
@@ -103,6 +114,7 @@ async function setup(status: ClaudeCodeStatusView = READY, options: { webSearch?
     current: () => status,
     refresh: async () => status,
     executable: () => "/usr/local/bin/claude",
+    recordPlanUsage: vi.fn(),
   } as unknown as ClaudeCodeStatusService;
   const factory = new ClaudeCodeSessionFactory({
     builder: builder as never,
@@ -111,7 +123,7 @@ async function setup(status: ClaudeCodeStatusView = READY, options: { webSearch?
     environment: { HOME: "/home/person", PATH: "/usr/bin", ANTHROPIC_API_KEY: "sk-ant-secret" },
     ...(options.webSearch ? { webSearch: options.webSearch } : {}),
   });
-  return { factory, context, launches, root, builder };
+  return { factory, context, launches, root, builder, statusService };
 }
 
 describe("ClaudeCodeSessionFactory", () => {
@@ -186,6 +198,39 @@ describe("ClaudeCodeSessionFactory", () => {
     run.dispose();
     // A job without web_search does not search.
     expect(launches[1]!.tools).toEqual([]);
+  });
+
+  it("records each turn's usage for the session report, a plan's turns at no cost, and the plan's usage", async () => {
+    const { factory, context, root, statusService } = await setup();
+    const session = await factory.create(context, { providerId: "claude-code", modelId: "sonnet" });
+    await session.prompt("Hello");
+    session.dispose();
+
+    await vi.waitFor(async () => {
+      const lines = (await readFile(path.join(root, "claude-code-usage.jsonl"), "utf8")).trim().split("\n");
+      expect(lines.map((line) => JSON.parse(line))).toEqual([
+        expect.objectContaining({
+          type: "message",
+          message: expect.objectContaining({
+            role: "assistant",
+            provider: "claude-code",
+            model: "sonnet",
+            billing: "plan",
+            usage: expect.objectContaining({
+              input: 10,
+              output: 5,
+              cacheRead: 100,
+              totalTokens: 115,
+              cost: { total: 0 },
+            }),
+          }),
+        }),
+      ]);
+    });
+    expect(statusService.recordPlanUsage).toHaveBeenCalledWith({
+      status: "allowed",
+      windows: { five_hour: { utilization: 0.8, resetsAt: 1792471200 } },
+    });
   });
 
   it("saves a new session once it answered, and resumes it later", async () => {

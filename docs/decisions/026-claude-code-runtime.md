@@ -271,10 +271,19 @@ How WebSearch is offered:
 
 ### Usage
 
-- A turn's token usage goes to the session report under `claude-code`.
-- Its cost is Claude Code's estimate, labeled as not billed on a plan.
-- The plan's 5-hour and 7-day usage, from `rate_limit_event`, is shown while
-  it is high.
+- Each turn's model and token usage go to `claude-code-usage.jsonl` in the
+  Wisp's session folder, as entries shaped like Pi's, so the session report
+  and Token usage read it as they read Pi's sessions. It holds no messages.
+- A turn on a plan is marked `billing: "plan"`. It costs nothing more and
+  shows a **Claude plan** badge. On an API account, the turn's cost is what it
+  added to Claude Code's estimate, which adds up over a process's turns.
+- The session report shows the usage log while it is newer than the Wisp's
+  Pi session, with the fallback model's turns, each kept in a folder of its
+  own under `claude-code-fallback/`.
+- The plan's 5-hour and weekly usage, from `rate_limit_event` (verified:
+  `rate_limit_info.unifiedWindows.five_hour` and `seven_day`, each with
+  `utilization` and `resetsAt`), shows in Claude Code's status in Settings
+  once a window is three-quarters used, or a limit was reached.
 
 ### What a Claude Code Wisp does differently
 

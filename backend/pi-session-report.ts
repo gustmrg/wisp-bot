@@ -61,6 +61,8 @@ interface ModelUsageBucket {
   turns: number;
   /** Auxiliary rows count calls, and are priced only with the cost Pi recorded. */
   auxiliary?: { task: "imageUnderstanding"; calls: number };
+  /** Turns a Claude plan paid for, recorded by Claude Code sessions (ADR 026). */
+  plan?: true;
   usage: SessionReportUsage;
   /** Cost Pi recorded with each turn, used when no current price is available. */
   recordedCostUsd: number | null;
@@ -321,13 +323,15 @@ function addUsage(current: SessionReportUsage, usage: SessionUsage): SessionRepo
 function accumulateModelUsage(message: AssistantSessionMessage, usageByModel: Map<string, ModelUsageBucket>): void {
   const usage = message.usage;
   if (!usage) return;
-  const key = `${message.provider}:${message.model}`;
+  const plan = (message as { billing?: unknown }).billing === "plan";
+  const key = `${plan ? "plan:" : ""}${message.provider}:${message.model}`;
   const bucket = usageByModel.get(key) ?? {
     providerId: message.provider,
     modelId: message.model,
     turns: 0,
     usage: emptyUsage(),
     recordedCostUsd: 0,
+    ...(plan ? { plan: true as const } : {}),
   };
   bucket.turns += 1;
   bucket.usage = addUsage(bucket.usage, usage);
@@ -415,6 +419,7 @@ function summarizeModelUsage(
     usage: bucket.usage,
     costUsd: costForBucket(bucket, getPricing),
     ...(bucket.auxiliary ? { auxiliary: { ...bucket.auxiliary } } : {}),
+    ...(bucket.plan ? { plan: true as const } : {}),
   }));
 }
 
@@ -431,6 +436,7 @@ function estimateCost(usageByModel: Map<string, ModelUsageBucket>, getPricing: S
 // Current OpenRouter prices win; otherwise fall back to the cost Pi recorded
 // from its own model catalog (e.g. direct providers such as Z.AI or Anthropic).
 function costForBucket(bucket: ModelUsageBucket, getPricing: SessionPricingLookup): number | null {
+  if (bucket.plan) return 0;
   if (bucket.auxiliary) return bucket.recordedCostUsd;
   return costForUsage(bucket.usage, getPricing(bucket.providerId, bucket.modelId)) ?? bucket.recordedCostUsd;
 }
@@ -465,7 +471,8 @@ function estimateCacheSavings(
   let total = 0;
   for (const bucket of usageByModel.values()) {
     const { cacheReadTokens, cacheWriteTokens } = bucket.usage;
-    if (cacheReadTokens === 0 && cacheWriteTokens === 0) continue;
+    // A plan's turns cost nothing more, so its cache saves nothing.
+    if (bucket.plan || (cacheReadTokens === 0 && cacheWriteTokens === 0)) continue;
     const pricing =
       options.getPricing(bucket.providerId, bucket.modelId) ??
       options.getCatalogPricing?.(bucket.providerId, bucket.modelId) ??

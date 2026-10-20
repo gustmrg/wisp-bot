@@ -531,6 +531,8 @@ export interface SessionReportModelUsage {
   costUsd: number | null;
   /** Set on a row for an auxiliary model, which runs calls for the Wisp rather than turns. */
   auxiliary?: { task: AuxiliaryTask; calls: number };
+  /** Set on a row for turns a Claude plan paid for (ADR 026), which cost nothing more. */
+  plan?: true;
 }
 
 export interface SessionReportToolCall {

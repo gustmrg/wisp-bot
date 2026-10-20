@@ -9,7 +9,8 @@ import {
   type ClaudeCodeRunner,
   type ClaudeCodeStatus,
 } from "./claude-code-cli.js";
-import { claudeCodeUnavailableMessage } from "../../shared/claude-code.js";
+import { claudeCodeUnavailableMessage, type ClaudeCodePlanUsageView } from "../../shared/claude-code.js";
+import type { ClaudeCodePlanUsage } from "./claude-code-events.js";
 
 /**
  * How long a status is trusted before the next check runs it again: a ready
@@ -54,6 +55,7 @@ export class ClaudeCodeStatusService {
   private readonly now: () => number;
   private latest: { status: ClaudeCodeStatus; executable: string | undefined; checkedAt: number } | undefined;
   private pending: Promise<ClaudeCodeStatus> | undefined;
+  private planUsage: ClaudeCodePlanUsageView | undefined;
 
   constructor(options: ClaudeCodeStatusServiceOptions = {}) {
     this.find = options.find ?? (() => findClaudeCode());
@@ -64,7 +66,21 @@ export class ClaudeCodeStatusService {
 
   /** The latest status, or undefined before the first check. */
   current(): ClaudeCodeStatus | undefined {
-    return this.latest?.status;
+    return this.latest && this.withPlanUsage(this.latest.status);
+  }
+
+  /** Keeps the plan's usage the latest turn reported, shown with a ready status. */
+  recordPlanUsage(usage: ClaudeCodePlanUsage | undefined): void {
+    if (!usage) return;
+    this.planUsage = {
+      limited: usage.status === "rejected",
+      windows: (["five_hour", "seven_day"] as const).flatMap((window) => {
+        const value = usage.windows[window];
+        return value
+          ? [{ window, utilization: value.utilization, resetsAt: new Date(value.resetsAt * 1000).toISOString() }]
+          : [];
+      }),
+    };
   }
 
   /** The `claude` the latest check found. */
@@ -75,11 +91,16 @@ export class ClaudeCodeStatusService {
   /** Checks again unless the latest result is recent; `force` always checks. */
   async refresh(force = false): Promise<ClaudeCodeStatus> {
     const ttl = this.latest?.status.state === "ready" ? READY_TTL_MS : NOT_READY_TTL_MS;
-    if (!force && this.latest && this.now() - this.latest.checkedAt < ttl) return this.latest.status;
+    if (!force && this.latest && this.now() - this.latest.checkedAt < ttl)
+      return this.withPlanUsage(this.latest.status);
     this.pending ??= this.check().finally(() => {
       this.pending = undefined;
     });
-    return this.pending;
+    return this.withPlanUsage(await this.pending);
+  }
+
+  private withPlanUsage(status: ClaudeCodeStatus): ClaudeCodeStatus {
+    return status.state === "ready" && this.planUsage ? { ...status, planUsage: this.planUsage } : status;
   }
 
   private async check(): Promise<ClaudeCodeStatus> {
