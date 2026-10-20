@@ -43,7 +43,7 @@ function AuxiliaryModelSettings({ view, onViewChange }: AuxiliaryModelSettingsPr
 
   const options = [
     { value: OFF, label: "Off", description: "Wisps on text-only models cannot read images" },
-    ...modelOptions(view, ({ input }) => input.includes("image")),
+    ...modelOptions(view, ({ input }) => input.includes("image"), { claudeCode: false }),
   ];
   if (selected && !options.some(({ value }) => value === modelOptionValue(selected))) {
     options.push(unavailableModelOption(view, selected));

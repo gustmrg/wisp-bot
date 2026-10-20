@@ -440,11 +440,14 @@ function FallbackSection({
       iconSrc: globalFallback ? modelLabLogo(globalFallback) : undefined,
     },
     // The Wisp's own model cannot stand in for itself.
-    ...modelOptions(catalog).filter((option) => !effective || option.value !== modelOptionValue(effective)),
+    ...modelOptions(catalog, undefined, { claudeCode: false }).filter(
+      (option) => !effective || option.value !== modelOptionValue(effective),
+    ),
   ];
   if (typeof fallback === "object" && !options.some((option) => option.value === value)) {
     options.push(
-      modelOptions(catalog).find((option) => option.value === value) ?? unavailableModelOption(catalog, fallback),
+      modelOptions(catalog, undefined, { claudeCode: false }).find((option) => option.value === value) ??
+        unavailableModelOption(catalog, fallback),
     );
   }
   const note =

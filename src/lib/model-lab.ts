@@ -54,6 +54,8 @@ const logos: Record<ModelLab, string> = {
 /** Providers run by a lab, for the lab's models whose IDs name no family below. */
 const labProviders: Record<string, ModelLab> = {
   anthropic: "anthropic",
+  // Claude Code's aliases, such as "opus", name no family.
+  "claude-code": "anthropic",
   openai: "openai",
   "openai-codex": "openai",
   "azure-openai-responses": "openai",
