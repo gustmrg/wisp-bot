@@ -153,7 +153,7 @@ describe("job records", () => {
   it("keeps the newest runs of each job and deletes the session files of the rest", async () => {
     const { directory, repository } = await setup();
     await repository.addJob(job(), 20);
-    const runDirectory = path.join(directory, "pi-sessions", "runs");
+    const runDirectory = path.join(directory, "wisp-sessions", "runs");
     await mkdir(runDirectory, { recursive: true });
     for (let index = 0; index < MAX_JOB_RUNS_KEPT + 2; index += 1) {
       const sessionFile = path.join(runDirectory, `run-${index}.jsonl`);

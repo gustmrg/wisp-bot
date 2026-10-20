@@ -29,7 +29,7 @@ async function setup(selected: string[] = [], quotaBytes?: number) {
   const root = await mkdtemp(path.join(os.tmpdir(), "wisp-workspace-"));
   directories.push(root);
   const workspaceDirectory = path.join(root, "workspaces", "session");
-  const configDirectory = path.join(root, "pi-config", "session");
+  const configDirectory = path.join(root, "wisp-config", "session");
   const picks = path.join(root, "picks");
   await mkdir(workspaceDirectory, { recursive: true });
   await mkdir(picks);

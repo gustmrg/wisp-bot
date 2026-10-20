@@ -1,4 +1,4 @@
-import { cp, mkdir, mkdtemp, readFile, readdir, writeFile } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, readFile, readdir, rename, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
@@ -285,9 +285,9 @@ describe("ConversationRepository", () => {
       wispId: "atlas",
       role: "Test",
       soul: "A test Wisp",
-      configDirectory: path.join(directory, "pi-config", "id-1"),
+      configDirectory: path.join(directory, "wisp-config", "id-1"),
       workspaceDirectory: path.join(directory, "workspaces", "id-2"),
-      sessionDirectory: path.join(directory, "pi-sessions", "id-3"),
+      sessionDirectory: path.join(directory, "wisp-sessions", "id-3"),
     });
     expect(repository.getWispStorageId("atlas")).toBe("id-1");
 
@@ -299,10 +299,48 @@ describe("ConversationRepository", () => {
     await expect(restored.updateWisp("missing", { name: "Ghost" })).rejects.toMatchObject({ code: "not_found" });
   });
 
+  it("moves a data directory's Pi-named folders to the new names when it loads, keeping each Wisp's files", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "wisp-folders-"));
+    let nextId = 0;
+    const created = new ConversationRepository({ dataDirectory: directory, createId: () => `id-${++nextId}` });
+    await created.load();
+    await created.createWisp(newWisp("atlas"), { notifyOnUpdatesEnabled: false });
+    const { configDirectory, sessionDirectory } = created.getAgentContext("atlas");
+    await created.savePiSessionIdentity("atlas", {
+      sessionId: "pi-1",
+      sessionFile: path.join(sessionDirectory, "history.jsonl"),
+    });
+    await created.close();
+    await writeFile(path.join(configDirectory, "memory.md"), "likes tea");
+    await writeFile(path.join(sessionDirectory, "history.jsonl"), "{}\n");
+    // Put the folders back under the names this data directory had before.
+    await rename(path.join(directory, "wisp-config"), path.join(directory, "pi-config"));
+    await rename(path.join(directory, "wisp-sessions"), path.join(directory, "pi-sessions"));
+    const oldFile = path.join(directory, "pi-sessions", "id-3", "history.jsonl");
+    const db = new DatabaseSync(path.join(directory, "conversations.sqlite"));
+    db.prepare("UPDATE participant_sessions SET pi_session_file = ?").run(oldFile);
+    db.close();
+
+    const upgraded = new ConversationRepository({ dataDirectory: directory });
+    await upgraded.load();
+
+    expect((await readdir(directory)).filter((name) => /^(pi|wisp)-/.test(name)).sort()).toEqual([
+      "wisp-config",
+      "wisp-sessions",
+    ]);
+    const context = upgraded.getAgentContext("atlas");
+    expect(context.configDirectory).toBe(configDirectory);
+    expect(await readFile(path.join(context.configDirectory, "memory.md"), "utf8")).toBe("likes tea");
+    // The session file the old layout stored resolves to the same file under its new folder.
+    expect(context.piSessionFile).toBe(path.join(sessionDirectory, "history.jsonl"));
+    expect(await readFile(context.piSessionFile!, "utf8")).toBe("{}\n");
+    await upgraded.close();
+  });
+
   it("splits records saved before Wisps were stored apart, keeping their folders and tone", async () => {
     const directory = await mkdtemp(path.join(os.tmpdir(), "wisp-split-"));
     const db = createJsonStore(directory);
-    const sessionFile = path.join(directory, "pi-sessions", "first-session", "history.jsonl");
+    const sessionFile = path.join(directory, "wisp-sessions", "first-session", "history.jsonl");
     db.prepare("INSERT INTO conversations (id, record) VALUES (?, ?)").run(
       "first",
       JSON.stringify({
@@ -384,9 +422,9 @@ describe("ConversationRepository", () => {
       modelOverride: { providerId: "anthropic", modelId: "claude-sonnet-5" },
       piSessionId: "pi-first",
       piSessionFile: sessionFile,
-      configDirectory: path.join(directory, "pi-config", "first-session"),
+      configDirectory: path.join(directory, "wisp-config", "first-session"),
       workspaceDirectory: path.join(directory, "workspaces", "first-session"),
-      sessionDirectory: path.join(directory, "pi-sessions", "first-session"),
+      sessionDirectory: path.join(directory, "wisp-sessions", "first-session"),
     });
     expect(upgraded.getWispStorageId("first")).toBe("first-session");
     // The records were rewritten as columns, and the pending messages kept.
@@ -403,8 +441,8 @@ describe("ConversationRepository", () => {
     expect(await upgraded.listQueuedMessages()).toEqual([queued]);
     expect(storedRows(directory, "SELECT key, value FROM meta WHERE key LIKE '%version'")).toEqual(
       expect.arrayContaining([
-        { key: "store_version", value: "11" },
-        { key: "min_reader_version", value: "6" },
+        { key: "store_version", value: "12" },
+        { key: "min_reader_version", value: "12" },
       ]),
     );
     await upgraded.close();
@@ -604,8 +642,8 @@ describe("ConversationRepository", () => {
       now: () => new Date("2026-08-30T12:00:00.000Z"),
     });
     await repository.initialize({ first: chat("first") });
-    const [storageId] = await readdir(path.join(directory, "pi-config"));
-    const cache = path.join(directory, "pi-config", storageId!, "transcription-cache");
+    const [storageId] = await readdir(path.join(directory, "wisp-config"));
+    const cache = path.join(directory, "wisp-config", storageId!, "transcription-cache");
     await mkdir(cache, { recursive: true });
     await writeFile(path.join(cache, "entry.json"), JSON.stringify({ text: "Scanned contract" }));
 
@@ -616,13 +654,13 @@ describe("ConversationRepository", () => {
     const archives = await readdir(path.join(directory, "deleted-conversations"));
     expect(archives).toHaveLength(1);
     const contents = await readdir(path.join(directory, "deleted-conversations", archives[0]!));
-    expect(contents.sort()).toEqual(["archive.json", "pi-config", "pi-session", "workspace"]);
+    expect(contents.sort()).toEqual(["archive.json", "wisp-config", "wisp-session", "workspace"]);
     // Storage names the archive from its manifest; the folder name is only an ID.
     expect(
       JSON.parse(await readFile(path.join(directory, "deleted-conversations", archives[0]!, "archive.json"), "utf8")),
     ).toEqual({ name: "first", kind: "wisp", archivedAt: "2026-08-30T12:00:00.000Z" });
     // Image transcriptions are deleted outright rather than archived.
-    expect(await readdir(path.join(directory, "deleted-conversations", archives[0]!, "pi-config"))).not.toContain(
+    expect(await readdir(path.join(directory, "deleted-conversations", archives[0]!, "wisp-config"))).not.toContain(
       "transcription-cache",
     );
   });
