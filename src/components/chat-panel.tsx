@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { ArrowDownIcon, CheckIcon, ChevronLeftIcon, SettingsIcon, XIcon } from "lucide-react";
 
 import type { ChatView, Message } from "@/chat-data";
@@ -158,6 +158,17 @@ function ChatPanel({
   const mobile = Boolean(onBack);
   const focusChatId = mobile && !hidden ? chat.id : null;
   const members = chat.kind === "circle" ? chat.members : [];
+  // The latest handler, so the mentions, and the Markdown rendered with them, change only with the members.
+  const openWisp = useRef(onOpenWisp);
+  openWisp.current = onOpenWisp;
+  const canOpenWisp = Boolean(onOpenWisp);
+  const mentions = useMemo(
+    () =>
+      members.length
+        ? { members, onOpenWisp: canOpenWisp ? (wispId: string) => openWisp.current?.(wispId) : undefined }
+        : undefined,
+    [members, canOpenWisp],
+  );
   const name = chatName(chat);
   const messages = transcript?.messages ?? NO_MESSAGES;
   const timeZone = useTimeZone();
@@ -451,8 +462,7 @@ function ChatPanel({
                     dense={message.type === "outgoing" && previous?.type === "outgoing"}
                     author={author}
                     showAuthor={Boolean(author) && previousAuthor !== author?.id}
-                    mentionable={members}
-                    onOpenWisp={onOpenWisp}
+                    mentions={mentions}
                     onAnswer={(answer) => onAnswerPrompt(message.id, answer)}
                     onRetry={() => onRetry(message.id)}
                   />

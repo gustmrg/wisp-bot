@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import { useState } from "react";
 import {
   CalendarClockIcon,
   CheckIcon,
@@ -11,7 +11,6 @@ import {
 
 import type { Message, Wisp } from "@/chat-data";
 import { WispAvatar } from "@/components/chat-avatar";
-import { mentionRanges } from "../../shared/circle-mentions";
 import { splitMessageAttachments } from "../../shared/workspace";
 import { useRevealedText } from "@/hooks/use-reply-pace";
 import { useTimeFormat, useTimeZone } from "@/hooks/use-time-zone";
@@ -20,6 +19,7 @@ import { copyText } from "@/lib/clipboard";
 import { cn } from "@/lib/utils";
 import { AttachmentChips } from "@/components/attachment-chips";
 import { MarkdownView } from "@/components/markdown-view";
+import { MentionedText, type WispMentions } from "@/components/wisp-mention";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 
 interface MessageViewProps {
@@ -28,9 +28,8 @@ interface MessageViewProps {
   /** In a circle, the Wisp that wrote an incoming message, named above it when `showAuthor` is set. */
   author?: Wisp;
   showAuthor?: boolean;
-  /** In a circle, its members, whose `@` mentions in the user's messages open their conversation. */
-  mentionable?: ReadonlyArray<Wisp>;
-  onOpenWisp?: (wispId: string) => void;
+  /** In a circle, its members, whose `@` mentions are set apart and open their conversation. */
+  mentions?: WispMentions;
   onAnswer?: (answer: string) => void;
   onRetry?: () => void;
 }
@@ -89,8 +88,7 @@ function MessageView({
   dense = false,
   author,
   showAuthor = false,
-  mentionable = [],
-  onOpenWisp,
+  mentions,
   onAnswer,
   onRetry,
 }: MessageViewProps) {
@@ -210,9 +208,9 @@ function MessageView({
           )}
         >
           {outgoing ? (
-            <OutgoingText text={message.text} mentionable={mentionable} onOpenWisp={onOpenWisp} />
+            <OutgoingText text={message.text} mentions={mentions} />
           ) : (
-            <IncomingText reveal={reveal} />
+            <IncomingText reveal={reveal} mentions={mentions} />
           )}
         </div>
         <MessageTools
@@ -292,27 +290,19 @@ function FailedNotice({ reason, onRetry }: { reason?: string; onRetry?: () => vo
 }
 
 /** A Wisp's reply, appearing at the person's chosen pace while it arrives; a click shows the rest at once. */
-function IncomingText({ reveal }: { reveal: ReturnType<typeof useRevealedText> }) {
-  if (!reveal.revealing) return <MarkdownView text={reveal.text} />;
+function IncomingText({ reveal, mentions }: { reveal: ReturnType<typeof useRevealedText>; mentions?: WispMentions }) {
+  if (!reveal.revealing) return <MarkdownView text={reveal.text} mentions={mentions} />;
   return (
     <div data-revealing="" onClick={reveal.finish}>
-      <MarkdownView text={reveal.text} />
+      <MarkdownView text={reveal.text} mentions={mentions} />
     </div>
   );
 }
 
 /** What the user typed, with the files attached to it shown as files rather than as the list the Wisp reads. */
-function OutgoingText({
-  text,
-  mentionable,
-  onOpenWisp,
-}: {
-  text: string;
-  mentionable: ReadonlyArray<Wisp>;
-  onOpenWisp?: (wispId: string) => void;
-}) {
+function OutgoingText({ text, mentions }: { text: string; mentions?: WispMentions }) {
   const { text: typed, attachments } = splitMessageAttachments(text);
-  const written = <MentionedText text={typed} members={mentionable} onOpenWisp={onOpenWisp} />;
+  const written = mentions ? <MentionedText text={typed} mentions={mentions} /> : typed;
   if (!attachments.length) return written;
   return (
     <>
@@ -324,48 +314,6 @@ function OutgoingText({
       />
     </>
   );
-}
-
-/** A text with its `@` mentions of members set apart, like attached files; each opens its Wisp's conversation. */
-function MentionedText({
-  text,
-  members,
-  onOpenWisp,
-}: {
-  text: string;
-  members: ReadonlyArray<Wisp>;
-  onOpenWisp?: (wispId: string) => void;
-}) {
-  const ranges = members.length ? mentionRanges(text, members) : [];
-  if (!ranges.length) return text;
-  const parts: ReactNode[] = [];
-  let from = 0;
-  for (const { start, end, memberId } of ranges) {
-    parts.push(text.slice(from, start));
-    const mention = text.slice(start, end);
-    const name = members.find(({ id }) => id === memberId)?.name ?? mention.slice(1);
-    const chip = "rounded-md bg-current/10 px-1 py-px font-medium";
-    parts.push(
-      onOpenWisp ? (
-        <button
-          key={start}
-          type="button"
-          className={cn(chip, "cursor-pointer border-0 text-inherit hover:bg-current/20 focus-visible:outline-2")}
-          title={`Open ${name}'s conversation and settings`}
-          onClick={() => onOpenWisp(memberId)}
-        >
-          {mention}
-        </button>
-      ) : (
-        <span key={start} className={chip}>
-          {mention}
-        </span>
-      ),
-    );
-    from = end;
-  }
-  parts.push(text.slice(from));
-  return <>{parts}</>;
 }
 
 /** Marks a Wisp's message that one of its jobs sent, with no request before it. */
