@@ -31,13 +31,15 @@ describe("variant details", () => {
         onChangeWisp={vi.fn()}
       />,
     );
-    await user.click(screen.getByRole("button", { name: "Teacher" }));
-    const soul = screen.getByRole("textbox", { name: "Soul" });
-    expect((soul as HTMLTextAreaElement).value).toContain("# Personality\nA patient teacher.");
+    await user.click(screen.getByRole("button", { name: "Tutor" }));
+    // A template opens on its preview, ready to use, with Edit to make it the person's own.
+    expect(screen.getByRole("heading", { name: "Identity" })).toBeVisible();
+    expect(screen.getByText(/The Tutor soul is ready to use as it is/)).toBeVisible();
     expect(screen.queryByRole("group", { name: "Soul templates" })).not.toBeInTheDocument();
 
-    await user.click(screen.getByRole("radio", { name: "Preview" }));
-    expect(screen.getByRole("heading", { name: "Personality" })).toBeVisible();
+    await user.click(screen.getByRole("radio", { name: "Edit" }));
+    const soul = screen.getByRole("textbox", { name: "Soul" });
+    expect((soul as HTMLTextAreaElement).value).toContain("# Identity\nYou are a patient tutor.");
   });
 
   it("keeps Wisp edits local until they are saved", async () => {

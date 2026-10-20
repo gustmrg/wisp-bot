@@ -24,7 +24,8 @@ import { SegmentedControl } from "@/components/ui/segmented-control";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { ToggleSwitch } from "@/components/ui/toggle-switch";
-import { SOUL_TEMPLATES, soulFromTemplate, type SoulTemplate } from "@/lib/soul-templates";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { SOUL_TEMPLATES, type SoulTemplate } from "@/lib/soul-templates";
 
 /** A Wisp as its settings form edits it, with its conversation's notification setting. */
 export type WispSettingsDraft = NewWisp & { notifyOnUpdatesEnabled: boolean };
@@ -77,14 +78,19 @@ function WispSoulField({ soul, onChange }: { soul: string; onChange: (soul: stri
   const [mode, setMode] = useState<SoulMode>("edit");
   // A template or a blank soul picked over edited text, waiting for the person to confirm losing the edits.
   const [pending, setPending] = useState<SoulTemplate | typeof BLANK | null>(null);
-  const applied = SOUL_TEMPLATES.find((template) => soulFromTemplate(template) === soul);
+  const applied = SOUL_TEMPLATES.find((template) => template.soul === soul);
 
   function choose(next: SoulTemplate | typeof BLANK) {
     // An empty soul or an untouched template has nothing to lose.
-    if (!soul.trim() || applied) {
-      setPending(null);
-      onChange(next === BLANK ? "" : soulFromTemplate(next));
-    } else setPending(next);
+    if (!soul.trim() || applied) apply(next);
+    else setPending(next);
+  }
+
+  /** A template opens on its preview, which reads as the Wisp that will be made; Edit makes it the person's own. */
+  function apply(next: SoulTemplate | typeof BLANK) {
+    setPending(null);
+    onChange(next === BLANK ? "" : next.soul);
+    setMode(next === BLANK ? "edit" : "preview");
   }
 
   return (
@@ -143,18 +149,16 @@ function WispSoulField({ soul, onChange }: { soul: string; onChange: (soul: stri
             <Button type="button" size="sm" variant="ghost" onClick={() => setPending(null)}>
               Cancel
             </Button>
-            <Button
-              type="button"
-              size="sm"
-              onClick={() => {
-                onChange(pending === BLANK ? "" : soulFromTemplate(pending));
-                setPending(null);
-              }}
-            >
+            <Button type="button" size="sm" onClick={() => apply(pending)}>
               {pending === BLANK ? "Clear" : "Replace"}
             </Button>
           </div>
         </div>
+      ) : null}
+      {applied ? (
+        <p className="m-0 text-xs text-dim">
+          {`The ${applied.label} soul is ready to use as it is. Switch to Edit to make it your own.`}
+        </p>
       ) : null}
       {mode === "edit" ? (
         <Textarea
@@ -167,7 +171,8 @@ function WispSoulField({ soul, onChange }: { soul: string; onChange: (soul: stri
           onChange={(event) => onChange(event.currentTarget.value)}
         />
       ) : (
-        <div className="min-h-[120px] rounded-md border border-border p-3 text-base">
+        // As tall as the editor at most, so a long soul scrolls here rather than the whole step.
+        <div className="max-h-[240px] min-h-[120px] overflow-y-auto rounded-md border border-border p-3 text-base">
           {soul.trim() ? <MarkdownView text={soul} /> : <p className="m-0 text-dim">Nothing written yet.</p>}
         </div>
       )}
@@ -176,9 +181,22 @@ function WispSoulField({ soul, onChange }: { soul: string; onChange: (soul: stri
           <FieldTitle>Start from a template</FieldTitle>
           <div className="flex flex-wrap gap-1.5">
             {SOUL_TEMPLATES.map((template) => (
-              <Button key={template.id} type="button" variant="outline" size="xs" onClick={() => choose(template)}>
-                {template.label}
-              </Button>
+              <Tooltip key={template.id}>
+                <TooltipTrigger
+                  render={
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="xs"
+                      aria-description={template.description}
+                      onClick={() => choose(template)}
+                    />
+                  }
+                >
+                  {template.label}
+                </TooltipTrigger>
+                <TooltipContent>{template.description}</TooltipContent>
+              </Tooltip>
             ))}
           </div>
         </div>
