@@ -350,15 +350,19 @@
     flex: 1;
     gap: 9px;
   }
-  .chat-heading .wisp-halo {
+  /* As on the desktop, the Wisp stands alone in the header: no disc behind it, so it does not read as a
+     second button beside the settings one. The ring for its state stays, just outside the Wisp. */
+  .chat-heading .wisp-halo,
+  .chat-heading .wisp-halo[data-state="error"] {
     width: 42px;
     height: 42px;
+    background: none;
   }
   .chat-heading .wisp-halo > svg,
   .chat-heading .wisp-halo > img,
   .chat-heading .wisp-halo > span {
-    width: 32px;
-    height: 32px;
+    width: 42px;
+    height: 42px;
   }
   .chat-heading h1 {
     font-size: 16px;
