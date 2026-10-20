@@ -1,7 +1,7 @@
 import { WispBackendError } from "../backend-error.js";
 import type { PluginAdapter } from "../plugin-types.js";
 import { type Fields, object, output, PluginRequestError, requestJson, textField } from "./shared.js";
-import { pageOutput, readInput, searchInput, webReadTool, webSearchTool } from "./web.js";
+import { pageOutput, webReadTool, webSearchTool } from "./web.js";
 
 // DeepSeek counts Unicode characters and rejects longer queries with HTTP 400.
 const MAX_QUERY_CHARS = 128;
@@ -32,8 +32,7 @@ async function search(apiKey: string, query: string, count: number, signal?: Abo
 export const deepseek: PluginAdapter = {
   id: "deepseek",
   tools: [
-    webSearchTool(async (apiKey, raw, signal) => {
-      const { query, count } = searchInput(raw);
+    webSearchTool(async (apiKey, { query, count }, signal) => {
       if (Array.from(query).length > MAX_QUERY_CHARS)
         throw new WispBackendError(
           "invalid_request",
@@ -55,8 +54,7 @@ export const deepseek: PluginAdapter = {
         moreResultsAvailable: null,
       });
     }),
-    webReadTool(async (apiKey, raw, signal) => {
-      const { url, normalizedUrl } = readInput(raw);
+    webReadTool(async (apiKey, { url, normalizedUrl }, signal) => {
       const page = await deepseekRequest(apiKey, "fetch", { url: normalizedUrl }, signal);
       if (typeof page.content !== "string" || !page.content.trim())
         throw new PluginRequestError("DeepSeek could not read this page. Check the URL and its accessibility.");

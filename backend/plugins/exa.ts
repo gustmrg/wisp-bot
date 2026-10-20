@@ -1,6 +1,6 @@
 import type { PluginAdapter } from "../plugin-types.js";
 import { type Fields, object, output, PluginRequestError, requestJson, textField } from "./shared.js";
-import { pageOutput, readInput, searchInput, webReadTool, webSearchTool } from "./web.js";
+import { pageOutput, webReadTool, webSearchTool } from "./web.js";
 
 async function exaRequest(apiKey: string, path: "search" | "contents", body: Fields, signal?: AbortSignal) {
   return requestJson(
@@ -18,8 +18,7 @@ async function exaRequest(apiKey: string, path: "search" | "contents", body: Fie
 export const exa: PluginAdapter = {
   id: "exa",
   tools: [
-    webSearchTool(async (apiKey, raw, signal) => {
-      const { query, count } = searchInput(raw);
+    webSearchTool(async (apiKey, { query, count }, signal) => {
       const data = await exaRequest(
         apiKey,
         "search",
@@ -44,8 +43,7 @@ export const exa: PluginAdapter = {
         moreResultsAvailable: null,
       });
     }),
-    webReadTool(async (apiKey, raw, signal) => {
-      const { url, normalizedUrl } = readInput(raw);
+    webReadTool(async (apiKey, { url, normalizedUrl }, signal) => {
       const data = await exaRequest(
         apiKey,
         "contents",

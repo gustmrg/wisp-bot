@@ -4,6 +4,7 @@ import type { BashOperations, ToolDefinition } from "@earendil-works/pi-coding-a
 import { randomUUID } from "node:crypto";
 import { readFile, rm } from "node:fs/promises";
 import path from "node:path";
+import { z } from "zod";
 
 import {
   CONTAINER_WORKSPACE,
@@ -35,6 +36,7 @@ import {
   type IntegrationToolSource,
 } from "./integration-tool-source.js";
 import type { ToolAuthorizationBroker } from "./tool-authorization-broker.js";
+import { defineWispTool } from "./tool-schema.js";
 import { measureTree, readWorkspaceQuota } from "./workspace-service.js";
 
 export const RUN_COMMAND_TOOL = "run_command";
@@ -279,29 +281,17 @@ export class ExecutionService implements IntegrationToolSource {
         ...(gitToken ? { gitToken } : {}),
       });
     };
-    const execute = async (toolCallId: string, params: ProcessParams, signal?: AbortSignal) => {
-      const request = parseProcessParams(params);
-      await this.authorize(conversationId, toolCallId, PROCESS_TOOL, PROCESS_SUMMARIES[request.action], signal);
-      return { content: [{ type: "text", text: await processResult(request, run, signal, wisp) }], details: {} };
-    };
-    return {
+    return defineWispTool({
       name: PROCESS_TOOL,
       label: "Background process",
       description: PROCESS_DESCRIPTION,
-      parameters: {
-        type: "object",
-        properties: {
-          action: { type: "string", enum: ["start", "list", "log", "wait", "kill"] },
-          command: { type: "string", minLength: 1, maxLength: MAX_PROCESS_COMMAND_LENGTH },
-          id: { type: "string", pattern: "^[a-f0-9]{8}$" },
-          lines: { type: "integer", minimum: 1, maximum: MAX_PROCESS_LOG_LINES },
-          timeout: { type: "integer", minimum: 1, maximum: MAX_PROCESS_WAIT_SECONDS },
-        },
-        required: ["action"],
-        additionalProperties: false,
+      parameters: PROCESS_PARAMETERS,
+      execute: async (toolCallId, params, signal) => {
+        const request = parseProcessParams(params);
+        await this.authorize(conversationId, toolCallId, PROCESS_TOOL, PROCESS_SUMMARIES[request.action], signal);
+        return { content: [{ type: "text", text: await processResult(request, run, signal, wisp) }], details: {} };
       },
-      execute,
-    } as unknown as ToolDefinition;
+    });
   }
 }
 
@@ -327,13 +317,22 @@ const PROCESS_SUMMARIES: Record<ProcessAction, string> = {
   kill: "Stop a background process in the Wisp's container",
 };
 
-interface ProcessParams {
-  action?: unknown;
-  command?: unknown;
-  id?: unknown;
-  lines?: unknown;
-  timeout?: unknown;
-}
+const PROCESS_ID_MESSAGE = "Give the id of a process, as returned by action=start or action=list.";
+
+export const PROCESS_PARAMETERS = z.strictObject({
+  action: z.enum(["start", "list", "log", "wait", "kill"], { error: "action must be start, list, log, wait or kill." }),
+  command: z
+    .string()
+    .min(1, "Give the command to start.")
+    .max(MAX_PROCESS_COMMAND_LENGTH, "The command is too long.")
+    .optional(),
+  id: z
+    .string()
+    .regex(/^[a-f0-9]{8}$/, PROCESS_ID_MESSAGE)
+    .optional(),
+  lines: z.int().min(1).max(MAX_PROCESS_LOG_LINES).optional(),
+  timeout: z.int().min(1).max(MAX_PROCESS_WAIT_SECONDS).optional(),
+});
 
 type ProcessRequest =
   | { action: "start"; command: string }
@@ -342,40 +341,30 @@ type ProcessRequest =
   | { action: "wait"; id: string; lines: number; timeout: number }
   | { action: "kill"; id: string };
 
-function parseProcessParams(params: ProcessParams): ProcessRequest {
+/** The schema checks each field; this checks which fields the action needs. */
+function parseProcessParams(params: z.output<typeof PROCESS_PARAMETERS>): ProcessRequest {
   const id = () => {
-    if (typeof params.id !== "string" || !/^[a-f0-9]{8}$/.test(params.id)) {
-      throw new Error("Give the id of a process, as returned by action=start or action=list.");
-    }
+    if (params.id === undefined) throw new Error(PROCESS_ID_MESSAGE);
     return params.id;
   };
-  const bounded = (value: unknown, fallback: number, max: number) =>
-    typeof value === "number" && Number.isInteger(value) && value >= 1 ? Math.min(value, max) : fallback;
   switch (params.action) {
     case "start":
-      if (typeof params.command !== "string" || !params.command.trim()) throw new Error("Give the command to start.");
-      if (params.command.length > MAX_PROCESS_COMMAND_LENGTH) throw new Error("The command is too long.");
+      if (!params.command?.trim()) throw new Error("Give the command to start.");
       assertAllowedCommand(params.command);
       return { action: "start", command: params.command };
     case "list":
       return { action: "list" };
     case "log":
-      return {
-        action: "log",
-        id: id(),
-        lines: bounded(params.lines, DEFAULT_PROCESS_LOG_LINES, MAX_PROCESS_LOG_LINES),
-      };
+      return { action: "log", id: id(), lines: params.lines ?? DEFAULT_PROCESS_LOG_LINES };
     case "wait":
       return {
         action: "wait",
         id: id(),
-        lines: bounded(params.lines, DEFAULT_PROCESS_LOG_LINES, MAX_PROCESS_LOG_LINES),
-        timeout: bounded(params.timeout, DEFAULT_PROCESS_WAIT_SECONDS, MAX_PROCESS_WAIT_SECONDS),
+        lines: params.lines ?? DEFAULT_PROCESS_LOG_LINES,
+        timeout: params.timeout ?? DEFAULT_PROCESS_WAIT_SECONDS,
       };
     case "kill":
       return { action: "kill", id: id() };
-    default:
-      throw new Error("action must be start, list, log, wait or kill.");
   }
 }
 

@@ -1,6 +1,6 @@
 import type { PluginAdapter } from "../plugin-types.js";
 import { type Fields, object, output, PluginRequestError, requestJson, textField } from "./shared.js";
-import { pageOutput, readInput, searchInput, webReadTool, webSearchTool } from "./web.js";
+import { pageOutput, webReadTool, webSearchTool } from "./web.js";
 
 async function tavilyRequest(
   apiKey: string,
@@ -23,8 +23,7 @@ async function tavilyRequest(
 export const tavily: PluginAdapter = {
   id: "tavily",
   tools: [
-    webSearchTool(async (apiKey, raw, signal) => {
-      const { query, count } = searchInput(raw);
+    webSearchTool(async (apiKey, { query, count }, signal) => {
       const data = await tavilyRequest(
         apiKey,
         "search",
@@ -53,8 +52,7 @@ export const tavily: PluginAdapter = {
         moreResultsAvailable: null,
       });
     }),
-    webReadTool(async (apiKey, raw, signal) => {
-      const { url, normalizedUrl } = readInput(raw);
+    webReadTool(async (apiKey, { url, normalizedUrl }, signal) => {
       const data = await tavilyRequest(
         apiKey,
         "extract",

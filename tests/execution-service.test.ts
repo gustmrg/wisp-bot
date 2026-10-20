@@ -322,8 +322,9 @@ describe("process tool", () => {
     );
 
     manager.processScript.mockResolvedValueOnce({ exitCode: 0, stdout: "line 1\nline 2\n" });
-    expect(await text({ action: "log", id: "abcd1234", lines: 9999 })).toBe("line 1\nline 2");
+    expect(await text({ action: "log", id: "abcd1234", lines: 500 })).toBe("line 1\nline 2");
     expect(manager.processScript).toHaveBeenLastCalledWith(expect.anything(), "log", ["abcd1234", "500"], {});
+    await expect(text({ action: "log", id: "abcd1234", lines: 9999 })).rejects.toThrow("Invalid lines: Too big");
 
     manager.processScript.mockResolvedValueOnce({ exitCode: 0, stdout: "exited 0\nall tests passed\n" });
     expect(await text({ action: "wait", id: "abcd1234", timeout: 60 })).toBe(

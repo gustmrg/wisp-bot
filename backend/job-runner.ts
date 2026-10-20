@@ -1,6 +1,7 @@
 import path from "node:path";
 
 import type { ToolDefinition } from "@earendil-works/pi-coding-agent" with { "resolution-mode": "import" };
+import { z } from "zod";
 
 import type { ModelSelection } from "../shared/contracts.js";
 import { type Job, type JobRun, MAX_JOB_STATE_BYTES } from "../shared/jobs.js";
@@ -13,6 +14,7 @@ import type { JobSessionSpec } from "./wisp-session-plan.js";
 import { sanitizeErrorMessage } from "./pi-event-translator.js";
 import { describeProviderError } from "./provider-error.js";
 import type { ToolAuthorizationBroker } from "./tool-authorization-broker.js";
+import { defineWispTool } from "./tool-schema.js";
 
 /** Where a Wisp's job runs keep their session files, inside its conversation's session folder. */
 export const JOB_RUNS_DIRECTORY = "jobs";
@@ -103,43 +105,36 @@ function providerError(message: string | undefined): WispBackendError {
   return new WispBackendError("internal_error", described.message, described.retryable);
 }
 
+export const SKIP_DELIVERY_PARAMETERS = z.strictObject({ reason: z.string().min(1).max(MAX_SKIP_REASON_LENGTH) });
+export const SAVE_JOB_STATE_PARAMETERS = z.strictObject({ state: z.string() });
+
 /** `skip_delivery` and `save_job_state`, the tools only job runs have. */
 export function createRunTools(handlers: {
   skip: (reason: string) => void;
   saveState: (state: string) => Promise<void>;
 }): ToolDefinition[] {
-  const tools = [
-    {
+  return [
+    defineWispTool({
       name: "skip_delivery",
       label: "Skip delivery",
       description:
         "End this job run without sending the user a message, because there is nothing worth reporting, such as no new posts. Give a short reason for the run's record. Write no message after calling it.",
-      parameters: {
-        type: "object",
-        properties: { reason: { type: "string", minLength: 1, maxLength: MAX_SKIP_REASON_LENGTH } },
-        required: ["reason"],
-        additionalProperties: false,
-      },
-      execute: async (_id: string, params: { reason: string }) => {
-        handlers.skip(String(params.reason).slice(0, MAX_SKIP_REASON_LENGTH));
+      parameters: SKIP_DELIVERY_PARAMETERS,
+      execute: async (_id, params) => {
+        handlers.skip(params.reason);
         return {
           content: [{ type: "text", text: "Delivery skipped. End the run now without writing a message." }],
           details: {},
         };
       },
-    },
-    {
+    }),
+    defineWispTool({
       name: "save_job_state",
       label: "Save job state",
       description: `Replace the state saved for this job's next run, such as the items already reported. Pass the complete new state as text (JSON works well), at most ${MAX_JOB_STATE_BYTES / 1024} KB; the next run receives it.`,
-      parameters: {
-        type: "object",
-        properties: { state: { type: "string" } },
-        required: ["state"],
-        additionalProperties: false,
-      },
-      execute: async (_id: string, params: { state: string }) => {
-        const state = String(params.state);
+      parameters: SAVE_JOB_STATE_PARAMETERS,
+      execute: async (_id, params) => {
+        const { state } = params;
         if (Buffer.byteLength(state, "utf8") > MAX_JOB_STATE_BYTES) {
           throw new WispBackendError(
             "invalid_request",
@@ -149,9 +144,8 @@ export function createRunTools(handlers: {
         await handlers.saveState(state);
         return { content: [{ type: "text", text: "State saved for the next run." }], details: {} };
       },
-    },
+    }),
   ];
-  return tools as unknown as ToolDefinition[];
 }
 
 /**

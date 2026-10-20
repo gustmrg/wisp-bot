@@ -1,6 +1,9 @@
+import { z } from "zod";
+
 import type { BackendErrorCode } from "../../shared/contracts.js";
 import { WispBackendError } from "../backend-error.js";
 import type { PluginToolSpec } from "../plugin-types.js";
+import { parseToolArguments, toolParameters } from "../tool-schema.js";
 
 const REQUEST_TIMEOUT_MS = 25_000;
 const MAX_RESPONSE_BYTES = 1_048_576;
@@ -18,48 +21,60 @@ export function object(value: unknown): Fields {
   return value !== null && typeof value === "object" && !Array.isArray(value) ? (value as Fields) : {};
 }
 
-export function params(value: unknown, allowed: string[]): Fields {
-  if (value === null || typeof value !== "object" || Array.isArray(value)) {
-    throw new WispBackendError("invalid_request", "Tool arguments must be an object.");
-  }
-  const result = value as Fields;
-  if (Object.keys(result).some((key) => !allowed.includes(key))) {
-    throw new WispBackendError("invalid_request", "Unsupported tool argument.");
-  }
-  return result;
+/**
+ * A bundled plugin tool as it is written: parameters as a zod schema, whose
+ * parsed arguments `summarize` and `execute` receive.
+ */
+export interface PluginToolDraft<TSchema extends z.ZodType>
+  extends Omit<PluginToolSpec, "parameters" | "summarize" | "execute"> {
+  parameters: TSchema;
+  summarize(params: z.output<TSchema>): string;
+  execute(credential: string, params: z.output<TSchema>, signal?: AbortSignal, endpoint?: string): Promise<string>;
 }
 
-export function stringField(
-  values: Fields,
-  key: string,
-  max: number,
-  optional = false,
-  allowEmpty = false,
-): string | undefined {
-  const value = values[key];
-  if (value === undefined && optional) return undefined;
-  if (typeof value !== "string" || value.length > max || (!allowEmpty && !value.trim())) {
-    throw new WispBackendError(
-      "invalid_request",
-      `Invalid ${key}: expected ${allowEmpty ? "a" : "a non-empty"} string of at most ${max} characters.`,
-    );
-  }
-  return allowEmpty ? value : value.trim();
+/**
+ * The tool as the plugin service runs it: the parameters as JSON Schema, and
+ * `summarize` and `execute` parsing the arguments first, so invalid ones fail
+ * before an approval is asked for or a request is sent.
+ */
+export function pluginTool<TSchema extends z.ZodType>(draft: PluginToolDraft<TSchema>): PluginToolSpec {
+  const { parameters, summarize, execute, ...rest } = draft;
+  return {
+    ...rest,
+    parameters: toolParameters(parameters),
+    summarize: (raw) => summarize(parseToolArguments(parameters, raw)),
+    execute: async (credential, raw, signal, endpoint) =>
+      execute(credential, parseToolArguments(parameters, raw), signal, endpoint),
+  };
 }
 
-export function integerField(
-  values: Fields,
-  key: string,
-  min: number,
-  max: number,
-  fallback?: number,
-): number | undefined {
-  const value = values[key];
-  if (value === undefined) return fallback;
-  if (typeof value !== "number" || !Number.isInteger(value) || value < min || value > max) {
-    throw new WispBackendError("invalid_request", `Invalid ${key}: expected an integer from ${min} to ${max}.`);
-  }
-  return value;
+/**
+ * A string argument, trimmed, that must not be blank. `minLength` is only what
+ * the model is told (none when null), so a field that is told it may be empty
+ * still is not.
+ */
+export function textArgument(max: number, description?: string, minLength: number | null = 1) {
+  const message = `expected a non-empty string of at most ${max} characters.`;
+  const string = z.string({ error: message });
+  const schema = (minLength === null ? string : string.min(minLength, message))
+    .max(max, message)
+    .trim()
+    .refine((value) => value !== "", message);
+  return description ? schema.describe(description) : schema;
+}
+
+/** A string argument that may be empty, kept as written. */
+export function emptyableTextArgument(max: number, description?: string, minLength?: number) {
+  const message = `expected a string of at most ${max} characters.`;
+  const string = z.string({ error: message });
+  const schema = (minLength === undefined ? string : string.min(minLength, message)).max(max, message);
+  return description ? schema.describe(description) : schema;
+}
+
+export function integerArgument(min: number, max: number, description?: string) {
+  const message = `expected an integer from ${min} to ${max}.`;
+  const schema = z.int({ error: message }).min(min, message).max(max, message);
+  return description ? schema.describe(description) : schema;
 }
 
 export function textField(value: unknown, max = 500): string | null {
@@ -79,10 +94,6 @@ export function output(value: unknown): string {
     if (compact.length <= MAX_OUTPUT_CHARS) return compact;
   }
   throw new PluginRequestError("The result exceeds the output limit. Narrow the search or request fewer results.");
-}
-
-export function schema(properties: Fields, required: string[] = []): PluginToolSpec["parameters"] {
-  return { type: "object", properties, required, additionalProperties: false } as PluginToolSpec["parameters"];
 }
 
 export async function requestJson(

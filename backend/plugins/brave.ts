@@ -1,11 +1,14 @@
 import type { PluginAdapter } from "../plugin-types.js";
 import { object, output, PluginRequestError, requestJson, textField } from "./shared.js";
-import { searchInput, webSearchTool } from "./web.js";
+import { webSearchTool } from "./web.js";
 
 const BRAVE_ENDPOINT = "https://api.search.brave.com/res/v1/web/search";
 
-async function searchWeb(apiKey: string, raw: unknown, signal?: AbortSignal): Promise<string> {
-  const { query, count } = searchInput(raw);
+async function searchWeb(
+  apiKey: string,
+  { query, count }: { query: string; count: number },
+  signal?: AbortSignal,
+): Promise<string> {
   const url = new URL(BRAVE_ENDPOINT);
   url.searchParams.set("q", query);
   url.searchParams.set("count", String(count));
