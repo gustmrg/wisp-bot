@@ -114,16 +114,37 @@ export function wispAccent(color: string): { accent: string; ink: string } {
   return { accent: `light-dark(${color}, ${lifted})`, ink: `light-dark(${inkOn(color)}, ${inkOn(lifted)})` };
 }
 
+/** WCAG contrast ratio between two colors, from 1 (none) to 21 (black on white). */
+export function contrastRatio(first: string, second: string): number {
+  const [lighter, darker] = [luminance(first), luminance(second)].sort((a, b) => b - a) as [number, number];
+  return (lighter + 0.05) / (darker + 0.05);
+}
+
+/** The contrast an icon needs against the fill behind it (WCAG 1.4.11). */
+const ICON_CONTRAST = 3;
+
+/** A fill a white icon reads on: the Wisp's color, deepened only as much as that takes. */
+export function iconFill(color: string): string {
+  for (let step = 0; step <= 100; step += 1) {
+    const fill = mixColors(color, "#000000", step / 100);
+    if (contrastRatio(fill, "#ffffff") >= ICON_CONTRAST) return fill;
+  }
+  return "#000000";
+}
+
 /** True for a gray, from near-black to near-white, which has no hue to tint a button with. */
 export function isNeutralColor(color: string): boolean {
   const values = channels(color);
   return Math.max(...values) - Math.min(...values) < 16;
 }
 
-/** The custom properties the Wisp styles read: `--wisp`, its color, and `--wisp-ink`, what reads on it. */
+/**
+ * The custom properties the Wisp styles read: `--wisp`, its color, `--wisp-ink`, what reads on it, and
+ * `--wisp-fill`, its color for a button that always carries a white icon.
+ */
 export function wispAccentStyle(color: string): CSSProperties {
   const { accent, ink } = wispAccent(color);
-  return { "--wisp": accent, "--wisp-ink": ink } as CSSProperties;
+  return { "--wisp": accent, "--wisp-ink": ink, "--wisp-fill": iconFill(color) } as CSSProperties;
 }
 
 export interface WispPalette {
