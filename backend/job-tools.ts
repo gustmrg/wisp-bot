@@ -1,4 +1,5 @@
 import type { ToolDefinition } from "@earendil-works/pi-coding-agent" with { "resolution-mode": "import" };
+import { z } from "zod";
 
 import {
   isJobFinished,
@@ -17,6 +18,7 @@ import { WispBackendError } from "./backend-error.js";
 import type { ConversationAgentContext } from "./conversation-agent.js";
 import type { JobChanges, NewJob } from "./job-scheduler.js";
 import type { ToolAuthorizationBroker } from "./tool-authorization-broker.js";
+import { defineWispTool } from "./tool-schema.js";
 
 /** The tools a Wisp manages its jobs with; never offered to a job's own runs. */
 export const JOB_TOOL_NAMES: ReadonlySet<string> = new Set(["schedule_job", "list_jobs", "update_job", "cancel_job"]);
@@ -55,75 +57,87 @@ export const JOB_INSTRUCTIONS = [
   "Messages that start with [Your job ...] are results your jobs already sent to the user; you can follow up on them.",
 ].join("\n");
 
-const SCHEDULE_PARAMETER = {
-  type: "object",
-  description:
-    "When the job runs. once: at one time. daily: every day at a local time. weekly: on some weekdays at a local time. monthly: on a day of the month at a local time. Local times are in the user's time zone.",
-  properties: {
-    kind: { type: "string", enum: ["once", "daily", "weekly", "monthly"] },
-    at: {
-      type: "string",
-      description: "For once: an ISO 8601 date and time with its offset, such as 2026-10-17T10:00:00-03:00.",
-    },
-    time: {
-      type: "string",
-      pattern: "^([01]\\d|2[0-3]):[0-5]\\d$",
-      description: "For daily, weekly and monthly: HH:MM.",
-    },
-    weekdays: {
-      type: "array",
-      items: { type: "integer", minimum: 0, maximum: 6 },
-      minItems: 1,
-      description: "For weekly: 0 is Sunday, 6 is Saturday.",
-    },
-    day: {
-      type: "integer",
-      minimum: 1,
-      maximum: 31,
-      description: "For monthly: the day of the month; months without it use their last day.",
-    },
-    end: {
-      type: "object",
-      description:
+const SCHEDULE_PARAMETER = z
+  .strictObject({
+    kind: z.enum(["once", "daily", "weekly", "monthly"]),
+    at: z
+      .string()
+      .describe("For once: an ISO 8601 date and time with its offset, such as 2026-10-17T10:00:00-03:00.")
+      .optional(),
+    time: z
+      .string()
+      .regex(/^([01]\d|2[0-3]):[0-5]\d$/)
+      .describe("For daily, weekly and monthly: HH:MM.")
+      .optional(),
+    weekdays: z.array(z.int().min(0).max(6)).min(1).describe("For weekly: 0 is Sunday, 6 is Saturday.").optional(),
+    day: z
+      .int()
+      .min(1)
+      .max(31)
+      .describe("For monthly: the day of the month; months without it use their last day.")
+      .optional(),
+    end: z
+      .object({
+        kind: z.enum(["until", "count"]),
+        date: z.string().optional(),
+        count: z.int().min(1).optional(),
+      })
+      .describe(
         'Optional, for recurring jobs: {"kind":"until","date":"YYYY-MM-DD"} runs through that local date; {"kind":"count","count":N} stops after N runs.',
-      properties: {
-        kind: { type: "string", enum: ["until", "count"] },
-        date: { type: "string" },
-        count: { type: "integer", minimum: 1 },
-      },
-      required: ["kind"],
-    },
-  },
-  required: ["kind"],
-  additionalProperties: false,
-};
+      )
+      .optional(),
+  })
+  .describe(
+    "When the job runs. once: at one time. daily: every day at a local time. weekly: on some weekdays at a local time. monthly: on a day of the month at a local time. Local times are in the user's time zone.",
+  );
 
-const NAMES_PARAMETER = (description: string, maxItems: number, maxLength: number) => ({
-  type: "array",
-  items: { type: "string", minLength: 1, maxLength },
-  maxItems,
-  description,
-});
+const NAMES_PARAMETER = (description: string, maxItems: number, maxLength: number, what: string) =>
+  z
+    .array(z.string().min(1).max(maxLength))
+    .max(maxItems, `List at most ${maxItems} ${what} by name.`)
+    .describe(description);
 
 const JOB_FIELDS = {
-  title: { type: "string", minLength: 1, maxLength: MAX_JOB_TITLE_LENGTH, description: "A short title." },
-  instructions: {
-    type: "string",
-    minLength: 1,
-    maxLength: MAX_JOB_INSTRUCTIONS_LENGTH,
-    description: "Self-contained instructions for every run; see Jobs in your instructions.",
-  },
+  title: z
+    .string()
+    .trim()
+    .min(1, `A job's title needs 1 to ${MAX_JOB_TITLE_LENGTH} characters.`)
+    .max(MAX_JOB_TITLE_LENGTH, `A job's title needs 1 to ${MAX_JOB_TITLE_LENGTH} characters.`)
+    .describe("A short title."),
+  instructions: z
+    .string()
+    .trim()
+    .min(1, `A job's instructions need 1 to ${MAX_JOB_INSTRUCTIONS_LENGTH} characters.`)
+    .max(MAX_JOB_INSTRUCTIONS_LENGTH, `A job's instructions need 1 to ${MAX_JOB_INSTRUCTIONS_LENGTH} characters.`)
+    .describe("Self-contained instructions for every run; see Jobs in your instructions."),
   schedule: SCHEDULE_PARAMETER,
-  skills: NAMES_PARAMETER("Names of your skills every run loads.", MAX_JOB_SKILLS, MAX_SKILL_NAME_LENGTH),
-  tools: NAMES_PARAMETER("Names of your tools the runs need, exactly as you see them.", MAX_JOB_TOOLS, 128),
+  skills: NAMES_PARAMETER("Names of your skills every run loads.", MAX_JOB_SKILLS, MAX_SKILL_NAME_LENGTH, "skills"),
+  tools: NAMES_PARAMETER("Names of your tools the runs need, exactly as you see them.", MAX_JOB_TOOLS, 128, "tools"),
 };
 
-interface JobFields {
-  title?: string;
-  instructions?: string;
-  schedule?: unknown;
-  skills?: string[];
-  tools?: string[];
+const JOB_ID = z.string().min(1);
+
+export const SCHEDULE_JOB_PARAMETERS = z.strictObject({
+  title: JOB_FIELDS.title,
+  instructions: JOB_FIELDS.instructions,
+  schedule: JOB_FIELDS.schedule,
+  skills: JOB_FIELDS.skills.optional(),
+  tools: JOB_FIELDS.tools.optional(),
+});
+export const LIST_JOBS_PARAMETERS = z.strictObject({});
+export const UPDATE_JOB_PARAMETERS = z.strictObject({
+  job_id: JOB_ID,
+  title: JOB_FIELDS.title.optional(),
+  instructions: JOB_FIELDS.instructions.optional(),
+  schedule: JOB_FIELDS.schedule.optional(),
+  skills: JOB_FIELDS.skills.optional(),
+  tools: JOB_FIELDS.tools.optional(),
+});
+export const CANCEL_JOB_PARAMETERS = z.strictObject({ job_id: JOB_ID });
+
+interface JobNames {
+  skills?: ReadonlyArray<string> | undefined;
+  tools?: ReadonlyArray<string> | undefined;
 }
 
 /** `schedule_job`, `list_jobs`, `update_job` and `cancel_job`, acting only on the jobs of the conversation they are called from. */
@@ -132,14 +146,14 @@ export function createJobTools(options: JobToolOptions): ToolDefinition[] {
   const now = options.now ?? (() => new Date());
   const timeZone = () => context.userTimeZone?.() ?? systemTimeZone();
 
-  const ownJob = async (jobId: unknown): Promise<Job> => {
+  const ownJob = async (jobId: string): Promise<Job> => {
     const job = (await host.list(context.conversationId)).find(({ id }) => id === jobId);
     if (!job)
       throw new WispBackendError("not_found", `No job with ID ${JSON.stringify(jobId)} exists here; call list_jobs.`);
     return job;
   };
 
-  const checkNames = async (fields: JobFields) => {
+  const checkNames = async (fields: JobNames) => {
     for (const name of fields.skills ?? []) {
       if (!(await options.hasSkill(name))) {
         throw new WispBackendError("invalid_request", `You have no skill named ${JSON.stringify(name)}.`);
@@ -172,25 +186,17 @@ export function createJobTools(options: JobToolOptions): ToolDefinition[] {
       signal,
     );
 
-  const tools = [
-    {
+  return [
+    defineWispTool({
       name: "schedule_job",
       label: "Schedule job",
       description:
         "Create a job: a task you run on your own on a schedule, in the background, sending only its result to this conversation. The user approves it in a card.",
-      parameters: {
-        type: "object",
-        properties: JOB_FIELDS,
-        required: ["title", "instructions", "schedule"],
-        additionalProperties: false,
-      },
-      execute: async (toolCallId: string, params: JobFields, signal?: AbortSignal) => {
-        const fields = parseFields(params);
-        const { title, instructions, schedule } = fields;
-        if (!title || !instructions || !schedule) {
-          throw new WispBackendError("invalid_request", "A job needs a title, instructions and a schedule.");
-        }
-        await checkNames(fields);
+      parameters: SCHEDULE_JOB_PARAMETERS,
+      execute: async (toolCallId, params, signal) => {
+        const { title, instructions } = params;
+        const schedule = parseSchedule(params.schedule);
+        await checkNames(params);
         const held = (await host.list(context.conversationId)).filter((job) => !isJobFinished(job));
         if (held.length >= MAX_JOBS_PER_WISP) {
           throw new WispBackendError(
@@ -204,8 +210,8 @@ export function createJobTools(options: JobToolOptions): ToolDefinition[] {
           conversationId: context.conversationId,
           title,
           instructions,
-          skills: unique(fields.skills ?? []),
-          tools: unique(fields.tools ?? []),
+          skills: unique(params.skills ?? []),
+          tools: unique(params.tools ?? []),
           schedule,
           timeZone: zone,
         };
@@ -219,13 +225,13 @@ export function createJobTools(options: JobToolOptions): ToolDefinition[] {
         await host.recordChange(job, "created");
         return text(`Scheduled the job "${job.title}" (ID ${job.id}). ${nextRunText(job)}`);
       },
-    },
-    {
+    }),
+    defineWispTool({
       name: "list_jobs",
       label: "List jobs",
       description:
         "List the jobs of this conversation, with their schedule, next run and last outcome. Finished jobs are not listed.",
-      parameters: { type: "object", properties: {}, additionalProperties: false },
+      parameters: LIST_JOBS_PARAMETERS,
       execute: async () => {
         const all = await host.list(context.conversationId);
         const jobs = all.filter((job) => !isJobFinished(job));
@@ -241,28 +247,23 @@ export function createJobTools(options: JobToolOptions): ToolDefinition[] {
           );
         return text([...jobs.map(describeJob), ...(note ? [note] : [])].join("\n\n"));
       },
-    },
-    {
+    }),
+    defineWispTool({
       name: "update_job",
       label: "Update job",
       description:
         "Change a job of this conversation. Pass only what changes. Changing its instructions or skills, or adding tools, asks the user to approve the job again.",
-      parameters: {
-        type: "object",
-        properties: { job_id: { type: "string", minLength: 1 }, ...JOB_FIELDS },
-        required: ["job_id"],
-        additionalProperties: false,
-      },
-      execute: async (toolCallId: string, params: JobFields & { job_id: string }, signal?: AbortSignal) => {
+      parameters: UPDATE_JOB_PARAMETERS,
+      execute: async (toolCallId, params, signal) => {
         const current = await ownJob(params.job_id);
-        const fields = parseFields(params);
-        await checkNames(fields);
+        const schedule = params.schedule && parseSchedule(params.schedule);
+        await checkNames(params);
         const changes: JobChanges = {
-          ...(fields.title ? { title: fields.title } : {}),
-          ...(fields.instructions ? { instructions: fields.instructions } : {}),
-          ...(fields.schedule ? { schedule: fields.schedule, timeZone: timeZone() } : {}),
-          ...(fields.skills ? { skills: unique(fields.skills) } : {}),
-          ...(fields.tools ? { tools: unique(fields.tools) } : {}),
+          ...(params.title ? { title: params.title } : {}),
+          ...(params.instructions ? { instructions: params.instructions } : {}),
+          ...(schedule ? { schedule, timeZone: timeZone() } : {}),
+          ...(params.skills ? { skills: unique(params.skills) } : {}),
+          ...(params.tools ? { tools: unique(params.tools) } : {}),
         };
         const next = { ...current, ...changes };
         const widened =
@@ -277,63 +278,31 @@ export function createJobTools(options: JobToolOptions): ToolDefinition[] {
         await host.recordChange(job, "updated");
         return text(`Updated the job "${job.title}". ${nextRunText(job)}`);
       },
-    },
-    {
+    }),
+    defineWispTool({
       name: "cancel_job",
       label: "Cancel job",
       description: "Delete a job of this conversation, with its run history.",
-      parameters: {
-        type: "object",
-        properties: { job_id: { type: "string", minLength: 1 } },
-        required: ["job_id"],
-        additionalProperties: false,
-      },
-      execute: async (_toolCallId: string, params: { job_id: string }) => {
+      parameters: CANCEL_JOB_PARAMETERS,
+      execute: async (_toolCallId, params) => {
         const job = await ownJob(params.job_id);
         await host.delete(job.id);
         return text(`Deleted the job "${job.title}".`);
       },
-    },
+    }),
   ];
-  return tools as unknown as ToolDefinition[];
 }
 
-function parseFields(params: JobFields): Omit<JobFields, "schedule"> & { schedule?: Schedule } {
-  const title = params.title?.trim();
-  const instructions = params.instructions?.trim();
-  if (title !== undefined && (!title || title.length > MAX_JOB_TITLE_LENGTH)) {
-    throw new WispBackendError("invalid_request", `A job's title needs 1 to ${MAX_JOB_TITLE_LENGTH} characters.`);
-  }
-  if (instructions !== undefined && (!instructions || instructions.length > MAX_JOB_INSTRUCTIONS_LENGTH)) {
+/** Checks what the schema cannot, such as a real date or a weekly schedule's weekdays. */
+function parseSchedule(value: z.output<typeof SCHEDULE_PARAMETER>): Schedule {
+  const schedule = normalizeSchedule(value);
+  if (!schedule) {
     throw new WispBackendError(
       "invalid_request",
-      `A job's instructions need 1 to ${MAX_JOB_INSTRUCTIONS_LENGTH} characters.`,
+      "The schedule is not valid. Use once with an ISO time and offset, or daily, weekly or monthly with time as HH:MM.",
     );
   }
-  let schedule: Schedule | undefined;
-  if (params.schedule !== undefined) {
-    schedule = normalizeSchedule(params.schedule);
-    if (!schedule) {
-      throw new WispBackendError(
-        "invalid_request",
-        "The schedule is not valid. Use once with an ISO time and offset, or daily, weekly or monthly with time as HH:MM.",
-      );
-    }
-  }
-  const names = (value: unknown, max: number, what: string) => {
-    if (value === undefined) return undefined;
-    if (!Array.isArray(value) || value.length > max || !value.every((name) => typeof name === "string" && name)) {
-      throw new WispBackendError("invalid_request", `List at most ${max} ${what} by name.`);
-    }
-    return value as string[];
-  };
-  return {
-    ...(title ? { title } : {}),
-    ...(instructions ? { instructions } : {}),
-    ...(schedule ? { schedule } : {}),
-    ...(params.skills !== undefined ? { skills: names(params.skills, MAX_JOB_SKILLS, "skills") } : {}),
-    ...(params.tools !== undefined ? { tools: names(params.tools, MAX_JOB_TOOLS, "tools") } : {}),
-  };
+  return schedule;
 }
 
 function firstRun(schedule: Schedule, timeZone: string, now: Date): string {
@@ -389,5 +358,5 @@ function unique(names: ReadonlyArray<string>): string[] {
 }
 
 function text(value: string) {
-  return { content: [{ type: "text", text: value }], details: {} };
+  return { content: [{ type: "text" as const, text: value }], details: {} };
 }

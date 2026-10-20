@@ -1,4 +1,5 @@
 import type { ToolDefinition } from "@earendil-works/pi-coding-agent" with { "resolution-mode": "import" };
+import { z } from "zod";
 
 import {
   WISP_NAME_MAX_LENGTH,
@@ -9,10 +10,11 @@ import {
   type WispChanges,
 } from "../shared/conversations.js";
 import type { WispApprovalDetails } from "../shared/tool-policy.js";
-import { DEFAULT_WISP_APPEARANCE, WISP_BODIES, WISP_COLORS, type WispBody } from "../shared/wisp-appearance.js";
+import { DEFAULT_WISP_APPEARANCE, WISP_BODIES, WISP_COLORS } from "../shared/wisp-appearance.js";
 import { WispBackendError } from "./backend-error.js";
 import type { ConversationAgentContext } from "./conversation-agent.js";
 import type { ToolAuthorizationBroker } from "./tool-authorization-broker.js";
+import { defineWispTool } from "./tool-schema.js";
 
 /** The tools a Wisp manages the person's Wisps with (ADR 024); never offered to a job's runs. */
 export const WISP_TOOL_NAMES: ReadonlySet<string> = new Set([
@@ -46,31 +48,50 @@ export const WISP_INSTRUCTIONS = [
   "The user approves every creation, change and deletion in a card that shows it, so do not repeat a soul in the chat or ask for confirmation; call the tool directly and confirm in one short sentence. Only delete a Wisp when the user asked for it. You cannot change or delete yourself; the user does that in your settings.",
 ].join("\n");
 
-const COLOR_IDS = WISP_COLORS.map(({ id }) => id);
+const COLOR_IDS = WISP_COLORS.map(({ id }) => id) as [string, ...string[]];
 
 const WISP_FIELDS = {
-  name: { type: "string", minLength: 1, maxLength: WISP_NAME_MAX_LENGTH, description: "The Wisp's name." },
-  role: {
-    type: "string",
-    maxLength: WISP_ROLE_MAX_LENGTH,
-    description: "A short role or profession shown under the name, such as Research.",
-  },
-  soul: {
-    type: "string",
-    maxLength: WISP_SOUL_MAX_LENGTH,
-    description: "Markdown that defines the Wisp's identity, personality, how it works, and its boundaries.",
-  },
-  color: { type: "string", enum: COLOR_IDS, description: "The Wisp's color." },
-  body: { type: "string", enum: [...WISP_BODIES], description: "The shape of the Wisp's body." },
+  name: z
+    .string()
+    .trim()
+    .min(1, `A Wisp's name needs 1 to ${WISP_NAME_MAX_LENGTH} characters.`)
+    .max(WISP_NAME_MAX_LENGTH, `A Wisp's name needs 1 to ${WISP_NAME_MAX_LENGTH} characters.`)
+    .describe("The Wisp's name."),
+  role: z
+    .string()
+    .trim()
+    .max(WISP_ROLE_MAX_LENGTH, `A Wisp's role has at most ${WISP_ROLE_MAX_LENGTH} characters.`)
+    .describe("A short role or profession shown under the name, such as Research."),
+  soul: z
+    .string()
+    .trim()
+    .max(WISP_SOUL_MAX_LENGTH, `A Wisp's soul has at most ${WISP_SOUL_MAX_LENGTH} characters.`)
+    .describe("Markdown that defines the Wisp's identity, personality, how it works, and its boundaries."),
+  color: z.enum(COLOR_IDS, { error: `Choose a color from: ${COLOR_IDS.join(", ")}.` }).describe("The Wisp's color."),
+  body: z
+    .enum(WISP_BODIES, { error: `Choose a body from: ${WISP_BODIES.join(", ")}.` })
+    .describe("The shape of the Wisp's body."),
 };
 
-interface WispFields {
-  name?: string;
-  role?: string;
-  soul?: string;
-  color?: string;
-  body?: string;
-}
+const WISP_ID = z.string().min(1);
+
+export const LIST_WISPS_PARAMETERS = z.strictObject({ wisp_id: WISP_ID.optional() });
+export const CREATE_WISP_PARAMETERS = z.strictObject({
+  name: WISP_FIELDS.name,
+  role: WISP_FIELDS.role.optional(),
+  soul: WISP_FIELDS.soul,
+  color: WISP_FIELDS.color.optional(),
+  body: WISP_FIELDS.body.optional(),
+});
+export const UPDATE_WISP_PARAMETERS = z.strictObject({
+  wisp_id: WISP_ID,
+  name: WISP_FIELDS.name.optional(),
+  role: WISP_FIELDS.role.optional(),
+  soul: WISP_FIELDS.soul.optional(),
+  color: WISP_FIELDS.color.optional(),
+  body: WISP_FIELDS.body.optional(),
+});
+export const DELETE_WISP_PARAMETERS = z.strictObject({ wisp_id: WISP_ID });
 
 /**
  * `list_wisps`, `create_wisp`, `update_wisp` and `delete_wisp`. Every change
@@ -80,7 +101,7 @@ interface WispFields {
 export function createWispTools(options: WispToolOptions): ToolDefinition[] {
   const { host, context, authorizationBroker } = options;
 
-  const otherWisp = (wispId: unknown): Wisp => {
+  const otherWisp = (wispId: string): Wisp => {
     if (wispId === context.wispId) {
       throw new WispBackendError(
         "invalid_request",
@@ -114,18 +135,14 @@ export function createWispTools(options: WispToolOptions): ToolDefinition[] {
       signal,
     );
 
-  const tools = [
-    {
+  return [
+    defineWispTool({
       name: "list_wisps",
       label: "List Wisps",
       description:
         "List the user's Wisps with their IDs, names and roles. Pass wisp_id to read one Wisp's soul in full.",
-      parameters: {
-        type: "object",
-        properties: { wisp_id: { type: "string", minLength: 1 } },
-        additionalProperties: false,
-      },
-      execute: async (_toolCallId: string, params: { wisp_id?: string }) => {
+      parameters: LIST_WISPS_PARAMETERS,
+      execute: async (_toolCallId, params) => {
         const wisps = host.list();
         if (params.wisp_id !== undefined) {
           const wisp = wisps.find(({ id }) => id === params.wisp_id);
@@ -135,27 +152,20 @@ export function createWispTools(options: WispToolOptions): ToolDefinition[] {
         }
         return text(wisps.map((wisp) => describeWisp(wisp, context.wispId)).join("\n"));
       },
-    },
-    {
+    }),
+    defineWispTool({
       name: "create_wisp",
       label: "Create Wisp",
       description:
         "Create a Wisp for the user, with its own conversation. The user approves it in a card that shows its name, role and soul.",
-      parameters: {
-        type: "object",
-        properties: WISP_FIELDS,
-        required: ["name", "soul"],
-        additionalProperties: false,
-      },
-      execute: async (toolCallId: string, params: WispFields, signal?: AbortSignal) => {
-        const fields = parseFields(params);
-        if (!fields.name) throw new WispBackendError("invalid_request", "A Wisp needs a name.");
+      parameters: CREATE_WISP_PARAMETERS,
+      execute: async (toolCallId, params, signal) => {
         const wisp: NewWisp = {
-          name: fields.name,
-          role: fields.role ?? "",
-          soul: fields.soul ?? "",
-          appearance: { ...DEFAULT_WISP_APPEARANCE, ...(fields.body ? { body: fields.body } : {}) },
-          ...(fields.color ? { color: fields.color } : {}),
+          name: params.name,
+          role: params.role ?? "",
+          soul: params.soul,
+          appearance: { ...DEFAULT_WISP_APPEARANCE, ...(params.body ? { body: params.body } : {}) },
+          ...(params.color ? { color: colorValue(params.color) } : {}),
         };
         await approve(
           toolCallId,
@@ -167,27 +177,21 @@ export function createWispTools(options: WispToolOptions): ToolDefinition[] {
         const created = await host.create(wisp);
         return text(`Created the Wisp "${created.name}" (ID ${created.id}). It is in the user's list of Wisps.`);
       },
-    },
-    {
+    }),
+    defineWispTool({
       name: "update_wisp",
       label: "Update Wisp",
       description:
         "Change another of the user's Wisps. Pass only what changes; a new soul replaces the whole soul. The user approves it in a card.",
-      parameters: {
-        type: "object",
-        properties: { wisp_id: { type: "string", minLength: 1 }, ...WISP_FIELDS },
-        required: ["wisp_id"],
-        additionalProperties: false,
-      },
-      execute: async (toolCallId: string, params: WispFields & { wisp_id: string }, signal?: AbortSignal) => {
+      parameters: UPDATE_WISP_PARAMETERS,
+      execute: async (toolCallId, params, signal) => {
         const current = otherWisp(params.wisp_id);
-        const fields = parseFields(params);
         const changes: WispChanges = {
-          ...(fields.name !== undefined ? { name: fields.name } : {}),
-          ...(fields.role !== undefined ? { role: fields.role } : {}),
-          ...(fields.soul !== undefined ? { soul: fields.soul } : {}),
-          ...(fields.body ? { appearance: { ...current.appearance, body: fields.body } } : {}),
-          ...(fields.color ? { color: fields.color } : {}),
+          ...(params.name !== undefined ? { name: params.name } : {}),
+          ...(params.role !== undefined ? { role: params.role } : {}),
+          ...(params.soul !== undefined ? { soul: params.soul } : {}),
+          ...(params.body ? { appearance: { ...current.appearance, body: params.body } } : {}),
+          ...(params.color ? { color: colorValue(params.color) } : {}),
         };
         if (!Object.keys(changes).length) throw new WispBackendError("invalid_request", "Pass at least one change.");
         await approve(
@@ -208,19 +212,14 @@ export function createWispTools(options: WispToolOptions): ToolDefinition[] {
         const updated = await host.update(current.id, changes);
         return text(`Updated the Wisp "${updated.name}".`);
       },
-    },
-    {
+    }),
+    defineWispTool({
       name: "delete_wisp",
       label: "Delete Wisp",
       description:
         "Delete another of the user's Wisps with its conversation, files, skills and jobs. Only when the user asked for it; they approve it in a card.",
-      parameters: {
-        type: "object",
-        properties: { wisp_id: { type: "string", minLength: 1 } },
-        required: ["wisp_id"],
-        additionalProperties: false,
-      },
-      execute: async (toolCallId: string, params: { wisp_id: string }, signal?: AbortSignal) => {
+      parameters: DELETE_WISP_PARAMETERS,
+      execute: async (toolCallId, params, signal) => {
         const wisp = otherWisp(params.wisp_id);
         await approve(
           toolCallId,
@@ -232,41 +231,12 @@ export function createWispTools(options: WispToolOptions): ToolDefinition[] {
         await host.delete(wisp.id);
         return text(`Deleted the Wisp "${wisp.name}".`);
       },
-    },
+    }),
   ];
-  return tools as unknown as ToolDefinition[];
 }
 
-function parseFields(params: WispFields): Omit<WispFields, "color" | "body"> & { color?: string; body?: WispBody } {
-  const name = params.name?.trim();
-  if (name !== undefined && (!name || name.length > WISP_NAME_MAX_LENGTH)) {
-    throw new WispBackendError("invalid_request", `A Wisp's name needs 1 to ${WISP_NAME_MAX_LENGTH} characters.`);
-  }
-  const role = params.role?.trim();
-  if (role !== undefined && role.length > WISP_ROLE_MAX_LENGTH) {
-    throw new WispBackendError("invalid_request", `A Wisp's role has at most ${WISP_ROLE_MAX_LENGTH} characters.`);
-  }
-  const soul = params.soul?.trim();
-  if (soul !== undefined && soul.length > WISP_SOUL_MAX_LENGTH) {
-    throw new WispBackendError("invalid_request", `A Wisp's soul has at most ${WISP_SOUL_MAX_LENGTH} characters.`);
-  }
-  let color: string | undefined;
-  if (params.color !== undefined) {
-    color = WISP_COLORS.find(({ id }) => id === params.color)?.value;
-    if (!color) throw new WispBackendError("invalid_request", `Choose a color from: ${COLOR_IDS.join(", ")}.`);
-  }
-  let body: WispBody | undefined;
-  if (params.body !== undefined) {
-    body = WISP_BODIES.find((value) => value === params.body);
-    if (!body) throw new WispBackendError("invalid_request", `Choose a body from: ${WISP_BODIES.join(", ")}.`);
-  }
-  return {
-    ...(name !== undefined ? { name } : {}),
-    ...(role !== undefined ? { role } : {}),
-    ...(soul !== undefined ? { soul } : {}),
-    ...(color ? { color } : {}),
-    ...(body ? { body } : {}),
-  };
+function colorValue(id: string): string {
+  return WISP_COLORS.find((color) => color.id === id)!.value;
 }
 
 function describeWisp(wisp: Wisp, selfId: string): string {
@@ -274,5 +244,5 @@ function describeWisp(wisp: Wisp, selfId: string): string {
 }
 
 function text(value: string) {
-  return { content: [{ type: "text", text: value }], details: {} };
+  return { content: [{ type: "text" as const, text: value }], details: {} };
 }
