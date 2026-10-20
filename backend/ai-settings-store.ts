@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 
 import {
@@ -10,16 +11,20 @@ import {
 import { writeFileAtomically } from "./atomic-file.js";
 
 /**
- * Version 1 gained `auxiliary` and `fallback` as optional fields rather than a
- * new version: earlier releases discard files whose version they do not know,
- * which would lose the main selection after a downgrade.
+ * Version 1 gained `auxiliary`, `fallback`, and `installationId` as optional
+ * fields rather than a new version: earlier releases discard files whose
+ * version they do not know, which would lose the main selection after a
+ * downgrade.
  */
 interface SettingsFile {
   schemaVersion: 1;
   selection: ModelSelection | null;
   auxiliary?: AuxiliaryModelSelections;
   fallback?: ModelSelection;
+  installationId?: string;
 }
+
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 function isId(value: unknown): value is string {
   return typeof value === "string" && value.length > 0 && value.length <= 256 && !/[\u0000-\u001f\u007f]/.test(value);
@@ -73,6 +78,7 @@ export class AiSettingsStore {
   private selection: ModelSelection | null = null;
   private auxiliary: AuxiliaryModelSelections = normalizeAuxiliary(undefined);
   private fallback: ModelSelection | null = null;
+  private installationId: string | undefined;
   private loaded = false;
 
   constructor(filePath: string) {
@@ -117,6 +123,19 @@ export class AiSettingsStore {
     await this.write();
   }
 
+  /**
+   * A stable ID for this installation, created on first use. Provider sign-ins
+   * that identify the installing app, such as Sign in with ChatGPT, send it.
+   */
+  async getInstallationId(): Promise<string> {
+    await this.load();
+    if (!this.installationId) {
+      this.installationId = randomUUID();
+      await this.write();
+    }
+    return this.installationId;
+  }
+
   private async write(): Promise<void> {
     const configured = Object.values(this.auxiliary).some(Boolean);
     const file: SettingsFile = {
@@ -124,6 +143,7 @@ export class AiSettingsStore {
       selection: this.selection,
       ...(configured ? { auxiliary: this.auxiliary } : {}),
       ...(this.fallback ? { fallback: this.fallback } : {}),
+      ...(this.installationId ? { installationId: this.installationId } : {}),
     };
     await writeFileAtomically(this.filePath, `${JSON.stringify(file, null, 2)}\n`);
   }
@@ -136,6 +156,10 @@ export class AiSettingsStore {
         this.selection = normalizeSelection(parsed.selection);
         this.auxiliary = normalizeAuxiliary(parsed.auxiliary);
         this.fallback = normalizeModelChoice(parsed.fallback);
+        this.installationId =
+          typeof parsed.installationId === "string" && UUID_PATTERN.test(parsed.installationId)
+            ? parsed.installationId
+            : undefined;
       }
       this.loaded = true;
     } catch (error) {

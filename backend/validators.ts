@@ -6,7 +6,9 @@ import {
   type ApplyFallbackModelRequest,
   type ApplyModelRequest,
   type ConversationRequest,
+  type FinishProviderSignInRequest,
   type ModelSelection,
+  type ProviderSignInRequest,
   type RemoveProviderCredentialRequest,
   type SaveAiSettingsRequest,
   type SaveAuxiliaryModelRequest,
@@ -230,6 +232,22 @@ export function parseApplyFallbackModelRequest(value: unknown): ApplyFallbackMod
 export function parseRemoveProviderCredentialRequest(value: unknown): RemoveProviderCredentialRequest {
   const request = asRecord(value);
   return { providerId: parseId(request.providerId) };
+}
+
+export function parseProviderSignInRequest(value: unknown): ProviderSignInRequest {
+  const request = asRecord(value);
+  return { providerId: parseId(request.providerId) };
+}
+
+const MAX_REDIRECT_URL_LENGTH = 8192;
+
+export function parseFinishProviderSignInRequest(value: unknown): FinishProviderSignInRequest {
+  const request = asRecord(value);
+  const redirectUrl = typeof request.redirectUrl === "string" ? request.redirectUrl.trim() : "";
+  if (!redirectUrl || redirectUrl.length > MAX_REDIRECT_URL_LENGTH) {
+    throw new WispBackendError("invalid_request", "Paste the address of the page the sign-in sent you to.");
+  }
+  return { providerId: parseId(request.providerId), redirectUrl };
 }
 
 export function parseApplyModelRequest(value: unknown): ApplyModelRequest {

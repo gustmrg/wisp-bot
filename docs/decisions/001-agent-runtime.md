@@ -7,7 +7,7 @@
 
 ## Provider and runtime
 
-Wisp uses the pinned `@earendil-works/pi-coding-agent` runtime in the Electron main process. Pi supplies a provider/model catalog and persistent agent sessions while allowing Wisp to keep one provider-neutral contract. The first supported authentication mechanism is a provider API key selected in AI Model settings. OAuth is not exposed by this slice.
+Wisp uses the pinned `@earendil-works/pi-coding-agent` runtime in the Electron main process. Pi supplies a provider/model catalog and persistent agent sessions while allowing Wisp to keep one provider-neutral contract. The first supported authentication mechanism is a provider API key selected in AI Model settings. OAuth is not exposed by this slice; [ADR 025](025-provider-subscription-sign-in.md) later added subscription sign-in for providers that allow it.
 
 Each Wisp, but never a circle, owns one application-managed Pi session and workspace. The session streams lifecycle, text, retry, compaction, and tool events. Pi automatic retry is enabled with at most two retries. Provider rejection, transport failure, and rate limiting are returned as sanitized `conversation_error` events; retryability is data, not permission to resend automatically beyond the configured Pi retries.
 

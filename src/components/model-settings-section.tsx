@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import type { AiSettingsView, ProviderSummary, ThinkingLevel } from "../../shared/contracts";
+import type { AiSettingsView, ProviderSignInView, ProviderSummary, ThinkingLevel } from "../../shared/contracts";
 import { AdvancedSettings } from "@/components/advanced-settings";
 import { AuxiliaryModelSettings } from "@/components/auxiliary-model-settings";
 import { FallbackModelSettings } from "@/components/fallback-model-settings";
+import { ManualSignInForm } from "@/components/manual-sign-in";
 import { NoImageInputNote } from "@/components/no-image-input-note";
 import { SearchableCombobox } from "@/components/searchable-combobox";
 import { canChooseThinkingLevel, keepThinkingLevel, ThinkingLevelRow } from "@/components/thinking-level-select";
@@ -31,6 +32,8 @@ import {
   type ClaudeCodePlanUsageView,
   type ClaudeCodeStatusView,
 } from "../../shared/claude-code";
+
+const SIGN_IN_POLL_MS = 1_500;
 
 interface ModelSettingsSectionProps {
   active: boolean;
@@ -90,11 +93,31 @@ function ModelSettingsSection({
     setApiKey("");
   }, []);
 
-  /** Takes a view saved by the auxiliary picker without resetting unsaved edits to the main model. */
+  /**
+   * Takes a view saved by the auxiliary picker or a provider sign-in without
+   * resetting unsaved edits to the main model.
+   */
   const applyAuxiliaryView = useCallback((nextView: AiSettingsView): void => {
     setView(nextView);
     onViewChangeRef.current?.(nextView);
   }, []);
+
+  // A sign-in completes in the browser, so the view is reloaded until it ends.
+  const signInWaiting = view?.providerSignIn?.status === "waiting";
+  useEffect(() => {
+    if (!active || !signInWaiting) return;
+    const timer = setInterval(() => {
+      void window.wisp
+        .getAiSettings()
+        .then((result) => {
+          if (!result.ok) return;
+          applyAuxiliaryView(result.value);
+          if (result.value.providerSignIn?.status !== "waiting") notifyProviderCredentialsChanged();
+        })
+        .catch(() => undefined);
+    }, SIGN_IN_POLL_MS);
+    return () => clearInterval(timer);
+  }, [active, signInWaiting, applyAuxiliaryView]);
 
   useEffect(() => {
     if (!active || view) return;
@@ -179,6 +202,39 @@ function ModelSettingsSection({
     } finally {
       setSaving(false);
     }
+  }
+
+  async function handleStartSignIn(): Promise<void> {
+    if (!provider?.subscriptionSignIn) return;
+    setError(null);
+    setSaved(false);
+    try {
+      const result = await window.wisp.startProviderSignIn({ providerId: provider.id });
+      if (result.ok) applyAuxiliaryView(result.value);
+      else setError(result.error.message);
+    } catch {
+      setError("Could not start the sign-in.");
+    }
+  }
+
+  async function handleCancelSignIn(): Promise<void> {
+    if (!provider) return;
+    try {
+      const result = await window.wisp.cancelProviderSignIn({ providerId: provider.id });
+      if (result.ok) applyAuxiliaryView(result.value);
+      else setError(result.error.message);
+    } catch {
+      setError("Could not cancel the sign-in.");
+    }
+  }
+
+  async function handleFinishSignIn(redirectUrl: string): Promise<string | undefined> {
+    if (!provider) return undefined;
+    const result = await window.wisp.finishProviderSignIn({ providerId: provider.id, redirectUrl });
+    if (!result.ok) return result.error.message;
+    applyAuxiliaryView(result.value);
+    notifyProviderCredentialsChanged();
+    return undefined;
   }
 
   /** Reads Claude Code's status again, after the person signed in or updated it, without losing edits. */
@@ -350,17 +406,32 @@ function ModelSettingsSection({
           ) : (
             <SettingsGroup label="Credential">
               <SettingsCard>
+                {provider?.subscriptionSignIn ? (
+                  <SubscriptionSignIn
+                    provider={provider}
+                    label={provider.subscriptionSignIn.label}
+                    signIn={view.providerSignIn?.providerId === provider.id ? view.providerSignIn : null}
+                    disabled={saving || !view.secureStorageAvailable}
+                    onStart={() => void handleStartSignIn()}
+                    onCancel={() => void handleCancelSignIn()}
+                    onFinish={handleFinishSignIn}
+                    onSignOut={() => void handleRemoveCredential()}
+                  />
+                ) : null}
                 <div className="flex flex-col gap-3 px-3.5 py-3.5">
                   <div className="flex flex-wrap items-start gap-3">
                     <SettingsRowCopy>
                       <SettingsRowTitle htmlFor="ai-api-key">API key</SettingsRowTitle>
                       <SettingsRowDescription>
-                        {provider?.credentialConfigured
-                          ? `An encrypted key is saved for ${provider.name}${voiceProvider(provider.id) ? " and shared with Voice Input settings" : ""}. Enter a new key to replace it.`
-                          : "The key is encrypted using your operating system's credential storage."}
+                        {provider?.credentialKind === "subscription"
+                          ? "Enter an API key to pay per token instead of using your subscription. It replaces the sign-in."
+                          : provider?.credentialConfigured
+                            ? `An encrypted key is saved for ${provider.name}${voiceProvider(provider.id) ? " and shared with Voice Input settings" : ""}. Enter a new key to replace it.`
+                            : "The key is encrypted using your operating system's credential storage."}
                       </SettingsRowDescription>
                     </SettingsRowCopy>
-                    {provider?.credentialConfigured ? (
+                    {/* A server from before sign-ins reports no credential kind; its credentials are keys. */}
+                    {provider?.credentialConfigured && provider.credentialKind !== "subscription" ? (
                       <ConfirmAction
                         label="Remove key"
                         confirmLabel="Remove key"
@@ -377,7 +448,11 @@ function ModelSettingsSection({
                     autoComplete="new-password"
                     value={apiKey}
                     disabled={!view.secureStorageAvailable}
-                    placeholder={provider?.credentialConfigured ? "Saved — enter a replacement" : "Enter API key"}
+                    placeholder={
+                      provider?.credentialConfigured && provider.credentialKind !== "subscription"
+                        ? "Saved — enter a replacement"
+                        : "Enter API key"
+                    }
                     onChange={(event) => {
                       setApiKey(event.currentTarget.value);
                       setError(null);
@@ -417,6 +492,76 @@ function ModelSettingsSection({
       ) : null}
       {!loading && !view && error ? <p className="text-sm text-destructive">{error}</p> : null}
     </section>
+  );
+}
+
+/**
+ * Signs a provider in with the person's subscription instead of an API key.
+ * Requests then count against the plan's usage limits rather than being billed
+ * per token.
+ */
+function SubscriptionSignIn({
+  provider,
+  label,
+  signIn,
+  disabled,
+  onStart,
+  onCancel,
+  onFinish,
+  onSignOut,
+}: {
+  provider: ProviderSummary;
+  label: string;
+  signIn: ProviderSignInView | null;
+  disabled: boolean;
+  onStart: () => void;
+  onCancel: () => void;
+  onFinish: (redirectUrl: string) => Promise<string | undefined>;
+  onSignOut: () => void;
+}) {
+  const signedIn = provider.credentialKind === "subscription";
+  const waiting = signIn?.status === "waiting";
+  return (
+    <div className="flex flex-col gap-3 border-b border-border px-3.5 py-3.5">
+      <div className="flex flex-wrap items-start gap-3">
+        <SettingsRowCopy>
+          <SettingsRowTitle>Subscription</SettingsRowTitle>
+          <SettingsRowDescription>
+            {signedIn
+              ? `Signed in. Wisps using ${provider.name} count against your subscription's usage limits instead of being billed per token.`
+              : waiting
+                ? "Finish signing in in your browser."
+                : `Use your ${provider.name} subscription instead of an API key. Requests count against your plan's usage limits instead of being billed per token.${provider.credentialKind === "api_key" ? " Signing in replaces the saved API key." : ""}`}
+          </SettingsRowDescription>
+        </SettingsRowCopy>
+        {signedIn && !waiting ? (
+          <ConfirmAction
+            label="Sign out"
+            confirmLabel="Sign out"
+            variant="ghost"
+            className="shrink-0"
+            disabled={disabled}
+            description={`Wisps using ${provider.name} stop working until you sign in again or enter an API key.`}
+            onConfirm={onSignOut}
+          />
+        ) : null}
+        {waiting ? (
+          <Button type="button" variant="ghost" className="shrink-0" onClick={onCancel}>
+            Cancel
+          </Button>
+        ) : signedIn ? null : (
+          <Button type="button" variant="secondary" className="shrink-0" disabled={disabled} onClick={onStart}>
+            {label}
+          </Button>
+        )}
+      </div>
+      {waiting && signIn.signInUrl ? <ManualSignInForm signInUrl={signIn.signInUrl} onFinish={onFinish} /> : null}
+      {signIn?.status === "failed" ? (
+        <p role="alert" className="m-0 text-xs leading-relaxed text-destructive">
+          {signIn.error ?? "The sign-in did not complete."}
+        </p>
+      ) : null}
+    </div>
   );
 }
 

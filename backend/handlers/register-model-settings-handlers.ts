@@ -2,6 +2,8 @@ import { WISP_IPC_CHANNELS, type ModelSelection } from "../../shared/contracts.j
 import type { ModelService } from "../model-service.js";
 import { registerGuardedHandlers, type HandlerRouter, type SenderAuthorizer } from "./guarded-handlers.js";
 import {
+  parseFinishProviderSignInRequest,
+  parseProviderSignInRequest,
   parseRemoveProviderCredentialRequest,
   parseSaveAiSettingsRequest,
   parseSaveAuxiliaryModelRequest,
@@ -41,6 +43,21 @@ export function registerModelSettingsHandlers(
         const view = await modelService.removeCredential(parseRemoveProviderCredentialRequest(payload).providerId);
         await onSelectionChange?.(view.selection);
         return view;
+      },
+    ],
+    [
+      WISP_IPC_CHANNELS.startProviderSignIn,
+      (payload) => modelService.startSignIn(parseProviderSignInRequest(payload).providerId),
+    ],
+    [
+      WISP_IPC_CHANNELS.cancelProviderSignIn,
+      (payload) => modelService.cancelSignIn(parseProviderSignInRequest(payload).providerId),
+    ],
+    [
+      WISP_IPC_CHANNELS.finishProviderSignIn,
+      (payload) => {
+        const { providerId, redirectUrl } = parseFinishProviderSignInRequest(payload);
+        return modelService.finishSignIn(providerId, redirectUrl);
       },
     ],
   ]);

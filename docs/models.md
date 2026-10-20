@@ -1,9 +1,10 @@
 # AI models
 
 Wisp conversations run on the [Pi agent runtime](decisions/001-agent-runtime.md)
-with a provider API key configured in the app, or on Claude Code with the
-person's own Claude plan (see [Claude Code](#claude-code)). Keys are encrypted
-at rest and never returned to the renderer (see [security](security.md)).
+with a provider API key or, for OpenAI, a ChatGPT subscription sign-in
+configured in the app, or on Claude Code with the person's own Claude plan (see
+[Claude Code](#claude-code)). Credentials are encrypted at rest and never
+returned to the renderer (see [security](security.md)).
 
 ## Global model and provider keys
 
@@ -26,6 +27,31 @@ always the provider serving it (Claude through OpenRouter shows Anthropic's).
 The lab comes from the model family or vendor prefix in the model ID, or from
 the provider when a lab runs it; models from other labs and routers that pick
 the model themselves show no logo.
+
+## Subscription sign-in
+
+For OpenAI, **Settings → AI Model → Credential → Sign in with ChatGPT** uses the
+person's ChatGPT plan instead of an API key: requests count against the plan's
+usage limits rather than being billed per token
+([ADR 025](decisions/025-provider-subscription-sign-in.md)). Other providers'
+subscription sign-ins that Pi has are not offered, because they sign in as
+another vendor's own client; a Claude plan runs Wisps through
+[Claude Code](#claude-code) instead.
+
+- In the desktop app on the server's computer, the system browser opens and the
+  sign-in completes on its own.
+- In the browser app, on a phone, or in a desktop app connected to a remote
+  server, settings show **Open the sign-in page**. After approving, the browser
+  goes to an address starting with `http://127.0.0.1:1455` that does not load;
+  paste it into **Address after sign-in**.
+- A provider keeps one credential: signing in replaces its API key, and
+  entering a key replaces the sign-in. **Sign out** removes the sign-in, and
+  Wisps on that provider stop until it is restored.
+- The backend stores the tokens encrypted and refreshes them. Voice input still
+  needs an OpenAI API key.
+- Only one sign-in can run at a time, and it is cancelled after ten minutes.
+  Pi listens on port 1455 on the server's computer, so an unfinished Codex CLI
+  login there blocks it.
 
 ## Claude Code
 
@@ -76,7 +102,6 @@ password or token.
   reached, the Wisp's [fallback model](#fallback-models) answers that turn,
   told the latest messages of the conversation. Other failures do not move
   to the fallback.
-
 ## Models per Wisp
 
 When creating a Wisp, the **Model** picker keeps **Use the global model** to

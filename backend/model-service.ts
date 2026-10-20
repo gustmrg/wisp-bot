@@ -13,6 +13,7 @@ import {
   type FallbackModelView,
   type ModelSelection,
   type ModelSummary,
+  type ProviderSignInView,
   type ProviderSummary,
   type SaveAiSettingsRequest,
   type WispFallback,
@@ -22,6 +23,7 @@ import { CLAUDE_CODE_PROVIDER, type ClaudeCodeStatusView } from "../shared/claud
 import { WispBackendError } from "./backend-error.js";
 import { AiSettingsStore } from "./ai-settings-store.js";
 import { EncryptedCredentialStore, type EncryptionService } from "./encrypted-credential-store.js";
+import type { SignInBrowser } from "./oauth-redirect.js";
 import { CLAUDE_CODE_MODELS, CLAUDE_CODE_PROVIDER_NAME, claudeCodeModel } from "./claude-code/claude-code-models.js";
 import { claudeCodeUnavailableMessage, type ClaudeCodeStatusService } from "./claude-code/claude-code-status.js";
 
@@ -29,8 +31,19 @@ type ClaudeCodeStatusSource = Pick<ClaudeCodeStatusService, "current" | "refresh
 
 const MAX_API_KEY_LENGTH = 20_000;
 const MODEL_REFRESH_TIMEOUT_MS = 10_000;
+const MAX_SIGN_IN_ERROR_LENGTH = 300;
+const SIGN_IN_TIMEOUT_MS = 10 * 60_000;
+
+/**
+ * Providers whose subscription sign-in Wisp offers. Pi has more OAuth flows,
+ * but the others sign in as another vendor's own client, such as Claude Code,
+ * which their terms do not allow for third-party apps (ADR 025).
+ */
+const SUBSCRIPTION_SIGN_IN_PROVIDERS: ReadonlySet<string> = new Set(["openai"]);
 
 type ModelRefreshResult = Awaited<ReturnType<ModelRuntime["refresh"]>>;
+type AuthInteraction = Parameters<ModelRuntime["login"]>[2];
+type LoginOptions = NonNullable<Parameters<ModelRuntime["login"]>[3]>;
 
 export interface ModelRuntimeLike {
   getProviders(): ReturnType<ModelRuntime["getProviders"]>;
@@ -41,6 +54,10 @@ export interface ModelRuntimeLike {
   hasConfiguredAuth(providerId: string): boolean;
   setRuntimeApiKey(providerId: string, apiKey: string): Promise<void>;
   removeRuntimeApiKey(providerId: string): Promise<void>;
+  /** Runs the provider's interactive sign-in and stores the credential it returns. */
+  login(providerId: string, type: "oauth", interaction: AuthInteraction, options?: LoginOptions): Promise<unknown>;
+  /** Deletes the provider's stored credential. */
+  logout(providerId: string): Promise<void>;
 }
 
 interface ModelServiceOptions {
@@ -49,6 +66,10 @@ interface ModelServiceOptions {
   credentials: EncryptedCredentialStore;
   /** The runtime's catalog refresh; absent for runtimes that cannot refresh. */
   refresh?: (options: { allowNetwork: boolean; signal: AbortSignal }) => Promise<ModelRefreshResult>;
+  /** Opens the system browser on this computer for a subscription sign-in. */
+  openExternal?: (url: string) => Promise<void>;
+  /** Where the browser of a sign-in runs for the device that asked; defaults to this computer. */
+  signInBrowser?: () => Promise<SignInBrowser>;
   /** Whether Claude Code can run Wisps; without it, the `claude-code` provider is not offered (ADR 026). */
   claudeCode?: ClaudeCodeStatusSource;
 }
@@ -59,6 +80,36 @@ export interface CreateModelServiceOptions {
   /** Allow the runtime to use the network for model catalogs. Defaults to true. */
   allowModelNetwork?: boolean;
   claudeCode?: ClaudeCodeStatusSource;
+  openExternal?: (url: string) => Promise<void>;
+  signInBrowser?: () => Promise<SignInBrowser>;
+}
+
+/** A subscription sign-in waiting on the browser, or the last one that failed. */
+interface ProviderSignIn {
+  providerId: string;
+  status: "waiting" | "failed";
+  controller: AbortController;
+  /** Settles when the sign-in stored its credential or failed. */
+  done: Promise<void>;
+  signInUrl?: string;
+  /** Completes the flow with the pasted redirect address while it waits for one. */
+  submitRedirect?: (redirectUrl: string) => void;
+  cancelledByUser: boolean;
+  error?: string;
+}
+
+function signInFailure(error: unknown): string {
+  const message = error instanceof Error && error.message ? error.message : "The sign-in did not complete.";
+  return message.length > MAX_SIGN_IN_ERROR_LENGTH ? `${message.slice(0, MAX_SIGN_IN_ERROR_LENGTH - 1)}…` : message;
+}
+
+function isSafeAuthorizationUrl(value: string): boolean {
+  try {
+    const url = new URL(value);
+    return url.protocol === "https:" && !url.username && !url.password;
+  } catch {
+    return false;
+  }
 }
 
 function describeRefreshFailure(result: ModelRefreshResult): string | null {
@@ -100,6 +151,9 @@ export class ModelService {
   private catalogRefreshError: string | null = null;
   private networkRefreshError: string | null = null;
   private networkRefresh: AbortController | undefined;
+  private readonly openExternal: ModelServiceOptions["openExternal"];
+  private readonly signInBrowser: ModelServiceOptions["signInBrowser"];
+  private signIn: ProviderSignIn | undefined;
   private readonly claudeCode: ClaudeCodeStatusSource | undefined;
 
   constructor(options: ModelServiceOptions) {
@@ -107,6 +161,8 @@ export class ModelService {
     this.settings = options.settings;
     this.credentials = options.credentials;
     this.refreshRuntime = options.refresh;
+    this.openExternal = options.openExternal;
+    this.signInBrowser = options.signInBrowser;
     this.claudeCode = options.claudeCode;
   }
 
@@ -131,6 +187,8 @@ export class ModelService {
       credentials,
       settings: new AiSettingsStore(path.join(options.dataDirectory, "ai-settings.json")),
       refresh: (refreshOptions) => runtime.refresh(refreshOptions),
+      ...(options.openExternal ? { openExternal: options.openExternal } : {}),
+      ...(options.signInBrowser ? { signInBrowser: options.signInBrowser } : {}),
       ...(options.claudeCode ? { claudeCode: options.claudeCode } : {}),
     });
     // Restore saved credentials and cached catalog entries offline, so the app
@@ -161,20 +219,30 @@ export class ModelService {
     }
   }
 
-  /** Stops an in-flight network refresh; used on shutdown. */
+  /** Stops an in-flight network refresh and sign-in; used on shutdown. */
   dispose(): void {
     this.networkRefresh?.abort();
+    this.signIn?.controller.abort();
   }
 
   async getView(): Promise<AiSettingsView> {
-    const credentialProviders = new Set((await this.credentials.list()).map(({ providerId }) => providerId));
+    const credentialTypes = new Map((await this.credentials.list()).map(({ providerId, type }) => [providerId, type]));
     const providers: ProviderSummary[] = this.runtime
       .getProviders()
       .filter((provider) => Boolean(provider.auth.apiKey) && this.runtime.getModels(provider.id).length > 0)
       .map((provider) => ({
         id: provider.id,
         name: provider.name,
-        credentialConfigured: credentialProviders.has(provider.id),
+        credentialConfigured: credentialTypes.has(provider.id),
+        ...(credentialTypes.has(provider.id)
+          ? {
+              credentialKind:
+                credentialTypes.get(provider.id) === "oauth" ? ("subscription" as const) : ("api_key" as const),
+            }
+          : {}),
+        ...(this.offersSubscriptionSignIn(provider.id)
+          ? { subscriptionSignIn: { label: provider.auth.oauth?.loginLabel ?? `Sign in with ${provider.name}` } }
+          : {}),
         models: this.runtime
           .getModels(provider.id)
           .map<ModelSummary>((model) => ({
@@ -191,6 +259,7 @@ export class ModelService {
       .filter((provider) => provider.models.length > 0)
       .sort(compareByName);
 
+    const credentialProviders: ReadonlySet<string> = new Set(credentialTypes.keys());
     const claudeCode = await this.claudeCodeStatus();
     if (claudeCode) {
       providers.push({
@@ -231,6 +300,7 @@ export class ModelService {
       fallback: this.fallbackView(await this.settings.getFallback(), credentialProviders),
       secureStorageAvailable: this.credentials.isSecureStorageAvailable(),
       providers,
+      providerSignIn: this.signInView(),
       ...(claudeCode ? { claudeCode } : {}),
       catalogError: errors.length > 0 ? errors.join("\n") : null,
     };
@@ -255,8 +325,13 @@ export class ModelService {
     }
 
     const existingCredential = await this.credentials.read(selection.providerId);
-    if (!apiKey && existingCredential?.type !== "api_key") {
-      throw new WispBackendError("invalid_configuration", "Add an API key before selecting this provider.");
+    if (!apiKey && !this.isUsableCredential(selection.providerId, existingCredential)) {
+      throw new WispBackendError(
+        "invalid_configuration",
+        this.offersSubscriptionSignIn(selection.providerId)
+          ? "Add an API key or sign in before selecting this provider."
+          : "Add an API key before selecting this provider.",
+      );
     }
 
     if (apiKey) await this.storeApiKey(selection.providerId, apiKey);
@@ -361,6 +436,13 @@ export class ModelService {
     return new Set((await this.credentials.list()).map(({ providerId }) => providerId));
   }
 
+  /** Providers with a saved API key; a subscription sign-in does not count. */
+  async listApiKeyProviders(): Promise<ReadonlySet<string>> {
+    return new Set(
+      (await this.credentials.list()).filter(({ type }) => type === "api_key").map(({ providerId }) => providerId),
+    );
+  }
+
   isSecureStorageAvailable(): boolean {
     return this.credentials.isSecureStorageAvailable();
   }
@@ -372,6 +454,8 @@ export class ModelService {
         "Secure credential storage is unavailable on this device.",
       );
     }
+    // A key settles the provider's credential, so an earlier failed sign-in no longer matters.
+    if (this.signIn?.status === "failed" && this.signIn.providerId === providerId) this.signIn = undefined;
     await this.runtime.setRuntimeApiKey(providerId, apiKey);
     try {
       await this.credentials.setApiKey(providerId, apiKey);
@@ -387,11 +471,166 @@ export class ModelService {
       throw new WispBackendError("invalid_request", "The provider is invalid.");
     }
 
+    const credential = await this.credentials.read(providerId);
     await this.runtime.removeRuntimeApiKey(providerId);
-    await this.credentials.delete(providerId);
+    // Signing out goes through the runtime, so it stops using the cached sign-in at once.
+    if (credential?.type === "oauth") await this.runtime.logout(providerId);
+    else await this.credentials.delete(providerId);
     const selection = await this.settings.getSelection();
     if (selection?.providerId === providerId) await this.settings.setSelection(null);
     // Auxiliary and fallback selections stay saved and show as unavailable until a key returns.
+    return this.getView();
+  }
+
+  /**
+   * Starts a subscription sign-in in the browser and returns once the browser
+   * has its page; the sign-in itself completes in the background, and the view
+   * reports it. The browser runs on this computer for a local caller, and the
+   * provider's redirect reaches the runtime's own listener here. Elsewhere the
+   * view shows the page, and the person pastes the address the browser lands
+   * on into finishSignIn: the provider's redirect address is fixed to this
+   * computer's loopback, so a relay on another computer cannot receive it.
+   * Signing in replaces a saved API key for the provider.
+   */
+  async startSignIn(providerId: string): Promise<AiSettingsView> {
+    if (!this.offersSubscriptionSignIn(providerId)) {
+      throw new WispBackendError("invalid_request", "This provider does not offer a subscription sign-in.");
+    }
+    if (this.signIn?.status === "waiting") {
+      throw new WispBackendError("invalid_request", "A provider sign-in is already in progress.");
+    }
+    if (!this.credentials.isSecureStorageAvailable()) {
+      throw new WispBackendError(
+        "secure_storage_unavailable",
+        "Secure credential storage is unavailable on this device.",
+      );
+    }
+    const signIn: ProviderSignIn = {
+      providerId,
+      status: "waiting",
+      controller: new AbortController(),
+      done: Promise.resolve(),
+      cancelledByUser: false,
+    };
+    // Taken before anything is awaited, so a second request is refused rather than racing this one.
+    this.signIn = signIn;
+    let browser: SignInBrowser;
+    let installationId: string;
+    try {
+      browser = (await this.signInBrowser?.()) ?? { kind: "local" };
+      if (browser.kind === "relay") browser.relay.close();
+      installationId = await this.settings.getInstallationId();
+      signIn.controller.signal.throwIfAborted();
+    } catch (error) {
+      if (this.signIn === signIn) this.signIn = undefined;
+      if (signIn.cancelledByUser) throw new WispBackendError("aborted", "The sign-in was cancelled.");
+      throw error;
+    }
+
+    let pageReady!: () => void;
+    const ready = new Promise<void>((resolve) => {
+      pageReady = resolve;
+    });
+    const showPage = (url: string): void => {
+      signIn.signInUrl = url;
+    };
+    const interaction: AuthInteraction = {
+      signal: signIn.controller.signal,
+      notify: (event) => {
+        if (event.type !== "auth_url") return;
+        if (!isSafeAuthorizationUrl(event.url)) {
+          signIn.controller.abort(new Error("The provider returned an unsafe sign-in address."));
+          return;
+        }
+        if (browser.kind === "local" && this.openExternal) {
+          // When no browser opens here after all, the person can still open the page by hand.
+          void this.openExternal(event.url).catch(() => showPage(event.url));
+        } else showPage(event.url);
+        pageReady();
+      },
+      prompt: (prompt) => {
+        if (prompt.type !== "manual_code") return Promise.reject(new Error("This sign-in step is not supported."));
+        return new Promise<string>((resolve, reject) => {
+          const signal = prompt.signal ?? signIn.controller.signal;
+          if (signal.aborted) {
+            reject(new Error("The sign-in was cancelled."));
+            return;
+          }
+          signIn.submitRedirect = resolve;
+          signal.addEventListener(
+            "abort",
+            () => {
+              if (signIn.submitRedirect === resolve) delete signIn.submitRedirect;
+              reject(new Error("The sign-in was cancelled."));
+            },
+            { once: true },
+          );
+        });
+      },
+    };
+
+    // The provider's flow waits on the browser for as long as it takes.
+    const timeout = setTimeout(
+      () => signIn.controller.abort(new Error("The sign-in timed out. Try again.")),
+      SIGN_IN_TIMEOUT_MS,
+    );
+    signIn.controller.signal.addEventListener("abort", () => clearTimeout(timeout), { once: true });
+    signIn.done = this.runtime
+      .login(providerId, "oauth", interaction, { getDeviceId: () => installationId })
+      // A key saved in this session would still win over the sign-in.
+      .then(() => this.runtime.removeRuntimeApiKey(providerId))
+      .then(
+        () => {
+          clearTimeout(timeout);
+          if (this.signIn === signIn) this.signIn = undefined;
+        },
+        (error: unknown) => {
+          clearTimeout(timeout);
+          if (this.signIn !== signIn) return;
+          if (signIn.cancelledByUser) {
+            this.signIn = undefined;
+            return;
+          }
+          signIn.status = "failed";
+          signIn.error = signInFailure(signIn.controller.signal.reason ?? error);
+          delete signIn.signInUrl;
+          delete signIn.submitRedirect;
+        },
+      );
+    await Promise.race([ready, signIn.done]);
+    if (signIn.error) throw new WispBackendError("configuration_required", signIn.error);
+    return this.getView();
+  }
+
+  /** Ends a waiting sign-in without connecting. */
+  async cancelSignIn(providerId: string): Promise<AiSettingsView> {
+    const signIn = this.signIn;
+    if (!signIn || signIn.providerId !== providerId) {
+      throw new WispBackendError("not_found", "No sign-in is in progress for this provider.");
+    }
+    if (signIn.status === "failed") this.signIn = undefined;
+    else {
+      signIn.cancelledByUser = true;
+      signIn.controller.abort();
+      await signIn.done;
+    }
+    return this.getView();
+  }
+
+  /** Completes a waiting sign-in with the address its browser was sent to, and waits for the result. */
+  async finishSignIn(providerId: string, redirectUrl: string): Promise<AiSettingsView> {
+    const signIn = this.signIn;
+    if (!signIn || signIn.providerId !== providerId || signIn.status !== "waiting" || !signIn.submitRedirect) {
+      throw new WispBackendError("not_found", "No sign-in is waiting for this provider.");
+    }
+    try {
+      new URL(redirectUrl);
+    } catch {
+      throw new WispBackendError("invalid_request", "That is not the address the sign-in sent you to.");
+    }
+    signIn.submitRedirect(redirectUrl);
+    await signIn.done;
+    if (signIn.error) throw new WispBackendError("configuration_required", signIn.error);
     return this.getView();
   }
 
@@ -406,7 +645,7 @@ export class ModelService {
       return (await this.claudeCodeStatus())?.state === "ready" ? selection : null;
     }
     const credential = await this.credentials.read(selection.providerId);
-    return credential?.type === "api_key" ? selection : null;
+    return this.isUsableCredential(selection.providerId, credential) ? selection : null;
   }
 
   async validateConversationSelection(selection: ModelSelection): Promise<void> {
@@ -416,12 +655,37 @@ export class ModelService {
       return;
     }
     const credential = await this.credentials.read(selection.providerId);
-    if (credential?.type !== "api_key") {
+    if (!this.isUsableCredential(selection.providerId, credential)) {
       throw new WispBackendError(
         "configuration_required",
         "Configure an API key for this provider in AI Model settings.",
       );
     }
+  }
+
+  private offersSubscriptionSignIn(providerId: string): boolean {
+    const provider = this.runtime.getProvider(providerId);
+    return SUBSCRIPTION_SIGN_IN_PROVIDERS.has(providerId) && provider?.auth.oauth?.isSubscription === true;
+  }
+
+  /** An API key, or a sign-in for a provider whose sign-in Wisp offers. */
+  private isUsableCredential(
+    providerId: string,
+    credential: Awaited<ReturnType<EncryptedCredentialStore["read"]>>,
+  ): boolean {
+    if (credential?.type === "api_key") return true;
+    return credential?.type === "oauth" && this.offersSubscriptionSignIn(providerId);
+  }
+
+  private signInView(): ProviderSignInView | null {
+    const signIn = this.signIn;
+    if (!signIn) return null;
+    return {
+      providerId: signIn.providerId,
+      status: signIn.status,
+      ...(signIn.signInUrl ? { signInUrl: signIn.signInUrl } : {}),
+      ...(signIn.error ? { error: signIn.error } : {}),
+    };
   }
 
   private auxiliaryView(
