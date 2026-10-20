@@ -4,6 +4,7 @@ import { advance, connectSteps, createProgress, fail, failedAttempt } from "../.
 import type { ConnectionProgress, ConnectionRetry, ConnectionsView, ConnectionStatus } from "../../shared/connections";
 import type { BackendResult, WispApi } from "../../shared/contracts";
 import { RUNTIME_OPERATIONS } from "../../shared/runtime-operations";
+import type { AttachWorkspaceFilesOptions } from "../../shared/workspace";
 
 /** The browser app's single connection: the server that served it. */
 export const WEB_CONNECTION_ID = "server";
@@ -20,7 +21,7 @@ export interface WebApiOptions {
   pairingCode?: string;
   fetch?: typeof fetch;
   /** Asks the person for files to attach; resolves empty when dismissed. Defaults to the browser's file picker. */
-  pickFiles?: () => Promise<ReadonlyArray<File>>;
+  pickFiles?: (signal?: AbortSignal) => Promise<ReadonlyArray<File>>;
 }
 
 type Listener<T> = (value: T) => void;
@@ -219,25 +220,36 @@ export function createWebWispApi(options: WebApiOptions): WispApi {
   }
   // The server has no screen here: the browser picks the files and sends them.
   const pickFiles = options.pickFiles ?? pickFilesWithInput;
-  api.attachWorkspaceFiles = async (request: { conversationId: string }) =>
+  api.attachWorkspaceFiles = async (request: { conversationId: string }, attach: AttachWorkspaceFilesOptions = {}) =>
     session.attachFiles(
       request.conversationId,
-      (await pickFiles()).map((file) => ({ name: file.name, content: file })),
+      (await pickFiles(attach.signal)).map((file) => ({ name: file.name, content: file })),
+      attach,
     );
   return api as unknown as WispApi;
 }
 
 /**
  * Opens the browser's file picker. It must run inside the click that asked
- * for it, before any `await`, or browsers refuse to show the picker.
+ * for it, before any `await`, or browsers refuse to show the picker. Some
+ * mobile browsers never say the picker was dismissed, so `signal` also ends
+ * the wait with no files.
  */
-function pickFilesWithInput(): Promise<ReadonlyArray<File>> {
+function pickFilesWithInput(signal?: AbortSignal): Promise<ReadonlyArray<File>> {
   return new Promise((resolve) => {
     const input = document.createElement("input");
     input.type = "file";
     input.multiple = true;
-    input.addEventListener("change", () => resolve([...(input.files ?? [])]), { once: true });
-    input.addEventListener("cancel", () => resolve([]), { once: true });
+    input.hidden = true;
+    // Safari on iOS may not report the choice from an input outside the page.
+    document.body.append(input);
+    const finish = (files: ReadonlyArray<File>) => {
+      input.remove();
+      resolve(files);
+    };
+    input.addEventListener("change", () => finish([...(input.files ?? [])]), { once: true });
+    input.addEventListener("cancel", () => finish([]), { once: true });
+    signal?.addEventListener("abort", () => finish([]), { once: true });
     input.click();
   });
 }

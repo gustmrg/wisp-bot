@@ -10,6 +10,7 @@ import {
 import {
   MAX_ATTACHMENTS_PER_REQUEST,
   formatBytes,
+  type AttachWorkspaceFilesOptions,
   type AttachWorkspaceFilesResult,
   type WorkspaceAttachment,
   type WorkspaceView,
@@ -153,10 +154,10 @@ export class RemoteSession {
   async attachFiles(
     conversationId: string,
     files: ReadonlyArray<{ name: string; content: Blob }>,
+    { signal, onProgress }: AttachWorkspaceFilesOptions = {},
   ): Promise<BackendResult<AttachWorkspaceFilesResult>> {
-    const workspace = async (): Promise<BackendResult<WorkspaceView>> =>
-      (await this.call("getWorkspace", { conversationId })) as BackendResult<WorkspaceView>;
-    const before = await workspace();
+    if (files.length) onProgress?.({ phase: "checking", count: files.length });
+    const before = (await this.call("getWorkspace", { conversationId })) as BackendResult<WorkspaceView>;
     if (!before.ok || !files.length)
       return before.ok ? { ok: true, value: { files: [], workspace: before.value } } : before;
     if (files.length > MAX_ATTACHMENTS_PER_REQUEST) {
@@ -172,18 +173,29 @@ export class RemoteSession {
     const client = this.client;
     if (!client || !this.connected) return this.unavailable();
     const attached: WorkspaceAttachment[] = [];
-    for (const file of files) {
+    for (const [index, file] of files.entries()) {
+      if (signal?.aborted) return cancelled();
+      onProgress?.({ phase: "sending", name: file.name, index, count: files.length });
       let result: BackendResult<WorkspaceAttachment>;
       try {
-        result = await client.uploadWorkspaceFile(conversationId, file.name, file.content);
+        result = await client.uploadWorkspaceFile(conversationId, file.name, file.content, signal);
       } catch (error) {
+        if (signal?.aborted) return cancelled();
+        // Names the file that failed; the ones before it are already in the workspace.
+        if (error instanceof RemoteError && error.code === "network") {
+          return {
+            ok: false,
+            error: { code: "unavailable", message: `${file.name} was not attached. ${error.message}`, retryable: true },
+          };
+        }
         return this.failureOf(error, "This server cannot receive files. Update it to attach files from this device.");
       }
       if (!result.ok) return result;
       attached.push(result.value);
     }
-    const after = await workspace();
-    return after.ok ? { ok: true, value: { files: attached, workspace: after.value } } : after;
+    // Measuring the workspace again can take long on a large one; what was added is known.
+    const added = attached.reduce((sum, file) => sum + file.size, 0);
+    return { ok: true, value: { files: attached, workspace: { ...before.value, usedBytes: usedBytes + added } } };
   }
 
   /** The result for a request the server never answered with an operation result. */
@@ -390,6 +402,10 @@ function protocolMismatch(serverName: string, server: ServerDescriptor): string 
   return !(server.protocolVersion > REMOTE_PROTOCOL_VERSION)
     ? `${serverName} runs an older Wisp server (${server.version}) that this app cannot use. Update the server to connect.`
     : `${serverName} runs a newer Wisp server (${server.version}) than this app understands. Update this app to connect.`;
+}
+
+function cancelled(): BackendResult<never> {
+  return { ok: false, error: { code: "aborted", message: "Attaching was cancelled.", retryable: false } };
 }
 
 function invalid(message: string): BackendResult<never> {

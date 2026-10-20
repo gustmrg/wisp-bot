@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { ConnectionsView } from "../../shared/connections";
 import type { WispApi } from "../../shared/contracts";
-import { messageWithAttachments } from "../../shared/workspace";
+import { messageWithAttachments, type AttachWorkspaceFilesOptions } from "../../shared/workspace";
 import type { ChatView } from "@/chat-data";
 import { circleChatView, wispChatView } from "@/test/chat-fixtures";
 import { ChatComposer } from "@/components/chat-composer";
@@ -240,7 +240,10 @@ describe("ChatComposer", () => {
 
     expect(screen.getByRole("button", { name: "Send message" })).toBeDisabled();
     await user.click(screen.getByRole("button", { name: "Attach files" }));
-    expect(attachWorkspaceFiles).toHaveBeenCalledWith({ conversationId: "one" });
+    expect(attachWorkspaceFiles).toHaveBeenCalledWith(
+      { conversationId: "one" },
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    );
     await user.click(await screen.findByRole("button", { name: "Remove b.csv from this message" }));
     await user.click(screen.getByRole("button", { name: "Send message" }));
 
@@ -275,6 +278,31 @@ describe("ChatComposer", () => {
     await user.click(screen.getByRole("button", { name: "Attach files" }));
 
     expect(await screen.findByText("This Wisp's workspace is full.")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Try again" }));
+    expect(attachWorkspaceFiles).toHaveBeenCalledTimes(2);
+  });
+
+  it("says which file is being sent and cancels an attach that does not finish", async () => {
+    const user = userEvent.setup();
+    let signal: AbortSignal | undefined;
+    const attachWorkspaceFiles = vi.fn(
+      (_request: unknown, options: AttachWorkspaceFilesOptions) =>
+        new Promise<never>(() => {
+          signal = options.signal;
+          options.onProgress?.({ phase: "sending", name: "photo.jpg", index: 1, count: 2 });
+        }),
+    );
+    Object.defineProperty(window, "wisp", { configurable: true, value: { attachWorkspaceFiles } });
+    render(<ChatComposer {...defaultProps} chat={wisp("one", "One")} />);
+
+    await user.click(screen.getByRole("button", { name: "Attach files" }));
+    expect(await screen.findByText("Sending photo.jpg (2 of 2)…")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Attach files" })).toBeDisabled();
+
+    await user.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(signal?.aborted).toBe(true);
+    expect(screen.queryByText("Sending photo.jpg (2 of 2)…")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Attach files" })).toBeEnabled();
   });
 
   it.each([

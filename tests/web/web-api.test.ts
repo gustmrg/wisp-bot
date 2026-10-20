@@ -11,6 +11,7 @@ import { MasterKeyEncryption } from "../../server/master-key.js";
 import { createWispServer } from "../../server/wisp-server.js";
 import type { ConnectionsView } from "../../shared/connections.js";
 import type { Wisp } from "../../shared/conversations.js";
+import type { AttachWorkspaceFilesProgress } from "../../shared/workspace.js";
 import { isWispBridgeAvailable } from "../../src/lib/wisp-bridge.js";
 import { browserDeviceName, createWebWispApi, takePairingCode } from "../../src/web/web-api.js";
 import { DEFAULT_WISP_APPEARANCE } from "../../shared/wisp-appearance.js";
@@ -123,7 +124,10 @@ describe("browser WispApi", () => {
       value: { files: [], workspace: { usedBytes: 0 } },
     });
     picks.push(new File(["hello"], "notes.txt"), new File(["a,b"], "notes.txt"));
-    expect(await api.attachWorkspaceFiles({ conversationId: "atlas" })).toEqual({
+    const progress: AttachWorkspaceFilesProgress[] = [];
+    expect(
+      await api.attachWorkspaceFiles({ conversationId: "atlas" }, { onProgress: (step) => progress.push(step) }),
+    ).toEqual({
       ok: true,
       value: {
         files: [
@@ -133,6 +137,21 @@ describe("browser WispApi", () => {
         workspace: expect.objectContaining({ usedBytes: 8 }),
       },
     });
+    expect(progress).toEqual([
+      { phase: "checking", count: 2 },
+      { phase: "sending", name: "notes.txt", index: 0, count: 2 },
+      { phase: "sending", name: "notes.txt", index: 1, count: 2 },
+    ]);
+    // Cancelling stops before the files are sent.
+    picks.push(new File(["late"], "late.txt"));
+    const cancel = new AbortController();
+    expect(
+      await api.attachWorkspaceFiles(
+        { conversationId: "atlas" },
+        { signal: cancel.signal, onProgress: (step) => step.phase === "checking" && cancel.abort() },
+      ),
+    ).toMatchObject({ ok: false, error: { code: "aborted" } });
+    expect(await api.getWorkspace({ conversationId: "atlas" })).toMatchObject({ ok: true, value: { usedBytes: 8 } });
     // A cookie alone cannot send files: a cross-site form could.
     const forged = await browser.fetch(`${server.url}/api/v1/workspace-files?conversationId=atlas&name=x.txt`, {
       method: "POST",
