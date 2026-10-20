@@ -1,19 +1,24 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { TranscriptionService } from "../backend/transcription-service.js";
-import type { TranscribeAudioRequest } from "../shared/voice.js";
+import type { TranscribeAudioRequest, VoiceCredentialSource } from "../shared/voice.js";
 
-function createService(options: { keys?: Record<string, string>; response?: Response | Error } = {}) {
+function createService(
+  options: { keys?: Record<string, string>; voiceOnly?: ReadonlyArray<string>; response?: Response | Error } = {},
+) {
   const keys = new Map(Object.entries(options.keys ?? { groq: "groq-key" }));
+  const source = (providerId: string): VoiceCredentialSource =>
+    options.voiceOnly?.includes(providerId) ? "voice" : "shared";
   const fetch = vi.fn(async (_url: string | URL | Request, _init?: RequestInit) => {
     const response = options.response ?? Response.json({ text: "  Hello there.  " });
     if (response instanceof Error) throw response;
     return response;
   });
   const credentials = {
-    getApiKey: vi.fn(async (providerId: string) => keys.get(providerId)),
-    setApiKey: vi.fn(async (providerId: string, apiKey: string) => void keys.set(providerId, apiKey)),
-    listApiKeyProviders: vi.fn(async () => new Set(keys.keys())),
+    getVoiceKey: vi.fn(async (providerId: string) => keys.get(providerId)),
+    saveVoiceKey: vi.fn(async (providerId: string, apiKey: string) => void keys.set(providerId, apiKey)),
+    removeVoiceKey: vi.fn(async (providerId: string) => void keys.delete(providerId)),
+    listVoiceKeys: vi.fn(async () => new Map([...keys.keys()].map((id) => [id, source(id)]))),
     isSecureStorageAvailable: () => true,
   };
   const service = new TranscriptionService({ credentials, fetch: fetch as unknown as typeof globalThis.fetch });
@@ -94,13 +99,31 @@ describe("TranscriptionService", () => {
     const { service, credentials } = createService();
 
     expect((await service.getView()).providers).toEqual([
-      { id: "groq", name: "Groq", credentialConfigured: true },
+      { id: "groq", name: "Groq", credentialConfigured: true, credentialSource: "shared" },
       { id: "openai", name: "OpenAI", credentialConfigured: false },
       { id: "mistral", name: "Mistral", credentialConfigured: false },
     ]);
     const view = await service.saveCredential({ providerId: "mistral", apiKey: "mistral-key" });
 
-    expect(credentials.setApiKey).toHaveBeenCalledWith("mistral", "mistral-key");
+    expect(credentials.saveVoiceKey).toHaveBeenCalledWith("mistral", "mistral-key");
     expect(view.providers.find(({ id }) => id === "mistral")?.credentialConfigured).toBe(true);
+  });
+
+  it("transcribes with a key kept for voice input alone and removes it", async () => {
+    const { service, fetch, credentials } = createService({ keys: { openai: "voice-key" }, voiceOnly: ["openai"] });
+
+    expect((await service.getView()).providers.find(({ id }) => id === "openai")).toEqual({
+      id: "openai",
+      name: "OpenAI",
+      credentialConfigured: true,
+      credentialSource: "voice",
+    });
+    await service.transcribe({ ...request, providerId: "openai", modelId: "whisper-1" });
+    expect(fetch.mock.calls[0]![1]?.headers).toEqual({ Authorization: "Bearer voice-key" });
+
+    const view = await service.removeCredential({ providerId: "openai" });
+
+    expect(credentials.removeVoiceKey).toHaveBeenCalledWith("openai");
+    expect(view.providers.find(({ id }) => id === "openai")?.credentialConfigured).toBe(false);
   });
 });

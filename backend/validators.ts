@@ -53,6 +53,7 @@ import {
   isVoiceProviderId,
   MAX_VOICE_AUDIO_BYTES,
   VOICE_AUDIO_MIME_TYPES,
+  type RemoveVoiceCredentialRequest,
   type SaveVoiceCredentialRequest,
   type TranscribeAudioRequest,
   type VoiceAudioMimeType,
@@ -443,6 +444,12 @@ export function parseSaveVoiceCredentialRequest(value: unknown): SaveVoiceCreden
   if (!isVoiceProviderId(request.providerId)) throw invalidRequest();
   if (typeof request.apiKey !== "string" || request.apiKey.length > 20_000) throw invalidRequest();
   return { providerId: request.providerId, apiKey: request.apiKey };
+}
+
+export function parseRemoveVoiceCredentialRequest(value: unknown): RemoveVoiceCredentialRequest {
+  const request = asRecord(value);
+  if (Object.keys(request).length !== 1 || !isVoiceProviderId(request.providerId)) throw invalidRequest();
+  return { providerId: request.providerId };
 }
 
 export function parseTranscribeAudioRequest(value: unknown): TranscribeAudioRequest {

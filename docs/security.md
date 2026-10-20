@@ -13,7 +13,8 @@ reviewed invariants.
 ## Credential storage
 
 API keys and sign-in tokens are stored under the user-data directory, separate
-per store (model keys and subscription sign-ins, plugin keys, MCP secrets),
+per store (model keys and subscription sign-ins, voice input keys kept apart
+from a subscription sign-in, plugin keys, MCP secrets),
 encrypted with AES-256-GCM under the local
 server's key. That key is random and is itself encrypted with Electron's
 operating-system-backed `safeStorage` API:

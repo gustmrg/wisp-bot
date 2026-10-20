@@ -20,6 +20,7 @@ import {
   wispFallbackChoice,
 } from "../shared/contracts.js";
 import { CLAUDE_CODE_PROVIDER, type ClaudeCodeStatusView } from "../shared/claude-code.js";
+import { isVoiceProviderId, type VoiceCredentialSource } from "../shared/voice.js";
 import { WispBackendError } from "./backend-error.js";
 import { AiSettingsStore } from "./ai-settings-store.js";
 import { EncryptedCredentialStore, type EncryptionService } from "./encrypted-credential-store.js";
@@ -64,6 +65,12 @@ interface ModelServiceOptions {
   runtime: ModelRuntimeLike;
   settings: AiSettingsStore;
   credentials: EncryptedCredentialStore;
+  /**
+   * Keys for voice input alone, kept apart from `credentials` while a
+   * provider's models use a subscription sign-in, since Pi keeps one
+   * credential per provider.
+   */
+  voiceCredentials: EncryptedCredentialStore;
   /** The runtime's catalog refresh; absent for runtimes that cannot refresh. */
   refresh?: (options: { allowNetwork: boolean; signal: AbortSignal }) => Promise<ModelRefreshResult>;
   /** Opens the system browser on this computer for a subscription sign-in. */
@@ -147,6 +154,7 @@ export class ModelService {
   private readonly runtime: ModelRuntimeLike;
   private readonly settings: AiSettingsStore;
   private readonly credentials: EncryptedCredentialStore;
+  private readonly voiceCredentials: EncryptedCredentialStore;
   private readonly refreshRuntime: ModelServiceOptions["refresh"];
   private catalogRefreshError: string | null = null;
   private networkRefreshError: string | null = null;
@@ -160,6 +168,7 @@ export class ModelService {
     this.runtime = options.runtime;
     this.settings = options.settings;
     this.credentials = options.credentials;
+    this.voiceCredentials = options.voiceCredentials;
     this.refreshRuntime = options.refresh;
     this.openExternal = options.openExternal;
     this.signInBrowser = options.signInBrowser;
@@ -185,6 +194,10 @@ export class ModelService {
     const service = new ModelService({
       runtime,
       credentials,
+      voiceCredentials: new EncryptedCredentialStore(
+        path.join(options.dataDirectory, "voice-credentials.enc.json"),
+        options.encryption,
+      ),
       settings: new AiSettingsStore(path.join(options.dataDirectory, "ai-settings.json")),
       refresh: (refreshOptions) => runtime.refresh(refreshOptions),
       ...(options.openExternal ? { openExternal: options.openExternal } : {}),
@@ -414,46 +427,87 @@ export class ModelService {
   }
 
   /**
-   * Saves a provider key outside of a model selection, for features such as
-   * voice input that call the provider directly. Chat models of the same
-   * provider can use the key too.
+   * Saves a provider key for voice input, which calls the provider directly.
+   * The key is the provider's own, shared with its chat models, unless they
+   * use a subscription sign-in: then it is kept for voice input alone, so it
+   * does not replace the sign-in.
    */
-  async setApiKey(providerId: string, value: string): Promise<void> {
+  async saveVoiceKey(providerId: string, value: string): Promise<void> {
     const apiKey = value.trim();
     if (!apiKey || apiKey.length > MAX_API_KEY_LENGTH) {
       throw new WispBackendError("invalid_request", "Enter a valid API key.");
     }
-    await this.storeApiKey(providerId, apiKey);
+    if ((await this.credentials.read(providerId))?.type !== "oauth") {
+      await this.storeApiKey(providerId, apiKey);
+      return;
+    }
+    this.assertSecureStorage();
+    await this.voiceCredentials.setApiKey(providerId, apiKey);
   }
 
-  /** The saved key for a provider, or undefined when none is saved. */
-  async getApiKey(providerId: string): Promise<string | undefined> {
-    const credential = await this.credentials.read(providerId);
-    return credential?.type === "api_key" && credential.key ? credential.key : undefined;
+  /** The key voice input uses for a provider: its shared key first, then one kept for voice alone. */
+  async getVoiceKey(providerId: string): Promise<string | undefined> {
+    const shared = await this.credentials.read(providerId);
+    if (shared?.type === "api_key" && shared.key) return shared.key;
+    const own = await this.voiceCredentials.read(providerId);
+    return own?.type === "api_key" && own.key ? own.key : undefined;
+  }
+
+  /** Providers with a key voice input can use, and where it is saved; a subscription sign-in does not count. */
+  async listVoiceKeys(): Promise<ReadonlyMap<string, VoiceCredentialSource>> {
+    const keys = new Map<string, VoiceCredentialSource>();
+    for (const { providerId, type } of await this.voiceCredentials.list()) {
+      if (type === "api_key") keys.set(providerId, "voice");
+    }
+    for (const { providerId, type } of await this.credentials.list()) {
+      if (type === "api_key") keys.set(providerId, "shared");
+    }
+    return keys;
+  }
+
+  /**
+   * Removes the key voice input uses for a provider. A shared key is removed
+   * for its chat models too, as in AI Model settings; a subscription sign-in
+   * is never touched.
+   */
+  async removeVoiceKey(providerId: string): Promise<void> {
+    if ((await this.listVoiceKeys()).get(providerId) === "shared") await this.removeCredential(providerId);
+    else await this.voiceCredentials.delete(providerId);
   }
 
   async listCredentialProviders(): Promise<ReadonlySet<string>> {
     return new Set((await this.credentials.list()).map(({ providerId }) => providerId));
   }
 
-  /** Providers with a saved API key; a subscription sign-in does not count. */
-  async listApiKeyProviders(): Promise<ReadonlySet<string>> {
-    return new Set(
-      (await this.credentials.list()).filter(({ type }) => type === "api_key").map(({ providerId }) => providerId),
-    );
-  }
-
   isSecureStorageAvailable(): boolean {
     return this.credentials.isSecureStorageAvailable();
   }
 
-  private async storeApiKey(providerId: string, apiKey: string): Promise<void> {
+  private assertSecureStorage(): void {
     if (!this.credentials.isSecureStorageAvailable()) {
       throw new WispBackendError(
         "secure_storage_unavailable",
         "Secure credential storage is unavailable on this device.",
       );
     }
+  }
+
+  /**
+   * Copies the provider's shared key to the keys kept for voice input before a
+   * sign-in replaces it, so voice input keeps working. Copied before the
+   * sign-in starts, so a failure here stops it before anything changed rather
+   * than failing a sign-in that already replaced the key. Voice input reads
+   * the shared key first, so a copy left by a sign-in that failed changes
+   * nothing, and removing the shared key removes it.
+   */
+  private async keepKeyForVoice(providerId: string): Promise<void> {
+    if (!isVoiceProviderId(providerId)) return;
+    const shared = await this.credentials.read(providerId);
+    if (shared?.type === "api_key" && shared.key) await this.voiceCredentials.setApiKey(providerId, shared.key);
+  }
+
+  private async storeApiKey(providerId: string, apiKey: string): Promise<void> {
+    this.assertSecureStorage();
     // A key settles the provider's credential, so an earlier failed sign-in no longer matters.
     if (this.signIn?.status === "failed" && this.signIn.providerId === providerId) this.signIn = undefined;
     await this.runtime.setRuntimeApiKey(providerId, apiKey);
@@ -463,6 +517,8 @@ export class ModelService {
       await this.runtime.removeRuntimeApiKey(providerId).catch(() => undefined);
       throw error;
     }
+    // Voice input now uses the shared key, so one kept for voice alone would only go stale.
+    await this.voiceCredentials.delete(providerId);
   }
 
   async removeCredential(providerId: string): Promise<AiSettingsView> {
@@ -474,8 +530,12 @@ export class ModelService {
     const credential = await this.credentials.read(providerId);
     await this.runtime.removeRuntimeApiKey(providerId);
     // Signing out goes through the runtime, so it stops using the cached sign-in at once.
+    // A key kept for voice input stays; removing the shared key removes any copy of it.
     if (credential?.type === "oauth") await this.runtime.logout(providerId);
-    else await this.credentials.delete(providerId);
+    else {
+      await this.credentials.delete(providerId);
+      await this.voiceCredentials.delete(providerId);
+    }
     const selection = await this.settings.getSelection();
     if (selection?.providerId === providerId) await this.settings.setSelection(null);
     // Auxiliary and fallback selections stay saved and show as unavailable until a key returns.
@@ -490,7 +550,8 @@ export class ModelService {
    * view shows the page, and the person pastes the address the browser lands
    * on into finishSignIn: the provider's redirect address is fixed to this
    * computer's loopback, so a relay on another computer cannot receive it.
-   * Signing in replaces a saved API key for the provider.
+   * Signing in replaces a saved API key for the provider's models; voice
+   * input keeps using it.
    */
   async startSignIn(providerId: string): Promise<AiSettingsView> {
     if (!this.offersSubscriptionSignIn(providerId)) {
@@ -499,12 +560,7 @@ export class ModelService {
     if (this.signIn?.status === "waiting") {
       throw new WispBackendError("invalid_request", "A provider sign-in is already in progress.");
     }
-    if (!this.credentials.isSecureStorageAvailable()) {
-      throw new WispBackendError(
-        "secure_storage_unavailable",
-        "Secure credential storage is unavailable on this device.",
-      );
-    }
+    this.assertSecureStorage();
     const signIn: ProviderSignIn = {
       providerId,
       status: "waiting",
@@ -520,6 +576,7 @@ export class ModelService {
       browser = (await this.signInBrowser?.()) ?? { kind: "local" };
       if (browser.kind === "relay") browser.relay.close();
       installationId = await this.settings.getInstallationId();
+      await this.keepKeyForVoice(providerId);
       signIn.controller.signal.throwIfAborted();
     } catch (error) {
       if (this.signIn === signIn) this.signIn = undefined;

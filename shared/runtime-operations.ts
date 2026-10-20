@@ -98,5 +98,6 @@ export const RUNTIME_OPERATIONS = [
   "importSkill",
   "getVoiceSettings",
   "saveVoiceCredential",
+  "removeVoiceCredential",
   "transcribeAudio",
 ] as const satisfies ReadonlyArray<keyof typeof WISP_IPC_CHANNELS>;

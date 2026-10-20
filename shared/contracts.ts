@@ -90,6 +90,7 @@ import type {
   WispToolPolicyView,
 } from "./tool-policy.js";
 import type {
+  RemoveVoiceCredentialRequest,
   SaveVoiceCredentialRequest,
   TranscribeAudioRequest,
   TranscriptionResult,
@@ -214,6 +215,7 @@ export const WISP_IPC_CHANNELS = {
   importSkill: "wisp:skills:import",
   getVoiceSettings: "wisp:voice:get",
   saveVoiceCredential: "wisp:voice:save-credential",
+  removeVoiceCredential: "wisp:voice:remove-credential",
   transcribeAudio: "wisp:voice:transcribe",
   getConnections: "wisp:connections:get",
   saveConnection: "wisp:connections:save",
@@ -869,8 +871,13 @@ export interface WispApi {
   importSkill(request: ImportSkillRequest): Promise<BackendResult<ReadonlyArray<SkillView>>>;
   /** Which voice providers have a saved key; keys themselves never leave the backend. */
   getVoiceSettings(): Promise<BackendResult<VoiceSettingsView>>;
-  /** Saves a provider key for voice input; chat models of the same provider can use it too. */
+  /**
+   * Saves a provider key for voice input. Chat models of the same provider use
+   * it too, unless they use a subscription sign-in, which the key leaves alone.
+   */
   saveVoiceCredential(request: SaveVoiceCredentialRequest): Promise<BackendResult<VoiceSettingsView>>;
+  /** Removes the key voice input uses for a provider, never a subscription sign-in. */
+  removeVoiceCredential(request: RemoveVoiceCredentialRequest): Promise<BackendResult<VoiceSettingsView>>;
   /** Sends a recording to the chosen speech-to-text provider and returns its text. */
   transcribeAudio(request: TranscribeAudioRequest): Promise<BackendResult<TranscriptionResult>>;
   getConnections(): Promise<BackendResult<ConnectionsView>>;

@@ -44,11 +44,15 @@ another vendor's own client; a Claude plan runs Wisps through
   server, settings show **Open the sign-in page**. After approving, the browser
   goes to an address starting with `http://127.0.0.1:1455` that does not load;
   paste it into **Address after sign-in**.
-- A provider keeps one credential: signing in replaces its API key, and
-  entering a key replaces the sign-in. **Sign out** removes the sign-in, and
-  Wisps on that provider stop until it is restored.
-- The backend stores the tokens encrypted and refreshes them. Voice input still
-  needs an OpenAI API key.
+- A provider's models use one credential: signing in replaces its API key, and
+  entering a key in AI Model settings replaces the sign-in. **Sign out**
+  removes the sign-in, and Wisps on that provider stop until it is restored.
+- Voice input needs an OpenAI API key; the sign-in does not reach it. Signing
+  in keeps the saved API key for voice input, and a key saved in Voice input
+  settings while signed in is kept for voice input alone, beside the sign-in.
+  Removing that key never signs out. Once a key is entered in AI Model
+  settings, voice input uses that one.
+- The backend stores the tokens encrypted and refreshes them.
 - Only one sign-in can run at a time, and it is cancelled after ten minutes.
   Pi listens on port 1455 on the server's computer, so an unfinished Codex CLI
   login there blocks it.

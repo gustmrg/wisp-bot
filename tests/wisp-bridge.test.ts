@@ -265,6 +265,7 @@ function completeBridge(): WispApi {
     importSkill: async () => ({ ok: true, value: [] }),
     getVoiceSettings: async () => ({ ok: true, value: { secureStorageAvailable: true, providers: [] } }),
     saveVoiceCredential: async () => ({ ok: true, value: { secureStorageAvailable: true, providers: [] } }),
+    removeVoiceCredential: async () => ({ ok: true, value: { secureStorageAvailable: true, providers: [] } }),
     transcribeAudio: async () => ({ ok: true, value: { text: "" } }),
     getConnections: async () => ({ ok: true, value: connections }),
     testSshConnection: async () => ({ ok: true as const, value: { message: "SSH connection successful." } }),

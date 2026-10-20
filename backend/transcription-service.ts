@@ -1,6 +1,7 @@
 import {
   VOICE_PROVIDERS,
   voiceProvider,
+  type RemoveVoiceCredentialRequest,
   type SaveVoiceCredentialRequest,
   type TranscribeAudioRequest,
   type TranscriptionResult,
@@ -14,7 +15,7 @@ const TRANSCRIPTION_TIMEOUT_MS = 60_000;
 
 type VoiceCredentials = Pick<
   ModelService,
-  "getApiKey" | "setApiKey" | "listApiKeyProviders" | "isSecureStorageAvailable"
+  "getVoiceKey" | "saveVoiceKey" | "removeVoiceKey" | "listVoiceKeys" | "isSecureStorageAvailable"
 >;
 
 interface TranscriptionServiceOptions {
@@ -52,26 +53,35 @@ export class TranscriptionService {
 
   async getView(): Promise<VoiceSettingsView> {
     // Transcription needs a key: a subscription sign-in for the same provider does not reach it.
-    const configured = await this.credentials.listApiKeyProviders();
+    const keys = await this.credentials.listVoiceKeys();
     return {
       secureStorageAvailable: this.credentials.isSecureStorageAvailable(),
-      providers: VOICE_PROVIDERS.map((provider) => ({
-        id: provider.id,
-        name: provider.name,
-        credentialConfigured: configured.has(provider.id),
-      })),
+      providers: VOICE_PROVIDERS.map((provider) => {
+        const source = keys.get(provider.id);
+        return {
+          id: provider.id,
+          name: provider.name,
+          credentialConfigured: source !== undefined,
+          ...(source ? { credentialSource: source } : {}),
+        };
+      }),
     };
   }
 
   async saveCredential(request: SaveVoiceCredentialRequest): Promise<VoiceSettingsView> {
-    await this.credentials.setApiKey(request.providerId, request.apiKey);
+    await this.credentials.saveVoiceKey(request.providerId, request.apiKey);
+    return this.getView();
+  }
+
+  async removeCredential(request: RemoveVoiceCredentialRequest): Promise<VoiceSettingsView> {
+    await this.credentials.removeVoiceKey(request.providerId);
     return this.getView();
   }
 
   async transcribe(request: TranscribeAudioRequest): Promise<TranscriptionResult> {
     const provider = voiceProvider(request.providerId);
     if (!provider) throw new WispBackendError("invalid_request", "The voice provider is invalid.");
-    const apiKey = await this.credentials.getApiKey(provider.id);
+    const apiKey = await this.credentials.getVoiceKey(provider.id);
     if (!apiKey) {
       throw new WispBackendError(
         "configuration_required",

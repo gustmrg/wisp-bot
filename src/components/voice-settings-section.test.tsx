@@ -6,38 +6,45 @@ import { VoiceSettingsSection } from "@/components/voice-settings-section";
 import { DEFAULT_PREFERENCES, type AppPreferences } from "@/lib/app-preferences";
 import type { VoiceSettingsView } from "../../shared/voice";
 
-function view(configured: ReadonlyArray<string>): VoiceSettingsView {
+/** `voiceOnly` lists providers whose key is kept for voice input alone, beside a subscription sign-in. */
+function view(configured: ReadonlyArray<string>, voiceOnly: ReadonlyArray<string> = []): VoiceSettingsView {
+  const status = (id: "groq" | "openai" | "mistral", name: string) => ({
+    id,
+    name,
+    credentialConfigured: configured.includes(id),
+    ...(configured.includes(id) ? { credentialSource: voiceOnly.includes(id) ? "voice" : "shared" } : {}),
+  });
   return {
     secureStorageAvailable: true,
-    providers: [
-      { id: "groq", name: "Groq", credentialConfigured: configured.includes("groq") },
-      { id: "openai", name: "OpenAI", credentialConfigured: configured.includes("openai") },
-      { id: "mistral", name: "Mistral", credentialConfigured: configured.includes("mistral") },
-    ],
-  };
+    providers: [status("groq", "Groq"), status("openai", "OpenAI"), status("mistral", "Mistral")],
+  } as VoiceSettingsView;
 }
 
-function renderSection(preferences: AppPreferences = DEFAULT_PREFERENCES, configured: ReadonlyArray<string> = []) {
+function renderSection(
+  preferences: AppPreferences = DEFAULT_PREFERENCES,
+  configured: ReadonlyArray<string> = [],
+  voiceOnly: ReadonlyArray<string> = [],
+) {
   let saved = [...configured];
   const saveVoiceCredential = vi.fn(async () => {
     saved = [...saved, "groq"];
-    return { ok: true as const, value: view(saved) };
+    return { ok: true as const, value: view(saved, voiceOnly) };
   });
-  const removeProviderCredential = vi.fn(async ({ providerId }: { providerId: string }) => {
+  const removeVoiceCredential = vi.fn(async ({ providerId }: { providerId: string }) => {
     saved = saved.filter((id) => id !== providerId);
-    return { ok: true as const, value: {} };
+    return { ok: true as const, value: view(saved, voiceOnly) };
   });
   Object.defineProperty(window, "wisp", {
     configurable: true,
     value: {
-      getVoiceSettings: vi.fn(async () => ({ ok: true as const, value: view(saved) })),
+      getVoiceSettings: vi.fn(async () => ({ ok: true as const, value: view(saved, voiceOnly) })),
       saveVoiceCredential,
-      removeProviderCredential,
+      removeVoiceCredential,
     },
   });
   const onPreferencesChange = vi.fn();
   render(<VoiceSettingsSection active preferences={preferences} onPreferencesChange={onPreferencesChange} />);
-  return { onPreferencesChange, saveVoiceCredential, removeProviderCredential };
+  return { onPreferencesChange, saveVoiceCredential, removeVoiceCredential };
 }
 
 describe("VoiceSettingsSection", () => {
@@ -78,14 +85,33 @@ describe("VoiceSettingsSection", () => {
 
   it("removes the saved key after confirmation", async () => {
     const user = userEvent.setup();
-    const { removeProviderCredential } = renderSection(DEFAULT_PREFERENCES, ["groq"]);
+    const { removeVoiceCredential } = renderSection(DEFAULT_PREFERENCES, ["groq"]);
 
     await user.click(await screen.findByRole("button", { name: "Remove key" }));
     expect(screen.getByText(/Voice input and Wisps using Groq stop working/)).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Remove key" }));
 
-    expect(removeProviderCredential).toHaveBeenCalledWith({ providerId: "groq" });
+    expect(removeVoiceCredential).toHaveBeenCalledWith({ providerId: "groq" });
     expect(await screen.findByText(/Add a Groq key to use voice input/)).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Remove key" })).not.toBeInTheDocument();
+  });
+
+  it("says a key kept for voice input alone leaves the sign-in in place", async () => {
+    const user = userEvent.setup();
+    const { removeVoiceCredential } = renderSection(
+      { ...DEFAULT_PREFERENCES, voiceProvider: "openai", voiceModel: "whisper-1" },
+      ["openai"],
+      ["openai"],
+    );
+
+    expect(
+      await screen.findByText(/saved for OpenAI voice input only; AI Model settings use your sign-in/),
+    ).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Remove key" }));
+    expect(screen.getByText(/Voice input with OpenAI stops working .* Your sign-in is kept/)).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Remove key" }));
+
+    expect(removeVoiceCredential).toHaveBeenCalledWith({ providerId: "openai" });
+    expect(await screen.findByText(/Add a OpenAI key to use voice input/)).toBeInTheDocument();
   });
 });
