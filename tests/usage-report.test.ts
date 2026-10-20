@@ -1,7 +1,8 @@
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import { claudeCodeFallbackEntry, claudeCodeUsageEntry } from "../backend/claude-code/claude-code-usage-log.js";
 import { ConversationRepository } from "../backend/conversation-repository.js";
 import { SessionReportService } from "../backend/session-report-service.js";
 import { ModelPricingService } from "../backend/model-pricing-service.js";
@@ -104,6 +105,71 @@ describe("usage history", () => {
     expect(report.totals.totalTokens).toBe(1350);
     expect(report.totals.costUsd).toBeNull();
     expect(report.totals.cacheSavingsUsd).toBeNull();
+  });
+
+  it("reports a Claude Code Wisp's turns, a plan's at no cost, with the turns its fallback model answered", async () => {
+    const { repository, service } = await setup();
+    const context = repository.getAgentContext("first");
+    const turn = (ok: boolean) => ({
+      sessionId: "s",
+      ok,
+      reply: "",
+      errors: [],
+      estimatedCostUsd: 0.5,
+      usage: { inputTokens: 1000, outputTokens: 200, cacheReadTokens: 100, cacheWriteTokens: 50, totalTokens: 1350 },
+    });
+    const at = (seconds: number) => new Date(Date.now() - seconds * 1000);
+    await writeFile(
+      path.join(context.sessionDirectory, "claude-code-usage.jsonl"),
+      [
+        claudeCodeUsageEntry(turn(true), "claude-sonnet-5-5", "subscription", 0.5, at(30)),
+        claudeCodeUsageEntry(
+          {
+            ...turn(false),
+            usage: {
+              ...turn(false).usage,
+              totalTokens: 0,
+              inputTokens: 0,
+              outputTokens: 0,
+              cacheReadTokens: 0,
+              cacheWriteTokens: 0,
+            },
+          },
+          "claude-sonnet-5-5",
+          "subscription",
+          null,
+          at(20),
+        ),
+        claudeCodeFallbackEntry("Test model", at(19)),
+      ]
+        .map((line) => JSON.stringify(line))
+        .join("\n"),
+    );
+    const fallbackTurn = path.join(
+      context.sessionDirectory,
+      "claude-code-fallback",
+      "2026-10-19T12-00-00-000Z-abcd1234",
+    );
+    await mkdir(fallbackTurn, { recursive: true });
+    await writeFile(path.join(fallbackTurn, "pi.jsonl"), `${JSON.stringify(entry(at(18).toISOString()))}\n`);
+
+    const report = await service.getSessionReport("first");
+    expect(report?.turns).toBe(3);
+    expect(report?.models).toEqual([
+      expect.objectContaining({
+        providerId: "claude-code",
+        modelId: "claude-sonnet-5-5",
+        turns: 2,
+        costUsd: 0,
+        plan: true,
+      }),
+      expect.objectContaining({ providerId: "openrouter", modelId: "test/model", turns: 1 }),
+    ]);
+    expect(report?.totals.costUsd).toBeCloseTo(0.00151, 8);
+    expect(report?.events.map(({ kind }) => kind)).toEqual(["error", "fallback"]);
+    const usage = await service.getUsageReport({ period: "all" });
+    expect(usage.totals.totalTokens).toBe(2700);
+    expect(usage.totals.costUsd).toBeCloseTo(0.00151, 8);
   });
 
   it("returns no activity before Pi writes its first message", async () => {

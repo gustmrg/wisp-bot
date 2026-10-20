@@ -42,7 +42,9 @@ function FallbackModelSettings({ view, onViewChange }: FallbackModelSettingsProp
   const options = [
     { value: OFF, label: "Off", description: "Wisps stop when the global model fails" },
     // The global model cannot stand in for itself.
-    ...modelOptions(view).filter(({ value }) => !primary || value !== modelOptionValue(primary)),
+    ...modelOptions(view, undefined, { claudeCode: false }).filter(
+      ({ value }) => !primary || value !== modelOptionValue(primary),
+    ),
   ];
   if (selected && !options.some(({ value }) => value === modelOptionValue(selected))) {
     options.push(unavailableModelOption(view, selected));

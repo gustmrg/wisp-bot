@@ -1,5 +1,6 @@
 import type { PluginAdapter } from "../plugin-types.js";
 import { webSearch } from "./brave.js";
+import { deepseek } from "./deepseek.js";
 import { exa } from "./exa.js";
 import { gmail } from "./gmail.js";
 import { googleCalendar } from "./google-calendar.js";
@@ -17,6 +18,7 @@ export const PLUGIN_ADAPTERS: ReadonlyArray<PluginAdapter> = [
   firecrawl,
   tavily,
   exa,
+  deepseek,
   googleCalendar,
   gmail,
   googleDrive,

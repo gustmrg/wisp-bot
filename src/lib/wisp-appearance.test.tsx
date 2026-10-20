@@ -12,6 +12,8 @@ import { Wisp } from "@/components/wisp";
 import {
   AVATAR_COLORS,
   appearanceOptions,
+  contrastRatio,
+  iconFill,
   isNeutralColor,
   luminance,
   randomAppearance,
@@ -91,6 +93,14 @@ describe("Wisp appearance registry", () => {
       accent: "light-dark(#262626, #a8a8a8)",
       ink: "light-dark(#ffffff, #111111)",
     });
+  });
+
+  it("gives every palette color a fill a white icon reads on, deepening only the light ones", () => {
+    for (const { value } of WISP_COLORS) expect(contrastRatio(iconFill(value), "#ffffff")).toBeGreaterThanOrEqual(3);
+    expect(iconFill("#3c82f6")).toBe("#3c82f6");
+    expect(iconFill("#885cf5")).toBe("#885cf5");
+    expect(luminance(iconFill("#f19d38"))).toBeLessThan(luminance("#f19d38"));
+    expect(luminance(iconFill("#54b9a6"))).toBeLessThan(luminance("#54b9a6"));
   });
 
   it("tells the grays of the palette from its hues", () => {

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import type { AiSettingsView, ProviderSignInView, ProviderSummary, ThinkingLevel } from "../../shared/contracts";
+import { AdvancedSettings } from "@/components/advanced-settings";
 import { AuxiliaryModelSettings } from "@/components/auxiliary-model-settings";
 import { FallbackModelSettings } from "@/components/fallback-model-settings";
 import { ManualSignInForm } from "@/components/manual-sign-in";
@@ -20,8 +21,17 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { SecretInput } from "@/components/ui/secret-input";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { invalidMaxOutputTokens } from "@/lib/model-choice";
+import { modelLabLogo } from "@/lib/model-lab";
 import { notifyProviderCredentialsChanged } from "@/lib/voice-credentials";
 import { voiceProvider } from "../../shared/voice";
+import {
+  CLAUDE_CODE_PROVIDER,
+  CLAUDE_CODE_PLAN_USAGE_SHOWN_FROM,
+  claudeCodeUnavailableMessage,
+  type ClaudeCodePlanUsageView,
+  type ClaudeCodeStatusView,
+} from "../../shared/claude-code";
 
 const SIGN_IN_POLL_MS = 1_500;
 
@@ -227,23 +237,38 @@ function ModelSettingsSection({
     return undefined;
   }
 
+  /** Reads Claude Code's status again, after the person signed in or updated it, without losing edits. */
+  async function handleCheckClaudeCode(): Promise<void> {
+    setError(null);
+    try {
+      const result = await window.wisp.getAiSettings();
+      if (result.ok) applyAuxiliaryView(result.value);
+      else setError(result.error.message);
+    } catch {
+      setError("Could not check Claude Code.");
+    }
+  }
+
   const providerItems = view?.providers.map(({ id, name }) => ({ value: id, label: name })) ?? [];
-  const modelItems = provider?.models.map(({ id, name }) => ({ value: id, label: name, description: id })) ?? [];
+  const modelItems =
+    provider?.models.map(({ id, name }) => ({
+      value: id,
+      label: name,
+      description: id,
+      iconSrc: modelLabLogo({ providerId: provider.id, modelId: id }),
+    })) ?? [];
   const model = provider?.models.find(({ id }) => id === modelId);
   const effectiveThinkingLevel = keepThinkingLevel(thinkingLevel, model);
-  const parsedMaxOutputTokens = maxOutputTokens ? Number(maxOutputTokens) : undefined;
-  const invalidMaxOutputTokens =
-    parsedMaxOutputTokens !== undefined &&
-    (!Number.isSafeInteger(parsedMaxOutputTokens) ||
-      parsedMaxOutputTokens < 1 ||
-      parsedMaxOutputTokens > (model?.maxOutputTokens ?? 1_000_000));
+  const maxOutputTokensInvalid = invalidMaxOutputTokens(maxOutputTokens, model?.maxOutputTokens);
+  // Claude Code signs in on its own and manages its output limit (ADR 026).
+  const claudeCode = provider?.id === CLAUDE_CODE_PROVIDER;
   const requiresKey = Boolean(provider && !provider.credentialConfigured && !apiKey.trim());
   const saveDisabled =
     saving ||
     !providerId ||
     !modelId ||
     requiresKey ||
-    invalidMaxOutputTokens ||
+    maxOutputTokensInvalid ||
     (!view?.secureStorageAvailable && !provider?.credentialConfigured);
 
   return (
@@ -326,29 +351,6 @@ function ModelSettingsSection({
                   }}
                 />
               </SettingsRow>
-              <SettingsRow>
-                <SettingsRowCopy>
-                  <SettingsRowTitle htmlFor="ai-max-output-tokens">Maximum output tokens</SettingsRowTitle>
-                  <SettingsRowDescription>
-                    Leave empty to use the safe automatic limit of up to 32,768 tokens.
-                  </SettingsRowDescription>
-                </SettingsRowCopy>
-                <Input
-                  id="ai-max-output-tokens"
-                  type="number"
-                  min={1}
-                  max={model?.maxOutputTokens ?? 1_000_000}
-                  step={1}
-                  value={maxOutputTokens}
-                  placeholder="Automatic"
-                  className="w-[160px] max-w-[45%]"
-                  onChange={(event) => {
-                    setMaxOutputTokens(event.currentTarget.value);
-                    setError(null);
-                    setSaved(false);
-                  }}
-                />
-              </SettingsRow>
               {canChooseThinkingLevel(model) ? (
                 <ThinkingLevelRow
                   id="ai-thinking-level"
@@ -362,71 +364,110 @@ function ModelSettingsSection({
                 />
               ) : null}
             </SettingsCard>
-          </SettingsGroup>
-
-          <SettingsGroup label="Credential">
-            <SettingsCard>
-              {provider?.subscriptionSignIn ? (
-                <SubscriptionSignIn
-                  provider={provider}
-                  label={provider.subscriptionSignIn.label}
-                  signIn={view.providerSignIn?.providerId === provider.id ? view.providerSignIn : null}
-                  disabled={saving || !view.secureStorageAvailable}
-                  onStart={() => void handleStartSignIn()}
-                  onCancel={() => void handleCancelSignIn()}
-                  onFinish={handleFinishSignIn}
-                  onSignOut={() => void handleRemoveCredential()}
-                />
-              ) : null}
-              <div className="flex flex-col gap-3 px-3.5 py-3.5">
-                <div className="flex flex-wrap items-start gap-3">
-                  <SettingsRowCopy>
-                    <SettingsRowTitle htmlFor="ai-api-key">API key</SettingsRowTitle>
-                    <SettingsRowDescription>
-                      {provider?.credentialKind === "subscription"
-                        ? "Enter an API key to pay per token instead of using your subscription. It replaces the sign-in."
-                        : provider?.credentialConfigured
-                          ? `An encrypted key is saved for ${provider.name}${voiceProvider(provider.id) ? " and shared with Voice Input settings" : ""}. Enter a new key to replace it.`
-                          : "The key is encrypted using your operating system's credential storage."}
-                    </SettingsRowDescription>
-                  </SettingsRowCopy>
-                  {/* A server from before sign-ins reports no credential kind; its credentials are keys. */}
-                  {provider?.credentialConfigured && provider.credentialKind !== "subscription" ? (
-                    <ConfirmAction
-                      label="Remove key"
-                      confirmLabel="Remove key"
-                      variant="ghost"
-                      className="shrink-0"
-                      disabled={saving}
-                      description={`${voiceProvider(provider.id) ? "Voice input and Wisps" : "Wisps"} using ${provider.name} stop working until you enter a new key.`}
-                      onConfirm={() => void handleRemoveCredential()}
+            {claudeCode ? null : (
+              <AdvancedSettings defaultOpen={Boolean(maxOutputTokens)} className="mt-1.5">
+                <SettingsCard>
+                  <SettingsRow>
+                    <SettingsRowCopy>
+                      <SettingsRowTitle htmlFor="ai-max-output-tokens">Maximum output tokens</SettingsRowTitle>
+                      <SettingsRowDescription>
+                        Leave empty to use the safe automatic limit of up to 32,768 tokens.
+                      </SettingsRowDescription>
+                    </SettingsRowCopy>
+                    <Input
+                      id="ai-max-output-tokens"
+                      type="number"
+                      min={1}
+                      max={model?.maxOutputTokens ?? 1_000_000}
+                      step={1}
+                      value={maxOutputTokens}
+                      placeholder="Automatic"
+                      className="w-[160px] max-w-[45%]"
+                      onChange={(event) => {
+                        setMaxOutputTokens(event.currentTarget.value);
+                        setError(null);
+                        setSaved(false);
+                      }}
                     />
-                  ) : null}
-                </div>
-                <SecretInput
-                  id="ai-api-key"
-                  autoComplete="new-password"
-                  value={apiKey}
-                  disabled={!view.secureStorageAvailable}
-                  placeholder={
-                    provider?.credentialConfigured && provider.credentialKind !== "subscription"
-                      ? "Saved — enter a replacement"
-                      : "Enter API key"
-                  }
-                  onChange={(event) => {
-                    setApiKey(event.currentTarget.value);
-                    setError(null);
-                    setSaved(false);
-                  }}
-                />
-                {!view.secureStorageAvailable ? (
-                  <p className="m-0 text-xs leading-relaxed text-destructive">
-                    Secure credential storage is unavailable. Wisp will not save an API key as plaintext.
+                  </SettingsRow>
+                </SettingsCard>
+                {maxOutputTokensInvalid ? (
+                  <p role="alert" className="m-0 mt-1.5 px-0.5 text-xs text-destructive">
+                    Maximum output tokens must be a whole number between 1 and{" "}
+                    {(model?.maxOutputTokens ?? 1_000_000).toLocaleString()}.
                   </p>
                 ) : null}
-              </div>
-            </SettingsCard>
+              </AdvancedSettings>
+            )}
           </SettingsGroup>
+
+          {claudeCode ? (
+            <ClaudeCodeStatusCard status={view.claudeCode} onCheckAgain={() => void handleCheckClaudeCode()} />
+          ) : (
+            <SettingsGroup label="Credential">
+              <SettingsCard>
+                {provider?.subscriptionSignIn ? (
+                  <SubscriptionSignIn
+                    provider={provider}
+                    label={provider.subscriptionSignIn.label}
+                    signIn={view.providerSignIn?.providerId === provider.id ? view.providerSignIn : null}
+                    disabled={saving || !view.secureStorageAvailable}
+                    onStart={() => void handleStartSignIn()}
+                    onCancel={() => void handleCancelSignIn()}
+                    onFinish={handleFinishSignIn}
+                    onSignOut={() => void handleRemoveCredential()}
+                  />
+                ) : null}
+                <div className="flex flex-col gap-3 px-3.5 py-3.5">
+                  <div className="flex flex-wrap items-start gap-3">
+                    <SettingsRowCopy>
+                      <SettingsRowTitle htmlFor="ai-api-key">API key</SettingsRowTitle>
+                      <SettingsRowDescription>
+                        {provider?.credentialKind === "subscription"
+                          ? "Enter an API key to pay per token instead of using your subscription. It replaces the sign-in."
+                          : provider?.credentialConfigured
+                            ? `An encrypted key is saved for ${provider.name}${voiceProvider(provider.id) ? " and shared with Voice Input settings" : ""}. Enter a new key to replace it.`
+                            : "The key is encrypted using your operating system's credential storage."}
+                      </SettingsRowDescription>
+                    </SettingsRowCopy>
+                    {/* A server from before sign-ins reports no credential kind; its credentials are keys. */}
+                    {provider?.credentialConfigured && provider.credentialKind !== "subscription" ? (
+                      <ConfirmAction
+                        label="Remove key"
+                        confirmLabel="Remove key"
+                        variant="ghost"
+                        className="shrink-0"
+                        disabled={saving}
+                        description={`${voiceProvider(provider.id) ? "Voice input and Wisps" : "Wisps"} using ${provider.name} stop working until you enter a new key.`}
+                        onConfirm={() => void handleRemoveCredential()}
+                      />
+                    ) : null}
+                  </div>
+                  <SecretInput
+                    id="ai-api-key"
+                    autoComplete="new-password"
+                    value={apiKey}
+                    disabled={!view.secureStorageAvailable}
+                    placeholder={
+                      provider?.credentialConfigured && provider.credentialKind !== "subscription"
+                        ? "Saved — enter a replacement"
+                        : "Enter API key"
+                    }
+                    onChange={(event) => {
+                      setApiKey(event.currentTarget.value);
+                      setError(null);
+                      setSaved(false);
+                    }}
+                  />
+                  {!view.secureStorageAvailable ? (
+                    <p className="m-0 text-xs leading-relaxed text-destructive">
+                      Secure credential storage is unavailable. Wisp will not save an API key as plaintext.
+                    </p>
+                  ) : null}
+                </div>
+              </SettingsCard>
+            </SettingsGroup>
+          )}
 
           <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
             <div aria-live="polite">
@@ -521,6 +562,94 @@ function SubscriptionSignIn({
         </p>
       ) : null}
     </div>
+  );
+}
+
+const CLAUDE_CODE_SETUP_URL = "https://code.claude.com/docs/en/setup";
+
+/**
+ * Whether the server's Claude Code can run Wisps. Wisp never signs in to
+ * Claude itself: the person signs in to Claude Code on the server's computer,
+ * and Wisps there use that sign-in (ADR 026).
+ */
+function ClaudeCodeStatusCard({
+  status,
+  onCheckAgain,
+}: {
+  status: ClaudeCodeStatusView | undefined;
+  onCheckAgain: () => void;
+}) {
+  const ready = status?.state === "ready" ? status : undefined;
+  const plan = ready?.plan ? `${ready.plan.charAt(0).toUpperCase()}${ready.plan.slice(1)} ` : "";
+  return (
+    <SettingsGroup label="Claude Code">
+      <SettingsCard>
+        <div className="flex flex-col gap-2 px-3.5 py-3.5">
+          <div className="flex flex-wrap items-start gap-3">
+            <SettingsRowCopy>
+              <SettingsRowTitle>{ready ? `Claude Code ${ready.version}` : "Claude Code"}</SettingsRowTitle>
+              <SettingsRowDescription>
+                {ready
+                  ? ready.billing === "subscription"
+                    ? `Runs on Claude Code with your Claude ${plan}plan. Wisps on it count against your plan's usage limits.`
+                    : "Runs on Claude Code signed in with an Anthropic API account, billed per token."
+                  : claudeCodeUnavailableMessage(status)}
+              </SettingsRowDescription>
+            </SettingsRowCopy>
+            {ready ? null : (
+              <Button type="button" variant="secondary" className="shrink-0" onClick={onCheckAgain}>
+                Check again
+              </Button>
+            )}
+          </div>
+          {status?.state === "missing" ? (
+            <p className="m-0 text-xs leading-relaxed text-dim">
+              Install it on the computer that runs Wisp by following{" "}
+              <a
+                href={CLAUDE_CODE_SETUP_URL}
+                target="_blank"
+                rel="noreferrer"
+                className="text-primary underline-offset-4 hover:underline"
+              >
+                Claude Code's setup guide
+              </a>
+              , then sign in with <code>claude auth login</code>.
+            </p>
+          ) : null}
+          {ready ? null : (
+            <p className="m-0 text-xs leading-relaxed text-dim">
+              Wisp never asks for your Claude password or token: Claude Code keeps its own sign-in.
+            </p>
+          )}
+          {ready?.planUsage ? <ClaudePlanUsage usage={ready.planUsage} /> : null}
+        </div>
+      </SettingsCard>
+    </SettingsGroup>
+  );
+}
+
+const PLAN_WINDOW_NAMES = { five_hour: "5-hour", seven_day: "Weekly" } as const;
+
+/** The plan's usage limits the latest turn reported, shown once one is nearly used up. */
+function ClaudePlanUsage({ usage }: { usage: ClaudeCodePlanUsageView }) {
+  const shown = usage.windows.filter(
+    ({ utilization }) => usage.limited || utilization >= CLAUDE_CODE_PLAN_USAGE_SHOWN_FROM,
+  );
+  if (!shown.length) return null;
+  return (
+    <ul aria-label="Claude plan usage" className="m-0 list-none space-y-0.5 p-0 text-xs leading-relaxed text-warning">
+      {shown.map(({ window, utilization, resetsAt }) => (
+        <li key={window}>
+          {PLAN_WINDOW_NAMES[window]} limit {Math.round(utilization * 100)}% used, resets{" "}
+          {new Date(resetsAt).toLocaleString([], {
+            ...(window === "seven_day" ? { weekday: "short" as const } : {}),
+            hour: "numeric",
+            minute: "2-digit",
+          })}
+          .
+        </li>
+      ))}
+    </ul>
   );
 }
 

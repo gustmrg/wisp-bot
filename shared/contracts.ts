@@ -1,3 +1,4 @@
+import type { ClaudeCodeStatusView } from "./claude-code.js";
 import type { ContextRequest, ContextView } from "./context-policy.js";
 import type {
   PluginSettingsView,
@@ -353,6 +354,8 @@ export interface AiSettingsView {
   providers: ReadonlyArray<ProviderSummary>;
   /** A subscription sign-in in progress or the last one that failed; missing from servers before sign-ins. */
   providerSignIn?: ProviderSignInView | null;
+  /** Whether this server's Claude Code can run Wisps (ADR 026); missing from servers before Claude Code. */
+  claudeCode?: ClaudeCodeStatusView;
   /** Set when the model catalog could not be fully loaded or refreshed and the built-in list is shown. */
   catalogError: string | null;
 }
@@ -563,6 +566,8 @@ export interface SessionReportModelUsage {
   costUsd: number | null;
   /** Set on a row for an auxiliary model, which runs calls for the Wisp rather than turns. */
   auxiliary?: { task: AuxiliaryTask; calls: number };
+  /** Set on a row for turns a Claude plan paid for (ADR 026), which cost nothing more. */
+  plan?: true;
 }
 
 export interface SessionReportToolCall {

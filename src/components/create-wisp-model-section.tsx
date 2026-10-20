@@ -1,6 +1,8 @@
+import { CLAUDE_CODE_PROVIDER, claudeCodeUnavailableMessage } from "../../shared/claude-code";
 import type { AiSettingsView, ModelSelection, ThinkingLevel } from "../../shared/contracts";
 import { missingModelSetup } from "../../shared/setup-status";
 import { NoImageInputNote } from "@/components/no-image-input-note";
+import { SearchableCombobox } from "@/components/searchable-combobox";
 import { canChooseThinkingLevel, keepThinkingLevel, ThinkingLevelRow } from "@/components/thinking-level-select";
 import {
   SettingsCard,
@@ -9,14 +11,22 @@ import {
   SettingsRowDescription,
   SettingsRowTitle,
 } from "@/components/settings/settings-primitives";
-import { Input } from "@/components/ui/input";
-import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { ToggleSwitch } from "@/components/ui/toggle-switch";
+import {
+  catalogModel,
+  invalidMaxOutputTokens,
+  isModelOptionValue,
+  modelName,
+  modelOptions,
+  modelOptionValue,
+  parseModelOptionValue,
+} from "@/lib/model-choice";
+import { modelLabLogo } from "@/lib/model-lab";
 
 export interface WispModelDraft {
   useGlobal: boolean;
   providerId: string;
   modelId: string;
+  /** Only a template sets it; the Wisp's Model tab changes it afterwards. */
   maxOutputTokens: string;
   thinkingLevel: ThinkingLevel;
 }
@@ -70,13 +80,6 @@ export function wispModelDraftFromTemplate(
   };
 }
 
-function invalidMaxOutputTokens(draft: WispModelDraft, modelMax: number | undefined): boolean {
-  const value = draft.maxOutputTokens.trim();
-  if (!value) return false;
-  const parsed = Number(value);
-  return !Number.isSafeInteger(parsed) || parsed < 1 || parsed > (modelMax ?? 1_000_000);
-}
-
 /** A new Wisp needs a model it can run: the global default or its own, with a saved provider key. */
 export function isWispModelDraftInvalid(draft: WispModelDraft, view: AiSettingsView | null): boolean {
   if (!view) return true;
@@ -85,15 +88,10 @@ export function isWispModelDraftInvalid(draft: WispModelDraft, view: AiSettingsV
   const provider = view.providers.find(({ id }) => id === draft.providerId);
   if (!provider?.credentialConfigured) return true;
   const model = provider.models.find(({ id }) => id === draft.modelId);
-  return invalidMaxOutputTokens(draft, model?.maxOutputTokens);
+  return invalidMaxOutputTokens(draft.maxOutputTokens, model?.maxOutputTokens);
 }
 
-function globalSummary(view: AiSettingsView | null): string {
-  const selection = view?.selection;
-  if (!selection) return "No global default configured yet";
-  const provider = view?.providers.find(({ id }) => id === selection.providerId);
-  return `Global default · ${provider?.name ?? selection.providerId} ${selection.modelId}`;
-}
+const GLOBAL_MODEL = "global";
 
 interface CreateWispModelSectionProps {
   view: AiSettingsView | null;
@@ -105,45 +103,45 @@ interface CreateWispModelSectionProps {
 }
 
 function CreateWispModelSection({ view, loadError, draft, onChange, notice }: CreateWispModelSectionProps) {
-  const catalog = view?.providers ?? [];
-  const provider = catalog.find(({ id }) => id === draft.providerId);
-  const model = provider?.models.find(({ id }) => id === draft.modelId);
-  const canCustomize = catalog.length > 0;
-
-  function switchMode(nextUseGlobal: boolean): void {
-    if (nextUseGlobal) {
-      onChange({ ...draft, useGlobal: true });
-      return;
-    }
-    const selection = view?.selection;
-    const nextProvider = catalog.find(({ id }) => id === selection?.providerId) ?? catalog[0];
-    onChange({
-      useGlobal: false,
-      providerId: nextProvider?.id ?? "",
-      modelId:
-        nextProvider && selection && nextProvider.id === selection.providerId
-          ? selection.modelId
-          : (nextProvider?.models[0]?.id ?? ""),
-      maxOutputTokens: "",
-      thinkingLevel: "off",
+  const selection = draft.useGlobal ? null : { providerId: draft.providerId, modelId: draft.modelId };
+  const provider = selection ? view?.providers.find(({ id }) => id === selection.providerId) : undefined;
+  const model = selection && view ? catalogModel(view, selection) : undefined;
+  const value = selection ? modelOptionValue(selection) : GLOBAL_MODEL;
+  const globalModel = view?.selection ?? null;
+  const options = view
+    ? [
+        {
+          value: GLOBAL_MODEL,
+          label: "Use the global model",
+          description: globalModel ? modelName(view, globalModel) : "None is set in Settings → AI Model",
+          iconSrc: globalModel ? modelLabLogo(globalModel) : undefined,
+        },
+        ...modelOptions(view),
+      ]
+    : [];
+  // A template's model from a provider without a saved key stays selected until one is added.
+  if (view && selection && model && !options.some((option) => option.value === value)) {
+    options.push({
+      value,
+      label: model.name,
+      description: `${provider?.name ?? selection.providerId} · ${selection.modelId}`,
+      iconSrc: modelLabLogo(selection),
     });
   }
 
-  function handleProviderChange(nextProviderId: string | null): void {
-    if (!nextProviderId) return;
-    const nextProvider = catalog.find(({ id }) => id === nextProviderId);
-    const selection = view?.selection;
-    const modelId =
-      selection && selection.providerId === nextProviderId ? selection.modelId : (nextProvider?.models[0]?.id ?? "");
+  function choose(next: string): void {
+    if (next === value) return;
+    if (next === GLOBAL_MODEL) {
+      onChange({ ...draft, useGlobal: true });
+      return;
+    }
+    if (!view || !isModelOptionValue(next)) return;
+    const nextSelection = parseModelOptionValue(next);
     onChange({
-      ...draft,
-      providerId: nextProviderId,
-      modelId,
+      useGlobal: false,
+      ...nextSelection,
       maxOutputTokens: "",
-      thinkingLevel: keepThinkingLevel(
-        draft.thinkingLevel,
-        nextProvider?.models.find(({ id }) => id === modelId),
-      ),
+      thinkingLevel: keepThinkingLevel(draft.thinkingLevel, catalogModel(view, nextSelection)),
     });
   }
 
@@ -151,15 +149,22 @@ function CreateWispModelSection({ view, loadError, draft, onChange, notice }: Cr
     <SettingsCard className="mt-[15px]">
       <SettingsRow className="min-h-0 p-[11px]">
         <SettingsRowCopy>
-          <SettingsRowTitle>Model</SettingsRowTitle>
+          <SettingsRowTitle htmlFor="create-wisp-model">Model</SettingsRowTitle>
           <SettingsRowDescription>
-            {draft.useGlobal ? globalSummary(view) : "Specific to this Wisp"}
+            {draft.useGlobal ? "Follows Settings → AI Model." : "Specific to this Wisp."}
           </SettingsRowDescription>
+          {model && !model.input.includes("image") ? <NoImageInputNote /> : null}
         </SettingsRowCopy>
-        <ToggleSwitch
-          checked={!draft.useGlobal}
-          label="Choose model for this Wisp"
-          onChange={() => (canCustomize ? switchMode(!draft.useGlobal) : undefined)}
+        <SearchableCombobox
+          id="create-wisp-model"
+          value={value}
+          options={options}
+          disabled={!view}
+          className="h-8 w-[260px] max-w-[62%] text-base"
+          searchLabel="Search models"
+          searchPlaceholder="Search model name or ID…"
+          emptyText="No models from providers with a saved key."
+          onChange={choose}
         />
       </SettingsRow>
       {notice ? (
@@ -167,7 +172,7 @@ function CreateWispModelSection({ view, loadError, draft, onChange, notice }: Cr
           {notice}
         </p>
       ) : null}
-      {draft.useGlobal && !canCustomize && loadError ? (
+      {!view && loadError ? (
         <p role="alert" className="m-0 px-3.5 pb-3 text-xs text-destructive">
           {loadError}
         </p>
@@ -179,104 +184,21 @@ function CreateWispModelSection({ view, loadError, draft, onChange, notice }: Cr
             : "No global default model is set. Choose one in Settings → AI Model, or choose a model for this Wisp."}
         </p>
       ) : null}
-      {!draft.useGlobal && view ? (
-        <>
-          <SettingsRow className="min-h-0 p-[11px]">
-            <SettingsRowCopy>
-              <SettingsRowTitle htmlFor="create-wisp-provider">Provider</SettingsRowTitle>
-            </SettingsRowCopy>
-            <Select
-              items={catalog.map(({ id, name }) => ({ value: id, label: name }))}
-              value={draft.providerId}
-              onValueChange={handleProviderChange}
-            >
-              <SelectTrigger id="create-wisp-provider" className="w-[220px] max-w-[55%]">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent align="end" alignItemWithTrigger={false}>
-                <SelectGroup>
-                  {catalog.map((item) => (
-                    <SelectItem key={item.id} value={item.id}>
-                      {item.name}
-                    </SelectItem>
-                  ))}
-                </SelectGroup>
-              </SelectContent>
-            </Select>
-          </SettingsRow>
-          <SettingsRow className="min-h-0 p-[11px]">
-            <SettingsRowCopy>
-              <SettingsRowTitle htmlFor="create-wisp-model">Model</SettingsRowTitle>
-              <SettingsRowDescription>{provider?.models.length ?? 0} models available.</SettingsRowDescription>
-              {model && !model.input.includes("image") ? <NoImageInputNote /> : null}
-            </SettingsRowCopy>
-            <Select
-              items={provider?.models.map(({ id, name }) => ({ value: id, label: name })) ?? []}
-              value={draft.modelId}
-              onValueChange={(value) => {
-                if (value === null) return;
-                const next = provider?.models.find(({ id }) => id === value);
-                onChange({
-                  ...draft,
-                  modelId: value,
-                  maxOutputTokens: "",
-                  thinkingLevel: keepThinkingLevel(draft.thinkingLevel, next),
-                });
-              }}
-            >
-              <SelectTrigger id="create-wisp-model" className="w-[220px] max-w-[55%]">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent align="end" alignItemWithTrigger={false}>
-                <SelectGroup>
-                  {provider?.models.map((item) => (
-                    <SelectItem key={item.id} value={item.id}>
-                      {item.name}
-                    </SelectItem>
-                  ))}
-                </SelectGroup>
-              </SelectContent>
-            </Select>
-          </SettingsRow>
-          <SettingsRow className="min-h-0 p-[11px]">
-            <SettingsRowCopy>
-              <SettingsRowTitle htmlFor="create-wisp-max-output-tokens">Maximum output tokens</SettingsRowTitle>
-              <SettingsRowDescription>
-                Leave empty to use the safe automatic limit of up to 32,768 tokens.
-              </SettingsRowDescription>
-            </SettingsRowCopy>
-            <Input
-              id="create-wisp-max-output-tokens"
-              type="number"
-              min={1}
-              max={model?.maxOutputTokens ?? 1_000_000}
-              step={1}
-              value={draft.maxOutputTokens}
-              placeholder="Automatic"
-              className="w-[160px] max-w-[45%]"
-              onChange={(event) => onChange({ ...draft, maxOutputTokens: event.currentTarget.value })}
-            />
-          </SettingsRow>
-          {canChooseThinkingLevel(model) ? (
-            <ThinkingLevelRow
-              id="create-wisp-thinking-level"
-              className="min-h-0 p-[11px]"
-              model={model}
-              value={keepThinkingLevel(draft.thinkingLevel, model)}
-              onChange={(thinkingLevel) => onChange({ ...draft, thinkingLevel })}
-            />
-          ) : null}
-          {provider && !provider.credentialConfigured ? (
-            <p role="alert" className="m-0 px-3.5 pb-3 text-xs text-destructive">
-              No API key saved for {provider.name} yet. Add one in Settings → AI Model before creating this Wisp.
-            </p>
-          ) : null}
-          {invalidMaxOutputTokens(draft, model?.maxOutputTokens) ? (
-            <p role="alert" className="m-0 px-3.5 pb-3 text-xs text-destructive">
-              Maximum output tokens must be a whole number between 1 and {model?.maxOutputTokens ?? 1_000_000}.
-            </p>
-          ) : null}
-        </>
+      {canChooseThinkingLevel(model) ? (
+        <ThinkingLevelRow
+          id="create-wisp-thinking-level"
+          className="min-h-0 p-[11px]"
+          model={model}
+          value={keepThinkingLevel(draft.thinkingLevel, model)}
+          onChange={(thinkingLevel) => onChange({ ...draft, thinkingLevel })}
+        />
+      ) : null}
+      {provider && !provider.credentialConfigured ? (
+        <p role="alert" className="m-0 px-3.5 pb-3 text-xs text-destructive">
+          {provider.id === CLAUDE_CODE_PROVIDER
+            ? `${claudeCodeUnavailableMessage(view?.claudeCode)} See Settings → AI Model.`
+            : `No API key saved for ${provider.name} yet. Add one in Settings → AI Model before creating this Wisp.`}
+        </p>
       ) : null}
     </SettingsCard>
   );

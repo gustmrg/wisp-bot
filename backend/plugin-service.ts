@@ -3,6 +3,7 @@ import { createHash, randomUUID } from "node:crypto";
 import path from "node:path";
 import type { ToolDefinition } from "@earendil-works/pi-coding-agent" with { "resolution-mode": "import" };
 import {
+  CLAUDE_WEB_SEARCH,
   PLUGIN_CATALOG,
   PLUGIN_IDS,
   pluginCatalogEntry,
@@ -14,6 +15,8 @@ import {
   type WebCapability,
   type WebProviders,
   type WispPluginAccessView,
+  type WispWebProvider,
+  type WispWebProviders,
   type PluginConnectionResult,
 } from "../shared/plugins.js";
 import { writeFileAtomically } from "./atomic-file.js";
@@ -48,6 +51,7 @@ import {
   parseStartPluginSignIn,
   parseFinishPluginSignIn,
   parseWebProviders,
+  parseWispWebProviders,
   pluginRecord,
 } from "./plugin-validation.js";
 import type { ToolAuthorizationBroker } from "./tool-authorization-broker.js";
@@ -69,7 +73,7 @@ interface PluginState {
   // Application session IDs prevent a deleted/recreated conversation from inheriting access.
   grants: Record<string, AccessMap>;
   /** Explicit provider per web capability. Sessions without an entry use catalog order among their grants. */
-  webProviders: Record<string, WebProviders>;
+  webProviders: Record<string, WispWebProviders>;
   /** Provider preselected when a Wisp turns a capability on. */
   defaultProviders: Partial<Record<WebCapability, PluginId>>;
   /** Per session; kept only while the session has write access to the plugin. */
@@ -142,6 +146,7 @@ function defaultState(): PluginState {
       firecrawl: false,
       tavily: false,
       exa: false,
+      deepseek: false,
       "google-calendar": false,
       gmail: false,
       "google-drive": false,
@@ -223,7 +228,7 @@ export class PluginService implements PluginToolSource, IntegrationToolSource {
       for (const [sessionId, value] of Object.entries(pluginRecord(raw.webProviders ?? {}))) {
         if (!Object.hasOwn(normalized.grants, sessionId)) throw invalidPluginRequest();
         Object.defineProperty(normalized.webProviders, sessionId, {
-          value: parseWebProviders(value),
+          value: parseWispWebProviders(value),
           enumerable: true,
           writable: true,
           configurable: true,
@@ -536,8 +541,10 @@ export class PluginService implements PluginToolSource, IntegrationToolSource {
   getAccess(value: unknown): WispPluginAccessView {
     const { conversationId } = parsePluginConversation(value);
     const sessionId = this.options.resolveWisp(conversationId);
-    const webProviders = { search: null, read: null } as WebProviders;
-    for (const { id } of WEB_CAPABILITIES) webProviders[id] = this.webProvider(sessionId, id);
+    const webProviders: WispWebProviders = {
+      search: this.webProvider(sessionId, "search"),
+      read: this.webProvider(sessionId, "read") as PluginId | null,
+    };
     return {
       conversationId,
       revision: this.accessRevision(sessionId),
@@ -587,7 +594,9 @@ export class PluginService implements PluginToolSource, IntegrationToolSource {
         // A provider replaced for a capability stops its in-flight calls, like a revoked grant.
         for (const { id } of WEB_CAPABILITIES) {
           const previous = this.webProvider(sessionId, id);
-          if (previous && previous !== request.webProviders[id]) changedPlugins.push(previous);
+          if (previous && previous !== CLAUDE_WEB_SEARCH && previous !== request.webProviders[id]) {
+            changedPlugins.push(previous);
+          }
         }
         Object.defineProperty(next.webProviders, sessionId, {
           value: request.webProviders,
@@ -691,7 +700,11 @@ export class PluginService implements PluginToolSource, IntegrationToolSource {
           : [];
       }),
       activeNames,
-      revision: snapshotRevision(bindings.map(({ pluginId, tool }) => `${pluginId}:${tool.name}`)),
+      // Choosing Claude Code's search changes what a Claude Code session offers, so it rebuilds.
+      revision: snapshotRevision([
+        ...bindings.map(({ pluginId, tool }) => `${pluginId}:${tool.name}`),
+        ...(this.searchesWithClaude(conversationId) ? [`${CLAUDE_WEB_SEARCH}:web_search`] : []),
+      ]),
     };
   }
 
@@ -726,7 +739,7 @@ export class PluginService implements PluginToolSource, IntegrationToolSource {
         ? explicit[id]
         : this.adapters.find((adapter) => usable(adapter.id) && adapter.tools.some(({ name }) => name === toolName))
             ?.id;
-      if (provider && usable(provider)) webTools.set(toolName, provider);
+      if (provider && provider !== CLAUDE_WEB_SEARCH && usable(provider)) webTools.set(toolName, provider);
     }
     return this.adapters.flatMap((adapter) => {
       if (!usable(adapter.id)) return [];
@@ -839,12 +852,20 @@ export class PluginService implements PluginToolSource, IntegrationToolSource {
     });
   }
 
-  private explicitWebProviders(sessionId: string): WebProviders | undefined {
+  /**
+   * Whether the Wisp searches with Claude Code's own web search (ADR 026),
+   * which its Claude Code sessions offer in place of a plugin's web_search.
+   */
+  searchesWithClaude(conversationId: string): boolean {
+    return this.explicitWebProviders(this.options.resolveWisp(conversationId))?.search === CLAUDE_WEB_SEARCH;
+  }
+
+  private explicitWebProviders(sessionId: string): WispWebProviders | undefined {
     return Object.hasOwn(this.state.webProviders, sessionId) ? this.state.webProviders[sessionId] : undefined;
   }
 
   /** Provider shown for a capability; legacy sessions report the first granted provider in catalog order. */
-  private webProvider(sessionId: string, capability: WebCapability): PluginId | null {
+  private webProvider(sessionId: string, capability: WebCapability): WispWebProvider | null {
     const explicit = this.explicitWebProviders(sessionId);
     if (explicit) return explicit[capability];
     const granted = PLUGIN_CATALOG.filter(

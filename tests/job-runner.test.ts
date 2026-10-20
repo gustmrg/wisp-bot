@@ -4,7 +4,8 @@ import { WispBackendError } from "../backend/backend-error.js";
 import type { ConversationAgentContext } from "../backend/conversation-agent.js";
 import { JobRunner, jobRunPrompt } from "../backend/job-runner.js";
 import type { JobRunContext } from "../backend/job-scheduler.js";
-import type { JobSessionSpec, PiJobSessionLike } from "../backend/pi-conversation-agent.js";
+import type { RuntimeJobSession } from "../backend/runtime-session.js";
+import type { JobSessionSpec } from "../backend/wisp-session-plan.js";
 import type { UnattendedGrant } from "../backend/tool-authorization-broker.js";
 import type { Job, JobRun } from "../shared/jobs.js";
 
@@ -48,7 +49,7 @@ function setup(answer: (tools: Tool[]) => Promise<{ text: string; stopReason?: s
   const prompts: string[] = [];
   const grants: UnattendedGrant[] = [];
   let last: { text: string; stopReason?: string; errorMessage?: string } | undefined;
-  const session: PiJobSessionLike = {
+  const session: RuntimeJobSession = {
     sessionFile: "/data/pi-sessions/atlas-session/jobs/job-1/run-1.jsonl",
     getActiveToolNames: () => [],
     prompt: async (text) => {

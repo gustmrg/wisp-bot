@@ -16,7 +16,9 @@ ENV NODE_ENV=production \
     WISP_PORT=8787
 WORKDIR /opt/wisp
 COPY --from=build /src/release/server ./
+# Claude Code Wisps run the person's own `claude`; the SDK's bundled binaries are never used.
 RUN npm install --omit=dev && npm cache clean --force \
+    && rm -rf node_modules/@anthropic-ai/claude-agent-sdk-* \
     && chmod 755 server/cli.js && ln -s /opt/wisp/server/cli.js /usr/local/bin/wispctl \
     && mkdir -m 700 /data && chown node:node /data
 USER node

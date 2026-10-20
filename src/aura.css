@@ -189,13 +189,13 @@
   background: var(--wisp);
 }
 
-/* The main button of a Wisp's composer is in its color; stop and recording keep theirs. A gray Wisp keeps the
-   default button, as its lifted gray would read as disabled. */
+/* The main button of a Wisp's composer is in its color, with a white icon on every color; stop and recording
+   keep theirs. A gray Wisp keeps the default button, as its lifted gray would read as disabled. */
 :root:not([data-wisp-colors="off"])
   .chat-panel[data-accent]:not([data-neutral-accent])
   .composer-primary:is([data-variant="voice"], [data-variant="send"]) {
-  background: var(--wisp);
-  color: var(--wisp-ink);
+  background: var(--wisp-fill);
+  color: #fff;
 }
 :root.dark:not([data-wisp-colors="off"])
   .chat-panel[data-accent]:not([data-neutral-accent])

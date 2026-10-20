@@ -21,7 +21,7 @@ to write them out as tool-call arguments.
 | PDF reading | `withDocumentReading` and `backend/pdf-reader.ts` | Returns text and page images for understanding; the original bytes never reach the model |
 | MCP dispatch | `executeTool` in `backend/mcp-service.ts` calls `connection.callTool(tool.name, args)` | Arguments are exactly the JSON the model produced; the host never transforms them |
 | Argument limit | `MAX_ARGUMENT_JSON_BYTES = 200_000` in `backend/mcp-tools.ts` | Larger payloads are refused |
-| Shell | `excludeTools: ["bash", "powershell"]` in `backend/pi-conversation-agent.ts` | Intentional; Wisps cannot run scripts |
+| Shell | `excludeTools: ["bash", "powershell"]` in `backend/pi-session-factory.ts` | Intentional; Wisps cannot run scripts |
 
 ## Why a shell or an encoding tool would not fix it
 

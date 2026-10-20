@@ -30,7 +30,7 @@ const ROOTS = ["backend", "server.sqlite", "local-server-key.json"];
 const DATABASES = new Set(["server.sqlite", "backend/conversations.sqlite"]);
 const SKIPPED_DIRECTORIES = new Set(["backend/logs"]);
 /** Each Wisp's cache of image transcriptions: text from the user's documents that can be rebuilt. */
-const SKIPPED_DIRECTORY_PATTERNS = [/^backend\/pi-config\/[^/]+\/transcription-cache$/u];
+const SKIPPED_DIRECTORY_PATTERNS = [/^backend\/wisp-config\/[^/]+\/transcription-cache$/u];
 /** Copies the app keeps before upgrading a database, for going back on this computer only. */
 const SKIPPED_FILE_PATTERNS = [/^backend\/conversations\.sqlite\.v\d+\.backup$/u];
 const SKIPPED_SUFFIXES = ["-wal", "-shm", "-journal", ".tmp", ".keychain-backup", ".partial"];

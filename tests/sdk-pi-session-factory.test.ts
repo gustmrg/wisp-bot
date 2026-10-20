@@ -90,7 +90,7 @@ import {
   excludeOpenRouterReasoning,
   sanitizeWorkspacePath,
   SdkPiSessionFactory,
-} from "../backend/pi-conversation-agent.js";
+} from "../backend/pi-session-factory.js";
 
 /** Adapts the legacy sync plugin tool source into the async snapshot source. */
 function toToolSource(pluginTools: PluginToolSource): IntegrationToolSource {

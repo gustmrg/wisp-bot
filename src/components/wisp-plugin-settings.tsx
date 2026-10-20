@@ -1,7 +1,10 @@
 import { useEffect, useId, useState, type ReactNode } from "react";
 import { FilePenIcon, FilePlusIcon, GlobeIcon, TriangleAlertIcon, XIcon } from "lucide-react";
 
+import { CLAUDE_CODE_PROVIDER } from "../../shared/claude-code";
 import {
+  CLAUDE_WEB_SEARCH,
+  CLAUDE_WEB_SEARCH_NAME,
   PLUGIN_CATALOG,
   WEB_CAPABILITIES,
   isWebProvider,
@@ -9,7 +12,7 @@ import {
   type PluginGrant,
   type PluginId,
   type PluginSettingsView,
-  type WebProviders,
+  type WispWebProviders,
 } from "../../shared/plugins";
 import type { McpAccess, McpGrant, McpServerSummary, McpSettingsView } from "../../shared/mcp";
 import { MCP_PRESETS } from "../../shared/mcp-presets";
@@ -55,7 +58,7 @@ const BEHAVIOR_LABELS: Record<ToolPolicyBehavior, string> = { allow: "Allow", as
 const NO_POLICY: WispToolPolicy = { files: {}, allowEverything: false };
 
 const MAX_PREVIEW_TOOLS = 6;
-const NO_PROVIDERS: WebProviders = { search: null, read: null };
+const NO_PROVIDERS: WispWebProviders = { search: null, read: null };
 
 export function WispPluginSettings({
   conversationId,
@@ -154,7 +157,7 @@ function AlwaysAllowedChips({
   );
 }
 
-function sameProviders(left: WebProviders, right: WebProviders): boolean {
+function sameProviders(left: WispWebProviders, right: WispWebProviders): boolean {
   return WEB_CAPABILITIES.every(({ id }) => left[id] === right[id]);
 }
 
@@ -196,8 +199,10 @@ function WispAccessForm({
   const [settings, setSettings] = useState<PluginSettingsView | null>(null);
   const [grants, setGrants] = useState<ReadonlyArray<PluginGrant>>([]);
   const [savedGrants, setSavedGrants] = useState<ReadonlyArray<PluginGrant>>([]);
-  const [providers, setProviders] = useState<WebProviders>(NO_PROVIDERS);
-  const [savedProviders, setSavedProviders] = useState<WebProviders>(NO_PROVIDERS);
+  const [providers, setProviders] = useState<WispWebProviders>(NO_PROVIDERS);
+  const [savedProviders, setSavedProviders] = useState<WispWebProviders>(NO_PROVIDERS);
+  // A Wisp on Claude Code can search with Claude Code's own web search.
+  const [onClaudeCode, setOnClaudeCode] = useState(false);
   const [revision, setRevision] = useState("");
   const [mcpView, setMcpView] = useState<McpSettingsView | null>(null);
   const [mcpGrants, setMcpGrants] = useState<ReadonlyArray<McpGrant>>([]);
@@ -221,9 +226,12 @@ function WispAccessForm({
       window.wisp.getMcpSettings(),
       window.wisp.getWispMcpAccess({ conversationId }),
       window.wisp.getWispToolPolicy({ conversationId }),
+      // Only the Claude Code search option depends on it, so the tab loads without it.
+      window.wisp.getConversationModel({ conversationId }).catch(() => null),
     ])
-      .then(([plugins, access, mcp, mcpAccess, wispPolicy]) => {
+      .then(([plugins, access, mcp, mcpAccess, wispPolicy, model]) => {
         if (cancelled) return;
+        setOnClaudeCode(Boolean(model?.ok && model.value.effective?.providerId === CLAUDE_CODE_PROVIDER));
         if (!plugins.ok) {
           setError(plugins.error.message);
           return;
@@ -461,7 +469,8 @@ function WispAccessForm({
     const candidates = PLUGIN_CATALOG.filter(
       ({ id, capabilities }) => capabilities.includes(capability.id) && (available(id) || id === saved),
     );
-    if (!candidates.length) return [];
+    const claude = capability.id === "search" && (onClaudeCode || saved === CLAUDE_WEB_SEARCH);
+    if (!candidates.length && !claude) return [];
     // The Settings default is listed first so it is the obvious choice.
     const defaultProvider = settings?.defaultProviders[capability.id];
     candidates.sort((left, right) => Number(right.id === defaultProvider) - Number(left.id === defaultProvider));
@@ -472,13 +481,14 @@ function WispAccessForm({
         label: id === defaultProvider && candidates.length > 1 ? `${name} (default)` : name,
         disabled: !available(id),
       })),
+      ...(claude ? [{ value: CLAUDE_WEB_SEARCH, label: CLAUDE_WEB_SEARCH_NAME, disabled: !onClaudeCode }] : []),
     ];
     return [
       <AccessRow
         key={capability.id}
         id={`${formId}-web-${capability.id}`}
         icon={
-          current ? (
+          current && current !== CLAUDE_WEB_SEARCH ? (
             <PluginLogo pluginId={current} size="sm" />
           ) : (
             <span className="flex size-7 flex-none items-center justify-center rounded-lg bg-muted">
@@ -491,10 +501,21 @@ function WispAccessForm({
         options={options}
         disabled={saving}
         onChange={(value) => {
-          setProviders((previous) => ({ ...previous, [capability.id]: value === "none" ? null : (value as PluginId) }));
+          // Only search lists Claude Code's own provider.
+          setProviders(
+            (previous) => ({ ...previous, [capability.id]: value === "none" ? null : value }) as WispWebProviders,
+          );
           changed();
         }}
-        notice={saved && !available(saved) ? unavailableNotice(saved) : undefined}
+        notice={
+          saved === CLAUDE_WEB_SEARCH
+            ? onClaudeCode
+              ? undefined
+              : "Claude searches only while this Wisp runs on Claude Code."
+            : saved && !available(saved)
+              ? unavailableNotice(saved)
+              : undefined
+        }
       />,
     ];
   });

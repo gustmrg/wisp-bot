@@ -11,6 +11,7 @@ import {
   type SaveWispPluginAccessRequest,
   type WebProviders,
   type WispPluginAccessView,
+  type WispWebProviders,
 } from "../../shared/plugins";
 import type { SaveWispToolPolicyRequest, WispToolPolicy, WispToolPolicyView } from "../../shared/tool-policy";
 import { WispDetails } from "./wisp-details";
@@ -27,15 +28,18 @@ function setup({
   mcpServers = [],
   mcpGrants = [],
   policy = { files: {}, allowEverything: false },
+  providerId = "openai",
 }: {
   available?: ReadonlyArray<PluginId>;
   disabled?: ReadonlyArray<PluginId>;
   grants?: ReadonlyArray<PluginGrant>;
-  webProviders?: WebProviders;
+  webProviders?: WispWebProviders;
   defaultProviders?: WebProviders;
   mcpServers?: ReadonlyArray<McpServerSummary>;
   mcpGrants?: ReadonlyArray<McpGrant>;
   policy?: WispToolPolicy;
+  /** The provider the Wisp runs on. */
+  providerId?: string;
 } = {}) {
   const getPluginSettings = vi.fn(async () => ({
     ok: true,
@@ -88,9 +92,14 @@ function setup({
       value: { ...request, defaults },
     }),
   );
+  const getConversationModel = vi.fn(async () => ({
+    ok: true,
+    value: { effective: { providerId, modelId: "model" } },
+  }));
   Object.defineProperty(window, "wisp", {
     configurable: true,
     value: {
+      getConversationModel,
       getPluginSettings,
       getWispPluginAccess,
       saveWispPluginAccess,
@@ -128,6 +137,7 @@ describe("WispPluginSettings", () => {
       "Firecrawl",
       "Tavily",
       "Exa",
+      "DeepSeek",
     ]);
     await user.click(screen.getByRole("option", { name: "Tavily" }));
     await openSelect(user, screen.getByRole("combobox", { name: "Read web pages access" }));
@@ -141,6 +151,31 @@ describe("WispPluginSettings", () => {
       webProviders: { search: "tavily", read: "exa" },
     });
     expect(await screen.findByRole("status")).toHaveTextContent("Access settings saved for this Wisp.");
+  });
+
+  it("offers Claude Code's own web search to a Wisp on Claude Code", async () => {
+    const api = setup({ providerId: "claude-code" });
+    const user = userEvent.setup();
+    render(<WispPluginSettings conversationId="researcher" />);
+    await openSelect(user, await screen.findByRole("combobox", { name: "Search the web access" }));
+    await user.click(screen.getByRole("option", { name: "Claude (included in your plan)" }));
+    await user.click(screen.getByRole("button", { name: "Save access" }));
+
+    expect(api.saveWispPluginAccess).toHaveBeenCalledWith(
+      expect.objectContaining({ grants: grantsFor({}), webProviders: { search: "claude-code", read: null } }),
+    );
+  });
+
+  it("keeps Claude Code's web search listed, but unused, for a Wisp no longer on Claude Code", async () => {
+    setup({ webProviders: { search: "claude-code", read: null } });
+    const user = userEvent.setup();
+    render(<WispPluginSettings conversationId="researcher" />);
+    expect(await screen.findByText("Claude searches only while this Wisp runs on Claude Code.")).toBeInTheDocument();
+    await openSelect(user, screen.getByRole("combobox", { name: "Search the web access" }));
+    expect(screen.getByRole("option", { name: "Claude (included in your plan)" })).toHaveAttribute(
+      "aria-disabled",
+      "true",
+    );
   });
 
   it("lists always-allowed MCP tools and saves their removal", async () => {
@@ -280,7 +315,7 @@ describe("WispPluginSettings", () => {
     expect(screen.getByText(/Read web pages: no connected plugin provides this/)).toBeVisible();
     expect(
       screen.getByText(
-        /Unavailable: Linear \(turned off\), Firecrawl, Tavily, Exa, Google Calendar, Gmail, Google Drive, Home Assistant, GitHub, Atlassian\./,
+        /Unavailable: Linear \(turned off\), Firecrawl, Tavily, Exa, DeepSeek, Google Calendar, Gmail, Google Drive, Home Assistant, GitHub, Atlassian\./,
       ),
     ).toBeVisible();
     await user.click(screen.getByRole("button", { name: "Set up plugins" }));

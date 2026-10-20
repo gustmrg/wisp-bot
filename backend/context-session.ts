@@ -7,6 +7,7 @@ import {
   shouldRenewContext,
   withPolicyDefaults,
   type ContextCommand,
+  type ContextPolicy,
   type ContextView,
 } from "../shared/context-policy.js";
 import { systemTimeZone } from "../shared/time-zone.js";
@@ -14,6 +15,33 @@ import { WispBackendError } from "./backend-error.js";
 
 const CONTINUITY_INSTRUCTIONS =
   "Preserve the user's goals, decisions, preferences, unresolved questions, pending work, and exact identifiers or references needed to continue. Distinguish completed work from pending work. Preserve the meaning of numbered options the user may refer to. Do not invent facts. Keep the summary concise. Earlier messages remain accessible with search_history.";
+
+/** The file in a Wisp's config directory that holds its context policy and memory. */
+export const CONTEXT_SETTINGS_FILE = "context-settings.json";
+
+export interface ContextSettings {
+  policy: ContextPolicy;
+  memory: string;
+}
+
+/** A Wisp's context policy and memory; the defaults when none are saved. Shared by every runtime. */
+export async function loadContextSettings(settingsPath: string): Promise<ContextSettings> {
+  try {
+    const data = JSON.parse(await readFile(settingsPath, "utf8"));
+    const policy = withPolicyDefaults(data.policy);
+    if (!isContextPolicy(policy) || typeof data.memory !== "string" || data.memory.length > 8000)
+      throw new Error("Invalid context settings");
+    return { policy, memory: data.memory };
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT")
+      throw new WispBackendError("invalid_configuration", "Could not load this Wisp's context settings.");
+    return { policy: { ...DEFAULT_CONTEXT_POLICY }, memory: "" };
+  }
+}
+
+export async function saveContextSettings(settingsPath: string, settings: ContextSettings): Promise<void> {
+  await writeFileAtomically(settingsPath, JSON.stringify(settings));
+}
 
 export class ContextSession {
   private settings = { policy: { ...DEFAULT_CONTEXT_POLICY }, memory: "" };
@@ -27,16 +55,7 @@ export class ContextSession {
   ) {}
 
   async load(): Promise<void> {
-    try {
-      const data = JSON.parse(await readFile(this.settingsPath, "utf8"));
-      const policy = withPolicyDefaults(data.policy);
-      if (!isContextPolicy(policy) || typeof data.memory !== "string" || data.memory.length > 8000)
-        throw new Error("Invalid context settings");
-      this.settings = { policy, memory: data.memory };
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== "ENOENT")
-        throw new WispBackendError("invalid_configuration", "Could not load this Wisp's context settings.");
-    }
+    this.settings = await loadContextSettings(this.settingsPath);
   }
 
   view(): ContextView {
@@ -75,7 +94,7 @@ export class ContextSession {
       throw new WispBackendError("invalid_request", "Wait for the Wisp to finish before changing its context.");
     if (command.action === "save") {
       const settings = { policy: command.policy, memory: command.memory };
-      await writeFileAtomically(this.settingsPath, JSON.stringify(settings));
+      await saveContextSettings(this.settingsPath, settings);
       this.settings = settings;
     } else if (command.action === "compact") {
       await this.session.compact(CONTINUITY_INSTRUCTIONS);

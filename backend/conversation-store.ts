@@ -6,6 +6,7 @@ import type { Job, JobRun } from "../shared/jobs.js";
 import type { QueuedMessage } from "../shared/message-queue.js";
 import type { ScheduledMessage } from "../shared/scheduled-messages.js";
 import { backUpBeforeUpgrade, IntactDatabaseError } from "./sqlite-backup.js";
+import { renamedSessionFile } from "./storage-layout.js";
 import type { ConversationRecord, WispRecord, WorkspaceRecords } from "./workspace-actions.js";
 
 // The layout this build writes, and the oldest layout reader that can still
@@ -27,8 +28,13 @@ import type { ConversationRecord, WispRecord, WorkspaceRecords } from "./workspa
 // deleting a conversation removes them through foreign keys.
 // Version 11 adds each Wisp's fallback choice; older writers leave it alone,
 // and a Wisp they create has none, so it follows its model.
-const STORE_VERSION = 11;
-const MIN_READER_VERSION = 6;
+// Version 12 follows the Wisp folders' new names (ADR 027) in each job run's
+// session file. Older readers look for the old folder names and would find
+// none, so it raises MIN_READER_VERSION: an older build refuses this database.
+const STORE_VERSION = 12;
+const MIN_READER_VERSION = 12;
+/** The first layout whose job runs name their session files under the runtime-neutral folders. */
+const WISP_FOLDERS_VERSION = 12;
 /** The first layout that stores records as columns rather than JSON. */
 const COLUMN_RECORDS_VERSION = 5;
 
@@ -558,6 +564,7 @@ export class ConversationStore {
         store.addPinnedConversations();
         store.addWispThinkingLevels();
         store.addWispFallbacks();
+        if (version !== undefined) store.renameJobRunSessionFiles(Number(version) < WISP_FOLDERS_VERSION);
       }
       return store;
     } catch (error) {
@@ -1144,6 +1151,28 @@ export class ConversationStore {
     this.db.exec("BEGIN IMMEDIATE");
     try {
       this.db.exec(ADD_WISP_FALLBACKS);
+      this.raiseVersions();
+      this.db.exec("COMMIT");
+    } catch (error) {
+      this.db.exec("ROLLBACK");
+      throw error;
+    }
+  }
+
+  // A run's file is only ever deleted from inside the session folders, so one
+  // named under the old folder would be left on disk when its run is pruned.
+  // Runs again when an interrupted upgrade (the version is raised by whichever
+  // step comes first) left some behind.
+  private renameJobRunSessionFiles(upgrading: boolean): void {
+    const rows = this.db.prepare("SELECT DISTINCT session_file FROM job_runs WHERE session_file IS NOT NULL").all();
+    const renames = rows
+      .map(({ session_file: file }) => [String(file), renamedSessionFile(String(file))] as const)
+      .filter(([file, renamed]) => renamed !== file);
+    if (!upgrading && !renames.length) return;
+    this.db.exec("BEGIN IMMEDIATE");
+    try {
+      const update = this.db.prepare("UPDATE job_runs SET session_file = ? WHERE session_file = ?");
+      for (const [file, renamed] of renames) update.run(renamed, file);
       this.raiseVersions();
       this.db.exec("COMMIT");
     } catch (error) {

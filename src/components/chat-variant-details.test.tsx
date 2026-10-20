@@ -146,6 +146,7 @@ it("loads model and usage data lazily and keeps model details across tabs", asyn
           status: "idle",
         },
       })),
+      manageContext: vi.fn(async () => ({ ok: true, value: { tokens: 0 } })),
       subscribeToAgentEvents: vi.fn(() => () => undefined),
     },
   });
@@ -157,13 +158,12 @@ it("loads model and usage data lazily and keeps model details across tabs", asyn
   await user.clear(screen.getByRole("textbox", { name: "Name" }));
   await user.type(screen.getByRole("textbox", { name: "Name" }), "Unsent name");
   await user.click(screen.getByRole("tab", { name: "Model" }));
-  expect(await screen.findByText("Test")).toBeVisible();
-  expect(screen.getByText("model")).toBeVisible();
+  expect(await screen.findByText("Test · model")).toBeVisible();
   expect(screen.getByText(/follows the global model/)).toBeVisible();
   await user.click(screen.getByRole("tab", { name: "Usage" }));
   expect(await screen.findByText("No session yet")).toBeVisible();
   await user.click(screen.getByRole("tab", { name: "Model" }));
-  expect(screen.getByText("Test")).toBeVisible();
+  expect(screen.getByText("Test · model")).toBeVisible();
   expect(getAiSettings).toHaveBeenCalledTimes(1);
   await user.click(screen.getByRole("tab", { name: "General" }));
   expect(screen.getByRole("textbox", { name: "Name" })).toHaveValue("Unsent name");
@@ -177,6 +177,7 @@ it("supports keyboard navigation between settings tabs", async () => {
     value: {
       getAiSettings: vi.fn(async () => ({ ok: false, error: { message: "No settings yet" } })),
       getConversationModel: vi.fn(async () => ({ ok: false, error: { message: "No model yet" } })),
+      manageContext: vi.fn(async () => ({ ok: true, value: { tokens: 0 } })),
       subscribeToAgentEvents: vi.fn(() => () => undefined),
     },
   });

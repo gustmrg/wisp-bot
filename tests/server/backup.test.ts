@@ -94,8 +94,8 @@ async function populated() {
   await symlink("/etc/passwd", path.join(workspaces, wispWorkspace!, "outside"));
   await mkdir(path.join(dataDirectory, "backend", "logs"), { recursive: true });
   await writeFile(path.join(dataDirectory, "backend", "logs", "backend.log"), "log line\n");
-  const [wispConfig] = await readdir(path.join(dataDirectory, "backend", "pi-config"));
-  const transcriptions = path.join(dataDirectory, "backend", "pi-config", wispConfig!, "transcription-cache");
+  const [wispConfig] = await readdir(path.join(dataDirectory, "backend", "wisp-config"));
+  const transcriptions = path.join(dataDirectory, "backend", "wisp-config", wispConfig!, "transcription-cache");
   await mkdir(transcriptions, { recursive: true });
   await writeFile(path.join(transcriptions, "entry.json"), JSON.stringify({ text: "Scanned contract" }));
   await writeFile(path.join(dataDirectory, "backend", "conversations.sqlite.v9.backup"), "upgrade backup");
@@ -139,7 +139,7 @@ describe("backups", () => {
     await expect(lstat(path.join(workspace, "outside"))).rejects.toThrow();
     await expect(lstat(path.join(target, "backend", "logs"))).rejects.toThrow();
     await expect(
-      lstat(path.join(target, "backend", "pi-config", source.wispConfig, "transcription-cache")),
+      lstat(path.join(target, "backend", "wisp-config", source.wispConfig, "transcription-cache")),
     ).rejects.toThrow();
     await expect(lstat(path.join(target, "backend", "conversations.sqlite.v9.backup"))).rejects.toThrow();
 

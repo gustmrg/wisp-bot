@@ -26,6 +26,11 @@ const GIB = 1024 * 1024 * 1024;
 
 const trigger = <button type="button" aria-label="Create Wisp" />;
 
+async function chooseModel(user: ReturnType<typeof userEvent.setup>, name: RegExp) {
+  await user.click(screen.getByRole("combobox", { name: "Model" }));
+  await user.click(await screen.findByRole("option", { name }));
+}
+
 function mockAiSettings(
   selection: AiSettingsView["selection"] = { providerId: "provider-a", modelId: "model-a" },
   setup: Partial<Record<"getWispSetup" | "setWorkspaceQuota" | "saveWispExecution", ReturnType<typeof vi.fn>>> = {},
@@ -72,7 +77,7 @@ describe("CreateAgentDialog persistence", () => {
     await user.click(screen.getByRole("button", { name: "Create Wisp" }));
     await user.type(screen.getByRole("textbox", { name: "Name" }), "Atlas");
     await user.click(screen.getByRole("button", { name: "Next" }));
-    await screen.findByText("Global default · Provider a model-a");
+    expect(await screen.findByRole("combobox", { name: "Model" })).toHaveTextContent("Use the global model");
     await user.click(screen.getByRole("button", { name: "Create Wisp" }));
     await waitFor(() =>
       expect(onCreate).toHaveBeenCalledWith(expect.objectContaining({ name: "Atlas", role: "", soul: "" }), {
@@ -90,19 +95,19 @@ describe("CreateAgentDialog persistence", () => {
     await user.click(screen.getByRole("button", { name: "Create Wisp" }));
     await user.type(screen.getByRole("textbox", { name: "Name" }), "Atlas");
     await user.click(screen.getByRole("button", { name: "Next" }));
-    await screen.findByText("Global default · Provider a model-a");
-    await user.click(screen.getByRole("switch", { name: "Choose model for this Wisp" }));
-    await user.type(screen.getByRole("spinbutton", { name: "Maximum output tokens" }), "512");
+    await chooseModel(user, /^Model a/);
+    // The limit is set later, under Advanced in the Wisp's Model tab.
+    expect(screen.queryByRole("spinbutton", { name: "Maximum output tokens" })).not.toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Create Wisp" }));
     await waitFor(() =>
       expect(onCreate).toHaveBeenCalledWith(expect.objectContaining({ name: "Atlas" }), {
         notifyOnUpdatesEnabled: true,
-        model: { providerId: "provider-a", modelId: "model-a", maxOutputTokens: 512 },
+        model: { providerId: "provider-a", modelId: "model-a" },
       }),
     );
   });
 
-  it("warns when the selected provider has no saved API key", async () => {
+  it("offers only models from providers with a saved key when the global one has none", async () => {
     mockAiSettings({ providerId: "provider-b", modelId: "model-b" });
     const user = userEvent.setup();
     const onCreate = vi.fn().mockResolvedValue("atlas");
@@ -110,10 +115,14 @@ describe("CreateAgentDialog persistence", () => {
     await user.click(screen.getByRole("button", { name: "Create Wisp" }));
     await user.type(screen.getByRole("textbox", { name: "Name" }), "Atlas");
     await user.click(screen.getByRole("button", { name: "Next" }));
-    await screen.findByText("Global default · Provider b model-b");
-    await user.click(screen.getByRole("switch", { name: "Choose model for this Wisp" }));
-    expect(await screen.findByText(/No API key saved for Provider b/)).toBeVisible();
-    expect(screen.getByRole("button", { name: "Create Wisp" })).toBeDisabled();
+    expect(await screen.findByText(/No API key is saved for the global default provider/)).toBeVisible();
+    const submit = screen.getByRole("button", { name: "Create Wisp" });
+    expect(submit).toBeDisabled();
+    await user.click(screen.getByRole("combobox", { name: "Model" }));
+    expect(await screen.findByRole("option", { name: /^Model a/ })).toBeVisible();
+    expect(screen.queryByRole("option", { name: /^Model b/ })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("option", { name: /^Model a/ }));
+    expect(submit).toBeEnabled();
   });
 
   it("blocks creation until a usable global default or Wisp model exists", async () => {
@@ -128,7 +137,7 @@ describe("CreateAgentDialog persistence", () => {
     expect(await screen.findByText(/No global default model is set/)).toBeVisible();
     const submit = screen.getByRole("button", { name: "Create Wisp" });
     expect(submit).toBeDisabled();
-    await user.click(screen.getByRole("switch", { name: "Choose model for this Wisp" }));
+    await chooseModel(user, /^Model a/);
     expect(submit).toBeEnabled();
   });
 
@@ -189,7 +198,8 @@ describe("CreateAgentDialog template import", () => {
     expect(screen.getByRole("textbox", { name: "Name" })).toHaveValue("Atlas");
     await user.click(screen.getByRole("button", { name: "Next" }));
     expect(screen.getByRole("textbox", { name: "Soul" })).toHaveValue("Careful researcher");
-    expect(screen.getByRole("spinbutton", { name: "Maximum output tokens" })).toHaveValue(512);
+    // The field is gone from creation, but the template's limit is kept.
+    expect(screen.queryByRole("spinbutton", { name: "Maximum output tokens" })).not.toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Create Wisp" }));
     await waitFor(() =>
       expect(onCreate).toHaveBeenCalledWith(expect.objectContaining(wisp), {
@@ -205,6 +215,7 @@ describe("CreateAgentDialog template import", () => {
       serializeWispTemplate(wisp, { providerId: "provider-b", modelId: "model-b" }),
     );
     await user.click(screen.getByRole("button", { name: "Next" }));
+    expect(screen.getByRole("combobox", { name: "Model" })).toHaveTextContent("Model b");
     expect(await screen.findByText(/No API key saved for Provider b/)).toBeVisible();
     expect(screen.getByRole("button", { name: "Create Wisp" })).toBeDisabled();
   });
