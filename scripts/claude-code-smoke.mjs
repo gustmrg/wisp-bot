@@ -274,7 +274,11 @@ async function run() {
       const cancelled = await c.q.cancelAsyncMessage(queued);
       await c.result(1);
       const second = await c.result(2, 15_000);
-      check("a queued follow-up can be withdrawn", cancelled === true && second === undefined, `cancelled=${cancelled}`);
+      check(
+        "a queued follow-up can be withdrawn",
+        cancelled === true && second === undefined,
+        `cancelled=${cancelled}`,
+      );
       c.close();
     }
 

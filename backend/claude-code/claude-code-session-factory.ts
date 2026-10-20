@@ -225,7 +225,13 @@ export class ClaudeCodeSessionFactory {
   /** Whether a Wisp's conversation ran on Claude Code, so Claude Code keeps data for it. */
   async usedClaudeCode(sessionDirectory: string): Promise<boolean> {
     for (const file of [SESSION_FILE, CLAUDE_CODE_USAGE_FILE]) {
-      if (await access(path.join(sessionDirectory, file)).then(() => true, () => false)) return true;
+      if (
+        await access(path.join(sessionDirectory, file)).then(
+          () => true,
+          () => false,
+        )
+      )
+        return true;
     }
     return false;
   }

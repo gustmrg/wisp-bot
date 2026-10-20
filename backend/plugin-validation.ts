@@ -242,7 +242,11 @@ export function parseSaveWispPluginAccess(value: unknown): SaveWispPluginAccessR
   const webProviders = parseWispWebProviders(raw.webProviders);
   // A selected provider needs its own grant, so revocation and key replacement keep working per plugin.
   for (const pluginId of Object.values(webProviders))
-    if (pluginId && pluginId !== CLAUDE_WEB_SEARCH && grants.find((grant) => grant.pluginId === pluginId)?.access !== "read")
+    if (
+      pluginId &&
+      pluginId !== CLAUDE_WEB_SEARCH &&
+      grants.find((grant) => grant.pluginId === pluginId)?.access !== "read"
+    )
       throw invalidPluginRequest();
   return {
     ...parsePluginConversation({ conversationId: raw.conversationId }),
