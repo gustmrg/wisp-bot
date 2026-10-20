@@ -9,6 +9,7 @@ import { EncryptedCredentialStore, type EncryptionService } from "../backend/enc
 import { getSupportedThinkingLevels } from "@earendil-works/pi-ai";
 
 import { ModelService, supportedThinkingLevels, type ModelRuntimeLike } from "../backend/model-service.js";
+import { CLAUDE_CODE_PROVIDER, type ClaudeCodeStatusView } from "../shared/claude-code.js";
 
 const directories: string[] = [];
 
@@ -495,5 +496,80 @@ describe("ModelService fallback models", () => {
     const view = await service.removeCredential("provider-b");
     expect(view.fallback).toEqual({ selection: backup, unavailable: "missing_key" });
     await expect(service.getFallbackModel(null, null)).resolves.toBeNull();
+  });
+});
+
+describe("ModelService with Claude Code", () => {
+  async function createClaudeCodeService(initial: ClaudeCodeStatusView) {
+    const directory = await mkdtemp(path.join(tmpdir(), "wisp-model-claude-code-"));
+    directories.push(directory);
+    let status = initial;
+    const service = new ModelService({
+      runtime: createRuntime() as unknown as ModelRuntimeLike,
+      credentials: new EncryptedCredentialStore(path.join(directory, "credentials.enc.json"), new TestEncryption()),
+      settings: new AiSettingsStore(path.join(directory, "settings.json")),
+      claudeCode: {
+        current: () => status as never,
+        refresh: async () => status as never,
+      },
+    });
+    return { service, setStatus: (next: ClaudeCodeStatusView) => (status = next) };
+  }
+
+  const ready: ClaudeCodeStatusView = { state: "ready", version: "2.1.303", billing: "subscription", plan: "pro" };
+  const sonnet = { providerId: CLAUDE_CODE_PROVIDER, modelId: "sonnet" };
+
+  it("offers Claude Code's model aliases with its status", async () => {
+    const { service } = await createClaudeCodeService(ready);
+
+    const view = await service.getView();
+
+    const provider = view.providers.find(({ id }) => id === CLAUDE_CODE_PROVIDER);
+    expect(provider).toMatchObject({ name: "Claude Code", credentialConfigured: true });
+    expect(provider?.models.map(({ id }) => id).sort()).toEqual(["default", "haiku", "opus", "sonnet"]);
+    expect(provider?.models[0]?.thinkingLevels).not.toContain("minimal");
+    expect(view.claudeCode).toEqual(ready);
+  });
+
+  it("selects a Claude Code model without a key once Claude Code is ready", async () => {
+    const { service, setStatus } = await createClaudeCodeService({ state: "signed_out", version: "2.1.303" });
+
+    await expect(service.save({ selection: sonnet })).rejects.toMatchObject({
+      code: "invalid_configuration",
+      message: "Claude Code is not signed in. Run `claude auth login` on the server's computer.",
+    });
+    setStatus(ready);
+    await expect(service.save({ selection: sonnet, apiKey: "sk" })).rejects.toMatchObject({ code: "invalid_request" });
+    await expect(service.save({ selection: { ...sonnet, thinkingLevel: "high" } })).resolves.toMatchObject({
+      selection: { ...sonnet, thinkingLevel: "high" },
+    });
+    await expect(service.getSelection()).resolves.toEqual({ ...sonnet, thinkingLevel: "high" });
+    await expect(service.validateConversationSelection(sonnet)).resolves.toBeUndefined();
+  });
+
+  it("stops offering a saved Claude Code model while Claude Code cannot run", async () => {
+    const { service, setStatus } = await createClaudeCodeService(ready);
+    await service.save({ selection: sonnet });
+
+    setStatus({ state: "outdated", version: "2.1.200", minimumVersion: "2.1.276" });
+
+    await expect(service.getSelection()).resolves.toBeNull();
+    const provider = (await service.getView()).providers.find(({ id }) => id === CLAUDE_CODE_PROVIDER);
+    expect(provider?.credentialConfigured).toBe(false);
+    await expect(service.validateConversationSelection(sonnet)).rejects.toMatchObject({
+      code: "configuration_required",
+      message: "Claude Code 2.1.200 is too old. Run `claude update` on the server's computer to get 2.1.276 or newer.",
+    });
+  });
+
+  it("refuses unknown aliases and leaves Claude Code out without status support", async () => {
+    const { service } = await createClaudeCodeService(ready);
+    await expect(
+      service.save({ selection: { providerId: CLAUDE_CODE_PROVIDER, modelId: "fable" } }),
+    ).rejects.toMatchObject({ code: "invalid_configuration" });
+
+    const { service: plain } = await createService();
+    expect((await plain.getView()).providers.map(({ id }) => id)).not.toContain(CLAUDE_CODE_PROVIDER);
+    await expect(plain.save({ selection: sonnet })).rejects.toMatchObject({ code: "invalid_configuration" });
   });
 });

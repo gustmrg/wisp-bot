@@ -2,7 +2,8 @@ import { mkdtemp, mkdir, rm } from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
 import { expect, it, vi } from "vitest";
-import { SdkPiSessionFactory, type PiSessionLike } from "../backend/pi-conversation-agent.js";
+import { SdkPiSessionFactory } from "../backend/pi-session-factory.js";
+import type { RuntimeSession } from "../backend/runtime-session.js";
 import { DEFAULT_CONTEXT_POLICY } from "../shared/context-policy.js";
 
 it("preserves continuity through real SDK compaction and a fresh-topic restart, with simulated transport", async () => {
@@ -59,7 +60,7 @@ it("preserves continuity through real SDK compaction and a fresh-topic restart, 
       headers: { "content-type": "text/event-stream" },
     });
   });
-  let session: PiSessionLike | undefined;
+  let session: RuntimeSession | undefined;
   try {
     const { ModelRuntime } = await import("@earendil-works/pi-coding-agent");
     const runtime = await ModelRuntime.create({

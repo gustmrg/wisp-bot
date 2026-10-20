@@ -27,6 +27,17 @@ export const WEB_CAPABILITIES = [
 export type WebCapability = (typeof WEB_CAPABILITIES)[number]["id"];
 export type WebProviders = Record<WebCapability, PluginId | null>;
 
+/**
+ * Claude Code's own web search, a search provider for a Wisp that runs on
+ * Claude Code (ADR 026). It runs on Anthropic's side within the person's
+ * plan, so it needs no plugin or key.
+ */
+export const CLAUDE_WEB_SEARCH = "claude-code";
+export const CLAUDE_WEB_SEARCH_NAME = "Claude (included in your plan)";
+export type WispWebProvider = PluginId | typeof CLAUDE_WEB_SEARCH;
+/** A Wisp's provider per capability; search can also be Claude Code's own. */
+export type WispWebProviders = { search: WispWebProvider | null; read: PluginId | null };
+
 export interface PluginCatalogEntry {
   id: PluginId;
   name: string;
@@ -275,7 +286,7 @@ export interface WispPluginAccessView {
   revision: string;
   grants: ReadonlyArray<PluginGrant>;
   /** Provider used for each web capability; null means the capability is off. */
-  webProviders: WebProviders;
+  webProviders: WispWebProviders;
 }
 export interface SaveWispPluginAccessRequest {
   conversationId: string;
@@ -285,5 +296,5 @@ export interface SaveWispPluginAccessRequest {
    * Explicit provider per capability. Each provider must also be granted `read`.
    * Without it, the Wisp falls back to catalog order among granted providers.
    */
-  webProviders?: WebProviders;
+  webProviders?: WispWebProviders;
 }

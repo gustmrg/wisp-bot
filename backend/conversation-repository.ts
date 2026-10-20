@@ -356,6 +356,7 @@ export class ConversationRepository {
     piSessionId: string | null;
     piSessionFile: string | null;
     workspaceDirectory: string;
+    sessionDirectory: string;
   } | null {
     const record = this.require(conversationId);
     if (record.chat.kind !== "wisp") return null;
@@ -366,6 +367,7 @@ export class ConversationRepository {
       piSessionId: session.piSessionId,
       piSessionFile: session.piSessionFile,
       workspaceDirectory: path.join(this.workspaceRoot, record.storageId),
+      sessionDirectory: path.join(this.sessionRoot, session.sessionId),
     };
   }
 

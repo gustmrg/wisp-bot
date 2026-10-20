@@ -1,4 +1,4 @@
-import { readdir, lstat, readFile } from "node:fs/promises";
+import { readdir, lstat, readFile, stat } from "node:fs/promises";
 
 import path from "node:path";
 import type { SessionEntry } from "@earendil-works/pi-coding-agent" with { "resolution-mode": "import" };
@@ -9,6 +9,7 @@ import type { ConversationRepository } from "./conversation-repository.js";
 import type { ModelPricingService } from "./model-pricing-service.js";
 import { addTotals, createUsageReport } from "./usage-report.js";
 import { buildSessionReport, emptyUsage, type SessionPricingLookup } from "./pi-session-report.js";
+import { CLAUDE_CODE_USAGE_FILE, claudeCodeFallbackSessionFiles } from "./claude-code/claude-code-usage-log.js";
 
 const MAX_SESSION_FILE_BYTES = 25 * 1024 * 1024;
 
@@ -32,11 +33,15 @@ export class SessionReportService {
 
   async getSessionReport(conversationId: string): Promise<WispSessionReport | null> {
     const context = this.repository.getPiSessionContext(conversationId);
-    if (!context?.piSessionFile) return null;
-    const entries = await readSessionEntries(context.piSessionFile).catch((error) => {
-      if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
-      throw error;
-    });
+    if (!context) return null;
+    const entries =
+      (await this.claudeCodeEntries(context.sessionDirectory, context.piSessionFile)) ??
+      (context.piSessionFile
+        ? await readSessionEntries(context.piSessionFile).catch((error) => {
+            if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
+            throw error;
+          })
+        : null);
     if (!entries) return null;
     await this.pricing.ensureFresh();
     return buildSessionReport(context.piSessionId ?? context.sessionId, entries, {
@@ -68,11 +73,16 @@ export class SessionReportService {
         rows.push(row);
         continue;
       }
-      // Files are Pi's durable history, including sessions preceding a restart or compaction.
+      // Files are Pi's durable history, including sessions preceding a restart or compaction,
+      // a Claude Code Wisp's usage log, and the sessions its fallback model answered in.
       // Read sequentially so large workspaces cannot allocate all session files at once.
-      for (const file of files) {
+      const paths = [
+        ...files.map((file) => path.join(context.sessionDirectory, file)),
+        ...(await claudeCodeFallbackSessionFiles(context.sessionDirectory)),
+      ];
+      for (const file of paths) {
         try {
-          const entries = await readSessionEntries(path.join(context.sessionDirectory, file));
+          const entries = await readSessionEntries(file);
           const filtered = entries.filter(
             (entry) => (!report.from || entry.timestamp >= report.from) && entry.timestamp <= report.generatedAt,
           );
@@ -94,6 +104,27 @@ export class SessionReportService {
     report.wisps = rows;
     for (const row of rows) addTotals(report.totals, row.totals);
     return report;
+  }
+
+  /**
+   * A Claude Code Wisp's session (ADR 026): its usage log, with the turns its
+   * fallback model answered, in time order. Null when the Wisp last ran on Pi.
+   */
+  private async claudeCodeEntries(
+    sessionDirectory: string,
+    piSessionFile: string | null,
+  ): Promise<SessionEntry[] | null> {
+    const log = path.join(sessionDirectory, CLAUDE_CODE_USAGE_FILE);
+    const modified = async (file: string) => (await stat(file).catch(() => null))?.mtimeMs;
+    const logModified = await modified(log);
+    if (logModified === undefined) return null;
+    const piModified = piSessionFile ? await modified(piSessionFile) : undefined;
+    if (piModified !== undefined && piModified > logModified) return null;
+    const entries = await readSessionEntries(log);
+    for (const file of await claudeCodeFallbackSessionFiles(sessionDirectory)) {
+      entries.push(...(await readSessionEntries(file)));
+    }
+    return entries.sort((left, right) => left.timestamp.localeCompare(right.timestamp));
   }
 }
 

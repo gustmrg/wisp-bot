@@ -726,6 +726,38 @@ describe("plugin service", () => {
     expect(await reopened.getActiveToolNames("one")).toEqual(["web_search"]);
   });
 
+  it("lets a Wisp search with Claude Code's own web search, which needs no plugin", async () => {
+    const { service, options } = await setup();
+    const { revision } = service.getAccess({ conversationId: "one" });
+    const before = (await service.getSnapshot("one")).revision;
+    await service.saveAccess({
+      conversationId: "one",
+      revision,
+      grants: [],
+      webProviders: { search: "claude-code", read: null },
+    });
+
+    expect(service.getAccess({ conversationId: "one" }).webProviders).toEqual({ search: "claude-code", read: null });
+    expect(service.searchesWithClaude("one")).toBe(true);
+    // No plugin's web_search, and Claude Code sessions rebuild to offer their own.
+    expect(await service.getActiveToolNames("one")).toEqual([]);
+    expect((await service.getSnapshot("one")).revision).not.toBe(before);
+    const reopened = new PluginService(options);
+    await reopened.load();
+    expect(reopened.searchesWithClaude("one")).toBe(true);
+    // Only search has Claude Code's provider, and defaults never do.
+    const current = service.getAccess({ conversationId: "one" }).revision;
+    expect(() =>
+      service.saveAccess({
+        conversationId: "one",
+        revision: current,
+        grants: [],
+        webProviders: { search: null, read: "claude-code" },
+      }),
+    ).toThrow();
+    expect(() => service.saveDefaults({ defaultProviders: { search: "claude-code", read: null } })).toThrow();
+  });
+
   it("rejects provider choices that are not granted or cannot supply the capability", async () => {
     const { service } = await setup();
     await service.save({ pluginId: "web-search", enabled: true, apiKey: "brave-key" });

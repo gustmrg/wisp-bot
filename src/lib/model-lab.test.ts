@@ -9,6 +9,7 @@ describe("modelLab", () => {
     ["kimi-coding", "k3", "moonshot"],
     ["meta", "muse-spark-1.3", "meta"],
     ["google", "deep-research-preview-04-2026", "google"],
+    ["claude-code", "opus", "anthropic"],
   ])("uses the lab running provider %s for %s", (providerId, modelId, lab) => {
     expect(modelLab({ providerId, modelId })).toBe(lab);
   });

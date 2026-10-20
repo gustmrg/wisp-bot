@@ -1,9 +1,9 @@
 # AI models
 
 Wisp conversations run on the [Pi agent runtime](decisions/001-agent-runtime.md)
-with a provider API key configured in the app. Only API-key authentication is
-offered; keys are encrypted at rest and never returned to the renderer (see
-[security](security.md)).
+with a provider API key configured in the app, or on Claude Code with the
+person's own Claude plan (see [Claude Code](#claude-code)). Keys are encrypted
+at rest and never returned to the renderer (see [security](security.md)).
 
 ## Global model and provider keys
 
@@ -26,6 +26,56 @@ always the provider serving it (Claude through OpenRouter shows Anthropic's).
 The lab comes from the model family or vendor prefix in the model ID, or from
 the provider when a lab runs it; models from other labs and routers that pick
 the model themselves show no logo.
+
+## Claude Code
+
+The **Claude Code** provider runs Wisps on the person's own Claude Code and
+Claude plan, through the official Claude Agent SDK
+([ADR 026](decisions/026-claude-code-runtime.md)). Wisp never asks for a Claude
+password or token.
+
+- **Setup:** install Claude Code on the computer that runs Wisp (the desktop
+  app's computer, or the server for a remote or headless Wisp), then sign in
+  there with `claude auth login`. On a headless server, sign in over SSH by
+  pasting the code the browser shows, or run `claude setup-token` and set
+  `CLAUDE_CODE_OAUTH_TOKEN` in the server's service environment.
+- **Status:** **Settings → AI Model**, with Claude Code chosen, shows whether
+  it is installed, recent enough, and signed in, and with which plan. Claude
+  Code must be at least the version the Agent SDK Wisp ships was built with;
+  `claude update` brings an older one up to date. **Check again** reads the
+  status after a fix.
+- **Models:** `default`, `opus`, `sonnet`, and `haiku`. Claude Code resolves
+  them to the newest model it knows. Fable is not offered, because it can bill
+  usage credits instead of the plan. The reasoning level sets Claude Code's
+  effort. Claude Code manages its own output limit, so none is set here.
+- **Tools:** a Claude Code Wisp has the same tools as on Pi (files in its
+  workspace, commands in its container, skills, jobs, Wisp management,
+  plugins, and MCP servers), with the same approvals. Claude Code's own tools,
+  such as Bash, are never offered, and its user and project settings, hooks,
+  and claude.ai connectors are not loaded. The one exception is web search:
+  in the Wisp's **Access** tab, **Search the web** can be **Claude (included
+  in your plan)**, which needs no search plugin
+  ([plugins](plugins.md#per-wisp-access)).
+- **Usage:** replies count against the plan's usage limits. The Wisp's
+  session report and **Token usage** count their tokens. Turns on a plan
+  cost nothing more and carry a **Claude plan** badge. Claude Code's status
+  shows the plan's 5-hour and weekly usage once one is three-quarters used.
+- **History:** Claude Code keeps its own conversation under `~/.claude/` on
+  that computer and deletes conversations unused for 30 days. The next message
+  after that starts a new Claude Code conversation that is told the latest
+  messages. The Wisp's own transcript stays the record that is shown, searched,
+  and backed up. Deleting the Wisp also deletes what Claude Code keeps for it
+  (`claude purge`).
+- **Context:** the Wisp's **Context** tab works as on Pi: **Compact** asks
+  Claude Code to summarize the conversation, **New topic** starts a new Claude
+  Code conversation, and the renewal policy and memory apply the same way.
+  Claude Code keeps its summary to itself, so none is shown.
+- **Jobs:** scheduled jobs run on Claude Code too, one turn each, and Claude
+  Code keeps nothing from them.
+- **Fallback:** when Claude Code is signed out or the plan's usage limit is
+  reached, the Wisp's [fallback model](#fallback-models) answers that turn,
+  told the latest messages of the conversation. Other failures do not move
+  to the fallback.
 
 ## Models per Wisp
 

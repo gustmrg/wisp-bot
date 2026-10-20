@@ -7,6 +7,7 @@ import type {
   ThinkingLevel,
   WispFallback,
 } from "../../shared/contracts";
+import { CLAUDE_CODE_PROVIDER, claudeCodeUnavailableMessage } from "../../shared/claude-code";
 import { AdvancedSettings } from "@/components/advanced-settings";
 import { LogoTile } from "@/components/logo-tile";
 import { NoImageInputNote } from "@/components/no-image-input-note";
@@ -239,7 +240,9 @@ export function WispModelSettings({ conversationId }: { conversationId: string }
             ) : null}
             {applied && appliedProvider && !appliedProvider.credentialConfigured ? (
               <p role="alert" className="m-0 text-destructive">
-                Configure this provider's API key in Settings → AI Model.
+                {appliedProvider.id === CLAUDE_CODE_PROVIDER
+                  ? `${claudeCodeUnavailableMessage(catalog?.claudeCode)} See Settings → AI Model.`
+                  : "Configure this provider's API key in Settings → AI Model."}
               </p>
             ) : null}
           </>
@@ -340,7 +343,8 @@ function ModelSection({
           &amp; memory.
         </p>
       ) : null}
-      {override ? (
+      {/* Claude Code manages its own output limit (ADR 026). */}
+      {override && override.providerId !== CLAUDE_CODE_PROVIDER ? (
         <AdvancedSettings defaultOpen={override.maxOutputTokens !== undefined}>
           <MaxOutputTokensField
             key={`${modelOptionValue(override)}:${override.maxOutputTokens ?? ""}`}
@@ -436,11 +440,14 @@ function FallbackSection({
       iconSrc: globalFallback ? modelLabLogo(globalFallback) : undefined,
     },
     // The Wisp's own model cannot stand in for itself.
-    ...modelOptions(catalog).filter((option) => !effective || option.value !== modelOptionValue(effective)),
+    ...modelOptions(catalog, undefined, { claudeCode: false }).filter(
+      (option) => !effective || option.value !== modelOptionValue(effective),
+    ),
   ];
   if (typeof fallback === "object" && !options.some((option) => option.value === value)) {
     options.push(
-      modelOptions(catalog).find((option) => option.value === value) ?? unavailableModelOption(catalog, fallback),
+      modelOptions(catalog, undefined, { claudeCode: false }).find((option) => option.value === value) ??
+        unavailableModelOption(catalog, fallback),
     );
   }
   const note =

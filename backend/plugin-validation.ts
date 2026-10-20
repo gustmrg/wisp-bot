@@ -1,4 +1,5 @@
 import {
+  CLAUDE_WEB_SEARCH,
   PLUGIN_IDS,
   PLUGIN_CATALOG,
   WEB_CAPABILITIES,
@@ -12,6 +13,7 @@ import {
   type FinishPluginSignInRequest,
   type SaveWispPluginAccessRequest,
   type WebProviders,
+  type WispWebProviders,
 } from "../shared/plugins.js";
 import { getToolMetadata } from "../shared/tool-catalog.js";
 import { WispBackendError } from "./backend-error.js";
@@ -215,6 +217,18 @@ export function parseWebProviders(value: unknown): WebProviders {
   return providers;
 }
 
+/** A Wisp's providers: search can also be Claude Code's own, which needs no grant. */
+export function parseWispWebProviders(value: unknown): WispWebProviders {
+  const raw = pluginRecord(
+    value,
+    WEB_CAPABILITIES.map(({ id }) => id),
+  );
+  const claude = raw.search === CLAUDE_WEB_SEARCH;
+  const providers: WispWebProviders = parseWebProviders(claude ? { ...raw, search: null } : raw);
+  if (claude) providers.search = CLAUDE_WEB_SEARCH;
+  return providers;
+}
+
 export function parseSavePluginDefaults(value: unknown): SavePluginDefaultsRequest {
   return { defaultProviders: parseWebProviders(pluginRecord(value, ["defaultProviders"]).defaultProviders) };
 }
@@ -225,10 +239,14 @@ export function parseSaveWispPluginAccess(value: unknown): SaveWispPluginAccessR
   const grants = parseGrants(raw.grants);
   if (raw.webProviders === undefined)
     return { ...parsePluginConversation({ conversationId: raw.conversationId }), revision: raw.revision, grants };
-  const webProviders = parseWebProviders(raw.webProviders);
+  const webProviders = parseWispWebProviders(raw.webProviders);
   // A selected provider needs its own grant, so revocation and key replacement keep working per plugin.
   for (const pluginId of Object.values(webProviders))
-    if (pluginId && grants.find((grant) => grant.pluginId === pluginId)?.access !== "read")
+    if (
+      pluginId &&
+      pluginId !== CLAUDE_WEB_SEARCH &&
+      grants.find((grant) => grant.pluginId === pluginId)?.access !== "read"
+    )
       throw invalidPluginRequest();
   return {
     ...parsePluginConversation({ conversationId: raw.conversationId }),

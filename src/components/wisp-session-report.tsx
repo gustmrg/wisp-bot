@@ -235,6 +235,9 @@ function ModelList({ report }: { report: WispSessionReport }) {
                 {model.auxiliary ? (
                   <span className="ml-1.5 rounded-full bg-accent px-1.5 text-2xs text-dim">image model</span>
                 ) : null}
+                {model.plan ? (
+                  <span className="ml-1.5 rounded-full bg-accent px-1.5 text-2xs text-dim">Claude plan</span>
+                ) : null}
               </span>
               <span
                 className={cn(

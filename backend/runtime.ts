@@ -33,7 +33,15 @@ import { MessageQueue } from "./message-queue.js";
 import { MessageScheduler } from "./message-scheduler.js";
 import { catalogModelPricing, ModelPricingService } from "./model-pricing-service.js";
 import { ModelService } from "./model-service.js";
-import { PiConversationAgentFactory, SdkPiSessionFactory } from "./pi-conversation-agent.js";
+import { SdkPiSessionFactory } from "./pi-session-factory.js";
+import { WispConversationAgentFactory } from "./wisp-conversation-agent.js";
+import { WispSessionBuilder } from "./wisp-session-plan.js";
+import { ClaudeCodeSessionFactory } from "./claude-code/claude-code-session-factory.js";
+import { CLAUDE_CODE_FALLBACK_DIRECTORY } from "./claude-code/claude-code-usage-log.js";
+import { ClaudeCodeProcesses } from "./claude-code/claude-code-processes.js";
+import { ClaudeCodeStatusService } from "./claude-code/claude-code-status.js";
+import { RoutingSessionFactory } from "./claude-code/routing-session-factory.js";
+import { formatHistorySearch, recentTranscript } from "./claude-code/conversation-history.js";
 import { PluginService } from "./plugin-service.js";
 import { SessionReportService } from "./session-report-service.js";
 import type { StructuredLogger } from "./structured-logger.js";
@@ -123,10 +131,15 @@ export interface BackendRuntime {
 
 export async function createBackendRuntime(options: BackendRuntimeOptions): Promise<BackendRuntime> {
   const { dataDirectory, encryption, logger } = options;
+  // Whether this server's `claude` can run Claude Code Wisps (ADR 026); the fake agent mode never runs it.
+  const claudeCodeStatus = new ClaudeCodeStatusService(
+    options.agentMode === "fake" ? { find: async () => undefined } : {},
+  );
   const modelService = await ModelService.create({
     dataDirectory,
     encryption,
     ...(options.allowModelNetwork === undefined ? {} : { allowModelNetwork: options.allowModelNetwork }),
+    claudeCode: claudeCodeStatus,
   });
   const toolPolicyStore = new ToolPolicyStore(path.join(dataDirectory, "tool-policy.json"));
   await toolPolicyStore.load();
@@ -249,23 +262,65 @@ export async function createBackendRuntime(options: BackendRuntimeOptions): Prom
     runtime: containerRuntime,
     gitHubToken: (id) => mcpService.gitHubToken(id),
   });
-  const sessionFactory = new SdkPiSessionFactory(
+  const toolSource = new CompositeIntegrationToolSource([pluginService, mcpService, executionService]);
+  // Read when a model fails, so a changed choice applies without rebuilding the session.
+  const fallbackModel = async (conversationId: string) => {
+    const { modelOverride, fallback } = conversationRepository.getAgentContext(conversationId);
+    return modelService.getFallbackModel(modelOverride ?? null, fallback ?? null);
+  };
+  const piSessionFactory = new SdkPiSessionFactory(
     modelService.getModelRuntime(),
     toolAuthorizationBroker,
-    new CompositeIntegrationToolSource([pluginService, mcpService, executionService]),
+    toolSource,
     () => modelService.getAuxiliaryModel("imageUnderstanding"),
     jobHost,
-    // Read when a model fails, so a changed choice applies without rebuilding the session.
-    async (conversationId) => {
-      const { modelOverride, fallback } = conversationRepository.getAgentContext(conversationId);
-      return modelService.getFallbackModel(modelOverride ?? null, fallback ?? null);
-    },
+    fallbackModel,
     wispHost,
   );
+  const claudeCodeSessionFactory = new ClaudeCodeSessionFactory({
+    builder: new WispSessionBuilder({
+      authorizationBroker: toolAuthorizationBroker,
+      toolSource,
+      jobs: jobHost,
+      wisps: wispHost,
+    }),
+    status: claudeCodeStatus,
+    recentTranscript: async (conversationId) =>
+      recentTranscript(await conversationRepository.getMessagePage({ conversationId, page: "latest" })),
+    searchHistory: async (conversationId, query) =>
+      formatHistorySearch(conversationId, await conversationRepository.searchMessages(query)),
+    webSearch: (conversationId) => pluginService.searchesWithClaude(conversationId),
+    // A Pi session of its own, so the conversation's Pi session and identity stay as they are.
+    fallback: async (context) => {
+      const choice = await fallbackModel(context.conversationId);
+      if (!choice) return null;
+      const model = piSessionFactory.resolveModel(choice);
+      // Each fallback turn starts fresh in a folder of its own, which the session report reads.
+      const sessionDirectory = path.join(
+        context.sessionDirectory,
+        CLAUDE_CODE_FALLBACK_DIRECTORY,
+        `${new Date().toISOString().replace(/[:.]/g, "-")}-${randomUUID().slice(0, 8)}`,
+      );
+      const session = await piSessionFactory.create(
+        {
+          ...context,
+          sessionDirectory,
+          piSessionId: null,
+          piSessionFile: null,
+          savePiSessionIdentity: undefined,
+          onContextRenewed: undefined,
+        },
+        choice,
+      );
+      return { name: model.name || model.id, session };
+    },
+    processes: new ClaudeCodeProcesses(),
+  });
+  const sessionFactory = new RoutingSessionFactory(piSessionFactory, claudeCodeSessionFactory);
   const agentFactory: ConversationAgentFactory =
     options.agentMode === "fake"
       ? new FakeConversationAgentFactory({ latencyMs: 350, steering: true })
-      : new PiConversationAgentFactory(sessionFactory);
+      : new WispConversationAgentFactory(sessionFactory);
   const registry = new AgentRegistry(
     agentFactory,
     publishAgentEvent,
@@ -294,6 +349,14 @@ export async function createBackendRuntime(options: BackendRuntimeOptions): Prom
         void executionService.reconcile().catch(() => undefined);
       },
       onFollowUpTaken: (_conversationId, queuedMessageId) => messageQueue?.followUpTaken(queuedMessageId),
+      // Claude Code keeps the transcripts of a Wisp that ran on it outside Wisp's data.
+      onWispDeleting: async ({ sessionDirectory, workspaceDirectory }) =>
+        (await claudeCodeSessionFactory.usedClaudeCode(sessionDirectory))
+          ? () =>
+              void claudeCodeSessionFactory
+                .purge(workspaceDirectory)
+                .catch(() => logger.warn("claude_code_purge_failed"))
+          : undefined,
     },
   );
   conversationService = service;

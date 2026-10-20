@@ -69,6 +69,30 @@ describe("ConversationService", () => {
     await service.dispose();
   });
 
+  it("cleans up outside Wisp's data only once a Wisp is deleted", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "wisp-service-cleanup-"));
+    const repository = new ConversationRepository({ dataDirectory: directory });
+    const registry = new AgentRegistry(new FakeConversationAgentFactory(), () => undefined);
+    const cleanup = vi.fn(() => expect(registry.list()).toEqual([]));
+    const onWispDeleting = vi.fn(async () => cleanup);
+    const service = new ConversationService(repository, registry, () => [], { onWispDeleting });
+    await service.start(null);
+    await service.initialize({});
+    await service.createWisp(newWisp("two"), { notifyOnUpdatesEnabled: true });
+    const context = repository.getAgentContext("two");
+
+    await service.deleteWisp("two");
+
+    expect(onWispDeleting).toHaveBeenCalledWith(
+      expect.objectContaining({
+        workspaceDirectory: context.workspaceDirectory,
+        sessionDirectory: context.sessionDirectory,
+      }),
+    );
+    expect(cleanup).toHaveBeenCalledOnce();
+    await service.dispose();
+  });
+
   it("tells every device when a Wisp is created, changed or deleted", async () => {
     const directory = await mkdtemp(path.join(os.tmpdir(), "wisp-service-wisps-"));
     const repository = new ConversationRepository({ dataDirectory: directory });
