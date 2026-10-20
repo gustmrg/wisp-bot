@@ -904,6 +904,7 @@ describe("SdkPiSessionFactory", () => {
       ].join("\n"),
     );
     expect(circlePrompt).toContain("Write only your own reply, in your own voice.");
+    expect(circlePrompt).toContain("To hand the task to another member, mention it with @ and its name in your reply");
   });
 
   it("offers the Wisp tools in the conversation only, never in a job's runs", async () => {

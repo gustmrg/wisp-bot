@@ -1,6 +1,6 @@
 /** A circle's agent: its members' own agents, one turn at a time (ADR 011). */
 
-import { circleRecipients } from "../shared/circle-mentions.js";
+import { circleRecipients, mentionedMembers } from "../shared/circle-mentions.js";
 import type { ConversationAgentEvent, ModelSelection, SendMessageRequest } from "../shared/contracts.js";
 import { assistantMessageId, type Message, type MessagePage } from "../shared/conversations.js";
 import { sanitizeBackendError, WispBackendError } from "./backend-error.js";
@@ -16,15 +16,21 @@ import {
 
 /** How much of the circle a member is told before its turn; the newest messages are kept. */
 const MAX_TRANSCRIPT_CHARACTERS = 12_000;
+/** How many times members may hand one of the person's messages to each other before the circle waits for the person. */
+export const MAX_CIRCLE_HANDOFFS = 3;
 
 export interface CircleAgentOptions {
   /** The circle's latest messages, replies not stored yet included. */
   readTranscript: (conversationId: string) => Promise<MessagePage>;
 }
 
-/** The request a member's turn answers as: the person's message, and the Wisp answering it. */
-export function circleTurnId(requestId: string, wispId: string): string {
-  return `${requestId}:${wispId}`;
+/**
+ * The request a member's turn answers as: the person's message, and the Wisp
+ * answering it; a Wisp's later turns for the same message, after a handoff
+ * back to it, are numbered.
+ */
+export function circleTurnId(requestId: string, wispId: string, turn = 1): string {
+  return turn === 1 ? `${requestId}:${wispId}` : `${requestId}:${wispId}:${turn}`;
 }
 
 interface Member {
@@ -40,9 +46,16 @@ interface Round {
   /** Members still to answer, in order. */
   queue: string[];
   current?: string;
+  /** The request the current turn answers as. */
+  currentTurnId?: string;
+  /** What the current turn wrote, its parts joined. */
+  reply: string;
   cancelled: boolean;
-  /** Members whose turn already reported its failure. */
+  /** Turns that already reported their failure. */
   reported: Set<string>;
+  /** How many turns each member took. */
+  turns: Map<string, number>;
+  handoffs: number;
 }
 
 export class CircleConversationAgent implements ConversationAgent {
@@ -94,7 +107,15 @@ export class CircleConversationAgent implements ConversationAgent {
     if (!queue.length) {
       throw new WispBackendError("configuration_required", "Add a Wisp to this circle before sending a message.");
     }
-    const round: Round = { requestId: request.requestId, queue, cancelled: false, reported: new Set() };
+    const round: Round = {
+      requestId: request.requestId,
+      queue,
+      reply: "",
+      cancelled: false,
+      reported: new Set(),
+      turns: new Map(),
+      handoffs: 0,
+    };
     this.round = round;
     this.emit({ type: "conversation_status", conversationId: this.context.conversationId, status: "working" });
     try {
@@ -109,7 +130,7 @@ export class CircleConversationAgent implements ConversationAgent {
           requestId: request.requestId,
           wispId,
         });
-        await this.runTurn(member, request, round);
+        if (await this.runTurn(member, request, round)) this.handOff(wispId, round);
       }
     } finally {
       this.round = null;
@@ -119,9 +140,14 @@ export class CircleConversationAgent implements ConversationAgent {
     }
   }
 
-  private async runTurn(member: Member, request: SendMessageRequest, round: Round): Promise<void> {
+  /** Runs a member's turn; resolves whether it answered. */
+  private async runTurn(member: Member, request: SendMessageRequest, round: Round): Promise<boolean> {
     const { wispId } = member.context;
-    const requestId = circleTurnId(request.requestId, wispId);
+    const turn = (round.turns.get(wispId) ?? 0) + 1;
+    round.turns.set(wispId, turn);
+    const requestId = circleTurnId(request.requestId, wispId, turn);
+    round.currentTurnId = requestId;
+    round.reply = "";
     try {
       const text = await this.turnText(member.context, request);
       await member.agent.send({
@@ -130,8 +156,9 @@ export class CircleConversationAgent implements ConversationAgent {
         text,
         ...(request.scheduled ? { scheduled: request.scheduled } : {}),
       });
+      return !round.cancelled && !round.reported.has(requestId);
     } catch (error) {
-      if (round.cancelled || this.disposed || round.reported.has(wispId) || !this.members.has(wispId)) return;
+      if (round.cancelled || this.disposed || round.reported.has(requestId) || !this.members.has(wispId)) return false;
       this.emit({
         type: "conversation_error",
         conversationId: this.context.conversationId,
@@ -141,6 +168,25 @@ export class CircleConversationAgent implements ConversationAgent {
         createdAt: new Date().toISOString(),
         error: sanitizeBackendError(error),
       });
+      return false;
+    }
+  }
+
+  /**
+   * A member that mentions others in its reply hands them the task: each
+   * answers next, after the turns already waiting. A member cannot hand off
+   * to itself or to one already waiting, and after `MAX_CIRCLE_HANDOFFS` the
+   * circle waits for the person.
+   */
+  private handOff(wispId: string, round: Round): void {
+    const members = this.context.members
+      .filter((member) => this.members.has(member.wispId))
+      .map((member) => ({ id: member.wispId, name: member.name }));
+    for (const next of mentionedMembers(round.reply, members)) {
+      if (round.handoffs >= MAX_CIRCLE_HANDOFFS) return;
+      if (next === wispId || round.queue.includes(next)) continue;
+      round.queue.push(next);
+      round.handoffs += 1;
     }
   }
 
@@ -309,8 +355,10 @@ export class CircleConversationAgent implements ConversationAgent {
     if (event.type === "conversation_model_changed" || event.type === "follow_up_taken") return;
     const round = this.round;
     if ("requestId" in event && event.requestId !== undefined) {
-      if (!round || event.requestId !== circleTurnId(round.requestId, wispId)) return;
-      if (event.type === "conversation_error") round.reported.add(wispId);
+      if (!round || round.current !== wispId || event.requestId !== round.currentTurnId) return;
+      if (event.type === "conversation_error") round.reported.add(event.requestId);
+      if (event.type === "assistant_text_delta") round.reply += event.delta;
+      if (event.type === "assistant_message_started" && round.reply) round.reply += "\n\n";
       this.emit({ ...event, requestId: round.requestId, wispId });
       return;
     }

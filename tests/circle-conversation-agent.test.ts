@@ -38,7 +38,12 @@ function circle(members: ReadonlyArray<ConversationAgentContext>): CircleAgentCo
 /** A circle over fake members, with a transcript kept the way the conversation service keeps it. */
 async function setup(
   members = [member("atlas", "Atlas"), member("nova", "Nova")],
-  options: { fail?: (wispId: string) => Error | undefined; latencyMs?: number } = {},
+  options: {
+    fail?: (wispId: string) => Error | undefined;
+    latencyMs?: number;
+    /** What each member replies; its name by default. */
+    reply?: (wispId: string, turn: number) => string;
+  } = {},
 ) {
   const received: Array<{ wispId: string; request: SendMessageRequest }> = [];
   const agents = new Map<string, FakeConversationAgent>();
@@ -46,7 +51,10 @@ async function setup(
     create: (context) => {
       const agent = new FakeConversationAgent(context.conversationId, {
         latencyMs: options.latencyMs ?? 0,
-        responseFor: () => `${context.name} here`,
+        responseFor: () => {
+          const turn = received.filter(({ wispId }) => wispId === context.wispId).length;
+          return options.reply?.(context.wispId, turn) ?? `${context.name} here`;
+        },
       });
       const send = agent.send.bind(agent);
       agent.send = async (request) => {
@@ -241,5 +249,53 @@ describe("CircleConversationAgent", () => {
     await agent.updateContext(circle([member("atlas", "Atlas"), member("nova", "Nova")]));
     expect(agents.get("atlas")!.selectedModel).toBeUndefined();
     await expect(agent.applyAppModel(null)).resolves.toBe(false);
+  });
+
+  it("hands the task to the members a reply mentions, after the turns already waiting", async () => {
+    const { received, events, say } = await setup(
+      [member("atlas", "Atlas"), member("nova", "Nova"), member("orion", "Orion")],
+      { reply: (wispId) => (wispId === "atlas" ? "Over to @Orion and @Nova, and not me, @Atlas." : "Done.") },
+    );
+
+    await say("m1", "@Atlas @Nova start");
+
+    // Nova was already waiting, so Orion follows it; Atlas cannot hand off to itself.
+    expect(received.map(({ wispId }) => wispId)).toEqual(["atlas", "nova", "orion"]);
+    expect(received[2]!.request.requestId).toBe("m1:orion");
+    expect(events).toContainEqual(expect.objectContaining({ type: "circle_turn_started", wispId: "orion" }));
+  });
+
+  it("waits for the person after three handoffs, numbering a member's later turns", async () => {
+    const { received, events, say } = await setup(undefined, {
+      reply: (wispId) => (wispId === "atlas" ? "@Nova your turn" : "@Atlas back to you"),
+    });
+
+    await say("m1", "Ping pong");
+
+    expect(received.map(({ wispId }) => wispId)).toEqual(["atlas", "nova", "atlas", "nova"]);
+    expect(received.map(({ request }) => request.requestId)).toEqual([
+      "m1:atlas",
+      "m1:nova",
+      "m1:atlas:2",
+      "m1:nova:2",
+    ]);
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: "assistant_message_completed",
+        messageId: "m1:atlas:2:assistant",
+        wispId: "atlas",
+      }),
+    );
+  });
+
+  it("hands nothing off from a turn that failed or was stopped", async () => {
+    const { received, say } = await setup(undefined, {
+      reply: () => "@Nova take it",
+      fail: (wispId) => (wispId === "atlas" ? new WispBackendError("internal_error", "Down.") : undefined),
+    });
+
+    await say("m1", "Go");
+
+    expect(received.map(({ wispId }) => wispId)).toEqual(["atlas"]);
   });
 });
