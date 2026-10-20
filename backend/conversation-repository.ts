@@ -43,6 +43,7 @@ import { normalizeQueuedMessage } from "./message-queue.js";
 import { normalizeScheduledMessage } from "./message-schedule.js";
 import { buildSnippet, MessageSearchWorker } from "./message-search.js";
 import { IntactDatabaseError } from "./sqlite-backup.js";
+import { migrateStorageFolders, WISP_CONFIG_DIRECTORY, WISP_SESSIONS_DIRECTORY } from "./storage-layout.js";
 import { CONVERSATION_STORAGE_POLICY } from "./storage-policy.js";
 import { ARCHIVE_MANIFEST_FILE, type ArchiveManifest } from "../shared/storage.js";
 import {
@@ -147,8 +148,8 @@ export class ConversationRepository {
     this.databasePath = path.join(options.dataDirectory, "conversations.sqlite");
     this.legacyStatePath = path.join(options.dataDirectory, "conversations.json");
     this.workspaceRoot = path.join(options.dataDirectory, "workspaces");
-    this.sessionRoot = path.join(options.dataDirectory, "pi-sessions");
-    this.configRoot = path.join(options.dataDirectory, "pi-config");
+    this.sessionRoot = path.join(options.dataDirectory, WISP_SESSIONS_DIRECTORY);
+    this.configRoot = path.join(options.dataDirectory, WISP_CONFIG_DIRECTORY);
     this.deletedRoot = path.join(options.dataDirectory, "deleted-conversations");
     this.profile.preferredName = normalizeUserName(options.userName) ?? "";
     this.now = options.now ?? (() => new Date());
@@ -157,6 +158,8 @@ export class ConversationRepository {
 
   async load(): Promise<void> {
     await mkdir(this.dataDirectory, { recursive: true });
+    // Before anything creates the folders under their new names (ADR 027).
+    await migrateStorageFolders(this.dataDirectory);
     try {
       this.profile = normalizeUserProfile(
         JSON.parse(await readFile(path.join(this.dataDirectory, "user-profile.json"), "utf8")),
@@ -1343,9 +1346,9 @@ export class ConversationRepository {
     await Promise.all([
       move(path.join(this.workspaceRoot, conversation.storageId), "workspace"),
       ...sessions.map(({ sessionId }, index) =>
-        move(path.join(this.sessionRoot, sessionId), index === 0 ? "pi-session" : `pi-session-${sessionId}`),
+        move(path.join(this.sessionRoot, sessionId), index === 0 ? "wisp-session" : `wisp-session-${sessionId}`),
       ),
-      ...(wisp ? [move(path.join(this.configRoot, wisp.storageId), "pi-config")] : []),
+      ...(wisp ? [move(path.join(this.configRoot, wisp.storageId), "wisp-config")] : []),
     ]);
   }
 }
