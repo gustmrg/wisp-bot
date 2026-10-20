@@ -49,6 +49,17 @@ describe("MobileNavigation", () => {
         .map((button) => button.textContent),
     ).toEqual(["Wisps", "Settings"]);
   });
+
+  it("sizes every tab for the longest name, so the bar keeps its width on each tab", () => {
+    const { rerender } = render(
+      <MobileNavigation current="wisps" onConversations={vi.fn()} onApprovals={vi.fn()} onSettings={vi.fn()} />,
+    );
+    const widest = () => screen.getAllByRole("button").map((button) => button.getAttribute("data-widest"));
+    expect(widest()).toEqual(["Approvals", "Approvals", "Approvals"]);
+
+    rerender(<MobileNavigation current="settings" onConversations={vi.fn()} onSettings={vi.fn()} />);
+    expect(widest()).toEqual(["Settings", "Settings"]);
+  });
 });
 
 describe("MobileApprovals", () => {

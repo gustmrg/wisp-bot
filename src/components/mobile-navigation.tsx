@@ -20,11 +20,16 @@ export function MobileNavigation({
   unreadCount = 0,
   approvalCount = 0,
 }: MobileNavigationProps) {
+  // The current tab is as wide as the longest name, so the bar keeps its size on every tab.
+  const widest = ["Wisps", ...(onApprovals ? ["Approvals"] : []), "Settings"].reduce((a, b) =>
+    b.length > a.length ? b : a,
+  );
   return (
     <nav className="mobile-navigation" aria-label="Main navigation">
       <Tab
         icon={MessageCircleIcon}
         label="Wisps"
+        widest={widest}
         current={current === "wisps"}
         onClick={onConversations}
         badge={badge(unreadCount, "unread")}
@@ -33,12 +38,13 @@ export function MobileNavigation({
         <Tab
           icon={ShieldAlertIcon}
           label="Approvals"
+          widest={widest}
           current={current === "approvals"}
           onClick={onApprovals}
           badge={badge(approvalCount, "pending", "warning")}
         />
       ) : null}
-      <Tab icon={SettingsIcon} label="Settings" current={current === "settings"} onClick={onSettings} />
+      <Tab icon={SettingsIcon} label="Settings" widest={widest} current={current === "settings"} onClick={onSettings} />
     </nav>
   );
 }
@@ -56,27 +62,31 @@ function badge(count: number, description: string, tone?: "warning"): TabBadge |
 function Tab({
   icon: Icon,
   label,
+  widest,
   current,
   onClick,
   badge,
 }: {
   icon: LucideIcon;
   label: string;
+  widest: string;
   current: boolean;
   onClick: () => void;
   badge?: TabBadge;
 }): ReactNode {
   return (
-    <button type="button" aria-current={current ? "page" : undefined} onClick={onClick}>
-      <span className="mobile-navigation-icon">
-        <Icon aria-hidden="true" />
-        {badge ? (
-          <span className="mobile-navigation-badge" data-tone={badge.tone} aria-hidden="true">
-            {badge.count > 99 ? "99+" : badge.count}
-          </span>
-        ) : null}
+    <button type="button" aria-current={current ? "page" : undefined} data-widest={widest} onClick={onClick}>
+      <span className="mobile-navigation-tab">
+        <span className="mobile-navigation-icon">
+          <Icon aria-hidden="true" />
+          {badge ? (
+            <span className="mobile-navigation-badge" data-tone={badge.tone} aria-hidden="true">
+              {badge.count > 99 ? "99+" : badge.count}
+            </span>
+          ) : null}
+        </span>
+        <span className="mobile-navigation-label">{label}</span>
       </span>
-      <span>{label}</span>
       {badge ? <span className="sr-only">{`, ${badge.count} ${badge.description}`}</span> : null}
     </button>
   );
