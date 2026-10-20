@@ -19,6 +19,8 @@ interface WispAvatarProps {
 }
 
 const CLUSTER_SLOTS = ["left-[30%] top-[4%]", "left-[5%] top-[38%]", "left-[41%] top-[40%]"];
+/** The count of the others, centered on the third slot and about as big as a Wisp's body in it. */
+const COUNT_SLOT = "left-[48%] top-[47%] size-[40%]";
 
 /** A conversation's picture: its Wisp's, or a circle's members together. */
 function ChatAvatar({ chat, size = "default", state }: ChatAvatarProps) {
@@ -76,9 +78,9 @@ function ChatAvatar({ chat, size = "default", state }: ChatAvatarProps) {
         {members.length > 3 ? (
           <span
             className={cn(
-              "absolute flex size-[54%] items-center justify-center rounded-full bg-foreground/15 font-semibold text-foreground",
-              size === "sm" ? "text-[6px]" : size === "xl" ? "text-[16px]" : "text-[8px]",
-              CLUSTER_SLOTS[2],
+              "absolute flex items-center justify-center rounded-full bg-foreground/15 font-semibold text-foreground",
+              size === "sm" ? "text-[5px]" : size === "xl" ? "text-[13px]" : "text-[7px]",
+              COUNT_SLOT,
             )}
           >
             +{members.length - 2}
