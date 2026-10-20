@@ -76,6 +76,10 @@ chose to add it, that is intended.
 Storage IDs are not Wisp or conversation IDs, so a deleted Wisp's archived
 folders never collide with a new one that reuses an ID.
 
+[ADR 027](027-runtime-neutral-storage-folders.md) renamed `pi-config` to
+`wisp-config` and `pi-sessions` to `wisp-sessions`; the table above keeps the
+names this ADR decided on.
+
 Context settings (renewal policy) still live with the Wisp. They belong with
 each Wisp's session in a conversation once circles run agents.
 
