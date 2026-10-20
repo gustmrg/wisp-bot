@@ -110,6 +110,7 @@ const REQUIRED_WISP_METHODS = [
   "importSkill",
   "getVoiceSettings",
   "saveVoiceCredential",
+  "removeVoiceCredential",
   "transcribeAudio",
   "getConnections",
   "saveConnection",

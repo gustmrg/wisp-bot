@@ -124,21 +124,19 @@ function VoiceSettingsSection({ active, preferences, onPreferencesChange }: Voic
     }
   }
 
-  /** The key is the one AI Model settings use, so removing it here removes it there too. */
+  /** A shared key is the one AI Model settings use, so removing it here removes it there too. */
   async function handleRemoveKey(): Promise<void> {
     setSaving(true);
     setError(null);
     setSaved(false);
     try {
-      const removed = await window.wisp.removeProviderCredential({ providerId: provider.id });
-      if (!removed.ok) {
-        setError(removed.error.message);
+      const result = await window.wisp.removeVoiceCredential({ providerId: provider.id });
+      if (!result.ok) {
+        setError(result.error.message);
         return;
       }
+      setView(result.value);
       notifyProviderCredentialsChanged();
-      const result = await window.wisp.getVoiceSettings();
-      if (result.ok) setView(result.value);
-      else setError(result.error.message);
     } catch {
       setError("Could not remove the API key.");
     } finally {
@@ -252,9 +250,11 @@ function VoiceSettingsSection({ active, preferences, onPreferencesChange }: Voic
                 <SettingsRowCopy>
                   <SettingsRowTitle htmlFor="voice-api-key">{provider.name} API key</SettingsRowTitle>
                   <SettingsRowDescription>
-                    {providerStatus?.credentialConfigured
-                      ? `An encrypted key is saved for ${provider.name} and shared with AI Model settings. Enter a new key to replace it.`
-                      : `Add a ${provider.name} key to use voice input. It is encrypted using your operating system's credential storage.`}
+                    {providerStatus?.credentialSource === "voice"
+                      ? `An encrypted key is saved for ${provider.name} voice input only; AI Model settings use your sign-in. Enter a new key to replace it.`
+                      : providerStatus?.credentialConfigured
+                        ? `An encrypted key is saved for ${provider.name} and shared with AI Model settings. Enter a new key to replace it.`
+                        : `Add a ${provider.name} key to use voice input. It is encrypted using your operating system's credential storage.`}
                   </SettingsRowDescription>
                 </SettingsRowCopy>
                 {providerStatus?.credentialConfigured ? (
@@ -264,7 +264,11 @@ function VoiceSettingsSection({ active, preferences, onPreferencesChange }: Voic
                     variant="ghost"
                     className="shrink-0"
                     disabled={saving}
-                    description={`Voice input and Wisps using ${provider.name} stop working until you enter a new key.`}
+                    description={
+                      providerStatus.credentialSource === "voice"
+                        ? `Voice input with ${provider.name} stops working until you enter a new key. Your sign-in is kept.`
+                        : `Voice input and Wisps using ${provider.name} stop working until you enter a new key.`
+                    }
                     onConfirm={() => void handleRemoveKey()}
                   />
                 ) : null}

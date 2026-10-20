@@ -1,7 +1,11 @@
 import { WISP_IPC_CHANNELS } from "../../shared/contracts.js";
 import type { TranscriptionService } from "../transcription-service.js";
 import { registerGuardedHandlers, type HandlerRouter, type SenderAuthorizer } from "./guarded-handlers.js";
-import { parseSaveVoiceCredentialRequest, parseTranscribeAudioRequest } from "../validators.js";
+import {
+  parseRemoveVoiceCredentialRequest,
+  parseSaveVoiceCredentialRequest,
+  parseTranscribeAudioRequest,
+} from "../validators.js";
 
 export function registerVoiceHandlers(
   router: HandlerRouter,
@@ -15,6 +19,14 @@ export function registerVoiceHandlers(
       WISP_IPC_CHANNELS.saveVoiceCredential,
       async (payload) => {
         const view = await service.saveCredential(parseSaveVoiceCredentialRequest(payload));
+        await onCredentialChange?.();
+        return view;
+      },
+    ],
+    [
+      WISP_IPC_CHANNELS.removeVoiceCredential,
+      async (payload) => {
+        const view = await service.removeCredential(parseRemoveVoiceCredentialRequest(payload));
         await onCredentialChange?.();
         return view;
       },

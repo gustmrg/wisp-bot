@@ -385,6 +385,10 @@ describe("Wisp server", () => {
         audio: new Uint8Array([1, 2, 3]),
       }),
     ).toEqual({ ok: true, value: { text: "This is a fake transcription." } });
+    expect(await rpc(harness.server, credentials, "removeVoiceCredential", { providerId: "groq" })).toMatchObject({
+      ok: true,
+      value: { providers: expect.arrayContaining([{ id: "groq", name: "Groq", credentialConfigured: false }]) },
+    });
     expect(await rpc(harness.server, credentials, "openWorkspaceFolder", { conversationId: "atlas" })).toMatchObject({
       ok: false,
       error: { code: "unsupported" },

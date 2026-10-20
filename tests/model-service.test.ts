@@ -104,13 +104,15 @@ async function createService(encryption = new TestEncryption()) {
   directories.push(directory);
   const runtime = createRuntime();
   const credentials = new EncryptedCredentialStore(path.join(directory, "credentials.enc.json"), encryption);
+  const voiceCredentials = new EncryptedCredentialStore(path.join(directory, "voice-credentials.enc.json"), encryption);
   const settings = new AiSettingsStore(path.join(directory, "settings.json"));
   const service = new ModelService({
     runtime: runtime as unknown as ModelRuntimeLike,
     credentials,
+    voiceCredentials,
     settings,
   });
-  return { service, runtime, credentials, settings };
+  return { service, runtime, credentials, voiceCredentials, settings };
 }
 
 describe("ModelService", () => {
@@ -338,17 +340,29 @@ describe("ModelService", () => {
     ).resolves.toMatchObject({ selection: { providerId: "provider-b", modelId: "vision-b" } });
   });
 
-  it("saves a key outside a selection and reads it back for direct provider calls", async () => {
-    const { service, runtime } = await createService();
+  it("saves a voice key as the provider's shared key and reads it back for direct provider calls", async () => {
+    const { service, runtime, voiceCredentials } = await createService();
 
-    await expect(service.setApiKey("groq", "   ")).rejects.toMatchObject({ code: "invalid_request" });
-    await service.setApiKey("groq", "  voice-key  ");
+    await expect(service.saveVoiceKey("groq", "   ")).rejects.toMatchObject({ code: "invalid_request" });
+    await service.saveVoiceKey("groq", "  voice-key  ");
 
     expect(runtime.setRuntimeApiKey).toHaveBeenCalledWith("groq", "voice-key");
-    await expect(service.getApiKey("groq")).resolves.toBe("voice-key");
-    await expect(service.getApiKey("openai")).resolves.toBeUndefined();
+    await expect(service.getVoiceKey("groq")).resolves.toBe("voice-key");
+    await expect(service.getVoiceKey("openai")).resolves.toBeUndefined();
+    await expect(service.listVoiceKeys()).resolves.toEqual(new Map([["groq", "shared"]]));
+    await expect(voiceCredentials.list()).resolves.toEqual([]);
     expect([...(await service.listCredentialProviders())]).toEqual(["groq"]);
     expect((await service.getView()).selection).toBeNull();
+  });
+
+  it("removes a shared voice key for the provider's chat models too", async () => {
+    const { service } = await createService();
+    await service.saveVoiceKey("provider-b", "voice-key");
+
+    await service.removeVoiceKey("provider-b");
+
+    await expect(service.getVoiceKey("provider-b")).resolves.toBeUndefined();
+    expect([...(await service.listCredentialProviders())]).toEqual([]);
   });
 
   it("removes the key and clears the active selection", async () => {
@@ -390,7 +404,7 @@ describe("ModelService auxiliary models", () => {
 
   it("saves an image model whose provider has a key, and turns it off", async () => {
     const { service } = await createService();
-    await service.setApiKey("provider-b", "secret-key");
+    await service.saveVoiceKey("provider-b", "secret-key");
 
     const view = await service.saveAuxiliary("imageUnderstanding", { ...vision, maxOutputTokens: 50 });
 
@@ -407,7 +421,7 @@ describe("ModelService auxiliary models", () => {
       code: "invalid_configuration",
       message: expect.stringContaining("API key"),
     });
-    await service.setApiKey("provider-b", "secret-key");
+    await service.saveVoiceKey("provider-b", "secret-key");
     await expect(
       service.saveAuxiliary("imageUnderstanding", { providerId: "provider-b", modelId: "model-b" }),
     ).rejects.toMatchObject({ code: "invalid_configuration", message: "This model does not accept images." });
@@ -420,7 +434,7 @@ describe("ModelService auxiliary models", () => {
   it("keeps the selection but treats it as off when its provider loses the key", async () => {
     const { service } = await createService();
     await service.save({ selection: { providerId: "openrouter", modelId: "model-a" }, apiKey: "main-key" });
-    await service.setApiKey("provider-b", "secret-key");
+    await service.saveVoiceKey("provider-b", "secret-key");
     await service.saveAuxiliary("imageUnderstanding", vision);
 
     const view = await service.removeCredential("provider-b");
@@ -432,7 +446,7 @@ describe("ModelService auxiliary models", () => {
 
   it("reports a saved model that left the catalog as unavailable instead of replacing it", async () => {
     const { service, settings } = await createService();
-    await service.setApiKey("provider-b", "secret-key");
+    await service.saveVoiceKey("provider-b", "secret-key");
     await settings.setAuxiliary("imageUnderstanding", { providerId: "provider-b", modelId: "retired" });
 
     expect((await service.getView()).auxiliary.imageUnderstanding).toEqual({
@@ -453,7 +467,7 @@ describe("ModelService fallback models", () => {
       code: "invalid_configuration",
       message: expect.stringContaining("API key"),
     });
-    await service.setApiKey("provider-b", "secret-key");
+    await service.saveVoiceKey("provider-b", "secret-key");
     await expect(service.saveFallback({ providerId: "provider-b", modelId: "missing" })).rejects.toMatchObject({
       code: "invalid_configuration",
     });
@@ -466,7 +480,7 @@ describe("ModelService fallback models", () => {
   it("gives Wisps on the global model the global fallback, and Wisps with their own model none until they choose", async () => {
     const { service } = await createService();
     await service.save({ selection: global, apiKey: "main-key" });
-    await service.setApiKey("provider-b", "secret-key");
+    await service.saveVoiceKey("provider-b", "secret-key");
     await service.saveFallback(backup);
     const own = { providerId: "provider-b", modelId: "vision-b" };
 
@@ -480,7 +494,7 @@ describe("ModelService fallback models", () => {
   it("has no fallback when it is the model that failed or cannot be used", async () => {
     const { service, settings } = await createService();
     await service.save({ selection: global, apiKey: "main-key" });
-    await service.setApiKey("provider-b", "secret-key");
+    await service.saveVoiceKey("provider-b", "secret-key");
 
     // The model cannot stand in for itself.
     await expect(service.getFallbackModel(null, global)).resolves.toBeNull();
@@ -578,16 +592,21 @@ describe("ModelService subscription sign-in", () => {
       path.join(directory, "credentials.enc.json"),
       new TestEncryption(),
     );
+    const voiceCredentials = new EncryptedCredentialStore(
+      path.join(directory, "voice-credentials.enc.json"),
+      new TestEncryption(),
+    );
     const { runtime, completeInBrowser } = createSignInRuntime(credentials);
     const openExternal = vi.fn(async (_url: string) => undefined);
     const service = new ModelService({
       runtime: runtime as unknown as ModelRuntimeLike,
       credentials,
+      voiceCredentials,
       settings: new AiSettingsStore(path.join(directory, "settings.json")),
       openExternal,
       signInBrowser: async () => ({ kind: options.browser ?? "local" }),
     });
-    return { service, runtime, credentials, openExternal, completeInBrowser };
+    return { service, runtime, credentials, voiceCredentials, openExternal, completeInBrowser };
   }
 
   async function waitForSignInToEnd(service: ModelService) {
@@ -632,7 +651,67 @@ describe("ModelService subscription sign-in", () => {
       service.validateConversationSelection({ providerId: "openai", modelId: "openai-chat" }),
     ).resolves.toBeUndefined();
     // Voice input needs a key; the sign-in does not count as one.
-    await expect(service.listApiKeyProviders()).resolves.toEqual(new Set());
+    await expect(service.listVoiceKeys()).resolves.toEqual(new Map());
+  });
+
+  async function signIn(service: ModelService, completeInBrowser: () => void) {
+    await service.startSignIn("openai");
+    completeInBrowser();
+    await waitForSignInToEnd(service);
+  }
+
+  it("keeps a voice key apart from the sign-in, which it leaves in place", async () => {
+    const { service, runtime, credentials, completeInBrowser } = await createSignInService();
+    await signIn(service, completeInBrowser);
+
+    await service.saveVoiceKey("openai", "voice-key");
+
+    await expect(credentials.read("openai")).resolves.toMatchObject({ type: "oauth" });
+    expect(runtime.setRuntimeApiKey).not.toHaveBeenCalled();
+    await expect(service.getVoiceKey("openai")).resolves.toBe("voice-key");
+    await expect(service.listVoiceKeys()).resolves.toEqual(new Map([["openai", "voice"]]));
+
+    await service.removeVoiceKey("openai");
+
+    expect(runtime.logout).not.toHaveBeenCalled();
+    await expect(credentials.read("openai")).resolves.toMatchObject({ type: "oauth" });
+    await expect(service.getVoiceKey("openai")).resolves.toBeUndefined();
+  });
+
+  it("keeps the API key for voice input when signing in, and after signing out", async () => {
+    const { service, credentials, voiceCredentials, completeInBrowser } = await createSignInService();
+    await service.saveVoiceKey("openai", "api-key");
+
+    await signIn(service, completeInBrowser);
+
+    await expect(credentials.read("openai")).resolves.toMatchObject({ type: "oauth" });
+    await expect(service.getVoiceKey("openai")).resolves.toBe("api-key");
+    await expect(service.listVoiceKeys()).resolves.toEqual(new Map([["openai", "voice"]]));
+
+    await service.removeCredential("openai");
+
+    await expect(service.getVoiceKey("openai")).resolves.toBe("api-key");
+
+    // A key saved for the models afterwards is shared with voice input again.
+    await service.saveVoiceKey("openai", "new-key");
+
+    await expect(service.getVoiceKey("openai")).resolves.toBe("new-key");
+    await expect(service.listVoiceKeys()).resolves.toEqual(new Map([["openai", "shared"]]));
+    await expect(voiceCredentials.read("openai")).resolves.toBeUndefined();
+  });
+
+  it("leaves no voice copy behind once the shared key a failed sign-in kept is removed", async () => {
+    const { service, voiceCredentials } = await createSignInService({ browser: "manual" });
+    await service.saveVoiceKey("openai", "api-key");
+    await service.startSignIn("openai");
+    await expect(service.finishSignIn("openai", "http://127.0.0.1:1455/auth/callback?state=other")).rejects.toThrow();
+
+    await expect(service.listVoiceKeys()).resolves.toEqual(new Map([["openai", "shared"]]));
+
+    await service.removeVoiceKey("openai");
+
+    await expect(service.getVoiceKey("openai")).resolves.toBeUndefined();
+    await expect(voiceCredentials.read("openai")).resolves.toBeUndefined();
   });
 
   it("shows the page and takes the pasted address when the browser runs elsewhere", async () => {
@@ -713,6 +792,10 @@ describe("ModelService with Claude Code", () => {
     const service = new ModelService({
       runtime: createRuntime() as unknown as ModelRuntimeLike,
       credentials: new EncryptedCredentialStore(path.join(directory, "credentials.enc.json"), new TestEncryption()),
+      voiceCredentials: new EncryptedCredentialStore(
+        path.join(directory, "voice-credentials.enc.json"),
+        new TestEncryption(),
+      ),
       settings: new AiSettingsStore(path.join(directory, "settings.json")),
       claudeCode: {
         current: () => status as never,

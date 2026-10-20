@@ -58,10 +58,19 @@ export const VOICE_AUDIO_MIME_TYPES = ["audio/webm", "audio/ogg", "audio/mp4", "
 
 export type VoiceAudioMimeType = (typeof VOICE_AUDIO_MIME_TYPES)[number];
 
+/**
+ * Where a provider's key for voice input is saved: shared with the provider's
+ * chat models, or kept for voice input alone while the models use a
+ * subscription sign-in.
+ */
+export type VoiceCredentialSource = "shared" | "voice";
+
 export interface VoiceProviderStatus {
   id: VoiceProviderId;
   name: string;
   credentialConfigured: boolean;
+  /** Present when a key is configured. */
+  credentialSource?: VoiceCredentialSource;
 }
 
 export interface VoiceSettingsView {
@@ -72,6 +81,10 @@ export interface VoiceSettingsView {
 export interface SaveVoiceCredentialRequest {
   providerId: VoiceProviderId;
   apiKey: string;
+}
+
+export interface RemoveVoiceCredentialRequest {
+  providerId: VoiceProviderId;
 }
 
 export interface TranscribeAudioRequest {
