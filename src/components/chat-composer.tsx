@@ -38,6 +38,7 @@ import {
   attachmentsNeedingVision,
   messageWithAttachments,
   splitMessageAttachments,
+  type AttachWorkspaceFilesProgress,
   type WorkspaceAttachment,
 } from "../../shared/workspace";
 
@@ -101,8 +102,13 @@ export function ChatComposer({
 }: ChatComposerProps) {
   const [draft, setDraft] = useState(() => readComposerDraft(chat.id).text);
   const [attachments, setAttachments] = useState(() => readComposerDraft(chat.id).attachments);
-  const [attaching, setAttaching] = useState(false);
+  // What attaching is doing, shown in place of a hint; null when not attaching.
+  const [attachStatus, setAttachStatus] = useState<string | null>(null);
+  const attaching = attachStatus !== null;
   const [attachError, setAttachError] = useState("");
+  // Cancels the attach in progress; a result that arrives after it is ignored.
+  const attachAbort = useRef<AbortController | null>(null);
+  useEffect(() => () => attachAbort.current?.abort(), []);
   const [menuOpen, setMenuOpen] = useState(false);
   const [menuView, setMenuView] = useState<"actions" | "schedule" | "new_topic">("actions");
   // A time picked from the + menu waits on the draft; from the send button's menu or the shortcut it schedules now.
@@ -311,10 +317,21 @@ export function ChatComposer({
   }, [voiceShortcutEnabled, voiceAvailable, voice.shortcut, cancelVoiceInput]);
 
   async function attachFiles(): Promise<void> {
-    setAttaching(true);
+    const controller = new AbortController();
+    attachAbort.current = controller;
+    setAttachStatus("Attaching files…");
     setAttachError("");
     try {
-      const result = await window.wisp.attachWorkspaceFiles({ conversationId: chat.id });
+      const result = await window.wisp.attachWorkspaceFiles(
+        { conversationId: chat.id },
+        {
+          signal: controller.signal,
+          onProgress: (progress) => {
+            if (!controller.signal.aborted) setAttachStatus(attachProgressLabel(progress));
+          },
+        },
+      );
+      if (controller.signal.aborted) return;
       if (!result.ok) {
         setAttachError(result.error.message);
         return;
@@ -322,10 +339,19 @@ export function ChatComposer({
       const added = result.value.files;
       setAttachments((current) => [...current, ...added.filter((file) => !current.some((c) => c.path === file.path))]);
     } catch {
-      setAttachError("Could not attach files.");
+      if (!controller.signal.aborted) setAttachError("Could not attach files.");
     } finally {
-      setAttaching(false);
+      if (attachAbort.current === controller) {
+        attachAbort.current = null;
+        setAttachStatus(null);
+      }
     }
+  }
+
+  function cancelAttach(): void {
+    attachAbort.current?.abort();
+    attachAbort.current = null;
+    setAttachStatus(null);
   }
 
   function handleKeyDown(event: KeyboardEvent<HTMLTextAreaElement>): void {
@@ -491,7 +517,7 @@ export function ChatComposer({
     if (chat.kind !== "wisp") return null;
     if (!schedulable && !onNewTopic) {
       return (
-        <ComposerTooltip message={attaching ? "Copying files to the workspace…" : "Attach files"}>
+        <ComposerTooltip message={attachStatus ?? "Attach files"}>
           <button
             type="button"
             className={LEAD_BUTTON}
@@ -653,9 +679,28 @@ export function ChatComposer({
         ) : voiceInput.phase === "starting" ? (
           "Starting the microphone…"
         ) : scheduleError || attachError || error ? (
-          <ComposerError message={scheduleError || attachError || error || ""} />
-        ) : attaching ? (
-          "Copying files to the workspace…"
+          <ComposerError message={scheduleError || attachError || error || ""}>
+            {attachError && !scheduleError && chat.kind === "wisp" ? (
+              <button
+                type="button"
+                className="font-medium text-foreground underline underline-offset-2"
+                onClick={() => void attachFiles()}
+              >
+                Try again
+              </button>
+            ) : null}
+          </ComposerError>
+        ) : attachStatus ? (
+          <span className="flex flex-wrap items-center gap-x-2">
+            <span>{attachStatus}</span>
+            <button
+              type="button"
+              className="font-medium text-foreground underline underline-offset-2"
+              onClick={cancelAttach}
+            >
+              Cancel
+            </button>
+          </span>
         ) : visionHint ? (
           <span className="flex items-start gap-1.5 text-warning">
             <EyeOffIcon aria-hidden="true" className="mt-px size-3.5 flex-none" />
@@ -869,6 +914,13 @@ function missingVisionHint(attachments: ReadonlyArray<WorkspaceAttachment>, imag
     return "This Wisp's model can't see images. It can read the text of PDFs, but not scanned pages.";
   }
   return null;
+}
+
+function attachProgressLabel(progress: AttachWorkspaceFilesProgress): string {
+  if (progress.phase === "checking") return "Checking room in the workspace…";
+  return progress.count > 1
+    ? `Sending ${progress.name} (${progress.index + 1} of ${progress.count})…`
+    : `Sending ${progress.name}…`;
 }
 
 function ComposerError({ message, children }: { message: string; children?: ReactNode }) {

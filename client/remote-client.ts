@@ -20,6 +20,8 @@ const REQUEST_TIMEOUT_MS = 60_000;
 const CONNECT_TIMEOUT_MS = 10_000;
 // The server sends a keep-alive every 20 seconds; silence this long means the path is dead.
 const STREAM_IDLE_TIMEOUT_MS = 45_000;
+// An upload may take the request timeout plus the time to send its bytes at a slow mobile link's speed.
+const UPLOAD_MIN_BYTES_PER_SECOND = 32 * 1024;
 
 export type RemoteErrorCode = RemoteTransportErrorCode | "network";
 
@@ -56,6 +58,11 @@ export interface RemoteClientOptions {
   now?: () => number;
   /** Cancels every request in flight, so a session can stop at once even over a link that stopped answering. */
   signal?: AbortSignal;
+}
+
+/** How long sending a file of `bytes` may take before the device gives up on it. */
+export function uploadTimeoutMs(bytes: number): number {
+  return REQUEST_TIMEOUT_MS + Math.ceil((bytes / UPLOAD_MIN_BYTES_PER_SECOND) * 1000);
 }
 
 /** Marks a cookie-authenticated request as the app's own; cross-site forms cannot set it. */
@@ -112,22 +119,27 @@ export class RemoteClient {
   }
 
   /**
-   * Sends one file into a Wisp's workspace. No timeout applies: a large file
-   * over a slow link takes as long as it takes, and the server closes a
-   * connection that stops sending.
+   * Sends one file into a Wisp's workspace. The time allowed grows with the
+   * file, so a large file over a slow link can finish while a server that
+   * stopped answering does not keep the device waiting; `signal` cancels it.
    */
   async uploadWorkspaceFile(
     conversationId: string,
     name: string,
     content: Blob,
+    signal?: AbortSignal,
   ): Promise<BackendResult<WorkspaceAttachment>> {
     const query = new URLSearchParams({ conversationId, name });
-    const attempt = async (auth: Record<string, string>): Promise<Response> =>
-      this.send(`${REMOTE_API_PREFIX}${WORKSPACE_UPLOAD_PATH}?${query}`, {
+    const timeoutMs = uploadTimeoutMs(content.size);
+    const attempt = async (auth: Record<string, string>): Promise<Response> => {
+      const timeout = AbortSignal.timeout(timeoutMs);
+      return this.send(`${REMOTE_API_PREFIX}${WORKSPACE_UPLOAD_PATH}?${query}`, {
         method: "POST",
         headers: { ...auth, "Content-Type": "application/octet-stream" },
         body: content,
+        signal: signal ? AbortSignal.any([signal, timeout]) : timeout,
       });
+    };
     let response = await attempt(await this.authHeaders());
     // A Blob can be sent again, so the same retry as `authorized` applies.
     if (response.status === 401) response = await attempt(await this.authHeaders(true));

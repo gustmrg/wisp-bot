@@ -74,7 +74,12 @@ import type {
   StorageSummary,
   StorageSummaryRequest,
 } from "./storage.js";
-import type { AttachWorkspaceFilesResult, SetWorkspaceQuotaRequest, WorkspaceView } from "./workspace.js";
+import type {
+  AttachWorkspaceFilesOptions,
+  AttachWorkspaceFilesResult,
+  SetWorkspaceQuotaRequest,
+  WorkspaceView,
+} from "./workspace.js";
 import type { SaveWispExecutionRequest, WispExecutionView, WispSetupView } from "./execution.js";
 import type { ImportSkillRequest, SkillRequest, SkillView } from "./skills.js";
 import type {
@@ -839,8 +844,14 @@ export interface WispApi {
   openWorkspaceFolder(request: ConversationRequest): Promise<EmptyResult>;
   /** Opens the Wisp's skills folder, creating it on first use. */
   openSkillsFolder(request: ConversationRequest): Promise<EmptyResult>;
-  /** Shows a native file picker and copies the chosen files into the Wisp's workspace inbox. */
-  attachWorkspaceFiles(request: ConversationRequest): Promise<BackendResult<AttachWorkspaceFilesResult>>;
+  /**
+   * Shows a native file picker and copies the chosen files into the Wisp's workspace inbox. `options` stay
+   * in the page: only a browser sending files itself reports progress and can be cancelled.
+   */
+  attachWorkspaceFiles(
+    request: ConversationRequest,
+    options?: AttachWorkspaceFilesOptions,
+  ): Promise<BackendResult<AttachWorkspaceFilesResult>>;
   /** Space used by every workspace and archived conversation on the active connection. */
   getStorageSummary(request: StorageSummaryRequest): Promise<BackendResult<StorageSummary>>;
   /** One page of a workspace folder's entries, largest first. */

@@ -46,6 +46,17 @@ export interface AttachWorkspaceFilesResult {
   workspace: WorkspaceView;
 }
 
+/** Where a device sending chosen files to a server is; a computer copying files itself reports nothing. */
+export type AttachWorkspaceFilesProgress =
+  | { phase: "checking"; count: number }
+  | { phase: "sending"; name: string; index: number; count: number };
+
+export interface AttachWorkspaceFilesOptions {
+  /** Stops sending; files already in the workspace stay there. */
+  signal?: AbortSignal;
+  onProgress?: (progress: AttachWorkspaceFilesProgress) => void;
+}
+
 /** The message text sent to a Wisp: what the user typed, followed by where its attachments landed. */
 export function messageWithAttachments(
   text: string,

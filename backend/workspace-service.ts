@@ -23,6 +23,8 @@ export const SKILLS_DIRECTORY = "skills";
 /** File inside a Wisp's config directory that holds its workspace size. */
 export const WORKSPACE_SETTINGS_FILE = "workspace-settings.json";
 const MAX_NAME_ATTEMPTS = 100;
+/** Files measured at once in a folder. */
+const MEASURE_BATCH_SIZE = 64;
 
 export interface TreeMeasurement {
   bytes: number;
@@ -59,26 +61,34 @@ export async function measureTree(directory: string, onFile?: (file: MeasuredFil
       if ((error as NodeJS.ErrnoException).code !== "ENOENT") total.partial = true;
       continue;
     }
+    const files: string[] = [];
     for (const entry of entries) {
       const entryPath = path.join(current, entry.name);
       if (entry.isDirectory()) pending.push(entryPath);
-      else if (entry.isFile()) {
-        try {
-          const info = await lstat(entryPath, { bigint: true });
-          if (info.nlink > 1n) {
-            const identity = `${info.dev}:${info.ino}`;
-            if (linked.has(identity)) continue;
-            linked.add(identity);
-          }
-          const size = Number(info.size);
-          total.bytes += size;
-          total.files += 1;
-          onFile?.({ path: entryPath, size, modifiedAt: info.mtime });
-        } catch (error) {
+      else if (entry.isFile()) files.push(entryPath);
+    }
+    // Files are read a batch at a time, which matters on slow disks, and counted in order, so the
+    // place a hard-linked file is counted stays the same as reading them one by one.
+    for (let start = 0; start < files.length; start += MEASURE_BATCH_SIZE) {
+      const batch = files.slice(start, start + MEASURE_BATCH_SIZE);
+      const results = await Promise.allSettled(batch.map((file) => lstat(file, { bigint: true })));
+      results.forEach((result, index) => {
+        if (result.status === "rejected") {
           // A file removed during the scan is gone, not unreadable.
-          if ((error as NodeJS.ErrnoException).code !== "ENOENT") total.partial = true;
+          if ((result.reason as NodeJS.ErrnoException).code !== "ENOENT") total.partial = true;
+          return;
         }
-      }
+        const info = result.value;
+        if (info.nlink > 1n) {
+          const identity = `${info.dev}:${info.ino}`;
+          if (linked.has(identity)) return;
+          linked.add(identity);
+        }
+        const size = Number(info.size);
+        total.bytes += size;
+        total.files += 1;
+        onFile?.({ path: batch[index]!, size, modifiedAt: info.mtime });
+      });
     }
   }
   return total;
