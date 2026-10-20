@@ -64,7 +64,8 @@ password or token.
   that computer and deletes conversations unused for 30 days. The next message
   after that starts a new Claude Code conversation that is told the latest
   messages. The Wisp's own transcript stays the record that is shown, searched,
-  and backed up.
+  and backed up. Deleting the Wisp also deletes what Claude Code keeps for it
+  (`claude purge`).
 - **Context:** the Wisp's **Context** tab works as on Pi: **Compact** asks
   Claude Code to summarize the conversation, **New topic** starts a new Claude
   Code conversation, and the renewal policy and memory apply the same way.

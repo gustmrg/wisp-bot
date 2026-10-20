@@ -38,6 +38,7 @@ import { WispConversationAgentFactory } from "./wisp-conversation-agent.js";
 import { WispSessionBuilder } from "./wisp-session-plan.js";
 import { ClaudeCodeSessionFactory } from "./claude-code/claude-code-session-factory.js";
 import { CLAUDE_CODE_FALLBACK_DIRECTORY } from "./claude-code/claude-code-usage-log.js";
+import { ClaudeCodeProcesses } from "./claude-code/claude-code-processes.js";
 import { ClaudeCodeStatusService } from "./claude-code/claude-code-status.js";
 import { RoutingSessionFactory } from "./claude-code/routing-session-factory.js";
 import { formatHistorySearch, recentTranscript } from "./claude-code/conversation-history.js";
@@ -276,47 +277,46 @@ export async function createBackendRuntime(options: BackendRuntimeOptions): Prom
     fallbackModel,
     wispHost,
   );
-  const sessionFactory = new RoutingSessionFactory(
-    piSessionFactory,
-    new ClaudeCodeSessionFactory({
-      builder: new WispSessionBuilder({
-        authorizationBroker: toolAuthorizationBroker,
-        toolSource,
-        jobs: jobHost,
-        wisps: wispHost,
-      }),
-      status: claudeCodeStatus,
-      recentTranscript: async (conversationId) =>
-        recentTranscript(await conversationRepository.getMessagePage({ conversationId, page: "latest" })),
-      searchHistory: async (conversationId, query) =>
-        formatHistorySearch(conversationId, await conversationRepository.searchMessages(query)),
-      webSearch: (conversationId) => pluginService.searchesWithClaude(conversationId),
-      // A Pi session of its own, so the conversation's Pi session and identity stay as they are.
-      fallback: async (context) => {
-        const choice = await fallbackModel(context.conversationId);
-        if (!choice) return null;
-        const model = piSessionFactory.resolveModel(choice);
-        // Each fallback turn starts fresh in a folder of its own, which the session report reads.
-        const sessionDirectory = path.join(
-          context.sessionDirectory,
-          CLAUDE_CODE_FALLBACK_DIRECTORY,
-          `${new Date().toISOString().replace(/[:.]/g, "-")}-${randomUUID().slice(0, 8)}`,
-        );
-        const session = await piSessionFactory.create(
-          {
-            ...context,
-            sessionDirectory,
-            piSessionId: null,
-            piSessionFile: null,
-            savePiSessionIdentity: undefined,
-            onContextRenewed: undefined,
-          },
-          choice,
-        );
-        return { name: model.name || model.id, session };
-      },
+  const claudeCodeSessionFactory = new ClaudeCodeSessionFactory({
+    builder: new WispSessionBuilder({
+      authorizationBroker: toolAuthorizationBroker,
+      toolSource,
+      jobs: jobHost,
+      wisps: wispHost,
     }),
-  );
+    status: claudeCodeStatus,
+    recentTranscript: async (conversationId) =>
+      recentTranscript(await conversationRepository.getMessagePage({ conversationId, page: "latest" })),
+    searchHistory: async (conversationId, query) =>
+      formatHistorySearch(conversationId, await conversationRepository.searchMessages(query)),
+    webSearch: (conversationId) => pluginService.searchesWithClaude(conversationId),
+    // A Pi session of its own, so the conversation's Pi session and identity stay as they are.
+    fallback: async (context) => {
+      const choice = await fallbackModel(context.conversationId);
+      if (!choice) return null;
+      const model = piSessionFactory.resolveModel(choice);
+      // Each fallback turn starts fresh in a folder of its own, which the session report reads.
+      const sessionDirectory = path.join(
+        context.sessionDirectory,
+        CLAUDE_CODE_FALLBACK_DIRECTORY,
+        `${new Date().toISOString().replace(/[:.]/g, "-")}-${randomUUID().slice(0, 8)}`,
+      );
+      const session = await piSessionFactory.create(
+        {
+          ...context,
+          sessionDirectory,
+          piSessionId: null,
+          piSessionFile: null,
+          savePiSessionIdentity: undefined,
+          onContextRenewed: undefined,
+        },
+        choice,
+      );
+      return { name: model.name || model.id, session };
+    },
+    processes: new ClaudeCodeProcesses(),
+  });
+  const sessionFactory = new RoutingSessionFactory(piSessionFactory, claudeCodeSessionFactory);
   const agentFactory: ConversationAgentFactory =
     options.agentMode === "fake"
       ? new FakeConversationAgentFactory({ latencyMs: 350, steering: true })
@@ -349,6 +349,14 @@ export async function createBackendRuntime(options: BackendRuntimeOptions): Prom
         void executionService.reconcile().catch(() => undefined);
       },
       onFollowUpTaken: (_conversationId, queuedMessageId) => messageQueue?.followUpTaken(queuedMessageId),
+      // Claude Code keeps the transcripts of a Wisp that ran on it outside Wisp's data.
+      onWispDeleting: async ({ sessionDirectory, workspaceDirectory }) =>
+        (await claudeCodeSessionFactory.usedClaudeCode(sessionDirectory))
+          ? () =>
+              void claudeCodeSessionFactory
+                .purge(workspaceDirectory)
+                .catch(() => logger.warn("claude_code_purge_failed"))
+          : undefined,
     },
   );
   conversationService = service;

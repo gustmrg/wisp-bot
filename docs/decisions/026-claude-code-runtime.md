@@ -256,7 +256,16 @@ How WebSearch is offered:
 - When `resume` fails because the session no longer exists, the
   conversation starts a new Claude Code session, and the appended prompt
   carries the latest Wisp messages as context.
-- Deleting a Wisp or conversation runs `claude purge <workspace>`.
+- Deleting a Wisp that ran on Claude Code runs `claude purge <workspace>
+  --yes`, which deletes its transcripts, file history, and project entry.
+  - It runs only once the Wisp's Claude Code processes exited (at most 10 s),
+    since a closing process writes its transcript again. Wisp starts Claude
+    Code through the SDK's `spawnClaudeCodeProcess`, as its docs show, to
+    know when each process exits.
+  - Verified: after one turn, the project's transcript existed; the purge,
+    after the process exited, left nothing.
+  - Circles hold no Claude Code session of their own; a Wisp's runs only in
+    its own conversation.
 - Moving Claude Code's data with `CLAUDE_CONFIG_DIR` would also move the
   sign-in into Wisp's data and backups, so Wisp does not do it.
 

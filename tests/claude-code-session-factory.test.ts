@@ -33,7 +33,10 @@ function tool(name: string) {
   };
 }
 
-async function setup(status: ClaudeCodeStatusView = READY, options: { webSearch?: () => boolean } = {}) {
+async function setup(
+  status: ClaudeCodeStatusView = READY,
+  options: { webSearch?: () => boolean; whenExited?: () => Promise<void> } = {},
+) {
   const root = await mkdtemp(path.join(tmpdir(), "wisp-claude-code-factory-"));
   directories.push(root);
   const context = {
@@ -110,6 +113,7 @@ async function setup(status: ClaudeCodeStatusView = READY, options: { webSearch?
       },
     };
   };
+  const purgeProject = vi.fn(async () => undefined);
   const statusService = {
     current: () => status,
     refresh: async () => status,
@@ -122,8 +126,10 @@ async function setup(status: ClaudeCodeStatusView = READY, options: { webSearch?
     query,
     environment: { HOME: "/home/person", PATH: "/usr/bin", ANTHROPIC_API_KEY: "sk-ant-secret" },
     ...(options.webSearch ? { webSearch: options.webSearch } : {}),
+    processes: { spawn: vi.fn(), whenExited: options.whenExited ?? (async () => undefined) } as never,
+    purgeProject,
   });
-  return { factory, context, launches, root, builder, statusService };
+  return { factory, context, launches, root, builder, statusService, purgeProject };
 }
 
 describe("ClaudeCodeSessionFactory", () => {
@@ -230,6 +236,29 @@ describe("ClaudeCodeSessionFactory", () => {
     expect(statusService.recordPlanUsage).toHaveBeenCalledWith({
       status: "allowed",
       windows: { five_hour: { utilization: 0.8, resetsAt: 1792471200 } },
+    });
+  });
+
+  it("purges what Claude Code keeps for a deleted Wisp's workspace once its processes exited", async () => {
+    let exit!: () => void;
+    const exited = new Promise<void>((resolve) => (exit = resolve));
+    const { factory, context, root, purgeProject } = await setup(READY, { whenExited: () => exited });
+    expect(await factory.usedClaudeCode(root)).toBe(false);
+    const session = await factory.create(context, { providerId: "claude-code", modelId: "sonnet" });
+    await session.prompt("Hello");
+    session.dispose();
+    expect(await factory.usedClaudeCode(root)).toBe(true);
+
+    const purged = factory.purge(context.workspaceDirectory);
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(purgeProject).not.toHaveBeenCalled();
+    exit();
+    await purged;
+
+    expect(purgeProject).toHaveBeenCalledWith("/usr/local/bin/claude", context.workspaceDirectory, {
+      HOME: "/home/person",
+      PATH: "/usr/bin",
+      ENABLE_CLAUDEAI_MCP_SERVERS: "false",
     });
   });
 

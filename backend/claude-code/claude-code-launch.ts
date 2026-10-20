@@ -1,13 +1,14 @@
 /**
- * Spike (SWE-182, ADR 026): how Wisp would run a Wisp's conversation on the
- * unmodified Claude Code binary through the Claude Agent SDK, and how it reads
- * whether the person signed in. Wisp never reads, stores, or passes on Claude
- * Code's credentials: the person signs in with `claude auth login` on the
- * server's computer, and the binary finds its own login.
+ * How Wisp runs a Wisp's conversation on the unmodified Claude Code binary
+ * through the Claude Agent SDK, and how it reads whether the person signed in
+ * (ADR 026). Wisp never reads, stores, or passes on Claude Code's
+ * credentials: the person signs in with `claude auth login` on the server's
+ * computer, and the binary finds its own login.
  *
- * The SDK is not a dependency yet; the types below are the subset of its
- * `Options` this design sets, as of @anthropic-ai/claude-agent-sdk 0.3.276.
+ * The types below are the subset of the SDK's `Options` this design sets, as
+ * of @anthropic-ai/claude-agent-sdk 0.3.276, which is loaded only when used.
  */
+import type { ClaudeCodeSpawnOptions } from "./claude-code-processes.js";
 
 /** The MCP server name Wisp's own tools are offered under. */
 export const WISP_MCP_SERVER = "wisp";
@@ -68,6 +69,7 @@ export interface ClaudeCodeQueryOptions {
   sessionId?: string;
   resume?: string;
   persistSession?: false;
+  spawnClaudeCodeProcess?: (options: ClaudeCodeSpawnOptions) => unknown;
 }
 
 export interface ClaudeCodeConversationOptions {
@@ -91,6 +93,8 @@ export interface ClaudeCodeConversationOptions {
   wispTools: unknown;
   /** Offer Claude's WebSearch, when it is the Wisp's web search provider. */
   webSearch?: boolean;
+  /** Starts the process, so Wisp knows when it exited. */
+  spawn?: (options: ClaudeCodeSpawnOptions) => unknown;
   /** Asks the broker about a prompt for one of Claude Code's own tools (only WebSearch is offered). */
   authorize: ClaudeCodeQueryOptions["canUseTool"];
   environment: NodeJS.ProcessEnv;
@@ -133,6 +137,7 @@ export function claudeCodeQueryOptions(options: ClaudeCodeConversationOptions): 
       },
     },
     canUseTool: options.authorize,
+    ...(options.spawn ? { spawnClaudeCodeProcess: options.spawn } : {}),
     systemPrompt: {
       type: "preset",
       preset: "claude_code",

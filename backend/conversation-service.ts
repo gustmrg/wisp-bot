@@ -29,6 +29,7 @@ import {
 import type { QueuedMessage } from "../shared/message-queue.js";
 import type { ToolApprovalRequest } from "../shared/tool-policy.js";
 import type { AgentRegistry } from "./agent-registry.js";
+import type { ConversationAgentContext } from "./conversation-agent.js";
 import { sanitizeBackendError, WispBackendError } from "./backend-error.js";
 import type { ConversationRepository, MessageChange } from "./conversation-repository.js";
 import type { StructuredLogger } from "./structured-logger.js";
@@ -43,6 +44,12 @@ export interface ConversationServiceOptions {
   onFollowUpTaken?: (conversationId: string, queuedMessageId: string) => void;
   /** Receives the Wisps and conversation summaries after a Wisp was created, changed or deleted. */
   onWispsChanged?: (view: WispsView) => void;
+  /**
+   * Asked before a Wisp is deleted, with its conversation's context, for what
+   * to delete outside Wisp's data once it is gone, such as what Claude Code
+   * keeps for its workspace (ADR 026).
+   */
+  onWispDeleting?: (context: ConversationAgentContext) => Promise<(() => void) | undefined>;
 }
 
 /**
@@ -61,6 +68,7 @@ export class ConversationService {
   private readonly onConversationsRemoved: () => void;
   private readonly onFollowUpTaken: (conversationId: string, queuedMessageId: string) => void;
   private readonly onWispsChanged: (view: WispsView) => void;
+  private readonly onWispDeleting: ConversationServiceOptions["onWispDeleting"];
 
   constructor(
     repository: ConversationRepository,
@@ -76,6 +84,7 @@ export class ConversationService {
     this.onConversationsRemoved = options.onConversationsRemoved ?? (() => undefined);
     this.onFollowUpTaken = options.onFollowUpTaken ?? (() => undefined);
     this.onWispsChanged = options.onWispsChanged ?? (() => undefined);
+    this.onWispDeleting = options.onWispDeleting;
   }
 
   async start(model: ModelSelection | null): Promise<void> {
@@ -287,6 +296,7 @@ export class ConversationService {
   async deleteWisp(wispId: string): Promise<ConversationStateView> {
     const context = this.repository.readConversationWisp(wispId) ? this.repository.getAgentContext(wispId) : null;
     if (!context) throw new WispBackendError("not_found", "The Wisp was not found.");
+    const afterDeleted = await this.onWispDeleting?.(context).catch(() => undefined);
     await this.registry.delete(wispId);
     try {
       await this.repository.deleteWisp(wispId);
@@ -295,6 +305,7 @@ export class ConversationService {
       await this.registry.create(context).catch(() => undefined);
       throw error;
     }
+    afterDeleted?.();
     this.onConversationsRemoved();
     this.publishWisps();
     return this.getState();

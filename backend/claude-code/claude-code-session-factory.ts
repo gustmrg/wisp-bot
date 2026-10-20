@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { readFile } from "node:fs/promises";
+import { access, readFile } from "node:fs/promises";
 import path from "node:path";
 
 import type { ModelSelection } from "../../shared/contracts.js";
@@ -12,7 +12,8 @@ import type { ConversationAgentContext } from "../conversation-agent.js";
 import type { RuntimeSession } from "../runtime-session.js";
 import { defaultToolRevision, type JobSessionSpec, type WispSessionBuilder } from "../wisp-session-plan.js";
 import { ClaudeCodeJobSession } from "./claude-code-job-session.js";
-import { claudeCodeQueryOptions, type ClaudeCodeQueryOptions } from "./claude-code-launch.js";
+import { claudeCodeEnvironment, claudeCodeQueryOptions, type ClaudeCodeQueryOptions } from "./claude-code-launch.js";
+import { purgeClaudeCodeProject, type ClaudeCodeProcesses } from "./claude-code-processes.js";
 import { claudeCodeModel, type ClaudeCodeModel } from "./claude-code-models.js";
 import {
   claudeCodeEffort,
@@ -22,7 +23,12 @@ import {
 } from "./claude-code-session.js";
 import { claudeCodeUnavailableMessage, type ClaudeCodeStatusService } from "./claude-code-status.js";
 import type { ClaudeCodeEventConverter, ClaudeCodeTurnResult } from "./claude-code-events.js";
-import { appendClaudeCodeUsage, claudeCodeFallbackEntry, claudeCodeUsageEntry } from "./claude-code-usage-log.js";
+import {
+  appendClaudeCodeUsage,
+  CLAUDE_CODE_USAGE_FILE,
+  claudeCodeFallbackEntry,
+  claudeCodeUsageEntry,
+} from "./claude-code-usage-log.js";
 import { createWispMcpServer, type WispMcpTool } from "./wisp-mcp-server.js";
 
 /** Claude Code's own web search tool. */
@@ -43,6 +49,10 @@ export interface ClaudeCodeSessionFactoryOptions {
   recentTranscript?: (conversationId: string) => Promise<string>;
   /** `search_history` for a Claude Code Wisp: Claude Code keeps its own history, so the Wisp's transcript is searched. */
   searchHistory?: (conversationId: string, query: string) => Promise<string>;
+  /** Tracks the processes, so a deleted Wisp's data is purged once they exited. */
+  processes?: ClaudeCodeProcesses;
+  /** Deletes what Claude Code keeps for a workspace; injected by tests. */
+  purgeProject?: (executable: string, workspaceDirectory: string, env: Record<string, string>) => Promise<void>;
   /** Whether the Wisp searches with Claude Code's own WebSearch instead of a plugin's web_search. */
   webSearch?: (conversationId: string) => boolean;
   /** A session on the Wisp's fallback model for a turn Claude Code failed for good (ADR 021), or null. */
@@ -207,8 +217,32 @@ export class ClaudeCodeSessionFactory {
               ? { behavior: "allow", updatedInput: input }
               : { behavior: "deny", message: "This Wisp cannot use that tool." },
           environment: this.options.environment ?? process.env,
+          ...(this.options.processes ? { spawn: this.options.processes.spawn } : {}),
         }),
     };
+  }
+
+  /** Whether a Wisp's conversation ran on Claude Code, so Claude Code keeps data for it. */
+  async usedClaudeCode(sessionDirectory: string): Promise<boolean> {
+    for (const file of [SESSION_FILE, CLAUDE_CODE_USAGE_FILE]) {
+      if (await access(path.join(sessionDirectory, file)).then(() => true, () => false)) return true;
+    }
+    return false;
+  }
+
+  /**
+   * Deletes what Claude Code keeps for a deleted Wisp's workspace, its
+   * transcripts among them, once its processes exited (ADR 026).
+   */
+  async purge(workspaceDirectory: string): Promise<void> {
+    const executable = this.options.status.executable();
+    if (!executable) return;
+    await this.options.processes?.whenExited(workspaceDirectory);
+    await (this.options.purgeProject ?? purgeClaudeCodeProject)(
+      executable,
+      workspaceDirectory,
+      claudeCodeEnvironment(this.options.environment ?? process.env),
+    );
   }
 
   /**
