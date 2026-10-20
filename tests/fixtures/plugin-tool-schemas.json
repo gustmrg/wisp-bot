@@ -1,0 +1,1334 @@
+{
+  "web-search": {
+    "web_search": {
+      "type": "object",
+      "properties": {
+        "query": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500,
+          "description": "Search query, at most 75 words."
+        },
+        "count": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 10,
+          "default": 5
+        }
+      },
+      "required": ["query"],
+      "additionalProperties": false
+    }
+  },
+  "linear": {
+    "linear_search_issues": {
+      "type": "object",
+      "properties": {
+        "query": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500,
+          "description": "Text to find in title or description."
+        },
+        "teamId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100,
+          "description": "Team UUID from linear_list_teams."
+        },
+        "stateId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100,
+          "description": "Status UUID from linear_list_statuses for the issue's team."
+        },
+        "projectId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100,
+          "description": "Project UUID from linear_list_projects."
+        },
+        "labelId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100,
+          "description": "Label UUID from linear_list_labels; matches issues that have this label."
+        },
+        "assigneeId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100,
+          "description": "User UUID from linear_list_users, \"me\" for the connected user, or \"none\" for unassigned."
+        },
+        "parentId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100,
+          "description": "Parent issue UUID or identifier (ENG-123); lists its sub-issues."
+        },
+        "priority": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4,
+          "description": "0 none, 1 urgent, 2 high, 3 normal, 4 low."
+        },
+        "updatedSince": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 50,
+          "description": "Only issues updated since an ISO 8601 date/date-time or duration, for example -P7D."
+        },
+        "cursor": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500,
+          "description": "Cursor from the previous result's pageInfo.endCursor."
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 20,
+          "default": 10
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
+    "linear_get_issue": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100,
+          "description": "Issue UUID or identifier, for example ENG-123."
+        }
+      },
+      "required": ["id"],
+      "additionalProperties": false
+    },
+    "linear_list_comments": {
+      "type": "object",
+      "properties": {
+        "issueId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100,
+          "description": "Issue UUID or identifier, for example ENG-123."
+        },
+        "cursor": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500,
+          "description": "Cursor from the previous result's pageInfo.endCursor."
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 20,
+          "default": 10
+        }
+      },
+      "required": ["issueId"],
+      "additionalProperties": false
+    },
+    "linear_list_projects": {
+      "type": "object",
+      "properties": {
+        "query": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200,
+          "description": "Case-insensitive text to find in the name."
+        },
+        "teamId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100,
+          "description": "Team UUID from linear_list_teams."
+        },
+        "cursor": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500,
+          "description": "Cursor from the previous result's pageInfo.endCursor."
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 20,
+          "default": 10
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
+    "linear_list_labels": {
+      "type": "object",
+      "properties": {
+        "query": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200,
+          "description": "Case-insensitive text to find in the name."
+        },
+        "teamId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100,
+          "description": "Team UUID from linear_list_teams."
+        },
+        "cursor": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500,
+          "description": "Cursor from the previous result's pageInfo.endCursor."
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 20,
+          "default": 10
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
+    "linear_list_users": {
+      "type": "object",
+      "properties": {
+        "query": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200,
+          "description": "Case-insensitive text to find in the name."
+        },
+        "cursor": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500,
+          "description": "Cursor from the previous result's pageInfo.endCursor."
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 20,
+          "default": 10
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
+    "linear_list_teams": {
+      "type": "object",
+      "properties": {
+        "cursor": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500,
+          "description": "Cursor from the previous result's pageInfo.endCursor."
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 20,
+          "default": 10
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
+    "linear_list_statuses": {
+      "type": "object",
+      "properties": {
+        "teamId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100,
+          "description": "Team UUID from linear_list_teams."
+        },
+        "cursor": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500,
+          "description": "Cursor from the previous result's pageInfo.endCursor."
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 20,
+          "default": 10
+        }
+      },
+      "required": ["teamId"],
+      "additionalProperties": false
+    },
+    "linear_create_issue": {
+      "type": "object",
+      "properties": {
+        "teamId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100,
+          "description": "Team UUID from linear_list_teams."
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500,
+          "description": "Issue title."
+        },
+        "description": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 20000,
+          "description": "Issue description in Markdown. Empty string clears it."
+        },
+        "stateId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100,
+          "description": "Status UUID from linear_list_statuses for the issue's team."
+        },
+        "priority": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4,
+          "description": "0 none, 1 urgent, 2 high, 3 normal, 4 low."
+        },
+        "assigneeId": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 100,
+          "description": "User UUID from linear_list_users."
+        },
+        "projectId": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 100,
+          "description": "Project UUID from linear_list_projects."
+        },
+        "parentId": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 100,
+          "description": "Parent issue UUID (the id returned by Linear issue tools)."
+        },
+        "estimate": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100,
+          "description": "Estimate points on the team's scale."
+        },
+        "dueDate": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 10,
+          "description": "Due date as YYYY-MM-DD."
+        },
+        "labelIds": {
+          "type": "array",
+          "maxItems": 20,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100
+          },
+          "description": "Label UUIDs from linear_list_labels."
+        }
+      },
+      "required": ["teamId", "title"],
+      "additionalProperties": false
+    },
+    "linear_update_issue": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100,
+          "description": "Issue UUID or identifier, for example ENG-123."
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500,
+          "description": "Issue title."
+        },
+        "description": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 20000,
+          "description": "Issue description in Markdown. Empty string clears it."
+        },
+        "stateId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100,
+          "description": "Status UUID from linear_list_statuses for the issue's team."
+        },
+        "priority": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4,
+          "description": "0 none, 1 urgent, 2 high, 3 normal, 4 low."
+        },
+        "assigneeId": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 100,
+          "description": "User UUID from linear_list_users. Empty string clears it."
+        },
+        "projectId": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 100,
+          "description": "Project UUID from linear_list_projects. Empty string clears it."
+        },
+        "parentId": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 100,
+          "description": "Parent issue UUID (the id returned by Linear issue tools). Empty string clears it."
+        },
+        "estimate": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100,
+          "description": "Estimate points on the team's scale."
+        },
+        "dueDate": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 10,
+          "description": "Due date as YYYY-MM-DD. Empty string clears it."
+        },
+        "addLabelIds": {
+          "type": "array",
+          "maxItems": 20,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100
+          },
+          "description": "Label UUIDs to add, from linear_list_labels."
+        },
+        "removeLabelIds": {
+          "type": "array",
+          "maxItems": 20,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100
+          },
+          "description": "Label UUIDs to remove."
+        }
+      },
+      "required": ["id"],
+      "additionalProperties": false
+    },
+    "linear_add_comment": {
+      "type": "object",
+      "properties": {
+        "issueId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100,
+          "description": "Issue UUID (the id returned by Linear issue tools)."
+        },
+        "body": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 10000,
+          "description": "Comment text in Markdown."
+        },
+        "parentId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100,
+          "description": "Comment UUID to reply to, from linear_list_comments."
+        }
+      },
+      "required": ["issueId", "body"],
+      "additionalProperties": false
+    }
+  },
+  "firecrawl": {
+    "web_search": {
+      "type": "object",
+      "properties": {
+        "query": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500,
+          "description": "Search query, at most 75 words."
+        },
+        "count": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 10,
+          "default": 5
+        }
+      },
+      "required": ["query"],
+      "additionalProperties": false
+    },
+    "web_read": {
+      "type": "object",
+      "properties": {
+        "url": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2000,
+          "description": "HTTP or HTTPS URL to read."
+        }
+      },
+      "required": ["url"],
+      "additionalProperties": false
+    }
+  },
+  "tavily": {
+    "web_search": {
+      "type": "object",
+      "properties": {
+        "query": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500,
+          "description": "Search query, at most 75 words."
+        },
+        "count": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 10,
+          "default": 5
+        }
+      },
+      "required": ["query"],
+      "additionalProperties": false
+    },
+    "web_read": {
+      "type": "object",
+      "properties": {
+        "url": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2000,
+          "description": "HTTP or HTTPS URL to read."
+        }
+      },
+      "required": ["url"],
+      "additionalProperties": false
+    }
+  },
+  "exa": {
+    "web_search": {
+      "type": "object",
+      "properties": {
+        "query": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500,
+          "description": "Search query, at most 75 words."
+        },
+        "count": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 10,
+          "default": 5
+        }
+      },
+      "required": ["query"],
+      "additionalProperties": false
+    },
+    "web_read": {
+      "type": "object",
+      "properties": {
+        "url": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2000,
+          "description": "HTTP or HTTPS URL to read."
+        }
+      },
+      "required": ["url"],
+      "additionalProperties": false
+    }
+  },
+  "deepseek": {
+    "web_search": {
+      "type": "object",
+      "properties": {
+        "query": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500,
+          "description": "Search query, at most 75 words."
+        },
+        "count": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 10,
+          "default": 5
+        }
+      },
+      "required": ["query"],
+      "additionalProperties": false
+    },
+    "web_read": {
+      "type": "object",
+      "properties": {
+        "url": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2000,
+          "description": "HTTP or HTTPS URL to read."
+        }
+      },
+      "required": ["url"],
+      "additionalProperties": false
+    }
+  },
+  "google-calendar": {
+    "google_calendar_list_calendars": {
+      "type": "object",
+      "properties": {},
+      "required": [],
+      "additionalProperties": false
+    },
+    "google_calendar_list_events": {
+      "type": "object",
+      "properties": {
+        "calendarId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 300,
+          "description": "Calendar ID from google_calendar_list_calendars; defaults to \"primary\", the user's main calendar."
+        },
+        "timeMin": {
+          "type": "string",
+          "minLength": 10,
+          "maxLength": 40,
+          "description": "Earliest end time, as a date-time with an offset (2026-10-20T00:00:00-03:00)."
+        },
+        "timeMax": {
+          "type": "string",
+          "minLength": 10,
+          "maxLength": 40,
+          "description": "Latest start time, as a date-time with an offset."
+        },
+        "query": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200,
+          "description": "Free text to match."
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 50,
+          "description": "Events per page, 20 by default."
+        },
+        "pageToken": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500,
+          "description": "nextPageToken from a previous call."
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
+    "google_calendar_get_event": {
+      "type": "object",
+      "properties": {
+        "calendarId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 300,
+          "description": "Calendar ID from google_calendar_list_calendars; defaults to \"primary\", the user's main calendar."
+        },
+        "eventId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024,
+          "description": "Event ID."
+        }
+      },
+      "required": ["eventId"],
+      "additionalProperties": false
+    },
+    "google_calendar_free_busy": {
+      "type": "object",
+      "properties": {
+        "timeMin": {
+          "type": "string",
+          "minLength": 10,
+          "maxLength": 40,
+          "description": "Start of the range, as a date-time with an offset."
+        },
+        "timeMax": {
+          "type": "string",
+          "minLength": 10,
+          "maxLength": 40,
+          "description": "End of the range, as a date-time with an offset; at most 31 days after timeMin."
+        },
+        "calendarIds": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 10,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 300
+          },
+          "description": "Calendars to check; defaults to [\"primary\"]."
+        }
+      },
+      "required": ["timeMin", "timeMax"],
+      "additionalProperties": false
+    },
+    "google_calendar_create_event": {
+      "type": "object",
+      "properties": {
+        "calendarId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 300,
+          "description": "Calendar ID from google_calendar_list_calendars; defaults to \"primary\", the user's main calendar."
+        },
+        "summary": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 300,
+          "description": "Title."
+        },
+        "start": {
+          "type": "string",
+          "minLength": 10,
+          "maxLength": 40,
+          "description": "Start: a date or a date-time."
+        },
+        "end": {
+          "type": "string",
+          "minLength": 10,
+          "maxLength": 40,
+          "description": "End: a date (exclusive) or a date-time."
+        },
+        "timeZone": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "description": "IANA time zone for date-times without an offset, such as America/Sao_Paulo."
+        },
+        "description": {
+          "type": "string",
+          "maxLength": 8000,
+          "description": "Details, as plain text."
+        },
+        "location": {
+          "type": "string",
+          "maxLength": 500,
+          "description": "Place or address."
+        },
+        "attendees": {
+          "type": "array",
+          "maxItems": 50,
+          "items": {
+            "type": "string",
+            "minLength": 3,
+            "maxLength": 320
+          },
+          "description": "Attendee email addresses."
+        },
+        "notifyAttendees": {
+          "type": "boolean",
+          "description": "Email the attendees about this change. Defaults to false; set it only when the user asked."
+        }
+      },
+      "required": ["summary", "start", "end"],
+      "additionalProperties": false
+    },
+    "google_calendar_update_event": {
+      "type": "object",
+      "properties": {
+        "calendarId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 300,
+          "description": "Calendar ID from google_calendar_list_calendars; defaults to \"primary\", the user's main calendar."
+        },
+        "eventId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024,
+          "description": "Event ID."
+        },
+        "summary": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 300,
+          "description": "New title."
+        },
+        "start": {
+          "type": "string",
+          "minLength": 10,
+          "maxLength": 40,
+          "description": "New start: a date or a date-time; give end too."
+        },
+        "end": {
+          "type": "string",
+          "minLength": 10,
+          "maxLength": 40,
+          "description": "New end: a date (exclusive) or a date-time; give start too."
+        },
+        "timeZone": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "description": "IANA time zone for date-times without an offset, such as America/Sao_Paulo."
+        },
+        "description": {
+          "type": "string",
+          "maxLength": 8000,
+          "description": "New details; an empty string clears them."
+        },
+        "location": {
+          "type": "string",
+          "maxLength": 500,
+          "description": "New place; an empty string clears it."
+        },
+        "attendees": {
+          "type": "array",
+          "maxItems": 50,
+          "items": {
+            "type": "string",
+            "minLength": 3,
+            "maxLength": 320
+          },
+          "description": "Attendee email addresses."
+        },
+        "notifyAttendees": {
+          "type": "boolean",
+          "description": "Email the attendees about this change. Defaults to false; set it only when the user asked."
+        }
+      },
+      "required": ["eventId"],
+      "additionalProperties": false
+    },
+    "google_calendar_respond_to_event": {
+      "type": "object",
+      "properties": {
+        "calendarId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 300,
+          "description": "Calendar ID from google_calendar_list_calendars; defaults to \"primary\", the user's main calendar."
+        },
+        "eventId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024,
+          "description": "Event ID."
+        },
+        "response": {
+          "type": "string",
+          "enum": ["accepted", "declined", "tentative"],
+          "description": "The answer."
+        },
+        "notifyOrganizer": {
+          "type": "boolean",
+          "description": "Email the organizer about the answer. Defaults to false; set it only when the user asked."
+        }
+      },
+      "required": ["eventId", "response"],
+      "additionalProperties": false
+    }
+  },
+  "gmail": {
+    "gmail_search_messages": {
+      "type": "object",
+      "properties": {
+        "query": {
+          "type": "string",
+          "maxLength": 500,
+          "description": "Gmail search query; empty lists recent mail."
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 25,
+          "description": "Messages per page, 10 by default."
+        },
+        "pageToken": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500,
+          "description": "nextPageToken from a previous call."
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
+    "gmail_read_message": {
+      "type": "object",
+      "properties": {
+        "messageId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200,
+          "description": "Message ID."
+        }
+      },
+      "required": ["messageId"],
+      "additionalProperties": false
+    },
+    "gmail_read_thread": {
+      "type": "object",
+      "properties": {
+        "threadId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200,
+          "description": "Thread ID."
+        }
+      },
+      "required": ["threadId"],
+      "additionalProperties": false
+    },
+    "gmail_list_labels": {
+      "type": "object",
+      "properties": {},
+      "required": [],
+      "additionalProperties": false
+    },
+    "gmail_list_drafts": {
+      "type": "object",
+      "properties": {
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 25,
+          "description": "Drafts to list, 10 by default."
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
+    "gmail_create_draft": {
+      "type": "object",
+      "properties": {
+        "to": {
+          "type": "array",
+          "maxItems": 50,
+          "items": {
+            "type": "string",
+            "minLength": 3,
+            "maxLength": 320
+          },
+          "description": "Recipient email addresses. For a reply, defaults to the original sender."
+        },
+        "cc": {
+          "type": "array",
+          "maxItems": 50,
+          "items": {
+            "type": "string",
+            "minLength": 3,
+            "maxLength": 320
+          },
+          "description": "Cc email addresses."
+        },
+        "bcc": {
+          "type": "array",
+          "maxItems": 50,
+          "items": {
+            "type": "string",
+            "minLength": 3,
+            "maxLength": 320
+          },
+          "description": "Bcc email addresses."
+        },
+        "subject": {
+          "type": "string",
+          "maxLength": 500,
+          "description": "Subject. For a reply, defaults to \"Re: \" and the original subject."
+        },
+        "body": {
+          "type": "string",
+          "maxLength": 50000,
+          "description": "The message, as plain text."
+        },
+        "replyToMessageId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200,
+          "description": "ID of the message this draft replies to; the draft joins its thread."
+        }
+      },
+      "required": ["body"],
+      "additionalProperties": false
+    },
+    "gmail_update_draft": {
+      "type": "object",
+      "properties": {
+        "draftId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200,
+          "description": "Draft ID."
+        },
+        "to": {
+          "type": "array",
+          "maxItems": 50,
+          "items": {
+            "type": "string",
+            "minLength": 3,
+            "maxLength": 320
+          },
+          "description": "Recipient email addresses. For a reply, defaults to the original sender."
+        },
+        "cc": {
+          "type": "array",
+          "maxItems": 50,
+          "items": {
+            "type": "string",
+            "minLength": 3,
+            "maxLength": 320
+          },
+          "description": "Cc email addresses."
+        },
+        "bcc": {
+          "type": "array",
+          "maxItems": 50,
+          "items": {
+            "type": "string",
+            "minLength": 3,
+            "maxLength": 320
+          },
+          "description": "Bcc email addresses."
+        },
+        "subject": {
+          "type": "string",
+          "maxLength": 500,
+          "description": "Subject. For a reply, defaults to \"Re: \" and the original subject."
+        },
+        "body": {
+          "type": "string",
+          "maxLength": 50000,
+          "description": "The message, as plain text."
+        },
+        "replyToMessageId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200,
+          "description": "ID of the message this draft replies to; the draft joins its thread."
+        }
+      },
+      "required": ["draftId", "body"],
+      "additionalProperties": false
+    }
+  },
+  "google-drive": {
+    "google_drive_search_files": {
+      "type": "object",
+      "properties": {
+        "text": {
+          "type": "string",
+          "maxLength": 200,
+          "description": "Words to find in the file's name or content."
+        },
+        "name": {
+          "type": "string",
+          "maxLength": 200,
+          "description": "Words in the file name only."
+        },
+        "type": {
+          "type": "string",
+          "enum": ["document", "spreadsheet", "presentation", "folder", "pdf", "image"],
+          "description": "Only files of this type."
+        },
+        "folderId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200,
+          "description": "Only files directly in this folder; \"root\" is My Drive."
+        },
+        "modifiedAfter": {
+          "type": "string",
+          "maxLength": 40,
+          "description": "Only files changed after this date-time, such as 2026-10-01T00:00:00Z."
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 50,
+          "description": "Files per page, 20 by default."
+        },
+        "pageToken": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500,
+          "description": "nextPageToken from a previous call."
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
+    "google_drive_get_file": {
+      "type": "object",
+      "properties": {
+        "fileId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200,
+          "description": "File ID."
+        }
+      },
+      "required": ["fileId"],
+      "additionalProperties": false
+    },
+    "google_drive_read_file": {
+      "type": "object",
+      "properties": {
+        "fileId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200,
+          "description": "File ID."
+        }
+      },
+      "required": ["fileId"],
+      "additionalProperties": false
+    },
+    "google_drive_create_file": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 255,
+          "description": "File name."
+        },
+        "content": {
+          "type": "string",
+          "maxLength": 200000,
+          "description": "The file's text."
+        },
+        "format": {
+          "type": "string",
+          "enum": ["document", "spreadsheet", "text"],
+          "description": "document (Google Doc, the default), spreadsheet (Google Sheet from CSV), or text."
+        },
+        "folderId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200,
+          "description": "Folder to create it in, one the Wisp created; My Drive by default."
+        }
+      },
+      "required": ["name", "content"],
+      "additionalProperties": false
+    },
+    "google_drive_update_file": {
+      "type": "object",
+      "properties": {
+        "fileId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200,
+          "description": "File ID."
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 255,
+          "description": "New file name."
+        },
+        "content": {
+          "type": "string",
+          "maxLength": 200000,
+          "description": "New text, replacing everything in the file."
+        }
+      },
+      "required": ["fileId"],
+      "additionalProperties": false
+    },
+    "google_drive_create_folder": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 255,
+          "description": "Folder name."
+        },
+        "folderId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200,
+          "description": "Folder to create it in, one the Wisp created; My Drive by default."
+        }
+      },
+      "required": ["name"],
+      "additionalProperties": false
+    }
+  },
+  "home-assistant": {
+    "home_assistant_list_entities": {
+      "type": "object",
+      "properties": {
+        "domain": {
+          "type": "string",
+          "maxLength": 50,
+          "description": "Only entities of this domain, such as light."
+        },
+        "area": {
+          "type": "string",
+          "maxLength": 100,
+          "description": "Only entities in this area, such as Kitchen."
+        },
+        "search": {
+          "type": "string",
+          "maxLength": 100,
+          "description": "Words in the name or entity ID."
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 200,
+          "description": "Entities to list, 50 by default."
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
+    "home_assistant_get_state": {
+      "type": "object",
+      "properties": {
+        "entityId": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 255,
+          "description": "Entity ID, such as sensor.living_room_temperature."
+        }
+      },
+      "required": ["entityId"],
+      "additionalProperties": false
+    },
+    "home_assistant_get_history": {
+      "type": "object",
+      "properties": {
+        "entityId": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 255,
+          "description": "Entity ID, such as binary_sensor.front_door."
+        },
+        "hours": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 168,
+          "description": "Hours to look back, 24 by default."
+        }
+      },
+      "required": ["entityId"],
+      "additionalProperties": false
+    },
+    "home_assistant_control": {
+      "type": "object",
+      "properties": {
+        "entityId": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 255,
+          "description": "Entity ID, such as light.kitchen."
+        },
+        "action": {
+          "type": "string",
+          "enum": [
+            "turn_on",
+            "turn_off",
+            "toggle",
+            "open",
+            "close",
+            "stop",
+            "set_brightness",
+            "set_temperature",
+            "set_volume"
+          ],
+          "description": "What to do."
+        },
+        "brightnessPercent": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 100,
+          "description": "For set_brightness."
+        },
+        "temperature": {
+          "type": "number",
+          "minimum": -50,
+          "maximum": 100,
+          "description": "For set_temperature, in the unit Home Assistant uses."
+        },
+        "volumePercent": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 100,
+          "description": "For set_volume."
+        }
+      },
+      "required": ["entityId", "action"],
+      "additionalProperties": false
+    },
+    "home_assistant_control_secure": {
+      "type": "object",
+      "properties": {
+        "entityId": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 255,
+          "description": "Entity ID, such as lock.front_door."
+        },
+        "action": {
+          "type": "string",
+          "enum": ["lock", "unlock", "open", "close", "stop", "arm_home", "arm_away", "arm_night", "disarm"],
+          "description": "What to do."
+        },
+        "code": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32,
+          "description": "The lock or alarm code, only when the user gave it."
+        }
+      },
+      "required": ["entityId", "action"],
+      "additionalProperties": false
+    },
+    "home_assistant_run_scene": {
+      "type": "object",
+      "properties": {
+        "entityId": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 255,
+          "description": "Entity ID, such as scene.movie_night."
+        }
+      },
+      "required": ["entityId"],
+      "additionalProperties": false
+    },
+    "home_assistant_run_script": {
+      "type": "object",
+      "properties": {
+        "entityId": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 255,
+          "description": "Entity ID, such as script.good_night."
+        }
+      },
+      "required": ["entityId"],
+      "additionalProperties": false
+    }
+  }
+}
