@@ -29,7 +29,7 @@ import {
 import type { QueuedMessage } from "../shared/message-queue.js";
 import type { ToolApprovalRequest } from "../shared/tool-policy.js";
 import type { AgentRegistry } from "./agent-registry.js";
-import type { ConversationAgentContext } from "./conversation-agent.js";
+import type { AgentContext } from "./conversation-agent.js";
 import { sanitizeBackendError, WispBackendError } from "./backend-error.js";
 import type { ConversationRepository, MessageChange } from "./conversation-repository.js";
 import type { StructuredLogger } from "./structured-logger.js";
@@ -45,11 +45,20 @@ export interface ConversationServiceOptions {
   /** Receives the Wisps and conversation summaries after a Wisp was created, changed or deleted. */
   onWispsChanged?: (view: WispsView) => void;
   /**
-   * Asked before a Wisp is deleted, with its conversation's context, for what
-   * to delete outside Wisp's data once it is gone, such as what Claude Code
-   * keeps for its workspace (ADR 026).
+   * Asked before agent sessions end, for what to delete outside Wisp's data
+   * once they are gone, such as what Claude Code keeps for them (ADR 026):
+   * whole workspaces, when a Wisp or a circle is deleted, and single sessions
+   * in a circle's shared workspace, when a member leaves it (ADR 011).
    */
-  onWispDeleting?: (context: ConversationAgentContext) => Promise<(() => void) | undefined>;
+  onSessionsEnding?: (ending: EndingSessions) => Promise<(() => void) | undefined>;
+}
+
+/** Agent sessions about to end; see `ConversationServiceOptions.onSessionsEnding`. */
+export interface EndingSessions {
+  /** Workspaces deleted with every session in them. */
+  workspaces: ReadonlyArray<{ workspaceDirectory: string; sessionDirectories: ReadonlyArray<string> }>;
+  /** Sessions leaving a workspace that other sessions keep using. */
+  sessions: ReadonlyArray<{ workspaceDirectory: string; sessionDirectory: string }>;
 }
 
 /**
@@ -68,7 +77,7 @@ export class ConversationService {
   private readonly onConversationsRemoved: () => void;
   private readonly onFollowUpTaken: (conversationId: string, queuedMessageId: string) => void;
   private readonly onWispsChanged: (view: WispsView) => void;
-  private readonly onWispDeleting: ConversationServiceOptions["onWispDeleting"];
+  private readonly onSessionsEnding: ConversationServiceOptions["onSessionsEnding"];
 
   constructor(
     repository: ConversationRepository,
@@ -84,14 +93,14 @@ export class ConversationService {
     this.onConversationsRemoved = options.onConversationsRemoved ?? (() => undefined);
     this.onFollowUpTaken = options.onFollowUpTaken ?? (() => undefined);
     this.onWispsChanged = options.onWispsChanged ?? (() => undefined);
-    this.onWispDeleting = options.onWispDeleting;
+    this.onSessionsEnding = options.onSessionsEnding;
   }
 
   async start(model: ModelSelection | null): Promise<void> {
     this.model = model;
     await this.repository.load();
     this.failUnansweredRequests();
-    await this.registry.restore(this.repository.listAgentContexts(), model);
+    await this.registry.restore(this.agentContexts(), model);
   }
 
   getUserProfile() {
@@ -100,8 +109,24 @@ export class ConversationService {
 
   async saveUserProfile(value: unknown) {
     const profile = await this.repository.saveUserProfile(value);
-    await Promise.all(this.repository.listAgentContexts().map((context) => this.registry.updateContext(context)));
+    await Promise.all(this.agentContexts().map((context) => this.registry.updateContext(context)));
     return profile;
+  }
+
+  /** Every conversation's agent context: each Wisp's own, then each circle's. */
+  private agentContexts(): AgentContext[] {
+    return [...this.repository.listAgentContexts(), ...this.repository.listCircleAgentContexts()];
+  }
+
+  /** Tells the agents of the circles a Wisp is in what changed about it, or about its model. */
+  private async updateCirclesOf(wispId: string): Promise<void> {
+    await Promise.all(
+      this.repository
+        .listCirclesOf(wispId)
+        .map((circleId) =>
+          this.registry.updateContext(this.repository.getCircleAgentContext(circleId)).catch(() => undefined),
+        ),
+    );
   }
 
   /** Wisps read the time zone on every message, so a change needs no context refresh. */
@@ -143,7 +168,7 @@ export class ConversationService {
         text: "",
         status: "streaming",
         createdAt: event.createdAt,
-        ...this.authorOf(event.conversationId),
+        ...this.authorOf(event.conversationId, event.wispId),
       });
       return;
     }
@@ -155,7 +180,7 @@ export class ConversationService {
         text: `${current?.type === "incoming" ? current.text : ""}${event.delta}`,
         status: "streaming",
         ...(current?.createdAt ? { createdAt: current.createdAt } : {}),
-        ...this.authorOf(event.conversationId),
+        ...this.authorOf(event.conversationId, event.wispId),
       });
       return;
     }
@@ -167,7 +192,7 @@ export class ConversationService {
         text: current?.type === "incoming" ? current.text : "",
         status: event.type === "assistant_message_completed" ? "complete" : "cancelled",
         ...(current?.createdAt ? { createdAt: current.createdAt } : {}),
-        ...this.authorOf(event.conversationId),
+        ...this.authorOf(event.conversationId, event.wispId),
         ...(event.type === "assistant_message_completed" && event.fallbackModel
           ? { fallbackModel: event.fallbackModel }
           : {}),
@@ -180,8 +205,38 @@ export class ConversationService {
       return;
     }
     if (event.type === "conversation_error" && event.requestId) {
+      if (event.wispId && this.repository.readChat(event.conversationId)?.kind === "circle") {
+        this.persistMemberFailure(event.conversationId, event.requestId, event.wispId, event.error, event.messageId);
+        return;
+      }
       this.persistRequestFailure(event.conversationId, event.requestId, event.error, event.messageId, event.createdAt);
     }
+  }
+
+  /**
+   * In a circle, one member failing fails only its reply: the person's
+   * message was sent, and the other members answer it (ADR 011). The person
+   * mentions the Wisp again to ask once more.
+   */
+  private persistMemberFailure(
+    conversationId: string,
+    requestId: string,
+    wispId: string,
+    error: BackendError,
+    replyId = assistantMessageId(requestId),
+  ): void {
+    this.persistOutgoingStatus(conversationId, requestId, "complete");
+    const current = this.getLiveMessage(conversationId, replyId);
+    this.persistLiveMessage(conversationId, {
+      id: replyId,
+      type: "incoming",
+      text: current?.type === "incoming" ? current.text : "",
+      status: "failed",
+      error: messageFailure(error),
+      retryable: false,
+      createdAt: current?.createdAt ?? new Date().toISOString(),
+      authorId: wispId,
+    });
   }
 
   /**
@@ -251,16 +306,17 @@ export class ConversationService {
     });
   }
 
-  /** Replies in a Wisp's own conversation are the Wisp's. */
-  private authorOf(conversationId: string): { authorId?: string } {
+  /** Replies in a Wisp's own conversation are the Wisp's; in a circle, the member's the event names. */
+  private authorOf(conversationId: string, wispId?: string): { authorId?: string } {
     const chat = this.repository.readChat(conversationId);
-    return chat?.kind === "wisp" ? { authorId: chat.wispId } : {};
+    if (chat?.kind === "wisp") return { authorId: chat.wispId };
+    return wispId ? { authorId: wispId } : {};
   }
 
   async initialize(chats: unknown): Promise<ConversationStateView> {
     await this.repository.initialize(chats);
     this.onConversationsRemoved();
-    await this.registry.restore(this.repository.listAgentContexts(), this.model);
+    await this.registry.restore(this.agentContexts(), this.model);
     return this.getState();
   }
 
@@ -287,6 +343,8 @@ export class ConversationService {
     await this.repository.updateWisp(wispId, changes);
     if (changes.name !== undefined || changes.role !== undefined || changes.soul !== undefined) {
       await this.registry.updateContext(this.repository.getAgentContext(wispId));
+      // Every member's prompt names the members, so each circle the Wisp is in changes.
+      await this.updateCirclesOf(wispId);
     }
     this.publishWisps();
     return this.getState();
@@ -296,7 +354,15 @@ export class ConversationService {
   async deleteWisp(wispId: string): Promise<ConversationStateView> {
     const context = this.repository.readConversationWisp(wispId) ? this.repository.getAgentContext(wispId) : null;
     if (!context) throw new WispBackendError("not_found", "The Wisp was not found.");
-    const afterDeleted = await this.onWispDeleting?.(context).catch(() => undefined);
+    const circles = this.repository.listCirclesOf(wispId);
+    const inCircles = circles.flatMap(
+      (circleId) =>
+        this.repository.getCircleAgentContext(circleId).members.find((member) => member.wispId === wispId) ?? [],
+    );
+    const afterDeleted = await this.onSessionsEnding?.({
+      workspaces: [{ workspaceDirectory: context.workspaceDirectory, sessionDirectories: [context.sessionDirectory] }],
+      sessions: inCircles.map(({ workspaceDirectory, sessionDirectory }) => ({ workspaceDirectory, sessionDirectory })),
+    }).catch(() => undefined);
     await this.registry.delete(wispId);
     try {
       await this.repository.deleteWisp(wispId);
@@ -305,6 +371,12 @@ export class ConversationService {
       await this.registry.create(context).catch(() => undefined);
       throw error;
     }
+    // The circles it was in go on without it.
+    await Promise.all(
+      circles.map((circleId) =>
+        this.registry.updateContext(this.repository.getCircleAgentContext(circleId)).catch(() => undefined),
+      ),
+    );
     afterDeleted?.();
     this.onConversationsRemoved();
     this.publishWisps();
@@ -330,11 +402,49 @@ export class ConversationService {
   /** Creates a circle; a Wisp's own conversation is created with the Wisp. */
   async create(conversation: CircleChat): Promise<ConversationStateView> {
     await this.repository.create(conversation);
+    try {
+      await this.registry.create(this.repository.getCircleAgentContext(conversation.id));
+    } catch (error) {
+      await this.repository.delete(conversation.id).catch(() => undefined);
+      throw error;
+    }
     return this.getState();
   }
 
+  /**
+   * Changes a conversation. A circle's agent follows its name, purpose, and
+   * members; the sessions of members who left end first (ADR 011).
+   */
   async update(conversationId: string, changes: ChatChanges): Promise<ConversationStateView> {
+    const before =
+      changes.kind === "circle" && this.repository.readChat(conversationId)?.kind === "circle"
+        ? this.repository.getCircleAgentContext(conversationId)
+        : null;
+    const leaving =
+      before && changes.kind === "circle" && changes.memberIds
+        ? before.members.filter(({ wispId }) => !changes.memberIds!.includes(wispId))
+        : [];
+    let afterLeft: (() => void) | undefined;
+    if (before && leaving.length) {
+      afterLeft = await this.onSessionsEnding?.({
+        workspaces: [],
+        sessions: leaving.map(({ workspaceDirectory, sessionDirectory }) => ({ workspaceDirectory, sessionDirectory })),
+      }).catch(() => undefined);
+      // Their agents stop before their sessions are archived.
+      await this.registry
+        .updateContext({ ...before, members: before.members.filter((member) => !leaving.includes(member)) })
+        .catch(() => undefined);
+    }
     await this.repository.update(conversationId, changes);
+    if (before) {
+      const changesAgents =
+        changes.kind === "circle" &&
+        (changes.name !== undefined || changes.description !== undefined || changes.memberIds !== undefined);
+      if (changesAgents) {
+        await this.registry.updateContext(this.repository.getCircleAgentContext(conversationId)).catch(() => undefined);
+      }
+    }
+    afterLeft?.();
     return this.getState();
   }
 
@@ -474,8 +584,33 @@ export class ConversationService {
 
   /** Deletes a circle; a Wisp's own conversation goes only with the Wisp. */
   async delete(conversationId: string): Promise<ConversationStateView> {
-    await this.repository.delete(conversationId);
+    const circle =
+      this.repository.readChat(conversationId)?.kind === "circle"
+        ? this.repository.getCircleAgentContext(conversationId)
+        : null;
+    const workspaceDirectory = circle?.members[0]?.workspaceDirectory;
+    const afterDeleted =
+      circle && workspaceDirectory
+        ? await this.onSessionsEnding?.({
+            workspaces: [
+              {
+                workspaceDirectory,
+                sessionDirectories: circle.members.map(({ sessionDirectory }) => sessionDirectory),
+              },
+            ],
+            sessions: [],
+          }).catch(() => undefined)
+        : undefined;
+    // Its members' agents stop before its folders are archived.
+    await this.registry.delete(conversationId);
+    try {
+      await this.repository.delete(conversationId);
+    } catch (error) {
+      if (circle) await this.registry.create(circle).catch(() => undefined);
+      throw error;
+    }
     this.liveMessages.delete(conversationId);
+    afterDeleted?.();
     this.onConversationsRemoved();
     return this.getState();
   }
@@ -488,6 +623,8 @@ export class ConversationService {
   async applyConversationModel(conversationId: string, model: ModelSelection | null): Promise<void> {
     await this.repository.setModelOverride(conversationId, model);
     await this.registry.applyConversationModel(conversationId, model);
+    // The Wisp answers with the same model in the circles it is in.
+    await this.updateCirclesOf(conversationId);
   }
 
   async applyConversationFallback(conversationId: string, fallback: WispFallback): Promise<void> {

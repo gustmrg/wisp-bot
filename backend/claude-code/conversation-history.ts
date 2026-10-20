@@ -4,11 +4,21 @@ import type { Message, MessagePage, MessageSearchHit } from "../../shared/conver
 const MAX_TRANSCRIPT_CHARACTERS = 8_000;
 const MAX_SEARCH_HITS = 10;
 
-function textOf(message: Message): { speaker: string; text: string } | undefined {
+/** Whose session the transcript is for, and the names of the other Wisps in a circle (ADR 011). */
+export interface TranscriptSpeakers {
+  wispId: string;
+  names: ReadonlyMap<string, string>;
+}
+
+function textOf(message: Message, speakers?: TranscriptSpeakers): { speaker: string; text: string } | undefined {
   if (message.type !== "incoming" && message.type !== "outgoing") return undefined;
   const text = message.text.trim();
   if (!text) return undefined;
-  return { speaker: message.type === "outgoing" ? "User" : "Wisp", text };
+  if (message.type === "outgoing") return { speaker: "User", text };
+  // In a circle another member's reply carries its name, so the Wisp never reads it as its own.
+  const other =
+    message.authorId && message.authorId !== speakers?.wispId ? speakers?.names.get(message.authorId) : undefined;
+  return { speaker: other ?? "Wisp", text };
 }
 
 /**
@@ -16,11 +26,11 @@ function textOf(message: Message): { speaker: string; text: string } | undefined
  * Claude Code session that replaces one Claude Code no longer has (ADR 026).
  * The newest messages are kept when the whole page does not fit.
  */
-export function recentTranscript(page: MessagePage): string {
+export function recentTranscript(page: MessagePage, speakers?: TranscriptSpeakers): string {
   const lines: string[] = [];
   let length = 0;
   for (const message of [...page.messages].reverse()) {
-    const entry = textOf(message);
+    const entry = textOf(message, speakers);
     if (!entry) continue;
     const line = `${entry.speaker}: ${entry.text}`;
     if (length + line.length > MAX_TRANSCRIPT_CHARACTERS) {

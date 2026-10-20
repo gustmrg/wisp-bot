@@ -27,7 +27,12 @@ import type { QueuedMessage } from "../shared/message-queue.js";
 import type { ScheduledMessage } from "../shared/scheduled-messages.js";
 import { WispBackendError } from "./backend-error.js";
 import { TRANSCRIPTION_CACHE_DIRECTORY } from "./transcription-cache.js";
-import { normalizeUserName, type ConversationAgentContext } from "./conversation-agent.js";
+import {
+  normalizeUserName,
+  type CircleAgentContext,
+  type CircleSetting,
+  type ConversationAgentContext,
+} from "./conversation-agent.js";
 import {
   asRecord,
   normalizeChat,
@@ -204,10 +209,37 @@ export class ConversationRepository {
     }
     if (stored) {
       this.state = stored;
+      this.addMissingCircleSessions(store);
       await this.ensureAllDirectories();
       return;
     }
     await this.migrateLegacyState(store);
+    this.addMissingCircleSessions(store);
+  }
+
+  /**
+   * Gives each circle member a session there; circles made before circles
+   * had agents have none (ADR 011).
+   */
+  private addMissingCircleSessions(store: ConversationStore): void {
+    const changed: ConversationRecord[] = [];
+    for (const record of Object.values(this.state.conversations)) {
+      if (record.chat.kind !== "circle") continue;
+      const missing = record.chat.memberIds.filter((wispId) => !record.sessions[wispId]);
+      if (!missing.length) continue;
+      changed.push({ ...record, sessions: { ...record.sessions, ...this.newSessions(missing) } });
+    }
+    if (!changed.length) return;
+    store.transaction(() => {
+      for (const record of changed) store.putConversation(record);
+    });
+    this.state = {
+      ...this.state,
+      conversations: {
+        ...this.state.conversations,
+        ...Object.fromEntries(changed.map((record) => [record.chat.id, record])),
+      },
+    };
   }
 
   getUserProfile(): UserProfile {
@@ -288,10 +320,61 @@ export class ConversationRepository {
     );
   }
 
+  /** Every circle's agent context (ADR 011). */
+  listCircleAgentContexts(): ReadonlyArray<CircleAgentContext> {
+    return Object.values(this.state.conversations).flatMap(({ chat }) =>
+      chat.kind === "circle" ? [this.getCircleAgentContext(chat.id)] : [],
+    );
+  }
+
+  /** A circle's agent context: each member's, in member order, the lead first (ADR 011). */
+  getCircleAgentContext(conversationId: string): CircleAgentContext {
+    const record = this.require(conversationId);
+    const { chat } = record;
+    if (chat.kind !== "circle") throw new WispBackendError("invalid_request", "This conversation is not a circle.");
+    const members = chat.memberIds.flatMap((wispId) => {
+      const wispRecord = this.state.wisps[wispId];
+      const session = record.sessions[wispId];
+      return wispRecord && session ? [{ wispRecord, session }] : [];
+    });
+    const circle: CircleSetting = {
+      name: chat.name,
+      description: chat.description,
+      members: members.map(({ wispRecord: { wisp } }) => ({ id: wisp.id, name: wisp.name, role: wisp.role })),
+    };
+    const userName = this.profile.preferredName || undefined;
+    return {
+      kind: "circle",
+      conversationId,
+      members: members.map(({ wispRecord, session }) => ({
+        ...this.agentContext(record, wispRecord, session),
+        circle,
+      })),
+      ...(normalizeUserName(userName) ? { userName: normalizeUserName(userName) } : {}),
+    };
+  }
+
+  /** The circles a Wisp is a member of. */
+  listCirclesOf(wispId: string): string[] {
+    return Object.values(this.state.conversations).flatMap(({ chat }) =>
+      chat.kind === "circle" && chat.memberIds.includes(wispId) ? [chat.id] : [],
+    );
+  }
+
   /** The agent context of a Wisp's own conversation. */
   getAgentContext(conversationId: string): ConversationAgentContext {
     const { record, wispRecord, session } = this.requireWispConversation(conversationId);
+    return this.agentContext(record, wispRecord, session);
+  }
+
+  /** A Wisp's agent context in a conversation, its own or a circle's. */
+  private agentContext(
+    record: ConversationRecord,
+    wispRecord: WispRecord,
+    session: ParticipantSession,
+  ): ConversationAgentContext {
     const { wisp } = wispRecord;
+    const conversationId = record.chat.id;
     return {
       conversationId,
       wispId: wisp.id,
@@ -309,7 +392,7 @@ export class ConversationRepository {
       configDirectory: path.join(this.configRoot, wispRecord.storageId),
       piSessionId: session.piSessionId,
       piSessionFile: session.piSessionFile,
-      savePiSessionIdentity: (identity) => this.savePiSessionIdentity(conversationId, identity),
+      savePiSessionIdentity: (identity) => this.savePiSessionIdentity(conversationId, identity, wisp.id),
     };
   }
 
@@ -392,7 +475,11 @@ export class ConversationRepository {
           next.wisps[wisp.id] = this.newWispRecord(wisp, null, timestamp);
           next.conversations[chat.id] = this.newConversationRecord(chat, timestamp, [wisp.id]);
         } else {
-          next.conversations[chat.id] = this.newConversationRecord(chat, timestamp);
+          next.conversations[chat.id] = this.newConversationRecord(
+            chat,
+            timestamp,
+            chat.kind === "circle" ? chat.memberIds : [],
+          );
         }
       }
       validateRecords(next);
@@ -470,21 +557,32 @@ export class ConversationRepository {
       if (chat.kind !== "circle") {
         throw new WispBackendError("invalid_request", "A Wisp's conversation is created with the Wisp.");
       }
-      const record = this.newConversationRecord(chat, this.now().toISOString());
+      // Each member gets its session in the circle (ADR 011).
+      const record = this.newConversationRecord(chat, this.now().toISOString(), chat.memberIds);
       const result = applyWorkspaceAction(this.state, { type: "create", record });
       await this.adopt(result, { ensure: { conversations: [record] } });
     });
   }
 
+  /**
+   * Changes a conversation. Wisps joining a circle get a session there, and
+   * the sessions of those leaving it are archived (ADR 011).
+   */
   async update(conversationId: string, changes: ChatChanges): Promise<void> {
     await this.enqueue(async () => {
       const updatedAt = this.now().toISOString();
+      const current = this.state.conversations[conversationId];
+      const joining =
+        changes.kind === "circle" && changes.memberIds !== undefined && current
+          ? changes.memberIds.filter((wispId) => !current.sessions[wispId])
+          : [];
       let result =
         changes.kind === "circle" && changes.memberIds !== undefined
           ? applyWorkspaceAction(this.state, {
               type: "replace-circle-members",
               conversationId,
               memberIds: changes.memberIds,
+              newSessions: this.newSessions(joining),
               updatedAt,
             })
           : applyWorkspaceAction(this.state, {
@@ -505,7 +603,21 @@ export class ConversationRepository {
           });
         }
       }
+      const updated = result.records.conversations[conversationId];
+      if (joining.length && updated)
+        await this.ensureAllDirectories({ wisps: {}, conversations: { [conversationId]: updated } });
+      const left =
+        current && updated ? Object.keys(current.sessions).filter((wispId) => !updated.sessions[wispId]) : [];
       await this.adopt(result);
+      if (left.length && current) {
+        await this.archiveLeftSessions(
+          current,
+          left.map((wispId) => ({
+            session: current.sessions[wispId]!,
+            name: this.state.wisps[wispId]?.wisp.name ?? "Wisp",
+          })),
+        ).catch(() => undefined);
+      }
     });
   }
 
@@ -662,12 +774,17 @@ export class ConversationRepository {
     });
   }
 
+  /** Records which Pi session a Wisp's session in a conversation is; `wispId` names it in a circle. */
   async savePiSessionIdentity(
     conversationId: string,
     identity: { sessionId: string; sessionFile: string | null },
+    wispId?: string,
   ): Promise<void> {
     await this.enqueue(async () => {
-      const { record, wispRecord, session } = this.requireWispConversation(conversationId);
+      const { record, wispRecord, session } =
+        wispId === undefined || wispId === conversationId
+          ? this.requireWispConversation(conversationId)
+          : this.requireCircleSession(conversationId, wispId);
       const piSessionId = normalizeConversationId(identity.sessionId);
       const piSessionFile =
         identity.sessionFile === null ? null : this.normalizePiSessionFile(session.sessionId, identity.sessionFile);
@@ -817,8 +934,9 @@ export class ConversationRepository {
   /** Queues a message for an existing Wisp; with a `limit`, only while it has fewer waiting. */
   async addQueuedMessage(message: QueuedMessage, limit?: number): Promise<void> {
     await this.enqueue(async () => {
-      if (this.state.conversations[message.conversationId]?.chat.kind !== "wisp") {
-        throw new WispBackendError("not_found", "The Wisp was not found.");
+      // A Wisp's own conversation, or a circle, which routes the message when it takes it (ADR 011).
+      if (!this.state.conversations[message.conversationId]) {
+        throw new WispBackendError("not_found", "The conversation was not found.");
       }
       const waiting = (await this.readQueuedMessages()).filter(
         ({ conversationId }) => conversationId === message.conversationId,
@@ -1008,15 +1126,20 @@ export class ConversationRepository {
     return {
       chat,
       storageId: normalizeConversationId(this.createId()),
-      sessions: Object.fromEntries(
-        participantIds.map((wispId) => [
-          wispId,
-          { sessionId: normalizeConversationId(this.createId()), piSessionId: null, piSessionFile: null },
-        ]),
-      ),
+      sessions: this.newSessions(participantIds),
       createdAt: timestamp,
       updatedAt: timestamp,
     };
+  }
+
+  /** A new agent session for each Wisp. */
+  private newSessions(wispIds: ReadonlyArray<WispId>): Record<WispId, ParticipantSession> {
+    return Object.fromEntries(
+      wispIds.map((wispId) => [
+        wispId,
+        { sessionId: normalizeConversationId(this.createId()), piSessionId: null, piSessionFile: null },
+      ]),
+    );
   }
 
   private async commit(next: PersistedConversationState, write: (store: ConversationStore) => void): Promise<void> {
@@ -1037,6 +1160,20 @@ export class ConversationRepository {
     const record = this.state.conversations[conversationId];
     if (!record) throw new WispBackendError("not_found", "The conversation was not found.");
     return record;
+  }
+
+  /** A member's session in a circle, with the Wisp. */
+  private requireCircleSession(
+    conversationId: string,
+    wispId: string,
+  ): { record: ConversationRecord; wispRecord: WispRecord; session: ParticipantSession } {
+    const record = this.require(conversationId);
+    const wispRecord = this.state.wisps[wispId];
+    const session = record.sessions[wispId];
+    if (record.chat.kind !== "circle" || !wispRecord || !session) {
+      throw new WispBackendError("not_found", "The Wisp's session in this circle was not found.");
+    }
+    return { record, wispRecord, session };
   }
 
   /** A Wisp's own conversation, with the Wisp and its session there; circles have no single agent. */
@@ -1313,6 +1450,38 @@ export class ConversationRepository {
     }
     this.state = { ...this.state, wisps: { ...records.wisps }, conversations: { ...records.conversations } };
     await Promise.allSettled(removed.map((deleted) => this.archiveDeleted(deleted)));
+  }
+
+  /** Moves the sessions of Wisps that left a circle into the archive, one entry for each. */
+  private async archiveLeftSessions(
+    circle: ConversationRecord,
+    left: ReadonlyArray<{ session: ParticipantSession; name: string }>,
+  ): Promise<void> {
+    const circleName = circle.chat.kind === "circle" ? circle.chat.name : "Circle";
+    await Promise.all(
+      left.map(async ({ session, name }) => {
+        const archive = path.join(this.deletedRoot, `${session.sessionId}-${this.fileSuffix()}`);
+        await mkdir(archive, { recursive: true });
+        const manifest: ArchiveManifest = {
+          name: `${name} in ${circleName}`,
+          kind: "circle",
+          archivedAt: this.now().toISOString(),
+        };
+        await writeFileAtomically(path.join(archive, ARCHIVE_MANIFEST_FILE), JSON.stringify(manifest)).catch(
+          () => undefined,
+        );
+        await rename(path.join(this.sessionRoot, session.sessionId), path.join(archive, "wisp-session")).catch(
+          () => undefined,
+        );
+      }),
+    );
+  }
+
+  /** The session folders of a Wisp's sessions in every circle it is a member of. */
+  listCircleSessionDirectories(wispId: string): string[] {
+    return Object.values(this.state.conversations).flatMap(({ chat, sessions }) =>
+      chat.kind === "circle" && sessions[wispId] ? [path.join(this.sessionRoot, sessions[wispId].sessionId)] : [],
+    );
   }
 
   /**

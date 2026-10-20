@@ -20,6 +20,25 @@ describe("recentTranscript", () => {
     expect(transcript).toBe("User: What's the weather?\n\nWisp: Sunny and 24°C.");
   });
 
+  it("names the other members' replies in a circle, so the Wisp does not read them as its own", () => {
+    const transcript = recentTranscript(
+      page([
+        message("outgoing", "@Nova @Atlas plan it"),
+        { ...message("incoming", "A draft."), authorId: "nova" } as Message,
+        { ...message("incoming", "Looks good."), authorId: "atlas" } as Message,
+      ]),
+      {
+        wispId: "atlas",
+        names: new Map([
+          ["nova", "Nova"],
+          ["atlas", "Atlas"],
+        ]),
+      },
+    );
+
+    expect(transcript).toBe("User: @Nova @Atlas plan it\n\nNova: A draft.\n\nWisp: Looks good.");
+  });
+
   it("keeps the newest messages when the page does not fit", () => {
     const transcript = recentTranscript(
       page([message("outgoing", "old ".repeat(2_500), "a"), message("incoming", "newest", "b")]),

@@ -35,7 +35,11 @@ function tool(name: string) {
 
 async function setup(
   status: ClaudeCodeStatusView = READY,
-  options: { webSearch?: () => boolean; whenExited?: () => Promise<void> } = {},
+  options: {
+    webSearch?: () => boolean;
+    whenExited?: () => Promise<void>;
+    deleteSession?: (sessionId: string, options: { dir: string }) => Promise<void>;
+  } = {},
 ) {
   const root = await mkdtemp(path.join(tmpdir(), "wisp-claude-code-factory-"));
   directories.push(root);
@@ -128,6 +132,7 @@ async function setup(
     ...(options.webSearch ? { webSearch: options.webSearch } : {}),
     processes: { spawn: vi.fn(), whenExited: options.whenExited ?? (async () => undefined) } as never,
     purgeProject,
+    ...(options.deleteSession ? { deleteSession: options.deleteSession } : {}),
   });
   return { factory, context, launches, root, builder, statusService, purgeProject };
 }
@@ -260,6 +265,31 @@ describe("ClaudeCodeSessionFactory", () => {
       PATH: "/usr/bin",
       ENABLE_CLAUDEAI_MCP_SERVERS: "false",
     });
+  });
+
+  it("remembers the sessions a new topic replaced, and deletes only the ones asked for", async () => {
+    const deleteSession = vi.fn(async (sessionId: string) => {
+      if (sessionId.startsWith("0")) throw new Error("Session not found");
+    });
+    const { factory, context, root } = await setup(READY, { deleteSession });
+    expect(await factory.sessionIds(root)).toEqual([]);
+    const session = await factory.create(context, { providerId: "claude-code", modelId: "sonnet" });
+    await session.prompt("Hello");
+    const [first] = await factory.sessionIds(root);
+    expect(first).toMatch(/^[0-9a-f-]{36}$/);
+
+    await session.manageContext!({ action: "new_topic" });
+    await session.prompt("Something else");
+    session.dispose();
+    const ids = await factory.sessionIds(root);
+    expect(ids).toHaveLength(2);
+    expect(ids).toContain(first);
+
+    await factory.deleteSessions(context.workspaceDirectory, ["00000000-0000-0000-0000-000000000000", ...ids]);
+    expect(deleteSession.mock.calls).toEqual([
+      ["00000000-0000-0000-0000-000000000000", { dir: context.workspaceDirectory }],
+      ...ids.map((id) => [id, { dir: context.workspaceDirectory }]),
+    ]);
   });
 
   it("saves a new session once it answered, and resumes it later", async () => {

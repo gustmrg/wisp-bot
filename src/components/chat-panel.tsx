@@ -7,7 +7,7 @@ import type { QueuedMessage } from "../../shared/message-queue";
 import type { ToolApprovalDecision, ToolApprovalRequest } from "../../shared/tool-policy";
 import { describeMcpAlias, getToolMetadata } from "../../shared/tool-catalog";
 import type { ToolActivityView } from "@/lib/conversation-stream";
-import { chatName } from "@/lib/chat-schema";
+import { approvalWispName, chatName } from "@/lib/chat-schema";
 import { conversationStarters } from "@/lib/conversation-starters";
 import { withDateDividers } from "@/lib/date-dividers";
 import { isAttached, type MessageWindow } from "@/lib/message-windows";
@@ -476,7 +476,7 @@ function ChatPanel({
                   <ToolApprovalCard
                     key={request.approvalId}
                     request={request}
-                    wispName={name}
+                    wispName={approvalWispName(chat, request)}
                     onResolve={(decision) => onResolveApproval(request, decision)}
                   />
                 ))}

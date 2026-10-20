@@ -264,8 +264,11 @@ How WebSearch is offered:
     know when each process exits.
   - Verified: after one turn, the project's transcript existed; the purge,
     after the process exited, left nothing.
-  - Circles hold no Claude Code session of their own; a Wisp's runs only in
-    its own conversation.
+  - In a circle ([ADR 011](011-circles.md)) every member on Claude Code
+    shares the circle's workspace, and so one Claude Code project. Each
+    member's session folder records every Claude Code session it used, and a
+    member that leaves, or is deleted, has only its own sessions deleted, with
+    the Agent SDK's `deleteSession`. Deleting the circle purges the project.
 - Moving Claude Code's data with `CLAUDE_CONFIG_DIR` would also move the
   sign-in into Wisp's data and backups, so Wisp does not do it.
 

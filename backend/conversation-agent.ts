@@ -16,7 +16,7 @@ export interface ConversationAgent {
   start(): Promise<void>;
   send(request: SendMessageRequest): Promise<void>;
   abort(): Promise<void>;
-  updateContext(context: ConversationAgentContext): Promise<void>;
+  updateContext(context: AgentContext): Promise<void>;
   applyModel(model: ModelSelection): Promise<void>;
   clearModel(): Promise<void>;
   dispose(): Promise<void>;
@@ -35,6 +35,20 @@ export interface ConversationAgent {
   steer?(request: SendMessageRequest): Promise<boolean>;
   /** Takes back the follow-ups handed to the running turn that it has not read, oldest first. */
   withdrawFollowUps?(): string[];
+  /**
+   * Applies the app's model to an agent whose members each answer with their
+   * own, a circle's (ADR 011), in place of `applyModel` and `clearModel`.
+   * Resolves whether any member can answer.
+   */
+  applyAppModel?(model: ModelSelection | null): Promise<boolean>;
+}
+
+/** The circle a Wisp's agent answers in, as its system prompt describes it (ADR 011). */
+export interface CircleSetting {
+  name: string;
+  description: string;
+  /** Every member in order, the lead first and the Wisp itself among them. */
+  members: ReadonlyArray<{ id: string; name: string; role: string }>;
 }
 
 /** One Wisp's agent in one conversation: who the Wisp is, and where its files and session live. */
@@ -64,8 +78,27 @@ export interface ConversationAgentContext {
   piSessionFile: string | null;
   onContextRenewed?: (kind: "compacted" | "new_topic", createdAt: string) => void;
   savePiSessionIdentity?: (identity: { sessionId: string; sessionFile: string | null }) => Promise<void>;
+  /** Set when the Wisp answers in a circle rather than in its own conversation. */
+  circle?: CircleSetting;
 }
 
-export interface ConversationAgentFactory {
-  create(context: ConversationAgentContext): ConversationAgent;
+/** A circle's agent: one agent per member, which answer one turn at a time (ADR 011). */
+export interface CircleAgentContext {
+  kind: "circle";
+  conversationId: string;
+  /** Each member's context in the circle, in member order: the lead first. */
+  members: ReadonlyArray<ConversationAgentContext>;
+  /** The person's preferred name, which labels their messages to the members. */
+  userName?: string;
+}
+
+/** What the registry starts an agent from: a Wisp in its own conversation, or a circle. */
+export type AgentContext = ConversationAgentContext | CircleAgentContext;
+
+export function isCircleContext(context: AgentContext): context is CircleAgentContext {
+  return "kind" in context && context.kind === "circle";
+}
+
+export interface ConversationAgentFactory<Context extends AgentContext = ConversationAgentContext> {
+  create(context: Context): ConversationAgent;
 }

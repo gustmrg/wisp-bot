@@ -5,7 +5,7 @@ import type { ChatId, ChatView, ChatViewCollection } from "@/chat-data";
 import { ChatAvatar, WispAvatar } from "@/components/chat-avatar";
 import { MobileNavigation } from "@/components/mobile-navigation";
 import { AllowAllApprovals, ToolApprovalCard, approvalAsk } from "@/components/tool-approval-card";
-import { chatName } from "@/lib/chat-schema";
+import { approvalWispName, chatName } from "@/lib/chat-schema";
 import { wispAccentStyle, wispColor } from "@/lib/wisp-appearance";
 import type { ToolApprovalDecision, ToolApprovalRequest } from "../../shared/tool-policy";
 
@@ -63,7 +63,7 @@ export function ApprovalEntry({ chat, request, onResolve, onOpenChat }: Approval
         </span>
         <ChevronRightIcon aria-hidden="true" />
       </button>
-      <ToolApprovalCard request={request} wispName={name} onResolve={onResolve} />
+      <ToolApprovalCard request={request} wispName={approvalWispName(chat, request)} onResolve={onResolve} />
     </article>
   );
 }

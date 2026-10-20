@@ -10,7 +10,12 @@ import type {
 import { wispFallbackChoice } from "../shared/contracts.js";
 import type { ManagedConversationStatus } from "../shared/conversations.js";
 import { sanitizeBackendError, WispBackendError } from "./backend-error.js";
-import type { ConversationAgent, ConversationAgentContext, ConversationAgentFactory } from "./conversation-agent.js";
+import {
+  isCircleContext,
+  type AgentContext,
+  type ConversationAgent,
+  type ConversationAgentFactory,
+} from "./conversation-agent.js";
 
 interface AgentEntry {
   agent: ConversationAgent;
@@ -56,7 +61,7 @@ type EventPublisher = (event: SequencedConversationAgentEvent) => void;
 
 export class AgentRegistry {
   private readonly entries = new Map<string, AgentEntry>();
-  private readonly factory: ConversationAgentFactory;
+  private readonly factory: ConversationAgentFactory<AgentContext>;
   private readonly publish: EventPublisher;
   private readonly onConversationDisposed: (conversationId: string) => void;
   private readonly executionTimeoutMs: number;
@@ -70,7 +75,7 @@ export class AgentRegistry {
   private readonly activeWaiters: Array<() => void> = [];
 
   constructor(
-    factory: ConversationAgentFactory,
+    factory: ConversationAgentFactory<AgentContext>,
     publish: EventPublisher,
     onConversationDisposed: (conversationId: string) => void = () => undefined,
     options: AgentRegistryOptions = {},
@@ -85,7 +90,7 @@ export class AgentRegistry {
     this.onTurnStarted = options.onTurnStarted ?? (() => undefined);
   }
 
-  async restore(contexts: ReadonlyArray<ConversationAgentContext>, model: ModelSelection | null): Promise<void> {
+  async restore(contexts: ReadonlyArray<AgentContext>, model: ModelSelection | null): Promise<void> {
     this.model = model;
     const wanted = new Set(contexts.map(({ conversationId }) => conversationId));
     await Promise.all(
@@ -96,19 +101,21 @@ export class AgentRegistry {
     await Promise.all(contexts.map((context) => this.create(context)));
   }
 
-  async create(context: ConversationAgentContext): Promise<void> {
+  async create(context: AgentContext): Promise<void> {
     const { conversationId } = context;
     if (this.entries.has(conversationId)) return;
     const agent = this.factory.create(context);
+    // A circle has no model of its own: each member answers with its own (ADR 011).
+    const override = isCircleContext(context) ? null : (context.modelOverride ?? null);
     const entry: AgentEntry = {
       agent,
       unsubscribe: () => undefined,
       status: "configuration_required",
-      override: context.modelOverride ?? null,
-      effective: context.modelOverride ?? this.model,
+      override,
+      effective: override ?? this.model,
       applied: null,
       pending: null,
-      fallback: wispFallbackChoice(context.modelOverride ?? null, context.fallback ?? null),
+      fallback: wispFallbackChoice(override, isCircleContext(context) ? null : (context.fallback ?? null)),
       ready: false,
       modelQueue: Promise.resolve(),
       commandQueue: Promise.resolve(),
@@ -131,6 +138,10 @@ export class AgentRegistry {
         this.publishEvent({ ...event, status: entry.status });
         if (entry.status === "working" && previous !== "working") this.onTurnStarted(conversationId);
         return;
+      }
+      if (event.type === "circle_turn_started") {
+        // Each member's turn in a circle gets the time a request of its own would.
+        entry.deadline?.restart();
       }
       if (event.type === "follow_up_taken") {
         entry.followedBy.set(event.requestId, event.followUpId);
@@ -378,7 +389,7 @@ export class AgentRegistry {
     return followUps;
   }
 
-  async updateContext(context: ConversationAgentContext): Promise<void> {
+  async updateContext(context: AgentContext): Promise<void> {
     await this.require(context.conversationId).agent.updateContext(context);
   }
 
@@ -460,7 +471,14 @@ export class AgentRegistry {
       const model = entry.override ?? this.model;
       entry.effective = model;
       try {
-        if (model) {
+        if (entry.agent.applyAppModel) {
+          entry.ready = await entry.agent.applyAppModel(this.model);
+          entry.status = entry.ready
+            ? entry.status === "configuration_required"
+              ? "idle"
+              : entry.status
+            : "configuration_required";
+        } else if (model) {
           await this.validateModel(model);
           await entry.agent.applyModel(model);
           entry.ready = true;

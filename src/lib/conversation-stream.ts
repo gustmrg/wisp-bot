@@ -22,6 +22,8 @@ export interface ConversationRuntimeState {
   messages: Record<string, ReadonlyArray<Message>>;
   errors: Record<string, BackendError | undefined>;
   activity: Record<string, string | undefined>;
+  /** In a circle, the member whose turn is running (ADR 011). */
+  turns: Record<string, string | undefined>;
   toolActivities: Record<string, ReadonlyArray<ToolActivityView>>;
   approvals: Record<string, ReadonlyArray<ToolApprovalRequest>>;
 }
@@ -48,6 +50,7 @@ export function createConversationRuntime(
     messages: liveMessages,
     errors: {},
     activity: {},
+    turns: {},
     toolActivities: {},
     approvals: groupApprovals(pendingApprovals),
   };
@@ -145,6 +148,7 @@ export function reduceConversationAgentEvent(
         ...next,
         statuses: { ...next.statuses, [event.conversationId]: event.status },
         activity: event.status === "idle" ? { ...next.activity, [event.conversationId]: undefined } : next.activity,
+        turns: event.status === "working" ? next.turns : { ...next.turns, [event.conversationId]: undefined },
         // A new turn starts its own list of steps.
         toolActivities:
           event.status === "working" && next.statuses[event.conversationId] !== "working"
@@ -172,6 +176,7 @@ export function reduceConversationAgentEvent(
           text: "",
           status: "streaming",
           createdAt: event.createdAt,
+          ...authorOf(event),
         },
       );
     }
@@ -183,13 +188,59 @@ export function reduceConversationAgentEvent(
         text: `${current?.type === "incoming" ? current.text : ""}${event.delta}`,
         status: "streaming",
         ...(current?.createdAt ? { createdAt: current.createdAt } : {}),
+        ...authorOf(event),
       });
     }
     case "assistant_message_completed":
-      return finalizeAssistant(next, stored, event.conversationId, event.messageId, "complete", event.fallbackModel);
+      return finalizeAssistant(
+        next,
+        stored,
+        event.conversationId,
+        event.messageId,
+        "complete",
+        event.fallbackModel,
+        event.wispId,
+      );
     case "assistant_message_cancelled":
-      return finalizeAssistant(next, stored, event.conversationId, event.messageId, "cancelled");
+      return finalizeAssistant(
+        next,
+        stored,
+        event.conversationId,
+        event.messageId,
+        "cancelled",
+        undefined,
+        event.wispId,
+      );
+    case "circle_turn_started":
+      return {
+        ...next,
+        turns: { ...next.turns, [event.conversationId]: event.wispId },
+        activity: { ...next.activity, [event.conversationId]: undefined },
+      };
     case "conversation_error": {
+      // In a circle, a member failing fails only its reply; the message was sent, and others answer it (ADR 011).
+      if (event.wispId && event.requestId) {
+        const outgoing = findMessage(next, stored, event.conversationId, event.requestId);
+        if (outgoing?.type === "outgoing" && outgoing.status !== "complete") {
+          next = setRuntimeMessage(next, event.conversationId, {
+            ...outgoing,
+            id: event.requestId,
+            status: "complete",
+          });
+        }
+        const replyId = event.messageId ?? assistantMessageId(event.requestId);
+        const reply = findMessage(next, stored, event.conversationId, replyId);
+        return setRuntimeMessage(next, event.conversationId, {
+          id: replyId,
+          type: "incoming",
+          text: reply?.type === "incoming" ? reply.text : "",
+          status: "failed",
+          error: messageFailure(event.error),
+          retryable: false,
+          createdAt: reply?.createdAt ?? event.createdAt,
+          authorId: event.wispId,
+        });
+      }
       next = {
         ...next,
         errors: { ...next.errors, [event.conversationId]: event.error },
@@ -286,6 +337,7 @@ export function reconcileConversationRuntime(
     messages: retain(state.messages),
     errors: retain(state.errors),
     activity: retain(state.activity),
+    turns: retain(state.turns),
     toolActivities: retain(state.toolActivities),
     approvals: retain(state.approvals),
   };
@@ -405,6 +457,7 @@ function finalizeAssistant(
   messageId: string,
   status: "complete" | "cancelled",
   fallbackModel?: string,
+  wispId?: string,
 ): ConversationRuntimeState {
   const current = findMessage(state, stored, conversationId, messageId);
   return setRuntimeMessage(state, conversationId, {
@@ -414,7 +467,13 @@ function finalizeAssistant(
     status,
     ...(current?.createdAt ? { createdAt: current.createdAt } : {}),
     ...(fallbackModel ? { fallbackModel } : {}),
+    ...authorOf({ wispId }),
   });
+}
+
+/** A circle's reply names its member; in a Wisp's own conversation it is the Wisp's. */
+function authorOf(event: { wispId?: string }): { authorId?: string } {
+  return event.wispId ? { authorId: event.wispId } : {};
 }
 
 function setRuntimeMessage(

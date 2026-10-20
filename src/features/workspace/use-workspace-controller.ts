@@ -239,7 +239,7 @@ export function useWorkspaceController(): WorkspaceController {
 
   const sendMessage = useCallback(
     (text: string): Promise<boolean> =>
-      activeChat?.kind === "wisp" ? conversations.sendMessage(activeChat.id, text) : Promise.resolve(false),
+      activeChat ? conversations.sendMessage(activeChat.id, text) : Promise.resolve(false),
     [activeChat, conversations.sendMessage],
   );
 

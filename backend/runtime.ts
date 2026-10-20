@@ -15,6 +15,7 @@ import type { MessageQueueView } from "../shared/message-queue.js";
 import type { ScheduledMessagesView } from "../shared/scheduled-messages.js";
 import type { AgentMode } from "./agent-mode.js";
 import { AgentRegistry } from "./agent-registry.js";
+import { CircleAgentFactory } from "./circle-conversation-agent.js";
 import { sanitizeBackendError, WispBackendError } from "./backend-error.js";
 import type { ConversationAgentFactory } from "./conversation-agent.js";
 import { normalizeWisp, normalizeWispChanges } from "./conversation-normalizer.js";
@@ -285,8 +286,11 @@ export async function createBackendRuntime(options: BackendRuntimeOptions): Prom
       wisps: wispHost,
     }),
     status: claudeCodeStatus,
-    recentTranscript: async (conversationId) =>
-      recentTranscript(await conversationRepository.getMessagePage({ conversationId, page: "latest" })),
+    recentTranscript: async ({ conversationId, wispId }) =>
+      recentTranscript(await conversationRepository.getMessagePage({ conversationId, page: "latest" }), {
+        wispId,
+        names: new Map(Object.values(conversationRepository.readWisps()).map(({ id, name }) => [id, name])),
+      }),
     searchHistory: async (conversationId, query) =>
       formatHistorySearch(conversationId, await conversationRepository.searchMessages(query)),
     webSearch: (wispId) => pluginService.searchesWithClaude(wispId),
@@ -322,7 +326,13 @@ export async function createBackendRuntime(options: BackendRuntimeOptions): Prom
       ? new FakeConversationAgentFactory({ latencyMs: 350, steering: true })
       : new WispConversationAgentFactory(sessionFactory);
   const registry = new AgentRegistry(
-    agentFactory,
+    new CircleAgentFactory(agentFactory, {
+      // Through the service, so a member reads the replies before its own even before they are stored.
+      readTranscript: (conversationId) => {
+        if (!conversationService) throw new Error("The conversation service has not started.");
+        return conversationService.getMessagePage({ conversationId, page: "latest" });
+      },
+    }),
     publishAgentEvent,
     (conversationId) => toolAuthorizationBroker.cancelConversation(conversationId),
     {
@@ -349,14 +359,44 @@ export async function createBackendRuntime(options: BackendRuntimeOptions): Prom
         void executionService.reconcile().catch(() => undefined);
       },
       onFollowUpTaken: (_conversationId, queuedMessageId) => messageQueue?.followUpTaken(queuedMessageId),
-      // Claude Code keeps the transcripts of a Wisp that ran on it outside Wisp's data.
-      onWispDeleting: async ({ sessionDirectory, workspaceDirectory }) =>
-        (await claudeCodeSessionFactory.usedClaudeCode(sessionDirectory))
-          ? () =>
-              void claudeCodeSessionFactory
-                .purge(workspaceDirectory)
-                .catch(() => logger.warn("claude_code_purge_failed"))
-          : undefined,
+      // Claude Code keeps the transcripts of a Wisp that ran on it outside Wisp's data: a
+      // deleted workspace's go with its project, a circle member's one session at a time.
+      onSessionsEnding: async ({ workspaces, sessions }) => {
+        const projects = (
+          await Promise.all(
+            workspaces.map(async ({ workspaceDirectory, sessionDirectories }) =>
+              (
+                await Promise.all(
+                  sessionDirectories.map((directory) => claudeCodeSessionFactory.usedClaudeCode(directory)),
+                )
+              ).some(Boolean)
+                ? [workspaceDirectory]
+                : [],
+            ),
+          )
+        ).flat();
+        const ended = (
+          await Promise.all(
+            sessions.map(async ({ workspaceDirectory, sessionDirectory }) => ({
+              workspaceDirectory,
+              sessionIds: await claudeCodeSessionFactory.sessionIds(sessionDirectory),
+            })),
+          )
+        ).filter(({ sessionIds }) => sessionIds.length);
+        if (!projects.length && !ended.length) return undefined;
+        return () => {
+          for (const workspaceDirectory of projects) {
+            void claudeCodeSessionFactory
+              .purge(workspaceDirectory)
+              .catch(() => logger.warn("claude_code_purge_failed"));
+          }
+          for (const { workspaceDirectory, sessionIds } of ended) {
+            void claudeCodeSessionFactory
+              .deleteSessions(workspaceDirectory, sessionIds)
+              .catch(() => logger.warn("claude_code_session_delete_failed"));
+          }
+        };
+      },
     },
   );
   conversationService = service;

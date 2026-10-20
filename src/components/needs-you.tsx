@@ -8,7 +8,7 @@ import { ToolApprovalCard, approvalAsk, needsReview, remainingLabel } from "@/co
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { useClock } from "@/hooks/use-clock";
-import { chatName } from "@/lib/chat-schema";
+import { approvalWispName, chatName } from "@/lib/chat-schema";
 import { wispAccentStyle, wispColor } from "@/lib/wisp-appearance";
 import type { ToolApprovalDecision, ToolApprovalRequest } from "../../shared/tool-policy";
 
@@ -53,12 +53,12 @@ export function NeedsYou({ chats, approvals, onResolve, onOpenChat, onOpenApprov
               <ChatAvatar chat={reviewingChat} size="lg" state="approval" />
             </span>
             <DialogTitle className="text-md leading-snug">
-              {`${chatName(reviewingChat)} ${approvalAsk(reviewing)}`}
+              {`${approvalWispName(reviewingChat, reviewing)} ${approvalAsk(reviewing)}`}
             </DialogTitle>
           </div>
           <ToolApprovalCard
             request={reviewing}
-            wispName={chatName(reviewingChat)}
+            wispName={approvalWispName(reviewingChat, reviewing)}
             onResolve={(decision) => {
               setReviewingId(null);
               onResolve(reviewing, decision);

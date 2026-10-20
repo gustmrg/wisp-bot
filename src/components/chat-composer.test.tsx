@@ -372,16 +372,51 @@ describe("ChatComposer", () => {
     expect(next).toHaveFocus();
   });
 
-  it("disables circles and exposes the active stop control", () => {
+  it("disables a circle with no members and exposes the active stop control", () => {
     const onAbort = vi.fn();
     const circle = circleChatView("crew", [], { name: "Crew" });
     const { rerender } = render(<ChatComposer {...defaultProps} chat={circle} />);
-    expect(screen.getByRole("textbox", { name: "Message Crew" })).toBeDisabled();
+    expect(screen.getByRole("combobox", { name: "Message Crew" })).toBeDisabled();
+    expect(screen.getByRole("status")).toHaveTextContent("Add Wisps to this circle");
 
     rerender(<ChatComposer {...defaultProps} chat={wisp("one", "One")} status="working" onAbort={onAbort} />);
     expect(screen.getByRole("status")).toBeEmptyDOMElement();
     screen.getByRole("button", { name: "Stop response" }).click();
     expect(onAbort).toHaveBeenCalledOnce();
+  });
+
+  it("sends to a circle and completes mentions of its members", async () => {
+    const user = userEvent.setup();
+    const onSend = vi.fn();
+    const atlas = wispChatView("atlas", { wisp: { name: "Atlas", role: "Research" } }).wisp;
+    const nova = wispChatView("nova", { wisp: { name: "Nova Lee", role: "Writing" } }).wisp;
+    render(
+      <ChatComposer {...defaultProps} onSend={onSend} chat={circleChatView("crew", [atlas, nova], { name: "Crew" })} />,
+    );
+    const input = screen.getByRole("combobox", { name: "Message Crew" });
+
+    await user.type(input, "Ask @");
+    const list = screen.getByRole("listbox", { name: "Mention a Wisp" });
+    expect(screen.getAllByRole("option").map((option) => option.textContent)).toEqual([
+      "AtlasResearch",
+      "Nova LeeWriting",
+    ]);
+    expect(input).toHaveAttribute("aria-expanded", "true");
+    await user.type(input, "n");
+    expect(screen.getAllByRole("option")).toHaveLength(1);
+    await user.keyboard("{Enter}");
+    expect(input).toHaveValue("Ask @Nova Lee ");
+    expect(list).not.toBeInTheDocument();
+
+    await user.type(input, "and @at{Tab}to check{Enter}");
+    expect(onSend).toHaveBeenCalledWith("Ask @Nova Lee and @Atlas to check");
+
+    // Escape leaves what was typed; an @ inside a word is no mention.
+    await user.type(input, "@x{Escape}");
+    expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
+    await user.clear(input);
+    await user.type(input, "ada@");
+    expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
   });
 
   it("puts follow-ups the stopped turn never read back into the draft, after what is typed", async () => {

@@ -11,6 +11,7 @@ import {
   stageOutgoingMessage,
   type StoredConversations,
 } from "../src/lib/conversation-stream.js";
+import type { SequencedConversationAgentEvent } from "../shared/contracts.js";
 import type { ChatSummary, Message } from "../shared/conversations.js";
 
 function chat(id: string): ChatSummary {
@@ -33,6 +34,67 @@ function stored(ids: string[], windows: StoredConversations["windows"] = {}): St
 }
 
 describe("conversation stream reducer", () => {
+  it("names each member's reply in a circle, and fails only the reply of a member that fails", () => {
+    const chats = stored(["crew"]);
+    let state = stageOutgoingMessage(createConversationRuntime(0, { crew: "idle" }), "crew", {
+      id: "m1",
+      type: "outgoing",
+      text: "@Nova @Atlas go",
+      status: "queued",
+    });
+    let sequence = 0;
+    const apply = (event: Omit<SequencedConversationAgentEvent, "sequence">) => {
+      sequence += 1;
+      state = reduceConversationAgentEvent(state, { ...event, sequence } as SequencedConversationAgentEvent, chats);
+    };
+    apply({ type: "conversation_status", conversationId: "crew", status: "working" });
+    apply({ type: "circle_turn_started", conversationId: "crew", requestId: "m1", wispId: "nova" });
+    expect(state.turns.crew).toBe("nova");
+    apply({
+      type: "conversation_error",
+      conversationId: "crew",
+      requestId: "m1",
+      messageId: "m1:nova:assistant",
+      wispId: "nova",
+      createdAt: "2026-10-20T10:00:00.000Z",
+      error: { code: "configuration_required", message: "Choose a model.", retryable: true },
+    });
+    apply({ type: "circle_turn_started", conversationId: "crew", requestId: "m1", wispId: "atlas" });
+    apply({
+      type: "assistant_message_started",
+      conversationId: "crew",
+      requestId: "m1",
+      messageId: "m1:atlas:assistant",
+      wispId: "atlas",
+      createdAt: "2026-10-20T10:00:01.000Z",
+    });
+    apply({
+      type: "assistant_text_delta",
+      conversationId: "crew",
+      requestId: "m1",
+      messageId: "m1:atlas:assistant",
+      wispId: "atlas",
+      delta: "On it.",
+    });
+
+    expect(state.errors.crew).toBeUndefined();
+    expect(state.turns.crew).toBe("atlas");
+    expect(state.messages.crew).toEqual([
+      expect.objectContaining({ id: "m1", status: "complete" }),
+      expect.objectContaining({
+        id: "m1:nova:assistant",
+        status: "failed",
+        retryable: false,
+        authorId: "nova",
+        error: { code: "configuration_required", message: "Choose a model." },
+      }),
+      expect.objectContaining({ id: "m1:atlas:assistant", text: "On it.", status: "streaming", authorId: "atlas" }),
+    ]);
+
+    apply({ type: "conversation_status", conversationId: "crew", status: "idle" });
+    expect(state.turns.crew).toBeUndefined();
+  });
+
   it("reconciles queued and streaming messages by stable IDs and ignores event replay", () => {
     const chats = stored(["one", "two"]);
     let state = createConversationRuntime(0, { one: "idle", two: "idle" });

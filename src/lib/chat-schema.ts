@@ -21,6 +21,14 @@ export function chatName(chat: ChatView): string {
   return chat.kind === "wisp" ? chat.wisp.name : chat.name;
 }
 
+/** Who asks for an approval: in a circle, the member the request names (ADR 011). */
+export function approvalWispName(chat: ChatView, request: { wispId?: string }): string {
+  if (chat.kind === "circle" && request.wispId) {
+    return chat.members.find(({ id }) => id === request.wispId)?.name ?? chat.name;
+  }
+  return chatName(chat);
+}
+
 /**
  * Joins conversation summaries with the Wisps they involve. A Wisp's
  * conversation whose Wisp is missing is left out, as are circle members

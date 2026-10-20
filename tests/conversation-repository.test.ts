@@ -676,6 +676,75 @@ describe("ConversationRepository", () => {
     expect(repository.readWisps()).toHaveProperty("first");
   });
 
+  it("gives circle members sessions in the shared workspace, and archives those of members who leave", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "wisp-circle-sessions-"));
+    const repository = new ConversationRepository({ dataDirectory: directory });
+    await repository.initialize({ atlas: chat("atlas"), nova: chat("nova"), orion: chat("orion") });
+    await repository.saveUserProfile({ preferredName: "Ada", aboutYou: "", responsePreferences: "" });
+    await repository.create({ ...circle("crew", ["atlas", "nova"]), name: "Crew", description: "Launch" });
+
+    const context = repository.getCircleAgentContext("crew");
+    expect(context).toMatchObject({ kind: "circle", conversationId: "crew", userName: "Ada" });
+    expect(context.members.map(({ wispId }) => wispId)).toEqual(["atlas", "nova"]);
+    const [atlas, nova] = context.members;
+    expect(atlas).toMatchObject({
+      conversationId: "crew",
+      wispId: "atlas",
+      configDirectory: repository.getAgentContext("atlas").configDirectory,
+      circle: {
+        name: "Crew",
+        description: "Launch",
+        members: [
+          { id: "atlas", name: "atlas", role: "Test" },
+          { id: "nova", name: "nova", role: "Test" },
+        ],
+      },
+    });
+    // One workspace for the circle, a session folder for each member.
+    expect(nova!.workspaceDirectory).toBe(atlas!.workspaceDirectory);
+    expect(nova!.workspaceDirectory).not.toBe(repository.getAgentContext("nova").workspaceDirectory);
+    expect(nova!.sessionDirectory).not.toBe(atlas!.sessionDirectory);
+    await expect(readdir(atlas!.sessionDirectory)).resolves.toEqual([]);
+    expect(repository.listCirclesOf("nova")).toEqual(["crew"]);
+    expect(repository.listCircleSessionDirectories("nova")).toEqual([nova!.sessionDirectory]);
+
+    await atlas!.savePiSessionIdentity!({ sessionId: "pi-atlas", sessionFile: null });
+    expect(repository.getCircleAgentContext("crew").members[0]).toMatchObject({ piSessionId: "pi-atlas" });
+    expect(repository.getAgentContext("atlas").piSessionId).toBeNull();
+
+    await writeFile(path.join(nova!.sessionDirectory, "session.jsonl"), "{}\n");
+    await repository.update("crew", { kind: "circle", memberIds: ["orion", "atlas"] });
+
+    const updated = repository.getCircleAgentContext("crew");
+    expect(updated.members.map(({ wispId }) => wispId)).toEqual(["orion", "atlas"]);
+    expect(updated.members[1]!.sessionId).toBe(atlas!.sessionId);
+    await expect(readdir(updated.members[0]!.sessionDirectory)).resolves.toEqual([]);
+    expect(repository.listCirclesOf("nova")).toEqual([]);
+    const [archive] = await readdir(path.join(directory, "deleted-conversations"));
+    const archived = path.join(directory, "deleted-conversations", archive!);
+    await expect(readFile(path.join(archived, "wisp-session", "session.jsonl"), "utf8")).resolves.toBe("{}\n");
+    expect(JSON.parse(await readFile(path.join(archived, "archive.json"), "utf8"))).toMatchObject({
+      name: "nova in Crew",
+      kind: "circle",
+    });
+  });
+
+  it("gives members of a circle made before circles had agents a session when it loads", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "wisp-circle-missing-sessions-"));
+    const first = new ConversationRepository({ dataDirectory: directory });
+    await first.initialize({ atlas: chat("atlas"), crew: circle("crew", ["atlas"]) });
+    const database = new DatabaseSync(path.join(directory, "conversations.sqlite"));
+    database.prepare("DELETE FROM participant_sessions WHERE conversation_id = 'crew'").run();
+    database.close();
+
+    const reopened = new ConversationRepository({ dataDirectory: directory });
+    await reopened.load();
+
+    const [atlas] = reopened.getCircleAgentContext("crew").members;
+    expect(atlas).toMatchObject({ wispId: "atlas" });
+    await expect(readdir(atlas!.sessionDirectory)).resolves.toEqual([]);
+  });
+
   it("archives a circle's workspace when it is deleted", async () => {
     const directory = await mkdtemp(path.join(os.tmpdir(), "wisp-circle-delete-"));
     const repository = new ConversationRepository({ dataDirectory: directory });
@@ -686,8 +755,10 @@ describe("ConversationRepository", () => {
 
     expect(Object.keys(repository.getChats())).toEqual(["first"]);
     const [archive] = await readdir(path.join(directory, "deleted-conversations"));
+    // With the session its member had there (ADR 011).
     expect((await readdir(path.join(directory, "deleted-conversations", archive!))).sort()).toEqual([
       "archive.json",
+      "wisp-session",
       "workspace",
     ]);
     expect(

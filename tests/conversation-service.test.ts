@@ -5,12 +5,14 @@ import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 
 import { AgentRegistry } from "../backend/agent-registry.js";
+import { WispBackendError } from "../backend/backend-error.js";
+import { CircleAgentFactory } from "../backend/circle-conversation-agent.js";
 import type { ConversationAgentContext, ConversationAgentFactory } from "../backend/conversation-agent.js";
 import { ConversationRepository } from "../backend/conversation-repository.js";
 import { ConversationService } from "../backend/conversation-service.js";
 import { FakeConversationAgent, FakeConversationAgentFactory } from "../backend/fake-conversation-agent.js";
 import type { SequencedConversationAgentEvent } from "../shared/contracts.js";
-import type { Chat, ConversationDelta, Wisp, WispsView } from "../shared/conversations.js";
+import type { Chat, CircleChat, ConversationDelta, Wisp, WispsView } from "../shared/conversations.js";
 import { DEFAULT_WISP_APPEARANCE } from "../shared/wisp-appearance.js";
 
 function chat(id: string, circle = false): Chat {
@@ -53,19 +55,20 @@ describe("ConversationService", () => {
     await service.start(null);
 
     const initialized = await service.initialize({ one: chat("one"), circle: chat("circle", true) });
-    expect(registry.list()).toEqual(["one"]);
-    expect(initialized.statuses).toEqual({ one: "configuration_required" });
+    // A circle's agent is its members' (ADR 011).
+    expect(registry.list()).toEqual(["one", "circle"]);
+    expect(initialized.statuses).toEqual({ one: "configuration_required", circle: "configuration_required" });
 
     const created = await service.createWisp(newWisp("two"), { notifyOnUpdatesEnabled: true });
     expect(created.wisps.two).toEqual(newWisp("two"));
     expect(created.chats.two).toMatchObject({ kind: "wisp", wispId: "two" });
-    expect(registry.list().sort()).toEqual(["one", "two"]);
+    expect(registry.list().sort()).toEqual(["circle", "one", "two"]);
     const deleted = await service.deleteWisp("two");
     expect(deleted.wisps).not.toHaveProperty("two");
     expect(deleted.chats).not.toHaveProperty("two");
 
     expect(disposedWithWorkspace).toContain("two");
-    expect(registry.list()).toEqual(["one"]);
+    expect(registry.list()).toEqual(["one", "circle"]);
     await service.dispose();
   });
 
@@ -74,8 +77,8 @@ describe("ConversationService", () => {
     const repository = new ConversationRepository({ dataDirectory: directory });
     const registry = new AgentRegistry(new FakeConversationAgentFactory(), () => undefined);
     const cleanup = vi.fn(() => expect(registry.list()).toEqual([]));
-    const onWispDeleting = vi.fn(async () => cleanup);
-    const service = new ConversationService(repository, registry, () => [], { onWispDeleting });
+    const onSessionsEnding = vi.fn(async () => cleanup);
+    const service = new ConversationService(repository, registry, () => [], { onSessionsEnding });
     await service.start(null);
     await service.initialize({});
     await service.createWisp(newWisp("two"), { notifyOnUpdatesEnabled: true });
@@ -83,12 +86,10 @@ describe("ConversationService", () => {
 
     await service.deleteWisp("two");
 
-    expect(onWispDeleting).toHaveBeenCalledWith(
-      expect.objectContaining({
-        workspaceDirectory: context.workspaceDirectory,
-        sessionDirectory: context.sessionDirectory,
-      }),
-    );
+    expect(onSessionsEnding).toHaveBeenCalledWith({
+      workspaces: [{ workspaceDirectory: context.workspaceDirectory, sessionDirectories: [context.sessionDirectory] }],
+      sessions: [],
+    });
     expect(cleanup).toHaveBeenCalledOnce();
     await service.dispose();
   });
@@ -164,7 +165,11 @@ describe("ConversationService", () => {
     const profile = { preferredName: "Ada", aboutYou: "Developer", responsePreferences: "Be concise" };
     await service.saveUserProfile(profile);
     expect(service.getUserProfile()).toEqual(profile);
-    expect(updateContext).toHaveBeenCalledTimes(2);
+    // The circle's agent too, which names the person to its members.
+    expect(updateContext).toHaveBeenCalledTimes(3);
+    expect(updateContext).toHaveBeenCalledWith(
+      expect.objectContaining({ kind: "circle", conversationId: "circle", userName: "Ada" }),
+    );
     for (const conversationId of ["one", "two"]) {
       expect(updateContext).toHaveBeenCalledWith(
         expect.objectContaining({ conversationId, userName: "Ada", userProfile: profile }),
@@ -264,6 +269,113 @@ describe("ConversationService", () => {
         }),
       );
     });
+    await service.dispose();
+  });
+
+  it("answers in a circle with its members, each reply theirs, and fails only a member that fails", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "wisp-service-circle-"));
+    const repository = new ConversationRepository({ dataDirectory: directory });
+    let service: ConversationService;
+    const members = new FakeConversationAgentFactory({ responseFor: ({ text }) => `Reply:${text.slice(-5)}` });
+    const registry = new AgentRegistry(
+      new CircleAgentFactory(
+        {
+          create: (context) => {
+            const agent = members.create(context);
+            // Nova has no model to answer with.
+            if (context.wispId === "nova") {
+              agent.send = async () => {
+                throw new WispBackendError("configuration_required", "Choose a model for Nova.");
+              };
+            }
+            return agent;
+          },
+        },
+        { readTranscript: (conversationId) => service.getMessagePage({ conversationId, page: "latest" }) },
+      ),
+      (event) => service.handleAgentEvent(event),
+    );
+    service = new ConversationService(repository, registry);
+    await service.start({ providerId: "test", modelId: "test" });
+    await service.initialize({ atlas: chat("atlas"), nova: chat("nova") });
+    const created = await service.create({ ...(chat("crew", true) as CircleChat), memberIds: ["atlas", "nova"] });
+    expect(created.statuses.crew).toBe("idle");
+
+    await service.appendMessage("crew", { id: "m1", type: "outgoing", text: "@nova @atlas hello", status: "queued" });
+    await registry.dispatch({ conversationId: "crew", requestId: "m1", text: "@nova @atlas hello" });
+
+    await vi.waitFor(async () => {
+      const { messages } = await service.getMessagePage({ conversationId: "crew", page: "latest" });
+      expect(messages).toEqual([
+        expect.objectContaining({ id: "m1", type: "outgoing", status: "complete" }),
+        expect.objectContaining({
+          id: "m1:nova:assistant",
+          status: "failed",
+          authorId: "nova",
+          retryable: false,
+          error: { code: "configuration_required", message: "Choose a model for Nova." },
+        }),
+        expect.objectContaining({
+          id: "m1:atlas:assistant",
+          status: "complete",
+          authorId: "atlas",
+          // Nova said nothing, so Atlas reads the message alone.
+          text: "Reply:hello",
+        }),
+      ]);
+    });
+    await service.dispose();
+  });
+
+  it("follows a circle's members, and ends the sessions of those who leave it", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "wisp-service-circle-members-"));
+    const repository = new ConversationRepository({ dataDirectory: directory });
+    const updateContext = vi.fn(async () => undefined);
+    const registry = new AgentRegistry(
+      {
+        create: (context) => {
+          const agent = new FakeConversationAgent(context.conversationId);
+          agent.updateContext = updateContext;
+          return agent;
+        },
+      },
+      () => undefined,
+    );
+    const ended = vi.fn();
+    const onSessionsEnding = vi.fn(async () => ended);
+    const service = new ConversationService(repository, registry, () => [], { onSessionsEnding });
+    await service.start(null);
+    await service.initialize({ atlas: chat("atlas"), nova: chat("nova") });
+    await service.create({ ...(chat("crew", true) as CircleChat), memberIds: ["atlas", "nova"] });
+    const nova = repository.getCircleAgentContext("crew").members[1]!;
+
+    await service.update("crew", { kind: "circle", memberIds: ["atlas"] });
+
+    expect(onSessionsEnding).toHaveBeenCalledWith({
+      workspaces: [],
+      sessions: [{ workspaceDirectory: nova.workspaceDirectory, sessionDirectory: nova.sessionDirectory }],
+    });
+    expect(ended).toHaveBeenCalledOnce();
+    expect(updateContext).toHaveBeenLastCalledWith(
+      expect.objectContaining({ kind: "circle", members: [expect.objectContaining({ wispId: "atlas" })] }),
+    );
+    updateContext.mockClear();
+    await service.updateWisp("atlas", { name: "Atlas Prime" });
+    expect(updateContext).toHaveBeenCalledWith(
+      expect.objectContaining({
+        kind: "circle",
+        members: [expect.objectContaining({ name: "Atlas Prime", circle: expect.anything() })],
+      }),
+    );
+
+    onSessionsEnding.mockClear();
+    const atlas = repository.getCircleAgentContext("crew").members[0]!;
+    await service.delete("crew");
+    expect(onSessionsEnding).toHaveBeenCalledWith({
+      workspaces: [{ workspaceDirectory: atlas.workspaceDirectory, sessionDirectories: [atlas.sessionDirectory] }],
+      sessions: [],
+    });
+    expect(registry.list().sort()).toEqual(["atlas", "nova"]);
     await service.dispose();
   });
 
