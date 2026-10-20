@@ -77,6 +77,12 @@ Plugins → Default web providers** sets which one is listed first and marked
 as the default in each Wisp's Access tab. Changing the default does not change
 the provider a Wisp already uses.
 
+A Wisp on [Claude Code](models.md#claude-code) can also choose **Claude
+(included in your plan)** for **Search the web**: Claude Code's own web
+search, which runs on Anthropic's side within the Claude plan and needs no
+plugin or key. It searches only while the Wisp runs on Claude Code; on another
+model the choice stays saved, and the Wisp has no web search.
+
 ## Capabilities
 
 | Plugin | Category | Access levels | Tools |

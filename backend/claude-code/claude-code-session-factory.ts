@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 
 import type { ModelSelection } from "../../shared/contracts.js";
+import { WEB_SEARCH_METADATA } from "../../shared/plugin-tools/web.js";
 import { writeFileAtomically } from "../atomic-file.js";
 import { WispBackendError } from "../backend-error.js";
 import { systemTimeZone } from "../../shared/time-zone.js";
@@ -22,6 +23,9 @@ import {
 import { claudeCodeUnavailableMessage, type ClaudeCodeStatusService } from "./claude-code-status.js";
 import { createWispMcpServer, type WispMcpTool } from "./wisp-mcp-server.js";
 
+/** Claude Code's own web search tool. */
+const CLAUDE_CODE_WEB_SEARCH_TOOL = "WebSearch";
+
 /** Claude Code's session for a Wisp in a conversation, kept with the Wisp's session there. */
 const SESSION_FILE = "claude-code-session.json";
 
@@ -40,6 +44,8 @@ export interface ClaudeCodeSessionFactoryOptions {
   recentTranscript?: (conversationId: string) => Promise<string>;
   /** `search_history` for a Claude Code Wisp: Claude Code keeps its own history, so the Wisp's transcript is searched. */
   searchHistory?: (conversationId: string, query: string) => Promise<string>;
+  /** Whether the Wisp searches with Claude Code's own WebSearch instead of a plugin's web_search. */
+  webSearch?: (conversationId: string) => boolean;
   /** A session on the Wisp's fallback model for a turn Claude Code failed for good (ADR 021), or null. */
   fallback?: (context: ConversationAgentContext) => Promise<{ name: string; session: RuntimeSession } | null>;
 }
@@ -154,10 +160,15 @@ export class ClaudeCodeSessionFactory {
     }
     const model = this.resolveModel(selection);
     const plan = await this.options.builder.plan(context, job);
+    const searchesWithClaude = () => this.options.webSearch?.(context.conversationId) ?? false;
     const tools = await this.options.builder.tools(context, plan, {
       ...(job ? { job } : {}),
       searchHistory: (query) => this.options.searchHistory?.(context.conversationId, query),
+      runtimeTools: () => (searchesWithClaude() ? [WEB_SEARCH_METADATA.name] : []),
     });
+    // A job run searches only when the job has web_search, as on Pi.
+    const webSearch = async () =>
+      searchesWithClaude() && (await tools.getAllowedTools()).includes(WEB_SEARCH_METADATA.name);
     const { validateToolArguments } = await import("@earendil-works/pi-ai");
     const query =
       this.options.query ?? ((await import("@anthropic-ai/claude-agent-sdk")).query as unknown as ClaudeCodeQuery);
@@ -186,8 +197,12 @@ export class ClaudeCodeSessionFactory {
             workspaceDirectory: context.workspaceDirectory,
             validate: (tool, toolCall) => validateToolArguments(tool as never, toolCall as never),
           }),
-          // No Claude Code tool that prompts is offered yet; anything that asks is refused.
-          authorize: async () => ({ behavior: "deny", message: "This Wisp cannot use that tool." }),
+          ...((await webSearch()) ? { webSearch: true } : {}),
+          // WebSearch asks before each search; it is allowed as a plugin's web_search is, while it is still chosen.
+          authorize: async (toolName, input) =>
+            toolName === CLAUDE_CODE_WEB_SEARCH_TOOL && (await webSearch())
+              ? { behavior: "allow", updatedInput: input }
+              : { behavior: "deny", message: "This Wisp cannot use that tool." },
           environment: this.options.environment ?? process.env,
         }),
     };

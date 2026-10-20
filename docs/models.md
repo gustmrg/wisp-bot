@@ -52,7 +52,10 @@ password or token.
   workspace, commands in its container, skills, jobs, Wisp management,
   plugins, and MCP servers), with the same approvals. Claude Code's own tools,
   such as Bash, are never offered, and its user and project settings, hooks,
-  and claude.ai connectors are not loaded.
+  and claude.ai connectors are not loaded. The one exception is web search:
+  in the Wisp's **Access** tab, **Search the web** can be **Claude (included
+  in your plan)**, which needs no search plugin
+  ([plugins](plugins.md#per-wisp-access)).
 - **Usage:** replies count against the plan's usage limits.
 - **History:** Claude Code keeps its own conversation under `~/.claude/` on
   that computer and deletes conversations unused for 30 days. The next message

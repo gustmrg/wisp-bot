@@ -230,10 +230,21 @@ the terms allow them:
 | Bash, PowerShell, and the other code-running tools | Out. They run on the server, which [ADR 017](017-container-execution.md) forbids; `run_command` runs in the container instead. |
 | WebFetch | Out. It fetches from the server, so it could reach the local network that the egress proxy blocks for Wisps. |
 | Read, Write, Edit, Glob, Grep | Out for now. They would work (confined by `--restricted`, approved through `canUseTool`), but Wisp's own read documents and images, follow lasting rules and audit categories, and respect the workspace size. Worth trying later if Claude edits better with its own Edit. |
-| WebSearch | **In**, as a web search provider for the Wisp, "Claude (included in your plan)", next to the search plugins. It runs on Anthropic's side and counts against the plan, so it needs no key. `canUseTool` asks the broker with the same rules as `web_search`. |
+| WebSearch | **In**, as a web search provider for the Wisp, "Claude (included in your plan)", next to the search plugins. It runs on Anthropic's side and counts against the plan, so it needs no key. It follows the same rules as `web_search`. |
 
-`canUseTool` answers WebSearch through the broker and denies anything else
-that would prompt.
+How WebSearch is offered:
+
+- The Wisp's search provider is saved as `claude-code` with its other
+  provider choices, without a plugin grant. The Access tab lists it while the
+  Wisp runs on Claude Code; on Pi the choice stays saved, and the Wisp has no
+  web search.
+- A Claude Code session lists it as the Wisp's `web_search`, so a job can
+  name it, and a run offers it only when the job does, as on Pi.
+- Like a plugin's `web_search`, it runs without asking. `canUseTool` allows
+  WebSearch while it is still the Wisp's choice and denies anything else that
+  would prompt. Choosing it changes the integration snapshot's revision, so
+  the session restarts with it.
+- Its events carry the name `web_search`, so the activity reads as a search.
 
 ### Sessions
 

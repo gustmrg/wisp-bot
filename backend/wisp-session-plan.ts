@@ -166,6 +166,11 @@ export class WispSessionBuilder {
       transcriber?: ImageTranscriber;
       /** Searches the Wisp's earlier messages; undefined when the history cannot be read. */
       searchHistory: (query: string) => string | undefined | Promise<string | undefined>;
+      /**
+       * Wisp tools the runtime provides itself, by name, such as `web_search`
+       * from Claude Code's own search (ADR 026); allowed like the others.
+       */
+      runtimeTools?: () => ReadonlyArray<string>;
     },
   ): Promise<WispSessionTools> {
     const {
@@ -213,6 +218,7 @@ export class WispSessionBuilder {
       const allowed = [
         ...BUILTIN_TOOL_NAMES,
         ...new Set((current?.activeNames ?? []).filter((name) => registeredIntegrationNames.has(name))),
+        ...(options.runtimeTools?.() ?? []),
       ];
       if (!job) return [...allowed, ...jobTools, ...wispTools];
       // A run offers only the job's tools the Wisp still has, and the tools only runs have.

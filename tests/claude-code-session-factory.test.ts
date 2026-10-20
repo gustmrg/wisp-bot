@@ -33,7 +33,7 @@ function tool(name: string) {
   };
 }
 
-async function setup(status: ClaudeCodeStatusView = READY) {
+async function setup(status: ClaudeCodeStatusView = READY, options: { webSearch?: () => boolean } = {}) {
   const root = await mkdtemp(path.join(tmpdir(), "wisp-claude-code-factory-"));
   directories.push(root);
   const context = {
@@ -42,18 +42,29 @@ async function setup(status: ClaudeCodeStatusView = READY) {
     sessionDirectory: root,
     configDirectory: root,
   } as ConversationAgentContext;
-  await writeFile(path.join(root, "context-settings.json"), JSON.stringify({ policy: DEFAULT_CONTEXT_POLICY, memory: "Prefers short answers." }));
+  await writeFile(
+    path.join(root, "context-settings.json"),
+    JSON.stringify({ policy: DEFAULT_CONTEXT_POLICY, memory: "Prefers short answers." }),
+  );
   const builder = {
     plan: vi.fn(async () => ({
       snapshot: { revision: "rev-7" },
       systemPrompt: () => "You are Lumen, a Wisp.",
       runSections: async (memory: string | undefined) => (memory ? [`## Memory\n${memory}`] : []),
     })),
-    tools: vi.fn(async () => ({
-      definitions: [tool("read"), tool("run_command")],
-      registryNames: ["read", "run_command"],
-      getAllowedTools: async () => ["read"],
-    })),
+    tools: vi.fn(
+      async (
+        _context: unknown,
+        _plan: unknown,
+        { job, runtimeTools }: { job?: { tools: string[] }; runtimeTools?: () => ReadonlyArray<string> },
+      ) => ({
+        definitions: [tool("read"), tool("run_command")],
+        registryNames: ["read", "run_command"],
+        // Like the builder, a run offers only the job's tools.
+        getAllowedTools: async () =>
+          ["read", ...(runtimeTools?.() ?? [])].filter((name) => !job || job.tools.includes(name)),
+      }),
+    ),
   };
   const launches: ClaudeCodeQueryOptions[] = [];
   const query: ClaudeCodeQuery = ({ prompt, options }) => {
@@ -98,6 +109,7 @@ async function setup(status: ClaudeCodeStatusView = READY) {
     status: statusService,
     query,
     environment: { HOME: "/home/person", PATH: "/usr/bin", ANTHROPIC_API_KEY: "sk-ant-secret" },
+    ...(options.webSearch ? { webSearch: options.webSearch } : {}),
   });
   return { factory, context, launches, root, builder };
 }
@@ -145,6 +157,35 @@ describe("ClaudeCodeSessionFactory", () => {
       behavior: "deny",
     });
     session.dispose();
+  });
+
+  it("offers Claude Code's WebSearch as the Wisp's web_search while it is the Wisp's search provider", async () => {
+    let chosen = true;
+    const { factory, context, launches, root } = await setup(READY, { webSearch: () => chosen });
+    const session = await factory.create(context, { providerId: "claude-code", modelId: "sonnet" });
+    expect(session.getActiveToolNames()).toEqual(["read", "web_search"]);
+
+    await session.prompt("Search for news");
+    const options = launches[0]!;
+    expect(options.tools).toEqual(["WebSearch"]);
+    const signal = new AbortController().signal;
+    await expect(options.canUseTool("WebSearch", { query: "news" }, { signal })).resolves.toEqual({
+      behavior: "allow",
+      updatedInput: { query: "news" },
+    });
+    chosen = false;
+    await expect(options.canUseTool("WebSearch", { query: "news" }, { signal })).resolves.toMatchObject({
+      behavior: "deny",
+    });
+    session.dispose();
+
+    chosen = true;
+    const job = { runId: "run-1", runDirectory: path.join(root, "jobs"), tools: ["read"], skills: [], runTools: [] };
+    const run = await factory.createJobSession(context, { providerId: "claude-code", modelId: "haiku" }, job);
+    await run.prompt("Report.", new AbortController().signal);
+    run.dispose();
+    // A job without web_search does not search.
+    expect(launches[1]!.tools).toEqual([]);
   });
 
   it("saves a new session once it answered, and resumes it later", async () => {

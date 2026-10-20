@@ -290,6 +290,7 @@ export async function createBackendRuntime(options: BackendRuntimeOptions): Prom
         recentTranscript(await conversationRepository.getMessagePage({ conversationId, page: "latest" })),
       searchHistory: async (conversationId, query) =>
         formatHistorySearch(conversationId, await conversationRepository.searchMessages(query)),
+      webSearch: (conversationId) => pluginService.searchesWithClaude(conversationId),
       // A Pi session of its own, so the conversation's Pi session and identity stay as they are.
       fallback: async (context) => {
         const choice = await fallbackModel(context.conversationId);

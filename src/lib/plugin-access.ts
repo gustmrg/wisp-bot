@@ -9,8 +9,8 @@ import {
   type PluginSummary,
   type SaveWispPluginAccessRequest,
   type WebCapability,
-  type WebProviders,
   type WispPluginAccessView,
+  type WispWebProviders,
 } from "../../shared/plugins";
 import type { McpPresetId } from "../../shared/mcp-presets";
 import type { WispAppearance } from "../../shared/wisp-appearance";
@@ -47,9 +47,9 @@ export function isPluginAvailable(plugin: PluginSummary | undefined): boolean {
 export function buildAccessRequest(
   view: Pick<WispPluginAccessView, "conversationId" | "revision">,
   grants: ReadonlyArray<PluginGrant>,
-  webProviders: WebProviders,
+  webProviders: WispWebProviders,
 ): SaveWispPluginAccessRequest {
-  const used = new Set(Object.values(webProviders));
+  const used = new Set<string | null>(Object.values(webProviders));
   return {
     conversationId: view.conversationId,
     revision: view.revision,
