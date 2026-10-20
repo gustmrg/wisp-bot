@@ -4,6 +4,7 @@ import { RoutingSessionFactory } from "../backend/claude-code/routing-session-fa
 import type { ConversationAgentContext } from "../backend/conversation-agent.js";
 import type { JobSessionFactory } from "../backend/job-runner.js";
 import type { RuntimeSessionFactory } from "../backend/runtime-session.js";
+import { ownConversation } from "../backend/integration-tool-source.js";
 
 describe("RoutingSessionFactory", () => {
   const piSession = { kind: "pi" };
@@ -29,7 +30,7 @@ describe("RoutingSessionFactory", () => {
     await expect(factory.create(context, openai)).resolves.toBe(piSession);
     expect(factory.resolveModel(claude)).toEqual({ id: "sonnet" });
     expect(factory.resolveModel(openai)).toEqual({ id: "gpt" });
-    await expect(factory.getToolRevision("c1")).resolves.toBe("rev-1");
+    await expect(factory.getToolRevision(ownConversation("c1"))).resolves.toBe("rev-1");
   });
 
   it("runs a Wisp's jobs on the same runtime as its conversations", async () => {

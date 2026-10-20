@@ -15,6 +15,7 @@ import {
 import type { FormEvent, KeyboardEvent, ReactNode } from "react";
 import { useEffect, useRef, useState } from "react";
 
+import { useMentionSuggestions } from "@/components/mention-suggestions";
 import { ScheduleSendPicker } from "@/components/schedule-send-picker";
 import { Button } from "@/components/ui/button";
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger } from "@/components/ui/context-menu";
@@ -118,7 +119,9 @@ export function ChatComposer({
   // Attaching picks files on this computer, so a server elsewhere cannot use them.
   const working = status === "working";
   const needsConfiguration = status === "configuration_required";
-  const canSend = (status === "idle" || working) && !acknowledging && chat.kind === "wisp";
+  // A circle answers once it has members (ADR 011).
+  const emptyCircle = chat.kind === "circle" && !chat.members.length;
+  const canSend = (status === "idle" || working) && !acknowledging && !emptyCircle;
   const vision = useModelVision(chat.kind === "wisp" ? chat.id : null);
   const visionHint = vision.imageInput === false ? missingVisionHint(attachments, vision.imageModel) : null;
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -126,6 +129,12 @@ export function ChatComposer({
   const boxRef = useRef<HTMLDivElement>(null);
   // Where the transcript goes: the text selected when recording started.
   const insertAt = useRef<readonly [number, number] | null>(null);
+  const mentions = useMentionSuggestions({
+    members: chat.kind === "circle" ? chat.members : [],
+    draft,
+    onDraftChange: setDraft,
+    textareaRef,
+  });
   const latest = useRef({ draft, attachments, canSend, autoSend: voice.autoSend });
   latest.current = { draft, attachments, canSend, autoSend: voice.autoSend };
   useEffect(() => saveComposerDraft(chat.id, { text: draft, attachments }), [chat.id, draft, attachments]);
@@ -139,7 +148,7 @@ export function ChatComposer({
   const voiceBusy = voiceInput.phase !== "idle";
   const recording = voiceInput.phase === "recording";
   const transcribing = voiceInput.phase === "transcribing";
-  const voiceAvailable = chat.kind === "wisp";
+  const voiceAvailable = !emptyCircle;
   const shortcutLabel = formatShortcut(voice.shortcut);
   const voiceDisabled =
     !voiceAvailable ||
@@ -320,6 +329,7 @@ export function ChatComposer({
   }
 
   function handleKeyDown(event: KeyboardEvent<HTMLTextAreaElement>): void {
+    if (mentions.handleKey(event)) return;
     if (matchesShortcut(event, SCHEDULE_SEND_SHORTCUT)) {
       event.preventDefault();
       if (canSchedule) openSchedulePicker("now");
@@ -602,10 +612,11 @@ export function ChatComposer({
   }
 
   return (
-    <form className="chat-composer flex-none px-3 pb-3" onSubmit={handleSubmit}>
+    <form className="chat-composer relative flex-none px-3 pb-3" onSubmit={handleSubmit}>
+      {mentions.list}
       <div className="pl-2.5 text-xs text-dim not-empty:pb-2" role="status">
-        {chat.kind === "circle" ? (
-          "Circle conversations are not enabled yet"
+        {emptyCircle ? (
+          "Add Wisps to this circle in its settings to talk with them."
         ) : needsConfiguration ? (
           <div className="flex flex-wrap items-center gap-2">
             <span>Choose a provider and model before sending a message.</span>
@@ -723,9 +734,13 @@ export function ChatComposer({
                 aria-label={`Message ${chatName(chat)}`}
                 placeholder={transcribing ? "Transcribing…" : mobile ? "Message" : `Message ${chatName(chat)}`}
                 value={draft}
-                disabled={chat.kind === "circle"}
+                disabled={emptyCircle}
                 readOnly={transcribing}
-                onChange={(event) => setDraft(event.currentTarget.value)}
+                {...(chat.kind === "circle" ? { role: "combobox", ...mentions.inputProps } : {})}
+                onChange={(event) => {
+                  setDraft(event.currentTarget.value);
+                  mentions.follow(event.currentTarget.selectionStart);
+                }}
                 onKeyDown={handleKeyDown}
               />
               {showInlineStop ? (

@@ -2,6 +2,7 @@ import type { ToolDefinition } from "@earendil-works/pi-coding-agent" with { "re
 import type { PluginToolMetadata } from "../shared/plugin-tools/types.js";
 import type { PluginId } from "../shared/plugins.js";
 import type { PluginOAuthConfig } from "./plugin-oauth.js";
+import type { AgentScope } from "./integration-tool-source.js";
 
 /** A bundled plugin tool; its name, labels and category come from the shared plugin tool metadata. */
 export interface PluginToolSpec extends PluginToolMetadata {
@@ -25,6 +26,6 @@ export interface PluginAdapter {
 }
 
 export interface PluginToolSource {
-  getTools(conversationId: string): ToolDefinition[];
-  getActiveToolNames(conversationId: string): Promise<string[]>;
+  getTools(scope: AgentScope): ToolDefinition[];
+  getActiveToolNames(wispId: string): Promise<string[]>;
 }

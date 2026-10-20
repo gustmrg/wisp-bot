@@ -85,7 +85,7 @@ export function CircleMemberPicker({
             </label>
           ))}
           {!availableWisps.length ? (
-            <p className="p-2 text-dim text-base">No Wisps yet. You can create an empty circle.</p>
+            <p className="p-2 text-dim text-base">No Wisps yet. Create one to add it here.</p>
           ) : null}
         </div>
       </div>

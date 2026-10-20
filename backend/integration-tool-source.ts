@@ -46,8 +46,24 @@ export interface SnapshotToolMetadata {
   sourceName?: string;
 }
 
+/**
+ * The Wisp a tool runs for, and the conversation it runs in. Grants,
+ * permissions, and settings belong to the Wisp; approval cards and the
+ * workspace to the conversation. In a Wisp's own conversation the two IDs are
+ * the same; in a circle they differ (ADR 011).
+ */
+export interface AgentScope {
+  conversationId: string;
+  wispId: string;
+}
+
+/** A Wisp in its own conversation, which shares the Wisp's ID. */
+export function ownConversation(wispId: string): AgentScope {
+  return { conversationId: wispId, wispId };
+}
+
 export interface IntegrationToolSource {
-  getSnapshot(conversationId: string): Promise<IntegrationToolSnapshot>;
+  getSnapshot(scope: AgentScope): Promise<IntegrationToolSnapshot>;
 }
 
 /**
@@ -61,8 +77,8 @@ export class CompositeIntegrationToolSource implements IntegrationToolSource {
     this.sources = sources;
   }
 
-  async getSnapshot(conversationId: string): Promise<IntegrationToolSnapshot> {
-    const snapshots = await Promise.all(this.sources.map((source) => source.getSnapshot(conversationId)));
+  async getSnapshot(scope: AgentScope): Promise<IntegrationToolSnapshot> {
+    const snapshots = await Promise.all(this.sources.map((source) => source.getSnapshot(scope)));
     const seen = new Set<string>();
     const definitions: ToolDefinition[] = [];
     const metadata: SnapshotToolMetadata[] = [];

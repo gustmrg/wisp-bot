@@ -214,6 +214,14 @@ function Workspace({
     } else showDetails(true);
   }
 
+  /** A mention in a circle: the Wisp's own conversation, with its profile on a phone and its settings otherwise. */
+  function openWisp(wispId: string) {
+    if (!workspace.chats[wispId]) return;
+    selectChat(wispId);
+    if (mobile) setProfileOpen(true);
+    else showDetails(true);
+  }
+
   function showSettings(section: SettingsEntrySection, pluginId?: SettingsPluginId, storageConversationId?: string) {
     navigationVersion.current += 1;
     settingsDialog.current?.open(section, pluginId, storageConversationId);
@@ -284,6 +292,15 @@ function Workspace({
                 }
                 return id;
               }}
+              onCreateCircle={async (circle) => {
+                const created = await workspace.createCircle(circle);
+                if (created) {
+                  navigationVersion.current += 1;
+                  if (mobile) setDetailsOpen(false);
+                  setMobilePage("chat");
+                }
+                return created;
+              }}
               onOpenSearch={() => showSearch(true)}
               onOpenSettings={() => showSettings("general")}
               onOpenApprovals={showApprovals}
@@ -310,6 +327,7 @@ function Workspace({
                 onLoadNewer={workspace.loadNewerMessages}
                 onShowLatest={workspace.showLatestMessages}
                 onOpenDetails={openChatDetails}
+                onOpenWisp={openWisp}
                 onConfigure={() => showSettings("model")}
                 voice={{
                   deviceId: workspace.preferences.microphone,

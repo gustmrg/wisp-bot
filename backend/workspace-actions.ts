@@ -46,7 +46,14 @@ export type WorkspaceAction =
   | { type: "delete-wisp"; wispId: WispId; updatedAt: string }
   | { type: "create"; record: ConversationRecord }
   | { type: "update"; conversationId: string; changes: ChatChanges; updatedAt: string }
-  | { type: "replace-circle-members"; conversationId: string; memberIds: ReadonlyArray<string>; updatedAt: string }
+  | {
+      type: "replace-circle-members";
+      conversationId: string;
+      memberIds: ReadonlyArray<string>;
+      /** Sessions for the Wisps joining; those leaving lose theirs (ADR 011). */
+      newSessions?: Readonly<Record<WispId, ParticipantSession>>;
+      updatedAt: string;
+    }
   | { type: "delete"; conversationId: string; updatedAt: string }
   | { type: "mark-read"; conversationId: string; updatedAt: string }
   | { type: "mark-unread"; conversationId: string; updatedAt: string }
@@ -169,9 +176,16 @@ export function applyWorkspaceAction(records: WorkspaceRecords, action: Workspac
       if (record.chat.kind !== "circle") return { records, status: "kind_mismatch" };
       const memberIds = [...new Set(action.memberIds)];
       if (memberIds.some((memberId) => !records.wisps[memberId])) return { records, status: "invalid_member" };
+      const sessions = Object.fromEntries(
+        memberIds.flatMap((memberId) => {
+          const session = record.sessions[memberId] ?? action.newSessions?.[memberId];
+          return session ? [[memberId, session]] : [];
+        }),
+      );
       return withConversation(records, action.conversationId, {
         ...record,
         chat: { ...record.chat, memberIds },
+        sessions,
         updatedAt: action.updatedAt,
       });
     }

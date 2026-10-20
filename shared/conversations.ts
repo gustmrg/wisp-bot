@@ -69,7 +69,18 @@ export interface CircleChat extends ChatBase {
   name: string;
   label: string;
   description: string;
+  /** The Wisps in the circle, in order. The first is its lead (ADR 011). */
   memberIds: ReadonlyArray<WispId>;
+}
+
+/** The member that answers a message mentioning no one: the first (ADR 011). */
+export function circleLeadId(circle: Pick<CircleChat, "memberIds">): WispId | undefined {
+  return circle.memberIds[0];
+}
+
+/** The members with `leadId` moved to the front, the others in their order. */
+export function withCircleLead(memberIds: ReadonlyArray<WispId>, leadId: WispId): WispId[] {
+  return memberIds.includes(leadId) ? [leadId, ...memberIds.filter((id) => id !== leadId)] : [...memberIds];
 }
 
 /** The job run that produced a Wisp's message (ADR 019). */

@@ -111,6 +111,24 @@ describe("variant details", () => {
     expect(screen.getAllByText("Atlas")).not.toHaveLength(0);
     expect(screen.getByRole("group", { name: "Edit participants" })).toBeVisible();
   });
+
+  it("makes the chosen lead the circle's first member", async () => {
+    const user = userEvent.setup();
+    const onChange = vi.fn();
+    const nova = wispChatView("nova", { wisp: { name: "Nova" } }).wisp;
+    render(
+      <CircleDetails
+        chat={circleChatView("crew", [wisp.wisp, nova])}
+        wisps={{ atlas: wisp.wisp, nova }}
+        onChange={onChange}
+      />,
+    );
+
+    expect(screen.getByRole("radio", { name: "Atlas" })).toBeChecked();
+    await user.click(screen.getByRole("radio", { name: "Nova" }));
+
+    expect(onChange).toHaveBeenCalledWith({ kind: "circle", memberIds: ["nova", wisp.wisp.id] });
+  });
 });
 
 it("loads model and usage data lazily and keeps model details across tabs", async () => {

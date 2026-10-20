@@ -46,6 +46,7 @@ describe("tool policy IPC", () => {
     await broker.savePolicy({ autoReview: true, rules: [] });
     const authorization = broker.authorize({
       conversationId: "one",
+      wispId: "one",
       toolCallId: "tool-1",
       toolName: "write",
       category: "create_file",

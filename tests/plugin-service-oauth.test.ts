@@ -11,6 +11,7 @@ import type { PluginOAuthConfig } from "../backend/plugin-oauth.js";
 import { PluginService } from "../backend/plugin-service.js";
 import type { PluginAdapter, PluginToolSpec } from "../backend/plugin-types.js";
 import type { PluginSettingsView } from "../shared/plugins.js";
+import { ownConversation } from "../backend/integration-tool-source.js";
 
 const directories: string[] = [];
 const services: PluginService[] = [];
@@ -102,7 +103,7 @@ async function setup({ signInBrowser }: { signInBrowser?: () => Promise<SignInBr
   };
   const call = (name: string) =>
     service
-      .getTools("one")
+      .getTools(ownConversation("one"))
       .find((tool) => tool.name === name)!
       .execute("tool-1", {}, undefined, undefined, {} as never);
   return { service, tokens, opened, pushed, execute, view, approve, grant, call };

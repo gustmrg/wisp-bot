@@ -70,6 +70,36 @@ describe("Sidebar current user", () => {
     expect(screen.getByRole("heading", { name: "Create new Wisp" })).toBeVisible();
     expect(screen.queryByRole("group", { name: "Creation type" })).not.toBeInTheDocument();
   });
+
+  it("offers a new circle of the existing Wisps when circles can be created", async () => {
+    const user = userEvent.setup();
+    const onCreateCircle = vi.fn(async () => true);
+    const chats: ChatViewCollection = { atlas: wispChatView("atlas", { wisp: { name: "Atlas" } }) };
+    render(
+      <Sidebar
+        activeChatId=""
+        chats={chats}
+        currentUser={currentUser}
+        width={280}
+        {...callbacks}
+        onCreateCircle={onCreateCircle}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Create" }));
+    await user.click(await screen.findByRole("menuitem", { name: "New circle" }));
+    expect(screen.getByRole("heading", { name: "Create new circle" })).toBeVisible();
+    await user.type(screen.getByRole("textbox", { name: "Name" }), "Crew");
+    await user.click(screen.getByRole("checkbox", { name: "Atlas" }));
+    await user.click(screen.getByRole("button", { name: "Create circle" }));
+
+    expect(onCreateCircle).toHaveBeenCalledWith(expect.objectContaining({ name: "Crew", memberIds: ["atlas"] }));
+    await waitFor(() => expect(screen.queryByRole("heading", { name: "Create new circle" })).not.toBeInTheDocument());
+
+    await user.click(screen.getByRole("button", { name: "Create" }));
+    await user.click(await screen.findByRole("menuitem", { name: "New Wisp" }));
+    expect(screen.getByRole("heading", { name: "Create new Wisp" })).toBeVisible();
+  });
 });
 
 describe("Sidebar approvals", () => {

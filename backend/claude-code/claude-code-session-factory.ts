@@ -36,6 +36,23 @@ const CLAUDE_CODE_WEB_SEARCH_TOOL = "WebSearch";
 
 /** Claude Code's session for a Wisp in a conversation, kept with the Wisp's session there. */
 const SESSION_FILE = "claude-code-session.json";
+/** How many replaced Claude Code sessions a session file remembers. */
+const MAX_PAST_SESSIONS = 200;
+
+function isSessionId(value: unknown): value is string {
+  return typeof value === "string" && /^[0-9a-f-]{36}$/i.test(value);
+}
+
+/** The session file's fields, or none when it is missing or unreadable. */
+async function readSessionFile(sessionDirectory: string): Promise<Record<string, unknown>> {
+  try {
+    const parsed: unknown = JSON.parse(await readFile(path.join(sessionDirectory, SESSION_FILE), "utf8"));
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) return parsed as Record<string, unknown>;
+  } catch {
+    // A new session.
+  }
+  return {};
+}
 
 export interface ClaudeCodeSessionFactoryOptions {
   /** Builds the Wisp's system prompt and tools, the same as for a Pi session. */
@@ -45,16 +62,18 @@ export interface ClaudeCodeSessionFactoryOptions {
   query?: ClaudeCodeQuery;
   /** The server's environment, which Claude Code receives a few variables of. */
   environment?: NodeJS.ProcessEnv;
-  /** The latest of a conversation's messages, carried into a session that replaces a lost one. */
-  recentTranscript?: (conversationId: string) => Promise<string>;
+  /** The latest of a conversation's messages, as the Wisp is told them, carried into a session that replaces a lost one. */
+  recentTranscript?: (context: ConversationAgentContext) => Promise<string>;
   /** `search_history` for a Claude Code Wisp: Claude Code keeps its own history, so the Wisp's transcript is searched. */
   searchHistory?: (conversationId: string, query: string) => Promise<string>;
   /** Tracks the processes, so a deleted Wisp's data is purged once they exited. */
   processes?: ClaudeCodeProcesses;
   /** Deletes what Claude Code keeps for a workspace; injected by tests. */
   purgeProject?: (executable: string, workspaceDirectory: string, env: Record<string, string>) => Promise<void>;
+  /** Deletes one Claude Code session of a workspace: the Agent SDK's `deleteSession`; injected by tests. */
+  deleteSession?: (sessionId: string, options: { dir: string }) => Promise<void>;
   /** Whether the Wisp searches with Claude Code's own WebSearch instead of a plugin's web_search. */
-  webSearch?: (conversationId: string) => boolean;
+  webSearch?: (wispId: string) => boolean;
   /** A session on the Wisp's fallback model for a turn Claude Code failed for good (ADR 021), or null. */
   fallback?: (context: ConversationAgentContext) => Promise<{ name: string; session: RuntimeSession } | null>;
 }
@@ -135,9 +154,7 @@ export class ClaudeCodeSessionFactory {
       onTurnResult: (result, converter) => this.recordTurn(context, prepared.model.id, result, converter),
       onFallback: (model) => this.appendUsage(context, claudeCodeFallbackEntry(model, new Date())),
       ...(this.options.fallback ? { fallback: () => this.options.fallback!(context) } : {}),
-      ...(this.options.recentTranscript
-        ? { recentTranscript: () => this.options.recentTranscript!(context.conversationId) }
-        : {}),
+      ...(this.options.recentTranscript ? { recentTranscript: () => this.options.recentTranscript!(context) } : {}),
     });
   }
 
@@ -173,7 +190,7 @@ export class ClaudeCodeSessionFactory {
     }
     const model = this.resolveModel(selection);
     const plan = await this.options.builder.plan(context, job);
-    const searchesWithClaude = () => this.options.webSearch?.(context.conversationId) ?? false;
+    const searchesWithClaude = () => this.options.webSearch?.(context.wispId) ?? false;
     const tools = await this.options.builder.tools(context, plan, {
       ...(job ? { job } : {}),
       searchHistory: (query) => this.options.searchHistory?.(context.conversationId, query),
@@ -252,6 +269,31 @@ export class ClaudeCodeSessionFactory {
   }
 
   /**
+   * Every Claude Code session a Wisp's session folder used: the current one,
+   * and those a new topic or a lost session replaced.
+   */
+  async sessionIds(sessionDirectory: string): Promise<string[]> {
+    const data = await readSessionFile(sessionDirectory);
+    const current = isSessionId(data.sessionId) ? [data.sessionId] : [];
+    const past = Array.isArray(data.pastSessionIds) ? data.pastSessionIds.filter(isSessionId) : [];
+    return [...new Set([...current, ...past])];
+  }
+
+  /**
+   * Deletes some of a workspace's Claude Code sessions and leaves the others,
+   * as when one member leaves a circle (ADR 011), once the processes there
+   * exited. A session Claude Code no longer has is skipped.
+   */
+  async deleteSessions(workspaceDirectory: string, sessionIds: ReadonlyArray<string>): Promise<void> {
+    if (!sessionIds.length) return;
+    await this.options.processes?.whenExited(workspaceDirectory);
+    const deleteSession = this.options.deleteSession ?? (await import("@anthropic-ai/claude-agent-sdk")).deleteSession;
+    for (const sessionId of sessionIds) {
+      await deleteSession(sessionId, { dir: workspaceDirectory }).catch(() => undefined);
+    }
+  }
+
+  /**
    * Records a turn's usage for the session report, and the plan's usage for
    * the status. Claude Code's cost estimate adds up over a process's turns,
    * so a turn's cost is what it added.
@@ -279,17 +321,11 @@ export class ClaudeCodeSessionFactory {
 
   /** The saved session, or a new one's state; the ID is null until a turn in the session succeeded. */
   private async readSession(context: ConversationAgentContext): Promise<ClaudeCodeSavedSession> {
-    let data: Record<string, unknown> = {};
-    try {
-      const parsed: unknown = JSON.parse(await readFile(path.join(context.sessionDirectory, SESSION_FILE), "utf8"));
-      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) data = parsed as Record<string, unknown>;
-    } catch {
-      // A new session.
-    }
+    const data = await readSessionFile(context.sessionDirectory);
     const timestamp = (value: unknown) =>
       typeof value === "string" && Number.isFinite(Date.parse(value)) ? value : null;
     return {
-      sessionId: typeof data.sessionId === "string" && /^[0-9a-f-]{36}$/i.test(data.sessionId) ? data.sessionId : null,
+      sessionId: isSessionId(data.sessionId) ? data.sessionId : null,
       lastActivityAt: timestamp(data.lastActivityAt),
       lastRenewedAt: timestamp(data.lastRenewedAt),
       tokens:
@@ -297,10 +333,15 @@ export class ClaudeCodeSessionFactory {
     };
   }
 
+  /** Saves the session, remembering the one it replaced, so the Wisp's sessions can be deleted later. */
   private async writeSession(context: ConversationAgentContext, session: ClaudeCodeSavedSession): Promise<void> {
+    const previous = await readSessionFile(context.sessionDirectory);
+    const past = Array.isArray(previous.pastSessionIds) ? previous.pastSessionIds.filter(isSessionId) : [];
+    if (isSessionId(previous.sessionId) && previous.sessionId !== session.sessionId) past.push(previous.sessionId);
+    const pastSessionIds = [...new Set(past)].slice(-MAX_PAST_SESSIONS);
     await writeFileAtomically(
       path.join(context.sessionDirectory, SESSION_FILE),
-      `${JSON.stringify(session, null, 2)}\n`,
+      `${JSON.stringify({ ...session, ...(pastSessionIds.length ? { pastSessionIds } : {}) }, null, 2)}\n`,
     );
   }
 }

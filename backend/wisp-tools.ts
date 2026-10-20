@@ -103,6 +103,7 @@ export function createWispTools(options: WispToolOptions): ToolDefinition[] {
     authorizationBroker.authorize(
       {
         conversationId: context.conversationId,
+        wispId: context.wispId,
         toolCallId,
         toolName,
         category: "manage_wisp",

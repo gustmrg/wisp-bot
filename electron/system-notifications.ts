@@ -76,6 +76,8 @@ export class SystemNotifier {
   private readonly unsuccessful = new Set<string>();
   /** The reply part each conversation is writing, cut to what a body needs. */
   private readonly replies = new Map<string, string>();
+  /** In a circle, the member whose reply is kept in `replies`. */
+  private readonly authors = new Map<string, string>();
   private readonly jobMessages = new Map<string, string>();
   /** The connection the conversations above belong to. */
   private loadedConnection: string | undefined;
@@ -184,17 +186,19 @@ export class SystemNotifier {
           this.statuses.delete(id);
           this.unsuccessful.delete(id);
           this.replies.delete(id);
+          this.authors.delete(id);
           return;
         }
         this.statuses.set(id, event.status);
         if (event.status === "working" && previous !== "working") this.unsuccessful.delete(id);
         if (previous === "working" && event.status === "idle" && !this.unsuccessful.has(id)) {
-          void this.notify(id, "finished", this.replies.get(id) || "Finished.");
+          void this.notify(id, "finished", this.replies.get(id) || "Finished.", undefined, this.authors.get(id));
         }
         return;
       }
       case "assistant_message_started":
         this.replies.set(id, "");
+        if (event.wispId) this.authors.set(id, event.wispId);
         return;
       case "assistant_text_delta": {
         const text = this.replies.get(id) ?? "";
@@ -205,7 +209,7 @@ export class SystemNotifier {
         // Errors without a request (e.g. a rejected model change) are not turn failures.
         if (!event.requestId) return;
         this.unsuccessful.add(id);
-        void this.notify(id, "error", event.error.message);
+        void this.notify(id, "error", event.error.message, undefined, event.wispId);
         return;
       case "assistant_message_cancelled":
         this.unsuccessful.add(id);
@@ -213,7 +217,13 @@ export class SystemNotifier {
       case "tool_approval_requested":
         this.approvals.set(event.request.approvalId, id);
         this.updateBadge();
-        void this.notify(id, "needs-input", `Needs approval: ${event.request.summary}`, event.request.approvalId);
+        void this.notify(
+          id,
+          "needs-input",
+          `Needs approval: ${event.request.summary}`,
+          event.request.approvalId,
+          event.request.wispId,
+        );
         return;
       case "tool_approval_resolved":
         this.approvals.delete(event.approvalId);
@@ -230,6 +240,8 @@ export class SystemNotifier {
     kind: SystemNotificationKind,
     text: string,
     approvalId?: string,
+    /** In a circle, the member it is about (ADR 011). */
+    wispId?: string,
   ): Promise<void> {
     const { settings } = this;
     const enabled =
@@ -238,11 +250,13 @@ export class SystemNotifier {
     // A Wisp created since the last load is not known yet.
     if (!this.chats.has(conversationId)) await (this.loading ?? this.reload());
     const chat = this.chats.get(conversationId);
-    if (!chat || chat.kind !== "wisp" || !chat.notify) return;
+    if (!chat || !chat.notify) return;
     if (this.host.windowFocused() && this.focusedConversation === conversationId) return;
     if (kind === "needs-input" && !this.host.windowFocused()) this.host.requestAttention();
+    const speaker = (chat.kind === "wisp" ? chat.wispId : wispId) ?? "";
+    const name = this.wispNames.get(speaker) || (chat.kind === "circle" ? chat.name : undefined) || "Wisp";
     this.host.show({
-      title: (chat.wispId && this.wispNames.get(chat.wispId)) || "Wisp",
+      title: chat.kind === "circle" && chat.name && name !== chat.name ? `${name} in ${chat.name}` : name,
       body: notificationBody(text),
       target: { conversationId, ...(approvalId ? { approvalId } : {}) },
     });

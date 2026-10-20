@@ -19,6 +19,8 @@ interface WispAvatarProps {
 }
 
 const CLUSTER_SLOTS = ["left-[30%] top-[4%]", "left-[5%] top-[38%]", "left-[41%] top-[40%]"];
+/** The count of the others, centered on the third slot and about as big as a Wisp's body in it. */
+const COUNT_SLOT = "left-[48%] top-[47%] size-[40%]";
 
 /** A conversation's picture: its Wisp's, or a circle's members together. */
 function ChatAvatar({ chat, size = "default", state }: ChatAvatarProps) {
@@ -32,9 +34,8 @@ function ChatAvatar({ chat, size = "default", state }: ChatAvatarProps) {
           : size === "xl"
             ? "size-20 rounded-[18px]"
             : "size-8 rounded-lg";
-    const ring = "ring-muted";
 
-    // Circles render as a bunch of overlapping round Wisps; the 2x2 grid is
+    // Circles render as a bunch of overlapping Wisps; the 2x2 grid is
     // kept for exactly four members where a bunch would hide one of them.
     if (members.length === 0 || members.length === 4) {
       return (
@@ -73,33 +74,30 @@ function ChatAvatar({ chat, size = "default", state }: ChatAvatarProps) {
     const visibleMembers = members.slice(0, members.length > 3 ? 2 : 3);
     return (
       <span className={cn("relative flex-none overflow-hidden bg-muted", tileSize)} aria-hidden="true">
-        {visibleMembers.map((member, index) => (
+        {/* The count sits behind the Wisps, which come first. */}
+        {members.length > 3 ? (
           <span
-            className={cn("absolute size-[54%] overflow-hidden rounded-full ring-2", ring, CLUSTER_SLOTS[index])}
-            key={member.id}
+            className={cn(
+              "absolute flex items-center justify-center rounded-full bg-foreground/15 font-semibold text-foreground",
+              size === "sm" ? "text-[5px]" : size === "xl" ? "text-[13px]" : "text-[7px]",
+              COUNT_SLOT,
+            )}
           >
-            {/* A round body with no trail fits the round slot. */}
+            +{members.length - 2}
+          </span>
+        ) : null}
+        {visibleMembers.map((member, index) => (
+          <span className={cn("absolute size-[54%]", CLUSTER_SLOTS[index])} key={member.id}>
+            {/* Without its trail a Wisp stays in its slot; `!` beats the size the `sm` variant sets. */}
             <Wisp
-              className="size-full"
-              appearance={{ ...member.appearance, body: "round", trail: "none" }}
+              className="size-full!"
+              appearance={{ ...member.appearance, trail: "none" }}
               color={member.color}
               name={member.name}
               size="sm"
             />
           </span>
         ))}
-        {members.length > 3 ? (
-          <span
-            className={cn(
-              "absolute flex size-[54%] items-center justify-center rounded-full bg-secondary font-semibold text-secondary-foreground ring-2",
-              ring,
-              size === "sm" ? "text-[6px]" : size === "xl" ? "text-[16px]" : "text-[8px]",
-              CLUSTER_SLOTS[2],
-            )}
-          >
-            +{members.length - 2}
-          </span>
-        ) : null}
       </span>
     );
   }

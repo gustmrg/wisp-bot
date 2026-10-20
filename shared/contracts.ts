@@ -443,7 +443,14 @@ export interface AbortConversationView {
 
 export type ConversationStatus = "configuration_required" | "idle" | "working" | "disposed";
 
-export type ConversationAgentEvent =
+/**
+ * What a conversation's agent reports. In a circle, events about one member's
+ * turn name it with `wispId` (ADR 011); in a Wisp's own conversation they are
+ * that Wisp's.
+ */
+export type ConversationAgentEvent = ConversationAgentEventBody & { wispId?: string };
+
+type ConversationAgentEventBody =
   | { type: "conversation_context_renewed"; conversationId: string; kind: "compacted" | "new_topic"; createdAt: string }
   | {
       type: "conversation_model_changed";
@@ -539,6 +546,13 @@ export type ConversationAgentEvent =
       conversationId: string;
       jobId: string;
       messageId: string;
+    }
+  | {
+      /** In a circle, a member's turn for the person's message `requestId` started (ADR 011). */
+      type: "circle_turn_started";
+      conversationId: string;
+      requestId: string;
+      wispId: string;
     };
 
 export type SequencedConversationAgentEvent = ConversationAgentEvent & { sequence: number };

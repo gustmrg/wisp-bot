@@ -34,7 +34,10 @@ const MAX_SUMMARY_LENGTH = 240;
 const MAX_PREVIEW_LENGTH = 20_000;
 
 export interface ToolAuthorizationRequest {
+  /** Where the approval card shows. */
   conversationId: string;
+  /** The Wisp acting, whose permissions apply; the conversation's ID in a Wisp's own conversation. */
+  wispId: string;
   toolCallId: string;
   toolName: string;
   category: ToolActionCategory;
@@ -61,13 +64,9 @@ export interface ToolAuthorizationRequest {
 /** Each Wisp's own permissions (ADR 023). */
 export interface WispToolPolicySource {
   /** Synchronous, so an approval card is published in the same tick as its action. */
-  get(conversationId: string): WispToolPolicy;
-  save(conversationId: string, policy: WispToolPolicy): Promise<WispToolPolicy>;
-  setFileBehavior(
-    conversationId: string,
-    category: WorkspaceFileCategory,
-    behavior: ToolPolicyBehavior,
-  ): Promise<unknown>;
+  get(wispId: string): WispToolPolicy;
+  save(wispId: string, policy: WispToolPolicy): Promise<WispToolPolicy>;
+  setFileBehavior(wispId: string, category: WorkspaceFileCategory, behavior: ToolPolicyBehavior): Promise<unknown>;
 }
 
 const NO_WISP_POLICIES: WispToolPolicySource = {
@@ -159,9 +158,9 @@ export class ToolAuthorizationBroker {
   }
 
   /** An unknown Wisp, or one whose permissions cannot be read, has none of its own. */
-  private readWispPolicy(conversationId: string): WispToolPolicy {
+  private readWispPolicy(wispId: string): WispToolPolicy {
     try {
-      return this.wispPolicies.get(conversationId);
+      return this.wispPolicies.get(wispId);
     } catch {
       return defaultWispToolPolicy();
     }
@@ -199,7 +198,7 @@ export class ToolAuthorizationBroker {
     let everything = false;
     if (behavior !== "block") {
       // A Block rule is final; otherwise the Wisp's own permissions may answer.
-      const wisp = this.readWispPolicy(action.conversationId);
+      const wisp = this.readWispPolicy(action.wispId);
       behavior = applyWispToolPolicy(behavior, wisp, action.category, action.scope.kind);
       everything = behavior === "ask" && allowsEverything(wisp, action.category);
     }
@@ -257,6 +256,8 @@ export class ToolAuthorizationBroker {
     const request: ToolApprovalRequest = {
       approvalId,
       conversationId: action.conversationId,
+      // Only a circle names its Wisp: in a Wisp's own conversation it is the conversation's.
+      ...(action.wispId === action.conversationId ? {} : { wispId: action.wispId }),
       toolCallId: safeId(action.toolCallId),
       toolName: safeToolName(action.toolName),
       category: action.category,
@@ -331,12 +332,12 @@ export class ToolAuthorizationBroker {
       });
     // File changes are remembered for this Wisp; an integration block applies to every Wisp.
     if (request.decision === "block" && fileCategory) {
-      await remember(() => this.wispPolicies.setFileBehavior(request.conversationId, fileCategory, "block"));
+      await remember(() => this.wispPolicies.setFileBehavior(wispOf(pending.request), fileCategory, "block"));
     } else if (request.decision === "block") {
       await remember(() => this.store.blockCategory(category, this.createId));
     }
     if (request.decision === "allow_always" && fileCategory) {
-      await remember(() => this.wispPolicies.setFileBehavior(request.conversationId, fileCategory, "allow"));
+      await remember(() => this.wispPolicies.setFileBehavior(wispOf(pending.request), fileCategory, "allow"));
     } else if (request.decision === "allow_always" && pending.rememberApproval) {
       await remember(pending.rememberApproval);
     }
@@ -350,6 +351,7 @@ export class ToolAuthorizationBroker {
     this.audit.append({
       actionId: request.approvalId,
       conversationId: request.conversationId,
+      ...(pending.request.wispId ? { wispId: pending.request.wispId } : {}),
       toolCallId: request.toolCallId,
       category: pending.request.category,
       scope: pending.request.scope.display,
@@ -437,6 +439,7 @@ export class ToolAuthorizationBroker {
     this.audit.append({
       actionId,
       conversationId: action.conversationId,
+      ...(action.wispId === action.conversationId ? {} : { wispId: action.wispId }),
       toolCallId: action.toolCallId,
       category: action.category,
       scope: action.scope.value,
@@ -457,6 +460,7 @@ export class ToolAuthorizationBroker {
     this.audit.append({
       actionId: pending.request.approvalId,
       conversationId: pending.request.conversationId,
+      ...(pending.request.wispId ? { wispId: pending.request.wispId } : {}),
       toolCallId: pending.request.toolCallId,
       category: pending.request.category,
       scope: pending.request.scope.display,
@@ -593,4 +597,9 @@ function safeId(value: string): string {
 
 function safeToolName(value: string): string {
   return getToolMetadata(value) ? value : "unknown";
+}
+
+/** The Wisp asking for an approval: the one it names, or the one whose own conversation it is in. */
+function wispOf(request: ToolApprovalRequest): string {
+  return request.wispId ?? request.conversationId;
 }

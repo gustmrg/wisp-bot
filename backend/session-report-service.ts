@@ -75,11 +75,19 @@ export class SessionReportService {
       }
       // Files are Pi's durable history, including sessions preceding a restart or compaction,
       // a Claude Code Wisp's usage log, and the sessions its fallback model answered in.
+      // The Wisp's sessions in circles count as its own (ADR 011); one not started has no folder yet.
       // Read sequentially so large workspaces cannot allocate all session files at once.
       const paths = [
         ...files.map((file) => path.join(context.sessionDirectory, file)),
         ...(await claudeCodeFallbackSessionFiles(context.sessionDirectory)),
       ];
+      for (const directory of this.repository.listCircleSessionDirectories(context.wispId)) {
+        const circleFiles = await readdir(directory).catch(() => [] as string[]);
+        paths.push(
+          ...circleFiles.filter((file) => file.endsWith(".jsonl")).map((file) => path.join(directory, file)),
+          ...(await claudeCodeFallbackSessionFiles(directory)),
+        );
+      }
       for (const file of paths) {
         try {
           const entries = await readSessionEntries(file);

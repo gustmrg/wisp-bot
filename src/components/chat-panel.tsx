@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { ArrowDownIcon, CheckIcon, ChevronLeftIcon, SettingsIcon, XIcon } from "lucide-react";
 
 import type { ChatView, Message } from "@/chat-data";
@@ -7,7 +7,7 @@ import type { QueuedMessage } from "../../shared/message-queue";
 import type { ToolApprovalDecision, ToolApprovalRequest } from "../../shared/tool-policy";
 import { describeMcpAlias, getToolMetadata } from "../../shared/tool-catalog";
 import type { ToolActivityView } from "@/lib/conversation-stream";
-import { chatName } from "@/lib/chat-schema";
+import { approvalWispName, chatName } from "@/lib/chat-schema";
 import { conversationStarters } from "@/lib/conversation-starters";
 import { withDateDividers } from "@/lib/date-dividers";
 import { isAttached, type MessageWindow } from "@/lib/message-windows";
@@ -95,6 +95,8 @@ interface ChatPanelProps {
   onLoadNewer: () => void;
   onShowLatest: () => void;
   onOpenDetails: () => void;
+  /** Opens a Wisp's own conversation with its settings, from a mention of it in a circle. */
+  onOpenWisp?: (wispId: string) => void;
   onConfigure?: () => void;
   voice?: VoiceInputSettings;
   onConfigureVoice?: () => void;
@@ -128,6 +130,7 @@ function ChatPanel({
   onLoadNewer,
   onShowLatest,
   onOpenDetails,
+  onOpenWisp,
   onConfigure,
   voice,
   onConfigureVoice,
@@ -155,6 +158,17 @@ function ChatPanel({
   const mobile = Boolean(onBack);
   const focusChatId = mobile && !hidden ? chat.id : null;
   const members = chat.kind === "circle" ? chat.members : [];
+  // The latest handler, so the mentions, and the Markdown rendered with them, change only with the members.
+  const openWisp = useRef(onOpenWisp);
+  openWisp.current = onOpenWisp;
+  const canOpenWisp = Boolean(onOpenWisp);
+  const mentions = useMemo(
+    () =>
+      members.length
+        ? { members, onOpenWisp: canOpenWisp ? (wispId: string) => openWisp.current?.(wispId) : undefined }
+        : undefined,
+    [members, canOpenWisp],
+  );
   const name = chatName(chat);
   const messages = transcript?.messages ?? NO_MESSAGES;
   const timeZone = useTimeZone();
@@ -360,17 +374,6 @@ function ChatPanel({
           </div>
         </div>
         <div className="flex flex-none items-center gap-2">
-          {chat.kind === "circle" ? (
-            <button
-              className="rounded-md border-0 bg-transparent px-[7px] py-1 text-dim text-sm hover:bg-muted hover:text-foreground"
-              type="button"
-              aria-label={`View circle participants (${members.length})`}
-              title={members.map((member) => member.name).join(", ") || "No Wisps in this circle"}
-              onClick={onOpenDetails}
-            >
-              {members.length} {members.length === 1 ? "Wisp" : "Wisps"}
-            </button>
-          ) : null}
           <Button
             className="size-9 rounded-full border-0 bg-foreground/[0.06] hover:bg-foreground/[0.1] dark:hover:bg-foreground/[0.1]"
             variant="ghost"
@@ -459,6 +462,7 @@ function ChatPanel({
                     dense={message.type === "outgoing" && previous?.type === "outgoing"}
                     author={author}
                     showAuthor={Boolean(author) && previousAuthor !== author?.id}
+                    mentions={mentions}
                     onAnswer={(answer) => onAnswerPrompt(message.id, answer)}
                     onRetry={() => onRetry(message.id)}
                   />
@@ -476,7 +480,7 @@ function ChatPanel({
                   <ToolApprovalCard
                     key={request.approvalId}
                     request={request}
-                    wispName={name}
+                    wispName={approvalWispName(chat, request)}
                     onResolve={(decision) => onResolveApproval(request, decision)}
                   />
                 ))}

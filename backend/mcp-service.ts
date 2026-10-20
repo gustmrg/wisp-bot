@@ -55,7 +55,12 @@ import {
   toolInputSchema,
   validateToolArguments,
 } from "./mcp-tools.js";
-import type { IntegrationSkill, IntegrationToolSnapshot, SnapshotToolMetadata } from "./integration-tool-source.js";
+import type {
+  AgentScope,
+  IntegrationSkill,
+  IntegrationToolSnapshot,
+  SnapshotToolMetadata,
+} from "./integration-tool-source.js";
 import {
   invalidMcpRequest,
   parseMcpConversation,
@@ -71,7 +76,8 @@ export interface McpServiceOptions {
   dataDirectory: string;
   encryption: EncryptionService;
   authorizationBroker: Pick<ToolAuthorizationBroker, "authorize">;
-  resolveWisp: (conversationId: string) => string;
+  /** The storage ID that keys a Wisp's grants. */
+  resolveWisp: (wispId: string) => string;
   /** The conversation's workspace, where file references are resolved; without it no file can be sent. */
   resolveWorkspaceDirectory?: (conversationId: string) => string;
   openExternal: (url: string) => Promise<void>;
@@ -554,9 +560,9 @@ export class McpService {
   }
 
   /** Trusted snapshot for the Pi session; only granted, enabled servers appear. */
-  async getSnapshot(conversationId: string): Promise<IntegrationToolSnapshot> {
+  async getSnapshot(scope: AgentScope): Promise<IntegrationToolSnapshot> {
     this.assertLive();
-    const sessionId = this.options.resolveWisp(conversationId);
+    const sessionId = this.options.resolveWisp(scope.wispId);
     const definitions: ToolDefinition[] = [];
     const metadata: SnapshotToolMetadata[] = [];
     const activeNames: string[] = [];
@@ -572,7 +578,7 @@ export class McpService {
         ...server.snapshot.tools.map(({ fingerprint }) => fingerprint),
       );
       for (const tool of server.snapshot.tools) {
-        definitions.push(this.wrapTool(conversationId, sessionId, server.serverId, server.name, tool));
+        definitions.push(this.wrapTool(scope, sessionId, server.serverId, server.name, tool));
         metadata.push({
           name: tool.alias,
           label: tool.label,
@@ -615,11 +621,11 @@ export class McpService {
    * connection, so git in its container acts as the same account. Undefined
    * when the Wisp has no such access or the token cannot be read.
    */
-  async gitHubToken(conversationId: string): Promise<string | undefined> {
+  async gitHubToken(wispId: string): Promise<string | undefined> {
     if (this.disposed) return undefined;
     let sessionId: string;
     try {
-      sessionId = this.options.resolveWisp(conversationId);
+      sessionId = this.options.resolveWisp(wispId);
     } catch {
       return undefined;
     }
@@ -649,7 +655,7 @@ export class McpService {
   }
 
   private wrapTool(
-    conversationId: string,
+    scope: AgentScope,
     sessionId: string,
     serverId: string,
     serverName: string,
@@ -664,16 +670,7 @@ export class McpService {
         content: [
           {
             type: "text",
-            text: await this.executeTool(
-              conversationId,
-              sessionId,
-              serverId,
-              serverName,
-              tool,
-              toolCallId,
-              params,
-              signal,
-            ),
+            text: await this.executeTool(scope, sessionId, serverId, serverName, tool, toolCallId, params, signal),
           },
         ],
         details: {},
@@ -681,9 +678,12 @@ export class McpService {
     } as ToolDefinition;
   }
 
-  /** Authorization and dispatch path: check, approve, recheck, then call once. */
+  /**
+   * Authorization and dispatch path: check, approve, recheck, then call once.
+   * Grants are the Wisp's; files and the approval card are the conversation's.
+   */
   private async executeTool(
-    conversationId: string,
+    { conversationId, wispId }: AgentScope,
     sessionId: string,
     serverId: string,
     serverName: string,
@@ -702,7 +702,7 @@ export class McpService {
     const reviewedFingerprint = tool.fingerprint;
     try {
       combinedSignal.throwIfAborted();
-      this.assertToolAccess(conversationId, sessionId, serverId);
+      this.assertToolAccess(wispId, sessionId, serverId);
       const args = validateToolArguments(tool, structuredClone(input));
       const workspaceDirectory = this.options.resolveWorkspaceDirectory?.(conversationId);
       const files = await planFileArguments(tool.inputSchema, args, workspaceDirectory);
@@ -711,6 +711,7 @@ export class McpService {
       await this.options.authorizationBroker.authorize(
         {
           conversationId,
+          wispId,
           toolCallId,
           toolName: tool.alias,
           category: "integration_call",
@@ -723,16 +724,8 @@ export class McpService {
                 alwaysAllowed:
                   this.access(sessionId, serverId) === "allow_all" || this.isAlwaysAllowed(sessionId, serverId, tool),
                 rememberApproval: () =>
-                  this.alwaysAllowTool(
-                    conversationId,
-                    sessionId,
-                    serverId,
-                    tool.name,
-                    reviewedGeneration,
-                    reviewedFingerprint,
-                  ),
-                rememberIntegration: () =>
-                  this.alwaysAllowServer(conversationId, sessionId, serverId, reviewedGeneration),
+                  this.alwaysAllowTool(wispId, sessionId, serverId, tool.name, reviewedGeneration, reviewedFingerprint),
+                rememberIntegration: () => this.alwaysAllowServer(wispId, sessionId, serverId, reviewedGeneration),
               }),
         },
         combinedSignal,
@@ -740,7 +733,7 @@ export class McpService {
       combinedSignal.throwIfAborted();
       // Recheck after the approval wait: grants and enablement may have
       // changed while the user was reviewing.
-      this.assertToolAccess(conversationId, sessionId, serverId);
+      this.assertToolAccess(wispId, sessionId, serverId);
       // A tool that was replaced, changed, or removed while the approval was
       // pending must never receive the approved dispatch.
       this.assertToolUnchanged(serverId, reviewedGeneration, reviewedFingerprint);
@@ -781,7 +774,7 @@ export class McpService {
    * access, the connection, or the tool changed since the approval card showed it.
    */
   private alwaysAllowTool(
-    conversationId: string,
+    wispId: string,
     sessionId: string,
     serverId: string,
     toolName: string,
@@ -789,7 +782,7 @@ export class McpService {
     fingerprint: string,
   ): Promise<void> {
     return this.enqueue(async () => {
-      this.assertToolAccess(conversationId, sessionId, serverId);
+      this.assertToolAccess(wispId, sessionId, serverId);
       this.assertToolUnchanged(serverId, generation, fingerprint);
       const next = structuredClone(this.state);
       const wisp = (next.alwaysAllowed[sessionId] ??= {});
@@ -804,13 +797,13 @@ export class McpService {
    * changed since the approval card showed it.
    */
   private alwaysAllowServer(
-    conversationId: string,
+    wispId: string,
     sessionId: string,
     serverId: string,
     generation: number | undefined,
   ): Promise<void> {
     return this.enqueue(async () => {
-      this.assertToolAccess(conversationId, sessionId, serverId);
+      this.assertToolAccess(wispId, sessionId, serverId);
       if (this.state.servers[serverId]?.configGeneration !== generation) {
         throw new WispBackendError("invalid_request", "This connection changed. Review the tool again.");
       }
@@ -1028,8 +1021,8 @@ export class McpService {
     }
   }
 
-  private assertToolAccess(conversationId: string, sessionId: string, serverId: string): void {
-    if (this.options.resolveWisp(conversationId) !== sessionId) {
+  private assertToolAccess(wispId: string, sessionId: string, serverId: string): void {
+    if (this.options.resolveWisp(wispId) !== sessionId) {
       throw new WispBackendError("tool_blocked", "This Wisp no longer exists.");
     }
     const server = this.state.servers[serverId];

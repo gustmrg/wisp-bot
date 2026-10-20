@@ -73,7 +73,10 @@ A Wisp is stored apart from the conversations it takes part in: its name,
 role, soul, and appearance, plus its own settings folder (skills, saved
 memory). Each Wisp has one conversation of its own, sharing its ID, and circles
 list Wisps; see [ADR 010](decisions/010-wisp-entity.md). In its own
-conversation each Wisp owns one persistent, application-managed Pi session.
+conversation each Wisp owns one persistent, application-managed Pi session. A
+circle's agent holds one such agent per member, each with its own session in
+the circle's shared workspace, and runs their turns one at a time; see
+[ADR 011](decisions/011-circles.md).
 Applying a model validates it immediately, but the session itself (which loads
 the Wisp's full history) opens on first use — a message or a context request —
 so startup time does not grow with every Wisp's transcript. Requests stream

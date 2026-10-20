@@ -6,6 +6,7 @@ import { PluginService } from "../backend/plugin-service.js";
 import type { PluginAdapter, PluginToolSpec } from "../backend/plugin-types.js";
 import type { EncryptionService } from "../backend/encrypted-credential-store.js";
 import { WispBackendError } from "../backend/backend-error.js";
+import { ownConversation } from "../backend/integration-tool-source.js";
 
 const directories: string[] = [];
 
@@ -93,7 +94,7 @@ async function setup() {
     service.saveAccess({ ...accessForm(service, conversationId), grants: [{ pluginId: "linear", access }] });
   const call = (name: string, conversationId = "one", signal?: AbortSignal) =>
     service
-      .getTools(conversationId)
+      .getTools(ownConversation(conversationId))
       .find((tool) => tool.name === name)!
       .execute("tool-1", {}, signal, undefined, {} as never);
   return {
@@ -123,8 +124,8 @@ describe("plugin service", () => {
       ...accessForm(service, "one"),
       grants: [{ pluginId, access: "read" }],
     });
-    expect(service.getTools("one").filter(({ name }) => name === "web_search")).toHaveLength(1);
-    expect(service.getTools("one").filter(({ name }) => name === "web_read")).toHaveLength(1);
+    expect(service.getTools(ownConversation("one")).filter(({ name }) => name === "web_search")).toHaveLength(1);
+    expect(service.getTools(ownConversation("one")).filter(({ name }) => name === "web_read")).toHaveLength(1);
     expect(await service.getActiveToolNames("one")).toEqual(["web_search", "web_read"]);
     await expect(call("web_search", "two")).rejects.toMatchObject({ code: "tool_blocked" });
     await expect(call("web_read", "two")).rejects.toMatchObject({ code: "tool_blocked" });
@@ -162,7 +163,7 @@ describe("plugin service", () => {
     expect(executeExa).not.toHaveBeenCalled();
     await service.save({ pluginId: "firecrawl", enabled: false });
     await service.save({ pluginId: "web-search", enabled: false });
-    const before = await service.getSnapshot("one");
+    const before = await service.getSnapshot(ownConversation("one"));
     await call("web_search");
     await call("web_read");
     expect(executeTavily).toHaveBeenCalledTimes(2);
@@ -171,7 +172,7 @@ describe("plugin service", () => {
       ...accessForm(service, "one"),
       grants: [{ pluginId: "exa", access: "read" }],
     });
-    const after = await service.getSnapshot("one");
+    const after = await service.getSnapshot(ownConversation("one"));
     expect(after.activeNames).toEqual(before.activeNames);
     expect(after.revision).not.toBe(before.revision);
     await call("web_search");
@@ -256,7 +257,7 @@ describe("plugin service", () => {
     await service.save({ pluginId: "web-search", enabled: true, apiKey: "brave-key" });
     await service.save({ pluginId: "firecrawl", enabled: true, apiKey: "firecrawl-key" });
     expect(await service.getActiveToolNames("one")).toEqual([]);
-    expect(service.getTools("one").filter(({ name }) => name === "web_search")).toHaveLength(1);
+    expect(service.getTools(ownConversation("one")).filter(({ name }) => name === "web_search")).toHaveLength(1);
     await service.saveAccess({
       ...accessForm(service, "one"),
       grants: [
@@ -269,7 +270,7 @@ describe("plugin service", () => {
       grants: [{ pluginId: "firecrawl", access: "read" }],
     });
     expect(await service.getActiveToolNames("one")).toEqual(["web_search", "web_read"]);
-    expect((await service.getSnapshot("two")).activeNames).toEqual(["web_search", "web_read"]);
+    expect((await service.getSnapshot(ownConversation("two"))).activeNames).toEqual(["web_search", "web_read"]);
     await call("web_search");
     expect(execute).toHaveBeenCalledWith("brave-key", {}, expect.any(AbortSignal));
     expect(executeFirecrawl).not.toHaveBeenCalled();
@@ -291,13 +292,13 @@ describe("plugin service", () => {
         { pluginId: "firecrawl", access: "read" },
       ],
     });
-    const before = await service.getSnapshot("one");
-    const staleTool = service.getTools("one").find(({ name }) => name === "web_search")!;
+    const before = await service.getSnapshot(ownConversation("one"));
+    const staleTool = service.getTools(ownConversation("one")).find(({ name }) => name === "web_search")!;
     await service.saveAccess({
       ...accessForm(service, "one"),
       grants: [{ pluginId: "firecrawl", access: "read" }],
     });
-    const after = await service.getSnapshot("one");
+    const after = await service.getSnapshot(ownConversation("one"));
     expect(after.activeNames).toEqual(before.activeNames);
     expect(after.revision).not.toBe(before.revision);
     await call("web_search");
@@ -412,6 +413,30 @@ describe("plugin service", () => {
     expect(execute).toHaveBeenCalledTimes(1);
   });
 
+  it("uses the Wisp's own grants in a circle and asks for approval there, naming the Wisp", async () => {
+    const { service, connect, grant, authorize, execute } = await setup();
+    await connect();
+    await grant("write");
+    const inCircle = (wispId: string) =>
+      service
+        .getTools({ conversationId: "circle", wispId })
+        .find((tool) => tool.name === "linear_update_issue")!
+        .execute("tool-1", {}, undefined, undefined, {} as never);
+
+    await inCircle("one");
+    expect(authorize).toHaveBeenLastCalledWith(
+      expect.objectContaining({ conversationId: "circle", wispId: "one", category: "external_write" }),
+      expect.any(AbortSignal),
+    );
+    expect(execute).toHaveBeenCalledTimes(1);
+    // Another member has no grant of its own.
+    await expect(inCircle("two")).rejects.toMatchObject({ code: "tool_blocked" });
+    expect((await service.getSnapshot({ conversationId: "circle", wispId: "one" })).activeNames).toContain(
+      "linear_update_issue",
+    );
+    expect((await service.getSnapshot({ conversationId: "circle", wispId: "two" })).activeNames).toEqual([]);
+  });
+
   it("lets a Wisp always run one write action, or all of them, and forgets them with write access", async () => {
     const { service, options, connect, grant, call, authorize } = await setup();
     await connect();
@@ -514,7 +539,7 @@ describe("plugin service", () => {
     const { service, connect, grant, sessions, execute } = await setup();
     await connect();
     await grant("write");
-    const oldTool = service.getTools("one").find(({ name }) => name === "linear_get_issue")!;
+    const oldTool = service.getTools(ownConversation("one")).find(({ name }) => name === "linear_get_issue")!;
     sessions.set("one", "replacement-session");
     expect(await service.getActiveToolNames("one")).toEqual([]);
     await grant("read");
@@ -729,7 +754,7 @@ describe("plugin service", () => {
   it("lets a Wisp search with Claude Code's own web search, which needs no plugin", async () => {
     const { service, options } = await setup();
     const { revision } = service.getAccess({ conversationId: "one" });
-    const before = (await service.getSnapshot("one")).revision;
+    const before = (await service.getSnapshot(ownConversation("one"))).revision;
     await service.saveAccess({
       conversationId: "one",
       revision,
@@ -741,7 +766,7 @@ describe("plugin service", () => {
     expect(service.searchesWithClaude("one")).toBe(true);
     // No plugin's web_search, and Claude Code sessions rebuild to offer their own.
     expect(await service.getActiveToolNames("one")).toEqual([]);
-    expect((await service.getSnapshot("one")).revision).not.toBe(before);
+    expect((await service.getSnapshot(ownConversation("one"))).revision).not.toBe(before);
     const reopened = new PluginService(options);
     await reopened.load();
     expect(reopened.searchesWithClaude("one")).toBe(true);

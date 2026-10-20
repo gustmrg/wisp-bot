@@ -1,9 +1,11 @@
+import { useMemo } from "react";
 import ReactMarkdown from "react-markdown";
 import type { Components } from "react-markdown";
 import remarkBreaks from "remark-breaks";
 import remarkGfm from "remark-gfm";
 
 import { cn } from "@/lib/utils";
+import { MENTION_ATTRIBUTE, remarkWispMentions, WispMention, type WispMentions } from "@/components/wisp-mention";
 
 const markdownComponents: Components = {
   // The main process opens new-window links in the system browser (web and mail links only).
@@ -73,9 +75,26 @@ const markdownComponents: Components = {
   ),
 };
 
-function MarkdownView({ text }: { text: string }) {
+/** Renders Markdown; given a circle's `mentions`, its prose's `@` mentions of members are set apart. */
+function MarkdownView({ text, mentions }: { text: string; mentions?: WispMentions }) {
+  const { plugins, components } = useMemo(() => {
+    if (!mentions?.members.length) return { plugins: [remarkGfm, remarkBreaks], components: markdownComponents };
+    const withMentions: Components = {
+      ...markdownComponents,
+      span: ({ node: _node, ...props }) => {
+        const memberId = (props as Record<string, unknown>)[MENTION_ATTRIBUTE];
+        if (typeof memberId !== "string") return <span {...props} />;
+        return (
+          <WispMention memberId={memberId} mentions={mentions}>
+            {props.children}
+          </WispMention>
+        );
+      },
+    };
+    return { plugins: [remarkGfm, remarkBreaks, remarkWispMentions(mentions.members)], components: withMentions };
+  }, [mentions]);
   return (
-    <ReactMarkdown remarkPlugins={[remarkGfm, remarkBreaks]} components={markdownComponents}>
+    <ReactMarkdown remarkPlugins={plugins} components={components}>
       {text}
     </ReactMarkdown>
   );

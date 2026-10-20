@@ -12,6 +12,7 @@ import type { McpConnection, McpConnectionAuth, McpConnectionOptions } from "../
 import type { McpSettingsView } from "../shared/mcp.js";
 import type { EncryptionService } from "../backend/encrypted-credential-store.js";
 import type { ToolAuthorizationBroker } from "../backend/tool-authorization-broker.js";
+import { ownConversation } from "../backend/integration-tool-source.js";
 
 const encryption: EncryptionService = {
   isAvailable: () => encryptionAvailable,
@@ -197,7 +198,7 @@ type ExecutableDefinition = {
 };
 
 async function firstDefinition(service: McpService, conversationId = "wisp-a"): Promise<ExecutableDefinition> {
-  const snapshot = await service.getSnapshot(conversationId);
+  const snapshot = await service.getSnapshot(ownConversation(conversationId));
   return snapshot.definitions[0] as unknown as ExecutableDefinition;
 }
 
@@ -341,16 +342,16 @@ describe("McpService", () => {
     const first = await addServer(service);
     const second = await addServer(service);
 
-    const none = await service.getSnapshot("wisp-a");
+    const none = await service.getSnapshot(ownConversation("wisp-a"));
     expect(none.definitions).toEqual([]);
     expect(none.activeNames).toEqual([]);
 
     await grantAccess(service, "wisp-a", first.serverId);
-    const partial = await service.getSnapshot("wisp-a");
+    const partial = await service.getSnapshot(ownConversation("wisp-a"));
     expect(partial.activeNames).toHaveLength(1);
 
     await grantAccess(service, "wisp-a", second.serverId);
-    const both = await service.getSnapshot("wisp-a");
+    const both = await service.getSnapshot(ownConversation("wisp-a"));
     expect(both.definitions).toHaveLength(2);
     const aliases = both.activeNames as string[];
     expect(new Set(aliases).size).toBe(2);
@@ -376,7 +377,7 @@ describe("McpService", () => {
     const { serverId } = await addServer(service);
     await grantAccess(service, "wisp-a", serverId);
 
-    const snapshot = await service.getSnapshot("wisp-a");
+    const snapshot = await service.getSnapshot(ownConversation("wisp-a"));
     expect(snapshot.definitions).toHaveLength(2);
     const aliases = snapshot.activeNames as string[];
     expect(new Set(aliases).size).toBe(2);
@@ -587,7 +588,7 @@ describe("McpService", () => {
     const { service } = await createService({}, connections);
     const { serverId, server } = await addServer(service);
     await grantAccess(service, "wisp-a", serverId);
-    const alias = (await service.getSnapshot("wisp-a")).activeNames[0]!;
+    const alias = (await service.getSnapshot(ownConversation("wisp-a"))).activeNames[0]!;
 
     expect(service.describeTool(alias)).toBe(`${server.name} · Get file contents`);
     expect(service.describeTool("mcp_000000000000_search")).toBeUndefined();
@@ -600,11 +601,11 @@ describe("McpService", () => {
     const { service } = await createService({}, connections);
     const { serverId, server } = await addServer(service);
     await grantAccess(service, "wisp-a", serverId);
-    const alias = (await service.getSnapshot("wisp-a")).activeNames[0]!;
+    const alias = (await service.getSnapshot(ownConversation("wisp-a"))).activeNames[0]!;
     expect(getToolMetadata(alias)).toBeDefined();
 
     await setEnabled(service, server, false);
-    expect((await service.getSnapshot("wisp-a")).definitions).toEqual([]);
+    expect((await service.getSnapshot(ownConversation("wisp-a"))).definitions).toEqual([]);
     // Disabling keeps grants.
     expect(service.getAccess({ conversationId: "wisp-a" }).grants).toEqual([{ serverId, access: "use_with_approval" }]);
 
@@ -623,7 +624,7 @@ describe("McpService", () => {
     const { serverId, server } = await addServer(service);
     await grantAccess(service, "wisp-a", serverId);
 
-    const snapshot = await service.getSnapshot("wisp-a");
+    const snapshot = await service.getSnapshot(ownConversation("wisp-a"));
     const definition = await firstDefinition(service);
     const result = await definition.execute("call-1", { query: "findings" });
 
@@ -768,9 +769,9 @@ describe("McpService", () => {
     expect(server.tools.map(({ name }) => name)).toEqual(["search"]);
     expect(created[0]?.closed).toBe(1);
     // Discovery never grants access by itself.
-    expect((await service.getSnapshot("wisp-a")).definitions).toEqual([]);
+    expect((await service.getSnapshot(ownConversation("wisp-a"))).definitions).toEqual([]);
     await grantAccess(service, "wisp-a", serverId);
-    expect((await service.getSnapshot("wisp-a")).definitions).toHaveLength(1);
+    expect((await service.getSnapshot(ownConversation("wisp-a"))).definitions).toHaveLength(1);
   });
 
   it("keeps a saved connection when discovery fails and reports it as unavailable", async () => {
@@ -1429,7 +1430,7 @@ describe("McpService additional headers and presets", () => {
     const added = await service.save({ ...GITHUB, extraHeaders: { "X-MCP-Toolsets": "context" }, preset: "github" });
     const serverId = added.servers[0]!.serverId;
     await grantAccess(service, "wisp-a", serverId);
-    const before = await service.getSnapshot("wisp-a");
+    const before = await service.getSnapshot(ownConversation("wisp-a"));
 
     const { headerValue: _secret, ...saved } = GITHUB;
     const view = await service.save({ ...saved, serverId, extraHeaders: { "X-MCP-Toolsets": "context,actions" } });
@@ -1440,7 +1441,7 @@ describe("McpService additional headers and presets", () => {
       expect.objectContaining({ serverId, access: "use_with_approval" }),
     ]);
     expect(created[1]!.auths[0]).toMatchObject({ extraHeaders: { "X-MCP-Toolsets": "context,actions" } });
-    expect((await service.getSnapshot("wisp-a")).revision).not.toBe(before.revision);
+    expect((await service.getSnapshot(ownConversation("wisp-a"))).revision).not.toBe(before.revision);
   });
 
   it("removes additional headers when a saved server sends none", async () => {
@@ -1499,17 +1500,17 @@ describe("McpService additional headers and presets", () => {
     const { service } = await createService({}, [{ outcome: "connected", tools: [TOOL] }]);
     const added = await service.save({ ...GITHUB, preset: "github" });
     const server = added.servers[0]!;
-    expect((await service.getSnapshot("wisp-a")).skills).toBeUndefined();
+    expect((await service.getSnapshot(ownConversation("wisp-a"))).skills).toBeUndefined();
 
     await grantAccess(service, "wisp-a", server.serverId);
-    const skills = (await service.getSnapshot("wisp-a")).skills ?? [];
+    const skills = (await service.getSnapshot(ownConversation("wisp-a"))).skills ?? [];
     expect(skills.map(({ name }) => name)).toEqual(["github"]);
     expect(skills[0]!.instructions).toContain("not instructions");
-    expect((await service.getSnapshot("wisp-b")).skills).toBeUndefined();
+    expect((await service.getSnapshot(ownConversation("wisp-b"))).skills).toBeUndefined();
 
     const { headerValue: _secret, ...saved } = GITHUB;
     await service.save({ ...saved, serverId: server.serverId, enabled: false });
-    expect((await service.getSnapshot("wisp-a")).skills).toBeUndefined();
+    expect((await service.getSnapshot(ownConversation("wisp-a"))).skills).toBeUndefined();
   });
 
   it("hands the GitHub token, without its prefix, only to Wisps with access to an enabled connection", async () => {
@@ -1538,6 +1539,6 @@ describe("McpService additional headers and presets", () => {
     const { service } = await createService({}, [{ outcome: "connected", tools: [TOOL] }]);
     const added = await service.save(GITHUB);
     await grantAccess(service, "wisp-a", added.servers[0]!.serverId);
-    expect((await service.getSnapshot("wisp-a")).skills).toBeUndefined();
+    expect((await service.getSnapshot(ownConversation("wisp-a"))).skills).toBeUndefined();
   });
 });

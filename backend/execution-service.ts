@@ -30,6 +30,7 @@ import {
 } from "./container-manager.js";
 import {
   snapshotRevision,
+  type AgentScope,
   type IntegrationToolSnapshot,
   type IntegrationToolSource,
 } from "./integration-tool-source.js";
@@ -145,7 +146,12 @@ export class ExecutionService implements IntegrationToolSource {
     return this.getView(request.conversationId);
   }
 
-  async getSnapshot(conversationId: string): Promise<IntegrationToolSnapshot> {
+  /**
+   * Commands run only in a Wisp's own conversation: its container mounts its
+   * own workspace, not a circle's (ADR 011).
+   */
+  async getSnapshot({ conversationId, wispId }: AgentScope): Promise<IntegrationToolSnapshot> {
+    if (conversationId !== wispId) return emptySnapshot();
     let wisp: ExecutionWisp;
     try {
       wisp = this.options.resolveWisp(conversationId);
@@ -251,7 +257,9 @@ export class ExecutionService implements IntegrationToolSource {
   ): Promise<void> {
     return this.options.authorizationBroker.authorize(
       {
+        // Commands run only in the Wisp's own conversation, which shares its ID.
         conversationId,
+        wispId: conversationId,
         toolCallId,
         toolName,
         category: "container_command",

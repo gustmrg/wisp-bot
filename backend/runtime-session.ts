@@ -6,6 +6,7 @@
 import type { ContextCommand, ContextView } from "../shared/context-policy.js";
 import type { ModelSelection, SessionReportUsage, ThinkingLevel } from "../shared/contracts.js";
 import type { ConversationAgentContext } from "./conversation-agent.js";
+import type { AgentScope } from "./integration-tool-source.js";
 import type { ModelRuntimeLike } from "./model-service.js";
 import type { PiAgentEvent } from "./pi-event-translator.js";
 
@@ -44,8 +45,8 @@ export const JOB_RESULT_MESSAGE = "wisp:job-result";
 export interface RuntimeSessionFactory {
   resolveModel(selection: ModelSelection): RuntimeModel;
   create(context: ConversationAgentContext, selection: ModelSelection): Promise<RuntimeSession>;
-  /** Current integration tool snapshot revision for this Wisp, or null. */
-  getToolRevision(conversationId: string): Promise<string | null>;
+  /** Current integration tool snapshot revision for this Wisp in this conversation, or null. */
+  getToolRevision(scope: AgentScope): Promise<string | null>;
   /**
    * Whether one session can switch between two selections' models. When it
    * cannot, as between Pi and Claude Code (ADR 026), the session closes and

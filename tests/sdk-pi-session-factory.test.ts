@@ -95,9 +95,9 @@ import {
 /** Adapts the legacy sync plugin tool source into the async snapshot source. */
 function toToolSource(pluginTools: PluginToolSource): IntegrationToolSource {
   return {
-    async getSnapshot(conversationId) {
-      const definitions = pluginTools.getTools(conversationId);
-      const activeNames = await pluginTools.getActiveToolNames(conversationId);
+    async getSnapshot(scope) {
+      const definitions = pluginTools.getTools(scope);
+      const activeNames = await pluginTools.getActiveToolNames(scope.wispId);
       return { definitions, metadata: [], activeNames, revision: snapshotRevision(activeNames) };
     },
   };
@@ -494,6 +494,7 @@ describe("SdkPiSessionFactory", () => {
     expect(authorize).toHaveBeenLastCalledWith(
       {
         conversationId: "one",
+        wispId: "one",
         toolCallId: "tool-3",
         toolName: "save_skill",
         category: "save_skill",
@@ -705,7 +706,10 @@ describe("SdkPiSessionFactory", () => {
     expect(sdk.session.setActiveToolsByName).toHaveBeenLastCalledWith(builtins);
     session.dispose();
 
-    await factory.create({ ...context, conversationId: "coordinator" }, { providerId: "provider", modelId: "model" });
+    await factory.create(
+      { ...context, conversationId: "coordinator", wispId: "coordinator" },
+      { providerId: "provider", modelId: "model" },
+    );
     expect(sdk.createAgentSession).toHaveBeenLastCalledWith(
       expect.objectContaining({ tools: [...builtins, "web_search", "linear_get_issue"] }),
     );
@@ -868,6 +872,39 @@ describe("SdkPiSessionFactory", () => {
     expect(sdk.session.setActiveToolsByName).toHaveBeenLastCalledWith([]);
     const runPrompt = (sdk.loaderOptions.at(-1) as { systemPromptOverride: () => string }).systemPromptOverride();
     expect(runPrompt).not.toContain("## Jobs");
+
+    // A job delivers to the Wisp's own conversation, so a circle has no job tools (ADR 011).
+    await factory.create(
+      {
+        ...context,
+        conversationId: "crew",
+        circle: {
+          name: "Crew",
+          description: "Ship the launch",
+          members: [
+            { id: "lead", name: "Lead", role: "Planning" },
+            { id: context.wispId, name: context.name, role: "" },
+          ],
+        },
+      },
+      { providerId: "provider", modelId: "model" },
+    );
+    const circleOptions = sdk.createAgentSession.mock.calls.at(-1)?.[0] as { customTools: { name: string }[] };
+    expect(circleOptions.customTools.map(({ name }) => name)).not.toContain("schedule_job");
+    const circlePrompt = (sdk.loaderOptions.at(-1) as { systemPromptOverride: () => string }).systemPromptOverride();
+    expect(circlePrompt).not.toContain("## Jobs");
+    expect(circlePrompt).toContain(
+      [
+        "## Circle",
+        'You are in a circle named "Crew": a conversation between the user and several Wisps.',
+        `The circle's purpose, as the user wrote it: "Ship the launch"`,
+        "Its members, in order:",
+        "- Lead (Planning)",
+        `- ${context.name} — you`,
+      ].join("\n"),
+    );
+    expect(circlePrompt).toContain("Write only your own reply, in your own voice.");
+    expect(circlePrompt).toContain("To hand the task to another member, mention it with @ and its name in your reply");
   });
 
   it("offers the Wisp tools in the conversation only, never in a job's runs", async () => {

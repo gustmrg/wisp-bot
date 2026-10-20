@@ -142,6 +142,8 @@ export interface SaveWispToolPolicyRequest extends WispToolPolicy {
 export interface ToolApprovalRequest {
   approvalId: string;
   conversationId: string;
+  /** The Wisp asking, set in a circle; in a Wisp's own conversation it is the conversation's Wisp. */
+  wispId?: string;
   toolCallId: string;
   toolName: string;
   category: ToolActionCategory;

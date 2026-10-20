@@ -1,5 +1,7 @@
+import { circleLeadId, withCircleLead } from "../../shared/conversations";
 import type { CircleChatChanges, CircleChatView, WispCollection } from "@/chat-data";
 import { ChatAvatar, WispAvatar } from "@/components/chat-avatar";
+import { CircleLeadPicker } from "@/components/circle-lead-picker";
 import { CircleMemberPicker } from "@/components/circle-member-picker";
 import {
   SettingsCard,
@@ -73,6 +75,13 @@ export function CircleDetails({ chat, wisps, onChange }: CircleDetailsProps) {
         selectedIds={chat.memberIds}
         onChange={(memberIds) => onChange({ kind: "circle", memberIds })}
       />
+      <div className="mt-[15px]">
+        <CircleLeadPicker
+          members={members}
+          leadId={circleLeadId(chat)}
+          onChange={(leadId) => onChange({ kind: "circle", memberIds: withCircleLead(chat.memberIds, leadId) })}
+        />
+      </div>
       <SettingsCard className="mt-[15px]">
         <SettingsRow className="min-h-0 p-[11px]">
           <SettingsRowCopy>

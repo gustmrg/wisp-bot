@@ -3,11 +3,13 @@
 import type { ContextCommand, ContextView } from "../shared/context-policy.js";
 import type { BackendError, ConversationAgentEvent, ModelSelection, SendMessageRequest } from "../shared/contracts.js";
 import { WispBackendError } from "./backend-error.js";
-import type {
-  ConversationAgent,
-  ConversationAgentContext,
-  ConversationAgentFactory,
-  ConversationAgentListener,
+import {
+  isCircleContext,
+  type AgentContext,
+  type ConversationAgent,
+  type ConversationAgentContext,
+  type ConversationAgentFactory,
+  type ConversationAgentListener,
 } from "./conversation-agent.js";
 import { currentTimeNote, scheduledMessageNote } from "./message-schedule.js";
 import { PiEventTranslator, sanitizeErrorMessage } from "./pi-event-translator.js";
@@ -193,10 +195,14 @@ export class WispConversationAgent implements ConversationAgent {
     await session?.abort();
   }
 
-  updateContext(context: ConversationAgentContext): Promise<void> {
+  updateContext(context: AgentContext): Promise<void> {
     return this.enqueueModelMutation(async () => {
       this.assertNotDisposed();
-      if (context.conversationId !== this.context.conversationId || context.sessionId !== this.context.sessionId) {
+      if (
+        isCircleContext(context) ||
+        context.conversationId !== this.context.conversationId ||
+        context.sessionId !== this.context.sessionId
+      ) {
         throw new WispBackendError("invalid_request", "The agent context does not match this conversation.");
       }
       this.context.name = context.name;
@@ -205,6 +211,7 @@ export class WispConversationAgent implements ConversationAgent {
       this.context.userName = context.userName;
       this.context.userProfile = context.userProfile;
       this.context.userTimeZone = context.userTimeZone;
+      this.context.circle = context.circle;
       if (!this.session) return;
       if (!this.session.isIdle) await this.session.waitForIdle();
       await this.session.reload();
@@ -348,7 +355,7 @@ export class WispConversationAgent implements ConversationAgent {
   private async ensureToolsCurrent(): Promise<void> {
     const session = this.session;
     if (!session || !this.appliedSelection) return;
-    const revision = await this.sessionFactory.getToolRevision(this.context.conversationId).catch(() => null);
+    const revision = await this.sessionFactory.getToolRevision(this.context).catch(() => null);
     if (!revision || revision === session.toolRevision) return;
     if (!session.isIdle) return;
     await this.enqueueModelMutation(async () => {

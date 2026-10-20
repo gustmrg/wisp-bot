@@ -25,10 +25,10 @@ export class WispToolPolicyStore {
   private mutation = Promise.resolve();
   private readonly cache = new Map<string, WispToolPolicy>();
 
-  constructor(private readonly resolveConfigDirectory: (conversationId: string) => string) {}
+  constructor(private readonly resolveConfigDirectory: (wispId: string) => string) {}
 
-  get(conversationId: string): WispToolPolicy {
-    const filePath = this.filePath(conversationId);
+  get(wispId: string): WispToolPolicy {
+    const filePath = this.filePath(wispId);
     const cached = this.cache.get(filePath);
     if (cached) return structuredClone(cached);
     let policy = defaultWispToolPolicy();
@@ -41,34 +41,34 @@ export class WispToolPolicyStore {
     return structuredClone(policy);
   }
 
-  save(conversationId: string, policy: WispToolPolicy): Promise<WispToolPolicy> {
+  save(wispId: string, policy: WispToolPolicy): Promise<WispToolPolicy> {
     return this.enqueue(async () => {
       const normalized = normalizeWispToolPolicy(policy);
-      await this.write(conversationId, normalized);
+      await this.write(wispId, normalized);
       return normalized;
     });
   }
 
   /** Sets how one kind of file change is handled for this Wisp, keeping everything else. */
   setFileBehavior(
-    conversationId: string,
+    wispId: string,
     category: WorkspaceFileCategory,
     behavior: ToolPolicyBehavior,
   ): Promise<WispToolPolicy> {
     return this.enqueue(async () => {
-      const current = this.get(conversationId);
+      const current = this.get(wispId);
       const next = { ...current, files: { ...current.files, [category]: behavior } };
-      await this.write(conversationId, next);
+      await this.write(wispId, next);
       return next;
     });
   }
 
-  private filePath(conversationId: string): string {
-    return path.join(this.resolveConfigDirectory(conversationId), WISP_TOOL_POLICY_FILE);
+  private filePath(wispId: string): string {
+    return path.join(this.resolveConfigDirectory(wispId), WISP_TOOL_POLICY_FILE);
   }
 
-  private async write(conversationId: string, policy: WispToolPolicy): Promise<void> {
-    const filePath = this.filePath(conversationId);
+  private async write(wispId: string, policy: WispToolPolicy): Promise<void> {
+    const filePath = this.filePath(wispId);
     await writeFileAtomically(filePath, `${JSON.stringify(policy)}\n`);
     this.cache.set(filePath, structuredClone(policy));
   }

@@ -493,7 +493,7 @@ export function useConversations(): ConversationsController {
   const sendMessage = useCallback(
     async (conversationId: string, textValue: string): Promise<boolean> => {
       const text = textValue.trim();
-      if (!text || chatsRef.current[conversationId]?.kind !== "wisp") return false;
+      if (!text || !chatsRef.current[conversationId]) return false;
       const status = runtimeRef.current.statuses[conversationId];
       if (status !== "idle" && status !== "working") return false;
       // The reply belongs at the end, so a window opened elsewhere in the transcript returns there.
@@ -583,13 +583,26 @@ export function useConversations(): ConversationsController {
   );
 
   const views = useMemo(() => chatViews(chats, wisps), [chats, wisps]);
+  // In a circle the activity names the member whose turn it is (ADR 011).
+  const activity = useMemo(() => {
+    const turns = Object.entries(runtime.turns).filter(([, wispId]) => wispId);
+    if (!turns.length) return runtime.activity;
+    const result = { ...runtime.activity };
+    for (const [conversationId, wispId] of turns) {
+      const name = wisps[wispId!]?.name;
+      if (!name) continue;
+      const label = runtime.activity[conversationId];
+      result[conversationId] = label ? `${name} · ${label}` : `${name} is working…`;
+    }
+    return result;
+  }, [runtime.activity, runtime.turns, wisps]);
 
   return {
     wisps,
     chats: views,
     windows: visibleWindows,
     statuses: runtime.statuses,
-    activity: runtime.activity,
+    activity,
     conversationErrors: runtime.errors,
     acknowledging,
     approvals: runtime.approvals,

@@ -133,10 +133,36 @@ describe("SystemNotifier", () => {
     expect(host.show).toHaveBeenCalledTimes(1);
   });
 
-  it("follows the settings and each Wisp's own notification choice, and skips circles", async () => {
+  it("names the member that answered in a circle, with the circle", async () => {
+    const { host, send } = await setup();
+    await send({ type: "conversation_status", conversationId: "circle", status: "working" });
+    await send({
+      type: "assistant_message_started",
+      conversationId: "circle",
+      requestId: "r",
+      messageId: "r:atlas:assistant",
+      wispId: "atlas",
+      createdAt: "2026-10-15T12:00:00.000Z",
+    });
+    await send({
+      type: "assistant_text_delta",
+      conversationId: "circle",
+      requestId: "r",
+      messageId: "r:atlas:assistant",
+      wispId: "atlas",
+      delta: "Done",
+    });
+    await send({ type: "conversation_status", conversationId: "circle", status: "idle" });
+    expect(host.show).toHaveBeenCalledWith({
+      title: "Atlas in Team",
+      body: "Done",
+      target: { conversationId: "circle" },
+    });
+  });
+
+  it("follows the settings and each Wisp's own notification choice", async () => {
     const { host, notifier, reply } = await setup();
     await reply("muted", "Hi");
-    await reply("circle", "Hi");
     notifier.configure({ ...DEFAULT_SYSTEM_NOTIFICATION_SETTINGS, onCompletion: false });
     await reply("atlas", "Hi");
     notifier.configure({ ...DEFAULT_SYSTEM_NOTIFICATION_SETTINGS, enabled: false });
