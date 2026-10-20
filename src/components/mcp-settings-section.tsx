@@ -329,7 +329,7 @@ function McpServerCard({
         </span>
       )}
       {server ? (
-        <Settings2 className="size-5 shrink-0 text-dim" aria-hidden="true" />
+        <Settings2 className="size-5 shrink-0 text-dim group-hover:text-foreground" aria-hidden="true" />
       ) : (
         <Plus className="size-5 shrink-0 text-dim group-hover:text-foreground" aria-hidden="true" />
       )}
