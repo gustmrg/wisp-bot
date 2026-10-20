@@ -252,31 +252,49 @@
     background: color-mix(in srgb, #26262c 86%, transparent);
     box-shadow: 0 10px 30px rgba(0, 0, 0, 0.55);
   }
+  /* Every tab keeps the same size whichever is current, so switching tabs never resizes or moves the bar. */
   .mobile-navigation button {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 7px;
-    min-width: 54px;
-    min-height: 46px;
-    padding: 0 16px;
+    display: grid;
+    flex: none;
+    place-items: center;
+    width: 54px;
+    height: 46px;
+    padding: 0;
     border-radius: 999px;
     color: var(--text-dim);
     font-size: 14px;
     font-weight: 600;
+    white-space: nowrap;
   }
   .mobile-navigation button[aria-current="page"] {
+    width: auto;
+    padding: 0 16px;
     background: var(--foreground);
     color: var(--background);
   }
+  .mobile-navigation-tab {
+    display: flex;
+    grid-area: 1 / 1;
+    align-items: center;
+    gap: 7px;
+  }
+  /* The current tab takes the room of the longest name, held by an invisible copy beside the icon, its gap,
+     and a badge's room, so a badge appearing does not resize it either. */
+  .mobile-navigation button[aria-current="page"]::after {
+    content: attr(data-widest);
+    grid-area: 1 / 1;
+    height: 0;
+    padding-left: 36px;
+    overflow: hidden;
+    visibility: hidden;
+  }
   /* Only the current tab shows its name; the others keep it for screen readers. */
-  .mobile-navigation button:not([aria-current="page"]) > span:nth-child(2) {
+  .mobile-navigation button:not([aria-current="page"]) .mobile-navigation-label {
     position: absolute;
     width: 1px;
     height: 1px;
     overflow: hidden;
     clip-path: inset(50%);
-    white-space: nowrap;
   }
   .mobile-navigation svg {
     width: 21px;
@@ -286,7 +304,7 @@
     position: relative;
     display: inline-flex;
   }
-  .mobile-navigation-icon:has(.mobile-navigation-badge) {
+  .mobile-navigation button[aria-current="page"] .mobile-navigation-icon:has(.mobile-navigation-badge) {
     margin-right: 8px;
   }
   .mobile-navigation-badge {
