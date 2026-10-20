@@ -83,6 +83,8 @@ start the real binary.
 | `extraArgs: { "system-prompt-snapshot": "off" }`, then `resume` with a different `append` | The resumed session follows the new prompt (it answered with the new name). |
 | Several turns on one query | The same process and session keep the conversation. |
 | A follow-up sent with `priority: "next"` during a turn | Steers it: the turn made 1 of 3 planned calls, then did what the follow-up asked. Without it, the follow-up waits for the next turn. |
+| The follow-up's `uuid` | A `command_lifecycle` message with `state: "started"` and that `command_uuid` when the turn reads it, and the reply after it carries it as `user_message_uuid`. |
+| `cancelAsyncMessage(uuid)` on a queued message (in the SDK, not its types) | Resolves `true`, and the message never runs. |
 | An image block in a user message | Reaches the model. |
 | `interrupt()` during a reply | The turn ends with `error_during_execution`; the same process takes the next message. |
 | `resume` of a session that no longer exists | An error result (`error_during_execution`). |
@@ -175,8 +177,16 @@ itself checks nothing; its `package.json` names the CLI it was built with
 The prompt stream lives as long as the conversation is active:
 
 - **Messages:** each message, with its images, goes into the prompt stream.
-  One sent while a turn runs goes with `priority: "next"` and steers it, as
-  Pi's steering does.
+  One sent while a turn runs goes with `priority: "next"` and a `uuid`, and
+  steers it, as Pi's steering does.
+  - When Claude Code reports it read the follow-up, the session emits a user
+    `message_start`, from which the conversation agent emits
+    `follow_up_taken`, as with Pi.
+  - At the turn's result, follow-ups it did not read are withdrawn with
+    `cancelAsyncMessage`, so Claude Code does not answer them with a turn of
+    its own; the conversation agent sends them as messages of their own. One
+    Claude Code already started reading cannot be withdrawn, and the turn
+    goes on to answer it.
 - **Stop:** calls `interrupt()`, and the reply is marked cancelled.
 - **Deadline:** the 10-minute request deadline ([ADR 001](001-agent-runtime.md))
   applies to each turn.
@@ -297,11 +307,6 @@ replaces four pieces Wisp would otherwise build:
 Zed's ACP adapter is built on this SDK, adds a dependency between Wisp and it,
 and hides the options this design needs. ACP is worth reconsidering when a
 second external agent, such as Codex, needs the same integration.
-
-## Open for implementation
-
-- Confirm how a steering follow-up shows in the messages, to emit
-  `follow_up_taken`.
 
 ## Consequences
 

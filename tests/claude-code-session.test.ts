@@ -21,6 +21,11 @@ const SESSION = "550e8400-e29b-41d4-a716-446655440000";
 /** A Claude Code process the test drives: it records what it is sent and yields what the test pushes. */
 class FakeProcess implements ClaudeCodeQueryHandle {
   readonly sent: string[] = [];
+  /** Each message as sent, with its priority and uuid. */
+  readonly messages: Array<{ message: { content: unknown }; priority?: string; uuid?: string }> = [];
+  /** The uuids cancelAsyncMessage withdraws; others were already read. */
+  cancellable = new Set<string>();
+  readonly cancelled: string[] = [];
   closed = false;
   interrupts = 0;
   private readonly outbox: unknown[] = [];
@@ -33,6 +38,7 @@ class FakeProcess implements ClaudeCodeQueryHandle {
   ) {
     void (async () => {
       for await (const message of prompt) {
+        this.messages.push(message);
         this.sent.push(String(message.message.content));
         await this.onMessage?.(String(message.message.content));
       }
@@ -57,6 +63,12 @@ class FakeProcess implements ClaudeCodeQueryHandle {
     this.interrupts += 1;
     this.onInterrupt?.();
     return { still_queued: [] };
+  }
+
+  async cancelAsyncMessage(uuid: string): Promise<boolean> {
+    if (!this.cancellable.has(uuid)) return false;
+    this.cancelled.push(uuid);
+    return true;
   }
 
   close(): void {
@@ -156,10 +168,12 @@ describe("ClaudeCodeSession", () => {
     expect(launches).toEqual([{ sessionId: SESSION, resume: false, model: "sonnet" }]);
     expect(events.map(({ type }) => type)).toEqual([
       "agent_start",
+      "message_start",
       "message_update",
       "agent_end",
       "agent_settled",
       "agent_start",
+      "message_start",
       "message_update",
       "agent_end",
       "agent_settled",
@@ -316,6 +330,7 @@ function fakeFallback(answer: "reply" | "wait" = "reply") {
       prompts.push(text);
       const emit = (event: unknown) => listeners.forEach((listener) => listener(event as PiAgentEvent));
       emit({ type: "agent_start" });
+      emit({ type: "message_start", message: { role: "user" } });
       emit({ type: "message_update", text: "from the fallback" });
       if (answer === "wait") await new Promise<void>((resolve) => (release = resolve));
       emit({ type: "agent_end" });
@@ -332,6 +347,96 @@ const signedOut = (process: FakeProcess) =>
     result({ subtype: "error_during_execution", is_error: true, errors: ["Not logged in · Please run /login"] }),
   );
 
+const lifecycle = (uuid: string, state: string) => ({ type: "command_lifecycle", command_uuid: uuid, state });
+const userStarts = (events: PiAgentEvent[]) =>
+  events.filter((event) => event.type === "message_start" && event.message?.role === "user").length;
+
+describe("ClaudeCodeSession steering", () => {
+  it("sends a follow-up to steer the running turn and reports when the turn reads it", async () => {
+    const { session, processes, events } = createSession({ answer: (process) => process.push(delta("working")) });
+    const turn = session.prompt("count slowly");
+    await vi.waitFor(() => expect(processes[0]?.sent).toEqual(["count slowly"]));
+
+    session.steer("stop at two");
+    const process = processes[0]!;
+    await vi.waitFor(() => expect(process.messages).toHaveLength(2));
+    const followUp = process.messages[1]!;
+    expect(followUp).toMatchObject({ priority: "next", message: { content: "stop at two" } });
+    expect(userStarts(events)).toBe(1);
+
+    process.push(lifecycle(followUp.uuid!, "started"), delta("stopping"), result());
+    await turn;
+
+    expect(userStarts(events)).toBe(2);
+    expect(process.cancelled).toEqual([]);
+  });
+
+  it("sends a follow-up that arrived before Claude Code had the message right after it", async () => {
+    let release!: () => void;
+    const loaded = new Promise<void>((resolve) => (release = resolve));
+    const { session, processes } = createSession({
+      answer: () => undefined,
+      // The context policy is read before the message is sent.
+      context: {
+        load: async () => {
+          await loaded;
+          return { policy: DEFAULT_CONTEXT_POLICY, memory: "" };
+        },
+        save: async () => undefined,
+        timeZone: () => "UTC",
+        onRenewed: () => undefined,
+      },
+    });
+
+    const turn = session.prompt("first");
+    session.steer("and then this");
+    release();
+    await vi.waitFor(() => expect(processes[0]?.messages).toHaveLength(2));
+    const process = processes[0]!;
+    expect(process.messages.map(({ priority }) => priority)).toEqual([undefined, "next"]);
+    process.cancellable.add(process.messages[1]!.uuid!);
+    process.push(result());
+    await turn;
+  });
+
+  it("withdraws a follow-up the turn did not read, so it is sent as a message of its own", async () => {
+    const { session, processes, events } = createSession({ answer: () => undefined });
+    const turn = session.prompt("hello");
+    await vi.waitFor(() => expect(processes[0]?.sent).toHaveLength(1));
+    session.steer("one more thing");
+    const process = processes[0]!;
+    await vi.waitFor(() => expect(process.messages).toHaveLength(2));
+    process.cancellable.add(process.messages[1]!.uuid!);
+
+    process.push(delta("hi"), result());
+    await turn;
+
+    expect(process.cancelled).toEqual([process.messages[1]!.uuid]);
+    expect(userStarts(events)).toBe(1);
+  });
+
+  it("goes on to answer a follow-up Claude Code read just as the turn ended", async () => {
+    const { session, processes, events } = createSession({ answer: () => undefined });
+    const turn = session.prompt("hello");
+    await vi.waitFor(() => expect(processes[0]?.sent).toHaveLength(1));
+    session.steer("one more thing");
+    const process = processes[0]!;
+    await vi.waitFor(() => expect(process.messages).toHaveLength(2));
+    const uuid = process.messages[1]!.uuid!;
+    let settled = false;
+    void turn.then(() => (settled = true));
+
+    process.push(delta("hi"), result());
+    await vi.waitFor(() => expect(userStarts(events)).toBe(1));
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(settled).toBe(false);
+
+    process.push(lifecycle(uuid, "started"), delta("and the rest"), result());
+    await turn;
+    expect(userStarts(events)).toBe(2);
+  });
+});
+
 describe("ClaudeCodeSession fallback", () => {
   it("answers a turn Claude Code failed for good on the fallback model, told the latest messages", async () => {
     const backup = fakeFallback();
@@ -341,12 +446,13 @@ describe("ClaudeCodeSession fallback", () => {
 
     expect(events.map(({ type }) => type)).toEqual([
       "agent_start",
+      "message_start",
       "model_fallback",
       "message_update",
       "agent_end",
       "agent_settled",
     ]);
-    expect(events[1]).toEqual({ type: "model_fallback", model: "GPT-5" });
+    expect(events[2]).toEqual({ type: "model_fallback", model: "GPT-5" });
     expect(backup.prompts[0]).toContain("user: earlier question");
     expect(backup.prompts[0]!.endsWith("hello")).toBe(true);
     expect(backup.session.dispose).toHaveBeenCalled();

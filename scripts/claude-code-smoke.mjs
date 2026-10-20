@@ -117,13 +117,14 @@ async function run() {
       events,
       results,
       done,
-      send(content, priority) {
+      send(content, priority, uuid) {
         queue.push({
           type: "user",
           session_id: "",
           parent_tool_use_id: null,
           message: { role: "user", content },
           ...(priority ? { priority } : {}),
+          ...(uuid ? { uuid } : {}),
         });
         wake?.();
       },
@@ -233,9 +234,11 @@ async function run() {
         "Do these one at a time, waiting for each result: call slow with seconds=4, then slow with seconds=4, then slow with seconds=4. Then reply 'finished'.",
       );
       await until(() => calls.length >= 1);
+      const followUp = randomUUID();
       c.send(
         "Change of plan: skip the remaining slow calls, call echo with 'steered', and reply with its result.",
         "next",
+        followUp,
       );
       const first = await c.result(1);
       const second = await c.result(2, 20_000);
@@ -245,6 +248,33 @@ async function run() {
         calls.some((call) => call.name === "echo") && slowCalls < 3 && second === undefined,
         `slow=${slowCalls} reply=${first?.result}`,
       );
+      // The session emits follow_up_taken from either of these.
+      const read = c.events.some(
+        (event) =>
+          (event.type === "command_lifecycle" && event.state === "started" && event.command_uuid === followUp) ||
+          (event.type === "assistant" && event.user_message_uuid === followUp),
+      );
+      check("Claude Code reports when it reads the follow-up", read);
+      c.close();
+    }
+
+    if (wanted("withdraw")) {
+      const calls = [];
+      const c = conversation(workspace, {
+        tools: [],
+        mcpServers: { wisp: { type: "sdk", name: "wisp", instance: wispServer(calls), timeout: 3_900_000 } },
+        allowedTools: ["mcp__wisp__*"],
+      });
+      c.send("Call slow with seconds=3, then reply 'finished'.");
+      await until(() => calls.length >= 1);
+      const queued = randomUUID();
+      // "later" waits for the turn to end, so it is still queued when withdrawn.
+      c.send("Reply 'withdrawn message ran'.", "later", queued);
+      await new Promise((resolve) => setTimeout(resolve, 500));
+      const cancelled = await c.q.cancelAsyncMessage(queued);
+      await c.result(1);
+      const second = await c.result(2, 15_000);
+      check("a queued follow-up can be withdrawn", cancelled === true && second === undefined, `cancelled=${cancelled}`);
       c.close();
     }
 

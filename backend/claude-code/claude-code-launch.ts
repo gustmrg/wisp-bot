@@ -161,7 +161,7 @@ export interface ClaudeCodeImage {
  */
 export function claudeCodeUserMessage(
   text: string,
-  options: { images?: ReadonlyArray<ClaudeCodeImage>; steer?: boolean } = {},
+  options: { images?: ReadonlyArray<ClaudeCodeImage>; steer?: boolean; uuid?: string } = {},
 ) {
   const images = options.images ?? [];
   return {
@@ -181,6 +181,8 @@ export function claudeCodeUserMessage(
         : text,
     },
     ...(options.steer ? { priority: "next" as const } : {}),
+    // Claude Code reports by this ID when it reads the message.
+    ...(options.uuid ? { uuid: options.uuid } : {}),
   };
 }
 

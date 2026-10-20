@@ -20,6 +20,8 @@ export type ClaudeCodeQuery = (params: {
 
 export interface ClaudeCodeQueryHandle extends AsyncIterable<unknown> {
   interrupt(): Promise<unknown>;
+  /** Drops a queued message by its uuid; true when it had not been read yet. Not in the SDK's types. */
+  cancelAsyncMessage?(uuid: string): Promise<unknown>;
   close(): void;
 }
 
@@ -107,6 +109,8 @@ interface RunningProcess {
   send: (message: ReturnType<typeof claudeCodeUserMessage>) => void;
   end: () => void;
   converter: ClaudeCodeEventConverter;
+  /** The uuids of follow-ups sent to steer the running turn that Claude Code has not read yet, oldest first. */
+  steers: string[];
 }
 
 /** A turn from the moment a message is accepted, so a second one or a Stop is handled even before Claude Code starts. */
@@ -118,6 +122,10 @@ interface Turn {
   settle: ((result: ClaudeCodeTurnResult | Error) => void) | undefined;
   /** Resolves when the turn ended, however it ended. */
   finished: Promise<void>;
+  /** Whether Claude Code has the turn's message, so a follow-up can steer it. */
+  steerable: boolean;
+  /** Follow-ups that arrived before Claude Code had the message, sent right after it. */
+  pendingSteers: string[];
 }
 
 /**
@@ -184,13 +192,15 @@ export class ClaudeCodeSession implements RuntimeSession {
     const message = this.notes.length ? `${this.notes.join("\n\n")}\n\n${text}` : text;
     this.notes = [];
     this.emit({ type: "agent_start" });
+    // The turn's own message; each later one is a follow-up the turn read.
+    this.emit({ type: "message_start", message: { role: "user" } });
     try {
       await this.renewIfDue(turn);
-      let result = await this.send(turn, message);
+      let result = await this.send(turn, message, { steerable: true });
       if (isMissingSession(result) && !turn.answered && !turn.aborted) {
         // Claude Code deletes sessions unused for a while; start a new one that knows the latest messages.
         await this.replaceSession();
-        result = await this.send(turn, message);
+        result = await this.send(turn, message, { steerable: true });
       }
       if (!result.ok && !turn.aborted) {
         const answered =
@@ -246,6 +256,30 @@ export class ClaudeCodeSession implements RuntimeSession {
       lastActivityAt: this.state.lastActivityAt,
       tokens: this.state.tokens,
     };
+  }
+
+  /**
+   * Hands a follow-up to the running turn, which reads it before its next
+   * model call (Pi's steering). Claude Code reports when it reads it, and
+   * the session then emits a user `message_start`, as Pi's sessions do.
+   */
+  steer(text: string): void {
+    const turn = this.turn;
+    if (!turn || this.disposed) return;
+    if (this.fallbackSession) {
+      this.fallbackSession.steer?.(text);
+      return;
+    }
+    if (turn.steerable && this.process) this.sendSteer(this.process, text);
+    else turn.pendingSteers.push(text);
+  }
+
+  /** Drops the follow-ups the turn has not read, so they can be sent as messages of their own. */
+  clearQueue(): void {
+    this.fallbackSession?.clearQueue?.();
+    if (this.turn) this.turn.pendingSteers = [];
+    const process = this.process;
+    if (process?.steers.length) void this.withdrawSteers(process);
   }
 
   async abort(): Promise<void> {
@@ -306,8 +340,11 @@ export class ClaudeCodeSession implements RuntimeSession {
     this.listeners.clear();
   }
 
-  /** Sends the turn's message to Claude Code and waits for its result; a stopped turn sends nothing. */
-  private async send(turn: Turn, text: string): Promise<ClaudeCodeTurnResult> {
+  /**
+   * Sends the turn's message to Claude Code and waits for its result; a
+   * stopped turn sends nothing. A steerable message takes follow-ups.
+   */
+  private async send(turn: Turn, text: string, options: { steerable?: boolean } = {}): Promise<ClaudeCodeTurnResult> {
     const stopped: ClaudeCodeTurnResult = {
       sessionId: this.sessionIdValue,
       ok: false,
@@ -326,8 +363,13 @@ export class ClaudeCodeSession implements RuntimeSession {
         resolve();
       };
       process.send(claudeCodeUserMessage(text));
+      if (options.steerable) {
+        turn.steerable = true;
+        for (const followUp of turn.pendingSteers.splice(0)) this.sendSteer(process, followUp);
+      }
     });
     turn.settle = undefined;
+    turn.steerable = false;
     if (outcome instanceof Error) throw outcome;
     return outcome!;
   }
@@ -357,6 +399,7 @@ export class ClaudeCodeSession implements RuntimeSession {
     const process: RunningProcess = {
       handle,
       converter: new ClaudeCodeEventConverter(),
+      steers: [],
       send: (message) => {
         queue.push(message);
         wake?.();
@@ -376,6 +419,7 @@ export class ClaudeCodeSession implements RuntimeSession {
     try {
       for await (const message of process.handle) {
         if (this.process !== process) return;
+        this.takeSteers(process, message);
         const { events, result } = process.converter.convert(message);
         const turn = this.turn;
         if (turn && events.some((event) => event.type === "message_update" || event.type === "tool_execution_start")) {
@@ -385,6 +429,8 @@ export class ClaudeCodeSession implements RuntimeSession {
         if (result) {
           if (result.sessionId) this.sessionIdValue = result.sessionId;
           this.options.onTurnResult?.(result, process.converter);
+          // Claude Code would answer a follow-up the turn did not read with a turn of its own.
+          if (process.steers.length && !(await this.withdrawSteers(process))) continue;
           turn?.settle?.(result);
         }
       }
@@ -402,6 +448,53 @@ export class ClaudeCodeSession implements RuntimeSession {
         true,
       ),
     );
+  }
+
+  private sendSteer(process: RunningProcess, text: string): void {
+    const uuid = randomUUID();
+    process.steers.push(uuid);
+    process.send(claudeCodeUserMessage(text, { steer: true, uuid }));
+  }
+
+  /**
+   * Emits a user `message_start` for each follow-up Claude Code started
+   * reading: it reports a queued message's `command_lifecycle` and stamps
+   * the reply to it with its uuid. Follow-ups are read in order.
+   */
+  private takeSteers(process: RunningProcess, message: unknown): void {
+    if (!process.steers.length || !message || typeof message !== "object") return;
+    const event = message as Record<string, unknown>;
+    const uuid =
+      event.type === "command_lifecycle" && event.state === "started"
+        ? event.command_uuid
+        : event.type === "assistant"
+          ? event.user_message_uuid
+          : undefined;
+    const index = typeof uuid === "string" ? process.steers.indexOf(uuid) : -1;
+    if (index < 0) return;
+    for (const _taken of process.steers.splice(0, index + 1)) {
+      this.emit({ type: "message_start", message: { role: "user" } });
+    }
+  }
+
+  /**
+   * Withdraws the follow-ups Claude Code has not read. Resolves false when
+   * one could not be withdrawn: Claude Code is reading it, so the turn goes
+   * on to answer it.
+   */
+  private async withdrawSteers(process: RunningProcess): Promise<boolean> {
+    let withdrawn = true;
+    for (const uuid of [...process.steers]) {
+      let cancelled = false;
+      try {
+        cancelled = (await process.handle.cancelAsyncMessage?.(uuid)) === true;
+      } catch {
+        // An older Claude Code, or one that already read it.
+      }
+      if (cancelled) process.steers.splice(process.steers.indexOf(uuid), 1);
+      else withdrawn = false;
+    }
+    return withdrawn;
   }
 
   private async replaceSession(): Promise<void> {
@@ -425,11 +518,15 @@ export class ClaudeCodeSession implements RuntimeSession {
     }
     const transcript = await this.options.recentTranscript?.().catch(() => undefined);
     this.emit({ type: "model_fallback", model: fallback.name });
-    // The conversation agent already started and ends this turn.
+    // The conversation agent already started and ends this turn, and has its message.
+    let prompted = false;
     const forward = fallback.session.subscribe((event) => {
-      if (event.type !== "agent_start" && event.type !== "agent_end" && event.type !== "agent_settled") {
-        this.emit(event);
+      if (event.type === "agent_start" || event.type === "agent_end" || event.type === "agent_settled") return;
+      if (event.type === "message_start" && event.message?.role === "user" && !prompted) {
+        prompted = true;
+        return;
       }
+      this.emit(event);
     });
     this.fallbackSession = fallback.session;
     try {
@@ -455,6 +552,8 @@ export class ClaudeCodeSession implements RuntimeSession {
       answered: false,
       settle: undefined,
       finished: new Promise<void>((resolve) => (finish = resolve)),
+      steerable: false,
+      pendingSteers: [],
     };
     this.turn = turn;
     clearTimeout(this.idleTimer);
