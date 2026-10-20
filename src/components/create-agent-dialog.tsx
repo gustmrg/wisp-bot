@@ -44,8 +44,10 @@ interface CreateAgentDialogProps {
     wisp: NewWisp,
     options: { notifyOnUpdatesEnabled: boolean; model: ModelSelection | null },
   ) => Promise<string | null>;
-  /** The button that opens the dialog. */
-  trigger: ReactElement;
+  /** The button that opens the dialog; without it, `open` and `onOpenChange` control it. */
+  trigger?: ReactElement;
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
 }
 
 const STEPS: ReadonlyArray<CreateWispStep> = ["identity", "behavior", "setup"];
@@ -64,8 +66,13 @@ const DEFAULT_WISP: WispSettingsDraft = {
   notifyOnUpdatesEnabled: true,
 };
 
-function CreateAgentDialog({ onCreate, trigger }: CreateAgentDialogProps) {
-  const [open, setOpen] = useState(false);
+function CreateAgentDialog({ onCreate, trigger, open: controlledOpen, onOpenChange }: CreateAgentDialogProps) {
+  const [uncontrolledOpen, setUncontrolledOpen] = useState(false);
+  const open = controlledOpen ?? uncontrolledOpen;
+  function setOpen(nextOpen: boolean) {
+    setUncontrolledOpen(nextOpen);
+    onOpenChange?.(nextOpen);
+  }
   const [step, setStep] = useState<CreateWispStep>("identity");
   const stepRef = useRef<HTMLDivElement>(null);
   const focusStep = useRef<CreateWispStep | null>(null);
@@ -229,7 +236,7 @@ function CreateAgentDialog({ onCreate, trigger }: CreateAgentDialogProps) {
         if (!nextOpen) resetForm();
       }}
     >
-      <DialogTrigger render={trigger} />
+      {trigger ? <DialogTrigger render={trigger} /> : null}
 
       <DialogContent
         mobileFullscreen

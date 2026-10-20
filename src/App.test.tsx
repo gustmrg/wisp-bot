@@ -876,7 +876,8 @@ describe("Mobile workspace", () => {
     await user.click(screen.getByRole("button", { name: "Back to settings" }));
     expect(screen.getByRole("navigation", { name: "Settings sections" })).toBeVisible();
     await user.click(screen.getByRole("button", { name: "Wisps" }));
-    await user.click(screen.getByRole("button", { name: "Create Wisp" }));
+    await user.click(screen.getByRole("button", { name: "Create" }));
+    await user.click(await screen.findByRole("menuitem", { name: "New Wisp" }));
     await user.type(screen.getByRole("textbox", { name: "Name" }), "Travel Planner");
     resize(false);
     expect(screen.getByRole("textbox", { name: "Name" })).toHaveValue("Travel Planner");

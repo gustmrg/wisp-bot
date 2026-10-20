@@ -46,6 +46,6 @@ describe("CircleMemberPicker", () => {
     rerender(<CircleMemberPicker availableWisps={[]} selectedIds={[atlas.id]} onChange={vi.fn()} />);
 
     expect(screen.queryByRole("button", { name: "Remove Atlas" })).not.toBeInTheDocument();
-    expect(screen.getByText("No Wisps yet. You can create an empty circle.")).toBeVisible();
+    expect(screen.getByText("No Wisps yet. Create one to add it here.")).toBeVisible();
   });
 });

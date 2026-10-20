@@ -284,6 +284,15 @@ function Workspace({
                 }
                 return id;
               }}
+              onCreateCircle={async (circle) => {
+                const created = await workspace.createCircle(circle);
+                if (created) {
+                  navigationVersion.current += 1;
+                  if (mobile) setDetailsOpen(false);
+                  setMobilePage("chat");
+                }
+                return created;
+              }}
               onOpenSearch={() => showSearch(true)}
               onOpenSettings={() => showSettings("general")}
               onOpenApprovals={showApprovals}

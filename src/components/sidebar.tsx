@@ -11,11 +11,20 @@ import {
   PlusIcon,
   SearchIcon,
   UserIcon,
+  UsersRoundIcon,
+  WandSparklesIcon,
 } from "lucide-react";
 
-import type { ChatId, ChatListAction, ChatView, ChatViewCollection, NewWisp } from "@/chat-data";
+import type { ChatId, ChatListAction, ChatView, ChatViewCollection, NewCircle, NewWisp } from "@/chat-data";
 import { ChatAvatar } from "@/components/chat-avatar";
 import { CreateAgentDialog } from "@/components/create-agent-dialog";
+import { CreateCircleDialog } from "@/components/create-circle-dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { MobileNavigation } from "@/components/mobile-navigation";
 import { NeedsYou } from "@/components/needs-you";
 import { WispOrbs } from "@/components/wisp-orbs";
@@ -60,6 +69,8 @@ interface SidebarProps {
     wisp: NewWisp,
     options: { notifyOnUpdatesEnabled: boolean; model: ModelSelection | null },
   ) => Promise<string | null>;
+  /** Resolves true once the circle exists; with it, the create button offers a circle as well as a Wisp. */
+  onCreateCircle?: (circle: NewCircle) => Promise<boolean>;
   onOpenSearch: () => void;
   onOpenSettings: () => void;
   /** Opens the mobile Approvals tab. */
@@ -109,6 +120,7 @@ function Sidebar({
   loading = false,
   error,
   onCreate,
+  onCreateCircle,
   onOpenSearch,
   onOpenSettings,
   onOpenApprovals,
@@ -403,20 +415,11 @@ function Sidebar({
                 : "absolute top-[11px] right-2 z-[1]"
           }
         >
-          <CreateAgentDialog
-            onCreate={onCreate}
-            trigger={
-              mobile ? (
-                <Button className="mobile-create-button" type="button" aria-label="Create Wisp">
-                  <PlusIcon aria-hidden="true" />
-                </Button>
-              ) : (
-                <button className={toolButton} type="button" aria-label="Create Wisp" title="Create Wisp">
-                  <PlusIcon aria-hidden="true" />
-                </button>
-              )
-            }
-          />
+          {onCreateCircle ? (
+            <CreateMenu chats={chats} mobile={mobile} onCreate={onCreate} onCreateCircle={onCreateCircle} />
+          ) : (
+            <CreateAgentDialog onCreate={onCreate} trigger={createButton(mobile, "Create Wisp")} />
+          )}
         </div>
 
         {mobile ? (
@@ -456,6 +459,60 @@ function Sidebar({
           />
         )}
       </aside>
+    </>
+  );
+}
+
+function createButton(mobile: boolean, label: string) {
+  return mobile ? (
+    <Button className="mobile-create-button" type="button" aria-label={label}>
+      <PlusIcon aria-hidden="true" />
+    </Button>
+  ) : (
+    <button className={toolButton} type="button" aria-label={label} title={label}>
+      <PlusIcon aria-hidden="true" />
+    </button>
+  );
+}
+
+/** The create button's menu: a new Wisp, or a new circle of the Wisps there are. */
+function CreateMenu({
+  chats,
+  mobile,
+  onCreate,
+  onCreateCircle,
+}: Pick<SidebarProps, "chats" | "onCreate"> & {
+  mobile: boolean;
+  onCreateCircle: NonNullable<SidebarProps["onCreateCircle"]>;
+}) {
+  const [creating, setCreating] = useState<"wisp" | "circle" | null>(null);
+  const wisps = Object.values(chats).flatMap((chat) => (chat.kind === "wisp" ? [chat.wisp] : []));
+  return (
+    <>
+      <DropdownMenu>
+        <DropdownMenuTrigger render={createButton(mobile, "Create")} />
+        <DropdownMenuContent aria-label="Create">
+          <DropdownMenuItem onClick={() => setCreating("wisp")}>
+            <WandSparklesIcon aria-hidden="true" />
+            New Wisp
+          </DropdownMenuItem>
+          <DropdownMenuItem onClick={() => setCreating("circle")}>
+            <UsersRoundIcon aria-hidden="true" />
+            New circle
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+      <CreateAgentDialog
+        open={creating === "wisp"}
+        onOpenChange={(open) => setCreating(open ? "wisp" : null)}
+        onCreate={onCreate}
+      />
+      <CreateCircleDialog
+        open={creating === "circle"}
+        onOpenChange={(open) => setCreating(open ? "circle" : null)}
+        wisps={wisps}
+        onCreate={onCreateCircle}
+      />
     </>
   );
 }
