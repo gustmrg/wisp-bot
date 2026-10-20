@@ -95,6 +95,8 @@ interface ChatPanelProps {
   onLoadNewer: () => void;
   onShowLatest: () => void;
   onOpenDetails: () => void;
+  /** Opens a Wisp's own conversation with its settings, from a mention of it in a circle. */
+  onOpenWisp?: (wispId: string) => void;
   onConfigure?: () => void;
   voice?: VoiceInputSettings;
   onConfigureVoice?: () => void;
@@ -128,6 +130,7 @@ function ChatPanel({
   onLoadNewer,
   onShowLatest,
   onOpenDetails,
+  onOpenWisp,
   onConfigure,
   voice,
   onConfigureVoice,
@@ -360,17 +363,6 @@ function ChatPanel({
           </div>
         </div>
         <div className="flex flex-none items-center gap-2">
-          {chat.kind === "circle" ? (
-            <button
-              className="rounded-md border-0 bg-transparent px-[7px] py-1 text-dim text-sm hover:bg-muted hover:text-foreground"
-              type="button"
-              aria-label={`View circle participants (${members.length})`}
-              title={members.map((member) => member.name).join(", ") || "No Wisps in this circle"}
-              onClick={onOpenDetails}
-            >
-              {members.length} {members.length === 1 ? "Wisp" : "Wisps"}
-            </button>
-          ) : null}
           <Button
             className="size-9 rounded-full border-0 bg-foreground/[0.06] hover:bg-foreground/[0.1] dark:hover:bg-foreground/[0.1]"
             variant="ghost"
@@ -459,6 +451,8 @@ function ChatPanel({
                     dense={message.type === "outgoing" && previous?.type === "outgoing"}
                     author={author}
                     showAuthor={Boolean(author) && previousAuthor !== author?.id}
+                    mentionable={members}
+                    onOpenWisp={onOpenWisp}
                     onAnswer={(answer) => onAnswerPrompt(message.id, answer)}
                     onRetry={() => onRetry(message.id)}
                   />

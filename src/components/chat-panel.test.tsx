@@ -423,9 +423,26 @@ describe("ChatPanel circles", () => {
     expect(screen.getAllByText("Quill")).toHaveLength(1);
     expect(screen.getAllByText("Forge")).toHaveLength(1);
   });
+
+  it("sets apart the members a message mentions, each opening its Wisp, and keeps only the settings button", async () => {
+    const user = userEvent.setup();
+    const onOpenWisp = vi.fn();
+    const crew = circleChatView("crew", [testWisp("quill", { name: "Quill" }), testWisp("forge", { name: "Forge" })]);
+    renderPanelIn(crew, [{ id: "1", type: "outgoing", text: "@quill draft it, then @Forge and @Nobody review" }], {
+      onOpenWisp,
+    });
+
+    // The mention keeps what was typed; a name that is no member stays plain text.
+    expect(screen.queryByRole("button", { name: "@Nobody" })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "@quill" }));
+    await user.click(screen.getByRole("button", { name: "@Forge" }));
+    expect(onOpenWisp.mock.calls).toEqual([["quill"], ["forge"]]);
+    expect(screen.queryByRole("button", { name: /View circle participants/ })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Open circle settings" })).toBeInTheDocument();
+  });
 });
 
-function renderPanelIn(chat: ChatPanelProps["chat"], held: Message[]) {
+function renderPanelIn(chat: ChatPanelProps["chat"], held: Message[], props: Partial<ChatPanelProps> = {}) {
   return render(
     <ChatPanel
       chat={chat}
@@ -442,6 +459,7 @@ function renderPanelIn(chat: ChatPanelProps["chat"], held: Message[]) {
       onRetry={vi.fn()}
       onResolveApproval={vi.fn()}
       onSend={vi.fn()}
+      {...props}
     />,
   );
 }

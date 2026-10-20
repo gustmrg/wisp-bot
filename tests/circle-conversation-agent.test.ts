@@ -8,7 +8,7 @@ import type {
   ConversationAgentFactory,
 } from "../backend/conversation-agent.js";
 import { FakeConversationAgent } from "../backend/fake-conversation-agent.js";
-import { circleRecipients, mentionedMembers } from "../shared/circle-mentions.js";
+import { circleRecipients, mentionedMembers, mentionRanges } from "../shared/circle-mentions.js";
 import type { ConversationAgentEvent, ModelSelection, SendMessageRequest } from "../shared/contracts.js";
 import type { Message } from "../shared/conversations.js";
 
@@ -108,6 +108,15 @@ describe("circle mentions", () => {
       "adam",
       "code",
       "ada",
+    ]);
+  });
+
+  it("finds where each mention is, as typed", () => {
+    const text = "@code reviewer and @Ada, then @Ada again";
+    expect(mentionRanges(text, members).map(({ start, end, memberId }) => [text.slice(start, end), memberId])).toEqual([
+      ["@code reviewer", "code"],
+      ["@Ada", "ada"],
+      ["@Ada", "ada"],
     ]);
   });
 
