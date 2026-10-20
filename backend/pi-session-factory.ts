@@ -13,7 +13,7 @@ import type {
 } from "@earendil-works/pi-coding-agent" with { "resolution-mode": "import" };
 import type { ModelSelection, ThinkingLevel } from "../shared/contracts.js";
 import { WispBackendError } from "./backend-error.js";
-import type { IntegrationToolSource } from "./integration-tool-source.js";
+import type { AgentScope, IntegrationToolSource } from "./integration-tool-source.js";
 import type { JobToolHost } from "./job-tools.js";
 import type { WispToolHost } from "./wisp-tools.js";
 import type { ConversationAgentContext } from "./conversation-agent.js";
@@ -56,7 +56,7 @@ export class SdkPiSessionFactory implements RuntimeSessionFactory {
   private readonly modelRuntime: ModelRuntimeLike;
   private readonly toolSource?: IntegrationToolSource;
   private readonly getImageModel?: () => Promise<ModelSelection | null>;
-  private readonly getFallbackModel?: (conversationId: string) => Promise<ModelSelection | null>;
+  private readonly getFallbackModel?: (wispId: string) => Promise<ModelSelection | null>;
   private readonly builder: WispSessionBuilder;
 
   constructor(
@@ -68,7 +68,7 @@ export class SdkPiSessionFactory implements RuntimeSessionFactory {
     /** Where the Wisp's jobs live; without it, Wisps have no job tools. */
     jobs?: JobToolHost,
     /** The model a Wisp answers with when its own fails for good, or null when it has none. */
-    getFallbackModel?: (conversationId: string) => Promise<ModelSelection | null>,
+    getFallbackModel?: (wispId: string) => Promise<ModelSelection | null>,
     /** Where the person's Wisps live; without it, Wisps have no Wisp tools. */
     wisps?: WispToolHost,
   ) {
@@ -79,10 +79,10 @@ export class SdkPiSessionFactory implements RuntimeSessionFactory {
     this.builder = new WispSessionBuilder({ authorizationBroker, toolSource, jobs, wisps });
   }
 
-  async getToolRevision(conversationId: string): Promise<string | null> {
+  async getToolRevision(scope: AgentScope): Promise<string | null> {
     if (!this.toolSource) return null;
     try {
-      return (await this.toolSource.getSnapshot(conversationId)).revision;
+      return (await this.toolSource.getSnapshot(scope)).revision;
     } catch {
       return null;
     }
@@ -164,7 +164,7 @@ export class SdkPiSessionFactory implements RuntimeSessionFactory {
     const fallback = new ModelFallback({
       pi: await import("@earendil-works/pi-ai"),
       resolve: async () => {
-        const choice = await this.getFallbackModel?.(context.conversationId);
+        const choice = await this.getFallbackModel?.(context.wispId);
         return choice ? this.resolveModel(choice) : null;
       },
       onFallback: (model) => {

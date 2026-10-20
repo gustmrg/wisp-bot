@@ -95,6 +95,7 @@ describe("tool policy", () => {
     });
     const action = {
       conversationId: "one",
+      wispId: "one",
       toolCallId: "linear-1",
       toolName: "linear_update_issue",
       category: "external_write" as const,
@@ -155,6 +156,7 @@ describe("tool policy", () => {
     });
     const authorization = broker.authorize({
       conversationId: "one",
+      wispId: "one",
       toolCallId: "tool-1",
       toolName: "write",
       category: "create_file",
@@ -228,6 +230,7 @@ describe("tool policy", () => {
     });
     const authorization = broker.authorize({
       conversationId: "one",
+      wispId: "one",
       toolCallId: "tool-1",
       toolName: "save_skill",
       category: "save_skill",
@@ -270,6 +273,7 @@ describe("tool policy", () => {
       });
       const expired = broker.authorize({
         conversationId: "one",
+        wispId: "one",
         toolCallId: "tool-expire",
         toolName: "edit",
         category: "modify_file",
@@ -282,6 +286,7 @@ describe("tool policy", () => {
 
       const blocked = broker.authorize({
         conversationId: "one",
+        wispId: "one",
         toolCallId: "tool-block",
         toolName: "edit",
         category: "modify_file",
@@ -321,6 +326,7 @@ describe("tool policy", () => {
     const create = (conversationId: string, toolCallId: string) =>
       broker.authorize({
         conversationId,
+        wispId: conversationId,
         toolCallId,
         toolName: "write",
         category: "create_file",
@@ -356,6 +362,7 @@ describe("tool policy", () => {
     });
     const integration = broker.authorize({
       conversationId: "one",
+      wispId: "one",
       toolCallId: "tool-linear",
       toolName: "linear_update_issue",
       category: "external_write",
@@ -375,6 +382,7 @@ describe("tool policy", () => {
     await store.save({ autoReview: false, rules: [] });
     const file = broker.authorize({
       conversationId: "one",
+      wispId: "one",
       toolCallId: "tool-edit",
       toolName: "edit",
       category: "modify_file",
@@ -408,6 +416,7 @@ describe("tool policy", () => {
     const rememberApproval = vi.fn(async () => undefined);
     const call = {
       conversationId: "one",
+      wispId: "one",
       toolCallId: "tool-mcp",
       toolName: "mcp_test_search",
       category: "integration_call" as const,
@@ -469,6 +478,7 @@ describe("tool policy", () => {
     });
     const asked = broker.authorize({
       conversationId: "one",
+      wispId: "one",
       toolCallId: "tool-mcp",
       toolName: "mcp_test_search",
       category: "integration_call",
@@ -510,6 +520,7 @@ describe("tool policy", () => {
     });
     const action = broker.authorize({
       conversationId: "one",
+      wispId: "one",
       toolCallId: "tool-1",
       toolName: "edit",
       category: "modify_file",
@@ -545,6 +556,7 @@ describe("tool policy", () => {
     });
     const action = broker.authorize({
       conversationId: "one",
+      wispId: "one",
       toolCallId: "tool-1",
       toolName: "edit",
       category: "modify_file",
@@ -569,6 +581,7 @@ describe("tool policy", () => {
     const broker = new ToolAuthorizationBroker(store, (event) => events.push(event), { selectWindowId: () => 7 });
     const action = (toolName: string, category: "modify_file" | "integration_call" | "save_skill") => ({
       conversationId: "one",
+      wispId: "one",
       toolCallId: `call-${toolName}`,
       toolName,
       category,
@@ -630,6 +643,7 @@ describe("tool policy", () => {
     };
     const authorization = broker.authorize({
       conversationId: "one",
+      wispId: "one",
       toolCallId: "tool-1",
       toolName: "schedule_job",
       category: "schedule_job",
@@ -660,6 +674,7 @@ describe("tool policy", () => {
       await expect(
         broker.authorize({
           conversationId: "one",
+          wispId: "one",
           toolCallId: "tool-2",
           toolName: "schedule_job",
           category: "schedule_job",
@@ -688,6 +703,7 @@ describe("tool policy", () => {
     expect(evaluateToolPolicy(store.get(), "manage_wisp", "workspace_path")).toBe("block");
     const authorization = broker.authorize({
       conversationId: "one",
+      wispId: "one",
       toolCallId: "tool-1",
       toolName: "create_wisp",
       category: "manage_wisp",
@@ -718,6 +734,7 @@ describe("tool policy", () => {
       await expect(
         broker.authorize({
           conversationId: "one",
+          wispId: "one",
           toolCallId: "tool-2",
           toolName: "delete_wisp",
           category: "manage_wisp",
@@ -740,6 +757,7 @@ describe("tool policy", () => {
     const authorization = broker.authorize(
       {
         conversationId: "one",
+        wispId: "one",
         toolCallId: "tool-abort",
         toolName: "write",
         category: "create_file",
@@ -768,6 +786,7 @@ describe("tool policy", () => {
     );
     const authorization = broker.authorize({
       conversationId: "one",
+      wispId: "one",
       toolCallId: "tool-delete",
       toolName: "write",
       category: "create_file",
@@ -866,6 +885,7 @@ describe("tool policy", () => {
     const rememberIntegration = vi.fn(async () => undefined);
     const asked = broker.authorize({
       conversationId: "one",
+      wispId: "one",
       toolCallId: "tool-linear",
       toolName: "linear_update_issue",
       category: "external_write",
@@ -886,6 +906,46 @@ describe("tool policy", () => {
     expect(rememberIntegration).toHaveBeenCalledTimes(1);
     expect(rememberApproval).not.toHaveBeenCalled();
     expect(events.at(-1)).toMatchObject({ type: "tool_approval_resolved", decision: "allow_integration" });
+  });
+
+  it("applies the acting Wisp's permissions in a circle and names it on the card", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "wisp-policy-circle-"));
+    const store = new ToolPolicyStore(path.join(directory, "policy.json"));
+    await store.save({ autoReview: false, rules: [] });
+    const events: ConversationAgentEvent[] = [];
+    const wispPolicies = new WispToolPolicyStore((wispId) => path.join(directory, wispId));
+    await wispPolicies.save("atlas", { files: { modify_file: "allow" }, allowEverything: false });
+    const broker = new ToolAuthorizationBroker(store, (event) => events.push(event), {
+      selectWindowId: () => 1,
+      createId: () => "approval-1",
+      wispPolicies,
+    });
+    const edit = (wispId: string) =>
+      broker.authorize({
+        conversationId: "circle",
+        wispId,
+        toolCallId: `edit-${wispId}`,
+        toolName: "edit",
+        category: "modify_file",
+        scope: { kind: "workspace_path", value: "plan.md" },
+        summary: "Modify plan.md",
+      });
+
+    await expect(edit("atlas")).resolves.toBeUndefined();
+    const asked = edit("nova");
+    expect(events.at(-1)).toMatchObject({
+      type: "tool_approval_requested",
+      conversationId: "circle",
+      request: { conversationId: "circle", wispId: "nova" },
+    });
+    await broker.resolve(
+      { approvalId: "approval-1", conversationId: "circle", toolCallId: "edit-nova", decision: "allow_always" },
+      1,
+    );
+    await expect(asked).resolves.toBeUndefined();
+    // The lasting Allow is Nova's, not the circle's.
+    expect(wispPolicies.get("nova").files).toEqual({ modify_file: "allow" });
+    expect(wispPolicies.get("circle").files).toEqual({});
   });
 
   it("reports a Wisp's permissions with the app-wide defaults it falls back to", async () => {

@@ -161,6 +161,7 @@ export function createJobTools(options: JobToolOptions): ToolDefinition[] {
     authorizationBroker.authorize(
       {
         conversationId: context.conversationId,
+        wispId: context.wispId,
         toolCallId,
         toolName: "schedule_job",
         category: "schedule_job",

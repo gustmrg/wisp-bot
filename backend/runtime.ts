@@ -219,9 +219,7 @@ export async function createBackendRuntime(options: BackendRuntimeOptions): Prom
     {
       selectWindowId: options.selectApprovalWindowId,
       audit: new ToolAuditStore(path.join(dataDirectory, "tool-audit.jsonl")),
-      wispPolicies: new WispToolPolicyStore(
-        (conversationId) => conversationRepository.getAgentContext(conversationId).configDirectory,
-      ),
+      wispPolicies: new WispToolPolicyStore((wispId) => conversationRepository.getAgentContext(wispId).configDirectory),
     },
   );
   const conversationRepository = new ConversationRepository({ dataDirectory, userName: options.userName });
@@ -266,8 +264,8 @@ export async function createBackendRuntime(options: BackendRuntimeOptions): Prom
   });
   const toolSource = new CompositeIntegrationToolSource([pluginService, mcpService, executionService]);
   // Read when a model fails, so a changed choice applies without rebuilding the session.
-  const fallbackModel = async (conversationId: string) => {
-    const { modelOverride, fallback } = conversationRepository.getAgentContext(conversationId);
+  const fallbackModel = async (wispId: string) => {
+    const { modelOverride, fallback } = conversationRepository.getAgentContext(wispId);
     return modelService.getFallbackModel(modelOverride ?? null, fallback ?? null);
   };
   const piSessionFactory = new SdkPiSessionFactory(
@@ -291,10 +289,10 @@ export async function createBackendRuntime(options: BackendRuntimeOptions): Prom
       recentTranscript(await conversationRepository.getMessagePage({ conversationId, page: "latest" })),
     searchHistory: async (conversationId, query) =>
       formatHistorySearch(conversationId, await conversationRepository.searchMessages(query)),
-    webSearch: (conversationId) => pluginService.searchesWithClaude(conversationId),
+    webSearch: (wispId) => pluginService.searchesWithClaude(wispId),
     // A Pi session of its own, so the conversation's Pi session and identity stay as they are.
     fallback: async (context) => {
-      const choice = await fallbackModel(context.conversationId);
+      const choice = await fallbackModel(context.wispId);
       if (!choice) return null;
       const model = piSessionFactory.resolveModel(choice);
       // Each fallback turn starts fresh in a folder of its own, which the session report reads.

@@ -9,6 +9,7 @@ import { SANDBOX_IMAGE } from "../backend/container-manager.js";
 import { containerPath, ExecutionService, PROCESS_TOOL, RUN_COMMAND_TOOL } from "../backend/execution-service.js";
 import { WORKSPACE_SETTINGS_FILE } from "../backend/workspace-service.js";
 import type { ContainerRuntimeStatus } from "../shared/execution.js";
+import { ownConversation } from "../backend/integration-tool-source.js";
 
 const directories: string[] = [];
 
@@ -79,7 +80,7 @@ type RunCommand = {
 };
 
 async function runCommandTool(service: ExecutionService): Promise<RunCommand> {
-  const snapshot = await service.getSnapshot("atlas");
+  const snapshot = await service.getSnapshot(ownConversation("atlas"));
   return snapshot.definitions.find(({ name }) => name === RUN_COMMAND_TOOL) as unknown as RunCommand;
 }
 
@@ -95,34 +96,40 @@ describe("ExecutionService", () => {
       runtime: { available: true, name: "docker", version: "29.0.0" },
       container: "absent",
     });
-    await expect(service.getSnapshot("atlas")).resolves.toMatchObject({ definitions: [], activeNames: [] });
-    await expect(service.getSnapshot("circle")).resolves.toMatchObject({ definitions: [], activeNames: [] });
+    await expect(service.getSnapshot(ownConversation("atlas"))).resolves.toMatchObject({
+      definitions: [],
+      activeNames: [],
+    });
+    await expect(service.getSnapshot({ conversationId: "circle", wispId: "atlas" })).resolves.toMatchObject({
+      definitions: [],
+      activeNames: [],
+    });
   });
 
   it("offers run_command once commands run in a container, and a new revision when the image changes", async () => {
     const { service, manager } = await setup();
     await service.save({ conversationId: "atlas", mode: "container", image: null, localNetwork: false });
-    const first = await service.getSnapshot("atlas");
+    const first = await service.getSnapshot(ownConversation("atlas"));
     expect(first.activeNames).toEqual([RUN_COMMAND_TOOL, PROCESS_TOOL]);
     expect(first.definitions.map(({ name }) => name)).toEqual([RUN_COMMAND_TOOL, PROCESS_TOOL]);
     // Settings changes drop the old container so the next command gets one made from them.
     expect(manager.remove).toHaveBeenCalledWith("s1");
 
     await service.save({ conversationId: "atlas", mode: "container", image: "node:22", localNetwork: false });
-    expect((await service.getSnapshot("atlas")).revision).not.toBe(first.revision);
+    expect((await service.getSnapshot(ownConversation("atlas"))).revision).not.toBe(first.revision);
   });
 
   it("blocks the local network unless allowed, and recreates the container when that changes", async () => {
     const { service, manager } = await setup();
     await service.save({ conversationId: "atlas", mode: "container", image: null, localNetwork: false });
-    const blocked = await service.getSnapshot("atlas");
+    const blocked = await service.getSnapshot(ownConversation("atlas"));
     const description = (blocked.definitions[0] as unknown as { description: string }).description;
     expect(description).toContain("Local and private network addresses are blocked");
     manager.remove.mockClear();
 
     await service.save({ conversationId: "atlas", mode: "container", image: null, localNetwork: true });
     expect(manager.remove).toHaveBeenCalledWith("s1");
-    const open = await service.getSnapshot("atlas");
+    const open = await service.getSnapshot(ownConversation("atlas"));
     expect(open.revision).not.toBe(blocked.revision);
     expect((open.definitions[0] as unknown as { description: string }).description).toContain(
       "the local network are reachable",
@@ -132,7 +139,7 @@ describe("ExecutionService", () => {
   it("offers no tool while no container program is available", async () => {
     const { service } = await setup({ runtime: { available: false, message: "Install Docker" } });
     await service.save({ conversationId: "atlas", mode: "container", image: null, localNetwork: false });
-    await expect(service.getSnapshot("atlas")).resolves.toMatchObject({ activeNames: [] });
+    await expect(service.getSnapshot(ownConversation("atlas"))).resolves.toMatchObject({ activeNames: [] });
   });
 
   it("refuses images that could be read as options", async () => {
@@ -265,7 +272,7 @@ describe("process tool", () => {
   async function processSetup() {
     const context = await setup({ gitHubToken: async () => "ghp_secret" });
     await context.service.save({ conversationId: "atlas", mode: "container", image: null, localNetwork: false });
-    const snapshot = await context.service.getSnapshot("atlas");
+    const snapshot = await context.service.getSnapshot(ownConversation("atlas"));
     const tool = snapshot.definitions.find(({ name }) => name === PROCESS_TOOL) as unknown as ProcessTool;
     const text = async (params: Record<string, unknown>) => (await tool.execute("call", params)).content[0]!.text;
     return { ...context, tool, text };

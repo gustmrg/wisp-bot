@@ -7,6 +7,7 @@ import { PluginService } from "../backend/plugin-service.js";
 import type { PluginAdapter, PluginToolSpec } from "../backend/plugin-types.js";
 import type { EncryptionService } from "../backend/encrypted-credential-store.js";
 import { isLocalHost, parsePluginEndpoint } from "../backend/plugin-validation.js";
+import { ownConversation } from "../backend/integration-tool-source.js";
 
 const directories: string[] = [];
 afterEach(async () => {
@@ -52,7 +53,7 @@ async function setup() {
   };
   const call = () =>
     service
-      .getTools("one")
+      .getTools(ownConversation("one"))
       .find(({ name }) => name === "home_assistant_list_entities")!
       .execute("tool-1", {}, undefined, undefined, {} as never);
   return { service, dataDirectory, execute, testConnection, grant, call };

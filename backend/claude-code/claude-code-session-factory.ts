@@ -54,7 +54,7 @@ export interface ClaudeCodeSessionFactoryOptions {
   /** Deletes what Claude Code keeps for a workspace; injected by tests. */
   purgeProject?: (executable: string, workspaceDirectory: string, env: Record<string, string>) => Promise<void>;
   /** Whether the Wisp searches with Claude Code's own WebSearch instead of a plugin's web_search. */
-  webSearch?: (conversationId: string) => boolean;
+  webSearch?: (wispId: string) => boolean;
   /** A session on the Wisp's fallback model for a turn Claude Code failed for good (ADR 021), or null. */
   fallback?: (context: ConversationAgentContext) => Promise<{ name: string; session: RuntimeSession } | null>;
 }
@@ -173,7 +173,7 @@ export class ClaudeCodeSessionFactory {
     }
     const model = this.resolveModel(selection);
     const plan = await this.options.builder.plan(context, job);
-    const searchesWithClaude = () => this.options.webSearch?.(context.conversationId) ?? false;
+    const searchesWithClaude = () => this.options.webSearch?.(context.wispId) ?? false;
     const tools = await this.options.builder.tools(context, plan, {
       ...(job ? { job } : {}),
       searchHistory: (query) => this.options.searchHistory?.(context.conversationId, query),

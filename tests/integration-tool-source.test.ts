@@ -12,6 +12,7 @@ import {
   BUILTIN_TOOL_NAMES,
 } from "../shared/tool-catalog.js";
 import {
+  ownConversation,
   CompositeIntegrationToolSource,
   snapshotRevision,
   type IntegrationToolSource,
@@ -149,7 +150,7 @@ describe("CompositeIntegrationToolSource", () => {
       }),
       sourceSnapshot({ activeNames: [], revision: "rev-b" }),
     ]);
-    const snapshot = await composite.getSnapshot("wisp-1");
+    const snapshot = await composite.getSnapshot(ownConversation("wisp-1"));
     expect(snapshot.definitions).toHaveLength(1);
     expect(snapshot.activeNames).toEqual(["mcp_a_search"]);
     expect(snapshot.metadata).toHaveLength(1);
@@ -166,13 +167,13 @@ describe("CompositeIntegrationToolSource", () => {
         ],
       }),
     ]);
-    const snapshot = await composite.getSnapshot("wisp-1");
+    const snapshot = await composite.getSnapshot(ownConversation("wisp-1"));
     expect(snapshot.skills?.map(({ name, description }) => [name, description])).toEqual([
       ["github", "First"],
       ["jira", "Jira"],
     ]);
     expect(
-      (await new CompositeIntegrationToolSource([sourceSnapshot({})]).getSnapshot("wisp-1")).skills,
+      (await new CompositeIntegrationToolSource([sourceSnapshot({})]).getSnapshot(ownConversation("wisp-1"))).skills,
     ).toBeUndefined();
   });
 
@@ -182,18 +183,18 @@ describe("CompositeIntegrationToolSource", () => {
       sourceSnapshot({ definitions: [definition], activeNames: ["mcp_a_search"] }),
       sourceSnapshot({ definitions: [definition], activeNames: ["mcp_a_search"] }),
     ]);
-    await expect(composite.getSnapshot("wisp-1")).rejects.toThrow(/collision/);
+    await expect(composite.getSnapshot(ownConversation("wisp-1"))).rejects.toThrow(/collision/);
   });
 
   it("changes the composite revision when a source revision changes even with identical names", async () => {
     const composite = new CompositeIntegrationToolSource([
       sourceSnapshot({ activeNames: ["mcp_a_search"], revision: "rev-1" }),
     ]);
-    const before = await composite.getSnapshot("wisp-1");
+    const before = await composite.getSnapshot(ownConversation("wisp-1"));
     const changed = new CompositeIntegrationToolSource([
       sourceSnapshot({ activeNames: ["mcp_a_search"], revision: "rev-2" }),
     ]);
-    const after = await changed.getSnapshot("wisp-1");
+    const after = await changed.getSnapshot(ownConversation("wisp-1"));
     expect(before.revision).not.toBe(after.revision);
   });
 

@@ -115,7 +115,7 @@ export class WispSessionBuilder {
     // Trusted snapshot: definitions, safe metadata, active names, and revision.
     // Pi's registry is a permanent allowlist, so a snapshot change requires a
     // session rebuild rather than an in-place definition swap.
-    const snapshot = this.toolSource ? await this.toolSource.getSnapshot(context.conversationId) : undefined;
+    const snapshot = this.toolSource ? await this.toolSource.getSnapshot(context) : undefined;
     const runsCommands = (snapshot?.activeNames ?? []).includes(RUN_COMMAND_TOOL);
     // Skills that come with granted integrations; the Wisp's own skill of the same name wins.
     const integrationSkills = snapshot?.skills ?? [];
@@ -213,7 +213,7 @@ export class WispSessionBuilder {
     // prompt even when definitions themselves did not change.
     const runToolNames = (job?.runTools ?? []).map(({ name }) => name);
     const getAllowedTools = async (): Promise<string[]> => {
-      const current = this.toolSource ? await this.toolSource.getSnapshot(context.conversationId) : undefined;
+      const current = this.toolSource ? await this.toolSource.getSnapshot(context) : undefined;
       registerDynamicToolMetadata(current?.metadata ?? []);
       const allowed = [
         ...BUILTIN_TOOL_NAMES,
@@ -486,6 +486,7 @@ function createSkillTools(
         await authorizationBroker.authorize(
           {
             conversationId: context.conversationId,
+            wispId: context.wispId,
             toolCallId,
             toolName: "save_skill",
             category: "save_skill",
@@ -681,6 +682,7 @@ function secureTool<TDefinition extends ToolDefinition<any, any, any>>(
         await authorizationBroker.authorize(
           {
             conversationId: context.conversationId,
+            wispId: context.wispId,
             toolCallId: args[0],
             toolName: definition.name,
             category,

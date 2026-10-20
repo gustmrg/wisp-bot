@@ -22,7 +22,7 @@ import {
 import { writeFileAtomically } from "./atomic-file.js";
 import { WispBackendError } from "./backend-error.js";
 import { EncryptedCredentialStore, type EncryptionService } from "./encrypted-credential-store.js";
-import type { IntegrationToolSource, IntegrationToolSnapshot } from "./integration-tool-source.js";
+import type { AgentScope, IntegrationToolSource, IntegrationToolSnapshot } from "./integration-tool-source.js";
 import { snapshotRevision } from "./integration-tool-source.js";
 import { PLUGIN_ADAPTERS } from "./plugins/index.js";
 import { OAuthRedirectReceiver, type SignInBrowser } from "./oauth-redirect.js";
@@ -84,7 +84,8 @@ export interface PluginServiceOptions {
   dataDirectory: string;
   encryption: EncryptionService;
   authorizationBroker: Pick<ToolAuthorizationBroker, "authorize">;
-  resolveWisp: (conversationId: string) => string;
+  /** The storage ID that keys a Wisp's grants. */
+  resolveWisp: (wispId: string) => string;
   adapters?: ReadonlyArray<PluginAdapter>;
   /** Opens the system browser for a sign-in on this computer. */
   openExternal?: (url: string) => Promise<void>;
@@ -624,8 +625,10 @@ export class PluginService implements PluginToolSource, IntegrationToolSource {
     });
   }
 
-  getTools(conversationId: string): ToolDefinition[] {
-    const sessionId = this.options.resolveWisp(conversationId);
+  /** The bundled tools, run for the Wisp and with approval cards in the conversation `scope` names. */
+  getTools(scope: AgentScope): ToolDefinition[] {
+    const { wispId } = scope;
+    const sessionId = this.options.resolveWisp(wispId);
     const bindings = new Map<string, PluginToolBinding>();
     for (const adapter of this.adapters) {
       for (const tool of adapter.tools) {
@@ -647,9 +650,9 @@ export class PluginService implements PluginToolSource, IntegrationToolSource {
           if (isSharedWebTool(tool.name)) {
             signal?.throwIfAborted();
             this.assertLive();
-            if (this.options.resolveWisp(conversationId) !== sessionId)
+            if (this.options.resolveWisp(wispId) !== sessionId)
               throw new WispBackendError("tool_blocked", "This Wisp no longer has access to the plugin.");
-            const active = (await this.getActiveBindings(conversationId)).find(
+            const active = (await this.getActiveBindings(wispId)).find(
               ({ tool: candidate }) => candidate.name === tool.name,
             );
             signal?.throwIfAborted();
@@ -660,15 +663,7 @@ export class PluginService implements PluginToolSource, IntegrationToolSource {
             content: [
               {
                 type: "text",
-                text: await this.execute(
-                  conversationId,
-                  sessionId,
-                  binding.pluginId,
-                  binding.tool,
-                  toolCallId,
-                  params,
-                  signal,
-                ),
+                text: await this.execute(scope, sessionId, binding.pluginId, binding.tool, toolCallId, params, signal),
               },
             ],
             details: {},
@@ -679,10 +674,10 @@ export class PluginService implements PluginToolSource, IntegrationToolSource {
   }
 
   /** Snapshot adapter: bundled definitions are static; only the active set varies. */
-  async getSnapshot(conversationId: string): Promise<IntegrationToolSnapshot> {
+  async getSnapshot(scope: AgentScope): Promise<IntegrationToolSnapshot> {
     this.assertLive();
-    const definitions = this.getTools(conversationId);
-    const bindings = await this.getActiveBindings(conversationId);
+    const definitions = this.getTools(scope);
+    const bindings = await this.getActiveBindings(scope.wispId);
     const activeNames = [...new Set(bindings.map(({ tool }) => tool.name))];
     return {
       definitions,
@@ -703,18 +698,18 @@ export class PluginService implements PluginToolSource, IntegrationToolSource {
       // Choosing Claude Code's search changes what a Claude Code session offers, so it rebuilds.
       revision: snapshotRevision([
         ...bindings.map(({ pluginId, tool }) => `${pluginId}:${tool.name}`),
-        ...(this.searchesWithClaude(conversationId) ? [`${CLAUDE_WEB_SEARCH}:web_search`] : []),
+        ...(this.searchesWithClaude(scope.wispId) ? [`${CLAUDE_WEB_SEARCH}:web_search`] : []),
       ]),
     };
   }
 
-  async getActiveToolNames(conversationId: string): Promise<string[]> {
-    return [...new Set((await this.getActiveBindings(conversationId)).map(({ tool }) => tool.name))];
+  async getActiveToolNames(wispId: string): Promise<string[]> {
+    return [...new Set((await this.getActiveBindings(wispId)).map(({ tool }) => tool.name))];
   }
 
-  private async getActiveBindings(conversationId: string): Promise<PluginToolBinding[]> {
+  private async getActiveBindings(wispId: string): Promise<PluginToolBinding[]> {
     this.assertLive();
-    const sessionId = this.options.resolveWisp(conversationId);
+    const sessionId = this.options.resolveWisp(wispId);
     if (
       !this.adapters.some((adapter) => this.state.enabled[adapter.id] && this.access(sessionId, adapter.id) !== "none")
     )
@@ -727,7 +722,7 @@ export class PluginService implements PluginToolSource, IntegrationToolSource {
       configured = new Set();
     }
     this.assertLive();
-    if (this.options.resolveWisp(conversationId) !== sessionId) return [];
+    if (this.options.resolveWisp(wispId) !== sessionId) return [];
     const usable = (pluginId: PluginId) =>
       this.state.enabled[pluginId] && configured.has(pluginId) && this.access(sessionId, pluginId) !== "none";
     // Each shared web tool is backed by exactly one provider: the Wisp's choice, or the
@@ -758,7 +753,7 @@ export class PluginService implements PluginToolSource, IntegrationToolSource {
   }
 
   private async execute(
-    conversationId: string,
+    scope: AgentScope,
     sessionId: string,
     pluginId: PluginId,
     tool: PluginToolSpec,
@@ -773,28 +768,29 @@ export class PluginService implements PluginToolSource, IntegrationToolSource {
     let dispatched = false;
     try {
       combinedSignal.throwIfAborted();
-      this.assertAccess(conversationId, sessionId, pluginId, tool.access);
+      this.assertAccess(scope.wispId, sessionId, pluginId, tool.access);
       const params = structuredClone(input);
       if (tool.access === "write") {
         const allowed = this.alwaysAllowed(sessionId, pluginId);
         await this.options.authorizationBroker.authorize(
           {
-            conversationId,
+            conversationId: scope.conversationId,
+            wispId: scope.wispId,
             toolCallId,
             toolName: tool.name,
             category: "external_write",
             scope: { kind: "integration", value: PLUGIN_CATALOG.find(({ id }) => id === pluginId)!.name },
             summary: tool.summarize(params),
             alwaysAllowed: allowed === "all" || (Array.isArray(allowed) && allowed.includes(tool.name)),
-            rememberApproval: () => this.alwaysAllow(conversationId, sessionId, pluginId, tool.name),
-            rememberIntegration: () => this.alwaysAllow(conversationId, sessionId, pluginId, "all"),
+            rememberApproval: () => this.alwaysAllow(scope.wispId, sessionId, pluginId, tool.name),
+            rememberIntegration: () => this.alwaysAllow(scope.wispId, sessionId, pluginId, "all"),
           },
           combinedSignal,
         );
       }
       const connection = await this.connectionFor(pluginId);
       combinedSignal.throwIfAborted();
-      this.assertAccess(conversationId, sessionId, pluginId, tool.access);
+      this.assertAccess(scope.wispId, sessionId, pluginId, tool.access);
       if (!connection) throw new WispBackendError("configuration_required", "This plugin is not connected.");
       dispatched = true;
       const result = await tool.execute(connection.credential, params, combinedSignal, ...endpointArgument(connection));
@@ -815,13 +811,8 @@ export class PluginService implements PluginToolSource, IntegrationToolSource {
     }
   }
 
-  private assertAccess(
-    conversationId: string,
-    sessionId: string,
-    pluginId: PluginId,
-    required: "read" | "write",
-  ): void {
-    if (this.options.resolveWisp(conversationId) !== sessionId)
+  private assertAccess(wispId: string, sessionId: string, pluginId: PluginId, required: "read" | "write"): void {
+    if (this.options.resolveWisp(wispId) !== sessionId)
       throw new WispBackendError("tool_blocked", "This Wisp no longer has access to the plugin.");
     const access = this.access(sessionId, pluginId);
     if (!this.state.enabled[pluginId] || access === "none" || (required === "write" && access !== "write"))
@@ -839,9 +830,9 @@ export class PluginService implements PluginToolSource, IntegrationToolSource {
   }
 
   /** Lets this Wisp run one write tool, or all of them, without asking; refused once write access is gone. */
-  private alwaysAllow(conversationId: string, sessionId: string, pluginId: PluginId, tool: string): Promise<void> {
+  private alwaysAllow(wispId: string, sessionId: string, pluginId: PluginId, tool: string): Promise<void> {
     return this.enqueue(async () => {
-      this.assertAccess(conversationId, sessionId, pluginId, "write");
+      this.assertAccess(wispId, sessionId, pluginId, "write");
       const current = this.alwaysAllowed(sessionId, pluginId);
       if (current === "all") return;
       const next = structuredClone(this.state);
@@ -856,8 +847,8 @@ export class PluginService implements PluginToolSource, IntegrationToolSource {
    * Whether the Wisp searches with Claude Code's own web search (ADR 026),
    * which its Claude Code sessions offer in place of a plugin's web_search.
    */
-  searchesWithClaude(conversationId: string): boolean {
-    return this.explicitWebProviders(this.options.resolveWisp(conversationId))?.search === CLAUDE_WEB_SEARCH;
+  searchesWithClaude(wispId: string): boolean {
+    return this.explicitWebProviders(this.options.resolveWisp(wispId))?.search === CLAUDE_WEB_SEARCH;
   }
 
   private explicitWebProviders(sessionId: string): WispWebProviders | undefined {

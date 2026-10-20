@@ -16,9 +16,9 @@ import { PluginService } from "../backend/plugin-service.js";
 
 function toToolSource(pluginTools: PluginToolSource): IntegrationToolSource {
   return {
-    async getSnapshot(conversationId) {
-      const definitions = pluginTools.getTools(conversationId);
-      const activeNames = await pluginTools.getActiveToolNames(conversationId);
+    async getSnapshot(scope) {
+      const definitions = pluginTools.getTools(scope);
+      const activeNames = await pluginTools.getActiveToolNames(scope.wispId);
       return { definitions, metadata: [], activeNames, revision: snapshotRevision(activeNames) };
     },
   };

@@ -7,6 +7,8 @@ import type { ToolActionCategory, ToolPolicyBehavior } from "../shared/tool-poli
 export interface ToolAuditEvent {
   actionId: string;
   conversationId: string;
+  /** The Wisp acting, when it is not the conversation's own (ADR 011). */
+  wispId?: string;
   toolCallId: string;
   category: ToolActionCategory;
   scope: string;

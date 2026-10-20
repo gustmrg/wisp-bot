@@ -1,5 +1,6 @@
 import type { ModelSelection } from "../../shared/contracts.js";
 import type { ConversationAgentContext } from "../conversation-agent.js";
+import type { AgentScope } from "../integration-tool-source.js";
 import type { JobSessionFactory } from "../job-runner.js";
 import type { RuntimeJobSession, RuntimeModel, RuntimeSession, RuntimeSessionFactory } from "../runtime-session.js";
 import type { JobSessionSpec } from "../wisp-session-plan.js";
@@ -40,8 +41,8 @@ export class RoutingSessionFactory implements RuntimeSessionFactory, JobSessionF
       : this.pi.createJobSession(context, selection, job);
   }
 
-  getToolRevision(conversationId: string): Promise<string | null> {
-    return this.pi.getToolRevision(conversationId);
+  getToolRevision(scope: AgentScope): Promise<string | null> {
+    return this.pi.getToolRevision(scope);
   }
 
   sameRuntime(current: ModelSelection, next: ModelSelection): boolean {

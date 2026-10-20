@@ -95,9 +95,9 @@ import {
 /** Adapts the legacy sync plugin tool source into the async snapshot source. */
 function toToolSource(pluginTools: PluginToolSource): IntegrationToolSource {
   return {
-    async getSnapshot(conversationId) {
-      const definitions = pluginTools.getTools(conversationId);
-      const activeNames = await pluginTools.getActiveToolNames(conversationId);
+    async getSnapshot(scope) {
+      const definitions = pluginTools.getTools(scope);
+      const activeNames = await pluginTools.getActiveToolNames(scope.wispId);
       return { definitions, metadata: [], activeNames, revision: snapshotRevision(activeNames) };
     },
   };
@@ -494,6 +494,7 @@ describe("SdkPiSessionFactory", () => {
     expect(authorize).toHaveBeenLastCalledWith(
       {
         conversationId: "one",
+        wispId: "one",
         toolCallId: "tool-3",
         toolName: "save_skill",
         category: "save_skill",
@@ -705,7 +706,10 @@ describe("SdkPiSessionFactory", () => {
     expect(sdk.session.setActiveToolsByName).toHaveBeenLastCalledWith(builtins);
     session.dispose();
 
-    await factory.create({ ...context, conversationId: "coordinator" }, { providerId: "provider", modelId: "model" });
+    await factory.create(
+      { ...context, conversationId: "coordinator", wispId: "coordinator" },
+      { providerId: "provider", modelId: "model" },
+    );
     expect(sdk.createAgentSession).toHaveBeenLastCalledWith(
       expect.objectContaining({ tools: [...builtins, "web_search", "linear_get_issue"] }),
     );

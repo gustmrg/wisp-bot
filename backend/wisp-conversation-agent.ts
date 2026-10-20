@@ -348,7 +348,7 @@ export class WispConversationAgent implements ConversationAgent {
   private async ensureToolsCurrent(): Promise<void> {
     const session = this.session;
     if (!session || !this.appliedSelection) return;
-    const revision = await this.sessionFactory.getToolRevision(this.context.conversationId).catch(() => null);
+    const revision = await this.sessionFactory.getToolRevision(this.context).catch(() => null);
     if (!revision || revision === session.toolRevision) return;
     if (!session.isIdle) return;
     await this.enqueueModelMutation(async () => {
