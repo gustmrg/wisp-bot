@@ -184,6 +184,14 @@ function ExecutionPanel({ conversationId }: { conversationId: string }) {
                 : "To use private repositories, add the GitHub plugin in Settings → Plugins and give this Wisp access to it."}
             </FieldDescription>
           </Field>
+          <Field>
+            <FieldTitle>GitLab</FieldTitle>
+            <FieldDescription>
+              {view.gitLabInstance
+                ? `git reaches ${view.gitLabInstance} through the server, which adds the GitLab plugin's token, so the Wisp can clone and push whatever the token allows without ever seeing it.`
+                : "To use private projects on GitLab.com or your own GitLab, add the GitLab plugin in Settings → Plugins and give this Wisp access to it."}
+            </FieldDescription>
+          </Field>
         </>
       ) : null}
       <FormStatus error={error} notice={notice} />
