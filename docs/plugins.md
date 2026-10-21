@@ -250,9 +250,16 @@ ignore. Access, approvals, and the **Enabled** switch work as for GitHub.
 
 Wisps with access also see a **gitlab** skill: identify projects by their full
 path with subgroups, call pull requests merge requests (`!123`), never merge,
-approve, or run pipelines unless asked. git in a Wisp's container does not use
-the GitLab token yet, so it can clone only public projects; Wisps change other
-projects through GitLab's commit and branch tools.
+approve, or run pipelines unless asked, and make code changes in the Wisp's
+container when it can run commands.
+
+In a Wisp's container, git over HTTPS to the instance goes through the same
+gateway as github.com, which adds the GitLab token, so the Wisp can clone and
+push the private projects the token covers without seeing it. The token needs
+access to the repositories as well as the MCP server. An instance on your local
+network is reached this way even when the Wisp's local network is blocked, for
+git only. Instances whose certificate is not signed by a public certificate
+authority are not supported yet.
 
 ## Atlassian
 

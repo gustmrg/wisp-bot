@@ -14,7 +14,7 @@ import {
   type WispMcpAccessView,
   mcpServerAliasPrefix,
 } from "../shared/mcp.js";
-import { GITHUB_MCP_PRESET } from "../shared/mcp-presets/index.js";
+import { MCP_PRESETS, presetInstanceAddress } from "../shared/mcp-presets/index.js";
 import {
   describeMcpAlias,
   registerDynamicToolMetadata,
@@ -620,8 +620,9 @@ export class McpService {
   /**
    * The git hosts of the plugins a Wisp has access to, with each plugin's
    * token, so git in its container acts as the same account: GitHub's token
-   * from an enabled GitHub connection. Empty when the Wisp has no such access
-   * or the token cannot be read.
+   * from an enabled GitHub connection, and GitLab's with its instance from an
+   * enabled GitLab one. Empty when the Wisp has no such access or the tokens
+   * cannot be read.
    */
   async gitForges(wispId: string): Promise<GitForges> {
     if (this.disposed) return {};
@@ -631,18 +632,23 @@ export class McpService {
     } catch {
       return {};
     }
-    const prefix = GITHUB_MCP_PRESET.auth.mode === "header" ? GITHUB_MCP_PRESET.auth.header.valuePrefix : "";
+    const forges: GitForges = {};
     for (const server of Object.values(this.state.servers)) {
-      if (server.preset !== "github" || !server.enabled || server.authMode !== "header") continue;
+      if (server.preset !== "github" && server.preset !== "gitlab") continue;
+      if (forges[server.preset] || !server.enabled || server.authMode !== "header") continue;
       if (this.access(sessionId, server.serverId) === "none") continue;
+      const preset = MCP_PRESETS[server.preset];
       const secret = await this.secrets.read(server.serverId).catch(() => undefined);
       if (secret?.type !== "header") continue;
+      const prefix = preset.auth.mode === "header" ? preset.auth.header.valuePrefix : "";
       const token = secret.headerValue.startsWith(prefix)
         ? secret.headerValue.slice(prefix.length)
         : secret.headerValue;
-      if (token) return { github: { token } };
+      if (!token) continue;
+      if (server.preset === "github") forges.github = { token };
+      else forges.gitlab = { upstream: presetInstanceAddress(preset, server.endpoint), token };
     }
-    return {};
+    return forges;
   }
 
   dispose(): void {

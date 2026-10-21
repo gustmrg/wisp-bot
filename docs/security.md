@@ -151,10 +151,13 @@ only way out is an egress proxy that refuses private, loopback, link-local and
 other non-public addresses after resolving them itself. Commands run without approval cards: the container is
 the boundary, a Block rule for `container_command` stops them all, and the
 audit log records each one without its text. Commands that would wipe the
-workspace are refused. The GitHub token never enters the container: git
-reaches github.com through a gateway in the egress proxy that carries only
-git's own protocol and adds the token there, so a Wisp can clone and push what
-the token allows but cannot read it or call the GitHub API with it. A misled Wisp can send its
+workspace are refused. The GitHub and GitLab tokens never enter the
+container: git reaches github.com and the GitLab plugin's instance through a
+gateway in the egress proxy that carries only git's own protocol and adds the
+token there, so a Wisp can clone and push what the token allows but cannot read
+it or call the GitHub or GitLab API with it. A GitLab instance on the local
+network is reached through the gateway even when the Wisp's local network is
+blocked, for git only. A misled Wisp can send its
 workspace contents over the network, so secrets do not belong in a workspace.
 
 ## Prohibited patterns

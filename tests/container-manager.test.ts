@@ -272,6 +272,31 @@ describe("ContainerManager", () => {
     ]);
   });
 
+  it("sends the GitLab plugin's instance to the gateway, and gives the gateway its token", async () => {
+    const { cli, manager, spec } = await setup();
+    const git = { gitlab: { upstream: "https://gitlab.example.invalid/gitlab", token: "glpat_secret" } };
+    const running = manager.exec(spec, "git fetch", "/workspace", { onData: () => undefined, git });
+    await finishNext(cli);
+    await running;
+
+    const stream = cli.streams[0]!;
+    expect(stream.args.slice(0, stream.args.indexOf("-w"))).toEqual([
+      "exec",
+      "-e",
+      "GIT_CONFIG_COUNT=2",
+      "-e",
+      "GIT_CONFIG_KEY_0=url.http://wisp-egress:3129/github/.insteadOf",
+      "-e",
+      "GIT_CONFIG_VALUE_0=https://github.com/",
+      "-e",
+      "GIT_CONFIG_KEY_1=url.http://wisp-egress:3129/gitlab/.insteadOf",
+      "-e",
+      "GIT_CONFIG_VALUE_1=https://gitlab.example.invalid/gitlab/",
+    ]);
+    expect(JSON.stringify(stream.args)).not.toContain("glpat_secret");
+    expect(gatewayCalls(cli, manager)).toEqual([{ address: "172.30.1.2", forges: git }]);
+  });
+
   it("tells the gateway again only when the token or the proxy changed", async () => {
     const { cli, manager, spec } = await setup();
     const run = async (gitToken?: string) => {

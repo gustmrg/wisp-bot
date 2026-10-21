@@ -49,9 +49,12 @@ interface Proxy {
 
 /**
  * Starts the real proxy script with Node; `allow` lets the test reach its own
- * loopback server, and the git gateway sends to `gitUpstream` instead of github.com.
+ * loopback server, the git gateway sends to `gitUpstream` instead of github.com,
+ * and `insecureUpstreams` lets the test give it a GitLab on plain HTTP loopback.
  */
-async function startProxy(options: { allow?: string; gitUpstream?: string } = {}): Promise<Proxy> {
+async function startProxy(
+  options: { allow?: string; gitUpstream?: string; insecureUpstreams?: boolean } = {},
+): Promise<Proxy> {
   const controlName = `wisp-egress-test-${process.pid}-${proxies.length}`;
   const env = {
     PATH: process.env.PATH,
@@ -60,6 +63,7 @@ async function startProxy(options: { allow?: string; gitUpstream?: string } = {}
     WISP_EGRESS_CONTROL: controlName,
     ...(options.allow ? { WISP_EGRESS_ALLOW: options.allow } : {}),
     ...(options.gitUpstream ? { WISP_GIT_UPSTREAM: options.gitUpstream } : {}),
+    ...(options.insecureUpstreams ? { WISP_GIT_INSECURE_UPSTREAMS: "1" } : {}),
   };
   const script = path.join(directory, "proxy.cjs");
   const child = spawn(process.execPath, [script], { env, stdio: ["ignore", "pipe", "inherit"] });
@@ -214,7 +218,7 @@ describe("egress proxy to an allowed address", () => {
 describe("git gateway", () => {
   let proxy: Proxy;
   beforeAll(async () => {
-    proxy = await startProxy({ gitUpstream: `http://127.0.0.1:${targetPort}` });
+    proxy = await startProxy({ gitUpstream: `http://127.0.0.1:${targetPort}`, insecureUpstreams: true });
   });
 
   async function send(
@@ -239,6 +243,7 @@ describe("git gateway", () => {
     ["GET", "/github/owner/../info/refs?service=git-upload-pack"],
     ["GET", "/github/a/b/c.git/info/refs?service=git-upload-pack"],
     ["GET", "/owner/repo.git/info/refs?service=git-upload-pack"],
+    // GitLab only for a Wisp the server gave an instance for.
     ["GET", "/gitlab/owner/repo.git/info/refs?service=git-upload-pack"],
     ["GET", "/constructor/owner/repo.git/info/refs?service=git-upload-pack"],
     ["POST", "/github/graphql"],
@@ -290,6 +295,59 @@ describe("git gateway", () => {
     );
   });
 
+  describe("to a GitLab instance", () => {
+    const gitlab = (token: string, upstream = `http://127.0.0.1:${targetPort}/gitlab`) =>
+      JSON.stringify({ address: "127.0.0.1", forges: { gitlab: { upstream, token } } });
+
+    it("sends a project under subgroups to the instance's path, with the token as oauth2", async () => {
+      await expect(proxy.control(gitlab("glpat-fake"))).resolves.toBe(0);
+      const answer = await send("/gitlab/group/sub/project.git/info/refs?service=git-upload-pack");
+      expect(answer.status).toBe(200);
+      const seen = JSON.parse(answer.text) as { path: string; headers: Record<string, string> };
+      expect(seen.path).toBe("/gitlab/group/sub/project.git/info/refs?service=git-upload-pack");
+      expect(seen.headers.authorization).toBe(`Basic ${Buffer.from("oauth2:glpat-fake").toString("base64")}`);
+    });
+
+    it("keeps GitHub without a token while it carries GitLab", async () => {
+      await expect(proxy.control(gitlab("glpat-fake"))).resolves.toBe(0);
+      const answer = await send("/github/owner/repo.git/info/refs?service=git-upload-pack");
+      expect((JSON.parse(answer.text) as { headers: Record<string, string> }).headers.authorization).toBeUndefined();
+    });
+
+    it.each([
+      "/gitlab/project.git/info/refs?service=git-upload-pack",
+      "/gitlab/group/-/project.git/info/refs?service=git-upload-pack",
+      "/gitlab/group/project/-/merge_requests",
+      "/gitlab/api/v4/projects",
+    ])("refuses %s", async (pathname) => {
+      await expect(proxy.control(gitlab("glpat-fake"))).resolves.toBe(0);
+      expect((await send(pathname)).status).toBe(403);
+    });
+
+    it("keeps a moved project's redirect on the gateway", async () => {
+      await expect(proxy.control(gitlab("glpat-fake", `http://127.0.0.1:${targetPort}`))).resolves.toBe(0);
+      const answer = await send("/gitlab/old/project.git/info/refs?service=git-upload-pack");
+      expect(answer.headers.get("location")).toBe(
+        `http://127.0.0.1:${proxy.gitPort}/gitlab/new/project.git/info/refs?service=git-upload-pack`,
+      );
+    });
+
+    it.each([
+      ["no instance", { token: "x" }],
+      ["an instance with credentials", { token: "x", upstream: "https://user:pass@gitlab.example.invalid" }],
+      ["an instance with a query", { token: "x", upstream: "https://gitlab.example.invalid/?a=1" }],
+      ["an address that is not a URL", { token: "x", upstream: "gitlab.example.invalid" }],
+    ])("refuses %s", async (_, entry) => {
+      await expect(proxy.control(JSON.stringify({ address: "127.0.0.1", forges: { gitlab: entry } }))).resolves.toBe(1);
+    });
+
+    it("refuses a plain HTTP instance unless tests allow it", async () => {
+      const strict = await startProxy();
+      await expect(strict.control(gitlab("x", "http://gitlab.example.invalid"))).resolves.toBe(1);
+      await expect(strict.control(gitlab("x", "https://gitlab.example.invalid/gitlab"))).resolves.toBe(0);
+    });
+  });
+
   it("refuses control messages it cannot use", async () => {
     await expect(proxy.control("not json")).resolves.toBe(1);
     await expect(proxy.control(JSON.stringify({ address: "wisp-egress", forges: {} }))).resolves.toBe(1);
@@ -323,12 +381,16 @@ describe("git through the gateway", () => {
   beforeAll(async () => {
     root = await mkdtemp(path.join(os.tmpdir(), "wisp-git-gateway-"));
     const projects = path.join(root, "projects");
-    await mkdir(path.join(projects, "owner"), { recursive: true });
-    const bare = path.join(projects, "owner", "repo.git");
-    await run("git", ["init", "--bare", "-b", "main", bare]);
-    await run("git", ["-C", bare, "config", "http.receivepack", "true"]);
+    for (const project of ["owner/repo.git", "group/sub/project.git"]) {
+      const bare = path.join(projects, project);
+      await mkdir(path.dirname(bare), { recursive: true });
+      await run("git", ["init", "--bare", "-b", "main", bare]);
+      await run("git", ["-C", bare, "config", "http.receivepack", "true"]);
+    }
     fakeGitHub = http.createServer((request, response) => {
-      const expected = `Basic ${Buffer.from(`x-access-token:${token}`).toString("base64")}`;
+      // GitHub's user name for a token on the GitHub repository, GitLab's on the GitLab project.
+      const user = request.url!.startsWith("/group/") ? "oauth2" : "x-access-token";
+      const expected = `Basic ${Buffer.from(`${user}:${token}`).toString("base64")}`;
       if (request.headers.authorization !== expected) {
         response.writeHead(401, { "www-authenticate": 'Basic realm="GitHub"' }).end();
         return;
@@ -372,7 +434,10 @@ describe("git through the gateway", () => {
       backend.on("close", () => response.end());
     });
     await new Promise<void>((resolve) => fakeGitHub.listen(0, "127.0.0.1", resolve));
-    proxy = await startProxy({ gitUpstream: `http://127.0.0.1:${(fakeGitHub.address() as net.AddressInfo).port}` });
+    proxy = await startProxy({
+      gitUpstream: `http://127.0.0.1:${(fakeGitHub.address() as net.AddressInfo).port}`,
+      insecureUpstreams: true,
+    });
   });
 
   afterAll(async () => {
@@ -380,9 +445,17 @@ describe("git through the gateway", () => {
     await rm(root, { recursive: true, force: true });
   });
 
-  /** git as a Wisp's container runs it: github.com goes to the gateway, and there is no credential to find. */
+  /**
+   * git as a Wisp's container runs it: github.com and the GitLab instance go
+   * to the gateway, and there is no credential to find.
+   */
   function git(cwd: string, ...args: string[]) {
-    return run("git", ["-c", `url.http://127.0.0.1:${proxy.gitPort}/github/.insteadOf=https://github.com/`, ...args], {
+    const gateway = `http://127.0.0.1:${proxy.gitPort}`;
+    const rewrites = [
+      `url.${gateway}/github/.insteadOf=https://github.com/`,
+      `url.${gateway}/gitlab/.insteadOf=https://gitlab.example.invalid/`,
+    ];
+    return run("git", [...rewrites.flatMap((rewrite) => ["-c", rewrite]), ...args], {
       cwd,
       env: {
         PATH: process.env.PATH,
@@ -413,6 +486,26 @@ describe("git through the gateway", () => {
     // The remote keeps its github.com address; only the gateway knows where it goes.
     expect((await git(work, "config", "remote.origin.url")).stdout.trim()).toBe("https://github.com/owner/repo.git");
     await git(root, "clone", "https://github.com/owner/repo.git", "again");
+  });
+
+  it("clones and pushes a GitLab project under subgroups with the GitLab token", async () => {
+    const upstream = `http://127.0.0.1:${(fakeGitHub.address() as net.AddressInfo).port}`;
+    await expect(
+      proxy.control(JSON.stringify({ address: "127.0.0.1", forges: { gitlab: { upstream, token } } })),
+    ).resolves.toBe(0);
+    await git(root, "clone", "https://gitlab.example.invalid/group/sub/project.git", "lab");
+    const lab = path.join(root, "lab");
+    await writeFile(path.join(lab, "README.md"), "hello\n");
+    await git(lab, "add", "README.md");
+    await git(lab, "commit", "-m", "Add a readme");
+    await git(lab, "push", "origin", "HEAD:main");
+
+    const bare = path.join(root, "projects", "group", "sub", "project.git");
+    expect((await run("git", ["-C", bare, "log", "--oneline"])).stdout).toContain("Add a readme");
+    // Without GitHub's token, the GitHub repository is refused.
+    await expect(git(root, "clone", "https://github.com/owner/repo.git", "no-github")).rejects.toThrow(
+      /Authentication failed|could not read Username|401/,
+    );
   });
 
   it("fails without the token", async () => {
