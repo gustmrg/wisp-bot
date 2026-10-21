@@ -43,7 +43,7 @@ input. It is a setting of its own and does not need commands.**
   accessibility snapshot for AI (`page.ariaSnapshot({ mode: "ai" })`), whose
   `[ref=eN]` names the elements the next action uses, cut at 40,000
   characters and marked as untrusted. A screenshot is an image for models that
-  take images.
+  take images, and is saved in the workspace for the Wisp to show.
 - **The engine:** Playwright (`playwright-core` 1.64.0) and its own headless
   Chromium shell, so the two always match. They are installed in a browser
   image built on the server from a Dockerfile in the code, like the sandbox
@@ -98,8 +98,8 @@ input. It is a setting of its own and does not need commands.**
   field that the page sends without a submit. Credentials and payment details
   belong in a field only when the user gave them for that site, which the
   system prompt says. Every action is in the tool audit log.
-- Screenshots reach the model but are not shown in the conversation yet
-  (SWE-177).
+- Screenshots are saved in the workspace under `browser-screenshots/`, so the
+  Wisp can show them in its reply ([ADR 029](029-files-in-replies.md)).
 
 ## Deferred
 

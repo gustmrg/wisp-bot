@@ -6,7 +6,7 @@ import { WispBackendError } from "../backend/backend-error.js";
 import type { EncryptionService } from "../backend/encrypted-credential-store.js";
 import type { HandlerRouter } from "../backend/handlers/guarded-handlers.js";
 import { registerRuntimeHandlers } from "../backend/handlers/register-runtime-handlers.js";
-import { parseConversationRequest } from "../backend/validators.js";
+import { parseConversationRequest, parseReadConversationMediaRequest } from "../backend/validators.js";
 import { createBackendRuntime, disposeWithin, type BackendRuntime } from "../backend/runtime.js";
 import type { StructuredLogger } from "../backend/structured-logger.js";
 import { startAdminSocket, type AdminCommand, type AdminHandler } from "./admin.js";
@@ -189,6 +189,7 @@ export async function createWispServer(options: WispServerOptions): Promise<Wisp
       ...(options.webRoot ? { webRoot: options.webRoot } : {}),
       uploadWorkspaceFile: ({ conversationId, name, size, content }) =>
         runtime.workspace.receive(parseConversationRequest({ conversationId }).conversationId, { name, size }, content),
+      openConversationMedia: (query) => runtime.media.open(parseReadConversationMediaRequest(query)),
       logger: options.logger,
     });
     // No limit on a whole request, so a large upload over a slow link can finish;

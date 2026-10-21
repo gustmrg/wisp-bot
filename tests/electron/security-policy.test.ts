@@ -96,6 +96,9 @@ describe("Electron renderer security policy", () => {
     expect(production).not.toContain("script-src 'self' 'unsafe-inline'");
     expect(production).not.toContain("ws:");
     expect(production).not.toMatch(/(?:default|script)-src \*/);
+    // HTML files a Wisp shows are previewed in a frame of the app's own page, and media play from blobs.
+    expect(production).toContain("frame-src 'self'");
+    expect(production).toContain("media-src blob:");
     const development = contentSecurityPolicy(true);
     expect(development).toContain("script-src 'self' 'unsafe-inline'");
     expect(development).toContain("ws://127.0.0.1:5173");

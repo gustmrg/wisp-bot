@@ -1,10 +1,10 @@
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { BROWSER_TOOL, BrowserService, sensitiveAction } from "../backend/browser-service.js";
+import { BROWSER_TOOL, BrowserService, SCREENSHOT_DIRECTORY, sensitiveAction } from "../backend/browser-service.js";
 import type { AttachedContainerProcess } from "../backend/container-cli.js";
 import { ownConversation } from "../backend/integration-tool-source.js";
 import { evaluateToolPolicy } from "../backend/tool-authorization-broker.js";
@@ -98,7 +98,7 @@ async function setup(
     manager: driver.manager,
     runtime: { status: async () => options.runtime ?? { available: true, name: "docker", version: "29.0.0" } },
   });
-  return { service, authorize, ...driver };
+  return { service, authorize, wisp, ...driver };
 }
 
 type BrowserTool = {
@@ -255,6 +255,39 @@ describe("BrowserService", () => {
     });
     expect(unseen.content).toHaveLength(1);
     expect(unseen.content[0]!.text).toContain("cannot see images");
+  });
+
+  it("saves each screenshot in the workspace, so the Wisp can show it to the user", async () => {
+    const { service, wisp } = await setup({
+      answer: () => ({ ok: true, result: { ...PAGE, snapshot: undefined, image: "aW1n" } }),
+    });
+    const tool = await browserTool(service);
+
+    const result = await tool.execute("call-1", { action: "screenshot" }, undefined, undefined, {
+      model: { input: ["text"] },
+    });
+    const saved = /<media src="(browser-screenshots\/screenshot-[^"]+\.jpg)" \/>/.exec(result.content[0]!.text!)?.[1];
+    expect(saved).toBeDefined();
+    expect(await readFile(path.join(wisp.workspaceDirectory, saved!), "utf8")).toBe("img");
+  });
+
+  it("still returns a screenshot it cannot save", async () => {
+    const { service, wisp } = await setup({
+      answer: () => ({ ok: true, result: { ...PAGE, snapshot: undefined, image: "aW1n" } }),
+    });
+    const outside = await mkdtemp(path.join(os.tmpdir(), "wisp-outside-"));
+    directories.push(outside);
+    await mkdir(wisp.workspaceDirectory, { recursive: true });
+    // A folder replaced by a link out of the workspace is not written through.
+    await symlink(outside, path.join(wisp.workspaceDirectory, SCREENSHOT_DIRECTORY));
+    const tool = await browserTool(service);
+
+    const result = await tool.execute("call-1", { action: "screenshot" }, undefined, undefined, {
+      model: { input: ["text", "image"] },
+    });
+    expect(result.content[0]!.text).toContain("could not be saved in the workspace");
+    expect(result.content[1]).toEqual({ type: "image", data: "aW1n", mimeType: "image/jpeg" });
+    expect(await readdir(outside)).toEqual([]);
   });
 
   it("reports the driver's errors without Playwright's call names", async () => {

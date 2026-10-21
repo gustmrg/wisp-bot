@@ -5,6 +5,8 @@ import remarkBreaks from "remark-breaks";
 import remarkGfm from "remark-gfm";
 
 import { cn } from "@/lib/utils";
+import { withMediaImages } from "../../shared/media";
+import { MessageMedia } from "@/components/message-media";
 import { MENTION_ATTRIBUTE, remarkWispMentions, WispMention, type WispMentions } from "@/components/wisp-mention";
 
 const markdownComponents: Components = {
@@ -48,7 +50,8 @@ const markdownComponents: Components = {
   h6: ({ node: _node, ...props }) => (
     <h6 className="mb-1 mt-2 text-base font-semibold first:mt-0 last:mb-0" {...props} />
   ),
-  img: ({ node: _node, ...props }) => <img className="max-w-full rounded-lg" {...props} />,
+  // Workspace files a Wisp shows become images, players or file cards.
+  img: ({ node: _node, src, alt }) => <MessageMedia src={typeof src === "string" ? src : undefined} alt={alt} />,
   ol: ({ node: _node, ...props }) => (
     <ol className="my-1.5 ml-5 list-decimal space-y-0.5 first:mt-0 last:mb-0" {...props} />
   ),
@@ -95,7 +98,7 @@ function MarkdownView({ text, mentions }: { text: string; mentions?: WispMention
   }, [mentions]);
   return (
     <ReactMarkdown remarkPlugins={plugins} components={components}>
-      {text}
+      {withMediaImages(text)}
     </ReactMarkdown>
   );
 }

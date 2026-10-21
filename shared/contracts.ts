@@ -42,6 +42,7 @@ import type {
   UpdateWispRequest,
   WispsView,
 } from "./conversations.js";
+import type { ConversationMedia, ReadConversationMediaRequest } from "./media.js";
 import type { JobRequest, JobRunsView, JobsView } from "./jobs.js";
 import type {
   RemoteAccessPairing,
@@ -205,6 +206,7 @@ export const WISP_IPC_CHANNELS = {
   openWorkspaceFolder: "wisp:workspace:open",
   openSkillsFolder: "wisp:workspace:open-skills",
   attachWorkspaceFiles: "wisp:workspace:attach",
+  readConversationMedia: "wisp:media:read",
   getStorageSummary: "wisp:storage:summary",
   listStorageDirectory: "wisp:storage:list",
   prepareStorageCleanup: "wisp:storage:prepare-cleanup",
@@ -427,6 +429,7 @@ export type BackendErrorCode =
   | "model_unavailable"
   | "approval_expired"
   | "tool_blocked"
+  | "too_large"
   | "secure_storage_unavailable"
   | "unsupported"
   | "unavailable";
@@ -854,6 +857,8 @@ export interface WispApi {
     request: ConversationRequest,
     options?: AttachWorkspaceFilesOptions,
   ): Promise<BackendResult<AttachWorkspaceFilesResult>>;
+  /** A workspace file a Wisp's message shows, fetched by the app so it is shown in the conversation. */
+  readConversationMedia(request: ReadConversationMediaRequest): Promise<BackendResult<ConversationMedia>>;
   /** Space used by every workspace and archived conversation on the active connection. */
   getStorageSummary(request: StorageSummaryRequest): Promise<BackendResult<StorageSummary>>;
   /** One page of a workspace folder's entries, largest first. */

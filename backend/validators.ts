@@ -1,4 +1,5 @@
 import type { JobRequest } from "../shared/jobs.js";
+import type { ReadConversationMediaRequest } from "../shared/media.js";
 import { isContextPolicy, withPolicyDefaults, type ContextRequest } from "../shared/context-policy.js";
 import {
   isThinkingLevel,
@@ -133,6 +134,25 @@ export function parseImportSkillRequest(value: unknown): ImportSkillRequest {
 export function parseConversationRequest(value: unknown): ConversationRequest {
   const request = asRecord(value);
   return { conversationId: parseId(request.conversationId) };
+}
+
+const MAX_MEDIA_PATH_LENGTH = 4096;
+
+export function parseReadConversationMediaRequest(value: unknown): ReadConversationMediaRequest {
+  const request = asRecord(value);
+  const { path, maxBytes } = request;
+  if (typeof path !== "string" || !path.trim() || path.length > MAX_MEDIA_PATH_LENGTH || path.includes("\0")) {
+    throw invalidRequest();
+  }
+  if (maxBytes !== undefined && (typeof maxBytes !== "number" || !Number.isSafeInteger(maxBytes) || maxBytes < 0)) {
+    throw invalidRequest();
+  }
+  return {
+    conversationId: parseId(request.conversationId),
+    messageId: parseId(request.messageId),
+    path,
+    ...(maxBytes === undefined ? {} : { maxBytes }),
+  };
 }
 
 export function parseSetWorkspaceQuotaRequest(value: unknown): SetWorkspaceQuotaRequest {

@@ -19,11 +19,14 @@ import { copyText } from "@/lib/clipboard";
 import { cn } from "@/lib/utils";
 import { AttachmentChips } from "@/components/attachment-chips";
 import { MarkdownView } from "@/components/markdown-view";
+import { MediaSourceProvider } from "@/components/message-media";
 import { MentionedText, type WispMentions } from "@/components/wisp-mention";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 
 interface MessageViewProps {
   message: Message;
+  /** The conversation the message is in, so the files a Wisp's reply shows can be fetched. */
+  conversationId?: string;
   dense?: boolean;
   /** In a circle, the Wisp that wrote an incoming message, named above it when `showAuthor` is set. */
   author?: Wisp;
@@ -85,6 +88,7 @@ function MessageTools({
 
 function MessageView({
   message,
+  conversationId,
   dense = false,
   author,
   showAuthor = false,
@@ -210,7 +214,15 @@ function MessageView({
           {outgoing ? (
             <OutgoingText text={message.text} mentions={mentions} />
           ) : (
-            <IncomingText reveal={reveal} mentions={mentions} />
+            <MediaSourceProvider
+              value={
+                conversationId && message.id
+                  ? { conversationId, messageId: message.id, ready: message.status !== "streaming" }
+                  : null
+              }
+            >
+              <IncomingText reveal={reveal} mentions={mentions} />
+            </MediaSourceProvider>
           )}
         </div>
         <MessageTools

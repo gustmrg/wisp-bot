@@ -171,7 +171,7 @@ export async function createBackend(host: BackendHost): Promise<Backend> {
     registerAuthorizedHandlers(
       ipcMain,
       authorize,
-      RUNTIME_OPERATIONS.map((operation) => {
+      [...RUNTIME_OPERATIONS, "readConversationMedia" as const].map((operation) => {
         const channel = WISP_IPC_CHANNELS[operation];
         return [channel, (payload) => manager.dispatch(channel, payload)] as const;
       }),

@@ -88,7 +88,10 @@ export function contentSecurityPolicy(development: boolean): string {
     script,
     style,
     "img-src 'self' data: blob:",
+    "media-src blob:",
     "font-src 'self'",
+    // The page HTML files a Wisp shows are previewed in.
+    "frame-src 'self'",
     connect,
     "object-src 'none'",
     "base-uri 'none'",

@@ -1,0 +1,33 @@
+<!doctype html>
+<!--
+  Where an HTML file a Wisp shows is previewed, in a sandboxed frame of the
+  app. The app sends the document once this page is ready, and the page
+  writes it in place of itself; the policy below stays with the document.
+  It must match MEDIA_PREVIEW_CONTENT_SECURITY_POLICY in shared/media.ts.
+-->
+<html>
+<head>
+<meta charset="utf-8" />
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline' 'unsafe-eval' https: http: data: blob:; style-src 'unsafe-inline' https: http: data:; img-src https: http: data: blob:; font-src https: http: data:; media-src https: http: data: blob:; connect-src 'none'; form-action 'none'; frame-src 'none'; worker-src 'none'; object-src 'none'; base-uri 'none'" />
+<script>
+  (function () {
+    function open(event) {
+      var link = event.target instanceof Element ? event.target.closest("a[href]") : null;
+      // Links open outside the preview, where the address answers for itself.
+      if (link && /^https?:/i.test(link.href)) link.target = "_blank";
+    }
+    function receive(event) {
+      if (event.source !== window.parent || !event.data || event.data.type !== "wisp-preview") return;
+      window.removeEventListener("message", receive);
+      document.open();
+      document.write(String(event.data.html));
+      document.close();
+      document.addEventListener("click", open, true);
+    }
+    window.addEventListener("message", receive);
+    window.parent.postMessage({ type: "wisp-preview-ready" }, "*");
+  })();
+</script>
+</head>
+<body></body>
+</html>

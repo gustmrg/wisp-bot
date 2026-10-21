@@ -4,6 +4,7 @@ import path from "node:path";
 
 import { WispBackendError } from "../../backend/backend-error.js";
 import type { StructuredLogger } from "../../backend/structured-logger.js";
+import { parseReadConversationMediaRequest } from "../../backend/validators.js";
 import {
   RemoteSession,
   TransportError,
@@ -23,6 +24,7 @@ import {
   type SshPromptView,
 } from "../../shared/connections.js";
 import { WISP_IPC_CHANNELS, type BackendResult } from "../../shared/contracts.js";
+import type { ReadConversationMediaRequest } from "../../shared/media.js";
 import {
   REMOTE_HOST_REQUESTS,
   type DeviceCredentials,
@@ -223,6 +225,16 @@ export class ConnectionManager {
       this.status.profileId !== LOCAL_CONNECTION_ID
     ) {
       return this.attachFromThisComputer(this.session, payload);
+    }
+    // Files travel as raw bytes rather than as an operation's JSON.
+    if (this.session && channel === WISP_IPC_CHANNELS.readConversationMedia) {
+      let request: ReadConversationMediaRequest;
+      try {
+        request = parseReadConversationMediaRequest(payload);
+      } catch {
+        return invalidResult("The request is invalid.");
+      }
+      return this.session.readMedia(request);
     }
     if (this.session && operation) return this.session.call(operation, payload);
     return {

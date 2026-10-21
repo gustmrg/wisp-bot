@@ -19,7 +19,9 @@ import {
   type ServerDescriptor,
   WORKSPACE_UPLOAD_PATH,
 } from "../shared/remote-protocol.js";
+import { MEDIA_PATH } from "../shared/media.js";
 import type { WorkspaceAttachment } from "../shared/workspace.js";
+import type { OpenedMedia } from "../backend/media-service.js";
 import type { StructuredLogger } from "../backend/structured-logger.js";
 import type { DeviceAuth } from "./device-auth.js";
 import { boundedString, HttpError, invalidRequest, unauthorized } from "./errors.js";
@@ -85,6 +87,11 @@ export interface HttpApiOptions {
   webRoot?: string;
   /** Stores an uploaded file in a Wisp's workspace; without it, uploads are not offered. */
   uploadWorkspaceFile?: (upload: WorkspaceUpload) => Promise<WorkspaceAttachment>;
+  /**
+   * Opens a workspace file a Wisp's message shows, from the query of a
+   * `MEDIA_PATH` request; without it, files are not served.
+   */
+  openConversationMedia?: (query: Record<string, unknown>) => Promise<OpenedMedia>;
 }
 
 export interface HttpApi {
@@ -297,6 +304,24 @@ export function createHttpApi(options: HttpApiOptions): HttpApi {
       sendJson(response, 200, result);
       return;
     }
+    if (path === MEDIA_PATH && method === "GET" && options.openConversationMedia) {
+      const open = options.openConversationMedia;
+      const maxBytes = searchParams.get("maxBytes");
+      const result = await toBackendResult(() =>
+        open({
+          conversationId: searchParams.get("conversationId") ?? undefined,
+          messageId: searchParams.get("messageId") ?? undefined,
+          path: searchParams.get("path") ?? undefined,
+          ...(maxBytes === null ? {} : { maxBytes: Number(maxBytes) }),
+        }),
+      );
+      if (!result.ok) {
+        sendJson(response, 200, result);
+        return;
+      }
+      sendMedia(response, result.value);
+      return;
+    }
     if (path.startsWith("/host-requests/") && method === "POST") {
       const id = path.slice("/host-requests/".length);
       const pending = hostRequests.get(id);
@@ -422,6 +447,32 @@ export function createHttpApi(options: HttpApiOptions): HttpApi {
       webRoot = access?.webRoot ?? options.webRoot;
     },
   };
+}
+
+/**
+ * A file's raw bytes. They are only ever read by the app, which fetches them
+ * itself: a browser that opened the address would save the file rather than
+ * show it, and nothing in it could run on the server's origin.
+ */
+function sendMedia(response: ServerResponse, media: OpenedMedia): void {
+  response.writeHead(200, {
+    "Content-Type": "application/octet-stream",
+    "Content-Length": media.size,
+    "Content-Disposition": "attachment",
+    "Content-Security-Policy": "default-src 'none'; sandbox",
+    "Cache-Control": "no-store",
+    "X-Content-Type-Options": "nosniff",
+  });
+  const stream = media.file.createReadStream({ start: 0, end: Math.max(0, media.size - 1) });
+  // A file that shrank while it was read ends the response short, which the client sees as a failure.
+  stream.once("error", () => response.destroy());
+  response.once("close", () => stream.destroy());
+  if (media.size === 0) {
+    stream.destroy();
+    response.end();
+    return;
+  }
+  stream.pipe(response);
 }
 
 const ACCESS_COOKIE = "wisp_access";

@@ -54,6 +54,7 @@ import { ToolPolicyStore } from "./tool-policy-store.js";
 import { fakeTranscriptionFetch, TranscriptionService } from "./transcription-service.js";
 import { StorageService } from "./storage-service.js";
 import { readWorkspaceQuota, WorkspaceService } from "./workspace-service.js";
+import { ConversationMediaService } from "./media-service.js";
 import { ContainerRuntimeDetector, type ContainerCli } from "./container-cli.js";
 import { ContainerManager } from "./container-manager.js";
 import { BrowserService } from "./browser-service.js";
@@ -116,6 +117,8 @@ export interface BackendRuntime {
   jobs: JobScheduler;
   sessionReports: SessionReportService;
   workspace: WorkspaceService;
+  /** The workspace files Wisps show in their replies. */
+  media: ConversationMediaService;
   storage: StorageService;
   transcription: TranscriptionService;
   execution: ExecutionService;
@@ -511,6 +514,7 @@ export async function createBackendRuntime(options: BackendRuntimeOptions): Prom
     jobs,
     sessionReports: sessionReportService,
     workspace: workspaceService,
+    media: new ConversationMediaService(conversationRepository),
     storage,
     transcription: transcriptionService,
     execution: executionService,

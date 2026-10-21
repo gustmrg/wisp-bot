@@ -7,6 +7,7 @@ import {
   type RemoteEventType,
   type ServerDescriptor,
 } from "../shared/remote-protocol.js";
+import type { ConversationMedia, ReadConversationMediaRequest } from "../shared/media.js";
 import {
   MAX_ATTACHMENTS_PER_REQUEST,
   formatBytes,
@@ -144,6 +145,22 @@ export class RemoteSession {
       return await client.call(operation, payload);
     } catch (error) {
       return this.failureOf(error, "This server does not offer that action.");
+    }
+  }
+
+  /** Fetches a workspace file a Wisp's message shows, as `readConversationMedia` answers. */
+  async readMedia(
+    request: ReadConversationMediaRequest,
+    signal?: AbortSignal,
+  ): Promise<BackendResult<ConversationMedia>> {
+    const client = this.client;
+    if (!client || !this.connected) return this.unavailable();
+    try {
+      return await client.readMedia(request, signal);
+    } catch (error) {
+      if (signal?.aborted)
+        return { ok: false, error: { code: "aborted", message: "Loading was cancelled.", retryable: false } };
+      return this.failureOf(error, "This server cannot show files. Update it to see the files Wisps show.");
     }
   }
 

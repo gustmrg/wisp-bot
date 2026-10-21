@@ -100,6 +100,7 @@ const REQUIRED_WISP_METHODS = [
   "openWorkspaceFolder",
   "openSkillsFolder",
   "attachWorkspaceFiles",
+  "readConversationMedia",
   "getStorageSummary",
   "listStorageDirectory",
   "prepareStorageCleanup",
