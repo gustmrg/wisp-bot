@@ -5,6 +5,7 @@ import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
+  listWorkspaceFiles,
   measureDirectory,
   readWorkspaceQuota,
   safeFileName,
@@ -217,6 +218,74 @@ describe("WorkspaceService", () => {
     await mkdir(configDirectory, { recursive: true });
     await writeFile(path.join(configDirectory, WORKSPACE_SETTINGS_FILE), "{", "utf8");
     await expect(readWorkspaceQuota(configDirectory)).rejects.toMatchObject({ code: "internal_error" });
+  });
+
+  it("finds workspace files by name first, then by path, shallowest first", async () => {
+    const { service, workspaceDirectory } = await setup();
+    await mkdir(path.join(workspaceDirectory, "docs", "plans"), { recursive: true });
+    await writeFile(path.join(workspaceDirectory, "notes.md"), "");
+    await writeFile(path.join(workspaceDirectory, "docs", "plans", "launch.md"), "");
+    await writeFile(path.join(workspaceDirectory, "docs", "plan.md"), "");
+
+    expect(await service.searchFiles({ conversationId: "atlas", query: "" })).toEqual({
+      paths: ["notes.md", "docs/plan.md", "docs/plans/launch.md"],
+      empty: false,
+    });
+    expect((await service.searchFiles({ conversationId: "atlas", query: "PLAN" })).paths).toEqual([
+      "docs/plan.md",
+      "docs/plans/launch.md",
+    ]);
+    expect(await service.searchFiles({ conversationId: "atlas", query: "zz" })).toEqual({ paths: [], empty: false });
+  });
+
+  it("leaves out what Git ignores, repository history, packages and symlinks", async () => {
+    const { workspaceDirectory, root } = await setup();
+    const app = path.join(workspaceDirectory, "app");
+    await mkdir(path.join(app, ".git", "info"), { recursive: true });
+    await mkdir(path.join(app, "dist"), { recursive: true });
+    await mkdir(path.join(app, "src"), { recursive: true });
+    await mkdir(path.join(workspaceDirectory, "node_modules", "left-pad"), { recursive: true });
+    await writeFile(path.join(workspaceDirectory, ".gitignore"), "*.log\n");
+    await writeFile(path.join(app, ".gitignore"), "dist/\n*.tmp\n!keep.log\n");
+    await writeFile(path.join(app, ".git", "info", "exclude"), "secret.txt\n");
+    await writeFile(path.join(app, ".git", "HEAD"), "");
+    for (const file of ["src/index.ts", "src/cache.tmp", "dist/index.js", "secret.txt", "debug.log", "keep.log"]) {
+      await writeFile(path.join(app, file), "");
+    }
+    await writeFile(path.join(workspaceDirectory, "server.log"), "");
+    await writeFile(path.join(workspaceDirectory, "node_modules", "left-pad", "index.js"), "");
+    await writeFile(path.join(root, "outside.txt"), "");
+    await symlink(path.join(root, "outside.txt"), path.join(workspaceDirectory, "outside.txt"));
+
+    expect(await listWorkspaceFiles(workspaceDirectory)).toEqual([
+      ".gitignore",
+      "app/.gitignore",
+      "app/keep.log",
+      "app/src/index.ts",
+    ]);
+  });
+
+  it("reads the workspace once while a query is typed, and again a few seconds later", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      const { service, workspaceDirectory } = await setup();
+      await writeFile(path.join(workspaceDirectory, "first.md"), "");
+      expect((await service.searchFiles({ conversationId: "atlas", query: "" })).paths).toEqual(["first.md"]);
+
+      await writeFile(path.join(workspaceDirectory, "second.md"), "");
+      expect((await service.searchFiles({ conversationId: "atlas", query: "sec" })).paths).toEqual([]);
+      vi.advanceTimersByTime(6_000);
+      expect((await service.searchFiles({ conversationId: "atlas", query: "sec" })).paths).toEqual(["second.md"]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("reports a workspace with no files, even one not created yet", async () => {
+    const { service, workspaceDirectory } = await setup();
+    await rm(workspaceDirectory, { recursive: true });
+
+    expect(await service.searchFiles({ conversationId: "atlas", query: "" })).toEqual({ paths: [], empty: true });
   });
 
   it("returns no files when the picker is dismissed", async () => {

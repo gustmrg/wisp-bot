@@ -3,6 +3,9 @@ import { constants } from "node:fs";
 import { copyFile, link, lstat, mkdir, open, readFile, readdir, stat, statfs, unlink } from "node:fs/promises";
 import path from "node:path";
 
+import ignore, { type Ignore } from "ignore";
+
+import { rankFilePaths } from "../shared/file-mentions.js";
 import {
   MAX_ATTACHMENTS_PER_REQUEST,
   WORKSPACE_INBOX_DIRECTORY,
@@ -10,7 +13,9 @@ import {
   WORKSPACE_QUOTA_PRESETS,
   formatBytes,
   type AttachWorkspaceFilesResult,
+  type SearchWorkspaceFilesRequest,
   type WorkspaceAttachment,
+  type WorkspaceFileSearch,
   type WorkspaceView,
 } from "../shared/workspace.js";
 import type { ImportSkillRequest, SkillView } from "../shared/skills.js";
@@ -23,6 +28,12 @@ export const SKILLS_DIRECTORY = "skills";
 /** File inside a Wisp's config directory that holds its workspace size. */
 export const WORKSPACE_SETTINGS_FILE = "workspace-settings.json";
 const MAX_NAME_ATTEMPTS = 100;
+/** Most files a workspace's file list holds, so even a huge checkout stays quick to search. */
+export const MAX_LISTED_WORKSPACE_FILES = 50_000;
+/** Folders never listed, ignored by Git or not: a repository's history and installed packages. */
+const UNLISTED_DIRECTORIES = new Set([".git", "node_modules"]);
+/** How long a workspace's file list is reused for searches. */
+const FILE_LIST_LIFETIME_MS = 5_000;
 /** Files measured at once in a folder. */
 const MEASURE_BATCH_SIZE = 64;
 
@@ -39,6 +50,65 @@ export interface MeasuredFile {
   path: string;
   size: number;
   modifiedAt: Date;
+}
+
+/** Ignore rules read in a folder, applying to the paths under it. */
+interface IgnoreRules {
+  /** The folder, relative to the workspace root; empty for the root. */
+  folder: string;
+  rules: Ignore;
+}
+
+/**
+ * Paths of the files in a workspace, relative to its root with forward
+ * slashes, folder by folder from the root so the shallowest come first.
+ * What Git ignores is left out: each folder's `.gitignore` and a
+ * repository's `.git/info/exclude` apply below them, deeper rules winning,
+ * as in a workspace holding cloned repositories. Symlinks are not followed,
+ * `.git` and `node_modules` are always left out, and the list stops at
+ * `MAX_LISTED_WORKSPACE_FILES`.
+ */
+export async function listWorkspaceFiles(workspaceDirectory: string): Promise<ReadonlyArray<string>> {
+  const files: string[] = [];
+  const pending: Array<{ folder: string; inherited: ReadonlyArray<IgnoreRules> }> = [{ folder: "", inherited: [] }];
+  for (let index = 0; index < pending.length && files.length < MAX_LISTED_WORKSPACE_FILES; index += 1) {
+    const { folder, inherited } = pending[index]!;
+    const directory = path.join(workspaceDirectory, folder);
+    let entries;
+    try {
+      entries = await readdir(directory, { withFileTypes: true });
+    } catch {
+      // A folder that went away or cannot be read has nothing to offer.
+      continue;
+    }
+    const scopes = [...inherited];
+    const ruleFiles = [".gitignore", ...(entries.some((entry) => entry.name === ".git") ? [".git/info/exclude"] : [])];
+    for (const ruleFile of ruleFiles) {
+      const text = await readFile(path.join(directory, ruleFile), "utf8").catch(() => null);
+      if (text) scopes.push({ folder, rules: ignore().add(text) });
+    }
+    entries.sort((a, b) => a.name.localeCompare(b.name));
+    for (const entry of entries) {
+      const relative = folder ? `${folder}/${entry.name}` : entry.name;
+      const isDirectory = entry.isDirectory();
+      if (isDirectory ? UNLISTED_DIRECTORIES.has(entry.name) : !entry.isFile()) continue;
+      if (isIgnored(relative, isDirectory, scopes)) continue;
+      if (isDirectory) pending.push({ folder: relative, inherited: scopes });
+      else if (files.length < MAX_LISTED_WORKSPACE_FILES) files.push(relative);
+    }
+  }
+  return files;
+}
+
+function isIgnored(relative: string, isDirectory: boolean, scopes: ReadonlyArray<IgnoreRules>): boolean {
+  let ignored = false;
+  for (const { folder, rules } of scopes) {
+    const inFolder = folder ? relative.slice(folder.length + 1) : relative;
+    const result = rules.test(isDirectory ? `${inFolder}/` : inFolder);
+    if (result.ignored) ignored = true;
+    else if (result.unignored) ignored = false;
+  }
+  return ignored;
 }
 
 /**
@@ -198,6 +268,7 @@ export interface WorkspaceServiceOptions {
 export class WorkspaceService {
   private readonly options: WorkspaceServiceOptions;
   private readonly quotaBytes: number;
+  private readonly fileLists = new Map<string, { at: number; files: Promise<ReadonlyArray<string>> }>();
 
   constructor(options: WorkspaceServiceOptions) {
     this.options = options;
@@ -294,6 +365,25 @@ export class WorkspaceService {
   private skills(conversationId: string): SkillStore {
     const { configDirectory } = this.options.resolveDirectories(conversationId);
     return new SkillStore(path.join(configDirectory, SKILLS_DIRECTORY));
+  }
+
+  /**
+   * The files in a Wisp's workspace best matching what follows an `@` (see
+   * `rankFilePaths`). The workspace's file list is kept for a few seconds, so
+   * typing a query reads the disk once rather than at every key.
+   */
+  async searchFiles({ conversationId, query }: SearchWorkspaceFilesRequest): Promise<WorkspaceFileSearch> {
+    const now = Date.now();
+    let cached = this.fileLists.get(conversationId);
+    if (!cached || now - cached.at > FILE_LIST_LIFETIME_MS) {
+      const { workspaceDirectory } = this.options.resolveDirectories(conversationId);
+      cached = { at: now, files: listWorkspaceFiles(workspaceDirectory) };
+      this.fileLists.set(conversationId, cached);
+      // A failed listing is not kept, so the next search tries again.
+      cached.files.catch(() => this.fileLists.delete(conversationId));
+    }
+    const files = await cached.files;
+    return { paths: rankFilePaths(files, query), empty: !files.length };
   }
 
   async attach(conversationId: string): Promise<AttachWorkspaceFilesResult> {

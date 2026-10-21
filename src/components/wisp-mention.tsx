@@ -10,6 +10,9 @@ export interface WispMentions {
   onOpenWisp?: (wispId: string) => void;
 }
 
+/** How an `@` mention is set apart in a message. */
+export const MENTION_CHIP = "rounded-md bg-current/10 px-1 py-px font-medium";
+
 /** An `@` mention of a member, set apart like an attached file; it opens its Wisp's conversation. */
 export function WispMention({
   memberId,
@@ -20,7 +23,7 @@ export function WispMention({
   mentions: WispMentions;
   children: ReactNode;
 }) {
-  const chip = "rounded-md bg-current/10 px-1 py-px font-medium";
+  const chip = MENTION_CHIP;
   const { onOpenWisp } = mentions;
   if (!onOpenWisp) return <span className={chip}>{children}</span>;
   const name = mentions.members.find(({ id }) => id === memberId)?.name ?? "this Wisp";

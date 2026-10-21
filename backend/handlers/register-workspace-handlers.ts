@@ -4,6 +4,7 @@ import { registerGuardedHandlers, type HandlerRouter, type SenderAuthorizer } fr
 import {
   parseConversationRequest,
   parseImportSkillRequest,
+  parseSearchWorkspaceFilesRequest,
   parseSetWorkspaceQuotaRequest,
   parseSkillRequest,
 } from "../validators.js";
@@ -39,6 +40,10 @@ export function registerWorkspaceHandlers(
     [
       WISP_IPC_CHANNELS.attachWorkspaceFiles,
       (payload) => service.attach(parseConversationRequest(payload).conversationId),
+    ],
+    [
+      WISP_IPC_CHANNELS.searchWorkspaceFiles,
+      (payload) => service.searchFiles(parseSearchWorkspaceFilesRequest(payload)),
     ],
     [WISP_IPC_CHANNELS.listSkills, (payload) => service.listSkills(parseConversationRequest(payload).conversationId)],
     [

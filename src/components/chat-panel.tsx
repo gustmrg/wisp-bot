@@ -463,6 +463,7 @@ function ChatPanel({
                     author={author}
                     showAuthor={Boolean(author) && previousAuthor !== author?.id}
                     mentions={mentions}
+                    fileMentions={chat.kind === "wisp"}
                     onAnswer={(answer) => onAnswerPrompt(message.id, answer)}
                     onRetry={() => onRetry(message.id)}
                   />

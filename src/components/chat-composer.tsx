@@ -15,7 +15,7 @@ import {
 import type { FormEvent, KeyboardEvent, ReactNode } from "react";
 import { useEffect, useRef, useState } from "react";
 
-import { useMentionSuggestions } from "@/components/mention-suggestions";
+import { fileSuggestions, memberSuggestions, useMentionSuggestions } from "@/components/mention-suggestions";
 import { ScheduleSendPicker } from "@/components/schedule-send-picker";
 import { Button } from "@/components/ui/button";
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger } from "@/components/ui/context-menu";
@@ -24,6 +24,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { useModelVision } from "@/hooks/use-model-image-input";
 import { useTimeFormat, useTimeZone } from "@/hooks/use-time-zone";
 import { useVoiceInput } from "@/hooks/use-voice-input";
+import { useWorkspaceFileSearch } from "@/hooks/use-workspace-file-search";
 import { DEFAULT_PREFERENCES } from "@/lib/app-preferences";
 import { formatScheduledTime, schedulePresets } from "@/lib/scheduled-time";
 import { formatShortcut, matchesShortcut, SCHEDULE_SEND_SHORTCUT } from "@/lib/shortcuts";
@@ -135,8 +136,23 @@ export function ChatComposer({
   const boxRef = useRef<HTMLDivElement>(null);
   // Where the transcript goes: the text selected when recording started.
   const insertAt = useRef<readonly [number, number] | null>(null);
+  // In a circle `@` mentions its members; talking with one Wisp, it mentions files in the Wisp's workspace.
+  const fileSearch = useWorkspaceFileSearch(chat.kind === "wisp" ? chat.id : null);
   const mentions = useMentionSuggestions({
-    members: chat.kind === "circle" ? chat.members : [],
+    ...(chat.kind === "circle"
+      ? { suggest: (query) => memberSuggestions(chat.members, query), label: "Mention a Wisp" }
+      : {
+          // The workspace is searched where it lives; the list shows the latest answer.
+          suggest: () => fileSuggestions(fileSearch.result?.paths ?? []),
+          label: "Mention a workspace file",
+          onQuery: fileSearch.search,
+          empty: () =>
+            fileSearch.result === null
+              ? null
+              : fileSearch.result.empty
+                ? "No files in the workspace yet"
+                : "No files match",
+        }),
     draft,
     onDraftChange: setDraft,
     textareaRef,
@@ -781,7 +797,8 @@ export function ChatComposer({
                 value={draft}
                 disabled={emptyCircle}
                 readOnly={transcribing}
-                {...(chat.kind === "circle" ? { role: "combobox", ...mentions.inputProps } : {})}
+                role="combobox"
+                {...mentions.inputProps}
                 onChange={(event) => {
                   setDraft(event.currentTarget.value);
                   mentions.follow(event.currentTarget.selectionStart);

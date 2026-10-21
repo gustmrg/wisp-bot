@@ -77,7 +77,9 @@ import type {
 import type {
   AttachWorkspaceFilesOptions,
   AttachWorkspaceFilesResult,
+  SearchWorkspaceFilesRequest,
   SetWorkspaceQuotaRequest,
+  WorkspaceFileSearch,
   WorkspaceView,
 } from "./workspace.js";
 import type { SaveWispExecutionRequest, WispExecutionView, WispSetupView } from "./execution.js";
@@ -205,6 +207,7 @@ export const WISP_IPC_CHANNELS = {
   openWorkspaceFolder: "wisp:workspace:open",
   openSkillsFolder: "wisp:workspace:open-skills",
   attachWorkspaceFiles: "wisp:workspace:attach",
+  searchWorkspaceFiles: "wisp:workspace:search-files",
   getStorageSummary: "wisp:storage:summary",
   listStorageDirectory: "wisp:storage:list",
   prepareStorageCleanup: "wisp:storage:prepare-cleanup",
@@ -854,6 +857,8 @@ export interface WispApi {
     request: ConversationRequest,
     options?: AttachWorkspaceFilesOptions,
   ): Promise<BackendResult<AttachWorkspaceFilesResult>>;
+  /** The files in a Wisp's workspace best matching what follows an `@`, for mentioning them in a message. */
+  searchWorkspaceFiles(request: SearchWorkspaceFilesRequest): Promise<BackendResult<WorkspaceFileSearch>>;
   /** Space used by every workspace and archived conversation on the active connection. */
   getStorageSummary(request: StorageSummaryRequest): Promise<BackendResult<StorageSummary>>;
   /** One page of a workspace folder's entries, largest first. */
