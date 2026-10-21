@@ -7,6 +7,7 @@ import tavilyLogo from "@/assets/plugins/tavily.svg";
 import exaLogo from "@/assets/plugins/exa.png";
 import deepseekLogo from "@/assets/plugins/deepseek.svg";
 import githubLogo from "@/assets/plugins/github.svg";
+import gitlabLogo from "@/assets/plugins/gitlab.svg";
 import googleCalendarLogo from "@/assets/plugins/google-calendar.svg";
 import gmailLogo from "@/assets/plugins/gmail.svg";
 import googleDriveLogo from "@/assets/plugins/google-drive.svg";
@@ -26,6 +27,7 @@ const logos: Record<PluginId | McpPresetId, string> = {
   "google-drive": googleDriveLogo,
   "home-assistant": homeAssistantLogo,
   github: githubLogo,
+  gitlab: gitlabLogo,
   atlassian: atlassianLogo,
 };
 

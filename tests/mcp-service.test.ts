@@ -1487,7 +1487,7 @@ describe("McpService additional headers and presets", () => {
 
   it("refuses an unknown preset and changing the preset of a saved server", async () => {
     const { service } = await createService({}, [{ outcome: "connected", tools: [TOOL] }]);
-    await expect(saveAsync(service, { ...GITHUB, preset: "gitlab" })).rejects.toMatchObject({
+    await expect(saveAsync(service, { ...GITHUB, preset: "bitbucket" })).rejects.toMatchObject({
       code: "invalid_request",
     });
     const added = await service.save(GITHUB);

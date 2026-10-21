@@ -509,6 +509,100 @@ describe("PluginSettingsSection GitHub", () => {
   });
 });
 
+describe("PluginSettingsSection GitLab", () => {
+  const gitlabServer: McpServerSummary = {
+    serverId: "gitlab-1",
+    name: "GitLab",
+    endpoint: "https://example.com/gitlab/api/v4/mcp",
+    authMode: "header",
+    enabled: true,
+    state: "connected",
+    headerConfigured: true,
+    headerName: "Authorization",
+    extraHeaders: { "X-Gitlab-Enabled-Mcp-Server-Toolsets": "core,merge_requests" },
+    preset: "gitlab",
+    lastDiscoveredAt: null,
+    tools: [],
+  };
+
+  it("adds GitLab.com by default, with the default toolsets", async () => {
+    const api = setup();
+    const user = userEvent.setup();
+    render(<PluginSettingsSection />);
+
+    await user.click(await screen.findByRole("button", { name: "Connect GitLab" }));
+    expect(screen.getByLabelText("GitLab address")).toHaveValue("https://gitlab.com");
+    expect(screen.getByRole("link", { name: /Create a token/ })).toHaveAttribute(
+      "href",
+      "https://gitlab.com/-/user_settings/personal_access_tokens",
+    );
+    await user.type(screen.getByLabelText("Personal access token"), "glpat-test");
+    await user.click(screen.getByRole("button", { name: "Save connection" }));
+
+    await waitFor(() => expect(api.saveMcpServer).toHaveBeenCalledTimes(1));
+    expect(api.saveMcpServer.mock.calls[0]?.[0]).toEqual({
+      name: "GitLab",
+      endpoint: "https://gitlab.com/api/v4/mcp",
+      authMode: "header",
+      headerName: "Authorization",
+      headerValue: "Bearer glpat-test",
+      extraHeaders: { "X-Gitlab-Enabled-Mcp-Server-Toolsets": "core,repository,merge_requests,work_items,ci" },
+      preset: "gitlab",
+      enabled: true,
+    });
+  });
+
+  it("adds a self-managed instance and links to its token page", async () => {
+    const api = setup();
+    const user = userEvent.setup();
+    render(<PluginSettingsSection />);
+
+    await user.click(await screen.findByRole("button", { name: "Connect GitLab" }));
+    const address = screen.getByLabelText("GitLab address");
+    await user.clear(address);
+    await user.type(address, "gitlab.example.com");
+    expect(screen.getByRole("link", { name: /Create a token/ })).toHaveAttribute(
+      "href",
+      "https://gitlab.example.com/-/user_settings/personal_access_tokens",
+    );
+    await user.type(screen.getByLabelText("Personal access token"), "glpat-test");
+    await user.click(screen.getByRole("button", { name: "Test connection" }));
+
+    await waitFor(() => expect(api.testMcpConnection).toHaveBeenCalledTimes(1));
+    expect(api.testMcpConnection.mock.calls[0]?.[0]).toMatchObject({
+      endpoint: "https://gitlab.example.com/api/v4/mcp",
+    });
+  });
+
+  it("cannot be saved without an address", async () => {
+    setup();
+    const user = userEvent.setup();
+    render(<PluginSettingsSection />);
+
+    await user.click(await screen.findByRole("button", { name: "Connect GitLab" }));
+    await user.clear(screen.getByLabelText("GitLab address"));
+    await user.type(screen.getByLabelText("Personal access token"), "glpat-test");
+    expect(screen.getByRole("button", { name: "Save connection" })).toBeDisabled();
+  });
+
+  it("shows the saved instance and keeps it when only the toolsets change", async () => {
+    const api = setup({ mcpServers: [gitlabServer] });
+    const user = userEvent.setup();
+    render(<PluginSettingsSection initialPluginId="gitlab" />);
+
+    expect(await screen.findByLabelText("GitLab address")).toHaveValue("https://example.com/gitlab");
+    await user.click(screen.getByRole("checkbox", { name: /CI\/CD/ }));
+    await user.click(screen.getByRole("button", { name: "Save connection" }));
+
+    await waitFor(() => expect(api.saveMcpServer).toHaveBeenCalledTimes(1));
+    expect(api.saveMcpServer.mock.calls[0]?.[0]).toMatchObject({
+      serverId: "gitlab-1",
+      endpoint: "https://example.com/gitlab/api/v4/mcp",
+      extraHeaders: { "X-Gitlab-Enabled-Mcp-Server-Toolsets": "core,merge_requests,ci" },
+    });
+  });
+});
+
 describe("PluginSettingsSection Atlassian", () => {
   it("connects Atlassian with a browser sign-in and nothing to fill in", async () => {
     const api = setup();
