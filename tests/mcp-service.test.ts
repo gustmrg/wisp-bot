@@ -202,6 +202,11 @@ async function firstDefinition(service: McpService, conversationId = "wisp-a"): 
   return snapshot.definitions[0] as unknown as ExecutableDefinition;
 }
 
+/** True once a tool call has started opening its pooled connection. */
+function connectsStarted(service: McpService): boolean {
+  return (service as unknown as { connecting: Map<string, unknown> }).connecting.size > 0;
+}
+
 afterEach(() => {
   resetDynamicToolMetadata();
   encryptionAvailable = true;
@@ -406,6 +411,32 @@ describe("McpService", () => {
     expect(created.at(-1)?.calls.map(({ args }) => args.query)).toEqual(["a", "b"]);
     service.dispose();
     expect(created.at(-1)?.closed).toBe(1);
+  });
+
+  it("stops waiting for a slow connection when the call is cancelled, but keeps it for other calls", async () => {
+    const gate = deferred<"connected">();
+    const connections = [
+      { outcome: "connected" as const, tools: [TOOL] },
+      { outcome: "connected" as const, tools: [TOOL] },
+      { outcome: "connected" as const, tools: [TOOL], gate: gate.promise },
+    ];
+    const { service, created } = await createService({}, connections);
+    const { serverId } = await addServer(service);
+    await service.refreshTools({ serverId });
+    await grantAccess(service, "wisp-a", serverId);
+    const definition = await firstDefinition(service);
+    const controller = new AbortController();
+
+    const cancelled = definition.execute("c1", { query: "a" }, controller.signal);
+    const other = definition.execute("c2", { query: "b" });
+    await vi.waitFor(() => expect(connectsStarted(service)).toBe(true));
+    controller.abort();
+    await expect(cancelled).rejects.toMatchObject({ code: "aborted" });
+
+    gate.resolve("connected");
+    await expect(other).resolves.toBeDefined();
+    expect(created.at(-1)?.calls.map(({ args }) => args.query)).toEqual(["b"]);
+    service.dispose();
   });
 
   it("blocks dispatch when the reviewed tool changed while approval was pending", async () => {

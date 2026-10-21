@@ -738,11 +738,11 @@ export class McpService {
       // pending must never receive the approved dispatch.
       this.assertToolUnchanged(serverId, reviewedGeneration, reviewedFingerprint);
       if (files.length) await expandFileArguments(files, workspaceDirectory!);
-      const connection = await this.pooledConnection(sessionId, serverId);
+      const connection = await untilAborted(this.pooledConnection(sessionId, serverId), combinedSignal);
       dispatched = true;
       const result = await connection.callTool(tool.name, args, { signal: combinedSignal }).catch(async (error) => {
         if (!(error instanceof McpSessionExpiredError)) throw error;
-        const fresh = await this.pooledConnection(sessionId, serverId);
+        const fresh = await untilAborted(this.pooledConnection(sessionId, serverId), combinedSignal);
         return fresh.callTool(tool.name, args, { signal: combinedSignal });
       });
       const converted = convertResult(result);
@@ -1220,6 +1220,20 @@ function sameHeaders(
   const a = Object.entries(saved ?? {}).sort(([x], [y]) => x.localeCompare(y));
   const b = Object.entries(requested).sort(([x], [y]) => x.localeCompare(y));
   return JSON.stringify(a) === JSON.stringify(b);
+}
+
+/**
+ * Stops one call waiting for a pooled connect when that call is cancelled.
+ * The connect is shared with other calls, so it goes on for them.
+ */
+function untilAborted<T>(pending: Promise<T>, signal: AbortSignal): Promise<T> {
+  const cancelled = () => new WispBackendError("aborted", "The MCP request was cancelled.");
+  if (signal.aborted) return Promise.reject(cancelled());
+  return new Promise<T>((resolve, reject) => {
+    const onAbort = () => reject(cancelled());
+    signal.addEventListener("abort", onAbort, { once: true });
+    pending.then(resolve, reject).finally(() => signal.removeEventListener("abort", onAbort));
+  });
 }
 
 function safeMcpError(error: unknown, signal?: AbortSignal): WispBackendError {
