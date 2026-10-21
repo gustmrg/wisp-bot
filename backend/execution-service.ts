@@ -79,13 +79,15 @@ const REFUSED_COMMANDS: ReadonlyArray<{ pattern: RegExp; reason: string }> = [
   { pattern: /:\(\)\s*\{\s*:\s*\|\s*:\s*&\s*\}\s*;\s*:/, reason: "is a fork bomb" },
 ];
 
-interface ExecutionSettings {
+export interface ExecutionSettings {
   mode: ExecutionMode;
   image: string | null;
+  /** Applies to the browser too. */
   localNetwork: boolean;
+  browser: boolean;
 }
 
-const DEFAULT_SETTINGS: ExecutionSettings = { mode: "off", image: null, localNetwork: false };
+const DEFAULT_SETTINGS: ExecutionSettings = { mode: "off", image: null, localNetwork: false, browser: false };
 
 export interface ExecutionWisp {
   storageId: string;
@@ -103,6 +105,8 @@ export interface ExecutionServiceOptions {
   runtime: { status(): Promise<ContainerRuntimeStatus>; cli(): Promise<ContainerCli | null> };
   /** The GitHub plugin's token, when the Wisp has access to the plugin. */
   gitHubToken?: (conversationId: string) => Promise<string | undefined>;
+  /** Closes a Wisp's browser, when it is turned off. */
+  browser?: { close(storageId: string): Promise<void> };
 }
 
 /**
@@ -116,7 +120,7 @@ export class ExecutionService implements IntegrationToolSource {
   async getView(conversationId: string): Promise<WispExecutionView> {
     const wisp = this.options.resolveWisp(conversationId);
     const [settings, runtime, container, gitHubPlugin] = await Promise.all([
-      readSettings(wisp.configDirectory),
+      readExecutionSettings(wisp.configDirectory),
       this.options.runtime.status(),
       this.options.manager.state(wisp.storageId),
       this.gitToken(conversationId).then(Boolean),
@@ -135,16 +139,24 @@ export class ExecutionService implements IntegrationToolSource {
       throw new WispBackendError("invalid_request", "Enter an image name such as node:22 or ghcr.io/owner/image:tag.");
     }
     const wisp = this.options.resolveWisp(request.conversationId);
-    const previous = await readSettings(wisp.configDirectory);
-    const next: ExecutionSettings = { mode: request.mode, image: request.image, localNetwork: request.localNetwork };
-    if (previous.mode !== next.mode || previous.image !== next.image || previous.localNetwork !== next.localNetwork) {
+    const previous = await readExecutionSettings(wisp.configDirectory);
+    const next: ExecutionSettings = {
+      mode: request.mode,
+      image: request.image,
+      localNetwork: request.localNetwork,
+      browser: request.browser ?? previous.browser,
+    };
+    const containerChanged =
+      previous.mode !== next.mode || previous.image !== next.image || previous.localNetwork !== next.localNetwork;
+    if (containerChanged || previous.browser !== next.browser) {
       await writeFileAtomically(
         path.join(wisp.configDirectory, EXECUTION_SETTINGS_FILE),
         `${JSON.stringify(next, null, 2)}\n`,
       );
-      // A container from the old settings must not keep running: it is created again on the next command.
-      await this.options.manager.remove(wisp.storageId);
     }
+    // Containers from the old settings must not keep running, the browser's included: each is created again when next used.
+    if (containerChanged) await this.options.manager.remove(wisp.storageId);
+    else if (previous.browser && !next.browser) await this.options.browser?.close(wisp.storageId);
     return this.getView(request.conversationId);
   }
 
@@ -161,7 +173,7 @@ export class ExecutionService implements IntegrationToolSource {
       return emptySnapshot();
     }
     // Unreadable settings leave commands off rather than preventing the Wisp from starting.
-    const settings = await readSettings(wisp.configDirectory).catch(() => DEFAULT_SETTINGS);
+    const settings = await readExecutionSettings(wisp.configDirectory).catch(() => DEFAULT_SETTINGS);
     if (settings.mode !== "container") return emptySnapshot();
     const runtime = await this.options.runtime.status();
     if (!runtime.available) return emptySnapshot();
@@ -476,7 +488,8 @@ export function containerPath(workspaceDirectory: string, directory: string): st
   return path.posix.join(CONTAINER_WORKSPACE, ...relative.split(path.sep));
 }
 
-async function readSettings(configDirectory: string): Promise<ExecutionSettings> {
+/** Where a Wisp's commands run, and whether it has a browser. */
+export async function readExecutionSettings(configDirectory: string): Promise<ExecutionSettings> {
   let contents: string;
   try {
     contents = await readFile(path.join(configDirectory, EXECUTION_SETTINGS_FILE), "utf8");
@@ -485,18 +498,20 @@ async function readSettings(configDirectory: string): Promise<ExecutionSettings>
     throw new WispBackendError("internal_error", "The command settings could not be read.", true);
   }
   try {
-    const { mode, image, localNetwork } = JSON.parse(contents) as {
+    const { mode, image, localNetwork, browser } = JSON.parse(contents) as {
       mode?: unknown;
       image?: unknown;
       localNetwork?: unknown;
+      browser?: unknown;
     };
     if (
       typeof mode === "string" &&
       EXECUTION_MODES.includes(mode as ExecutionMode) &&
       (image === null || (typeof image === "string" && isContainerImage(image))) &&
-      (localNetwork === undefined || typeof localNetwork === "boolean")
+      (localNetwork === undefined || typeof localNetwork === "boolean") &&
+      (browser === undefined || typeof browser === "boolean")
     ) {
-      return { mode: mode as ExecutionMode, image, localNetwork: localNetwork ?? false };
+      return { mode: mode as ExecutionMode, image, localNetwork: localNetwork ?? false, browser: browser ?? false };
     }
   } catch {
     // Falls through: a damaged file is reported like an unreadable one.

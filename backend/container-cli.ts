@@ -16,6 +16,13 @@ export interface ContainerProcess {
   kill(): void;
 }
 
+/** A program the server keeps talking to on its standard input, such as the browser driver. */
+export interface AttachedContainerProcess extends ContainerProcess {
+  write(data: string): void;
+  /** Closes its standard input. */
+  end(): void;
+}
+
 /**
  * The container program, run without a shell: every value is one argument,
  * so nothing in it can become another command.
@@ -30,6 +37,11 @@ export interface ContainerCli {
     args: ReadonlyArray<string>,
     options: { onData: (data: Buffer) => void; env?: Record<string, string> },
   ): ContainerProcess;
+  /** Like `stream`, with standard input kept open and standard error apart. */
+  attach(
+    args: ReadonlyArray<string>,
+    options: { onStdout: (data: Buffer) => void; onStderr?: (data: Buffer) => void },
+  ): AttachedContainerProcess;
 }
 
 /** Most output kept from a command whose output is read rather than streamed. */
@@ -128,6 +140,30 @@ export class SpawnedContainerCli implements ContainerCli {
     });
     return {
       done,
+      kill: () => {
+        child.kill("SIGKILL");
+      },
+    };
+  }
+
+  attach(
+    args: ReadonlyArray<string>,
+    options: { onStdout: (data: Buffer) => void; onStderr?: (data: Buffer) => void },
+  ): AttachedContainerProcess {
+    const child = spawn(this.program, [...args], { env: programEnvironment(), stdio: ["pipe", "pipe", "pipe"] });
+    child.stdout?.on("data", options.onStdout);
+    child.stderr?.on("data", options.onStderr ?? (() => undefined));
+    child.stdin?.on("error", () => undefined);
+    const done = new Promise<number | null>((resolve) => {
+      child.once("error", () => resolve(127));
+      child.once("close", (code) => resolve(code));
+    });
+    return {
+      done,
+      write: (data) => {
+        if (child.stdin?.writable) child.stdin.write(data);
+      },
+      end: () => child.stdin?.end(),
       kill: () => {
         child.kill("SIGKILL");
       },

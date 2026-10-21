@@ -134,6 +134,34 @@ describe("ToolApprovalCard", () => {
     expect(onResolve).toHaveBeenCalledWith("deny");
   });
 
+  it("names the button and the site of a browser action", async () => {
+    const user = userEvent.setup();
+    const onResolve = vi.fn();
+    render(
+      <ToolApprovalCard
+        request={{
+          approvalId: "approval-browser",
+          conversationId: "atlas",
+          toolCallId: "tool-browser",
+          toolName: "browser",
+          category: "browser_submit",
+          scope: { kind: "browser", display: "shop.example.com" },
+          summary: "Click the button “Place order” on shop.example.com",
+          expiresAt: "2026-09-07T12:01:00.000Z",
+        }}
+        wispName="Atlas"
+        onResolve={onResolve}
+      />,
+    );
+
+    expect(screen.getByText("Approve browser action?")).toBeVisible();
+    expect(screen.getByText("Click the button “Place order” on shop.example.com")).toBeVisible();
+    expect(screen.getByText(/act on your behalf, on that site/)).toBeVisible();
+    expect(screen.queryByRole("button", { name: /Always allow/ })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Allow once" }));
+    expect(onResolve).toHaveBeenCalledWith("allow_once");
+  });
+
   it("offers to always allow an MCP tool for this Wisp only when the request allows it", async () => {
     const user = userEvent.setup();
     const onResolve = vi.fn();

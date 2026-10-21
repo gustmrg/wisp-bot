@@ -162,7 +162,7 @@ export function WispDetails({
             <SettingsAccordionSection value="workspace" label="Workspace">
               <WispWorkspaceSettings conversationId={chat.id} onOpenSettings={onOpenSettings} />
             </SettingsAccordionSection>
-            <SettingsAccordionSection value="commands" label="Commands">
+            <SettingsAccordionSection value="commands" label="Commands & browser">
               <WispExecutionSettings conversationId={chat.id} />
             </SettingsAccordionSection>
             <SettingsAccordionSection value="jobs" label="Jobs">

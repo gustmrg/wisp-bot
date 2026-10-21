@@ -4,8 +4,14 @@ import path from "node:path";
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import type { ContainerCli, ContainerCommandResult, ContainerProcess } from "../backend/container-cli.js";
+import type {
+  AttachedContainerProcess,
+  ContainerCli,
+  ContainerCommandResult,
+  ContainerProcess,
+} from "../backend/container-cli.js";
 import { ContainerRuntimeDetector } from "../backend/container-cli.js";
+import { BROWSER_DOCKERFILE, BROWSER_DRIVER_SCRIPT, BROWSER_IMAGE } from "../backend/browser-driver.js";
 import { ContainerManager, SANDBOX_DOCKERFILE, SANDBOX_IMAGE } from "../backend/container-manager.js";
 import { EGRESS_PROXY_SCRIPT } from "../backend/egress-proxy.js";
 
@@ -31,6 +37,12 @@ class FakeCli implements ContainerCli {
   >();
   readonly images = new Set<string>();
   readonly networks = new Map<string, { internal: boolean }>();
+  readonly attached: Array<{
+    args: string[];
+    written: string[];
+    ended: boolean;
+    finish: (code: number | null) => void;
+  }> = [];
   createFails = false;
   private starts = 0;
   private addresses = 0;
@@ -67,7 +79,7 @@ class FakeCli implements ContainerCli {
         }
         return ok();
       case "rm":
-        this.containers.delete(name);
+        for (const removed of rest.filter((value) => !value.startsWith("-"))) this.containers.delete(removed);
         return ok();
       case "image":
         return this.images.has(name) ? ok() : fail();
@@ -127,6 +139,24 @@ class FakeCli implements ContainerCli {
       default:
         return ok();
     }
+  }
+
+  attach(args: ReadonlyArray<string>): AttachedContainerProcess {
+    let finish!: (code: number | null) => void;
+    const done = new Promise<number | null>((resolve) => {
+      finish = resolve;
+    });
+    const entry = { args: [...args], written: [] as string[], ended: false, finish };
+    this.attached.push(entry);
+    return {
+      done,
+      write: (data) => entry.written.push(data),
+      end: () => {
+        entry.ended = true;
+        finish(0);
+      },
+      kill: () => finish(null),
+    };
   }
 
   stream(args: ReadonlyArray<string>, options: { onData: (data: Buffer) => void; env?: Record<string, string> }) {
@@ -534,5 +564,73 @@ describe("ContainerRuntimeDetector", () => {
       available: false,
       message: expect.stringContaining("Install Docker or Podman"),
     });
+  });
+});
+
+describe("ContainerManager browsers", () => {
+  it("starts a confined browser on the Wisp's blocked network, through the proxy, without the workspace", async () => {
+    const { cli, manager, spec, root } = await setup();
+    const blocked = { storageId: spec.storageId, localNetwork: false };
+
+    const browser = await manager.startBrowser(blocked, { onStdout: () => undefined });
+
+    const build = cli.calls.find(({ args }) => args[0] === "build" && args.includes(BROWSER_IMAGE))!;
+    expect(build.input).toBe(BROWSER_DOCKERFILE);
+    const network = manager.networkName("s1");
+    expect(cli.networks.get(network)).toEqual({ internal: true });
+    const driver = path.join(root, "data", "containers", "browser-driver.cjs");
+    expect(await readFile(driver, "utf8")).toBe(BROWSER_DRIVER_SCRIPT);
+    const { args } = cli.attached[0]!;
+    expect(args.slice(0, 5)).toEqual(["run", "-i", "--rm", "--name", manager.browserName("s1")]);
+    expect(args).toEqual(
+      expect.arrayContaining([
+        "--read-only",
+        "--cap-drop=ALL",
+        "--security-opt=no-new-privileges",
+        "--network",
+        network,
+        "WISP_BROWSER_PROXY=http://wisp-egress:3128",
+        `type=bind,source=${driver},target=/opt/wisp/browser-driver.cjs,readonly`,
+        BROWSER_IMAGE,
+      ]),
+    );
+    expect(args.join(" ")).not.toContain(spec.workspaceDirectory);
+    // The browser leaves the git gateway's token to the commands.
+    expect(gatewayCalls(cli, manager)).toEqual([]);
+
+    await manager.closeBrowser("s1", browser);
+    expect(cli.attached[0]!.ended).toBe(true);
+  });
+
+  it("lets a browser allowed the local network go straight out", async () => {
+    const { cli, manager } = await setup();
+    await manager.startBrowser({ storageId: "s1", localNetwork: true }, { onStdout: () => undefined });
+    expect(cli.networks.get(manager.networkName("s1"))).toEqual({ internal: false });
+    expect(cli.attached[0]!.args.some((value) => value.startsWith("WISP_BROWSER_PROXY="))).toBe(false);
+  });
+
+  it("removes a Wisp's browser with its container, and browsers of deleted Wisps", async () => {
+    const { cli, manager } = await setup();
+    cli.containers.set(manager.browserName("s1"), { running: true, spec: "x" });
+    cli.containers.set(manager.browserName("gone"), { running: true, spec: "x" });
+
+    await manager.reconcile(new Set(["s1"]));
+    expect([...cli.containers.keys()]).toEqual([manager.browserName("s1")]);
+
+    await manager.remove("s1");
+    expect(cli.containers.size).toBe(0);
+  });
+
+  it("removes a browser that does not close when its input ends", async () => {
+    const { cli, manager } = await setup();
+    const browser = await manager.startBrowser({ storageId: "s1", localNetwork: true }, { onStdout: () => undefined });
+    const stuck = { ...browser, end: () => undefined };
+    cli.containers.set(manager.browserName("s1"), { running: true, spec: "x" });
+    vi.useFakeTimers();
+
+    const closing = manager.closeBrowser("s1", stuck);
+    await vi.advanceTimersByTimeAsync(5_000);
+    await closing;
+    expect(cli.containers.has(manager.browserName("s1"))).toBe(false);
   });
 });

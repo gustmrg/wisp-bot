@@ -42,7 +42,10 @@ export interface ToolAuthorizationRequest {
   toolName: string;
   category: ToolActionCategory;
   summary: string;
-  scope: { kind: "workspace_path" | "integration" | "skill" | "container" | "job" | "wisp"; value: string };
+  scope: {
+    kind: "workspace_path" | "integration" | "skill" | "container" | "browser" | "job" | "wisp";
+    value: string;
+  };
   /** Content the user must see to decide; only sent for skill changes. */
   preview?: string;
   /** The job the user must see to decide; only sent for job approvals. */
@@ -509,6 +512,14 @@ export function evaluateToolPolicy(
     return settings.rules.some((rule) => ruleMatchesCategory(rule.action, category) && rule.behavior === "block")
       ? "block"
       : "allow";
+  }
+  if (category === "browser" || category === "browser_submit") {
+    // Reading and moving around the web runs like commands do; sending something asks.
+    if (scopeKind !== "browser") return "block";
+    if (settings.rules.some((rule) => ruleMatchesCategory(rule.action, category) && rule.behavior === "block")) {
+      return "block";
+    }
+    return category === "browser" ? "allow" : "ask";
   }
   if (category === "schedule_job") {
     // A job runs unattended with the tools approved with it, so the user

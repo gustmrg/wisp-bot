@@ -47,6 +47,9 @@ function approvalAsk(request: ToolApprovalRequest): string {
     case "container_command":
     case "shell":
       return "wants to run a command";
+    case "browser":
+    case "browser_submit":
+      return `wants to act on ${request.scope.display}`;
     case "external_write":
     case "integration_call":
       return `wants to use ${request.scope.display}`;
@@ -179,7 +182,9 @@ function ToolApprovalCard({ request, wispName, onResolve }: ToolApprovalCardProp
                       ? "Approve integration change?"
                       : request.category === "shell" || request.category === "container_command"
                         ? "Approve command?"
-                        : "Approve file change?"}
+                        : request.category === "browser" || request.category === "browser_submit"
+                          ? "Approve browser action?"
+                          : "Approve file change?"}
             </strong>
             {Number.isNaN(remaining) ? null : (
               <time
@@ -233,9 +238,11 @@ function ToolApprovalCard({ request, wispName, onResolve }: ToolApprovalCardProp
                 {wispName} requested {request.toolName} for {request.scope.display}.{" "}
                 {integration
                   ? "This action can change data in the connected service."
-                  : fileCategory
-                    ? "No file content is shown here."
-                    : ""}
+                  : request.category === "browser_submit"
+                    ? "This can send what the Wisp typed, or act on your behalf, on that site."
+                    : fileCategory
+                      ? "No file content is shown here."
+                      : ""}
               </>
             )}
           </small>

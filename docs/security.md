@@ -89,8 +89,8 @@ stores an app-wide integration-scope rule. See
 [ADR 023](decisions/023-wisp-permissions.md).
 
 **Allow everything** (risk mode) in a Wisp's **Access** tab lets that Wisp
-create and edit files, write to plugins and call MCP tools, including calls
-that send workspace files, without asking. It never covers skills, jobs or
+create and edit files, write to plugins, call MCP tools and send forms in its
+browser, including calls that send workspace files, without asking. It never covers skills, jobs or
 commands outside a container, app-wide Block rules still win, and so does the
 Wisp's own Block for a kind of file change. Each action it allows is logged as
 `allow_everything` in the tool audit log.
@@ -156,6 +156,22 @@ reaches github.com through a gateway in the egress proxy that carries only
 git's own protocol and adds the token there, so a Wisp can clone and push what
 the token allows but cannot read it or call the GitHub API with it. A misled Wisp can send its
 workspace contents over the network, so secrets do not belong in a workspace.
+
+## Browser
+
+A Wisp has a browser only when **Use a browser** is on in its **Commands &
+browser** settings ([ADR 028](decisions/028-wisp-browser.md)); it does not
+need commands. Its `browser` tool drives headless Chromium in a container of
+its own, confined like the command container, that mounts nothing of the
+Wisp's: the browser cannot read the workspace. The server talks to it over the
+container's standard input, so it publishes no port. It sits on the Wisp's own
+network and, unless **Allow local network** is on, reaches the internet only
+through the egress proxy. Opening and reading pages, following links and
+typing into ordinary fields run without asking (`browser`); clicking a button,
+sending a form other than a search, and typing a password ask first
+(`browser_submit`), and a Block rule stops either. Downloads and uploads are
+refused. The browser keeps cookies and sign-ins only until it is closed or
+unused for 10 minutes.
 
 ## Prohibited patterns
 

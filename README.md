@@ -62,6 +62,10 @@ preset.
 - **Commands** — a Wisp can be allowed to run commands (git, builds, tests) in
   its own Docker or Podman container that sees only its workspace. See
   [ADR 017](docs/decisions/017-container-execution.md).
+- **Browser** — a Wisp can be given a headless browser, in a container of its
+  own, to open pages, follow links and fill in forms; it asks before clicking
+  buttons, sending forms or typing passwords. See
+  [ADR 028](docs/decisions/028-wisp-browser.md).
 - **Message search** — search every conversation with `Cmd/Ctrl+K` and jump to
   the matching message.
 - **Skills** — per-Wisp reusable procedures, saved on request after you

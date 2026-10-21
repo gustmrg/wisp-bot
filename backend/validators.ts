@@ -156,8 +156,9 @@ export function parseSetWorkspaceQuotaRequest(value: unknown): SetWorkspaceQuota
 
 export function parseSaveWispExecutionRequest(value: unknown): SaveWispExecutionRequest {
   const request = asRecord(value);
-  const { mode, image, localNetwork } = request;
+  const { mode, image, localNetwork, browser } = request;
   if (typeof localNetwork !== "boolean") throw invalidRequest();
+  if (browser !== undefined && typeof browser !== "boolean") throw invalidRequest();
   if (typeof mode !== "string" || !EXECUTION_MODES.includes(mode as ExecutionMode)) throw invalidRequest();
   if (image !== null && (typeof image !== "string" || !isContainerImage(image))) throw invalidRequest();
   return {
@@ -165,6 +166,7 @@ export function parseSaveWispExecutionRequest(value: unknown): SaveWispExecution
     mode: mode as ExecutionMode,
     image,
     localNetwork,
+    ...(browser === undefined ? {} : { browser }),
   };
 }
 

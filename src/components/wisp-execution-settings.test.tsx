@@ -9,6 +9,7 @@ const VIEW: WispExecutionView = {
   mode: "off",
   image: null,
   localNetwork: false,
+  browser: false,
   defaultImage: "wisp-sandbox:abc",
   gitHubPlugin: false,
   runtime: { available: true, name: "docker", version: "29.8.1" },
@@ -18,12 +19,18 @@ const VIEW: WispExecutionView = {
 function install(view: WispExecutionView) {
   let current = view;
   const saveWispExecution = vi.fn(
-    async (request: { mode: WispExecutionView["mode"]; image: string | null; localNetwork: boolean }) => {
+    async (request: {
+      mode: WispExecutionView["mode"];
+      image: string | null;
+      localNetwork: boolean;
+      browser?: boolean;
+    }) => {
       current = {
         ...current,
         mode: request.mode,
         image: request.image,
         localNetwork: request.localNetwork,
+        browser: request.browser ?? current.browser,
       };
       return { ok: true as const, value: current };
     },
@@ -41,7 +48,13 @@ it("turns commands on, points to the GitHub plugin, and keeps other settings", a
   render(<WispExecutionSettings conversationId="one" />);
 
   await user.click(await screen.findByRole("radio", { name: "In a container" }));
-  expect(save).toHaveBeenLastCalledWith({ conversationId: "one", mode: "container", image: null, localNetwork: false });
+  expect(save).toHaveBeenLastCalledWith({
+    conversationId: "one",
+    mode: "container",
+    image: null,
+    localNetwork: false,
+    browser: false,
+  });
   expect(await screen.findByText("Docker 29.8.1 · Container: Not created yet")).toBeInTheDocument();
 
   expect(screen.getByText(/add the GitHub plugin in Settings → Plugins/)).toBeInTheDocument();
@@ -51,7 +64,13 @@ it("turns commands on, points to the GitHub plugin, and keeps other settings", a
   const local = screen.getByRole("switch", { name: "Allow local network" });
   expect(local).toHaveAttribute("aria-checked", "false");
   await user.click(local);
-  expect(save).toHaveBeenLastCalledWith({ conversationId: "one", mode: "container", image: null, localNetwork: true });
+  expect(save).toHaveBeenLastCalledWith({
+    conversationId: "one",
+    mode: "container",
+    image: null,
+    localNetwork: true,
+    browser: false,
+  });
   expect(await screen.findByRole("switch", { name: "Allow local network" })).toHaveAttribute("aria-checked", "true");
 });
 
@@ -68,4 +87,31 @@ it("explains a missing container program and does not offer to turn commands on"
 
   expect(await screen.findByText("Install Docker or Podman on the server.")).toBeInTheDocument();
   expect(screen.getByRole("radio", { name: "In a container" })).toBeDisabled();
+});
+
+it("gives a Wisp a browser without commands, with the local network setting that applies to it", async () => {
+  const user = userEvent.setup();
+  const save = install(VIEW);
+  render(<WispExecutionSettings conversationId="one" />);
+
+  const browser = await screen.findByRole("switch", { name: "Use a browser" });
+  expect(screen.queryByRole("switch", { name: "Allow local network" })).not.toBeInTheDocument();
+  await user.click(browser);
+  expect(save).toHaveBeenLastCalledWith({
+    conversationId: "one",
+    mode: "off",
+    image: null,
+    localNetwork: false,
+    browser: true,
+  });
+  expect(await screen.findByRole("switch", { name: "Use a browser" })).toHaveAttribute("aria-checked", "true");
+  expect(screen.getByRole("switch", { name: "Allow local network" })).toHaveAttribute("aria-checked", "false");
+  expect(screen.queryByLabelText("Image")).not.toBeInTheDocument();
+});
+
+it("does not offer a browser without a container program", async () => {
+  install({ ...VIEW, runtime: { available: false, message: "Install Docker or Podman on the server." } });
+  render(<WispExecutionSettings conversationId="one" />);
+
+  expect(await screen.findByRole("switch", { name: "Use a browser" })).toBeDisabled();
 });

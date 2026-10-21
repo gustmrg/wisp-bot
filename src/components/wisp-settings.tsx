@@ -60,7 +60,12 @@ export const WISP_SETTINGS_MORE: ReadonlyArray<WispSettingsSectionInfo> = [
   { section: "memory", label: "Memory", icon: BrainIcon, description: "Context and saved memory" },
   { section: "skills", label: "Skills", icon: SparklesIcon, description: "Procedures it follows" },
   { section: "workspace", label: "Workspace", icon: FolderIcon, description: "Its private folder" },
-  { section: "execution", label: "Commands", icon: TerminalIcon, description: "Commands in a container" },
+  {
+    section: "execution",
+    label: "Commands & browser",
+    icon: TerminalIcon,
+    description: "Commands and a browser in containers",
+  },
   { section: "jobs", label: "Jobs", icon: CalendarClockIcon, description: "Tasks on a schedule" },
 ];
 
