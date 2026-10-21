@@ -10,6 +10,9 @@ import type {
 } from "../../shared/mcp";
 import {
   MCP_PRESETS,
+  presetInstanceAddress,
+  presetInstanceEndpoint,
+  presetInstancePage,
   presetToolsetHeaderValue,
   presetToolsetsFromHeader,
   type McpPreset,
@@ -92,6 +95,8 @@ interface HeaderRow {
 interface McpDraft {
   name: string;
   endpoint: string;
+  /** The instance's address, for a preset the user can point at their own instance. */
+  instance: string;
   authMode: McpAuthChoice;
   headerName: string;
   headerValue: string;
@@ -114,6 +119,7 @@ function emptyDraft(preset?: McpPreset): McpDraft {
     return {
       name: preset.name,
       endpoint: preset.endpoint,
+      instance: presetInstanceAddress(preset, preset.endpoint),
       authMode: preset.auth.mode,
       headerName: preset.auth.mode === "header" ? preset.auth.header.name : "",
       headerValue: "",
@@ -125,6 +131,7 @@ function emptyDraft(preset?: McpPreset): McpDraft {
   return {
     name: "",
     endpoint: "",
+    instance: "",
     authMode: "none",
     headerName: "",
     headerValue: "",
@@ -142,6 +149,7 @@ function draftFrom(server: McpServerSummary, preset?: McpPreset): McpDraft {
   return {
     name: server.name,
     endpoint: server.endpoint,
+    instance: preset ? presetInstanceAddress(preset, server.endpoint) : "",
     authMode: savedAuthChoice(server, preset),
     headerName: server.headerName ?? "",
     headerValue: "",
@@ -456,7 +464,7 @@ export function McpServerForm({
     const headers = extraHeaders();
     const request: Omit<SaveMcpServerRequest, "enabled" | "serverId"> & { serverId?: string; enabled?: boolean } = {
       name: draft.name.trim(),
-      endpoint: draft.endpoint.trim(),
+      endpoint: draftEndpoint(),
       authMode: draft.authMode === "bearer" ? "header" : draft.authMode,
       ...(headerName ? { headerName } : {}),
       ...(headerValue !== undefined ? { headerValue } : {}),
@@ -466,6 +474,11 @@ export function McpServerForm({
     };
     if (!isNew && server) request.serverId = server.serverId;
     return request;
+  }
+
+  /** The endpoint as sent: on the chosen instance for a preset that has instances. */
+  function draftEndpoint(): string {
+    return preset?.instance ? (presetInstanceEndpoint(preset, draft.instance) ?? "") : draft.endpoint.trim();
   }
 
   /** The test endpoint accepts a narrower payload than the save endpoint. */
@@ -583,7 +596,7 @@ export function McpServerForm({
     }
   }
 
-  const endpoint = draft.endpoint.trim();
+  const endpoint = draftEndpoint();
   // Switching between a bearer token and a custom header needs the credential entered again.
   const savedCredential = Boolean(server?.headerConfigured) && draft.authMode === savedAuthChoice(server!, preset);
   const canTest = endpoint !== "" && (draft.authMode !== "header" || draft.headerName.trim() !== "");
@@ -639,6 +652,29 @@ export function McpServerForm({
         )}
         {preset ? (
           <>
+            {preset.instance ? (
+              <Field>
+                <FieldLabel htmlFor={`${formId}-instance`}>{preset.instance.label}</FieldLabel>
+                <Input
+                  id={`${formId}-instance`}
+                  type="url"
+                  value={draft.instance}
+                  disabled={busy}
+                  placeholder={presetInstanceAddress(preset, preset.endpoint)}
+                  autoComplete="off"
+                  spellCheck={false}
+                  aria-invalid={draft.instance.trim() !== "" && !endpoint}
+                  onChange={(event) => {
+                    setDraft({ ...draft, instance: event.target.value });
+                    setError("");
+                  }}
+                />
+                <FieldDescription>
+                  {preset.instance.help}
+                  {server ? " Another address removes Wisp access, as a different account would." : ""}
+                </FieldDescription>
+              </Field>
+            ) : null}
             {preset.auth.mode === "header" ? (
               <Field>
                 <FieldLabel htmlFor={`${formId}-credential`}>{preset.auth.label}</FieldLabel>
@@ -658,7 +694,7 @@ export function McpServerForm({
                   {server?.headerConfigured ? "Leave blank to keep the saved token. " : ""}
                   {preset.auth.help} Encrypted on this device and never shown to Wisps.{" "}
                   <a
-                    href={preset.auth.helpUrl}
+                    href={presetInstancePage(preset, draft.instance, preset.auth.helpUrl)}
                     target="_blank"
                     rel="noreferrer"
                     className="inline-flex items-center gap-1 text-primary underline-offset-4 hover:underline"
