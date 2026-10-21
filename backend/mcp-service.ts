@@ -70,6 +70,7 @@ import {
   parseFinishMcpSignIn,
   parseMcpServerRequest,
 } from "./mcp-validation.js";
+import type { StructuredLogger } from "./structured-logger.js";
 import type { ToolAuthorizationBroker } from "./tool-authorization-broker.js";
 
 export interface McpServiceOptions {
@@ -92,6 +93,8 @@ export interface McpServiceOptions {
   createOAuthProvider?: (serverId: string) => McpOAuthProvider;
   /** Observes sanitized settings changes; raw secrets never reach the renderer. */
   onSettingsChanged?: (view: McpSettingsView) => void;
+  /** Records connections that failed, so a server's log shows why. */
+  logger?: Pick<StructuredLogger, "warn">;
 }
 
 interface PoolEntry {
@@ -1159,6 +1162,8 @@ export class McpService {
       onClosed: () => {
         void this.publishAndView();
       },
+      onConnectFailed: ({ endpoint, reason }) =>
+        this.options.logger?.warn("mcp_connect_failed", { host: hostOf(endpoint), reason }),
     });
   }
 
@@ -1234,4 +1239,13 @@ function humanizeToolName(name: string): string {
     .replaceAll(/[_.-]+/g, " ")
     .trim()
     .replace(/^./, (character) => character.toUpperCase());
+}
+
+/** The endpoint's host only: its path or query may carry details that do not belong in a log. */
+function hostOf(endpoint: string): string {
+  try {
+    return new URL(endpoint).host;
+  } catch {
+    return "unknown";
+  }
 }

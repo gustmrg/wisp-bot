@@ -59,6 +59,8 @@ export interface McpConnectionOptions {
   /** Invoked when the SDK reports a tool-list change or the connection drops. */
   onToolsChanged?: (tools: McpSdkTool[] | undefined) => void;
   onClosed?: () => void;
+  /** Observes a connect that failed for a reason other than a needed sign-in, for the server's log. */
+  onConnectFailed?: (failure: { endpoint: string; reason: string }) => void;
 }
 
 export type McpConnectionStatus = "idle" | "connected" | "needs_sign_in" | "unavailable";
@@ -79,7 +81,9 @@ export class McpConnection {
 
   constructor(options: McpConnectionOptions = {}) {
     this.options = {
-      connectTimeoutMs: 15_000,
+      // Some servers take most of a minute to answer initialize; Atlassian's
+      // sends only keep-alives for 40-50 seconds before its first result.
+      connectTimeoutMs: 90_000,
       toolTimeoutMs: 120_000,
       maxTools: MAX_TOOL_SNAPSHOT_TOOLS,
       ...options,
@@ -173,7 +177,9 @@ export class McpConnection {
           return "needs_sign_in";
         }
         this.status = "unavailable";
-        throw toConnectionError(error);
+        const failure = toConnectionError(error);
+        this.options.onConnectFailed?.({ endpoint, reason: describeFailure(error, failure) });
+        throw failure;
       }
     }
     throw new WispBackendError("internal_error", "The MCP server could not be connected.", true);
@@ -374,6 +380,12 @@ function toConnectionError(error: unknown): WispBackendError {
     return new WispBackendError("aborted", "The MCP request was cancelled.");
   }
   return new WispBackendError("internal_error", "The MCP server could not complete the request.", true);
+}
+
+/** The cause behind a connection error, for the log; the user sees only the generic message. */
+function describeFailure(error: unknown, failure: WispBackendError): string {
+  if (error === failure || !(error instanceof Error)) return failure.message;
+  return `${failure.message} (${error.name}: ${error.message})`;
 }
 
 function toToolError(error: unknown, signal: AbortSignal | undefined): WispBackendError {

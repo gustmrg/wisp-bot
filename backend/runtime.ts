@@ -245,6 +245,7 @@ export async function createBackendRuntime(options: BackendRuntimeOptions): Prom
     ...(options.signInBrowser ? { signInBrowser: options.signInBrowser } : {}),
     clientVersion: options.appVersion,
     onSettingsChanged: options.onMcpSettingsChanged,
+    logger,
   });
   await mcpService.load();
   const containerRuntime = new ContainerRuntimeDetector(
