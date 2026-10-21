@@ -344,6 +344,7 @@ function createApi(initialState: ConversationStateView): WispApi {
       ok: true as const,
       value: { files: [], workspace: { usedBytes: 0, quotaBytes: 1024, maxQuotaBytes: 1024 } },
     })),
+    searchWorkspaceFiles: vi.fn(async () => ({ ok: true as const, value: { paths: [], empty: true } })),
     listSkills: vi.fn(async () => ({ ok: true as const, value: [] })),
     deleteSkill: vi.fn(async () => ({ ok: true as const, value: [] })),
     importSkill: vi.fn(async () => ({ ok: true as const, value: [] })),
@@ -465,7 +466,7 @@ describe("App", () => {
 
     render(<App />);
 
-    expect(await screen.findByRole("textbox", { name: "Message Atlas" })).toBeVisible();
+    expect(await screen.findByRole("combobox", { name: "Message Atlas" })).toBeVisible();
     expect(api.initializeConversations).not.toHaveBeenCalled();
     expect(window.localStorage.getItem(LEGACY_STORAGE_KEY)).toBeNull();
   });
@@ -504,7 +505,7 @@ describe("App", () => {
 
     render(<App />);
 
-    const composer = await screen.findByRole("textbox", { name: "Message Atlas" });
+    const composer = await screen.findByRole("combobox", { name: "Message Atlas" });
     await user.type(composer, "Prepare the launch brief");
     await user.click(screen.getByRole("button", { name: "Send message" }));
 
@@ -524,7 +525,7 @@ describe("App", () => {
     });
     exposeApi(api);
     render(<App />);
-    await screen.findByRole("textbox", { name: "Message Atlas" });
+    await screen.findByRole("combobox", { name: "Message Atlas" });
     const reply = { id: "reply-1", type: "incoming" as const, text: "Done", status: "complete" as const };
     const visibility = vi.spyOn(document, "visibilityState", "get").mockReturnValue("hidden");
     act(() => {
@@ -544,7 +545,7 @@ describe("App", () => {
     const api = createApi(conversationState(true, { atlas }));
     exposeApi(api);
     render(<App />);
-    await screen.findByRole("textbox", { name: "Message Atlas" });
+    await screen.findByRole("combobox", { name: "Message Atlas" });
     const list = screen.getByRole("navigation", { name: "Wisps and circles" });
 
     fireEvent.contextMenu(within(list).getByRole("button", { name: /Atlas/ }));
@@ -578,7 +579,7 @@ describe("App", () => {
 
     render(<App />);
 
-    const composer = await screen.findByRole("textbox", { name: "Message Atlas" });
+    const composer = await screen.findByRole("combobox", { name: "Message Atlas" });
     await user.type(composer, "Prepare the launch brief");
     await user.click(screen.getByRole("button", { name: "Send message" }));
 
@@ -640,7 +641,7 @@ describe("App", () => {
     const beta = wispChat("beta");
     exposeApi(createApi(conversationState(true, { atlas, beta })));
     render(<App />);
-    await screen.findByRole("textbox", { name: "Message Atlas" });
+    await screen.findByRole("combobox", { name: "Message Atlas" });
     await user.click(screen.getByRole("button", { name: "Open Wisp settings" }));
     // The panel opens straight on the Wisp's settings, with who it is in its header.
     const panel = screen.getByRole("complementary", { name: "Atlas settings" });
@@ -671,7 +672,7 @@ describe("App", () => {
     });
     exposeApi(api);
     render(<App />);
-    await screen.findByRole("textbox", { name: "Message Atlas" });
+    await screen.findByRole("combobox", { name: "Message Atlas" });
     await user.click(screen.getByRole("button", { name: "Open user settings" }));
     await user.click(
       within(screen.getByRole("navigation", { name: "Settings sections" })).getByRole("button", { name: "About" }),
@@ -747,19 +748,19 @@ describe("Mobile workspace", () => {
       name: "Wisps and circles",
     });
     await waitFor(() => expect(within(list).getByRole("button", { name: /Atlas/ })).toBeVisible());
-    expect(screen.queryByRole("textbox", { name: "Message Atlas" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("combobox", { name: "Message Atlas" })).not.toBeInTheDocument();
     await user.click(within(list).getByRole("button", { name: /Atlas/ }));
-    const composer = screen.getByRole("textbox", { name: "Message Atlas" });
+    const composer = screen.getByRole("combobox", { name: "Message Atlas" });
     expect(composer).not.toHaveFocus();
     await user.type(composer, "Keep this draft");
     await user.click(screen.getByRole("button", { name: "Back to conversations" }));
-    expect(screen.queryByRole("textbox", { name: "Message Atlas" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("combobox", { name: "Message Atlas" })).not.toBeInTheDocument();
     await user.click(within(list).getByRole("button", { name: /Atlas/ }));
     expect(composer).toHaveValue("Keep this draft");
     await user.click(screen.getByRole("button", { name: "Open Wisp settings" }));
     // On a phone the gear opens the Wisp's profile, and Edit its settings.
     expect(screen.getByRole("region", { name: "Atlas" })).toBeVisible();
-    expect(screen.queryByRole("textbox", { name: "Message Atlas" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("combobox", { name: "Message Atlas" })).not.toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Edit" }));
     expect(screen.getByRole("complementary", { name: "Atlas settings" })).toBeVisible();
     await user.click(screen.getByRole("button", { name: "Back to profile" }));
@@ -835,7 +836,7 @@ describe("Mobile workspace", () => {
     });
 
     await user.click(screen.getByRole("button", { name: "Open the conversation with Atlas" }));
-    expect(screen.getByRole("textbox", { name: "Message Atlas" })).toBeVisible();
+    expect(screen.getByRole("combobox", { name: "Message Atlas" })).toBeVisible();
     expect(screen.queryByRole("heading", { name: "Approvals" })).not.toBeInTheDocument();
   });
 
@@ -861,7 +862,7 @@ describe("Mobile workspace", () => {
     await user.click(screen.getByRole("button", { name: "Search conversations" }));
     await user.type(screen.getByRole("textbox", { name: "Search" }), "Atlas");
     await user.click(within(screen.getByRole("dialog")).getByRole("button", { name: /Atlas/ }));
-    expect(screen.getByRole("textbox", { name: "Message Atlas" })).toBeVisible();
+    expect(screen.getByRole("combobox", { name: "Message Atlas" })).toBeVisible();
     expect(list).not.toBeVisible();
   });
 
@@ -892,7 +893,7 @@ describe("Mobile workspace", () => {
         name: "Create Wisp",
       }),
     );
-    expect(await screen.findByRole("textbox", { name: "Message Travel Planner" })).toBeVisible();
+    expect(await screen.findByRole("combobox", { name: "Message Travel Planner" })).toBeVisible();
     expect(api.createWisp).toHaveBeenCalledOnce();
     expect(api.createWisp).toHaveBeenCalledWith(
       expect.objectContaining({ wisp: expect.objectContaining({ name: "Travel Planner", role: "", soul: "" }) }),
@@ -952,7 +953,7 @@ it("opens provider setup from an unconfigured Wisp and preserves its first draft
   const api = createApi(state);
   exposeApi(api);
   render(<App />);
-  const composer = await screen.findByRole("textbox", { name: "Message Atlas" });
+  const composer = await screen.findByRole("combobox", { name: "Message Atlas" });
   await user.type(composer, "My first task{enter}");
   expect(api.sendMessage).not.toHaveBeenCalled();
   expect(api.appendConversationMessage).not.toHaveBeenCalled();

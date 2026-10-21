@@ -57,6 +57,19 @@ export interface AttachWorkspaceFilesOptions {
   onProgress?: (progress: AttachWorkspaceFilesProgress) => void;
 }
 
+export interface SearchWorkspaceFilesRequest {
+  conversationId: string;
+  /** What follows the `@` being typed; empty lists the shallowest files. */
+  query: string;
+}
+
+export interface WorkspaceFileSearch {
+  /** The best matching paths, relative to the workspace root with forward slashes. */
+  paths: ReadonlyArray<string>;
+  /** The workspace has no files at all, as opposed to none matching. */
+  empty: boolean;
+}
+
 /** The message text sent to a Wisp: what the user typed, followed by where its attachments landed. */
 export function messageWithAttachments(
   text: string,

@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { ConnectionsView } from "../../shared/connections";
 import type { WispApi } from "../../shared/contracts";
+import { rankFilePaths } from "../../shared/file-mentions";
 import { messageWithAttachments, type AttachWorkspaceFilesOptions } from "../../shared/workspace";
 import type { ChatView } from "@/chat-data";
 import { circleChatView, wispChatView } from "@/test/chat-fixtures";
@@ -57,25 +58,25 @@ describe("ChatComposer", () => {
   it("keeps the unsent draft when it remounts, as after a reconnect", async () => {
     const user = userEvent.setup();
     const { unmount } = render(<ChatComposer {...defaultProps} chat={wisp("one", "One")} />);
-    await user.type(screen.getByRole("textbox", { name: "Message One" }), "Half a thought");
+    await user.type(screen.getByRole("combobox", { name: "Message One" }), "Half a thought");
     unmount();
 
     render(<ChatComposer {...defaultProps} chat={wisp("one", "One")} />);
-    expect(screen.getByRole("textbox", { name: "Message One" })).toHaveValue("Half a thought");
+    expect(screen.getByRole("combobox", { name: "Message One" })).toHaveValue("Half a thought");
   });
 
   it("keeps each conversation's draft apart and forgets one once sent", async () => {
     const user = userEvent.setup();
     const onSend = vi.fn();
     const { rerender } = render(<ChatComposer {...defaultProps} key="one" chat={wisp("one", "One")} onSend={onSend} />);
-    await user.type(screen.getByRole("textbox", { name: "Message One" }), "Hello{Enter}");
+    await user.type(screen.getByRole("combobox", { name: "Message One" }), "Hello{Enter}");
     expect(onSend).toHaveBeenCalledWith("Hello");
-    await user.type(screen.getByRole("textbox", { name: "Message One" }), "Unsent");
+    await user.type(screen.getByRole("combobox", { name: "Message One" }), "Unsent");
 
     rerender(<ChatComposer {...defaultProps} key="two" chat={wisp("two", "Two")} onSend={onSend} />);
-    expect(screen.getByRole("textbox", { name: "Message Two" })).toHaveValue("");
+    expect(screen.getByRole("combobox", { name: "Message Two" })).toHaveValue("");
     rerender(<ChatComposer {...defaultProps} key="one" chat={wisp("one", "One")} onSend={onSend} />);
-    expect(screen.getByRole("textbox", { name: "Message One" })).toHaveValue("Unsent");
+    expect(screen.getByRole("combobox", { name: "Message One" })).toHaveValue("Unsent");
   });
 
   it("schedules the draft from the shortcut instead of sending it", async () => {
@@ -83,7 +84,7 @@ describe("ChatComposer", () => {
     const onSend = vi.fn();
     const onSchedule = vi.fn(async () => null);
     render(<ChatComposer {...defaultProps} chat={wisp("one", "One")} onSend={onSend} onSchedule={onSchedule} />);
-    const input = screen.getByRole("textbox", { name: "Message One" });
+    const input = screen.getByRole("combobox", { name: "Message One" });
     await user.type(input, "Good morning");
     await user.keyboard("{Control>}{Shift>}{Enter}{/Shift}{/Control}");
     await user.click(await screen.findByRole("button", { name: /Tomorrow morning/ }));
@@ -100,7 +101,7 @@ describe("ChatComposer", () => {
     const onSend = vi.fn();
     const onSchedule = vi.fn(async () => "This Wisp already has too many scheduled messages.");
     render(<ChatComposer {...defaultProps} chat={wisp("one", "One")} onSend={onSend} onSchedule={onSchedule} />);
-    const input = screen.getByRole("textbox", { name: "Message One" });
+    const input = screen.getByRole("combobox", { name: "Message One" });
     await user.type(input, "Later");
     await user.click(screen.getByRole("button", { name: "Attach, schedule or new topic" }));
     await user.click(await screen.findByRole("button", { name: "Schedule send" }));
@@ -138,7 +139,7 @@ describe("ChatComposer", () => {
 
     expect(screen.getByRole("button", { name: "Schedule message" })).toBeDisabled();
     await user.click(screen.getByRole("button", { name: "Remove the scheduled time" }));
-    await user.type(screen.getByRole("textbox", { name: "Message One" }), "Now{enter}");
+    await user.type(screen.getByRole("combobox", { name: "Message One" }), "Now{enter}");
 
     expect(onSend).toHaveBeenCalledWith("Now");
     expect(onSchedule).not.toHaveBeenCalled();
@@ -149,7 +150,7 @@ describe("ChatComposer", () => {
     const onSend = vi.fn();
     const onSchedule = vi.fn(async () => null);
     render(<ChatComposer {...defaultProps} chat={wisp("one", "One")} onSend={onSend} onSchedule={onSchedule} />);
-    await user.type(screen.getByRole("textbox", { name: "Message One" }), "Good morning");
+    await user.type(screen.getByRole("combobox", { name: "Message One" }), "Good morning");
     await user.pointer({ keys: "[MouseRight]", target: screen.getByRole("button", { name: "Send message" }) });
     await user.click(await screen.findByRole("menuitem", { name: /Tomorrow morning/ }));
 
@@ -168,7 +169,7 @@ describe("ChatComposer", () => {
         mobile
       />,
     );
-    fireEvent.change(screen.getByRole("textbox", { name: "Message One" }), { target: { value: "Later" } });
+    fireEvent.change(screen.getByRole("combobox", { name: "Message One" }), { target: { value: "Later" } });
     vi.useFakeTimers();
     try {
       const send = screen.getByRole("button", { name: "Send message" });
@@ -190,7 +191,7 @@ describe("ChatComposer", () => {
     expect(screen.queryByRole("button", { name: "Send message" })).toBeNull();
     expect(screen.getAllByRole("button", { name: "Start voice input" })).toHaveLength(1);
 
-    await user.type(screen.getByRole("textbox", { name: "Message One" }), "Hi");
+    await user.type(screen.getByRole("combobox", { name: "Message One" }), "Hi");
     expect(screen.getByRole("button", { name: "Send message" })).toBeEnabled();
     expect(screen.getAllByRole("button", { name: "Start voice input" })).toHaveLength(1);
 
@@ -214,7 +215,7 @@ describe("ChatComposer", () => {
         enterToSend={false}
       />,
     );
-    const input = screen.getByRole("textbox", { name: "Message One" });
+    const input = screen.getByRole("combobox", { name: "Message One" });
     expect(input).not.toHaveFocus();
     await user.type(input, "First line{enter}Second line");
     expect(onSend).not.toHaveBeenCalled();
@@ -378,7 +379,7 @@ describe("ChatComposer", () => {
     const user = userEvent.setup();
     const onSend = vi.fn();
     render(<ChatComposer {...defaultProps} chat={wisp("one", "One")} onSend={onSend} />);
-    const input = screen.getByRole("textbox", { name: "Message One" });
+    const input = screen.getByRole("combobox", { name: "Message One" });
 
     await user.type(input, "First line{shift>}{enter}{/shift}Second line");
     expect(onSend).not.toHaveBeenCalled();
@@ -391,11 +392,11 @@ describe("ChatComposer", () => {
   it("resets and focuses when the keyed conversation changes", async () => {
     const user = userEvent.setup();
     const { rerender } = render(<ChatComposer key="one" {...defaultProps} chat={wisp("one", "One")} />);
-    await user.type(screen.getByRole("textbox", { name: "Message One" }), "unsent");
+    await user.type(screen.getByRole("combobox", { name: "Message One" }), "unsent");
 
     rerender(<ChatComposer key="two" {...defaultProps} chat={wisp("two", "Two")} />);
 
-    const next = screen.getByRole("textbox", { name: "Message Two" });
+    const next = screen.getByRole("combobox", { name: "Message Two" });
     expect(next).toHaveValue("");
     expect(next).toHaveFocus();
   });
@@ -447,6 +448,66 @@ describe("ChatComposer", () => {
     expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
   });
 
+  it("completes mentions of the files the Wisp's workspace finds for what follows the @", async () => {
+    const user = userEvent.setup();
+    const onSend = vi.fn();
+    const files = ["notes.md", "docs/plan.md", "inbox/meeting notes.md"];
+    const searchWorkspaceFiles = vi.fn<WispApi["searchWorkspaceFiles"]>(async ({ query }) => ({
+      ok: true,
+      value: { paths: rankFilePaths(files, query), empty: false },
+    }));
+    Object.defineProperty(window, "wisp", { configurable: true, value: { searchWorkspaceFiles } });
+    render(<ChatComposer {...defaultProps} onSend={onSend} chat={wisp("atlas", "Atlas")} />);
+    const input = screen.getByRole("combobox", { name: "Message Atlas" });
+
+    await user.type(input, "Compare @");
+    const list = await screen.findByRole("listbox", { name: "Mention a workspace file" });
+    expect(searchWorkspaceFiles).toHaveBeenLastCalledWith({ conversationId: "atlas", query: "" });
+    expect(screen.getAllByRole("option").map((option) => option.textContent)).toEqual([
+      "notes.md",
+      "plan.mddocs",
+      "meeting notes.mdinbox",
+    ]);
+    await user.type(input, "me");
+    expect(searchWorkspaceFiles).toHaveBeenLastCalledWith({ conversationId: "atlas", query: "me" });
+    await waitFor(() =>
+      expect(screen.getAllByRole("option").map((option) => option.textContent)).toEqual(["meeting notes.mdinbox"]),
+    );
+    await user.keyboard("{Enter}");
+    expect(input).toHaveValue('Compare @"inbox/meeting notes.md" ');
+    expect(list).not.toBeInTheDocument();
+
+    await user.type(input, "with @pla");
+    expect(await screen.findByRole("option", { name: "plan.mddocs" })).toBeInTheDocument();
+    await waitFor(() => expect(screen.getAllByRole("option")).toHaveLength(1));
+    await user.keyboard("{Tab}{Enter}");
+    expect(onSend).toHaveBeenCalledWith('Compare @"inbox/meeting notes.md" with @docs/plan.md');
+  });
+
+  it("says when the workspace has no files or none match, and still sends on Enter", async () => {
+    const user = userEvent.setup();
+    const onSend = vi.fn();
+    const searchWorkspaceFiles = vi
+      .fn<WispApi["searchWorkspaceFiles"]>()
+      .mockResolvedValueOnce({ ok: true, value: { paths: [], empty: true } })
+      .mockResolvedValue({ ok: true, value: { paths: [], empty: false } });
+    Object.defineProperty(window, "wisp", { configurable: true, value: { searchWorkspaceFiles } });
+    render(<ChatComposer {...defaultProps} onSend={onSend} chat={wisp("atlas", "Atlas")} />);
+    const input = screen.getByRole("combobox", { name: "Message Atlas" });
+
+    await user.type(input, "Read @");
+    expect(await screen.findByText("No files in the workspace yet")).toBeInTheDocument();
+    expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
+    expect(input).toHaveAttribute("aria-expanded", "false");
+    await user.keyboard("{Escape}");
+    expect(screen.queryByText("No files in the workspace yet")).not.toBeInTheDocument();
+
+    await user.type(input, " or @zz");
+    expect(await screen.findByText("No files match")).toBeInTheDocument();
+    await user.keyboard("{Enter}");
+    expect(onSend).toHaveBeenCalledWith("Read @ or @zz");
+  });
+
   it("puts follow-ups the stopped turn never read back into the draft, after what is typed", async () => {
     const user = userEvent.setup();
     const onAbort = vi.fn(async () => [
@@ -460,7 +521,7 @@ describe("ChatComposer", () => {
       { id: "q2", conversationId: "steer", createdAt: "2026-10-18T12:00:01.000Z", text: "In Portuguese" },
     ]);
     render(<ChatComposer {...defaultProps} chat={wisp("steer", "Steer")} status="working" onAbort={onAbort} />);
-    const input = screen.getByRole("textbox", { name: "Message Steer" });
+    const input = screen.getByRole("combobox", { name: "Message Steer" });
     await user.type(input, "Draft");
 
     await user.click(screen.getByRole("button", { name: "Stop response" }));
@@ -483,7 +544,7 @@ describe("ChatComposer", () => {
       </>,
     );
 
-    await user.type(screen.getByRole("textbox", { name: "Message One" }), "local draft");
+    await user.type(screen.getByRole("combobox", { name: "Message One" }), "local draft");
 
     expect(renderSibling).toHaveBeenCalledOnce();
   });
@@ -495,7 +556,7 @@ it("blocks first-run sends without losing the draft and offers configuration", a
   const onConfigure = vi.fn();
   const props = { ...defaultProps, chat: wisp("new", "New"), onSend, onConfigure };
   const { rerender } = render(<ChatComposer {...props} status="configuration_required" />);
-  const input = screen.getByRole("textbox", { name: "Message New" });
+  const input = screen.getByRole("combobox", { name: "Message New" });
   await user.type(input, "First task{enter}");
   expect(onSend).not.toHaveBeenCalled();
   expect(input).toHaveValue("First task");
@@ -663,7 +724,7 @@ describe("ChatComposer voice input", () => {
     const transcribeAudio = setup();
     const onSend = vi.fn();
     render(<ChatComposer {...defaultProps} chat={wisp("one", "One")} onSend={onSend} />);
-    const input = screen.getByRole("textbox", { name: "Message One" });
+    const input = screen.getByRole("combobox", { name: "Message One" });
     await user.type(input, "Please  now");
     (input as HTMLTextAreaElement).setSelectionRange(7, 7);
 
@@ -734,7 +795,7 @@ describe("ChatComposer voice input", () => {
     await user.click(await screen.findByRole("button", { name: "Stop recording and transcribe" }));
 
     await waitFor(() => expect(onSend).toHaveBeenCalledWith("dictated words"));
-    expect(screen.getByRole("textbox", { name: "Message One" })).toHaveValue("");
+    expect(screen.getByRole("combobox", { name: "Message One" })).toHaveValue("");
   });
 
   it("toggles recording with the shortcut and discards it with Escape", async () => {

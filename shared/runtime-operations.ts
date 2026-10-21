@@ -88,6 +88,7 @@ export const RUNTIME_OPERATIONS = [
   "openWorkspaceFolder",
   "openSkillsFolder",
   "attachWorkspaceFiles",
+  "searchWorkspaceFiles",
   "getStorageSummary",
   "listStorageDirectory",
   "prepareStorageCleanup",

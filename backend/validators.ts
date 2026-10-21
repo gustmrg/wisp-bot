@@ -64,7 +64,12 @@ import type {
   ScheduleMessageRequest,
   UpdateScheduledMessageRequest,
 } from "../shared/scheduled-messages.js";
-import { WORKSPACE_QUOTA_PRESETS, type SetWorkspaceQuotaRequest } from "../shared/workspace.js";
+import { MAX_FILE_MENTION_QUERY_LENGTH } from "../shared/file-mentions.js";
+import {
+  WORKSPACE_QUOTA_PRESETS,
+  type SearchWorkspaceFilesRequest,
+  type SetWorkspaceQuotaRequest,
+} from "../shared/workspace.js";
 import {
   EXECUTION_MODES,
   isContainerImage,
@@ -133,6 +138,13 @@ export function parseImportSkillRequest(value: unknown): ImportSkillRequest {
 export function parseConversationRequest(value: unknown): ConversationRequest {
   const request = asRecord(value);
   return { conversationId: parseId(request.conversationId) };
+}
+
+export function parseSearchWorkspaceFilesRequest(value: unknown): SearchWorkspaceFilesRequest {
+  const request = asRecord(value);
+  const query = request.query;
+  if (typeof query !== "string" || query.length > MAX_FILE_MENTION_QUERY_LENGTH) throw invalidRequest();
+  return { conversationId: parseId(request.conversationId), query };
 }
 
 export function parseSetWorkspaceQuotaRequest(value: unknown): SetWorkspaceQuotaRequest {

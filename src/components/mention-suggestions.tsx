@@ -1,8 +1,19 @@
-import { useId, useLayoutEffect, useRef, useState, type KeyboardEvent, type ReactNode, type RefObject } from "react";
+import { FileIcon } from "lucide-react";
+import {
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type KeyboardEvent,
+  type ReactNode,
+  type RefObject,
+} from "react";
 
 import type { Wisp } from "@/chat-data";
 import { WispAvatar } from "@/components/chat-avatar";
 import { cn } from "@/lib/utils";
+import { fileMentionText } from "../../shared/file-mentions";
 
 /** The `@` being typed right before the caret, unless it is inside a word, as in an email address. */
 const MENTION_AT_CARET = /(?:^|[^\p{L}\p{N}_])@([^\s@]{0,64})$/u;
@@ -18,6 +29,58 @@ function queryAt(draft: string, caret: number | null): MentionQuery | null {
   const match = MENTION_AT_CARET.exec(draft.slice(0, caret));
   if (!match) return null;
   return { start: caret - match[1]!.length - 1, text: match[1]! };
+}
+
+/** Something an `@` can mention. */
+export interface MentionSuggestion {
+  key: string;
+  /** Written after the `@` when it is picked. */
+  text: string;
+  /** How it shows in the list. */
+  content: ReactNode;
+}
+
+const MAX_SUGGESTIONS = 8;
+
+/** A circle's members whose name starts with what follows the `@` (ADR 011). */
+export function memberSuggestions(members: ReadonlyArray<Wisp>, query: string): MentionSuggestion[] {
+  return members
+    .filter(({ name }) => name.toLowerCase().startsWith(query.toLowerCase()))
+    .slice(0, MAX_SUGGESTIONS)
+    .map((member) => ({
+      key: member.id,
+      text: member.name,
+      content: (
+        <>
+          <WispAvatar wisp={member} size="sm" />
+          <span className="min-w-0 truncate">{member.name}</span>
+          {member.role ? <small className="min-w-0 truncate text-faint">{member.role}</small> : null}
+        </>
+      ),
+    }));
+}
+
+/** Workspace files found for what follows the `@`, already in the order to offer them. */
+export function fileSuggestions(paths: ReadonlyArray<string>): MentionSuggestion[] {
+  return paths.map((path) => {
+    const name = baseName(path);
+    const folder = path.slice(0, Math.max(0, path.lastIndexOf("/")));
+    return {
+      key: path,
+      text: fileMentionText(path),
+      content: (
+        <>
+          <FileIcon aria-hidden="true" className="size-4 flex-none text-dim" />
+          <span className="min-w-0 flex-none truncate">{name}</span>
+          {folder ? <small className="min-w-0 truncate text-faint">{folder}</small> : null}
+        </>
+      ),
+    };
+  });
+}
+
+function baseName(path: string): string {
+  return path.slice(path.lastIndexOf("/") + 1);
 }
 
 export interface MentionSuggestions {
@@ -38,17 +101,27 @@ export interface MentionSuggestions {
 }
 
 /**
- * Completes `@` mentions of a circle's members (ADR 011): typing `@` lists
- * the members whose name starts with what follows it, and picking one writes
- * its full name.
+ * Completes `@` mentions: typing `@` lists what `suggest` offers for what
+ * follows it, a circle's members (ADR 011) or a Wisp's workspace files, and
+ * picking one writes it in full. `onQuery` follows what is typed after the
+ * `@`, null once no list is shown, for suggestions found elsewhere. When nothing matches,
+ * `empty` can say why in place of the list; Enter still sends then.
  */
 export function useMentionSuggestions({
-  members,
+  suggest,
+  label,
+  onQuery,
+  empty,
   draft,
   onDraftChange,
   textareaRef,
 }: {
-  members: ReadonlyArray<Wisp>;
+  suggest: (query: string) => ReadonlyArray<MentionSuggestion>;
+  /** Names the list for assistive technology. */
+  label: string;
+  onQuery?: (query: string | null) => void;
+  /** Shown when nothing matches what follows the `@`; null shows nothing, as while the list loads. */
+  empty?: () => string | null;
   draft: string;
   onDraftChange: (draft: string) => void;
   textareaRef: RefObject<HTMLTextAreaElement | null>;
@@ -67,11 +140,18 @@ export function useMentionSuggestions({
     textarea.focus();
     textarea.setSelectionRange(position, position);
   });
-  const query = members.length ? queryAt(draft, caret) : null;
-  const matches = query
-    ? members.filter(({ name }) => name.toLowerCase().startsWith(query.text.toLowerCase())).slice(0, 8)
-    : [];
-  const open = Boolean(query && matches.length && dismissed !== query.start);
+  const query = queryAt(draft, caret);
+  const matches = query ? suggest(query.text) : [];
+  const shown = Boolean(query && dismissed !== query.start);
+  // The latest handler, so a new one each render does not count as another query.
+  const latestOnQuery = useRef(onQuery);
+  latestOnQuery.current = onQuery;
+  const shownQuery = shown ? query!.text : null;
+  useEffect(() => {
+    latestOnQuery.current?.(shownQuery);
+  }, [shownQuery]);
+  const open = shown && matches.length > 0;
+  const emptyMessage = shown && !matches.length ? (empty?.() ?? null) : null;
   const activeIndex = Math.min(active, Math.max(0, matches.length - 1));
 
   function readCaret() {
@@ -79,10 +159,10 @@ export function useMentionSuggestions({
     setCaret(textarea ? textarea.selectionStart : null);
   }
 
-  function pick(member: Wisp) {
+  function pick(suggestion: MentionSuggestion) {
     if (!query) return;
     const end = query.start + 1 + query.text.length;
-    const inserted = `@${member.name} `;
+    const inserted = `@${suggestion.text} `;
     onDraftChange(`${draft.slice(0, query.start)}${inserted}${draft.slice(end).replace(/^ /, "")}`);
     const position = query.start + inserted.length;
     pendingCaret.current = position;
@@ -91,6 +171,11 @@ export function useMentionSuggestions({
   }
 
   function handleKey(event: KeyboardEvent<HTMLTextAreaElement>): boolean {
+    if (emptyMessage && event.key === "Escape" && !event.nativeEvent.isComposing) {
+      event.preventDefault();
+      setDismissed(query!.start);
+      return true;
+    }
     if (!open || event.nativeEvent.isComposing) return false;
     if (event.key === "ArrowDown" || event.key === "ArrowUp") {
       event.preventDefault();
@@ -130,12 +215,12 @@ export function useMentionSuggestions({
       <ul
         id={listId}
         role="listbox"
-        aria-label="Mention a Wisp"
+        aria-label={label}
         className="absolute right-3 bottom-full left-3 z-20 m-0 mb-1 max-w-[320px] list-none rounded-xl border border-border bg-card p-1 shadow-lg"
       >
-        {matches.map((member, index) => (
+        {matches.map((suggestion, index) => (
           <li
-            key={member.id}
+            key={suggestion.key}
             id={optionId(index)}
             role="option"
             aria-selected={index === activeIndex}
@@ -145,15 +230,20 @@ export function useMentionSuggestions({
             )}
             // Picking must not take the focus away from the draft.
             onMouseDown={(event) => event.preventDefault()}
-            onClick={() => pick(member)}
+            onClick={() => pick(suggestion)}
             onMouseEnter={() => setActive(index)}
           >
-            <WispAvatar wisp={member} size="sm" />
-            <span className="min-w-0 truncate">{member.name}</span>
-            {member.role ? <small className="min-w-0 truncate text-faint">{member.role}</small> : null}
+            {suggestion.content}
           </li>
         ))}
       </ul>
+    ) : emptyMessage ? (
+      <div
+        role="status"
+        className="absolute right-3 bottom-full left-3 z-20 mb-1 flex min-h-11 max-w-[320px] items-center rounded-xl border border-border bg-card px-3 text-sm text-dim shadow-lg select-none"
+      >
+        {emptyMessage}
+      </div>
     ) : null,
   };
 }

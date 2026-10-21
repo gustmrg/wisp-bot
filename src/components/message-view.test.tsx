@@ -106,6 +106,17 @@ describe("MessageView", () => {
     expect(screen.queryByText(/Attached to the workspace/)).toBeNull();
   });
 
+  it("sets apart the workspace files a message to a Wisp mentions", () => {
+    const text = 'Compare @docs/plan.md with @"inbox/meeting notes.md". Mail ada@example.com';
+    const { container } = render(
+      <MessageView message={{ id: "files", type: "outgoing", text, status: "complete" }} fileMentions />,
+    );
+    expect(screen.getByTitle("docs/plan.md in the workspace")).toHaveTextContent("@docs/plan.md");
+    expect(screen.getByTitle("inbox/meeting notes.md in the workspace")).toHaveTextContent('@"inbox/meeting notes.md"');
+    expect(container.querySelectorAll("[title$='in the workspace']")).toHaveLength(2);
+    expect(container).toHaveTextContent(text, { normalizeWhitespace: false });
+  });
+
   it("copies only the typed text of a message with attachments", async () => {
     // userEvent installs its own clipboard, so the stub goes in after it.
     const user = userEvent.setup();

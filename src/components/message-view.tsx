@@ -19,6 +19,7 @@ import { copyText } from "@/lib/clipboard";
 import { cn } from "@/lib/utils";
 import { AttachmentChips } from "@/components/attachment-chips";
 import { MarkdownView } from "@/components/markdown-view";
+import { FileMentionedText } from "@/components/file-mention";
 import { MentionedText, type WispMentions } from "@/components/wisp-mention";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 
@@ -30,6 +31,8 @@ interface MessageViewProps {
   showAuthor?: boolean;
   /** In a circle, its members, whose `@` mentions are set apart and open their conversation. */
   mentions?: WispMentions;
+  /** In a direct conversation, the user's `@` mentions of workspace files are set apart. */
+  fileMentions?: boolean;
   onAnswer?: (answer: string) => void;
   onRetry?: () => void;
 }
@@ -89,6 +92,7 @@ function MessageView({
   author,
   showAuthor = false,
   mentions,
+  fileMentions,
   onAnswer,
   onRetry,
 }: MessageViewProps) {
@@ -208,7 +212,7 @@ function MessageView({
           )}
         >
           {outgoing ? (
-            <OutgoingText text={message.text} mentions={mentions} />
+            <OutgoingText text={message.text} mentions={mentions} fileMentions={fileMentions} />
           ) : (
             <IncomingText reveal={reveal} mentions={mentions} />
           )}
@@ -300,9 +304,23 @@ function IncomingText({ reveal, mentions }: { reveal: ReturnType<typeof useRevea
 }
 
 /** What the user typed, with the files attached to it shown as files rather than as the list the Wisp reads. */
-function OutgoingText({ text, mentions }: { text: string; mentions?: WispMentions }) {
+function OutgoingText({
+  text,
+  mentions,
+  fileMentions,
+}: {
+  text: string;
+  mentions?: WispMentions;
+  fileMentions?: boolean;
+}) {
   const { text: typed, attachments } = splitMessageAttachments(text);
-  const written = mentions ? <MentionedText text={typed} mentions={mentions} /> : typed;
+  const written = mentions ? (
+    <MentionedText text={typed} mentions={mentions} />
+  ) : fileMentions ? (
+    <FileMentionedText text={typed} />
+  ) : (
+    typed
+  );
   if (!attachments.length) return written;
   return (
     <>
