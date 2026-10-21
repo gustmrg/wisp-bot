@@ -591,12 +591,6 @@
     top: max(8px, env(safe-area-inset-top, 0px));
     right: max(8px, env(safe-area-inset-right, 0px));
   }
-  .create-wisp-dialog form {
-    flex: 1;
-  }
-  .create-wisp-dialog form > div:first-child {
-    flex: 1;
-  }
   [data-slot="dialog-footer"] {
     flex-direction: row;
     gap: 10px;
