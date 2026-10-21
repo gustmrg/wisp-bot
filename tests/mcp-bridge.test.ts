@@ -161,6 +161,32 @@ describe("McpConnection", () => {
     await expect(connection.callTool("search", {})).rejects.toMatchObject({ code: "tool_blocked" });
   });
 
+  it("waits for a server that is slow to initialize", async () => {
+    vi.useFakeTimers();
+    try {
+      const { sdk } = fakeSdk({ connect: () => new Promise((resolve) => setTimeout(resolve, 50_000)) });
+      const connection = new McpConnection({ sdk });
+      const outcome = connection.connect("https://example.com/mcp", { mode: "none" });
+      await vi.advanceTimersByTimeAsync(50_000);
+      await expect(outcome).resolves.toBe("connected");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("reports why a connect failed", async () => {
+    const { sdk } = fakeSdk({ connect: () => new Promise(() => undefined) });
+    const onConnectFailed = vi.fn();
+    const connection = new McpConnection({ sdk, connectTimeoutMs: 10, onConnectFailed });
+    await expect(connection.connect("https://example.com/mcp", { mode: "none" })).rejects.toThrow(
+      "The MCP server did not connect in time.",
+    );
+    expect(onConnectFailed).toHaveBeenCalledWith({
+      endpoint: "https://example.com/mcp",
+      reason: "The MCP server did not connect in time.",
+    });
+  });
+
   it("drops a session the server no longer knows so the pool can reopen it", async () => {
     const { sdk, clients } = fakeSdk();
     const connection = new McpConnection({ sdk });

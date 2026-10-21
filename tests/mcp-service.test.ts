@@ -7,7 +7,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { getToolMetadata, resetDynamicToolMetadata } from "../shared/tool-catalog.js";
 import { McpOAuthProvider, type McpSignInBrowser } from "../backend/mcp-oauth.js";
 import { McpSecretStore } from "../backend/mcp-secret-store.js";
-import { McpService } from "../backend/mcp-service.js";
+import { McpService, type McpServiceOptions } from "../backend/mcp-service.js";
 import type { McpConnection, McpConnectionAuth, McpConnectionOptions } from "../backend/mcp-bridge.js";
 import type { McpSettingsView } from "../shared/mcp.js";
 import type { EncryptionService } from "../backend/encrypted-credential-store.js";
@@ -34,7 +34,10 @@ class FakeConnection implements McpConnection {
   closed = 0;
   calls: Array<{ name: string; args: Record<string, unknown> }> = [];
 
-  constructor(private readonly fixture: ConnectionFixture) {}
+  constructor(
+    private readonly fixture: ConnectionFixture,
+    private readonly options: McpConnectionOptions = {},
+  ) {}
 
   get connectionStatus(): "connected" | "idle" {
     return this.connects > 0 && this.closed === 0 ? "connected" : "idle";
@@ -42,11 +45,14 @@ class FakeConnection implements McpConnection {
 
   auths: McpConnectionAuth[] = [];
 
-  async connect(_endpoint: string, auth: McpConnectionAuth): Promise<"connected" | "needs_sign_in"> {
+  async connect(endpoint: string, auth: McpConnectionAuth): Promise<"connected" | "needs_sign_in"> {
     this.connects += 1;
     this.auths.push(auth);
     const outcome = this.fixture.gate ? await this.fixture.gate : this.fixture.outcome;
-    if (outcome instanceof Error) throw outcome;
+    if (outcome instanceof Error) {
+      this.options.onConnectFailed?.({ endpoint, reason: outcome.message });
+      throw outcome;
+    }
     return outcome;
   }
 
@@ -72,6 +78,7 @@ interface ServiceOverrides {
   onSettingsChanged?: (view: McpSettingsView) => void;
   /** Every conversation's workspace; omitted, file references are refused. */
   workspaceDirectory?: string;
+  logger?: McpServiceOptions["logger"];
 }
 
 /** Minimal provider surface used by sign-in flows; tests assert on counters. */
@@ -111,7 +118,7 @@ const TOOL = {
 let serverCounter = 0;
 
 async function createService(
-  { authorizationBroker, oauthProviders, onSettingsChanged, workspaceDirectory }: ServiceOverrides = {},
+  { authorizationBroker, oauthProviders, onSettingsChanged, workspaceDirectory, logger }: ServiceOverrides = {},
   connections: ReadonlyArray<ConnectionFixture> = [],
 ) {
   const dataDirectory = await mkdtemp(path.join(os.tmpdir(), "wisp-mcp-"));
@@ -126,9 +133,10 @@ async function createService(
     openExternal: vi.fn(async () => undefined),
     ...(onSettingsChanged ? { onSettingsChanged } : {}),
     ...(workspaceDirectory ? { resolveWorkspaceDirectory: () => workspaceDirectory } : {}),
-    createConnection: (_options: McpConnectionOptions): McpConnection => {
+    ...(logger ? { logger } : {}),
+    createConnection: (options: McpConnectionOptions): McpConnection => {
       const fixture = connections[created.length] ?? { outcome: new Error("no fixture"), tools: [] };
-      const connection = new FakeConnection(fixture);
+      const connection = new FakeConnection(fixture, options);
       created.push(connection);
       return connection;
     },
@@ -781,6 +789,15 @@ describe("McpService", () => {
     expect(server.state).toBe("unavailable");
     expect(server.tools).toEqual([]);
     expect((await service.getView()).servers).toHaveLength(1);
+  });
+
+  it("logs a failed connect with the endpoint's host only", async () => {
+    const warn = vi.fn();
+    const { service } = await createService({ logger: { warn } }, [{ outcome: new Error("offline"), tools: [] }]);
+    await addServer(service, { endpoint: "https://mcp.example.com/v1/mcp?workspace=private-team" });
+
+    expect(warn).toHaveBeenCalledWith("mcp_connect_failed", { host: "mcp.example.com", reason: "offline" });
+    expect(JSON.stringify(warn.mock.calls)).not.toContain("private-team");
   });
 
   it("rediscovers on save only when the connection has no tools", async () => {

@@ -16,6 +16,17 @@ import { readServerSentEvents } from "./sse.js";
 // Refresh this long before the access token expires rather than waiting for a 401.
 const REFRESH_MARGIN_MS = 30_000;
 const REQUEST_TIMEOUT_MS = 60_000;
+// Connecting to an MCP server may take most of the server's 90-second connect limit, then discovery.
+const CONNECTION_TIMEOUT_MS = 3 * 60_000;
+// A sign-in waits up to five minutes for the browser, then connects.
+const SIGN_IN_TIMEOUT_MS = 8 * 60_000;
+const OPERATION_TIMEOUT_MS: Readonly<Record<string, number>> = {
+  testMcpConnection: CONNECTION_TIMEOUT_MS,
+  refreshMcpTools: CONNECTION_TIMEOUT_MS,
+  testPluginConnection: CONNECTION_TIMEOUT_MS,
+  startMcpSignIn: SIGN_IN_TIMEOUT_MS,
+  startPluginSignIn: SIGN_IN_TIMEOUT_MS,
+};
 // Connecting gives up sooner, so a server that never answers counts as a failed attempt and the app says so.
 const CONNECT_TIMEOUT_MS = 10_000;
 // The server sends a keep-alive every 20 seconds; silence this long means the path is dead.
@@ -114,7 +125,7 @@ export class RemoteClient {
       "POST",
       `/rpc/${encodeURIComponent(operation)}`,
       payload ?? {},
-      REQUEST_TIMEOUT_MS,
+      OPERATION_TIMEOUT_MS[operation] ?? REQUEST_TIMEOUT_MS,
     )) as BackendResult<unknown>;
   }
 
