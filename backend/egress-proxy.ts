@@ -8,6 +8,15 @@ export const EGRESS_GIT_PORT = 3129;
 export const EGRESS_PROXY_HOST = "wisp-egress";
 
 /**
+ * The forges git in a Wisp's container reaches through the git gateway, each
+ * with the token the gateway adds. github.com is always reached through it,
+ * without a token when none is given, so public repositories still work.
+ */
+export interface GitForges {
+  github?: { token: string };
+}
+
+/**
  * The egress proxy, run with Node in the sandbox image. It serves three
  * things:
  *
@@ -19,18 +28,19 @@ export const EGRESS_PROXY_HOST = "wisp-egress";
  *   address for the check and a private one for the connection. It handles
  *   CONNECT (HTTPS, and anything tunnelled) and plain HTTP requests, and logs
  *   nothing about them.
- * - **The git gateway.** git in every Wisp container sends github.com
- *   requests here over plain HTTP. Only git's smart HTTP protocol (and git
- *   LFS's batch and lock check) is carried; the gateway adds the Wisp's
- *   GitHub token and sends the request to github.com over HTTPS. The token
- *   never enters a Wisp's container, and the GitHub API cannot be reached
- *   with it. Each Wisp reaches the proxy only over its own network, so the
- *   address a request arrives on tells which Wisp sent it.
+ * - **The git gateway.** git in every Wisp container sends requests for
+ *   its git hosts here over plain HTTP, under the forge's name
+ *   (`/github/owner/repo.git/...` for github.com). Only git's smart HTTP
+ *   protocol (and git LFS's batch and lock check) is carried; the gateway
+ *   adds the Wisp's token for that forge and sends the request to the forge
+ *   over HTTPS. The token never enters a Wisp's container, and the forge's
+ *   API cannot be reached with it. Each Wisp reaches the proxy only over its
+ *   own network, so the address a request arrives on tells which Wisp sent it.
  * - **The control socket**, an abstract Unix socket that only processes in
  *   the proxy's own container can reach. The server runs
- *   `node <script> control` in the container with `{ address, token }` on
- *   stdin to set (or, with a null token, forget) the token for requests
- *   arriving on that address.
+ *   `node <script> control` in the container with `{ address, forges }` on
+ *   stdin to set (or, with null forges, forget) the token for each forge for
+ *   requests arriving on that address.
  *
  * `WISP_EGRESS_ALLOW` lists extra CIDR ranges to allow, `WISP_GIT_UPSTREAM`
  * replaces github.com and `WISP_EGRESS_CONTROL` names the control socket; only
@@ -155,23 +165,48 @@ server.on("connect", async (request, client, head) => {
   client.on("close", () => upstream.destroy());
 });
 
-/** The GitHub token for requests arriving on each of the proxy's addresses, one per Wisp network. */
-const gitTokens = new Map();
-const GIT_PATH = /^\/[A-Za-z0-9][A-Za-z0-9-]{0,38}\/([A-Za-z0-9._-]{1,100})\/(info\/refs|git-upload-pack|git-receive-pack|info\/lfs\/objects\/batch|info\/lfs\/locks\/verify)$/;
+/**
+ * The forges the git gateway carries, by the first segment of a request's
+ * path: where requests go, which repository paths it accepts, and the user
+ * name its token is sent with.
+ */
+const FORGES = {
+  github: {
+    upstream: GIT_UPSTREAM,
+    repository: /^[A-Za-z0-9][A-Za-z0-9-]{0,38}\/[A-Za-z0-9._-]{1,100}$/,
+    user: "x-access-token",
+  },
+};
+/** Per forge, the token for requests arriving on each of the proxy's addresses, one per Wisp network. */
+const gitForges = new Map();
+const GIT_PATH = /^\/([a-z]+)\/(.+)\/(info\/refs|git-upload-pack|git-receive-pack|info\/lfs\/objects\/batch|info\/lfs\/locks\/verify)$/;
+const GIT_TOKEN = /^[\x21-\x7e]{1,512}$/;
 const GIT_REQUEST_HEADERS = ["accept", "accept-encoding", "content-encoding", "content-length", "content-type", "git-protocol", "user-agent"];
 const HOP_HEADERS = ["connection", "keep-alive", "transfer-encoding"];
-const GIT_REFUSED = "The Wisp git gateway carries only git over HTTPS to github.com. Use the GitHub plugin's tools for anything else.\n";
+const GIT_REFUSED = "The Wisp git gateway carries only git over HTTPS to the git hosts of this Wisp's plugins. Use the plugins' tools for anything else.\n";
 
 function unmapped(address) {
   return address && address.startsWith("::ffff:") ? address.slice(7) : address || "";
 }
 
-/** Whether a request is part of git's smart HTTP protocol, or git LFS's batch and lock check, for one repository. */
-function isGitRequest(method, url) {
+function forge(id) {
+  return Object.prototype.hasOwnProperty.call(FORGES, id) ? FORGES[id] : null;
+}
+
+/**
+ * Where a request goes, when it is part of git's smart HTTP protocol, or git
+ * LFS's batch and lock check, for one repository of a forge; null otherwise.
+ */
+function gitTarget(address, method, url) {
   const match = GIT_PATH.exec(url.pathname);
-  if (!match || match[1] === "." || match[1] === "..") return false;
-  if (match[2] === "info/refs") return method === "GET" && /^\?service=git-(upload|receive)-pack$/.test(url.search);
-  return method === "POST" && url.search === "";
+  const target = match && forge(match[1]);
+  if (!target || !target.repository.test(match[2])) return null;
+  if (match[2].split("/").some((segment) => segment === "." || segment === "..")) return null;
+  if (match[3] === "info/refs") {
+    if (method !== "GET" || !/^\?service=git-(upload|receive)-pack$/.test(url.search)) return null;
+  } else if (method !== "POST" || url.search !== "") return null;
+  const given = (gitForges.get(address) || {})[match[1]];
+  return { id: match[1], forge: target, upstream: target.upstream, token: given && given.token, path: "/" + match[2] + "/" + match[3] };
 }
 
 const gitServer = http.createServer((request, response) => {
@@ -181,32 +216,36 @@ const gitServer = http.createServer((request, response) => {
   } catch {
     url = null;
   }
-  if (!url || !request.url.startsWith("/") || request.url.startsWith("//") || !isGitRequest(request.method, url)) {
+  const target = url && request.url.startsWith("/") && !request.url.startsWith("//")
+    ? gitTarget(unmapped(request.socket.localAddress), request.method, url)
+    : null;
+  if (!target) {
     request.resume();
     response.writeHead(403, { "content-type": "text/plain" }).end(GIT_REFUSED);
     return;
   }
   const headers = {};
   for (const name of GIT_REQUEST_HEADERS) if (request.headers[name] !== undefined) headers[name] = request.headers[name];
-  const token = gitTokens.get(unmapped(request.socket.localAddress));
-  if (token) headers.authorization = "Basic " + Buffer.from("x-access-token:" + token).toString("base64");
-  const upstream = (GIT_UPSTREAM.protocol === "https:" ? https : http).request(
+  if (target.token) headers.authorization = "Basic " + Buffer.from(target.forge.user + ":" + target.token).toString("base64");
+  const base = target.upstream.pathname.replace(/\/$/, "");
+  const upstream = (target.upstream.protocol === "https:" ? https : http).request(
     {
-      protocol: GIT_UPSTREAM.protocol,
-      hostname: GIT_UPSTREAM.hostname,
-      port: GIT_UPSTREAM.port || undefined,
+      protocol: target.upstream.protocol,
+      hostname: target.upstream.hostname,
+      port: target.upstream.port || undefined,
       method: request.method,
-      path: GIT_UPSTREAM.pathname.replace(/\/$/, "") + url.pathname + url.search,
+      path: base + target.path + url.search,
       headers,
     },
     (reply) => {
       const replyHeaders = { ...reply.headers };
       for (const name of HOP_HEADERS) delete replyHeaders[name];
-      // A moved repository redirects to github.com; keep git on the gateway, or it would lose the token.
+      // A moved repository redirects to the forge; keep git on the gateway, or it would lose the token.
       const host = request.headers.host;
       const location = replyHeaders.location;
-      if (typeof location === "string" && location.startsWith(GIT_UPSTREAM.origin + "/") && /^[A-Za-z0-9.-]+(:\d+)?$/.test(host || "")) {
-        replyHeaders.location = "http://" + host + location.slice(GIT_UPSTREAM.origin.length);
+      const from = target.upstream.origin + base + "/";
+      if (typeof location === "string" && location.startsWith(from) && /^[A-Za-z0-9.-]+(:\d+)?$/.test(host || "")) {
+        replyHeaders.location = "http://" + host + "/" + target.id + "/" + location.slice(from.length);
       }
       response.writeHead(reply.statusCode || 502, replyHeaders);
       reply.pipe(response);
@@ -215,10 +254,22 @@ const gitServer = http.createServer((request, response) => {
   upstream.setTimeout(IDLE_MS, () => upstream.destroy());
   upstream.on("error", () => {
     if (response.headersSent) return response.destroy();
-    response.writeHead(502, { "content-type": "text/plain" }).end("github.com could not be reached.\n");
+    response.writeHead(502, { "content-type": "text/plain" }).end(target.upstream.host + " could not be reached.\n");
   });
   request.pipe(upstream);
 });
+
+/** The forges a control message gives for an address, checked; throws on anything else. */
+function parseForges(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("forges");
+  const forges = {};
+  for (const [id, entry] of Object.entries(value)) {
+    if (!forge(id) || !entry || typeof entry.token !== "string" || !GIT_TOKEN.test(entry.token)) throw new Error("forge");
+    if (Object.keys(entry).some((key) => key !== "token")) throw new Error("forge");
+    forges[id] = { token: entry.token };
+  }
+  return forges;
+}
 
 const control = net.createServer({ allowHalfOpen: true }, (socket) => {
   let input = "";
@@ -230,11 +281,10 @@ const control = net.createServer({ allowHalfOpen: true }, (socket) => {
   });
   socket.on("end", () => {
     try {
-      const { address, token } = JSON.parse(input);
+      const { address, forges } = JSON.parse(input);
       if (typeof address !== "string" || !net.isIP(address)) throw new Error("address");
-      if (token === null) gitTokens.delete(address);
-      else if (typeof token === "string" && /^[\x21-\x7e]{1,512}$/.test(token)) gitTokens.set(address, token);
-      else throw new Error("token");
+      if (forges === null) gitForges.delete(address);
+      else gitForges.set(address, parseForges(forges));
       socket.end("ok\n");
     } catch {
       socket.end("invalid\n");

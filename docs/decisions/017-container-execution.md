@@ -155,6 +155,22 @@ without the plugin's approvals. Tracked as SWE-172.
   tokens a Wisp already wrote into its workspace stay valid until the user
   replaces the token.
 
+## Amendment: the gateway routes by forge (2026-10-21)
+
+To carry git for more than github.com (GitLab next), the gateway now takes the
+forge from the first segment of the path:
+`url.http://wisp-egress:3129/github/.insteadOf https://github.com/`. Each forge
+in the proxy script has its own upstream, the repository paths it accepts and
+the user name its token goes with; a path under an unknown forge is refused.
+The control message is `{ address, forges: { github: { token } } }`, which
+replaces everything the address had; `forges: null` forgets the address, and
+github.com without a token is still carried, so public repositories work.
+
+The rewrites are now given with every command (`docker exec -e
+GIT_CONFIG_*`) instead of when the container is created, so they follow the
+plugins a Wisp can use without recreating its container. Containers made with
+the old rewrite are recreated once (layout version 4).
+
 ## Deferred: SSH mode
 
 A third mode would run a Wisp's commands over SSH on a machine the user

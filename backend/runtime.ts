@@ -261,7 +261,7 @@ export async function createBackendRuntime(options: BackendRuntimeOptions): Prom
     authorizationBroker: toolAuthorizationBroker,
     manager: containerManager,
     runtime: containerRuntime,
-    gitHubToken: (id) => mcpService.gitHubToken(id),
+    gitForges: (id) => mcpService.gitForges(id),
   });
   const toolSource = new CompositeIntegrationToolSource([pluginService, mcpService, executionService]);
   // Read when a model fails, so a changed choice applies without rebuilding the session.

@@ -23,6 +23,7 @@ import {
 import { writeFileAtomically } from "./atomic-file.js";
 import { WispBackendError } from "./backend-error.js";
 import type { EncryptionService } from "./encrypted-credential-store.js";
+import type { GitForges } from "./egress-proxy.js";
 import {
   McpConnection,
   McpSessionExpiredError,
@@ -617,17 +618,18 @@ export class McpService {
   }
 
   /**
-   * The GitHub plugin's token for a Wisp with access to an enabled GitHub
-   * connection, so git in its container acts as the same account. Undefined
-   * when the Wisp has no such access or the token cannot be read.
+   * The git hosts of the plugins a Wisp has access to, with each plugin's
+   * token, so git in its container acts as the same account: GitHub's token
+   * from an enabled GitHub connection. Empty when the Wisp has no such access
+   * or the token cannot be read.
    */
-  async gitHubToken(wispId: string): Promise<string | undefined> {
-    if (this.disposed) return undefined;
+  async gitForges(wispId: string): Promise<GitForges> {
+    if (this.disposed) return {};
     let sessionId: string;
     try {
       sessionId = this.options.resolveWisp(wispId);
     } catch {
-      return undefined;
+      return {};
     }
     const prefix = GITHUB_MCP_PRESET.auth.mode === "header" ? GITHUB_MCP_PRESET.auth.header.valuePrefix : "";
     for (const server of Object.values(this.state.servers)) {
@@ -638,9 +640,9 @@ export class McpService {
       const token = secret.headerValue.startsWith(prefix)
         ? secret.headerValue.slice(prefix.length)
         : secret.headerValue;
-      if (token) return token;
+      if (token) return { github: { token } };
     }
-    return undefined;
+    return {};
   }
 
   dispose(): void {
