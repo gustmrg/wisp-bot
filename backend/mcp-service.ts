@@ -1156,15 +1156,16 @@ export class McpService {
   }
 
   private createConnection(): McpConnection {
-    if (this.options.createConnection) return this.options.createConnection({ fetch: undefined });
-    return new McpConnection({
+    const options: McpConnectionOptions = {
       clientVersion: this.options.clientVersion,
       onClosed: () => {
         void this.publishAndView();
       },
       onConnectFailed: ({ endpoint, reason }) =>
         this.options.logger?.warn("mcp_connect_failed", { host: hostOf(endpoint), reason }),
-    });
+    };
+    if (this.options.createConnection) return this.options.createConnection(options);
+    return new McpConnection(options);
   }
 
   private createOAuthProvider(serverId: string): McpOAuthProvider {
