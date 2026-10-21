@@ -1,4 +1,9 @@
 /**
+ * "browser" is the Wisp's browser reading and moving around the web; it is
+ * allowed unless a Block rule matches. "browser_submit" is a browser action
+ * that can send something on the user's behalf: a button, a form sent with
+ * POST, or a password. It asks, unless risk mode covers it.
+ *
  * "integration_call" is the generic category for dynamically discovered MCP
  * tools. Server-supplied annotations are untrusted, so these calls never map to
  * "read" or "write". They ask unless the user always allowed that exact tool
@@ -25,6 +30,8 @@ export type ToolActionCategory =
   | "schedule_job"
   | "manage_wisp"
   | "container_command"
+  | "browser"
+  | "browser_submit"
   | "shell";
 export type ToolPolicyBehavior = "allow" | "ask" | "block";
 
@@ -127,6 +134,7 @@ export const ALLOW_EVERYTHING_CATEGORIES: ReadonlyArray<ToolActionCategory> = [
   "modify_file",
   "external_write",
   "integration_call",
+  "browser_submit",
 ];
 
 export interface WispToolPolicyView extends WispToolPolicy {
@@ -147,7 +155,10 @@ export interface ToolApprovalRequest {
   toolCallId: string;
   toolName: string;
   category: ToolActionCategory;
-  scope: { kind: "workspace_path" | "integration" | "skill" | "container" | "job" | "wisp"; display: string };
+  scope: {
+    kind: "workspace_path" | "integration" | "skill" | "container" | "browser" | "job" | "wisp";
+    display: string;
+  };
   summary: string;
   /** What a job will do, shown for job approvals. */
   job?: JobApprovalDetails;

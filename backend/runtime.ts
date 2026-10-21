@@ -56,6 +56,7 @@ import { StorageService } from "./storage-service.js";
 import { readWorkspaceQuota, WorkspaceService } from "./workspace-service.js";
 import { ContainerRuntimeDetector, type ContainerCli } from "./container-cli.js";
 import { ContainerManager } from "./container-manager.js";
+import { BrowserService } from "./browser-service.js";
 import { ExecutionService } from "./execution-service.js";
 
 /** Host capabilities the runtime needs, injected so any host (desktop or server) can compose it. */
@@ -251,19 +252,27 @@ export async function createBackendRuntime(options: BackendRuntimeOptions): Prom
     options.containerPrograms ?? (options.agentMode === "fake" ? [] : undefined),
   );
   const containerManager = new ContainerManager({ cli: () => containerRuntime.cli(), dataDirectory });
+  const resolveExecutionWisp = (id: string) => {
+    const { workspaceDirectory, configDirectory } = conversationRepository.getAgentContext(id);
+    return { storageId: conversationRepository.getWispStorageId(id), workspaceDirectory, configDirectory };
+  };
+  const browserService = new BrowserService({
+    resolveWisp: resolveExecutionWisp,
+    authorizationBroker: toolAuthorizationBroker,
+    manager: containerManager,
+    runtime: containerRuntime,
+  });
   const executionService = new ExecutionService({
     dataDirectory,
-    resolveWisp: (id) => {
-      const { workspaceDirectory, configDirectory } = conversationRepository.getAgentContext(id);
-      return { storageId: conversationRepository.getWispStorageId(id), workspaceDirectory, configDirectory };
-    },
+    resolveWisp: resolveExecutionWisp,
     listWispStorageIds: () => conversationRepository.listWispStorageIds(),
     authorizationBroker: toolAuthorizationBroker,
     manager: containerManager,
     runtime: containerRuntime,
     gitHubToken: (id) => mcpService.gitHubToken(id),
+    browser: browserService,
   });
-  const toolSource = new CompositeIntegrationToolSource([pluginService, mcpService, executionService]);
+  const toolSource = new CompositeIntegrationToolSource([pluginService, mcpService, executionService, browserService]);
   // Read when a model fails, so a changed choice applies without rebuilding the session.
   const fallbackModel = async (wispId: string) => {
     const { modelOverride, fallback } = conversationRepository.getAgentContext(wispId);
@@ -532,6 +541,7 @@ export async function createBackendRuntime(options: BackendRuntimeOptions): Prom
       toolAuthorizationBroker.dispose();
       await registry.disposeAll();
       // After the agents, so no command starts a container once they are stopped.
+      await browserService.dispose().catch(() => undefined);
       await containerManager.dispose().catch(() => undefined);
       // Last: agents may persist their final messages while they settle.
       await conversationRepository.close();

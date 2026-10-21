@@ -51,6 +51,7 @@ async function setup(
     reconcile: vi.fn(async () => undefined),
   };
   const authorize = vi.fn(async () => undefined);
+  const browser = { close: vi.fn(async () => undefined) };
   const service = new ExecutionService({
     dataDirectory: root,
     resolveWisp: (id) => {
@@ -65,8 +66,9 @@ async function setup(
       cli: async () => null,
     },
     ...(options.gitHubToken ? { gitHubToken: options.gitHubToken } : {}),
+    browser,
   });
-  return { root, wisp, manager, authorize, service };
+  return { root, wisp, manager, authorize, browser, service };
 }
 
 type RunCommand = {
@@ -91,6 +93,7 @@ describe("ExecutionService", () => {
       mode: "off",
       image: null,
       localNetwork: false,
+      browser: false,
       defaultImage: SANDBOX_IMAGE,
       gitHubPlugin: false,
       runtime: { available: true, name: "docker", version: "29.0.0" },
@@ -117,6 +120,37 @@ describe("ExecutionService", () => {
 
     await service.save({ conversationId: "atlas", mode: "container", image: "node:22", localNetwork: false });
     expect((await service.getSnapshot(ownConversation("atlas"))).revision).not.toBe(first.revision);
+  });
+
+  it("turns the browser on and off apart from commands, closing it but keeping the container", async () => {
+    const { service, manager, browser, wisp } = await setup();
+    await service.save({ conversationId: "atlas", mode: "container", image: null, localNetwork: false });
+    manager.remove.mockClear();
+
+    await expect(
+      service.save({ conversationId: "atlas", mode: "container", image: null, localNetwork: false, browser: true }),
+    ).resolves.toMatchObject({ browser: true });
+    // Left out, it stays as it is.
+    await expect(
+      service.save({ conversationId: "atlas", mode: "container", image: null, localNetwork: false }),
+    ).resolves.toMatchObject({ browser: true });
+    expect(JSON.parse(await readFile(path.join(wisp.configDirectory, "execution-settings.json"), "utf8"))).toEqual({
+      mode: "container",
+      image: null,
+      localNetwork: false,
+      browser: true,
+    });
+    expect(browser.close).not.toHaveBeenCalled();
+
+    await service.save({
+      conversationId: "atlas",
+      mode: "container",
+      image: null,
+      localNetwork: false,
+      browser: false,
+    });
+    expect(browser.close).toHaveBeenCalledWith("s1");
+    expect(manager.remove).not.toHaveBeenCalled();
   });
 
   it("blocks the local network unless allowed, and recreates the container when that changes", async () => {

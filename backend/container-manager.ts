@@ -5,7 +5,8 @@ import path from "node:path";
 
 import { CONTAINER_HOME, CONTAINER_IDLE_MS, CONTAINER_WORKSPACE, type ContainerState } from "../shared/execution.js";
 import { WispBackendError } from "./backend-error.js";
-import type { ContainerCli } from "./container-cli.js";
+import { BROWSER_DOCKERFILE, BROWSER_DRIVER_SCRIPT, BROWSER_IMAGE } from "./browser-driver.js";
+import type { AttachedContainerProcess, ContainerCli } from "./container-cli.js";
 import {
   EGRESS_GIT_PORT,
   EGRESS_PROXY_HOST,
@@ -38,6 +39,15 @@ const GIT_GATEWAY_URL = `http://${EGRESS_PROXY_HOST}:${EGRESS_GIT_PORT}/`;
 /** Hosts reached without the proxy; the git gateway is on the Wisp's own network. */
 const NO_PROXY = `localhost,127.0.0.1,::1,${EGRESS_PROXY_HOST}`;
 const PROXY_SCRIPT_TARGET = "/opt/wisp/egress-proxy.cjs";
+const BROWSER_DRIVER_TARGET = "/opt/wisp/browser-driver.cjs";
+const BROWSER_MEMORY_BYTES = 2 * 1024 * 1024 * 1024;
+const BROWSER_PROCESS_LIMIT = 256;
+const BROWSER_TMP_SIZE = "512m";
+/** The images built on the server rather than pulled, and what to say while one builds. */
+const BUILT_IMAGES: Record<string, { dockerfile: string; name: string }> = {
+  [SANDBOX_IMAGE]: { dockerfile: SANDBOX_DOCKERFILE, name: "Wisp sandbox image" },
+  [BROWSER_IMAGE]: { dockerfile: BROWSER_DOCKERFILE, name: "Wisp browser image" },
+};
 const PROXY_MEMORY = "256m";
 const PROXY_PROCESS_LIMIT = 128;
 /** Key that serializes work on the shared egress proxy, apart from any Wisp's own container. */
@@ -47,6 +57,8 @@ const CPU_LIMIT = 2;
 const PROCESS_LIMIT = 512;
 const TMP_SIZE = "1g";
 const STOP_TIMEOUT_SECONDS = 5;
+/** How long a browser gets to close Chromium once its input ends, before its client is killed. */
+const BROWSER_CLOSE_GRACE_MS = 5_000;
 /** How long a cancelled command gets to end after its processes are killed, before the client is killed too. */
 const KILL_GRACE_MS = 2_000;
 const PATH_IN_CONTAINER = [
@@ -201,6 +213,11 @@ export class ContainerManager {
     return `wisp-net-${this.installation}-${storageId}`;
   }
 
+  /** A Wisp's browser, on the Wisp's own network; it lives only as long as the server's process attached to it. */
+  browserName(storageId: string): string {
+    return `wisp-browser-${this.installation}-${storageId}`;
+  }
+
   /** Not prefixed like Wisp containers, so cleaning up deleted Wisps never matches it. */
   proxyName(): string {
     return `wisp-egress-${this.installation}`;
@@ -313,18 +330,75 @@ export class ContainerManager {
     const cli = await this.options.cli();
     if (!cli) return;
     await this.serialized(storageId, async () => {
-      await cli.run(["rm", "-f", this.containerName(storageId)]);
+      await cli.run(["rm", "-f", this.containerName(storageId), this.browserName(storageId)]);
       await this.removeNetwork(cli, this.networkName(storageId));
     });
+  }
+
+  /**
+   * Starts the Wisp's browser: a container on the Wisp's own network whose
+   * only process is the browser driver, attached to this server's process.
+   * Its local network is blocked like the Wisp's commands', through the
+   * egress proxy. It needs no port and mounts nothing of the Wisp's: it
+   * cannot see the workspace. Ending its input ends the container, which
+   * removes itself.
+   */
+  async startBrowser(
+    spec: Pick<ContainerSpec, "storageId" | "localNetwork">,
+    handlers: { onStdout: (data: Buffer) => void; onStderr?: (data: Buffer) => void },
+    signal?: AbortSignal,
+  ): Promise<AttachedContainerProcess> {
+    if (signal?.aborted) throw new Error("aborted");
+    const cli = await this.requireCli();
+    let attached: AttachedContainerProcess | undefined;
+    await abortable(
+      this.serialized(spec.storageId, async () => {
+        if (this.disposed) throw new WispBackendError("unavailable", "The Wisp server is shutting down.", true);
+        const ignore = () => undefined;
+        // The gateway's token is the commands' business: the browser leaves it as it is.
+        await this.ensureEgress(cli, spec, null, ignore);
+        await this.ensureImage(cli, BROWSER_IMAGE, ignore);
+        const driver = await this.writeScript("browser-driver.cjs", BROWSER_DRIVER_SCRIPT);
+        const name = this.browserName(spec.storageId);
+        // Left by a server that stopped without closing it.
+        await cli.run(["rm", "-f", name]);
+        // The caller stopped waiting while the image was built: nobody would use this browser.
+        if (signal?.aborted) return;
+        attached = cli.attach(this.browserArgs(cli, spec, name, driver), handlers);
+      }),
+      signal,
+    );
+    if (!attached) throw new WispBackendError("internal_error", "The browser could not be started.", true);
+    return attached;
+  }
+
+  /** Ends the browser's input, so its driver closes Chromium and the container goes; removes it if it does not. */
+  async closeBrowser(storageId: string, browser: AttachedContainerProcess): Promise<void> {
+    const cli = await this.options.cli();
+    if (!cli) {
+      browser.kill();
+      return;
+    }
+    await this.closeAttached(cli, browser, storageId);
+  }
+
+  private async closeAttached(cli: ContainerCli, browser: AttachedContainerProcess, storageId: string): Promise<void> {
+    browser.end();
+    const timer = setTimeout(() => browser.kill(), BROWSER_CLOSE_GRACE_MS);
+    timer.unref();
+    const code = await browser.done;
+    clearTimeout(timer);
+    if (code === null) await cli.run(["rm", "-f", this.browserName(storageId)]);
   }
 
   /** Removes this server's containers whose Wisp no longer exists. */
   async reconcile(storageIds: ReadonlySet<string>): Promise<void> {
     const cli = await this.options.cli();
     if (!cli) return;
-    const prefix = `wisp-${this.installation}-`;
+    const prefixes = [`wisp-${this.installation}-`, `wisp-browser-${this.installation}-`];
     for (const name of await this.listNames(cli, false)) {
-      if (name.startsWith(prefix) && !storageIds.has(name.slice(prefix.length))) {
+      const prefix = prefixes.find((value) => name.startsWith(value));
+      if (prefix && !storageIds.has(name.slice(prefix.length))) {
         await cli.run(["rm", "-f", name]);
       }
     }
@@ -529,13 +603,14 @@ export class ContainerManager {
    */
   private ensureEgress(
     cli: ContainerCli,
-    spec: ContainerSpec,
-    gitToken: string | undefined,
+    spec: Pick<ContainerSpec, "storageId" | "localNetwork">,
+    /** null leaves what the gateway has for the Wisp as it is. */
+    gitToken: string | undefined | null,
     onData: (data: Buffer) => void,
   ): Promise<void> {
     return this.serialized(EGRESS_KEY, async () => {
       await this.ensureImage(cli, SANDBOX_IMAGE, onData);
-      const script = await this.writeProxyScript();
+      const script = await this.writeScript("egress-proxy.cjs", EGRESS_PROXY_SCRIPT);
       const proxy = this.proxyName();
       const fingerprint = createHash("sha256")
         .update(JSON.stringify([CONTAINER_LAYOUT_VERSION, cli.name, SANDBOX_IMAGE, EGRESS_PROXY_SCRIPT_HASH, script]))
@@ -570,7 +645,7 @@ export class ContainerManager {
       const matches = existing.exitCode === 0 && existing.stdout.trim() === String(internal);
       if (existing.exitCode === 0 && !matches) {
         // Left from other settings: a blocked Wisp must never sit on a network with a route out.
-        await cli.run(["rm", "-f", this.containerName(spec.storageId)]);
+        await cli.run(["rm", "-f", this.containerName(spec.storageId), this.browserName(spec.storageId)]);
         await this.removeNetwork(cli, network);
       }
       if (!matches) {
@@ -606,6 +681,7 @@ export class ContainerManager {
       if (!attached || !address) {
         throw new WispBackendError("internal_error", "The network proxy has no address on the Wisp's network.", true);
       }
+      if (gitToken === null) return;
       // A restarted proxy has forgotten every token, so its start time is part of what it was told.
       const told = [attached.startedAt, address, gitToken ? createHash("sha256").update(gitToken).digest("hex") : ""];
       if (this.gatewayTokens.get(network) === told.join(" ")) return;
@@ -712,12 +788,61 @@ export class ContainerManager {
     ];
   }
 
-  /** The proxy script on disk, where the container program can mount it; rewritten only when it changed. */
-  private async writeProxyScript(): Promise<string> {
-    const file = path.join(path.resolve(this.options.dataDirectory), "containers", "egress-proxy.cjs");
-    if ((await readFile(file, "utf8").catch(() => null)) !== EGRESS_PROXY_SCRIPT) {
+  private browserArgs(
+    cli: ContainerCli,
+    spec: Pick<ContainerSpec, "storageId" | "localNetwork">,
+    name: string,
+    driver: string,
+  ): string[] {
+    if (driver.includes(","))
+      throw new WispBackendError("internal_error", "The browser driver's path cannot be mounted.");
+    const uid = this.options.uid ?? process.getuid?.() ?? 1000;
+    const gid = this.options.gid ?? process.getgid?.() ?? 1000;
+    const cpus = Math.min(this.options.cpus ?? CPU_LIMIT, os.availableParallelism());
+    const memory = Math.min(BROWSER_MEMORY_BYTES, Math.floor(os.totalmem() / 4));
+    return [
+      "run",
+      "-i",
+      "--rm",
+      "--name",
+      name,
+      "--label",
+      "wisp.managed=true",
+      "--label",
+      `wisp.installation=${this.installation}`,
+      "--user",
+      `${uid}:${gid}`,
+      ...(cli.name === "podman" ? ["--userns=keep-id"] : []),
+      "--init",
+      "--read-only",
+      "--tmpfs",
+      `/tmp:rw,nosuid,size=${BROWSER_TMP_SIZE}`,
+      "--cap-drop=ALL",
+      "--security-opt=no-new-privileges",
+      `--pids-limit=${BROWSER_PROCESS_LIMIT}`,
+      `--memory=${memory}b`,
+      `--cpus=${cpus}`,
+      "--network",
+      this.networkName(spec.storageId),
+      "-e",
+      "HOME=/tmp",
+      // The proxy refuses local and private addresses; a Wisp allowed them goes straight out.
+      ...(spec.localNetwork ? [] : ["-e", `WISP_BROWSER_PROXY=${PROXY_URL}`]),
+      "--mount",
+      `type=bind,source=${driver},target=${BROWSER_DRIVER_TARGET},readonly`,
+      "--entrypoint",
+      "node",
+      BROWSER_IMAGE,
+      BROWSER_DRIVER_TARGET,
+    ];
+  }
+
+  /** A script on disk, where the container program can mount it; rewritten only when it changed. */
+  private async writeScript(fileName: string, contents: string): Promise<string> {
+    const file = path.join(path.resolve(this.options.dataDirectory), "containers", fileName);
+    if ((await readFile(file, "utf8").catch(() => null)) !== contents) {
       await mkdir(path.dirname(file), { recursive: true });
-      await writeFile(file, EGRESS_PROXY_SCRIPT, { mode: 0o644 });
+      await writeFile(file, contents, { mode: 0o644 });
     }
     return file;
   }
@@ -733,16 +858,17 @@ export class ContainerManager {
 
   private async prepareImage(cli: ContainerCli, image: string, onData: (data: Buffer) => void): Promise<void> {
     if ((await cli.run(["image", "inspect", image])).exitCode === 0) return;
-    if (image === SANDBOX_IMAGE) {
-      onData(Buffer.from("Building the Wisp sandbox image. This happens once and can take a few minutes.\n"));
+    const builtImage = BUILT_IMAGES[image];
+    if (builtImage) {
+      onData(Buffer.from(`Building the ${builtImage.name}. This happens once and can take a few minutes.\n`));
       // An empty build context: the image needs nothing from this computer.
       const context = await mkdtemp(path.join(os.tmpdir(), "wisp-image-"));
       try {
-        const built = await cli.run(["build", "-q", "-t", image, "-f", "-", context], { input: SANDBOX_DOCKERFILE });
+        const built = await cli.run(["build", "-q", "-t", image, "-f", "-", context], { input: builtImage.dockerfile });
         if (built.exitCode !== 0) {
           throw new WispBackendError(
             "internal_error",
-            `The Wisp sandbox image could not be built: ${lastLine(built.stderr || built.stdout)}`,
+            `The ${builtImage.name} could not be built: ${lastLine(built.stderr || built.stdout)}`,
             true,
           );
         }

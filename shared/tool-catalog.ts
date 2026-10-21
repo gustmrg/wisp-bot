@@ -17,6 +17,8 @@ export interface ToolMetadata {
   jobs?: boolean;
   /** Creates, changes or deletes Wisps (ADR 024); offered only where the backend can manage them. */
   wisps?: boolean;
+  /** The Wisp's browser (ADR 028); offered only to Wisps that have one. */
+  browser?: boolean;
 }
 
 export interface DynamicToolMetadataInput {
@@ -62,6 +64,13 @@ export const TOOL_CATALOG: ReadonlyArray<ToolMetadata> = [
     label: "Background process",
     activityLabel: "Checking a background process…",
     category: "container_command",
+  },
+  {
+    name: "browser",
+    label: "Browser",
+    activityLabel: "Using the browser…",
+    category: "browser",
+    browser: true,
   },
   { name: "save_skill", label: "Save skill", activityLabel: "Saving a skill…", category: "save_skill" },
   // Job tools are offered only where jobs can run, so they are not among the tools every Wisp has.
@@ -150,10 +159,13 @@ function boundedText(value: string, maxLength: number): string {
   return normalized.slice(0, maxLength);
 }
 
-/** Tools every Wisp has. Container tools are not: only Wisps whose commands run in a container get them. */
+/**
+ * Tools every Wisp has. Container tools are not: only Wisps whose commands run
+ * in a container get them, and only Wisps with a browser get the browser.
+ */
 export const BUILTIN_TOOL_NAMES = TOOL_CATALOG.filter(
-  ({ pluginId, pluginIds, category, jobs, wisps }) =>
-    !pluginId && !pluginIds && category !== "container_command" && !jobs && !wisps,
+  ({ pluginId, pluginIds, category, jobs, wisps, browser }) =>
+    !pluginId && !pluginIds && category !== "container_command" && !jobs && !wisps && !browser,
 ).map(({ name }) => name);
 
 export function getToolMetadata(name: string): ToolMetadata | undefined {

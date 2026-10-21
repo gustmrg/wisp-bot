@@ -3,6 +3,9 @@ export type ExecutionMode = "off" | "container";
 
 export const EXECUTION_MODES: ReadonlyArray<ExecutionMode> = ["off", "container"];
 
+/** A Wisp's browser closes after this long without being used; its pages and sign-ins go with it. */
+export const BROWSER_IDLE_MS = 10 * 60 * 1000;
+
 /** A container stops after this long without a command and starts again on the next one. */
 export const CONTAINER_IDLE_MS = 30 * 60 * 1000;
 /** Container folder that holds the Wisp's workspace, the same files its file tools see. */
@@ -23,8 +26,10 @@ export interface WispExecutionView {
   mode: ExecutionMode;
   /** An image the person chose; null uses the Wisp sandbox image built on the server. */
   image: string | null;
-  /** Whether commands may reach local and private network addresses; the internet is always reachable. */
+  /** Whether commands and the browser may reach local and private network addresses; the internet is always reachable. */
   localNetwork: boolean;
+  /** Whether the Wisp has a browser, in a container of its own; it does not need commands. */
+  browser: boolean;
   defaultImage: string;
   /** Whether git can use the GitHub plugin's token: the Wisp has access to an enabled GitHub plugin. */
   gitHubPlugin: boolean;
@@ -44,6 +49,8 @@ export interface SaveWispExecutionRequest {
   mode: ExecutionMode;
   image: string | null;
   localNetwork: boolean;
+  /** Left out keeps the current setting. */
+  browser?: boolean;
 }
 
 /**

@@ -24,7 +24,7 @@ const MODES: ReadonlyArray<{ value: ExecutionMode; label: string }> = [
 
 const CONTAINER_STATES = { absent: "Not created yet", stopped: "Stopped", running: "Running" } as const;
 
-/** The Commands section of a Wisp's settings. */
+/** The Commands & browser section of a Wisp's settings. */
 export function WispExecutionSettings({ conversationId }: { conversationId: string }) {
   return <ExecutionPanel key={conversationId} conversationId={conversationId} />;
 }
@@ -71,6 +71,7 @@ function ExecutionPanel({ conversationId }: { conversationId: string }) {
         mode: view.mode,
         image: view.image,
         localNetwork: view.localNetwork,
+        browser: view.browser,
         ...changes,
       });
       if (!result.ok) {
@@ -101,6 +102,7 @@ function ExecutionPanel({ conversationId }: { conversationId: string }) {
   }
   const trimmedImage = image.trim();
   const imageChanged = (trimmedImage || null) !== view.image;
+  const commands = view.mode === "container";
   return (
     <FieldGroup className="gap-3">
       <FieldDescription>
@@ -129,29 +131,51 @@ function ExecutionPanel({ conversationId }: { conversationId: string }) {
           }
         />
       </Field>
-      {view.mode === "container" ? (
+      <Field orientation="horizontal">
+        <FieldContent>
+          <FieldTitle>Use a browser</FieldTitle>
+          <FieldDescription>
+            Opens pages in a browser of its own, in another container, to follow links and fill in forms. It cannot see
+            the workspace. Clicking buttons, sending forms and typing passwords ask you first.
+          </FieldDescription>
+        </FieldContent>
+        <ToggleSwitch
+          label="Use a browser"
+          checked={view.browser}
+          disabled={saving || (!view.runtime.available && !view.browser)}
+          onChange={() =>
+            void save(
+              { browser: !view.browser },
+              view.browser ? "Browser turned off." : "This Wisp can now use a browser.",
+            )
+          }
+        />
+      </Field>
+      {commands || view.browser ? (
+        <Field orientation="horizontal">
+          <FieldContent>
+            <FieldTitle>Allow local network</FieldTitle>
+            <FieldDescription>
+              {view.localNetwork
+                ? "Commands and the browser can reach devices and services on the server's network, such as a router or a NAS."
+                : "Commands and the browser reach the internet through a proxy that blocks the server's network and local addresses. Changing this recreates their containers."}
+            </FieldDescription>
+          </FieldContent>
+          <ToggleSwitch
+            label="Allow local network"
+            checked={view.localNetwork}
+            disabled={saving}
+            onChange={() =>
+              void save(
+                { localNetwork: !view.localNetwork },
+                view.localNetwork ? "Local network blocked." : "Local network allowed.",
+              )
+            }
+          />
+        </Field>
+      ) : null}
+      {commands ? (
         <>
-          <Field orientation="horizontal">
-            <FieldContent>
-              <FieldTitle>Allow local network</FieldTitle>
-              <FieldDescription>
-                {view.localNetwork
-                  ? "Commands can reach devices and services on the server's network, such as a router or a NAS."
-                  : "Commands reach the internet through a proxy that blocks the server's network and local addresses. Changing this recreates the container."}
-              </FieldDescription>
-            </FieldContent>
-            <ToggleSwitch
-              label="Allow local network"
-              checked={view.localNetwork}
-              disabled={saving}
-              onChange={() =>
-                void save(
-                  { localNetwork: !view.localNetwork },
-                  view.localNetwork ? "Local network blocked." : "Local network allowed.",
-                )
-              }
-            />
-          </Field>
           <Field>
             <FieldLabel htmlFor={`${id}-image`}>Image</FieldLabel>
             <div className="flex gap-2">
