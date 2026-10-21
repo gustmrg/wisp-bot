@@ -171,6 +171,18 @@ GIT_CONFIG_*`) instead of when the container is created, so they follow the
 plugins a Wisp can use without recreating its container. Containers made with
 the old rewrite are recreated once (layout version 4).
 
+GitLab is the second forge. Its upstream is the GitLab plugin's instance, so
+the server sends it with the token (`gitlab: { upstream, token }`), only HTTPS
+and without credentials, query or fragment; a Wisp the server gave no instance
+for is refused. Projects can sit under up to 20 levels of groups, a `-` segment
+(GitLab's own routes) is refused, and the token is sent as
+`Basic oauth2:<token>`. The rewrite is
+`url.http://wisp-egress:3129/gitlab/.insteadOf <instance>/`. The proxy reaches
+the instance from its own network, so a self-managed instance on the local
+network works for git even when the Wisp's local network is blocked: the user
+chose that instance, and only git reaches it. Not covered: instances with a
+certificate from a private authority.
+
 ## Deferred: SSH mode
 
 A third mode would run a Wisp's commands over SSH on a machine the user

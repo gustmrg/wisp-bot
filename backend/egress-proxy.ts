@@ -14,6 +14,8 @@ export const EGRESS_PROXY_HOST = "wisp-egress";
  */
 export interface GitForges {
   github?: { token: string };
+  /** The GitLab plugin's instance (`https://gitlab.com`, or the user's own, with any path it is served under). */
+  gitlab?: { upstream: string; token: string };
 }
 
 /**
@@ -30,12 +32,15 @@ export interface GitForges {
  *   nothing about them.
  * - **The git gateway.** git in every Wisp container sends requests for
  *   its git hosts here over plain HTTP, under the forge's name
- *   (`/github/owner/repo.git/...` for github.com). Only git's smart HTTP
+ *   (`/github/owner/repo.git/...` for github.com, `/gitlab/group/project.git/...`
+ *   for the instance of the Wisp's GitLab plugin). Only git's smart HTTP
  *   protocol (and git LFS's batch and lock check) is carried; the gateway
  *   adds the Wisp's token for that forge and sends the request to the forge
  *   over HTTPS. The token never enters a Wisp's container, and the forge's
  *   API cannot be reached with it. Each Wisp reaches the proxy only over its
  *   own network, so the address a request arrives on tells which Wisp sent it.
+ *   A GitLab instance on the local network is reached even by a Wisp whose
+ *   local network is blocked: the user chose it, and only git goes there.
  * - **The control socket**, an abstract Unix socket that only processes in
  *   the proxy's own container can reach. The server runs
  *   `node <script> control` in the container with `{ address, forges }` on
@@ -43,8 +48,9 @@ export interface GitForges {
  *   requests arriving on that address.
  *
  * `WISP_EGRESS_ALLOW` lists extra CIDR ranges to allow, `WISP_GIT_UPSTREAM`
- * replaces github.com and `WISP_EGRESS_CONTROL` names the control socket; only
- * tests set them.
+ * replaces github.com, `WISP_GIT_INSECURE_UPSTREAMS=1` lets the server give
+ * plain HTTP instances and `WISP_EGRESS_CONTROL` names the control socket;
+ * only tests set them.
  */
 export const EGRESS_PROXY_SCRIPT = String.raw`"use strict";
 const http = require("node:http");
@@ -168,13 +174,21 @@ server.on("connect", async (request, client, head) => {
 /**
  * The forges the git gateway carries, by the first segment of a request's
  * path: where requests go, which repository paths it accepts, and the user
- * name its token is sent with.
+ * name its token is sent with. A forge without an upstream of its own goes
+ * where the server said for the Wisp, and is refused for a Wisp it said
+ * nothing about.
  */
 const FORGES = {
   github: {
     upstream: GIT_UPSTREAM,
     repository: /^[A-Za-z0-9][A-Za-z0-9-]{0,38}\/[A-Za-z0-9._-]{1,100}$/,
     user: "x-access-token",
+  },
+  // A project under up to 20 levels of groups; GitLab's own routes have a "-" segment, which is refused.
+  gitlab: {
+    upstream: null,
+    repository: /^[A-Za-z0-9_.][A-Za-z0-9_.-]{0,254}(\/[A-Za-z0-9_.][A-Za-z0-9_.-]{0,254}){1,20}$/,
+    user: "oauth2",
   },
 };
 /** Per forge, the token for requests arriving on each of the proxy's addresses, one per Wisp network. */
@@ -206,7 +220,9 @@ function gitTarget(address, method, url) {
     if (method !== "GET" || !/^\?service=git-(upload|receive)-pack$/.test(url.search)) return null;
   } else if (method !== "POST" || url.search !== "") return null;
   const given = (gitForges.get(address) || {})[match[1]];
-  return { id: match[1], forge: target, upstream: target.upstream, token: given && given.token, path: "/" + match[2] + "/" + match[3] };
+  const upstream = target.upstream || (given && given.upstream);
+  if (!upstream) return null;
+  return { id: match[1], forge: target, upstream, token: given && given.token, path: "/" + match[2] + "/" + match[3] };
 }
 
 const gitServer = http.createServer((request, response) => {
@@ -259,14 +275,27 @@ const gitServer = http.createServer((request, response) => {
   request.pipe(upstream);
 });
 
+/** An instance's address from the server: HTTPS, with no credentials, query or fragment. */
+function parseUpstream(value) {
+  const url = typeof value === "string" && value.length <= 2048 ? new URL(value) : null;
+  const insecure = process.env.WISP_GIT_INSECURE_UPSTREAMS === "1" && url && url.protocol === "http:";
+  if (!url || (url.protocol !== "https:" && !insecure) || url.username || url.password || url.search || url.hash) {
+    throw new Error("upstream");
+  }
+  return url;
+}
+
 /** The forges a control message gives for an address, checked; throws on anything else. */
 function parseForges(value) {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("forges");
   const forges = {};
   for (const [id, entry] of Object.entries(value)) {
-    if (!forge(id) || !entry || typeof entry.token !== "string" || !GIT_TOKEN.test(entry.token)) throw new Error("forge");
-    if (Object.keys(entry).some((key) => key !== "token")) throw new Error("forge");
-    forges[id] = { token: entry.token };
+    const target = forge(id);
+    if (!target || !entry || typeof entry.token !== "string" || !GIT_TOKEN.test(entry.token)) throw new Error("forge");
+    // Only a forge without an upstream of its own is told where to go.
+    const keys = target.upstream ? ["token"] : ["token", "upstream"];
+    if (Object.keys(entry).some((key) => !keys.includes(key))) throw new Error("forge");
+    forges[id] = target.upstream ? { token: entry.token } : { token: entry.token, upstream: parseUpstream(entry.upstream) };
   }
   return forges;
 }

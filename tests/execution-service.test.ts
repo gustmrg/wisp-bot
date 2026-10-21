@@ -94,6 +94,7 @@ describe("ExecutionService", () => {
       browser: false,
       defaultImage: SANDBOX_IMAGE,
       gitHubPlugin: false,
+      gitLabInstance: null,
       runtime: { available: true, name: "docker", version: "29.0.0" },
       container: "absent",
     });
@@ -241,6 +242,26 @@ describe("ExecutionService", () => {
 
     expect(gitForges).toHaveBeenCalledWith("atlas");
     expect(manager.exec.mock.calls[0]![3]).toMatchObject({ git: { github: { token: "github_pat_plugin" } } });
+  });
+
+  it("gives git the GitLab plugin's instance and token, and leaves out an instance it cannot use", async () => {
+    const forges: { current: GitForges } = {
+      current: { gitlab: { upstream: "https://gitlab.example.invalid/gitlab", token: "glpat-plugin" } },
+    };
+    const { service, manager } = await setup({ gitForges: async () => forges.current });
+    await service.save({ conversationId: "atlas", mode: "container", image: null, localNetwork: false });
+    await expect(service.getView("atlas")).resolves.toMatchObject({
+      gitHubPlugin: false,
+      gitLabInstance: "https://gitlab.example.invalid/gitlab",
+    });
+    const tool = await runCommandTool(service);
+    await tool.execute("call-1", { command: "git clone https://gitlab.example.invalid/gitlab/group/project" });
+    expect(manager.exec.mock.calls[0]![3]).toMatchObject({ git: forges.current });
+
+    for (const upstream of ["http://gitlab.example.invalid", "https://gitlab.example.invalid/", "not a url"]) {
+      forges.current = { gitlab: { upstream, token: "glpat-plugin" } };
+      await expect(service.getView("atlas")).resolves.toMatchObject({ gitLabInstance: null });
+    }
   });
 
   it("runs commands without a token when the plugin's cannot be read", async () => {

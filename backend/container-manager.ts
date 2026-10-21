@@ -49,25 +49,6 @@ const BUILT_IMAGES: Record<string, { dockerfile: string; name: string }> = {
   [SANDBOX_IMAGE]: { dockerfile: SANDBOX_DOCKERFILE, name: "Wisp sandbox image" },
   [BROWSER_IMAGE]: { dockerfile: BROWSER_DOCKERFILE, name: "Wisp browser image" },
 };
-
-/**
- * git configuration for one command: each forge's address goes to the
- * gateway under the forge's name. Given with every command rather than when
- * the container is created, so it follows the plugins the Wisp can use now.
- */
-function gitEnvironment(): string[] {
-  const rewrites: Array<[string, string]> = [["https://github.com/", `${GIT_GATEWAY_URL}github/`]];
-  return [
-    "-e",
-    `GIT_CONFIG_COUNT=${rewrites.length}`,
-    ...rewrites.flatMap(([from, to], index) => [
-      "-e",
-      `GIT_CONFIG_KEY_${index}=url.${to}.insteadOf`,
-      "-e",
-      `GIT_CONFIG_VALUE_${index}=${from}`,
-    ]),
-  ];
-}
 const PROXY_MEMORY = "256m";
 const PROXY_PROCESS_LIMIT = 128;
 /** Key that serializes work on the shared egress proxy, apart from any Wisp's own container. */
@@ -206,6 +187,27 @@ export interface ContainerManagerOptions {
 }
 
 /**
+ * git configuration for one command: github.com, and the GitLab plugin's
+ * instance when the Wisp can use it, go to the gateway under the forge's name.
+ * Given with every command rather than when the container is created, so it
+ * follows the plugins the Wisp can use now.
+ */
+function gitEnvironment(git: GitForges | undefined): string[] {
+  const rewrites: Array<[string, string]> = [["https://github.com/", `${GIT_GATEWAY_URL}github/`]];
+  if (git?.gitlab) rewrites.push([`${git.gitlab.upstream}/`, `${GIT_GATEWAY_URL}gitlab/`]);
+  return [
+    "-e",
+    `GIT_CONFIG_COUNT=${rewrites.length}`,
+    ...rewrites.flatMap(([from, to], index) => [
+      "-e",
+      `GIT_CONFIG_KEY_${index}=url.${to}.insteadOf`,
+      "-e",
+      `GIT_CONFIG_VALUE_${index}=${from}`,
+    ]),
+  ];
+}
+
+/**
  * Owns the containers Wisps run commands in: one per Wisp, created on its
  * first command, stopped after a while without one, and removed with the Wisp.
  */
@@ -277,7 +279,7 @@ export class ContainerManager {
       const execId = randomUUID();
       const args = [
         "exec",
-        ...gitEnvironment(),
+        ...gitEnvironment(options.git),
         "-w",
         cwd,
         name,
@@ -339,7 +341,7 @@ export class ContainerManager {
       const result = await abortable(
         cli.run([
           "exec",
-          ...gitEnvironment(),
+          ...gitEnvironment(options.git),
           "-w",
           CONTAINER_WORKSPACE,
           this.containerName(spec.storageId),
