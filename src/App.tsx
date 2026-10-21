@@ -276,6 +276,7 @@ function Workspace({
               mobile={mobile}
               collapsed={sidebarCollapsed}
               onToggleCollapsed={toggleSidebar}
+              showWispsRow={workspace.preferences.wispsRow}
               hidden={mobile && (mobilePage !== "list" || detailsOpen)}
               statuses={workspace.statuses}
               activity={workspace.activity}

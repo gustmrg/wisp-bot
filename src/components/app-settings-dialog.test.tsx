@@ -305,6 +305,8 @@ describe("AppSettingsDialog metadata", () => {
 
     await user.click(screen.getByRole("radio", { name: "Natural" }));
     expect(onPreferencesChange).toHaveBeenCalledWith({ ...DEFAULT_PREFERENCES, replyPace: "natural" });
+    // The row of Wisps only exists on the phone list.
+    expect(screen.queryByRole("switch", { name: "Wisps row" })).not.toBeInTheDocument();
   });
 });
 
@@ -355,5 +357,43 @@ describe("AppSettingsDialog on mobile", () => {
 
     await user.click(screen.getByRole("button", { name: "Ada Lovelace" }));
     expect(screen.getByLabelText("Preferred name")).toHaveValue("Ada");
+  });
+
+  it("shows or hides the row of Wisps above the conversations", async () => {
+    const user = userEvent.setup();
+    const onPreferencesChange = vi.fn();
+    Object.defineProperty(window, "wisp", {
+      configurable: true,
+      value: {
+        subscribeToPluginSettings: vi.fn(() => () => undefined),
+        subscribeToUpdateState: vi.fn(() => () => undefined),
+        getUpdateState: vi.fn(async () => ({ ok: true, value: { phase: "idle", currentVersion: "9.8.7" } })),
+      },
+    });
+    render(
+      <AppSettingsDialog
+        mobile
+        appMetadata={appMetadata}
+        currentUser={currentUser}
+        userProfile={{
+          profile: { preferredName: "Ada", aboutYou: "", responsePreferences: "" },
+          loading: false,
+          error: null,
+          save: vi.fn(),
+        }}
+        open
+        preferences={DEFAULT_PREFERENCES}
+        persistenceStatus="saved"
+        persistenceError={null}
+        onOpenChange={vi.fn()}
+        onPreferencesChange={onPreferencesChange}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Ada Lovelace" }));
+    const wispsRow = screen.getByRole("switch", { name: "Wisps row" });
+    expect(wispsRow).toBeChecked();
+    await user.click(wispsRow);
+    expect(onPreferencesChange).toHaveBeenCalledWith({ ...DEFAULT_PREFERENCES, wispsRow: false });
   });
 });

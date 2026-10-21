@@ -12,6 +12,7 @@ describe("normalizePreferences", () => {
       normalizePreferences({
         theme: "dark",
         wispColors: false,
+        wispsRow: false,
         launchAtLogin: true,
         notificationSounds: false,
         microphone: "studio-mic",
@@ -29,6 +30,7 @@ describe("normalizePreferences", () => {
       ...DEFAULT_PREFERENCES,
       theme: "dark",
       wispColors: false,
+      wispsRow: false,
       launchAtLogin: true,
       notificationSounds: false,
       microphone: "studio-mic",
