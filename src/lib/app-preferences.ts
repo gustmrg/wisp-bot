@@ -63,6 +63,8 @@ export interface AppPreferences {
   detailsWidth: number;
   /** The desktop Wisp list is folded to a rail of avatars. */
   sidebarCollapsed: boolean;
+  /** The phone list shows every Wisp in a row above the conversations. */
+  wispsRow: boolean;
 }
 
 export const DEFAULT_PREFERENCES: AppPreferences = {
@@ -93,6 +95,7 @@ export const DEFAULT_PREFERENCES: AppPreferences = {
   sidebarWidth: SIDEBAR_LAYOUT.resize.defaultWidth,
   detailsWidth: DETAILS_LAYOUT.resize.defaultWidth,
   sidebarCollapsed: false,
+  wispsRow: true,
 };
 
 export function isRuleBehavior(value: unknown): value is RuleBehavior {
@@ -179,5 +182,6 @@ export function normalizePreferences(value: unknown): AppPreferences {
     sidebarWidth: panelWidth(saved?.sidebarWidth, SIDEBAR_LAYOUT.resize),
     detailsWidth: panelWidth(saved?.detailsWidth, DETAILS_LAYOUT.resize),
     sidebarCollapsed: typeof saved?.sidebarCollapsed === "boolean" ? saved.sidebarCollapsed : false,
+    wispsRow: typeof saved?.wispsRow === "boolean" ? saved.wispsRow : true,
   };
 }

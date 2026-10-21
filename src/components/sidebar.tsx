@@ -56,6 +56,8 @@ interface SidebarProps {
   collapsed?: boolean;
   /** Folds or unfolds the desktop list; without it there is no button to. */
   onToggleCollapsed?: () => void;
+  /** On mobile, shows every Wisp in a row above the conversations. */
+  showWispsRow?: boolean;
   statuses?: Record<string, ManagedConversationStatus>;
   /** What each working conversation is doing, such as "Searching the web". */
   activity?: Record<string, string | undefined>;
@@ -113,6 +115,7 @@ function Sidebar({
   hidden = false,
   collapsed = false,
   onToggleCollapsed,
+  showWispsRow = true,
   statuses = {},
   activity = {},
   approvals = {},
@@ -195,13 +198,15 @@ function Sidebar({
             >
               <SearchIcon aria-hidden="true" />
             </button>
-            <WispOrbs
-              chats={chats}
-              statuses={statuses}
-              approvals={approvals}
-              failedChats={failedChats}
-              onSelectChat={onSelectChat}
-            />
+            {showWispsRow ? (
+              <WispOrbs
+                chats={chats}
+                statuses={statuses}
+                approvals={approvals}
+                failedChats={failedChats}
+                onSelectChat={onSelectChat}
+              />
+            ) : null}
             {onResolveApproval ? (
               <NeedsYou
                 chats={chats}

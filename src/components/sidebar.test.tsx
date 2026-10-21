@@ -339,6 +339,29 @@ describe("Sidebar on mobile", () => {
     expect(within(list).getAllByRole("button")).toHaveLength(1);
   });
 
+  it("leaves out the row of Wisps when the person hides it", () => {
+    const { rerender } = render(
+      <Sidebar mobile activeChatId="" chats={chats} currentUser={currentUser} width={280} {...callbacks} />,
+    );
+    expect(screen.getByRole("navigation", { name: "Your Wisps" })).toBeInTheDocument();
+
+    rerender(
+      <Sidebar
+        mobile
+        showWispsRow={false}
+        activeChatId=""
+        chats={chats}
+        currentUser={currentUser}
+        width={280}
+        {...callbacks}
+      />,
+    );
+    expect(screen.queryByRole("navigation", { name: "Your Wisps" })).not.toBeInTheDocument();
+    // Every Wisp stays reachable through its conversation.
+    const list = screen.getByRole("navigation", { name: "Wisps and circles" });
+    expect(within(list).getAllByRole("button")).toHaveLength(3);
+  });
+
   it("counts the unread messages in the badge, up to 99+", () => {
     const counted = (unreadCount: number) =>
       wispChatView("beta", { wisp: { name: "Beta" }, chat: { preview: "Fresh reply", unread: true, unreadCount } });
