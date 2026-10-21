@@ -29,6 +29,7 @@ import {
   type ContainerSpec,
   type ProcessAction,
 } from "./container-manager.js";
+import type { GitForges } from "./egress-proxy.js";
 import {
   snapshotRevision,
   type AgentScope,
@@ -103,8 +104,8 @@ export interface ExecutionServiceOptions {
   authorizationBroker: Pick<ToolAuthorizationBroker, "authorize">;
   manager: ContainerManager;
   runtime: { status(): Promise<ContainerRuntimeStatus>; cli(): Promise<ContainerCli | null> };
-  /** The GitHub plugin's token, when the Wisp has access to the plugin. */
-  gitHubToken?: (conversationId: string) => Promise<string | undefined>;
+  /** The forges git can use through the gateway, with the tokens of the plugins the Wisp has access to. */
+  gitForges?: (conversationId: string) => Promise<GitForges>;
   /** Closes a Wisp's browser, when it is turned off. */
   browser?: { close(storageId: string): Promise<void> };
 }
@@ -123,7 +124,7 @@ export class ExecutionService implements IntegrationToolSource {
       readExecutionSettings(wisp.configDirectory),
       this.options.runtime.status(),
       this.options.manager.state(wisp.storageId),
-      this.gitToken(conversationId).then(Boolean),
+      this.gitForges(conversationId).then((forges) => Boolean(forges.github)),
     ]);
     return { ...settings, defaultImage: SANDBOX_IMAGE, gitHubPlugin, runtime, container };
   }
@@ -199,10 +200,11 @@ export class ExecutionService implements IntegrationToolSource {
     await rm(path.join(this.options.dataDirectory, LEGACY_CREDENTIALS_FILE), { force: true });
   }
 
-  /** The GitHub plugin's token, which the git gateway adds for this Wisp. */
-  private async gitToken(conversationId: string): Promise<string | undefined> {
-    const token = await this.options.gitHubToken?.(conversationId).catch(() => undefined);
-    return token && isGitToken(token) ? token : undefined;
+  /** The plugins' tokens, which the git gateway adds for this Wisp; a forge without a usable token is left out. */
+  private async gitForges(conversationId: string): Promise<GitForges> {
+    const forges = await this.options.gitForges?.(conversationId).catch(() => undefined);
+    const github = forges?.github;
+    return github && isGitToken(github.token) ? { github: { token: github.token } } : {};
   }
 
   private async createRunCommandTool(
@@ -218,7 +220,7 @@ export class ExecutionService implements IntegrationToolSource {
           onData,
           ...(signal ? { signal } : {}),
           ...(timeout === undefined ? {} : { timeout }),
-          ...(await this.gitToken(conversationId).then((gitToken) => (gitToken ? { gitToken } : {}))),
+          git: await this.gitForges(conversationId),
         }),
     };
     const base = createBashToolDefinition(wisp.workspaceDirectory, { operations, exposeSessionEnvironment: false });
@@ -287,10 +289,10 @@ export class ExecutionService implements IntegrationToolSource {
   private createProcessTool(conversationId: string, wisp: ExecutionWisp, settings: ExecutionSettings): ToolDefinition {
     const spec = containerSpec(wisp, settings);
     const run = async (action: ProcessAction, args: ReadonlyArray<string>, signal: AbortSignal | undefined) => {
-      const gitToken = action === "start" ? await this.gitToken(conversationId) : undefined;
+      const git = action === "start" ? await this.gitForges(conversationId) : undefined;
       return this.options.manager.processScript(spec, action, args, {
         ...(signal ? { signal } : {}),
-        ...(gitToken ? { gitToken } : {}),
+        ...(git ? { git } : {}),
       });
     };
     return defineWispTool({

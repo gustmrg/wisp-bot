@@ -43,7 +43,7 @@ afterAll(async () => {
 interface Proxy {
   port: number;
   gitPort: number;
-  /** Sets or, with null, forgets the git gateway's token for an address, as the server does. */
+  /** Sets the git gateway's forges for an address or, with null forges, forgets it, as the server does. */
   control: (input: string) => Promise<number | null>;
 }
 
@@ -226,26 +226,32 @@ describe("git gateway", () => {
     return { status: response.status, headers: response.headers, text };
   }
 
+  const forges = (token: string) => JSON.stringify({ address: "127.0.0.1", forges: { github: { token } } });
+
   it.each([
-    ["GET", "/repos/owner/repo"],
-    ["GET", "/owner/repo/pulls"],
-    ["GET", "/owner/repo.git/info/refs"],
-    ["GET", "/owner/repo.git/info/refs?service=git-upload-archive"],
-    ["POST", "/owner/repo.git/info/refs?service=git-upload-pack"],
-    ["GET", "/owner/repo.git/git-receive-pack"],
-    ["POST", "/owner/repo.git/git-upload-pack?x=1"],
-    ["GET", "/owner/../info/refs?service=git-upload-pack"],
-    ["POST", "/graphql"],
-  ])("refuses %s %s, which is not git", async (method, pathname) => {
-    await expect(proxy.control(JSON.stringify({ address: "127.0.0.1", token: "fake-token" }))).resolves.toBe(0);
+    ["GET", "/github/repos/owner/repo"],
+    ["GET", "/github/owner/repo/pulls"],
+    ["GET", "/github/owner/repo.git/info/refs"],
+    ["GET", "/github/owner/repo.git/info/refs?service=git-upload-archive"],
+    ["POST", "/github/owner/repo.git/info/refs?service=git-upload-pack"],
+    ["GET", "/github/owner/repo.git/git-receive-pack"],
+    ["POST", "/github/owner/repo.git/git-upload-pack?x=1"],
+    ["GET", "/github/owner/../info/refs?service=git-upload-pack"],
+    ["GET", "/github/a/b/c.git/info/refs?service=git-upload-pack"],
+    ["GET", "/owner/repo.git/info/refs?service=git-upload-pack"],
+    ["GET", "/gitlab/owner/repo.git/info/refs?service=git-upload-pack"],
+    ["GET", "/constructor/owner/repo.git/info/refs?service=git-upload-pack"],
+    ["POST", "/github/graphql"],
+  ])("refuses %s %s, which is not git to a forge it carries", async (method, pathname) => {
+    await expect(proxy.control(forges("fake-token"))).resolves.toBe(0);
     const answer = await send(pathname, { method });
     expect(answer.status).toBe(403);
     expect(answer.text).toContain("carries only git");
   });
 
   it("adds the token for the address a request arrives on, and replaces the client's own", async () => {
-    await expect(proxy.control(JSON.stringify({ address: "127.0.0.1", token: "fake-token" }))).resolves.toBe(0);
-    const answer = await send("/owner/repo.git/info/refs?service=git-upload-pack", {
+    await expect(proxy.control(forges("fake-token"))).resolves.toBe(0);
+    const answer = await send("/github/owner/repo.git/info/refs?service=git-upload-pack", {
       headers: { authorization: "Bearer stolen", cookie: "session=1", "git-protocol": "version=2" },
     });
     expect(answer.status).toBe(200);
@@ -256,15 +262,19 @@ describe("git gateway", () => {
     expect(seen.headers["git-protocol"]).toBe("version=2");
   });
 
-  it("sends requests without a token once it is taken away, so public repositories still work", async () => {
-    await expect(proxy.control(JSON.stringify({ address: "127.0.0.1", token: null }))).resolves.toBe(0);
-    const answer = await send("/owner/repo/info/refs?service=git-receive-pack");
+  it.each([
+    ["no forges", { forges: {} }],
+    ["the address forgotten", { forges: null }],
+  ])("sends GitHub requests without a token with %s, so public repositories still work", async (_, message) => {
+    await expect(proxy.control(forges("fake-token"))).resolves.toBe(0);
+    await expect(proxy.control(JSON.stringify({ address: "127.0.0.1", ...message }))).resolves.toBe(0);
+    const answer = await send("/github/owner/repo/info/refs?service=git-receive-pack");
     expect((JSON.parse(answer.text) as { headers: Record<string, string> }).headers.authorization).toBeUndefined();
   });
 
   it("streams a large pack to github.com", async () => {
     const body = Buffer.alloc(5 * 1024 * 1024, 7);
-    const answer = await send("/owner/repo.git/git-receive-pack", {
+    const answer = await send("/github/owner/repo.git/git-receive-pack", {
       method: "POST",
       headers: { "content-type": "application/x-git-receive-pack-request" },
       body,
@@ -273,17 +283,27 @@ describe("git gateway", () => {
   });
 
   it("keeps a moved repository's redirect on the gateway", async () => {
-    const answer = await send("/old/repo.git/info/refs?service=git-upload-pack");
+    const answer = await send("/github/old/repo.git/info/refs?service=git-upload-pack");
     expect(answer.status).toBe(301);
     expect(answer.headers.get("location")).toBe(
-      `http://127.0.0.1:${proxy.gitPort}/new/repo.git/info/refs?service=git-upload-pack`,
+      `http://127.0.0.1:${proxy.gitPort}/github/new/repo.git/info/refs?service=git-upload-pack`,
     );
   });
 
   it("refuses control messages it cannot use", async () => {
     await expect(proxy.control("not json")).resolves.toBe(1);
-    await expect(proxy.control(JSON.stringify({ address: "wisp-egress", token: "x" }))).resolves.toBe(1);
-    await expect(proxy.control(JSON.stringify({ address: "127.0.0.1", token: "has space" }))).resolves.toBe(1);
+    await expect(proxy.control(JSON.stringify({ address: "wisp-egress", forges: {} }))).resolves.toBe(1);
+    await expect(proxy.control(forges("has space"))).resolves.toBe(1);
+    await expect(proxy.control(JSON.stringify({ address: "127.0.0.1", token: "x" }))).resolves.toBe(1);
+    await expect(proxy.control(JSON.stringify({ address: "127.0.0.1", forges: [] }))).resolves.toBe(1);
+    await expect(
+      proxy.control(JSON.stringify({ address: "127.0.0.1", forges: { bitbucket: { token: "x" } } })),
+    ).resolves.toBe(1);
+    await expect(
+      proxy.control(
+        JSON.stringify({ address: "127.0.0.1", forges: { github: { token: "x", upstream: "https://x" } } }),
+      ),
+    ).resolves.toBe(1);
   });
 });
 
@@ -362,7 +382,7 @@ describe("git through the gateway", () => {
 
   /** git as a Wisp's container runs it: github.com goes to the gateway, and there is no credential to find. */
   function git(cwd: string, ...args: string[]) {
-    return run("git", ["-c", `url.http://127.0.0.1:${proxy.gitPort}/.insteadOf=https://github.com/`, ...args], {
+    return run("git", ["-c", `url.http://127.0.0.1:${proxy.gitPort}/github/.insteadOf=https://github.com/`, ...args], {
       cwd,
       env: {
         PATH: process.env.PATH,
@@ -378,7 +398,9 @@ describe("git through the gateway", () => {
   }
 
   it("clones and pushes a private repository with the token only the gateway has", async () => {
-    await expect(proxy.control(JSON.stringify({ address: "127.0.0.1", token }))).resolves.toBe(0);
+    await expect(proxy.control(JSON.stringify({ address: "127.0.0.1", forges: { github: { token } } }))).resolves.toBe(
+      0,
+    );
     await git(root, "clone", "https://github.com/owner/repo.git", "work");
     const work = path.join(root, "work");
     await writeFile(path.join(work, "README.md"), "hello\n");
@@ -394,7 +416,7 @@ describe("git through the gateway", () => {
   });
 
   it("fails without the token", async () => {
-    await expect(proxy.control(JSON.stringify({ address: "127.0.0.1", token: null }))).resolves.toBe(0);
+    await expect(proxy.control(JSON.stringify({ address: "127.0.0.1", forges: null }))).resolves.toBe(0);
     await expect(git(root, "clone", "https://github.com/owner/repo.git", "denied")).rejects.toThrow(
       /Authentication failed|could not read Username|401/,
     );

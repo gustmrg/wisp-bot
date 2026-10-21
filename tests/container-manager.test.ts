@@ -13,7 +13,7 @@ import type {
 import { ContainerRuntimeDetector } from "../backend/container-cli.js";
 import { BROWSER_DOCKERFILE, BROWSER_DRIVER_SCRIPT, BROWSER_IMAGE } from "../backend/browser-driver.js";
 import { ContainerManager, SANDBOX_DOCKERFILE, SANDBOX_IMAGE } from "../backend/container-manager.js";
-import { EGRESS_PROXY_SCRIPT } from "../backend/egress-proxy.js";
+import { EGRESS_PROXY_SCRIPT, type GitForges } from "../backend/egress-proxy.js";
 
 const directories: string[] = [];
 
@@ -199,12 +199,12 @@ async function setup(options: { cli?: FakeCli; idleMs?: number } = {}) {
 }
 
 /** What the manager told the git gateway, in order. */
-function gatewayCalls(cli: FakeCli, manager: ContainerManager): Array<{ address: string; token: string | null }> {
+function gatewayCalls(cli: FakeCli, manager: ContainerManager): Array<{ address: string; forges: GitForges | null }> {
   return cli.calls
     .filter(({ args }) => args[0] === "exec" && args.includes(manager.proxyName()) && args.at(-1) === "control")
     .map(({ args, input }) => {
       expect(args).toEqual(["exec", "-i", manager.proxyName(), "node", "/opt/wisp/egress-proxy.cjs", "control"]);
-      return JSON.parse(input!) as { address: string; token: string | null };
+      return JSON.parse(input!) as { address: string; forges: GitForges | null };
     });
 }
 
@@ -244,7 +244,8 @@ describe("ContainerManager", () => {
     // The home folder lives in the workspace, created by the server so it owns it.
     expect((await stat(path.join(spec.workspaceDirectory, ".home"))).isDirectory()).toBe(true);
     const exec = cli.streams[0]!.args;
-    expect(exec.slice(0, 4)).toEqual(["exec", "-w", "/workspace/repo", name]);
+    expect(exec.slice(0, 1)).toEqual(["exec"]);
+    expect(exec.slice(exec.indexOf("-w"), exec.indexOf("-w") + 3)).toEqual(["-w", "/workspace/repo", name]);
     expect(exec.at(-1)).toBe("git status");
     expect(output.join("")).toContain("Building the Wisp sandbox image");
   });
@@ -272,23 +273,33 @@ describe("ContainerManager", () => {
 
   it("never gives the container the git token, only the gateway, on standard input", async () => {
     const { cli, manager, spec, name } = await setup();
-    const running = manager.exec(spec, "git push", "/workspace", { onData: () => undefined, gitToken: "ghp_secret" });
+    const running = manager.exec(spec, "git push", "/workspace", {
+      onData: () => undefined,
+      git: { github: { token: "ghp_secret" } },
+    });
     await finishNext(cli);
     await running;
 
     const wispRun = cli.calls.find(({ args }) => args[0] === "run" && args.includes(name))!.args;
-    expect(wispRun).toEqual(
-      expect.arrayContaining([
-        "GIT_CONFIG_KEY_0=url.http://wisp-egress:3129/.insteadOf",
-        "GIT_CONFIG_VALUE_0=https://github.com/",
-      ]),
-    );
+    expect(wispRun.join(" ")).not.toContain("GIT_CONFIG");
     expect(wispRun.join(" ")).not.toContain("credential");
     const stream = cli.streams[0]!;
+    // Each command sends github.com to the gateway, under the forge's name.
+    expect(stream.args.slice(0, stream.args.indexOf("-w"))).toEqual([
+      "exec",
+      "-e",
+      "GIT_CONFIG_COUNT=1",
+      "-e",
+      "GIT_CONFIG_KEY_0=url.http://wisp-egress:3129/github/.insteadOf",
+      "-e",
+      "GIT_CONFIG_VALUE_0=https://github.com/",
+    ]);
     expect(stream.env).toBeUndefined();
     const everything = JSON.stringify([...cli.calls.map(({ args, env }) => ({ args, env })), stream.args]);
     expect(everything).not.toContain("ghp_secret");
-    expect(gatewayCalls(cli, manager)).toEqual([{ address: "172.30.1.2", token: "ghp_secret" }]);
+    expect(gatewayCalls(cli, manager)).toEqual([
+      { address: "172.30.1.2", forges: { github: { token: "ghp_secret" } } },
+    ]);
   });
 
   it("tells the gateway again only when the token or the proxy changed", async () => {
@@ -297,7 +308,7 @@ describe("ContainerManager", () => {
       const count = cli.streams.length;
       const running = manager.exec(spec, "git fetch", "/workspace", {
         onData: () => undefined,
-        ...(gitToken ? { gitToken } : {}),
+        ...(gitToken ? { git: { github: { token: gitToken } } } : {}),
       });
       await vi.waitFor(() => expect(cli.streams).toHaveLength(count + 1));
       cli.streams.at(-1)!.finish(0);
@@ -310,18 +321,19 @@ describe("ContainerManager", () => {
     await run("two");
     await run();
     expect(gatewayCalls(cli, manager).slice(1)).toEqual([
-      { address: "172.30.1.2", token: "two" },
-      { address: "172.30.1.2", token: null },
+      { address: "172.30.1.2", forges: { github: { token: "two" } } },
+      { address: "172.30.1.2", forges: {} },
     ]);
 
     // A restarted proxy has forgotten its tokens.
     cli.containers.get(manager.proxyName())!.running = false;
     await run();
-    expect(gatewayCalls(cli, manager).at(-1)).toEqual({ address: "172.30.1.2", token: null });
+    expect(gatewayCalls(cli, manager).at(-1)).toEqual({ address: "172.30.1.2", forges: {} });
     expect(gatewayCalls(cli, manager)).toHaveLength(4);
 
     await manager.remove("s1");
     expect(gatewayCalls(cli, manager)).toHaveLength(5);
+    expect(gatewayCalls(cli, manager).at(-1)).toEqual({ address: "172.30.1.2", forges: null });
   });
 
   it("kills the command's processes on cancel and reports it as aborted", async () => {
@@ -401,16 +413,20 @@ describe("ContainerManager", () => {
 describe("ContainerManager background processes", () => {
   it("starts the container for a new process and runs the start script with its arguments", async () => {
     const { cli, manager, spec, name } = await setup();
-    const result = await manager.processScript(spec, "start", ["abcd1234", "npm run dev", "8"], { gitToken: "t0k" });
+    const result = await manager.processScript(spec, "start", ["abcd1234", "npm run dev", "8"], {
+      git: { github: { token: "t0k" } },
+    });
 
     expect(result).toEqual({ exitCode: 0, stdout: "" });
     expect(cli.containers.get(name)?.running).toBe(true);
     const call = cli.calls.find(({ args }) => args[0] === "exec" && args.includes(name))!;
-    expect(call.args.slice(0, 4)).toEqual(["exec", "-w", "/workspace", name]);
+    const workdir = call.args.indexOf("-w");
+    expect(call.args.slice(0, workdir)).toContain("GIT_CONFIG_VALUE_0=https://github.com/");
+    expect(call.args.slice(workdir, workdir + 3)).toEqual(["-w", "/workspace", name]);
     expect(call.args.slice(-4)).toEqual(["wisp-start", "abcd1234", "npm run dev", "8"]);
     expect(call.args[call.args.length - 5]).toContain("setsid");
     expect(call.env).toBeUndefined();
-    expect(gatewayCalls(cli, manager)).toEqual([{ address: "172.30.1.2", token: "t0k" }]);
+    expect(gatewayCalls(cli, manager)).toEqual([{ address: "172.30.1.2", forges: { github: { token: "t0k" } } }]);
   });
 
   it("answers from a stopped container without starting it", async () => {

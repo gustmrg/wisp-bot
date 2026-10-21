@@ -270,7 +270,7 @@ export async function createBackendRuntime(options: BackendRuntimeOptions): Prom
     authorizationBroker: toolAuthorizationBroker,
     manager: containerManager,
     runtime: containerRuntime,
-    gitHubToken: (id) => mcpService.gitHubToken(id),
+    gitForges: (id) => mcpService.gitForges(id),
     browser: browserService,
   });
   const toolSource = new CompositeIntegrationToolSource([pluginService, mcpService, executionService, browserService]);
