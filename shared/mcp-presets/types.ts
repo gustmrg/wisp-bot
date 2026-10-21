@@ -6,7 +6,7 @@
  * mentioning MCP: the user configures a plugin, not a server. Wisps with
  * access to the connection also receive the plugin's skill.
  */
-export const MCP_PRESET_IDS = ["github", "atlassian"] as const;
+export const MCP_PRESET_IDS = ["github", "gitlab", "atlassian"] as const;
 export type McpPresetId = (typeof MCP_PRESET_IDS)[number];
 
 export interface McpPresetToolset {
@@ -25,6 +25,18 @@ export interface McpPresetTokenAuth {
   label: string;
   helpUrl: string;
   help: string;
+}
+
+/**
+ * For a server people also run themselves, such as GitLab: the form asks for
+ * the instance's address, and the connection's endpoint is `path` on it. The
+ * preset's own endpoint is the hosted instance's, filled in by default.
+ */
+export interface McpPresetInstance {
+  label: string;
+  help: string;
+  /** The MCP endpoint's path on an instance, after any path the instance itself is served under. */
+  path: string;
 }
 
 /** A browser sign-in; the user approves access on the provider's site. */
@@ -51,4 +63,6 @@ export interface McpPreset {
   category: string;
   auth: McpPresetTokenAuth | McpPresetSignInAuth;
   toolsets?: McpPresetToolsets;
+  /** Set when the user can connect their own instance; `endpoint` and the token's `helpUrl` are the hosted one's. */
+  instance?: McpPresetInstance;
 }
