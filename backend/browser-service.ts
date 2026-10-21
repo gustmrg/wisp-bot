@@ -1,4 +1,6 @@
 import type { ToolDefinition } from "@earendil-works/pi-coding-agent" with { "resolution-mode": "import" };
+import { mkdir, writeFile } from "node:fs/promises";
+import path from "node:path";
 import { z } from "zod";
 
 import { BROWSER_IDLE_MS, type ContainerRuntimeStatus } from "../shared/execution.js";
@@ -15,6 +17,8 @@ import {
 } from "./integration-tool-source.js";
 import type { ToolAuthorizationBroker } from "./tool-authorization-broker.js";
 import { defineWispTool } from "./tool-schema.js";
+import { resolveWorkspacePath } from "./workspace-path.js";
+import { assertWorkspaceCapacity, readWorkspaceQuota } from "./workspace-service.js";
 
 export const BROWSER_TOOL = "browser";
 /** Longest page snapshot handed to the model; the rest is cut. */
@@ -28,7 +32,7 @@ const BROWSER_DESCRIPTION = [
   "Use a real web browser (headless Chromium) in this Wisp's own container, for pages that need JavaScript, following links, or filling in forms. Prefer web_read, when available, to just read a page.",
   "action=open opens `url` (http or https) and returns the page's URL, title and an accessibility snapshot; action=snapshot returns the current page's snapshot again.",
   "Each element in a snapshot has a ref such as [ref=e12]. action=click clicks the element `ref`; action=type replaces the text of the field `ref` with `text`, and presses Enter after it when `submit` is true; action=select chooses `values` in the list `ref`.",
-  "action=back goes back one page; action=wait waits `seconds` (1 to 30) for a page that is still loading; action=screenshot returns an image of the page (the visible part, or all of it with `fullPage`); action=close closes the browser.",
+  "action=back goes back one page; action=wait waits `seconds` (1 to 30) for a page that is still loading; action=screenshot takes an image of the page (the visible part, or all of it with `fullPage`), returns it when the model can see images, and saves it in the workspace so it can be shown to the user; action=close closes the browser.",
   "Refs change when the page does: use those from the latest snapshot. Clicking buttons, sending forms with Enter and typing passwords ask the user first. Downloads are refused, and dialogs are dismissed.",
   "The browser keeps its page, cookies and sign-ins until it is closed or unused for 10 minutes; nothing is kept after that. It cannot see the workspace.",
 ].join(" ");
@@ -315,7 +319,8 @@ export class BrowserService implements IntegrationToolSource {
         const state = await (await session()).request<PageState>(request, signal);
         if (request.action === "screenshot") {
           const model = (ctx as { model?: { input?: ReadonlyArray<string> } } | undefined)?.model;
-          const text = pageHeader(state);
+          const saved = state.image ? await saveScreenshot(wisp, state.image) : undefined;
+          const text = [pageHeader(state), saved].filter(Boolean).join("\n");
           if (!state.image || !model?.input?.includes("image")) {
             return textResult(
               `${text}\nThe current model cannot see images. Use action=snapshot to read the page instead.`,
@@ -333,6 +338,34 @@ export class BrowserService implements IntegrationToolSource {
       },
     });
   }
+}
+
+/** Workspace folder that keeps the browser's screenshots, so a Wisp can show them in its reply. */
+export const SCREENSHOT_DIRECTORY = "browser-screenshots";
+
+/**
+ * Saves a screenshot in the Wisp's workspace, within its size, and says how
+ * to show it; a screenshot that cannot be saved is still returned.
+ */
+async function saveScreenshot(wisp: ExecutionWisp, image: string): Promise<string> {
+  const bytes = Buffer.from(image, "base64");
+  const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+  const relative = `${SCREENSHOT_DIRECTORY}/screenshot-${stamp}.jpg`;
+  try {
+    await assertWorkspaceCapacity(
+      wisp.workspaceDirectory,
+      bytes.length,
+      await readWorkspaceQuota(wisp.configDirectory),
+    );
+    await mkdir(path.join(wisp.workspaceDirectory, SCREENSHOT_DIRECTORY), { recursive: true });
+    // A folder replaced by a link to somewhere else is refused.
+    const { canonicalPath } = await resolveWorkspacePath(wisp.workspaceDirectory, relative, true);
+    await writeFile(canonicalPath, bytes, { flag: "wx", mode: 0o644 });
+  } catch (error) {
+    const reason = error instanceof WispBackendError ? error.message : "The workspace could not be written.";
+    return `The screenshot could not be saved in the workspace: ${reason}`;
+  }
+  return `Saved in the workspace as ${relative}. To show it to the user, put <media src="${relative}" /> in your reply.`;
 }
 
 type BrowserRequest =

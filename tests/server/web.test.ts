@@ -8,6 +8,7 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import { StructuredLogger } from "../../backend/structured-logger.js";
 import { adminRequest } from "../../server/admin.js";
+import { MEDIA_PREVIEW_CONTENT_SECURITY_POLICY } from "../../shared/media.js";
 import { MasterKeyEncryption } from "../../server/master-key.js";
 import { createWispServer, type WispServer } from "../../server/wisp-server.js";
 
@@ -57,6 +58,7 @@ async function setup(options: { webRoot?: boolean; publicOrigin?: string } = {})
   await mkdir(path.join(webRoot, "assets"), { recursive: true });
   await writeFile(path.join(webRoot, "index.html"), "<!doctype html><title>Wisp</title>");
   await writeFile(path.join(webRoot, "sw.js"), "self.addEventListener('fetch', () => {});");
+  await writeFile(path.join(webRoot, "media-preview.html"), "<!doctype html><title>Preview</title>");
   await writeFile(path.join(webRoot, "assets", "main-abc123.js"), "console.log('app');");
   await writeFile(path.join(root, "secret.txt"), "outside the web root");
   const dataDirectory = path.join(root, "data");
@@ -103,6 +105,14 @@ describe("browser app", () => {
     expect((await send(server, { method: "HEAD", path: "/" })).body).toBe("");
     // The API is never shadowed by the app.
     expect((await send(server, { path: "/api/v1/server" })).status).toBe(401);
+  });
+
+  it("serves the HTML preview page with its own policy, which the app may frame", async () => {
+    const { server } = await setup();
+    expect((await send(server, { path: "/" })).headers["content-security-policy"]).toContain("frame-src 'self'");
+    const preview = await send(server, { path: "/media-preview.html" });
+    expect(preview.body).toContain("<title>Preview</title>");
+    expect(preview.headers["content-security-policy"]).toBe(MEDIA_PREVIEW_CONTENT_SECURITY_POLICY);
   });
 
   it("answers only the API without a web root", async () => {

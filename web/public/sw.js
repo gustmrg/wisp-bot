@@ -36,7 +36,8 @@ self.addEventListener("fetch", (event) => {
   const request = event.request;
   const url = new URL(request.url);
   if (request.method !== "GET" || url.origin !== self.location.origin) return;
-  if (url.pathname.startsWith("/api/") || url.pathname === "/health") return;
+  // The preview page is not the app: it must never be answered with the app's shell.
+  if (url.pathname.startsWith("/api/") || url.pathname === "/health" || url.pathname === "/media-preview.html") return;
   if (request.mode === "navigate") {
     const network = fetch(request).then((response) => {
       if (response.ok) {

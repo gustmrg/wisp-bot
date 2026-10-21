@@ -10,6 +10,14 @@ import {
   type WebSession,
   WORKSPACE_UPLOAD_PATH,
 } from "../shared/remote-protocol.js";
+import {
+  MEDIA_DOWNLOAD_LIMIT_BYTES,
+  MEDIA_PATH,
+  mediaMimeType,
+  mediaName,
+  type ConversationMedia,
+  type ReadConversationMediaRequest,
+} from "../shared/media.js";
 import type { WorkspaceAttachment } from "../shared/workspace.js";
 import { readServerSentEvents } from "./sse.js";
 
@@ -144,6 +152,45 @@ export class RemoteClient {
     // A Blob can be sent again, so the same retry as `authorized` applies.
     if (response.status === 401) response = await attempt(await this.authHeaders(true));
     return (await this.bodyOf(response)) as BackendResult<WorkspaceAttachment>;
+  }
+
+  /**
+   * Fetches a workspace file a Wisp's message shows. The time allowed grows
+   * with the largest size accepted, as for an upload; `signal` cancels it.
+   */
+  async readMedia(
+    request: ReadConversationMediaRequest,
+    signal?: AbortSignal,
+  ): Promise<BackendResult<ConversationMedia>> {
+    const query = new URLSearchParams({
+      conversationId: request.conversationId,
+      messageId: request.messageId,
+      path: request.path,
+      ...(request.maxBytes === undefined ? {} : { maxBytes: String(request.maxBytes) }),
+    });
+    const timeoutMs = uploadTimeoutMs(request.maxBytes ?? MEDIA_DOWNLOAD_LIMIT_BYTES);
+    const attempt = async (auth: Record<string, string>): Promise<Response> => {
+      const timeout = AbortSignal.timeout(timeoutMs);
+      return this.send(`${REMOTE_API_PREFIX}${MEDIA_PATH}?${query}`, {
+        headers: auth,
+        signal: signal ? AbortSignal.any([signal, timeout]) : timeout,
+      });
+    };
+    let response = await attempt(await this.authHeaders());
+    if (response.status === 401) response = await attempt(await this.authHeaders(true));
+    if (!response.ok) throw await this.failure(response);
+    // A refusal is an operation result in JSON; the file itself is raw bytes.
+    if (response.headers.get("Content-Type")?.startsWith("application/json")) {
+      return (await this.bodyOf(response)) as BackendResult<ConversationMedia>;
+    }
+    let bytes: Uint8Array;
+    try {
+      bytes = new Uint8Array(await response.arrayBuffer());
+    } catch {
+      if (signal?.aborted) throw signal.reason;
+      throw new RemoteError("network", "The file could not be read from the server.");
+    }
+    return { ok: true, value: { name: mediaName(request.path), mimeType: mediaMimeType(request.path), bytes } };
   }
 
   /** Answers a server's request to act on this computer's screen. */

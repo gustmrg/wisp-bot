@@ -3,7 +3,11 @@ import { realpath, stat } from "node:fs/promises";
 import type { ServerResponse } from "node:http";
 import path from "node:path";
 
+import { MEDIA_PREVIEW_CONTENT_SECURITY_POLICY } from "../shared/media.js";
 import { HttpError } from "./errors.js";
+
+/** The page HTML previews run in, with a policy of its own. */
+const MEDIA_PREVIEW_PAGE = "media-preview.html";
 
 /**
  * The browser app's policy: like the desktop renderer's, plus what a web app
@@ -18,6 +22,8 @@ export function webContentSecurityPolicy(): string {
     "img-src 'self' data: blob:",
     "font-src 'self'",
     "media-src 'self' blob:",
+    // The page HTML files a Wisp shows are previewed in.
+    "frame-src 'self'",
     "connect-src 'self'",
     "manifest-src 'self'",
     "worker-src 'self'",
@@ -71,7 +77,12 @@ export async function serveWeb(response: ServerResponse, root: string, pathname:
     "Cache-Control": relative.startsWith("assets/") ? "public, max-age=31536000, immutable" : "no-cache",
     "X-Content-Type-Options": "nosniff",
     "Referrer-Policy": "no-referrer",
-    ...(extension === ".html" ? { "Content-Security-Policy": webContentSecurityPolicy() } : {}),
+    ...(extension === ".html"
+      ? {
+          "Content-Security-Policy":
+            relative === MEDIA_PREVIEW_PAGE ? MEDIA_PREVIEW_CONTENT_SECURITY_POLICY : webContentSecurityPolicy(),
+        }
+      : {}),
     ...(relative === "sw.js" ? { "Service-Worker-Allowed": "/" } : {}),
   });
   if (head) {

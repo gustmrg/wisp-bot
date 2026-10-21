@@ -66,6 +66,9 @@ preset.
   own, to open pages, follow links and fill in forms; it asks before clicking
   buttons, sending forms or typing passwords. See
   [ADR 028](docs/decisions/028-wisp-browser.md).
+- **Files in replies** — a Wisp shows the files it made, such as charts,
+  screenshots, recordings and HTML pages, right in the conversation, on every
+  device. See [ADR 029](docs/decisions/029-files-in-replies.md).
 - **Message search** — search every conversation with `Cmd/Ctrl+K` and jump to
   the matching message.
 - **Skills** — per-Wisp reusable procedures, saved on request after you

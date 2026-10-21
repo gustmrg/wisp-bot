@@ -6,6 +6,7 @@ import path from "node:path";
 
 import { afterEach, describe, expect, it } from "vitest";
 
+import { RemoteClient } from "../../client/remote-client.js";
 import { FileLogSink } from "../../backend/file-log-sink.js";
 import { StructuredLogger } from "../../backend/structured-logger.js";
 import { adminRequest } from "../../server/admin.js";
@@ -400,6 +401,67 @@ describe("Wisp server", () => {
       credentials.accessToken,
     );
     expect(tooLarge.status).toBe(413);
+  });
+
+  it("serves only the workspace files a Wisp's reply shows, to paired devices", async () => {
+    const harness = await start();
+    const credentials = await pair(harness);
+    await setUpWisp(harness.server, credentials);
+    const events = await openEvents(harness.server, credentials);
+    await rpc(harness.server, credentials, "startConversation", { conversationId: "atlas" });
+    await rpc(harness.server, credentials, "sendMessage", {
+      conversationId: "atlas",
+      requestId: "request-1",
+      text: 'Here: <media src="/workspace/inbox/sales.png" />',
+    });
+    await events.waitFor(
+      (event) => event.type === "agentEvent" && (event.data as { type: string }).type === "assistant_message_completed",
+    );
+    await events.waitFor((event) => event.type === "conversationChanged");
+    const page = await rpc<{ messages: Array<{ id: string; type: string }> }>(
+      harness.server,
+      credentials,
+      "getConversationMessages",
+      { conversationId: "atlas", page: "latest" },
+    );
+    const reply = page.ok ? page.value.messages.find((message) => message.type === "incoming") : undefined;
+    expect(reply).toBeDefined();
+    const client = new RemoteClient({
+      baseUrl: harness.server.url,
+      credentials: { load: () => credentials, save: async () => undefined },
+    });
+    const image = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 1, 2, 3]);
+    // Attached files land in the workspace's inbox, where the reply's path points.
+    expect(await client.uploadWorkspaceFile("atlas", "sales.png", new Blob([image]))).toMatchObject({
+      ok: true,
+      value: { path: "inbox/sales.png" },
+    });
+    expect(await client.uploadWorkspaceFile("atlas", "secret.txt", new Blob(["not shown"]))).toMatchObject({
+      ok: true,
+    });
+    const request = { conversationId: "atlas", messageId: reply!.id, path: "/workspace/inbox/sales.png" };
+    expect(await client.readMedia(request)).toEqual({
+      ok: true,
+      value: { name: "sales.png", mimeType: "image/png", bytes: image },
+    });
+    expect(await client.readMedia({ ...request, maxBytes: 4 })).toMatchObject({
+      ok: false,
+      error: { code: "too_large" },
+    });
+    expect(await client.readMedia({ ...request, path: "inbox/secret.txt" })).toMatchObject({
+      ok: false,
+      error: { code: "not_found" },
+    });
+
+    const query = new URLSearchParams(request);
+    const response = await fetch(`${harness.server.url}/api/v1/media?${query}`, {
+      headers: { Authorization: `Bearer ${credentials.accessToken}` },
+    });
+    expect(response.headers.get("content-type")).toBe("application/octet-stream");
+    expect(response.headers.get("content-disposition")).toBe("attachment");
+    expect(response.headers.get("x-content-type-options")).toBe("nosniff");
+    expect(new Uint8Array(await response.arrayBuffer())).toEqual(image);
+    expect((await fetch(`${harness.server.url}/api/v1/media?${query}`)).status).toBe(401);
   });
 
   it("owns its data directory exclusively and keeps state across restarts", async () => {

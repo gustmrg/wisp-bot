@@ -173,6 +173,16 @@ sending a form other than a search, and typing a password ask first
 refused. The browser keeps cookies and sign-ins only until it is closed or
 unused for 10 minutes.
 
+## Files in replies
+
+A Wisp shows a workspace file by naming it in its reply, with `<media
+src="…" />` or a Markdown image ([ADR 029](decisions/029-files-in-replies.md)).
+The server serves a file only for the Wisp's own message that names it, from
+inside that conversation's workspace, as a download with a sandboxing policy;
+the app fetches it with its own sign-in and shows it from a blob. HTML files
+run in a sandboxed frame with an opaque origin and a policy that blocks
+requests from scripts, form posts and other workspace files.
+
 ## Prohibited patterns
 
 Pi's automatic discovery of project extensions, skills, prompts, and context

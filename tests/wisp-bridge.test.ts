@@ -260,6 +260,10 @@ function completeBridge(): WispApi {
       ok: true,
       value: { files: [], workspace: { usedBytes: 0, quotaBytes: 1024, maxQuotaBytes: 1024 } },
     }),
+    readConversationMedia: async () => ({
+      ok: true,
+      value: { name: "chart.png", mimeType: "image/png", bytes: new Uint8Array() },
+    }),
     listSkills: async () => ({ ok: true, value: [] }),
     deleteSkill: async () => ({ ok: true, value: [] }),
     importSkill: async () => ({ ok: true, value: [] }),

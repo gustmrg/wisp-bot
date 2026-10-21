@@ -4,6 +4,7 @@ import { advance, connectSteps, createProgress, fail, failedAttempt } from "../.
 import type { ConnectionProgress, ConnectionRetry, ConnectionsView, ConnectionStatus } from "../../shared/connections";
 import type { BackendResult, WispApi } from "../../shared/contracts";
 import { RUNTIME_OPERATIONS } from "../../shared/runtime-operations";
+import type { ReadConversationMediaRequest } from "../../shared/media";
 import type { AttachWorkspaceFilesOptions } from "../../shared/workspace";
 
 /** The browser app's single connection: the server that served it. */
@@ -226,6 +227,8 @@ export function createWebWispApi(options: WebApiOptions): WispApi {
       (await pickFiles(attach.signal)).map((file) => ({ name: file.name, content: file })),
       attach,
     );
+  // Files come as raw bytes from their own route, not as an operation.
+  api.readConversationMedia = (request: ReadConversationMediaRequest) => session.readMedia(request);
   return api as unknown as WispApi;
 }
 

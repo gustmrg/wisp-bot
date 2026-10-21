@@ -459,6 +459,7 @@ function ChatPanel({
                 >
                   <MessageView
                     message={message}
+                    conversationId={chat.id}
                     dense={message.type === "outgoing" && previous?.type === "outgoing"}
                     author={author}
                     showAuthor={Boolean(author) && previousAuthor !== author?.id}

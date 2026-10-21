@@ -159,6 +159,19 @@ describe("browser WispApi", () => {
     });
     expect(forged.status).toBe(403);
 
+    // The app fetches the files a reply shows with its cookie session, never through an address of its own.
+    const replies = events.length;
+    await api.sendMessage({ conversationId: "atlas", requestId: "r2", text: "![](inbox/notes.txt)" });
+    await until(() => events.slice(replies).includes("assistant_message_completed"), "the second reply");
+    const page = await api.getConversationMessages({ conversationId: "atlas", page: "latest" });
+    const reply = page.ok ? page.value.messages.findLast((message) => message.type === "incoming") : undefined;
+    expect(
+      await api.readConversationMedia({ conversationId: "atlas", messageId: reply!.id!, path: "inbox/notes.txt" }),
+    ).toEqual({
+      ok: true,
+      value: { name: "notes.txt", mimeType: "text/plain", bytes: new TextEncoder().encode("hello") },
+    });
+
     await api.removeConnection({ id: "server" });
     await until(async () => (await phase()) === "pairing_required", "signing out");
     expect(server.auth.devices()).toEqual([]);
