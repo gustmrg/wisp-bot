@@ -144,6 +144,16 @@ describe("ChatPanel transcript", () => {
     expect(within(scroller).getByText("Searching the web…")).toBeInTheDocument();
   });
 
+  it("leaves the Wisp's avatar to the header while it works", () => {
+    const { scroller } = renderPanel(
+      transcript([{ id: "request", type: "outgoing", text: "Search the web", status: "complete" }]),
+      { status: "working" },
+    );
+    const indicator = within(scroller).getByRole("status");
+    expect(indicator).toHaveTextContent("Atlas is working…");
+    expect(indicator.querySelector("svg")).toBeNull();
+  });
+
   it("keeps the execution indicator hidden when a message is queued during the reply", () => {
     const { scroller } = renderPanel(
       transcript([

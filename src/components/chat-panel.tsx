@@ -516,7 +516,6 @@ function ChatPanel({
             ) : null}
             {showActivity ? (
               <div role="status" className="chat-activity mt-3 flex items-center gap-2 text-dim text-sm">
-                {chat.kind === "wisp" ? <WispAvatar wisp={chat.wisp} size="sm" state="working" /> : null}
                 <span
                   aria-hidden="true"
                   className="chat-activity-bubble flex items-center gap-1 rounded-[16px] rounded-bl-[5px] border border-border bg-bubble-in px-3.5 py-3"
