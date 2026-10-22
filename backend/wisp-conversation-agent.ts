@@ -10,6 +10,7 @@ import {
   type ConversationAgentContext,
   type ConversationAgentFactory,
   type ConversationAgentListener,
+  type WispDisplay,
 } from "./conversation-agent.js";
 import { currentTimeNote, scheduledMessageNote } from "./message-schedule.js";
 import { PiEventTranslator, sanitizeErrorMessage } from "./pi-event-translator.js";
@@ -60,6 +61,7 @@ export class WispConversationAgent implements ConversationAgent {
       options.flushDelayMs,
       context.workspaceDirectory,
     );
+    this.translator.setShowReasoning(context.display?.showReasoning === true);
   }
 
   async start(): Promise<void> {
@@ -200,6 +202,12 @@ export class WispConversationAgent implements ConversationAgent {
     await session?.abort();
   }
 
+  applyDisplay(wispId: string, display: WispDisplay): void {
+    if (wispId !== this.context.wispId) return;
+    this.context.display = display;
+    this.translator.setShowReasoning(display.showReasoning);
+  }
+
   updateContext(context: AgentContext): Promise<void> {
     return this.enqueueModelMutation(async () => {
       this.assertNotDisposed();
@@ -217,6 +225,7 @@ export class WispConversationAgent implements ConversationAgent {
       this.context.userProfile = context.userProfile;
       this.context.userTimeZone = context.userTimeZone;
       this.context.circle = context.circle;
+      this.applyDisplay(context.wispId, context.display ?? { showReasoning: false });
       if (!this.session) return;
       if (!this.session.isIdle) await this.session.waitForIdle();
       await this.session.reload();

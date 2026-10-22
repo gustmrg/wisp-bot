@@ -9,6 +9,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { WispContextSettings } from "@/components/wisp-context-settings";
 import { WispExecutionSettings } from "@/components/wisp-execution-settings";
 import { WispJobSettings } from "@/components/wisp-job-settings";
+import { WispChatDisplaySettings } from "@/components/wisp-chat-display-settings";
 import { WispModelSettings } from "@/components/wisp-model-settings";
 import { WispPluginSettings } from "@/components/wisp-plugin-settings";
 import { WispSessionReportSection } from "@/components/wisp-session-report";
@@ -201,7 +202,11 @@ export function WispDetails({
         keepMounted
         className={cn("flex min-h-0 flex-col overflow-hidden", tab === "model" && slideClass)}
       >
-        {visited.has("model") ? <WispModelSettings conversationId={chat.id} /> : null}
+        {visited.has("model") ? (
+          <WispModelSettings conversationId={chat.id}>
+            <WispChatDisplaySettings wisp={chat.wisp} onChangeWisp={onChangeWisp} />
+          </WispModelSettings>
+        ) : null}
       </TabsContent>
       <TabsContent
         value="usage"

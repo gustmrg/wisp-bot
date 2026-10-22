@@ -488,6 +488,14 @@ type ConversationAgentEventBody =
       delta: string;
     }
   | {
+      /** The model's reasoning before the text of `messageId`, sent only when the Wisp shows reasoning. */
+      type: "assistant_reasoning_delta";
+      conversationId: string;
+      requestId: string;
+      messageId: string;
+      delta: string;
+    }
+  | {
       type: "assistant_message_completed";
       conversationId: string;
       requestId: string;

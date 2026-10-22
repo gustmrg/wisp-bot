@@ -15,6 +15,7 @@ import { useState } from "react";
 import type { WispChanges, WispChatView } from "@/chat-data";
 import { Button } from "@/components/ui/button";
 import { FormStatus } from "@/components/ui/form-status";
+import { WispChatDisplaySettings } from "@/components/wisp-chat-display-settings";
 import { WispContextSettings } from "@/components/wisp-context-settings";
 import { WispExecutionSettings } from "@/components/wisp-execution-settings";
 import { WispJobSettings } from "@/components/wisp-job-settings";
@@ -90,7 +91,11 @@ export function WispSettingsSectionContent({ chat, section, onChangeWisp, onOpen
       return <WispProfileEditor key={id} chat={chat} onChangeWisp={onChangeWisp} />;
     // These two scroll and pad themselves.
     case "model":
-      return <WispModelSettings conversationId={id} />;
+      return (
+        <WispModelSettings conversationId={id}>
+          <WispChatDisplaySettings wisp={chat.wisp} onChangeWisp={onChangeWisp} />
+        </WispModelSettings>
+      );
     case "access":
       return <WispPluginSettings conversationId={id} onOpenSettings={onOpenSettings} />;
     default:

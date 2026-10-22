@@ -61,6 +61,43 @@ describe("PiEventTranslator", () => {
     translator.dispose();
   });
 
+  it("sends the model's reasoning with the message it precedes only while the Wisp shows it", () => {
+    const events: ConversationAgentEvent[] = [];
+    const translator = new PiEventTranslator("wisp-1", (event) => events.push(event), 0);
+    const thinking = (delta: string) =>
+      translator.handle({ type: "message_update", assistantMessageEvent: { type: "thinking_delta", delta } });
+    translator.begin({ conversationId: "wisp-1", requestId: "r1", text: "Plan it" });
+    translator.handle({ type: "agent_start" });
+    thinking("hidden");
+    translator.setShowReasoning(true);
+    thinking("Check the file first.");
+    translator.handle({ type: "tool_execution_start", toolCallId: "read-1", toolName: "read" });
+    translator.handle({ type: "tool_execution_end", toolCallId: "read-1", toolName: "read", isError: false });
+    thinking(" Then answer.");
+    translator.handle({ type: "message_update", assistantMessageEvent: { type: "text_delta", delta: "Done" } });
+    translator.handle({ type: "agent_settled" });
+
+    const reasoning = events.filter((event) => event.type === "assistant_reasoning_delta");
+    expect(reasoning.map((event) => [event.messageId, event.delta])).toEqual([
+      // A part with reasoning alone stays open, so its reasoning goes with the text that follows.
+      ["r1:assistant", "Check the file first."],
+      ["r1:assistant", " Then answer."],
+    ]);
+    expect(JSON.stringify(events)).not.toContain("hidden");
+    expect(events.at(-2)).toMatchObject({ type: "assistant_message_completed", messageId: "r1:assistant" });
+  });
+
+  it("does not count reasoning as an answer", () => {
+    const events: ConversationAgentEvent[] = [];
+    const translator = new PiEventTranslator("wisp-1", (event) => events.push(event), 0);
+    translator.setShowReasoning(true);
+    translator.begin({ conversationId: "wisp-1", requestId: "r1", text: "Plan it" });
+    translator.handle({ type: "agent_start" });
+    translator.handle({ type: "message_update", assistantMessageEvent: { type: "thinking_delta", delta: "Hmm" } });
+    translator.handle({ type: "agent_settled" });
+    expect(events).toContainEqual(expect.objectContaining({ type: "conversation_error", requestId: "r1" }));
+  });
+
   it("answers a follow-up with the rest of the turn, even when the reply before it used tools alone", () => {
     const events: ConversationAgentEvent[] = [];
     const translator = new PiEventTranslator("wisp-1", (event) => events.push(event), 0);

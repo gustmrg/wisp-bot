@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 
 import type {
   AiSettingsView,
@@ -34,7 +34,8 @@ import { modelLabLogo } from "@/lib/model-lab";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
-export function WispModelSettings({ conversationId }: { conversationId: string }) {
+/** `children` follow the model settings, in the same scrolling column. */
+export function WispModelSettings({ conversationId, children }: { conversationId: string; children?: ReactNode }) {
   const [catalog, setCatalog] = useState<AiSettingsView | null>(null);
   const [view, setView] = useState<ConversationModelView | null>(null);
   const [error, setError] = useState("");
@@ -247,6 +248,7 @@ export function WispModelSettings({ conversationId }: { conversationId: string }
             ) : null}
           </>
         )}
+        {children}
       </div>
     </div>
   );

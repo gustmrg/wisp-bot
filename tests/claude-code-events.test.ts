@@ -123,6 +123,18 @@ describe("ClaudeCodeEventConverter", () => {
     ]);
   });
 
+  it("passes Claude's thinking on as reasoning", () => {
+    const thinking = {
+      type: "stream_event",
+      session_id: SESSION,
+      parent_tool_use_id: null,
+      event: { type: "content_block_delta", index: 0, delta: { type: "thinking_delta", thinking: "Weigh it." } },
+    };
+    expect(convertAll([thinking]).events).toEqual([
+      { type: "message_update", assistantMessageEvent: { type: "thinking_delta", delta: "Weigh it." } },
+    ]);
+  });
+
   it("ends tools still running when the turn ends, as after a Stop", () => {
     const interrupted = { type: "result", subtype: "error_during_execution", is_error: true, session_id: SESSION };
     const { events, results } = convertAll([toolUse("toolu_1", "mcp__wisp__run_command"), interrupted]);

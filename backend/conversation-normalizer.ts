@@ -8,6 +8,7 @@ import {
   type JobOrigin,
   type MessageFailure,
   MESSAGE_FAILURE_MAX_LENGTH,
+  MESSAGE_REASONING_MAX_LENGTH,
   type ScheduledOrigin,
   type Wisp,
   type WispChanges,
@@ -172,6 +173,9 @@ export function normalizeMessage(value: unknown, fallbackId?: string): Message {
         ? {}
         : { fallbackModel: string(raw.fallbackModel, 256, false) }),
       ...(raw.error === undefined || raw.type !== "incoming" ? {} : { error: normalizeMessageFailure(raw.error) }),
+      ...(raw.reasoning === undefined || raw.type !== "incoming"
+        ? {}
+        : { reasoning: string(raw.reasoning, MESSAGE_REASONING_MAX_LENGTH) }),
     };
   }
   if (raw.type === "time") {
@@ -254,12 +258,19 @@ export function normalizeWisp(value: unknown): Wisp {
     soul: string(raw.soul, MAX_WISP_SOUL_LENGTH),
     appearance: storedAppearance(raw),
     ...(color === undefined ? {} : { color }),
+    ...(raw.showReasoning === undefined ? {} : flag("showReasoning", raw.showReasoning)),
   };
+}
+
+/** A display choice that is on, or left out when off. */
+function flag<Key extends "showReasoning">(key: Key, value: unknown): Partial<Record<Key, true>> {
+  if (typeof value !== "boolean") throw invalidRequest();
+  return value ? ({ [key]: true } as Record<Key, true>) : {};
 }
 
 export function normalizeWispChanges(value: unknown): WispChanges {
   const raw = asRecord(value);
-  const allowed = new Set(["name", "role", "soul", "appearance", "color"]);
+  const allowed = new Set(["name", "role", "soul", "appearance", "color", "showReasoning"]);
   if (Object.keys(raw).some((key) => !allowed.has(key))) throw invalidRequest();
   const result: WispChanges = {};
   if (raw.name !== undefined) result.name = string(raw.name, MAX_WISP_NAME_LENGTH, false);
@@ -268,6 +279,10 @@ export function normalizeWispChanges(value: unknown): WispChanges {
   if (raw.appearance !== undefined) result.appearance = appearanceChange(raw.appearance);
   // Present but undefined clears the color.
   if (Object.hasOwn(raw, "color")) result.color = raw.color === undefined ? undefined : colorChange(raw.color);
+  if (raw.showReasoning !== undefined) {
+    if (typeof raw.showReasoning !== "boolean") throw invalidRequest();
+    result.showReasoning = raw.showReasoning;
+  }
   return result;
 }
 
@@ -275,6 +290,7 @@ export function normalizeWispChanges(value: unknown): WispChanges {
 export function applyWispChanges(wisp: Wisp, changes: WispChanges): Wisp {
   const next: Wisp = { ...wisp, ...changes };
   if (next.color === undefined) delete next.color;
+  if (!next.showReasoning) delete next.showReasoning;
   return next;
 }
 

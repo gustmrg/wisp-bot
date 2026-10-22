@@ -190,6 +190,36 @@ describe("conversation stream reducer", () => {
     expect(state.toolActivities.one).toEqual([]);
   });
 
+  it("keeps a reply's reasoning beside its text, through to the end of the reply", () => {
+    const chats = stored(["one"]);
+    const base = { conversationId: "one", requestId: "request", messageId: "request:assistant" } as const;
+    let state = createConversationRuntime(0, {});
+    state = reduceConversationAgentEvent(
+      state,
+      { sequence: 1, type: "assistant_message_started", ...base, createdAt: "2026-10-21T10:00:00.000Z" },
+      chats,
+    );
+    state = reduceConversationAgentEvent(
+      state,
+      { sequence: 2, type: "assistant_reasoning_delta", ...base, delta: "Look " },
+      chats,
+    );
+    state = reduceConversationAgentEvent(
+      state,
+      { sequence: 3, type: "assistant_reasoning_delta", ...base, delta: "first." },
+      chats,
+    );
+    state = reduceConversationAgentEvent(
+      state,
+      { sequence: 4, type: "assistant_text_delta", ...base, delta: "Hi" },
+      chats,
+    );
+    state = reduceConversationAgentEvent(state, { sequence: 5, type: "assistant_message_completed", ...base }, chats);
+    expect(state.messages.one).toEqual([
+      expect.objectContaining({ text: "Hi", reasoning: "Look first.", status: "complete" }),
+    ]);
+  });
+
   it("adds a step's result to what it started with", () => {
     const chats = stored(["one"]);
     const step = (sequence: number, phase: "started" | "completed", detail: object) =>

@@ -142,6 +142,18 @@ carries a **Fallback** badge, and the session report lists the switch. A
 fallback whose key is removed or whose model leaves the catalog stays saved
 but is not used, and the setting says why.
 
+## Showing reasoning
+
+A Wisp's **Model** tab has **In the chat → Show reasoning**, off by default.
+When it is on, what the model reasons before each reply is kept with the reply
+and folded above it as **Reasoning**; while the model is still thinking it
+reads **Thinking…** and can be opened to follow along. Only models that reason
+send any, so the reasoning level above has to be on for most of them, and
+Claude Code Wisps show it only when Claude Code streams it. The change applies
+from the next thought on, also in circles the Wisp is in. Reasoning is stored
+with the reply (at most 100,000 characters each), so a reply keeps it after a
+restart; turning the setting off hides new reasoning, not what was kept.
+
 ## Auxiliary models
 
 Some models cannot see images. **Settings → AI Model → Auxiliary models →

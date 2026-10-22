@@ -32,6 +32,7 @@ import {
   type CircleAgentContext,
   type CircleSetting,
   type ConversationAgentContext,
+  wispDisplay,
 } from "./conversation-agent.js";
 import {
   asRecord,
@@ -384,6 +385,7 @@ export class ConversationRepository {
       name: wisp.name,
       role: wisp.role,
       soul: wisp.soul,
+      display: wispDisplay(wisp),
       userName: this.profile.preferredName || undefined,
       userProfile: this.getUserProfile(),
       userTimeZone: () => this.timeZone,

@@ -161,6 +161,9 @@ export class ClaudeCodeEventConverter {
     }
     if (event.type !== "content_block_delta") return [];
     const delta = record(event.delta);
+    if (delta?.type === "thinking_delta" && typeof delta.thinking === "string" && delta.thinking) {
+      return [{ type: "message_update", assistantMessageEvent: { type: "thinking_delta", delta: delta.thinking } }];
+    }
     if (delta?.type !== "text_delta" || typeof delta.text !== "string" || !delta.text) return [];
     return [{ type: "message_update", assistantMessageEvent: { type: "text_delta", delta: delta.text } }];
   }

@@ -1,5 +1,6 @@
 import type { ContextCommand, ContextView } from "../shared/context-policy.js";
 import type { ConversationAgentEvent, ModelSelection, SendMessageRequest, WispFallback } from "../shared/contracts.js";
+import type { Wisp } from "../shared/conversations.js";
 
 export type ConversationAgentListener = (event: ConversationAgentEvent) => void;
 
@@ -17,6 +18,8 @@ export interface ConversationAgent {
   send(request: SendMessageRequest): Promise<void>;
   abort(): Promise<void>;
   updateContext(context: AgentContext): Promise<void>;
+  /** Applies a Wisp's display choices from its next event on, mid-turn too, without reloading its session. */
+  applyDisplay?(wispId: string, display: WispDisplay): void;
   applyModel(model: ModelSelection): Promise<void>;
   clearModel(): Promise<void>;
   dispose(): Promise<void>;
@@ -80,6 +83,19 @@ export interface ConversationAgentContext {
   savePiSessionIdentity?: (identity: { sessionId: string; sessionFile: string | null }) => Promise<void>;
   /** Set when the Wisp answers in a circle rather than in its own conversation. */
   circle?: CircleSetting;
+  /** What the chat shows of the Wisp's work; nothing beyond its replies and steps when absent. */
+  display?: WispDisplay;
+}
+
+/** What the chat shows of a Wisp's work, as the Wisp's settings choose. */
+export interface WispDisplay {
+  /** The model's reasoning before each reply. */
+  showReasoning: boolean;
+}
+
+/** A Wisp's display choices, as its stored settings make them. */
+export function wispDisplay(wisp: Pick<Wisp, "showReasoning">): WispDisplay {
+  return { showReasoning: wisp.showReasoning === true };
 }
 
 /** A circle's agent: one agent per member, which answer one turn at a time (ADR 011). */

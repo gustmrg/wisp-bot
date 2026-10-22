@@ -9,6 +9,8 @@ import {
   assistantMessageId,
   chatSummary,
   messageFailure,
+  reasoningOf,
+  withReasoning,
   type Chat,
   type ChatChanges,
   type CircleChat,
@@ -29,7 +31,7 @@ import {
 import type { QueuedMessage } from "../shared/message-queue.js";
 import type { ToolApprovalRequest } from "../shared/tool-policy.js";
 import type { AgentRegistry } from "./agent-registry.js";
-import type { AgentContext } from "./conversation-agent.js";
+import { wispDisplay, type AgentContext } from "./conversation-agent.js";
 import { sanitizeBackendError, WispBackendError } from "./backend-error.js";
 import type { ConversationRepository, MessageChange } from "./conversation-repository.js";
 import type { StructuredLogger } from "./structured-logger.js";
@@ -172,15 +174,18 @@ export class ConversationService {
       });
       return;
     }
-    if (event.type === "assistant_text_delta") {
+    if (event.type === "assistant_text_delta" || event.type === "assistant_reasoning_delta") {
       const current = this.getLiveMessage(event.conversationId, event.messageId);
+      const text = current?.type === "incoming" ? current.text : "";
+      const reasoning = reasoningOf(current);
       this.setLiveMessage(event.conversationId, {
         id: event.messageId,
         type: "incoming",
-        text: `${current?.type === "incoming" ? current.text : ""}${event.delta}`,
+        text: event.type === "assistant_text_delta" ? `${text}${event.delta}` : text,
         status: "streaming",
         ...(current?.createdAt ? { createdAt: current.createdAt } : {}),
         ...this.authorOf(event.conversationId, event.wispId),
+        ...withReasoning(event.type === "assistant_reasoning_delta" ? `${reasoning}${event.delta}` : reasoning),
       });
       return;
     }
@@ -193,6 +198,7 @@ export class ConversationService {
         status: event.type === "assistant_message_completed" ? "complete" : "cancelled",
         ...(current?.createdAt ? { createdAt: current.createdAt } : {}),
         ...this.authorOf(event.conversationId, event.wispId),
+        ...withReasoning(reasoningOf(current)),
         ...(event.type === "assistant_message_completed" && event.fallbackModel
           ? { fallbackModel: event.fallbackModel }
           : {}),
@@ -236,6 +242,7 @@ export class ConversationService {
       retryable: false,
       createdAt: current?.createdAt ?? new Date().toISOString(),
       authorId: wispId,
+      ...withReasoning(reasoningOf(current)),
     });
   }
 
@@ -303,6 +310,7 @@ export class ConversationService {
       retryable: error.retryable,
       createdAt: current?.createdAt ?? createdAt,
       ...this.authorOf(conversationId),
+      ...withReasoning(reasoningOf(current)),
     });
   }
 
@@ -345,6 +353,13 @@ export class ConversationService {
       await this.registry.updateContext(this.repository.getAgentContext(wispId));
       // Every member's prompt names the members, so each circle the Wisp is in changes.
       await this.updateCirclesOf(wispId);
+    }
+    const wisp = this.repository.readWisps()[wispId];
+    if (changes.showReasoning !== undefined && wisp) {
+      // The chat shows the change from the Wisp's next event on, in every conversation it answers in.
+      for (const conversationId of [wispId, ...this.repository.listCirclesOf(wispId)]) {
+        this.registry.applyDisplay(conversationId, wispId, wispDisplay(wisp));
+      }
     }
     this.publishWisps();
     return this.getState();
