@@ -21,6 +21,7 @@ import { AttachmentChips } from "@/components/attachment-chips";
 import { MarkdownView } from "@/components/markdown-view";
 import { FileMentionedText } from "@/components/file-mention";
 import { MentionedText, type WispMentions } from "@/components/wisp-mention";
+import { MessageSteps, type ProcessStates } from "@/components/message-steps";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 
 interface MessageViewProps {
@@ -37,6 +38,8 @@ interface MessageViewProps {
   fileMentions?: boolean;
   onAnswer?: (answer: string) => void;
   onRetry?: () => void;
+  /** What is known of each background process the conversation's steps started. */
+  processStates?: ProcessStates;
 }
 
 function MessageTools({
@@ -98,6 +101,7 @@ function MessageView({
   fileMentions,
   onAnswer,
   onRetry,
+  processStates,
 }: MessageViewProps) {
   // Called before anything can return, so a reply is seen while it is still empty and streaming.
   const reveal = useRevealedText(
@@ -105,6 +109,19 @@ function MessageView({
     message.type === "incoming" ? message.text : "",
     message.status,
   );
+  if (message.type === "incoming" && message.steps?.length && !message.text) {
+    return (
+      <div className="relative flex flex-col items-start">
+        {author && showAuthor ? (
+          <span className="message-author">
+            <WispAvatar wisp={author} size="sm" />
+            {author.name}
+          </span>
+        ) : null}
+        <MessageSteps steps={message.steps} processStates={processStates} />
+      </div>
+    );
+  }
   if (message.type === "time") {
     return (
       <div className="mt-[13px] mb-[5px] flex items-center justify-center text-faint text-2xs">

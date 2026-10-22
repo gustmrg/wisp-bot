@@ -323,36 +323,7 @@
   background: color-mix(in srgb, var(--wisp) 11%, #141418);
 }
 
-/* The tools the Wisp has used in this turn, as a trail of small steps. */
-.chat-steps {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin: 10px 0 0;
-  padding: 0;
-  list-style: none;
-}
-.chat-step {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  padding: 3px 9px;
-  border: 1px solid color-mix(in srgb, var(--wisp, var(--blue)) 22%, transparent);
-  border-radius: 12px;
-  background: color-mix(in srgb, var(--wisp, var(--blue)) 10%, transparent);
-  color: color-mix(in srgb, var(--wisp, var(--blue)) 72%, var(--foreground));
-  font-size: var(--text-xs);
-  animation: var(--animate-message-in);
-}
-.chat-step > svg {
-  width: 12px;
-  height: 12px;
-}
-.chat-step[data-phase="failed"] {
-  border-color: color-mix(in srgb, var(--destructive) 30%, transparent);
-  background: color-mix(in srgb, var(--destructive) 10%, transparent);
-  color: var(--destructive);
-}
+/* A step that is still running. */
 .chat-step-spinner {
   width: 9px;
   height: 9px;
@@ -917,4 +888,150 @@
     max-width: 904px;
     margin: 0 auto;
   }
+}
+
+/* ---------- The steps a reply took, folded between its parts ---------- */
+.message-steps {
+  margin-top: 8px;
+  max-width: min(820px, 78vw);
+  animation: var(--animate-message-in);
+}
+.message-steps-summary {
+  display: inline-flex;
+  max-width: 100%;
+  align-items: center;
+  gap: 7px;
+  padding: 4px 10px 4px 9px;
+  border: 1px solid color-mix(in srgb, var(--wisp, var(--blue)) 20%, var(--border));
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--wisp, var(--blue)) 7%, transparent);
+  color: var(--text-dim);
+  font-size: var(--text-xs);
+  text-align: left;
+}
+.message-steps-summary:hover {
+  background: color-mix(in srgb, var(--wisp, var(--blue)) 12%, transparent);
+}
+.message-steps-summary:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+.message-steps-label {
+  overflow: hidden;
+  color: var(--foreground);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.message-steps-count {
+  flex: none;
+  color: var(--text-faint);
+}
+.message-steps-chevron {
+  width: 12px;
+  height: 12px;
+  flex: none;
+  transition: transform 120ms ease;
+}
+.message-steps[data-open] .message-steps-chevron {
+  transform: rotate(90deg);
+}
+.message-steps-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 6px 0 0;
+  padding: 0 0 0 10px;
+  border-left: 1px solid var(--border);
+  list-style: none;
+}
+.message-step {
+  padding: 3px 0 3px 6px;
+  font-size: var(--text-xs);
+}
+.message-step-line {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
+}
+.message-step-status,
+.message-step-icon {
+  width: 12px;
+  height: 12px;
+  flex: none;
+  color: var(--text-faint);
+}
+.message-step[data-status="completed"] .message-step-status {
+  color: var(--green);
+}
+.message-step[data-status="failed"] .message-step-status,
+.message-steps[data-status="failed"] .message-steps-summary .message-step-status {
+  color: var(--destructive);
+}
+.message-steps[data-status="completed"] .message-steps-summary .message-step-status {
+  color: var(--green);
+}
+.message-step-text {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-dim);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.message-step-text code {
+  padding: 0 4px;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--foreground) 6%, transparent);
+  color: var(--foreground);
+  font-family: var(--font-mono);
+  font-size: 0.95em;
+}
+.message-step-subject {
+  color: var(--foreground);
+}
+.message-step-fact {
+  margin-left: 6px;
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+}
+.message-step-fact[data-tone="added"] {
+  color: var(--green);
+}
+.message-step-fact[data-tone="removed"],
+.message-step-fact[data-tone="error"] {
+  color: var(--destructive);
+}
+.message-step-toggle {
+  flex: none;
+  margin-left: auto;
+  padding: 0 6px;
+  border-radius: 6px;
+  color: var(--text-faint);
+  font-size: var(--text-2xs);
+}
+.message-step-toggle:hover {
+  background: var(--muted);
+  color: var(--foreground);
+}
+.message-step-detail {
+  margin: 1px 0 0 36px;
+  overflow: hidden;
+  color: var(--text-faint);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.message-step-output {
+  max-height: 240px;
+  margin: 5px 0 2px 36px;
+  overflow: auto;
+  padding: 7px 9px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--card);
+  color: var(--foreground);
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  line-height: 1.45;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
