@@ -11,6 +11,7 @@ import type { ConversationAgentContext, ConversationAgentFactory } from "../back
 import { ConversationRepository } from "../backend/conversation-repository.js";
 import { ConversationService } from "../backend/conversation-service.js";
 import { FakeConversationAgent, FakeConversationAgentFactory } from "../backend/fake-conversation-agent.js";
+import { PiEventTranslator } from "../backend/pi-event-translator.js";
 import type { SequencedConversationAgentEvent } from "../shared/contracts.js";
 import type { Chat, CircleChat, ConversationDelta, Wisp, WispsView } from "../shared/conversations.js";
 import { DEFAULT_WISP_APPEARANCE } from "../shared/wisp-appearance.js";
@@ -583,6 +584,83 @@ describe("ConversationService", () => {
     );
     // A reply that failed before writing anything previews why.
     expect(chats.two?.preview).toBe("The provider is out of credits.");
+    await restored.dispose();
+  });
+
+  it("stores the steps of a reply between its parts, without counting them as news", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "wisp-service-steps-"));
+    const repository = new ConversationRepository({ dataDirectory: directory });
+    const service = new ConversationService(
+      repository,
+      new AgentRegistry(new FakeConversationAgentFactory(), () => undefined),
+    );
+    await service.start({ providerId: "test", modelId: "test" });
+    await service.initialize({ one: chat("one") });
+    await service.appendMessage("one", { id: "request-1", type: "outgoing", text: "Fix it", status: "queued" });
+    let sequence = 0;
+    const translator = new PiEventTranslator(
+      "one",
+      (event) => service.handleAgentEvent({ ...event, sequence: ++sequence }),
+      0,
+      "/workspace",
+    );
+    const text = (delta: string) =>
+      translator.handle({ type: "message_update", assistantMessageEvent: { type: "text_delta", delta } });
+    translator.begin({ conversationId: "one", requestId: "request-1", text: "Fix it" });
+    translator.handle({ type: "agent_start" });
+    translator.handle({ type: "tool_execution_start", toolCallId: "a", toolName: "read", args: { path: "a.ts" } });
+    translator.handle({ type: "tool_execution_end", toolCallId: "a", toolName: "read", isError: false });
+    text("Found it.");
+    translator.handle({
+      type: "tool_execution_start",
+      toolCallId: "b",
+      toolName: "run_command",
+      args: { command: "npm test" },
+    });
+    // The reply writes on before the command's end arrives; the stored step is updated in place.
+    text("Running the tests.");
+    translator.handle({
+      type: "tool_execution_end",
+      toolCallId: "b",
+      toolName: "run_command",
+      isError: false,
+      result: { content: [{ type: "text", text: "ok" }], details: { commandResult: { exitCode: 0 } } },
+    });
+    translator.handle({ type: "agent_settled" });
+
+    await vi.waitFor(() =>
+      expect(service.getState().chats.one?.messages.at(-1)).toMatchObject({
+        id: "request-1:assistant:2",
+        status: "complete",
+      }),
+    );
+    await vi.waitFor(() => expect(service.getState().liveMessages).toEqual({}));
+    await service.dispose();
+
+    const restored = new ConversationService(
+      new ConversationRepository({ dataDirectory: directory }),
+      new AgentRegistry(new FakeConversationAgentFactory(), () => undefined),
+    );
+    await restored.start({ providerId: "test", modelId: "test" });
+    await restored.initialize({});
+    const one = restored.getState().chats.one!;
+    expect(one.messages.map((message) => [message.id, message.type === "incoming" ? message.text : ""])).toEqual([
+      ["request-1", ""],
+      ["request-1:work", ""],
+      ["request-1:assistant", "Found it."],
+      ["request-1:work:2", ""],
+      ["request-1:assistant:2", "Running the tests."],
+    ]);
+    expect(one.messages[1]).toMatchObject({
+      type: "incoming",
+      status: "complete",
+      steps: [{ id: "a", type: "file_read", paths: ["a.ts"], status: "completed" }],
+    });
+    expect(one.messages[3]).toMatchObject({
+      steps: [{ id: "b", type: "command_execution", command: "npm test", exitCode: 0, status: "completed" }],
+    });
+    // Only the reply's two parts are news, and the preview is its text.
+    expect(one).toMatchObject({ preview: "Running the tests.", unreadCount: 2 });
     await restored.dispose();
   });
 

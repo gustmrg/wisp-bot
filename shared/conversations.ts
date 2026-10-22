@@ -1,4 +1,4 @@
-import type { ModelSelection } from "./contracts.js";
+import type { ModelSelection, TurnItem } from "./contracts.js";
 import type { ToolApprovalRequest } from "./tool-policy.js";
 import type { WispAppearance } from "./wisp-appearance.js";
 
@@ -145,6 +145,20 @@ export interface TextMessage extends MessageMetadata {
    * carry the reason as their text instead.
    */
   error?: MessageFailure;
+  /**
+   * The steps a reply took between two of its parts, set on an incoming
+   * message of its own with no text (see `workMessageId`). Versions that do
+   * not know steps hide it, as they hide any reply part with no text.
+   */
+  steps?: ReadonlyArray<TurnItem>;
+}
+
+/** How many steps one group keeps; the oldest go first. */
+export const MAX_MESSAGE_STEPS = 100;
+
+/** Whether a message holds only the steps a reply took. */
+export function isStepsMessage(message: Message): boolean {
+  return message.type === "incoming" && Boolean(message.steps?.length) && !message.text;
 }
 
 export interface TimeMessage extends MessageMetadata {
