@@ -431,6 +431,43 @@
   background: color-mix(in srgb, var(--destructive) 10%, transparent);
   color: var(--destructive);
 }
+.chat-step-verbose {
+  display: block;
+}
+.chat-step-verbose > details > summary {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  cursor: pointer;
+  list-style: none;
+}
+.chat-step-verbose > details > summary::-webkit-details-marker {
+  display: none;
+}
+.chat-step-verbose > details > summary > svg {
+  flex: none;
+  width: 12px;
+  height: 12px;
+}
+.chat-step-console {
+  max-height: 240px;
+  margin: 6px 0 3px;
+  padding: 6px 8px;
+  overflow: auto;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--foreground) 6%, var(--background));
+  color: var(--foreground);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+.chat-step-command {
+  color: color-mix(in srgb, var(--wisp, var(--blue)) 72%, var(--foreground));
+}
 .chat-step-more {
   padding: 0;
   border: 0;

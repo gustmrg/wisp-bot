@@ -19,6 +19,13 @@ describe("WispChatDisplaySettings", () => {
     expect(onChangeWisp).toHaveBeenLastCalledWith({ showReasoning: false });
   });
 
+  it("saves whether the Wisp's steps are verbose", async () => {
+    const onChangeWisp = vi.fn(async () => true);
+    render(<WispChatDisplaySettings wisp={testWisp("one")} onChangeWisp={onChangeWisp} />);
+    await userEvent.click(screen.getByRole("switch", { name: "Verbose steps" }));
+    expect(onChangeWisp).toHaveBeenCalledWith({ verboseSteps: true });
+  });
+
   it("says when the choice could not be saved", async () => {
     render(<WispChatDisplaySettings wisp={testWisp("one")} onChangeWisp={async () => false} />);
     await userEvent.click(screen.getByRole("switch", { name: "Show reasoning" }));

@@ -27,6 +27,8 @@ export interface Wisp {
   color?: string;
   /** Whether the chat shows the model's reasoning above each reply; off when absent. */
   showReasoning?: boolean;
+  /** Whether the chat's steps show full commands and the end of their output (ADR 029); off when absent. */
+  verboseSteps?: boolean;
 }
 
 export type WispCollection = Record<WispId, Wisp>;

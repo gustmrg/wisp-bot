@@ -50,6 +50,21 @@ export function WispChatDisplaySettings({ wisp, onChangeWisp }: WispChatDisplayS
             onChange={() => void change({ showReasoning: !wisp.showReasoning })}
           />
         </SettingsRow>
+        <SettingsRow className="min-h-0 p-[11px]">
+          <SettingsRowCopy>
+            <SettingsRowTitle>Verbose steps</SettingsRowTitle>
+            <SettingsRowDescription>
+              Each command as written and the end of its output, and why a step failed. Commands can carry secrets the
+              Wisp was given, and they show here on every device you use.
+            </SettingsRowDescription>
+          </SettingsRowCopy>
+          <ToggleSwitch
+            checked={wisp.verboseSteps === true}
+            disabled={saving}
+            label="Verbose steps"
+            onChange={() => void change({ verboseSteps: !wisp.verboseSteps })}
+          />
+        </SettingsRow>
       </SettingsCard>
       {error ? (
         <p role="alert" className="m-0 mt-1.5 text-destructive">

@@ -259,18 +259,19 @@ export function normalizeWisp(value: unknown): Wisp {
     appearance: storedAppearance(raw),
     ...(color === undefined ? {} : { color }),
     ...(raw.showReasoning === undefined ? {} : flag("showReasoning", raw.showReasoning)),
+    ...(raw.verboseSteps === undefined ? {} : flag("verboseSteps", raw.verboseSteps)),
   };
 }
 
 /** A display choice that is on, or left out when off. */
-function flag<Key extends "showReasoning">(key: Key, value: unknown): Partial<Record<Key, true>> {
+function flag<Key extends "showReasoning" | "verboseSteps">(key: Key, value: unknown): Partial<Record<Key, true>> {
   if (typeof value !== "boolean") throw invalidRequest();
   return value ? ({ [key]: true } as Record<Key, true>) : {};
 }
 
 export function normalizeWispChanges(value: unknown): WispChanges {
   const raw = asRecord(value);
-  const allowed = new Set(["name", "role", "soul", "appearance", "color", "showReasoning"]);
+  const allowed = new Set(["name", "role", "soul", "appearance", "color", "showReasoning", "verboseSteps"]);
   if (Object.keys(raw).some((key) => !allowed.has(key))) throw invalidRequest();
   const result: WispChanges = {};
   if (raw.name !== undefined) result.name = string(raw.name, MAX_WISP_NAME_LENGTH, false);
@@ -279,9 +280,10 @@ export function normalizeWispChanges(value: unknown): WispChanges {
   if (raw.appearance !== undefined) result.appearance = appearanceChange(raw.appearance);
   // Present but undefined clears the color.
   if (Object.hasOwn(raw, "color")) result.color = raw.color === undefined ? undefined : colorChange(raw.color);
-  if (raw.showReasoning !== undefined) {
-    if (typeof raw.showReasoning !== "boolean") throw invalidRequest();
-    result.showReasoning = raw.showReasoning;
+  for (const key of ["showReasoning", "verboseSteps"] as const) {
+    if (raw[key] === undefined) continue;
+    if (typeof raw[key] !== "boolean") throw invalidRequest();
+    result[key] = raw[key];
   }
   return result;
 }
@@ -291,6 +293,7 @@ export function applyWispChanges(wisp: Wisp, changes: WispChanges): Wisp {
   const next: Wisp = { ...wisp, ...changes };
   if (next.color === undefined) delete next.color;
   if (!next.showReasoning) delete next.showReasoning;
+  if (!next.verboseSteps) delete next.verboseSteps;
   return next;
 }
 

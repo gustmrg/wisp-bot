@@ -518,6 +518,28 @@ describe("ChatPanel steps", () => {
     expect(screen.queryByRole("list", { name: "What Atlas has done so far" })).not.toBeInTheDocument();
   });
 
+  it("opens a verbose step to its command and the end of its output", () => {
+    const steps = [
+      {
+        toolCallId: "1",
+        toolName: "run_command",
+        phase: "completed" as const,
+        isError: true,
+        detail: { purpose: "Run the tests", command: "npm test", output: "1 failed", commandResult: { exitCode: 1 } },
+      },
+      { toolCallId: "2", toolName: "read", phase: "completed" as const, detail: { target: "a.md" } },
+    ];
+    renderPanel(transcript(messages(0, 1)), { status: "working", steps });
+    const trail = screen.getByRole("list", { name: "What Atlas has done so far" });
+    const console = trail.querySelector(".chat-step-console");
+    expect(console).toHaveTextContent("$ npm test 1 failed");
+    expect(console?.closest("details")?.open).toBe(false);
+    fireEvent.click(within(trail).getByText("Run the tests"));
+    expect(console?.closest("details")?.open).toBe(true);
+    // A step without a command or output stays a plain line.
+    expect(trail.querySelectorAll("details")).toHaveLength(1);
+  });
+
   it("folds a finished turn's steps under a count until the person writes again", () => {
     const steps = [{ toolCallId: "1", toolName: "read", phase: "completed" as const }];
     const { show } = renderPanel(transcript(messages(0, 1)), { status: "idle", steps });

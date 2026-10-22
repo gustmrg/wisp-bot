@@ -146,7 +146,7 @@ describe("ConversationService", () => {
     await service.dispose();
   });
 
-  it("shows or hides a Wisp's reasoning in its running agents without reloading them", async () => {
+  it("applies a Wisp's display choices to its running agents without reloading them", async () => {
     const directory = await mkdtemp(path.join(os.tmpdir(), "wisp-service-display-"));
     const updateContext = vi.fn(async () => undefined);
     const applyDisplay = vi.fn();
@@ -165,11 +165,11 @@ describe("ConversationService", () => {
 
     const state = await service.updateWisp("one", { showReasoning: true });
     expect(state.wisps.one?.showReasoning).toBe(true);
-    expect(applyDisplay).toHaveBeenCalledWith("one", { showReasoning: true });
+    expect(applyDisplay).toHaveBeenCalledWith("one", { showReasoning: true, verboseSteps: false });
     expect(updateContext).not.toHaveBeenCalled();
-    expect(repository.getAgentContext("one").display).toEqual({ showReasoning: true });
-    await service.updateWisp("one", { showReasoning: false });
-    expect(applyDisplay).toHaveBeenLastCalledWith("one", { showReasoning: false });
+    expect(repository.getAgentContext("one").display).toEqual({ showReasoning: true, verboseSteps: false });
+    await service.updateWisp("one", { showReasoning: false, verboseSteps: true });
+    expect(applyDisplay).toHaveBeenLastCalledWith("one", { showReasoning: false, verboseSteps: true });
     await service.dispose();
   });
 

@@ -12,8 +12,12 @@ import { outlineCommand } from "./command-outline.js";
 const MAX_PURPOSE_CHARACTERS = 120;
 const MAX_TARGET_CHARACTERS = 120;
 const SECRET_LIKE_PATTERN = /sk-|key[=_-]|token[=_-]|secret[=_-]|bearer|passw/i;
-/** Tools that run commands; their `command` is outlined, never shown. */
+/** Tools that run commands; their `command` is outlined, and shown only with verbose steps. */
 const COMMAND_TOOLS = new Set(["run_command", "process"]);
+
+export function isCommandTool(toolName: string): boolean {
+  return COMMAND_TOOLS.has(toolName);
+}
 /** The argument a step names as its target, in order of preference. */
 const TARGET_KEYS = ["path", "url", "query", "pattern", "glob"] as const;
 
@@ -42,6 +46,55 @@ export function toolStepResult(toolName: string, result: unknown): ToolStepDetai
   return commandResult ? { commandResult } : undefined;
 }
 
+const MAX_COMMAND_CHARACTERS = 2_000;
+const MAX_OUTPUT_CHARACTERS = 4_000;
+const MAX_OUTPUT_LINES = 40;
+// Terminal escape sequences, such as colors, which the chat cannot draw.
+const ANSI_ESCAPE_PATTERN = /\x1b\[[0-?]*[ -/]*[@-~]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)/gu;
+
+/**
+ * With verbose steps (ADR 029): the command as the Wisp wrote it, bounded.
+ * Unlike the summaries above, its arguments and any secret in them show.
+ */
+export function verboseStepCommand(toolName: string, args: unknown): string | undefined {
+  if (!COMMAND_TOOLS.has(toolName)) return undefined;
+  const command = plainRecord(args)?.command;
+  if (typeof command !== "string") return undefined;
+  const clean = printable(command).trim();
+  return clean ? truncate(clean, MAX_COMMAND_CHARACTERS) : undefined;
+}
+
+/** With verbose steps (ADR 029): the end of the text a tool returned, its last lines. */
+export function verboseStepOutput(result: unknown): string | undefined {
+  const text = printable(textBlocks(plainRecord(result)?.content).join("\n")).trimEnd();
+  if (!text.trim()) return undefined;
+  let tail = text.split("\n").slice(-MAX_OUTPUT_LINES).join("\n");
+  if (tail.length > MAX_OUTPUT_CHARACTERS) {
+    tail = tail.slice(-MAX_OUTPUT_CHARACTERS);
+    // Starts at a whole line when there is one.
+    tail = tail.slice(tail.indexOf("\n") + 1);
+  }
+  return tail.length < text.length ? `…\n${tail}` : tail;
+}
+
+/** The text blocks of a tool result's content. */
+function textBlocks(content: unknown): string[] {
+  if (!Array.isArray(content)) return [];
+  return content.flatMap((block) =>
+    block && typeof block === "object" && block.type === "text" && typeof block.text === "string"
+      ? [block.text as string]
+      : [],
+  );
+}
+
+/** Text without terminal escapes or control characters, keeping lines and tabs. */
+function printable(value: string): string {
+  return value
+    .replace(ANSI_ESCAPE_PATTERN, "")
+    .replace(/\r\n?/gu, "\n")
+    .replace(/[\u0000-\u0008\u000b-\u001f\u007f]/gu, "");
+}
+
 /** What a command ran and what the Wisp said it was for; never its arguments. */
 export function summarizeCommand(args: unknown): Pick<SessionReportToolCall, "commandOutline" | "purpose"> {
   if (!args || typeof args !== "object" || Array.isArray(args)) return {};
@@ -67,15 +120,7 @@ export function commandResultOf(toolResult: ToolResultLike): SessionReportToolCa
     if (typeof recorded.durationMs === "number" && Number.isFinite(recorded.durationMs) && recorded.durationMs >= 0)
       result.durationMs = Math.round(recorded.durationMs);
   }
-  const content = Array.isArray(toolResult.content) ? toolResult.content : [];
-  const text =
-    content
-      .flatMap((block) =>
-        block && typeof block === "object" && block.type === "text" && typeof block.text === "string"
-          ? [block.text as string]
-          : [],
-      )
-      .at(-1) ?? "";
+  const text = textBlocks(toolResult.content).at(-1) ?? "";
   const status = text.trimEnd().split("\n").at(-1)?.trim() ?? "";
   const exited = /^Command exited with code (\d{1,3})$/.exec(status);
   if (exited && result.exitCode === undefined) result.exitCode = Number(exited[1]);

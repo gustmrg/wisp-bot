@@ -40,11 +40,9 @@ function StepRow({ step }: { step: ToolActivityView }) {
   const result = stepResult(step.detail);
   // A command's purpose shows; the programs it ran are a hover away.
   const outline = step.detail?.purpose && step.detail.commandOutline ? step.detail.commandOutline : undefined;
-  return (
-    <li
-      className="chat-step"
-      data-phase={step.phase === "completed" ? (step.isError ? "failed" : "completed") : "running"}
-    >
+  const phase = step.phase === "completed" ? (step.isError ? "failed" : "completed") : "running";
+  const line = (
+    <>
       {step.phase !== "completed" ? (
         <span className="chat-step-spinner" aria-hidden="true" />
       ) : step.isError ? (
@@ -69,6 +67,28 @@ function StepRow({ step }: { step: ToolActivityView }) {
       ) : step.isError ? (
         <span className="sr-only">, failed</span>
       ) : null}
+    </>
+  );
+  const command = step.detail?.command;
+  const output = step.detail?.output;
+  if (!command && !output) {
+    return (
+      <li className="chat-step" data-phase={phase}>
+        {line}
+      </li>
+    );
+  }
+  // Verbose steps (ADR 029) open to the command as written and the end of its output.
+  return (
+    <li className="chat-step chat-step-verbose" data-phase={phase}>
+      <details>
+        <summary>{line}</summary>
+        <pre className="chat-step-console">
+          {command ? <span className="chat-step-command">{`$ ${command}`}</span> : null}
+          {command && output ? "\n" : null}
+          {output}
+        </pre>
+      </details>
     </li>
   );
 }

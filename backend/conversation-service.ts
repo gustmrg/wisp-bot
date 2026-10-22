@@ -355,7 +355,7 @@ export class ConversationService {
       await this.updateCirclesOf(wispId);
     }
     const wisp = this.repository.readWisps()[wispId];
-    if (changes.showReasoning !== undefined && wisp) {
+    if ((changes.showReasoning !== undefined || changes.verboseSteps !== undefined) && wisp) {
       // The chat shows the change from the Wisp's next event on, in every conversation it answers in.
       for (const conversationId of [wispId, ...this.repository.listCirclesOf(wispId)]) {
         this.registry.applyDisplay(conversationId, wispId, wispDisplay(wisp));

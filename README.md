@@ -66,6 +66,10 @@ preset.
   own, to open pages, follow links and fill in forms; it asks before clicking
   buttons, sending forms or typing passwords. See
   [ADR 028](docs/decisions/028-wisp-browser.md).
+- **Following a Wisp's work** — the chat shows each step a Wisp takes and what
+  it works on; a Wisp can also show its reasoning, and verbose steps show each
+  command and the end of its output. See
+  [ADR 029](docs/decisions/029-verbose-steps.md).
 - **Message search** — search every conversation with `Cmd/Ctrl+K` and jump to
   the matching message.
 - **Skills** — per-Wisp reusable procedures, saved on request after you
