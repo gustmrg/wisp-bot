@@ -61,6 +61,59 @@ describe("PiEventTranslator", () => {
     translator.dispose();
   });
 
+  it("shows commands as written and the end of their output only with verbose steps", () => {
+    const events: ConversationAgentEvent[] = [];
+    const translator = new PiEventTranslator("wisp-1", (event) => events.push(event), 0, "/workspace");
+    const run = (id: string) => {
+      translator.handle({
+        type: "tool_execution_start",
+        toolCallId: id,
+        toolName: "run_command",
+        args: { command: "npm test -- --token=abc" },
+      });
+      translator.handle({
+        type: "tool_execution_end",
+        toolCallId: id,
+        toolName: "run_command",
+        isError: false,
+        result: { content: [{ type: "text", text: "3 passed" }] },
+      });
+    };
+    translator.begin({ conversationId: "wisp-1", requestId: "r1", text: "Test it" });
+    run("run-1");
+    translator.setDisplay({ showReasoning: false, verboseSteps: true });
+    run("run-2");
+    translator.handle({ type: "tool_execution_start", toolCallId: "read-1", toolName: "read", args: { path: "a.md" } });
+    translator.handle({
+      type: "tool_execution_end",
+      toolCallId: "read-1",
+      toolName: "read",
+      isError: false,
+      result: { content: [{ type: "text", text: "file body" }] },
+    });
+    translator.handle({ type: "tool_execution_start", toolCallId: "edit-1", toolName: "edit", args: { path: "a.md" } });
+    translator.handle({
+      type: "tool_execution_end",
+      toolCallId: "edit-1",
+      toolName: "edit",
+      isError: true,
+      result: { content: [{ type: "text", text: "Text not found" }] },
+    });
+
+    const details = Object.fromEntries(
+      events.flatMap((event) =>
+        event.type === "tool_activity" ? [[`${event.toolCallId}:${event.phase}`, event.detail]] : [],
+      ),
+    );
+    expect(details["run-1:started"]).not.toHaveProperty("command");
+    expect(details["run-1:completed"]).toBeUndefined();
+    expect(details["run-2:started"]).toMatchObject({ command: "npm test -- --token=abc" });
+    expect(details["run-2:completed"]).toEqual({ output: "3 passed" });
+    // A file's content stays out; why a step failed shows.
+    expect(details["read-1:completed"]).toBeUndefined();
+    expect(details["edit-1:completed"]).toEqual({ output: "Text not found" });
+  });
+
   it("sends the model's reasoning with the message it precedes only while the Wisp shows it", () => {
     const events: ConversationAgentEvent[] = [];
     const translator = new PiEventTranslator("wisp-1", (event) => events.push(event), 0);
@@ -69,7 +122,7 @@ describe("PiEventTranslator", () => {
     translator.begin({ conversationId: "wisp-1", requestId: "r1", text: "Plan it" });
     translator.handle({ type: "agent_start" });
     thinking("hidden");
-    translator.setShowReasoning(true);
+    translator.setDisplay({ showReasoning: true, verboseSteps: false });
     thinking("Check the file first.");
     translator.handle({ type: "tool_execution_start", toolCallId: "read-1", toolName: "read" });
     translator.handle({ type: "tool_execution_end", toolCallId: "read-1", toolName: "read", isError: false });
@@ -90,7 +143,7 @@ describe("PiEventTranslator", () => {
   it("does not count reasoning as an answer", () => {
     const events: ConversationAgentEvent[] = [];
     const translator = new PiEventTranslator("wisp-1", (event) => events.push(event), 0);
-    translator.setShowReasoning(true);
+    translator.setDisplay({ showReasoning: true, verboseSteps: false });
     translator.begin({ conversationId: "wisp-1", requestId: "r1", text: "Plan it" });
     translator.handle({ type: "agent_start" });
     translator.handle({ type: "message_update", assistantMessageEvent: { type: "thinking_delta", delta: "Hmm" } });

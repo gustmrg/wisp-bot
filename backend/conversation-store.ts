@@ -33,7 +33,8 @@ import type { ConversationRecord, WispRecord, WorkspaceRecords } from "./workspa
 // none, so it raises MIN_READER_VERSION: an older build refuses this database.
 // Version 13 adds whether each Wisp shows its reasoning; older writers leave it
 // alone, and a Wisp they create does not show it.
-const STORE_VERSION = 13;
+// Version 14 adds whether each Wisp's steps are verbose (ADR 029); the same holds.
+const STORE_VERSION = 14;
 const MIN_READER_VERSION = 12;
 /** The first layout whose job runs name their session files under the runtime-neutral folders. */
 const WISP_FOLDERS_VERSION = 12;
@@ -133,6 +134,7 @@ const RECORD_SCHEMA = `
     fallback_provider_id TEXT,
     fallback_model_id TEXT,
     show_reasoning INTEGER NOT NULL DEFAULT 0 CHECK (show_reasoning IN (0, 1)),
+    verbose_steps INTEGER NOT NULL DEFAULT 0 CHECK (verbose_steps IN (0, 1)),
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
     CHECK ((model_provider_id IS NULL) = (model_id IS NULL)),
@@ -303,6 +305,10 @@ const ADD_WISP_FALLBACKS = `
 const ADD_WISP_SHOW_REASONING =
   "ALTER TABLE wisps ADD COLUMN show_reasoning INTEGER NOT NULL DEFAULT 0 CHECK (show_reasoning IN (0, 1));";
 
+// Builds before version 14 could not make a Wisp's steps verbose; its Wisps' are not.
+const ADD_WISP_VERBOSE_STEPS =
+  "ALTER TABLE wisps ADD COLUMN verbose_steps INTEGER NOT NULL DEFAULT 0 CHECK (verbose_steps IN (0, 1));";
+
 /** Tables layout 5 replaced; their rows held whole records as JSON. */
 const JSON_RECORD_TABLES = ["wisps", "conversations", "scheduled_messages", "queued_messages"];
 
@@ -374,6 +380,7 @@ function wispRecordOf(row: Row): unknown {
       },
       ...(color === undefined ? {} : { color }),
       ...(row.show_reasoning === 1 ? { showReasoning: true } : {}),
+      ...(row.verbose_steps === 1 ? { verboseSteps: true } : {}),
     },
     storageId: row.storage_id,
     modelOverride:
@@ -573,6 +580,7 @@ export class ConversationStore {
         store.addWispThinkingLevels();
         store.addWispFallbacks();
         store.addWispShowReasoning();
+        store.addWispVerboseSteps();
         if (version !== undefined) store.renameJobRunSessionFiles(Number(version) < WISP_FOLDERS_VERSION);
       }
       return store;
@@ -746,8 +754,9 @@ export class ConversationStore {
     this.statement(
       `INSERT INTO wisps (id, name, role, soul, body, trail, tone, eyes, eye_ink, finish, mark, color,
         storage_id, model_provider_id, model_id, model_max_output_tokens, model_thinking_level,
-        fallback_mode, fallback_provider_id, fallback_model_id, show_reasoning, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        fallback_mode, fallback_provider_id, fallback_model_id, show_reasoning, verbose_steps,
+        created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT (id) DO UPDATE SET
         name = excluded.name, role = excluded.role, soul = excluded.soul,
         body = excluded.body, trail = excluded.trail, tone = excluded.tone, eyes = excluded.eyes,
@@ -758,6 +767,7 @@ export class ConversationStore {
         model_thinking_level = excluded.model_thinking_level,
         fallback_mode = excluded.fallback_mode, fallback_provider_id = excluded.fallback_provider_id,
         fallback_model_id = excluded.fallback_model_id, show_reasoning = excluded.show_reasoning,
+        verbose_steps = excluded.verbose_steps,
         created_at = excluded.created_at, updated_at = excluded.updated_at`,
     ).run(
       wisp.id,
@@ -781,6 +791,7 @@ export class ConversationStore {
       typeof fallback === "object" ? fallback.providerId : null,
       typeof fallback === "object" ? fallback.modelId : null,
       wisp.showReasoning ? 1 : 0,
+      wisp.verboseSteps ? 1 : 0,
       record.createdAt,
       record.updatedAt,
     );
@@ -1175,6 +1186,20 @@ export class ConversationStore {
     this.db.exec("BEGIN IMMEDIATE");
     try {
       this.db.exec(ADD_WISP_SHOW_REASONING);
+      this.raiseVersions();
+      this.db.exec("COMMIT");
+    } catch (error) {
+      this.db.exec("ROLLBACK");
+      throw error;
+    }
+  }
+
+  private addWispVerboseSteps(): void {
+    const columns = this.db.prepare("SELECT name FROM pragma_table_info('wisps')").all();
+    if (columns.some((column) => column.name === "verbose_steps")) return;
+    this.db.exec("BEGIN IMMEDIATE");
+    try {
+      this.db.exec(ADD_WISP_VERBOSE_STEPS);
       this.raiseVersions();
       this.db.exec("COMMIT");
     } catch (error) {

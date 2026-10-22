@@ -2,7 +2,14 @@ import type { BackendError, ConversationAgentEvent, SendMessageRequest, ToolStep
 import { assistantMessageId, MESSAGE_REASONING_MAX_LENGTH } from "../shared/conversations.js";
 import { describeProviderError, isRetryableProviderError } from "./provider-error.js";
 import { getToolMetadata } from "../shared/tool-catalog.js";
-import { toolStepDetail, toolStepResult } from "./tool-step-detail.js";
+import type { WispDisplay } from "./conversation-agent.js";
+import {
+  isCommandTool,
+  toolStepDetail,
+  toolStepResult,
+  verboseStepCommand,
+  verboseStepOutput,
+} from "./tool-step-detail.js";
 
 const MAX_DELTA_CHARACTERS = 8_000;
 const MAX_RESPONSE_CHARACTERS = 500_000;
@@ -73,8 +80,8 @@ export class PiEventTranslator {
   private messageHasText = false;
   private pendingDelta = "";
   private pendingReasoning = "";
-  /** Whether the model's reasoning reaches the chat; it is dropped otherwise. */
-  private showReasoning = false;
+  /** What reaches the chat beyond replies and step summaries: reasoning, and verbose steps (ADR 029). */
+  private display: WispDisplay = { showReasoning: false, verboseSteps: false };
   /** Reasoning sent for the current message, bounded like the message keeps it. */
   private reasoningCharacters = 0;
   private flushTimer: ReturnType<typeof setTimeout> | undefined;
@@ -111,10 +118,10 @@ export class PiEventTranslator {
     this.fallbackModel = undefined;
   }
 
-  /** Applies the Wisp's choice from its next reasoning on, so a change reaches a running turn. */
-  setShowReasoning(show: boolean): void {
-    this.showReasoning = show;
-    if (!show) this.pendingReasoning = "";
+  /** Applies the Wisp's display choices from its next event on, so a change reaches a running turn. */
+  setDisplay(display: WispDisplay): void {
+    this.display = display;
+    if (!display.showReasoning) this.pendingReasoning = "";
   }
 
   handle(event: PiAgentEvent): void {
@@ -146,19 +153,13 @@ export class PiEventTranslator {
         break;
       case "tool_execution_start":
         this.completeMessagePart();
-        this.publishTool(
-          event,
-          "started",
-          undefined,
-          undefined,
-          toolStepDetail(event.toolName, event.args, this.workspaceDirectory),
-        );
+        this.publishTool(event, "started", undefined, undefined, this.startDetail(event.toolName, event.args));
         break;
       case "tool_execution_update":
         this.publishTool(event, "updated", undefined, activityLabelOf(event.partialResult));
         break;
       case "tool_execution_end":
-        this.publishTool(event, "completed", event.isError, undefined, toolStepResult(event.toolName, event.result));
+        this.publishTool(event, "completed", event.isError, undefined, this.endDetail(event));
         break;
       case "auto_retry_start":
         this.retryNoticeVisible = !event.errorMessage || isRetryableProviderError(event.errorMessage);
@@ -370,7 +371,7 @@ export class PiEventTranslator {
    * a response, and past the bound a message keeps, the rest is dropped.
    */
   private queueReasoning(delta: string): void {
-    if (!this.showReasoning || !delta || this.failed || this.cancelled) return;
+    if (!this.display.showReasoning || !delta || this.failed || this.cancelled) return;
     const accepted = delta.slice(0, MESSAGE_REASONING_MAX_LENGTH - this.reasoningCharacters);
     if (!accepted) return;
     this.reasoningCharacters += accepted.length;
@@ -429,6 +430,23 @@ export class PiEventTranslator {
       ...(label ? { label } : {}),
       ...(detail ? { detail } : {}),
     });
+  }
+
+  /** What a step works on; with verbose steps, a command as written too. */
+  private startDetail(toolName: string, args: unknown): ToolStepDetail | undefined {
+    const detail = toolStepDetail(toolName, args, this.workspaceDirectory);
+    const command = this.display.verboseSteps ? verboseStepCommand(toolName, args) : undefined;
+    return command ? { ...detail, command } : detail;
+  }
+
+  /** How a command ended; with verbose steps, the end of a command's output or a failed step's error too. */
+  private endDetail(event: { toolName: string; isError: boolean; result?: unknown }): ToolStepDetail | undefined {
+    const detail = toolStepResult(event.toolName, event.result);
+    const output =
+      this.display.verboseSteps && (event.isError || isCommandTool(event.toolName))
+        ? verboseStepOutput(event.result)
+        : undefined;
+    return output ? { ...detail, output } : detail;
   }
 
   private fallbackField(): { fallbackModel?: string } {

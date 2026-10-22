@@ -27,7 +27,7 @@ Tool arguments are summarized through a strict field whitelist (`path`, `pattern
 
 ## Steps in the chat
 
-The steps a turn shows in the chat (`tool_activity` events) carry the same kind of summary, built by `backend/tool-step-detail.ts`, which the report shares: a workspace path relative to the workspace (paths outside it are left out), a search, or a page's host and path without its query string; for commands, the purpose the Wisp gave and the programs they ran, without arguments, and on completion the exit code and duration. Secret-looking values are dropped and every value is capped. File contents, command arguments and tool output still never cross the bridge.
+The steps a turn shows in the chat (`tool_activity` events) carry the same kind of summary, built by `backend/tool-step-detail.ts`, which the report shares: a workspace path relative to the workspace (paths outside it are left out), a search, or a page's host and path without its query string; for commands, the purpose the Wisp gave and the programs they ran, without arguments, and on completion the exit code and duration. Secret-looking values are dropped and every value is capped. File contents, command arguments and tool output still never cross the bridge, except for the Wisps whose steps are verbose ([ADR 029](029-verbose-steps.md)).
 
 ## Cost estimation
 

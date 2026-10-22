@@ -51,7 +51,7 @@ describe("reasoning", () => {
     expect(() => normalizeMessage({ id: "r", type: "incoming", text: "", reasoning: 1 })).toThrow();
   });
 
-  it("stores whether a Wisp shows its reasoning only while it does", () => {
+  it("stores a Wisp's display choices only while they are on", () => {
     const wisp = normalizeWisp({ id: "one", name: "One", role: "", soul: "", appearance: DEFAULT_WISP_APPEARANCE });
     expect(wisp).not.toHaveProperty("showReasoning");
     const showing = applyWispChanges(wisp, normalizeWispChanges({ showReasoning: true }));
@@ -61,5 +61,8 @@ describe("reasoning", () => {
       "showReasoning",
     );
     expect(() => normalizeWispChanges({ showReasoning: "yes" })).toThrow();
+    const verbose = applyWispChanges(wisp, normalizeWispChanges({ verboseSteps: true }));
+    expect(normalizeWisp(verbose).verboseSteps).toBe(true);
+    expect(applyWispChanges(verbose, { verboseSteps: false })).not.toHaveProperty("verboseSteps");
   });
 });

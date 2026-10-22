@@ -91,11 +91,15 @@ export interface ConversationAgentContext {
 export interface WispDisplay {
   /** The model's reasoning before each reply. */
   showReasoning: boolean;
+  /** Full commands and the end of their output in the steps (ADR 029). */
+  verboseSteps: boolean;
 }
 
+export const DEFAULT_WISP_DISPLAY: WispDisplay = { showReasoning: false, verboseSteps: false };
+
 /** A Wisp's display choices, as its stored settings make them. */
-export function wispDisplay(wisp: Pick<Wisp, "showReasoning">): WispDisplay {
-  return { showReasoning: wisp.showReasoning === true };
+export function wispDisplay(wisp: Pick<Wisp, "showReasoning" | "verboseSteps">): WispDisplay {
+  return { showReasoning: wisp.showReasoning === true, verboseSteps: wisp.verboseSteps === true };
 }
 
 /** A circle's agent: one agent per member, which answer one turn at a time (ADR 011). */

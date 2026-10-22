@@ -4,6 +4,7 @@ import type { ContextCommand, ContextView } from "../shared/context-policy.js";
 import type { BackendError, ConversationAgentEvent, ModelSelection, SendMessageRequest } from "../shared/contracts.js";
 import { WispBackendError } from "./backend-error.js";
 import {
+  DEFAULT_WISP_DISPLAY,
   isCircleContext,
   type AgentContext,
   type ConversationAgent,
@@ -61,7 +62,7 @@ export class WispConversationAgent implements ConversationAgent {
       options.flushDelayMs,
       context.workspaceDirectory,
     );
-    this.translator.setShowReasoning(context.display?.showReasoning === true);
+    this.translator.setDisplay(context.display ?? DEFAULT_WISP_DISPLAY);
   }
 
   async start(): Promise<void> {
@@ -205,7 +206,7 @@ export class WispConversationAgent implements ConversationAgent {
   applyDisplay(wispId: string, display: WispDisplay): void {
     if (wispId !== this.context.wispId) return;
     this.context.display = display;
-    this.translator.setShowReasoning(display.showReasoning);
+    this.translator.setDisplay(display);
   }
 
   updateContext(context: AgentContext): Promise<void> {
@@ -225,7 +226,7 @@ export class WispConversationAgent implements ConversationAgent {
       this.context.userProfile = context.userProfile;
       this.context.userTimeZone = context.userTimeZone;
       this.context.circle = context.circle;
-      this.applyDisplay(context.wispId, context.display ?? { showReasoning: false });
+      this.applyDisplay(context.wispId, context.display ?? DEFAULT_WISP_DISPLAY);
       if (!this.session) return;
       if (!this.session.isIdle) await this.session.waitForIdle();
       await this.session.reload();

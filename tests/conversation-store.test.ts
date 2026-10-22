@@ -314,7 +314,7 @@ describe("ConversationStore versions", () => {
         .map(({ name }) => name),
     ).not.toContain("avatar_image");
     columns.close();
-    expect(meta(file)).toMatchObject({ store_version: "13", min_reader_version: "12" });
+    expect(meta(file)).toMatchObject({ store_version: "14", min_reader_version: "12" });
   });
 
   it("adds unread counts to a version 6 store, keeping which conversations are unread", async () => {
@@ -344,7 +344,7 @@ describe("ConversationStore versions", () => {
     expect(conversations.one).toMatchObject({ chat: { unread: true, unreadCount: 1 } });
     expect(conversations.two).toMatchObject({ chat: { unread: false, unreadCount: 0 } });
     upgraded.close();
-    expect(meta(file)).toMatchObject({ store_version: "13", min_reader_version: "12" });
+    expect(meta(file)).toMatchObject({ store_version: "14", min_reader_version: "12" });
   });
 
   it("trusts unread over a count that a version 6 build left behind", async () => {
@@ -386,7 +386,7 @@ describe("ConversationStore versions", () => {
     const pinned = { ...record("one"), chat: { ...record("one").chat, pinned: true } };
     upgraded.transaction(() => upgraded.putConversation(pinned));
     upgraded.close();
-    expect(meta(file)).toMatchObject({ store_version: "13", min_reader_version: "12" });
+    expect(meta(file)).toMatchObject({ store_version: "14", min_reader_version: "12" });
 
     const reopened = ConversationStore.open(file);
     expect(reopened.read().conversations.one).toEqual(pinned);
@@ -414,7 +414,7 @@ describe("ConversationStore versions", () => {
     const thinking: WispRecord = { ...own, modelOverride: { ...own.modelOverride!, thinkingLevel: "high" } };
     upgraded.transaction(() => upgraded.putWisp(thinking));
     upgraded.close();
-    expect(meta(file)).toMatchObject({ store_version: "13", min_reader_version: "12" });
+    expect(meta(file)).toMatchObject({ store_version: "14", min_reader_version: "12" });
 
     const reopened = ConversationStore.open(file);
     expect(reopened.read().wisps.one).toEqual(thinking);
@@ -517,7 +517,7 @@ describe("ConversationStore versions", () => {
       },
     });
     store.close();
-    expect(meta(file)).toMatchObject({ store_version: "13", min_reader_version: "12" });
+    expect(meta(file)).toMatchObject({ store_version: "14", min_reader_version: "12" });
     const db = new DatabaseSync(file, { readOnly: true });
     expect(db.prepare("SELECT conversation_id, type, author_id FROM messages").all()).toEqual([
       { conversation_id: "one", type: "incoming", author_id: "one" },
@@ -549,7 +549,7 @@ describe("ConversationStore versions", () => {
     const chosen: WispRecord = { ...own, fallback: { providerId: "openrouter", modelId: "backup" } };
     upgraded.transaction(() => upgraded.putWisp(chosen));
     upgraded.close();
-    expect(meta(file)).toMatchObject({ store_version: "13", min_reader_version: "12" });
+    expect(meta(file)).toMatchObject({ store_version: "14", min_reader_version: "12" });
 
     const reopened = ConversationStore.open(file);
     expect(reopened.read().wisps.one).toEqual(chosen);
@@ -614,11 +614,11 @@ describe("ConversationStore versions", () => {
       windows: "C:\\data\\wisp-sessions\\session-1\\jobs\\job-1\\windows.jsonl",
       none: undefined,
     });
-    expect(meta(file)).toMatchObject({ store_version: "13", min_reader_version: "12" });
+    expect(meta(file)).toMatchObject({ store_version: "14", min_reader_version: "12" });
     expect(meta(`${file}.v11.backup`)).toMatchObject({ store_version: "11" });
     // A reader that predates the new names must not open it and find no sessions.
     const older = new DatabaseSync(file);
-    older.exec("UPDATE meta SET value = '14' WHERE key IN ('store_version', 'min_reader_version')");
+    older.exec("UPDATE meta SET value = '15' WHERE key IN ('store_version', 'min_reader_version')");
     older.close();
     expect(() => ConversationStore.open(file)).toThrow("saved by a newer version of Wisp Bot");
   });
@@ -644,12 +644,39 @@ describe("ConversationStore versions", () => {
     const showing: WispRecord = { ...wispRecord("one"), wisp: { ...wispRecord("one").wisp, showReasoning: true } };
     upgraded.transaction(() => upgraded.putWisp(showing));
     upgraded.close();
-    expect(meta(file)).toMatchObject({ store_version: "13", min_reader_version: "12" });
+    expect(meta(file)).toMatchObject({ store_version: "14", min_reader_version: "12" });
 
     const reopened = ConversationStore.open(file);
     expect(reopened.read().wisps.one).toEqual(showing);
     reopened.transaction(() => reopened.putWisp(wispRecord("one")));
     expect(reopened.read().wisps.one?.wisp.showReasoning).toBeUndefined();
+    reopened.close();
+  });
+
+  it("adds the verbose steps choice to a version 13 store, and keeps the ones written since", async () => {
+    const file = await databasePath();
+    const store = ConversationStore.open(file);
+    store.transaction(() =>
+      store.replaceAll({ initialized: true, wisps: { one: wispRecord("one") }, conversations: { one: record("one") } }),
+    );
+    store.close();
+    // Recreate the layout version 13 wrote: no verbose steps column.
+    const db = new DatabaseSync(file);
+    db.exec(`
+      ALTER TABLE wisps DROP COLUMN verbose_steps;
+      UPDATE meta SET value = '13' WHERE key = 'store_version';
+    `);
+    db.close();
+
+    const upgraded = ConversationStore.open(file);
+    expect(upgraded.read().wisps.one?.wisp.verboseSteps).toBeUndefined();
+    const verbose: WispRecord = { ...wispRecord("one"), wisp: { ...wispRecord("one").wisp, verboseSteps: true } };
+    upgraded.transaction(() => upgraded.putWisp(verbose));
+    upgraded.close();
+    expect(meta(file)).toMatchObject({ store_version: "14", min_reader_version: "12" });
+
+    const reopened = ConversationStore.open(file);
+    expect(reopened.read().wisps.one).toEqual(verbose);
     reopened.close();
   });
 
@@ -691,19 +718,19 @@ describe("ConversationStore versions", () => {
       db.close();
     };
 
-    raise(readable, "14", "12");
+    raise(readable, "15", "12");
     const newer = ConversationStore.open(readable);
     expect(newer.read().initialized).toBe(true);
     // Writing here must not lower the markers the newer build set.
     newer.transaction(() => newer.setInitialized(true));
     newer.close();
-    expect(meta(readable)).toMatchObject({ store_version: "14", min_reader_version: "12" });
+    expect(meta(readable)).toMatchObject({ store_version: "15", min_reader_version: "12" });
 
-    raise(readable, "15", "14");
+    raise(readable, "16", "15");
     expect(() => ConversationStore.open(readable)).toThrow(IntactDatabaseError);
     expect(() => ConversationStore.open(readable)).toThrow("saved by a newer version of Wisp Bot");
     // Refusing leaves the newer build's layout exactly as it was.
-    expect(meta(readable)).toMatchObject({ store_version: "15", min_reader_version: "14" });
+    expect(meta(readable)).toMatchObject({ store_version: "16", min_reader_version: "15" });
   });
 
   it("backs up a store before upgrading it, keeping the newest few backups", async () => {
@@ -731,6 +758,6 @@ describe("ConversationStore versions", () => {
       "conversations.sqlite.v9.backup",
     ]);
     expect(meta(`${file}.v9.backup`)).toMatchObject({ store_version: "9", initialized: "1" });
-    expect(meta(file)).toMatchObject({ store_version: "13" });
+    expect(meta(file)).toMatchObject({ store_version: "14" });
   });
 });

@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 
-import { commandResultOf, toolStepDetail, toolStepResult } from "../backend/tool-step-detail.js";
+import {
+  commandResultOf,
+  toolStepDetail,
+  toolStepResult,
+  verboseStepCommand,
+  verboseStepOutput,
+} from "../backend/tool-step-detail.js";
 
 const WORKSPACE = "/data/wisps/atlas/workspace";
 
@@ -57,5 +63,30 @@ describe("toolStepResult", () => {
     );
     expect(toolStepResult("run_command", undefined)).toBeUndefined();
     expect(toolStepResult("read", { details: { commandResult: { exitCode: 0 } } })).toBeUndefined();
+  });
+});
+
+describe("verbose steps", () => {
+  it("shows a command as written, without control characters, and nothing for other tools", () => {
+    expect(verboseStepCommand("run_command", { command: "npm test -- --token=abc\u0007" })).toBe(
+      "npm test -- --token=abc",
+    );
+    expect(verboseStepCommand("process", { action: "start", command: "npm run dev" })).toBe("npm run dev");
+    expect(verboseStepCommand("read", { command: "cat x" })).toBeUndefined();
+    expect(verboseStepCommand("run_command", { command: "x".repeat(3_000) })).toHaveLength(2_001);
+  });
+
+  it("keeps the last lines of the output, without terminal colors", () => {
+    expect(verboseStepOutput({ content: [{ type: "text", text: "\u001b[32mok\u001b[0m\r\ndone\n" }] })).toBe(
+      "ok\ndone",
+    );
+    const long = Array.from({ length: 60 }, (_, index) => `line ${index}`).join("\n");
+    const tail = verboseStepOutput({ content: [{ type: "text", text: long }] });
+    expect(tail?.startsWith("…\nline 20\n")).toBe(true);
+    expect(tail?.endsWith("line 59")).toBe(true);
+    const wide = verboseStepOutput({ content: [{ type: "text", text: `${"a".repeat(5_000)}\n${"b".repeat(3_000)}` }] });
+    expect(wide).toBe(`…\n${"b".repeat(3_000)}`);
+    expect(verboseStepOutput({ content: [{ type: "image" }] })).toBeUndefined();
+    expect(verboseStepOutput(undefined)).toBeUndefined();
   });
 });

@@ -142,7 +142,7 @@ carries a **Fallback** badge, and the session report lists the switch. A
 fallback whose key is removed or whose model leaves the catalog stays saved
 but is not used, and the setting says why.
 
-## Showing reasoning
+## Reasoning and verbose steps
 
 A Wisp's **Model** tab has **In the chat → Show reasoning**, off by default.
 When it is on, what the model reasons before each reply is kept with the reply
@@ -153,6 +153,11 @@ Claude Code Wisps show it only when Claude Code streams it. The change applies
 from the next thought on, also in circles the Wisp is in. Reasoning is stored
 with the reply (at most 100,000 characters each), so a reply keeps it after a
 restart; turning the setting off hides new reasoning, not what was kept.
+
+**Verbose steps**, next to it, makes the steps of a turn show each command as
+the Wisp wrote it and the end of its output, and why a step failed
+([ADR 029](decisions/029-verbose-steps.md)). It is meant for Wisps you develop
+with; commands can carry secrets the Wisp was given.
 
 ## Auxiliary models
 

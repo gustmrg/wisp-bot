@@ -637,6 +637,10 @@ export interface ToolStepDetail {
   commandOutline?: string;
   /** For commands: how the command ended. */
   commandResult?: SessionReportToolCall["commandResult"];
+  /** With verbose steps only (ADR 029): the command as the Wisp wrote it, bounded. */
+  command?: string;
+  /** With verbose steps only (ADR 029): the end of a command's output, or of a failed step's error. */
+  output?: string;
 }
 
 export interface SessionReportEvent {
