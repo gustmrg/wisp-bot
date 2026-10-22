@@ -224,8 +224,10 @@ describe("SdkPiSessionFactory", () => {
     expect(prompt).not.toContain("Description:");
     expect(prompt).toContain("subject to app policy and user approval");
     expect(prompt).toContain("must not execute shell commands");
-    expect(prompt).toContain("first write one short sentence in the user's language");
-    expect(prompt).toContain("Apart from that sentence, return only the final answer");
+    expect(prompt).toContain("## Progress updates");
+    expect(prompt).toContain("Before your first tool call in a turn, write one short sentence");
+    expect(prompt).toContain("write a brief update between steps");
+    expect(prompt).not.toContain("return only the final answer");
     expect(prompt).toContain("## Response style");
     expect(prompt).toContain("1. Explicit instructions in the user's current message.");
     expect(prompt).toContain("Configured role: Finance.");
@@ -816,7 +818,7 @@ describe("SdkPiSessionFactory", () => {
     expect(prompt).toContain("## Background job");
     expect(prompt).toContain("## Skill: job-search");
     expect(prompt).toContain("Search three boards.");
-    expect(prompt).not.toContain("first write one short sentence");
+    expect(prompt).not.toContain("## Progress updates");
     expect(run.sessionFile).toBe("/sessions/concrete.jsonl");
 
     await expect(
