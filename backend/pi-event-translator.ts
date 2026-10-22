@@ -1,7 +1,8 @@
-import type { BackendError, ConversationAgentEvent, SendMessageRequest } from "../shared/contracts.js";
+import type { BackendError, ConversationAgentEvent, SendMessageRequest, ToolStepDetail } from "../shared/contracts.js";
 import { assistantMessageId } from "../shared/conversations.js";
 import { describeProviderError, isRetryableProviderError } from "./provider-error.js";
 import { getToolMetadata } from "../shared/tool-catalog.js";
+import { toolStepDetail, toolStepResult } from "./tool-step-detail.js";
 
 const MAX_DELTA_CHARACTERS = 8_000;
 const MAX_RESPONSE_CHARACTERS = 500_000;
@@ -46,9 +47,9 @@ export type PiAgentEvent =
     }
   | { type: "message_start"; message?: { role?: string } }
   | { type: "message_end"; message?: PiAssistantMessageSnapshot }
-  | { type: "tool_execution_start"; toolCallId: string; toolName: string }
+  | { type: "tool_execution_start"; toolCallId: string; toolName: string; args?: unknown }
   | { type: "tool_execution_update"; toolCallId: string; toolName: string; partialResult?: unknown }
-  | { type: "tool_execution_end"; toolCallId: string; toolName: string; isError: boolean }
+  | { type: "tool_execution_end"; toolCallId: string; toolName: string; isError: boolean; result?: unknown }
   | { type: "auto_retry_start"; errorMessage?: string }
   | { type: "auto_retry_end"; success?: boolean; finalError?: string }
   | { type: "compaction_start" }
@@ -62,6 +63,8 @@ export class PiEventTranslator {
   private readonly conversationId: string;
   private readonly publish: EventPublisher;
   private readonly flushDelayMs: number;
+  /** Where the Wisp's file tools work, so the paths steps show are relative to it. */
+  private readonly workspaceDirectory: string;
   private request: SendMessageRequest | null = null;
   private messageId = "";
   private messagePart = 1;
@@ -78,10 +81,11 @@ export class PiEventTranslator {
   /** The fallback model answering the rest of the turn, if the Wisp's own failed. */
   private fallbackModel: string | undefined;
 
-  constructor(conversationId: string, publish: EventPublisher, flushDelayMs = 24) {
+  constructor(conversationId: string, publish: EventPublisher, flushDelayMs = 24, workspaceDirectory = "") {
     this.conversationId = conversationId;
     this.publish = publish;
     this.flushDelayMs = flushDelayMs;
+    this.workspaceDirectory = workspaceDirectory;
   }
 
   begin(request: SendMessageRequest): void {
@@ -127,13 +131,19 @@ export class PiEventTranslator {
         break;
       case "tool_execution_start":
         this.completeMessagePart();
-        this.publishTool(event, "started");
+        this.publishTool(
+          event,
+          "started",
+          undefined,
+          undefined,
+          toolStepDetail(event.toolName, event.args, this.workspaceDirectory),
+        );
         break;
       case "tool_execution_update":
         this.publishTool(event, "updated", undefined, activityLabelOf(event.partialResult));
         break;
       case "tool_execution_end":
-        this.publishTool(event, "completed", event.isError);
+        this.publishTool(event, "completed", event.isError, undefined, toolStepResult(event.toolName, event.result));
         break;
       case "auto_retry_start":
         this.retryNoticeVisible = !event.errorMessage || isRetryableProviderError(event.errorMessage);
@@ -357,6 +367,7 @@ export class PiEventTranslator {
     phase: "started" | "updated" | "completed",
     isError?: boolean,
     label?: string,
+    detail?: ToolStepDetail,
   ): void {
     if (!this.request || !getToolMetadata(event.toolName)) return;
     this.flush();
@@ -369,6 +380,7 @@ export class PiEventTranslator {
       phase,
       ...(phase === "completed" ? { isError: Boolean(isError) } : {}),
       ...(label ? { label } : {}),
+      ...(detail ? { detail } : {}),
     });
   }
 

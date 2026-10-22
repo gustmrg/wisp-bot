@@ -54,7 +54,12 @@ export class WispConversationAgent implements ConversationAgent {
   ) {
     this.context = context;
     this.sessionFactory = sessionFactory;
-    this.translator = new PiEventTranslator(context.conversationId, (event) => this.emit(event), options.flushDelayMs);
+    this.translator = new PiEventTranslator(
+      context.conversationId,
+      (event) => this.emit(event),
+      options.flushDelayMs,
+      context.workspaceDirectory,
+    );
   }
 
   async start(): Promise<void> {

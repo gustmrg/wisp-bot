@@ -190,6 +190,30 @@ describe("conversation stream reducer", () => {
     expect(state.toolActivities.one).toEqual([]);
   });
 
+  it("adds a step's result to what it started with", () => {
+    const chats = stored(["one"]);
+    const step = (sequence: number, phase: "started" | "completed", detail: object) =>
+      ({
+        sequence,
+        type: "tool_activity",
+        conversationId: "one",
+        requestId: "request",
+        toolCallId: "run-1",
+        toolName: "run_command",
+        phase,
+        detail,
+      }) as const;
+    let state = createConversationRuntime(0, {});
+    state = reduceConversationAgentEvent(state, step(1, "started", { purpose: "Run the tests" }), chats);
+    state = reduceConversationAgentEvent(state, step(2, "completed", { commandResult: { exitCode: 0 } }), chats);
+    expect(state.toolActivities.one).toEqual([
+      expect.objectContaining({
+        phase: "completed",
+        detail: { purpose: "Run the tests", commandResult: { exitCode: 0 } },
+      }),
+    ]);
+  });
+
   it("tracks sanitized activity, cancellation, and retryable errors without cross-chat leakage", () => {
     const chats = stored(["one", "two"]);
     let state = createConversationRuntime(0, {});

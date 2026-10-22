@@ -27,6 +27,40 @@ describe("PiEventTranslator", () => {
     translator.dispose();
   });
 
+  it("tells what each step works on and how a command ended", () => {
+    const events: ConversationAgentEvent[] = [];
+    const translator = new PiEventTranslator("wisp-1", (event) => events.push(event), 0, "/workspace");
+    translator.begin({ conversationId: "wisp-1", requestId: "r1", text: "Test it" });
+    translator.handle({
+      type: "tool_execution_start",
+      toolCallId: "read-1",
+      toolName: "read",
+      args: { path: "/workspace/src/app.ts" },
+    });
+    translator.handle({
+      type: "tool_execution_start",
+      toolCallId: "run-1",
+      toolName: "run_command",
+      args: { command: "npm test -- --token=abc", description: "Run the tests" },
+    });
+    translator.handle({
+      type: "tool_execution_end",
+      toolCallId: "run-1",
+      toolName: "run_command",
+      isError: true,
+      result: { content: [{ type: "text", text: "secret output" }], details: { commandResult: { exitCode: 1 } } },
+    });
+
+    expect(events.filter((event) => event.type === "tool_activity").map((event) => event.detail)).toEqual([
+      { target: "src/app.ts" },
+      { purpose: "Run the tests", commandOutline: "npm test" },
+      { commandResult: { exitCode: 1 } },
+    ]);
+    expect(JSON.stringify(events)).not.toContain("secret output");
+    expect(JSON.stringify(events)).not.toContain("token=abc");
+    translator.dispose();
+  });
+
   it("answers a follow-up with the rest of the turn, even when the reply before it used tools alone", () => {
     const events: ConversationAgentEvent[] = [];
     const translator = new PiEventTranslator("wisp-1", (event) => events.push(event), 0);

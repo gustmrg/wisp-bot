@@ -24,19 +24,26 @@ const textDelta = (text: string) => ({
   parent_tool_use_id: null,
   event: { type: "content_block_delta", index: 0, delta: { type: "text_delta", text } },
 });
-const toolUse = (id: string, name: string) => ({
+const toolUse = (id: string, name: string, input: unknown = {}) => ({
   type: "assistant",
   session_id: SESSION,
   parent_tool_use_id: null,
-  message: { role: "assistant", content: [{ type: "tool_use", id, name, input: {} }] },
+  message: { role: "assistant", content: [{ type: "tool_use", id, name, input }] },
 });
-const toolResult = (id: string, isError?: boolean) => ({
+const toolResult = (id: string, isError?: boolean, content?: unknown) => ({
   type: "user",
   session_id: SESSION,
   parent_tool_use_id: null,
   message: {
     role: "user",
-    content: [{ type: "tool_result", tool_use_id: id, ...(isError ? { is_error: true } : {}) }],
+    content: [
+      {
+        type: "tool_result",
+        tool_use_id: id,
+        ...(isError ? { is_error: true } : {}),
+        ...(content === undefined ? {} : { content }),
+      },
+    ],
   },
 });
 const success = {
@@ -87,20 +94,32 @@ describe("ClaudeCodeEventConverter", () => {
     expect([...converter.capabilities]).toEqual(["interrupt_receipt_v1"]);
   });
 
-  it("reports tool calls under Wisp's tool names", () => {
+  it("reports tool calls under Wisp's tool names, with their inputs and results", () => {
     const { events } = convertAll([
-      toolUse("toolu_1", "mcp__wisp__read"),
-      toolResult("toolu_1"),
+      toolUse("toolu_1", "mcp__wisp__read", { path: "notes.md" }),
+      toolResult("toolu_1", false, [{ type: "text", text: "body" }, { type: "image" }]),
       toolUse("toolu_2", "WebSearch"),
-      toolResult("toolu_2", true),
+      toolResult("toolu_2", true, "No results"),
       toolResult("toolu_unknown"),
     ]);
 
     expect(events).toEqual([
-      { type: "tool_execution_start", toolCallId: "toolu_1", toolName: "read" },
-      { type: "tool_execution_end", toolCallId: "toolu_1", toolName: "read", isError: false },
-      { type: "tool_execution_start", toolCallId: "toolu_2", toolName: "web_search" },
-      { type: "tool_execution_end", toolCallId: "toolu_2", toolName: "web_search", isError: true },
+      { type: "tool_execution_start", toolCallId: "toolu_1", toolName: "read", args: { path: "notes.md" } },
+      {
+        type: "tool_execution_end",
+        toolCallId: "toolu_1",
+        toolName: "read",
+        isError: false,
+        result: { content: [{ type: "text", text: "body" }] },
+      },
+      { type: "tool_execution_start", toolCallId: "toolu_2", toolName: "web_search", args: {} },
+      {
+        type: "tool_execution_end",
+        toolCallId: "toolu_2",
+        toolName: "web_search",
+        isError: true,
+        result: { content: [{ type: "text", text: "No results" }] },
+      },
     ]);
   });
 

@@ -1,11 +1,10 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
-import { ArrowDownIcon, CheckIcon, ChevronLeftIcon, SettingsIcon, XIcon } from "lucide-react";
+import { ArrowDownIcon, ChevronLeftIcon, SettingsIcon } from "lucide-react";
 
 import type { ChatView, Message } from "@/chat-data";
 import type { ManagedConversationStatus } from "../../shared/conversations";
 import type { QueuedMessage } from "../../shared/message-queue";
 import type { ToolApprovalDecision, ToolApprovalRequest } from "../../shared/tool-policy";
-import { describeMcpAlias, getToolMetadata } from "../../shared/tool-catalog";
 import type { ToolActivityView } from "@/lib/conversation-stream";
 import { approvalWispName, chatName } from "@/lib/chat-schema";
 import { conversationStarters } from "@/lib/conversation-starters";
@@ -16,6 +15,7 @@ import { cn } from "@/lib/utils";
 import { isNeutralColor, wispAccentStyle, wispColor } from "@/lib/wisp-appearance";
 import { ChatAvatar, WispAvatar } from "@/components/chat-avatar";
 import { ChatComposer, type VoiceInputSettings } from "@/components/chat-composer";
+import { ChatSteps } from "@/components/chat-steps";
 import { Button } from "@/components/ui/button";
 import { MessageView } from "@/components/message-view";
 import { PendingMessagesBar } from "@/components/pending-messages-bar";
@@ -68,13 +68,6 @@ function chatAccentStyle(chat: ChatView): CSSProperties | undefined {
   return wispAccentStyle(color);
 }
 
-/** How many of the turn's steps show; older ones fold into a count. */
-const VISIBLE_STEPS = 4;
-
-function stepLabel(toolName: string): string {
-  return getToolMetadata(toolName)?.label ?? describeMcpAlias(toolName)?.label ?? toolName;
-}
-
 interface ChatPanelProps {
   hidden?: boolean;
   onBack?: () => void;
@@ -83,7 +76,7 @@ interface ChatPanelProps {
   transcript: MessageWindow | undefined;
   status: ManagedConversationStatus;
   activity?: string;
-  /** The tools the Wisp used in the turn it is working on. */
+  /** The tools the Wisp used in its latest turn. */
   steps?: ReadonlyArray<ToolActivityView>;
   error?: string;
   acknowledging: boolean;
@@ -487,33 +480,9 @@ function ChatPanel({
                 ))}
               </>
             ) : null}
-            {attached && working && steps.length ? (
-              <ol className="chat-steps" aria-label={`What ${name} has done so far`}>
-                {steps.length > VISIBLE_STEPS ? (
-                  <li className="chat-step" data-phase="completed">{`+${steps.length - VISIBLE_STEPS}`}</li>
-                ) : null}
-                {steps.slice(-VISIBLE_STEPS).map((step) => (
-                  <li
-                    key={step.toolCallId}
-                    className="chat-step"
-                    data-phase={step.phase === "completed" ? (step.isError ? "failed" : "completed") : "running"}
-                  >
-                    {step.phase !== "completed" ? (
-                      <span className="chat-step-spinner" aria-hidden="true" />
-                    ) : step.isError ? (
-                      <XIcon aria-hidden="true" />
-                    ) : (
-                      <CheckIcon aria-hidden="true" />
-                    )}
-                    {stepLabel(step.toolName)}
-                    {step.phase !== "completed" ? (
-                      <span className="sr-only">, running</span>
-                    ) : step.isError ? (
-                      <span className="sr-only">, failed</span>
-                    ) : null}
-                  </li>
-                ))}
-              </ol>
+            {/* After the turn its steps fold under the reply, until the person writes again. */}
+            {attached && steps.length > 0 && (working || lastMessage?.type !== "outgoing") ? (
+              <ChatSteps key={steps[0]?.toolCallId} steps={steps} name={name} working={working} />
             ) : null}
             {showActivity ? (
               <div role="status" className="chat-activity mt-3 flex items-center gap-2 text-dim text-sm">

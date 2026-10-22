@@ -323,19 +323,28 @@
   background: color-mix(in srgb, var(--wisp) 11%, #141418);
 }
 
-/* The tools the Wisp has used in this turn, as a trail of small steps. */
+/* The tools the Wisp used in its latest turn, one step per line with what it worked on. */
+.chat-steps-group {
+  margin: 10px 0 0;
+}
 .chat-steps {
   display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
   margin: 10px 0 0;
   padding: 0;
   list-style: none;
+}
+.chat-steps-group > .chat-steps {
+  margin-top: 6px;
 }
 .chat-step {
   display: inline-flex;
   align-items: center;
   gap: 5px;
+  max-width: 100%;
+  min-width: 0;
   padding: 3px 9px;
   border: 1px solid color-mix(in srgb, var(--wisp, var(--blue)) 22%, transparent);
   border-radius: 12px;
@@ -345,13 +354,68 @@
   animation: var(--animate-message-in);
 }
 .chat-step > svg {
+  flex: none;
   width: 12px;
   height: 12px;
+}
+.chat-step-label {
+  flex: none;
+}
+.chat-step-target {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-dim);
+  font-family: var(--font-mono);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.chat-step-target[data-prose] {
+  font-family: inherit;
+}
+.chat-step-result {
+  flex: none;
+  color: var(--text-dim);
 }
 .chat-step[data-phase="failed"] {
   border-color: color-mix(in srgb, var(--destructive) 30%, transparent);
   background: color-mix(in srgb, var(--destructive) 10%, transparent);
   color: var(--destructive);
+}
+.chat-step-more {
+  padding: 0;
+  border: 0;
+  background: none;
+}
+.chat-step-more > button,
+.chat-steps-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 9px;
+  border: 0;
+  background: none;
+  color: var(--text-dim);
+  font-size: var(--text-xs);
+  cursor: pointer;
+}
+.chat-steps-toggle {
+  margin: 10px 0 0;
+  padding-left: 2px;
+}
+.chat-steps-group > .chat-steps-toggle {
+  margin: 0;
+}
+.chat-steps-toggle > svg {
+  width: 12px;
+  height: 12px;
+  transition: transform 0.15s;
+}
+.chat-steps-toggle[aria-expanded="false"] > svg {
+  transform: rotate(-90deg);
+}
+.chat-step-more > button:hover,
+.chat-steps-toggle:hover {
+  color: var(--foreground);
 }
 .chat-step-spinner {
   width: 9px;

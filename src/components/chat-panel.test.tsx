@@ -482,19 +482,51 @@ function renderPanelIn(chat: ChatPanelProps["chat"], held: Message[], props: Par
 }
 
 describe("ChatPanel steps", () => {
-  it("shows the tools used in this turn while the Wisp works, and hides them after", () => {
+  it("shows what each step works on while the Wisp works, and folds the steps under the reply after", () => {
     const steps = [
-      { toolCallId: "1", toolName: "read", phase: "completed" as const },
+      { toolCallId: "1", toolName: "read", phase: "completed" as const, detail: { target: "src/app.ts" } },
       { toolCallId: "2", toolName: "grep", phase: "completed" as const, isError: true },
-      { toolCallId: "3", toolName: "read", phase: "started" as const },
+      {
+        toolCallId: "3",
+        toolName: "run_command",
+        phase: "completed" as const,
+        isError: true,
+        detail: {
+          purpose: "Run the tests",
+          commandOutline: "npm test",
+          commandResult: { exitCode: 1, durationMs: 2400 },
+        },
+      },
+      { toolCallId: "4", toolName: "read", phase: "started" as const },
+      { toolCallId: "5", toolName: "ls", phase: "started" as const },
     ];
     const { show } = renderPanel(transcript(messages(0, 1)), { status: "working", steps });
     const trail = screen.getByRole("list", { name: "What Atlas has done so far" });
-    expect(trail.querySelectorAll("li")).toHaveLength(3);
+    // The oldest step folds into a count.
+    expect(trail.querySelectorAll(".chat-step:not(.chat-step-more)")).toHaveLength(4);
     expect(trail).toHaveTextContent("Search workspace, failed");
+    expect(trail).toHaveTextContent("Run commandRun the testsexit 1 · 2.4 s");
+    expect(screen.getByTitle("npm test")).toHaveTextContent("Run the tests");
     expect(trail).toHaveTextContent("Read file, running");
+    fireEvent.click(screen.getByRole("button", { name: "+1 earlier" }));
+    expect(screen.getByRole("list", { name: "What Atlas has done so far" })).toHaveTextContent("src/app.ts");
 
+    // Steps the person opened stay open when the turn ends, and fold away on request.
     show(transcript(messages(0, 1)), { status: "idle", steps });
+    expect(screen.getByRole("list", { name: "What Atlas has done so far" }).querySelectorAll("li")).toHaveLength(5);
+    fireEvent.click(screen.getByRole("button", { name: "5 steps" }));
     expect(screen.queryByRole("list", { name: "What Atlas has done so far" })).not.toBeInTheDocument();
+  });
+
+  it("folds a finished turn's steps under a count until the person writes again", () => {
+    const steps = [{ toolCallId: "1", toolName: "read", phase: "completed" as const }];
+    const { show } = renderPanel(transcript(messages(0, 1)), { status: "idle", steps });
+    expect(screen.queryByRole("list", { name: "What Atlas has done so far" })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "1 step" }));
+    expect(screen.getByRole("list", { name: "What Atlas has done so far" })).toHaveTextContent("Read file");
+
+    const outgoing: Message = { id: "m9", type: "outgoing", text: "Next" };
+    show(transcript([...messages(0, 1), outgoing]), { status: "idle", steps });
+    expect(screen.queryByRole("button", { name: "1 step" })).not.toBeInTheDocument();
   });
 });
