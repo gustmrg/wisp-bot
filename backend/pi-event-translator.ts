@@ -232,6 +232,8 @@ export class PiEventTranslator {
     if (!this.request) return;
     const request = this.request;
     this.flush();
+    // Before the reply ends, so its steps are stored as they ended.
+    this.closeToolCalls(this.cancelled ? "cancelled" : "failed");
     if (this.cancelled) {
       this.startMessage();
       this.publish({
@@ -263,7 +265,6 @@ export class PiEventTranslator {
         ...this.fallbackField(),
       });
     }
-    this.closeToolCalls(this.cancelled ? "cancelled" : "failed");
     this.publish({ type: "conversation_status", conversationId: this.conversationId, status: "idle" });
     this.request = null;
   }
