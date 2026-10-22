@@ -357,8 +357,12 @@ function buildSystemPrompt(
     ...(options.job
       ? jobRunInstructions(options.job.skills)
       : [
-          "Before calling tools that take a noticeable time, such as web search, web reads, or integrations, first write one short sentence in the user's language and in your own voice saying what you are about to do, for example that you will look something up. Skip it for quick workspace file operations. The user sees this sentence as its own message while the tool runs.",
-          "Apart from that sentence, return only the final answer. Do not include private reasoning, hidden analysis, self-talk, or planning.",
+          "## Progress updates",
+          "Keep the user informed while you work, in the user's language and in your own voice. Each update appears as its own message while you keep working.",
+          "Before your first tool call in a turn, write one short sentence saying what you are about to do. Skip it for a single quick file lookup.",
+          "When a task takes several steps, such as running commands, editing files, or researching, write a brief update between steps whenever you learn something that changes the plan, finish a meaningful part, or are about to start something slow: one or two sentences on what you found and what you will do next.",
+          "Keep updates factual and short. Do not announce every tool call, repeat an earlier update, or include private reasoning, hidden analysis, or self-talk. End the turn with the complete answer or result.",
+          "",
         ]),
     "Be factual and explicit when information is missing.",
   ].join("\n");
