@@ -1,4 +1,9 @@
-import type { BackendError, ConversationAgentEvent, SequencedConversationAgentEvent } from "../../shared/contracts";
+import type {
+  BackendError,
+  ConversationAgentEvent,
+  SequencedConversationAgentEvent,
+  ToolStepDetail,
+} from "../../shared/contracts";
 import {
   assistantMessageId,
   messageFailure,
@@ -14,6 +19,8 @@ export interface ToolActivityView {
   toolName: string;
   phase: "started" | "updated" | "completed";
   isError?: boolean;
+  /** What the step works on, and how a command ended. */
+  detail?: ToolStepDetail;
 }
 
 export interface ConversationRuntimeState {
@@ -514,26 +521,21 @@ function upsertToolActivity(
   activities: ReadonlyArray<ToolActivityView>,
   event: Extract<ConversationAgentEvent, { type: "tool_activity" }>,
 ): ReadonlyArray<ToolActivityView> {
+  const view = (detail: ToolStepDetail | undefined): ToolActivityView => ({
+    toolCallId: event.toolCallId,
+    toolName: event.toolName,
+    phase: event.phase,
+    ...(event.isError === undefined ? {} : { isError: event.isError }),
+    ...(detail ? { detail } : {}),
+  });
   const next = activities.some(({ toolCallId }) => toolCallId === event.toolCallId)
     ? activities.map((activity) =>
         activity.toolCallId === event.toolCallId
-          ? {
-              toolCallId: event.toolCallId,
-              toolName: event.toolName,
-              phase: event.phase,
-              ...(event.isError === undefined ? {} : { isError: event.isError }),
-            }
+          ? // A step's later events add to what it started with.
+            view(activity.detail || event.detail ? { ...activity.detail, ...event.detail } : undefined)
           : activity,
       )
-    : [
-        ...activities,
-        {
-          toolCallId: event.toolCallId,
-          toolName: event.toolName,
-          phase: event.phase,
-          ...(event.isError === undefined ? {} : { isError: event.isError }),
-        },
-      ];
+    : [...activities, view(event.detail)];
   return next.slice(-20);
 }
 

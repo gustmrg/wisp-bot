@@ -520,6 +520,8 @@ type ConversationAgentEventBody =
       isError?: boolean;
       /** The tool's own progress text, such as which model reads a page; replaces the generic activity. */
       label?: string;
+      /** What the step works on when it starts, and how a command ended when it completes. */
+      detail?: ToolStepDetail;
     }
   | {
       type: "conversation_notice";
@@ -610,6 +612,23 @@ export interface SessionReportToolCall {
   timestamp: string;
   /** The image model that read images or scanned pages for this call; `fromCache` when nothing was sent again. */
   imageModel?: { name: string; fromCache: boolean };
+}
+
+/**
+ * What a step in a turn worked on, summarized as the session report summarizes
+ * tool calls (ADR 003): a workspace path, a search or a page, and for commands
+ * what they were for and which programs they ran. Never file contents, command
+ * arguments or tool output.
+ */
+export interface ToolStepDetail {
+  /** The workspace path, search, or page the step worked on. */
+  target?: string;
+  /** For commands: what the Wisp said the command was for. */
+  purpose?: string;
+  /** For commands: the programs run, without their arguments. */
+  commandOutline?: string;
+  /** For commands: how the command ended. */
+  commandResult?: SessionReportToolCall["commandResult"];
 }
 
 export interface SessionReportEvent {

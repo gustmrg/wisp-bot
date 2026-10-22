@@ -71,6 +71,18 @@ export function isMissingSession(result: ClaudeCodeTurnResult): boolean {
   return !result.ok && result.errors.some((error) => error.startsWith("No conversation found"));
 }
 
+/** A tool result's content as Pi's text blocks: Claude Code sends a string or content blocks. */
+function resultContent(content: unknown): Array<{ type: "text"; text: string }> {
+  if (typeof content === "string") return [{ type: "text", text: content }];
+  if (!Array.isArray(content)) return [];
+  return content.flatMap((item) => {
+    const block = record(item);
+    return block?.type === "text" && typeof block.text === "string"
+      ? [{ type: "text" as const, text: block.text }]
+      : [];
+  });
+}
+
 export class ClaudeCodeEventConverter {
   /** Tool calls that started and have no result yet, with their Wisp names. */
   private readonly openTools = new Map<string, string>();
@@ -161,7 +173,7 @@ export class ClaudeCodeEventConverter {
       if (block?.type !== "tool_use" || typeof block.id !== "string" || typeof block.name !== "string") continue;
       const toolName = wispToolName(block.name);
       this.openTools.set(block.id, toolName);
-      events.push({ type: "tool_execution_start", toolCallId: block.id, toolName });
+      events.push({ type: "tool_execution_start", toolCallId: block.id, toolName, args: block.input });
     }
     return events;
   }
@@ -179,6 +191,7 @@ export class ClaudeCodeEventConverter {
         toolCallId: block.tool_use_id,
         toolName,
         isError: block.is_error === true,
+        result: { content: resultContent(block.content) },
       });
     }
     return events;

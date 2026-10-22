@@ -25,6 +25,10 @@ Retry notices are out of scope for this slice: retries are not persisted in the 
 
 Tool arguments are summarized through a strict field whitelist (`path`, `pattern`, `include`, `glob`, `query`, `regex`). Values are capped and workspace paths are relativized. Everything else — notably `content`, `oldText`/`newString`, and any other argument data — is dropped. Tool outputs and tool result content never cross the bridge. Error details reuse the translator's sanitizer (bounded, no stacks, no provider bodies) and are identical to what the chat already displays. Argument summaries and report arrays are capped (last 50 tool calls, last 50 events) and the session file is bounded by a size check before parsing.
 
+## Steps in the chat
+
+The steps a turn shows in the chat (`tool_activity` events) carry the same kind of summary, built by `backend/tool-step-detail.ts`, which the report shares: a workspace path relative to the workspace (paths outside it are left out), a search, or a page's host and path without its query string; for commands, the purpose the Wisp gave and the programs they ran, without arguments, and on completion the exit code and duration. Secret-looking values are dropped and every value is capped. File contents, command arguments and tool output still never cross the bridge.
+
 ## Cost estimation
 
 Token counts are the source of truth. Cost is an estimate computed from third-party model pricing: the public OpenRouter models endpoint (`GET https://openrouter.ai/api/v1/models`), which matches the app's supported provider set. The response is cached in the user-data directory with a TTL and refreshed best-effort; a report never blocks or fails on pricing fetch. When pricing is unavailable for a model, its cost is omitted rather than reported as zero. No credentials, prompts, or conversation data are sent to the pricing endpoint.
