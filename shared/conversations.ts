@@ -25,6 +25,8 @@ export interface Wisp {
   appearance: WispAppearance;
   /** One of `WISP_COLORS`; without one, the color is derived from the name. */
   color?: string;
+  /** Whether the chat shows the model's reasoning above each reply; off when absent. */
+  showReasoning?: boolean;
 }
 
 export type WispCollection = Record<WispId, Wisp>;
@@ -32,6 +34,19 @@ export type WispCollection = Record<WispId, Wisp>;
 export type NewWisp = Omit<Wisp, "id">;
 /** Fields to change; `color` set to undefined is cleared. */
 export type WispChanges = Partial<NewWisp>;
+
+/** How much of a reply's reasoning is kept; the rest is cut off. */
+export const MESSAGE_REASONING_MAX_LENGTH = 100_000;
+
+/** The reasoning a reply carries so far; empty for any other message. */
+export function reasoningOf(message: Message | undefined): string {
+  return message?.type === "incoming" ? (message.reasoning ?? "") : "";
+}
+
+/** The `reasoning` field for a reply, left out when there is none. */
+export function withReasoning(reasoning: string): { reasoning?: string } {
+  return reasoning ? { reasoning } : {};
+}
 
 export type MessageStatus = "queued" | "streaming" | "complete" | "failed" | "cancelled";
 
@@ -132,6 +147,8 @@ export interface TextMessage extends MessageMetadata {
   job?: JobOrigin;
   /** The fallback model's name, set on a reply it wrote because the Wisp's model failed. */
   fallbackModel?: string;
+  /** What the model reasoned before writing the reply, when its Wisp shows reasoning. */
+  reasoning?: string;
   /**
    * Why a failed reply failed. Replies that failed before this was stored
    * carry the reason as their text instead.

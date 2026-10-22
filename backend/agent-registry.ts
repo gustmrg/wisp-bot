@@ -15,6 +15,7 @@ import {
   type AgentContext,
   type ConversationAgent,
   type ConversationAgentFactory,
+  type WispDisplay,
 } from "./conversation-agent.js";
 
 interface AgentEntry {
@@ -387,6 +388,11 @@ export class AgentRegistry {
     const followUps = agent.withdrawFollowUps?.() ?? [];
     await agent.abort();
     return followUps;
+  }
+
+  /** Applies a Wisp's display choices to a conversation it answers in, if its agent runs. */
+  applyDisplay(conversationId: string, wispId: string, display: WispDisplay): void {
+    this.entries.get(conversationId)?.agent.applyDisplay?.(wispId, display);
   }
 
   async updateContext(context: AgentContext): Promise<void> {

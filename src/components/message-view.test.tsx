@@ -136,4 +136,22 @@ describe("MessageView", () => {
     await user.click(screen.getByRole("button", { name: "Copy message" }));
     expect(writeText).toHaveBeenCalledWith("Anexe os boletos");
   });
+
+  it("folds the model's reasoning above a reply, and shows it alone while the model thinks", async () => {
+    const { rerender } = render(
+      <MessageView message={{ id: "r", type: "incoming", text: "", status: "streaming", reasoning: "Weigh both." }} />,
+    );
+    expect(screen.getByText("Thinking…")).toBeTruthy();
+    rerender(
+      <MessageView
+        message={{ id: "r", type: "incoming", text: "Pick A.", status: "complete", reasoning: "Weigh both." }}
+      />,
+    );
+    const summary = screen.getByText("Reasoning");
+    expect(summary.closest("details")?.open).toBe(false);
+    await userEvent.click(summary);
+    expect(summary.closest("details")?.open).toBe(true);
+    expect(screen.getByText("Weigh both.")).toBeTruthy();
+    expect(screen.getByText("Pick A.")).toBeTruthy();
+  });
 });

@@ -7,6 +7,8 @@ import type {
 import {
   assistantMessageId,
   messageFailure,
+  reasoningOf,
+  withReasoning,
   type ManagedConversationStatus,
   type Message,
   type TextMessage,
@@ -187,15 +189,19 @@ export function reduceConversationAgentEvent(
         },
       );
     }
-    case "assistant_text_delta": {
+    case "assistant_text_delta":
+    case "assistant_reasoning_delta": {
       const current = findMessage(next, stored, event.conversationId, event.messageId);
+      const text = current?.type === "incoming" ? current.text : "";
+      const reasoning = reasoningOf(current);
       return setRuntimeMessage(next, event.conversationId, {
         id: event.messageId,
         type: "incoming",
-        text: `${current?.type === "incoming" ? current.text : ""}${event.delta}`,
+        text: event.type === "assistant_text_delta" ? `${text}${event.delta}` : text,
         status: "streaming",
         ...(current?.createdAt ? { createdAt: current.createdAt } : {}),
         ...authorOf(event),
+        ...withReasoning(event.type === "assistant_reasoning_delta" ? `${reasoning}${event.delta}` : reasoning),
       });
     }
     case "assistant_message_completed":
@@ -246,6 +252,7 @@ export function reduceConversationAgentEvent(
           retryable: false,
           createdAt: reply?.createdAt ?? event.createdAt,
           authorId: event.wispId,
+          ...withReasoning(reasoningOf(reply)),
         });
       }
       next = {
@@ -272,6 +279,7 @@ export function reduceConversationAgentEvent(
         error: messageFailure(event.error),
         retryable: event.error.retryable,
         createdAt: assistant?.createdAt ?? event.createdAt,
+        ...withReasoning(reasoningOf(assistant)),
       });
     }
     case "tool_activity":
@@ -475,6 +483,7 @@ function finalizeAssistant(
     ...(current?.createdAt ? { createdAt: current.createdAt } : {}),
     ...(fallbackModel ? { fallbackModel } : {}),
     ...authorOf({ wispId }),
+    ...withReasoning(reasoningOf(current)),
   });
 }
 

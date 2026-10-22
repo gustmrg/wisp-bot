@@ -1,5 +1,6 @@
 import { useState } from "react";
 import {
+  BrainIcon,
   CalendarClockIcon,
   CheckIcon,
   CircleAlertIcon,
@@ -183,7 +184,24 @@ function MessageView({
       </div>
     );
   }
-  if (empty || (!outgoing && !reveal.text.trim())) return null;
+  const reasoning =
+    message.type === "incoming" && message.reasoning ? (
+      <MessageReasoning text={message.reasoning} thinking={message.status === "streaming" && empty} />
+    ) : null;
+  if (empty || (!outgoing && !reveal.text.trim())) {
+    // While the model reasons, before any text, its reasoning stands alone.
+    return reasoning ? (
+      <div className={cn("relative flex animate-message-in flex-col items-start", dense ? "mt-2" : "mt-3")}>
+        {author && showAuthor ? (
+          <span className="message-author">
+            <WispAvatar wisp={author} size="sm" />
+            {author.name}
+          </span>
+        ) : null}
+        {reasoning}
+      </div>
+    ) : null;
+  }
   return (
     <div
       className={cn(
@@ -198,6 +216,7 @@ function MessageView({
           {author.name}
         </span>
       ) : null}
+      {reasoning}
       <div
         className={cn("message-row group/message-row flex max-w-full items-center", outgoing && "flex-row-reverse")}
         data-outgoing={outgoing}
@@ -259,6 +278,19 @@ function MessageView({
         </div>
       ) : null}
     </div>
+  );
+}
+
+/** What the model reasoned before a reply, folded away until the person opens it. */
+function MessageReasoning({ text, thinking }: { text: string; thinking: boolean }) {
+  return (
+    <details className="message-reasoning" data-thinking={thinking || undefined}>
+      <summary>
+        <BrainIcon aria-hidden="true" />
+        {thinking ? "Thinking…" : "Reasoning"}
+      </summary>
+      <div className="message-reasoning-text">{text}</div>
+    </details>
   );
 }
 

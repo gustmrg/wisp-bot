@@ -146,6 +146,69 @@ describe("ConversationService", () => {
     await service.dispose();
   });
 
+  it("shows or hides a Wisp's reasoning in its running agents without reloading them", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "wisp-service-display-"));
+    const updateContext = vi.fn(async () => undefined);
+    const applyDisplay = vi.fn();
+    const factory: ConversationAgentFactory = {
+      create: (context) => {
+        const agent = new FakeConversationAgent(context.conversationId);
+        agent.updateContext = updateContext;
+        Object.assign(agent, { applyDisplay });
+        return agent;
+      },
+    };
+    const repository = new ConversationRepository({ dataDirectory: directory });
+    const service = new ConversationService(repository, new AgentRegistry(factory, () => undefined));
+    await service.start(null);
+    await service.initialize({ one: chat("one") });
+
+    const state = await service.updateWisp("one", { showReasoning: true });
+    expect(state.wisps.one?.showReasoning).toBe(true);
+    expect(applyDisplay).toHaveBeenCalledWith("one", { showReasoning: true });
+    expect(updateContext).not.toHaveBeenCalled();
+    expect(repository.getAgentContext("one").display).toEqual({ showReasoning: true });
+    await service.updateWisp("one", { showReasoning: false });
+    expect(applyDisplay).toHaveBeenLastCalledWith("one", { showReasoning: false });
+    await service.dispose();
+  });
+
+  it("keeps a reply's reasoning across a restart", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "wisp-service-reasoning-"));
+    const service = new ConversationService(
+      new ConversationRepository({ dataDirectory: directory }),
+      new AgentRegistry(new FakeConversationAgentFactory(), () => undefined),
+    );
+    await service.start({ providerId: "test", modelId: "test" });
+    await service.initialize({ one: chat("one") });
+    await service.appendMessage("one", { id: "request-1", type: "outgoing", text: "A", status: "queued" });
+    const base = { conversationId: "one", requestId: "request-1", messageId: "request-1:assistant" } as const;
+    const events = [
+      { type: "assistant_message_started", ...base, createdAt: "2026-10-21T12:00:00.000Z" },
+      { type: "assistant_reasoning_delta", ...base, delta: "Answer briefly." },
+      { type: "assistant_text_delta", ...base, delta: "B" },
+      { type: "assistant_message_completed", ...base },
+    ] as const;
+    events.forEach((event, index) => service.handleAgentEvent({ ...event, sequence: index + 1 }));
+    await vi.waitFor(() =>
+      expect(service.getState().chats.one?.messages).toContainEqual(
+        expect.objectContaining({ id: "request-1:assistant", status: "complete" }),
+      ),
+    );
+    await service.dispose();
+
+    const restored = new ConversationService(
+      new ConversationRepository({ dataDirectory: directory }),
+      new AgentRegistry(new FakeConversationAgentFactory(), () => undefined),
+    );
+    await restored.start({ providerId: "test", modelId: "test" });
+    await restored.initialize({});
+    expect(restored.getState().chats.one?.messages).toContainEqual(
+      expect.objectContaining({ id: "request-1:assistant", text: "B", reasoning: "Answer briefly." }),
+    );
+    await restored.dispose();
+  });
+
   it("refreshes every existing Wisp when the shared profile changes", async () => {
     const directory = await mkdtemp(path.join(os.tmpdir(), "wisp-service-profile-"));
     const updateContext = vi.fn(async () => undefined);

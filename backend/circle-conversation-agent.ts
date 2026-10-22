@@ -12,6 +12,7 @@ import {
   type ConversationAgentContext,
   type ConversationAgentFactory,
   type ConversationAgentListener,
+  type WispDisplay,
 } from "./conversation-agent.js";
 
 /** How much of the circle a member is told before its turn; the newest messages are kept. */
@@ -239,6 +240,13 @@ export class CircleConversationAgent implements ConversationAgent {
   }
 
   /** Brings the members in line with the circle: who is in it, and each member's identity and model. */
+  applyDisplay(wispId: string, display: WispDisplay): void {
+    const member = this.members.get(wispId);
+    if (!member) return;
+    member.context = { ...member.context, display };
+    member.agent.applyDisplay?.(wispId, display);
+  }
+
   updateContext(context: AgentContext): Promise<void> {
     if (!isCircleContext(context) || context.conversationId !== this.context.conversationId) {
       return Promise.reject(new WispBackendError("invalid_request", "The agent context does not match this circle."));

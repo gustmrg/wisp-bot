@@ -1,5 +1,5 @@
 import type { BackendError, ConversationAgentEvent, SendMessageRequest, ToolStepDetail } from "../shared/contracts.js";
-import { assistantMessageId } from "../shared/conversations.js";
+import { assistantMessageId, MESSAGE_REASONING_MAX_LENGTH } from "../shared/conversations.js";
 import { describeProviderError, isRetryableProviderError } from "./provider-error.js";
 import { getToolMetadata } from "../shared/tool-catalog.js";
 import { toolStepDetail, toolStepResult } from "./tool-step-detail.js";
@@ -72,6 +72,11 @@ export class PiEventTranslator {
   /** Whether the current message has visible text, so a tool call only splits a message the user can see. */
   private messageHasText = false;
   private pendingDelta = "";
+  private pendingReasoning = "";
+  /** Whether the model's reasoning reaches the chat; it is dropped otherwise. */
+  private showReasoning = false;
+  /** Reasoning sent for the current message, bounded like the message keeps it. */
+  private reasoningCharacters = 0;
   private flushTimer: ReturnType<typeof setTimeout> | undefined;
   private failed = false;
   private cancelled = false;
@@ -96,12 +101,20 @@ export class PiEventTranslator {
     this.messageStarted = false;
     this.messageHasText = false;
     this.pendingDelta = "";
+    this.pendingReasoning = "";
+    this.reasoningCharacters = 0;
     this.failed = false;
     this.cancelled = false;
     this.responseCharacters = 0;
     this.lastErrorMessage = "";
     this.retryNoticeVisible = false;
     this.fallbackModel = undefined;
+  }
+
+  /** Applies the Wisp's choice from its next reasoning on, so a change reaches a running turn. */
+  setShowReasoning(show: boolean): void {
+    this.showReasoning = show;
+    if (!show) this.pendingReasoning = "";
   }
 
   handle(event: PiAgentEvent): void {
@@ -119,6 +132,8 @@ export class PiEventTranslator {
           this.lastErrorMessage = "";
           this.startMessage();
           this.queueDelta(update.delta);
+        } else if (update.type === "thinking_delta" && typeof update.delta === "string") {
+          this.queueReasoning(update.delta);
         } else if (update.type === "error") {
           if (update.reason === "aborted") this.cancelled = true;
           else
@@ -203,6 +218,7 @@ export class PiEventTranslator {
     this.messageId = assistantMessageId(followUp.requestId);
     this.messageStarted = false;
     this.messageHasText = false;
+    this.reasoningCharacters = 0;
     this.responseCharacters = 0;
     this.lastErrorMessage = "";
     this.startMessage();
@@ -269,6 +285,7 @@ export class PiEventTranslator {
     this.clearTimer();
     this.request = null;
     this.pendingDelta = "";
+    this.pendingReasoning = "";
   }
 
   private startMessage(): void {
@@ -303,6 +320,7 @@ export class PiEventTranslator {
     this.messageId = assistantMessageId(this.request.requestId, this.messagePart);
     this.messageStarted = false;
     this.messageHasText = false;
+    this.reasoningCharacters = 0;
   }
 
   private captureError(message: PiAssistantMessageSnapshot | undefined): void {
@@ -347,8 +365,37 @@ export class PiEventTranslator {
     this.flushTimer ??= setTimeout(() => this.flush(), this.flushDelayMs);
   }
 
+  /**
+   * Reasoning goes with the message whose text follows it. It never counts as
+   * a response, and past the bound a message keeps, the rest is dropped.
+   */
+  private queueReasoning(delta: string): void {
+    if (!this.showReasoning || !delta || this.failed || this.cancelled) return;
+    const accepted = delta.slice(0, MESSAGE_REASONING_MAX_LENGTH - this.reasoningCharacters);
+    if (!accepted) return;
+    this.reasoningCharacters += accepted.length;
+    this.startMessage();
+    this.pendingReasoning += accepted;
+    if (this.flushDelayMs <= 0 || this.pendingReasoning.length >= MAX_DELTA_CHARACTERS) {
+      this.flush();
+      return;
+    }
+    this.flushTimer ??= setTimeout(() => this.flush(), this.flushDelayMs);
+  }
+
   private flush(): void {
     this.clearTimer();
+    if (this.request && this.pendingReasoning) {
+      const reasoning = this.pendingReasoning;
+      this.pendingReasoning = "";
+      this.publish({
+        type: "assistant_reasoning_delta",
+        conversationId: this.conversationId,
+        requestId: this.request.requestId,
+        messageId: this.messageId,
+        delta: reasoning,
+      });
+    }
     if (!this.request || !this.pendingDelta) return;
     const delta = this.pendingDelta;
     this.pendingDelta = "";
