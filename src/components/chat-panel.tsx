@@ -6,7 +6,7 @@ import type { ManagedConversationStatus } from "../../shared/conversations";
 import type { QueuedMessage } from "../../shared/message-queue";
 import type { ToolApprovalDecision, ToolApprovalRequest } from "../../shared/tool-policy";
 import { describeMcpAlias, getToolMetadata } from "../../shared/tool-catalog";
-import type { ToolActivityView } from "@/lib/conversation-stream";
+import type { TurnItemView } from "@/lib/conversation-stream";
 import { approvalWispName, chatName } from "@/lib/chat-schema";
 import { conversationStarters } from "@/lib/conversation-starters";
 import { withDateDividers } from "@/lib/date-dividers";
@@ -103,7 +103,7 @@ interface ChatPanelProps {
   status: ManagedConversationStatus;
   activity?: string;
   /** The tools the Wisp used in the turn it is working on. */
-  steps?: ReadonlyArray<ToolActivityView>;
+  steps?: ReadonlyArray<TurnItemView>;
   error?: string;
   acknowledging: boolean;
   approvals: ReadonlyArray<ToolApprovalRequest>;
@@ -535,23 +535,25 @@ function ChatPanel({
                 ) : null}
                 {steps.slice(-VISIBLE_STEPS).map((step) => (
                   <li
-                    key={step.toolCallId}
+                    key={step.id}
                     className="chat-step"
-                    data-phase={step.phase === "completed" ? (step.isError ? "failed" : "completed") : "running"}
+                    data-phase={
+                      step.status === "running" ? "running" : step.status === "completed" ? "completed" : "failed"
+                    }
                   >
-                    {step.phase !== "completed" ? (
+                    {step.status === "running" ? (
                       <span className="chat-step-spinner" aria-hidden="true" />
-                    ) : step.isError ? (
-                      <XIcon aria-hidden="true" />
-                    ) : (
+                    ) : step.status === "completed" ? (
                       <CheckIcon aria-hidden="true" />
+                    ) : (
+                      <XIcon aria-hidden="true" />
                     )}
                     {stepLabel(step.toolName)}
-                    {step.phase !== "completed" ? (
+                    {step.status === "running" ? (
                       <span className="sr-only">, running</span>
-                    ) : step.isError ? (
+                    ) : step.status === "completed" ? null : (
                       <span className="sr-only">, failed</span>
-                    ) : null}
+                    )}
                   </li>
                 ))}
               </ol>

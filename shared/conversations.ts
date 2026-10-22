@@ -196,6 +196,11 @@ export function assistantMessageId(requestId: string, part = 1): string {
   return part === 1 ? `${requestId}:assistant` : `${requestId}:assistant:${part}`;
 }
 
+/** The ID of the steps a reply took right before its part `part`. */
+export function workMessageId(requestId: string, part = 1): string {
+  return part === 1 ? `${requestId}:work` : `${requestId}:work:${part}`;
+}
+
 /** The request a reply message answers, or null for any other message. */
 export function requestIdOfAssistantMessage(messageId: string): string | null {
   return /^(.+):assistant(?::\d+)?$/.exec(messageId)?.[1] ?? null;

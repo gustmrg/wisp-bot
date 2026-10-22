@@ -8,6 +8,7 @@ import type { RuntimeSession } from "../runtime-session.js";
 import type { PiAgentEvent } from "../pi-event-translator.js";
 import { ClaudeCodeEventConverter, isMissingSession, type ClaudeCodeTurnResult } from "./claude-code-events.js";
 import { claudeCodeUserMessage, type ClaudeCodeQueryOptions } from "./claude-code-launch.js";
+import type { WispToolObserver } from "./wisp-mcp-server.js";
 
 /** A Claude Code process closes after this long without a turn; the next message resumes it. */
 const DEFAULT_IDLE_MS = 30 * 60_000;
@@ -33,6 +34,8 @@ export interface ClaudeCodeLaunch {
   effort?: ClaudeCodeQueryOptions["effort"];
   /** Set when a session that no longer existed was replaced: what the new one should know. */
   recoveredContext?: string;
+  /** Told what the process's Wisp tools report as they run and end. */
+  observer: WispToolObserver;
 }
 
 export interface ClaudeCodeSessionOptions {
@@ -378,12 +381,20 @@ export class ClaudeCodeSession implements RuntimeSession {
 
   private async ensureProcess(): Promise<RunningProcess> {
     if (this.process) return this.process;
+    const converter = new ClaudeCodeEventConverter();
     const launch: ClaudeCodeLaunch = {
       sessionId: this.sessionIdValue,
       resume: this.resume,
       model: this.model,
       ...(claudeCodeEffort(this.thinkingLevel) ? { effort: claudeCodeEffort(this.thinkingLevel) } : {}),
       ...(this.recoveredContext ? { recoveredContext: this.recoveredContext } : {}),
+      observer: {
+        progress: (toolCallId, partialResult) => {
+          if (this.process?.converter !== converter) return;
+          for (const event of converter.toolProgress(toolCallId, partialResult)) this.emit(event);
+        },
+        result: (toolCallId, result) => converter.recordToolResult(toolCallId, result),
+      },
     };
     const queryOptions = await this.options.queryOptions(launch);
     this.assertOpen();
@@ -400,7 +411,7 @@ export class ClaudeCodeSession implements RuntimeSession {
     const handle = this.options.query({ prompt: input(), options: queryOptions });
     const process: RunningProcess = {
       handle,
-      converter: new ClaudeCodeEventConverter(),
+      converter,
       steers: [],
       send: (message) => {
         queue.push(message);

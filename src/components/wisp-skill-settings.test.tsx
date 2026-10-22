@@ -39,12 +39,17 @@ it("lists skills, refreshes after a save, and deletes after confirmation", async
 
   await act(async () => {
     listener?.({
-      type: "tool_activity",
+      type: "turn_item",
       conversationId: "one",
       requestId: "request",
-      toolCallId: "tool",
-      toolName: "save_skill",
-      phase: "completed",
+      groupId: "request:work",
+      item: {
+        id: "tool",
+        toolName: "save_skill",
+        status: "completed",
+        startedAt: "2026-10-22T10:00:00.000Z",
+        type: "tool",
+      },
       sequence: 1,
     });
   });

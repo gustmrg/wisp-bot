@@ -97,10 +97,33 @@ describe("ClaudeCodeEventConverter", () => {
     ]);
 
     expect(events).toEqual([
-      { type: "tool_execution_start", toolCallId: "toolu_1", toolName: "read" },
-      { type: "tool_execution_end", toolCallId: "toolu_1", toolName: "read", isError: false },
-      { type: "tool_execution_start", toolCallId: "toolu_2", toolName: "web_search" },
-      { type: "tool_execution_end", toolCallId: "toolu_2", toolName: "web_search", isError: true },
+      { type: "tool_execution_start", toolCallId: "toolu_1", toolName: "read", args: {} },
+      { type: "tool_execution_end", toolCallId: "toolu_1", toolName: "read", isError: false, result: {} },
+      { type: "tool_execution_start", toolCallId: "toolu_2", toolName: "web_search", args: {} },
+      { type: "tool_execution_end", toolCallId: "toolu_2", toolName: "web_search", isError: true, result: {} },
+    ]);
+  });
+
+  it("ends a Wisp tool's call with the result the tool returned, details included", () => {
+    const converter = new ClaudeCodeEventConverter();
+    converter.convert(toolUse("toolu_1", "mcp__wisp__edit"));
+    const result = { content: [{ type: "text", text: "Edited a.ts" }], details: { patch: "+one" } };
+    converter.recordToolResult("toolu_1", result);
+    // A result for a call Claude Code did not announce is not kept.
+    converter.recordToolResult("toolu_other", result);
+    const progress = converter.toolProgress("toolu_1", { details: { activityLabel: "Editing…" } });
+
+    expect(progress).toEqual([
+      {
+        type: "tool_execution_update",
+        toolCallId: "toolu_1",
+        toolName: "edit",
+        partialResult: { details: { activityLabel: "Editing…" } },
+      },
+    ]);
+    expect(converter.toolProgress("toolu_other", {})).toEqual([]);
+    expect(converter.convert(toolResult("toolu_1")).events).toEqual([
+      { type: "tool_execution_end", toolCallId: "toolu_1", toolName: "edit", isError: false, result },
     ]);
   });
 

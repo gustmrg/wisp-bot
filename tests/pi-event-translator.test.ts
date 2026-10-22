@@ -18,7 +18,7 @@ describe("PiEventTranslator", () => {
       "bash",
     ])
       translator.handle({ type: "tool_execution_start", toolCallId: `call-${toolName}`, toolName });
-    expect(events.filter((event) => event.type === "tool_activity").map((event) => event.toolName)).toEqual([
+    expect(events.flatMap((event) => (event.type === "turn_item" ? [event.item.toolName] : []))).toEqual([
       "web_search",
       "web_read",
       "firecrawl_scrape",
@@ -44,8 +44,8 @@ describe("PiEventTranslator", () => {
         .map((event) => `${event.type}:${"requestId" in event ? event.requestId : ""}`),
     ).toEqual([
       "assistant_message_started:r1",
-      "tool_activity:r1",
-      "tool_activity:r1",
+      "turn_item:r1",
+      "turn_item:r1",
       // Empty, so hidden in the transcript; the request still counts as answered.
       "assistant_message_completed:r1",
       "follow_up_taken:r1",
@@ -83,9 +83,9 @@ describe("PiEventTranslator", () => {
       "assistant_text_delta",
       // Text before a tool call is its own message; nothing followed the tools.
       "assistant_message_completed",
-      "tool_activity",
-      "tool_activity",
-      "tool_activity",
+      // An update without progress text changes nothing the conversation shows.
+      "turn_item",
+      "turn_item",
       "conversation_notice",
       "conversation_notice",
       "conversation_notice",
@@ -106,10 +106,8 @@ describe("PiEventTranslator", () => {
     );
     expect(events).toContainEqual(
       expect.objectContaining({
-        type: "tool_activity",
-        toolName: "read",
-        phase: "completed",
-        isError: false,
+        type: "turn_item",
+        item: expect.objectContaining({ toolName: "read", status: "completed" }),
       }),
     );
     expect(JSON.stringify(events)).not.toContain("secret");
@@ -121,6 +119,7 @@ describe("PiEventTranslator", () => {
     const translator = new PiEventTranslator("wisp-1", (event) => events.push(event), 0);
     translator.begin({ conversationId: "wisp-1", requestId: "request-1", text: "Read" });
 
+    translator.handle({ type: "tool_execution_start", toolCallId: "read-1", toolName: "read" });
     translator.handle({
       type: "tool_execution_update",
       toolCallId: "read-1",
@@ -135,8 +134,8 @@ describe("PiEventTranslator", () => {
     });
     translator.handle({ type: "tool_execution_update", toolCallId: "read-1", toolName: "read", partialResult: {} });
 
-    const labels = events.filter((event) => event.type === "tool_activity").map((event) => event.label);
-    expect(labels).toEqual(["Reading with Vision, page 1 of 2…", "x".repeat(160), undefined]);
+    const labels = events.flatMap((event) => (event.type === "turn_item" ? [event.item.label] : []));
+    expect(labels).toEqual([undefined, "Reading with Vision, page 1 of 2…", "x".repeat(160)]);
   });
 
   it("splits a reply at tool calls so text written before a tool is its own message", () => {
@@ -373,6 +372,8 @@ describe("PiEventTranslator", () => {
         error: expect.objectContaining({ retryable: false }),
       }),
     );
-    expect(events).toContainEqual(expect.objectContaining({ type: "tool_activity", toolName: "edit" }));
+    expect(events).toContainEqual(
+      expect.objectContaining({ type: "turn_item", item: expect.objectContaining({ toolName: "edit" }) }),
+    );
   });
 });

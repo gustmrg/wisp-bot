@@ -167,15 +167,21 @@ describe("conversation stream reducer", () => {
 
   it("starts a new list of steps when a turn starts, and keeps it while the turn goes on", () => {
     const chats = stored(["one"]);
-    const step = (sequence: number, toolCallId: string) =>
+    const step = (sequence: number, id: string) =>
       ({
         sequence,
-        type: "tool_activity",
+        type: "turn_item",
         conversationId: "one",
         requestId: "request",
-        toolCallId,
-        toolName: "read",
-        phase: "completed",
+        groupId: "request:work",
+        item: {
+          id,
+          toolName: "read",
+          status: "completed",
+          startedAt: "2026-08-31T23:10:00.000Z",
+          type: "file_read",
+          paths: ["a.ts"],
+        },
       }) as const;
     const status = (sequence: number, value: "working" | "idle") =>
       ({ sequence, type: "conversation_status", conversationId: "one", status: value }) as const;
@@ -184,10 +190,13 @@ describe("conversation stream reducer", () => {
     state = reduceConversationAgentEvent(state, step(2, "first"), chats);
     state = reduceConversationAgentEvent(state, status(3, "working"), chats);
     state = reduceConversationAgentEvent(state, step(4, "second"), chats);
-    expect(state.toolActivities.one?.map(({ toolCallId }) => toolCallId)).toEqual(["first", "second"]);
+    expect(state.turnItems.one?.map(({ id, groupId }) => [id, groupId])).toEqual([
+      ["first", "request:work"],
+      ["second", "request:work"],
+    ]);
     state = reduceConversationAgentEvent(state, status(5, "idle"), chats);
     state = reduceConversationAgentEvent(state, status(6, "working"), chats);
-    expect(state.toolActivities.one).toEqual([]);
+    expect(state.turnItems.one).toEqual([]);
   });
 
   it("tracks sanitized activity, cancellation, and retryable errors without cross-chat leakage", () => {
@@ -197,33 +206,45 @@ describe("conversation stream reducer", () => {
       state,
       {
         sequence: 1,
-        type: "tool_activity",
+        type: "turn_item",
         conversationId: "one",
         requestId: "request-1",
-        toolCallId: "read-1",
-        toolName: "read",
-        phase: "started",
+        groupId: "request-1:work",
+        item: {
+          id: "read-1",
+          toolName: "read",
+          status: "running",
+          startedAt: "2026-08-31T23:10:00.000Z",
+          type: "file_read",
+          paths: ["a.ts"],
+        },
       },
       chats,
     );
     expect(state.activity.one).toBe("Reading files…");
-    expect(state.toolActivities.one).toContainEqual(
+    expect(state.turnItems.one).toContainEqual(
       expect.objectContaining({
-        toolCallId: "read-1",
-        phase: "started",
+        id: "read-1",
+        status: "running",
       }),
     );
     const progress = reduceConversationAgentEvent(
       state,
       {
         sequence: 2,
-        type: "tool_activity",
+        type: "turn_item",
         conversationId: "one",
         requestId: "request-1",
-        toolCallId: "read-1",
-        toolName: "read",
-        phase: "updated",
-        label: "Reading with Vision (OpenAI), page 2 of 5…",
+        groupId: "request-1:work",
+        item: {
+          id: "read-1",
+          toolName: "read",
+          status: "running",
+          startedAt: "2026-08-31T23:10:00.000Z",
+          label: "Reading with Vision (OpenAI), page 2 of 5…",
+          type: "file_read",
+          paths: ["a.ts"],
+        },
       },
       chats,
     );

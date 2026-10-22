@@ -74,6 +74,11 @@ export function isMissingSession(result: ClaudeCodeTurnResult): boolean {
 export class ClaudeCodeEventConverter {
   /** Tool calls that started and have no result yet, with their Wisp names. */
   private readonly openTools = new Map<string, string>();
+  /**
+   * Results of Wisp tools as they returned them, with the details Claude
+   * Code's MCP result leaves out, until Claude Code reports the call ended.
+   */
+  private readonly toolResultsById = new Map<string, unknown>();
   private retrying = false;
   private planUsageValue: ClaudeCodePlanUsage | undefined;
   private modelValue: string | undefined;
@@ -101,6 +106,17 @@ export class ClaudeCodeEventConverter {
   /** The protocol features this Claude Code reports, from `system/init`. */
   get capabilities(): ReadonlySet<string> {
     return this.capabilitiesValue;
+  }
+
+  /** Keeps a Wisp tool's own result, read when Claude Code reports the call ended. */
+  recordToolResult(toolCallId: string, result: unknown): void {
+    if (this.openTools.has(toolCallId)) this.toolResultsById.set(toolCallId, result);
+  }
+
+  /** A Wisp tool's progress while it runs, such as which page a document reader is on. */
+  toolProgress(toolCallId: string, partialResult: unknown): PiAgentEvent[] {
+    const toolName = this.openTools.get(toolCallId);
+    return toolName === undefined ? [] : [{ type: "tool_execution_update", toolCallId, toolName, partialResult }];
   }
 
   /**
@@ -161,7 +177,7 @@ export class ClaudeCodeEventConverter {
       if (block?.type !== "tool_use" || typeof block.id !== "string" || typeof block.name !== "string") continue;
       const toolName = wispToolName(block.name);
       this.openTools.set(block.id, toolName);
-      events.push({ type: "tool_execution_start", toolCallId: block.id, toolName });
+      events.push({ type: "tool_execution_start", toolCallId: block.id, toolName, args: block.input });
     }
     return events;
   }
@@ -174,11 +190,14 @@ export class ClaudeCodeEventConverter {
       const toolName = this.openTools.get(block.tool_use_id);
       if (toolName === undefined) continue;
       this.openTools.delete(block.tool_use_id);
+      const result = this.toolResultsById.get(block.tool_use_id) ?? { content: block.content };
+      this.toolResultsById.delete(block.tool_use_id);
       events.push({
         type: "tool_execution_end",
         toolCallId: block.tool_use_id,
         toolName,
         isError: block.is_error === true,
+        result,
       });
     }
     return events;
@@ -193,6 +212,7 @@ export class ClaudeCodeEventConverter {
       isError: true,
     }));
     this.openTools.clear();
+    this.toolResultsById.clear();
     if (this.retrying) {
       this.retrying = false;
       events.push({ type: "auto_retry_end", success: false });
