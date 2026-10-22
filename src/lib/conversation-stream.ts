@@ -1,4 +1,9 @@
-import type { BackendError, ConversationAgentEvent, SequencedConversationAgentEvent } from "../../shared/contracts";
+import type {
+  BackendError,
+  ConversationAgentEvent,
+  SequencedConversationAgentEvent,
+  TurnItem,
+} from "../../shared/contracts";
 import {
   assistantMessageId,
   messageFailure,
@@ -9,12 +14,8 @@ import {
 import type { ToolApprovalRequest } from "../../shared/tool-policy";
 import { describeMcpAlias, getToolMetadata } from "../../shared/tool-catalog";
 
-export interface ToolActivityView {
-  toolCallId: string;
-  toolName: string;
-  phase: "started" | "updated" | "completed";
-  isError?: boolean;
-}
+/** A step of the running turn, with the reply and the group of steps it belongs to. */
+export type TurnItemView = TurnItem & { requestId: string; groupId: string };
 
 export interface ConversationRuntimeState {
   sequence: number;
@@ -24,7 +25,7 @@ export interface ConversationRuntimeState {
   activity: Record<string, string | undefined>;
   /** In a circle, the member whose turn is running (ADR 011). */
   turns: Record<string, string | undefined>;
-  toolActivities: Record<string, ReadonlyArray<ToolActivityView>>;
+  turnItems: Record<string, ReadonlyArray<TurnItemView>>;
   approvals: Record<string, ReadonlyArray<ToolApprovalRequest>>;
 }
 
@@ -51,7 +52,7 @@ export function createConversationRuntime(
     errors: {},
     activity: {},
     turns: {},
-    toolActivities: {},
+    turnItems: {},
     approvals: groupApprovals(pendingApprovals),
   };
 }
@@ -150,10 +151,10 @@ export function reduceConversationAgentEvent(
         activity: event.status === "idle" ? { ...next.activity, [event.conversationId]: undefined } : next.activity,
         turns: event.status === "working" ? next.turns : { ...next.turns, [event.conversationId]: undefined },
         // A new turn starts its own list of steps.
-        toolActivities:
+        turnItems:
           event.status === "working" && next.statuses[event.conversationId] !== "working"
-            ? { ...next.toolActivities, [event.conversationId]: [] }
-            : next.toolActivities,
+            ? { ...next.turnItems, [event.conversationId]: [] }
+            : next.turnItems,
       };
     case "assistant_message_started": {
       const outgoing = findMessage(next, stored, event.conversationId, event.requestId);
@@ -267,17 +268,17 @@ export function reduceConversationAgentEvent(
         createdAt: assistant?.createdAt ?? event.createdAt,
       });
     }
-    case "tool_activity":
+    case "turn_item":
       return {
         ...next,
         activity: {
           ...next.activity,
           [event.conversationId]:
-            event.phase === "completed" ? undefined : (event.label ?? toolActivityLabel(event.toolName)),
+            event.item.status === "running" ? (event.item.label ?? toolActivityLabel(event.item.toolName)) : undefined,
         },
-        toolActivities: {
-          ...next.toolActivities,
-          [event.conversationId]: upsertToolActivity(next.toolActivities[event.conversationId] ?? [], event),
+        turnItems: {
+          ...next.turnItems,
+          [event.conversationId]: upsertTurnItem(next.turnItems[event.conversationId] ?? [], event),
         },
       };
     case "conversation_notice":
@@ -338,7 +339,7 @@ export function reconcileConversationRuntime(
     errors: retain(state.errors),
     activity: retain(state.activity),
     turns: retain(state.turns),
-    toolActivities: retain(state.toolActivities),
+    turnItems: retain(state.turnItems),
     approvals: retain(state.approvals),
   };
 }
@@ -510,32 +511,19 @@ function toolActivityLabel(toolName: string): string {
   return getToolMetadata(toolName)?.activityLabel ?? describeMcpAlias(toolName)?.activityLabel ?? "Running a tool…";
 }
 
-function upsertToolActivity(
-  activities: ReadonlyArray<ToolActivityView>,
-  event: Extract<ConversationAgentEvent, { type: "tool_activity" }>,
-): ReadonlyArray<ToolActivityView> {
-  const next = activities.some(({ toolCallId }) => toolCallId === event.toolCallId)
-    ? activities.map((activity) =>
-        activity.toolCallId === event.toolCallId
-          ? {
-              toolCallId: event.toolCallId,
-              toolName: event.toolName,
-              phase: event.phase,
-              ...(event.isError === undefined ? {} : { isError: event.isError }),
-            }
-          : activity,
-      )
-    : [
-        ...activities,
-        {
-          toolCallId: event.toolCallId,
-          toolName: event.toolName,
-          phase: event.phase,
-          ...(event.isError === undefined ? {} : { isError: event.isError }),
-        },
-      ];
-  return next.slice(-20);
+function upsertTurnItem(
+  items: ReadonlyArray<TurnItemView>,
+  event: Extract<ConversationAgentEvent, { type: "turn_item" }>,
+): ReadonlyArray<TurnItemView> {
+  const item: TurnItemView = { ...event.item, requestId: event.requestId, groupId: event.groupId };
+  const next = items.some(({ id }) => id === item.id)
+    ? items.map((current) => (current.id === item.id ? item : current))
+    : [...items, item];
+  return next.slice(-MAX_TURN_ITEMS);
 }
+
+/** The steps of a turn kept while it runs; the oldest go first. */
+const MAX_TURN_ITEMS = 50;
 
 function noticeLabel(
   kind: Extract<ConversationAgentEvent, { type: "conversation_notice" }>["kind"],

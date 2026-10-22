@@ -483,10 +483,11 @@ function renderPanelIn(chat: ChatPanelProps["chat"], held: Message[], props: Par
 
 describe("ChatPanel steps", () => {
   it("shows the tools used in this turn while the Wisp works, and hides them after", () => {
+    const step = { requestId: "r", groupId: "r:work", startedAt: "2026-10-22T10:00:00.000Z" };
     const steps = [
-      { toolCallId: "1", toolName: "read", phase: "completed" as const },
-      { toolCallId: "2", toolName: "grep", phase: "completed" as const, isError: true },
-      { toolCallId: "3", toolName: "read", phase: "started" as const },
+      { ...step, id: "1", toolName: "read", status: "completed" as const, type: "file_read" as const, paths: ["a"] },
+      { ...step, id: "2", toolName: "grep", status: "failed" as const, type: "file_search" as const, pattern: "x" },
+      { ...step, id: "3", toolName: "read", status: "running" as const, type: "file_read" as const, paths: ["b"] },
     ];
     const { show } = renderPanel(transcript(messages(0, 1)), { status: "working", steps });
     const trail = screen.getByRole("list", { name: "What Atlas has done so far" });

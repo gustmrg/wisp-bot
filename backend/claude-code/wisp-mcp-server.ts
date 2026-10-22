@@ -22,9 +22,12 @@ export interface WispMcpTool {
     toolCallId: string,
     params: never,
     signal: AbortSignal | undefined,
-    onUpdate: undefined,
+    onUpdate: ((partialResult: unknown) => void) | undefined,
     ctx: unknown,
-  ): Promise<{ content: ReadonlyArray<{ type: string; text?: string; data?: string; mimeType?: string }> }>;
+  ): Promise<{
+    content: ReadonlyArray<{ type: string; text?: string; data?: string; mimeType?: string }>;
+    details?: unknown;
+  }>;
 }
 
 export interface WispMcpServerOptions {
@@ -37,6 +40,16 @@ export interface WispMcpServerOptions {
     tool: WispMcpTool,
     toolCall: { type: "toolCall"; id: string; name: string; arguments: unknown },
   ) => unknown;
+  /**
+   * Told a tool's progress and its result as the tool reported them, details
+   * included, which the MCP result Claude Code gets leaves out.
+   */
+  observer?: WispToolObserver;
+}
+
+export interface WispToolObserver {
+  progress(toolCallId: string, partialResult: unknown): void;
+  result(toolCallId: string, result: { content: ReadonlyArray<unknown>; details?: unknown }): void;
 }
 
 type ToolContent = { type: "text"; text: string } | { type: "image"; data: string; mimeType: string };
@@ -79,7 +92,10 @@ export function createWispMcpServer(options: WispMcpServerOptions): McpServer {
       return errorResult(error instanceof Error ? error.message : "The tool arguments are invalid.");
     }
     try {
-      const result = await tool.execute(toolCallId, params as never, extra.signal, undefined, toolContext);
+      const { observer } = options;
+      const onUpdate = observer ? (partialResult: unknown) => observer.progress(toolCallId, partialResult) : undefined;
+      const result = await tool.execute(toolCallId, params as never, extra.signal, onUpdate, toolContext);
+      observer?.result(toolCallId, result);
       const content: ToolContent[] = [];
       for (const item of result.content) {
         if (item.type === "text" && typeof item.text === "string") content.push({ type: "text", text: item.text });
