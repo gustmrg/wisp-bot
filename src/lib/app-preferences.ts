@@ -18,6 +18,11 @@ export type ReplyPace = "instant" | "smooth" | "natural";
 
 export const REPLY_PACES: ReadonlyArray<ReplyPace> = ["instant", "smooth", "natural"];
 
+/** How the conversation list is ordered: latest activity first, or fixed in the order they were created. */
+export type ChatListOrder = "recent" | "created";
+
+export const CHAT_LIST_ORDERS: ReadonlyArray<ChatListOrder> = ["recent", "created"];
+
 export type RuleBehavior = "allow" | "ask" | "block";
 
 export interface AutoReviewRule {
@@ -65,6 +70,8 @@ export interface AppPreferences {
   sidebarCollapsed: boolean;
   /** The phone list shows every Wisp in a row above the conversations. */
   wispsRow: boolean;
+  /** How this device orders the conversation list and the Wisps row. */
+  chatListOrder: ChatListOrder;
 }
 
 export const DEFAULT_PREFERENCES: AppPreferences = {
@@ -96,6 +103,7 @@ export const DEFAULT_PREFERENCES: AppPreferences = {
   detailsWidth: DETAILS_LAYOUT.resize.defaultWidth,
   sidebarCollapsed: false,
   wispsRow: true,
+  chatListOrder: "recent",
 };
 
 export function isRuleBehavior(value: unknown): value is RuleBehavior {
@@ -183,5 +191,8 @@ export function normalizePreferences(value: unknown): AppPreferences {
     detailsWidth: panelWidth(saved?.detailsWidth, DETAILS_LAYOUT.resize),
     sidebarCollapsed: typeof saved?.sidebarCollapsed === "boolean" ? saved.sidebarCollapsed : false,
     wispsRow: typeof saved?.wispsRow === "boolean" ? saved.wispsRow : true,
+    chatListOrder: CHAT_LIST_ORDERS.includes(saved?.chatListOrder as ChatListOrder)
+      ? (saved?.chatListOrder as ChatListOrder)
+      : "recent",
   };
 }

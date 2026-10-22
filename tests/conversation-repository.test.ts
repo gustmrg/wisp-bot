@@ -239,6 +239,26 @@ describe("ConversationRepository", () => {
     expect(restored.getAgentContext("plain").modelOverride).toBeNull();
   });
 
+  it("gives each conversation its creation time, which survives a restart and later changes", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "wisp-created-at-"));
+    let now = new Date("2026-10-01T10:00:00.000Z");
+    const repository = new ConversationRepository({ dataDirectory: directory, now: () => now });
+    await repository.load();
+    await repository.createWisp(newWisp("first"), { notifyOnUpdatesEnabled: true, modelOverride: null });
+    now = new Date("2026-10-02T10:00:00.000Z");
+    await repository.create({ ...circle("team", ["first"]), createdAt: "2020-01-01T00:00:00.000Z" });
+    now = new Date("2026-10-03T10:00:00.000Z");
+    await repository.markUnread("first");
+
+    expect(repository.getChats().first?.createdAt).toBe("2026-10-01T10:00:00.000Z");
+    // The backend decides when a conversation was created, not the client.
+    expect(repository.getChats().team?.createdAt).toBe("2026-10-02T10:00:00.000Z");
+
+    const restored = await reload(directory);
+    expect(restored.getChats().first?.createdAt).toBe("2026-10-01T10:00:00.000Z");
+    expect(restored.getChats().team?.createdAt).toBe("2026-10-02T10:00:00.000Z");
+  });
+
   it("rejects invalid model overrides and a Wisp's conversation created without its Wisp", async () => {
     const directory = await mkdtemp(path.join(os.tmpdir(), "wisp-create-override-invalid-"));
     const repository = new ConversationRepository({ dataDirectory: directory });

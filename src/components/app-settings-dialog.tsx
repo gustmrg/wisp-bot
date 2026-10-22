@@ -55,7 +55,7 @@ import {
 } from "@/components/settings/settings-primitives";
 import { Button } from "@/components/ui/button";
 import type { AppMetadata, CurrentUser } from "@/config/app-metadata";
-import type { AppPreferences, ReplyPace } from "@/lib/app-preferences";
+import type { AppPreferences, ChatListOrder, ReplyPace } from "@/lib/app-preferences";
 import { SegmentedControl } from "@/components/ui/segmented-control";
 import type { PersistenceStatus } from "@/features/persistence/storage-policy";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -203,6 +203,16 @@ const REPLY_PACE_DESCRIPTIONS: Record<ReplyPace, string> = {
   instant: "Replies appear as fast as the model writes them.",
   smooth: "Replies flow in evenly, keeping up with the model.",
   natural: "Replies appear at a slower, steady pace, even from fast models. Click a reply to show the rest.",
+};
+
+const CHAT_LIST_ORDER_OPTIONS: ReadonlyArray<{ value: ChatListOrder; label: string }> = [
+  { value: "recent", label: "Latest activity" },
+  { value: "created", label: "Creation" },
+];
+
+const CHAT_LIST_ORDER_DESCRIPTIONS: Record<ChatListOrder, string> = {
+  recent: "The conversation with the latest message comes first.",
+  created: "Conversations stay in the order they were created, so the list never moves on its own.",
 };
 
 const THEME_OPTIONS = [
@@ -559,6 +569,20 @@ function AppSettingsDialog({
                     />
                   </SettingsRow>
                 ) : null}
+                <SettingsRow>
+                  <SettingsRowCopy>
+                    <SettingsRowTitle>Conversation order</SettingsRowTitle>
+                    <SettingsRowDescription>
+                      {CHAT_LIST_ORDER_DESCRIPTIONS[preferences.chatListOrder]} Pinned conversations come first.
+                    </SettingsRowDescription>
+                  </SettingsRowCopy>
+                  <SegmentedControl<ChatListOrder>
+                    label="Conversation order"
+                    value={preferences.chatListOrder}
+                    options={CHAT_LIST_ORDER_OPTIONS}
+                    onChange={(chatListOrder) => onPreferencesChange({ ...preferences, chatListOrder })}
+                  />
+                </SettingsRow>
                 <SettingsRow>
                   <SettingsRowCopy>
                     <SettingsRowTitle>Reply speed</SettingsRowTitle>

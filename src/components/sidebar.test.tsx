@@ -2,7 +2,7 @@ import { act, fireEvent, render, screen, waitFor, within } from "@testing-librar
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { ChatViewCollection } from "@/chat-data";
+import type { ChatView, ChatViewCollection } from "@/chat-data";
 import type { CurrentUser } from "@/config/app-metadata";
 import { Sidebar } from "@/components/sidebar";
 import { wispChatView } from "@/test/chat-fixtures";
@@ -445,6 +445,47 @@ describe("Sidebar conversation menu", () => {
     document.body.innerHTML = "";
 
     expect(names(renderList(vi.fn(), false))).toEqual(["Gamma", "Beta", "Atlas"]);
+  });
+
+  it("keeps creation order when a conversation gets a message, with pinned ones still first", () => {
+    const created: ChatViewCollection = {
+      atlas: { ...chats.atlas, createdAt: "2026-08-03T10:00:00.000Z" } as ChatView,
+      beta: { ...chats.beta, createdAt: "2026-08-02T10:00:00.000Z" } as ChatView,
+      delta: wispChatView("delta", { wisp: { name: "Delta" }, chat: { lastActivityAt: "2026-10-10T10:00:00.000Z" } }),
+      gamma: { ...chats.gamma, createdAt: "2026-08-04T10:00:00.000Z" } as ChatView,
+    };
+    const props = { activeChatId: "", currentUser, width: 280, ...callbacks, order: "created" as const };
+    const { rerender } = render(<Sidebar {...props} chats={created} />);
+    const list = () => within(screen.getByRole("navigation", { name: "Wisps and circles" }));
+    // A conversation from a server that predates creation times goes last.
+    expect(names(list())).toEqual(["Gamma", "Beta", "Atlas", "Delta"]);
+
+    rerender(
+      <Sidebar
+        {...props}
+        chats={{ ...created, atlas: { ...created.atlas, lastActivityAt: "2026-10-20T10:00:00.000Z" } as ChatView }}
+      />,
+    );
+    expect(names(list())).toEqual(["Gamma", "Beta", "Atlas", "Delta"]);
+
+    rerender(<Sidebar {...props} order="recent" chats={created} />);
+    expect(names(list())).toEqual(["Gamma", "Delta", "Beta", "Atlas"]);
+  });
+
+  it("switches the order from the desktop list", async () => {
+    const user = userEvent.setup();
+    const onOrderChange = vi.fn();
+    const props = { chats, activeChatId: "", currentUser, width: 280, ...callbacks, onOrderChange };
+    const { rerender } = render(<Sidebar {...props} />);
+    const toggle = screen.getByRole("button", { name: "Keep creation order" });
+    expect(toggle).toHaveAttribute("aria-pressed", "false");
+    await user.click(toggle);
+    expect(onOrderChange).toHaveBeenCalledWith("created");
+
+    rerender(<Sidebar {...props} order="created" />);
+    expect(toggle).toHaveAttribute("aria-pressed", "true");
+    await user.click(toggle);
+    expect(onOrderChange).toHaveBeenLastCalledWith("recent");
   });
 
   it("offers each action for what the conversation is now", async () => {

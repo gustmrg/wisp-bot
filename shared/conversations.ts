@@ -55,6 +55,8 @@ export interface ChatBase {
   pinned?: boolean;
   /** Time of the newest message (ISO 8601), maintained by the backend. */
   lastActivityAt?: string;
+  /** When the conversation was created (ISO 8601), set by the backend; a Wisp's own one, with the Wisp. */
+  createdAt?: string;
 }
 
 /** The conversation between the person and one Wisp. It shares the Wisp's ID. */

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } f
 import {
   BellIcon,
   BellOffIcon,
+  CalendarArrowDownIcon,
   MailCheckIcon,
   MailIcon,
   PanelLeftCloseIcon,
@@ -27,6 +28,8 @@ import type { ToolApprovalDecision, ToolApprovalRequest } from "../../shared/too
 import { messagePreview } from "../../shared/workspace";
 import type { CurrentUser } from "@/config/app-metadata";
 import { useClock } from "@/hooks/use-clock";
+import type { ChatListOrder } from "@/lib/app-preferences";
+import { sortChats } from "@/lib/chat-order";
 import { useTimeFormat, useTimeZone } from "@/hooks/use-time-zone";
 import { chatName } from "@/lib/chat-schema";
 import { chatActivityDate, chatActivityLabel } from "@/lib/date-dividers";
@@ -49,6 +52,10 @@ interface SidebarProps {
   onToggleCollapsed?: () => void;
   /** On mobile, shows every Wisp in a row above the conversations. */
   showWispsRow?: boolean;
+  /** Latest activity first, or fixed in creation order; pinned conversations come first either way. */
+  order?: ChatListOrder;
+  /** Switches the order from the desktop list; without it there is no button to. */
+  onOrderChange?: (order: ChatListOrder) => void;
   statuses?: Record<string, ManagedConversationStatus>;
   /** What each working conversation is doing, such as "Searching the web". */
   activity?: Record<string, string | undefined>;
@@ -93,10 +100,6 @@ function greeting(now: Date, timeZone: string, name: string): string {
   return name ? `Good ${part}, ${name}` : `Good ${part}`;
 }
 
-function activityTime(chat: Parameters<typeof chatActivityDate>[0] | undefined): number {
-  return (chat && chatActivityDate(chat)?.getTime()) || 0;
-}
-
 function Sidebar({
   activeChatId,
   chats,
@@ -107,6 +110,8 @@ function Sidebar({
   collapsed = false,
   onToggleCollapsed,
   showWispsRow = true,
+  order = "recent",
+  onOrderChange,
   statuses = {},
   activity = {},
   approvals = {},
@@ -126,6 +131,7 @@ function Sidebar({
   const [filter, setFilter] = useState<"all" | "unread" | "active">("all");
   const [menuChatId, setMenuChatId] = useState<ChatId | null>(null);
   const titleRef = useRef<HTMLHeadingElement>(null);
+  const listRef = useRef<HTMLElement>(null);
   const rail = !mobile && collapsed;
   const toggleLabel = `${rail ? "Expand" : "Collapse"} sidebar (${formatShortcut(TOGGLE_SIDEBAR_SHORTCUT)})`;
   const toggleButton = onToggleCollapsed ? (
@@ -145,17 +151,22 @@ function Sidebar({
   const timeFormat = useTimeFormat();
   const allChatIds = Object.keys(chats);
   const unreadCount = allChatIds.filter((id) => chats[id]?.unread).length;
-  const chatIds = allChatIds.filter(
-    (id) => !mobile || filter === "all" || (filter === "unread" ? chats[id]?.unread : statuses[id] === "working"),
-  );
-  // Like a messaging app, the list puts the latest activity first.
-  chatIds.sort((left, right) => activityTime(chats[right]) - activityTime(chats[left]));
-  // Pinned conversations come first, each group keeping that order.
-  chatIds.sort((left, right) => Number(Boolean(chats[right]?.pinned)) - Number(Boolean(chats[left]?.pinned)));
+  const chatIds = sortChats(
+    Object.values(chats).filter(
+      (chat) => !mobile || filter === "all" || (filter === "unread" ? chat.unread : statuses[chat.id] === "working"),
+    ),
+    order,
+  ).map((chat) => chat.id);
 
   useEffect(() => {
     if (mobile && !hidden) titleRef.current?.focus();
   }, [mobile, hidden]);
+
+  // The open conversation stays in view when it or the order changes.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: those changes are what scroll it back into view.
+  useEffect(() => {
+    listRef.current?.querySelector("[aria-current='page']")?.scrollIntoView?.({ block: "nearest" });
+  }, [activeChatId, order]);
 
   return (
     <>
@@ -195,6 +206,7 @@ function Sidebar({
                 statuses={statuses}
                 approvals={approvals}
                 failedChats={failedChats}
+                order={order}
                 onSelectChat={onSelectChat}
               />
             ) : null}
@@ -238,6 +250,18 @@ function Sidebar({
               <SearchIcon aria-hidden="true" />
               <span>Search</span>
             </button>
+            {onOrderChange ? (
+              <button
+                className={cn(toolButton, "sidebar-order", order === "created" ? "text-foreground" : "bg-transparent")}
+                type="button"
+                aria-label="Keep creation order"
+                aria-pressed={order === "created"}
+                title={order === "created" ? "Ordered by creation" : "Ordered by latest activity"}
+                onClick={() => onOrderChange(order === "created" ? "recent" : "created")}
+              >
+                <CalendarArrowDownIcon aria-hidden="true" />
+              </button>
+            ) : null}
           </div>
         )}
 
@@ -258,6 +282,7 @@ function Sidebar({
         ) : null}
 
         <nav
+          ref={listRef}
           className={cn(
             "conversation-list min-h-0 flex-1 overflow-x-hidden overflow-y-auto [&::-webkit-scrollbar]:w-0",
             rail ? "border-t border-border px-1 pt-2" : "px-2.5",
