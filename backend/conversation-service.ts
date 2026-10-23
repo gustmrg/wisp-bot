@@ -1,5 +1,6 @@
 import type {
   BackendError,
+  ConversationAgentEvent,
   ConversationModelView,
   ModelSelection,
   SequencedConversationAgentEvent,
@@ -16,11 +17,13 @@ import {
   type ConversationDelta,
   type ConversationStateView,
   type JobOrigin,
+  MAX_MESSAGE_STEPS,
   type Message,
   type MessagePage,
   type MessagePageRequest,
   type MessageSearchHit,
   type OutgoingMessage,
+  type TextMessage,
   type Wisp,
   type WispChanges,
   type WispCollection,
@@ -33,6 +36,12 @@ import type { AgentContext } from "./conversation-agent.js";
 import { sanitizeBackendError, WispBackendError } from "./backend-error.js";
 import type { ConversationRepository, MessageChange } from "./conversation-repository.js";
 import type { StructuredLogger } from "./structured-logger.js";
+
+interface WorkGroup {
+  requestId: string;
+  message: TextMessage & { id: string };
+  stored: boolean;
+}
 
 export interface ConversationServiceOptions {
   /** Receives what changed after agent-driven changes are persisted, so the renderer never re-fetches anything. */
@@ -71,6 +80,13 @@ export class ConversationService {
   private readonly registry: AgentRegistry;
   private model: ModelSelection | null = null;
   private readonly liveMessages = new Map<string, Map<string, Message>>();
+  /**
+   * Each conversation's groups of steps in the running turn, by ID: the reply
+   * they belong to, the message so far, and whether it is stored. A group is
+   * stored when its reply writes on, ends, or fails, so it lands before the
+   * text after it; a step that ends later updates the stored message.
+   */
+  private readonly work = new Map<string, Map<string, WorkGroup>>();
   private readonly pendingApprovals: () => ReadonlyArray<ToolApprovalRequest>;
   private readonly onConversationChanged: (delta: ConversationDelta) => void;
   private readonly logger: Pick<StructuredLogger, "warn"> | undefined;
@@ -151,6 +167,27 @@ export class ConversationService {
   }
 
   handleAgentEvent(event: SequencedConversationAgentEvent): void {
+    if (event.type === "turn_item") {
+      this.recordStep(event);
+      return;
+    }
+    switch (event.type) {
+      case "assistant_text_delta":
+      case "assistant_message_completed":
+      case "assistant_message_cancelled":
+      case "follow_up_taken":
+        this.storeSteps(event.conversationId, event.requestId);
+        break;
+      case "conversation_error":
+        if (event.requestId) this.storeSteps(event.conversationId, event.requestId);
+        break;
+      case "conversation_status":
+        if (event.status !== "working") {
+          this.storeSteps(event.conversationId);
+          this.work.delete(event.conversationId);
+        }
+        break;
+    }
     if (event.type === "conversation_context_renewed") {
       this.persistLiveMessage(event.conversationId, {
         id: `context:${event.createdAt}`,
@@ -306,6 +343,40 @@ export class ConversationService {
     });
   }
 
+  /** Adds a step to its group, or updates it; once the group is stored, the stored message too. */
+  private recordStep(event: Extract<ConversationAgentEvent, { type: "turn_item" }>): void {
+    const groups = this.work.get(event.conversationId) ?? new Map<string, WorkGroup>();
+    this.work.set(event.conversationId, groups);
+    const group = groups.get(event.groupId);
+    const steps = group?.message.steps ?? [];
+    const updated = steps.some(({ id }) => id === event.item.id)
+      ? steps.map((step) => (step.id === event.item.id ? event.item : step))
+      : [...steps, event.item];
+    const stored = group?.stored ?? false;
+    const message: WorkGroup["message"] = {
+      id: event.groupId,
+      type: "incoming",
+      text: "",
+      status: stored ? "complete" : "streaming",
+      steps: updated.slice(-MAX_MESSAGE_STEPS),
+      createdAt: group?.message.createdAt ?? event.item.startedAt,
+      ...this.authorOf(event.conversationId, event.wispId),
+    };
+    groups.set(event.groupId, { requestId: event.requestId, message, stored });
+    if (stored) this.persistLiveMessage(event.conversationId, message);
+    else this.setLiveMessage(event.conversationId, message);
+  }
+
+  /** Stores the groups of steps of a reply, or of every reply in the conversation, not stored yet. */
+  private storeSteps(conversationId: string, requestId?: string): void {
+    for (const group of this.work.get(conversationId)?.values() ?? []) {
+      if (group.stored || (requestId !== undefined && group.requestId !== requestId)) continue;
+      group.stored = true;
+      group.message = { ...group.message, status: "complete" };
+      this.persistLiveMessage(conversationId, group.message);
+    }
+  }
+
   /** Replies in a Wisp's own conversation are the Wisp's; in a circle, the member's the event names. */
   private authorOf(conversationId: string, wispId?: string): { authorId?: string } {
     const chat = this.repository.readChat(conversationId);
@@ -367,6 +438,7 @@ export class ConversationService {
     try {
       await this.repository.deleteWisp(wispId);
       this.liveMessages.delete(wispId);
+      this.work.delete(wispId);
     } catch (error) {
       await this.registry.create(context).catch(() => undefined);
       throw error;
@@ -615,6 +687,7 @@ export class ConversationService {
       throw error;
     }
     this.liveMessages.delete(conversationId);
+    this.work.delete(conversationId);
     afterDeleted?.();
     this.onConversationsRemoved();
     return this.getState();

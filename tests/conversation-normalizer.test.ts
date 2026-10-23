@@ -25,4 +25,36 @@ describe("normalizeMessage", () => {
     expect(() => normalizeMessage({ id: "r", type: "incoming", text: "", error: { code: "aborted" } })).toThrow();
     expect(() => normalizeMessage({ id: "r", type: "incoming", text: "", error: "Stopped." })).toThrow();
   });
+
+  it("keeps a reply's steps, leaving out a step that does not load rather than the message", () => {
+    const base = { toolName: "read", status: "completed", startedAt: "2026-10-22T10:00:00.000Z" };
+    const steps = [
+      { ...base, id: "a", type: "file_read", paths: ["a.ts"], extra: "dropped" },
+      { ...base, id: "b", toolName: "run_command", type: "command_execution", command: "npm test", exitCode: 1 },
+      { ...base, id: "c", type: "file_read", paths: "a.ts" },
+      { ...base, id: "d", status: "paused", type: "tool" },
+      // A kind a newer version wrote shows as a plain tool call.
+      { ...base, id: "e", toolName: "deploy", type: "deployment", target: "prod" },
+    ];
+    const message = normalizeMessage({ id: "r:work", type: "incoming", text: "", steps });
+
+    expect(message).toMatchObject({
+      steps: [
+        { id: "a", type: "file_read", paths: ["a.ts"] },
+        { id: "b", type: "command_execution", command: "npm test", exitCode: 1 },
+        { id: "e", toolName: "deploy", type: "tool" },
+      ],
+    });
+    expect(message.type === "incoming" && message.steps?.[0]).not.toHaveProperty("extra");
+    expect(message.type === "incoming" && message.steps?.[2]).not.toHaveProperty("target");
+  });
+
+  it("keeps steps only on a Wisp's messages, and none when none load", () => {
+    const steps = [
+      { id: "a", toolName: "read", status: "completed", startedAt: "2026-10-22T10:00:00.000Z", type: "tool" },
+    ];
+    expect(normalizeMessage({ id: "o", type: "outgoing", text: "Hi", steps })).not.toHaveProperty("steps");
+    expect(normalizeMessage({ id: "r", type: "incoming", text: "", steps: [{ id: "a" }] })).not.toHaveProperty("steps");
+    expect(normalizeMessage({ id: "r", type: "incoming", text: "", steps: "a" })).not.toHaveProperty("steps");
+  });
 });

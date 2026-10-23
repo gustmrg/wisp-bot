@@ -1,5 +1,14 @@
 import type { ModelSelection, WispFallback } from "../shared/contracts.js";
-import type { Chat, ChatChanges, ChatId, Message, Wisp, WispChanges, WispId } from "../shared/conversations.js";
+import {
+  isStepsMessage,
+  type Chat,
+  type ChatChanges,
+  type ChatId,
+  type Message,
+  type Wisp,
+  type WispChanges,
+  type WispId,
+} from "../shared/conversations.js";
 import { applyWispChanges, normalizeChat, upsertNormalizedMessage } from "./conversation-normalizer.js";
 
 export interface WispRecord {
@@ -101,15 +110,21 @@ function laterOf(current: string | undefined, candidate: string): string {
 }
 
 // A finished reply (or one that failed) and a question from a Wisp are news
-// for the person; their own messages, notices, and replies they stopped are not.
+// for the person; their own messages, notices, replies they stopped, and the
+// steps a reply took are not.
 function marksUnread(message: Message): boolean {
   if (message.type === "prompt") return true;
-  return message.type === "incoming" && message.status !== "streaming" && message.status !== "cancelled";
+  return (
+    message.type === "incoming" &&
+    message.status !== "streaming" &&
+    message.status !== "cancelled" &&
+    !isStepsMessage(message)
+  );
 }
 
 /** What a conversation's preview shows for a message: a reply that failed before writing anything shows why. */
 function previewOf(message: Message, current: string): string {
-  if (!("text" in message)) return current;
+  if (!("text" in message) || isStepsMessage(message)) return current;
   if (!message.text && message.type === "incoming" && message.error) return message.error.message;
   return message.text;
 }

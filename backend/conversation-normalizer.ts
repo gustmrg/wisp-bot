@@ -8,6 +8,7 @@ import {
   type JobOrigin,
   type MessageFailure,
   MESSAGE_FAILURE_MAX_LENGTH,
+  MAX_MESSAGE_STEPS,
   type ScheduledOrigin,
   type Wisp,
   type WispChanges,
@@ -22,8 +23,10 @@ import {
   wispPaletteColor,
   type WispAppearance,
 } from "../shared/wisp-appearance.js";
+import type { BackgroundProcessAction, TurnItem, TurnItemStatus } from "../shared/contracts.js";
 import { WispBackendError } from "./backend-error.js";
 import { CONVERSATION_STORAGE_POLICY } from "./storage-policy.js";
+import { MAX_TURN_ITEM_DIFF_CHARACTERS, MAX_TURN_ITEM_OUTPUT_CHARACTERS } from "./turn-items.js";
 
 const ID_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9._:-]*$/;
 const MESSAGE_STATUSES = new Set<MessageStatus>(["queued", "streaming", "complete", "failed", "cancelled"]);
@@ -135,6 +138,101 @@ function normalizeMessageFailure(value: unknown): MessageFailure {
   return { code: string(raw.code, 64, false), message: string(raw.message, MESSAGE_FAILURE_MAX_LENGTH, false) };
 }
 
+const TURN_ITEM_STATUSES = new Set<string>(["running", "completed", "failed", "cancelled"]);
+const PROCESS_ACTIONS = new Set<string>(["start", "list", "log", "wait", "kill"]);
+const STEP_FIELD_LENGTH = 2_000;
+// Some room over what the backend writes, so a step it wrote always loads.
+const STEP_OUTPUT_LENGTH = MAX_TURN_ITEM_OUTPUT_CHARACTERS * 2;
+const STEP_DIFF_LENGTH = MAX_TURN_ITEM_DIFF_CHARACTERS * 2;
+
+/**
+ * A reply's steps. A step that does not load is left out rather than failing
+ * the message, and a kind this version does not know shows as a plain tool
+ * call, so steps written by a newer version still load.
+ */
+function normalizeSteps(value: unknown): { steps?: TurnItem[] } {
+  if (!Array.isArray(value)) return {};
+  const steps = value.slice(-MAX_MESSAGE_STEPS).flatMap((item) => {
+    try {
+      return [normalizeTurnItem(item)];
+    } catch {
+      return [];
+    }
+  });
+  return steps.length ? { steps } : {};
+}
+
+function normalizeTurnItem(value: unknown): TurnItem {
+  const raw = asRecord(value);
+  if (typeof raw.status !== "string" || !TURN_ITEM_STATUSES.has(raw.status)) throw invalidRequest();
+  const optional = (key: string, maxLength = STEP_FIELD_LENGTH) =>
+    raw[key] === undefined ? {} : { [key]: string(raw[key], maxLength) };
+  const flag = (key: string) => (raw[key] === true ? { [key]: true } : {});
+  const count = (key: string) =>
+    Number.isSafeInteger(raw[key]) && (raw[key] as number) >= 0 ? { [key]: raw[key] as number } : {};
+  const base = {
+    id: normalizeConversationId(raw.id),
+    toolName: string(raw.toolName, 200, false),
+    status: raw.status as TurnItemStatus,
+    startedAt: timestamp(raw.startedAt),
+    ...(raw.completedAt === undefined ? {} : { completedAt: timestamp(raw.completedAt) }),
+    ...optional("label", 200),
+  };
+  switch (raw.type) {
+    case "command_execution":
+      return {
+        ...base,
+        type: "command_execution",
+        command: string(raw.command, STEP_FIELD_LENGTH),
+        ...optional("purpose", 200),
+        ...(Number.isSafeInteger(raw.exitCode) ? { exitCode: raw.exitCode as number } : {}),
+        ...optional("output", STEP_OUTPUT_LENGTH),
+        ...flag("outputTruncated"),
+      };
+    case "background_process":
+      if (typeof raw.action !== "string" || !PROCESS_ACTIONS.has(raw.action)) throw invalidRequest();
+      return {
+        ...base,
+        type: "background_process",
+        action: raw.action as BackgroundProcessAction,
+        ...optional("processId", 64),
+        ...optional("command"),
+        ...optional("state", 64),
+        ...optional("output", STEP_OUTPUT_LENGTH),
+        ...flag("outputTruncated"),
+      };
+    case "file_change":
+      return {
+        ...base,
+        type: "file_change",
+        path: string(raw.path, STEP_FIELD_LENGTH),
+        ...count("additions"),
+        ...count("deletions"),
+        ...optional("diff", STEP_DIFF_LENGTH),
+        ...flag("diffTruncated"),
+      };
+    case "file_read":
+      if (!Array.isArray(raw.paths) || raw.paths.length > 100) throw invalidRequest();
+      return { ...base, type: "file_read", paths: raw.paths.map((path) => string(path, STEP_FIELD_LENGTH)) };
+    case "file_search":
+      return { ...base, type: "file_search", pattern: string(raw.pattern, STEP_FIELD_LENGTH), ...optional("path") };
+    case "web_search":
+      return { ...base, type: "web_search", query: string(raw.query, STEP_FIELD_LENGTH) };
+    case "web_read":
+      return { ...base, type: "web_read", url: string(raw.url, STEP_FIELD_LENGTH) };
+    case "browser":
+      return {
+        ...base,
+        type: "browser",
+        action: string(raw.action, 40),
+        ...optional("url"),
+        ...optional("pageTitle", 400),
+      };
+    default:
+      return { ...base, type: "tool" };
+  }
+}
+
 export function normalizeMessage(value: unknown, fallbackId?: string): Message {
   const raw = asRecord(value);
   const id = raw.id === undefined ? fallbackId : normalizeConversationId(raw.id);
@@ -172,6 +270,7 @@ export function normalizeMessage(value: unknown, fallbackId?: string): Message {
         ? {}
         : { fallbackModel: string(raw.fallbackModel, 256, false) }),
       ...(raw.error === undefined || raw.type !== "incoming" ? {} : { error: normalizeMessageFailure(raw.error) }),
+      ...(raw.steps === undefined || raw.type !== "incoming" ? {} : normalizeSteps(raw.steps)),
     };
   }
   if (raw.type === "time") {
