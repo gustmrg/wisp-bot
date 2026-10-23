@@ -294,6 +294,7 @@ export function normalizeChat(value: unknown): Chat {
     ...unreadFields(raw),
     ...(raw.pinned === true ? { pinned: true } : {}),
     ...(raw.lastActivityAt === undefined ? {} : { lastActivityAt: timestamp(raw.lastActivityAt) }),
+    ...(raw.createdAt === undefined ? {} : { createdAt: timestamp(raw.createdAt) }),
   };
   if (raw.kind === "wisp") {
     const wispId = normalizeConversationId(raw.wispId);

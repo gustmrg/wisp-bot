@@ -1124,7 +1124,8 @@ export class ConversationRepository {
     participantIds: ReadonlyArray<WispId> = [],
   ): ConversationRecord {
     return {
-      chat,
+      // The chat carries its creation time so every device can list conversations in that order.
+      chat: { ...chat, createdAt: timestamp },
       storageId: normalizeConversationId(this.createId()),
       sessions: this.newSessions(participantIds),
       createdAt: timestamp,
@@ -1299,11 +1300,12 @@ export class ConversationRepository {
       }
       const chat = normalizeChat(record.chat);
       if (chat.id !== id) throw new Error("Invalid state");
+      const createdAt = this.timestampOf(record.createdAt);
       state.conversations[id] = {
-        chat,
+        chat: { ...chat, createdAt },
         storageId: normalizeConversationId(record.storageId),
         sessions: this.parseSessions(record.sessions),
-        createdAt: this.timestampOf(record.createdAt),
+        createdAt,
         updatedAt: this.timestampOf(record.updatedAt),
       };
     }
@@ -1317,9 +1319,10 @@ export class ConversationRepository {
    * conversation's workspace, and its session there.
    */
   private upgradeLegacyRecord(state: PersistedConversationState, id: string, record: Record<string, unknown>): void {
-    const { chat, wisp } = splitLegacyChat(record.chat);
-    if (chat.id !== id) throw new Error("Invalid state");
+    const { chat: legacyChat, wisp } = splitLegacyChat(record.chat);
+    if (legacyChat.id !== id) throw new Error("Invalid state");
     const createdAt = this.timestampOf(record.createdAt);
+    const chat = { ...legacyChat, createdAt };
     const updatedAt = this.timestampOf(record.updatedAt);
     if (!wisp) {
       if (record.sessionId !== null) throw new Error("Invalid state");

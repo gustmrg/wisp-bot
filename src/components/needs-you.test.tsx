@@ -112,4 +112,27 @@ describe("WispOrbs", () => {
     await user.click(orbs[1]!);
     expect(onSelectChat).toHaveBeenCalledWith("atlas");
   });
+
+  it("keeps the Wisps in creation order whatever they are doing", () => {
+    render(
+      <WispOrbs
+        chats={{
+          atlas: wispChatView("atlas", { wisp: { name: "Atlas" }, chat: { createdAt: "2026-08-02T10:00:00.000Z" } }),
+          quill: wispChatView("quill", { wisp: { name: "Quill" }, chat: { createdAt: "2026-08-01T10:00:00.000Z" } }),
+          sage: wispChatView("sage", { wisp: { name: "Sage" }, chat: { createdAt: "2026-08-03T10:00:00.000Z" } }),
+        }}
+        statuses={{ atlas: "working" }}
+        approvals={{ sage: [request("sage", "push", 5)] }}
+        failedChats={{}}
+        order="created"
+        onSelectChat={vi.fn()}
+      />,
+    );
+    const orbs = within(screen.getByRole("navigation", { name: "Your Wisps" })).getAllByRole("button");
+    expect(orbs.map((orb) => orb.getAttribute("aria-label"))).toEqual([
+      "Quill",
+      "Atlas, working",
+      "Sage, waiting for your approval",
+    ]);
+  });
 });

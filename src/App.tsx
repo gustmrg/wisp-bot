@@ -277,6 +277,7 @@ function Workspace({
               collapsed={sidebarCollapsed}
               onToggleCollapsed={toggleSidebar}
               showWispsRow={workspace.preferences.wispsRow}
+              order={workspace.preferences.chatListOrder}
               hidden={mobile && (mobilePage !== "list" || detailsOpen)}
               statuses={workspace.statuses}
               activity={workspace.activity}

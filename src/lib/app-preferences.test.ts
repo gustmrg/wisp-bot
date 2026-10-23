@@ -3,6 +3,11 @@ import { describe, expect, it } from "vitest";
 import { DEFAULT_PREFERENCES, normalizePreferences } from "@/lib/app-preferences";
 
 describe("normalizePreferences", () => {
+  it("keeps a known conversation order and falls back to latest activity", () => {
+    expect(normalizePreferences({ chatListOrder: "created" }).chatListOrder).toBe("created");
+    expect(normalizePreferences({ chatListOrder: "alphabetical" }).chatListOrder).toBe("recent");
+  });
+
   it("returns defaults when no saved preferences exist", () => {
     expect(normalizePreferences(undefined)).toEqual(DEFAULT_PREFERENCES);
   });

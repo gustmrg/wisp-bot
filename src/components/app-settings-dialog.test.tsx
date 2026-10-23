@@ -396,4 +396,38 @@ describe("AppSettingsDialog on mobile", () => {
     await user.click(wispsRow);
     expect(onPreferencesChange).toHaveBeenCalledWith({ ...DEFAULT_PREFERENCES, wispsRow: false });
   });
+
+  it("chooses the conversation order with a description that stays the same", async () => {
+    const user = userEvent.setup();
+    const onPreferencesChange = vi.fn();
+    const props = {
+      mobile: true,
+      appMetadata,
+      currentUser,
+      userProfile: {
+        profile: { preferredName: "Ada", aboutYou: "", responsePreferences: "" },
+        loading: false,
+        error: null,
+        save: vi.fn(),
+      },
+      open: true,
+      persistenceStatus: "saved" as const,
+      persistenceError: null,
+      onOpenChange: vi.fn(),
+      onPreferencesChange,
+    };
+    const { rerender } = render(<AppSettingsDialog {...props} preferences={DEFAULT_PREFERENCES} />);
+    await user.click(screen.getByRole("button", { name: "Ada Lovelace" }));
+    const order = screen.getByRole("radiogroup", { name: "Conversation order" });
+    const description = screen.getByText(/keep conversations in the order they were created/);
+    const text = description.textContent;
+
+    await user.click(within(order).getByRole("radio", { name: "Creation" }));
+    expect(onPreferencesChange).toHaveBeenCalledWith({ ...DEFAULT_PREFERENCES, chatListOrder: "created" });
+
+    rerender(<AppSettingsDialog {...props} preferences={{ ...DEFAULT_PREFERENCES, chatListOrder: "created" }} />);
+    expect(within(order).getByRole("radio", { name: "Creation" })).toBeChecked();
+    expect(description).toBeInTheDocument();
+    expect(description.textContent).toBe(text);
+  });
 });

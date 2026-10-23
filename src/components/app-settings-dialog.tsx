@@ -55,7 +55,7 @@ import {
 } from "@/components/settings/settings-primitives";
 import { Button } from "@/components/ui/button";
 import type { AppMetadata, CurrentUser } from "@/config/app-metadata";
-import type { AppPreferences, ReplyPace } from "@/lib/app-preferences";
+import type { AppPreferences, ChatListOrder, ReplyPace } from "@/lib/app-preferences";
 import { SegmentedControl } from "@/components/ui/segmented-control";
 import type { PersistenceStatus } from "@/features/persistence/storage-policy";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -204,6 +204,11 @@ const REPLY_PACE_DESCRIPTIONS: Record<ReplyPace, string> = {
   smooth: "Replies flow in evenly, keeping up with the model.",
   natural: "Replies appear at a slower, steady pace, even from fast models. Click a reply to show the rest.",
 };
+
+const CHAT_LIST_ORDER_OPTIONS: ReadonlyArray<{ value: ChatListOrder; label: string }> = [
+  { value: "recent", label: "Latest activity" },
+  { value: "created", label: "Creation" },
+];
 
 const THEME_OPTIONS = [
   { value: "system", label: "System" },
@@ -559,6 +564,21 @@ function AppSettingsDialog({
                     />
                   </SettingsRow>
                 ) : null}
+                <SettingsRow>
+                  <SettingsRowCopy>
+                    <SettingsRowTitle>Conversation order</SettingsRowTitle>
+                    <SettingsRowDescription>
+                      Show the latest activity first, or keep conversations in the order they were created. Pinned
+                      conversations come first.
+                    </SettingsRowDescription>
+                  </SettingsRowCopy>
+                  <SegmentedControl<ChatListOrder>
+                    label="Conversation order"
+                    value={preferences.chatListOrder}
+                    options={CHAT_LIST_ORDER_OPTIONS}
+                    onChange={(chatListOrder) => onPreferencesChange({ ...preferences, chatListOrder })}
+                  />
+                </SettingsRow>
                 <SettingsRow>
                   <SettingsRowCopy>
                     <SettingsRowTitle>Reply speed</SettingsRowTitle>
