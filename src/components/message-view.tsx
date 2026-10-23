@@ -322,14 +322,15 @@ function OutgoingText({
     typed
   );
   if (!attachments.length) return written;
+  // Above the text, where the composer shows them, so sending does not move them.
   return (
     <>
-      {written}
       <AttachmentChips
         attachments={attachments}
-        className={cn("whitespace-normal", typed && "mt-1.5")}
+        className={cn("whitespace-normal", typed && "mb-1.5")}
         chipClassName="border-current/25 bg-current/10"
       />
+      {written}
     </>
   );
 }

@@ -906,11 +906,12 @@
   opacity: 0.75;
 }
 
-/* On the desktop the conversation reads as one centered column, composer included. */
+/* On the desktop the conversation reads as one centered column, pending messages and composer included. */
 @media (min-width: 761px) {
   .chat-panel .chat-messages {
     max-width: 880px;
   }
+  .chat-panel .chat-pending,
   .chat-panel .chat-composer {
     width: 100%;
     max-width: 904px;

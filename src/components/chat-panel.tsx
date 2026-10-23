@@ -551,7 +551,7 @@ function ChatPanel({
       </div>
 
       {scheduledMessages?.available || messageQueue?.available ? (
-        <div className="flex-none px-3">
+        <div className="chat-pending flex-none px-3">
           <PendingMessagesBar
             queued={
               messageQueue?.available
