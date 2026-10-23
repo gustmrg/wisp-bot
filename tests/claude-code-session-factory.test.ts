@@ -51,13 +51,14 @@ async function setup(
   } as ConversationAgentContext;
   await writeFile(
     path.join(root, "context-settings.json"),
-    JSON.stringify({ policy: DEFAULT_CONTEXT_POLICY, memory: "Prefers short answers." }),
+    JSON.stringify({ policy: DEFAULT_CONTEXT_POLICY, memory: "" }),
   );
   const builder = {
     plan: vi.fn(async () => ({
       snapshot: { revision: "rev-7" },
       systemPrompt: () => "You are Lumen, a Wisp.",
-      runSections: async (memory: string | undefined) => (memory ? [`## Memory\n${memory}`] : []),
+      // The plan reads memory itself (ADR 029); the factory appends what it returns.
+      runSections: async () => ["## Memory\nPrefers short answers."],
     })),
     tools: vi.fn(
       async (

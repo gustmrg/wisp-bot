@@ -196,7 +196,7 @@ export class SdkPiSessionFactory implements RuntimeSessionFactory {
           hidden: true,
           factory: (pi) => {
             pi.on("before_agent_start", async (event) => {
-              const sections = await plan.runSections(continuity?.view().memory);
+              const sections = await plan.runSections();
               return sections.length ? { systemPrompt: [event.systemPrompt, ...sections].join("\n\n") } : undefined;
             });
           },
