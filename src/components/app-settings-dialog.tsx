@@ -210,11 +210,6 @@ const CHAT_LIST_ORDER_OPTIONS: ReadonlyArray<{ value: ChatListOrder; label: stri
   { value: "created", label: "Creation" },
 ];
 
-const CHAT_LIST_ORDER_DESCRIPTIONS: Record<ChatListOrder, string> = {
-  recent: "The conversation with the latest message comes first.",
-  created: "Conversations stay in the order they were created, so the list never moves on its own.",
-};
-
 const THEME_OPTIONS = [
   { value: "system", label: "System" },
   { value: "light", label: "Light" },
@@ -573,7 +568,8 @@ function AppSettingsDialog({
                   <SettingsRowCopy>
                     <SettingsRowTitle>Conversation order</SettingsRowTitle>
                     <SettingsRowDescription>
-                      {CHAT_LIST_ORDER_DESCRIPTIONS[preferences.chatListOrder]} Pinned conversations come first.
+                      Show the latest activity first, or keep conversations in the order they were created. Pinned
+                      conversations come first.
                     </SettingsRowDescription>
                   </SettingsRowCopy>
                   <SegmentedControl<ChatListOrder>

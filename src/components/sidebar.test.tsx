@@ -472,22 +472,6 @@ describe("Sidebar conversation menu", () => {
     expect(names(list())).toEqual(["Gamma", "Delta", "Beta", "Atlas"]);
   });
 
-  it("switches the order from the desktop list", async () => {
-    const user = userEvent.setup();
-    const onOrderChange = vi.fn();
-    const props = { chats, activeChatId: "", currentUser, width: 280, ...callbacks, onOrderChange };
-    const { rerender } = render(<Sidebar {...props} />);
-    const toggle = screen.getByRole("button", { name: "Keep creation order" });
-    expect(toggle).toHaveAttribute("aria-pressed", "false");
-    await user.click(toggle);
-    expect(onOrderChange).toHaveBeenCalledWith("created");
-
-    rerender(<Sidebar {...props} order="created" />);
-    expect(toggle).toHaveAttribute("aria-pressed", "true");
-    await user.click(toggle);
-    expect(onOrderChange).toHaveBeenLastCalledWith("recent");
-  });
-
   it("offers each action for what the conversation is now", async () => {
     const user = userEvent.setup();
     const onChatAction = vi.fn();

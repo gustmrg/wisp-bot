@@ -27,7 +27,7 @@ import { ReplyPaceProvider } from "@/hooks/use-reply-pace";
 import { useSystemNotifications } from "@/hooks/use-system-notifications";
 import { TimeZoneProvider, useReportedTimeZone } from "@/hooks/use-time-zone";
 import { type UserProfileController, useUserProfile } from "@/hooks/use-user-profile";
-import { type ChatListOrder, effectiveTimeZone } from "@/lib/app-preferences";
+import { effectiveTimeZone } from "@/lib/app-preferences";
 import { CHIEF_WISP } from "@/lib/chief-wisp";
 import { DETAILS_LAYOUT, SIDEBAR_LAYOUT } from "@/lib/layout";
 import { matchesShortcut, TOGGLE_SIDEBAR_SHORTCUT } from "@/lib/shortcuts";
@@ -240,10 +240,6 @@ function Workspace({
     const preferences = latestPreferences.current;
     updatePreferences({ ...preferences, sidebarCollapsed: !preferences.sidebarCollapsed });
   }, [updatePreferences]);
-  const changeChatListOrder = useCallback(
-    (chatListOrder: ChatListOrder) => updatePreferences({ ...latestPreferences.current, chatListOrder }),
-    [updatePreferences],
-  );
 
   useEffect(() => {
     function handleKeyDown(event: KeyboardEvent) {
@@ -282,7 +278,6 @@ function Workspace({
               onToggleCollapsed={toggleSidebar}
               showWispsRow={workspace.preferences.wispsRow}
               order={workspace.preferences.chatListOrder}
-              onOrderChange={changeChatListOrder}
               hidden={mobile && (mobilePage !== "list" || detailsOpen)}
               statuses={workspace.statuses}
               activity={workspace.activity}

@@ -2,7 +2,6 @@ import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } f
 import {
   BellIcon,
   BellOffIcon,
-  CalendarArrowDownIcon,
   MailCheckIcon,
   MailIcon,
   PanelLeftCloseIcon,
@@ -54,8 +53,6 @@ interface SidebarProps {
   showWispsRow?: boolean;
   /** Latest activity first, or fixed in creation order; pinned conversations come first either way. */
   order?: ChatListOrder;
-  /** Switches the order from the desktop list; without it there is no button to. */
-  onOrderChange?: (order: ChatListOrder) => void;
   statuses?: Record<string, ManagedConversationStatus>;
   /** What each working conversation is doing, such as "Searching the web". */
   activity?: Record<string, string | undefined>;
@@ -111,7 +108,6 @@ function Sidebar({
   onToggleCollapsed,
   showWispsRow = true,
   order = "recent",
-  onOrderChange,
   statuses = {},
   activity = {},
   approvals = {},
@@ -250,18 +246,6 @@ function Sidebar({
               <SearchIcon aria-hidden="true" />
               <span>Search</span>
             </button>
-            {onOrderChange ? (
-              <button
-                className={cn(toolButton, "sidebar-order", order === "created" ? "text-foreground" : "bg-transparent")}
-                type="button"
-                aria-label="Keep creation order"
-                aria-pressed={order === "created"}
-                title={order === "created" ? "Ordered by creation" : "Ordered by latest activity"}
-                onClick={() => onOrderChange(order === "created" ? "recent" : "created")}
-              >
-                <CalendarArrowDownIcon aria-hidden="true" />
-              </button>
-            ) : null}
           </div>
         )}
 
