@@ -185,15 +185,15 @@ export async function assertWorkspaceCapacity(
   if (used + incomingBytes > quotaBytes) {
     throw new WispBackendError(
       "invalid_request",
-      `This Wisp's workspace is full (${formatBytes(used)} of ${formatBytes(quotaBytes)} used). Free some space before adding more files.`,
+      `This workspace is full (${formatBytes(used)} of ${formatBytes(quotaBytes)} used). Free some space before adding more files.`,
     );
   }
   return used;
 }
 
 /**
- * The size a Wisp's workspace was given, or `fallback` when it was never
- * resized. A setting that cannot be read throws rather than silently
+ * The size a workspace was given, read from the folder keeping its settings
+ * (a Wisp's or a circle's), or `fallback` when it was never resized. A setting that cannot be read throws rather than silently
  * shrinking the workspace back to the default.
  */
 export async function readWorkspaceQuota(configDirectory: string, fallback = WORKSPACE_QUOTA_BYTES): Promise<number> {
@@ -238,6 +238,12 @@ export interface WorkspaceDirectories {
   configDirectory: string;
 }
 
+/** A conversation's workspace and the folder keeping its size: the Wisp's settings, or the circle's. */
+export interface ConversationWorkspaceDirectories {
+  workspaceDirectory: string;
+  settingsDirectory: string;
+}
+
 export interface WorkspaceServiceOptions {
   /** A Wisp's directories; throws for unknown conversations and circles. */
   resolveDirectories: (conversationId: string) => WorkspaceDirectories;
@@ -245,8 +251,8 @@ export interface WorkspaceServiceOptions {
   openPath: (directory: string) => Promise<void>;
   /** Asks the user to pick files; resolves with absolute paths, empty when dismissed. */
   selectFiles: () => Promise<ReadonlyArray<string>>;
-  /** Any conversation's workspace folder, circles included; throws for unknown conversations. */
-  resolveWorkspace?: (conversationId: string) => string;
+  /** Any conversation's workspace folders, circles included; throws for unknown conversations. Unset, only Wisps'. */
+  resolveWorkspace?: (conversationId: string) => ConversationWorkspaceDirectories;
   /** Size of a workspace whose Wisp was never resized. */
   quotaBytes?: number;
   /** Free space on the disk holding a folder; defaults to asking the operating system. */
@@ -276,10 +282,10 @@ export class WorkspaceService {
   }
 
   async getView(conversationId: string): Promise<WorkspaceView> {
-    const { workspaceDirectory, configDirectory } = this.options.resolveDirectories(conversationId);
+    const { workspaceDirectory, settingsDirectory } = this.workspace(conversationId);
     const [usedBytes, quotaBytes, freeBytes] = await Promise.all([
       measureDirectory(workspaceDirectory),
-      this.quota(configDirectory),
+      this.quota(settingsDirectory),
       (this.options.freeDiskBytes ?? freeDiskBytes)(workspaceDirectory),
     ]);
     return { usedBytes, quotaBytes, maxQuotaBytes: largestQuota(usedBytes + freeBytes) };
@@ -294,7 +300,7 @@ export class WorkspaceService {
   }
 
   /**
-   * Gives a Wisp's workspace another size. Growing needs room on the disk;
+   * Gives a Wisp's or a circle's workspace another size. Growing needs room on the disk;
    * shrinking below what the workspace holds deletes nothing and only stops
    * new files until enough is freed.
    */
@@ -302,7 +308,7 @@ export class WorkspaceService {
     if (!WORKSPACE_QUOTA_PRESETS.includes(quotaBytes)) {
       throw new WispBackendError("invalid_request", "Choose one of the offered workspace sizes.");
     }
-    const { configDirectory } = this.options.resolveDirectories(conversationId);
+    const { settingsDirectory } = this.workspace(conversationId);
     const view = await this.getView(conversationId);
     if (quotaBytes > view.quotaBytes && quotaBytes > view.maxQuotaBytes) {
       throw new WispBackendError(
@@ -310,22 +316,28 @@ export class WorkspaceService {
         `The disk does not have room for a ${formatBytes(quotaBytes)} workspace. Free some disk space or choose a smaller size.`,
       );
     }
+    // A circle's settings folder exists only once it is first resized.
+    await mkdir(settingsDirectory, { recursive: true });
     await writeFileAtomically(
-      path.join(configDirectory, WORKSPACE_SETTINGS_FILE),
+      path.join(settingsDirectory, WORKSPACE_SETTINGS_FILE),
       `${JSON.stringify({ quotaBytes }, null, 2)}\n`,
     );
     this.options.onQuotaChanged?.(conversationId);
     return { ...view, quotaBytes };
   }
 
-  private quota(configDirectory: string): Promise<number> {
-    return readWorkspaceQuota(configDirectory, this.quotaBytes);
+  private quota(settingsDirectory: string): Promise<number> {
+    return readWorkspaceQuota(settingsDirectory, this.quotaBytes);
+  }
+
+  private workspace(conversationId: string): ConversationWorkspaceDirectories {
+    if (this.options.resolveWorkspace) return this.options.resolveWorkspace(conversationId);
+    const { workspaceDirectory, configDirectory } = this.options.resolveDirectories(conversationId);
+    return { workspaceDirectory, settingsDirectory: configDirectory };
   }
 
   async openWorkspace(conversationId: string): Promise<void> {
-    const workspaceDirectory =
-      this.options.resolveWorkspace?.(conversationId) ??
-      this.options.resolveDirectories(conversationId).workspaceDirectory;
+    const { workspaceDirectory } = this.workspace(conversationId);
     await mkdir(workspaceDirectory, { recursive: true });
     await this.options.openPath(workspaceDirectory);
   }
@@ -368,7 +380,7 @@ export class WorkspaceService {
   }
 
   /**
-   * The files in a Wisp's workspace best matching what follows an `@` (see
+   * The files in a conversation's workspace best matching what follows an `@` (see
    * `rankFilePaths`). The workspace's file list is kept for a few seconds, so
    * typing a query reads the disk once rather than at every key.
    */
@@ -376,7 +388,7 @@ export class WorkspaceService {
     const now = Date.now();
     let cached = this.fileLists.get(conversationId);
     if (!cached || now - cached.at > FILE_LIST_LIFETIME_MS) {
-      const { workspaceDirectory } = this.options.resolveDirectories(conversationId);
+      const { workspaceDirectory } = this.workspace(conversationId);
       cached = { at: now, files: listWorkspaceFiles(workspaceDirectory) };
       this.fileLists.set(conversationId, cached);
       // A failed listing is not kept, so the next search tries again.
@@ -387,12 +399,17 @@ export class WorkspaceService {
   }
 
   async attach(conversationId: string): Promise<AttachWorkspaceFilesResult> {
-    const { workspaceDirectory, configDirectory } = this.options.resolveDirectories(conversationId);
+    const { workspaceDirectory, settingsDirectory } = this.workspace(conversationId);
     const selected = await this.options.selectFiles();
     if (!selected.length) return { files: [], workspace: await this.getView(conversationId) };
     const release = this.options.acquireWrite?.(conversationId);
     try {
-      return await this.copyIntoInbox(conversationId, workspaceDirectory, await this.quota(configDirectory), selected);
+      return await this.copyIntoInbox(
+        conversationId,
+        workspaceDirectory,
+        await this.quota(settingsDirectory),
+        selected,
+      );
     } finally {
       release?.();
     }
@@ -440,8 +457,8 @@ export class WorkspaceService {
     file: { name: string; size: number },
     content: AsyncIterable<Uint8Array>,
   ): Promise<WorkspaceAttachment> {
-    const { workspaceDirectory, configDirectory } = this.options.resolveDirectories(conversationId);
-    const quotaBytes = await this.quota(configDirectory);
+    const { workspaceDirectory, settingsDirectory } = this.workspace(conversationId);
+    const quotaBytes = await this.quota(settingsDirectory);
     const release = this.options.acquireWrite?.(conversationId);
     try {
       return await this.writeUpload(workspaceDirectory, quotaBytes, file, content);

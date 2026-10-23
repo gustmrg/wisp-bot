@@ -189,7 +189,7 @@ function DetailsPanel({
       ) : (
         <div className="relative flex min-h-0 flex-1 flex-col">
           <div className="min-h-0 flex-1 overflow-y-auto p-3.5">
-            <CircleDetails chat={chat} wisps={wisps} onChange={onChange} />
+            <CircleDetails chat={chat} wisps={wisps} onChange={onChange} onOpenSettings={onOpenSettings} />
             <SettingsActions className="mt-[18px]">{deleteControl}</SettingsActions>
           </div>
         </div>

@@ -5,6 +5,8 @@ import path from "node:path";
 export const WISP_CONFIG_DIRECTORY = "wisp-config";
 /** Where a Wisp keeps its agent history in one conversation (ADR 010, ADR 027). */
 export const WISP_SESSIONS_DIRECTORY = "wisp-sessions";
+/** Where a circle keeps its own settings, such as its workspace size (ADR 011). */
+export const CIRCLE_CONFIG_DIRECTORY = "circle-config";
 
 /** The folders' names before they stopped naming a runtime: the first of each pair is the old one. */
 const RENAMED: ReadonlyArray<readonly [string, string]> = [

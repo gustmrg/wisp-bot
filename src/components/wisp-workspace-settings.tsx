@@ -10,21 +10,31 @@ import { Field, FieldDescription, FieldGroup, FieldLabel, FieldTitle } from "@/c
 import { FormStatus } from "@/components/ui/form-status";
 import { WorkspaceSizeSelect } from "@/components/workspace-size-select";
 
+const OLD_SERVER_CIRCLE =
+  "This server is older than this app and cannot show a circle's workspace. Update the server to see and resize it.";
+
+/** A Wisp's or a circle's workspace: its usage, size, and folder. */
 export function WispWorkspaceSettings({
   conversationId,
+  kind = "wisp",
   onOpenSettings,
 }: {
   conversationId: string;
+  kind?: "wisp" | "circle";
   onOpenSettings?: (target: IntegrationSettingsTarget) => void;
 }) {
-  return <WorkspacePanel key={conversationId} conversationId={conversationId} onOpenSettings={onOpenSettings} />;
+  return (
+    <WorkspacePanel key={conversationId} conversationId={conversationId} kind={kind} onOpenSettings={onOpenSettings} />
+  );
 }
 
 function WorkspacePanel({
   conversationId,
+  kind,
   onOpenSettings,
 }: {
   conversationId: string;
+  kind: "wisp" | "circle";
   onOpenSettings?: (target: IntegrationSettingsTarget) => void;
 }) {
   // Opening a folder needs this computer's file manager and the Wisp's files on this computer.
@@ -42,6 +52,8 @@ function WorkspacePanel({
       .then((result) => {
         if (!active) return;
         if (result.ok) setView(result.value);
+        // Servers from before circles had a workspace size refuse circles as invalid.
+        else if (kind === "circle" && result.error.code === "invalid_request") setError(OLD_SERVER_CIRCLE);
         else setError(result.error.message);
       })
       .catch(() => {
@@ -50,7 +62,7 @@ function WorkspacePanel({
     return () => {
       active = false;
     };
-  }, [loadRequest]);
+  }, [loadRequest, kind]);
 
   async function openFolder() {
     setError("");
@@ -66,7 +78,9 @@ function WorkspacePanel({
   return (
     <FieldGroup className="gap-3">
       <FieldDescription>
-        A private folder only this Wisp can read and write. Attached files are copied to its inbox folder.
+        {kind === "circle"
+          ? "A folder every Wisp in this circle reads and writes. Attached files are copied to its inbox folder."
+          : "A private folder only this Wisp can read and write. Attached files are copied to its inbox folder."}
       </FieldDescription>
       {view ? (
         <>

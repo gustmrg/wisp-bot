@@ -720,8 +720,17 @@ describe("ConversationRepository", () => {
         ],
       },
     });
-    // One workspace for the circle, a session folder for each member.
+    // One workspace for the circle, and its size, a session folder for each member.
     expect(nova!.workspaceDirectory).toBe(atlas!.workspaceDirectory);
+    const circleFolders = repository.getWorkspaceDirectories("crew");
+    expect(circleFolders.workspaceDirectory).toBe(atlas!.workspaceDirectory);
+    expect(path.dirname(circleFolders.settingsDirectory)).toBe(path.join(directory, "circle-config"));
+    expect(atlas!.workspaceSettingsDirectory).toBe(circleFolders.settingsDirectory);
+    expect(nova!.workspaceSettingsDirectory).toBe(circleFolders.settingsDirectory);
+    expect(repository.getWorkspaceDirectories("atlas")).toEqual({
+      workspaceDirectory: repository.getAgentContext("atlas").workspaceDirectory,
+      settingsDirectory: repository.getAgentContext("atlas").configDirectory,
+    });
     expect(nova!.workspaceDirectory).not.toBe(repository.getAgentContext("nova").workspaceDirectory);
     expect(nova!.sessionDirectory).not.toBe(atlas!.sessionDirectory);
     await expect(readdir(atlas!.sessionDirectory)).resolves.toEqual([]);
@@ -770,6 +779,9 @@ describe("ConversationRepository", () => {
     const repository = new ConversationRepository({ dataDirectory: directory });
     await repository.initialize({ first: chat("first") });
     await repository.create(circle("crew", ["first"]));
+    const { settingsDirectory } = repository.getWorkspaceDirectories("crew");
+    await mkdir(settingsDirectory, { recursive: true });
+    await writeFile(path.join(settingsDirectory, "workspace-settings.json"), '{"quotaBytes":1}');
 
     await repository.delete("crew");
 
@@ -778,6 +790,7 @@ describe("ConversationRepository", () => {
     // With the session its member had there (ADR 011).
     expect((await readdir(path.join(directory, "deleted-conversations", archive!))).sort()).toEqual([
       "archive.json",
+      "circle-config",
       "wisp-session",
       "workspace",
     ]);

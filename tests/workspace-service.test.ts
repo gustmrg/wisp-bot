@@ -1,4 +1,16 @@
-import { chmod, link, mkdir, mkdtemp, readdir, readFile, rm, stat, symlink, writeFile } from "node:fs/promises";
+import {
+  chmod,
+  link,
+  mkdir,
+  mkdtemp,
+  readdir,
+  readFile,
+  rm,
+  stat,
+  symlink,
+  truncate,
+  writeFile,
+} from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
@@ -73,7 +85,7 @@ describe("WorkspaceService", () => {
       },
       resolveWorkspace: (id) => {
         if (id !== "crew") throw new Error("unknown");
-        return circleWorkspace;
+        return { workspaceDirectory: circleWorkspace, settingsDirectory: path.join(root, "circle-config", "crew") };
       },
       openPath,
       selectFiles: async () => [],
@@ -83,6 +95,44 @@ describe("WorkspaceService", () => {
 
     expect(openPath).toHaveBeenCalledWith(circleWorkspace);
     expect((await stat(circleWorkspace)).isDirectory()).toBe(true);
+  });
+
+  it("measures, resizes and fills a circle's workspace by the circle's own size", async () => {
+    const { root, picks } = await setup(["big.bin"]);
+    const workspaceDirectory = path.join(root, "workspaces", "crew");
+    const settingsDirectory = path.join(root, "circle-config", "crew");
+    await mkdir(workspaceDirectory, { recursive: true });
+    const [smallest] = WORKSPACE_QUOTA_PRESETS as [number];
+    const larger = WORKSPACE_QUOTA_PRESETS[WORKSPACE_QUOTA_PRESETS.indexOf(WORKSPACE_QUOTA_BYTES) + 1]!;
+    const service = new WorkspaceService({
+      resolveDirectories: () => {
+        throw new Error("not a Wisp");
+      },
+      resolveWorkspace: (id) => {
+        if (id !== "crew") throw new Error("unknown");
+        return { workspaceDirectory, settingsDirectory };
+      },
+      openPath: async () => undefined,
+      selectFiles: async () => [path.join(picks, "big.bin")],
+      freeDiskBytes: async () => larger,
+    });
+
+    await expect(service.getView("crew")).resolves.toMatchObject({
+      usedBytes: 0,
+      quotaBytes: WORKSPACE_QUOTA_BYTES,
+      maxQuotaBytes: larger,
+    });
+    // The circle's settings folder does not exist until its first resize.
+    await expect(service.setQuota("crew", larger)).resolves.toMatchObject({ quotaBytes: larger });
+    expect(await readWorkspaceQuota(settingsDirectory)).toBe(larger);
+
+    await service.setQuota("crew", smallest);
+    await writeFile(path.join(picks, "big.bin"), Buffer.alloc(0));
+    await truncate(path.join(picks, "big.bin"), smallest + 1);
+    await expect(service.attach("crew")).rejects.toMatchObject({
+      code: "invalid_request",
+      message: expect.stringContaining("This workspace is full"),
+    });
   });
 
   it("imports a picked SKILL.md and replaces an existing skill only when asked", async () => {

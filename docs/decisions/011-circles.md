@@ -96,7 +96,11 @@ own reply.
   its ID and the conversation by its ID, separately; in a Wisp's own
   conversation the two are the same.
 - **Workspace:** the circle's shared workspace (`workspaces/<circle storage
-  ID>`). Sequential turns avoid concurrent edits.
+  ID>`). Sequential turns avoid concurrent edits. Its size belongs to the
+  circle, not to its members: it is kept in `circle-config/<circle storage
+  ID>`, starts at the default, and is changed in the circle's details or in
+  Storage like a Wisp's. Every member's writes are checked against it, and
+  deleting the circle archives that folder with the workspace.
 - **Approvals:** requests and audit entries add `wispId`, so the approval card
   says which Wisp is asking.
 - **Commands:** a Wisp's container mounts its own workspace
@@ -200,3 +204,6 @@ members share one:
   order already says.
 - **Purging a circle's Claude Code project when one member leaves:** it would
   delete the other members' sessions too.
+- **Checking each member's writes against its own Wisp's workspace size:**
+  the shared workspace had as many limits as members, none of them the one
+  Storage showed, and a circle's size could not be changed at all.
