@@ -54,10 +54,10 @@ async function startServer(directory: string, port: number, key: Buffer): Promis
 async function setup() {
   const directory = await mkdtemp(path.join(os.tmpdir(), "wisp-session-"));
   cleanups.push(() => rm(directory, { recursive: true, force: true }));
-  const port = await freePort();
   const key = randomBytes(32);
-  const server = await startServer(directory, port, key);
-  return { directory, port, key, server };
+  // Port 0 lets the OS pick; probing for a free port first races other test files.
+  const server = await startServer(directory, 0, key);
+  return { directory, port: server.port, key, server };
 }
 
 function session(
