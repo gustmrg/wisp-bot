@@ -4,11 +4,11 @@ import { expect, it, vi } from "vitest";
 import { WispContextSettings } from "./wisp-context-settings";
 import { DEFAULT_CONTEXT_POLICY, type ContextCommand } from "../../shared/context-policy";
 
-it("loads, saves memory and requires an explicit new-topic choice", async () => {
+it("loads, saves the policy with the old memory untouched, and requires an explicit new-topic choice", async () => {
   const user = userEvent.setup();
   const view = {
     policy: DEFAULT_CONTEXT_POLICY,
-    memory: "",
+    memory: "Legacy saved memory",
     summary: "SQLite selected. Migration pending.",
     lastRenewedAt: null,
     lastActivityAt: null,
@@ -27,12 +27,15 @@ it("loads, saves memory and requires an explicit new-topic choice", async () => 
     },
   });
   render(<WispContextSettings conversationId="one" />);
-  const memory = await screen.findByRole("textbox", { name: "Saved memory" });
-  await user.type(memory, "Use Portuguese");
+  const idle = await screen.findByRole("spinbutton", { name: "Inactivity (hours)" });
+  // Saved memory is edited under Memory now (ADR 029).
+  expect(screen.queryByRole("textbox", { name: "Saved memory" })).not.toBeInTheDocument();
+  await user.clear(idle);
+  await user.type(idle, "48");
   await user.click(screen.getByRole("button", { name: "Save context settings" }));
   expect(manageContext).toHaveBeenLastCalledWith({
     conversationId: "one",
-    command: { action: "save", policy: DEFAULT_CONTEXT_POLICY, memory: "Use Portuguese" },
+    command: { action: "save", policy: { ...DEFAULT_CONTEXT_POLICY, idleHours: 48 }, memory: "Legacy saved memory" },
   });
   await user.click(screen.getByRole("button", { name: "Start new topic" }));
   expect(manageContext).not.toHaveBeenCalledWith(expect.objectContaining({ command: { action: "new_topic" } }));

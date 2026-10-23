@@ -26,6 +26,7 @@ import {
   type WispCollection,
   type WispsView,
 } from "../shared/conversations.js";
+import type { ApplyMemoryRequest, ExportMemoryRequest } from "../shared/memory.js";
 import type { QueuedMessage } from "../shared/message-queue.js";
 import type { ToolApprovalRequest } from "../shared/tool-policy.js";
 import type { AgentRegistry } from "./agent-registry.js";
@@ -111,6 +112,18 @@ export class ConversationService {
     const profile = await this.repository.saveUserProfile(value);
     await Promise.all(this.agentContexts().map((context) => this.registry.updateContext(context)));
     return profile;
+  }
+
+  getMemory(conversationId: string) {
+    return this.repository.getMemory(conversationId);
+  }
+
+  applyMemory(request: ApplyMemoryRequest) {
+    return this.repository.applyMemory(request.conversationId, request.operations);
+  }
+
+  exportMemory(request: ExportMemoryRequest) {
+    return this.repository.exportMemory(request.conversationId, request.scope);
   }
 
   /** Every conversation's agent context: each Wisp's own, then each circle's. */

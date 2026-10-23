@@ -159,8 +159,8 @@ of task → skill) applies only to what a Wisp proposes on its own (SWE-154).
 `USER.md` and `MEMORY.md` are not files the app keeps. They are produced from
 the table when needed, with the same rendering as the prompt, without the IDs:
 
-- **On request:** **Settings → Memory → Export** saves `USER.md`, and in a
-  Wisp's memory settings it saves that Wisp's `MEMORY.md`. Each Wisp's file
+- **On request:** each scope in a Wisp's **Memory** settings has an export
+  button that downloads `USER.md` or that Wisp's `MEMORY.md`. Each Wisp's file
   has only its own entries; `USER.md` is the same for every Wisp.
 - **When a Wisp is deleted:** its `MEMORY.md` is written into its entry in the
   archive, beside the folders ADR 010 already archives, and then its rows are
@@ -172,8 +172,10 @@ read back, which is the two sources of truth the table exists to avoid.
 
 ### Settings
 
-- **Settings → Memory** lists entries grouped by scope ("About you · every
-  Wisp" and "This Wisp"), with each scope's use of its limit.
+- A Wisp's **Memory** settings list entries grouped by scope ("About you ·
+  every Wisp" and "This Wisp"), with each scope's use of its limit, above the
+  context settings. The person's entries can be edited from any Wisp. The
+  app's profile keeps only the preferred name and points to Memory.
 - Each entry shows its origin (You or Wisp), date and expiry, and can be edited
   in place, removed, or restored when superseded or removed. Entries can be
   added by hand.

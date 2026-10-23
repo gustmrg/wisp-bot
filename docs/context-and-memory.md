@@ -1,11 +1,11 @@
 # Context and memory
 
-Open **Wisp settings → General → Context & memory** to configure context
+Open **Wisp settings → General → Context** to configure context
 renewal for a Wisp. By default, the next message after 24 hours of inactivity
 starts a new topic, but only when the active context is at least 12,000
 tokens. **On renewal** can instead summarize the context and continue, which
 costs a summarization request and keeps the summary in every later request;
-starting a new topic sends only the system prompt, saved memory and the new
+starting a new topic sends only the system prompt, memory and the new
 message, and the Wisp can still reach earlier messages with `search_history`.
 The thresholds are configurable (inactivity between 1 and 720 hours; minimum
 context between 1,000 and 200,000 tokens). Optional daily renewal uses
@@ -28,13 +28,27 @@ continuity.
 
 **Start new topic** explicitly clears the active conversation context while
 keeping all messages on screen, the local transcript, Wisp identity, model and
-saved memory. A timeline marker explains each boundary.
+memory. A timeline marker explains each boundary.
 
-## Saved memory
+## Memory
 
-**Saved memory** is user-maintained text, stored locally and included in model
-requests. It survives new topics and restarts; facts are not silently promoted
-from summaries into permanent memory.
+**Memory** is a list of one-line entries, stored locally and included in every
+model request. It survives new topics and restarts; facts are not silently
+promoted from summaries into permanent memory. Open **Wisp settings → Memory**
+to see it in two groups:
+
+- **About you · every Wisp** (`USER.md`): facts and preferences about you,
+  shared by all of your Wisps, up to 1,500 characters.
+- **This Wisp** (`MEMORY.md`): what only this Wisp remembers, up to 4,000
+  characters.
+
+Each entry shows who wrote it and when, and can be edited, removed, or
+restored later. **Edit as text** edits a group one line per entry and shows
+what will change before saving; lines left as they are keep their history.
+Each group can be exported as Markdown. Deleting a Wisp keeps its `MEMORY.md`
+in the archive. The saved memory and the profile's "About you" and "Response
+preferences" from earlier versions became entries on the first start. See
+[ADR 029](decisions/029-wisp-memory.md).
 
 ## Skills
 
