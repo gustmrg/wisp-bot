@@ -88,7 +88,7 @@ describe("MessageView", () => {
     expect(screen.queryByText("Scheduled")).toBeNull();
   });
 
-  it("shows the files attached to a sent message as files", () => {
+  it("shows the files attached to a sent message as files, above its text", () => {
     render(
       <MessageView
         message={{
@@ -99,8 +99,10 @@ describe("MessageView", () => {
         }}
       />,
     );
-    expect(screen.getByText("Anexe os boletos")).toBeTruthy();
     const list = screen.getByRole("list", { name: "Attached files" });
+    // The files come before the text, as in the composer.
+    expect(list.parentElement?.firstChild).toBe(list);
+    expect(list.nextSibling?.textContent).toBe("Anexe os boletos");
     expect(Array.from(list.querySelectorAll("li"), (item) => item.textContent)).toEqual(["boleto.pdf", "luz.pdf"]);
     expect(screen.getByTitle("inbox/boleto.pdf")).toBeTruthy();
     expect(screen.queryByText(/Attached to the workspace/)).toBeNull();
