@@ -207,6 +207,12 @@ export function workMessageId(requestId: string, part = 1): string {
   return part === 1 ? `${requestId}:work` : `${requestId}:work:${part}`;
 }
 
+/** The reply part that follows a group of steps, by the group's ID; null for any other ID. */
+export function replyPartAfterWork(workId: string): string | null {
+  const match = /^(.+):work(?::(\d+))?$/.exec(workId);
+  return match ? assistantMessageId(match[1]!, match[2] ? Number(match[2]) : 1) : null;
+}
+
 /** The request a reply message answers, or null for any other message. */
 export function requestIdOfAssistantMessage(messageId: string): string | null {
   return /^(.+):assistant(?::\d+)?$/.exec(messageId)?.[1] ?? null;
