@@ -140,7 +140,8 @@ describe("SdkPiSessionFactory", () => {
       role: "Finance",
       soul: "# Identity\nYou are a financial advisor who explains markets clearly.",
       userName: "John",
-      userProfile: { preferredName: "John", aboutYou: "Backend developer", responsePreferences: "Be concise" },
+      memory: async () =>
+        "### USER.md · 2% of 1,500 characters\n- [m1] Backend developer.\n- [m2] Prefers concise answers.",
       workspaceDirectory: path.join(directory, "workspace"),
       sessionDirectory: directory,
       configDirectory: path.join(directory, "config"),
@@ -212,8 +213,9 @@ describe("SdkPiSessionFactory", () => {
     expect(prompt).not.toContain("coding agent");
     expect(prompt).toContain("Mention an operational limitation only when it materially affects the user's request");
     expect(prompt).toContain("## Relationship with the user");
-    expect(prompt).toContain('"aboutYou":"Backend developer"');
-    expect(prompt).toContain('"responsePreferences":"Be concise"');
+    // Background and response preferences are memory now (ADR 029), added on every run instead.
+    expect(prompt).not.toContain("## User profile");
+    expect(prompt).toContain("3. The user's general response preferences, as saved under Memory.");
     expect(prompt).toContain('The user\'s preferred name is "John".');
     expect(prompt).toContain("do not force it or use their name in every response");
     expect(prompt).toContain("Never infer the user's name from paths, workspace metadata");
@@ -230,7 +232,6 @@ describe("SdkPiSessionFactory", () => {
     expect(prompt).toContain("1. Explicit instructions in the user's current message.");
     expect(prompt).toContain("Configured role: Finance.");
     expect(prompt).toContain("2. Your identity and purpose, above.");
-    expect(prompt).toContain("3. The user's general response preferences from the user profile.");
     expect(prompt).not.toContain("Tone:");
     expect(prompt).not.toContain("configured tone");
     expect(prompt).not.toContain("Be concise, factual");
@@ -475,7 +476,11 @@ describe("SdkPiSessionFactory", () => {
     loader.extensionFactories
       .find(({ name }) => name === "wisp-continuity")!
       .factory({ on: (_event: string, handler: typeof beforeStart) => (beforeStart = handler) });
-    await expect(beforeStart!({ systemPrompt: "base" })).resolves.toBeUndefined();
+    // Memory is always there, even empty, so the Wisp knows it exists (SWE-188).
+    const first = await beforeStart!({ systemPrompt: "base" });
+    expect(first?.systemPrompt).toMatch(/^base\n\n## Memory\n/);
+    expect(first?.systemPrompt).toContain("never offer a skill instead");
+    expect(first?.systemPrompt).not.toContain("## Available skills");
 
     const draft = {
       name: "weekly-report",
@@ -505,9 +510,12 @@ describe("SdkPiSessionFactory", () => {
       undefined,
     );
     const prompt = await beforeStart!({ systemPrompt: "base" });
-    expect(prompt?.systemPrompt).toBe(
-      `base\n\n## Available skills\nLoad one with use_skill before following it.\n- weekly-report: ${draft.description}`,
-    );
+    expect(prompt?.systemPrompt).toMatch(/^base\n\n## Memory\n/);
+    expect(
+      prompt?.systemPrompt.endsWith(
+        `\n\n## Available skills\nLoad one with use_skill before following it.\n- weekly-report: ${draft.description}`,
+      ),
+    ).toBe(true);
     await expect(tool("use_skill").execute("tool-4", { name: "weekly-report" })).resolves.toMatchObject({
       content: [{ text: expect.stringContaining("2. Group them by team.") }],
     });
@@ -603,8 +611,9 @@ describe("SdkPiSessionFactory", () => {
       .factory({ on: (_event: string, handler: typeof beforeStart) => (beforeStart = handler) });
 
     const prompt = await beforeStart!({ systemPrompt: "base" });
-    expect(prompt?.systemPrompt).toBe(
-      "base\n\n## Available skills\nLoad one with use_skill before following it.\n- linear: My own Linear steps.\n- github: Works with GitHub.",
+    expect(prompt?.systemPrompt).toMatch(/^base\n\n## Memory\n/);
+    expect(prompt?.systemPrompt).toMatch(
+      /\n\n## Available skills\nLoad one with use_skill before following it\.\n- linear: My own Linear steps\.\n- github: Works with GitHub\.$/,
     );
     await expect(useSkill.execute("tool-1", { name: "github" })).resolves.toMatchObject({
       content: [{ text: expect.stringContaining("Pass owner and repo.") }],

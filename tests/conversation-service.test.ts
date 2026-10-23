@@ -171,9 +171,7 @@ describe("ConversationService", () => {
       expect.objectContaining({ kind: "circle", conversationId: "circle", userName: "Ada" }),
     );
     for (const conversationId of ["one", "two"]) {
-      expect(updateContext).toHaveBeenCalledWith(
-        expect.objectContaining({ conversationId, userName: "Ada", userProfile: profile }),
-      );
+      expect(updateContext).toHaveBeenCalledWith(expect.objectContaining({ conversationId, userName: "Ada" }));
     }
     await service.dispose();
   });

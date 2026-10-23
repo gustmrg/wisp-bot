@@ -84,17 +84,19 @@ it("preserves continuity through real SDK compaction and a fresh-topic restart, 
       piSessionId: null as string | null,
       piSessionFile: null as string | null,
       onContextRenewed: vi.fn(),
+      // Memory reaches every request from the memory store (ADR 029), not from the context settings.
+      memory: async () => "### USER.md · 1% of 1,500 characters\n- [m1] Prefer Portuguese",
     };
     for (const key of ["workspaceDirectory", "sessionDirectory", "configDirectory"] as const)
       await mkdir(context[key], { recursive: true });
     const factory = new SdkPiSessionFactory(runtime);
     const selection = { providerId: "openrouter", modelId: "openai/gpt-4o-mini" };
     session = await factory.create(context, selection);
-    await session.manageContext!({ action: "save", policy: DEFAULT_CONTEXT_POLICY, memory: "Prefer Portuguese" });
+    await session.manageContext!({ action: "save", policy: DEFAULT_CONTEXT_POLICY, memory: "Legacy saved memory" });
     // Settings survive even before the first assistant message creates the Pi transcript.
     session.dispose();
     session = await factory.create(context, selection);
-    expect((await session.manageContext!({ action: "get" })).memory).toBe("Prefer Portuguese");
+    expect((await session.manageContext!({ action: "get" })).memory).toBe("Legacy saved memory");
     for (let turn = 0; turn < 3; turn++)
       await session.prompt(`Turn ${turn}: SQLite. ${"Synthetic background. ".repeat(500)}`);
     expect(JSON.stringify(requests[0])).toContain("Prefer Portuguese");
