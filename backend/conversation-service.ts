@@ -572,14 +572,19 @@ export class ConversationService {
     return this.requireDelta(conversationId, { updated: [prompt] });
   }
 
+  // Published too, so the Dock badge and other clients follow the read state.
   async markRead(conversationId: string): Promise<ConversationDelta> {
     await this.repository.markRead(conversationId);
-    return this.requireDelta(conversationId, {});
+    const delta = this.requireDelta(conversationId, {});
+    this.onConversationChanged(delta);
+    return delta;
   }
 
   async markUnread(conversationId: string): Promise<ConversationDelta> {
     await this.repository.markUnread(conversationId);
-    return this.requireDelta(conversationId, {});
+    const delta = this.requireDelta(conversationId, {});
+    this.onConversationChanged(delta);
+    return delta;
   }
 
   /** Deletes a circle; a Wisp's own conversation goes only with the Wisp. */
