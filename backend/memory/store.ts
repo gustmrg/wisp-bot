@@ -191,6 +191,11 @@ export class MemoryStore {
     });
   }
 
+  /** Whether `importLegacy` has yet to run, so the caller reads the old memory only when needed. */
+  needsLegacyImport(): boolean {
+    return this.getMeta("legacy_imported") === undefined;
+  }
+
   /**
    * Turns memory kept before entries existed into active `owner` entries, once.
    * Limits do not apply: nothing the person wrote is dropped. Returns false

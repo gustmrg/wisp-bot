@@ -316,12 +316,12 @@ describe("WispConversationAgent", () => {
       ...initialContext,
       soul: "Financial advisor",
       userName: "Jane",
-      userProfile: { preferredName: "Jane", aboutYou: "Developer", responsePreferences: "Be concise" },
+      memory: async () => "- [m1] Developer",
     });
 
     expect(initialContext.soul).toBe("Financial advisor");
     expect(initialContext.userName).toBe("Jane");
-    expect(initialContext.userProfile?.aboutYou).toBe("Developer");
+    expect(await initialContext.memory?.()).toBe("- [m1] Developer");
     expect(sessions.get("one")?.reloadCount).toBe(1);
     await agent.dispose();
   });

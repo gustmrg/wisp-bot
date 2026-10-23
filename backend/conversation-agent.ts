@@ -62,7 +62,8 @@ export interface ConversationAgentContext {
   /** Markdown that defines the Wisp's identity, personality, and behavior. */
   soul: string;
   userName?: string;
-  userProfile?: import("../shared/user-profile.js").UserProfile;
+  /** The Wisp's memory as its prompt shows it, read on every run so a change applies at once (ADR 029). */
+  memory?: () => Promise<string>;
   /** The person's current time zone, read on every message; without it the Wisp is not told the time. */
   userTimeZone?: () => string;
   modelOverride?: ModelSelection | null;

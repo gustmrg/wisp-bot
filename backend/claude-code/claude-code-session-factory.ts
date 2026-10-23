@@ -78,15 +78,6 @@ export interface ClaudeCodeSessionFactoryOptions {
   fallback?: (context: ConversationAgentContext) => Promise<{ name: string; session: RuntimeSession } | null>;
 }
 
-/** The memory the person keeps for the Wisp, as Pi's sessions read it; none when the settings cannot be read. */
-async function readMemory(settingsPath: string): Promise<string | undefined> {
-  try {
-    return (await loadContextSettings(settingsPath)).memory || undefined;
-  } catch {
-    return undefined;
-  }
-}
-
 /** What a process of a conversation or of a job run starts with. */
 interface ProcessLaunch {
   model: string;
@@ -202,7 +193,6 @@ export class ClaudeCodeSessionFactory {
     const { validateToolArguments } = await import("@earendil-works/pi-ai");
     const query =
       this.options.query ?? ((await import("@anthropic-ai/claude-agent-sdk")).query as unknown as ClaudeCodeQuery);
-    const settingsPath = path.join(context.configDirectory, CONTEXT_SETTINGS_FILE);
     const offered = async (): Promise<ReadonlyArray<WispMcpTool>> => {
       const allowed = new Set(await tools.getAllowedTools());
       return tools.definitions.filter(({ name }) => allowed.has(name)) as unknown as WispMcpTool[];
@@ -218,7 +208,7 @@ export class ClaudeCodeSessionFactory {
           executable,
           model: launch.model,
           ...(launch.effort ? { effort: launch.effort } : {}),
-          systemPrompt: [plan.systemPrompt(), ...(await plan.runSections(await readMemory(settingsPath)))].join("\n\n"),
+          systemPrompt: [plan.systemPrompt(), ...(await plan.runSections())].join("\n\n"),
           session: launch.session,
           ...(launch.recoveredContext ? { recoveredContext: launch.recoveredContext } : {}),
           // A server instance connects once, so each process gets its own.
