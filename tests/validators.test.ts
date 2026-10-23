@@ -6,6 +6,8 @@ import {
   parseMessagePageRequest,
   parseSearchMessagesRequest,
   parseApplyModelRequest,
+  parseApplyMemoryRequest,
+  parseExportMemoryRequest,
   parseConversationRequest,
   parseCreateConversationRequest,
   parseCreateWispRequest,
@@ -26,6 +28,43 @@ import {
 } from "../backend/validators.js";
 import { MAX_VOICE_AUDIO_BYTES } from "../shared/voice.js";
 import { DEFAULT_WISP_APPEARANCE } from "../shared/wisp-appearance.js";
+
+describe("memory request validators", () => {
+  it("accepts each operation's shape and leaves the rest to the memory store", () => {
+    const operations = [
+      { op: "add", scope: "user", text: "Prefers short answers." },
+      { op: "add", scope: "wisp", text: "Travelling.", expiresAt: "2026-10-30" },
+      { op: "patch", id: "m1", text: "" },
+      { op: "remove", id: "m2" },
+      { op: "restore", id: "m3" },
+    ];
+    expect(parseApplyMemoryRequest({ conversationId: "wisp:one", operations })).toEqual({
+      conversationId: "wisp:one",
+      operations,
+    });
+    expect(parseExportMemoryRequest({ conversationId: "wisp:one", scope: "wisp" })).toEqual({
+      conversationId: "wisp:one",
+      scope: "wisp",
+    });
+  });
+
+  it("rejects malformed memory requests", () => {
+    for (const operations of [
+      undefined,
+      [{ op: "replace", scope: "user", text: "x" }],
+      [{ op: "add", scope: "everyone", text: "x" }],
+      [{ op: "add", scope: "user", text: 42 }],
+      [{ op: "add", scope: "user", text: "x".repeat(4001) }],
+      [{ op: "add", scope: "user", text: "x", source: "agent" }],
+      [{ op: "remove", id: "m1", text: "x" }],
+      [{ op: "patch", id: "", text: "x" }],
+      Array.from({ length: 501 }, () => ({ op: "remove", id: "m1" })),
+    ]) {
+      expect(() => parseApplyMemoryRequest({ conversationId: "wisp:one", operations })).toThrow(WispBackendError);
+    }
+    expect(() => parseExportMemoryRequest({ conversationId: "wisp:one", scope: "all" })).toThrow(WispBackendError);
+  });
+});
 
 describe("voice request validators", () => {
   const audio = new Uint8Array([1, 2, 3]);

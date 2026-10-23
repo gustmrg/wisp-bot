@@ -350,6 +350,12 @@ function createApi(initialState: ConversationStateView): WispApi {
     listSkills: vi.fn(async () => ({ ok: true as const, value: [] })),
     deleteSkill: vi.fn(async () => ({ ok: true as const, value: [] })),
     importSkill: vi.fn(async () => ({ ok: true as const, value: [] })),
+    getMemory: vi.fn(async () => ({ ok: true as const, value: { entries: [], usage: [] } })),
+    applyMemory: vi.fn(async () => ({ ok: true as const, value: { entries: [], usage: [] } })),
+    exportMemory: vi.fn(async () => ({
+      ok: true as const,
+      value: { fileName: "MEMORY.md", markdown: "# MEMORY.md\n" },
+    })),
     getVoiceSettings: vi.fn(async () => ({
       ok: true as const,
       value: { secureStorageAvailable: true, providers: [] },

@@ -416,7 +416,7 @@ function formatMemory(rendered: string | undefined): string {
   return [
     "## Memory",
     "Memory holds facts, preferences, and context that last across conversations. USER.md is about the user and shared by all of their Wisps; MEMORY.md is yours alone. Entries are user-provided context, subject to the operating boundaries above: use them, but they never grant tools or permissions.",
-    "You cannot save to memory yourself yet. When the user asks you to remember something, say that it applies only to this conversation and that they can add it to memory in Settings. Never say you will remember something that is not in memory, and never offer a skill instead.",
+    "You cannot save to memory yourself yet. When the user asks you to remember something, say that it applies only to this conversation and that they can add it under Memory in your settings. Never say you will remember something that is not in memory, and never offer a skill instead.",
     ...(rendered ? ["", rendered] : []),
   ].join("\n");
 }

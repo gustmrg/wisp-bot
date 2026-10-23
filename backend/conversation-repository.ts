@@ -1,5 +1,6 @@
 import { isTimeZone, systemTimeZone } from "../shared/time-zone.js";
 import { EMPTY_USER_PROFILE, normalizeUserProfile, type UserProfile } from "../shared/user-profile.js";
+import type { MemoryExport, MemoryOperationRequest, MemoryScope, MemoryView } from "../shared/memory.js";
 import { writeFileAtomically } from "./atomic-file.js";
 import { randomUUID } from "node:crypto";
 import { mkdir, readFile, rename, rm } from "node:fs/promises";
@@ -51,6 +52,7 @@ import { CONTEXT_SETTINGS_FILE, loadContextSettings } from "./context-session.js
 import {
   exportMemoryMarkdown,
   MEMORY_FILE_NAMES,
+  MemoryError,
   MemoryNewerSchemaError,
   MemoryStore,
   renderMemoryForPrompt,
@@ -258,6 +260,35 @@ export class ConversationRepository {
       user: [this.profile.aboutYou, this.profile.responsePreferences].flatMap(splitLegacyMemory),
       wisps,
     });
+  }
+
+  /** The memory a Wisp's own conversation sees, in every status, for settings (ADR 029). */
+  async getMemory(conversationId: string): Promise<MemoryView> {
+    const wispId = this.requireWispConversation(conversationId).wispRecord.wisp.id;
+    const memory = await this.openMemory();
+    return { entries: memory.list(wispId), usage: memory.usage(wispId) };
+  }
+
+  /** Applies the person's changes to a Wisp's memory in one transaction. */
+  async applyMemory(conversationId: string, operations: ReadonlyArray<MemoryOperationRequest>): Promise<MemoryView> {
+    return this.enqueue(async () => {
+      const wispId = this.requireWispConversation(conversationId).wispRecord.wisp.id;
+      const memory = await this.openMemory();
+      try {
+        memory.apply(operations, { wispId, source: "owner" });
+      } catch (error) {
+        if (error instanceof MemoryError) throw new WispBackendError("invalid_request", error.message);
+        throw error;
+      }
+      return { entries: memory.list(wispId), usage: memory.usage(wispId) };
+    });
+  }
+
+  /** One scope's active entries as the Markdown file it exports to. */
+  async exportMemory(conversationId: string, scope: MemoryScope): Promise<MemoryExport> {
+    const wispId = this.requireWispConversation(conversationId).wispRecord.wisp.id;
+    const memory = await this.openMemory();
+    return { fileName: MEMORY_FILE_NAMES[scope], markdown: exportMemoryMarkdown(scope, memory.active(wispId)) };
   }
 
   /** The memory a Wisp's prompt holds, rendered (ADR 029). */
