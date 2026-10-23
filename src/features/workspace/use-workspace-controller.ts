@@ -20,7 +20,7 @@ import { createChatIdFactory, selectActiveChatId, unseenFailures } from "@/featu
 import { useConversations } from "@/hooks/use-conversations";
 import { useNotificationSounds } from "@/hooks/use-notification-sounds";
 import type { AppPreferences } from "@/lib/app-preferences";
-import type { ToolActivityView } from "@/lib/conversation-stream";
+import type { TurnItemView } from "@/lib/conversation-stream";
 import type { MessageWindow } from "@/lib/message-windows";
 import { applyTheme, applyWispColors } from "@/lib/theme";
 
@@ -38,7 +38,7 @@ export interface WorkspaceController {
   failedChats: Record<string, boolean>;
   acknowledging: Record<string, boolean | undefined>;
   approvals: Record<string, ReadonlyArray<ToolApprovalRequest>>;
-  toolActivities: Record<string, ReadonlyArray<ToolActivityView>>;
+  turnItems: Record<string, ReadonlyArray<TurnItemView>>;
   loading: boolean;
   error: string | null;
   preferences: AppPreferences;
@@ -298,7 +298,7 @@ export function useWorkspaceController(): WorkspaceController {
     failedChats,
     acknowledging: conversations.acknowledging,
     approvals: conversations.approvals,
-    toolActivities: conversations.toolActivities,
+    turnItems: conversations.turnItems,
     loading: conversations.loading,
     error: conversations.error,
     preferences,
