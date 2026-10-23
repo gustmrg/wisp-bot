@@ -30,6 +30,13 @@ describe("backend and server boundary", () => {
     expect(offenders).toEqual([]);
   });
 
+  it("keeps the memory module free of the rest of Wisp (ADR 029)", async () => {
+    const imports = await importsOf(["backend/memory"]);
+    expect(imports.length).toBeGreaterThan(0);
+    const offenders = imports.filter(([, specifier]) => !specifier.startsWith("./") && !specifier.startsWith("node:"));
+    expect(offenders).toEqual([]);
+  });
+
   it("only uses packages the server package installs", async () => {
     const manifest = JSON.parse(await readFile(path.join(root, "server/package.json"), "utf8"));
     const serverDependencies = Object.keys(manifest.dependencies as object);
