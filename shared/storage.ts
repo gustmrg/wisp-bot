@@ -19,9 +19,9 @@ export interface StorageWorkspace {
   /** Some folders or files could not be read, so the numbers are a lower bound. */
   partial: boolean;
   /**
-   * The largest size a Wisp's workspace can be given now, as in `WorkspaceView`.
-   * Absent for circles, whose size is fixed, when the disk could not be
-   * measured, and from servers older than this field.
+   * The largest size the workspace can be given now, as in `WorkspaceView`.
+   * Absent when the disk could not be measured, from servers older than this
+   * field, and for circles from servers where a circle's size was fixed.
    */
   maxQuotaBytes?: number;
   /** The largest folders and files at the workspace root, largest first; absent from older servers. */

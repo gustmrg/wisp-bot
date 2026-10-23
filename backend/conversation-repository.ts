@@ -48,7 +48,12 @@ import { normalizeQueuedMessage } from "./message-queue.js";
 import { normalizeScheduledMessage } from "./message-schedule.js";
 import { buildSnippet, MessageSearchWorker } from "./message-search.js";
 import { IntactDatabaseError } from "./sqlite-backup.js";
-import { migrateStorageFolders, WISP_CONFIG_DIRECTORY, WISP_SESSIONS_DIRECTORY } from "./storage-layout.js";
+import {
+  CIRCLE_CONFIG_DIRECTORY,
+  migrateStorageFolders,
+  WISP_CONFIG_DIRECTORY,
+  WISP_SESSIONS_DIRECTORY,
+} from "./storage-layout.js";
 import { CONVERSATION_STORAGE_POLICY } from "./storage-policy.js";
 import { ARCHIVE_MANIFEST_FILE, type ArchiveManifest } from "../shared/storage.js";
 import {
@@ -136,6 +141,7 @@ export class ConversationRepository {
   private readonly workspaceRoot: string;
   private readonly sessionRoot: string;
   private readonly configRoot: string;
+  private readonly circleConfigRoot: string;
   private readonly deletedRoot: string;
   private profile: UserProfile = { ...EMPTY_USER_PROFILE };
   /** The person's time zone as the app last reported it; this computer's until then. */
@@ -155,6 +161,7 @@ export class ConversationRepository {
     this.workspaceRoot = path.join(options.dataDirectory, "workspaces");
     this.sessionRoot = path.join(options.dataDirectory, WISP_SESSIONS_DIRECTORY);
     this.configRoot = path.join(options.dataDirectory, WISP_CONFIG_DIRECTORY);
+    this.circleConfigRoot = path.join(options.dataDirectory, CIRCLE_CONFIG_DIRECTORY);
     this.deletedRoot = path.join(options.dataDirectory, "deleted-conversations");
     this.profile.preferredName = normalizeUserName(options.userName) ?? "";
     this.now = options.now ?? (() => new Date());
@@ -390,6 +397,7 @@ export class ConversationRepository {
       workspaceDirectory: path.join(this.workspaceRoot, record.storageId),
       sessionDirectory: path.join(this.sessionRoot, session.sessionId),
       configDirectory: path.join(this.configRoot, wispRecord.storageId),
+      workspaceSettingsDirectory: this.workspaceSettingsDirectory(record),
       piSessionId: session.piSessionId,
       piSessionFile: session.piSessionFile,
       savePiSessionIdentity: (identity) => this.savePiSessionIdentity(conversationId, identity, wisp.id),
@@ -427,6 +435,27 @@ export class ConversationRepository {
   /** The workspace folder of any conversation; throws for an unknown one. */
   getWorkspaceDirectory(conversationId: string): string {
     return path.join(this.workspaceRoot, this.require(conversationId).storageId);
+  }
+
+  /**
+   * Any conversation's workspace folder and the folder keeping its size: a
+   * Wisp's own settings, or the circle's, since a circle's members share one
+   * workspace. Throws for an unknown conversation.
+   */
+  getWorkspaceDirectories(conversationId: string): { workspaceDirectory: string; settingsDirectory: string } {
+    const record = this.require(conversationId);
+    return {
+      workspaceDirectory: path.join(this.workspaceRoot, record.storageId),
+      settingsDirectory: this.workspaceSettingsDirectory(record),
+    };
+  }
+
+  private workspaceSettingsDirectory(record: ConversationRecord): string {
+    const { chat } = record;
+    if (chat.kind === "circle") return path.join(this.circleConfigRoot, record.storageId);
+    const wispRecord = this.state.wisps[chat.wispId];
+    if (!wispRecord) throw new WispBackendError("not_found", "The Wisp was not found.");
+    return path.join(this.configRoot, wispRecord.storageId);
   }
 
   /** Where deleted Wisps and circles are kept until the person removes them for good. */
@@ -1523,6 +1552,9 @@ export class ConversationRepository {
         move(path.join(this.sessionRoot, sessionId), index === 0 ? "wisp-session" : `wisp-session-${sessionId}`),
       ),
       ...(wisp ? [move(path.join(this.configRoot, wisp.storageId), "wisp-config")] : []),
+      ...(conversation.chat.kind === "circle"
+        ? [move(path.join(this.circleConfigRoot, conversation.storageId), "circle-config")]
+        : []),
     ]);
   }
 }

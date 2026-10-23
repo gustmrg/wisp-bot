@@ -702,7 +702,8 @@ function secureTool<TDefinition extends ToolDefinition<any, any, any>>(
         await assertWorkspaceCapacity(
           context.workspaceDirectory,
           assertMutationInputSize(parameters),
-          await readWorkspaceQuota(context.configDirectory),
+          // A circle's members share its workspace, and so its size.
+          await readWorkspaceQuota(context.workspaceSettingsDirectory ?? context.configDirectory),
         );
         await authorizationBroker.authorize(
           {

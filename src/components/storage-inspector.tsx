@@ -214,7 +214,8 @@ export function StorageInspector({
           <FieldLabel htmlFor={`size-${conversationId}`} className="font-medium">
             Workspace size
           </FieldLabel>
-          {workspace.kind === "wisp" ? (
+          {/* Servers from before circles could be resized leave out a circle's room. */}
+          {workspace.kind === "wisp" || workspace.maxQuotaBytes !== undefined ? (
             <>
               <WorkspaceSizeSelect
                 id={`size-${conversationId}`}
@@ -226,12 +227,15 @@ export function StorageInspector({
                 onResized={onResized}
               />
               <FieldDescription>
-                The most this workspace can hold. The same setting as in the Wisp&apos;s Workspace settings.
+                The most this workspace can hold.{" "}
+                {workspace.kind === "circle"
+                  ? "Every Wisp in the circle shares it. The same setting as in the circle's details."
+                  : "The same setting as in the Wisp's Workspace settings."}
               </FieldDescription>
             </>
           ) : (
             <FieldDescription>
-              {formatBytes(workspace.quotaBytes)}. Circles share one workspace of a fixed size.
+              {formatBytes(workspace.quotaBytes)}. Update the server to change the size of a circle&apos;s workspace.
             </FieldDescription>
           )}
         </SettingsCard>

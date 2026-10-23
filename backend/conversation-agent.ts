@@ -74,6 +74,8 @@ export interface ConversationAgentContext {
   sessionDirectory: string;
   /** The Wisp's own settings, skills, and saved memory, the same in every conversation. */
   configDirectory: string;
+  /** Where the conversation's workspace size is kept: the circle's in a circle; unset, `configDirectory`. */
+  workspaceSettingsDirectory?: string;
   piSessionId: string | null;
   piSessionFile: string | null;
   onContextRenewed?: (kind: "compacted" | "new_topic", createdAt: string) => void;

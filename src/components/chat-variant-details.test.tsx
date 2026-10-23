@@ -114,6 +114,33 @@ describe("variant details", () => {
     expect(screen.getByRole("group", { name: "Edit participants" })).toBeVisible();
   });
 
+  it("shows a circle's shared workspace and lets its size change", async () => {
+    const user = userEvent.setup();
+    const MIB = 1024 * 1024;
+    const getWorkspace = vi.fn(async () => ({
+      ok: true as const,
+      value: { usedBytes: 10 * MIB, quotaBytes: 512 * MIB, maxQuotaBytes: 10 * 1024 * MIB },
+    }));
+    const setWorkspaceQuota = vi.fn(async ({ quotaBytes }: { quotaBytes: number }) => ({
+      ok: true as const,
+      value: { usedBytes: 10 * MIB, quotaBytes, maxQuotaBytes: 10 * 1024 * MIB },
+    }));
+    Object.defineProperty(window, "wisp", { configurable: true, value: { getWorkspace, setWorkspaceQuota } });
+    render(<CircleDetails chat={circle} wisps={{ atlas: wisp.wisp }} onChange={vi.fn()} />);
+    // Loaded only once the section is opened.
+    expect(getWorkspace).not.toHaveBeenCalled();
+
+    await user.click(screen.getByRole("button", { name: "Workspace" }));
+
+    expect(await screen.findByText("10.0 MiB of 512 MiB used")).toBeVisible();
+    expect(screen.getByText(/every Wisp in this circle reads and writes/)).toBeVisible();
+    expect(getWorkspace).toHaveBeenCalledWith({ conversationId: "crew" });
+    await user.click(screen.getByRole("combobox", { name: "Size" }));
+    await user.click(await screen.findByRole("option", { name: "2.0 GiB" }));
+    expect(setWorkspaceQuota).toHaveBeenCalledWith({ conversationId: "crew", quotaBytes: 2 * 1024 * MIB });
+    expect(await screen.findByText("10.0 MiB of 2.0 GiB used")).toBeVisible();
+  });
+
   it("makes the chosen lead the circle's first member", async () => {
     const user = userEvent.setup();
     const onChange = vi.fn();

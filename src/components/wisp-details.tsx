@@ -42,7 +42,16 @@ function draftOf(chat: WispChatView): WispSettingsDraft {
 }
 
 /** One of the General tab's sections: its panel loads the first time it is opened, and stays mounted. */
-function SettingsAccordionSection({ value, label, children }: { value: string; label: string; children: ReactNode }) {
+/** A section that loads its contents the first time it is opened. */
+export function SettingsAccordionSection({
+  value,
+  label,
+  children,
+}: {
+  value: string;
+  label: string;
+  children: ReactNode;
+}) {
   const [visited, setVisited] = useState(false);
   return (
     <AccordionItem

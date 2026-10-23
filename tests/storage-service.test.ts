@@ -160,12 +160,12 @@ describe("StorageService largest consumers", () => {
     expect(files.map(({ size }) => size)).toEqual([25, 24, 23, 22, 21, 20, 19, 18, 17, 16]);
   });
 
-  it("offers Wisp workspaces the sizes the disk has room for, and none for circles", async () => {
+  it("offers Wisp and circle workspaces the sizes the disk has room for", async () => {
     const MIB = 1024 * 1024;
     const { service } = await setup({ freeDiskBytes: async () => 3 * 1024 * MIB });
     const { workspaces } = await service.getSummary();
     expect(workspaces.find(({ conversationId }) => conversationId === "atlas")?.maxQuotaBytes).toBe(2 * 1024 * MIB);
-    expect(workspaces.find(({ conversationId }) => conversationId === "circle")).not.toHaveProperty("maxQuotaBytes");
+    expect(workspaces.find(({ conversationId }) => conversationId === "circle")?.maxQuotaBytes).toBe(2 * 1024 * MIB);
   });
 
   it("leaves the largest size out when the disk cannot be measured", async () => {
@@ -343,10 +343,10 @@ describe("StorageService cleanup", () => {
     expect(finished).toHaveBeenCalledWith("atlas");
   });
 
-  it("reports each Wisp's own workspace size and the default for circles", async () => {
+  it("reports each Wisp's and circle's own workspace size", async () => {
     const resolveQuota = vi.fn(async (id: string, fallback: number) => {
       if (id === "atlas-dup") throw new Error("unreadable");
-      return id === "atlas" ? 4096 : fallback;
+      return id === "atlas" ? 4096 : id === "circle" ? 8192 : fallback;
     });
     const { service } = await setup({ quotaBytes: 100, resolveQuota });
 
@@ -355,10 +355,9 @@ describe("StorageService cleanup", () => {
     expect(summary.workspaces.map(({ conversationId, quotaBytes }) => [conversationId, quotaBytes])).toEqual(
       expect.arrayContaining([
         ["atlas", 4096],
-        ["circle", 100],
+        ["circle", 8192],
       ]),
     );
-    expect(resolveQuota).not.toHaveBeenCalledWith("circle", expect.anything());
   });
 
   it("blocks uploads during a cleanup and frees quota afterwards", async () => {

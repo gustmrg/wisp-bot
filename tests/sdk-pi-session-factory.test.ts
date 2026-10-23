@@ -9,6 +9,7 @@ import type { IntegrationToolSource } from "../backend/integration-tool-source.j
 import { snapshotRevision } from "../backend/integration-tool-source.js";
 import type { ModelRuntimeLike } from "../backend/model-service.js";
 import type { PluginToolSource } from "../backend/plugin-types.js";
+import { WORKSPACE_SETTINGS_FILE } from "../backend/workspace-service.js";
 import { WORKSPACE_QUOTA_BYTES } from "../shared/workspace.js";
 import { buildPdf } from "./helpers/pdf-fixture.js";
 
@@ -435,6 +436,53 @@ describe("SdkPiSessionFactory", () => {
 
     await read.execute("text-1", { path: "notes.txt" }, undefined, undefined, {});
     expect(sdk.toolExecute).toHaveBeenCalledTimes(1);
+  });
+
+  it("holds a Wisp in a circle to the circle's workspace size, not its own", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "wisp-pi-circle-quota-"));
+    const runtime = {
+      hasConfiguredAuth: vi.fn(() => true),
+      getModel: vi.fn(() => ({ provider: "provider", id: "model" })),
+    } as unknown as ModelRuntimeLike;
+    const context: ConversationAgentContext = {
+      conversationId: "crew",
+      sessionId: "app-session",
+      name: "Atlas",
+      wispId: "atlas",
+      role: "Research",
+      soul: "",
+      workspaceDirectory: path.join(directory, "workspace"),
+      sessionDirectory: directory,
+      configDirectory: path.join(directory, "wisp-config"),
+      workspaceSettingsDirectory: path.join(directory, "circle-config"),
+      piSessionId: null,
+      piSessionFile: null,
+      circle: { name: "Crew", description: "", members: [{ id: "atlas", name: "Atlas", role: "Research" }] },
+    };
+    await mkdir(context.workspaceDirectory, { recursive: true });
+    await mkdir(context.configDirectory);
+    await mkdir(context.workspaceSettingsDirectory!);
+    // The Wisp's own workspace is large; the circle's holds 100 bytes.
+    await writeFile(path.join(context.configDirectory, WORKSPACE_SETTINGS_FILE), JSON.stringify({ quotaBytes: 1e9 }));
+    await writeFile(
+      path.join(context.workspaceSettingsDirectory!, WORKSPACE_SETTINGS_FILE),
+      JSON.stringify({ quotaBytes: 100 }),
+    );
+    const authorize = vi.fn(async () => undefined);
+    await new SdkPiSessionFactory(runtime, { authorize }).create(context, { providerId: "provider", modelId: "model" });
+    const options = sdk.createAgentSession.mock.calls[0]?.[0] as {
+      customTools: Array<{ name: string; execute: (...args: unknown[]) => Promise<unknown> }>;
+    };
+    const write = options.customTools.find(({ name }) => name === "write")!;
+
+    await expect(
+      write.execute("fits", { path: "a.txt", content: "safe" }, undefined, undefined, {}),
+    ).resolves.toBeDefined();
+    await writeFile(path.join(context.workspaceDirectory, "filler.bin"), Buffer.alloc(90));
+    await expect(
+      write.execute("too-big", { path: "b.txt", content: "no room" }, undefined, undefined, {}),
+    ).rejects.toMatchObject({ code: "invalid_request", message: expect.stringContaining("This workspace is full") });
+    expect(authorize).toHaveBeenCalledTimes(1);
   });
 
   it("saves skills only after approval and lists them in the next run's prompt", async () => {

@@ -1,5 +1,6 @@
 import { circleLeadId, withCircleLead } from "../../shared/conversations";
 import type { CircleChatChanges, CircleChatView, WispCollection } from "@/chat-data";
+import type { IntegrationSettingsTarget } from "@/lib/plugin-access";
 import { ChatAvatar, WispAvatar } from "@/components/chat-avatar";
 import { CircleLeadPicker } from "@/components/circle-lead-picker";
 import { CircleMemberPicker } from "@/components/circle-member-picker";
@@ -11,7 +12,10 @@ import {
   SettingsRowDescription,
   SettingsRowTitle,
 } from "@/components/settings/settings-primitives";
+import { Accordion } from "@/components/ui/accordion";
 import { ToggleSwitch } from "@/components/ui/toggle-switch";
+import { SettingsAccordionSection } from "@/components/wisp-details";
+import { WispWorkspaceSettings } from "@/components/wisp-workspace-settings";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 
@@ -19,9 +23,10 @@ interface CircleDetailsProps {
   chat: CircleChatView;
   wisps: WispCollection;
   onChange: (changes: CircleChatChanges) => void;
+  onOpenSettings?: (target: IntegrationSettingsTarget) => void;
 }
 
-export function CircleDetails({ chat, wisps, onChange }: CircleDetailsProps) {
+export function CircleDetails({ chat, wisps, onChange, onOpenSettings }: CircleDetailsProps) {
   const members = chat.members;
   const availableWisps = Object.values(wisps);
   return (
@@ -95,6 +100,11 @@ export function CircleDetails({ chat, wisps, onChange }: CircleDetailsProps) {
           />
         </SettingsRow>
       </SettingsCard>
+      <Accordion multiple className="mt-4 border-t border-border">
+        <SettingsAccordionSection value="workspace" label="Workspace">
+          <WispWorkspaceSettings conversationId={chat.id} kind="circle" onOpenSettings={onOpenSettings} />
+        </SettingsAccordionSection>
+      </Accordion>
     </>
   );
 }

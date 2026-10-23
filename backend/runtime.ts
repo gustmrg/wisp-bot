@@ -477,13 +477,13 @@ export async function createBackendRuntime(options: BackendRuntimeOptions): Prom
     // Messages queued during the cleanup are delivered once it ends.
     onCleanupFinished: (id) => queue.pump(id),
     resolveQuota: (id, fallback) =>
-      readWorkspaceQuota(conversationRepository.getAgentContext(id).configDirectory, fallback),
+      readWorkspaceQuota(conversationRepository.getWorkspaceDirectories(id).settingsDirectory, fallback),
   });
   storageService = storage;
   const workspaceService = new WorkspaceService({
     acquireWrite: (id) => storage.acquireWrite(id),
     resolveDirectories: (id) => conversationRepository.getAgentContext(id),
-    resolveWorkspace: (id) => conversationRepository.getWorkspaceDirectory(id),
+    resolveWorkspace: (id) => conversationRepository.getWorkspaceDirectories(id),
     openPath: options.openPath,
     selectFiles: options.selectFiles,
     // The summary shows each workspace's size, so a resize must not wait for the cache to expire.
