@@ -18,6 +18,7 @@ import { FormStatus } from "@/components/ui/form-status";
 import { WispContextSettings } from "@/components/wisp-context-settings";
 import { WispExecutionSettings } from "@/components/wisp-execution-settings";
 import { WispJobSettings } from "@/components/wisp-job-settings";
+import { WispMemorySettings } from "@/components/wisp-memory-settings";
 import { WispModelSettings } from "@/components/wisp-model-settings";
 import { WispPluginSettings } from "@/components/wisp-plugin-settings";
 import { WispSessionReportSection } from "@/components/wisp-session-report";
@@ -57,7 +58,7 @@ export const WISP_SETTINGS_MAIN: ReadonlyArray<WispSettingsSectionInfo> = [
 
 /** What the Wisp knows and does, under the shortcuts. */
 export const WISP_SETTINGS_MORE: ReadonlyArray<WispSettingsSectionInfo> = [
-  { section: "memory", label: "Memory", icon: BrainIcon, description: "Context and saved memory" },
+  { section: "memory", label: "Memory", icon: BrainIcon, description: "What it remembers, and its context" },
   { section: "skills", label: "Skills", icon: SparklesIcon, description: "Procedures it follows" },
   { section: "workspace", label: "Workspace", icon: FolderIcon, description: "Its private folder" },
   {
@@ -97,7 +98,14 @@ export function WispSettingsSectionContent({ chat, section, onChangeWisp, onOpen
       return (
         <div className="wisp-settings-scroll min-h-0 flex-1 overflow-y-auto p-3.5 text-sm">
           {section === "usage" ? <WispSessionReportSection chatId={id} onOpenSettings={onOpenSettings} /> : null}
-          {section === "memory" ? <WispContextSettings conversationId={id} /> : null}
+          {section === "memory" ? (
+            <div className="flex flex-col gap-6">
+              <WispMemorySettings conversationId={id} />
+              <div className="border-t border-border pt-4">
+                <WispContextSettings conversationId={id} />
+              </div>
+            </div>
+          ) : null}
           {section === "skills" ? <WispSkillSettings conversationId={id} /> : null}
           {section === "workspace" ? (
             <WispWorkspaceSettings conversationId={id} onOpenSettings={onOpenSettings} />

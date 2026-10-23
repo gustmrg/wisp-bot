@@ -31,6 +31,15 @@ import type {
   UpdateConversationRequest,
   UpdateWispRequest,
 } from "../shared/conversations.js";
+import {
+  MAX_MEMORY_OPERATIONS,
+  MAX_MEMORY_TEXT_LENGTH,
+  MEMORY_SCOPES,
+  type ApplyMemoryRequest,
+  type ExportMemoryRequest,
+  type MemoryOperationRequest,
+  type MemoryScope,
+} from "../shared/memory.js";
 import { MAX_MESSAGE_SEARCH_LENGTH, MIN_MESSAGE_SEARCH_LENGTH } from "../shared/message-search.js";
 import {
   MAX_ARCHIVE_DELETIONS,
@@ -429,6 +438,59 @@ export function parseUsageReportRequest(value: unknown): UsageReportRequest {
   const { period } = asRecord(value);
   if (period !== "7d" && period !== "30d" && period !== "all") throw invalidRequest();
   return { period };
+}
+
+function parseMemoryScope(value: unknown): MemoryScope {
+  if (!MEMORY_SCOPES.includes(value as MemoryScope)) throw invalidRequest();
+  return value as MemoryScope;
+}
+
+function parseMemoryText(value: unknown): string {
+  if (typeof value !== "string" || value.length > MAX_MEMORY_TEXT_LENGTH) throw invalidRequest();
+  return value;
+}
+
+/** The shape of each operation; whether it can apply is the memory store's to say. */
+function parseMemoryOperation(value: unknown): MemoryOperationRequest {
+  const operation = asRecord(value);
+  const keys = (allowed: string[]) => {
+    if (Object.keys(operation).some((key) => !allowed.includes(key))) throw invalidRequest();
+  };
+  switch (operation.op) {
+    case "add": {
+      keys(["op", "scope", "text", "expiresAt"]);
+      const { expiresAt } = operation;
+      if (expiresAt !== undefined && expiresAt !== null && (typeof expiresAt !== "string" || expiresAt.length > 64))
+        throw invalidRequest();
+      return {
+        op: "add",
+        scope: parseMemoryScope(operation.scope),
+        text: parseMemoryText(operation.text),
+        ...(typeof expiresAt === "string" ? { expiresAt } : {}),
+      };
+    }
+    case "patch":
+      keys(["op", "id", "text"]);
+      return { op: "patch", id: parseId(operation.id), text: parseMemoryText(operation.text) };
+    case "remove":
+    case "restore":
+      keys(["op", "id"]);
+      return { op: operation.op, id: parseId(operation.id) };
+    default:
+      throw invalidRequest();
+  }
+}
+
+export function parseApplyMemoryRequest(value: unknown): ApplyMemoryRequest {
+  const request = asRecord(value);
+  const { operations } = request;
+  if (!Array.isArray(operations) || operations.length > MAX_MEMORY_OPERATIONS) throw invalidRequest();
+  return { conversationId: parseId(request.conversationId), operations: operations.map(parseMemoryOperation) };
+}
+
+export function parseExportMemoryRequest(value: unknown): ExportMemoryRequest {
+  const request = asRecord(value);
+  return { conversationId: parseId(request.conversationId), scope: parseMemoryScope(request.scope) };
 }
 
 export function parseContextRequest(value: unknown): ContextRequest {

@@ -3,7 +3,6 @@ import { normalizeUserProfile, PROFILE_LIMITS } from "../../shared/user-profile"
 import type { UserProfileController } from "@/hooks/use-user-profile";
 import { SettingsCard, SettingsField, SettingsGroup } from "@/components/settings/settings-primitives";
 import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 
 export function UserProfileSettings({ controller }: { controller: UserProfileController }) {
@@ -44,30 +43,10 @@ export function UserProfileSettings({ controller }: { controller: UserProfileCon
                 }}
               />
             </SettingsField>
-            <SettingsField label="About you (optional)" htmlFor="profile-about">
-              <Textarea
-                id="profile-about"
-                maxLength={PROFILE_LIMITS.aboutYou}
-                value={draft.aboutYou}
-                placeholder="For example: I’m a backend developer working mainly with .NET."
-                onChange={(event) => {
-                  setDraft({ ...draft, aboutYou: event.target.value });
-                  setSaved(false);
-                }}
-              />
-            </SettingsField>
-            <SettingsField label="Response preferences (optional)" htmlFor="profile-responses">
-              <Textarea
-                id="profile-responses"
-                maxLength={PROFILE_LIMITS.responsePreferences}
-                value={draft.responsePreferences}
-                placeholder="For example: Be concise, respond in Portuguese, and explain technical tradeoffs."
-                onChange={(event) => {
-                  setDraft({ ...draft, responsePreferences: event.target.value });
-                  setSaved(false);
-                }}
-              />
-            </SettingsField>
+            <p className="m-0 text-xs leading-relaxed text-dim">
+              What your Wisps know about you, such as your work and how you like answers, is kept under Memory in any
+              Wisp's settings.
+            </p>
             <div className="flex justify-end">
               <Button type="submit" disabled={!dirty || nameMissing}>
                 {saving ? "Saving…" : "Save profile"}

@@ -11,7 +11,6 @@ import { Button } from "@/components/ui/button";
 import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel, FieldTitle } from "@/components/ui/field";
 import { FormStatus } from "@/components/ui/form-status";
 import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useTransientMessage } from "@/hooks/use-transient-message";
 
@@ -36,7 +35,6 @@ function ContextForm({ conversationId }: { conversationId: string }) {
   const id = useId();
   const [view, setView] = useState<ContextView | null>(null);
   const [policy, setPolicy] = useState<ContextPolicy>({ ...DEFAULT_CONTEXT_POLICY });
-  const [memory, setMemory] = useState("");
   const [busy, setBusy] = useState(false);
   const [working, setWorking] = useState(false);
   const [error, setError] = useState("");
@@ -57,7 +55,6 @@ function ContextForm({ conversationId }: { conversationId: string }) {
         }
         setView(result.value);
         setPolicy(result.value.policy);
-        setMemory(result.value.memory);
         setError("");
       })
       .catch(() => {
@@ -97,7 +94,7 @@ function ContextForm({ conversationId }: { conversationId: string }) {
           ? "Context settings saved."
           : command.action === "compact"
             ? "Context summarized. History preserved."
-            : "New topic started. History and saved memory preserved.",
+            : "New topic started. History and memory preserved.",
       );
     } catch {
       setError("Could not update context. Please try again.");
@@ -121,7 +118,7 @@ function ContextForm({ conversationId }: { conversationId: string }) {
       </div>
     );
   const disabled = busy || working;
-  const dirty = JSON.stringify(policy) !== JSON.stringify(view.policy) || memory !== view.memory;
+  const dirty = JSON.stringify(policy) !== JSON.stringify(view.policy);
   return (
     <FieldGroup className="gap-3">
       <FieldDescription>
@@ -230,25 +227,11 @@ function ContextForm({ conversationId }: { conversationId: string }) {
           </Field>
         ) : null}
       </div>
-      <Field>
-        <FieldLabel htmlFor={`${id}-memory`}>Saved memory</FieldLabel>
-        <Textarea
-          id={`${id}-memory`}
-          rows={3}
-          maxLength={8000}
-          value={memory}
-          disabled={disabled}
-          onChange={(event) => setMemory(event.target.value)}
-          placeholder="Preferences and facts to keep across topics"
-        />
-        <FieldDescription>
-          Memory is stored locally and included in model requests. Starting a new topic keeps it.
-        </FieldDescription>
-      </Field>
       <SettingsActions align="end">
         <Button
           disabled={disabled || !dirty || !isContextPolicy(policy)}
-          onClick={() => void run({ action: "save", policy, memory })}
+          // Saved memory moved to memory entries (ADR 029); the old text is kept as it is.
+          onClick={() => void run({ action: "save", policy, memory: view.memory })}
         >
           Save context settings
         </Button>
@@ -268,7 +251,7 @@ function ContextForm({ conversationId }: { conversationId: string }) {
             confirmLabel="Start fresh context"
             variant="outline"
             disabled={disabled}
-            description="The next message will start without the current conversation context. Chat history and saved memory remain available."
+            description="The next message will start without the current conversation context. Chat history and memory remain available."
             onConfirm={() => void run({ action: "new_topic" })}
           />
         </SettingsActions>

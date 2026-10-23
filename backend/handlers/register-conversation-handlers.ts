@@ -3,6 +3,9 @@ import type { ConversationService } from "../conversation-service.js";
 import { registerGuardedHandlers, type HandlerRouter, type SenderAuthorizer } from "./guarded-handlers.js";
 import {
   parseAnswerConversationPromptRequest,
+  parseApplyMemoryRequest,
+  parseConversationRequest,
+  parseExportMemoryRequest,
   parseAppendConversationMessageRequest,
   parseCreateConversationRequest,
   parseCreateWispRequest,
@@ -25,6 +28,9 @@ export function registerConversationHandlers(
   return registerGuardedHandlers(router, authorizeSender, [
     [WISP_IPC_CHANNELS.getUserProfile, () => service.getUserProfile()],
     [WISP_IPC_CHANNELS.saveUserProfile, (payload) => service.saveUserProfile(payload)],
+    [WISP_IPC_CHANNELS.getMemory, (payload) => service.getMemory(parseConversationRequest(payload).conversationId)],
+    [WISP_IPC_CHANNELS.applyMemory, (payload) => service.applyMemory(parseApplyMemoryRequest(payload))],
+    [WISP_IPC_CHANNELS.exportMemory, (payload) => service.exportMemory(parseExportMemoryRequest(payload))],
     [
       WISP_IPC_CHANNELS.setUserTimeZone,
       (payload) => service.saveUserTimeZone(parseSetUserTimeZoneRequest(payload).timeZone),
