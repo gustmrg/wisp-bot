@@ -33,6 +33,7 @@ import {
   type CircleAgentContext,
   type CircleSetting,
   type ConversationAgentContext,
+  type WispMemoryAccess,
 } from "./conversation-agent.js";
 import {
   asRecord,
@@ -291,6 +292,36 @@ export class ConversationRepository {
     return { fileName: MEMORY_FILE_NAMES[scope], markdown: exportMemoryMarkdown(scope, memory.active(wispId)) };
   }
 
+  /** What a Wisp's session reads and writes of its memory; its writes are the Wisp's (`agent`). */
+  private memoryAccess(wispId: string): WispMemoryAccess {
+    const asAgent = { wispId, source: "agent" } as const;
+    const refused = (error: unknown): never => {
+      if (error instanceof MemoryError) throw new WispBackendError("invalid_request", error.message);
+      throw error;
+    };
+    return {
+      render: () => this.renderMemory(wispId),
+      active: async () => (await this.openMemory()).active(wispId),
+      check: async (operations) => {
+        const memory = await this.openMemory();
+        try {
+          memory.check(operations, asAgent);
+        } catch (error) {
+          refused(error);
+        }
+      },
+      apply: (operations) =>
+        this.enqueue(async () => {
+          const memory = await this.openMemory();
+          try {
+            return memory.apply(operations, asAgent);
+          } catch (error) {
+            return refused(error);
+          }
+        }),
+    };
+  }
+
   /** The memory a Wisp's prompt holds, rendered (ADR 029). */
   async renderMemory(wispId: string): Promise<string> {
     const memory = await this.openMemory();
@@ -471,7 +502,7 @@ export class ConversationRepository {
       soul: wisp.soul,
       userName: this.profile.preferredName || undefined,
       userTimeZone: () => this.timeZone,
-      memory: () => this.renderMemory(wisp.id),
+      memory: this.memoryAccess(wisp.id),
       workspaceDirectory: path.join(this.workspaceRoot, record.storageId),
       sessionDirectory: path.join(this.sessionRoot, session.sessionId),
       configDirectory: path.join(this.configRoot, wispRecord.storageId),

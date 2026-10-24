@@ -73,6 +73,7 @@ export const TOOL_CATALOG: ReadonlyArray<ToolMetadata> = [
     browser: true,
   },
   { name: "save_skill", label: "Save skill", activityLabel: "Saving a skill…", category: "save_skill" },
+  { name: "save_memory", label: "Save memory", activityLabel: "Saving to memory…", category: "save_memory" },
   // Job tools are offered only where jobs can run, so they are not among the tools every Wisp has.
   {
     name: "schedule_job",

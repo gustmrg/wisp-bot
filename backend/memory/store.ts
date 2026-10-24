@@ -41,6 +41,9 @@ const SCHEMA = `
 // migration with a new version, as for the other stores.
 const MIGRATIONS: Record<number, string> = { 1: SCHEMA };
 
+/** Rolls back a batch that was only being checked. */
+const DRY_RUN = Symbol("dry run");
+
 /** Thrown when an operation cannot apply; nothing in its batch was written. */
 export class MemoryError extends Error {
   constructor(readonly details: MemoryErrorDetails) {
@@ -158,30 +161,48 @@ export class MemoryStore {
    */
   apply(operations: readonly MemoryOperation[], context: MemoryWriteContext): MemoryEntry[] {
     if (operations.length === 0) return [];
-    return this.transaction(() => {
-      const now = this.now().toISOString();
-      const before = this.active(context.wispId);
-      const changed: string[] = [];
-      operations.forEach((operation, index) => {
-        changed.push(this.applyOne(operation, index, context, now));
+    return this.transaction(() => this.applyBatch(operations, context));
+  }
+
+  /**
+   * Throws the `MemoryError` that `apply` would, and writes nothing either way,
+   * so a batch can be checked before someone is asked to approve it.
+   */
+  check(operations: readonly MemoryOperation[], context: MemoryWriteContext): void {
+    if (operations.length === 0) return;
+    try {
+      this.transaction(() => {
+        this.applyBatch(operations, context);
+        throw DRY_RUN;
       });
-      const after = this.active(context.wispId);
-      for (const scope of SCOPES) {
-        const total = used(after, scope);
-        const limit = MEMORY_LIMITS[scope];
-        if (total > limit && total > used(before, scope)) {
-          throw new MemoryError({
-            code: "over_limit",
-            message: `This would leave ${scope} memory at ${total} of ${limit} characters. Remove or shorten entries to free ${total - limit}.`,
-            scope,
-            limit,
-            excess: total - limit,
-            entries: before.filter((entry) => entry.scope === scope),
-          });
-        }
-      }
-      return [...new Set(changed)].map((id) => this.find(id, context.wispId)!);
+    } catch (error) {
+      if (error !== DRY_RUN) throw error;
+    }
+  }
+
+  private applyBatch(operations: readonly MemoryOperation[], context: MemoryWriteContext): MemoryEntry[] {
+    const now = this.now().toISOString();
+    const before = this.active(context.wispId);
+    const changed: string[] = [];
+    operations.forEach((operation, index) => {
+      changed.push(this.applyOne(operation, index, context, now));
     });
+    const after = this.active(context.wispId);
+    for (const scope of SCOPES) {
+      const total = used(after, scope);
+      const limit = MEMORY_LIMITS[scope];
+      if (total > limit && total > used(before, scope)) {
+        throw new MemoryError({
+          code: "over_limit",
+          message: `This would leave ${scope} memory at ${total} of ${limit} characters. Remove or shorten entries to free ${total - limit}.`,
+          scope,
+          limit,
+          excess: total - limit,
+          entries: before.filter((entry) => entry.scope === scope),
+        });
+      }
+    }
+    return [...new Set(changed)].map((id) => this.find(id, context.wispId)!);
   }
 
   /** Removes a deleted Wisp's entries; `user` entries stay. */
