@@ -100,8 +100,9 @@ function MemoryPanel({ conversationId }: { conversationId: string }) {
   return (
     <FieldGroup className="gap-5">
       <FieldDescription>
-        Facts, preferences, and context your Wisps keep across conversations and new topics. Memory is stored on this
-        device and included in model requests.
+        Facts, preferences, and context your Wisps keep across conversations and new topics. Ask a Wisp to remember
+        something and approve the change, or add it here. Memory is stored on this device and included in model
+        requests.
       </FieldDescription>
       {view === null && !error ? <FormStatus pending="Loading memory…" /> : null}
       {view

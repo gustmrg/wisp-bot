@@ -43,10 +43,10 @@ export interface ToolAuthorizationRequest {
   category: ToolActionCategory;
   summary: string;
   scope: {
-    kind: "workspace_path" | "integration" | "skill" | "container" | "browser" | "job" | "wisp";
+    kind: "workspace_path" | "integration" | "skill" | "memory" | "container" | "browser" | "job" | "wisp";
     value: string;
   };
-  /** Content the user must see to decide; only sent for skill changes. */
+  /** Content the user must see to decide; only sent for skill and memory changes. */
   preview?: string;
   /** The job the user must see to decide; only sent for job approvals. */
   job?: JobApprovalDetails;
@@ -219,10 +219,11 @@ export class ToolAuthorizationBroker {
     }
     const unattended = this.unattended.getStore();
     if (unattended) {
-      // Skill, job and Wisp changes are reviewed one by one, so no grant covers them.
+      // Skill, memory, job and Wisp changes are reviewed one by one, so no grant covers them.
       const approved =
         unattended.conversationId === action.conversationId &&
         action.category !== "save_skill" &&
+        action.category !== "save_memory" &&
         action.category !== "schedule_job" &&
         action.category !== "manage_wisp" &&
         unattended.approvedTools.has(action.toolName);
@@ -317,6 +318,9 @@ export class ToolAuthorizationBroker {
     }
     if (request.decision === "block" && category === "save_skill") {
       throw new WispBackendError("invalid_request", "Skill changes can only be allowed once or denied.");
+    }
+    if (request.decision === "block" && category === "save_memory") {
+      throw new WispBackendError("invalid_request", "Memory changes can only be allowed once or denied.");
     }
     if (request.decision === "block" && category === "schedule_job") {
       throw new WispBackendError("invalid_request", "Jobs can only be allowed once or denied.");
@@ -530,6 +534,11 @@ export function evaluateToolPolicy(
     // Skills become standing instructions, so each change is reviewed by the
     // user; no rule or auto-review setting can approve or suppress the prompt.
     return scopeKind === "skill" ? "ask" : "block";
+  }
+  if (category === "save_memory") {
+    // Memory is in every request, and the person's reaches every Wisp, so the
+    // user reviews each change; no rule or auto-review setting suppresses it.
+    return scopeKind === "memory" ? "ask" : "block";
   }
   if (category === "manage_wisp") {
     // A soul becomes another Wisp's standing instructions, and a deleted Wisp

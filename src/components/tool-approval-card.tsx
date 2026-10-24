@@ -36,6 +36,8 @@ function approvalAsk(request: ToolApprovalRequest): string {
       return "wants to edit a file";
     case "save_skill":
       return "wants to save a skill";
+    case "save_memory":
+      return "wants to change its memory";
     case "schedule_job":
       return "wants to schedule a job";
     case "manage_wisp":
@@ -58,9 +60,14 @@ function approvalAsk(request: ToolApprovalRequest): string {
   }
 }
 
-/** Jobs, skills and Wisp changes are read in full before they are approved, so they have no one-tap answer. */
+/** Jobs, skills, memory and Wisp changes are read in full before they are approved, so they have no one-tap answer. */
 function needsReview(request: ToolApprovalRequest): boolean {
-  return request.category === "save_skill" || request.category === "schedule_job" || request.category === "manage_wisp";
+  return (
+    request.category === "save_skill" ||
+    request.category === "save_memory" ||
+    request.category === "schedule_job" ||
+    request.category === "manage_wisp"
+  );
 }
 
 function remainingLabel(seconds: number): string {
@@ -146,10 +153,11 @@ function ToolApprovalCard({ request, wispName, onResolve }: ToolApprovalCardProp
   const now = useClock(1_000);
   const integration = request.scope.kind === "integration";
   const skill = request.category === "save_skill" && request.scope.kind === "skill";
+  const memory = request.category === "save_memory" && request.scope.kind === "memory";
   const job = request.category === "schedule_job" && request.scope.kind === "job" ? request.job : undefined;
   const wisp = request.category === "manage_wisp" && request.scope.kind === "wisp" ? request.wisp : undefined;
-  // Skills, jobs and Wisp changes are approved one at a time; no lasting rule covers them.
-  const reviewed = skill || Boolean(job) || Boolean(wisp);
+  // Skills, memory, jobs and Wisp changes are approved one at a time; no lasting rule covers them.
+  const reviewed = skill || memory || Boolean(job) || Boolean(wisp);
   const fileCategory = !integration && isWorkspaceFileCategory(request.category) ? request.category : null;
   const alwaysAllowTool = integration && request.alwaysAllowTool === true;
   const alwaysAllowIntegration = integration && request.alwaysAllowIntegration === true;
@@ -178,13 +186,15 @@ function ToolApprovalCard({ request, wispName, onResolve }: ToolApprovalCardProp
                   ? "Approve job?"
                   : skill
                     ? "Approve skill?"
-                    : integration
-                      ? "Approve integration change?"
-                      : request.category === "shell" || request.category === "container_command"
-                        ? "Approve command?"
-                        : request.category === "browser" || request.category === "browser_submit"
-                          ? "Approve browser action?"
-                          : "Approve file change?"}
+                    : memory
+                      ? "Save to memory?"
+                      : integration
+                        ? "Approve integration change?"
+                        : request.category === "shell" || request.category === "container_command"
+                          ? "Approve command?"
+                          : request.category === "browser" || request.category === "browser_submit"
+                            ? "Approve browser action?"
+                            : "Approve file change?"}
             </strong>
             {Number.isNaN(remaining) ? null : (
               <time
@@ -203,10 +213,10 @@ function ToolApprovalCard({ request, wispName, onResolve }: ToolApprovalCardProp
           ) : (
             <p className="my-1 break-words text-sm text-dim">{request.summary}</p>
           )}
-          {skill && request.preview ? (
+          {(skill || memory) && request.preview ? (
             <pre
               className="my-2 max-h-64 overflow-y-auto whitespace-pre-wrap break-words rounded-md border border-border bg-background/60 p-2 font-mono text-xs text-foreground"
-              aria-label="Skill instructions"
+              aria-label={memory ? "Memory changes" : "Skill instructions"}
             >
               {request.preview}
             </pre>
@@ -227,6 +237,12 @@ function ToolApprovalCard({ request, wispName, onResolve }: ToolApprovalCardProp
               <>
                 {wispName} will run this job in the background with no one present, using only these tools, and send you
                 its results here. You can pause or delete it in Settings → Jobs.
+              </>
+            ) : memory ? (
+              <>
+                Memory is part of every request
+                {request.scope.display.startsWith("About you") ? ", and every Wisp sees what is about you" : ""}. You
+                can edit or remove entries in Wisp settings → Memory.
               </>
             ) : skill ? (
               <>

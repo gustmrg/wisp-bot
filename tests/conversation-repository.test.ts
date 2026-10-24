@@ -216,7 +216,7 @@ describe("ConversationRepository", () => {
     db.close();
 
     const restored = await reload(directory);
-    const first = await restored.getAgentContext("first").memory!();
+    const first = await restored.getAgentContext("first").memory!.render();
     expect(first).toBe(
       [
         "### USER.md · 4% of 1,500 characters",
@@ -229,7 +229,7 @@ describe("ConversationRepository", () => {
         "- [m5] Ships on Fridays.",
       ].join("\n"),
     );
-    expect(await restored.getAgentContext("second").memory!()).toContain(
+    expect(await restored.getAgentContext("second").memory!.render()).toContain(
       "### MEMORY.md · 0% of 4,000 characters\n(empty)",
     );
     // The old text stays where an older build reads it.
@@ -239,7 +239,7 @@ describe("ConversationRepository", () => {
 
     // Imported once: later edits to the old fields are not read again.
     await writeFile(settingsPath, JSON.stringify({ ...settings, memory: "Changed." }));
-    expect(await (await reload(directory)).getAgentContext("first").memory!()).not.toContain("Changed.");
+    expect(await (await reload(directory)).getAgentContext("first").memory!.render()).not.toContain("Changed.");
   });
 
   it("writes a deleted Wisp's memory into its archive and keeps the person's", async () => {

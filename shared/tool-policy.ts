@@ -12,6 +12,9 @@
  * "save_skill" creates or updates one of the Wisp's own skills. It always asks:
  * policy rules can neither allow nor block it.
  *
+ * "save_memory" adds, changes or removes entries in the Wisp's memory, or in
+ * the person's, which every Wisp sees (ADR 029). It always asks, like skills.
+ *
  * "schedule_job" creates a job, or changes what one does (ADR 019). It always
  * asks, like skills: approving the card authorizes the job's tools for its runs.
  *
@@ -27,6 +30,7 @@ export type ToolActionCategory =
   | "external_write"
   | "integration_call"
   | "save_skill"
+  | "save_memory"
   | "schedule_job"
   | "manage_wisp"
   | "container_command"
@@ -156,7 +160,7 @@ export interface ToolApprovalRequest {
   toolName: string;
   category: ToolActionCategory;
   scope: {
-    kind: "workspace_path" | "integration" | "skill" | "container" | "browser" | "job" | "wisp";
+    kind: "workspace_path" | "integration" | "skill" | "memory" | "container" | "browser" | "job" | "wisp";
     display: string;
   };
   summary: string;
@@ -164,7 +168,7 @@ export interface ToolApprovalRequest {
   job?: JobApprovalDetails;
   /** The Wisp to create, change or delete, shown for Wisp approvals. */
   wisp?: WispApprovalDetails;
-  /** Exact content to review, shown for skill changes; bounded and stripped of control characters. */
+  /** Exact content to review, shown for skill and memory changes; bounded and stripped of control characters. */
   preview?: string;
   /** The integration can remember this tool for this Wisp, so the card offers "Always allow". */
   alwaysAllowTool?: boolean;

@@ -85,7 +85,7 @@ it("preserves continuity through real SDK compaction and a fresh-topic restart, 
       piSessionFile: null as string | null,
       onContextRenewed: vi.fn(),
       // Memory reaches every request from the memory store (ADR 029), not from the context settings.
-      memory: async () => "### USER.md · 1% of 1,500 characters\n- [m1] Prefer Portuguese",
+      memory: { render: async () => "### USER.md · 1% of 1,500 characters\n- [m1] Prefer Portuguese" } as never,
     };
     for (const key of ["workspaceDirectory", "sessionDirectory", "configDirectory"] as const)
       await mkdir(context[key], { recursive: true });
