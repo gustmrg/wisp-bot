@@ -479,6 +479,18 @@ describe("ChatPanel circles", () => {
     // Only Wisps that took part are set apart, not every Wisp the person has.
     expect(screen.queryByRole("button", { name: "@Nova" })).not.toBeInTheDocument();
   });
+
+  it("names a deleted Wisp's replies by the name they kept, marked deleted", () => {
+    renderPanelIn(circleChatView("crew", [testWisp("quill", { name: "Quill" })]), [
+      { id: "1", type: "incoming", text: "Still here.", authorId: "quill" },
+      { id: "2", type: "incoming", text: "Before I left.", authorId: "lumi", authorName: "Lumi" },
+      { id: "3", type: "incoming", text: "From long ago.", authorId: "old" },
+    ]);
+
+    const named = [...document.querySelectorAll(".message-author")].map((author) => author.textContent);
+    // The label sits beside the name, so their text runs together.
+    expect(named).toEqual(["Quill", "Lumideleted", "Deleted Wispdeleted"]);
+  });
 });
 
 function renderPanelIn(chat: ChatPanelProps["chat"], held: Message[], props: Partial<ChatPanelProps> = {}) {

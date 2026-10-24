@@ -164,6 +164,7 @@ export function normalizeMessage(value: unknown, fallbackId?: string): Message {
       ...(raw.authorId === undefined || raw.type !== "incoming"
         ? {}
         : { authorId: normalizeConversationId(raw.authorId) }),
+      ...(raw.authorName === undefined || raw.type !== "incoming" ? {} : { authorName: string(raw.authorName, 256) }),
       ...(raw.scheduled === undefined || raw.type !== "outgoing"
         ? {}
         : { scheduled: normalizeScheduledOrigin(raw.scheduled) }),

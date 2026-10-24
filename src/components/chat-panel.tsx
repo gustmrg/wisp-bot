@@ -13,6 +13,7 @@ import { withDateDividers } from "@/lib/date-dividers";
 import { isAttached, type MessageWindow } from "@/lib/message-windows";
 import { mainPanel } from "@/lib/ui-classes";
 import { cn } from "@/lib/utils";
+import { DEFAULT_WISP_APPEARANCE } from "../../shared/wisp-appearance";
 import { isNeutralColor, wispAccentStyle, wispColor } from "@/lib/wisp-appearance";
 import { ChatAvatar, WispAvatar } from "@/components/chat-avatar";
 import { ChatComposer, type VoiceInputSettings } from "@/components/chat-composer";
@@ -27,6 +28,20 @@ import { AllowAllApprovals, ToolApprovalCard } from "@/components/tool-approval-
 const NO_MESSAGES: ReadonlyArray<Message> = [];
 const NO_MEMBERS: ReadonlyArray<Wisp> = [];
 const NO_WISPS: WispCollection = {};
+/** How a deleted Wisp is drawn: gray, in the default shape. */
+const DELETED_WISP_COLOR = "#8e8e8e";
+
+/** A reply's author whose Wisp no longer exists, under the name the reply was written with. */
+function deletedAuthor(id: string, name: string | undefined): Wisp {
+  return {
+    id,
+    name: name ?? "Deleted Wisp",
+    role: "",
+    soul: "",
+    appearance: DEFAULT_WISP_APPEARANCE,
+    color: DELETED_WISP_COLOR,
+  };
+}
 const unavailable = async () => "This server cannot do that. Update it first.";
 const NO_QUEUE = { update: unavailable, cancel: unavailable };
 const NO_SCHEDULE = { update: unavailable, cancel: unavailable, sendNow: unavailable };
@@ -466,10 +481,12 @@ function ChatPanel({
             {transcriptMessages.map((message, index) => {
               const previous = transcriptMessages[index - 1];
               // In a circle each reply carries its Wisp's name and color; consecutive ones share the name.
+              const reply = message.type === "incoming" && message.authorId ? message : undefined;
+              const participant = reply && participants.find((member) => member.id === reply.authorId);
+              // A reply whose Wisp is gone keeps the name it was written with.
+              const authorDeleted = chat.kind === "circle" && Boolean(reply) && !participant;
               const author =
-                message.type === "incoming" && message.authorId
-                  ? participants.find((member) => member.id === message.authorId)
-                  : undefined;
+                authorDeleted && reply?.authorId ? deletedAuthor(reply.authorId, reply.authorName) : participant;
               const previousAuthor = previous?.type === "incoming" ? previous.authorId : undefined;
               const authorColor = author ? wispColor(author.name, author.color) : undefined;
               return (
@@ -484,6 +501,7 @@ function ChatPanel({
                     message={message}
                     dense={message.type === "outgoing" && previous?.type === "outgoing"}
                     author={author}
+                    authorDeleted={authorDeleted}
                     showAuthor={Boolean(author) && previousAuthor !== author?.id}
                     mentions={mentions}
                     fileMentions={chat.kind === "wisp"}

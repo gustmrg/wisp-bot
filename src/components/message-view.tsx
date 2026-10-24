@@ -28,6 +28,8 @@ interface MessageViewProps {
   dense?: boolean;
   /** In a circle, the Wisp that wrote an incoming message, named above it when `showAuthor` is set. */
   author?: Wisp;
+  /** The author's Wisp was deleted, so `author` is drawn from what the reply kept of it. */
+  authorDeleted?: boolean;
   showAuthor?: boolean;
   /** In a circle, its members, whose `@` mentions are set apart and open their conversation. */
   mentions?: WispMentions;
@@ -90,6 +92,7 @@ function MessageView({
   message,
   dense = false,
   author,
+  authorDeleted = false,
   showAuthor = false,
   mentions,
   fileMentions,
@@ -196,6 +199,7 @@ function MessageView({
         <span className="message-author">
           <WispAvatar wisp={author} size="sm" />
           {author.name}
+          {authorDeleted ? <span className="font-normal text-dim">deleted</span> : null}
         </span>
       ) : null}
       <div

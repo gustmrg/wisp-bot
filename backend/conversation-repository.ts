@@ -315,6 +315,11 @@ export class ConversationRepository {
     return wispsOf(this.state.wisps);
   }
 
+  /** The Wisp with this ID, if it exists. */
+  readWisp(wispId: string): Readonly<Wisp> | undefined {
+    return this.state.wisps[wispId]?.wisp;
+  }
+
   /** The Wisp whose own conversation this is, or undefined for a circle or an unknown conversation. */
   readConversationWisp(conversationId: string): Readonly<Wisp> | undefined {
     const chat = this.state.conversations[conversationId]?.chat;

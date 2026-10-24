@@ -128,6 +128,12 @@ export interface TextMessage extends MessageMetadata {
    * conversation are its own.
    */
   authorId?: WispId;
+  /**
+   * The author's name when the reply was written, so the reply stays named
+   * after its Wisp is deleted. Absent on replies of Wisps deleted before it
+   * was stored. The Wisp's current name wins while it exists.
+   */
+  authorName?: string;
   /** Set on an outgoing message sent from a scheduled message rather than typed then. */
   scheduled?: ScheduledOrigin;
   /** Set on an incoming message a job's run delivered, with no request before it. */

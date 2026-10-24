@@ -312,6 +312,7 @@ describe("ConversationService", () => {
           id: "m1:nova:assistant",
           status: "failed",
           authorId: "nova",
+          authorName: "nova",
           retryable: false,
           error: { code: "configuration_required", message: "Choose a model for Nova." },
         }),
@@ -319,11 +320,18 @@ describe("ConversationService", () => {
           id: "m1:atlas:assistant",
           status: "complete",
           authorId: "atlas",
+          authorName: "atlas",
           // Nova said nothing, so Atlas reads the message alone.
           text: "Reply:hello",
         }),
       ]);
     });
+    // A deleted member's replies stay in the circle, still named.
+    await service.deleteWisp("atlas");
+    const { messages } = await service.getMessagePage({ conversationId: "crew", page: "latest" });
+    expect(messages).toContainEqual(
+      expect.objectContaining({ id: "m1:atlas:assistant", authorId: "atlas", authorName: "atlas" }),
+    );
     await service.dispose();
   });
 

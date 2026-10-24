@@ -15,9 +15,12 @@ function textOf(message: Message, speakers?: TranscriptSpeakers): { speaker: str
   const text = message.text.trim();
   if (!text) return undefined;
   if (message.type === "outgoing") return { speaker: "User", text };
-  // In a circle another member's reply carries its name, so the Wisp never reads it as its own.
+  // In a circle another member's reply carries its name, so the Wisp never reads it as its own;
+  // a Wisp that has left or been deleted keeps the name the reply was written with.
   const other =
-    message.authorId && message.authorId !== speakers?.wispId ? speakers?.names.get(message.authorId) : undefined;
+    speakers && message.authorId && message.authorId !== speakers.wispId
+      ? (speakers.names.get(message.authorId) ?? message.authorName)
+      : undefined;
   return { speaker: other ?? "Wisp", text };
 }
 

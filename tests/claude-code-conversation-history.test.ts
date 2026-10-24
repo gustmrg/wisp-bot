@@ -39,6 +39,18 @@ describe("recentTranscript", () => {
     expect(transcript).toBe("User: @Nova @Atlas plan it\n\nNova: A draft.\n\nWisp: Looks good.");
   });
 
+  it("names a reply by the name it kept once its Wisp is no longer in the circle", () => {
+    const transcript = recentTranscript(
+      page([
+        { ...message("incoming", "Gone now."), authorId: "lumi", authorName: "Lumi" } as Message,
+        { ...message("incoming", "Never named."), authorId: "old" } as Message,
+      ]),
+      { wispId: "atlas", names: new Map([["atlas", "Atlas"]]) },
+    );
+
+    expect(transcript).toBe("Lumi: Gone now.\n\nWisp: Never named.");
+  });
+
   it("keeps the newest messages when the page does not fit", () => {
     const transcript = recentTranscript(
       page([message("outgoing", "old ".repeat(2_500), "a"), message("incoming", "newest", "b")]),
