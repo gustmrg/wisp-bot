@@ -155,8 +155,58 @@ describe("variant details", () => {
 
     expect(screen.getByRole("radio", { name: "Atlas" })).toBeChecked();
     await user.click(screen.getByRole("radio", { name: "Nova" }));
+    await user.click(screen.getByRole("button", { name: "Save circle" }));
 
     expect(onChange).toHaveBeenCalledWith({ kind: "circle", memberIds: ["nova", wisp.wisp.id] });
+  });
+
+  it("removes a participant only once the circle is saved", async () => {
+    const user = userEvent.setup();
+    const onChange = vi.fn(async () => true);
+    const nova = wispChatView("nova", { wisp: { name: "Nova" } }).wisp;
+    render(
+      <CircleDetails
+        chat={circleChatView("crew", [wisp.wisp, nova])}
+        wisps={{ atlas: wisp.wisp, nova }}
+        onChange={onChange}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Remove Nova" }));
+
+    expect(onChange).not.toHaveBeenCalled();
+    expect(screen.getByText("Participants (1)")).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "Save circle" }));
+    expect(onChange).toHaveBeenCalledWith({ kind: "circle", memberIds: [wisp.wisp.id] });
+  });
+
+  it("saves only what changed, and discards the rest", async () => {
+    const user = userEvent.setup();
+    const onChange = vi.fn(async () => true);
+    render(<CircleDetails chat={circle} wisps={{ atlas: wisp.wisp }} onChange={onChange} />);
+    expect(screen.queryByRole("button", { name: "Save circle" })).toBeNull();
+
+    await user.type(screen.getByRole("textbox", { name: "Label (optional)" }), "Ops");
+    await user.click(screen.getByRole("switch", { name: "Notifications" }));
+    await user.click(screen.getByRole("button", { name: "Discard" }));
+
+    expect(screen.getByRole("textbox", { name: "Label (optional)" })).toHaveValue(circle.label);
+    expect(screen.queryByRole("button", { name: "Save circle" })).toBeNull();
+    await user.clear(screen.getByRole("textbox", { name: "Name" }));
+    await user.click(screen.getByRole("button", { name: "Save circle" }));
+    expect(onChange).toHaveBeenCalledTimes(1);
+    expect(onChange).toHaveBeenCalledWith({ kind: "circle", name: "Untitled" });
+  });
+
+  it("keeps the changes and says so when the circle cannot be saved", async () => {
+    const user = userEvent.setup();
+    render(<CircleDetails chat={circle} wisps={{ atlas: wisp.wisp }} onChange={vi.fn(async () => false)} />);
+
+    await user.click(screen.getByRole("switch", { name: "Notifications" }));
+    await user.click(screen.getByRole("button", { name: "Save circle" }));
+
+    expect(await screen.findByText("Could not save circle settings.")).toBeVisible();
+    expect(screen.getByRole("button", { name: "Save circle" })).toBeEnabled();
   });
 });
 
