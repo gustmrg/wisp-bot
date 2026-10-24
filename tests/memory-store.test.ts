@@ -164,6 +164,16 @@ describe("MemoryStore", () => {
     expect(store.apply([{ op: "add", scope: "wisp", text: "Next." }], owner)[0]?.id).toBe("m2");
   });
 
+  it("checks a batch without writing it, failing as apply would", () => {
+    const { store } = open();
+    store.apply([{ op: "add", scope: "wisp", text: "Kept." }], owner);
+    store.check([{ op: "add", scope: "wisp", text: "Checked." }], agent);
+    expect(store.list("lumi").map((entry) => entry.text)).toEqual(["Kept."]);
+    expect(() => store.check([{ op: "add", scope: "wisp", text: "Kept." }], agent)).toThrow(MemoryError);
+    // A check takes no ID.
+    expect(store.apply([{ op: "add", scope: "wisp", text: "Next." }], owner)[0]?.id).toBe("m2");
+  });
+
   it("lets later operations in a batch see earlier ones", () => {
     const { store } = open();
     store.apply([{ op: "add", scope: "wisp", text: "Old." }], owner);
