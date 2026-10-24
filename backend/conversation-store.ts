@@ -1018,6 +1018,11 @@ export class ConversationStore {
     ).run("initialized", initialized ? "1" : "0");
   }
 
+  /** The open connection, for stores that keep their own tables in this file, such as memory (ADR 029). */
+  get database(): DatabaseSync {
+    return this.db;
+  }
+
   close(): void {
     if (this.db.isOpen) this.db.close();
   }

@@ -1,10 +1,13 @@
 import { mkdir, mkdtemp, readFile, symlink, truncate, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { DatabaseSync } from "node:sqlite";
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { ConversationAgentContext } from "../backend/conversation-agent.js";
+import type { ConversationAgentContext, WispMemoryAccess } from "../backend/conversation-agent.js";
+import { WispBackendError } from "../backend/backend-error.js";
+import { MemoryError, MemoryStore, renderMemoryForPrompt } from "../backend/memory/index.js";
 import type { IntegrationToolSource } from "../backend/integration-tool-source.js";
 import { snapshotRevision } from "../backend/integration-tool-source.js";
 import type { ModelRuntimeLike } from "../backend/model-service.js";
@@ -141,7 +144,10 @@ describe("SdkPiSessionFactory", () => {
       role: "Finance",
       soul: "# Identity\nYou are a financial advisor who explains markets clearly.",
       userName: "John",
-      userProfile: { preferredName: "John", aboutYou: "Backend developer", responsePreferences: "Be concise" },
+      memory: {
+        render: async () =>
+          "### USER.md · 2% of 1,500 characters\n- [m1] Backend developer.\n- [m2] Prefers concise answers.",
+      } as never,
       workspaceDirectory: path.join(directory, "workspace"),
       sessionDirectory: directory,
       configDirectory: path.join(directory, "config"),
@@ -165,7 +171,18 @@ describe("SdkPiSessionFactory", () => {
         agentDir: context.configDirectory,
         model,
         modelRuntime: runtime,
-        tools: ["read", "grep", "find", "ls", "edit", "write", "search_history", "use_skill", "save_skill"],
+        tools: [
+          "read",
+          "grep",
+          "find",
+          "ls",
+          "edit",
+          "write",
+          "search_history",
+          "use_skill",
+          "save_skill",
+          "save_memory",
+        ],
         excludeTools: ["bash", "powershell"],
         thinkingLevel: "off",
         customTools: expect.arrayContaining([
@@ -188,6 +205,7 @@ describe("SdkPiSessionFactory", () => {
       "search_history",
       "use_skill",
       "save_skill",
+      "save_memory",
     ]);
     expect(sdk.loaderOptions[0]).toEqual(
       expect.objectContaining({
@@ -213,8 +231,9 @@ describe("SdkPiSessionFactory", () => {
     expect(prompt).not.toContain("coding agent");
     expect(prompt).toContain("Mention an operational limitation only when it materially affects the user's request");
     expect(prompt).toContain("## Relationship with the user");
-    expect(prompt).toContain('"aboutYou":"Backend developer"');
-    expect(prompt).toContain('"responsePreferences":"Be concise"');
+    // Background and response preferences are memory now (ADR 029), added on every run instead.
+    expect(prompt).not.toContain("## User profile");
+    expect(prompt).toContain("3. The user's general response preferences, as saved under Memory.");
     expect(prompt).toContain('The user\'s preferred name is "John".');
     expect(prompt).toContain("do not force it or use their name in every response");
     expect(prompt).toContain("Never infer the user's name from paths, workspace metadata");
@@ -231,7 +250,6 @@ describe("SdkPiSessionFactory", () => {
     expect(prompt).toContain("1. Explicit instructions in the user's current message.");
     expect(prompt).toContain("Configured role: Finance.");
     expect(prompt).toContain("2. Your identity and purpose, above.");
-    expect(prompt).toContain("3. The user's general response preferences from the user profile.");
     expect(prompt).not.toContain("Tone:");
     expect(prompt).not.toContain("configured tone");
     expect(prompt).not.toContain("Be concise, factual");
@@ -485,6 +503,116 @@ describe("SdkPiSessionFactory", () => {
     expect(authorize).toHaveBeenCalledTimes(1);
   });
 
+  it("saves memory only after approval of a change that was checked first (SWE-153)", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "wisp-pi-memory-"));
+    const runtime = {
+      hasConfiguredAuth: vi.fn(() => true),
+      getModel: vi.fn(() => ({ provider: "provider", id: "model" })),
+    } as unknown as ModelRuntimeLike;
+    const store = MemoryStore.open(new DatabaseSync(":memory:"));
+    store.apply([{ op: "add", scope: "wisp", text: "Works on Wisp Bot." }], { wispId: "one", source: "owner" });
+    const asAgent = { wispId: "one", source: "agent" } as const;
+    const refused = (error: unknown): never => {
+      throw error instanceof MemoryError ? new WispBackendError("invalid_request", error.message) : error;
+    };
+    const memory: WispMemoryAccess = {
+      render: async () => renderMemoryForPrompt(store.active("one"), store.usage("one")),
+      active: async () => store.active("one"),
+      check: async (operations) => {
+        try {
+          store.check(operations, asAgent);
+        } catch (error) {
+          refused(error);
+        }
+      },
+      apply: async (operations) => store.apply(operations, asAgent),
+    };
+    const context: ConversationAgentContext = {
+      conversationId: "one",
+      sessionId: "app-session",
+      name: "Atlas",
+      wispId: "one",
+      role: "Research",
+      soul: "",
+      workspaceDirectory: path.join(directory, "workspace"),
+      sessionDirectory: directory,
+      configDirectory: path.join(directory, "config"),
+      piSessionId: null,
+      piSessionFile: null,
+      memory,
+    };
+    await mkdir(context.workspaceDirectory, { recursive: true });
+    const authorize = vi.fn(async () => undefined);
+    await new SdkPiSessionFactory(runtime, { authorize }).create(context, { providerId: "provider", modelId: "model" });
+    const options = sdk.createAgentSession.mock.calls[0]?.[0] as {
+      customTools: Array<{ name: string; execute: (...args: unknown[]) => Promise<unknown> }>;
+    };
+    const saveMemory = options.customTools.find((candidate) => candidate.name === "save_memory")!;
+
+    await expect(
+      saveMemory.execute("tool-1", {
+        operations: [
+          { op: "add", scope: "user", text: "Prefers short answers." },
+          { op: "patch", id: "m1", text: "Works on Wisp Bot and Aura." },
+        ],
+      }),
+    ).resolves.toEqual({
+      content: [
+        {
+          type: "text",
+          text: "Memory updated.\n[m2] About you, saved: Prefers short answers.\n[m3] This Wisp, saved: Works on Wisp Bot and Aura.",
+        },
+      ],
+      details: {},
+    });
+    expect(authorize).toHaveBeenCalledWith({
+      conversationId: "one",
+      wispId: "one",
+      toolCallId: "tool-1",
+      toolName: "save_memory",
+      category: "save_memory",
+      scope: { kind: "memory", value: "About you and this Wisp" },
+      summary: "2 memory changes",
+      preview:
+        "Add to About you: Prefers short answers.\nChange in This Wisp: Works on Wisp Bot. → Works on Wisp Bot and Aura.",
+    });
+    expect(store.active("one").map(({ id, source }) => [id, source])).toEqual([
+      ["m2", "agent"],
+      ["m3", "agent"],
+    ]);
+
+    // A change that cannot apply is refused before the card.
+    authorize.mockClear();
+    await expect(
+      saveMemory.execute("tool-2", { operations: [{ op: "add", scope: "user", text: "Prefers short answers." }] }),
+    ).rejects.toMatchObject({ code: "invalid_request", message: "Memory already has this as m2." });
+    await expect(
+      saveMemory.execute("tool-3", {
+        operations: [{ op: "add", scope: "wisp", text: "token: ghp_abcdefghijklmnopqrstuvwxyz0123" }],
+      }),
+    ).rejects.toMatchObject({ code: "invalid_request" });
+    await expect(
+      saveMemory.execute("tool-4", { operations: [{ op: "add", text: "No scope." }] }),
+    ).rejects.toMatchObject({
+      code: "invalid_request",
+      message: "Invalid operations.0: add needs scope.",
+    });
+    expect(authorize).not.toHaveBeenCalled();
+
+    // A denied card writes nothing.
+    authorize.mockRejectedValueOnce(new WispBackendError("tool_blocked", "The tool action was denied."));
+    await expect(saveMemory.execute("tool-5", { operations: [{ op: "remove", id: "m3" }] })).rejects.toMatchObject({
+      code: "tool_blocked",
+    });
+    expect(authorize).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        scope: { kind: "memory", value: "This Wisp" },
+        summary: "Remove from This Wisp: Works on Wisp Bot and Aura.",
+      }),
+    );
+    expect(store.active("one").map(({ id }) => id)).toEqual(["m2", "m3"]);
+  });
+
   it("saves skills only after approval and lists them in the next run's prompt", async () => {
     const directory = await mkdtemp(path.join(os.tmpdir(), "wisp-pi-skills-"));
     const runtime = {
@@ -523,7 +651,11 @@ describe("SdkPiSessionFactory", () => {
     loader.extensionFactories
       .find(({ name }) => name === "wisp-continuity")!
       .factory({ on: (_event: string, handler: typeof beforeStart) => (beforeStart = handler) });
-    await expect(beforeStart!({ systemPrompt: "base" })).resolves.toBeUndefined();
+    // Memory is always there, even empty, so the Wisp knows it exists (SWE-188).
+    const first = await beforeStart!({ systemPrompt: "base" });
+    expect(first?.systemPrompt).toMatch(/^base\n\n## Memory\n/);
+    expect(first?.systemPrompt).toContain("call save_memory, never save_skill");
+    expect(first?.systemPrompt).not.toContain("## Available skills");
 
     const draft = {
       name: "weekly-report",
@@ -553,9 +685,12 @@ describe("SdkPiSessionFactory", () => {
       undefined,
     );
     const prompt = await beforeStart!({ systemPrompt: "base" });
-    expect(prompt?.systemPrompt).toBe(
-      `base\n\n## Available skills\nLoad one with use_skill before following it.\n- weekly-report: ${draft.description}`,
-    );
+    expect(prompt?.systemPrompt).toMatch(/^base\n\n## Memory\n/);
+    expect(
+      prompt?.systemPrompt.endsWith(
+        `\n\n## Available skills\nLoad one with use_skill before following it.\n- weekly-report: ${draft.description}`,
+      ),
+    ).toBe(true);
     await expect(tool("use_skill").execute("tool-4", { name: "weekly-report" })).resolves.toMatchObject({
       content: [{ text: expect.stringContaining("2. Group them by team.") }],
     });
@@ -651,8 +786,9 @@ describe("SdkPiSessionFactory", () => {
       .factory({ on: (_event: string, handler: typeof beforeStart) => (beforeStart = handler) });
 
     const prompt = await beforeStart!({ systemPrompt: "base" });
-    expect(prompt?.systemPrompt).toBe(
-      "base\n\n## Available skills\nLoad one with use_skill before following it.\n- linear: My own Linear steps.\n- github: Works with GitHub.",
+    expect(prompt?.systemPrompt).toMatch(/^base\n\n## Memory\n/);
+    expect(prompt?.systemPrompt).toMatch(
+      /\n\n## Available skills\nLoad one with use_skill before following it\.\n- linear: My own Linear steps\.\n- github: Works with GitHub\.$/,
     );
     await expect(useSkill.execute("tool-1", { name: "github" })).resolves.toMatchObject({
       content: [{ text: expect.stringContaining("Pass owner and repo.") }],
@@ -729,7 +865,18 @@ describe("SdkPiSessionFactory", () => {
     };
     const factory = new SdkPiSessionFactory(runtime, undefined, toToolSource(pluginTools));
     const session = await factory.create(context, { providerId: "provider", modelId: "model" });
-    const builtins = ["read", "grep", "find", "ls", "edit", "write", "search_history", "use_skill", "save_skill"];
+    const builtins = [
+      "read",
+      "grep",
+      "find",
+      "ls",
+      "edit",
+      "write",
+      "search_history",
+      "use_skill",
+      "save_skill",
+      "save_memory",
+    ];
     expect(sdk.createAgentSession).toHaveBeenLastCalledWith(
       expect.objectContaining({
         tools: [...builtins, "web_search", "linear_get_issue"],

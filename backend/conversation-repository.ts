@@ -1,5 +1,6 @@
 import { isTimeZone, systemTimeZone } from "../shared/time-zone.js";
 import { EMPTY_USER_PROFILE, normalizeUserProfile, type UserProfile } from "../shared/user-profile.js";
+import type { MemoryExport, MemoryOperationRequest, MemoryScope, MemoryView } from "../shared/memory.js";
 import { writeFileAtomically } from "./atomic-file.js";
 import { randomUUID } from "node:crypto";
 import { mkdir, readFile, rename, rm } from "node:fs/promises";
@@ -32,6 +33,7 @@ import {
   type CircleAgentContext,
   type CircleSetting,
   type ConversationAgentContext,
+  type WispMemoryAccess,
 } from "./conversation-agent.js";
 import {
   asRecord,
@@ -47,7 +49,17 @@ import { splitLegacyChat } from "./legacy-conversations.js";
 import { normalizeQueuedMessage } from "./message-queue.js";
 import { normalizeScheduledMessage } from "./message-schedule.js";
 import { buildSnippet, MessageSearchWorker } from "./message-search.js";
-import { IntactDatabaseError } from "./sqlite-backup.js";
+import { CONTEXT_SETTINGS_FILE, loadContextSettings } from "./context-session.js";
+import {
+  exportMemoryMarkdown,
+  MEMORY_FILE_NAMES,
+  MemoryError,
+  MemoryNewerSchemaError,
+  MemoryStore,
+  renderMemoryForPrompt,
+  splitLegacyMemory,
+} from "./memory/index.js";
+import { backUpBeforeUpgrade, IntactDatabaseError } from "./sqlite-backup.js";
 import {
   CIRCLE_CONFIG_DIRECTORY,
   migrateStorageFolders,
@@ -150,6 +162,7 @@ export class ConversationRepository {
   private readonly createId: () => string;
   private state: PersistedConversationState = emptyState();
   private store: ConversationStore | undefined;
+  private memory: MemoryStore | undefined;
   private searchWorker: MessageSearchWorker | undefined;
   private recoveredCorruptState = false;
   private mutation = Promise.resolve();
@@ -218,10 +231,101 @@ export class ConversationRepository {
       this.state = stored;
       this.addMissingCircleSessions(store);
       await this.ensureAllDirectories();
-      return;
+    } else {
+      await this.migrateLegacyState(store);
+      this.addMissingCircleSessions(store);
     }
-    await this.migrateLegacyState(store);
-    this.addMissingCircleSessions(store);
+    await this.importLegacyMemory();
+  }
+
+  /**
+   * Turns the saved memory of every Wisp and the profile's background and
+   * response preferences into memory entries, once (ADR 029). The old fields
+   * are left as they are, so an older build still finds them.
+   */
+  private async importLegacyMemory(): Promise<void> {
+    const memory = await this.openMemory();
+    if (!memory.needsLegacyImport()) return;
+    const wisps = await Promise.all(
+      Object.values(this.state.wisps).map(async ({ wisp, storageId }) => {
+        const settingsPath = path.join(this.configRoot, storageId, CONTEXT_SETTINGS_FILE);
+        // Unreadable settings had no memory the Wisp could see either.
+        const saved = await loadContextSettings(settingsPath).then(
+          (settings) => settings.memory,
+          () => "",
+        );
+        return { wispId: wisp.id, lines: splitLegacyMemory(saved) };
+      }),
+    );
+    memory.importLegacy({
+      user: [this.profile.aboutYou, this.profile.responsePreferences].flatMap(splitLegacyMemory),
+      wisps,
+    });
+  }
+
+  /** The memory a Wisp's own conversation sees, in every status, for settings (ADR 029). */
+  async getMemory(conversationId: string): Promise<MemoryView> {
+    const wispId = this.requireWispConversation(conversationId).wispRecord.wisp.id;
+    const memory = await this.openMemory();
+    return { entries: memory.list(wispId), usage: memory.usage(wispId) };
+  }
+
+  /** Applies the person's changes to a Wisp's memory in one transaction. */
+  async applyMemory(conversationId: string, operations: ReadonlyArray<MemoryOperationRequest>): Promise<MemoryView> {
+    return this.enqueue(async () => {
+      const wispId = this.requireWispConversation(conversationId).wispRecord.wisp.id;
+      const memory = await this.openMemory();
+      try {
+        memory.apply(operations, { wispId, source: "owner" });
+      } catch (error) {
+        if (error instanceof MemoryError) throw new WispBackendError("invalid_request", error.message);
+        throw error;
+      }
+      return { entries: memory.list(wispId), usage: memory.usage(wispId) };
+    });
+  }
+
+  /** One scope's active entries as the Markdown file it exports to. */
+  async exportMemory(conversationId: string, scope: MemoryScope): Promise<MemoryExport> {
+    const wispId = this.requireWispConversation(conversationId).wispRecord.wisp.id;
+    const memory = await this.openMemory();
+    return { fileName: MEMORY_FILE_NAMES[scope], markdown: exportMemoryMarkdown(scope, memory.active(wispId)) };
+  }
+
+  /** What a Wisp's session reads and writes of its memory; its writes are the Wisp's (`agent`). */
+  private memoryAccess(wispId: string): WispMemoryAccess {
+    const asAgent = { wispId, source: "agent" } as const;
+    const refused = (error: unknown): never => {
+      if (error instanceof MemoryError) throw new WispBackendError("invalid_request", error.message);
+      throw error;
+    };
+    return {
+      render: () => this.renderMemory(wispId),
+      active: async () => (await this.openMemory()).active(wispId),
+      check: async (operations) => {
+        const memory = await this.openMemory();
+        try {
+          memory.check(operations, asAgent);
+        } catch (error) {
+          refused(error);
+        }
+      },
+      apply: (operations) =>
+        this.enqueue(async () => {
+          const memory = await this.openMemory();
+          try {
+            return memory.apply(operations, asAgent);
+          } catch (error) {
+            return refused(error);
+          }
+        }),
+    };
+  }
+
+  /** The memory a Wisp's prompt holds, rendered (ADR 029). */
+  async renderMemory(wispId: string): Promise<string> {
+    const memory = await this.openMemory();
+    return renderMemoryForPrompt(memory.active(wispId), memory.usage(wispId));
   }
 
   /**
@@ -397,8 +501,8 @@ export class ConversationRepository {
       role: wisp.role,
       soul: wisp.soul,
       userName: this.profile.preferredName || undefined,
-      userProfile: this.getUserProfile(),
       userTimeZone: () => this.timeZone,
+      memory: this.memoryAccess(wisp.id),
       workspaceDirectory: path.join(this.workspaceRoot, record.storageId),
       sessionDirectory: path.join(this.sessionRoot, session.sessionId),
       configDirectory: path.join(this.configRoot, wispRecord.storageId),
@@ -1043,6 +1147,7 @@ export class ConversationRepository {
     this.searchWorker = undefined;
     this.store?.close();
     this.store = undefined;
+    this.memory = undefined;
   }
 
   private async applyAppend(
@@ -1191,6 +1296,28 @@ export class ConversationRepository {
     return this.store;
   }
 
+  /** Memory keeps its own tables in the conversations database (ADR 029). */
+  private async openMemory(): Promise<MemoryStore> {
+    if (!this.memory) {
+      const { database } = await this.openStore();
+      // Named apart from the conversation store's backups, whose versions it does not share.
+      const backupPath = `${this.databasePath}-memory`;
+      try {
+        this.memory = MemoryStore.open(database, {
+          beforeUpgrade: (version) => backUpBeforeUpgrade(database, backupPath, version),
+          now: this.now,
+        });
+      } catch (error) {
+        if (!(error instanceof MemoryNewerSchemaError)) throw error;
+        throw new IntactDatabaseError(
+          `Memory was saved by a newer version of Wisp Bot. Install it again, or replace ${path.basename(this.databasePath)} with a ${path.basename(backupPath)}.v<N>.backup beside it.`,
+          { cause: error },
+        );
+      }
+    }
+    return this.memory;
+  }
+
   private require(conversationId: string): ConversationRecord {
     const record = this.state.conversations[conversationId];
     if (!record) throw new WispBackendError("not_found", "The conversation was not found.");
@@ -1292,6 +1419,7 @@ export class ConversationRepository {
   private async preserveCorruptDatabase(): Promise<void> {
     this.store?.close();
     this.store = undefined;
+    this.memory = undefined;
     this.state = emptyState();
     const preserved = `${this.databasePath}.corrupt-${this.fileSuffix()}`;
     // SQLite finds a database's write-ahead log by name, so the companions move with it.
@@ -1526,6 +1654,19 @@ export class ConversationRepository {
    * conversation's workspace, its sessions and any `otherSessions`, and the
    * Wisp's own settings.
    */
+  /**
+   * Writes a deleted Wisp's memory into its archive as MEMORY.md, then removes
+   * its entries; the person's own (USER.md) stay. A failed write keeps them.
+   */
+  private async archiveMemory(wispId: string, archive: string): Promise<void> {
+    const memory = await this.openMemory();
+    const entries = memory.active(wispId).filter((entry) => entry.scope === "wisp");
+    if (entries.length > 0) {
+      await writeFileAtomically(path.join(archive, MEMORY_FILE_NAMES.wisp), exportMemoryMarkdown("wisp", entries));
+    }
+    memory.deleteWisp(wispId);
+  }
+
   private async archiveDeleted(
     deleted: NonNullable<WorkspaceActionResult["deleted"]>,
     otherSessions: ReadonlyArray<ParticipantSession> = [],
@@ -1543,6 +1684,7 @@ export class ConversationRepository {
       () => undefined,
     );
     const move = (from: string, to: string) => rename(from, path.join(archive, to)).catch(() => undefined);
+    if (wisp) await this.archiveMemory(wisp.wisp.id, archive).catch(() => undefined);
     // Transcriptions are a cache of the user's documents, so they are deleted, not archived.
     if (wisp) {
       await rm(path.join(this.configRoot, wisp.storageId, TRANSCRIPTION_CACHE_DIRECTORY), {

@@ -14,8 +14,8 @@ Every Wisp is yours to shape:
 - **Your own keys, your own models.** You bring your own provider API keys and
   pick the model per Wisp — a strong reasoning model for the researcher, a fast
   cheap one for the inbox triager — or let a Wisp inherit your default.
-- **Its own memory, skills, tools, and workspace.** Each Wisp has saved memory,
-  reusable skills, the plugins and MCP servers you grant it, and a private
+- **Its own memory, skills, tools, and workspace.** Each Wisp has its own memory
+  beside what all your Wisps know about you, reusable skills, the plugins and MCP servers you grant it, and a private
   workspace folder, so one Wisp never sees another's files or access.
 
 The project is inspired by Grok Bot but built from scratch and is not affiliated
@@ -54,7 +54,7 @@ preset.
 - **Remote MCP servers** — Streamable HTTP integrations with header or OAuth
   authentication, granted per Wisp. See [MCP servers](docs/mcp-servers.md).
 - **Context and memory** — continuity summaries, explicit new topics, and
-  user-maintained saved memory. See [context and memory](docs/context-and-memory.md).
+  memory you can see and edit, entry by entry. See [context and memory](docs/context-and-memory.md).
 - **Workspaces and attachments** — each Wisp gets a private folder (512 MB by
   default, resizable per Wisp up to 100 GB) for the files it writes and the
   files you attach. See
@@ -162,7 +162,7 @@ locally.
 | [AI models](docs/models.md) | Global model settings and per-Wisp overrides |
 | [Plugins](docs/plugins.md) | Brave Search, Linear, Firecrawl, Tavily, and Exa connections and access |
 | [MCP servers](docs/mcp-servers.md) | Remote MCP integrations, access, and revocation |
-| [Context and memory](docs/context-and-memory.md) | Context renewal, summaries, new topics, saved memory |
+| [Context and memory](docs/context-and-memory.md) | Context renewal, summaries, new topics, memory |
 | [Token usage](docs/token-usage.md) | Session reports and the usage dashboard |
 | [Mobile layout](docs/mobile-layout.md) | Responsive single-screen layout below 760px |
 | [Application settings](docs/application-settings.md) | App settings, notification sounds, updates, known limitations |

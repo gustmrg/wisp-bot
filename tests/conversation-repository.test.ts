@@ -6,7 +6,9 @@ import { DatabaseSync } from "node:sqlite";
 import { describe, expect, it } from "vitest";
 
 import { ConversationRepository } from "../backend/conversation-repository.js";
+import { IntactDatabaseError } from "../backend/sqlite-backup.js";
 import { CONVERSATION_STORAGE_POLICY } from "../backend/storage-policy.js";
+import { DEFAULT_CONTEXT_POLICY } from "../shared/context-policy.js";
 import type { Chat, CircleChat, Message, Wisp } from "../shared/conversations.js";
 import { DEFAULT_WISP_APPEARANCE, appearanceFromLegacyShape } from "../shared/wisp-appearance.js";
 
@@ -184,7 +186,6 @@ describe("ConversationRepository", () => {
     expect(restored.getUserProfile()).toEqual(profile);
     for (const context of restored.listAgentContexts()) {
       expect(context.userName).toBe("Ada");
-      expect(context.userProfile).toEqual(profile);
     }
     await expect(restored.saveUserProfile({ ...profile, aboutYou: "x".repeat(2001) })).rejects.toMatchObject({
       code: "invalid_request",
@@ -194,7 +195,123 @@ describe("ConversationRepository", () => {
     await restored.saveUserProfile(empty);
     expect((await reload(directory)).getUserProfile()).toEqual(empty);
     expect(restored.getAgentContext("first").userName).toBeUndefined();
-    expect(restored.getAgentContext("second").userProfile).toEqual(empty);
+  });
+
+  it("turns saved memory and the profile into memory entries once, and keeps the old text (ADR 029)", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "wisp-memory-import-"));
+    const repository = await reload(directory);
+    await repository.initialize({ first: chat("first"), second: chat("second") });
+    await repository.saveUserProfile({
+      preferredName: "Ada",
+      aboutYou: "- Backend developer\n- Lives in Recife",
+      responsePreferences: "Prefers short answers.",
+    });
+    const settingsPath = path.join(repository.getAgentContext("first").configDirectory, "context-settings.json");
+    const settings = { policy: DEFAULT_CONTEXT_POLICY, memory: "Works on Wisp Bot.\n\nShips on Fridays." };
+    await writeFile(settingsPath, JSON.stringify(settings));
+    await repository.close();
+    // A database from before memory had tables of its own.
+    const db = new DatabaseSync(path.join(directory, "conversations.sqlite"));
+    db.exec("DROP TABLE memory_entries; DROP TABLE memory_meta;");
+    db.close();
+
+    const restored = await reload(directory);
+    const first = await restored.getAgentContext("first").memory!.render();
+    expect(first).toBe(
+      [
+        "### USER.md · 4% of 1,500 characters",
+        "- [m1] Backend developer",
+        "- [m2] Lives in Recife",
+        "- [m3] Prefers short answers.",
+        "",
+        "### MEMORY.md · 1% of 4,000 characters",
+        "- [m4] Works on Wisp Bot.",
+        "- [m5] Ships on Fridays.",
+      ].join("\n"),
+    );
+    expect(await restored.getAgentContext("second").memory!.render()).toContain(
+      "### MEMORY.md · 0% of 4,000 characters\n(empty)",
+    );
+    // The old text stays where an older build reads it.
+    expect(JSON.parse(await readFile(settingsPath, "utf8"))).toEqual(settings);
+    expect(restored.getUserProfile().aboutYou).toBe("- Backend developer\n- Lives in Recife");
+    await restored.close();
+
+    // Imported once: later edits to the old fields are not read again.
+    await writeFile(settingsPath, JSON.stringify({ ...settings, memory: "Changed." }));
+    expect(await (await reload(directory)).getAgentContext("first").memory!.render()).not.toContain("Changed.");
+  });
+
+  it("writes a deleted Wisp's memory into its archive and keeps the person's", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "wisp-memory-delete-"));
+    const repository = await reload(directory);
+    await repository.initialize({ first: chat("first"), second: chat("second") });
+    await repository.saveUserProfile({ preferredName: "", aboutYou: "Backend developer", responsePreferences: "" });
+    await writeFile(
+      path.join(repository.getAgentContext("first").configDirectory, "context-settings.json"),
+      JSON.stringify({ policy: DEFAULT_CONTEXT_POLICY, memory: "Works on Wisp Bot." }),
+    );
+    await repository.close();
+    const db = new DatabaseSync(path.join(directory, "conversations.sqlite"));
+    db.exec("DROP TABLE memory_entries; DROP TABLE memory_meta;");
+    db.close();
+    const restored = await reload(directory);
+
+    await restored.deleteWisp("first");
+
+    const [archive] = await readdir(path.join(directory, "deleted-conversations"));
+    expect(await readFile(path.join(directory, "deleted-conversations", archive!, "MEMORY.md"), "utf8")).toBe(
+      "# MEMORY.md\n\n- Works on Wisp Bot.\n",
+    );
+    expect(storedRows(directory, "SELECT scope, wisp_id, text FROM memory_entries")).toEqual([
+      { scope: "user", wisp_id: null, text: "Backend developer" },
+    ]);
+  });
+
+  it("lets the person change a Wisp's memory, as the owner, and export it", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "wisp-memory-settings-"));
+    const repository = await reload(directory);
+    await repository.initialize({ first: chat("first"), second: chat("second") });
+
+    const view = await repository.applyMemory("first", [
+      { op: "add", scope: "user", text: "Prefers short answers." },
+      { op: "add", scope: "wisp", text: "Works on Wisp Bot." },
+    ]);
+    expect(view.entries.map(({ id, scope, text, source }) => [id, scope, text, source])).toEqual([
+      ["m1", "user", "Prefers short answers.", "owner"],
+      ["m2", "wisp", "Works on Wisp Bot.", "owner"],
+    ]);
+    expect(view.usage).toEqual([
+      { scope: "user", used: 22, limit: 1500 },
+      { scope: "wisp", used: 18, limit: 4000 },
+    ]);
+    // The person's entries reach every Wisp; the Wisp's stay its own.
+    expect((await repository.getMemory("second")).entries.map(({ id }) => id)).toEqual(["m1"]);
+    expect(await repository.exportMemory("first", "wisp")).toEqual({
+      fileName: "MEMORY.md",
+      markdown: "# MEMORY.md\n\n- Works on Wisp Bot.\n",
+    });
+
+    await expect(
+      repository.applyMemory("first", [{ op: "add", scope: "user", text: "Prefers short answers." }]),
+    ).rejects.toMatchObject({ code: "invalid_request", message: "Memory already has this as m1." });
+    await expect(repository.applyMemory("second", [{ op: "remove", id: "m2" }])).rejects.toMatchObject({
+      code: "invalid_request",
+    });
+    await expect(repository.getMemory("missing")).rejects.toMatchObject({ code: "not_found" });
+  });
+
+  it("refuses to start on memory saved by a newer version, leaving the database in place", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "wisp-memory-newer-"));
+    const repository = await reload(directory);
+    await repository.initialize({ first: chat("first") });
+    await repository.close();
+    const db = new DatabaseSync(path.join(directory, "conversations.sqlite"));
+    db.exec("UPDATE memory_meta SET value = '99' WHERE key = 'schema_version'");
+    db.close();
+
+    await expect(reload(directory)).rejects.toBeInstanceOf(IntactDatabaseError);
+    expect(await readdir(directory)).toContain("conversations.sqlite");
   });
 
   it("keeps the reported time zone across restarts and gives every Wisp the current one", async () => {

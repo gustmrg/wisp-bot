@@ -229,6 +229,38 @@ describe("ToolApprovalCard", () => {
     expect(onResolve).toHaveBeenCalledWith("allow_once");
   });
 
+  it("shows a memory change in full and allows it only once (ADR 029)", async () => {
+    const user = userEvent.setup();
+    const onResolve = vi.fn();
+    render(
+      <ToolApprovalCard
+        request={{
+          approvalId: "approval-4",
+          conversationId: "atlas",
+          toolCallId: "tool-4",
+          toolName: "save_memory",
+          category: "save_memory",
+          scope: { kind: "memory", display: "About you and this Wisp" },
+          summary: "2 memory changes",
+          preview: "Add to About you: Prefers short answers.\nRemove from This Wisp: Old note.",
+          expiresAt: "2026-09-07T12:01:00.000Z",
+        }}
+        wispName="Atlas"
+        onResolve={onResolve}
+      />,
+    );
+
+    expect(screen.getByText("Save to memory?")).toBeVisible();
+    expect(screen.getByLabelText("Memory changes")).toHaveTextContent(
+      "Add to About you: Prefers short answers. Remove from This Wisp: Old note.",
+    );
+    expect(screen.getByText(/every Wisp sees what is about you/)).toBeVisible();
+    expect(screen.queryByRole("button", { name: /block/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Always allow/ })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Allow once" }));
+    expect(onResolve).toHaveBeenCalledWith("allow_once");
+  });
+
   it("shows the bounded scope and returns only an explicit decision", async () => {
     const user = userEvent.setup();
     const onResolve = vi.fn();

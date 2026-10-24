@@ -9,6 +9,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { WispContextSettings } from "@/components/wisp-context-settings";
 import { WispExecutionSettings } from "@/components/wisp-execution-settings";
 import { WispJobSettings } from "@/components/wisp-job-settings";
+import { WispMemorySettings } from "@/components/wisp-memory-settings";
 import { WispModelSettings } from "@/components/wisp-model-settings";
 import { WispPluginSettings } from "@/components/wisp-plugin-settings";
 import { WispSessionReportSection } from "@/components/wisp-session-report";
@@ -162,7 +163,10 @@ export function WispDetails({
           </SettingsGroup>
           {/* Each of these sections saves its own changes. */}
           <Accordion multiple className="mt-4 border-t border-border">
-            <SettingsAccordionSection value="context" label="Context & memory">
+            <SettingsAccordionSection value="memory" label="Memory">
+              <WispMemorySettings conversationId={chat.id} />
+            </SettingsAccordionSection>
+            <SettingsAccordionSection value="context" label="Context">
               <WispContextSettings conversationId={chat.id} />
             </SettingsAccordionSection>
             <SettingsAccordionSection value="skills" label="Skills">

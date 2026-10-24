@@ -3,7 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { expect, it, vi } from "vitest";
 import { UserProfileSettings } from "./user-profile-settings";
 
-it("edits all profile fields and explicitly saves them, including clearing values", async () => {
+it("edits the preferred name and explicitly saves it, keeping the fields that moved to memory", async () => {
   const user = userEvent.setup();
   const save = vi.fn(async () => true);
   render(
@@ -18,12 +18,12 @@ it("edits all profile fields and explicitly saves them, including clearing value
   );
   await user.clear(screen.getByLabelText("Preferred name"));
   await user.type(screen.getByLabelText("Preferred name"), "Grace");
-  await user.clear(screen.getByLabelText("About you (optional)"));
-  await user.clear(screen.getByLabelText("Response preferences (optional)"));
-  await user.type(screen.getByLabelText("Response preferences (optional)"), "Explain tradeoffs");
+  // Background and response preferences are memory entries now (ADR 029).
+  expect(screen.queryByLabelText("About you (optional)")).not.toBeInTheDocument();
+  expect(screen.queryByLabelText("Response preferences (optional)")).not.toBeInTheDocument();
   expect(save).not.toHaveBeenCalled();
   await user.click(screen.getByRole("button", { name: "Save profile" }));
-  expect(save).toHaveBeenCalledWith({ preferredName: "Grace", aboutYou: "", responsePreferences: "Explain tradeoffs" });
+  expect(save).toHaveBeenCalledWith({ preferredName: "Grace", aboutYou: "Developer", responsePreferences: "Brief" });
   expect(await screen.findByRole("status")).toHaveTextContent("Profile saved.");
 });
 

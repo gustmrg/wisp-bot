@@ -258,6 +258,59 @@ describe("tool policy", () => {
     await expect(authorization).rejects.toMatchObject({ code: "tool_blocked" });
   });
 
+  it("always asks for memory changes, shows them, and refuses lasting decisions (ADR 029)", async () => {
+    const settings: ToolPolicySettings = {
+      autoReview: true,
+      rules: [{ id: "a", action: "save_memory", behavior: "allow", scope: "workspace" }],
+    };
+    expect(evaluateToolPolicy(settings, "save_memory", "memory")).toBe("ask");
+    expect(evaluateToolPolicy(settings, "save_memory", "workspace_path")).toBe("block");
+
+    const directory = await mkdtemp(path.join(os.tmpdir(), "wisp-approval-memory-"));
+    const store = new ToolPolicyStore(path.join(directory, "policy.json"));
+    await store.save(settings);
+    const events: ConversationAgentEvent[] = [];
+    const broker = new ToolAuthorizationBroker(store, (event) => events.push(event), {
+      createId: () => "approval-memory",
+      selectWindowId: () => 7,
+    });
+    const authorization = broker.authorize({
+      conversationId: "one",
+      wispId: "one",
+      toolCallId: "tool-1",
+      toolName: "save_memory",
+      category: "save_memory",
+      scope: { kind: "memory", value: "About you" },
+      summary: "Add to About you: Prefers short answers.",
+      preview: "Add to About you: Prefers short answers.",
+    });
+    expect(events[0]).toMatchObject({
+      type: "tool_approval_requested",
+      request: { category: "save_memory", scope: { kind: "memory", display: "About you" } },
+    });
+    const resolution = { approvalId: "approval-memory", conversationId: "one", toolCallId: "tool-1" };
+    for (const decision of ["allow_always", "block"] as const) {
+      await expect(broker.resolve({ ...resolution, decision }, 7)).rejects.toMatchObject({ code: "invalid_request" });
+    }
+    await broker.resolve({ ...resolution, decision: "allow_once" }, 7);
+    await expect(authorization).resolves.toBeUndefined();
+
+    // A job run never writes memory, even if its grant names the tool.
+    await broker.runUnattended({ conversationId: "one", approvedTools: new Set(["save_memory"]) }, async () => {
+      await expect(
+        broker.authorize({
+          conversationId: "one",
+          wispId: "one",
+          toolCallId: "tool-2",
+          toolName: "save_memory",
+          category: "save_memory",
+          scope: { kind: "memory", value: "This Wisp" },
+          summary: "Remove from This Wisp: Old.",
+        }),
+      ).rejects.toMatchObject({ code: "tool_blocked" });
+    });
+  });
+
   it("expires stale approvals and persists an explicit block decision", async () => {
     vi.useFakeTimers();
     try {

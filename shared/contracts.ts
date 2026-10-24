@@ -216,6 +216,9 @@ export const WISP_IPC_CHANNELS = {
   listSkills: "wisp:skills:list",
   deleteSkill: "wisp:skills:delete",
   importSkill: "wisp:skills:import",
+  getMemory: "wisp:memory:get",
+  applyMemory: "wisp:memory:apply",
+  exportMemory: "wisp:memory:export",
   getVoiceSettings: "wisp:voice:get",
   saveVoiceCredential: "wisp:voice:save-credential",
   removeVoiceCredential: "wisp:voice:remove-credential",
@@ -874,6 +877,16 @@ export interface WispApi {
   deleteSkill(request: SkillRequest): Promise<BackendResult<ReadonlyArray<SkillView>>>;
   /** Saves a SKILL.md the user picked, without going through the Wisp, and returns the updated list. */
   importSkill(request: ImportSkillRequest): Promise<BackendResult<ReadonlyArray<SkillView>>>;
+  /** The memory a Wisp sees: the person's entries and its own, in every status (ADR 029). */
+  getMemory(request: ConversationRequest): Promise<BackendResult<import("./memory.js").MemoryView>>;
+  /** Applies the person's changes in one transaction and returns the memory as it is after them. */
+  applyMemory(
+    request: import("./memory.js").ApplyMemoryRequest,
+  ): Promise<BackendResult<import("./memory.js").MemoryView>>;
+  /** One scope's active entries as a Markdown file: USER.md, or the Wisp's MEMORY.md. */
+  exportMemory(
+    request: import("./memory.js").ExportMemoryRequest,
+  ): Promise<BackendResult<import("./memory.js").MemoryExport>>;
   /** Which voice providers have a saved key; keys themselves never leave the backend. */
   getVoiceSettings(): Promise<BackendResult<VoiceSettingsView>>;
   /**

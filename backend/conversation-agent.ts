@@ -51,6 +51,23 @@ export interface CircleSetting {
   members: ReadonlyArray<{ id: string; name: string; role: string }>;
 }
 
+/** What a Wisp's session reads and writes of its memory (ADR 029). */
+export interface WispMemoryAccess {
+  /** The memory as the prompt shows it. */
+  render(): Promise<string>;
+  /** The active entries the Wisp can see, `user` first. */
+  active(): Promise<ReadonlyArray<import("../shared/memory.js").MemoryEntryView>>;
+  /**
+   * Checks a batch the Wisp wants to write, without writing it; throws an
+   * `invalid_request` error with the reason when it cannot apply.
+   */
+  check(operations: ReadonlyArray<import("../shared/memory.js").MemoryOperationRequest>): Promise<void>;
+  /** Writes the Wisp's batch as `agent`, in one transaction, and returns the entries it changed. */
+  apply(
+    operations: ReadonlyArray<import("../shared/memory.js").MemoryOperationRequest>,
+  ): Promise<ReadonlyArray<import("../shared/memory.js").MemoryEntryView>>;
+}
+
 /** One Wisp's agent in one conversation: who the Wisp is, and where its files and session live. */
 export interface ConversationAgentContext {
   conversationId: string;
@@ -62,7 +79,8 @@ export interface ConversationAgentContext {
   /** Markdown that defines the Wisp's identity, personality, and behavior. */
   soul: string;
   userName?: string;
-  userProfile?: import("../shared/user-profile.js").UserProfile;
+  /** The Wisp's memory, read on every run so a change applies at once (ADR 029). */
+  memory?: WispMemoryAccess;
   /** The person's current time zone, read on every message; without it the Wisp is not told the time. */
   userTimeZone?: () => string;
   modelOverride?: ModelSelection | null;
