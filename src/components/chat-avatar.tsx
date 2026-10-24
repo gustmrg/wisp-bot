@@ -18,9 +18,19 @@ interface WispAvatarProps {
   state?: WispState;
 }
 
-const CLUSTER_SLOTS = ["left-[30%] top-[4%]", "left-[5%] top-[38%]", "left-[41%] top-[40%]"];
+/**
+ * Slots for the bodies by how many Wisps are shown, so the bunch stays centered: one alone is
+ * bigger, two sit side by side. They sit low enough that a trail rising from the top stays in the tile.
+ */
+const CLUSTER_SLOTS: Readonly<Record<1 | 2 | 3, ReadonlyArray<string>>> = {
+  1: ["left-[12%] top-[14%] size-[76%]"],
+  2: ["left-[4%] top-[30%] size-[54%]", "left-[42%] top-[22%] size-[54%]"],
+  3: ["left-[30%] top-[8%] size-[54%]", "left-[5%] top-[42%] size-[54%]", "left-[41%] top-[44%] size-[54%]"],
+};
 /** The count of the others, centered on the third slot and about as big as a Wisp's body in it. */
-const COUNT_SLOT = "left-[48%] top-[47%] size-[40%]";
+const COUNT_SLOT = "left-[48%] top-[51%] size-[40%]";
+/** A trail leaves the body lower in its box; this moves it to where a Wisp without one sits (`NO_TRAIL_OFFSET`). */
+const TRAIL_SHIFT = "translate-x-[2%] -translate-y-[12%]";
 
 /** A conversation's picture: its Wisp's, or a circle's members together. */
 function ChatAvatar({ chat, size = "default", state }: ChatAvatarProps) {
@@ -72,6 +82,8 @@ function ChatAvatar({ chat, size = "default", state }: ChatAvatarProps) {
     }
 
     const visibleMembers = members.slice(0, members.length > 3 ? 2 : 3);
+    // With a count, the two Wisps keep the bunch's places and the count takes the third.
+    const slots = CLUSTER_SLOTS[members.length > 3 ? 3 : (visibleMembers.length as 1 | 2 | 3)];
     return (
       <span className={cn("relative flex-none overflow-hidden bg-muted", tileSize)} aria-hidden="true">
         {/* The count sits behind the Wisps, which come first. */}
@@ -87,11 +99,14 @@ function ChatAvatar({ chat, size = "default", state }: ChatAvatarProps) {
           </span>
         ) : null}
         {visibleMembers.map((member, index) => (
-          <span className={cn("absolute size-[54%]", CLUSTER_SLOTS[index])} key={member.id}>
-            {/* Without its trail a Wisp stays in its slot; `!` beats the size the `sm` variant sets. */}
+          <span
+            className={cn("absolute", slots[index], member.appearance.trail !== "none" && TRAIL_SHIFT)}
+            key={member.id}
+          >
+            {/* `!` beats the size the `sm` variant sets. */}
             <Wisp
               className="size-full!"
-              appearance={{ ...member.appearance, trail: "none" }}
+              appearance={member.appearance}
               color={member.color}
               name={member.name}
               size="sm"
