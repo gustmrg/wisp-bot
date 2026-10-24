@@ -3,7 +3,6 @@ import { type PointerEvent as ReactPointerEvent, useEffect, useRef } from "react
 
 import type { ChatChanges, ChatView, WispChanges, WispCollection } from "@/chat-data";
 import { CircleDetails } from "@/components/circle-details";
-import { SettingsActions } from "@/components/settings/settings-primitives";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -187,12 +186,14 @@ function DetailsPanel({
           }
         />
       ) : (
-        <div className="relative flex min-h-0 flex-1 flex-col">
-          <div className="min-h-0 flex-1 overflow-y-auto p-3.5">
-            <CircleDetails chat={chat} wisps={wisps} onChange={onChange} onOpenSettings={onOpenSettings} />
-            <SettingsActions className="mt-[18px]">{deleteControl}</SettingsActions>
-          </div>
-        </div>
+        <CircleDetails
+          key={chat.id}
+          chat={chat}
+          wisps={wisps}
+          onChange={onChange}
+          onOpenSettings={onOpenSettings}
+          actions={deleteControl}
+        />
       )}
     </aside>
   );
