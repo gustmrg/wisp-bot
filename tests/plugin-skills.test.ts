@@ -19,4 +19,11 @@ describe("PLUGIN_SKILLS", () => {
     expect(instructions).toMatch(/JQL/);
     expect(instructions).toMatch(/transitions/);
   });
+
+  it("tells Wisps that GitLab paths can have subgroups and that git in the container uses the token", () => {
+    const { instructions } = PLUGIN_SKILLS.gitlab;
+    expect(instructions).toMatch(/subgroup/);
+    expect(instructions).toMatch(/merge requests/);
+    expect(instructions).toMatch(/git in the container uses this connection's token/);
+  });
 });

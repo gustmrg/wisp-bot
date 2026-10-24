@@ -315,7 +315,7 @@ describe("WispPluginSettings", () => {
     expect(screen.getByText(/Read web pages: no connected plugin provides this/)).toBeVisible();
     expect(
       screen.getByText(
-        /Unavailable: Linear \(turned off\), Firecrawl, Tavily, Exa, DeepSeek, Google Calendar, Gmail, Google Drive, Home Assistant, GitHub, Atlassian\./,
+        /Unavailable: Linear \(turned off\), Firecrawl, Tavily, Exa, DeepSeek, Google Calendar, Gmail, Google Drive, Home Assistant, GitHub, GitLab, Atlassian\./,
       ),
     ).toBeVisible();
     await user.click(screen.getByRole("button", { name: "Set up plugins" }));

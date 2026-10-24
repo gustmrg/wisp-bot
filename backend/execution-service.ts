@@ -11,6 +11,7 @@ import {
   EXECUTION_MODES,
   isContainerImage,
   isGitToken,
+  isGitUpstream,
   MAX_COMMAND_DESCRIPTION_LENGTH,
   type CommandResultDetails,
   type ContainerRuntimeStatus,
@@ -29,6 +30,7 @@ import {
   type ContainerSpec,
   type ProcessAction,
 } from "./container-manager.js";
+import type { GitForges } from "./egress-proxy.js";
 import {
   snapshotRevision,
   type AgentScope,
@@ -60,7 +62,7 @@ const RUN_COMMAND_DESCRIPTION: ReadonlyArray<string> = [
   `The working directory is ${CONTAINER_WORKSPACE}, which holds the same files as the workspace file tools; paths in commands use ${CONTAINER_WORKSPACE}.`,
   "Use it for git, builds, tests, package installs and other command-line work. git, curl, python3, node, npm, build-essential, ripgrep and jq are installed when the default image is used.",
   "Commands run as a regular user without sudo, so system packages cannot be installed; install tools into the home folder (pip --user, npm -g, downloads into ~/.local/bin). The home folder is inside the workspace and is kept; anything outside the workspace can disappear when the container is recreated.",
-  "git over HTTPS to github.com goes through a gateway on the server, which adds the GitHub plugin's token when this Wisp has access to it; the token is not in the container, and the gateway carries only git, so use the GitHub tools for issues, pull requests and other API calls.",
+  "git over HTTPS to github.com, and to the GitLab plugin's instance when this Wisp has access to it, goes through a gateway on the server, which adds the plugin's token; the token is not in the container, and the gateway carries only git, so use the GitHub and GitLab tools for issues, pull and merge requests and other API calls.",
   "Each call starts a fresh shell in the working directory; use cd within the command. Processes left running in the background are stopped when the command ends; start servers, watchers and other long-running commands with the process tool instead. Output is truncated to the last lines; optionally give a timeout in seconds.",
 ];
 
@@ -103,8 +105,8 @@ export interface ExecutionServiceOptions {
   authorizationBroker: Pick<ToolAuthorizationBroker, "authorize">;
   manager: ContainerManager;
   runtime: { status(): Promise<ContainerRuntimeStatus>; cli(): Promise<ContainerCli | null> };
-  /** The GitHub plugin's token, when the Wisp has access to the plugin. */
-  gitHubToken?: (conversationId: string) => Promise<string | undefined>;
+  /** The forges git can use through the gateway, with the tokens of the plugins the Wisp has access to. */
+  gitForges?: (conversationId: string) => Promise<GitForges>;
   /** Closes a Wisp's browser, when it is turned off. */
   browser?: { close(storageId: string): Promise<void> };
 }
@@ -119,13 +121,20 @@ export class ExecutionService implements IntegrationToolSource {
 
   async getView(conversationId: string): Promise<WispExecutionView> {
     const wisp = this.options.resolveWisp(conversationId);
-    const [settings, runtime, container, gitHubPlugin] = await Promise.all([
+    const [settings, runtime, container, git] = await Promise.all([
       readExecutionSettings(wisp.configDirectory),
       this.options.runtime.status(),
       this.options.manager.state(wisp.storageId),
-      this.gitToken(conversationId).then(Boolean),
+      this.gitForges(conversationId),
     ]);
-    return { ...settings, defaultImage: SANDBOX_IMAGE, gitHubPlugin, runtime, container };
+    return {
+      ...settings,
+      defaultImage: SANDBOX_IMAGE,
+      gitHubPlugin: Boolean(git.github),
+      gitLabInstance: git.gitlab?.upstream ?? null,
+      runtime,
+      container,
+    };
   }
 
   /** Whether the server can run commands at all, before any Wisp is involved. */
@@ -199,10 +208,16 @@ export class ExecutionService implements IntegrationToolSource {
     await rm(path.join(this.options.dataDirectory, LEGACY_CREDENTIALS_FILE), { force: true });
   }
 
-  /** The GitHub plugin's token, which the git gateway adds for this Wisp. */
-  private async gitToken(conversationId: string): Promise<string | undefined> {
-    const token = await this.options.gitHubToken?.(conversationId).catch(() => undefined);
-    return token && isGitToken(token) ? token : undefined;
+  /** The plugins' tokens, which the git gateway adds for this Wisp; a forge without a usable token is left out. */
+  private async gitForges(conversationId: string): Promise<GitForges> {
+    const forges = await this.options.gitForges?.(conversationId).catch(() => undefined);
+    const { github, gitlab } = forges ?? {};
+    return {
+      ...(github && isGitToken(github.token) ? { github: { token: github.token } } : {}),
+      ...(gitlab && isGitToken(gitlab.token) && isGitUpstream(gitlab.upstream)
+        ? { gitlab: { upstream: gitlab.upstream, token: gitlab.token } }
+        : {}),
+    };
   }
 
   private async createRunCommandTool(
@@ -218,7 +233,7 @@ export class ExecutionService implements IntegrationToolSource {
           onData,
           ...(signal ? { signal } : {}),
           ...(timeout === undefined ? {} : { timeout }),
-          ...(await this.gitToken(conversationId).then((gitToken) => (gitToken ? { gitToken } : {}))),
+          git: await this.gitForges(conversationId),
         }),
     };
     const base = createBashToolDefinition(wisp.workspaceDirectory, { operations, exposeSessionEnvironment: false });
@@ -287,10 +302,10 @@ export class ExecutionService implements IntegrationToolSource {
   private createProcessTool(conversationId: string, wisp: ExecutionWisp, settings: ExecutionSettings): ToolDefinition {
     const spec = containerSpec(wisp, settings);
     const run = async (action: ProcessAction, args: ReadonlyArray<string>, signal: AbortSignal | undefined) => {
-      const gitToken = action === "start" ? await this.gitToken(conversationId) : undefined;
+      const git = action === "start" ? await this.gitForges(conversationId) : undefined;
       return this.options.manager.processScript(spec, action, args, {
         ...(signal ? { signal } : {}),
-        ...(gitToken ? { gitToken } : {}),
+        ...(git ? { git } : {}),
       });
     };
     return defineWispTool({

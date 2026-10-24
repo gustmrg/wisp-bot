@@ -33,6 +33,8 @@ export interface WispExecutionView {
   defaultImage: string;
   /** Whether git can use the GitHub plugin's token: the Wisp has access to an enabled GitHub plugin. */
   gitHubPlugin: boolean;
+  /** The instance git reaches with the GitLab plugin's token, when the Wisp has access to an enabled GitLab plugin. */
+  gitLabInstance: string | null;
   runtime: ContainerRuntimeStatus;
   container: ContainerState;
 }
@@ -63,6 +65,25 @@ export function isContainerImage(value: string): boolean {
     value.length <= MAX_CONTAINER_IMAGE_LENGTH &&
     /^[A-Za-z0-9][A-Za-z0-9._/:@-]*$/.test(value) &&
     !value.includes("//")
+  );
+}
+
+/** A GitLab instance's address the git gateway can be given: HTTPS, without credentials, query, fragment or trailing slash. */
+export function isGitUpstream(value: string): boolean {
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    return false;
+  }
+  return (
+    value.length <= 2048 &&
+    url.protocol === "https:" &&
+    !url.username &&
+    !url.password &&
+    !url.search &&
+    !url.hash &&
+    !value.endsWith("/")
   );
 }
 

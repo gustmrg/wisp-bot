@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { ContainerManager } from "../backend/container-manager.js";
 import { SANDBOX_IMAGE } from "../backend/container-manager.js";
+import type { GitForges } from "../backend/egress-proxy.js";
 import { containerPath, ExecutionService, PROCESS_TOOL, RUN_COMMAND_TOOL } from "../backend/execution-service.js";
 import { WORKSPACE_SETTINGS_FILE } from "../backend/workspace-service.js";
 import type { ContainerRuntimeStatus } from "../shared/execution.js";
@@ -18,10 +19,7 @@ afterEach(async () => {
 });
 
 async function setup(
-  options: {
-    runtime?: ContainerRuntimeStatus;
-    gitHubToken?: (conversationId: string) => Promise<string | undefined>;
-  } = {},
+  options: { runtime?: ContainerRuntimeStatus; gitForges?: (conversationId: string) => Promise<GitForges> } = {},
 ) {
   const root = await mkdtemp(path.join(os.tmpdir(), "wisp-execution-"));
   directories.push(root);
@@ -65,7 +63,7 @@ async function setup(
       status: async () => options.runtime ?? { available: true, name: "docker", version: "29.0.0" },
       cli: async () => null,
     },
-    ...(options.gitHubToken ? { gitHubToken: options.gitHubToken } : {}),
+    ...(options.gitForges ? { gitForges: options.gitForges } : {}),
     browser,
   });
   return { root, wisp, manager, authorize, browser, service };
@@ -96,6 +94,7 @@ describe("ExecutionService", () => {
       browser: false,
       defaultImage: SANDBOX_IMAGE,
       gitHubPlugin: false,
+      gitLabInstance: null,
       runtime: { available: true, name: "docker", version: "29.0.0" },
       container: "absent",
     });
@@ -188,7 +187,9 @@ describe("ExecutionService", () => {
   });
 
   it("runs a command in the container after authorizing it, with the token and the container path", async () => {
-    const { service, manager, authorize, wisp } = await setup({ gitHubToken: async () => "ghp_secret" });
+    const { service, manager, authorize, wisp } = await setup({
+      gitForges: async () => ({ github: { token: "ghp_secret" } }),
+    });
     await service.save({ conversationId: "atlas", mode: "container", image: null, localNetwork: false });
     const tool = await runCommandTool(service);
 
@@ -207,7 +208,7 @@ describe("ExecutionService", () => {
       { storageId: "s1", image: SANDBOX_IMAGE, workspaceDirectory: wisp.workspaceDirectory, localNetwork: false },
       "git status",
       "/workspace",
-      expect.objectContaining({ gitToken: "ghp_secret" }),
+      expect.objectContaining({ git: { github: { token: "ghp_secret" } } }),
     );
     // The server's environment is never handed to the container.
     expect(manager.exec.mock.calls[0]![3]).not.toHaveProperty("env");
@@ -229,23 +230,43 @@ describe("ExecutionService", () => {
   });
 
   it("gives git the GitHub plugin's token when the Wisp has access to the plugin", async () => {
-    const gitHubToken = vi.fn(async (conversationId: string) =>
-      conversationId === "atlas" ? "github_pat_plugin" : undefined,
+    const gitForges = vi.fn(async (conversationId: string) =>
+      conversationId === "atlas" ? { github: { token: "github_pat_plugin" } } : {},
     );
-    const { service, manager } = await setup({ gitHubToken });
+    const { service, manager } = await setup({ gitForges });
     await service.save({ conversationId: "atlas", mode: "container", image: null, localNetwork: false });
     await expect(service.getView("atlas")).resolves.toMatchObject({ gitHubPlugin: true });
     const tool = await runCommandTool(service);
 
     await tool.execute("call-1", { command: "git clone https://github.com/owner/private" });
 
-    expect(gitHubToken).toHaveBeenCalledWith("atlas");
-    expect(manager.exec.mock.calls[0]![3]).toMatchObject({ gitToken: "github_pat_plugin" });
+    expect(gitForges).toHaveBeenCalledWith("atlas");
+    expect(manager.exec.mock.calls[0]![3]).toMatchObject({ git: { github: { token: "github_pat_plugin" } } });
+  });
+
+  it("gives git the GitLab plugin's instance and token, and leaves out an instance it cannot use", async () => {
+    const forges: { current: GitForges } = {
+      current: { gitlab: { upstream: "https://gitlab.example.invalid/gitlab", token: "glpat-plugin" } },
+    };
+    const { service, manager } = await setup({ gitForges: async () => forges.current });
+    await service.save({ conversationId: "atlas", mode: "container", image: null, localNetwork: false });
+    await expect(service.getView("atlas")).resolves.toMatchObject({
+      gitHubPlugin: false,
+      gitLabInstance: "https://gitlab.example.invalid/gitlab",
+    });
+    const tool = await runCommandTool(service);
+    await tool.execute("call-1", { command: "git clone https://gitlab.example.invalid/gitlab/group/project" });
+    expect(manager.exec.mock.calls[0]![3]).toMatchObject({ git: forges.current });
+
+    for (const upstream of ["http://gitlab.example.invalid", "https://gitlab.example.invalid/", "not a url"]) {
+      forges.current = { gitlab: { upstream, token: "glpat-plugin" } };
+      await expect(service.getView("atlas")).resolves.toMatchObject({ gitLabInstance: null });
+    }
   });
 
   it("runs commands without a token when the plugin's cannot be read", async () => {
     const { service, manager } = await setup({
-      gitHubToken: async () => {
+      gitForges: async () => {
         throw new Error("secure storage unavailable");
       },
     });
@@ -255,7 +276,7 @@ describe("ExecutionService", () => {
 
     await tool.execute("call-1", { command: "git status" });
 
-    expect(manager.exec.mock.calls[0]![3]).not.toHaveProperty("gitToken");
+    expect(manager.exec.mock.calls[0]![3]).toMatchObject({ git: {} });
   });
 
   it("refuses commands that would wipe the workspace, without running them", async () => {
@@ -304,7 +325,7 @@ type ProcessTool = {
 
 describe("process tool", () => {
   async function processSetup() {
-    const context = await setup({ gitHubToken: async () => "ghp_secret" });
+    const context = await setup({ gitForges: async () => ({ github: { token: "ghp_secret" } }) });
     await context.service.save({ conversationId: "atlas", mode: "container", image: null, localNetwork: false });
     const snapshot = await context.service.getSnapshot(ownConversation("atlas"));
     const tool = snapshot.definitions.find(({ name }) => name === PROCESS_TOOL) as unknown as ProcessTool;
@@ -329,7 +350,7 @@ describe("process tool", () => {
       { storageId: "s1", image: SANDBOX_IMAGE, workspaceDirectory: wisp.workspaceDirectory, localNetwork: false },
       "start",
       [id, "npm run dev", "8"],
-      { gitToken: "ghp_secret" },
+      { git: { github: { token: "ghp_secret" } } },
     );
   });
 

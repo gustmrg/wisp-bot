@@ -8,9 +8,9 @@ Assistant**, which connects to your own server. Connections are configured globa
 **Settings → Plugins**; each Wisp receives access independently through its
 **Access** tab. Connecting a plugin grants no Wisp access automatically.
 
-**GitHub** and **Atlassian** (Jira and Confluence) are also listed under
-Plugins but run over a remote MCP connection; see [GitHub](#github) and
-[Atlassian](#atlassian). Plugins of this kind that sign in through the browser
+**GitHub**, **GitLab**, and **Atlassian** (Jira and Confluence) are also
+listed under Plugins but run over a remote MCP connection; see
+[GitHub](#github), [GitLab](#gitlab), and [Atlassian](#atlassian). Plugins of this kind that sign in through the browser
 have no form: **Connect** opens the provider's page to approve access, and
 **Sign in again** on the plugin's page repeats it. For dynamically discovered
 integrations, see [remote MCP servers](mcp-servers.md).
@@ -226,6 +226,40 @@ commands. It is not one of the Wisp's own skills: it is not
 listed in its Skills settings, does not count toward its limit, and
 disappears when the Wisp loses access. A skill of the Wisp's own with the same
 name is used instead. Like every skill, it grants nothing.
+
+## GitLab
+
+**Settings → Plugins → GitLab** connects
+[GitLab's official MCP server](https://docs.gitlab.com/user/model_context_protocol/mcp_server/)
+on GitLab.com or on your own GitLab Self-Managed or Dedicated instance. The
+**GitLab address** starts as `https://gitlab.com`; for your own instance,
+enter its address (with the path it is served under, if any), and the
+connection uses `/api/v4/mcp` on it. The server needs GitLab 18.6 or later, and
+the top-level group's owner (on GitLab.com) or the instance's administrator
+must allow access to it. One GitLab connection is offered at a time; entering
+another address later removes every Wisp's access to it, as a new token would.
+
+Enter a fine-grained personal access token with the **Execute** permission on
+the MCP server; **Create a token** opens the token page of the instance you
+entered. GitLab refuses legacy personal access tokens and project or group
+access tokens. The token is sent as `Authorization: Bearer …`. Core,
+Repository, Merge requests, Work items, and CI/CD are selected by default, and
+Wikis and Code security can be added; the selection is sent as
+`X-Gitlab-Enabled-Mcp-Server-Toolsets`, which instances before GitLab 19.5
+ignore. Access, approvals, and the **Enabled** switch work as for GitHub.
+
+Wisps with access also see a **gitlab** skill: identify projects by their full
+path with subgroups, call pull requests merge requests (`!123`), never merge,
+approve, or run pipelines unless asked, and make code changes in the Wisp's
+container when it can run commands.
+
+In a Wisp's container, git over HTTPS to the instance goes through the same
+gateway as github.com, which adds the GitLab token, so the Wisp can clone and
+push the private projects the token covers without seeing it. The token needs
+access to the repositories as well as the MCP server. An instance on your local
+network is reached this way even when the Wisp's local network is blocked, for
+git only. Instances whose certificate is not signed by a public certificate
+authority are not supported yet.
 
 ## Atlassian
 

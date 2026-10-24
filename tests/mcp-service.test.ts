@@ -1535,7 +1535,7 @@ describe("McpService additional headers and presets", () => {
 
   it("refuses an unknown preset and changing the preset of a saved server", async () => {
     const { service } = await createService({}, [{ outcome: "connected", tools: [TOOL] }]);
-    await expect(saveAsync(service, { ...GITHUB, preset: "gitlab" })).rejects.toMatchObject({
+    await expect(saveAsync(service, { ...GITHUB, preset: "bitbucket" })).rejects.toMatchObject({
       code: "invalid_request",
     });
     const added = await service.save(GITHUB);
@@ -1565,22 +1565,49 @@ describe("McpService additional headers and presets", () => {
     const { service } = await createService({}, [{ outcome: "connected", tools: [TOOL] }]);
     const added = await service.save({ ...GITHUB, preset: "github" });
     const server = added.servers[0]!;
-    await expect(service.gitHubToken("wisp-a")).resolves.toBeUndefined();
+    await expect(service.gitForges("wisp-a")).resolves.toEqual({});
 
     await grantAccess(service, "wisp-a", server.serverId);
-    await expect(service.gitHubToken("wisp-a")).resolves.toBe("test-token");
-    await expect(service.gitHubToken("wisp-b")).resolves.toBeUndefined();
+    await expect(service.gitForges("wisp-a")).resolves.toEqual({ github: { token: "test-token" } });
+    await expect(service.gitForges("wisp-b")).resolves.toEqual({});
 
     const { headerValue: _secret, ...saved } = GITHUB;
     await service.save({ ...saved, serverId: server.serverId, enabled: false });
-    await expect(service.gitHubToken("wisp-a")).resolves.toBeUndefined();
+    await expect(service.gitForges("wisp-a")).resolves.toEqual({});
+  });
+
+  it("hands the GitLab token with its instance, beside GitHub's, to Wisps with access", async () => {
+    const { service } = await createService({}, [
+      { outcome: "connected", tools: [TOOL] },
+      { outcome: "connected", tools: [TOOL] },
+    ]);
+    const github = (await service.save({ ...GITHUB, preset: "github" })).servers[0]!;
+    const added = await service.save({
+      ...GITHUB,
+      name: "GitLab",
+      endpoint: "https://example.invalid/gitlab/api/v4/mcp",
+      headerValue: "Bearer glpat-test",
+      preset: "gitlab",
+    });
+    const gitlab = added.servers.find(({ preset }) => preset === "gitlab")!;
+    await grantAccess(service, "wisp-a", gitlab.serverId);
+    await expect(service.gitForges("wisp-a")).resolves.toEqual({
+      gitlab: { upstream: "https://example.invalid/gitlab", token: "glpat-test" },
+    });
+
+    await grantAccess(service, "wisp-a", github.serverId);
+    await expect(service.gitForges("wisp-a")).resolves.toEqual({
+      github: { token: "test-token" },
+      gitlab: { upstream: "https://example.invalid/gitlab", token: "glpat-test" },
+    });
+    await expect(service.gitForges("wisp-b")).resolves.toEqual({});
   });
 
   it("hands no GitHub token from a connection added without the preset", async () => {
     const { service } = await createService({}, [{ outcome: "connected", tools: [TOOL] }]);
     const added = await service.save(GITHUB);
     await grantAccess(service, "wisp-a", added.servers[0]!.serverId);
-    await expect(service.gitHubToken("wisp-a")).resolves.toBeUndefined();
+    await expect(service.gitForges("wisp-a")).resolves.toEqual({});
   });
 
   it("offers no skill for a connection added without a preset", async () => {

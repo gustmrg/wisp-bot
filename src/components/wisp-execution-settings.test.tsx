@@ -12,6 +12,7 @@ const VIEW: WispExecutionView = {
   browser: false,
   defaultImage: "wisp-sandbox:abc",
   gitHubPlugin: false,
+  gitLabInstance: null,
   runtime: { available: true, name: "docker", version: "29.8.1" },
   container: "absent",
 };
@@ -79,6 +80,15 @@ it("says when git uses the GitHub plugin's token, and that the Wisp never sees i
   render(<WispExecutionSettings conversationId="one" />);
 
   expect(await screen.findByText(/adds the GitHub plugin's token/)).toHaveTextContent("without ever seeing it");
+});
+
+it("says which GitLab instance git reaches with the GitLab plugin's token", async () => {
+  install({ ...VIEW, mode: "container", gitLabInstance: "https://gitlab.example.com" });
+  render(<WispExecutionSettings conversationId="one" />);
+
+  expect(await screen.findByText(/adds the GitLab plugin's token/)).toHaveTextContent(
+    "git reaches https://gitlab.example.com through the server",
+  );
 });
 
 it("explains a missing container program and does not offer to turn commands on", async () => {
