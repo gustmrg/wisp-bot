@@ -210,7 +210,9 @@ export class CircleConversationAgent implements ConversationAgent {
     let length = 0;
     for (const message of [...unseen].reverse()) {
       const speaker =
-        message.type === "outgoing" ? `${userName} (the user)` : `${names.get(message.authorId ?? "") ?? "A Wisp"}`;
+        message.type === "outgoing"
+          ? `${userName} (the user)`
+          : `${names.get(message.authorId ?? "") ?? message.authorName ?? "A Wisp"}`;
       const line = `${speaker}: ${message.text.trim()}`;
       if (length + line.length > MAX_TRANSCRIPT_CHARACTERS) {
         if (!lines.length) lines.push(`${line.slice(0, MAX_TRANSCRIPT_CHARACTERS - 1)}…`);

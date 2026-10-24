@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { ArrowDownIcon, CheckIcon, ChevronLeftIcon, SettingsIcon, XIcon } from "lucide-react";
 
-import type { ChatView, Message } from "@/chat-data";
+import type { ChatView, Message, Wisp, WispCollection } from "@/chat-data";
 import type { ManagedConversationStatus } from "../../shared/conversations";
 import type { QueuedMessage } from "../../shared/message-queue";
 import type { ToolApprovalDecision, ToolApprovalRequest } from "../../shared/tool-policy";
@@ -13,6 +13,7 @@ import { withDateDividers } from "@/lib/date-dividers";
 import { isAttached, type MessageWindow } from "@/lib/message-windows";
 import { mainPanel } from "@/lib/ui-classes";
 import { cn } from "@/lib/utils";
+import { DEFAULT_WISP_APPEARANCE } from "../../shared/wisp-appearance";
 import { isNeutralColor, wispAccentStyle, wispColor } from "@/lib/wisp-appearance";
 import { ChatAvatar, WispAvatar } from "@/components/chat-avatar";
 import { ChatComposer, type VoiceInputSettings } from "@/components/chat-composer";
@@ -25,6 +26,22 @@ import { useTimeZone } from "@/hooks/use-time-zone";
 import { AllowAllApprovals, ToolApprovalCard } from "@/components/tool-approval-card";
 
 const NO_MESSAGES: ReadonlyArray<Message> = [];
+const NO_MEMBERS: ReadonlyArray<Wisp> = [];
+const NO_WISPS: WispCollection = {};
+/** How a deleted Wisp is drawn: gray, in the default shape. */
+const DELETED_WISP_COLOR = "#8e8e8e";
+
+/** A reply's author whose Wisp no longer exists, under the name the reply was written with. */
+function deletedAuthor(id: string, name: string | undefined): Wisp {
+  return {
+    id,
+    name: name ?? "Deleted Wisp",
+    role: "",
+    soul: "",
+    appearance: DEFAULT_WISP_APPEARANCE,
+    color: DELETED_WISP_COLOR,
+  };
+}
 const unavailable = async () => "This server cannot do that. Update it first.";
 const NO_QUEUE = { update: unavailable, cancel: unavailable };
 const NO_SCHEDULE = { update: unavailable, cancel: unavailable, sendNow: unavailable };
@@ -79,6 +96,8 @@ interface ChatPanelProps {
   hidden?: boolean;
   onBack?: () => void;
   chat: ChatView;
+  /** Every Wisp, so a circle's replies from Wisps no longer in it keep their names. */
+  wisps?: WispCollection;
   /** The loaded part of the transcript; undefined until its first page arrives. */
   transcript: MessageWindow | undefined;
   status: ManagedConversationStatus;
@@ -117,6 +136,7 @@ function ChatPanel({
   hidden = false,
   onBack,
   chat,
+  wisps = NO_WISPS,
   transcript,
   status,
   activity,
@@ -157,20 +177,38 @@ function ChatPanel({
   const shown = useRef<TranscriptView | null>(null);
   const mobile = Boolean(onBack);
   const focusChatId = mobile && !hidden ? chat.id : null;
-  const members = chat.kind === "circle" ? chat.members : [];
-  // The latest handler, so the mentions, and the Markdown rendered with them, change only with the members.
+  const messages = transcript?.messages ?? NO_MESSAGES;
+  const members = chat.kind === "circle" ? chat.members : NO_MEMBERS;
+  // Wisps that replied here but have since left the circle, as a key that changes only when they do.
+  const formerMemberIds = [
+    ...new Set(
+      messages.flatMap((message) =>
+        message.type === "incoming" && message.authorId && !members.some(({ id }) => id === message.authorId)
+          ? [message.authorId]
+          : [],
+      ),
+    ),
+  ].join(" ");
+  // Everyone who took part: replies keep their author, and mentions of a former member stay set apart.
+  const participants = useMemo(() => {
+    const former = formerMemberIds ? formerMemberIds.split(" ").flatMap((id) => (wisps[id] ? [wisps[id]] : [])) : [];
+    return former.length ? [...members, ...former] : members;
+  }, [members, formerMemberIds, wisps]);
+  // The latest handler, so the mentions, and the Markdown rendered with them, change only with the participants.
   const openWisp = useRef(onOpenWisp);
   openWisp.current = onOpenWisp;
   const canOpenWisp = Boolean(onOpenWisp);
   const mentions = useMemo(
     () =>
-      members.length
-        ? { members, onOpenWisp: canOpenWisp ? (wispId: string) => openWisp.current?.(wispId) : undefined }
+      participants.length
+        ? {
+            members: participants,
+            onOpenWisp: canOpenWisp ? (wispId: string) => openWisp.current?.(wispId) : undefined,
+          }
         : undefined,
-    [members, canOpenWisp],
+    [participants, canOpenWisp],
   );
   const name = chatName(chat);
-  const messages = transcript?.messages ?? NO_MESSAGES;
   const timeZone = useTimeZone();
   const transcriptMessages = withDateDividers(messages, new Date(), timeZone);
   const working = status === "working";
@@ -443,10 +481,12 @@ function ChatPanel({
             {transcriptMessages.map((message, index) => {
               const previous = transcriptMessages[index - 1];
               // In a circle each reply carries its Wisp's name and color; consecutive ones share the name.
+              const reply = message.type === "incoming" && message.authorId ? message : undefined;
+              const participant = reply && participants.find((member) => member.id === reply.authorId);
+              // A reply whose Wisp is gone keeps the name it was written with.
+              const authorDeleted = chat.kind === "circle" && Boolean(reply) && !participant;
               const author =
-                message.type === "incoming" && message.authorId
-                  ? members.find((member) => member.id === message.authorId)
-                  : undefined;
+                authorDeleted && reply?.authorId ? deletedAuthor(reply.authorId, reply.authorName) : participant;
               const previousAuthor = previous?.type === "incoming" ? previous.authorId : undefined;
               const authorColor = author ? wispColor(author.name, author.color) : undefined;
               return (
@@ -461,6 +501,7 @@ function ChatPanel({
                     message={message}
                     dense={message.type === "outgoing" && previous?.type === "outgoing"}
                     author={author}
+                    authorDeleted={authorDeleted}
                     showAuthor={Boolean(author) && previousAuthor !== author?.id}
                     mentions={mentions}
                     fileMentions={chat.kind === "wisp"}

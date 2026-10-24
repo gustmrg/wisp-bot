@@ -316,6 +316,7 @@ function Workspace({
                 hidden={mobile && (mobilePage !== "chat" || detailsOpen || profileOpen)}
                 onBack={mobile ? showConversations : undefined}
                 chat={workspace.activeChat}
+                wisps={workspace.wisps}
                 transcript={workspace.activeTranscript}
                 status={workspace.statuses[workspace.activeChat.id] ?? "configuration_required"}
                 activity={workspace.activity[workspace.activeChat.id]}

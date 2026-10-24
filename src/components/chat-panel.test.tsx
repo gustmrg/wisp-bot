@@ -457,6 +457,40 @@ describe("ChatPanel circles", () => {
     expect(screen.queryByRole("button", { name: /View circle participants/ })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Open circle settings" })).toBeInTheDocument();
   });
+
+  it("keeps the name and mentions of a Wisp that has left the circle", async () => {
+    const user = userEvent.setup();
+    const onOpenWisp = vi.fn();
+    const quill = testWisp("quill", { name: "Quill" });
+    const lumi = testWisp("lumi", { name: "Lumi" });
+    const nova = testWisp("nova", { name: "Nova" });
+    renderPanelIn(
+      circleChatView("crew", [quill]),
+      [
+        { id: "1", type: "outgoing", text: "@Lumi are you free? Not you, @Nova." },
+        { id: "2", type: "incoming", text: "Sure, what do you need?", authorId: "lumi" },
+      ],
+      { onOpenWisp, wisps: { quill, lumi, nova } },
+    );
+
+    expect(screen.getByText("Lumi")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "@Lumi" }));
+    expect(onOpenWisp).toHaveBeenCalledWith("lumi");
+    // Only Wisps that took part are set apart, not every Wisp the person has.
+    expect(screen.queryByRole("button", { name: "@Nova" })).not.toBeInTheDocument();
+  });
+
+  it("names a deleted Wisp's replies by the name they kept, marked deleted", () => {
+    renderPanelIn(circleChatView("crew", [testWisp("quill", { name: "Quill" })]), [
+      { id: "1", type: "incoming", text: "Still here.", authorId: "quill" },
+      { id: "2", type: "incoming", text: "Before I left.", authorId: "lumi", authorName: "Lumi" },
+      { id: "3", type: "incoming", text: "From long ago.", authorId: "old" },
+    ]);
+
+    const named = [...document.querySelectorAll(".message-author")].map((author) => author.textContent);
+    // The label sits beside the name, so their text runs together.
+    expect(named).toEqual(["Quill", "Lumideleted", "Deleted Wispdeleted"]);
+  });
 });
 
 function renderPanelIn(chat: ChatPanelProps["chat"], held: Message[], props: Partial<ChatPanelProps> = {}) {

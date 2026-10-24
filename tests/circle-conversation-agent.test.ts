@@ -194,6 +194,22 @@ describe("CircleConversationAgent", () => {
     expect(received[0]!.request.text).not.toContain("@Atlas start");
   });
 
+  it("names a reply of a Wisp no longer in the circle by the name it kept", async () => {
+    const { received, messages, say } = await setup();
+    messages.push({
+      id: "old",
+      type: "incoming",
+      text: "I was here.",
+      status: "complete",
+      authorId: "lumi",
+      authorName: "Lumi",
+    });
+
+    await say("m1", "@Atlas who was here?");
+
+    expect(received[0]!.request.text).toContain("Lumi: I was here.");
+  });
+
   it("fails only the member that failed, and the next member answers", async () => {
     const { received, events, say } = await setup(undefined, {
       fail: (wispId) =>

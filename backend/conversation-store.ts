@@ -31,10 +31,14 @@ import type { ConversationRecord, WispRecord, WorkspaceRecords } from "./workspa
 // Version 12 follows the Wisp folders' new names (ADR 027) in each job run's
 // session file. Older readers look for the old folder names and would find
 // none, so it raises MIN_READER_VERSION: an older build refuses this database.
-const STORE_VERSION = 12;
+// Version 13 names each reply's author in the reply itself, so a reply keeps a
+// name after its Wisp is deleted. Older readers ignore the field.
+const STORE_VERSION = 13;
 const MIN_READER_VERSION = 12;
 /** The first layout whose job runs name their session files under the runtime-neutral folders. */
 const WISP_FOLDERS_VERSION = 12;
+/** The first layout whose replies carry their author's name. */
+const AUTHOR_NAMES_VERSION = 13;
 /** The first layout that stores records as columns rather than JSON. */
 const COLUMN_RECORDS_VERSION = 5;
 
@@ -294,6 +298,16 @@ const ADD_WISP_FALLBACKS = `
   ALTER TABLE wisps ADD COLUMN fallback_mode TEXT;
   ALTER TABLE wisps ADD COLUMN fallback_provider_id TEXT;
   ALTER TABLE wisps ADD COLUMN fallback_model_id TEXT;
+`;
+
+// Replies stored before version 13 name their author only by ID; those whose Wisp
+// still exists take its name. Replies of Wisps already deleted stay unnamed.
+const NAME_MESSAGE_AUTHORS = `
+  UPDATE messages
+  SET body = json_set(body, '$.authorName', (SELECT name FROM wisps WHERE wisps.id = messages.author_id))
+  WHERE author_id IS NOT NULL
+    AND json_extract(body, '$.authorName') IS NULL
+    AND EXISTS (SELECT 1 FROM wisps WHERE wisps.id = messages.author_id);
 `;
 
 /** Tables layout 5 replaced; their rows held whole records as JSON. */
@@ -565,6 +579,7 @@ export class ConversationStore {
         store.addWispThinkingLevels();
         store.addWispFallbacks();
         if (version !== undefined) store.renameJobRunSessionFiles(Number(version) < WISP_FOLDERS_VERSION);
+        if (version !== undefined && Number(version) < AUTHOR_NAMES_VERSION) store.nameMessageAuthors();
       }
       return store;
     } catch (error) {
@@ -697,6 +712,7 @@ export class ConversationStore {
         for (const record of Object.values(records.wisps)) this.putWisp(record);
         for (const record of Object.values(records.conversations)) this.putConversation(record);
         this.db.exec("DELETE FROM messages WHERE conversation_id NOT IN (SELECT id FROM conversations)");
+        this.db.exec(NAME_MESSAGE_AUTHORS);
         for (const message of pending.scheduled) {
           if (records.conversations[message.conversationId]) this.putScheduledMessage(message);
         }
@@ -1173,6 +1189,18 @@ export class ConversationStore {
     try {
       const update = this.db.prepare("UPDATE job_runs SET session_file = ? WHERE session_file = ?");
       for (const [file, renamed] of renames) update.run(renamed, file);
+      this.raiseVersions();
+      this.db.exec("COMMIT");
+    } catch (error) {
+      this.db.exec("ROLLBACK");
+      throw error;
+    }
+  }
+
+  private nameMessageAuthors(): void {
+    this.db.exec("BEGIN IMMEDIATE");
+    try {
+      this.db.exec(NAME_MESSAGE_AUTHORS);
       this.raiseVersions();
       this.db.exec("COMMIT");
     } catch (error) {

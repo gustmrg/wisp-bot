@@ -235,7 +235,7 @@ export class ConversationService {
       error: messageFailure(error),
       retryable: false,
       createdAt: current?.createdAt ?? new Date().toISOString(),
-      authorId: wispId,
+      ...this.author(wispId),
     });
   }
 
@@ -307,10 +307,16 @@ export class ConversationService {
   }
 
   /** Replies in a Wisp's own conversation are the Wisp's; in a circle, the member's the event names. */
-  private authorOf(conversationId: string, wispId?: string): { authorId?: string } {
+  private authorOf(conversationId: string, wispId?: string): { authorId?: string; authorName?: string } {
     const chat = this.repository.readChat(conversationId);
-    if (chat?.kind === "wisp") return { authorId: chat.wispId };
-    return wispId ? { authorId: wispId } : {};
+    if (chat?.kind === "wisp") return this.author(chat.wispId);
+    return wispId ? this.author(wispId) : {};
+  }
+
+  /** A reply's author, named so the reply stays named after the Wisp is deleted. */
+  private author(wispId: string): { authorId: string; authorName?: string } {
+    const name = this.repository.readWisp(wispId)?.name;
+    return name === undefined ? { authorId: wispId } : { authorId: wispId, authorName: name };
   }
 
   async initialize(chats: unknown): Promise<ConversationStateView> {
