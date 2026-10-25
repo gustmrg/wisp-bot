@@ -1,9 +1,9 @@
 # Context and memory
 
-Open **Wisp settings → General → Context** to configure context
-renewal for a Wisp. By default, the next message after 24 hours of inactivity
-starts a new topic, but only when the active context is at least 12,000
-tokens. **On renewal** can instead summarize the context and continue, which
+Open **Wisp settings → General → Context** (on a phone, the profile's
+**Memory** row) to configure context renewal for a Wisp. By default, the next
+message after 24 hours of inactivity starts a new topic, but only when the
+active context is at least 12,000 tokens. **On renewal** can instead summarize the context and continue, which
 costs a summarization request and keeps the summary in every later request;
 starting a new topic sends only the system prompt, memory and the new
 message, and the Wisp can still reach earlier messages with `search_history`.
@@ -34,7 +34,7 @@ memory. A timeline marker explains each boundary.
 
 **Memory** is a list of one-line entries, stored locally and included in every
 model request. It survives new topics and restarts; facts are not silently
-promoted from summaries into permanent memory. Open **Wisp settings → Memory**
+promoted from summaries into permanent memory. Open **Wisp settings → General → Memory**
 to see it in two groups:
 
 - **About you · every Wisp** (`USER.md`): facts and preferences about you,

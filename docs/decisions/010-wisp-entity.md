@@ -171,6 +171,6 @@ failed. Approval and failure also put a dot in the avatar's bottom corner
 
 ## Not yet
 
-Circles still have no agents. Running them needs a session per member (the
-`sessions` map on a conversation record already allows it), deciding which
-Wisp answers, and showing each message's author.
+When this was decided, circles had no agents. [ADR 011](011-circles.md) gave
+them one session per member (the `sessions` map on a conversation record),
+decided which Wisp answers, and showed each message's author.
