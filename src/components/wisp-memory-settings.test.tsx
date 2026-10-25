@@ -173,12 +173,17 @@ it("reloads when the Wisp saves a memory", async () => {
   expect(api.getMemory).toHaveBeenCalledTimes(1);
   await act(async () => {
     emit({
-      type: "tool_activity",
+      type: "turn_item",
       conversationId: "one",
       requestId: "request",
-      toolCallId: "tool",
-      toolName: "save_memory",
-      phase: "completed",
+      groupId: "request:work",
+      item: {
+        id: "tool",
+        toolName: "save_memory",
+        status: "completed",
+        startedAt: "2026-10-22T10:00:00.000Z",
+        type: "tool",
+      },
       sequence: 1,
     });
   });
