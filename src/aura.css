@@ -926,6 +926,18 @@
   flex: none;
   color: var(--text-faint);
 }
+.message-steps-total + .message-steps-failures::before {
+  content: " · ";
+}
+/* On a phone the summary needs the room; the open list still counts the steps. */
+@media (max-width: 760px) {
+  .message-steps-total {
+    display: none;
+  }
+  .message-steps-total + .message-steps-failures::before {
+    content: none;
+  }
+}
 .message-steps-chevron {
   width: 12px;
   height: 12px;

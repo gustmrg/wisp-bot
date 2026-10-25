@@ -54,7 +54,13 @@ function hostOf(url: string): string {
   }
 }
 
-/** What a group of steps did, in a few words: "Read 3 files, edited 2 files, ran 1 command". */
+/** How many kinds of work the folded line names; the rest are counted. */
+const SUMMARY_PARTS = 2;
+
+/**
+ * What a group of steps did, in a few words, naming what changed the
+ * workspace first: "Edited 2 files, ran 1 command +2 more".
+ */
 export function summarizeSteps(steps: ReadonlyArray<TurnItem>): string {
   const read = new Set<string>();
   const edited = new Set<string>();
@@ -99,19 +105,30 @@ export function summarizeSteps(steps: ReadonlyArray<TurnItem>): string {
     }
   }
   const parts = [
-    read.size ? `read ${plural(read.size, "file", "files")}` : "",
     edited.size ? `edited ${plural(edited.size, "file", "files")}` : "",
     commands ? `ran ${plural(commands, "command", "commands")}` : "",
     processes ? `managed ${plural(processes, "background process", "background processes")}` : "",
+    read.size ? `read ${plural(read.size, "file", "files")}` : "",
     searches ? `searched the workspace${searches > 1 ? ` ${searches} times` : ""}` : "",
     webSearches ? `searched the web${webSearches > 1 ? ` ${webSearches} times` : ""}` : "",
     pages ? `read ${plural(pages, "web page", "web pages")}` : "",
     browser ? "used the browser" : "",
     ...tools.map((label) => label.charAt(0).toLowerCase() + label.slice(1)),
   ].filter(Boolean);
-  const failed = steps.filter(({ status }) => status === "failed").length;
-  const text = parts.join(", ") || plural(steps.length, "step", "steps");
-  return `${text.charAt(0).toUpperCase()}${text.slice(1)}${failed ? ` · ${failed} failed` : ""}`;
+  const more = parts.length - SUMMARY_PARTS;
+  const text = parts.slice(0, SUMMARY_PARTS).join(", ") || plural(steps.length, "step", "steps");
+  return `${text.charAt(0).toUpperCase()}${text.slice(1)}${more > 0 ? ` +${more} more` : ""}`;
+}
+
+/**
+ * Whether a group of steps ended in failure: its last step or its last
+ * command failed. A failure the Wisp went on to fix, such as a test that
+ * passed on the next run, does not mark the group.
+ */
+export function stepsFailed(steps: ReadonlyArray<TurnItem>): boolean {
+  const reversed = [...steps].reverse();
+  const lastCommand = reversed.find(({ type }) => type === "command_execution");
+  return reversed[0]?.status === "failed" || lastCommand?.status === "failed";
 }
 
 const BROWSER_ACTIONS: Readonly<Record<string, [string, string]>> = {
@@ -317,7 +334,8 @@ export function MessageSteps({
 }) {
   const [open, setOpen] = useState(false);
   const current = [...steps].reverse().find(({ status }) => status === "running");
-  const failed = steps.some(({ status }) => status === "failed");
+  const failed = stepsFailed(steps);
+  const failures = steps.filter(({ status }) => status === "failed").length;
   const summary = current ? runningSummary(viewOfStep(current, processStates)) : summarizeSteps(steps);
   return (
     <section
@@ -338,7 +356,10 @@ export function MessageSteps({
           <StatusIcon status={failed ? "failed" : "completed"} />
         )}
         <span className="message-steps-label">{summary}</span>
-        <span className="message-steps-count">{plural(steps.length, "step", "steps")}</span>
+        <span className="message-steps-count">
+          <span className="message-steps-total">{plural(steps.length, "step", "steps")}</span>
+          {failures ? <span className="message-steps-failures">{`${failures} failed`}</span> : null}
+        </span>
         <ChevronRightIcon aria-hidden="true" className="message-steps-chevron" />
       </button>
       {open ? (

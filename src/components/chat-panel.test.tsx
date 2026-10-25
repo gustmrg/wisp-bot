@@ -585,9 +585,9 @@ describe("ChatPanel steps", () => {
 
     const [first] = screen.getAllByRole("region", { name: "Steps" });
     const summary = within(first!).getByRole("button", { expanded: false });
-    expect(summary).toHaveTextContent(
-      "Read 1 file, edited 1 file, ran 1 command, managed 1 background process · 1 failed4 steps",
-    );
+    // Two kinds of work by name, the rest counted; the last command failed, so the group did.
+    expect(summary).toHaveTextContent("Edited 1 file, ran 1 command +2 more4 steps1 failed");
+    expect(first).toHaveAttribute("data-status", "failed");
 
     await user.click(summary);
     const rows = within(first!).getAllByRole("listitem");
@@ -603,6 +603,38 @@ describe("ChatPanel steps", () => {
 
     await user.click(within(rows[2]!).getByRole("button", { name: "Output" }));
     expect(within(rows[2]!).getByLabelText("Output")).toHaveTextContent("1 failing");
+  });
+
+  it("does not mark a group failed when a later run passed", () => {
+    const at = "2026-10-22T10:00:00.000Z";
+    const run = (id: string, status: "completed" | "failed", exitCode: number) => ({
+      id,
+      toolName: "run_command",
+      status,
+      startedAt: at,
+      type: "command_execution" as const,
+      command: "npm test",
+      exitCode,
+    });
+    const held: Message[] = [
+      {
+        id: "r:work",
+        type: "incoming",
+        text: "",
+        status: "complete",
+        steps: [
+          run("1", "failed", 1),
+          { id: "2", toolName: "edit", status: "completed", startedAt: at, type: "file_change", path: "src/a.ts" },
+          run("3", "completed", 0),
+          { id: "4", toolName: "read", status: "completed", startedAt: at, type: "file_read", paths: ["src/b.ts"] },
+        ],
+      },
+    ];
+    renderPanel(transcript(held), { status: "idle" });
+
+    const group = screen.getByRole("region", { name: "Steps" });
+    expect(group).toHaveAttribute("data-status", "completed");
+    expect(group).toHaveTextContent("Edited 1 file, ran 2 commands +1 more4 steps1 failed");
   });
 
   it("says what the running step does while the steps go on", () => {
