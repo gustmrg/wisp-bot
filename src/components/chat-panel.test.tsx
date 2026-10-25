@@ -491,6 +491,21 @@ describe("ChatPanel circles", () => {
     // The label sits beside the name, so their text runs together.
     expect(named).toEqual(["Quill", "Lumideleted", "Deleted Wispdeleted"]);
   });
+
+  it("leaves the replies in a Wisp's own conversation unnamed, though they keep their author", () => {
+    renderPanelIn(
+      atlas,
+      [
+        { id: "1", type: "outgoing", text: "Anything new, @Atlas?" },
+        { id: "2", type: "incoming", text: "All quiet.", authorId: "atlas", authorName: "Atlas" },
+      ],
+      { wisps: { atlas: atlas.wisp } },
+    );
+
+    expect(document.querySelector(".message-author")).toBeNull();
+    expect(document.querySelector(".message-row[data-authored]")).toBeNull();
+    expect(screen.queryByRole("button", { name: "@Atlas" })).not.toBeInTheDocument();
+  });
 });
 
 function renderPanelIn(chat: ChatPanelProps["chat"], held: Message[], props: Partial<ChatPanelProps> = {}) {

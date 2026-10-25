@@ -169,10 +169,14 @@ function ChatPanel({
   const messages = transcript?.messages ?? NO_MESSAGES;
   const members = chat.kind === "circle" ? chat.members : NO_MEMBERS;
   // Wisps that replied here but have since left the circle, as a key that changes only when they do.
+  // A Wisp's own conversation records its replies' author too, but has no circle to leave.
   const formerMemberIds = [
     ...new Set(
       messages.flatMap((message) =>
-        message.type === "incoming" && message.authorId && !members.some(({ id }) => id === message.authorId)
+        chat.kind === "circle" &&
+        message.type === "incoming" &&
+        message.authorId &&
+        !members.some(({ id }) => id === message.authorId)
           ? [message.authorId]
           : [],
       ),
