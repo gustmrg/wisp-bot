@@ -6,9 +6,10 @@ Nothing here is decided. Revisit it before writing an ADR.
 ## Goal
 
 Let users write their own plugins in TypeScript, install them in Wisp, and
-eventually share them through a community marketplace. Today the five bundled
-plugins are compiled into the application, and remote MCP servers are the only
-user-extensible integrations (see [plugins](plugins.md) and
+eventually share them through a community marketplace. Today the ten bundled
+plugins are compiled into the application (GitHub, GitLab, and Atlassian are
+presets of remote MCP connections, not bundled adapters), and remote MCP
+servers are the only user-extensible integrations (see [plugins](plugins.md) and
 [ADR 004](decisions/004-wisp-plugins.md)).
 
 ## The principal obstacle: third-party code has no boundary
@@ -140,7 +141,7 @@ malicious plugin can be disabled remotely.
 ## Suggested sequence
 
 1. Internal refactor with no visible change: dynamic `PluginId`, manifest, and
-   host `ctx.fetch`, migrating the five bundled plugins to the same contract.
+   host `ctx.fetch`, migrating the bundled plugins to the same contract.
    This validates the API before opening it.
 2. Sandboxed runtime and **Load local plugin** in developer mode.
 3. Published SDK and scaffold (`npm create wisp-plugin`).

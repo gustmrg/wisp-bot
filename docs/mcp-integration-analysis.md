@@ -1,6 +1,11 @@
 # MCP integration analysis
 
-Date: 2026-09-12. Status: proposal; application behavior is unchanged.
+Date: 2026-09-12. Status: implemented; see [ADR 005](decisions/005-remote-mcp-servers.md)
+for the decision as built and [remote MCP servers](mcp-servers.md) for how it
+works. This analysis is kept as written: its file paths are those of the time
+(the services have since moved from `electron/backend/` to `backend/`), and
+the single **Settings → Integrations** panel it recommends shipped as separate
+**Plugins** and **MCP servers** panels.
 
 ## Recommendation
 

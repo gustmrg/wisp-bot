@@ -93,6 +93,14 @@ model the choice stays saved, and the Wisp has no web search.
 | Tavily | Web & research | `none`, `read` | `web_search`, `web_read` |
 | Exa | Web & research | `none`, `read` | `web_search`, `web_read` |
 | DeepSeek | Web & research | `none`, `read` | `web_search`, `web_read` |
+| Google Calendar | Productivity | `none`, `read`, `write` | `google_calendar_list_calendars`, `google_calendar_list_events`, `google_calendar_get_event`, `google_calendar_free_busy`; write also enables `google_calendar_create_event`, `google_calendar_update_event`, and `google_calendar_respond_to_event` |
+| Gmail | Productivity | `none`, `read`, `write` | `gmail_search_messages`, `gmail_read_message`, `gmail_read_thread`, `gmail_list_labels`, `gmail_list_drafts`; write also enables `gmail_create_draft` and `gmail_update_draft` |
+| Google Drive | Productivity | `none`, `read`, `write` | `google_drive_search_files`, `google_drive_get_file`, `google_drive_read_file`; write also enables `google_drive_create_file`, `google_drive_create_folder`, and `google_drive_update_file` |
+| Home Assistant | Smart home | `none`, `read`, `write` | `home_assistant_list_entities`, `home_assistant_get_state`, `home_assistant_get_history`; write also enables `home_assistant_control`, `home_assistant_control_secure`, `home_assistant_run_scene`, and `home_assistant_run_script` |
+
+GitHub, GitLab, and Atlassian are not in this table: their tools are
+discovered from their MCP servers, and their access levels are those of
+[remote MCP servers](mcp-servers.md#per-wisp-access).
 
 ## Shared web tools
 
@@ -370,6 +378,31 @@ the limit is in Wisp, not in Google's permission. The plugin cannot delete
 mail, change labels, or read attachments. Email contents are written by other
 people and reach the Wisp as data, not instructions.
 
+## Google Drive
+
+With **Read only**, a Wisp can search your Drive, including shared drives and
+files shared with you, by words in the name or content, type, folder, or
+modification date, and list a folder (`google_drive_search_files`); read a
+file's details (`google_drive_get_file`); and read a file as text
+(`google_drive_read_file`). Google Docs and Slides are read as plain text, a
+Google Sheet as CSV of its first sheet, and text files such as `.txt`, `.md`,
+`.csv`, or `.json` directly; long files are truncated. PDFs, images, and other
+files are not read, only described.
+
+With **Read and write**, it can create files: a Google Doc from plain text, a
+Google Sheet from CSV, or a text file whose type follows its extension
+(`google_drive_create_file`); create folders (`google_drive_create_folder`);
+and rename or rewrite the files it created (`google_drive_update_file`). Each
+change asks for approval unless you allowed it without asking.
+
+**Wisps change only the files they create.** Writing uses the `drive.file`
+scope, which Google limits to files and folders created with your OAuth
+client, so a Wisp cannot edit, move, delete, or reshare your own files, even
+with write access; it can add files only to My Drive or to folders it created.
+Files created with one OAuth client cannot be changed after you switch to a
+client from another Google Cloud project. File contents are written by other
+people and reach the Wisp as data, not instructions.
+
 ## Home Assistant
 
 Connect with your server's address and a long-lived access token. Create the
@@ -437,28 +470,3 @@ accounts per plugin are not available yet. See
 boundaries, and validation scope. A possible direction for user-written,
 installable plugins is described in the
 [plugin extensibility analysis](plugin-extensibility-analysis.md).
-
-## Google Drive
-
-With **Read only**, a Wisp can search your Drive, including shared drives and
-files shared with you, by words in the name or content, type, folder, or
-modification date, and list a folder (`google_drive_search_files`); read a
-file's details (`google_drive_get_file`); and read a file as text
-(`google_drive_read_file`). Google Docs and Slides are read as plain text, a
-Google Sheet as CSV of its first sheet, and text files such as `.txt`, `.md`,
-`.csv`, or `.json` directly; long files are truncated. PDFs, images, and other
-files are not read, only described.
-
-With **Read and write**, it can create files: a Google Doc from plain text, a
-Google Sheet from CSV, or a text file whose type follows its extension
-(`google_drive_create_file`); create folders (`google_drive_create_folder`);
-and rename or rewrite the files it created (`google_drive_update_file`). Each
-change asks for approval unless you allowed it without asking.
-
-**Wisps change only the files they create.** Writing uses the `drive.file`
-scope, which Google limits to files and folders created with your OAuth
-client, so a Wisp cannot edit, move, delete, or reshare your own files, even
-with write access; it can add files only to My Drive or to folders it created.
-Files created with one OAuth client cannot be changed after you switch to a
-client from another Google Cloud project. File contents are written by other
-people and reach the Wisp as data, not instructions.

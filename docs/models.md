@@ -96,7 +96,7 @@ password or token.
   messages. The Wisp's own transcript stays the record that is shown, searched,
   and backed up. Deleting the Wisp also deletes what Claude Code keeps for it
   (`claude purge`).
-- **Context:** the Wisp's **Context** tab works as on Pi: **Compact** asks
+- **Context:** the Wisp's **Context** settings work as on Pi: **Compact** asks
   Claude Code to summarize the conversation, **New topic** starts a new Claude
   Code conversation, and the renewal policy and memory apply the same way.
   Claude Code keeps its summary to itself, so none is shown.

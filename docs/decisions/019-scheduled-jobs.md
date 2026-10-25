@@ -1,11 +1,12 @@
 # ADR 019: Scheduled jobs that Wisps run in the background
 
-- Status: Proposed
-- Date: 2026-10-11
+- Status: Accepted
+- Date: 2026-10-11, accepted 2026-10-12
 - Decision owners: Wisp backend and renderer
 - Scope: Tasks a Wisp runs on a schedule without anyone present, and where their results go
 - Related: [ADR 001](001-agent-runtime.md), [ADR 008](008-wisp-skills.md), [ADR 009](009-headless-server.md),
-  [ADR 017](017-container-execution.md), [ADR 018](018-native-mobile-app.md)
+  [ADR 017](017-container-execution.md), [ADR 018](018-native-mobile-app.md),
+  [scheduled jobs](../jobs.md)
 
 ## Context
 

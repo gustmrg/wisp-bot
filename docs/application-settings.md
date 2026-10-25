@@ -1,8 +1,18 @@
 # Application settings and status
 
-**Settings** (application-level) has panels for **General**, **AI Model**,
-**Plugins**, **MCP servers**, **Token usage**, **Notifications**,
-**Shortcuts**, and **About**.
+**Settings** (application-level) has panels for **General**,
+**Connections**, **Remote access**, **AI Model**, **Voice input**,
+**Plugins**, **MCP servers**, **Jobs**, **Token usage**, **Storage**,
+**Notifications**, **Shortcuts**, and **About**. Where they are covered
+elsewhere:
+
+- **Connections** and **Remote access**: [headless server](remote-server.md#connect-the-desktop-app)
+  and [remote access to this computer](remote-server.md#remote-access-to-this-computer).
+- **AI Model**: [AI models](models.md).
+- **Plugins** and **MCP servers**: [plugins](plugins.md) and
+  [remote MCP servers](mcp-servers.md).
+- **Jobs**: [scheduled jobs](jobs.md).
+- **Token usage**: [token usage](token-usage.md).
 
 ## First-run setup
 
@@ -39,15 +49,45 @@ zone to the server it is connected to, which saves it in
 each message, and daily context renewal and new scheduled messages use the
 same zone. Until the app reports a zone, a server uses its own.
 
-Settings that are saved but not wired to the desktop yet (microphone) are
-shown disabled with a **Soon** badge.
-
 **Plugins** and **MCP servers** open each connection in place, inside the
 settings dialog. Removing a connection or a provider API key asks for an
 inline confirmation first.
 
-Preferences are stored locally in the renderer. Desktop integration for some
-of them is not wired up yet — see "Not connected yet" below.
+Preferences are stored locally in the renderer.
+
+## Voice input
+
+The composer's main button records a message while there is nothing to send
+(also with `Ctrl+Space`, which can be changed under **Shortcuts**). A
+recording lasts at most five minutes and is transcribed by a cloud
+speech-to-text provider: **Groq** (the default), **OpenAI**, or **Mistral**,
+with the model and the **Language** you speak (or auto-detect) chosen here,
+along with the microphone. **Send automatically** sends the message as soon as
+it is transcribed; otherwise the transcript waits in the composer for review.
+
+Each provider needs its API key. A key saved for that provider's chat models
+in **AI Model** is used too; see [subscription sign-in](models.md#subscription-sign-in)
+for how a voice key and a ChatGPT sign-in coexist. In the browser app, voice
+input needs HTTPS.
+
+## Storage
+
+**Storage** measures the space each Wisp's and circle's workspace takes,
+largest first, with its largest folders and files, and lets you browse a
+workspace folder by folder. Selected files and folders can be removed after a
+preview of what will go; a removal from `inbox/` warns that messages may refer
+to those attachments. The same panel changes a workspace's size limit (as in
+the Wisp's or circle's **Workspace** settings) and lists the archives of
+deleted Wisps and circles, which can be deleted permanently. Sizes are the
+files' logical lengths, not the space allocated on disk.
+
+## Shortcuts
+
+**Shortcuts** lists the keyboard shortcuts: search (`Cmd/Ctrl+K`), collapse or
+expand the sidebar (`Cmd/Ctrl+B`), send (`Enter`), new line (`Shift+Enter`),
+schedule a message (`Cmd/Ctrl+Shift+Enter`), and cancel a voice recording
+(`Esc`). The voice input shortcut can be changed or reset; it needs `Ctrl`,
+`Alt`, or `Super` with another key, or a function key.
 
 ## Launch at login
 
@@ -70,7 +110,9 @@ registration. Disable this option before removing the application.
 ## Notifications
 
 The **Notifications** panel contains the app-level **Notification sounds** toggle,
-a volume slider (0–100%), and a Test button for each sound.
+a volume slider (0–100%), and a Test button for each sound. In the desktop
+app it also has **System notifications**, with a switch and a Test button per
+event; see [below](#system-notifications).
 Existing sound preferences are preserved. New settings default to full volume,
 all three events enabled, and open-conversation muting off.
 
@@ -86,8 +128,20 @@ notification toggle. Failed or cancelled turns do not also play the completion
 sound. Volume zero is silent. Test buttons preview sounds at the chosen volume,
 even if that event is disabled, but are disabled when global sounds are off or
 volume is zero. Settings are saved on this device; disabling sounds retains the
-volume and event choices. This panel currently controls sounds only, without
-system notifications or scheduled quiet hours.
+volume and event choices. There are no scheduled quiet hours.
+
+### System notifications
+
+The desktop app's main process shows native notifications and the Dock or
+taskbar badge for the same events, and for a [job's](jobs.md) message, also
+with every window closed while the app runs
+([ADR 022](decisions/022-system-notifications.md)). The title is the Wisp's
+name and the body the start of its reply, the approval's summary, or the
+error. Clicking one opens that conversation. The conversation on screen is
+skipped while the app has focus, and a Wisp whose notifications are off never
+notifies. The badge counts unread conversations plus pending approvals. If
+notifications never appear, they are turned off for Wisp in the system's
+settings. The browser app has no system notifications.
 
 ## Updates (About)
 
@@ -105,8 +159,5 @@ in an installed release").
 
 ## Not connected yet
 
-- Microphone capture and voice input.
 - Launch at login on macOS.
-- The Shortcuts settings panel (the `Cmd/Ctrl+K` search dialog itself works).
-- **Circles** cannot run their own model sessions, and the create dialog only
-  creates Wisps.
+- System notifications in the browser app and on phones (Web Push, SWE-163).

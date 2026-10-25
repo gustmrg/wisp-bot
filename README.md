@@ -49,8 +49,10 @@ preset.
   and reasoning level. See [AI models](docs/models.md).
 - **Persistent agent conversations** — one durable Pi session per Wisp, with
   streaming events, retries, and compaction.
-- **Bundled plugins** — Brave Search, Linear, Firecrawl, Tavily, and Exa, connected once and
-  granted per Wisp. See [plugins](docs/plugins.md).
+- **Bundled plugins** — web search and page reading (Brave Search,
+  Firecrawl, Tavily, Exa, DeepSeek), Linear, Google Calendar, Gmail, Google
+  Drive, Home Assistant, and GitHub, GitLab, and Atlassian over MCP, connected
+  once and granted per Wisp. See [plugins](docs/plugins.md).
 - **Remote MCP servers** — Streamable HTTP integrations with header or OAuth
   authentication, granted per Wisp. See [MCP servers](docs/mcp-servers.md).
 - **Context and memory** — continuity summaries, explicit new topics, and
@@ -66,6 +68,13 @@ preset.
   own, to open pages, follow links and fill in forms; it asks before clicking
   buttons, sending forms or typing passwords. See
   [ADR 028](docs/decisions/028-wisp-browser.md).
+- **Circles** — bring several Wisps into one conversation and address them
+  with `@` mentions; they answer one at a time and can hand work to each
+  other. See [circles](docs/circles.md).
+- **Scheduled jobs and messages** — ask a Wisp to run a task on a schedule
+  and report back, or schedule your own message for later. See
+  [scheduled jobs](docs/jobs.md) and
+  [scheduled messages](docs/scheduled-messages.md).
 - **Message search** — search every conversation with `Cmd/Ctrl+K` and jump to
   the matching message.
 - **Skills** — per-Wisp reusable procedures, saved on request after you
@@ -160,12 +169,16 @@ locally.
 | [Architecture](docs/architecture.md) | Process boundary, project structure, runtime, data storage |
 | [Security](docs/security.md) | Trust boundary, credential storage, tool authorization |
 | [AI models](docs/models.md) | Global model settings and per-Wisp overrides |
-| [Plugins](docs/plugins.md) | Brave Search, Linear, Firecrawl, Tavily, and Exa connections and access |
+| [Plugins](docs/plugins.md) | Bundled plugins and plugins over MCP: connections and per-Wisp access |
 | [MCP servers](docs/mcp-servers.md) | Remote MCP integrations, access, and revocation |
-| [Context and memory](docs/context-and-memory.md) | Context renewal, summaries, new topics, memory |
+| [Context and memory](docs/context-and-memory.md) | Context renewal, summaries, new topics, memory, skills |
+| [Circles](docs/circles.md) | Conversations with several Wisps, mentions, and handoffs |
+| [Scheduled jobs](docs/jobs.md) | Tasks Wisps run on a schedule and how runs report back |
+| [Queued and scheduled messages](docs/scheduled-messages.md) | Messages sent while a Wisp works, and messages sent later |
 | [Token usage](docs/token-usage.md) | Session reports and the usage dashboard |
 | [Mobile layout](docs/mobile-layout.md) | Responsive single-screen layout below 760px |
-| [Application settings](docs/application-settings.md) | App settings, notification sounds, updates, known limitations |
+| [Application settings](docs/application-settings.md) | App settings, voice input, storage, notifications, updates, known limitations |
+| [Headless server](docs/remote-server.md) | Running a Wisp server, connecting to it, backups, the browser app, and the HTTP API |
 | [Installing on macOS](docs/installing-on-macos.md) | Running unsigned builds under Gatekeeper |
 | [Installing on Linux](docs/installing-on-linux.md) | `.deb` and AppImage installation, keyring requirement |
 | [Release runbook](docs/release-runbook.md) | Publishing, verification, and rollback for releases |

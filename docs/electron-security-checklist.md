@@ -1,6 +1,6 @@
 # Electron security checklist
 
-Verified for the Phase 6 backend boundary:
+Invariants of the renderer and backend boundary:
 
 - Renderer runs with `contextIsolation`, Chromium sandboxing, and no Node integration.
 - Preload exposes a fixed, typed IPC allowlist through `contextBridge`.
@@ -10,11 +10,11 @@ Verified for the Phase 6 backend boundary:
 - The renderer applies a restrictive content security policy.
 - Provider credentials remain encrypted in the main process and never enter renderer events.
 - Plugin keys use a separate encrypted store; configuration responses never return saved secrets.
-- Automatic discovery of project Pi extensions, skills, prompts, and context files is disabled. The bundled Brave Search, Linear, and Firecrawl tools are registered explicitly, and arbitrary plugins are not accepted. Remote MCP servers are accepted only as user-configured HTTPS Streamable HTTP endpoints, and every Wisp is denied access to them by default ([ADR 005](decisions/005-remote-mcp-servers.md)).
+- Automatic discovery of project Pi extensions, skills, prompts, and context files is disabled. The bundled plugin tools ([plugins](plugins.md)) are registered explicitly, and arbitrary plugins are not accepted; GitHub, GitLab, and Atlassian are fixed presets of remote MCP connections. Remote MCP servers are accepted only as user-configured HTTPS Streamable HTTP endpoints, and every Wisp is denied access to them by default ([ADR 005](decisions/005-remote-mcp-servers.md)).
 - Plugin access defaults to deny for every Wisp and is bound to its immutable application session ID. Calls recheck live grants; revocation cancels pending approvals and requests.
-- Linear mutations require an expiring, single-use integration approval. Workspace auto-review rules cannot authorize external writes.
+- Bundled plugin writes (Linear, Google, Home Assistant) require an expiring, single-use integration approval unless the person allowed them without asking for that Wisp. Workspace auto-review rules cannot authorize external writes.
 - Bundled plugin requests use fixed HTTPS provider endpoints, reject redirects, and enforce request/response bounds. Remote mutation cancellation is not a rollback guarantee.
-- Pi's shell and PowerShell tools are excluded and cannot be enabled by tool policy. Wisps given container execution run commands only through `run_command`, in their own container ([ADR 017](decisions/017-container-execution.md)).
+- Pi's shell and PowerShell tools are excluded and cannot be enabled by tool policy. Wisps given container execution run commands only through `run_command` and `process`, in their own container ([ADR 017](decisions/017-container-execution.md)). A Wisp's `browser` tool drives Chromium in a separate container that mounts nothing of the Wisp's ([ADR 028](decisions/028-wisp-browser.md)).
 - File paths are canonicalized against the Wisp workspace, including symlink parents.
 - Mutation paths are revalidated after approval and before execution.
 - Approval responses are expiring, single-use, and bound to a window, conversation, and tool call.

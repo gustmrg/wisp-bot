@@ -138,7 +138,7 @@ delete itself, and job runs never get these tools.
 
 ## Commands
 
-A Wisp runs commands only when **Wisp settings → General → Commands** is set
+A Wisp runs commands only when **Wisp settings → General → Commands & browser** is set
 to run them in a container ([ADR 017](decisions/017-container-execution.md)).
 Its `run_command` and `process` tools run commands, in the foreground or in
 the background, in that Wisp's own Docker or Podman container, which mounts only the Wisp's workspace and receives none of the
