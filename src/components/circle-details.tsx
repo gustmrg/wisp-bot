@@ -3,7 +3,8 @@ import { type ReactNode, useState } from "react";
 import { circleLeadId, withCircleLead } from "../../shared/conversations";
 import type { CircleChatChanges, CircleChatView, WispCollection, WispId } from "@/chat-data";
 import type { IntegrationSettingsTarget } from "@/lib/plugin-access";
-import { ChatAvatar, WispAvatar } from "@/components/chat-avatar";
+import { cn } from "@/lib/utils";
+import { ChatAvatar } from "@/components/chat-avatar";
 import { CircleLeadPicker } from "@/components/circle-lead-picker";
 import { CircleMemberPicker } from "@/components/circle-member-picker";
 import {
@@ -15,14 +16,18 @@ import {
   SettingsRowDescription,
   SettingsRowTitle,
 } from "@/components/settings/settings-primitives";
-import { Accordion } from "@/components/ui/accordion";
 import { Button } from "@/components/ui/button";
 import { FormStatus } from "@/components/ui/form-status";
 import { ToggleSwitch } from "@/components/ui/toggle-switch";
-import { SettingsAccordionSection } from "@/components/wisp-details";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { WispWorkspaceSettings } from "@/components/wisp-workspace-settings";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+
+const TAB_ORDER = ["general", "members", "workspace"] as const;
+
+/** The tabs of a circle's settings. */
+export type CircleSettingsTab = (typeof TAB_ORDER)[number];
 
 interface CircleDetailsProps {
   chat: CircleChatView;
@@ -31,6 +36,8 @@ interface CircleDetailsProps {
   onChange: (changes: CircleChatChanges) => Promise<boolean> | void;
   onOpenSettings?: (target: IntegrationSettingsTarget) => void;
   actions?: ReactNode;
+  /** The tab shown first. */
+  initialTab?: CircleSettingsTab;
 }
 
 interface CircleSettingsDraft {
@@ -50,7 +57,17 @@ function sameIds(a: ReadonlyArray<WispId>, b: ReadonlyArray<WispId>): boolean {
   return a.length === b.length && a.every((id, index) => id === b[index]);
 }
 
-export function CircleDetails({ chat, wisps, onChange, onOpenSettings, actions }: CircleDetailsProps) {
+export function CircleDetails({
+  chat,
+  wisps,
+  onChange,
+  onOpenSettings,
+  actions,
+  initialTab = "general",
+}: CircleDetailsProps) {
+  const [tab, setTab] = useState<CircleSettingsTab>(initialTab);
+  const [slideDirection, setSlideDirection] = useState<"forward" | "back">("forward");
+  const [visited, setVisited] = useState(() => new Set<string>(["general", initialTab]));
   const [draft, setDraft] = useState(() => draftOf(chat));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -71,6 +88,7 @@ export function CircleDetails({ chat, wisps, onChange, onOpenSettings, actions }
     }),
   };
   const changed = Object.keys(changes).length > 1;
+  const slideClass = slideDirection === "forward" ? "animate-tab-forward" : "animate-tab-back";
 
   function edit(next: Partial<CircleSettingsDraft>) {
     setDraft((current) => ({ ...current, ...next }));
@@ -94,8 +112,31 @@ export function CircleDetails({ chat, wisps, onChange, onOpenSettings, actions }
   }
 
   return (
-    <div className="relative flex min-h-0 flex-1 flex-col">
-      <div className="min-h-0 flex-1 overflow-y-auto p-3.5">
+    <Tabs
+      value={tab}
+      onValueChange={(value) => {
+        if (typeof value !== "string") return;
+        const nextIndex = TAB_ORDER.indexOf(value as CircleSettingsTab);
+        const currentIndex = TAB_ORDER.indexOf(tab);
+        if (nextIndex < 0) return;
+        if (nextIndex !== currentIndex) setSlideDirection(nextIndex > currentIndex ? "forward" : "back");
+        setTab(value as CircleSettingsTab);
+        setVisited((current) => (current.has(value) ? current : new Set([...current, value])));
+      }}
+      className="min-h-0 flex-1 gap-0 overflow-hidden"
+    >
+      <div className="flex-none border-b border-border px-3.5 py-3">
+        <TabsList className="w-full" aria-label="Circle settings sections">
+          <TabsTrigger value="general">General</TabsTrigger>
+          <TabsTrigger value="members">Members</TabsTrigger>
+          <TabsTrigger value="workspace">Workspace</TabsTrigger>
+        </TabsList>
+      </div>
+      <TabsContent
+        value="general"
+        keepMounted
+        className={cn("min-h-0 overflow-y-auto p-3.5", tab === "general" && slideClass)}
+      >
         <div className="flex justify-center pt-5 pb-[30px]">
           <ChatAvatar chat={{ ...chat, members }} size="xl" />
         </div>
@@ -118,36 +159,6 @@ export function CircleDetails({ chat, wisps, onChange, onOpenSettings, actions }
             onChange={(event) => edit({ description: event.currentTarget.value })}
           />
         </SettingsField>
-        <section className="my-4" aria-labelledby="circle-participants-title">
-          <h3 id="circle-participants-title" className="mb-2 mt-0 text-dim text-sm font-medium">
-            Participants ({members.length})
-          </h3>
-          {members.length ? (
-            <ul className="m-0 flex list-none flex-col gap-2 p-0">
-              {members.map((member) => (
-                <li key={member.id} className="flex items-center gap-2">
-                  <WispAvatar wisp={member} size="sm" />
-                  <span className="min-w-0 [overflow-wrap:anywhere]">{member.name}</span>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p className="text-dim text-sm">No Wisps in this circle.</p>
-          )}
-        </section>
-        <CircleMemberPicker
-          label="Edit participants"
-          availableWisps={availableWisps}
-          selectedIds={draft.memberIds}
-          onChange={(memberIds) => edit({ memberIds })}
-        />
-        <div className="mt-[15px]">
-          <CircleLeadPicker
-            members={members}
-            leadId={circleLeadId(draft)}
-            onChange={(leadId) => edit({ memberIds: withCircleLead(draft.memberIds, leadId) })}
-          />
-        </div>
         <SettingsCard className="mt-[15px]">
           <SettingsRow className="min-h-0 p-[11px]">
             <SettingsRowCopy>
@@ -161,14 +172,37 @@ export function CircleDetails({ chat, wisps, onChange, onOpenSettings, actions }
             />
           </SettingsRow>
         </SettingsCard>
-        {/* The workspace saves its own changes. */}
-        <Accordion multiple className="mt-4 border-t border-border">
-          <SettingsAccordionSection value="workspace" label="Workspace">
-            <WispWorkspaceSettings conversationId={chat.id} kind="circle" onOpenSettings={onOpenSettings} />
-          </SettingsAccordionSection>
-        </Accordion>
         {actions ? <SettingsActions className="mt-[18px]">{actions}</SettingsActions> : null}
-      </div>
+      </TabsContent>
+      <TabsContent
+        value="members"
+        keepMounted
+        className={cn("min-h-0 overflow-y-auto p-3.5", tab === "members" && slideClass)}
+      >
+        <CircleMemberPicker
+          label={`Participants (${members.length})`}
+          availableWisps={availableWisps}
+          selectedIds={draft.memberIds}
+          onChange={(memberIds) => edit({ memberIds })}
+        />
+        <div className="mt-[15px]">
+          <CircleLeadPicker
+            members={members}
+            leadId={circleLeadId(draft)}
+            onChange={(leadId) => edit({ memberIds: withCircleLead(draft.memberIds, leadId) })}
+          />
+        </div>
+      </TabsContent>
+      {/* The workspace saves its own changes. */}
+      <TabsContent
+        value="workspace"
+        keepMounted
+        className={cn("min-h-0 overflow-y-auto p-3.5", tab === "workspace" && slideClass)}
+      >
+        {visited.has("workspace") ? (
+          <WispWorkspaceSettings conversationId={chat.id} kind="circle" onOpenSettings={onOpenSettings} />
+        ) : null}
+      </TabsContent>
       {changed ? (
         <footer className="flex flex-none flex-col gap-3 border-t border-border p-3.5">
           <FormStatus error={error} />
@@ -191,6 +225,6 @@ export function CircleDetails({ chat, wisps, onChange, onOpenSettings, actions }
           </div>
         </footer>
       ) : null}
-    </div>
+    </Tabs>
   );
 }

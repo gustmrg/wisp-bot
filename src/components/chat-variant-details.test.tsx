@@ -107,11 +107,18 @@ describe("variant details", () => {
     expect(onChangeNotifications).toHaveBeenCalledWith(false);
   });
 
-  it("renders circle-only membership details", () => {
+  it("renders circle-only membership details on the Members tab", async () => {
+    const user = userEvent.setup();
     render(<CircleDetails chat={circle} wisps={{ atlas: wisp.wisp }} onChange={vi.fn()} />);
+    expect(screen.getByRole("tab", { name: "General" })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("textbox", { name: "Name" })).toBeVisible();
+    expect(screen.getByText("Participants (1)")).not.toBeVisible();
+
+    await user.click(screen.getByRole("tab", { name: "Members" }));
+
     expect(screen.getByText("Participants (1)")).toBeVisible();
-    expect(screen.getAllByText("Atlas")).not.toHaveLength(0);
-    expect(screen.getByRole("group", { name: "Edit participants" })).toBeVisible();
+    expect(screen.getByRole("group", { name: "Participants (1)" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "Remove Atlas" })).toBeVisible();
   });
 
   it("shows a circle's shared workspace and lets its size change", async () => {
@@ -127,10 +134,10 @@ describe("variant details", () => {
     }));
     Object.defineProperty(window, "wisp", { configurable: true, value: { getWorkspace, setWorkspaceQuota } });
     render(<CircleDetails chat={circle} wisps={{ atlas: wisp.wisp }} onChange={vi.fn()} />);
-    // Loaded only once the section is opened.
+    // Loaded only once the tab is opened.
     expect(getWorkspace).not.toHaveBeenCalled();
 
-    await user.click(screen.getByRole("button", { name: "Workspace" }));
+    await user.click(screen.getByRole("tab", { name: "Workspace" }));
 
     expect(await screen.findByText("10.0 MiB of 512 MiB used")).toBeVisible();
     expect(screen.getByText(/every Wisp in this circle reads and writes/)).toBeVisible();
@@ -152,6 +159,7 @@ describe("variant details", () => {
         onChange={onChange}
       />,
     );
+    await user.click(screen.getByRole("tab", { name: "Members" }));
 
     expect(screen.getByRole("radio", { name: "Atlas" })).toBeChecked();
     await user.click(screen.getByRole("radio", { name: "Nova" }));
@@ -171,6 +179,7 @@ describe("variant details", () => {
         onChange={onChange}
       />,
     );
+    await user.click(screen.getByRole("tab", { name: "Members" }));
 
     await user.click(screen.getByRole("button", { name: "Remove Nova" }));
 
@@ -196,6 +205,28 @@ describe("variant details", () => {
     await user.click(screen.getByRole("button", { name: "Save circle" }));
     expect(onChange).toHaveBeenCalledTimes(1);
     expect(onChange).toHaveBeenCalledWith({ kind: "circle", name: "Untitled" });
+  });
+
+  it("keeps unsaved edits from every tab and saves them together", async () => {
+    const user = userEvent.setup();
+    const onChange = vi.fn(async () => true);
+    const nova = wispChatView("nova", { wisp: { name: "Nova" } }).wisp;
+    render(
+      <CircleDetails
+        chat={circleChatView("crew", [wisp.wisp, nova], { name: "Crew" })}
+        wisps={{ atlas: wisp.wisp, nova }}
+        onChange={onChange}
+      />,
+    );
+
+    await user.type(screen.getByRole("textbox", { name: "Label (optional)" }), "Ops");
+    await user.click(screen.getByRole("tab", { name: "Members" }));
+    await user.click(screen.getByRole("button", { name: "Remove Nova" }));
+    await user.click(screen.getByRole("tab", { name: "General" }));
+
+    expect(screen.getByRole("textbox", { name: "Label (optional)" })).toHaveValue(`${circle.label}Ops`);
+    await user.click(screen.getByRole("button", { name: "Save circle" }));
+    expect(onChange).toHaveBeenCalledWith({ kind: "circle", label: `${circle.label}Ops`, memberIds: [wisp.wisp.id] });
   });
 
   it("keeps the changes and says so when the circle cannot be saved", async () => {
