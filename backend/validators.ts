@@ -435,9 +435,9 @@ function stringValue(value: unknown, maxLength: number): string {
 }
 
 export function parseUsageReportRequest(value: unknown): UsageReportRequest {
-  const { period } = asRecord(value);
+  const { period, conversationId } = asRecord(value);
   if (period !== "7d" && period !== "30d" && period !== "all") throw invalidRequest();
-  return { period };
+  return conversationId === undefined ? { period } : { period, conversationId: parseId(conversationId) };
 }
 
 function parseMemoryScope(value: unknown): MemoryScope {

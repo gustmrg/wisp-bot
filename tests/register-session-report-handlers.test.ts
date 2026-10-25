@@ -118,12 +118,21 @@ it("authorizes and validates usage requests before reading history, and disposes
   untrusted.dispose();
   const registration = registerSessionReportHandlers(ipcMain as never, service, () => true);
   const handler = handlers.get(WISP_IPC_CHANNELS.getUsageReport);
-  for (const payload of [null, {}, { period: "../../private" }, { period: 7 }]) {
+  for (const payload of [
+    null,
+    {},
+    { period: "../../private" },
+    { period: 7 },
+    { period: "7d", conversationId: "../crew" },
+    { period: "7d", conversationId: 7 },
+  ]) {
     await expect(handler?.({}, payload)).resolves.toMatchObject({ ok: false, error: { code: "invalid_request" } });
   }
   expect(getUsageReport).not.toHaveBeenCalled();
   await expect(handler?.({}, { period: "7d" })).resolves.toMatchObject({ ok: true, value: { period: "7d" } });
   expect(getUsageReport).toHaveBeenCalledWith({ period: "7d" });
+  await handler?.({}, { period: "all", conversationId: "crew" });
+  expect(getUsageReport).toHaveBeenLastCalledWith({ period: "all", conversationId: "crew" });
   registration.dispose();
   expect(ipcMain.removeHandler).toHaveBeenCalledWith(WISP_IPC_CHANNELS.getUsageReport);
 });
