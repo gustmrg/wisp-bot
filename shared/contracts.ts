@@ -701,6 +701,8 @@ export type UsagePeriod = "7d" | "30d" | "all";
 
 export interface UsageReportRequest {
   period: UsagePeriod;
+  /** A circle: only its members' usage in it, one row per member, keyed by the Wisp's ID. */
+  conversationId?: string;
 }
 
 export interface WispUsageRow {

@@ -20,11 +20,12 @@ import { Button } from "@/components/ui/button";
 import { FormStatus } from "@/components/ui/form-status";
 import { ToggleSwitch } from "@/components/ui/toggle-switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { UsageReportPanel } from "@/components/usage-settings-section";
 import { WispWorkspaceSettings } from "@/components/wisp-workspace-settings";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 
-const TAB_ORDER = ["general", "members", "workspace"] as const;
+const TAB_ORDER = ["general", "members", "workspace", "usage"] as const;
 
 /** The tabs of a circle's settings. */
 export type CircleSettingsTab = (typeof TAB_ORDER)[number];
@@ -130,6 +131,7 @@ export function CircleDetails({
           <TabsTrigger value="general">General</TabsTrigger>
           <TabsTrigger value="members">Members</TabsTrigger>
           <TabsTrigger value="workspace">Workspace</TabsTrigger>
+          <TabsTrigger value="usage">Usage</TabsTrigger>
         </TabsList>
       </div>
       <TabsContent
@@ -201,6 +203,15 @@ export function CircleDetails({
       >
         {visited.has("workspace") ? (
           <WispWorkspaceSettings conversationId={chat.id} kind="circle" onOpenSettings={onOpenSettings} />
+        ) : null}
+      </TabsContent>
+      <TabsContent
+        value="usage"
+        keepMounted
+        className={cn("min-h-0 overflow-y-auto p-3.5", tab === "usage" && slideClass)}
+      >
+        {visited.has("usage") ? (
+          <UsageReportPanel conversationId={chat.id} wisps={chat.members} active={tab === "usage"} />
         ) : null}
       </TabsContent>
       {changed ? (

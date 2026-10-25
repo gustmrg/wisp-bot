@@ -127,7 +127,8 @@ row, and the approval is answered in the conversation. The conversation reads as
 column. A gear button opens a side panel on the Wisp's settings; who the Wisp
 is sits in the panel's header, as tall as the conversation's own top bar, and
 General, Model, Access, and Usage tabs carry the rest. A circle's gear opens
-its settings directly, in General, Members, and Workspace tabs.
+its settings directly, in General, Members, Workspace, and Usage tabs; its
+Usage counts only what each member used in that circle.
 
 In the dark theme a near-black Wisp lends the interface a silver tint instead
 of its own color, so its glow and accents still show on the dark background.

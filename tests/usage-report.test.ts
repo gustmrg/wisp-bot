@@ -6,7 +6,7 @@ import { claudeCodeFallbackEntry, claudeCodeUsageEntry } from "../backend/claude
 import { ConversationRepository } from "../backend/conversation-repository.js";
 import { SessionReportService } from "../backend/session-report-service.js";
 import { ModelPricingService } from "../backend/model-pricing-service.js";
-import type { Chat } from "../shared/conversations.js";
+import type { Chat, CircleChat } from "../shared/conversations.js";
 
 const directories: string[] = [];
 afterEach(async () => {
@@ -90,6 +90,68 @@ describe("usage history", () => {
     const restoredService = new SessionReportService(restored, pricing);
     expect((await restoredService.getUsageReport({ period: "all" })).totals).toEqual(all.totals);
     expect((await restoredService.getUsageReport({ period: "all" })).totals).toEqual(all.totals);
+  });
+
+  it("reports a circle's members' usage in that circle alone, one row per member", async () => {
+    const { repository, service } = await setup();
+    const circle: CircleChat = {
+      id: "crew",
+      kind: "circle",
+      name: "Crew",
+      label: "",
+      description: "",
+      memberIds: ["second", "first"],
+      notifyOnUpdatesEnabled: true,
+      preview: "",
+      messages: [],
+    };
+    await repository.create(circle);
+    const recent = new Date(Date.now() - 1000).toISOString();
+    const [second] = repository.getCircleAgentContext("crew").members;
+    // The first Wisp's own conversation is not the circle's.
+    await writeFile(
+      path.join(repository.getAgentContext("first").sessionDirectory, "own.jsonl"),
+      `${JSON.stringify(entry(recent))}\n`,
+    );
+    await writeFile(path.join(second!.sessionDirectory, "circle.jsonl"), `${JSON.stringify(entry(recent))}\n`);
+
+    const report = await service.getUsageReport({ period: "all", conversationId: "crew" });
+
+    expect(report.incomplete).toBe(false);
+    expect(
+      report.wisps.map(({ conversationId, sessions, totals }) => [conversationId, sessions, totals.totalTokens]),
+    ).toEqual([
+      ["second", 1, 1350],
+      ["first", 0, 0],
+    ]);
+    expect(report.totals.totalTokens).toBe(1350);
+    // Every Wisp's usage still counts its sessions in circles as its own.
+    const everyone = await service.getUsageReport({ period: "all" });
+    expect(everyone.wisps.map(({ totals }) => totals.totalTokens)).toEqual([1350, 1350]);
+    await expect(service.getUsageReport({ period: "all", conversationId: "first" })).rejects.toMatchObject({
+      code: "invalid_request",
+    });
+  });
+
+  it("does not count a circle member's session as partial before its first turn there", async () => {
+    const { repository, service } = await setup();
+    await repository.create({
+      id: "crew",
+      kind: "circle",
+      name: "Crew",
+      label: "",
+      description: "",
+      memberIds: ["first"],
+      notifyOnUpdatesEnabled: true,
+      preview: "",
+      messages: [],
+    } satisfies CircleChat);
+    await rm(repository.getCircleAgentContext("crew").members[0]!.sessionDirectory, { recursive: true });
+
+    const report = await service.getUsageReport({ period: "all", conversationId: "crew" });
+
+    expect(report.incomplete).toBe(false);
+    expect(report.wisps).toEqual([expect.objectContaining({ conversationId: "first", sessions: 0 })]);
   });
 
   it("marks unreadable history as partial and unavailable pricing as unknown", async () => {

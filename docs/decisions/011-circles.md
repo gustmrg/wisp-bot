@@ -145,7 +145,8 @@ too. A circle does not override them for now.
 ### 9. Usage and reports
 
 Usage rows stay per Wisp, and each session writes its usage in its own folder
-as it does now.
+as it does now. A circle's settings also show its members' usage in that
+circle alone, read from their session folders there.
 
 ### 10. Claude Code
 
@@ -172,7 +173,7 @@ members share one:
 - The composer completes `@` mentions from the circle's members.
 - The activity line names the Wisp working ("Atlas is working…").
 - Circle settings, in tabs: General (name, label, description,
-  notifications), Members (members and lead), and Workspace.
+  notifications), Members (members and lead), Workspace, and Usage.
 
 ## Delivery
 

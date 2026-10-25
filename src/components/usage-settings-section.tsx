@@ -21,38 +21,6 @@ const PERIOD_OPTIONS: ReadonlyArray<{ value: UsagePeriod; label: string }> = [
 type Totals = WispUsageRow["totals"];
 
 export function UsageSettingsSection({ wisps = [] }: { wisps?: ReadonlyArray<WispOption> }) {
-  const [request, setRequest] = useState<{ period: UsagePeriod }>({ period: "30d" });
-  const timeZone = useTimeZone();
-  // The previous report stays visible (dimmed) while the next one loads, so
-  // switching periods or refreshing does not collapse the page.
-  const [state, setState] = useState<{ report?: UsageReport; error?: string; loading: boolean }>({ loading: true });
-  const [slide, setSlide] = useState<"animate-tab-forward" | "animate-tab-back">("animate-tab-forward");
-  useEffect(() => {
-    let active = true;
-    setState((current) => ({ report: current.report, loading: true }));
-    void window.wisp
-      .getUsageReport(request)
-      .then((result) => {
-        if (active)
-          setState(
-            result.ok ? { report: result.value, loading: false } : { error: result.error.message, loading: false },
-          );
-      })
-      .catch(() => {
-        if (active) setState({ error: "Could not load token usage.", loading: false });
-      });
-    return () => {
-      active = false;
-    };
-  }, [request]);
-  const changePeriod = (period: UsagePeriod) => {
-    const order = PERIOD_OPTIONS.map((option) => option.value);
-    setSlide(order.indexOf(period) > order.indexOf(request.period) ? "animate-tab-forward" : "animate-tab-back");
-    setRequest({ period });
-  };
-  const refresh = () => setRequest((value) => ({ ...value }));
-  const report = state.report;
-  const wispsById = new Map(wisps.map((wisp) => [wisp.id, wisp]));
   return (
     <section
       id="usage-settings-panel"
@@ -65,6 +33,57 @@ export function UsageSettingsSection({ wisps = [] }: { wisps?: ReadonlyArray<Wis
       <p className="mb-4 text-xs leading-relaxed text-dim">
         Tokens and estimated cost per Wisp, from saved session history on this device.
       </p>
+      <UsageReportPanel wisps={wisps} />
+    </section>
+  );
+}
+
+interface UsageReportPanelProps {
+  wisps?: ReadonlyArray<WispOption>;
+  /** A circle whose members' usage in it is shown, rather than every Wisp's everywhere. */
+  conversationId?: string;
+  /** Loads again each time it becomes active. */
+  active?: boolean;
+}
+
+/** Token usage by Wisp, for a period: every Wisp's, or only what a circle's members used in it. */
+export function UsageReportPanel({ wisps = [], conversationId, active = true }: UsageReportPanelProps) {
+  const [request, setRequest] = useState<{ period: UsagePeriod }>({ period: "30d" });
+  const timeZone = useTimeZone();
+  // The previous report stays visible (dimmed) while the next one loads, so
+  // switching periods or refreshing does not collapse the page.
+  const [state, setState] = useState<{ report?: UsageReport; error?: string; loading: boolean }>({ loading: true });
+  const [slide, setSlide] = useState<"animate-tab-forward" | "animate-tab-back">("animate-tab-forward");
+  useEffect(() => {
+    if (!active) return;
+    let current = true;
+    setState((value) => ({ report: value.report, loading: true }));
+    void window.wisp
+      .getUsageReport(conversationId ? { ...request, conversationId } : request)
+      .then((result) => {
+        if (current)
+          setState(
+            result.ok ? { report: result.value, loading: false } : { error: result.error.message, loading: false },
+          );
+      })
+      .catch(() => {
+        if (current) setState({ error: "Could not load token usage.", loading: false });
+      });
+    return () => {
+      current = false;
+    };
+  }, [request, conversationId, active]);
+  const changePeriod = (period: UsagePeriod) => {
+    const order = PERIOD_OPTIONS.map((option) => option.value);
+    setSlide(order.indexOf(period) > order.indexOf(request.period) ? "animate-tab-forward" : "animate-tab-back");
+    setRequest({ period });
+  };
+  const refresh = () => setRequest((value) => ({ ...value }));
+  const report = state.report;
+  const wispsById = new Map(wisps.map((wisp) => [wisp.id, wisp]));
+  const circle = conversationId !== undefined;
+  return (
+    <div className="@container min-w-0">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <SegmentedControl label="Period" value={request.period} options={PERIOD_OPTIONS} onChange={changePeriod} />
         <Button size="sm" variant="ghost" disabled={state.loading} onClick={refresh}>
@@ -91,7 +110,10 @@ export function UsageSettingsSection({ wisps = [] }: { wisps?: ReadonlyArray<Wis
           className={cn("transition-opacity duration-200", slide, state.loading && "opacity-60")}
         >
           {report.wisps.length === 0 ? (
-            <EmptyUsage title="No Wisps yet" description="Usage will appear after you send messages." />
+            <EmptyUsage
+              title={circle ? "No Wisps in this circle" : "No Wisps yet"}
+              description="Usage will appear after you send messages."
+            />
           ) : report.totals.totalTokens === 0 && !report.incomplete ? (
             <EmptyUsage
               title={
@@ -101,8 +123,8 @@ export function UsageSettingsSection({ wisps = [] }: { wisps?: ReadonlyArray<Wis
               }
               description={
                 report.period === "all"
-                  ? "Usage will appear after your Wisps reply to a message."
-                  : "Usage will appear after your Wisps reply to a message. Older sessions may show under All history."
+                  ? `Usage will appear after ${circle ? "this circle's" : "your"} Wisps reply to a message.`
+                  : `Usage will appear after ${circle ? "this circle's" : "your"} Wisps reply to a message. Older sessions may show under All history.`
               }
               action={
                 report.period === "all" ? null : (
@@ -149,7 +171,11 @@ export function UsageSettingsSection({ wisps = [] }: { wisps?: ReadonlyArray<Wis
                 Uncached input includes tokens written to the cache, which few providers report. Cache savings compare
                 cached input with its full input price, less any extra charge for writing the cache.
               </p>
-              <p className="m-0">History includes saved sessions for existing Wisps, across app restarts.</p>
+              <p className="m-0">
+                {circle
+                  ? "History includes the saved sessions of the circle's current members in this circle, across app restarts. Their usage elsewhere is not included."
+                  : "History includes saved sessions for existing Wisps, across app restarts."}
+              </p>
             </div>
           </details>
           <p className="mx-0.5 mb-0 mt-2 text-xs text-dim">
@@ -158,7 +184,7 @@ export function UsageSettingsSection({ wisps = [] }: { wisps?: ReadonlyArray<Wis
           </p>
         </div>
       )}
-    </section>
+    </div>
   );
 }
 

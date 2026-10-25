@@ -229,6 +229,40 @@ describe("variant details", () => {
     expect(onChange).toHaveBeenCalledWith({ kind: "circle", label: `${circle.label}Ops`, memberIds: [wisp.wisp.id] });
   });
 
+  it("shows each member's usage in the circle on the Usage tab", async () => {
+    const user = userEvent.setup();
+    const totals = {
+      inputTokens: 1000,
+      outputTokens: 200,
+      cacheReadTokens: 0,
+      cacheWriteTokens: 0,
+      totalTokens: 1200,
+      costUsd: 0.5,
+      cacheSavingsUsd: 0,
+    };
+    const getUsageReport = vi.fn(async () => ({
+      ok: true as const,
+      value: {
+        generatedAt: "2026-10-25T00:00:00Z",
+        from: null,
+        period: "30d",
+        pricingUpdatedAt: null,
+        incomplete: false,
+        wisps: [{ conversationId: wisp.wisp.id, name: "Atlas", sessions: 1, totals }],
+        totals,
+      },
+    }));
+    Object.defineProperty(window, "wisp", { configurable: true, value: { getUsageReport } });
+    render(<CircleDetails chat={circle} wisps={{ atlas: wisp.wisp }} onChange={vi.fn()} />);
+    expect(getUsageReport).not.toHaveBeenCalled();
+
+    await user.click(screen.getByRole("tab", { name: "Usage" }));
+
+    expect(await screen.findByRole("rowheader", { name: /Atlas/ })).toBeVisible();
+    expect(getUsageReport).toHaveBeenCalledWith({ period: "30d", conversationId: "crew" });
+    expect(screen.getByText(/Their usage elsewhere is not included/)).toBeInTheDocument();
+  });
+
   it("keeps the changes and says so when the circle cannot be saved", async () => {
     const user = userEvent.setup();
     render(<CircleDetails chat={circle} wisps={{ atlas: wisp.wisp }} onChange={vi.fn(async () => false)} />);
