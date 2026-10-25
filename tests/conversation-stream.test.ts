@@ -165,29 +165,83 @@ describe("conversation stream reducer", () => {
     expect(state.messages.two).toBeUndefined();
   });
 
-  it("starts a new list of steps when a turn starts, and keeps it while the turn goes on", () => {
+  it("shows each group of steps before the reply part after it, live until the reply writes on", () => {
     const chats = stored(["one"]);
-    const step = (sequence: number, toolCallId: string) =>
+    const step = (sequence: number, id: string, groupId: string, status: "running" | "completed") =>
       ({
         sequence,
-        type: "tool_activity",
+        type: "turn_item",
         conversationId: "one",
         requestId: "request",
-        toolCallId,
-        toolName: "read",
-        phase: "completed",
+        groupId,
+        item: {
+          id,
+          toolName: "read",
+          status,
+          startedAt: "2026-08-31T23:10:00.000Z",
+          type: "file_read",
+          paths: ["a.ts"],
+        },
       }) as const;
-    const status = (sequence: number, value: "working" | "idle") =>
-      ({ sequence, type: "conversation_status", conversationId: "one", status: value }) as const;
+    const started = (sequence: number, messageId: string) =>
+      ({
+        sequence,
+        type: "assistant_message_started",
+        conversationId: "one",
+        requestId: "request",
+        messageId,
+        createdAt: "2026-08-31T23:10:00.000Z",
+      }) as const;
+    const delta = (sequence: number, messageId: string) =>
+      ({
+        sequence,
+        type: "assistant_text_delta",
+        conversationId: "one",
+        requestId: "request",
+        messageId,
+        delta: "Hi",
+      }) as const;
     let state = createConversationRuntime(0, {});
-    state = reduceConversationAgentEvent(state, status(1, "working"), chats);
-    state = reduceConversationAgentEvent(state, step(2, "first"), chats);
-    state = reduceConversationAgentEvent(state, status(3, "working"), chats);
-    state = reduceConversationAgentEvent(state, step(4, "second"), chats);
-    expect(state.toolActivities.one?.map(({ toolCallId }) => toolCallId)).toEqual(["first", "second"]);
-    state = reduceConversationAgentEvent(state, status(5, "idle"), chats);
-    state = reduceConversationAgentEvent(state, status(6, "working"), chats);
-    expect(state.toolActivities.one).toEqual([]);
+    state = reduceConversationAgentEvent(state, started(1, "request:assistant"), chats);
+    state = reduceConversationAgentEvent(state, step(2, "a", "request:work", "running"), chats);
+    state = reduceConversationAgentEvent(state, step(3, "a", "request:work", "completed"), chats);
+    state = reduceConversationAgentEvent(state, step(4, "b", "request:work", "completed"), chats);
+    // The reply's first part started before its steps; the steps still come first.
+    expect(state.messages.one?.map(({ id, status }) => [id, status])).toEqual([
+      ["request:work", "streaming"],
+      ["request:assistant", "streaming"],
+    ]);
+    expect(state.messages.one?.[0]).toMatchObject({
+      steps: [
+        { id: "a", status: "completed" },
+        { id: "b", status: "completed" },
+      ],
+    });
+
+    state = reduceConversationAgentEvent(state, delta(5, "request:assistant"), chats);
+    expect(state.messages.one?.[0]).toMatchObject({ id: "request:work", status: "complete" });
+
+    state = reduceConversationAgentEvent(state, step(6, "c", "request:work:2", "running"), chats);
+    state = reduceConversationAgentEvent(
+      state,
+      { sequence: 7, type: "conversation_status", conversationId: "one", status: "idle" },
+      chats,
+    );
+    expect(state.messages.one?.map(({ id, status }) => [id, status])).toEqual([
+      ["request:work", "complete"],
+      ["request:assistant", "streaming"],
+      ["request:work:2", "complete"],
+    ]);
+  });
+
+  it("puts a live group of steps before its reply part when the app opens mid-turn", () => {
+    const state = createConversationRuntime(0, {}, [], {
+      one: [
+        { id: "request:assistant", type: "incoming", text: "", status: "streaming" },
+        { id: "request:work", type: "incoming", text: "", status: "streaming", steps: [] },
+      ],
+    });
+    expect(state.messages.one?.map(({ id }) => id)).toEqual(["request:work", "request:assistant"]);
   });
 
   it("tracks sanitized activity, cancellation, and retryable errors without cross-chat leakage", () => {
@@ -197,33 +251,45 @@ describe("conversation stream reducer", () => {
       state,
       {
         sequence: 1,
-        type: "tool_activity",
+        type: "turn_item",
         conversationId: "one",
         requestId: "request-1",
-        toolCallId: "read-1",
-        toolName: "read",
-        phase: "started",
+        groupId: "request-1:work",
+        item: {
+          id: "read-1",
+          toolName: "read",
+          status: "running",
+          startedAt: "2026-08-31T23:10:00.000Z",
+          type: "file_read",
+          paths: ["a.ts"],
+        },
       },
       chats,
     );
     expect(state.activity.one).toBe("Reading files…");
-    expect(state.toolActivities.one).toContainEqual(
+    expect(state.messages.one).toContainEqual(
       expect.objectContaining({
-        toolCallId: "read-1",
-        phase: "started",
+        id: "request-1:work",
+        steps: [expect.objectContaining({ id: "read-1", status: "running" })],
       }),
     );
     const progress = reduceConversationAgentEvent(
       state,
       {
         sequence: 2,
-        type: "tool_activity",
+        type: "turn_item",
         conversationId: "one",
         requestId: "request-1",
-        toolCallId: "read-1",
-        toolName: "read",
-        phase: "updated",
-        label: "Reading with Vision (OpenAI), page 2 of 5…",
+        groupId: "request-1:work",
+        item: {
+          id: "read-1",
+          toolName: "read",
+          status: "running",
+          startedAt: "2026-08-31T23:10:00.000Z",
+          label: "Reading with Vision (OpenAI), page 2 of 5…",
+          type: "file_read",
+          paths: ["a.ts"],
+        },
       },
       chats,
     );

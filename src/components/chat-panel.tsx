@@ -1,12 +1,10 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
-import { ArrowDownIcon, CheckIcon, ChevronLeftIcon, SettingsIcon, XIcon } from "lucide-react";
+import { ArrowDownIcon, ChevronLeftIcon, SettingsIcon } from "lucide-react";
 
 import type { ChatView, Message, Wisp, WispCollection } from "@/chat-data";
 import type { ManagedConversationStatus } from "../../shared/conversations";
 import type { QueuedMessage } from "../../shared/message-queue";
 import type { ToolApprovalDecision, ToolApprovalRequest } from "../../shared/tool-policy";
-import { describeMcpAlias, getToolMetadata } from "../../shared/tool-catalog";
-import type { ToolActivityView } from "@/lib/conversation-stream";
 import { approvalWispName, chatName } from "@/lib/chat-schema";
 import { conversationStarters } from "@/lib/conversation-starters";
 import { withDateDividers } from "@/lib/date-dividers";
@@ -19,6 +17,7 @@ import { ChatAvatar, WispAvatar } from "@/components/chat-avatar";
 import { ChatComposer, type VoiceInputSettings } from "@/components/chat-composer";
 import { Button } from "@/components/ui/button";
 import { MessageView } from "@/components/message-view";
+import { processStatesOf } from "@/components/message-steps";
 import { PendingMessagesBar } from "@/components/pending-messages-bar";
 import type { MessageQueueController } from "@/hooks/use-message-queue";
 import type { ScheduledMessagesController } from "@/hooks/use-scheduled-messages";
@@ -85,13 +84,6 @@ function chatAccentStyle(chat: ChatView): CSSProperties | undefined {
   return wispAccentStyle(color);
 }
 
-/** How many of the turn's steps show; older ones fold into a count. */
-const VISIBLE_STEPS = 4;
-
-function stepLabel(toolName: string): string {
-  return getToolMetadata(toolName)?.label ?? describeMcpAlias(toolName)?.label ?? toolName;
-}
-
 interface ChatPanelProps {
   hidden?: boolean;
   onBack?: () => void;
@@ -102,8 +94,6 @@ interface ChatPanelProps {
   transcript: MessageWindow | undefined;
   status: ManagedConversationStatus;
   activity?: string;
-  /** The tools the Wisp used in the turn it is working on. */
-  steps?: ReadonlyArray<ToolActivityView>;
   error?: string;
   acknowledging: boolean;
   approvals: ReadonlyArray<ToolApprovalRequest>;
@@ -140,7 +130,6 @@ function ChatPanel({
   transcript,
   status,
   activity,
-  steps = [],
   error,
   acknowledging,
   approvals,
@@ -211,6 +200,7 @@ function ChatPanel({
   const name = chatName(chat);
   const timeZone = useTimeZone();
   const transcriptMessages = withDateDividers(messages, new Date(), timeZone);
+  const processStates = useMemo(() => processStatesOf(messages), [messages]);
   const working = status === "working";
   const attached = !transcript || isAttached(transcript);
   const targetMessageId = transcript?.targetMessageId;
@@ -241,7 +231,9 @@ function ChatPanel({
     );
   const showActivity = attached && working && !responding;
   const openKey = transcript && !hidden ? `${chat.id}:${transcript.epoch}` : null;
-  const endKey = `${lastMessage?.id}:${lastMessage && "text" in lastMessage ? lastMessage.text.length : 0}:${working}`;
+  // Steps arrive in a message of their own, so a new one moves the end as text does.
+  const lastSteps = lastMessage?.type === "incoming" ? (lastMessage.steps?.length ?? 0) : 0;
+  const endKey = `${lastMessage?.id}:${lastMessage && "text" in lastMessage ? lastMessage.text.length : 0}:${lastSteps}:${working}`;
   const canLoadOlder = Boolean(transcript?.olderCursor) && !transcript?.loading;
   const canLoadNewer = Boolean(transcript?.newerCursor) && !transcript?.loading;
 
@@ -507,6 +499,7 @@ function ChatPanel({
                     fileMentions={chat.kind === "wisp"}
                     onAnswer={(answer) => onAnswerPrompt(message.id, answer)}
                     onRetry={() => onRetry(message.id)}
+                    processStates={processStates}
                   />
                 </div>
               );
@@ -527,34 +520,6 @@ function ChatPanel({
                   />
                 ))}
               </>
-            ) : null}
-            {attached && working && steps.length ? (
-              <ol className="chat-steps" aria-label={`What ${name} has done so far`}>
-                {steps.length > VISIBLE_STEPS ? (
-                  <li className="chat-step" data-phase="completed">{`+${steps.length - VISIBLE_STEPS}`}</li>
-                ) : null}
-                {steps.slice(-VISIBLE_STEPS).map((step) => (
-                  <li
-                    key={step.toolCallId}
-                    className="chat-step"
-                    data-phase={step.phase === "completed" ? (step.isError ? "failed" : "completed") : "running"}
-                  >
-                    {step.phase !== "completed" ? (
-                      <span className="chat-step-spinner" aria-hidden="true" />
-                    ) : step.isError ? (
-                      <XIcon aria-hidden="true" />
-                    ) : (
-                      <CheckIcon aria-hidden="true" />
-                    )}
-                    {stepLabel(step.toolName)}
-                    {step.phase !== "completed" ? (
-                      <span className="sr-only">, running</span>
-                    ) : step.isError ? (
-                      <span className="sr-only">, failed</span>
-                    ) : null}
-                  </li>
-                ))}
-              </ol>
             ) : null}
             {showActivity ? (
               <div role="status" className="chat-activity mt-3 flex items-center gap-2 text-dim text-sm">

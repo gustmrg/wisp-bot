@@ -456,6 +456,70 @@ export interface AbortConversationView {
 
 export type ConversationStatus = "configuration_required" | "idle" | "working" | "disposed";
 
+export type TurnItemStatus = "running" | "completed" | "failed" | "cancelled";
+
+export type BackgroundProcessAction = "start" | "list" | "log" | "wait" | "kill";
+
+/**
+ * What a Wisp did with one tool call, as the conversation shows it. The
+ * backend reads it from the call's arguments and result, the same way on
+ * every runtime; secrets are masked and long text is cut before it leaves.
+ */
+export type TurnItem = {
+  /** The tool call's ID. */
+  id: string;
+  toolName: string;
+  status: TurnItemStatus;
+  startedAt: string;
+  completedAt?: string;
+  /** The tool's own progress text while it runs. */
+  label?: string;
+} & (
+  | {
+      type: "command_execution";
+      command: string;
+      /** What the Wisp said the command is for. */
+      purpose?: string;
+      exitCode?: number;
+      /** The end of the output. */
+      output?: string;
+      outputTruncated?: boolean;
+    }
+  | {
+      type: "background_process";
+      action: BackgroundProcessAction;
+      processId?: string;
+      /** Set for `start`. */
+      command?: string;
+      /** How the process stood after the call, such as `running` or `exited`. */
+      state?: string;
+      output?: string;
+      outputTruncated?: boolean;
+    }
+  | {
+      type: "file_change";
+      /** Relative to the workspace when inside it. */
+      path: string;
+      additions?: number;
+      deletions?: number;
+      /** The unified patch, from its start. */
+      diff?: string;
+      diffTruncated?: boolean;
+    }
+  | { type: "file_read"; paths: string[] }
+  | { type: "file_search"; pattern: string; path?: string }
+  | { type: "web_search"; query: string }
+  | { type: "web_read"; url: string }
+  | {
+      type: "browser";
+      action: string;
+      /** The page the browser was on after the call. */
+      url?: string;
+      pageTitle?: string;
+    }
+  | { type: "tool" }
+);
+
 /**
  * What a conversation's agent reports. In a circle, events about one member's
  * turn name it with `wispId` (ADR 011); in a Wisp's own conversation they are
@@ -514,15 +578,13 @@ type ConversationAgentEventBody =
       error: BackendError;
     }
   | {
-      type: "tool_activity";
+      /** A tool call started, made progress, or ended; `item` is all of it so far and replaces what came before. */
+      type: "turn_item";
       conversationId: string;
       requestId: string;
-      toolCallId: string;
-      toolName: string;
-      phase: "started" | "updated" | "completed";
-      isError?: boolean;
-      /** The tool's own progress text, such as which model reads a page; replaces the generic activity. */
-      label?: string;
+      /** The steps between two parts of the reply share it; see `workMessageId`. */
+      groupId: string;
+      item: TurnItem;
     }
   | {
       type: "conversation_notice";

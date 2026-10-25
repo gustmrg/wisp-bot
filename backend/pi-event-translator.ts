@@ -1,7 +1,8 @@
 import type { BackendError, ConversationAgentEvent, SendMessageRequest } from "../shared/contracts.js";
-import { assistantMessageId } from "../shared/conversations.js";
+import { assistantMessageId, workMessageId } from "../shared/conversations.js";
 import { describeProviderError, isRetryableProviderError } from "./provider-error.js";
 import { getToolMetadata } from "../shared/tool-catalog.js";
+import { describeToolCall, type ToolCall, type ToolCallResult } from "./turn-items.js";
 
 const MAX_DELTA_CHARACTERS = 8_000;
 const MAX_RESPONSE_CHARACTERS = 500_000;
@@ -46,9 +47,9 @@ export type PiAgentEvent =
     }
   | { type: "message_start"; message?: { role?: string } }
   | { type: "message_end"; message?: PiAssistantMessageSnapshot }
-  | { type: "tool_execution_start"; toolCallId: string; toolName: string }
-  | { type: "tool_execution_update"; toolCallId: string; toolName: string; partialResult?: unknown }
-  | { type: "tool_execution_end"; toolCallId: string; toolName: string; isError: boolean }
+  | { type: "tool_execution_start"; toolCallId: string; toolName: string; args?: unknown }
+  | { type: "tool_execution_update"; toolCallId: string; toolName: string; args?: unknown; partialResult?: unknown }
+  | { type: "tool_execution_end"; toolCallId: string; toolName: string; isError: boolean; result?: unknown }
   | { type: "auto_retry_start"; errorMessage?: string }
   | { type: "auto_retry_end"; success?: boolean; finalError?: string }
   | { type: "compaction_start" }
@@ -58,10 +59,20 @@ export type PiAgentEvent =
 
 type EventPublisher = (event: ConversationAgentEvent) => void;
 
+/** A tool call the conversation shows that has not ended, with the reply it belongs to. */
+interface OpenToolCall {
+  call: ToolCall;
+  requestId: string;
+  groupId: string;
+}
+
 export class PiEventTranslator {
   private readonly conversationId: string;
   private readonly publish: EventPublisher;
   private readonly flushDelayMs: number;
+  /** Where the Wisp's file tools resolve paths, so the steps show them relative to it. */
+  private readonly workspaceDirectory: string;
+  private readonly toolCalls = new Map<string, OpenToolCall>();
   private request: SendMessageRequest | null = null;
   private messageId = "";
   private messagePart = 1;
@@ -78,10 +89,11 @@ export class PiEventTranslator {
   /** The fallback model answering the rest of the turn, if the Wisp's own failed. */
   private fallbackModel: string | undefined;
 
-  constructor(conversationId: string, publish: EventPublisher, flushDelayMs = 24) {
+  constructor(conversationId: string, publish: EventPublisher, flushDelayMs = 24, workspaceDirectory = "") {
     this.conversationId = conversationId;
     this.publish = publish;
     this.flushDelayMs = flushDelayMs;
+    this.workspaceDirectory = workspaceDirectory;
   }
 
   begin(request: SendMessageRequest): void {
@@ -127,13 +139,13 @@ export class PiEventTranslator {
         break;
       case "tool_execution_start":
         this.completeMessagePart();
-        this.publishTool(event, "started");
+        this.startToolCall(event);
         break;
       case "tool_execution_update":
-        this.publishTool(event, "updated", undefined, activityLabelOf(event.partialResult));
+        this.updateToolCall(event);
         break;
       case "tool_execution_end":
-        this.publishTool(event, "completed", event.isError);
+        this.endToolCall(event);
         break;
       case "auto_retry_start":
         this.retryNoticeVisible = !event.errorMessage || isRetryableProviderError(event.errorMessage);
@@ -220,6 +232,8 @@ export class PiEventTranslator {
     if (!this.request) return;
     const request = this.request;
     this.flush();
+    // Before the reply ends, so its steps are stored as they ended.
+    this.closeToolCalls(this.cancelled ? "cancelled" : "failed");
     if (this.cancelled) {
       this.startMessage();
       this.publish({
@@ -257,6 +271,7 @@ export class PiEventTranslator {
 
   dispose(): void {
     this.clearTimer();
+    this.toolCalls.clear();
     this.request = null;
     this.pendingDelta = "";
   }
@@ -352,23 +367,67 @@ export class PiEventTranslator {
     });
   }
 
-  private publishTool(
-    event: { toolCallId: string; toolName: string },
-    phase: "started" | "updated" | "completed",
-    isError?: boolean,
-    label?: string,
-  ): void {
+  private startToolCall(event: { toolCallId: string; toolName: string; args?: unknown }): void {
     if (!this.request || !getToolMetadata(event.toolName)) return;
     this.flush();
-    this.publish({
-      type: "tool_activity",
-      conversationId: this.conversationId,
+    const open: OpenToolCall = {
+      call: {
+        id: safeId(event.toolCallId),
+        toolName: event.toolName,
+        args: event.args,
+        status: "running",
+        startedAt: new Date().toISOString(),
+      },
       requestId: this.request.requestId,
-      toolCallId: safeId(event.toolCallId),
-      toolName: event.toolName,
-      phase,
-      ...(phase === "completed" ? { isError: Boolean(isError) } : {}),
-      ...(label ? { label } : {}),
+      // A tool call ends the reply's part, so the calls up to the next text all come before this part.
+      groupId: workMessageId(this.request.requestId, this.messagePart),
+    };
+    this.toolCalls.set(event.toolCallId, open);
+    this.publishToolCall(open);
+  }
+
+  private updateToolCall(event: { toolCallId: string; args?: unknown; partialResult?: unknown }): void {
+    const open = this.toolCalls.get(event.toolCallId);
+    const label = activityLabelOf(event.partialResult);
+    if (!open || !label || label === open.call.label) return;
+    open.call.label = label;
+    this.flush();
+    this.publishToolCall(open);
+  }
+
+  private endToolCall(event: { toolCallId: string; isError: boolean; result?: unknown }): void {
+    const open = this.toolCalls.get(event.toolCallId);
+    if (!open) return;
+    this.toolCalls.delete(event.toolCallId);
+    const { label: _label, ...call } = open.call;
+    open.call = {
+      ...call,
+      status: event.isError ? "failed" : "completed",
+      completedAt: new Date().toISOString(),
+      ...(event.result && typeof event.result === "object" ? { result: event.result as ToolCallResult } : {}),
+    };
+    this.flush();
+    this.publishToolCall(open);
+  }
+
+  /** Ends the calls a turn left running, as when it was stopped. */
+  private closeToolCalls(status: "cancelled" | "failed"): void {
+    const completedAt = new Date().toISOString();
+    for (const open of this.toolCalls.values()) {
+      const { label: _label, ...call } = open.call;
+      open.call = { ...call, status, completedAt };
+      this.publishToolCall(open);
+    }
+    this.toolCalls.clear();
+  }
+
+  private publishToolCall(open: OpenToolCall): void {
+    this.publish({
+      type: "turn_item",
+      conversationId: this.conversationId,
+      requestId: open.requestId,
+      groupId: open.groupId,
+      item: describeToolCall(open.call, this.workspaceDirectory),
     });
   }
 

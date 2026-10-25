@@ -115,7 +115,8 @@ function createSession(
   } = {},
 ) {
   const processes: FakeProcess[] = [];
-  const launches: ClaudeCodeLaunch[] = [];
+  const launches: Array<Omit<ClaudeCodeLaunch, "observer">> = [];
+  const observers: Array<ClaudeCodeLaunch["observer"]> = [];
   const query: ClaudeCodeQuery = ({ prompt, options: queryOptions }) => {
     const process = new FakeProcess(queryOptions, prompt as AsyncIterable<{ message: { content: unknown } }>);
     process.onMessage = (text) => {
@@ -128,8 +129,9 @@ function createSession(
   const onSessionSaved = vi.fn(async (_saved: ClaudeCodeSavedSession) => undefined);
   const session = new ClaudeCodeSession({
     query,
-    queryOptions: async (launch) => {
+    queryOptions: async ({ observer, ...launch }) => {
       launches.push(launch);
+      observers.push(observer);
       return { model: launch.model } as ClaudeCodeQueryOptions;
     },
     sessionId: SESSION,
@@ -147,7 +149,7 @@ function createSession(
   });
   const events: PiAgentEvent[] = [];
   session.subscribe((event) => events.push(event));
-  return { session, processes, launches, events, onSessionSaved };
+  return { session, processes, launches, observers, events, onSessionSaved };
 }
 
 afterEach(() => {
@@ -180,6 +182,47 @@ describe("ClaudeCodeSession", () => {
     ]);
     expect(session.isIdle).toBe(true);
     expect(session.getActiveToolNames()).toEqual(["read", "run_command"]);
+  });
+
+  it("reports a Wisp tool's progress and ends its call with the tool's own result", async () => {
+    const toolUse = {
+      type: "assistant",
+      parent_tool_use_id: null,
+      message: {
+        role: "assistant",
+        content: [{ type: "tool_use", id: "toolu_1", name: "mcp__wisp__edit", input: {} }],
+      },
+    };
+    const toolResult = {
+      type: "user",
+      parent_tool_use_id: null,
+      message: { role: "user", content: [{ type: "tool_result", tool_use_id: "toolu_1", content: "Edited" }] },
+    };
+    const own = { content: [{ type: "text", text: "Edited" }], details: { patch: "+one" } };
+    const { session, observers, events } = createSession({
+      answer: (process) => {
+        process.push(toolUse);
+        // The Wisp's MCP server runs the tool before Claude Code reports its result.
+        setTimeout(() => {
+          observers[0]!.progress("toolu_1", { details: { activityLabel: "Editing…" } });
+          observers[0]!.result("toolu_1", own);
+          process.push(toolResult, delta("Done"), result());
+        }, 0);
+      },
+    });
+
+    await session.prompt("edit it");
+
+    expect(events.filter(({ type }) => type.startsWith("tool_execution"))).toEqual([
+      { type: "tool_execution_start", toolCallId: "toolu_1", toolName: "edit", args: {} },
+      {
+        type: "tool_execution_update",
+        toolCallId: "toolu_1",
+        toolName: "edit",
+        partialResult: { details: { activityLabel: "Editing…" } },
+      },
+      { type: "tool_execution_end", toolCallId: "toolu_1", toolName: "edit", isError: false, result: own },
+    ]);
   });
 
   it("resumes the session in a new process after a model, reasoning, or identity change", async () => {

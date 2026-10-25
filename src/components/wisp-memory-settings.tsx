@@ -58,9 +58,9 @@ function MemoryPanel({ conversationId }: { conversationId: string }) {
     return window.wisp.subscribeToAgentEvents((event) => {
       if (
         event.conversationId === conversationId &&
-        event.type === "tool_activity" &&
-        event.toolName === "save_memory" &&
-        event.phase === "completed"
+        event.type === "turn_item" &&
+        event.item.toolName === "save_memory" &&
+        event.item.status === "completed"
       ) {
         void load();
       }

@@ -29,7 +29,7 @@ import {
   claudeCodeFallbackEntry,
   claudeCodeUsageEntry,
 } from "./claude-code-usage-log.js";
-import { createWispMcpServer, type WispMcpTool } from "./wisp-mcp-server.js";
+import { createWispMcpServer, type WispMcpTool, type WispToolObserver } from "./wisp-mcp-server.js";
 
 /** Claude Code's own web search tool. */
 const CLAUDE_CODE_WEB_SEARCH_TOOL = "WebSearch";
@@ -85,6 +85,8 @@ interface ProcessLaunch {
   /** Null for a job run, which Claude Code keeps no session of. */
   session: { id: string; resume: boolean } | null;
   recoveredContext?: string;
+  /** Told what the Wisp's tools report; a job run's process has none. */
+  observer?: WispToolObserver;
 }
 
 /** What every Claude Code process of a Wisp shares: its query function, tools, and options. */
@@ -140,6 +142,7 @@ export class ClaudeCodeSessionFactory {
           ...(launch.effort ? { effort: launch.effort } : {}),
           session: { id: launch.sessionId, resume: launch.resume },
           ...(launch.recoveredContext ? { recoveredContext: launch.recoveredContext } : {}),
+          observer: launch.observer,
         }),
       onSessionSaved: (session) => this.writeSession(context, session),
       onTurnResult: (result, converter) => this.recordTurn(context, prepared.model.id, result, converter),
@@ -216,6 +219,7 @@ export class ClaudeCodeSessionFactory {
             tools: offered,
             workspaceDirectory: context.workspaceDirectory,
             validate: (tool, toolCall) => validateToolArguments(tool as never, toolCall as never),
+            ...(launch.observer ? { observer: launch.observer } : {}),
           }),
           ...((await webSearch()) ? { webSearch: true } : {}),
           // WebSearch asks before each search; it is allowed as a plugin's web_search is, while it is still chosen.

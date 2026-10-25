@@ -516,19 +516,147 @@ function renderPanelIn(chat: ChatPanelProps["chat"], held: Message[], props: Par
 }
 
 describe("ChatPanel steps", () => {
-  it("shows the tools used in this turn while the Wisp works, and hides them after", () => {
-    const steps = [
-      { toolCallId: "1", toolName: "read", phase: "completed" as const },
-      { toolCallId: "2", toolName: "grep", phase: "completed" as const, isError: true },
-      { toolCallId: "3", toolName: "read", phase: "started" as const },
+  it("folds the steps between two parts of a reply into one line, and opens them one per line", async () => {
+    const user = userEvent.setup();
+    const at = "2026-10-22T10:00:00.000Z";
+    const held: Message[] = [
+      {
+        id: "r:work",
+        type: "incoming",
+        text: "",
+        status: "complete",
+        steps: [
+          { id: "1", toolName: "read", status: "completed", startedAt: at, type: "file_read", paths: ["src/a.ts"] },
+          {
+            id: "2",
+            toolName: "edit",
+            status: "completed",
+            startedAt: at,
+            type: "file_change",
+            path: "src/a.ts",
+            additions: 3,
+            deletions: 1,
+            diff: "+secret diff line",
+          },
+          {
+            id: "3",
+            toolName: "run_command",
+            status: "failed",
+            startedAt: at,
+            type: "command_execution",
+            command: "npm test",
+            exitCode: 1,
+            output: "1 failing",
+          },
+          {
+            id: "4",
+            toolName: "process",
+            status: "completed",
+            startedAt: at,
+            type: "background_process",
+            action: "start",
+            processId: "0a1b2c3d",
+            command: "npm run dev",
+            state: "running",
+          },
+        ],
+      },
+      { id: "r:assistant", type: "incoming", text: "Fixed it.", status: "complete" },
+      {
+        id: "r2:work",
+        type: "incoming",
+        text: "",
+        status: "complete",
+        steps: [
+          {
+            id: "5",
+            toolName: "process",
+            status: "completed",
+            startedAt: at,
+            type: "background_process",
+            action: "kill",
+            processId: "0a1b2c3d",
+            state: "stopped",
+          },
+        ],
+      },
     ];
-    const { show } = renderPanel(transcript(messages(0, 1)), { status: "working", steps });
-    const trail = screen.getByRole("list", { name: "What Atlas has done so far" });
-    expect(trail.querySelectorAll("li")).toHaveLength(3);
-    expect(trail).toHaveTextContent("Search workspace, failed");
-    expect(trail).toHaveTextContent("Read file, running");
+    renderPanel(transcript(held), { status: "idle" });
 
-    show(transcript(messages(0, 1)), { status: "idle", steps });
-    expect(screen.queryByRole("list", { name: "What Atlas has done so far" })).not.toBeInTheDocument();
+    const [first] = screen.getAllByRole("region", { name: "Steps" });
+    const summary = within(first!).getByRole("button", { expanded: false });
+    // Two kinds of work by name, the rest counted; the last command failed, so the group did.
+    expect(summary).toHaveTextContent("Edited 1 file, ran 1 command +2 more4 steps1 failed");
+    expect(first).toHaveAttribute("data-status", "failed");
+
+    await user.click(summary);
+    const rows = within(first!).getAllByRole("listitem");
+    expect(rows.map((row) => row.textContent)).toEqual([
+      "Read src/a.ts",
+      "Edited src/a.ts+3−1",
+      "Ran npm testexit 1, failedOutput",
+      // A later step stopped the process, so it no longer shows as running.
+      "Started npm run devstoppedBackground process #0a1b2c3d",
+    ]);
+    // Diffs are never shown, only their counts.
+    expect(first).not.toHaveTextContent("secret diff line");
+
+    await user.click(within(rows[2]!).getByRole("button", { name: "Output" }));
+    expect(within(rows[2]!).getByLabelText("Output")).toHaveTextContent("1 failing");
+  });
+
+  it("does not mark a group failed when a later run passed", () => {
+    const at = "2026-10-22T10:00:00.000Z";
+    const run = (id: string, status: "completed" | "failed", exitCode: number) => ({
+      id,
+      toolName: "run_command",
+      status,
+      startedAt: at,
+      type: "command_execution" as const,
+      command: "npm test",
+      exitCode,
+    });
+    const held: Message[] = [
+      {
+        id: "r:work",
+        type: "incoming",
+        text: "",
+        status: "complete",
+        steps: [
+          run("1", "failed", 1),
+          { id: "2", toolName: "edit", status: "completed", startedAt: at, type: "file_change", path: "src/a.ts" },
+          run("3", "completed", 0),
+          { id: "4", toolName: "read", status: "completed", startedAt: at, type: "file_read", paths: ["src/b.ts"] },
+        ],
+      },
+    ];
+    renderPanel(transcript(held), { status: "idle" });
+
+    const group = screen.getByRole("region", { name: "Steps" });
+    expect(group).toHaveAttribute("data-status", "completed");
+    expect(group).toHaveTextContent("Edited 1 file, ran 2 commands +1 more4 steps1 failed");
+  });
+
+  it("says what the running step does while the steps go on", () => {
+    const held: Message[] = [
+      {
+        id: "r:work",
+        type: "incoming",
+        text: "",
+        status: "streaming",
+        steps: [
+          {
+            id: "1",
+            toolName: "run_command",
+            status: "running",
+            startedAt: "2026-10-22T10:00:00.000Z",
+            type: "command_execution",
+            command: "npm run build",
+          },
+        ],
+      },
+    ];
+    renderPanel(transcript(held), { status: "working" });
+    expect(screen.getByRole("region", { name: "Steps" })).toHaveTextContent("Running npm run build…");
   });
 });

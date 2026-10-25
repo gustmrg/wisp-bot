@@ -1,6 +1,8 @@
 import type { BackendError, ConversationAgentEvent, SequencedConversationAgentEvent } from "../../shared/contracts";
 import {
+  MAX_MESSAGE_STEPS,
   assistantMessageId,
+  replyPartAfterWork,
   messageFailure,
   type ManagedConversationStatus,
   type Message,
@@ -8,13 +10,6 @@ import {
 } from "../../shared/conversations";
 import type { ToolApprovalRequest } from "../../shared/tool-policy";
 import { describeMcpAlias, getToolMetadata } from "../../shared/tool-catalog";
-
-export interface ToolActivityView {
-  toolCallId: string;
-  toolName: string;
-  phase: "started" | "updated" | "completed";
-  isError?: boolean;
-}
 
 export interface ConversationRuntimeState {
   sequence: number;
@@ -24,7 +19,6 @@ export interface ConversationRuntimeState {
   activity: Record<string, string | undefined>;
   /** In a circle, the member whose turn is running (ADR 011). */
   turns: Record<string, string | undefined>;
-  toolActivities: Record<string, ReadonlyArray<ToolActivityView>>;
   approvals: Record<string, ReadonlyArray<ToolApprovalRequest>>;
 }
 
@@ -47,11 +41,12 @@ export function createConversationRuntime(
   return {
     sequence,
     statuses,
-    messages: liveMessages,
+    messages: Object.fromEntries(
+      Object.entries(liveMessages).map(([conversationId, messages]) => [conversationId, stepsBeforeReplies(messages)]),
+    ),
     errors: {},
     activity: {},
     turns: {},
-    toolActivities: {},
     approvals: groupApprovals(pendingApprovals),
   };
 }
@@ -132,6 +127,7 @@ export function reduceConversationAgentEvent(
   if (event.sequence <= state.sequence) return state;
   let next: ConversationRuntimeState = { ...state, sequence: event.sequence };
   if (!stored.chats[event.conversationId]) return next;
+  next = settleWork(next, event);
 
   switch (event.type) {
     case "conversation_context_renewed":
@@ -149,11 +145,6 @@ export function reduceConversationAgentEvent(
         statuses: { ...next.statuses, [event.conversationId]: event.status },
         activity: event.status === "idle" ? { ...next.activity, [event.conversationId]: undefined } : next.activity,
         turns: event.status === "working" ? next.turns : { ...next.turns, [event.conversationId]: undefined },
-        // A new turn starts its own list of steps.
-        toolActivities:
-          event.status === "working" && next.statuses[event.conversationId] !== "working"
-            ? { ...next.toolActivities, [event.conversationId]: [] }
-            : next.toolActivities,
       };
     case "assistant_message_started": {
       const outgoing = findMessage(next, stored, event.conversationId, event.requestId);
@@ -267,17 +258,17 @@ export function reduceConversationAgentEvent(
         createdAt: assistant?.createdAt ?? event.createdAt,
       });
     }
-    case "tool_activity":
+    case "turn_item":
       return {
         ...next,
         activity: {
           ...next.activity,
           [event.conversationId]:
-            event.phase === "completed" ? undefined : (event.label ?? toolActivityLabel(event.toolName)),
+            event.item.status === "running" ? (event.item.label ?? toolActivityLabel(event.item.toolName)) : undefined,
         },
-        toolActivities: {
-          ...next.toolActivities,
-          [event.conversationId]: upsertToolActivity(next.toolActivities[event.conversationId] ?? [], event),
+        messages: {
+          ...next.messages,
+          [event.conversationId]: upsertWork(next.messages[event.conversationId] ?? [], stored, event),
         },
       };
     case "conversation_notice":
@@ -338,7 +329,6 @@ export function reconcileConversationRuntime(
     errors: retain(state.errors),
     activity: retain(state.activity),
     turns: retain(state.turns),
-    toolActivities: retain(state.toolActivities),
     approvals: retain(state.approvals),
   };
 }
@@ -510,31 +500,95 @@ function toolActivityLabel(toolName: string): string {
   return getToolMetadata(toolName)?.activityLabel ?? describeMcpAlias(toolName)?.activityLabel ?? "Running a tool…";
 }
 
-function upsertToolActivity(
-  activities: ReadonlyArray<ToolActivityView>,
-  event: Extract<ConversationAgentEvent, { type: "tool_activity" }>,
-): ReadonlyArray<ToolActivityView> {
-  const next = activities.some(({ toolCallId }) => toolCallId === event.toolCallId)
-    ? activities.map((activity) =>
-        activity.toolCallId === event.toolCallId
-          ? {
-              toolCallId: event.toolCallId,
-              toolName: event.toolName,
-              phase: event.phase,
-              ...(event.isError === undefined ? {} : { isError: event.isError }),
-            }
-          : activity,
-      )
-    : [
-        ...activities,
-        {
-          toolCallId: event.toolCallId,
-          toolName: event.toolName,
-          phase: event.phase,
-          ...(event.isError === undefined ? {} : { isError: event.isError }),
-        },
-      ];
-  return next.slice(-20);
+/**
+ * Adds a step to its group's message, or updates it. A new group goes right
+ * before the reply part that follows it, which started before its steps did.
+ */
+function upsertWork(
+  messages: ReadonlyArray<Message>,
+  stored: StoredConversations,
+  event: Extract<ConversationAgentEvent, { type: "turn_item" }>,
+): ReadonlyArray<Message> {
+  const current =
+    messages.find(({ id }) => id === event.groupId) ??
+    stored.windows[event.conversationId]?.messages.find(({ id }) => id === event.groupId);
+  const steps = current?.type === "incoming" ? (current.steps ?? []) : [];
+  const updated = steps.some(({ id }) => id === event.item.id)
+    ? steps.map((step) => (step.id === event.item.id ? event.item : step))
+    : [...steps, event.item];
+  const message: Message & { id: string } = {
+    id: event.groupId,
+    type: "incoming",
+    text: "",
+    // Stored once the reply writes on; until then it is live.
+    status: current?.status === "complete" ? "complete" : "streaming",
+    steps: updated.slice(-MAX_MESSAGE_STEPS),
+    createdAt: current?.createdAt ?? event.item.startedAt,
+    ...authorOf(event),
+  };
+  if (messages.some(({ id }) => id === event.groupId)) {
+    return messages.map((candidate) => (candidate.id === event.groupId ? message : candidate));
+  }
+  const after = messages.findIndex(({ id }) => id === replyPartAfterWork(event.groupId));
+  return after === -1 ? [...messages, message] : [...messages.slice(0, after), message, ...messages.slice(after)];
+}
+
+/** Puts each group of steps before the reply part after it, as `upsertWork` does. */
+function stepsBeforeReplies(messages: ReadonlyArray<Message>): ReadonlyArray<Message> {
+  let ordered = messages;
+  for (const message of messages) {
+    const reply = message.id ? replyPartAfterWork(message.id) : null;
+    if (!reply) continue;
+    const at = ordered.indexOf(message);
+    const before = ordered.findIndex(({ id }) => id === reply);
+    if (before === -1 || before > at) continue;
+    const rest = ordered.filter((candidate) => candidate !== message);
+    ordered = [...rest.slice(0, before), message, ...rest.slice(before)];
+  }
+  return ordered;
+}
+
+/**
+ * Settles the live groups of steps the backend stores on this event, as it
+ * stores them: when their reply writes on, ends, or fails, and when the
+ * conversation stops working. The stored copies then replace them.
+ */
+function settleWork(state: ConversationRuntimeState, event: ConversationAgentEvent): ConversationRuntimeState {
+  let requestId: string | undefined;
+  switch (event.type) {
+    case "assistant_text_delta":
+    case "assistant_message_completed":
+    case "assistant_message_cancelled":
+    case "follow_up_taken":
+      requestId = event.requestId;
+      break;
+    case "conversation_error":
+      if (!event.requestId) return state;
+      requestId = event.requestId;
+      break;
+    case "conversation_status":
+      if (event.status === "working") return state;
+      break;
+    default:
+      return state;
+  }
+  const messages = state.messages[event.conversationId];
+  const settles = (message: Message) =>
+    message.type === "incoming" &&
+    message.status === "streaming" &&
+    Boolean(message.steps?.length) &&
+    !message.text &&
+    (requestId === undefined || message.id?.startsWith(`${requestId}:work`));
+  if (!messages?.some(settles)) return state;
+  return {
+    ...state,
+    messages: {
+      ...state.messages,
+      [event.conversationId]: messages.map((message) =>
+        settles(message) ? { ...message, status: "complete" } : message,
+      ),
+    },
+  };
 }
 
 function noticeLabel(

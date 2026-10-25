@@ -47,7 +47,6 @@ import {
   stageOutgoingMessage,
   type ConversationRuntimeState,
   type StoredConversations,
-  type ToolActivityView,
 } from "@/lib/conversation-stream";
 import {
   applyDeltaToWindow,
@@ -126,7 +125,6 @@ export interface ConversationsController {
   conversationErrors: Record<string, BackendError | undefined>;
   acknowledging: Record<string, boolean | undefined>;
   approvals: Record<string, ReadonlyArray<ToolApprovalRequest>>;
-  toolActivities: Record<string, ReadonlyArray<ToolActivityView>>;
   loading: boolean;
   error: string | null;
   createWisp: (
@@ -606,7 +604,6 @@ export function useConversations(): ConversationsController {
     conversationErrors: runtime.errors,
     acknowledging,
     approvals: runtime.approvals,
-    toolActivities: runtime.toolActivities,
     loading,
     error,
     createWisp: useCallback(
