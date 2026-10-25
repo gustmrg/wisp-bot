@@ -90,6 +90,11 @@
     "vitest": "^4.1.11",
     "wait-on": "^9.1.0"
   },
+  "overrides": {
+    "@earendil-works/pi-coding-agent": {
+      "undici": "^8.12.3"
+    }
+  },
   "engines": {
     "node": ">=22.19.0"
   },
