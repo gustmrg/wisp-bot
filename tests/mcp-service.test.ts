@@ -979,12 +979,17 @@ describe("McpService interactive sign-in", () => {
     ]);
     const { serverId } = await addServer(service, { authMode: "oauth" });
 
-    const pending = service.startSignIn({ serverId });
+    // The cancel can reject the sign-in before the gate opens, so the
+    // rejection is observed up front rather than left unhandled meanwhile.
+    const rejected = expect(service.startSignIn({ serverId })).rejects.toMatchObject({
+      code: "aborted",
+      message: "The sign-in was cancelled.",
+    });
     await service.cancelSignIn({ serverId });
     expect(provider.cancelled).toBe(1);
 
     gate.resolve("needs_sign_in");
-    await expect(pending).rejects.toMatchObject({ code: "aborted", message: "The sign-in was cancelled." });
+    await rejected;
     const view = await service.getView();
     expect(view.servers[0]?.tools).toHaveLength(0);
   });
