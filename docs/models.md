@@ -2,9 +2,10 @@
 
 Wisp conversations run on the [Pi agent runtime](decisions/001-agent-runtime.md)
 with a provider API key or, for OpenAI, a ChatGPT subscription sign-in
-configured in the app, or on Claude Code with the person's own Claude plan (see
-[Claude Code](#claude-code)). Credentials are encrypted at rest and never
-returned to the renderer (see [security](security.md)).
+configured in the app, or on an OpenAI-compatible server you add (see
+[custom endpoints](#custom-endpoints)), or on Claude Code with the person's own
+Claude plan (see [Claude Code](#claude-code)). Credentials are encrypted at rest
+and never returned to the renderer (see [security](security.md)).
 
 ## Global model and provider keys
 
@@ -106,6 +107,42 @@ password or token.
   reached, the Wisp's [fallback model](#fallback-models) answers that turn,
   told the latest messages of the conversation. Other failures do not move
   to the fallback.
+## Custom endpoints
+
+**Settings → AI Model → Custom endpoints** adds a server that speaks the OpenAI
+chat completions API, such as Ollama, LM Studio, vLLM, llama.cpp, or a proxy
+like LiteLLM ([ADR 031](decisions/031-custom-endpoints.md)). Each endpoint is a
+provider of its own: its models appear in every model picker, fallback and
+image understanding included, and run on Pi like the catalog's.
+
+- **Add endpoint** asks for a name, the base URL of the server's OpenAI API
+  (for Ollama, `http://127.0.0.1:11434/v1`), an optional API key, and its
+  models. **Load models** reads the models the server lists; one it does not
+  list can be added by its ID.
+- **Find local servers** looks for Ollama, LM Studio, vLLM, and llama.cpp at
+  their usual addresses on the computer that runs Wisp, without a key, and
+  offers to add the ones that answer.
+- The address is seen from the computer that runs Wisp. With a
+  [Wisp server](remote-server.md), `127.0.0.1` is the server.
+- Servers do not report a model's limits, so each model has a context window
+  and an output limit (32,768 and 8,192 tokens unless changed) and says whether
+  it accepts images. Set the context window to what the server allows: Ollama
+  uses a small window unless it is configured for a larger one.
+- Wisps use tools, so choose models that support tool calling.
+- The key is optional and encrypted like other provider keys. It is sent only
+  to the endpoint's own address: model lists are read without following
+  redirects, and moving an endpoint to another address takes its key again, or
+  its removal. Without a key, Wisp sends a placeholder that local servers
+  ignore. A key for an endpoint is set here, not in the provider's Credential
+  section.
+- Endpoints have no known prices, so [usage reports](token-usage.md) show their
+  cost as unknown.
+- Removing an endpoint removes its key and clears the global model if it used
+  one of its models. Wisps, fallbacks, and image models that chose one of its
+  models show it as unavailable.
+- Each environment keeps its own endpoints: the desktop's **This computer** and
+  every Wisp server.
+
 ## Models per Wisp
 
 When creating a Wisp, the **Model** picker keeps **Use the global model** to

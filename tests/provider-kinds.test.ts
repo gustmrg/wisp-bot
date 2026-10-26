@@ -24,12 +24,27 @@ describe("providerKind", () => {
       runtime: "claude-code",
       credential: "external",
       outputLimit: "runtime",
+      prices: "catalog",
+    });
+  });
+
+  it("runs custom endpoints on Pi, with an optional key and no known prices", () => {
+    expect(providerKind("custom-1a2b3c4d")).toEqual({
+      runtime: "pi",
+      credential: "optional",
+      outputLimit: "configurable",
+      prices: "unknown",
     });
   });
 
   it("runs every other provider on Pi with a key or sign-in Wisp keeps", () => {
     for (const providerId of ["openai", "openrouter", "anthropic", "claude"]) {
-      expect(providerKind(providerId)).toEqual({ runtime: "pi", credential: "required", outputLimit: "configurable" });
+      expect(providerKind(providerId)).toEqual({
+        runtime: "pi",
+        credential: "required",
+        outputLimit: "configurable",
+        prices: "catalog",
+      });
     }
   });
 

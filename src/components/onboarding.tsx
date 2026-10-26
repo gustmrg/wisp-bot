@@ -151,7 +151,7 @@ function Onboarding({
           <StepCount index={index} total={steps.length} />
           <h1 className="m-0 text-lg font-semibold">Choose an AI model</h1>
           <p className="m-0 text-base leading-relaxed text-dim">
-            Wisps need a default model and an API key for its provider before they can respond.
+            Wisps need a default model before they can respond: a provider with your API key, or a server you add.
           </p>
         </header>
         <div className="flex min-h-0 flex-1 flex-col">
@@ -159,7 +159,7 @@ function Onboarding({
         </div>
         <footer className="flex items-center justify-between gap-3 border-t border-border px-[30px] py-4 max-[620px]:px-4">
           <p className="m-0 text-xs text-dim" aria-live="polite">
-            {modelReady ? "Model and API key saved." : "Save a model and API key to continue."}
+            {modelReady ? "AI model saved." : "Save an AI model to continue."}
           </p>
           <Button type="button" disabled={!modelReady} onClick={next}>
             Continue

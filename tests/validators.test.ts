@@ -12,7 +12,10 @@ import {
   parseCreateConversationRequest,
   parseCreateWispRequest,
   parseDeleteWispRequest,
+  parseLoadCustomEndpointModelsRequest,
+  parseRemoveCustomEndpointRequest,
   parseRemoveProviderCredentialRequest,
+  parseSaveCustomEndpointRequest,
   parseResolveToolApprovalRequest,
   parseSaveAiSettingsRequest,
   parseSaveAuxiliaryModelRequest,
@@ -313,6 +316,54 @@ describe("IPC request validators", () => {
     expect(() =>
       parseSaveAuxiliaryModelRequest({ task: "imageUnderstanding", selection: { providerId: "openrouter" } }),
     ).toThrow(WispBackendError);
+  });
+
+  it("accepts model IDs with underscores, as local servers name quantized models", () => {
+    expect(
+      parseSaveAiSettingsRequest({
+        selection: { providerId: "custom-0a1b2c3d", modelId: "llama3.1:8b-instruct-q4_K_M" },
+      }),
+    ).toEqual({ selection: { providerId: "custom-0a1b2c3d", modelId: "llama3.1:8b-instruct-q4_K_M" } });
+  });
+
+  it("accepts a custom endpoint with its address normalized, and refuses a broken one", () => {
+    const model = { id: "qwen2.5-coder:7b", contextWindow: 32_768, maxOutputTokens: 8_192, images: false };
+    expect(
+      parseSaveCustomEndpointRequest({ name: " Ollama ", baseUrl: "http://127.0.0.1:11434/v1/", models: [model] }),
+    ).toEqual({ name: "Ollama", baseUrl: "http://127.0.0.1:11434/v1", models: [model] });
+    expect(
+      parseSaveCustomEndpointRequest({
+        id: "custom-0a1b2c3d",
+        name: "Proxy",
+        baseUrl: "https://llm.example.test/v1",
+        apiKey: "sk",
+        models: [model],
+      }),
+    ).toMatchObject({ id: "custom-0a1b2c3d", apiKey: "sk" });
+
+    for (const request of [
+      { name: "Ollama", baseUrl: "http://user:pass@127.0.0.1/v1", models: [model] },
+      { name: "", baseUrl: "http://127.0.0.1/v1", models: [model] },
+      { name: "Ollama", baseUrl: "http://127.0.0.1/v1", models: [] },
+      { name: "Ollama", baseUrl: "http://127.0.0.1/v1", models: [model, model] },
+      { name: "Ollama", baseUrl: "http://127.0.0.1/v1", models: [{ ...model, maxOutputTokens: 40_000 }] },
+      { name: "Ollama", baseUrl: "http://127.0.0.1/v1", models: [{ ...model, id: "has spaces" }] },
+      { id: "openai", name: "Ollama", baseUrl: "http://127.0.0.1/v1", models: [model] },
+    ]) {
+      expect(() => parseSaveCustomEndpointRequest(request)).toThrow(WispBackendError);
+    }
+  });
+
+  it("names a custom endpoint to remove or load models from by its own ID", () => {
+    expect(parseRemoveCustomEndpointRequest({ id: "custom-0a1b2c3d" })).toEqual({ id: "custom-0a1b2c3d" });
+    expect(() => parseRemoveCustomEndpointRequest({ id: "openrouter" })).toThrow(WispBackendError);
+    expect(
+      parseLoadCustomEndpointModelsRequest({ baseUrl: "http://127.0.0.1:1234/v1/", id: "custom-0a1b2c3d" }),
+    ).toEqual({
+      baseUrl: "http://127.0.0.1:1234/v1",
+      id: "custom-0a1b2c3d",
+    });
+    expect(() => parseLoadCustomEndpointModelsRequest({ baseUrl: "file:///etc" })).toThrow(WispBackendError);
   });
 
   it("accepts a fallback model without an output limit or reasoning, or off", () => {

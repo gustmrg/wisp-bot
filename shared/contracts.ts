@@ -1,4 +1,12 @@
 import type { ClaudeCodeStatusView } from "./claude-code.js";
+import type {
+  CustomEndpointModelsView,
+  CustomEndpointView,
+  DetectedEndpointsView,
+  LoadCustomEndpointModelsRequest,
+  RemoveCustomEndpointRequest,
+  SaveCustomEndpointRequest,
+} from "./custom-endpoints.js";
 import type { ContextRequest, ContextView } from "./context-policy.js";
 import type {
   PluginSettingsView,
@@ -147,6 +155,10 @@ export const WISP_IPC_CHANNELS = {
   startProviderSignIn: "wisp:settings:ai:sign-in",
   cancelProviderSignIn: "wisp:settings:ai:sign-in:cancel",
   finishProviderSignIn: "wisp:settings:ai:sign-in:finish",
+  saveCustomEndpoint: "wisp:settings:ai:custom-endpoint:save",
+  removeCustomEndpoint: "wisp:settings:ai:custom-endpoint:remove",
+  loadCustomEndpointModels: "wisp:settings:ai:custom-endpoint:models",
+  detectLocalEndpoints: "wisp:settings:ai:custom-endpoint:detect",
   getConversationState: "wisp:conversations:get",
   initializeConversations: "wisp:conversations:initialize",
   createWisp: "wisp:wisps:create",
@@ -273,6 +285,11 @@ export function isThinkingLevel(value: unknown): value is ThinkingLevel {
   return typeof value === "string" && (THINKING_LEVELS as ReadonlyArray<string>).includes(value);
 }
 
+/** A model ID as catalogs and endpoints name it, such as `openai/gpt-5.5` or `llama3.1:8b-instruct-q4_K_M`. */
+export function isModelId(value: unknown): value is string {
+  return typeof value === "string" && value.length <= 256 && /^[a-zA-Z0-9~][a-zA-Z0-9_.:/@~-]*$/.test(value);
+}
+
 export interface ModelSelection {
   providerId: string;
   modelId: string;
@@ -369,6 +386,8 @@ export interface AiSettingsView {
   providerSignIn?: ProviderSignInView | null;
   /** Whether this server's Claude Code can run Wisps (ADR 026); missing from servers before Claude Code. */
   claudeCode?: ClaudeCodeStatusView;
+  /** The OpenAI-compatible endpoints added on this server (ADR 031); missing from servers before them. */
+  customEndpoints?: ReadonlyArray<CustomEndpointView>;
   /** Set when the model catalog could not be fully loaded or refreshed and the built-in list is shown. */
   catalogError: string | null;
 }
@@ -830,6 +849,12 @@ export interface WispApi {
   startProviderSignIn(request: ProviderSignInRequest): Promise<BackendResult<AiSettingsView>>;
   cancelProviderSignIn(request: ProviderSignInRequest): Promise<BackendResult<AiSettingsView>>;
   finishProviderSignIn(request: FinishProviderSignInRequest): Promise<BackendResult<AiSettingsView>>;
+  saveCustomEndpoint(request: SaveCustomEndpointRequest): Promise<BackendResult<AiSettingsView>>;
+  removeCustomEndpoint(request: RemoveCustomEndpointRequest): Promise<BackendResult<AiSettingsView>>;
+  /** The models an endpoint lists, for the form that adds or edits it; nothing is saved. */
+  loadCustomEndpointModels(request: LoadCustomEndpointModelsRequest): Promise<BackendResult<CustomEndpointModelsView>>;
+  /** Local model servers answering on the server's computer at their usual addresses. */
+  detectLocalEndpoints(): Promise<BackendResult<DetectedEndpointsView>>;
   getConversationState(): Promise<BackendResult<ConversationStateView>>;
   initializeConversations(request: InitializeConversationsRequest): Promise<BackendResult<ConversationStateView>>;
   createWisp(request: CreateWispRequest): Promise<BackendResult<ConversationStateView>>;

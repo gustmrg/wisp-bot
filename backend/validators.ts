@@ -1,6 +1,15 @@
 import type { JobRequest } from "../shared/jobs.js";
+import {
+  MAX_CUSTOM_ENDPOINT_MODELS,
+  MAX_CUSTOM_ENDPOINT_NAME_LENGTH,
+  MIN_CUSTOM_CONTEXT_WINDOW,
+  type LoadCustomEndpointModelsRequest,
+  type RemoveCustomEndpointRequest,
+  type SaveCustomEndpointRequest,
+} from "../shared/custom-endpoints.js";
 import { isContextPolicy, withPolicyDefaults, type ContextRequest } from "../shared/context-policy.js";
 import {
+  isModelId,
   isThinkingLevel,
   type UsageReportRequest,
   type ApplyFallbackModelRequest,
@@ -86,6 +95,12 @@ import {
   type SaveWispExecutionRequest,
 } from "../shared/execution.js";
 import { WispBackendError } from "./backend-error.js";
+import {
+  isStoredCustomEndpointId,
+  normalizeBaseUrl,
+  normalizeEndpointModels,
+  normalizeEndpointName,
+} from "./custom-endpoints.js";
 import { MAX_SKILL_FILE_BYTES } from "./skill-store.js";
 import {
   normalizeChatChanges,
@@ -116,9 +131,7 @@ function parseId(value: unknown): string {
 }
 
 function parseCatalogId(value: unknown): string {
-  if (typeof value !== "string" || value.length > 256 || !/^[a-zA-Z0-9~][a-zA-Z0-9._:/@~-]*$/.test(value)) {
-    throw invalidRequest();
-  }
+  if (!isModelId(value)) throw invalidRequest();
   return value;
 }
 
@@ -250,6 +263,72 @@ export function parseApplyFallbackModelRequest(value: unknown): ApplyFallbackMod
   return {
     conversationId: parseId(request.conversationId),
     fallback: fallback === "off" || fallback === "global" ? fallback : parseModelChoice(fallback),
+  };
+}
+
+const MAX_API_KEY_LENGTH = 20_000;
+
+function parseOptionalApiKey(value: unknown): string | undefined {
+  if (value === undefined) return undefined;
+  if (typeof value !== "string" || value.length > MAX_API_KEY_LENGTH) throw invalidRequest();
+  return value;
+}
+
+function parseEndpointBaseUrl(value: unknown): string {
+  const baseUrl = normalizeBaseUrl(value);
+  if (!baseUrl) {
+    throw new WispBackendError(
+      "invalid_request",
+      "Enter the endpoint's http or https address, without a user name, query, or fragment.",
+    );
+  }
+  return baseUrl;
+}
+
+export function parseSaveCustomEndpointRequest(value: unknown): SaveCustomEndpointRequest {
+  const request = asRecord(value);
+  if (request.id !== undefined && !isStoredCustomEndpointId(request.id)) throw invalidRequest();
+  if (request.removeKey !== undefined && typeof request.removeKey !== "boolean") throw invalidRequest();
+  const name = normalizeEndpointName(request.name);
+  if (!name) {
+    throw new WispBackendError(
+      "invalid_request",
+      `Name the endpoint in at most ${MAX_CUSTOM_ENDPOINT_NAME_LENGTH} characters.`,
+    );
+  }
+  const baseUrl = parseEndpointBaseUrl(request.baseUrl);
+  const models = normalizeEndpointModels(request.models);
+  if (!models) {
+    throw new WispBackendError(
+      "invalid_request",
+      `List 1 to ${MAX_CUSTOM_ENDPOINT_MODELS} different models, each with a context window of at least ${MIN_CUSTOM_CONTEXT_WINDOW.toLocaleString("en-US")} tokens and an output limit no larger than it.`,
+    );
+  }
+  const apiKey = parseOptionalApiKey(request.apiKey);
+  return {
+    ...(request.id === undefined ? {} : { id: request.id }),
+    name,
+    baseUrl,
+    ...(apiKey === undefined ? {} : { apiKey }),
+    ...(request.removeKey ? { removeKey: true } : {}),
+    models,
+  };
+}
+
+export function parseRemoveCustomEndpointRequest(value: unknown): RemoveCustomEndpointRequest {
+  const request = asRecord(value);
+  if (!isStoredCustomEndpointId(request.id)) throw invalidRequest();
+  return { id: request.id };
+}
+
+export function parseLoadCustomEndpointModelsRequest(value: unknown): LoadCustomEndpointModelsRequest {
+  const request = asRecord(value);
+  if (request.id !== undefined && !isStoredCustomEndpointId(request.id)) throw invalidRequest();
+  const apiKey = parseOptionalApiKey(request.apiKey);
+  return {
+    baseUrl: parseEndpointBaseUrl(request.baseUrl),
+    ...(apiKey === undefined ? {} : { apiKey }),
+    ...(request.id === undefined ? {} : { id: request.id }),
   };
 }
 
