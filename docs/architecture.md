@@ -85,6 +85,14 @@ capped at two retries, and a request may run for at most ten minutes before it
 is aborted with a retryable sanitized error. On quit, agents get five seconds to
 settle before the app exits anyway.
 
+What sets one kind of provider apart is decided in one table,
+`shared/provider-kinds.ts`, which the backend and the renderer both read:
+the runtime that runs its models, whether Wisp keeps its credential or it
+signs in on its own, and whether a selection sets its output limit. Nothing
+else compares provider IDs to choose a behavior; `tests/provider-kinds.test.ts`
+checks this. In `backend/model-service.ts`, each runtime brings its own rules
+for finding a selection's model and saying whether it can run Wisps now.
+
 The bundled fake agent is a deterministic test adapter used by tests and
 opt-in development runs (`WISP_AGENT_MODE=fake`, unpackaged builds only); it is
 not the production transport.

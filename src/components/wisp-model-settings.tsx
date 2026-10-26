@@ -7,7 +7,8 @@ import type {
   ThinkingLevel,
   WispFallback,
 } from "../../shared/contracts";
-import { CLAUDE_CODE_PROVIDER, claudeCodeUnavailableMessage } from "../../shared/claude-code";
+import { claudeCodeUnavailableMessage } from "../../shared/claude-code";
+import { providerKind } from "../../shared/provider-kinds";
 import { AdvancedSettings } from "@/components/advanced-settings";
 import { LogoTile } from "@/components/logo-tile";
 import { NoImageInputNote } from "@/components/no-image-input-note";
@@ -240,7 +241,7 @@ export function WispModelSettings({ conversationId }: { conversationId: string }
             ) : null}
             {applied && appliedProvider && !appliedProvider.credentialConfigured ? (
               <p role="alert" className="m-0 text-destructive">
-                {appliedProvider.id === CLAUDE_CODE_PROVIDER
+                {providerKind(appliedProvider.id).credential === "external"
                   ? `${claudeCodeUnavailableMessage(catalog?.claudeCode)} See Settings → AI Model.`
                   : "Configure this provider's API key in Settings → AI Model."}
               </p>
@@ -343,8 +344,7 @@ function ModelSection({
           &amp; memory.
         </p>
       ) : null}
-      {/* Claude Code manages its own output limit (ADR 026). */}
-      {override && override.providerId !== CLAUDE_CODE_PROVIDER ? (
+      {override && providerKind(override.providerId).outputLimit === "configurable" ? (
         <AdvancedSettings defaultOpen={override.maxOutputTokens !== undefined}>
           <MaxOutputTokensField
             key={`${modelOptionValue(override)}:${override.maxOutputTokens ?? ""}`}
@@ -440,13 +440,13 @@ function FallbackSection({
       iconSrc: globalFallback ? modelLabLogo(globalFallback) : undefined,
     },
     // The Wisp's own model cannot stand in for itself.
-    ...modelOptions(catalog, undefined, { claudeCode: false }).filter(
+    ...modelOptions(catalog, undefined, { runtime: "pi" }).filter(
       (option) => !effective || option.value !== modelOptionValue(effective),
     ),
   ];
   if (typeof fallback === "object" && !options.some((option) => option.value === value)) {
     options.push(
-      modelOptions(catalog, undefined, { claudeCode: false }).find((option) => option.value === value) ??
+      modelOptions(catalog, undefined, { runtime: "pi" }).find((option) => option.value === value) ??
         unavailableModelOption(catalog, fallback),
     );
   }

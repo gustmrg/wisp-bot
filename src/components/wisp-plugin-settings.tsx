@@ -1,7 +1,6 @@
 import { useEffect, useId, useState, type ReactNode } from "react";
 import { FilePenIcon, FilePlusIcon, GlobeIcon, TriangleAlertIcon, XIcon } from "lucide-react";
 
-import { CLAUDE_CODE_PROVIDER } from "../../shared/claude-code";
 import {
   CLAUDE_WEB_SEARCH,
   CLAUDE_WEB_SEARCH_NAME,
@@ -16,6 +15,7 @@ import {
 } from "../../shared/plugins";
 import type { McpAccess, McpGrant, McpServerSummary, McpSettingsView } from "../../shared/mcp";
 import { MCP_PRESETS } from "../../shared/mcp-presets";
+import { providerKind } from "../../shared/provider-kinds";
 import { getToolMetadata } from "../../shared/tool-catalog";
 import type {
   ToolPolicyBehavior,
@@ -231,7 +231,8 @@ function WispAccessForm({
     ])
       .then(([plugins, access, mcp, mcpAccess, wispPolicy, model]) => {
         if (cancelled) return;
-        setOnClaudeCode(Boolean(model?.ok && model.value.effective?.providerId === CLAUDE_CODE_PROVIDER));
+        const effective = model?.ok ? model.value.effective : null;
+        setOnClaudeCode(Boolean(effective && providerKind(effective.providerId).runtime === "claude-code"));
         if (!plugins.ok) {
           setError(plugins.error.message);
           return;
