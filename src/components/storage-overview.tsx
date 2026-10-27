@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { SegmentedControl } from "@/components/ui/segmented-control";
 import { cn } from "@/lib/utils";
 import type { StorageSummary } from "../../shared/storage";
-import { formatBytes } from "../../shared/workspace";
+import { formatBytes, workspaceUsage } from "../../shared/workspace";
 
 /** Rows shown for each kind of largest consumer. */
 export const LARGEST_SHOWN = 5;
@@ -92,9 +92,13 @@ export function UsageBar({
 
 export function StorageOverview({ summary }: { summary: StorageSummary }) {
   const { workspaces } = summary;
-  const allotted = workspaces.reduce((sum, { quotaBytes }) => sum + quotaBytes, 0);
-  const full = workspaces.filter(({ usedBytes, quotaBytes }) => usedBytes >= quotaBytes).length;
-  const percent = allotted ? Math.round((summary.workspaceBytes / allotted) * 100) : 0;
+  // Workspaces without a size have nothing to allot; they are counted apart.
+  const sized = workspaces.filter(({ unlimited }) => !unlimited);
+  const unlimited = workspaces.length - sized.length;
+  const allotted = sized.reduce((sum, { quotaBytes }) => sum + quotaBytes, 0);
+  const sizedBytes = sized.reduce((sum, { usedBytes }) => sum + usedBytes, 0);
+  const full = workspaces.filter((workspace) => workspaceUsage(workspace).full).length;
+  const percent = allotted ? Math.round((sizedBytes / allotted) * 100) : 0;
   return (
     <SettingsGroup label="Summary">
       <SettingsCard className="space-y-4 p-4">
@@ -103,11 +107,15 @@ export function StorageOverview({ summary }: { summary: StorageSummary }) {
             <p className="m-0 text-xl font-semibold tabular-nums">
               {formatBytes(summary.workspaceBytes)}
               {summary.partial ? "+" : ""}{" "}
-              <span className="text-sm font-normal text-dim">of {formatBytes(allotted)} allotted</span>
+              <span className="text-sm font-normal text-dim">
+                {unlimited ? "used" : `of ${formatBytes(allotted)} allotted`}
+              </span>
             </p>
             <p className="m-0 text-xs text-dim">
-              {workspaces.length} {workspaces.length === 1 ? "workspace" : "workspaces"} · {percent}% of their combined
-              sizes · a circle counts once
+              {workspaces.length} {workspaces.length === 1 ? "workspace" : "workspaces"} ·{" "}
+              {unlimited ? `${unlimited} without a size limit · ` : ""}
+              {sized.length ? `${percent}% of ${unlimited ? "the others'" : "their"} combined sizes · ` : ""}a circle
+              counts once
             </p>
           </div>
           <dl className="m-0 flex gap-5 text-right">

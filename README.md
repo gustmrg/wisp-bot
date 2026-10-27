@@ -57,9 +57,9 @@ preset.
   authentication, granted per Wisp. See [MCP servers](docs/mcp-servers.md).
 - **Context and memory** — continuity summaries, explicit new topics, and
   memory you can see and edit, entry by entry. See [context and memory](docs/context-and-memory.md).
-- **Workspaces and attachments** — each Wisp gets a private folder (512 MB by
-  default, resizable per Wisp up to 100 GB) for the files it writes and the
-  files you attach. See
+- **Workspaces and attachments** — each Wisp gets a private folder (512 MiB by
+  default, resizable per Wisp up to 100 GiB or unlimited) for the files it
+  writes and the files you attach. See
   [security](docs/security.md).
 - **Commands** — a Wisp can be allowed to run commands (git, builds, tests) in
   its own Docker or Podman container that sees only its workspace. See

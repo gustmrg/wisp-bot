@@ -63,12 +63,18 @@ blocked, and conflicting auto-review rules resolve with `block` → `ask` →
 output to 64 KB.
 
 Each Wisp's workspace is a private folder under the backend data directory,
-capped at 512 MB unless the Wisp is given another size. **Wisp settings →
-General → Workspace** offers 512 MB, 2, 10, 50 and 100 GB; growing needs that
-much room on the server's disk, and shrinking below what the workspace holds
-deletes nothing but stops new files. The size is kept in the Wisp's config
-directory, outside the workspace, so the Wisp cannot change it. A file change
-that would exceed the cap is refused before the approval prompt. The same
+capped at 512 MiB unless the Wisp is given another size. **Wisp settings →
+General → Workspace** offers 64, 128, 256 and 512 MiB, 1, 2, 10, 50 and
+100 GiB, and **Unlimited**; growing needs that much room on the server's disk,
+and shrinking below what the workspace holds deletes nothing but stops new
+files. An unlimited workspace is still measured, and is held back only by its
+disk: attachments, uploads, file changes and commands are refused once they
+would leave less than 1 GiB free there, so the conversations, sessions and
+settings on the same disk can still be saved. Choosing it asks for
+confirmation first. The size is kept in the Wisp's config directory, outside
+the workspace, so the Wisp cannot change it; an unlimited workspace keeps its
+last size there too, which older servers apply. A file change that would
+exceed the cap is refused before the approval prompt. The same
 panel shows usage and opens the workspace folder; the path is computed by the
 main process. Attached
 files are picked in a native dialog owned by the main process and copied into the

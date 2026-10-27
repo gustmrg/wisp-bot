@@ -289,6 +289,36 @@ describe("CreateChatDialog workspace and commands", () => {
     });
   });
 
+  it("offers no size limit when the server does, saying what it means for the disk", async () => {
+    const api = mockAiSettings(undefined, {
+      getWispSetup: vi.fn(async () => ({
+        ok: true,
+        value: {
+          maxQuotaBytes: 10 * GIB,
+          unlimitedWorkspaces: true,
+          runtime: { available: true, name: "docker", version: "29.0.0" },
+        },
+      })),
+    });
+    const { user } = await openSetupStep();
+    await user.click(await screen.findByRole("combobox", { name: "Workspace size" }));
+    await user.click(await screen.findByRole("option", { name: "Unlimited" }));
+    expect(screen.getByText(/No size limit\. It can grow until its disk has 1\.0 GiB left/)).toBeVisible();
+    await user.click(screen.getByRole("switch", { name: "Run commands in a container" }));
+    expect(screen.queryByText(/Packages installed by commands count toward the workspace/)).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Create Wisp" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    expect(api.setWorkspaceQuota).toHaveBeenCalledWith({ conversationId: "atlas", quotaBytes: null });
+  });
+
+  it("offers no Unlimited size from servers older than it", async () => {
+    mockAiSettings();
+    const { user } = await openSetupStep();
+    await user.click(await screen.findByRole("combobox", { name: "Workspace size" }));
+    expect(await screen.findByRole("option", { name: "1.0 GiB" })).toBeInTheDocument();
+    expect(screen.queryByRole("option", { name: "Unlimited" })).not.toBeInTheDocument();
+  });
+
   it("keeps commands off when the server cannot run them", async () => {
     mockAiSettings(undefined, {
       getWispSetup: vi.fn(async () => ({

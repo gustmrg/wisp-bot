@@ -4,17 +4,25 @@ const GIB = 1024 * MIB;
 export const WORKSPACE_QUOTA_BYTES = 512 * MIB;
 /** Below this, packages installed by a Wisp's commands quickly fill its workspace. */
 export const COMMAND_WORKSPACE_QUOTA_BYTES = 2 * GIB;
-/** The sizes a Wisp's workspace can be given, smallest first. */
+/** The sizes a Wisp's workspace can be given, smallest first; it can also be given none (`null`). */
 export const WORKSPACE_QUOTA_PRESETS: ReadonlyArray<number> = [
   64 * MIB,
   128 * MIB,
   256 * MIB,
   WORKSPACE_QUOTA_BYTES,
+  GIB,
   COMMAND_WORKSPACE_QUOTA_BYTES,
   10 * GIB,
   50 * GIB,
   100 * GIB,
 ];
+/**
+ * Free space a workspace without a size leaves on its disk: new files stop
+ * there, so the conversations, sessions and settings beside it can still be saved.
+ */
+export const WORKSPACE_DISK_RESERVE_BYTES = GIB;
+/** At this share of its size, a workspace is shown as nearly full. */
+export const WORKSPACE_NEARLY_FULL_PERCENT = 90;
 /** Most files a single attach request copies into the workspace. */
 export const MAX_ATTACHMENTS_PER_REQUEST = 20;
 /** Workspace folder, relative to its root, that receives attached files. */
@@ -22,15 +30,67 @@ export const WORKSPACE_INBOX_DIRECTORY = "inbox";
 
 export interface WorkspaceView {
   usedBytes: number;
+  /**
+   * The workspace's size. With `unlimited`, what it can hold before its disk
+   * reaches the reserve, so apps older than that field still show a usable bar.
+   */
   quotaBytes: number;
   /** The largest size the workspace can be given now: the disk must have room to grow into it. */
   maxQuotaBytes: number;
+  /**
+   * The workspace has no size; only its disk's free space holds it back.
+   * Absent from servers older than unlimited workspaces, which cannot be given one.
+   */
+  unlimited?: boolean;
+  /** Free space on the disk holding the workspace; absent from older servers. */
+  freeDiskBytes?: number;
 }
 
 export interface SetWorkspaceQuotaRequest {
   conversationId: string;
-  /** One of `WORKSPACE_QUOTA_PRESETS`. */
-  quotaBytes: number;
+  /** One of `WORKSPACE_QUOTA_PRESETS`, or `null` for no size. */
+  quotaBytes: number | null;
+}
+
+/**
+ * What a workspace without a size can hold now: what it holds, plus its disk's
+ * free space above the reserve. Checking new files against it is checking the reserve.
+ */
+export function unlimitedWorkspaceRoom(usedBytes: number, freeDiskBytes: number): number {
+  return usedBytes + Math.max(0, freeDiskBytes - WORKSPACE_DISK_RESERVE_BYTES);
+}
+
+/** Why new files are refused in a workspace without a size; `before` says what to free space before. */
+export function diskReserveMessage(freeDiskBytes: number, before: string): string {
+  return `This workspace has no size limit, but its disk is almost full (${formatBytes(freeDiskBytes)} free; Wisp keeps ${formatBytes(WORKSPACE_DISK_RESERVE_BYTES)} free for conversations and settings). Free some space on the disk ${before}.`;
+}
+
+/** How a workspace's usage is shown. */
+export interface WorkspaceUsage {
+  /** Share of its size in use, rounded, above 100 past its size; null for a workspace without a size. */
+  share: number | null;
+  /** `share` capped at 100, for a usage bar. */
+  percent: number | null;
+  /** Close enough to its limit that the person should free space. */
+  nearlyFull: boolean;
+  /** New files are refused: past its size, or its disk down to the reserve. */
+  full: boolean;
+}
+
+export function workspaceUsage(
+  workspace: Pick<WorkspaceView, "usedBytes" | "quotaBytes" | "unlimited" | "freeDiskBytes">,
+): WorkspaceUsage {
+  if (workspace.unlimited) {
+    const full = workspace.freeDiskBytes !== undefined && workspace.freeDiskBytes <= WORKSPACE_DISK_RESERVE_BYTES;
+    return { share: null, percent: null, nearlyFull: full, full };
+  }
+  const share = workspace.quotaBytes > 0 ? Math.round((workspace.usedBytes / workspace.quotaBytes) * 100) : 100;
+  return {
+    share,
+    percent: Math.min(100, share),
+    nearlyFull: share >= WORKSPACE_NEARLY_FULL_PERCENT,
+    full: workspace.usedBytes >= workspace.quotaBytes,
+  };
 }
 
 export interface WorkspaceAttachment {

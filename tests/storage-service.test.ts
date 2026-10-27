@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { StorageService } from "../backend/storage-service.js";
 import { WorkspaceService } from "../backend/workspace-service.js";
+import { WORKSPACE_DISK_RESERVE_BYTES, WORKSPACE_QUOTA_BYTES } from "../shared/workspace.js";
 
 const directories: string[] = [];
 
@@ -18,7 +19,7 @@ async function setup(
     busy?: Set<string>;
     quotaBytes?: number;
     onCleanupFinished?: (id: string) => void;
-    resolveQuota?: (id: string, fallback: number) => Promise<number>;
+    resolveQuota?: (id: string, fallback: number) => Promise<number | null>;
     freeDiskBytes?: (directory: string) => Promise<number>;
   } = {},
 ) {
@@ -166,6 +167,26 @@ describe("StorageService largest consumers", () => {
     const { workspaces } = await service.getSummary();
     expect(workspaces.find(({ conversationId }) => conversationId === "atlas")?.maxQuotaBytes).toBe(2 * 1024 * MIB);
     expect(workspaces.find(({ conversationId }) => conversationId === "circle")?.maxQuotaBytes).toBe(2 * 1024 * MIB);
+  });
+
+  it("reports a workspace without a size with the disk's free space and what it can still hold", async () => {
+    const GIB = 1024 * 1024 * 1024;
+    const { atlas, service } = await setup({
+      resolveQuota: async (id, fallback) => (id === "atlas" ? null : fallback),
+      freeDiskBytes: async () => 5 * GIB,
+    });
+    await writeFile(path.join(atlas, "notes.txt"), Buffer.alloc(50));
+    const { workspaces } = await service.getSummary();
+    expect(workspaces.find(({ conversationId }) => conversationId === "atlas")).toMatchObject({
+      usedBytes: 50,
+      unlimited: true,
+      freeDiskBytes: 5 * GIB,
+      quotaBytes: 50 + 5 * GIB - WORKSPACE_DISK_RESERVE_BYTES,
+    });
+    expect(workspaces.find(({ conversationId }) => conversationId === "circle")).toMatchObject({
+      unlimited: false,
+      quotaBytes: WORKSPACE_QUOTA_BYTES,
+    });
   });
 
   it("leaves the largest size out when the disk cannot be measured", async () => {

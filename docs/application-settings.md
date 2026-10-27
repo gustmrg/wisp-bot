@@ -78,7 +78,10 @@ workspace folder by folder. Selected files and folders can be removed after a
 preview of what will go; a removal from `inbox/` warns that messages may refer
 to those attachments. The same panel changes a workspace's size limit (as in
 the Wisp's or circle's **Workspace** settings) and lists the archives of
-deleted Wisps and circles, which can be deleted permanently. Sizes are the
+deleted Wisps and circles, which can be deleted permanently. A workspace set
+to **Unlimited** shows what it holds and the free space on its disk instead of
+a share of its size, and the summary counts it apart from the allotted space;
+see [security](security.md#tool-authorization) for how its disk limits it. Sizes are the
 files' logical lengths, not the space allocated on disk.
 
 ## Shortcuts

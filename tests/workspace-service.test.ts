@@ -17,20 +17,29 @@ import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
+  assertWorkspaceCapacity,
+  largestQuota,
   listWorkspaceFiles,
   measureDirectory,
   readWorkspaceQuota,
+  readWorkspaceSizeSetting,
   safeFileName,
   WORKSPACE_SETTINGS_FILE,
   WorkspaceService,
 } from "../backend/workspace-service.js";
 import {
+  formatBytes,
   messagePreview,
   messageWithAttachments,
   splitMessageAttachments,
+  WORKSPACE_DISK_RESERVE_BYTES,
   WORKSPACE_QUOTA_BYTES,
   WORKSPACE_QUOTA_PRESETS,
+  workspaceUsage,
 } from "../shared/workspace.js";
+
+const MIB = 1024 * 1024;
+const GIB = 1024 * MIB;
 
 const directories: string[] = [];
 
@@ -262,11 +271,140 @@ describe("WorkspaceService", () => {
     await expect(service.attach("atlas")).rejects.toMatchObject({ message: expect.stringContaining("of 8 B used") });
   });
 
+  it("offers 1 GiB between 512 MiB and 2 GiB", async () => {
+    const { configDirectory, workspaceDirectory } = await setup();
+    expect(WORKSPACE_QUOTA_PRESETS.slice(WORKSPACE_QUOTA_PRESETS.indexOf(WORKSPACE_QUOTA_BYTES), -3)).toEqual([
+      512 * MIB,
+      GIB,
+      2 * GIB,
+    ]);
+    expect(formatBytes(GIB)).toBe("1.0 GiB");
+    expect(largestQuota(1.5 * GIB)).toBe(GIB);
+    const service = new WorkspaceService({
+      resolveDirectories: () => ({ workspaceDirectory, configDirectory }),
+      openPath: async () => undefined,
+      selectFiles: async () => [],
+      freeDiskBytes: async () => 1.5 * GIB,
+    });
+
+    await expect(service.getView("atlas")).resolves.toMatchObject({ maxQuotaBytes: GIB });
+    await expect(service.setQuota("atlas", GIB)).resolves.toMatchObject({ quotaBytes: GIB, unlimited: false });
+    await expect(service.setQuota("atlas", 2 * GIB)).rejects.toMatchObject({
+      message: expect.stringContaining("does not have room"),
+    });
+  });
+
+  it("gives a workspace no size, keeping the last one for older builds and still measuring it", async () => {
+    const { configDirectory, workspaceDirectory, picks } = await setup();
+    await writeFile(path.join(picks, "notes.txt"), "0123456789");
+    const service = new WorkspaceService({
+      resolveDirectories: () => ({ workspaceDirectory, configDirectory }),
+      openPath: async () => undefined,
+      selectFiles: async () => [path.join(picks, "notes.txt")],
+      quotaBytes: 8,
+      freeDiskBytes: async () => 10 * GIB,
+    });
+    await expect(service.attach("atlas")).rejects.toMatchObject({ message: expect.stringContaining("of 8 B used") });
+
+    await expect(service.setQuota("atlas", null)).resolves.toMatchObject({
+      unlimited: true,
+      freeDiskBytes: 10 * GIB,
+      quotaBytes: 10 * GIB - WORKSPACE_DISK_RESERVE_BYTES,
+    });
+    expect(JSON.parse(await readFile(path.join(configDirectory, WORKSPACE_SETTINGS_FILE), "utf8"))).toEqual({
+      quotaBytes: 8,
+      unlimited: true,
+    });
+    expect(await readWorkspaceQuota(configDirectory)).toBeNull();
+
+    // Past the size it had, files still fit, and what the workspace holds is still measured.
+    const { workspace } = await service.attach("atlas");
+    expect(workspace).toMatchObject({ usedBytes: 10, unlimited: true, quotaBytes: 10 + 10 * GIB - GIB });
+    expect(workspaceUsage(workspace)).toEqual({ share: null, percent: null, nearlyFull: false, full: false });
+  });
+
+  it("stops new files in a workspace without a size once its disk is down to the reserve", async () => {
+    const { configDirectory, workspaceDirectory, picks } = await setup();
+    await writeFile(path.join(picks, "notes.txt"), "0123456789");
+    let free = WORKSPACE_DISK_RESERVE_BYTES + 100;
+    const service = new WorkspaceService({
+      resolveDirectories: () => ({ workspaceDirectory, configDirectory }),
+      openPath: async () => undefined,
+      selectFiles: async () => [path.join(picks, "notes.txt")],
+      freeDiskBytes: async () => free,
+    });
+    await service.setQuota("atlas", null);
+
+    await expect(service.attach("atlas")).resolves.toMatchObject({ files: [expect.objectContaining({ size: 10 })] });
+    free = WORKSPACE_DISK_RESERVE_BYTES + 5;
+    await expect(service.attach("atlas")).rejects.toMatchObject({
+      code: "invalid_request",
+      message: expect.stringContaining("its disk is almost full"),
+    });
+    await expect(
+      service.receive("atlas", { name: "more.txt", size: 10 }, (async function* () {})()),
+    ).rejects.toMatchObject({ message: expect.stringContaining("Wisp keeps 1.0 GiB free") });
+    await expect(service.getView("atlas")).resolves.toMatchObject({ usedBytes: 10, unlimited: true });
+    expect(workspaceUsage(await service.getView("atlas"))).toMatchObject({ full: false, percent: null });
+    free = WORKSPACE_DISK_RESERVE_BYTES;
+    expect(workspaceUsage(await service.getView("atlas"))).toMatchObject({ full: true, nearlyFull: true });
+  });
+
+  it("checks a workspace without a size against the disk only, without measuring it", async () => {
+    const { workspaceDirectory } = await setup();
+    await chmod(workspaceDirectory, 0o000);
+    try {
+      // Measuring the unreadable folder would throw; the disk check never reads it.
+      await expect(assertWorkspaceCapacity(workspaceDirectory, 10, null, async () => 2 * GIB)).resolves.toBeUndefined();
+      await expect(assertWorkspaceCapacity(workspaceDirectory, 10, null, async () => GIB)).rejects.toMatchObject({
+        code: "invalid_request",
+      });
+    } finally {
+      await chmod(workspaceDirectory, 0o700);
+    }
+  });
+
+  it("gives a workspace without a size a size again, needing disk room only to grow past what it holds", async () => {
+    const { configDirectory, workspaceDirectory } = await setup();
+    const [smallest] = WORKSPACE_QUOTA_PRESETS as [number];
+    const service = new WorkspaceService({
+      resolveDirectories: () => ({ workspaceDirectory, configDirectory }),
+      openPath: async () => undefined,
+      selectFiles: async () => [],
+      freeDiskBytes: async () => 3 * GIB,
+    });
+    await service.setQuota("atlas", null);
+
+    await expect(service.setQuota("atlas", 10 * GIB)).rejects.toMatchObject({
+      message: expect.stringContaining("does not have room"),
+    });
+    await expect(service.setQuota("atlas", smallest)).resolves.toMatchObject({
+      quotaBytes: smallest,
+      unlimited: false,
+    });
+    expect(JSON.parse(await readFile(path.join(configDirectory, WORKSPACE_SETTINGS_FILE), "utf8"))).toEqual({
+      quotaBytes: smallest,
+    });
+    await expect(readWorkspaceSizeSetting(configDirectory)).resolves.toEqual({
+      quotaBytes: smallest,
+      unlimited: false,
+    });
+  });
+
   it("reports a damaged size setting instead of falling back to the default", async () => {
     const { configDirectory } = await setup();
     await expect(readWorkspaceQuota(configDirectory)).resolves.toBe(WORKSPACE_QUOTA_BYTES);
     await mkdir(configDirectory, { recursive: true });
     await writeFile(path.join(configDirectory, WORKSPACE_SETTINGS_FILE), "{", "utf8");
+    await expect(readWorkspaceQuota(configDirectory)).rejects.toMatchObject({ code: "internal_error" });
+    await writeFile(
+      path.join(configDirectory, WORKSPACE_SETTINGS_FILE),
+      JSON.stringify({ quotaBytes: WORKSPACE_QUOTA_BYTES, unlimited: "yes" }),
+      "utf8",
+    );
+    await expect(readWorkspaceQuota(configDirectory)).rejects.toMatchObject({ code: "internal_error" });
+    // Without the size older builds apply, the setting is damaged even when it asks for none.
+    await writeFile(path.join(configDirectory, WORKSPACE_SETTINGS_FILE), JSON.stringify({ unlimited: true }), "utf8");
     await expect(readWorkspaceQuota(configDirectory)).rejects.toMatchObject({ code: "internal_error" });
   });
 
@@ -458,6 +596,34 @@ describe("measureDirectory", () => {
     } finally {
       await chmod(locked, 0o700);
     }
+  });
+});
+
+describe("workspaceUsage", () => {
+  it("shows a sized workspace's share, nearly full from 90% and full at its size", () => {
+    expect(workspaceUsage({ usedBytes: 0, quotaBytes: GIB })).toEqual({
+      share: 0,
+      percent: 0,
+      nearlyFull: false,
+      full: false,
+    });
+    expect(workspaceUsage({ usedBytes: 0.9 * GIB, quotaBytes: GIB })).toMatchObject({ percent: 90, nearlyFull: true });
+    expect(workspaceUsage({ usedBytes: 2 * GIB, quotaBytes: GIB })).toEqual({
+      share: 200,
+      percent: 100,
+      nearlyFull: true,
+      full: true,
+    });
+  });
+
+  it("gives a workspace without a size no share, and calls it full only when its disk is down to the reserve", () => {
+    const unlimited = { usedBytes: 40 * GIB, quotaBytes: 0, unlimited: true };
+    expect(workspaceUsage(unlimited)).toEqual({ share: null, percent: null, nearlyFull: false, full: false });
+    expect(workspaceUsage({ ...unlimited, freeDiskBytes: 5 * GIB })).toMatchObject({ full: false });
+    expect(workspaceUsage({ ...unlimited, freeDiskBytes: WORKSPACE_DISK_RESERVE_BYTES })).toMatchObject({
+      full: true,
+      nearlyFull: true,
+    });
   });
 });
 

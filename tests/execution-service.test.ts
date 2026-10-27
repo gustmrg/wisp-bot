@@ -9,6 +9,7 @@ import { SANDBOX_IMAGE } from "../backend/container-manager.js";
 import type { GitForges } from "../backend/egress-proxy.js";
 import { containerPath, ExecutionService, PROCESS_TOOL, RUN_COMMAND_TOOL } from "../backend/execution-service.js";
 import { WORKSPACE_SETTINGS_FILE } from "../backend/workspace-service.js";
+import { WORKSPACE_DISK_RESERVE_BYTES } from "../shared/workspace.js";
 import type { ContainerRuntimeStatus } from "../shared/execution.js";
 import { ownConversation } from "../backend/integration-tool-source.js";
 
@@ -19,7 +20,11 @@ afterEach(async () => {
 });
 
 async function setup(
-  options: { runtime?: ContainerRuntimeStatus; gitForges?: (conversationId: string) => Promise<GitForges> } = {},
+  options: {
+    runtime?: ContainerRuntimeStatus;
+    gitForges?: (conversationId: string) => Promise<GitForges>;
+    freeDiskBytes?: (directory: string) => Promise<number>;
+  } = {},
 ) {
   const root = await mkdtemp(path.join(os.tmpdir(), "wisp-execution-"));
   directories.push(root);
@@ -64,6 +69,7 @@ async function setup(
       cli: async () => null,
     },
     ...(options.gitForges ? { gitForges: options.gitForges } : {}),
+    ...(options.freeDiskBytes ? { freeDiskBytes: options.freeDiskBytes } : {}),
     browser,
   });
   return { root, wisp, manager, authorize, browser, service };
@@ -306,6 +312,27 @@ describe("ExecutionService", () => {
       message: expect.stringContaining("workspace is full"),
     });
     expect(manager.exec).not.toHaveBeenCalled();
+  });
+
+  it("runs commands in a workspace without a size until its disk is down to the reserve", async () => {
+    let free = 2 * WORKSPACE_DISK_RESERVE_BYTES;
+    const { service, manager, wisp } = await setup({ freeDiskBytes: async () => free });
+    await service.save({ conversationId: "atlas", mode: "container", image: null, localNetwork: false });
+    await writeFile(
+      path.join(wisp.configDirectory, WORKSPACE_SETTINGS_FILE),
+      JSON.stringify({ quotaBytes: 4, unlimited: true }),
+    );
+    // Past the size it once had.
+    await writeFile(path.join(wisp.workspaceDirectory, "big.txt"), "12345");
+    const tool = await runCommandTool(service);
+
+    await tool.execute("call", { command: "ls" });
+    expect(manager.exec).toHaveBeenCalledTimes(1);
+    free = WORKSPACE_DISK_RESERVE_BYTES - 1;
+    await expect(tool.execute("call", { command: "ls" })).rejects.toMatchObject({
+      message: expect.stringContaining("before running more commands"),
+    });
+    expect(manager.exec).toHaveBeenCalledTimes(1);
   });
 
   it("removes the containers of deleted Wisps and the tokens once saved for each Wisp", async () => {

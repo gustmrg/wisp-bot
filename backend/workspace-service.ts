@@ -8,10 +8,13 @@ import ignore, { type Ignore } from "ignore";
 import { rankFilePaths } from "../shared/file-mentions.js";
 import {
   MAX_ATTACHMENTS_PER_REQUEST,
+  WORKSPACE_DISK_RESERVE_BYTES,
   WORKSPACE_INBOX_DIRECTORY,
   WORKSPACE_QUOTA_BYTES,
   WORKSPACE_QUOTA_PRESETS,
+  diskReserveMessage,
   formatBytes,
+  unlimitedWorkspaceRoom,
   type AttachWorkspaceFilesResult,
   type SearchWorkspaceFilesRequest,
   type WorkspaceAttachment,
@@ -175,12 +178,20 @@ export async function measureDirectory(directory: string): Promise<number> {
   return bytes;
 }
 
-/** Throws when adding `incomingBytes` would take the workspace past its quota. */
+/**
+ * Throws when adding `incomingBytes` would take the workspace past its quota,
+ * or, for a workspace without one (`null`), its disk below the reserve.
+ */
 export async function assertWorkspaceCapacity(
   workspaceDirectory: string,
   incomingBytes: number,
-  quotaBytes = WORKSPACE_QUOTA_BYTES,
-): Promise<number> {
+  quotaBytes: number | null = WORKSPACE_QUOTA_BYTES,
+  measureFreeDisk: (directory: string) => Promise<number> = freeDiskBytes,
+): Promise<void> {
+  if (quotaBytes === null) {
+    await assertDiskReserve(workspaceDirectory, incomingBytes, "before adding more files", measureFreeDisk);
+    return;
+  }
   const used = await measureDirectory(workspaceDirectory);
   if (used + incomingBytes > quotaBytes) {
     throw new WispBackendError(
@@ -188,7 +199,31 @@ export async function assertWorkspaceCapacity(
       `This workspace is full (${formatBytes(used)} of ${formatBytes(quotaBytes)} used). Free some space before adding more files.`,
     );
   }
-  return used;
+}
+
+/**
+ * Throws when writing `incomingBytes` into a workspace without a size would
+ * leave less than the reserve free on its disk. It asks the operating system
+ * once and reads no files, so it costs far less than measuring the workspace.
+ */
+export async function assertDiskReserve(
+  workspaceDirectory: string,
+  incomingBytes: number,
+  /** How the message ends: what to free space before. */
+  before: string,
+  measureFreeDisk: (directory: string) => Promise<number> = freeDiskBytes,
+): Promise<void> {
+  const free = await measureFreeDisk(workspaceDirectory);
+  if (free - incomingBytes < WORKSPACE_DISK_RESERVE_BYTES) {
+    throw new WispBackendError("invalid_request", diskReserveMessage(free, before));
+  }
+}
+
+/** The size a workspace was given, as saved beside its settings. */
+export interface WorkspaceSizeSetting {
+  /** The size in bytes. With `unlimited`, the last size it had, which builds older than that flag still apply. */
+  quotaBytes: number;
+  unlimited: boolean;
 }
 
 /**
@@ -196,21 +231,40 @@ export async function assertWorkspaceCapacity(
  * (a Wisp's or a circle's), or `fallback` when it was never resized. A setting that cannot be read throws rather than silently
  * shrinking the workspace back to the default.
  */
-export async function readWorkspaceQuota(configDirectory: string, fallback = WORKSPACE_QUOTA_BYTES): Promise<number> {
+export async function readWorkspaceSizeSetting(
+  configDirectory: string,
+  fallback = WORKSPACE_QUOTA_BYTES,
+): Promise<WorkspaceSizeSetting> {
   let contents: string;
   try {
     contents = await readFile(path.join(configDirectory, WORKSPACE_SETTINGS_FILE), "utf8");
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") return fallback;
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return { quotaBytes: fallback, unlimited: false };
     throw new WispBackendError("internal_error", "The workspace size could not be read.", true);
   }
   try {
-    const { quotaBytes } = JSON.parse(contents) as { quotaBytes?: unknown };
-    if (typeof quotaBytes === "number" && Number.isSafeInteger(quotaBytes) && quotaBytes > 0) return quotaBytes;
+    const { quotaBytes, unlimited } = JSON.parse(contents) as { quotaBytes?: unknown; unlimited?: unknown };
+    if (
+      typeof quotaBytes === "number" &&
+      Number.isSafeInteger(quotaBytes) &&
+      quotaBytes > 0 &&
+      (unlimited === undefined || typeof unlimited === "boolean")
+    ) {
+      return { quotaBytes, unlimited: unlimited === true };
+    }
   } catch {
     // Falls through: a damaged file is reported like an unreadable one.
   }
   throw new WispBackendError("internal_error", "The workspace size could not be read.", true);
+}
+
+/** The size a workspace was given, or `null` when it has none; see `readWorkspaceSizeSetting`. */
+export async function readWorkspaceQuota(
+  configDirectory: string,
+  fallback = WORKSPACE_QUOTA_BYTES,
+): Promise<number | null> {
+  const setting = await readWorkspaceSizeSetting(configDirectory, fallback);
+  return setting.unlimited ? null : setting.quotaBytes;
 }
 
 /**
@@ -282,13 +336,30 @@ export class WorkspaceService {
   }
 
   async getView(conversationId: string): Promise<WorkspaceView> {
+    return (await this.measure(conversationId)).view;
+  }
+
+  private async measure(conversationId: string): Promise<{ view: WorkspaceView; setting: WorkspaceSizeSetting }> {
     const { workspaceDirectory, settingsDirectory } = this.workspace(conversationId);
-    const [usedBytes, quotaBytes, freeBytes] = await Promise.all([
+    const [usedBytes, setting, freeBytes] = await Promise.all([
       measureDirectory(workspaceDirectory),
-      this.quota(settingsDirectory),
-      (this.options.freeDiskBytes ?? freeDiskBytes)(workspaceDirectory),
+      readWorkspaceSizeSetting(settingsDirectory, this.quotaBytes),
+      this.freeDiskBytes(workspaceDirectory),
     ]);
-    return { usedBytes, quotaBytes, maxQuotaBytes: largestQuota(usedBytes + freeBytes) };
+    return {
+      view: {
+        usedBytes,
+        quotaBytes: setting.unlimited ? unlimitedWorkspaceRoom(usedBytes, freeBytes) : setting.quotaBytes,
+        maxQuotaBytes: largestQuota(usedBytes + freeBytes),
+        unlimited: setting.unlimited,
+        freeDiskBytes: freeBytes,
+      },
+      setting,
+    };
+  }
+
+  private freeDiskBytes(directory: string): Promise<number> {
+    return (this.options.freeDiskBytes ?? freeDiskBytes)(directory);
   }
 
   /** The largest size a Wisp created now could be given. */
@@ -296,37 +367,45 @@ export class WorkspaceService {
     const { workspaceRoot } = this.options;
     if (!workspaceRoot)
       throw new WispBackendError("internal_error", "The free disk space could not be measured.", true);
-    return largestQuota(await (this.options.freeDiskBytes ?? freeDiskBytes)(workspaceRoot));
+    return largestQuota(await this.freeDiskBytes(workspaceRoot));
   }
 
   /**
-   * Gives a Wisp's or a circle's workspace another size. Growing needs room on the disk;
-   * shrinking below what the workspace holds deletes nothing and only stops
-   * new files until enough is freed.
+   * Gives a Wisp's or a circle's workspace another size, or none (`null`).
+   * Growing needs room on the disk; shrinking below what the workspace holds
+   * deletes nothing and only stops new files until enough is freed. Without a
+   * size, new files stop when the disk is down to the reserve.
    */
-  async setQuota(conversationId: string, quotaBytes: number): Promise<WorkspaceView> {
-    if (!WORKSPACE_QUOTA_PRESETS.includes(quotaBytes)) {
+  async setQuota(conversationId: string, quotaBytes: number | null): Promise<WorkspaceView> {
+    if (quotaBytes !== null && !WORKSPACE_QUOTA_PRESETS.includes(quotaBytes)) {
       throw new WispBackendError("invalid_request", "Choose one of the offered workspace sizes.");
     }
     const { settingsDirectory } = this.workspace(conversationId);
-    const view = await this.getView(conversationId);
-    if (quotaBytes > view.quotaBytes && quotaBytes > view.maxQuotaBytes) {
+    const { view, setting } = await this.measure(conversationId);
+    const growing = quotaBytes !== null && (setting.unlimited || quotaBytes > setting.quotaBytes);
+    if (growing && quotaBytes > view.maxQuotaBytes) {
       throw new WispBackendError(
         "invalid_request",
         `The disk does not have room for a ${formatBytes(quotaBytes)} workspace. Free some disk space or choose a smaller size.`,
       );
     }
+    // Without a size, the last one stays saved: builds older than `unlimited` apply it instead.
+    const saved = quotaBytes === null ? { quotaBytes: setting.quotaBytes, unlimited: true } : { quotaBytes };
     // A circle's settings folder exists only once it is first resized.
     await mkdir(settingsDirectory, { recursive: true });
     await writeFileAtomically(
       path.join(settingsDirectory, WORKSPACE_SETTINGS_FILE),
-      `${JSON.stringify({ quotaBytes }, null, 2)}\n`,
+      `${JSON.stringify(saved, null, 2)}\n`,
     );
     this.options.onQuotaChanged?.(conversationId);
-    return { ...view, quotaBytes };
+    return {
+      ...view,
+      quotaBytes: quotaBytes ?? unlimitedWorkspaceRoom(view.usedBytes, view.freeDiskBytes ?? 0),
+      unlimited: quotaBytes === null,
+    };
   }
 
-  private quota(settingsDirectory: string): Promise<number> {
+  private quota(settingsDirectory: string): Promise<number | null> {
     return readWorkspaceQuota(settingsDirectory, this.quotaBytes);
   }
 
@@ -418,7 +497,7 @@ export class WorkspaceService {
   private async copyIntoInbox(
     conversationId: string,
     workspaceDirectory: string,
-    quotaBytes: number,
+    quotaBytes: number | null,
     selected: ReadonlyArray<string>,
   ): Promise<AttachWorkspaceFilesResult> {
     if (selected.length > MAX_ATTACHMENTS_PER_REQUEST) {
@@ -436,6 +515,7 @@ export class WorkspaceService {
       workspaceDirectory,
       sources.reduce((sum, { size }) => sum + size, 0),
       quotaBytes,
+      (directory) => this.freeDiskBytes(directory),
     );
 
     const inbox = await prepareInbox(workspaceDirectory);
@@ -469,11 +549,13 @@ export class WorkspaceService {
 
   private async writeUpload(
     workspaceDirectory: string,
-    quotaBytes: number,
+    quotaBytes: number | null,
     file: { name: string; size: number },
     content: AsyncIterable<Uint8Array>,
   ): Promise<WorkspaceAttachment> {
-    await assertWorkspaceCapacity(workspaceDirectory, file.size, quotaBytes);
+    await assertWorkspaceCapacity(workspaceDirectory, file.size, quotaBytes, (directory) =>
+      this.freeDiskBytes(directory),
+    );
     const inbox = await prepareInbox(workspaceDirectory);
     const partial = path.join(inbox, `.upload-${randomUUID()}.partial`);
     const handle = await open(partial, "wx", 0o600);

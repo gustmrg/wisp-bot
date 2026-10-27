@@ -3,7 +3,7 @@ import { useEffect, useId, useState } from "react";
 import { FolderOpenIcon, HardDriveIcon } from "lucide-react";
 
 import type { IntegrationSettingsTarget } from "@/lib/plugin-access";
-import { formatBytes, type WorkspaceView } from "../../shared/workspace";
+import { WORKSPACE_DISK_RESERVE_BYTES, formatBytes, workspaceUsage, type WorkspaceView } from "../../shared/workspace";
 import { SettingsActions } from "@/components/settings/settings-primitives";
 import { Button } from "@/components/ui/button";
 import { Field, FieldDescription, FieldGroup, FieldLabel, FieldTitle } from "@/components/ui/field";
@@ -74,7 +74,7 @@ function WorkspacePanel({
     }
   }
 
-  const percent = view ? Math.min(100, Math.round((view.usedBytes / view.quotaBytes) * 100)) : 0;
+  const usage = view ? workspaceUsage(view) : null;
   return (
     <FieldGroup className="gap-3">
       <FieldDescription>
@@ -85,22 +85,32 @@ function WorkspacePanel({
       {view ? (
         <>
           <Field>
-            <FieldTitle>
-              {formatBytes(view.usedBytes)} of {formatBytes(view.quotaBytes)} used
-            </FieldTitle>
-            <div
-              className="h-1.5 overflow-hidden rounded-full bg-muted"
-              role="progressbar"
-              aria-label="Workspace usage"
-              aria-valuemin={0}
-              aria-valuemax={100}
-              aria-valuenow={percent}
-            >
-              <div
-                className={percent >= 90 ? "h-full bg-destructive" : "h-full bg-primary"}
-                style={{ width: `${percent}%` }}
-              />
-            </div>
+            {usage && usage.percent !== null ? (
+              <>
+                <FieldTitle>
+                  {formatBytes(view.usedBytes)} of {formatBytes(view.quotaBytes)} used
+                </FieldTitle>
+                <div
+                  className="h-1.5 overflow-hidden rounded-full bg-muted"
+                  role="progressbar"
+                  aria-label="Workspace usage"
+                  aria-valuemin={0}
+                  aria-valuemax={100}
+                  aria-valuenow={usage.percent}
+                >
+                  <div
+                    className={usage.nearlyFull ? "h-full bg-destructive" : "h-full bg-primary"}
+                    style={{ width: `${usage.percent}%` }}
+                  />
+                </div>
+              </>
+            ) : (
+              // Without a size there is nothing to fill: what it holds, and what is left on its disk.
+              <FieldTitle>
+                {formatBytes(view.usedBytes)} used
+                {view.freeDiskBytes === undefined ? "" : ` · ${formatBytes(view.freeDiskBytes)} free on disk`}
+              </FieldTitle>
+            )}
           </Field>
           <Field>
             <div className="flex flex-col gap-1.5 min-[761px]:flex-row min-[761px]:items-center min-[761px]:justify-between">
@@ -111,14 +121,20 @@ function WorkspacePanel({
                 usedBytes={view.usedBytes}
                 quotaBytes={view.quotaBytes}
                 maxQuotaBytes={view.maxQuotaBytes}
+                unlimited={view.unlimited}
+                freeDiskBytes={view.freeDiskBytes}
                 className="w-full min-[761px]:w-36"
                 onResized={setView}
               />
             </div>
             <FieldDescription>
-              {view.usedBytes > view.quotaBytes
-                ? "Holds more than this size. Nothing is deleted, but no new files fit until you free space."
-                : "Larger sizes need free space on the disk."}
+              {view.unlimited
+                ? usage?.full
+                  ? "Its disk is almost full. No new files fit until you free space on the disk."
+                  : `No size limit. New files stop when its disk has ${formatBytes(WORKSPACE_DISK_RESERVE_BYTES)} left.`
+                : view.usedBytes > view.quotaBytes
+                  ? "Holds more than this size. Nothing is deleted, but no new files fit until you free space."
+                  : "Larger sizes need free space on the disk."}
             </FieldDescription>
           </Field>
         </>
@@ -129,11 +145,11 @@ function WorkspacePanel({
         <SettingsActions>
           {onOpenSettings ? (
             <Button
-              variant={percent >= 90 ? "default" : "outline"}
+              variant={usage?.nearlyFull ? "default" : "outline"}
               onClick={() => onOpenSettings({ section: "storage", conversationId })}
             >
               <HardDriveIcon data-icon="inline-start" aria-hidden="true" />
-              {percent >= 90 ? "Free up space" : "Inspect and clean up"}
+              {usage?.nearlyFull ? "Free up space" : "Inspect and clean up"}
             </Button>
           ) : null}
           {screenActions ? (

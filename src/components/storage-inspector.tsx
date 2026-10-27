@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import { FieldDescription, FieldLabel } from "@/components/ui/field";
 import { useScreenActions } from "@/features/connections/active-connection";
 import type { StorageCleanupPreview, StorageEntry, StorageWorkspace } from "../../shared/storage";
-import { WORKSPACE_INBOX_DIRECTORY, formatBytes, type WorkspaceView } from "../../shared/workspace";
+import { WORKSPACE_INBOX_DIRECTORY, formatBytes, workspaceUsage, type WorkspaceView } from "../../shared/workspace";
 
 interface Listing {
   entries: StorageEntry[];
@@ -153,7 +153,7 @@ export function StorageInspector({
 
   const segments = folder ? folder.split("/") : [];
   const inInbox = folder === WORKSPACE_INBOX_DIRECTORY || folder.startsWith(`${WORKSPACE_INBOX_DIRECTORY}/`);
-  const nearlyFull = workspace.usedBytes / workspace.quotaBytes >= 0.9;
+  const { nearlyFull } = workspaceUsage(workspace);
   const entries = listing?.entries ?? [];
   const largestFiles = workspace.largestFiles ?? [];
 
@@ -180,11 +180,14 @@ export function StorageInspector({
         ) : null}
       </div>
       <h3 className="m-0 text-sm font-medium">
-        {workspace.name} · {formatBytes(workspace.usedBytes)} of {formatBytes(workspace.quotaBytes)}
+        {workspace.name} · {formatBytes(workspace.usedBytes)}{" "}
+        {workspace.unlimited ? "· no size limit" : `of ${formatBytes(workspace.quotaBytes)}`}
       </h3>
       {nearlyFull ? (
         <p role="alert" className="m-0 text-xs text-destructive">
-          This workspace is almost full. New attachments are refused once it is. Select files below to remove them.
+          {workspace.unlimited
+            ? "The disk this workspace is on is almost full, so new attachments are refused. Select files below to remove them."
+            : "This workspace is almost full. New attachments are refused once it is. Select files below to remove them."}
         </p>
       ) : null}
 
@@ -195,7 +198,7 @@ export function StorageInspector({
             workspace.usedBytes > 0 ? (
               <UsageBar
                 label="Space by folder"
-                capacity={workspace.quotaBytes}
+                capacity={workspace.unlimited ? undefined : workspace.quotaBytes}
                 shares={workspace.folders.map((item) => ({
                   key: item.path,
                   label: item.type === "directory" ? `${item.path}/` : item.path,
@@ -223,11 +226,15 @@ export function StorageInspector({
                 usedBytes={workspace.usedBytes}
                 quotaBytes={workspace.quotaBytes}
                 maxQuotaBytes={workspace.maxQuotaBytes}
+                unlimited={workspace.unlimited}
+                freeDiskBytes={workspace.freeDiskBytes}
                 className="w-full"
                 onResized={onResized}
               />
               <FieldDescription>
-                The most this workspace can hold.{" "}
+                {workspace.unlimited
+                  ? `No size limit${workspace.freeDiskBytes === undefined ? "" : `; ${formatBytes(workspace.freeDiskBytes)} free on its disk`}.`
+                  : "The most this workspace can hold."}{" "}
                 {workspace.kind === "circle"
                   ? "Every Wisp in the circle shares it. The same setting as in the circle's details."
                   : "The same setting as in the Wisp's Workspace settings."}
