@@ -67,6 +67,8 @@ Wisp, so it changes with Pi.
 - After a switch, the rest of the turn goes to the fallback without trying the
   Wisp's model again; each new message starts on the Wisp's model. A Wisp
   moves at most once per turn, and a failing fallback reports its own error.
+  ADR 035 changed this: a failing fallback hands over to the next in the
+  global list, and a model on hold is not tried until its hold ends.
 - The fallback is read when a call fails, so a changed choice applies without
   rebuilding the session. A fallback equal to the model that failed is none.
 - Credentials resolved for the Wisp's provider are not sent to a fallback of
@@ -95,7 +97,8 @@ Wisp, so it changes with Pi.
 - **Wrapping the model runtime given to Pi.** Cache warming calls it too, and
   would reach the fallback.
 - **A chain of fallbacks.** One per scope covers the reported problem; the
-  settings file can grow into a list later.
+  settings file can grow into a list later. It did, for the global fallback:
+  [ADR 035](035-fallback-after-retries.md).
 
 ## Deferred
 

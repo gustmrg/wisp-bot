@@ -6,6 +6,7 @@ import {
   THINKING_LEVELS,
   type ThinkingLevel,
   type AiSettingsView,
+  type SaveFallbackModelRequest,
   type AuxiliaryModelUnavailableReason,
   type AuxiliaryModelView,
   type AuxiliaryTask,
@@ -374,7 +375,7 @@ export class ModelService {
       auxiliary: {
         imageUnderstanding: this.auxiliaryView(auxiliary.imageUnderstanding, usableProviders),
       },
-      fallback: this.fallbackView(await this.settings.getFallback(), usableProviders),
+      ...(await this.fallbackViews(usableProviders)),
       secureStorageAvailable: this.credentials.isSecureStorageAvailable(),
       providers,
       providerSignIn: this.signInView(),
@@ -458,18 +459,31 @@ export class ModelService {
   }
 
   /**
-   * Chooses the global fallback model, or turns it off with null. Its provider
-   * needs a saved key; a fallback never takes a key of its own.
+   * Saves the global fallback models in order, or turns them off. Each
+   * provider needs a saved key; a fallback never takes a key of its own. A
+   * request from a client before the list names one model, which replaces
+   * the first fallback and keeps the others.
    */
-  async saveFallback(selection: ModelSelection | null): Promise<AiSettingsView> {
-    if (selection) await this.assertUsableFallback(selection);
-    await this.settings.setFallback(selection);
+  async saveFallback(request: SaveFallbackModelRequest): Promise<AiSettingsView> {
+    const current = await this.settings.getFallbacks();
+    const selections = request.selections ?? (request.selection ? [request.selection, ...current.slice(1)] : []);
+    const usableProviders = await this.usableProviders();
+    // Only a model the person adds must be usable now; one already saved may wait for its key to return.
+    for (const selection of selections) {
+      if (current.some((saved) => sameModel(saved, selection))) continue;
+      this.assertUsableFallbackFor(selection, usableProviders);
+    }
+    await this.settings.setFallbacks(selections);
     return this.getView();
   }
 
   /** Checks a fallback a person is choosing: a catalog model whose provider has a saved key. */
   async assertUsableFallback(selection: ModelSelection): Promise<void> {
-    const reason = this.fallbackUnavailableReason(selection, await this.usableProviders());
+    this.assertUsableFallbackFor(selection, await this.usableProviders());
+  }
+
+  private assertUsableFallbackFor(selection: ModelSelection, usableProviders: ReadonlySet<string>): void {
+    const reason = this.fallbackUnavailableReason(selection, usableProviders);
     if (reason) {
       throw new WispBackendError(
         "invalid_configuration",
@@ -481,21 +495,20 @@ export class ModelService {
   }
 
   /**
-   * The model a Wisp answers with when its own fails for good, or null when it
-   * has none, its saved model cannot be used, or it is the model that failed.
+   * The models a Wisp answers with when its own fails, in the order they are
+   * tried: the global list or its own model. Models that cannot be used now
+   * and the Wisp's own model are left out, so the list may be empty.
    */
-  async getFallbackModel(
-    modelOverride: ModelSelection | null,
-    saved: WispFallback | null,
-  ): Promise<ModelSelection | null> {
+  async getFallbackModels(modelOverride: ModelSelection | null, saved: WispFallback | null): Promise<ModelSelection[]> {
     const choice = wispFallbackChoice(modelOverride, saved);
-    if (choice === "off") return null;
-    const selection = choice === "global" ? await this.settings.getFallback() : choice;
-    if (!selection || this.fallbackUnavailableReason(selection, await this.usableProviders())) return null;
+    if (choice === "off") return [];
+    const selections = choice === "global" ? await this.settings.getFallbacks() : [choice];
+    const usableProviders = await this.usableProviders();
     const primary = modelOverride ?? (await this.settings.getSelection());
-    return primary && sameModel(primary, selection)
-      ? null
-      : { providerId: selection.providerId, modelId: selection.modelId };
+    return selections
+      .filter((selection) => !this.fallbackUnavailableReason(selection, usableProviders))
+      .filter((selection) => !primary || !sameModel(primary, selection))
+      .map(({ providerId, modelId }) => ({ providerId, modelId }));
   }
 
   /**
@@ -945,6 +958,16 @@ export class ModelService {
       selection,
       unavailable: selection ? this.auxiliaryUnavailableReason(selection, usableProviders) : null,
     };
+  }
+
+  /** The first global fallback, as clients before the list read it, and the whole list. */
+  private async fallbackViews(
+    usableProviders: ReadonlySet<string>,
+  ): Promise<Pick<AiSettingsView, "fallback" | "fallbacks">> {
+    const fallbacks = (await this.settings.getFallbacks()).map((selection) =>
+      this.fallbackView(selection, usableProviders),
+    );
+    return { fallback: fallbacks[0] ?? this.fallbackView(null, usableProviders), fallbacks };
   }
 
   private fallbackView(selection: ModelSelection | null, usableProviders: ReadonlySet<string>): FallbackModelView {

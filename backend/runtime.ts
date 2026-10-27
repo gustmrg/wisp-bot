@@ -277,9 +277,9 @@ export async function createBackendRuntime(options: BackendRuntimeOptions): Prom
   });
   const toolSource = new CompositeIntegrationToolSource([pluginService, mcpService, executionService, browserService]);
   // Read when a model fails, so a changed choice applies without rebuilding the session.
-  const fallbackModel = async (wispId: string) => {
+  const fallbackModels = async (wispId: string) => {
     const { modelOverride, fallback } = conversationRepository.getAgentContext(wispId);
-    return modelService.getFallbackModel(modelOverride ?? null, fallback ?? null);
+    return modelService.getFallbackModels(modelOverride ?? null, fallback ?? null);
   };
   // Rate limits and outages hold a model for every Wisp of this backend, whichever runtime hit them.
   const modelHolds = new ModelHolds();
@@ -289,7 +289,7 @@ export async function createBackendRuntime(options: BackendRuntimeOptions): Prom
     toolSource,
     () => modelService.getAuxiliaryModel("imageUnderstanding"),
     jobHost,
-    fallbackModel,
+    fallbackModels,
     wispHost,
     modelHolds,
   );
@@ -311,7 +311,8 @@ export async function createBackendRuntime(options: BackendRuntimeOptions): Prom
     webSearch: (wispId) => pluginService.searchesWithClaude(wispId),
     // A Pi session of its own, so the conversation's Pi session and identity stay as they are.
     fallback: async (context) => {
-      const choice = await fallbackModel(context.wispId);
+      // The first fallback answers; its own session moves on to the others if it fails too.
+      const [choice] = await fallbackModels(context.wispId);
       if (!choice) return null;
       const model = piSessionFactory.resolveModel(choice);
       // Each fallback turn starts fresh in a folder of its own, which the session report reads.

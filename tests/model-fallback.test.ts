@@ -133,7 +133,7 @@ describe("ModelFallback", () => {
   it("answers with the fallback when the model fails for good, for the rest of the turn", async () => {
     const inner = provider({ primary: failing(primary, "402 Payment Required"), backup: answer(backup, "Hi") });
     const onFallback = vi.fn();
-    const fallback = new ModelFallback({ pi, resolve: async () => backup, onFallback });
+    const fallback = new ModelFallback({ pi, resolve: async () => [backup], onFallback });
     const stream = fallback.wrap(inner);
 
     const events = await collect(stream(primary, context, {}));
@@ -158,13 +158,13 @@ describe("ModelFallback", () => {
 
   it("keeps the model's own error when there is no fallback", async () => {
     const events = failing(primary, "402 Payment Required");
-    const fallback = new ModelFallback({ pi, resolve: async () => null });
+    const fallback = new ModelFallback({ pi, resolve: async () => [] });
     expect(await collect(fallback.wrap(provider({ primary: events }))(primary, context, {}))).toEqual(events);
   });
 
   it("keeps the model's own error for failures Pi retries when it has no retries to wait for", async () => {
     const events = failing(primary, "429 Too Many Requests: rate limit reached");
-    const resolve = vi.fn(async () => backup);
+    const resolve = vi.fn(async () => [backup]);
     const fallback = new ModelFallback({ pi, resolve });
     expect(await collect(fallback.wrap(provider({ primary: events }))(primary, context, {}))).toEqual(events);
     expect(resolve).not.toHaveBeenCalled();
@@ -173,7 +173,7 @@ describe("ModelFallback", () => {
   it("answers with the fallback once Pi's retries of a failure that may pass have run out", async () => {
     const inner = provider({ primary: failing(primary, "429 Too Many Requests"), backup: answer(backup, "Hi") });
     const onFallback = vi.fn();
-    const resolve = vi.fn(async () => backup);
+    const resolve = vi.fn(async () => [backup]);
     const stream = new ModelFallback({ pi, resolve, onFallback, retries: 2 }).wrap(inner);
 
     // The first call and Pi's two retries: the first two failures are Pi's to retry.
@@ -188,7 +188,7 @@ describe("ModelFallback", () => {
   it("counts the retries again after the model answers, and never moves a request too large", async () => {
     let next: AssistantMessageEvent[] = failing(primary, "503 Service Unavailable");
     const inner = vi.fn<StreamFn>((requested) => streamOf(requested.id === "backup" ? answer(backup, "Hi") : next));
-    const resolve = vi.fn(async () => backup);
+    const resolve = vi.fn(async () => [backup]);
     const stream = new ModelFallback({ pi, resolve, retries: 2 }).wrap(inner);
 
     await collect(stream(primary, context, {}));
@@ -212,7 +212,7 @@ describe("ModelFallback", () => {
     const onFallback = vi.fn();
     const fallback = new ModelFallback({
       pi,
-      resolve: async () => backup,
+      resolve: async () => [backup],
       onFallback,
       retries: 2,
       holds,
@@ -248,15 +248,57 @@ describe("ModelFallback", () => {
     const holds = new ModelHolds();
     const inner = provider({ primary: failing(primary, "fetch failed"), backup: answer(backup, "Hi") });
     const onFallback = vi.fn();
-    const stream = new ModelFallback({ pi, resolve: async () => backup, onFallback, retries: 2, holds }).wrap(inner);
+    const stream = new ModelFallback({ pi, resolve: async () => [backup], onFallback, retries: 2, holds }).wrap(inner);
     for (let call = 0; call < 3; call += 1) await collect(stream(primary, context, {}));
     expect(onFallback).toHaveBeenCalledExactlyOnceWith(backup, undefined);
     expect(holds.heldUntil(primary)).toBeUndefined();
 
     holds.hold(primary, Date.now() + MODEL_HOLD_MS);
     const alone = provider({ primary: answer(primary, "Mine") });
-    await collect(new ModelFallback({ pi, resolve: async () => null, holds }).wrap(alone)(primary, context, {}));
+    await collect(new ModelFallback({ pi, resolve: async () => [], holds }).wrap(alone)(primary, context, {}));
     expect(alone.mock.calls.map(([requested]) => requested.id)).toEqual(["primary"]);
+  });
+
+  it("moves on through the list when a fallback fails too, skipping one on hold", async () => {
+    const third = model("google", "third");
+    const fourth = model("mistral", "fourth");
+    const holds = new ModelHolds();
+    holds.hold(third, Date.now() + MODEL_HOLD_MS);
+    const inner = provider({
+      primary: failing(primary, "402 Payment Required"),
+      backup: failing(backup, "401 invalid key"),
+      fourth: answer(fourth, "Hi"),
+    });
+    const onFallback = vi.fn();
+    const fallback = new ModelFallback({
+      pi,
+      resolve: async () => [primary, backup, third, fourth],
+      onFallback,
+      holds,
+    });
+    const stream = fallback.wrap(inner);
+
+    expect((await collect(stream(primary, context, {}))).at(-1)?.type).toBe("done");
+    expect(inner.mock.calls.map(([requested]) => requested.id)).toEqual(["primary", "backup", "fourth"]);
+    expect(onFallback.mock.calls.map(([to]) => to.id)).toEqual(["backup", "fourth"]);
+
+    // The rest of the turn stays on the fallback that answered.
+    await collect(stream(primary, context, {}));
+    expect(inner.mock.calls.at(-1)?.[0].id).toBe("fourth");
+  });
+
+  it("reports the last fallback's own error when every fallback fails", async () => {
+    const inner = provider({
+      primary: failing(primary, "402 Payment Required"),
+      backup: failing(backup, "401 invalid key"),
+    });
+    const events = await collect(
+      new ModelFallback({ pi, resolve: async () => [backup] }).wrap(inner)(primary, context, {}),
+    );
+    expect(events.at(-1)).toMatchObject({
+      type: "error",
+      error: { provider: "openrouter", errorMessage: "401 invalid key" },
+    });
   });
 
   it("does not move once the model has started answering", async () => {
@@ -268,7 +310,7 @@ describe("ModelFallback", () => {
       { type: "error", reason: "error", error: failure(primary, "402 Payment Required") },
     ];
     const inner = provider({ primary: events, backup: answer(backup, "Hi") });
-    const fallback = new ModelFallback({ pi, resolve: async () => backup });
+    const fallback = new ModelFallback({ pi, resolve: async () => [backup] });
     expect(await collect(fallback.wrap(inner)(primary, context, {}))).toEqual(events);
     expect(inner).toHaveBeenCalledOnce();
   });
@@ -278,7 +320,7 @@ describe("ModelFallback", () => {
     controller.abort();
     const events = failing(primary, "402 Payment Required");
     const inner = provider({ primary: events, backup: answer(backup, "Hi") });
-    const fallback = new ModelFallback({ pi, resolve: async () => backup });
+    const fallback = new ModelFallback({ pi, resolve: async () => [backup] });
     expect(await collect(fallback.wrap(inner)(primary, context, { signal: controller.signal }))).toEqual(events);
     expect(inner).toHaveBeenCalledOnce();
   });
@@ -289,14 +331,14 @@ describe("ModelFallback", () => {
       if (requested.id === "backup") throw new Error("No API key for openrouter");
       return streamOf(events);
     });
-    const fallback = new ModelFallback({ pi, resolve: async () => backup });
+    const fallback = new ModelFallback({ pi, resolve: async () => [backup] });
     expect(await collect(fallback.wrap(inner)(primary, context, {}))).toEqual(events);
     expect(fallback.fallbackRequest).toBeUndefined();
   });
 
   it("sends the fallback its own limits and none of the other provider's credentials", async () => {
     const inner = provider({ primary: failing(primary, "402 Payment Required"), backup: answer(backup, "Hi") });
-    const fallback = new ModelFallback({ pi, resolve: async () => backup });
+    const fallback = new ModelFallback({ pi, resolve: async () => [backup] });
     await collect(
       fallback.wrap(inner)(primary, context, {
         apiKey: "openai-key",
@@ -353,7 +395,7 @@ describe("ModelFallback in a real Pi session", () => {
       const onFallback = vi.fn();
       session.agent.streamFunction = new ModelFallback({
         pi,
-        resolve: async () => spare.getModel() as Model<Api>,
+        resolve: async () => [spare.getModel() as Model<Api>],
         onFallback,
         retries: 2,
       }).wrap(session.agent.streamFunction);

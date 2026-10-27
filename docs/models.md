@@ -180,14 +180,19 @@ the Wisp's activity says "Answering with the fallback model until" and the
 time. The hold covers every Wisp of the environment that uses that model,
 and restarting the app or the server ends it.
 
-**Settings → AI Model → Fallback** chooses the global fallback; it is **Off**
-by default. A Wisp's **Model** tab chooses **Off**, **Use the global
-fallback**, or a model of its own. A Wisp on the global model uses the global
-fallback until it chooses; a Wisp with its own model has none until it is
-turned on. Only models from providers with a saved key are listed.
+**Settings → AI Model → Fallback** chooses up to three global fallbacks, tried
+in order: **Fallback model**, then **Another fallback** adds the next, and each
+later one can be removed. It is **Off** by default, and turning the first off
+turns them all off. A fallback that fails before answering hands over to the
+next; one without a key, out of the catalog, or on hold is skipped. A Wisp's
+**Model** tab chooses **Off**, **Use the global fallback** (the list), or a
+model of its own. A Wisp on the global model uses the global fallbacks until
+it chooses; a Wisp with its own model has none until it is turned on. Only
+models from providers with a saved key are listed. An earlier release reads
+the first fallback only, and keeps only that one if it saves the settings.
 
-Once the fallback answers, it answers for the rest of that turn; the next
-message tries the Wisp's model again. The fallback takes the output limit and
+Once a fallback answers, it answers for the rest of that turn; the next
+message tries the Wisp's model again, unless it is on hold. The fallback takes the output limit and
 reasoning level of the model it stands in for, reduced to what it supports.
 The Wisp's activity says when the fallback is answering, each reply it wrote
 carries a **Fallback** badge, and the session report lists the switch. A

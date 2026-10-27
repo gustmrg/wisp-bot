@@ -38,7 +38,7 @@ export function registerModelSettingsHandlers(
     ],
     [
       WISP_IPC_CHANNELS.saveFallbackModel,
-      (payload) => modelService.saveFallback(parseSaveFallbackModelRequest(payload).selection),
+      (payload) => modelService.saveFallback(parseSaveFallbackModelRequest(payload)),
     ],
     [
       WISP_IPC_CHANNELS.removeProviderCredential,

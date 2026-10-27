@@ -43,6 +43,7 @@ function api(
   catalog = providers,
   fallback: AiSettingsView["fallback"] = { selection: null, unavailable: null },
   contextTokens = 0,
+  fallbacks?: AiSettingsView["fallbacks"],
 ) {
   const applyModel = vi.fn(async () => ({ ok: true, value: {} }));
   const applyFallbackModel = vi.fn(async () => ({ ok: true, value: {} }));
@@ -56,6 +57,7 @@ function api(
         value: {
           selection: globalModel,
           fallback,
+          ...(fallbacks ? { fallbacks } : {}),
           secureStorageAvailable: true,
           providers: catalog.map((provider) => ({ ...provider, credentialConfigured: configured })),
           ...(auxiliary ? { auxiliary } : {}),
@@ -330,6 +332,32 @@ describe("WispModelSettings", () => {
     await user.click(screen.getByRole("combobox", { name: "Fallback model" }));
     await user.click(await screen.findByRole("option", { name: /Use the global fallback/ }));
     expect(applyFallbackModel).toHaveBeenLastCalledWith({ conversationId: "wisp-one", fallback: "global" });
+  });
+
+  it("names every global fallback in order, and warns only when none of them can stand in", async () => {
+    const user = userEvent.setup();
+    const override: ModelSelection = { providerId: "provider-b", modelId: "model-b" };
+    const first = { selection: override, unavailable: null };
+    const second = { selection: globalModel, unavailable: null };
+    api(
+      { ...baseView, override, effective: override, applied: override, fallback: "global" },
+      true,
+      undefined,
+      providers,
+      first,
+      0,
+      [first, second],
+    );
+    render(<WispModelSettings conversationId="wisp-one" />);
+
+    const select = await screen.findByRole("combobox", { name: "Fallback model" });
+    expect(select).toHaveTextContent("Use the global fallbacks");
+    // The first is this Wisp's own model, which is skipped; the second still stands in.
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    await user.click(select);
+    expect(
+      await screen.findByRole("option", { name: /Use the global fallbacks.*Model b, then Model a/ }),
+    ).toBeInTheDocument();
   });
 
   it("warns when a Wisp uses the global fallback but none is set", async () => {

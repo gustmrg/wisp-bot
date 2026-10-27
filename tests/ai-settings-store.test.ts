@@ -96,23 +96,45 @@ describe("AiSettingsStore", () => {
     expect(JSON.parse(await readFile(filePath, "utf8"))).toEqual({ schemaVersion: 1, selection });
   });
 
-  it("keeps the fallback model in version 1, naming only its provider and model", async () => {
+  it("keeps the fallback models in version 1, naming only their provider and model", async () => {
     const { filePath, store } = await createStore();
     const selection = { providerId: "anthropic", modelId: "claude-example" };
     const fallback = { providerId: "openrouter", modelId: "backup" };
 
     await store.setSelection(selection);
-    await store.setFallback({ ...fallback, maxOutputTokens: 100, thinkingLevel: "high" });
+    await store.setFallbacks([{ ...fallback, maxOutputTokens: 100, thinkingLevel: "high" }]);
 
     const reloaded = new AiSettingsStore(filePath);
-    await expect(reloaded.getFallback()).resolves.toEqual(fallback);
+    await expect(reloaded.getFallbacks()).resolves.toEqual([fallback]);
     await expect(reloaded.getSelection()).resolves.toEqual(selection);
     expect(JSON.parse(await readFile(filePath, "utf8"))).toEqual({ schemaVersion: 1, selection, fallback });
 
-    await store.setFallback(null);
+    await store.setFallbacks([]);
     expect(JSON.parse(await readFile(filePath, "utf8"))).toEqual({ schemaVersion: 1, selection });
     await writeFile(filePath, JSON.stringify({ schemaVersion: 1, selection, fallback: { providerId: "" } }));
-    await expect(new AiSettingsStore(filePath).getFallback()).resolves.toBeNull();
+    await expect(new AiSettingsStore(filePath).getFallbacks()).resolves.toEqual([]);
+  });
+
+  it("keeps the first fallback where earlier releases read it, and the others after, up to three without repeats", async () => {
+    const { filePath, store } = await createStore();
+    const selection = { providerId: "anthropic", modelId: "claude-example" };
+    const [one, two, three, four] = ["a", "b", "c", "d"].map((id) => ({ providerId: "openrouter", modelId: id }));
+    await store.setSelection(selection);
+    await store.setFallbacks([one!, two!, one!, three!, four!]);
+
+    expect(JSON.parse(await readFile(filePath, "utf8"))).toEqual({
+      schemaVersion: 1,
+      selection,
+      fallback: one,
+      moreFallbacks: [two, three],
+    });
+    await expect(new AiSettingsStore(filePath).getFallbacks()).resolves.toEqual([one, two, three]);
+
+    // A file an earlier release rewrote keeps its first fallback only; others left without a first are dropped.
+    await writeFile(filePath, JSON.stringify({ schemaVersion: 1, selection, fallback: one }));
+    await expect(new AiSettingsStore(filePath).getFallbacks()).resolves.toEqual([one]);
+    await writeFile(filePath, JSON.stringify({ schemaVersion: 1, selection, moreFallbacks: [two] }));
+    await expect(new AiSettingsStore(filePath).getFallbacks()).resolves.toEqual([]);
   });
 
   it("reads files without auxiliary models, or with malformed ones, as off", async () => {

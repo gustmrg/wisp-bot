@@ -1,10 +1,10 @@
-# ADR 035: Fallback models answer once retries run out, until limits reset
+# ADR 035: A list of fallback models, after retries and until limits reset
 
 - Status: Accepted
 - Date: 2026-10-26
 - Decision owners: Wisp product and model runtime
-- Scope: When a Wisp's fallback model answers for a failure that may pass,
-  such as a rate limit, and how long the Wisp stays on it
+- Scope: When a Wisp's fallback models answer for a failure that may pass,
+  such as a rate limit, how long the Wisp stays on them, and the global list
 - Related: [ADR 021](021-fallback-models.md), [ADR 026](026-claude-code-runtime.md),
   [AI models](../models.md#fallback-models), SWE-238
 
@@ -73,6 +73,33 @@ while it is held, turns of Wisps with a fallback start on the fallback.**
   model until 17:30…".
 - Restarting the backend ends every hold.
 
+### A list of global fallbacks
+
+**Settings → AI Model → Fallback holds up to three global fallbacks
+(`MAX_FALLBACK_MODELS`), tried in order.**
+
+- `ai-settings.json` keeps the first in `fallback`, where earlier releases
+  read it, and the others in `moreFallbacks`, still in version 1. An earlier
+  release reads the first only; if it saves the settings, the others are
+  gone. Others left without a first are dropped.
+- `AiSettingsView.fallbacks` lists them all; `fallback` stays the first for
+  earlier clients. `SaveFallbackModelRequest.selections` saves the list. A
+  request from an earlier client names one model, which replaces the first
+  and keeps the others; null turns them all off.
+- Only a model the person adds must be usable when saved. One already saved
+  whose key was removed stays, shown as unavailable, and is skipped.
+- `ModelService.getFallbackModels` gives a Wisp its fallbacks in order: the
+  global list, or its own single model. It leaves out models that cannot be
+  used now and the Wisp's own model.
+- `ModelFallback` takes the list. When the model it moved to fails before
+  answering in a way that moves, the call goes to the next one the turn has
+  not tried; fallbacks on hold are skipped. With none left, the last error is
+  reported. Pi's retry count is kept across switches, as Pi keeps it.
+- A Claude Code Wisp's turn moves to the first fallback; the Pi session that
+  answers it moves on through the rest.
+- A Wisp's **Model** tab names the list in order, and warns only when none of
+  them can stand in for its model.
+
 ## Consequences
 
 - A Wisp with a fallback answers through a rate limit or an outage of its
@@ -84,12 +111,15 @@ while it is held, turns of Wisps with a fallback start on the fallback.**
 - A hold covers every Wisp of the environment on that model, since a rate
   limit applies to the account's key, not to one Wisp.
 - A provider that recovers early is not tried until the hold ends.
+- With fallbacks from different providers, a Wisp keeps answering through an
+  outage of one of them.
 
 ## Deferred
 
 - Keeping holds across a restart of the backend.
 - Reading the `retry-after` header, which Pi does not pass on.
-- A list of fallback models tried in order.
+- A list for a Wisp's own fallback. Its choice lives in `conversations.sqlite`,
+  and the column for more models would need a store upgrade.
 - Claude Code job runs, which do not fall back at all yet.
 
 ## Decisions taken with the user
@@ -110,3 +140,7 @@ while it is held, turns of Wisps with a fallback start on the fallback.**
   Wisp on the model would hit it in turn.
 - **Saving holds to disk.** A restart is rare, and trying the model again
   after one costs one turn's retries.
+- **More than three fallbacks.** Each failing fallback costs the turn time,
+  and three providers cover an outage of any one.
+- **A new settings version for the list.** Earlier releases discard a file
+  whose version they do not know, which would lose the main model.

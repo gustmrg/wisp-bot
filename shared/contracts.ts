@@ -350,6 +350,9 @@ export interface AuxiliaryModelView {
   unavailable: AuxiliaryModelUnavailableReason | null;
 }
 
+/** Global fallback models a person can list, tried in order (ADR 035). */
+export const MAX_FALLBACK_MODELS = 3;
+
 /** Why a saved fallback model is not used. The selection is kept so the person can see and fix it. */
 export type FallbackModelUnavailableReason = "missing_key" | "model_unavailable";
 
@@ -378,8 +381,14 @@ export function wispFallbackChoice(modelOverride: ModelSelection | null, saved: 
 export interface AiSettingsView {
   selection: ModelSelection | null;
   auxiliary: Record<AuxiliaryTask, AuxiliaryModelView>;
-  /** The model Wisps on the global model answer with when it fails for good. */
+  /** The first model Wisps on the global model answer with when it fails; see `fallbacks`. */
   fallback: FallbackModelView;
+  /**
+   * Every global fallback model, tried in order, at most
+   * `MAX_FALLBACK_MODELS` (ADR 035); missing from servers before the list,
+   * which keep one in `fallback`.
+   */
+  fallbacks?: ReadonlyArray<FallbackModelView>;
   secureStorageAvailable: boolean;
   providers: ReadonlyArray<ProviderSummary>;
   /** A subscription sign-in in progress or the last one that failed; missing from servers before sign-ins. */
@@ -404,8 +413,14 @@ export interface SaveAuxiliaryModelRequest {
 }
 
 export interface SaveFallbackModelRequest {
-  /** Null turns the global fallback off. */
+  /**
+   * Null turns the global fallbacks off. Without `selections`, a model
+   * replaces the first fallback and the others stay, as a client from before
+   * the list expects.
+   */
   selection: ModelSelection | null;
+  /** The whole list, in order; when given, `selection` is ignored. Missing from clients before the list. */
+  selections?: ReadonlyArray<ModelSelection>;
 }
 
 export interface RemoveProviderCredentialRequest {

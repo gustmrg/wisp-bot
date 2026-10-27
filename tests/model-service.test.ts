@@ -463,32 +463,53 @@ describe("ModelService fallback models", () => {
 
   it("saves a global fallback whose provider has a key, and turns it off", async () => {
     const { service } = await createService();
-    await expect(service.saveFallback(backup)).rejects.toMatchObject({
+    await expect(service.saveFallback({ selection: backup })).rejects.toMatchObject({
       code: "invalid_configuration",
       message: expect.stringContaining("API key"),
     });
     await service.saveVoiceKey("provider-b", "secret-key");
-    await expect(service.saveFallback({ providerId: "provider-b", modelId: "missing" })).rejects.toMatchObject({
-      code: "invalid_configuration",
-    });
+    await expect(
+      service.saveFallback({ selection: { providerId: "provider-b", modelId: "missing" } }),
+    ).rejects.toMatchObject({ code: "invalid_configuration" });
 
-    const view = await service.saveFallback({ ...backup, thinkingLevel: "high" });
+    const view = await service.saveFallback({ selection: { ...backup, thinkingLevel: "high" } });
     expect(view.fallback).toEqual({ selection: backup, unavailable: null });
-    expect((await service.saveFallback(null)).fallback).toEqual({ selection: null, unavailable: null });
+    expect(view.fallbacks).toEqual([{ selection: backup, unavailable: null }]);
+    const off = await service.saveFallback({ selection: null });
+    expect(off.fallback).toEqual({ selection: null, unavailable: null });
+    expect(off.fallbacks).toEqual([]);
+  });
+
+  it("keeps a list of fallbacks in order, which a client before the list edits only at the top", async () => {
+    const { service } = await createService();
+    await service.save({ selection: global, apiKey: "main-key" });
+    await service.saveVoiceKey("provider-b", "secret-key");
+    const vision = { providerId: "provider-b", modelId: "vision-b" };
+
+    const view = await service.saveFallback({ selection: backup, selections: [backup, vision] });
+    expect(view.fallbacks?.map(({ selection }) => selection)).toEqual([backup, vision]);
+    expect(view.fallback.selection).toEqual(backup);
+    await expect(service.getFallbackModels(null, null)).resolves.toEqual([backup, vision]);
+
+    // An older client names one model: it replaces the first, and the rest stay.
+    const replaced = await service.saveFallback({ selection: global });
+    expect(replaced.fallbacks?.map(({ selection }) => selection)).toEqual([global, vision]);
+    // The global model is not its own fallback.
+    await expect(service.getFallbackModels(null, null)).resolves.toEqual([vision]);
   });
 
   it("gives Wisps on the global model the global fallback, and Wisps with their own model none until they choose", async () => {
     const { service } = await createService();
     await service.save({ selection: global, apiKey: "main-key" });
     await service.saveVoiceKey("provider-b", "secret-key");
-    await service.saveFallback(backup);
+    await service.saveFallback({ selection: backup });
     const own = { providerId: "provider-b", modelId: "vision-b" };
 
-    await expect(service.getFallbackModel(null, null)).resolves.toEqual(backup);
-    await expect(service.getFallbackModel(own, null)).resolves.toBeNull();
-    await expect(service.getFallbackModel(own, "global")).resolves.toEqual(backup);
-    await expect(service.getFallbackModel(null, "off")).resolves.toBeNull();
-    await expect(service.getFallbackModel(own, global)).resolves.toEqual(global);
+    await expect(service.getFallbackModels(null, null)).resolves.toEqual([backup]);
+    await expect(service.getFallbackModels(own, null)).resolves.toEqual([]);
+    await expect(service.getFallbackModels(own, "global")).resolves.toEqual([backup]);
+    await expect(service.getFallbackModels(null, "off")).resolves.toEqual([]);
+    await expect(service.getFallbackModels(own, global)).resolves.toEqual([global]);
   });
 
   it("has no fallback when it is the model that failed or cannot be used", async () => {
@@ -497,19 +518,30 @@ describe("ModelService fallback models", () => {
     await service.saveVoiceKey("provider-b", "secret-key");
 
     // The model cannot stand in for itself.
-    await expect(service.getFallbackModel(null, global)).resolves.toBeNull();
-    await expect(service.getFallbackModel(backup, backup)).resolves.toBeNull();
+    await expect(service.getFallbackModels(null, global)).resolves.toEqual([]);
+    await expect(service.getFallbackModels(backup, backup)).resolves.toEqual([]);
     // A saved model that left the catalog, or whose key is gone, is kept but not used.
-    await settings.setFallback({ providerId: "provider-b", modelId: "retired" });
+    await settings.setFallbacks([{ providerId: "provider-b", modelId: "retired" }]);
     expect((await service.getView()).fallback).toEqual({
       selection: { providerId: "provider-b", modelId: "retired" },
       unavailable: "model_unavailable",
     });
-    await expect(service.getFallbackModel(null, null)).resolves.toBeNull();
-    await service.saveFallback(backup);
+    await expect(service.getFallbackModels(null, null)).resolves.toEqual([]);
+    // Saving the list again keeps it, though it cannot be used; adding another unusable model is refused.
+    await expect(
+      service.saveFallback({
+        selection: { providerId: "provider-b", modelId: "retired" },
+        selections: [{ providerId: "provider-b", modelId: "retired" }, backup],
+      }),
+    ).resolves.toMatchObject({ fallbacks: [{ unavailable: "model_unavailable" }, { unavailable: null }] });
+    await expect(service.getFallbackModels(null, null)).resolves.toEqual([backup]);
     const view = await service.removeCredential("provider-b");
-    expect(view.fallback).toEqual({ selection: backup, unavailable: "missing_key" });
-    await expect(service.getFallbackModel(null, null)).resolves.toBeNull();
+    expect(view.fallback).toEqual({
+      selection: { providerId: "provider-b", modelId: "retired" },
+      unavailable: "model_unavailable",
+    });
+    expect(view.fallbacks?.[1]).toEqual({ selection: backup, unavailable: "missing_key" });
+    await expect(service.getFallbackModels(null, null)).resolves.toEqual([]);
   });
 });
 

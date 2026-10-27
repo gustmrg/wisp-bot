@@ -1347,7 +1347,7 @@ describe("SdkPiSessionFactory", () => {
       return stream;
     });
     sdk.session.agent.streamFunction = inner;
-    const getFallbackModel = vi.fn(async () => ({ providerId: "openrouter", modelId: "backup" }));
+    const getFallbackModels = vi.fn(async () => [{ providerId: "openrouter", modelId: "backup" }]);
     let beforeRequest:
       | ((event: { payload: unknown }, context: { model?: { provider: string } }) => unknown)
       | undefined;
@@ -1358,7 +1358,7 @@ describe("SdkPiSessionFactory", () => {
       undefined,
       undefined,
       undefined,
-      getFallbackModel,
+      getFallbackModels,
     ).create(context, { providerId: "anthropic", modelId: "claude" });
     const loader = sdk.loaderOptions[0] as {
       extensionFactories: Array<{ name: string; factory: (pi: unknown) => void }>;
@@ -1374,7 +1374,7 @@ describe("SdkPiSessionFactory", () => {
     const result = await (await wrapped(models["anthropic/claude"] as { provider: string; id: string })).result();
 
     expect(result).toMatchObject({ provider: "openrouter", stopReason: "stop" });
-    expect(getFallbackModel).toHaveBeenCalledWith("one");
+    expect(getFallbackModels).toHaveBeenCalledWith("one");
     expect(events).toContainEqual({ type: "model_fallback", model: "Backup" });
     // The fallback's request is shaped for OpenRouter even though the session's model is Anthropic's.
     expect(providerRequests).toEqual([

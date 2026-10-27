@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 
 import {
   isThinkingLevel,
+  MAX_FALLBACK_MODELS,
   type AuxiliaryModelSelections,
   type AuxiliaryTask,
   type ModelSelection,
@@ -11,16 +12,18 @@ import {
 import { writeFileAtomically } from "./atomic-file.js";
 
 /**
- * Version 1 gained `auxiliary`, `fallback`, and `installationId` as optional
- * fields rather than a new version: earlier releases discard files whose
- * version they do not know, which would lose the main selection after a
- * downgrade.
+ * Version 1 gained `auxiliary`, `fallback`, `moreFallbacks`, and
+ * `installationId` as optional fields rather than a new version: earlier
+ * releases discard files whose version they do not know, which would lose the
+ * main selection after a downgrade. The first fallback stays in `fallback`,
+ * where earlier releases read it, and the others follow in `moreFallbacks`.
  */
 interface SettingsFile {
   schemaVersion: 1;
   selection: ModelSelection | null;
   auxiliary?: AuxiliaryModelSelections;
   fallback?: ModelSelection;
+  moreFallbacks?: ModelSelection[];
   installationId?: string;
 }
 
@@ -58,6 +61,22 @@ export function normalizeModelChoice(value: unknown): ModelSelection | null {
   return selection ? { providerId: selection.providerId, modelId: selection.modelId } : null;
 }
 
+/** Valid fallback models in order, without repeats, at most `MAX_FALLBACK_MODELS`. */
+export function normalizeFallbacks(values: ReadonlyArray<unknown>): ModelSelection[] {
+  const fallbacks: ModelSelection[] = [];
+  for (const value of values) {
+    const selection = normalizeModelChoice(value);
+    if (!selection || fallbacks.some((saved) => sameChoice(saved, selection))) continue;
+    fallbacks.push(selection);
+    if (fallbacks.length === MAX_FALLBACK_MODELS) break;
+  }
+  return fallbacks;
+}
+
+function sameChoice(left: ModelSelection, right: ModelSelection): boolean {
+  return left.providerId === right.providerId && left.modelId === right.modelId;
+}
+
 /** A saved fallback choice, or undefined when it is missing or invalid: the Wisp then follows its model. */
 export function normalizeWispFallback(value: unknown): WispFallback | undefined {
   if (value === "off" || value === "global") return value;
@@ -77,7 +96,7 @@ export class AiSettingsStore {
   private readonly filePath: string;
   private selection: ModelSelection | null = null;
   private auxiliary: AuxiliaryModelSelections = normalizeAuxiliary(undefined);
-  private fallback: ModelSelection | null = null;
+  private fallbacks: ModelSelection[] = [];
   private installationId: string | undefined;
   private loaded = false;
 
@@ -108,18 +127,18 @@ export class AiSettingsStore {
   }
 
   /**
-   * The model Wisps on the global model answer with when it fails for good. It
-   * names a provider and model only: its output limit and reasoning follow the
-   * model it stands in for.
+   * The models Wisps on the global model answer with when it fails, tried in
+   * order (ADR 035). Each names a provider and model only: its output limit
+   * and reasoning follow the model it stands in for.
    */
-  async getFallback(): Promise<ModelSelection | null> {
+  async getFallbacks(): Promise<ModelSelection[]> {
     await this.load();
-    return this.fallback ? { ...this.fallback } : null;
+    return this.fallbacks.map((selection) => ({ ...selection }));
   }
 
-  async setFallback(selection: ModelSelection | null): Promise<void> {
+  async setFallbacks(selections: ReadonlyArray<ModelSelection>): Promise<void> {
     await this.load();
-    this.fallback = normalizeModelChoice(selection);
+    this.fallbacks = normalizeFallbacks(selections);
     await this.write();
   }
 
@@ -142,7 +161,8 @@ export class AiSettingsStore {
       schemaVersion: 1,
       selection: this.selection,
       ...(configured ? { auxiliary: this.auxiliary } : {}),
-      ...(this.fallback ? { fallback: this.fallback } : {}),
+      ...(this.fallbacks[0] ? { fallback: this.fallbacks[0] } : {}),
+      ...(this.fallbacks.length > 1 ? { moreFallbacks: this.fallbacks.slice(1) } : {}),
       ...(this.installationId ? { installationId: this.installationId } : {}),
     };
     await writeFileAtomically(this.filePath, `${JSON.stringify(file, null, 2)}\n`);
@@ -155,7 +175,11 @@ export class AiSettingsStore {
       if (parsed.schemaVersion === 1) {
         this.selection = normalizeSelection(parsed.selection);
         this.auxiliary = normalizeAuxiliary(parsed.auxiliary);
-        this.fallback = normalizeModelChoice(parsed.fallback);
+        // A release without the list rewrites the file with its first fallback only, which then stands alone.
+        const first = normalizeModelChoice(parsed.fallback);
+        this.fallbacks = first
+          ? normalizeFallbacks([first, ...(Array.isArray(parsed.moreFallbacks) ? parsed.moreFallbacks : [])])
+          : [];
         this.installationId =
           typeof parsed.installationId === "string" && UUID_PATTERN.test(parsed.installationId)
             ? parsed.installationId

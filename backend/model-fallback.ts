@@ -28,9 +28,12 @@ export interface FallbackPiFunctions {
 
 export interface ModelFallbackOptions {
   pi: FallbackPiFunctions;
-  /** The Wisp's fallback model now, or null when it has none; read only when its model fails. */
-  resolve: () => Promise<RequestModel | null>;
-  /** Told when a turn moves to the fallback model, with when the hold on the Wisp's model ends, if it is held. */
+  /**
+   * The Wisp's fallback models now, in the order they are tried, or none;
+   * read only when its model fails or is on hold.
+   */
+  resolve: () => Promise<ReadonlyArray<RequestModel>>;
+  /** Told when a turn moves to a fallback model, with when the hold on the Wisp's model ends, if it is held. */
   onFallback?: (model: RequestModel, until?: number) => void;
   /**
    * How many times Pi retries a failure that may pass, such as a rate limit;
@@ -40,8 +43,8 @@ export interface ModelFallbackOptions {
   retries?: number;
   /**
    * Models on hold after a rate limit or an outage (ADR 035): a turn on a
-   * held model starts on the fallback, and a model that kept failing that way
-   * after the retries is held.
+   * held model starts on a fallback, held fallbacks are skipped, and a model
+   * that kept failing that way after the retries is held.
    */
   holds?: ModelHolds;
   now?: () => number;
@@ -70,10 +73,11 @@ export function isRetriedFailure(pi: FallbackPiFunctions, message: AssistantMess
 }
 
 /**
- * Sends a Wisp's model calls to its fallback model when its own fails before
- * answering, for good or once Pi's retries have run out. The switch lasts for
- * the rest of the turn, so the Wisp moves at most once per turn and tries its
- * own model again on the next.
+ * Sends a Wisp's model calls to its fallback models when its own fails before
+ * answering, for good or once Pi's retries have run out. A fallback that
+ * fails the same way hands over to the next in the list. The switch lasts for
+ * the rest of the turn, and each turn starts on the Wisp's own model again,
+ * unless it is on hold.
  */
 export class ModelFallback {
   private readonly pi: FallbackPiFunctions;
@@ -82,8 +86,14 @@ export class ModelFallback {
   private readonly retries: number;
   private readonly holds: ModelHolds | undefined;
   private readonly now: () => number;
+  /** The fallback answering the rest of the turn, if the turn moved. */
   private fallback: RequestModel | null = null;
-  /** Calls of the Wisp's model in a row that failed in a way Pi retries, since one last answered. */
+  /** The fallbacks the turn moved to, which it does not go back to. */
+  private tried: RequestModel[] = [];
+  /**
+   * Calls in a row that failed in a way Pi retries, whichever model failed,
+   * since one last answered: Pi's own count, which a switch does not reset.
+   */
   private retriedFailures = 0;
   /** The provider and reasoning of the fallback request being sent, for hooks that shape its payload. */
   fallbackRequest: { provider: string; thinkingLevel: ModelThinkingLevel } | undefined;
@@ -100,32 +110,40 @@ export class ModelFallback {
   /** Starts a turn on the Wisp's own model. */
   reset(): void {
     this.fallback = null;
+    this.tried = [];
     this.retriedFailures = 0;
   }
 
   wrap(inner: StreamFn): StreamFn {
     return async (model, context, options) => {
-      if (this.fallback) return this.sendToFallback(inner, model, this.fallback, context, options);
-      const held = await this.startOnFallback(inner, model, context, options);
-      if (held) return held;
-      this.fallbackRequest = undefined;
-      const primary = await inner(model, context, options);
-      const output = this.pi.createAssistantMessageEventStream();
-      void this.relay(
-        primary,
-        output,
-        (failed) => this.retry(inner, model, failed, context, options),
-        () => {
-          this.retriedFailures = 0;
-        },
-      );
-      return output;
+      if (!this.fallback) {
+        const held = await this.startOnFallback(inner, model, context, options);
+        if (held) return held;
+      }
+      const current = this.fallback;
+      if (!current) this.fallbackRequest = undefined;
+      const source = current
+        ? await this.sendToFallback(inner, model, current, context, options)
+        : await inner(model, context, options);
+      return this.relayed(source, (failed) => this.retry(inner, model, current ?? model, failed, context, options));
     };
+  }
+
+  /** A model's events, passed on by `relay` into a stream of their own. */
+  private relayed(
+    source: AssistantMessageEventStream,
+    retry: (failed: AssistantMessage) => Promise<AssistantMessageEventStream | null>,
+  ): AssistantMessageEventStream {
+    const output = this.pi.createAssistantMessageEventStream();
+    void this.relay(source, output, retry, () => {
+      this.retriedFailures = 0;
+    });
+    return output;
   }
 
   /**
    * Passes the model's events on, holding back its opening event until it
-   * answers: a call that fails before then can still go to the fallback.
+   * answers: a call that fails before then can still go to a fallback.
    */
   private async relay(
     source: AssistantMessageEventStream,
@@ -158,34 +176,26 @@ export class ModelFallback {
     output.end();
   }
 
+  /** Moves a call that `current`, the Wisp's model or a fallback, failed to the next fallback, or resolves null. */
   private async retry(
     inner: StreamFn,
     model: RequestModel,
+    current: RequestModel,
     failed: AssistantMessage,
     context: Parameters<StreamFn>[1],
     options: StreamOptions | undefined,
   ): Promise<AssistantMessageEventStream | null> {
-    if (options?.signal?.aborted || !this.movesOn(failed, model.contextWindow)) return null;
-    const until = this.holdAfterRetries(model, failed);
-    const fallback = await this.resolve().catch(() => null);
-    if (!fallback || options?.signal?.aborted) return null;
-    try {
-      const stream = await this.sendToFallback(inner, model, fallback, context, options);
-      this.fallback = fallback;
-      this.retriedFailures = 0;
-      this.onFallback?.(fallback, until);
-      return stream;
-    } catch {
-      // A fallback that cannot start leaves the model's own error to report.
-      this.fallbackRequest = undefined;
-      return null;
-    }
+    if (options?.signal?.aborted || !this.movesOn(failed, current.contextWindow)) return null;
+    this.holdAfterRetries(current, failed);
+    const next = await this.nextFallback(model, options);
+    if (!next) return null;
+    return this.switchTo(inner, model, next, context, options, this.holds?.heldUntil(model));
   }
 
   /**
-   * Starts the call on the fallback while the Wisp's model is on hold, so the
+   * Starts the call on a fallback while the Wisp's model is on hold, so the
    * turn does not wait through retries the model would most likely fail
-   * again. Resolves null when the model is not held or the fallback cannot
+   * again. Resolves null when the model is not held or no fallback can
    * start, and the call goes to the model as usual.
    */
   private async startOnFallback(
@@ -196,26 +206,51 @@ export class ModelFallback {
   ): Promise<AssistantMessageEventStream | null> {
     const until = this.holds?.heldUntil(model);
     if (until === undefined) return null;
-    const fallback = await this.resolve().catch(() => null);
-    if (!fallback || options?.signal?.aborted) return null;
-    if (fallback.provider === model.provider && fallback.id === model.id) return null;
+    const next = await this.nextFallback(model, options);
+    return next ? this.switchTo(inner, model, next, context, options, until) : null;
+  }
+
+  /** The first fallback the turn has not tried that is neither the Wisp's own model nor on hold. */
+  private async nextFallback(model: RequestModel, options: StreamOptions | undefined): Promise<RequestModel | null> {
+    const candidates = await this.resolve().catch(() => []);
+    if (options?.signal?.aborted) return null;
+    return (
+      candidates.find(
+        (candidate) =>
+          !sameModel(candidate, model) &&
+          !this.tried.some((tried) => sameModel(tried, candidate)) &&
+          this.holds?.heldUntil(candidate) === undefined,
+      ) ?? null
+    );
+  }
+
+  /** Sends the call to `fallback`, which answers the rest of the turn, or resolves null when it cannot start. */
+  private async switchTo(
+    inner: StreamFn,
+    model: RequestModel,
+    fallback: RequestModel,
+    context: Parameters<StreamFn>[1],
+    options: StreamOptions | undefined,
+    until: number | undefined,
+  ): Promise<AssistantMessageEventStream | null> {
+    this.tried.push(fallback);
     try {
       const stream = await this.sendToFallback(inner, model, fallback, context, options);
       this.fallback = fallback;
       this.onFallback?.(fallback, until);
-      return stream;
+      return this.relayed(stream, (failed) => this.retry(inner, model, fallback, failed, context, options));
     } catch {
+      // A fallback that cannot start leaves the error of the model before it to report.
       this.fallbackRequest = undefined;
       return null;
     }
   }
 
-  /** Holds the Wisp's model when it kept failing in a way that passes with time; returns when the hold ends. */
-  private holdAfterRetries(model: RequestModel, failed: AssistantMessage): number | undefined {
-    if (!this.holds || this.retriedFailures <= this.retries || !failed.errorMessage) return undefined;
+  /** Holds a model that kept failing in a way that passes with time, once Pi's retries ran out. */
+  private holdAfterRetries(model: RequestModel, failed: AssistantMessage): void {
+    if (!this.holds || this.retriedFailures <= this.retries || !failed.errorMessage) return;
     const until = holdAfter(failed.errorMessage, this.now());
     if (until !== undefined) this.holds.hold(model, until);
-    return until;
   }
 
   /**
@@ -248,4 +283,8 @@ export class ModelFallback {
       reasoning: thinkingLevel === "off" ? undefined : thinkingLevel,
     });
   }
+}
+
+function sameModel(left: RequestModel, right: RequestModel): boolean {
+  return left.provider === right.provider && left.id === right.id;
 }

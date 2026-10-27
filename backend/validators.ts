@@ -11,6 +11,7 @@ import { isContextPolicy, withPolicyDefaults, type ContextRequest } from "../sha
 import {
   isModelId,
   isThinkingLevel,
+  MAX_FALLBACK_MODELS,
   type UsageReportRequest,
   type ApplyFallbackModelRequest,
   type ApplyModelRequest,
@@ -254,7 +255,10 @@ function parseModelChoice(value: unknown): ModelSelection {
 
 export function parseSaveFallbackModelRequest(value: unknown): SaveFallbackModelRequest {
   const request = asRecord(value);
-  return { selection: request.selection === null ? null : parseModelChoice(request.selection) };
+  const selection = request.selection === null ? null : parseModelChoice(request.selection);
+  if (request.selections === undefined) return { selection };
+  if (!Array.isArray(request.selections) || request.selections.length > MAX_FALLBACK_MODELS) throw invalidRequest();
+  return { selection, selections: request.selections.map(parseModelChoice) };
 }
 
 export function parseApplyFallbackModelRequest(value: unknown): ApplyFallbackModelRequest {

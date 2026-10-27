@@ -400,7 +400,7 @@ describe("ModelService with custom endpoints", () => {
     const id = (await service.saveCustomEndpoint({ name: "Ollama", baseUrl: `${endpoint.url}/v1`, models: [QWEN] }))
       .customEndpoints![0]!.id;
 
-    await expect(service.saveFallback({ providerId: id, modelId: QWEN.id })).resolves.toMatchObject({
+    await expect(service.saveFallback({ selection: { providerId: id, modelId: QWEN.id } })).resolves.toMatchObject({
       fallback: { selection: { providerId: id, modelId: QWEN.id }, unavailable: null },
     });
     await expect(service.save({ selection: { providerId: id, modelId: QWEN.id }, apiKey: "sk" })).rejects.toMatchObject(

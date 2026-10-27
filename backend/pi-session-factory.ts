@@ -61,7 +61,7 @@ export class SdkPiSessionFactory implements RuntimeSessionFactory {
   private readonly modelRuntime: ModelRuntimeLike;
   private readonly toolSource?: IntegrationToolSource;
   private readonly getImageModel?: () => Promise<ModelSelection | null>;
-  private readonly getFallbackModel?: (wispId: string) => Promise<ModelSelection | null>;
+  private readonly getFallbackModels?: (wispId: string) => Promise<ModelSelection[]>;
   private readonly holds?: ModelHolds;
   private readonly builder: WispSessionBuilder;
 
@@ -73,8 +73,8 @@ export class SdkPiSessionFactory implements RuntimeSessionFactory {
     getImageModel?: () => Promise<ModelSelection | null>,
     /** Where the Wisp's jobs live; without it, Wisps have no job tools. */
     jobs?: JobToolHost,
-    /** The model a Wisp answers with when its own fails for good, or null when it has none. */
-    getFallbackModel?: (wispId: string) => Promise<ModelSelection | null>,
+    /** The models a Wisp answers with when its own fails, in the order they are tried. */
+    getFallbackModels?: (wispId: string) => Promise<ModelSelection[]>,
     /** Where the person's Wisps live; without it, Wisps have no Wisp tools. */
     wisps?: WispToolHost,
     /** Models on hold after a rate limit or an outage, shared by every session (ADR 035). */
@@ -83,7 +83,7 @@ export class SdkPiSessionFactory implements RuntimeSessionFactory {
     this.modelRuntime = modelRuntime;
     this.toolSource = toolSource;
     this.getImageModel = getImageModel;
-    this.getFallbackModel = getFallbackModel;
+    this.getFallbackModels = getFallbackModels;
     this.holds = holds;
     this.builder = new WispSessionBuilder({ authorizationBroker, toolSource, jobs, wisps });
   }
@@ -173,8 +173,15 @@ export class SdkPiSessionFactory implements RuntimeSessionFactory {
     const fallback = new ModelFallback({
       pi: await import("@earendil-works/pi-ai"),
       resolve: async () => {
-        const choice = await this.getFallbackModel?.(context.wispId);
-        return choice ? this.resolveModel(choice) : null;
+        const choices = (await this.getFallbackModels?.(context.wispId)) ?? [];
+        // A fallback that cannot be resolved now, such as one whose key was just removed, is skipped.
+        return choices.flatMap((choice) => {
+          try {
+            return [this.resolveModel(choice)];
+          } catch {
+            return [];
+          }
+        });
       },
       onFallback: (model, until) => {
         const name = displayModelName(model);

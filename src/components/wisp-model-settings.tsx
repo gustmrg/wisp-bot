@@ -416,7 +416,7 @@ function MaxOutputTokensField({
 const FALLBACK_OFF = "off";
 const FALLBACK_GLOBAL = "global";
 
-/** Chooses what answers when the Wisp's model fails for good: nothing, the global fallback, or a model of its own. */
+/** Chooses what answers when the Wisp's model fails: nothing, the global fallbacks, or a model of its own. */
 function FallbackSection({
   catalog,
   view,
@@ -429,14 +429,22 @@ function FallbackSection({
   onChange: (fallback: WispFallback) => void;
 }) {
   const { fallback, effective } = view;
-  const globalFallback = catalog.fallback.selection;
+  // A server before the list has one global fallback.
+  const globalFallbacks = (catalog.fallbacks ?? [catalog.fallback]).flatMap(({ selection, unavailable }) =>
+    selection ? [{ selection, unavailable }] : [],
+  );
+  const globalFallback = globalFallbacks[0]?.selection;
+  const isOwnModel = (selection: ModelSelection) =>
+    Boolean(effective && modelOptionValue(selection) === modelOptionValue(effective));
   const value = typeof fallback === "string" ? fallback : modelOptionValue(fallback);
   const options = [
     { value: FALLBACK_OFF, label: "Off", description: "This Wisp stops when its model fails" },
     {
       value: FALLBACK_GLOBAL,
-      label: "Use the global fallback",
-      description: globalFallback ? modelName(catalog, globalFallback) : "None is set in Settings → AI Model",
+      label: globalFallbacks.length > 1 ? "Use the global fallbacks" : "Use the global fallback",
+      description: globalFallbacks.length
+        ? globalFallbacks.map(({ selection }) => modelName(catalog, selection)).join(", then ")
+        : "None is set in Settings → AI Model",
       iconSrc: globalFallback ? modelLabLogo(globalFallback) : undefined,
     },
     // The Wisp's own model cannot stand in for itself.
@@ -457,9 +465,9 @@ function FallbackSection({
         : null
       : !globalFallback
         ? "No global fallback is set, so this Wisp stops when its model fails. Choose one in Settings → AI Model."
-        : catalog.fallback.unavailable
+        : globalFallbacks.every(({ unavailable }) => unavailable)
           ? "The global fallback cannot be used right now. Check it in Settings → AI Model."
-          : effective && modelOptionValue(globalFallback) === modelOptionValue(effective)
+          : globalFallbacks.every(({ selection, unavailable }) => unavailable || isOwnModel(selection))
             ? "The global fallback is this Wisp's own model, so it has no fallback. Choose another model."
             : null;
 
@@ -487,8 +495,8 @@ function FallbackSection({
         }}
       />
       <p className="m-0 text-xs leading-relaxed text-dim">
-        Answers when this Wisp's model fails for good, for example when the provider is out of credits. Each message
-        tries the Wisp's model first.
+        Answers when this Wisp's model fails, for example when the provider is out of credits or keeps rate limiting.
+        Each message tries the Wisp's model first, unless it is on hold after a rate limit.
       </p>
       {note ? (
         <p role="alert" className="m-0 text-xs leading-relaxed text-warning">

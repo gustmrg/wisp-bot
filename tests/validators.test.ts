@@ -375,6 +375,14 @@ describe("IPC request validators", () => {
     });
     expect(parseSaveFallbackModelRequest({ selection: null })).toEqual({ selection: null });
     expect(() => parseSaveFallbackModelRequest({ selection: { providerId: "openrouter" } })).toThrow(WispBackendError);
+    const other = { providerId: "openai", modelId: "gpt-5-mini" };
+    expect(
+      parseSaveFallbackModelRequest({ selection: backup, selections: [backup, { ...other, thinkingLevel: "low" }] }),
+    ).toEqual({ selection: backup, selections: [backup, other] });
+    expect(() => parseSaveFallbackModelRequest({ selection: null, selections: "all" })).toThrow(WispBackendError);
+    expect(() =>
+      parseSaveFallbackModelRequest({ selection: backup, selections: [backup, other, backup, other] }),
+    ).toThrow(WispBackendError);
 
     expect(parseApplyFallbackModelRequest({ conversationId: "wisp-1", fallback: "off" })).toEqual({
       conversationId: "wisp-1",

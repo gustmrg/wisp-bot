@@ -25,6 +25,8 @@ interface SearchableComboboxProps {
   searchLabel: string;
   searchPlaceholder: string;
   emptyText: string;
+  /** Shown on the trigger while `value` matches no option. */
+  placeholder?: string;
   disabled?: boolean;
   className?: string;
 }
@@ -42,6 +44,7 @@ function SearchableCombobox({
   searchLabel,
   searchPlaceholder,
   emptyText,
+  placeholder,
   disabled = false,
   className,
 }: SearchableComboboxProps) {
@@ -82,7 +85,7 @@ function SearchableCombobox({
         <span className="flex min-w-0 items-center gap-2">
           {selectedOption?.iconSrc ? <LogoTile src={selectedOption.iconSrc} className="size-5" /> : null}
           <span className="min-w-0 truncate">
-            <Combobox.Value />
+            {selectedOption || !placeholder ? <Combobox.Value /> : <span className="text-dim">{placeholder}</span>}
           </span>
         </span>
         <ChevronDownIcon aria-hidden="true" className="size-3.5 shrink-0 text-dim" />
