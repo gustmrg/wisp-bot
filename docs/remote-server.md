@@ -314,7 +314,7 @@ server:
   would use for that host, or else the first key in ssh-agent. Passphrases of
   keys that are not in ssh-agent are asked each time; `ssh-add` stops that. To
   check what Wisp will see, run `ssh -o BatchMode=yes user@host true`. On
-  Windows, connect once with `ssh` in a terminal first and use a key: the app
+  Windows ([installing on Windows](installing-on-windows.md#known-limitations)), connect once with `ssh` in a terminal first and use a key: the app
   cannot ask there yet. MagicDNS names and Tailscale SSH work like any other
   host; if Tailscale SSH asks for a browser check, run `ssh` in a terminal
   once. See [ADR 013](decisions/013-ssh-questions.md).

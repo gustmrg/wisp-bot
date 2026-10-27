@@ -20,7 +20,7 @@ ADR 002 planned signed Windows and notarized macOS betas, staged rollouts, and a
 
 As of 2026-10-09, new macOS releases target Apple Silicon (arm64) only, with an explicit minimum of macOS 14.0.0. Intel Macs no longer receive new desktop builds. Linux remains x64.
 
-Windows is deferred, and its electron-builder and Azure Trusted Signing configuration has been removed. A Windows build will need it added back.
+Windows is deferred, and its electron-builder and Azure Trusted Signing configuration has been removed. A Windows build will need it added back. As of 2026-10-27, [ADR 031](031-unsigned-windows-release.md) adds an unsigned Windows x64 installer to the matrix.
 
 One manual **Desktop release** dispatch from `main` takes a version (`patch`, `minor`, `major`, or an exact version). It runs every quality gate against the bumped tree and packages both platforms. Only then does it commit `chore(release): prepare vX.Y.Z`, push that commit and the tag atomically, and draft the GitHub release. The draft is published once npm serves the matching `@gustmrg/wisp-server`, so the updater never offers a version a server cannot install. The workflow pushes straight to `main` with `GITHUB_TOKEN`. It does not open a release pull request.
 

@@ -57,8 +57,9 @@ for that user and port.
 - Passwords and passphrases now pass through the renderer and the main
   process. They are never stored, logged, or kept in a connection profile.
 - Connecting to a new server needs no terminal.
-- Windows keeps `BatchMode` until the helper has a Windows form; the app is
-  not built for Windows yet.
+- Windows keeps `BatchMode` until the helper has a Windows form
+  ([ADR 031](031-unsigned-windows-release.md) ships the Windows build
+  without one).
 
 ## Alternatives considered
 
