@@ -88,6 +88,7 @@ vi.mock("@earendil-works/pi-coding-agent", () => ({
   createLsToolDefinition: () => toolDefinition("ls"),
   createEditToolDefinition: () => toolDefinition("edit"),
   createWriteToolDefinition: () => toolDefinition("write"),
+  createToolSearchExtension: () => () => undefined,
 }));
 
 import {

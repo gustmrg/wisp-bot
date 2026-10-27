@@ -683,6 +683,7 @@ export class PluginService implements PluginToolSource, IntegrationToolSource {
       definitions,
       metadata: definitions.flatMap(({ name }) => {
         const catalogMetadata = getToolMetadata(name);
+        const pluginName = PLUGIN_CATALOG.find(({ id }) => id === catalogMetadata?.pluginId)?.name;
         return catalogMetadata?.pluginId || catalogMetadata?.pluginIds
           ? [
               {
@@ -690,6 +691,8 @@ export class PluginService implements PluginToolSource, IntegrationToolSource {
                 label: catalogMetadata.label,
                 activityLabel: catalogMetadata.activityLabel,
                 category: catalogMetadata.category,
+                // Shared web tools have several providers and stay declared, so they have no group.
+                ...(pluginName ? { group: pluginName } : {}),
               },
             ]
           : [];

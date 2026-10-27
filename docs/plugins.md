@@ -77,6 +77,10 @@ Plugins → Default web providers** sets which one is listed first and marked
 as the default in each Wisp's Access tab. Changing the default does not change
 the provider a Wisp already uses.
 
+A Wisp with more than 12 plugin and MCP tools loads them when it needs them
+instead of seeing every one in each request; see
+[many integration tools](mcp-servers.md#many-integration-tools).
+
 A Wisp on [Claude Code](models.md#claude-code) can also choose **Claude
 (included in your plan)** for **Search the web**: Claude Code's own web
 search, which runs on Anthropic's side within the Claude plan and needs no

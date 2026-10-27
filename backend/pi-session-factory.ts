@@ -24,6 +24,7 @@ import { AUXILIARY_USAGE_ENTRY, ImageTranscriber } from "./image-transcriber.js"
 import { TRANSCRIPTION_CACHE_DIRECTORY, TranscriptionCache } from "./transcription-cache.js";
 import { FALLBACK_ENTRY, ModelFallback } from "./model-fallback.js";
 import type { ToolAuthorizationBroker } from "./tool-authorization-broker.js";
+import { declaredTools, TOOL_SEARCH_TOOL, toolSearchLoads } from "./tool-discovery.js";
 import type { RuntimeJobSession, RuntimeModel, RuntimeSession, RuntimeSessionFactory } from "./runtime-session.js";
 import {
   BlockMutationAuthorizer,
@@ -158,9 +159,14 @@ export class SdkPiSessionFactory implements RuntimeSessionFactory {
     job?: JobSessionSpec,
   ): Promise<BuiltSession> {
     const model = this.resolveModel(selection);
-    const { createAgentSession, DefaultResourceLoader, SessionManager, SettingsManager, VERSION } = await import(
-      "@earendil-works/pi-coding-agent"
-    );
+    const {
+      createAgentSession,
+      createToolSearchExtension,
+      DefaultResourceLoader,
+      SessionManager,
+      SettingsManager,
+      VERSION,
+    } = await import("@earendil-works/pi-coding-agent");
     const fallbackListeners = new Set<(model: string) => void>();
     let recordFallback: ((model: string) => void) | undefined;
     const fallback = new ModelFallback({
@@ -177,7 +183,7 @@ export class SdkPiSessionFactory implements RuntimeSessionFactory {
       retries: MODEL_RETRIES,
     });
     let continuity: ContextSession | undefined;
-    const plan = await this.builder.plan(context, job);
+    const plan = await this.builder.plan(context, job, { deferTools: true });
     const resourceLoader = new DefaultResourceLoader({
       cwd: context.workspaceDirectory,
       agentDir: context.configDirectory,
@@ -204,6 +210,10 @@ export class SdkPiSessionFactory implements RuntimeSessionFactory {
             });
           },
         },
+        // Pi's own tool_search loads deferred tools for the next model call (ADR 034).
+        ...(plan.deferred.names.size
+          ? [{ name: "wisp-tool-search", hidden: true, factory: createToolSearchExtension() }]
+          : []),
       ],
     });
     await resourceLoader.reload();
@@ -255,6 +265,16 @@ export class SdkPiSessionFactory implements RuntimeSessionFactory {
       excludeTools: ["bash", "powershell"],
       thinkingLevel: selection.thinkingLevel ?? "off",
     }));
+    // Pi activates every tool it is given when a session starts, deferred ones too, so what
+    // tool_search loaded is known only from its results.
+    const loadedTools = new Set<string>();
+    if (tools.deferred.size) {
+      session.subscribe((event) => {
+        if (event.type === "tool_execution_end" && event.toolName === TOOL_SEARCH_TOOL && !event.isError) {
+          for (const name of toolSearchLoads(event.result)) loadedTools.add(name);
+        }
+      });
+    }
     // Every model call of the session, compaction included, can move to the fallback; cache warming cannot.
     session.agent.streamFunction = fallback.wrap(session.agent.streamFunction);
     const fallbackLog = sessionManager;
@@ -270,7 +290,7 @@ export class SdkPiSessionFactory implements RuntimeSessionFactory {
     );
     try {
       await continuity.load();
-      assertAllowedTools(session, await tools.getAllowedTools());
+      assertAllowedTools(session, await tools.getAllowedTools(), tools.deferred, loadedTools);
     } catch (error) {
       session.dispose();
       throw error;
@@ -281,7 +301,8 @@ export class SdkPiSessionFactory implements RuntimeSessionFactory {
       fallback,
       fallbackListeners,
       continuity,
-      refreshTools: async () => assertAllowedTools(session!, await tools.getAllowedTools()),
+      refreshTools: async () =>
+        assertAllowedTools(session!, await tools.getAllowedTools(), tools.deferred, loadedTools),
       snapshot: plan.snapshot,
       version: VERSION,
     };
@@ -513,15 +534,22 @@ function recordSessionIdentity(
   }
 }
 
+/**
+ * Declares the allowed tools, and only those: a revoked grant leaves at
+ * once. Deferred tools are declared only after tool_search loaded them, and
+ * stay so while they are allowed.
+ */
 function assertAllowedTools(
   session: Pick<AgentSession, "getActiveToolNames" | "setActiveToolsByName">,
   allowedTools: ReadonlyArray<string>,
+  deferred: ReadonlySet<string>,
+  loaded: ReadonlySet<string>,
 ): void {
   const active = session.getActiveToolNames();
-  const hasExactAllowedSet =
-    active.length === allowedTools.length && allowedTools.every((tool) => active.includes(tool));
+  const declared = declaredTools(allowedTools, deferred, loaded);
+  const hasExactAllowedSet = active.length === declared.length && declared.every((tool) => active.includes(tool));
   if (!hasExactAllowedSet) {
-    session.setActiveToolsByName([...allowedTools]);
+    session.setActiveToolsByName(declared);
   }
 }
 
