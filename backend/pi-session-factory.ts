@@ -33,6 +33,8 @@ import {
 } from "./wisp-session-plan.js";
 
 const DEFAULT_MAX_OUTPUT_TOKENS = 32_768;
+/** Pi's retries of a model call that may pass; after them the call goes to the fallback, if any. */
+const MODEL_RETRIES = 2;
 
 /** A model's name for people, without control characters. */
 function displayModelName(model: { id: string; name?: string }): string {
@@ -172,6 +174,7 @@ export class SdkPiSessionFactory implements RuntimeSessionFactory {
         recordFallback?.(name);
         for (const listener of fallbackListeners) listener(name);
       },
+      retries: MODEL_RETRIES,
     });
     let continuity: ContextSession | undefined;
     const plan = await this.builder.plan(context, job);
@@ -242,7 +245,7 @@ export class SdkPiSessionFactory implements RuntimeSessionFactory {
       resourceLoader,
       sessionManager,
       settingsManager: SettingsManager.inMemory({
-        retry: { enabled: true, maxRetries: 2 },
+        retry: { enabled: true, maxRetries: MODEL_RETRIES },
         compaction: { enabled: true, keepRecentTokens: 4000, reserveTokens: 16384 },
       }),
       // Pi treats this as a permanent registry allowlist, including after reload.
