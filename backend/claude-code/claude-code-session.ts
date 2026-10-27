@@ -6,6 +6,7 @@ import { WispBackendError } from "../backend-error.js";
 import type { ContextSettings } from "../context-session.js";
 import type { RuntimeSession } from "../runtime-session.js";
 import type { PiAgentEvent } from "../pi-event-translator.js";
+import { isRetryableProviderError } from "../provider-error.js";
 import { ClaudeCodeEventConverter, isMissingSession, type ClaudeCodeTurnResult } from "./claude-code-events.js";
 import { claudeCodeUserMessage, type ClaudeCodeQueryOptions } from "./claude-code-launch.js";
 import type { WispToolObserver } from "./wisp-mcp-server.js";
@@ -209,7 +210,7 @@ export class ClaudeCodeSession implements RuntimeSession {
       }
       if (!result.ok && !turn.aborted) {
         const answered =
-          failedForGood(result) && !turn.answered && (await this.answerWithFallback(turn, message, options.signal));
+          movesToFallback(result) && !turn.answered && (await this.answerWithFallback(turn, message, options.signal));
         if (!answered) throw describeFailure(result);
       }
       if (result.ok) {
@@ -682,11 +683,13 @@ export function describeFailure(result: ClaudeCodeTurnResult): WispBackendError 
 }
 
 /**
- * Whether a turn failed for good, so its Wisp's fallback model answers it
- * (ADR 021): Claude Code is signed out or the plan's limit is reached. Other
- * failures may pass on their own.
+ * Whether its Wisp's fallback model answers a failed turn: Claude Code is
+ * signed out or the plan's limit is reached (ADR 021), or the provider kept
+ * failing in a way that may pass, such as being overloaded, after Claude
+ * Code's own retries ran out (ADR 032). A failure of Claude Code itself does
+ * not move.
  */
-export function failedForGood(result: ClaudeCodeTurnResult): boolean {
+export function movesToFallback(result: ClaudeCodeTurnResult): boolean {
   const text = result.errors.join("\n");
-  return SIGNED_OUT.test(text) || PLAN_LIMIT.test(text);
+  return SIGNED_OUT.test(text) || PLAN_LIMIT.test(text) || isRetryableProviderError(text);
 }
