@@ -18,6 +18,6 @@ describe("modelOptions", () => {
   it("lists the models of providers that can run, Claude Code among them unless left out", () => {
     expect(modelOptions(view).map(({ label }) => label)).toEqual(["gpt-5.5", "sonnet"]);
     // Fallback and image models run on Pi.
-    expect(modelOptions(view, undefined, { claudeCode: false }).map(({ label }) => label)).toEqual(["gpt-5.5"]);
+    expect(modelOptions(view, undefined, { runtime: "pi" }).map(({ label }) => label)).toEqual(["gpt-5.5"]);
   });
 });

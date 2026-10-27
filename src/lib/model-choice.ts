@@ -1,5 +1,5 @@
-import { CLAUDE_CODE_PROVIDER } from "../../shared/claude-code";
 import type { AiSettingsView, ModelSelection } from "../../shared/contracts";
+import { providerKind, type ProviderRuntime } from "../../shared/provider-kinds";
 import { modelLabLogo } from "@/lib/model-lab";
 
 /** Ids never hold control characters, so one joins provider and model into an option value. */
@@ -19,16 +19,19 @@ export function isModelOptionValue(value: string): boolean {
 /**
  * One option per model of a provider with a saved key that `include` accepts,
  * labelled for a model picker. Claude Code, which needs no key, is listed while
- * it is ready; `claudeCode: false` leaves it out of pickers for models that
- * run on Pi, such as the fallback and image models (ADR 026).
+ * it is ready; `runtime` keeps only the providers one runtime runs, as pickers
+ * for models that must run on Pi do, such as the fallback and image models
+ * (ADR 026).
  */
 export function modelOptions(
   view: AiSettingsView,
   include: (model: AiSettingsView["providers"][number]["models"][number]) => boolean = () => true,
-  { claudeCode = true }: { claudeCode?: boolean } = {},
+  { runtime }: { runtime?: ProviderRuntime } = {},
 ): Array<{ value: string; label: string; description: string; iconSrc: string | undefined }> {
   return view.providers
-    .filter(({ id, credentialConfigured }) => credentialConfigured && (claudeCode || id !== CLAUDE_CODE_PROVIDER))
+    .filter(
+      ({ id, credentialConfigured }) => credentialConfigured && (!runtime || providerKind(id).runtime === runtime),
+    )
     .flatMap((provider) =>
       provider.models.filter(include).map((model) => ({
         value: modelOptionValue({ providerId: provider.id, modelId: model.id }),

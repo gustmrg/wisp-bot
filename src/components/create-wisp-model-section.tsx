@@ -1,5 +1,6 @@
-import { CLAUDE_CODE_PROVIDER, claudeCodeUnavailableMessage } from "../../shared/claude-code";
+import { claudeCodeUnavailableMessage } from "../../shared/claude-code";
 import type { AiSettingsView, ModelSelection, ThinkingLevel } from "../../shared/contracts";
+import { providerKind } from "../../shared/provider-kinds";
 import { missingModelSetup } from "../../shared/setup-status";
 import { NoImageInputNote } from "@/components/no-image-input-note";
 import { SearchableCombobox } from "@/components/searchable-combobox";
@@ -195,7 +196,7 @@ function CreateWispModelSection({ view, loadError, draft, onChange, notice }: Cr
       ) : null}
       {provider && !provider.credentialConfigured ? (
         <p role="alert" className="m-0 px-3.5 pb-3 text-xs text-destructive">
-          {provider.id === CLAUDE_CODE_PROVIDER
+          {providerKind(provider.id).credential === "external"
             ? `${claudeCodeUnavailableMessage(view?.claudeCode)} See Settings → AI Model.`
             : `No API key saved for ${provider.name} yet. Add one in Settings → AI Model before creating this Wisp.`}
         </p>

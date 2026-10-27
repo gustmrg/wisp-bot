@@ -20,6 +20,7 @@ import {
   wispFallbackChoice,
 } from "../shared/contracts.js";
 import { CLAUDE_CODE_PROVIDER, type ClaudeCodeStatusView } from "../shared/claude-code.js";
+import { providerKind, type ProviderRuntime } from "../shared/provider-kinds.js";
 import { isVoiceProviderId, type VoiceCredentialSource } from "../shared/voice.js";
 import { WispBackendError } from "./backend-error.js";
 import { AiSettingsStore } from "./ai-settings-store.js";
@@ -127,6 +128,20 @@ function describeRefreshFailure(result: ModelRefreshResult): string | null {
 
 type CatalogModel = NonNullable<ReturnType<ModelRuntime["getModel"]>>;
 
+/** A model as the checks here read it, whichever runtime offers it. */
+type RuntimeModel = Pick<
+  CatalogModel,
+  "id" | "name" | "reasoning" | "thinkingLevelMap" | "input" | "contextWindow" | "maxTokens"
+>;
+
+/** What this service checks differently for each runtime. */
+interface RuntimeRules {
+  /** The model a selection names, when this server offers it. */
+  model(selection: ModelSelection): RuntimeModel | undefined;
+  /** Why the runtime cannot run Wisps now, in words the person can act on; undefined when it can. */
+  unavailable(): Promise<string | undefined>;
+}
+
 /**
  * The thinking levels a model supports, as Pi's `getSupportedThinkingLevels`
  * reports them: "off" plus every level its thinking map does not disable,
@@ -150,6 +165,18 @@ function compareByName(left: { name: string }, right: { name: string }): number 
   return left.name.localeCompare(right.name, undefined, { sensitivity: "base" });
 }
 
+function modelSummary(model: RuntimeModel): ModelSummary {
+  return {
+    id: model.id,
+    name: model.name,
+    reasoning: model.reasoning,
+    thinkingLevels: supportedThinkingLevels(model),
+    input: [...model.input],
+    contextWindow: model.contextWindow,
+    maxOutputTokens: model.maxTokens,
+  };
+}
+
 export class ModelService {
   private readonly runtime: ModelRuntimeLike;
   private readonly settings: AiSettingsStore;
@@ -163,6 +190,16 @@ export class ModelService {
   private readonly signInBrowser: ModelServiceOptions["signInBrowser"];
   private signIn: ProviderSignIn | undefined;
   private readonly claudeCode: ClaudeCodeStatusSource | undefined;
+  private readonly runtimeRules: Record<ProviderRuntime, RuntimeRules> = {
+    pi: {
+      model: (selection) => this.catalogModel(selection),
+      unavailable: async () => undefined,
+    },
+    "claude-code": {
+      model: (selection) => (this.claudeCode ? claudeCodeModel(selection.modelId) : undefined),
+      unavailable: () => this.claudeCodeUnavailable(),
+    },
+  };
 
   constructor(options: ModelServiceOptions) {
     this.runtime = options.runtime;
@@ -256,18 +293,7 @@ export class ModelService {
         ...(this.offersSubscriptionSignIn(provider.id)
           ? { subscriptionSignIn: { label: provider.auth.oauth?.loginLabel ?? `Sign in with ${provider.name}` } }
           : {}),
-        models: this.runtime
-          .getModels(provider.id)
-          .map<ModelSummary>((model) => ({
-            id: model.id,
-            name: model.name,
-            reasoning: model.reasoning,
-            thinkingLevels: supportedThinkingLevels(model),
-            input: [...model.input],
-            contextWindow: model.contextWindow,
-            maxOutputTokens: model.maxTokens,
-          }))
-          .sort(compareByName),
+        models: this.runtime.getModels(provider.id).map(modelSummary).sort(compareByName),
       }))
       .filter((provider) => provider.models.length > 0)
       .sort(compareByName);
@@ -279,26 +305,17 @@ export class ModelService {
         id: CLAUDE_CODE_PROVIDER,
         name: CLAUDE_CODE_PROVIDER_NAME,
         credentialConfigured: claudeCode.state === "ready",
-        models: CLAUDE_CODE_MODELS.map((model) => ({
-          id: model.id,
-          name: model.name,
-          reasoning: model.reasoning,
-          thinkingLevels: supportedThinkingLevels(model),
-          input: [...model.input],
-          contextWindow: model.contextWindow,
-          maxOutputTokens: model.maxTokens,
-        })),
+        models: CLAUDE_CODE_MODELS.map(modelSummary),
       });
       providers.sort(compareByName);
     }
 
     const savedSelection = await this.settings.getSelection();
+    // Shown while Wisps can use its provider, which `credentialConfigured` reports for every kind.
     const selection =
       savedSelection &&
       this.isValidSelection(savedSelection) &&
-      (savedSelection.providerId === CLAUDE_CODE_PROVIDER
-        ? claudeCode?.state === "ready"
-        : credentialProviders.has(savedSelection.providerId))
+      providers.find(({ id }) => id === savedSelection.providerId)?.credentialConfigured
         ? savedSelection
         : null;
     const errors = [this.catalogRefreshError, this.networkRefreshError, this.runtime.getError()].filter(
@@ -324,10 +341,13 @@ export class ModelService {
     this.assertValidSelection(selection);
     this.assertSupportedThinkingLevel(selection);
 
-    if (selection.providerId === CLAUDE_CODE_PROVIDER) {
-      // Claude Code signs in on its own; Wisp never takes a key for it.
-      if (request.apiKey !== undefined) throw new WispBackendError("invalid_request", "Claude Code takes no API key.");
-      await this.assertClaudeCodeReady("invalid_configuration");
+    const kind = providerKind(selection.providerId);
+    // A provider that signs in on its own never takes a key from Wisp.
+    if (kind.credential === "external" && request.apiKey !== undefined) {
+      throw new WispBackendError("invalid_request", "This provider signs in on its own and takes no API key.");
+    }
+    await this.assertRuntimeAvailable(selection.providerId, "invalid_configuration");
+    if (kind.credential === "external") {
       await this.settings.setSelection(selection);
       return this.getView();
     }
@@ -698,19 +718,16 @@ export class ModelService {
   async getSelection(): Promise<ModelSelection | null> {
     const selection = await this.settings.getSelection();
     if (!selection || !this.isValidSelection(selection)) return null;
-    if (selection.providerId === CLAUDE_CODE_PROVIDER) {
-      return (await this.claudeCodeStatus())?.state === "ready" ? selection : null;
-    }
+    if (await this.runtimeUnavailable(selection.providerId)) return null;
+    if (providerKind(selection.providerId).credential === "external") return selection;
     const credential = await this.credentials.read(selection.providerId);
     return this.isUsableCredential(selection.providerId, credential) ? selection : null;
   }
 
   async validateConversationSelection(selection: ModelSelection): Promise<void> {
     this.assertValidSelection(selection);
-    if (selection.providerId === CLAUDE_CODE_PROVIDER) {
-      await this.assertClaudeCodeReady("configuration_required");
-      return;
-    }
+    await this.assertRuntimeAvailable(selection.providerId, "configuration_required");
+    if (providerKind(selection.providerId).credential === "external") return;
     const credential = await this.credentials.read(selection.providerId);
     if (!this.isUsableCredential(selection.providerId, credential)) {
       throw new WispBackendError(
@@ -797,31 +814,39 @@ export class ModelService {
     }
   }
 
-  private async assertClaudeCodeReady(code: "invalid_configuration" | "configuration_required"): Promise<void> {
+  private async claudeCodeUnavailable(): Promise<string | undefined> {
     const status = await this.claudeCodeStatus();
-    const unavailable =
-      status?.state === "checking" ? claudeCodeUnavailableMessage(undefined) : claudeCodeUnavailableMessage(status);
-    if (!status || unavailable) {
-      throw new WispBackendError(code, unavailable ?? "Claude Code is not available on this server.");
-    }
+    return status ? claudeCodeUnavailableMessage(status) : "Claude Code is not available on this server.";
+  }
+
+  /** Why the runtime of a provider cannot run Wisps now; undefined when it can. */
+  private runtimeUnavailable(providerId: string): Promise<string | undefined> {
+    return this.runtimeRules[providerKind(providerId).runtime].unavailable();
+  }
+
+  private async assertRuntimeAvailable(
+    providerId: string,
+    code: "invalid_configuration" | "configuration_required",
+  ): Promise<void> {
+    const unavailable = await this.runtimeUnavailable(providerId);
+    if (unavailable) throw new WispBackendError(code, unavailable);
+  }
+
+  private selectionModel(selection: ModelSelection): RuntimeModel | undefined {
+    return this.runtimeRules[providerKind(selection.providerId).runtime].model(selection);
   }
 
   private isValidSelection(selection: ModelSelection): boolean {
-    if (selection.providerId === CLAUDE_CODE_PROVIDER) {
-      // Claude Code manages its own output limit, so a saved one is not checked.
-      return Boolean(this.claudeCode && claudeCodeModel(selection.modelId));
-    }
-    const provider = this.runtime.getProvider(selection.providerId);
-    const model = this.runtime.getModel(selection.providerId, selection.modelId);
+    const model = this.selectionModel(selection);
+    if (!model) return false;
     const maxOutputTokens = selection.maxOutputTokens;
-    return Boolean(
-      provider?.auth.apiKey &&
-        model &&
-        (maxOutputTokens === undefined ||
-          (Number.isSafeInteger(maxOutputTokens) &&
-            maxOutputTokens >= 1 &&
-            maxOutputTokens <= 1_000_000 &&
-            maxOutputTokens <= model.maxTokens)),
+    // A runtime that manages its own output limit ignores a saved one.
+    if (maxOutputTokens === undefined || providerKind(selection.providerId).outputLimit === "runtime") return true;
+    return (
+      Number.isSafeInteger(maxOutputTokens) &&
+      maxOutputTokens >= 1 &&
+      maxOutputTokens <= 1_000_000 &&
+      maxOutputTokens <= model.maxTokens
     );
   }
 
@@ -839,10 +864,7 @@ export class ModelService {
   assertSupportedThinkingLevel(selection: ModelSelection): void {
     const level = selection.thinkingLevel;
     if (!level || level === "off") return;
-    const model =
-      selection.providerId === CLAUDE_CODE_PROVIDER
-        ? claudeCodeModel(selection.modelId)
-        : this.runtime.getModel(selection.providerId, selection.modelId);
+    const model = this.selectionModel(selection);
     if (model && !supportedThinkingLevels(model).includes(level)) {
       throw new WispBackendError("invalid_configuration", "The selected model does not support this reasoning level.");
     }

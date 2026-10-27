@@ -26,12 +26,12 @@ import { modelLabLogo } from "@/lib/model-lab";
 import { notifyProviderCredentialsChanged } from "@/lib/voice-credentials";
 import { voiceProvider } from "../../shared/voice";
 import {
-  CLAUDE_CODE_PROVIDER,
   CLAUDE_CODE_PLAN_USAGE_SHOWN_FROM,
   claudeCodeUnavailableMessage,
   type ClaudeCodePlanUsageView,
   type ClaudeCodeStatusView,
 } from "../../shared/claude-code";
+import { providerKind } from "../../shared/provider-kinds";
 
 const SIGN_IN_POLL_MS = 1_500;
 
@@ -260,8 +260,7 @@ function ModelSettingsSection({
   const model = provider?.models.find(({ id }) => id === modelId);
   const effectiveThinkingLevel = keepThinkingLevel(thinkingLevel, model);
   const maxOutputTokensInvalid = invalidMaxOutputTokens(maxOutputTokens, model?.maxOutputTokens);
-  // Claude Code signs in on its own and manages its output limit (ADR 026).
-  const claudeCode = provider?.id === CLAUDE_CODE_PROVIDER;
+  const kind = provider ? providerKind(provider.id) : undefined;
   const requiresKey = Boolean(provider && !provider.credentialConfigured && !apiKey.trim());
   const saveDisabled =
     saving ||
@@ -364,7 +363,7 @@ function ModelSettingsSection({
                 />
               ) : null}
             </SettingsCard>
-            {claudeCode ? null : (
+            {kind?.outputLimit === "runtime" ? null : (
               <AdvancedSettings defaultOpen={Boolean(maxOutputTokens)} className="mt-1.5">
                 <SettingsCard>
                   <SettingsRow>
@@ -401,7 +400,8 @@ function ModelSettingsSection({
             )}
           </SettingsGroup>
 
-          {claudeCode ? (
+          {/* Only Claude Code signs in outside Wisp (ADR 026). */}
+          {kind?.credential === "external" ? (
             <ClaudeCodeStatusCard status={view.claudeCode} onCheckAgain={() => void handleCheckClaudeCode()} />
           ) : (
             <SettingsGroup label="Credential">
