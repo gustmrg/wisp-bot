@@ -82,7 +82,10 @@ the Wisp's full history) opens on first use â€” a message or a context request â
 so startup time does not grow with every Wisp's transcript. Requests stream
 lifecycle, text, retry, compaction, and tool events; Pi automatic retry is
 capped at two retries, and a request may run for at most ten minutes before it
-is aborted with a retryable sanitized error. On quit, agents get five seconds to
+is aborted with a retryable sanitized error. A turn in which the same tool
+fails with the same error three times in a row stops, and the reply fails
+with a message that names the tool and the error
+([ADR 033](decisions/033-repeated-tool-failures.md)). On quit, agents get five seconds to
 settle before the app exits anyway.
 
 The bundled fake agent is a deterministic test adapter used by tests and

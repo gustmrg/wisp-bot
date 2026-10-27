@@ -68,7 +68,8 @@ A Wisp may mention another member in its reply to hand the task over.
 already waiting. One message from the person allows at most three handoffs,
 after which the circle waits for the person. A Wisp cannot hand off to itself
 or to a Wisp outside the circle, and a Wisp already waiting is not added
-again.
+again. A Wisp whose turn failed in the round is not added again either
+([ADR 033](033-repeated-tool-failures.md)).
 
 ### 4. What each Wisp sees
 

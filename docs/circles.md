@@ -28,7 +28,8 @@ label, description, notifications), **Members** (members and lead),
   the activity line names the Wisp working.
 - A Wisp can hand the task to another member by mentioning it in its reply.
   One message from you allows at most three handoffs; then the circle waits
-  for you. A Wisp cannot hand off to itself or to a Wisp outside the circle.
+  for you. A Wisp cannot hand off to itself or to a Wisp outside the circle,
+  and a Wisp whose turn already failed for your message is skipped.
 - **Stop** stops the current turn and drops the remaining ones. A message
   sent while the circle works waits for the round to end, and queued and
   [scheduled messages](scheduled-messages.md) are routed the same way when

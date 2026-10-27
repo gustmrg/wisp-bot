@@ -98,7 +98,7 @@ function record(value: unknown): Record<string, unknown> | undefined {
 }
 
 /** The text a result carries: Pi's content blocks, or Claude Code's plain string. */
-function resultText(result: ToolCallResult | undefined): string {
+export function resultText(result: ToolCallResult | undefined): string {
   const content = result?.content;
   if (typeof content === "string") return content;
   if (!Array.isArray(content)) return "";
