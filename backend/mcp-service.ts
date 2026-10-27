@@ -590,6 +590,7 @@ export class McpService {
           category: "integration_call",
           mcpServerId: server.serverId,
           sourceName: tool.name,
+          group: server.name,
         });
         activeNames.push(tool.alias);
       }

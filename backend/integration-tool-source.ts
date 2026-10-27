@@ -44,6 +44,12 @@ export interface SnapshotToolMetadata {
   mcpServerId?: string;
   /** Original server-side tool name, when the alias was derived from one. */
   sourceName?: string;
+  /**
+   * The integration the tool belongs to, as the person named or knows it
+   * ("Linear", "GitHub"); set for plugin and MCP tools, which a Wisp with many
+   * of them finds with tool_search (ADR 034).
+   */
+  group?: string;
 }
 
 /**

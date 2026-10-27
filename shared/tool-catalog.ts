@@ -19,6 +19,8 @@ export interface ToolMetadata {
   wisps?: boolean;
   /** The Wisp's browser (ADR 028); offered only to Wisps that have one. */
   browser?: boolean;
+  /** Finds integration tools that are not declared until loaded (ADR 034); offered only while some are. */
+  discovery?: boolean;
 }
 
 export interface DynamicToolMetadataInput {
@@ -53,6 +55,13 @@ export const TOOL_CATALOG: ReadonlyArray<ToolMetadata> = [
     category: "search",
   },
   { name: "use_skill", label: "Use skill", activityLabel: "Reading a skill…", category: "read" },
+  {
+    name: "tool_search",
+    label: "Find tools",
+    activityLabel: "Looking for the right tool…",
+    category: "search",
+    discovery: true,
+  },
   {
     name: "run_command",
     label: "Run command",
@@ -165,8 +174,8 @@ function boundedText(value: string, maxLength: number): string {
  * in a container get them, and only Wisps with a browser get the browser.
  */
 export const BUILTIN_TOOL_NAMES = TOOL_CATALOG.filter(
-  ({ pluginId, pluginIds, category, jobs, wisps, browser }) =>
-    !pluginId && !pluginIds && category !== "container_command" && !jobs && !wisps && !browser,
+  ({ pluginId, pluginIds, category, jobs, wisps, browser, discovery }) =>
+    !pluginId && !pluginIds && category !== "container_command" && !jobs && !wisps && !browser && !discovery,
 ).map(({ name }) => name);
 
 export function getToolMetadata(name: string): ToolMetadata | undefined {

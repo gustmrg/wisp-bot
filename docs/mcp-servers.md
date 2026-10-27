@@ -96,6 +96,28 @@ rebuild, which preserves conversation identity, model selection, and context
 settings — no new topic starts. Grant reductions take effect immediately in the
 backend, independent of the definitions the model still sees.
 
+## Many integration tools
+
+A model reads the description and parameters of every tool it is offered in
+each request, so a large server, or several plugins, make every request
+bigger, and some models refuse requests with many tools. A Wisp on Pi with
+more than 12 plugin and MCP tools therefore loads them as it needs them
+([ADR 034](decisions/034-tool-discovery.md)):
+
+- Those tools are not offered until the Wisp loads them with **Find tools**
+  (`tool_search`), which finds them by words such as "Linear create issue".
+  The Wisp's instructions name each integration whose tools it can load, with
+  how many.
+- A tool it loaded stays offered until the app restarts or the Wisp's access
+  changes; after that, the Wisp loads it again when it needs it.
+- Web search and page reading are always offered, as are the Wisp's own tools:
+  files, commands, the browser, skills, memory, and jobs.
+- Approvals, **Always allow** permissions, and blocks apply exactly as when
+  the tool is offered from the start, and a revoked grant removes a loaded
+  tool at once.
+- Scheduled jobs and Wisps on Claude Code are offered every tool they may use,
+  as before.
+
 ## Sending workspace files
 
 Some tools take a file as base64 or a data URL, such as an upload tool. The
