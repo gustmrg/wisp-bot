@@ -313,6 +313,21 @@ describe("CircleConversationAgent", () => {
     );
   });
 
+  it("hands nothing to a member whose turn failed in this round, and keeps the handoff for others", async () => {
+    const { received, say } = await setup(
+      [member("atlas", "Atlas"), member("nova", "Nova"), member("orion", "Orion")],
+      {
+        reply: (wispId) => (wispId === "orion" ? "@Nova try again, then @Atlas." : "Done."),
+        fail: (wispId) => (wispId === "nova" ? new WispBackendError("internal_error", "No key.") : undefined),
+      },
+    );
+
+    await say("m1", "@Nova @Orion go");
+
+    // Nova failed, so Orion's handoff to it is skipped; Atlas, who has not failed, still answers.
+    expect(received.map(({ wispId }) => wispId)).toEqual(["nova", "orion", "atlas"]);
+  });
+
   it("hands nothing off from a turn that failed or was stopped", async () => {
     const { received, say } = await setup(undefined, {
       reply: () => "@Nova take it",

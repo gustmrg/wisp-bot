@@ -55,6 +55,8 @@ interface Round {
   reported: Set<string>;
   /** How many turns each member took. */
   turns: Map<string, number>;
+  /** Members whose turn failed; they are not handed the task again (ADR 033). */
+  failed: Set<string>;
   handoffs: number;
 }
 
@@ -114,6 +116,7 @@ export class CircleConversationAgent implements ConversationAgent {
       cancelled: false,
       reported: new Set(),
       turns: new Map(),
+      failed: new Set(),
       handoffs: 0,
     };
     this.round = round;
@@ -131,6 +134,7 @@ export class CircleConversationAgent implements ConversationAgent {
           wispId,
         });
         if (await this.runTurn(member, request, round)) this.handOff(wispId, round);
+        else if (!round.cancelled) round.failed.add(wispId);
       }
     } finally {
       this.round = null;
@@ -175,8 +179,9 @@ export class CircleConversationAgent implements ConversationAgent {
   /**
    * A member that mentions others in its reply hands them the task: each
    * answers next, after the turns already waiting. A member cannot hand off
-   * to itself or to one already waiting, and after `MAX_CIRCLE_HANDOFFS` the
-   * circle waits for the person.
+   * to itself, to one already waiting, or to one whose turn failed in this
+   * round, which would most likely fail the same way. After
+   * `MAX_CIRCLE_HANDOFFS` the circle waits for the person.
    */
   private handOff(wispId: string, round: Round): void {
     const members = this.context.members
@@ -184,7 +189,7 @@ export class CircleConversationAgent implements ConversationAgent {
       .map((member) => ({ id: member.wispId, name: member.name }));
     for (const next of mentionedMembers(round.reply, members)) {
       if (round.handoffs >= MAX_CIRCLE_HANDOFFS) return;
-      if (next === wispId || round.queue.includes(next)) continue;
+      if (next === wispId || round.queue.includes(next) || round.failed.has(next)) continue;
       round.queue.push(next);
       round.handoffs += 1;
     }

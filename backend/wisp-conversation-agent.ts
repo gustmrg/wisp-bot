@@ -20,6 +20,7 @@ import {
   type RuntimeSession,
   type RuntimeSessionFactory,
 } from "./runtime-session.js";
+import { repeatedFailureMessage, ToolLoopGuard, type RepeatedToolFailure } from "./tool-loop-guard.js";
 
 export interface WispConversationAgentOptions {
   flushDelayMs?: number;
@@ -46,6 +47,7 @@ export class WispConversationAgent implements ConversationAgent {
   private followUps: SendMessageRequest[] = [];
   /** Whether the running turn's own message has started, so later user messages are its follow-ups. */
   private promptStarted = false;
+  private readonly loopGuard = new ToolLoopGuard();
 
   constructor(
     context: ConversationAgentContext,
@@ -86,6 +88,7 @@ export class WispConversationAgent implements ConversationAgent {
         throw new WispBackendError("configuration_required", "Choose a provider and model before sending a message.");
       }
       this.translator.begin(request);
+      this.loopGuard.reset();
       this.promptStarted = false;
       await this.promptSession(this.session, request, cancellation.signal);
     } finally {
@@ -340,12 +343,28 @@ export class WispConversationAgent implements ConversationAgent {
         if (followUp) this.translator.takeFollowUp(followUp);
       }
       this.translator.handle(event);
+      if (event.type === "tool_execution_end") {
+        const repeated = this.loopGuard.record(event);
+        if (repeated) this.stopRepeatedFailure(session, repeated);
+      }
       if (event.type === "agent_settled") void this.applyPendingModel();
     });
     // Track the live session identity so a later rebuild reopens the exact same
     // session file instead of starting a new conversation or topic.
     this.context.piSessionId = session.sessionId;
     if (session.sessionFile) this.context.piSessionFile = session.sessionFile;
+  }
+
+  /**
+   * Ends a turn whose tool keeps failing with the same error, before the
+   * model spends more calls on it (ADR 033). The reply fails with a message
+   * that names the tool and the error, rather than showing as stopped.
+   */
+  private stopRepeatedFailure(session: RuntimeSession, failure: RepeatedToolFailure): void {
+    this.loopGuard.reset();
+    if (!this.sending || this.sendCancellation?.signal.aborted) return;
+    this.translator.reportError({ code: "internal_error", message: repeatedFailureMessage(failure), retryable: false });
+    void session.abort().catch(() => undefined);
   }
 
   /**

@@ -128,7 +128,8 @@ export class PiEventTranslator {
           this.startMessage();
           this.queueDelta(update.delta);
         } else if (update.type === "error") {
-          if (update.reason === "aborted") this.cancelled = true;
+          // A turn ended for a reported failure, such as a tool that kept failing, stays failed.
+          if (update.reason === "aborted") this.cancelled ||= !this.failed;
           else
             this.captureError(update.error ?? { role: "assistant", stopReason: "error", errorMessage: update.reason });
         }
