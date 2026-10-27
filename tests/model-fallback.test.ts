@@ -161,11 +161,46 @@ describe("ModelFallback", () => {
     expect(await collect(fallback.wrap(provider({ primary: events }))(primary, context, {}))).toEqual(events);
   });
 
-  it("keeps the model's own error for failures the fallback cannot fix", async () => {
+  it("keeps the model's own error for failures Pi retries when it has no retries to wait for", async () => {
     const events = failing(primary, "429 Too Many Requests: rate limit reached");
     const resolve = vi.fn(async () => backup);
     const fallback = new ModelFallback({ pi, resolve });
     expect(await collect(fallback.wrap(provider({ primary: events }))(primary, context, {}))).toEqual(events);
+    expect(resolve).not.toHaveBeenCalled();
+  });
+
+  it("answers with the fallback once Pi's retries of a failure that may pass have run out", async () => {
+    const inner = provider({ primary: failing(primary, "429 Too Many Requests"), backup: answer(backup, "Hi") });
+    const onFallback = vi.fn();
+    const resolve = vi.fn(async () => backup);
+    const stream = new ModelFallback({ pi, resolve, onFallback, retries: 2 }).wrap(inner);
+
+    // The first call and Pi's two retries: the first two failures are Pi's to retry.
+    expect((await collect(stream(primary, context, {}))).at(-1)?.type).toBe("error");
+    expect((await collect(stream(primary, context, {}))).at(-1)?.type).toBe("error");
+    expect(resolve).not.toHaveBeenCalled();
+    expect((await collect(stream(primary, context, {}))).at(-1)?.type).toBe("done");
+    expect(onFallback).toHaveBeenCalledExactlyOnceWith(backup);
+    expect(inner.mock.calls.map(([requested]) => requested.id)).toEqual(["primary", "primary", "primary", "backup"]);
+  });
+
+  it("counts the retries again after the model answers, and never moves a request too large", async () => {
+    let next: AssistantMessageEvent[] = failing(primary, "503 Service Unavailable");
+    const inner = vi.fn<StreamFn>((requested) => streamOf(requested.id === "backup" ? answer(backup, "Hi") : next));
+    const resolve = vi.fn(async () => backup);
+    const stream = new ModelFallback({ pi, resolve, retries: 2 }).wrap(inner);
+
+    await collect(stream(primary, context, {}));
+    await collect(stream(primary, context, {}));
+    next = answer(primary, "Back");
+    await collect(stream(primary, context, {}));
+    next = failing(primary, "503 Service Unavailable");
+    await collect(stream(primary, context, {}));
+    await collect(stream(primary, context, {}));
+    expect(resolve).not.toHaveBeenCalled();
+
+    next = failing(primary, "400 prompt is too long: 250000 tokens > 200000 maximum");
+    for (let call = 0; call < 4; call += 1) await collect(stream(primary, context, {}));
     expect(resolve).not.toHaveBeenCalled();
   });
 
@@ -224,5 +259,63 @@ describe("ModelFallback", () => {
     // The fallback cannot reason, so it answers without.
     expect(options?.reasoning).toBeUndefined();
     expect(fallback.fallbackRequest).toEqual({ provider: "openrouter", thinkingLevel: "off" });
+  });
+});
+
+describe("ModelFallback in a real Pi session", () => {
+  it("lets Pi retry a rate limit twice, then answers with the fallback, which ends the retries well", async () => {
+    const { mkdtemp, rm } = await import("node:fs/promises");
+    const os = await import("node:os");
+    const path = await import("node:path");
+    const directory = await mkdtemp(path.join(os.tmpdir(), "wisp-fallback-retries-"));
+    const { createAgentSession, ModelRuntime, SessionManager, SettingsManager } = await import(
+      "@earendil-works/pi-coding-agent"
+    );
+    try {
+      const runtime = await ModelRuntime.create({
+        authPath: path.join(directory, "auth.json"),
+        modelsPath: null,
+        modelsStorePath: path.join(directory, "models.json"),
+        allowModelNetwork: false,
+        refreshOnCreate: false,
+      });
+      const own = pi.fauxProvider({ provider: "wisp-test-own", models: [{ id: "own" }] });
+      const spare = pi.fauxProvider({ provider: "wisp-test-spare", models: [{ id: "spare" }] });
+      runtime.registerNativeProvider(own.provider);
+      runtime.registerNativeProvider(spare.provider);
+      const limited = () => pi.fauxAssistantMessage([], { stopReason: "error", errorMessage: "429 Too Many Requests" });
+      own.setResponses([limited, limited, limited, limited]);
+      spare.setResponses([pi.fauxAssistantMessage("From the spare.")]);
+
+      const { session } = await createAgentSession({
+        cwd: directory,
+        agentDir: directory,
+        model: own.getModel(),
+        modelRuntime: runtime,
+        sessionManager: SessionManager.inMemory(directory),
+        settingsManager: SettingsManager.inMemory({ retry: { enabled: true, maxRetries: 2, baseDelayMs: 1 } }),
+      });
+      const onFallback = vi.fn();
+      session.agent.streamFunction = new ModelFallback({
+        pi,
+        resolve: async () => spare.getModel() as Model<Api>,
+        onFallback,
+        retries: 2,
+      }).wrap(session.agent.streamFunction);
+      const events: Array<{ type: string; success?: boolean }> = [];
+      session.subscribe((event) => events.push(event as { type: string; success?: boolean }));
+
+      await session.prompt("Hello");
+
+      expect(own.state.callCount).toBe(3);
+      expect(onFallback).toHaveBeenCalledOnce();
+      expect(events.filter(({ type }) => type === "auto_retry_start")).toHaveLength(2);
+      expect(events.find(({ type }) => type === "auto_retry_end")).toMatchObject({ success: true });
+      const last = session.messages.at(-1);
+      expect(last).toMatchObject({ role: "assistant", provider: "wisp-test-spare", stopReason: "stop" });
+      session.dispose();
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
   });
 });

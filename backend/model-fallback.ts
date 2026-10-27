@@ -31,6 +31,12 @@ export interface ModelFallbackOptions {
   resolve: () => Promise<RequestModel | null>;
   /** Told when a turn moves to the fallback model. */
   onFallback?: (model: RequestModel) => void;
+  /**
+   * How many times Pi retries a failure that may pass, such as a rate limit;
+   * the failure after those retries goes to the fallback. Without it, those
+   * failures never move.
+   */
+  retries?: number;
 }
 
 /**
@@ -46,15 +52,29 @@ export function shouldFallBack(pi: FallbackPiFunctions, message: AssistantMessag
 }
 
 /**
- * Sends a Wisp's model calls to its fallback model when its own fails for
- * good before answering. The switch lasts for the rest of the turn, so the
- * Wisp moves at most once per turn and tries its own model again on the next.
+ * Whether a failed model call is one Pi retries: a rate limit, an overloaded
+ * or failing server, a dropped connection. Its fallback waits for those
+ * retries to run out (ADR 035).
+ */
+export function isRetriedFailure(pi: FallbackPiFunctions, message: AssistantMessage, contextWindow: number): boolean {
+  if (message.stopReason !== "error") return false;
+  return pi.isRetryableAssistantError(message) && !pi.isContextOverflow(message, contextWindow);
+}
+
+/**
+ * Sends a Wisp's model calls to its fallback model when its own fails before
+ * answering, for good or once Pi's retries have run out. The switch lasts for
+ * the rest of the turn, so the Wisp moves at most once per turn and tries its
+ * own model again on the next.
  */
 export class ModelFallback {
   private readonly pi: FallbackPiFunctions;
   private readonly resolve: ModelFallbackOptions["resolve"];
   private readonly onFallback: ModelFallbackOptions["onFallback"];
+  private readonly retries: number;
   private fallback: RequestModel | null = null;
+  /** Calls of the Wisp's model in a row that failed in a way Pi retries, since one last answered. */
+  private retriedFailures = 0;
   /** The provider and reasoning of the fallback request being sent, for hooks that shape its payload. */
   fallbackRequest: { provider: string; thinkingLevel: ModelThinkingLevel } | undefined;
 
@@ -62,11 +82,13 @@ export class ModelFallback {
     this.pi = options.pi;
     this.resolve = options.resolve;
     this.onFallback = options.onFallback;
+    this.retries = options.retries ?? 0;
   }
 
   /** Starts a turn on the Wisp's own model. */
   reset(): void {
     this.fallback = null;
+    this.retriedFailures = 0;
   }
 
   wrap(inner: StreamFn): StreamFn {
@@ -75,7 +97,14 @@ export class ModelFallback {
       this.fallbackRequest = undefined;
       const primary = await inner(model, context, options);
       const output = this.pi.createAssistantMessageEventStream();
-      void this.relay(primary, output, (failed) => this.retry(inner, model, failed, context, options));
+      void this.relay(
+        primary,
+        output,
+        (failed) => this.retry(inner, model, failed, context, options),
+        () => {
+          this.retriedFailures = 0;
+        },
+      );
       return output;
     };
   }
@@ -88,6 +117,7 @@ export class ModelFallback {
     source: AssistantMessageEventStream,
     output: AssistantMessageEventStream,
     retry: (failed: AssistantMessage) => Promise<AssistantMessageEventStream | null>,
+    answered: () => void,
   ): Promise<void> {
     const held: AssistantMessageEvent[] = [];
     let answering = false;
@@ -106,6 +136,7 @@ export class ModelFallback {
       }
       if (!answering) {
         answering = true;
+        if (event.type !== "error") answered();
         for (const opening of held) output.push(opening);
       }
       output.push(event);
@@ -120,12 +151,13 @@ export class ModelFallback {
     context: Parameters<StreamFn>[1],
     options: StreamOptions | undefined,
   ): Promise<AssistantMessageEventStream | null> {
-    if (options?.signal?.aborted || !shouldFallBack(this.pi, failed, model.contextWindow)) return null;
+    if (options?.signal?.aborted || !this.movesOn(failed, model.contextWindow)) return null;
     const fallback = await this.resolve().catch(() => null);
     if (!fallback || options?.signal?.aborted) return null;
     try {
       const stream = await this.sendToFallback(inner, model, fallback, context, options);
       this.fallback = fallback;
+      this.retriedFailures = 0;
       this.onFallback?.(fallback);
       return stream;
     } catch {
@@ -133,6 +165,17 @@ export class ModelFallback {
       this.fallbackRequest = undefined;
       return null;
     }
+  }
+
+  /**
+   * A failure Pi does not retry moves at once. One Pi retries moves only when
+   * Pi's retries have run out, on the failure that would otherwise end the turn.
+   */
+  private movesOn(failed: AssistantMessage, contextWindow: number): boolean {
+    if (shouldFallBack(this.pi, failed, contextWindow)) return true;
+    if (!isRetriedFailure(this.pi, failed, contextWindow)) return false;
+    this.retriedFailures += 1;
+    return this.retries > 0 && this.retriedFailures > this.retries;
   }
 
   private sendToFallback(

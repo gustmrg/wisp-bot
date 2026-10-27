@@ -159,11 +159,18 @@ change.
 
 ## Fallback models
 
-A fallback model answers when a Wisp's model fails for good before answering,
-for example when the provider is out of credits, rejects the key, or no longer
-serves the model ([ADR 021](decisions/021-fallback-models.md)). Errors Pi
-retries, such as rate limits and server errors, and requests too large for the
-model do not move to the fallback.
+A fallback model answers when a Wisp's model fails before answering
+([ADR 021](decisions/021-fallback-models.md),
+[ADR 035](decisions/035-fallback-after-retries.md)):
+
+- at once when it fails for good, for example when the provider is out of
+  credits, rejects the key, or no longer serves the model;
+- after the retries when it keeps failing in a way that may pass, such as a
+  rate limit, an overloaded or failing server, or a dropped connection. Pi
+  retries twice, and Claude Code retries on its own first.
+
+A request too large for the model does not move to the fallback; compaction
+shortens it instead.
 
 **Settings → AI Model → Fallback** chooses the global fallback; it is **Off**
 by default. A Wisp's **Model** tab chooses **Off**, **Use the global

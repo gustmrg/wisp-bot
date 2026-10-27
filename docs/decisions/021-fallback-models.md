@@ -49,8 +49,8 @@ error **Pi does not retry** (`isRetryableAssistantError` is false): out of
 credits or over a quota (whatever the status: OpenAI says so with a 429,
 Anthropic with a 400), a rejected key, a forbidden or missing model, a
 rejected request. A request too large for the model does not move, since
-compaction fixes it. Rate limits and server errors keep Pi's own retries; a
-fallback after those retries run out is deferred.
+compaction fixes it. Rate limits and server errors keep Pi's own retries, and
+move once those run out ([ADR 035](035-fallback-after-retries.md)).
 
 The rule follows Pi's classification rather than a list of statuses kept by
 Wisp, so it changes with Pi.
@@ -99,6 +99,7 @@ Wisp, so it changes with Pi.
 
 ## Deferred
 
-- Falling back after Pi's retries on rate limits and server errors run out.
+- Falling back after Pi's retries on rate limits and server errors run out:
+  done in [ADR 035](035-fallback-after-retries.md).
 - Staying on the fallback until a rate limit's reset time, as Hermes does.
 - Sizing the conversation to the fallback's context window.

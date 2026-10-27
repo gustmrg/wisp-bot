@@ -508,11 +508,33 @@ describe("ClaudeCodeSession fallback", () => {
     await expect(session.prompt("hello")).rejects.toMatchObject({ code: "configuration_required" });
   });
 
-  it("keeps a failure that may pass on its own on Claude Code", async () => {
+  it("answers on the fallback model once Claude Code's own retries of an overloaded provider ran out", async () => {
+    const backup = fakeFallback();
+    const { session, events } = createSession({
+      answer: (process) =>
+        process.push(
+          result({
+            subtype: "error_during_execution",
+            is_error: true,
+            errors: ['API Error: 529 {"type":"overloaded_error"}'],
+          }),
+        ),
+      fallback: backup.fallback,
+    });
+
+    await session.prompt("hello");
+
+    expect(backup.fallback).toHaveBeenCalledOnce();
+    expect(events).toContainEqual({ type: "model_fallback", model: "GPT-5" });
+  });
+
+  it("keeps a failure of Claude Code itself on Claude Code", async () => {
     const backup = fakeFallback();
     const { session } = createSession({
       answer: (process) =>
-        process.push(result({ subtype: "error_during_execution", is_error: true, errors: ["Overloaded"] })),
+        process.push(
+          result({ subtype: "error_max_turns", is_error: true, errors: ["Reached maximum number of turns (40)"] }),
+        ),
       fallback: backup.fallback,
     });
 
