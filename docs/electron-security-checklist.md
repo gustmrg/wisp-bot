@@ -23,4 +23,4 @@ Invariants of the renderer and backend boundary:
 - Structured logs redact sensitive keys and secret-shaped values and omit prompts/tool content.
 - Agent sessions, pending approvals, subscriptions, and IPC handlers are disposed on shutdown.
 
-The release workflow packages macOS on `macos-14` and Linux on `ubuntu-latest` with electron-builder ([release runbook](release-runbook.md)). macOS builds are ad-hoc signed and Linux builds are unsigned. Windows is not packaged.
+The release workflow packages macOS on `macos-14`, Linux on `ubuntu-latest`, and Windows on `windows-latest` with electron-builder ([release runbook](release-runbook.md)). macOS builds are ad-hoc signed, and Linux and Windows builds are unsigned ([ADR 031](decisions/031-unsigned-windows-release.md)).

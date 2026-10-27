@@ -181,23 +181,26 @@ locally.
 | [Headless server](docs/remote-server.md) | Running a Wisp server, connecting to it, backups, the browser app, and the HTTP API |
 | [Installing on macOS](docs/installing-on-macos.md) | Running unsigned builds under Gatekeeper |
 | [Installing on Linux](docs/installing-on-linux.md) | `.deb` and AppImage installation, keyring requirement |
+| [Installing on Windows](docs/installing-on-windows.md) | Running the unsigned installer under SmartScreen |
 | [Release runbook](docs/release-runbook.md) | Publishing, verification, and rollback for releases |
 | [Decision records](docs/decisions/) | Architecture decision records (ADRs) |
 
 ## Desktop releases
 
 [GitHub Releases](https://github.com/gustmrg/wisp-bot/releases) has macOS
-(Apple Silicon arm64 DMG/ZIP, macOS 14 Sonoma or later) and Linux (x64 AppImage and `.deb`) builds. Windows is
-not built yet.
+(Apple Silicon arm64 DMG/ZIP, macOS 14 Sonoma or later), Linux (x64 AppImage and `.deb`), and Windows (x64
+installer, Windows 10 and 11) builds.
 
 macOS builds are ad-hoc signed and not notarized, so you have to remove the
 quarantine attribute before the first launch. See
 [installing on macOS](docs/installing-on-macos.md). Linux builds update in
-place from Settings → About. See [installing on Linux](docs/installing-on-linux.md).
+place from Settings → About. See [installing on Linux](docs/installing-on-linux.md). The Windows installer is not
+code-signed, so SmartScreen warns on the first launch; it then updates in place. See
+[installing on Windows](docs/installing-on-windows.md).
 
 To release, run the **Desktop release** workflow from `main` with a version
 (`patch`, `minor`, `major`, or an exact version). It runs every quality gate,
-packages both platforms, commits the version bump, tags it, and publishes the
+packages every platform, commits the version bump, tags it, and publishes the
 release. See the [release runbook](docs/release-runbook.md) and
 [ADR 007](docs/decisions/007-release-automation.md). `npm run dist` and
 `npm run dist:dir` package the current OS locally without publishing.

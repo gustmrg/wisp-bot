@@ -103,7 +103,14 @@ jobs:
           - os: ubuntu-latest
             name: linux
             builder-args: --linux AppImage deb --x64
+          - os: windows-latest
+            name: windows
+            builder-args: --win nsis --x64
     runs-on: ${{ matrix.os }}
+    # Windows runners default to PowerShell; the packaging script is bash.
+    defaults:
+      run:
+        shell: bash
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -121,7 +128,7 @@ jobs:
           # app once installed. electron-builder converts the PNG for each platform.
           ICON_ARGS=()
           if [[ "$VERSION" == *-* ]]; then
-            ICON_ARGS=(-c.mac.icon=build/icon-mac-dev.png -c.linux.icon=build/icon-mac-dev.png)
+            ICON_ARGS=(-c.mac.icon=build/icon-mac-dev.png -c.linux.icon=build/icon-mac-dev.png -c.win.icon=build/icon-mac-dev.png)
           fi
           npm run build && npx electron-builder ${{ matrix.builder-args }} "${ICON_ARGS[@]}" --publish never
       - uses: actions/upload-artifact@v7
@@ -132,6 +139,7 @@ jobs:
             release/*.zip
             release/*.AppImage
             release/*.deb
+            release/*.exe
             release/latest*.yml
             release/beta*.yml
             release/*.blockmap
@@ -139,7 +147,7 @@ jobs:
           retention-days: 30
 
   # Commits the version bump, tags it, and uploads the release as a draft only
-  # after every gate and both packaging jobs have passed. A release moves main
+  # after every gate and every packaging job has passed. A release moves main
   # with it; a beta's commit is kept by its tag alone, so no branch takes its
   # version. The draft stays hidden from the updater until the server is on npm.
   release:

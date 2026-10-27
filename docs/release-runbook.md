@@ -6,14 +6,17 @@ Wisp Bot ships these artifacts from GitHub Releases, which also hosts the update
 | --- | --- | --- | --- |
 | macOS 14+ | arm64 | DMG, ZIP | `latest-mac.yml`, or `beta-mac.yml` for a beta |
 | Linux | x64 | AppImage, `.deb` | `latest-linux.yml`, or `beta-linux.yml` for a beta |
+| Windows 10 and 11 | x64 | NSIS installer (`.exe`) | `latest.yml`, or `beta.yml` for a beta |
 
-Windows is not built yet. [ADR 007](decisions/007-release-automation.md) records the platform matrix and release flow, and [ADR 020](decisions/020-development-workflow.md) the branch strategy: changes reach `main` through pull requests, betas are cut from `main`, and a release promotes the beta line.
+[ADR 007](decisions/007-release-automation.md) records the platform matrix and release flow, [ADR 031](decisions/031-unsigned-windows-release.md) the Windows build, and [ADR 020](decisions/020-development-workflow.md) the branch strategy: changes reach `main` through pull requests, betas are cut from `main`, and a release promotes the beta line.
 
 ## Signing
 
 macOS builds are ad-hoc signed (`CSC_IDENTITY_AUTO_DISCOVERY: false`) and not notarized, because there is no Apple Developer account. Gatekeeper blocks the first launch of a downloaded build and may report it as damaged. Point users to [installing on macOS](installing-on-macos.md). Right-click → Open does not fix the "damaged" error.
 
 Linux packages are unsigned. The updater checks each download against the SHA-512 in `latest-linux.yml`. See [installing on Linux](installing-on-linux.md).
+
+The Windows installer is not code-signed. SmartScreen warns on its first launch, and the updater checks each download against the SHA-512 in `latest.yml`. See [installing on Windows](installing-on-windows.md).
 
 ## Publish a release
 
@@ -23,16 +26,16 @@ Linux packages are unsigned. The updater checks each download against the SHA-51
    While a beta is out, a release must sort above it, or beta installs would never update to it. With `0.19.0-beta.2` out, `patch` (`0.18.1`) fails and names `0.19.0` instead, so release `minor`.
 3. The workflow:
    1. resolves the version on top of `main`, and fails if its tag already exists or if any install already runs a higher version;
-   2. runs lint, formatting, typecheck, tests, build, the production audit, and the SBOM against the bumped tree, while it packages macOS (on `macos-14`) and Linux (on `ubuntu-latest`) at the same time;
+   2. runs lint, formatting, typecheck, tests, build, the production audit, and the SBOM against the bumped tree, while it packages macOS (on `macos-14`), Linux (on `ubuntu-latest`), and Windows (on `windows-latest`) at the same time;
    3. commits `chore(release): prepare vX.Y.Z` to `main` and pushes it with the `vX.Y.Z` tag in one atomic push;
-   4. drafts the GitHub release with notes generated since the previous release, every artifact, both update feeds, the SBOM, and `SHA256SUMS.txt`;
+   4. drafts the GitHub release with notes generated since the previous release, every artifact, every update feed, the SBOM, and `SHA256SUMS.txt`;
    5. publishes the server to npm and waits until npm serves it (see [The server package on npm](#the-server-package-on-npm));
    6. publishes the draft, which is when installs can see the update.
 4. Download the artifacts and check them against `SHA256SUMS.txt`.
 
 `main` only takes pull requests. The release job pushes with the write deploy key stored in the `RELEASE_DEPLOY_KEY` secret, and **Deploy keys** are the only bypass actor of the `main` ruleset. If that secret or the bypass is missing, the push is rejected with `GH013: Repository rule violations` and nothing is committed or tagged. To rotate the key, add a new write deploy key, replace the secret, then delete the old key.
 
-Nothing is committed or tagged until all checks and both packaging jobs pass, so a failed run leaves the repository unchanged. Fix the cause on `main` and run the workflow again. If someone pushes to `main` during the run, the atomic push fails. Run the workflow again to release the newer commit.
+Nothing is committed or tagged until all checks and every packaging job pass, so a failed run leaves the repository unchanged. Fix the cause on `main` and run the workflow again. If someone pushes to `main` during the run, the atomic push fails. Run the workflow again to release the newer commit.
 
 ## Publish a beta
 
@@ -76,6 +79,7 @@ Later releases need nothing else. npm prefers the OIDC identity when it is avail
 Settings → About checks GitHub Releases only when asked and never downloads on its own.
 
 - **Linux:** the AppImage and the `.deb` download and install in place. The `.deb` asks for the administrator password through `pkexec`.
+- **Windows:** the installer downloads and installs in place when the app restarts, without administrator rights.
 - **macOS:** Squirrel.Mac only installs updates signed with a Developer ID. Ad-hoc builds show the new version and open the releases page for a manual download instead.
 
 A download that fails verification stays an error and never reaches the restart-to-install state.

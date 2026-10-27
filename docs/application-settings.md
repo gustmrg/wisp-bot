@@ -99,8 +99,8 @@ starts. No administrator permissions are needed.
 
 The toggle reads the registration when Settings opens and when the window
 regains focus. The legacy renderer preference is ignored; it never recreates
-a registration removed or disabled outside Wisp. macOS and development builds
-show a disabled toggle with an explanation.
+a registration removed or disabled outside Wisp. macOS, Windows, and
+development builds show a disabled toggle with an explanation.
 
 AppImage registration uses the original `APPIMAGE` path, not the temporary
 mounted executable. Keep the AppImage in a stable location. After moving or
@@ -153,11 +153,13 @@ in an installed release").
 - **Linux** (AppImage and `.deb`) downloads and installs updates in place. The
   `.deb` asks for the administrator password. See
   [installing on Linux](installing-on-linux.md).
+- **Windows** downloads updates and installs them in place on restart. See
+  [installing on Windows](installing-on-windows.md).
 - **macOS** builds are ad-hoc signed rather than notarized, so they cannot
   install updates themselves. They show the new version and open the releases
   page instead. See [installing on macOS](installing-on-macos.md).
 
 ## Not connected yet
 
-- Launch at login on macOS.
+- Launch at login on macOS and Windows.
 - System notifications in the browser app and on phones (Web Push, SWE-163).
