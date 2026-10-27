@@ -33,7 +33,9 @@ import type { ConversationRecord, WispRecord, WorkspaceRecords } from "./workspa
 // none, so it raises MIN_READER_VERSION: an older build refuses this database.
 // Version 13 names each reply's author in the reply itself, so a reply keeps a
 // name after its Wisp is deleted. Older readers ignore the field.
-const STORE_VERSION = 13;
+// Version 14 adds the outside actions that kept a failed job run from being
+// retried; older writers leave the column alone.
+const STORE_VERSION = 14;
 const MIN_READER_VERSION = 12;
 /** The first layout whose job runs name their session files under the runtime-neutral folders. */
 const WISP_FOLDERS_VERSION = 12;
@@ -253,7 +255,8 @@ const JOBS_SCHEMA = `
     skip_reason TEXT,
     usage TEXT CHECK (usage IS NULL OR json_valid(usage)),
     message_id TEXT,
-    session_file TEXT
+    session_file TEXT,
+    not_retried_after TEXT CHECK (not_retried_after IS NULL OR json_valid(not_retried_after))
   ) STRICT;
   CREATE INDEX IF NOT EXISTS job_runs_by_job ON job_runs (job_id, seq);
 `;
@@ -299,6 +302,10 @@ const ADD_WISP_FALLBACKS = `
   ALTER TABLE wisps ADD COLUMN fallback_provider_id TEXT;
   ALTER TABLE wisps ADD COLUMN fallback_model_id TEXT;
 `;
+
+// Builds before version 14 retried every job run that failed for a reason that may pass.
+const ADD_JOB_RUN_RETRY_NOTES =
+  "ALTER TABLE job_runs ADD COLUMN not_retried_after TEXT CHECK (not_retried_after IS NULL OR json_valid(not_retried_after));";
 
 // Replies stored before version 13 name their author only by ID; those whose Wisp
 // still exists take its name. Replies of Wisps already deleted stay unnamed.
@@ -488,6 +495,7 @@ function jobRunOf(row: Row): unknown {
     errorCode: optional(row.error_code),
     deliveryErrorCode: optional(row.delivery_error_code),
     skipReason: optional(row.skip_reason),
+    notRetriedAfter: json(row.not_retried_after),
     usage: json(row.usage),
     messageId: optional(row.message_id),
     sessionFile: optional(row.session_file),
@@ -578,6 +586,7 @@ export class ConversationStore {
         store.addPinnedConversations();
         store.addWispThinkingLevels();
         store.addWispFallbacks();
+        store.addJobRunRetryNotes();
         if (version !== undefined) store.renameJobRunSessionFiles(Number(version) < WISP_FOLDERS_VERSION);
         if (version !== undefined && Number(version) < AUTHOR_NAMES_VERSION) store.nameMessageAuthors();
       }
@@ -982,12 +991,13 @@ export class ConversationStore {
   putJobRun(run: JobRun, keep: number): string[] {
     this.statement(
       `INSERT INTO job_runs (id, job_id, conversation_id, trigger, scheduled_at, started_at, ended_at, status,
-        error_code, delivery_error_code, skip_reason, usage, message_id, session_file)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        error_code, delivery_error_code, skip_reason, usage, message_id, session_file, not_retried_after)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT (id) DO UPDATE SET
         ended_at = excluded.ended_at, status = excluded.status, error_code = excluded.error_code,
         delivery_error_code = excluded.delivery_error_code, skip_reason = excluded.skip_reason,
-        usage = excluded.usage, message_id = excluded.message_id, session_file = excluded.session_file`,
+        usage = excluded.usage, message_id = excluded.message_id, session_file = excluded.session_file,
+        not_retried_after = excluded.not_retried_after`,
     ).run(
       run.id,
       run.jobId,
@@ -1003,6 +1013,7 @@ export class ConversationStore {
       run.usage === undefined ? null : JSON.stringify(run.usage),
       run.messageId ?? null,
       run.sessionFile ?? null,
+      run.notRetriedAfter === undefined ? null : JSON.stringify(run.notRetriedAfter),
     );
     const stale = "job_id = ? AND seq NOT IN (SELECT seq FROM job_runs WHERE job_id = ? ORDER BY seq DESC LIMIT ?)";
     const files = this.statement(`SELECT session_file FROM job_runs WHERE session_file IS NOT NULL AND ${stale}`)
@@ -1158,6 +1169,20 @@ export class ConversationStore {
     this.db.exec("BEGIN IMMEDIATE");
     try {
       this.db.exec(ADD_WISP_THINKING_LEVELS);
+      this.raiseVersions();
+      this.db.exec("COMMIT");
+    } catch (error) {
+      this.db.exec("ROLLBACK");
+      throw error;
+    }
+  }
+
+  private addJobRunRetryNotes(): void {
+    const columns = this.db.prepare("SELECT name FROM pragma_table_info('job_runs')").all();
+    if (columns.some((column) => column.name === "not_retried_after")) return;
+    this.db.exec("BEGIN IMMEDIATE");
+    try {
+      this.db.exec(ADD_JOB_RUN_RETRY_NOTES);
       this.raiseVersions();
       this.db.exec("COMMIT");
     } catch (error) {

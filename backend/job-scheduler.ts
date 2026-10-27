@@ -12,6 +12,7 @@ import {
   MAX_JOBS_PER_WISP,
 } from "../shared/jobs.js";
 import { nextOccurrence, type Schedule } from "../shared/schedule.js";
+import { getToolMetadata } from "../shared/tool-catalog.js";
 import { sanitizeBackendError, WispBackendError } from "./backend-error.js";
 import type { ConversationRepository } from "./conversation-repository.js";
 import type { StructuredLogger } from "./structured-logger.js";
@@ -43,6 +44,8 @@ export interface JobRunContext {
   saveState: (state: string) => Promise<void>;
   /** Keeps the run's session file and token usage with its record, whether it succeeds or fails. */
   recordSession: (details: { sessionFile?: string; usage?: SessionReportUsage }) => void;
+  /** Notes a tool the run used that acts outside Wisp; a run that used one is not retried (ADR 033). */
+  recordExternalAction: (toolName: string) => void;
 }
 
 /** Fields a new job is created with; see `JobScheduler.create`. */
@@ -363,6 +366,7 @@ export class JobScheduler {
     const timeout = setTimeout(() => controller.abort(timedOut), this.runTimeoutMs);
     let ended: JobRun;
     let session: Pick<JobRun, "sessionFile" | "usage"> = {};
+    const externalActions = new Set<string>();
     try {
       const outcome = await abortable(
         this.runJob(job, {
@@ -373,11 +377,15 @@ export class JobScheduler {
           recordSession: (details) => {
             session = { ...session, ...definedOf(details) };
           },
+          recordExternalAction: (toolName) => externalActions.add(toolName),
         }),
         controller.signal,
       );
       ended = await this.finish(job, { ...run, ...session }, outcome);
     } catch (error) {
+      const mayPass = isRetryable(error) && queued.trigger !== "manual";
+      // A retry would repeat what the run already did outside Wisp, such as an email it sent.
+      const notRetriedAfter = mayPass && externalActions.size ? [...externalActions] : undefined;
       // Besides backend error codes, a run fails with "timed_out" or "empty_response".
       ended = {
         ...run,
@@ -385,15 +393,18 @@ export class JobScheduler {
         endedAt: this.now().toISOString(),
         status: "failed",
         errorCode: controller.signal.reason === timedOut ? "timed_out" : sanitizeBackendError(error).code,
+        ...(notRetriedAfter ? { notRetriedAfter } : {}),
       };
       if (!this.disposed) this.warn("job_run_failed", error, job);
       await this.repository.putJobRun(ended);
       if (this.disposed) return;
-      await this.recordOutcome(
-        job,
-        ended,
-        isRetryable(error) && queued.trigger !== "manual" ? queued.attempt : undefined,
-      );
+      if (notRetriedAfter) {
+        await this.notify(
+          job,
+          `The job "${job.title}" failed after using ${toolList(notRetriedAfter)}, so it was not retried, to avoid doing that twice. Run it from the jobs list if it should try again.`,
+        ).catch((noticeError) => this.warn("job_notice_failed", noticeError, job));
+      }
+      await this.recordOutcome(job, ended, mayPass && !notRetriedAfter ? queued.attempt : undefined);
       return;
     } finally {
       clearTimeout(timeout);
@@ -572,6 +583,12 @@ function abortable<T>(promise: Promise<T>, signal: AbortSignal): Promise<T> {
       },
     );
   });
+}
+
+/** Tools by their labels, quoted, as a notice names them. */
+function toolList(names: ReadonlyArray<string>): string {
+  const labels = names.map((name) => `"${getToolMetadata(name)?.label ?? name}"`);
+  return labels.length > 1 ? `${labels.slice(0, -1).join(", ")} and ${labels.at(-1)}` : labels.join("");
 }
 
 /** Provider, network and rate-limit errors may pass; the agent marks them retryable. */

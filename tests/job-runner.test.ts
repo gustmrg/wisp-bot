@@ -1,3 +1,7 @@
+import { mkdtemp } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+
 import { describe, expect, it, vi } from "vitest";
 
 import { WispBackendError } from "../backend/backend-error.js";
@@ -6,7 +10,8 @@ import { JobRunner, jobRunPrompt } from "../backend/job-runner.js";
 import type { JobRunContext } from "../backend/job-scheduler.js";
 import type { RuntimeJobSession } from "../backend/runtime-session.js";
 import type { JobSessionSpec } from "../backend/wisp-session-plan.js";
-import type { UnattendedGrant } from "../backend/tool-authorization-broker.js";
+import { ToolAuthorizationBroker, type UnattendedGrant } from "../backend/tool-authorization-broker.js";
+import { ToolPolicyStore } from "../backend/tool-policy-store.js";
 import type { Job, JobRun } from "../shared/jobs.js";
 
 const NOW = new Date("2026-10-12T13:00:30.000Z");
@@ -77,6 +82,7 @@ function setup(answer: (tools: Tool[]) => Promise<{ text: string; stopReason?: s
   });
   const recorded: Array<Parameters<JobRunContext["recordSession"]>[0]> = [];
   const saved: string[] = [];
+  const external: string[] = [];
   const context: JobRunContext = {
     run: RUN,
     lastRunAt: "2026-10-11T13:02:00.000Z",
@@ -85,8 +91,9 @@ function setup(answer: (tools: Tool[]) => Promise<{ text: string; stopReason?: s
       saved.push(state);
     },
     recordSession: (details) => recorded.push(details),
+    recordExternalAction: (toolName) => external.push(toolName),
   };
-  return { runner, session, specs, prompts, grants, recorded, saved, context };
+  return { runner, session, specs, prompts, grants, recorded, saved, external, context };
 }
 
 describe("JobRunner", () => {
@@ -103,7 +110,12 @@ describe("JobRunner", () => {
       skills: ["job-search"],
     });
     expect(harness.specs[0]?.runTools.map(({ name }) => name)).toEqual(["skip_delivery", "save_job_state"]);
-    expect(harness.grants).toEqual([{ conversationId: "atlas", approvedTools: new Set(["web_search"]) }]);
+    expect(harness.grants).toEqual([
+      { conversationId: "atlas", approvedTools: new Set(["web_search"]), onExternalAction: expect.any(Function) },
+    ]);
+    // The broker's reports of external actions reach the scheduler's record of the run.
+    harness.grants[0]?.onExternalAction?.("gmail_create_draft");
+    expect(harness.external).toEqual(["gmail_create_draft"]);
     expect(harness.prompts[0]).toContain("Search the boards and report new openings.");
     expect(harness.recorded.at(-1)).toEqual({
       sessionFile: "/data/pi-sessions/atlas-session/jobs/job-1/run-1.jsonl",
@@ -140,6 +152,39 @@ describe("JobRunner", () => {
     expect(error).toMatchObject({ retryable: true });
     // The session is kept with the failed run.
     expect(harness.recorded.at(-1)).toHaveProperty("sessionFile");
+  });
+
+  it("reports the external actions the broker allowed in the run, even when the run then fails", async () => {
+    const store = new ToolPolicyStore(path.join(await mkdtemp(path.join(os.tmpdir(), "wisp-job-external-")), "p.json"));
+    await store.load();
+    const broker = new ToolAuthorizationBroker(store, () => undefined);
+    const harness = setup(async () => {
+      // A plugin tool asks the broker as it would in a real run, from inside the session's turn.
+      await broker.authorize({
+        conversationId: "atlas",
+        wispId: "atlas",
+        toolCallId: "call-1",
+        toolName: "gmail_create_draft",
+        category: "external_write",
+        summary: "Draft an email",
+        scope: { kind: "integration", value: "Gmail" },
+      });
+      return { text: "", stopReason: "error", errorMessage: "429 Too Many Requests" };
+    });
+    const runner = new JobRunner({
+      sessionFactory: {
+        createJobSession: async (_context, _selection, spec) => {
+          harness.specs.push(spec);
+          return harness.session;
+        },
+      },
+      getContext: () => AGENT_CONTEXT,
+      getSelection: async () => ({ providerId: "provider", modelId: "model" }),
+      runUnattended: (grant, run) => broker.runUnattended(grant, run),
+    });
+    const job = { ...JOB, tools: ["gmail_create_draft"] };
+    await expect(runner.run(job, harness.context)).rejects.toMatchObject({ retryable: true });
+    expect(harness.external).toEqual(["gmail_create_draft"]);
   });
 
   it("needs a model", async () => {

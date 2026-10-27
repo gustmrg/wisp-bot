@@ -54,9 +54,15 @@ Jobs run in the backend that owns the Wisp: around the clock on a
 while it was stopped collapse into one run when it starts again.
 
 A run that fails for a reason that may pass (provider, network, or rate
-limits) is retried 5 and then 15 minutes later. After three failed
-occurrences in a row the job pauses itself, and a notice in the conversation
-says why. The last 50 runs of each job are kept, with their timing, outcome,
+limits) is retried 5 and then 15 minutes later. A run that already acted
+outside Wisp is not retried, so nothing is done twice
+([ADR 033](decisions/033-no-retry-after-external-actions.md)). That is any
+plugin tool that writes, such as a Gmail draft, any MCP tool, and a browser
+action that sends something; commands in the container do not count. The
+run's details in **Settings → Jobs** say "not retried after" and name the
+tools, and a notice in the conversation says so; use **run now** to try
+again. After three failed occurrences in a row the job pauses itself, and a
+notice in the conversation says why. The last 50 runs of each job are kept, with their timing, outcome,
 errors, and token usage.
 
 Jobs are not available in [circles](circles.md). Wisps on

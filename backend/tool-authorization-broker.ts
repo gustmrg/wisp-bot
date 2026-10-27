@@ -83,12 +83,27 @@ const NO_WISP_POLICIES: WispToolPolicySource = {
 };
 
 /**
+ * Actions that reach outside Wisp and cannot be taken back, such as a sent
+ * email, a created issue, or a submitted form (ADR 033). Every MCP call
+ * counts, since server annotations are untrusted and any tool may write.
+ * Container commands do not: the container is the boundary, and counting
+ * them would end retries for almost every job that works on code.
+ */
+export const EXTERNAL_ACTION_CATEGORIES: ReadonlySet<ToolActionCategory> = new Set([
+  "external_write",
+  "integration_call",
+  "browser_submit",
+]);
+
+/**
  * What the person approved for a run with no one present, such as a job's
  * run (ADR 019): the tools approved with the job.
  */
 export interface UnattendedGrant {
   conversationId: string;
   approvedTools: ReadonlySet<string>;
+  /** Told of each external action allowed in the run, before it runs, by tool name. */
+  onExternalAction?: (toolName: string) => void;
 }
 
 interface PendingApproval {
@@ -207,10 +222,12 @@ export class ToolAuthorizationBroker {
     }
     if (everything) {
       this.auditDecision(actionId, action, behavior, "allow_everything", "user", "allowed");
+      this.noteExternalAction(action);
       return Promise.resolve();
     }
     if (behavior === "allow") {
       this.auditDecision(actionId, action, behavior, "allow", "policy", "allowed");
+      this.noteExternalAction(action);
       return Promise.resolve();
     }
     if (behavior === "block") {
@@ -229,6 +246,7 @@ export class ToolAuthorizationBroker {
         unattended.approvedTools.has(action.toolName);
       if (approved) {
         this.auditDecision(actionId, action, behavior, "allow", "user", "allowed");
+        this.noteExternalAction(action);
         return Promise.resolve();
       }
       this.auditDecision(actionId, action, behavior, "block", "system", "blocked");
@@ -426,6 +444,12 @@ export class ToolAuthorizationBroker {
     });
     this.auditPending(pending, "cancelled", "system", "cancelled");
     pending.reject(new WispBackendError("aborted", "The tool action was cancelled."));
+  }
+
+  /** Tells an unattended run of an external action it may now take; no approval card shows in such a run. */
+  private noteExternalAction(action: ToolAuthorizationRequest): void {
+    if (EXTERNAL_ACTION_CATEGORIES.has(action.category))
+      this.unattended.getStore()?.onExternalAction?.(action.toolName);
   }
 
   private cleanup(pending: PendingApproval): void {

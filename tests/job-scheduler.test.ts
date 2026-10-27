@@ -250,6 +250,56 @@ describe("JobScheduler", () => {
     await harness.close();
   });
 
+  it("does not retry a run that failed after acting outside Wisp, and says why", async () => {
+    const harness = await setup({
+      runner: async (_job, context) => {
+        context.recordExternalAction("gmail_create_draft");
+        context.recordExternalAction("gmail_create_draft");
+        throw new WispBackendError("model_unavailable", "The provider is rate limiting requests.", true);
+      },
+    });
+    harness.scheduler.start();
+    const job = await harness.scheduler.create(DAILY);
+    await harness.advance(60 * MINUTE);
+    await vi.waitFor(async () => {
+      const current = await harness.scheduler.getJob(job.id);
+      expect(current).toMatchObject({ nextRunAt: "2026-10-12T13:00:00.000Z", consecutiveFailures: 1 });
+      expect(current).not.toHaveProperty("retry");
+    });
+    const [run] = (await harness.scheduler.listRuns(job.id)).runs;
+    expect(run).toMatchObject({
+      status: "failed",
+      errorCode: "model_unavailable",
+      notRetriedAfter: ["gmail_create_draft"],
+    });
+    expect(harness.notices).toEqual([
+      'The job "Job openings" failed after using "Create email draft", so it was not retried, to avoid doing that twice. Run it from the jobs list if it should try again.',
+    ]);
+
+    // Nothing runs again until the next occurrence.
+    await harness.advance(20 * MINUTE);
+    expect(harness.runs).toHaveLength(1);
+    await harness.close();
+  });
+
+  it("keeps the record of why a run was not retried across a restart", async () => {
+    const first = await setup({
+      runner: async (_job, context) => {
+        context.recordExternalAction("mcp_linear_create");
+        throw new WispBackendError("model_unavailable", "Overloaded.", true);
+      },
+    });
+    first.scheduler.start();
+    const job = await first.scheduler.create(DAILY);
+    await first.advance(60 * MINUTE);
+    await vi.waitFor(async () => expect((await first.scheduler.listRuns(job.id)).runs[0]).toHaveProperty("endedAt"));
+    await first.close();
+
+    const second = await setup({ directory: first.directory });
+    expect((await second.scheduler.listRuns(job.id)).runs[0]).toMatchObject({ notRetriedAfter: ["mcp_linear_create"] });
+    await second.close();
+  });
+
   it("does not retry failures that will not pass, and pauses after three failed occurrences", async () => {
     const harness = await setup({
       runner: async () => {

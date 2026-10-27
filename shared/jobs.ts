@@ -96,6 +96,12 @@ export interface JobRun {
   deliveryErrorCode?: string;
   /** The reason the run gave to `skip_delivery`. */
   skipReason?: string;
+  /**
+   * The tools that acted outside Wisp, such as sending an email, in a run
+   * that failed for a reason that may pass. It was not retried, so they do
+   * not run twice (ADR 033).
+   */
+  notRetriedAfter?: ReadonlyArray<string>;
   usage?: SessionReportUsage;
   /** The delivered message, in the job's conversation. */
   messageId?: string;

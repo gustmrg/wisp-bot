@@ -52,6 +52,18 @@ function stub(jobs: Job[]) {
             skipReason: "No new openings",
             usage: { inputTokens: 900, outputTokens: 100, cacheReadTokens: 0, cacheWriteTokens: 0, totalTokens: 1000 },
           },
+          {
+            id: "run-2",
+            jobId: "job-1",
+            conversationId: "atlas",
+            trigger: "on_time",
+            scheduledAt: "2026-10-10T13:00:00.000Z",
+            startedAt: "2026-10-10T13:00:00.000Z",
+            endedAt: "2026-10-10T13:03:00.000Z",
+            status: "failed",
+            errorCode: "model_unavailable",
+            notRetriedAfter: ["gmail_create_draft"],
+          },
         ],
       },
     })),
@@ -114,6 +126,9 @@ describe("JobsSettingsSection", () => {
     const runs = await screen.findByRole("list", { name: "Recent runs of Job openings" });
     expect(within(runs).getByText("Nothing to report")).toBeVisible();
     expect(within(runs).getByText("Caught up · 30 min late · No new openings · 1,000 tokens")).toBeVisible();
+    expect(
+      within(runs).getByText("On time · the model is unavailable · not retried after Create email draft"),
+    ).toBeVisible();
 
     await user.click(screen.getByRole("button", { name: "Delete Job openings" }));
     expect(api.deleteJob).not.toHaveBeenCalled();

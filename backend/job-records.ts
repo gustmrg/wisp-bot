@@ -148,6 +148,7 @@ export function normalizeJobRun(value: unknown): JobRun | undefined {
   const errorCode = optional(record.errorCode, optionalString);
   const deliveryErrorCode = optional(record.deliveryErrorCode, optionalString);
   const skipReason = optional(record.skipReason, optionalString);
+  const notRetriedAfter = optional(record.notRetriedAfter, (value) => (isNames(value) ? value : undefined));
   const usage = optional(record.usage, usageOf);
   const messageId = optional(record.messageId, optionalString);
   const sessionFile = optional(record.sessionFile, optionalString);
@@ -158,7 +159,9 @@ export function normalizeJobRun(value: unknown): JobRun | undefined {
     !trigger ||
     !scheduledAt ||
     !startedAt ||
-    ![endedAt, status, errorCode, deliveryErrorCode, skipReason, usage, messageId, sessionFile].every(({ ok }) => ok)
+    ![endedAt, status, errorCode, deliveryErrorCode, skipReason, notRetriedAfter, usage, messageId, sessionFile].every(
+      ({ ok }) => ok,
+    )
   ) {
     return undefined;
   }
@@ -174,6 +177,7 @@ export function normalizeJobRun(value: unknown): JobRun | undefined {
     ...(errorCode.value ? { errorCode: errorCode.value } : {}),
     ...(deliveryErrorCode.value ? { deliveryErrorCode: deliveryErrorCode.value } : {}),
     ...(skipReason.value ? { skipReason: skipReason.value } : {}),
+    ...(notRetriedAfter.value?.length ? { notRetriedAfter: notRetriedAfter.value } : {}),
     ...(usage.value ? { usage: usage.value } : {}),
     ...(messageId.value ? { messageId: messageId.value } : {}),
     ...(sessionFile.value ? { sessionFile: sessionFile.value } : {}),

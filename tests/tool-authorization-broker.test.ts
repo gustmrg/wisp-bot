@@ -8,7 +8,7 @@ import { evaluateToolPolicy, ToolAuthorizationBroker } from "../backend/tool-aut
 import { ToolPolicyStore } from "../backend/tool-policy-store.js";
 import { WispToolPolicyStore } from "../backend/wisp-tool-policy-store.js";
 import type { ConversationAgentEvent } from "../shared/contracts.js";
-import type { ToolPolicySettings } from "../shared/tool-policy.js";
+import type { ToolActionCategory, ToolPolicySettings } from "../shared/tool-policy.js";
 
 describe("tool policy", () => {
   it("recovers a corrupt persisted policy to safe defaults", async () => {
@@ -673,6 +673,53 @@ describe("tool policy", () => {
     void broker.authorize(action("mcp_linear_create", "integration_call")).catch(() => undefined);
     expect(events).toEqual([expect.objectContaining({ type: "tool_approval_requested" })]);
     broker.dispose();
+  });
+
+  it("tells an unattended run of each external action it allowed, and of nothing else", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "wisp-policy-external-"));
+    const store = new ToolPolicyStore(path.join(directory, "policy.json"));
+    await store.load();
+    let riskMode = false;
+    const broker = new ToolAuthorizationBroker(store, () => undefined, {
+      selectWindowId: () => 7,
+      wispPolicies: {
+        get: () => ({ files: {}, allowEverything: riskMode }),
+        save: async (_id, policy) => policy,
+        setFileBehavior: async () => undefined,
+      },
+    });
+    const action = (toolName: string, category: ToolActionCategory, kind: "integration" | "container" | "browser") => ({
+      conversationId: "one",
+      wispId: "one",
+      toolCallId: `call-${toolName}`,
+      toolName,
+      category,
+      summary: "Do something",
+      scope: { kind, value: "Gmail" },
+    });
+    const external: string[] = [];
+    const grant = {
+      conversationId: "one",
+      approvedTools: new Set(["gmail_create_draft", "mcp_linear_create", "run_command"]),
+      onExternalAction: (toolName: string) => external.push(toolName),
+    };
+
+    await broker.runUnattended(grant, async () => {
+      await broker.authorize(action("gmail_create_draft", "external_write", "integration"));
+      await broker.authorize(action("mcp_linear_create", "integration_call", "integration"));
+      // Commands stay inside the Wisp's container.
+      await broker.authorize(action("run_command", "container_command", "container"));
+      // A refused action does nothing outside.
+      await expect(broker.authorize(action("browser", "browser_submit", "browser"))).rejects.toMatchObject({
+        code: "tool_blocked",
+      });
+    });
+    expect(external).toEqual(["gmail_create_draft", "mcp_linear_create"]);
+
+    // Risk mode allows a submit the job did not list; it still counts.
+    riskMode = true;
+    await broker.runUnattended(grant, () => broker.authorize(action("browser", "browser_submit", "browser")));
+    expect(external.at(-1)).toBe("browser");
   });
 
   it("always asks for jobs, shows what they may do, and refuses lasting decisions", async () => {

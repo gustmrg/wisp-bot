@@ -76,8 +76,13 @@ export class JobRunner {
     context.recordSession(session.sessionFile ? { sessionFile: session.sessionFile } : {});
     try {
       const prompt = jobRunPrompt(job, context.run, context.lastRunAt, this.now());
-      await this.options.runUnattended({ conversationId: job.conversationId, approvedTools: new Set(job.tools) }, () =>
-        session.prompt(prompt, context.signal),
+      await this.options.runUnattended(
+        {
+          conversationId: job.conversationId,
+          approvedTools: new Set(job.tools),
+          onExternalAction: context.recordExternalAction,
+        },
+        () => session.prompt(prompt, context.signal),
       );
       context.signal.throwIfAborted();
       if (skipped !== undefined) return { kind: "silent", reason: skipped };

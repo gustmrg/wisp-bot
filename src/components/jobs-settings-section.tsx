@@ -18,6 +18,7 @@ import type { WispOption } from "@/lib/plugin-access";
 import { cn } from "@/lib/utils";
 import { isJobFinished, type Job, type JobRun, type JobRunStatus, type JobRunTrigger } from "../../shared/jobs";
 import { describeSchedule } from "../../shared/schedule";
+import { getToolMetadata } from "../../shared/tool-catalog";
 
 const STATUS_LABELS: Record<JobRunStatus, string> = {
   delivered: "Delivered",
@@ -255,6 +256,9 @@ function RunItem({ run, format }: { run: JobRun; format: (time: string) => strin
     run.trigger !== "manual" && lateMinutes >= 1 ? `${lateMinutes} min late` : undefined,
     run.skipReason,
     errorText(run.errorCode),
+    run.notRetriedAfter?.length
+      ? `not retried after ${run.notRetriedAfter.map((name) => getToolMetadata(name)?.label ?? name).join(", ")}`
+      : undefined,
     run.deliveryErrorCode ? `message not added: ${errorText(run.deliveryErrorCode)}` : undefined,
     run.usage ? `${run.usage.totalTokens.toLocaleString("en-US")} tokens` : undefined,
   ].filter(Boolean);

@@ -175,7 +175,9 @@ runs, so a copy in the instructions could go out of date after `update_job`.
   `once` job missed this way still runs. The prompt says it is late.
 - **Retries:** a run that fails for a reason that may pass (provider, network
   or rate-limit errors) is retried twice, 5 and then 15 minutes later, unless
-  the next occurrence comes first.
+  the next occurrence comes first. A run that already acted outside Wisp,
+  such as sending an email, is not retried
+  ([ADR 033](033-no-retry-after-external-actions.md)).
 - **Pausing after failures:** after 3 failed occurrences in a row, the job
   pauses itself and a notice in the conversation says why. A successful run
   resets the count.
@@ -185,6 +187,7 @@ runs, so a copy in the instructions could go out of date after `update_job`.
   - its status: `delivered`, `silent`, `failed` or `skipped`;
   - the run's error code, and separately a delivery error;
   - the reason given to `skip_delivery`;
+  - the tools that kept a failed run from being retried (ADR 033);
   - token usage.
 
   A failed delivery does not repeat the run. The UI shows the last runs.
