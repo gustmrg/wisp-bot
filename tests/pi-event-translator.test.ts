@@ -322,6 +322,19 @@ describe("PiEventTranslator", () => {
     ]);
     expect(events.some((event) => event.type === "conversation_error")).toBe(false);
 
+    // A turn on a model on hold says until when.
+    translator.begin({ conversationId: "wisp-1", requestId: "request-held", text: "Held" });
+    translator.handle({ type: "model_fallback", model: "Backup", until: "2026-10-26T17:30:00.000Z" });
+    expect(events.at(-1)).toEqual({
+      type: "conversation_notice",
+      conversationId: "wisp-1",
+      requestId: "request-held",
+      kind: "fallback_started",
+      until: "2026-10-26T17:30:00.000Z",
+    });
+    translator.handle({ type: "message_update", assistantMessageEvent: { type: "text_delta", delta: "Here." } });
+    translator.handle({ type: "agent_settled" });
+
     // The next turn starts on the Wisp's own model.
     translator.begin({ conversationId: "wisp-1", requestId: "request-2", text: "Again" });
     translator.handle({ type: "message_update", assistantMessageEvent: { type: "text_delta", delta: "Sure." } });

@@ -93,6 +93,56 @@ export function describeProviderError(raw: string): { message: string; retryable
   return { message, retryable: isRetryableProviderError(detail) };
 }
 
+const RATE_LIMIT_PATTERN = /rate.?limit|too many requests/i;
+const UNAVAILABLE_PATTERN = /overload|service.?unavailable|server.?error|internal.?error|bad gateway/i;
+const RETRY_AFTER_PATTERN =
+  /(?:try again|retry)\s+(?:in|after)\s+(\d+(?:\.\d+)?)\s*(ms|milliseconds?|s|secs?|seconds?|m|mins?|minutes?|h|hours?)\b/i;
+
+/** Why a model call failed, as far as its error says. */
+export type ProviderFailureCause =
+  | "billing"
+  | "authentication"
+  | "rate_limit"
+  | "provider_unavailable"
+  | "network"
+  | "too_large"
+  | "other";
+
+/**
+ * The cause of a provider error, from its text: credits and quotas first,
+ * since OpenAI reports them with a 429, then the status, then the words.
+ */
+export function providerFailureCause(raw: string): ProviderFailureCause {
+  const detail = raw.trim();
+  if (QUOTA_PATTERN.test(detail)) return "billing";
+  if (CONTEXT_LENGTH_PATTERN.test(detail)) return "too_large";
+  const status = providerStatus(detail);
+  if (status === 401 || status === 403) return "authentication";
+  if (status === 402) return "billing";
+  if (status === 413) return "too_large";
+  if (status === 429 || RATE_LIMIT_PATTERN.test(detail)) return "rate_limit";
+  if ((status !== undefined && status >= 500) || UNAVAILABLE_PATTERN.test(detail)) return "provider_unavailable";
+  if (CONNECTION_PATTERN.test(detail)) return "network";
+  return "other";
+}
+
+/** How long the provider asked to wait, when its error says so ("try again in 20s"). */
+export function retryAfterMs(raw: string): number | undefined {
+  const match = raw.match(RETRY_AFTER_PATTERN);
+  if (!match) return undefined;
+  const amount = Number(match[1]);
+  const unit = match[2]!.toLowerCase();
+  const scale =
+    unit.startsWith("ms") || unit.startsWith("milli")
+      ? 1
+      : unit.startsWith("h")
+        ? 3_600_000
+        : unit.startsWith("m")
+          ? 60_000
+          : 1_000;
+  return Number.isFinite(amount) ? Math.round(amount * scale) : undefined;
+}
+
 /** Whether a request failed for being too large for the model, which compaction fixes rather than another model. */
 export function isRequestTooLarge(message: string): boolean {
   return CONTEXT_LENGTH_PATTERN.test(message) || providerStatus(message) === 413;

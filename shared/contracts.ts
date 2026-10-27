@@ -610,6 +610,11 @@ type ConversationAgentEventBody =
       conversationId: string;
       requestId?: string;
       kind: "retry_started" | "retry_finished" | "compaction_started" | "compaction_finished" | "fallback_started";
+      /**
+       * With `fallback_started`, when the Wisp's model is on hold after a
+       * rate limit or an outage: the time the hold ends (ISO 8601).
+       */
+      until?: string;
     }
   | {
       type: "tool_approval_requested";

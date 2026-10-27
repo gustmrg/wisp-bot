@@ -9,6 +9,7 @@ import type {
 } from "@earendil-works/pi-ai";
 
 import { ModelFallback, shouldFallBack } from "../backend/model-fallback.js";
+import { MODEL_HOLD_MS, ModelHolds } from "../backend/model-holds.js";
 
 const pi = await import("@earendil-works/pi-ai");
 
@@ -142,7 +143,7 @@ describe("ModelFallback", () => {
         (event) => (event.type === "error" ? event.error : (event.partial ?? event.message))?.provider === "openrouter",
       ),
     ).toBe(true);
-    expect(onFallback).toHaveBeenCalledExactlyOnceWith(backup);
+    expect(onFallback).toHaveBeenCalledExactlyOnceWith(backup, undefined);
 
     // The next call of the turn, such as after a tool runs, goes straight to the fallback.
     await collect(stream(primary, context, {}));
@@ -180,7 +181,7 @@ describe("ModelFallback", () => {
     expect((await collect(stream(primary, context, {}))).at(-1)?.type).toBe("error");
     expect(resolve).not.toHaveBeenCalled();
     expect((await collect(stream(primary, context, {}))).at(-1)?.type).toBe("done");
-    expect(onFallback).toHaveBeenCalledExactlyOnceWith(backup);
+    expect(onFallback).toHaveBeenCalledExactlyOnceWith(backup, undefined);
     expect(inner.mock.calls.map(([requested]) => requested.id)).toEqual(["primary", "primary", "primary", "backup"]);
   });
 
@@ -202,6 +203,60 @@ describe("ModelFallback", () => {
     next = failing(primary, "400 prompt is too long: 250000 tokens > 200000 maximum");
     for (let call = 0; call < 4; call += 1) await collect(stream(primary, context, {}));
     expect(resolve).not.toHaveBeenCalled();
+  });
+
+  it("holds a model whose retries of a rate limit ran out, starting later turns on the fallback until the hold ends", async () => {
+    let now = Date.parse("2026-10-26T14:00:00.000Z");
+    const holds = new ModelHolds(() => now);
+    const inner = provider({ primary: failing(primary, "429 Too Many Requests"), backup: answer(backup, "Hi") });
+    const onFallback = vi.fn();
+    const fallback = new ModelFallback({
+      pi,
+      resolve: async () => backup,
+      onFallback,
+      retries: 2,
+      holds,
+      now: () => now,
+    });
+    const stream = fallback.wrap(inner);
+    for (let call = 0; call < 3; call += 1) await collect(stream(primary, context, {}));
+    const until = now + MODEL_HOLD_MS;
+    expect(onFallback).toHaveBeenLastCalledWith(backup, until);
+    expect(holds.heldUntil(primary)).toBe(until);
+
+    // The next turn goes straight to the fallback, without trying the held model.
+    fallback.reset();
+    now += 60_000;
+    await collect(stream(primary, context, {}));
+    expect(inner.mock.calls.map(([requested]) => requested.id)).toEqual([
+      "primary",
+      "primary",
+      "primary",
+      "backup",
+      "backup",
+    ]);
+    expect(onFallback).toHaveBeenLastCalledWith(backup, until);
+
+    // Once the hold ends, the Wisp's own model answers again.
+    fallback.reset();
+    now = until;
+    await collect(stream(primary, context, {}));
+    expect(inner.mock.calls.at(-1)?.[0].id).toBe("primary");
+  });
+
+  it("holds no model for a failure that does not pass with time, and keeps a held model without a fallback", async () => {
+    const holds = new ModelHolds();
+    const inner = provider({ primary: failing(primary, "fetch failed"), backup: answer(backup, "Hi") });
+    const onFallback = vi.fn();
+    const stream = new ModelFallback({ pi, resolve: async () => backup, onFallback, retries: 2, holds }).wrap(inner);
+    for (let call = 0; call < 3; call += 1) await collect(stream(primary, context, {}));
+    expect(onFallback).toHaveBeenCalledExactlyOnceWith(backup, undefined);
+    expect(holds.heldUntil(primary)).toBeUndefined();
+
+    holds.hold(primary, Date.now() + MODEL_HOLD_MS);
+    const alone = provider({ primary: answer(primary, "Mine") });
+    await collect(new ModelFallback({ pi, resolve: async () => null, holds }).wrap(alone)(primary, context, {}));
+    expect(alone.mock.calls.map(([requested]) => requested.id)).toEqual(["primary"]);
   });
 
   it("does not move once the model has started answering", async () => {

@@ -1,10 +1,10 @@
-# ADR 035: Fallback models answer once retries run out
+# ADR 035: Fallback models answer once retries run out, until limits reset
 
 - Status: Accepted
 - Date: 2026-10-26
 - Decision owners: Wisp product and model runtime
 - Scope: When a Wisp's fallback model answers for a failure that may pass,
-  such as a rate limit
+  such as a rate limit, and how long the Wisp stays on it
 - Related: [ADR 021](021-fallback-models.md), [ADR 026](026-claude-code-runtime.md),
   [AI models](../models.md#fallback-models), SWE-238
 
@@ -46,18 +46,49 @@ retries have run out**, on the failure that would otherwise end the turn.
   overloaded`) to the fallback; a failure of Claude Code itself, such as
   reaching its turn limit, does not move.
 
+### Holding a model until its limit resets
+
+**A model that kept rate limiting or failing after the retries is held, and
+while it is held, turns of Wisps with a fallback start on the fallback.**
+
+- `ModelHolds` (`backend/model-holds.ts`) keeps, in memory, until when each
+  model (provider and model ID) is held. One instance serves the backend:
+  Pi's sessions, job runs included, and Claude Code's.
+- `holdAfter` decides from the error: `providerFailureCause` says
+  `rate_limit` or `provider_unavailable`, and the hold lasts until the time
+  the provider named ("try again in 20s", read by `retryAfterMs`), or
+  `MODEL_HOLD_MS`, 10 minutes. Credits, keys, a request too large, and
+  network failures do not pass with time, so they hold nothing.
+- `ModelFallback` holds the model when Pi's retries ran out on such a
+  failure. A call on a held model starts on the fallback at once, without
+  retries; a Wisp without a fallback keeps calling its model as before. Once
+  the hold ends, the next turn starts on the Wisp's own model.
+- A Claude Code plan limit holds its model until the plan's full window
+  resets (`planResetAt`, from Claude Code's `rate_limit_event`), and a
+  provider that kept failing after Claude Code's retries holds it as above.
+  A turn on a held Claude Code model goes to the fallback without starting a
+  Claude Code process.
+- The fallback's notice carries the end of the hold (`until`), and the
+  conversation reads "The model is limited. Answering with the fallback
+  model until 17:30…".
+- Restarting the backend ends every hold.
+
 ## Consequences
 
 - A Wisp with a fallback answers through a rate limit or an outage of its
   provider, after the few seconds of Pi's retries.
 - A Wisp without a fallback fails as before.
-- Each turn tries the Wisp's own model again, with its retries. A provider
-  that stays limited costs those seconds on every message; keeping the Wisp
-  on the fallback until the limit resets is the next step of SWE-238.
+- While a model is held, Wisps with a fallback answer at once instead of
+  waiting through retries on every message, and come back to their model
+  when the hold ends.
+- A hold covers every Wisp of the environment on that model, since a rate
+  limit applies to the account's key, not to one Wisp.
+- A provider that recovers early is not tried until the hold ends.
 
 ## Deferred
 
-- Staying on the fallback until the provider's limit resets.
+- Keeping holds across a restart of the backend.
+- Reading the `retry-after` header, which Pi does not pass on.
 - A list of fallback models tried in order.
 - Claude Code job runs, which do not fall back at all yet.
 
@@ -73,4 +104,9 @@ retries have run out**, on the failure that would otherwise end the turn.
 - **Lowering Pi's retries to reach the fallback sooner.** Wisps without a
   fallback would lose retries that often succeed.
 - **Telling failures apart again in Wisp.** Pi already classifies which
-  failures it retries; following it keeps the two in step.
+  failures it retries; following it keeps the two in step. Causes are read
+  from the error text only to decide how long a model is held.
+- **A hold per Wisp.** A rate limit applies to the provider account, so every
+  Wisp on the model would hit it in turn.
+- **Saving holds to disk.** A restart is rare, and trying the model again
+  after one costs one turn's retries.

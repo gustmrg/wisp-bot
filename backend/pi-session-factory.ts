@@ -23,6 +23,7 @@ import type { PiAgentEvent } from "./pi-event-translator.js";
 import { AUXILIARY_USAGE_ENTRY, ImageTranscriber } from "./image-transcriber.js";
 import { TRANSCRIPTION_CACHE_DIRECTORY, TranscriptionCache } from "./transcription-cache.js";
 import { FALLBACK_ENTRY, ModelFallback } from "./model-fallback.js";
+import type { ModelHolds } from "./model-holds.js";
 import type { ToolAuthorizationBroker } from "./tool-authorization-broker.js";
 import type { RuntimeJobSession, RuntimeModel, RuntimeSession, RuntimeSessionFactory } from "./runtime-session.js";
 import {
@@ -42,12 +43,14 @@ function displayModelName(model: { id: string; name?: string }): string {
   return name.slice(0, 256) || model.id.slice(0, 256);
 }
 
+type FallbackListener = (model: string, until?: string) => void;
+
 interface BuiltSession {
   session: AgentSession;
   sessionManager: SessionManager;
   fallback: ModelFallback;
-  /** Listeners told the name of the fallback model when a turn moves to it. */
-  fallbackListeners: Set<(model: string) => void>;
+  /** Listeners told the name of the fallback model when a turn moves to it, and when a hold on the Wisp's model ends. */
+  fallbackListeners: Set<FallbackListener>;
   continuity: ContextSession;
   refreshTools: () => Promise<void>;
   snapshot: Awaited<ReturnType<IntegrationToolSource["getSnapshot"]>> | undefined;
@@ -59,6 +62,7 @@ export class SdkPiSessionFactory implements RuntimeSessionFactory {
   private readonly toolSource?: IntegrationToolSource;
   private readonly getImageModel?: () => Promise<ModelSelection | null>;
   private readonly getFallbackModel?: (wispId: string) => Promise<ModelSelection | null>;
+  private readonly holds?: ModelHolds;
   private readonly builder: WispSessionBuilder;
 
   constructor(
@@ -73,11 +77,14 @@ export class SdkPiSessionFactory implements RuntimeSessionFactory {
     getFallbackModel?: (wispId: string) => Promise<ModelSelection | null>,
     /** Where the person's Wisps live; without it, Wisps have no Wisp tools. */
     wisps?: WispToolHost,
+    /** Models on hold after a rate limit or an outage, shared by every session (ADR 035). */
+    holds?: ModelHolds,
   ) {
     this.modelRuntime = modelRuntime;
     this.toolSource = toolSource;
     this.getImageModel = getImageModel;
     this.getFallbackModel = getFallbackModel;
+    this.holds = holds;
     this.builder = new WispSessionBuilder({ authorizationBroker, toolSource, jobs, wisps });
   }
 
@@ -161,7 +168,7 @@ export class SdkPiSessionFactory implements RuntimeSessionFactory {
     const { createAgentSession, DefaultResourceLoader, SessionManager, SettingsManager, VERSION } = await import(
       "@earendil-works/pi-coding-agent"
     );
-    const fallbackListeners = new Set<(model: string) => void>();
+    const fallbackListeners = new Set<FallbackListener>();
     let recordFallback: ((model: string) => void) | undefined;
     const fallback = new ModelFallback({
       pi: await import("@earendil-works/pi-ai"),
@@ -169,12 +176,14 @@ export class SdkPiSessionFactory implements RuntimeSessionFactory {
         const choice = await this.getFallbackModel?.(context.wispId);
         return choice ? this.resolveModel(choice) : null;
       },
-      onFallback: (model) => {
+      onFallback: (model, until) => {
         const name = displayModelName(model);
         recordFallback?.(name);
-        for (const listener of fallbackListeners) listener(name);
+        const ends = until === undefined ? undefined : new Date(until).toISOString();
+        for (const listener of fallbackListeners) listener(name, ends);
       },
       retries: MODEL_RETRIES,
+      ...(this.holds ? { holds: this.holds } : {}),
     });
     let continuity: ContextSession | undefined;
     const plan = await this.builder.plan(context, job);
@@ -370,7 +379,7 @@ function adaptSession(
   refreshTools: () => Promise<void>,
   toolRevision: string,
   fallback: ModelFallback,
-  fallbackListeners: Set<(model: string) => void>,
+  fallbackListeners: Set<FallbackListener>,
 ): RuntimeSession {
   return {
     get isIdle() {
@@ -385,7 +394,8 @@ function adaptSession(
     toolRevision,
     subscribe: (listener) => {
       const unsubscribe = session.subscribe((event: AgentSessionEvent) => listener(event as PiAgentEvent));
-      const onFallback = (model: string) => listener({ type: "model_fallback", model });
+      const onFallback: FallbackListener = (model, until) =>
+        listener({ type: "model_fallback", model, ...(until ? { until } : {}) });
       fallbackListeners.add(onFallback);
       return () => {
         fallbackListeners.delete(onFallback);

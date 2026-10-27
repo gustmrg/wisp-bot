@@ -8,6 +8,7 @@ import type {
   ModelThinkingLevel,
 } from "@earendil-works/pi-ai" with { "resolution-mode": "import" };
 
+import { holdAfter, type ModelHolds } from "./model-holds.js";
 import { isRequestTooLarge } from "./provider-error.js";
 
 /** The session entry recording that a turn moved to the fallback model. */
@@ -29,14 +30,21 @@ export interface ModelFallbackOptions {
   pi: FallbackPiFunctions;
   /** The Wisp's fallback model now, or null when it has none; read only when its model fails. */
   resolve: () => Promise<RequestModel | null>;
-  /** Told when a turn moves to the fallback model. */
-  onFallback?: (model: RequestModel) => void;
+  /** Told when a turn moves to the fallback model, with when the hold on the Wisp's model ends, if it is held. */
+  onFallback?: (model: RequestModel, until?: number) => void;
   /**
    * How many times Pi retries a failure that may pass, such as a rate limit;
    * the failure after those retries goes to the fallback. Without it, those
    * failures never move.
    */
   retries?: number;
+  /**
+   * Models on hold after a rate limit or an outage (ADR 035): a turn on a
+   * held model starts on the fallback, and a model that kept failing that way
+   * after the retries is held.
+   */
+  holds?: ModelHolds;
+  now?: () => number;
 }
 
 /**
@@ -72,6 +80,8 @@ export class ModelFallback {
   private readonly resolve: ModelFallbackOptions["resolve"];
   private readonly onFallback: ModelFallbackOptions["onFallback"];
   private readonly retries: number;
+  private readonly holds: ModelHolds | undefined;
+  private readonly now: () => number;
   private fallback: RequestModel | null = null;
   /** Calls of the Wisp's model in a row that failed in a way Pi retries, since one last answered. */
   private retriedFailures = 0;
@@ -83,6 +93,8 @@ export class ModelFallback {
     this.resolve = options.resolve;
     this.onFallback = options.onFallback;
     this.retries = options.retries ?? 0;
+    this.holds = options.holds;
+    this.now = options.now ?? Date.now;
   }
 
   /** Starts a turn on the Wisp's own model. */
@@ -94,6 +106,8 @@ export class ModelFallback {
   wrap(inner: StreamFn): StreamFn {
     return async (model, context, options) => {
       if (this.fallback) return this.sendToFallback(inner, model, this.fallback, context, options);
+      const held = await this.startOnFallback(inner, model, context, options);
+      if (held) return held;
       this.fallbackRequest = undefined;
       const primary = await inner(model, context, options);
       const output = this.pi.createAssistantMessageEventStream();
@@ -152,19 +166,56 @@ export class ModelFallback {
     options: StreamOptions | undefined,
   ): Promise<AssistantMessageEventStream | null> {
     if (options?.signal?.aborted || !this.movesOn(failed, model.contextWindow)) return null;
+    const until = this.holdAfterRetries(model, failed);
     const fallback = await this.resolve().catch(() => null);
     if (!fallback || options?.signal?.aborted) return null;
     try {
       const stream = await this.sendToFallback(inner, model, fallback, context, options);
       this.fallback = fallback;
       this.retriedFailures = 0;
-      this.onFallback?.(fallback);
+      this.onFallback?.(fallback, until);
       return stream;
     } catch {
       // A fallback that cannot start leaves the model's own error to report.
       this.fallbackRequest = undefined;
       return null;
     }
+  }
+
+  /**
+   * Starts the call on the fallback while the Wisp's model is on hold, so the
+   * turn does not wait through retries the model would most likely fail
+   * again. Resolves null when the model is not held or the fallback cannot
+   * start, and the call goes to the model as usual.
+   */
+  private async startOnFallback(
+    inner: StreamFn,
+    model: RequestModel,
+    context: Parameters<StreamFn>[1],
+    options: StreamOptions | undefined,
+  ): Promise<AssistantMessageEventStream | null> {
+    const until = this.holds?.heldUntil(model);
+    if (until === undefined) return null;
+    const fallback = await this.resolve().catch(() => null);
+    if (!fallback || options?.signal?.aborted) return null;
+    if (fallback.provider === model.provider && fallback.id === model.id) return null;
+    try {
+      const stream = await this.sendToFallback(inner, model, fallback, context, options);
+      this.fallback = fallback;
+      this.onFallback?.(fallback, until);
+      return stream;
+    } catch {
+      this.fallbackRequest = undefined;
+      return null;
+    }
+  }
+
+  /** Holds the Wisp's model when it kept failing in a way that passes with time; returns when the hold ends. */
+  private holdAfterRetries(model: RequestModel, failed: AssistantMessage): number | undefined {
+    if (!this.holds || this.retriedFailures <= this.retries || !failed.errorMessage) return undefined;
+    const until = holdAfter(failed.errorMessage, this.now());
+    if (until !== undefined) this.holds.hold(model, until);
+    return until;
   }
 
   /**

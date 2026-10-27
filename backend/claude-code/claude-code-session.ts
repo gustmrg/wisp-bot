@@ -6,8 +6,14 @@ import { WispBackendError } from "../backend-error.js";
 import type { ContextSettings } from "../context-session.js";
 import type { RuntimeSession } from "../runtime-session.js";
 import type { PiAgentEvent } from "../pi-event-translator.js";
+import { holdAfter, MODEL_HOLD_MS } from "../model-holds.js";
 import { isRetryableProviderError } from "../provider-error.js";
-import { ClaudeCodeEventConverter, isMissingSession, type ClaudeCodeTurnResult } from "./claude-code-events.js";
+import {
+  ClaudeCodeEventConverter,
+  isMissingSession,
+  type ClaudeCodePlanUsage,
+  type ClaudeCodeTurnResult,
+} from "./claude-code-events.js";
 import { claudeCodeUserMessage, type ClaudeCodeQueryOptions } from "./claude-code-launch.js";
 import type { WispToolObserver } from "./wisp-mcp-server.js";
 
@@ -67,6 +73,11 @@ export interface ClaudeCodeSessionOptions {
   fallback?: () => Promise<{ name: string; session: RuntimeSession } | null>;
   /** Told when the fallback model answers a turn, for the session report. */
   onFallback?: (model: string) => void;
+  /**
+   * The hold on this session's model in the backend's model holds (ADR 035):
+   * while it lasts, turns start on the fallback without starting Claude Code.
+   */
+  hold?: { until(): number | undefined; set(until: number): void };
   now?: () => Date;
   /** The latest of the Wisp's own messages, to carry into a replaced session. */
   recentTranscript?: () => Promise<string>;
@@ -163,6 +174,8 @@ export class ClaudeCodeSession implements RuntimeSession {
   private readonly now: () => Date;
   /** The fallback model's session while it answers a turn. */
   private fallbackSession: RuntimeSession | null = null;
+  /** The plan's usage as Claude Code last reported it, for when a reached limit resets. */
+  private planUsage: ClaudeCodePlanUsage | undefined;
   private disposed = false;
 
   constructor(options: ClaudeCodeSessionOptions) {
@@ -201,6 +214,13 @@ export class ClaudeCodeSession implements RuntimeSession {
     // The turn's own message; each later one is a follow-up the turn read.
     this.emit({ type: "message_start", message: { role: "user" } });
     try {
+      // A model on hold goes straight to the fallback, without a Claude Code process.
+      const heldUntil = this.options.hold?.until();
+      if (heldUntil !== undefined && (await this.answerWithFallback(turn, message, options.signal, heldUntil))) {
+        this.emit({ type: "agent_end" });
+        this.emit({ type: "agent_settled" });
+        return;
+      }
       await this.renewIfDue(turn);
       let result = await this.send(turn, message, { steerable: true });
       if (isMissingSession(result) && !turn.answered && !turn.aborted) {
@@ -209,8 +229,11 @@ export class ClaudeCodeSession implements RuntimeSession {
         result = await this.send(turn, message, { steerable: true });
       }
       if (!result.ok && !turn.aborted) {
+        const until = this.holdAfterFailure(result);
         const answered =
-          movesToFallback(result) && !turn.answered && (await this.answerWithFallback(turn, message, options.signal));
+          movesToFallback(result) &&
+          !turn.answered &&
+          (await this.answerWithFallback(turn, message, options.signal, until));
         if (!answered) throw describeFailure(result);
       }
       if (result.ok) {
@@ -443,6 +466,7 @@ export class ClaudeCodeSession implements RuntimeSession {
         if (result) {
           if (result.sessionId) this.sessionIdValue = result.sessionId;
           this.options.onTurnResult?.(result, process.converter);
+          this.planUsage = process.converter.planUsage ?? this.planUsage;
           // Claude Code would answer a follow-up the turn did not read with a turn of its own.
           if (process.steers.length && !(await this.withdrawSteers(process))) continue;
           turn?.settle?.(result);
@@ -523,7 +547,12 @@ export class ClaudeCodeSession implements RuntimeSession {
    * turn to it. The fallback session has none of Claude Code's history, so it
    * is told the latest messages. Resolves false when the Wisp has no fallback.
    */
-  private async answerWithFallback(turn: Turn, message: string, signal?: AbortSignal): Promise<boolean> {
+  private async answerWithFallback(
+    turn: Turn,
+    message: string,
+    signal?: AbortSignal,
+    heldUntil?: number,
+  ): Promise<boolean> {
     const fallback = await this.options.fallback?.().catch(() => null);
     if (!fallback) return false;
     if (turn.aborted) {
@@ -531,7 +560,11 @@ export class ClaudeCodeSession implements RuntimeSession {
       return true;
     }
     const transcript = await this.options.recentTranscript?.().catch(() => undefined);
-    this.emit({ type: "model_fallback", model: fallback.name });
+    this.emit({
+      type: "model_fallback",
+      model: fallback.name,
+      ...(heldUntil === undefined ? {} : { until: new Date(heldUntil).toISOString() }),
+    });
     this.options.onFallback?.(fallback.name);
     // The conversation agent already started and ends this turn, and has its message.
     let prompted = false;
@@ -557,6 +590,21 @@ export class ClaudeCodeSession implements RuntimeSession {
       fallback.session.dispose();
     }
     return true;
+  }
+
+  /**
+   * Holds Claude Code's model after a turn failed in a way that passes with
+   * time: the plan's limit until its window resets, or a provider that kept
+   * failing after Claude Code's own retries. Returns when the hold ends.
+   */
+  private holdAfterFailure(result: ClaudeCodeTurnResult): number | undefined {
+    const hold = this.options.hold;
+    if (!hold) return undefined;
+    const text = result.errors.join("\n");
+    const now = this.now().getTime();
+    const until = PLAN_LIMIT.test(text) ? planResetAt(this.planUsage, now) : holdAfter(text, now);
+    if (until !== undefined) hold.set(until);
+    return until;
   }
 
   /** Holds the session for a turn, or for a context command, until `end`. */
@@ -666,6 +714,19 @@ export class ClaudeCodeSession implements RuntimeSession {
 
 const SIGNED_OUT = /log ?in|logged out|not authenticated|oauth|authentication/i;
 const PLAN_LIMIT = /rate.?limit|usage limit|limit reached/i;
+
+/**
+ * When a reached plan limit resets: the latest reset of the plan's windows
+ * that are full; the soonest reset when none says it is full; or
+ * `MODEL_HOLD_MS` from now when Claude Code reported no window.
+ */
+export function planResetAt(usage: ClaudeCodePlanUsage | undefined, now: number): number {
+  const windows = Object.values(usage?.windows ?? {}).filter(({ resetsAt }) => resetsAt * 1000 > now);
+  const full = windows.filter(({ utilization }) => utilization >= 1).map(({ resetsAt }) => resetsAt * 1000);
+  if (full.length) return Math.max(...full);
+  const ahead = windows.map(({ resetsAt }) => resetsAt * 1000);
+  return ahead.length ? Math.min(...ahead) : now + MODEL_HOLD_MS;
+}
 
 /** A failed turn as an error the person can act on; Claude Code's own text stays in the detail. */
 export function describeFailure(result: ClaudeCodeTurnResult): WispBackendError {

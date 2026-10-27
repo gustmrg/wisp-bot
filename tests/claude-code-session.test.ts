@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   claudeCodeEffort,
   ClaudeCodeSession,
+  planResetAt,
   type ClaudeCodeLaunch,
   type ClaudeCodeQuery,
   type ClaudeCodeQueryHandle,
@@ -112,6 +113,7 @@ function createSession(
     resume?: boolean;
     now?: () => Date;
     fallback?: ClaudeCodeSessionOptions["fallback"];
+    hold?: ClaudeCodeSessionOptions["hold"];
   } = {},
 ) {
   const processes: FakeProcess[] = [];
@@ -146,6 +148,7 @@ function createSession(
     ...(options.state ? { state: options.state } : {}),
     ...(options.now ? { now: options.now } : {}),
     ...(options.fallback ? { fallback: options.fallback } : {}),
+    ...(options.hold ? { hold: options.hold } : {}),
   });
   const events: PiAgentEvent[] = [];
   session.subscribe((event) => events.push(event));
@@ -540,6 +543,74 @@ describe("ClaudeCodeSession fallback", () => {
 
     await expect(session.prompt("hello")).rejects.toMatchObject({ code: "unavailable", retryable: true });
     expect(backup.fallback).not.toHaveBeenCalled();
+  });
+
+  it("holds Claude Code's model until the plan's full window resets, and starts later turns on the fallback", async () => {
+    const now = new Date("2026-10-26T14:00:00.000Z");
+    const resetsAt = Date.parse("2026-10-26T17:00:00.000Z") / 1000;
+    let heldUntil: number | undefined;
+    const hold = { until: () => heldUntil, set: vi.fn((until: number) => (heldUntil = until)) };
+    const backup = fakeFallback();
+    const { session, processes, events } = createSession({
+      now: () => now,
+      hold,
+      fallback: backup.fallback,
+      answer: (process) =>
+        process.push(
+          {
+            type: "rate_limit_event",
+            rate_limit_info: {
+              status: "rejected",
+              unifiedWindows: {
+                five_hour: { utilization: 1, resetsAt },
+                seven_day: { utilization: 0.4, resetsAt: resetsAt + 86_400 },
+              },
+            },
+            session_id: SESSION,
+          },
+          result({ subtype: "success", is_error: true, result: "Claude AI usage limit reached" }),
+        ),
+    });
+
+    await session.prompt("hello");
+    expect(hold.set).toHaveBeenCalledWith(resetsAt * 1000);
+    expect(events).toContainEqual({ type: "model_fallback", model: "GPT-5", until: "2026-10-26T17:00:00.000Z" });
+
+    // While held, the turn goes to the fallback without starting Claude Code again.
+    const started = processes.length;
+    await session.prompt("again");
+    expect(processes).toHaveLength(started);
+    expect(backup.fallback).toHaveBeenCalledTimes(2);
+  });
+
+  it("finds when a reached plan limit resets", () => {
+    const now = Date.parse("2026-10-26T14:00:00.000Z");
+    const at = (hours: number) => now / 1000 + hours * 3600;
+    expect(
+      planResetAt(
+        {
+          status: "rejected",
+          windows: {
+            five_hour: { utilization: 0.5, resetsAt: at(2) },
+            seven_day: { utilization: 1, resetsAt: at(40) },
+          },
+        },
+        now,
+      ),
+    ).toBe(at(40) * 1000);
+    expect(
+      planResetAt(
+        {
+          status: "rejected",
+          windows: {
+            five_hour: { utilization: 0.9, resetsAt: at(2) },
+            seven_day: { utilization: 0.5, resetsAt: at(40) },
+          },
+        },
+        now,
+      ),
+    ).toBe(at(2) * 1000);
+    expect(planResetAt(undefined, now)).toBe(now + 10 * 60_000);
   });
 
   it("stops the fallback model's reply", async () => {

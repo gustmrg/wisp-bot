@@ -11,6 +11,8 @@ import {
   stageOutgoingMessage,
   type StoredConversations,
 } from "../src/lib/conversation-stream.js";
+import { formatClockTime } from "../src/lib/clock-time.js";
+import { systemTimeZone } from "../shared/time-zone.js";
 import type { SequencedConversationAgentEvent } from "../shared/contracts.js";
 import type { ChatSummary, Message } from "../shared/conversations.js";
 
@@ -376,6 +378,25 @@ describe("conversation stream reducer", () => {
         error: { code: "internal_error", message: "Try again." },
       }),
     ]);
+  });
+
+  it("says until when the fallback answers for a model on hold", () => {
+    const until = "2026-10-26T17:30:00.000Z";
+    const state = reduceConversationAgentEvent(
+      createConversationRuntime(0, { one: "working" }),
+      {
+        type: "conversation_notice",
+        conversationId: "one",
+        requestId: "request-1",
+        kind: "fallback_started",
+        until,
+        sequence: 1,
+      },
+      stored(["one"]),
+    );
+    expect(state.activity.one).toBe(
+      `The model is limited. Answering with the fallback model until ${formatClockTime(new Date(until), systemTimeZone())}…`,
+    );
   });
 
   it("says the fallback model is answering, and marks the reply it wrote", () => {

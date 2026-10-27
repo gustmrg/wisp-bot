@@ -34,6 +34,7 @@ import type { McpSignInBrowser } from "./mcp-oauth.js";
 import { MessageQueue } from "./message-queue.js";
 import { MessageScheduler } from "./message-scheduler.js";
 import { catalogModelPricing, ModelPricingService } from "./model-pricing-service.js";
+import { ModelHolds } from "./model-holds.js";
 import { ModelService } from "./model-service.js";
 import { SdkPiSessionFactory } from "./pi-session-factory.js";
 import { WispConversationAgentFactory } from "./wisp-conversation-agent.js";
@@ -280,6 +281,8 @@ export async function createBackendRuntime(options: BackendRuntimeOptions): Prom
     const { modelOverride, fallback } = conversationRepository.getAgentContext(wispId);
     return modelService.getFallbackModel(modelOverride ?? null, fallback ?? null);
   };
+  // Rate limits and outages hold a model for every Wisp of this backend, whichever runtime hit them.
+  const modelHolds = new ModelHolds();
   const piSessionFactory = new SdkPiSessionFactory(
     modelService.getModelRuntime(),
     toolAuthorizationBroker,
@@ -288,6 +291,7 @@ export async function createBackendRuntime(options: BackendRuntimeOptions): Prom
     jobHost,
     fallbackModel,
     wispHost,
+    modelHolds,
   );
   const claudeCodeSessionFactory = new ClaudeCodeSessionFactory({
     builder: new WispSessionBuilder({
@@ -330,6 +334,7 @@ export async function createBackendRuntime(options: BackendRuntimeOptions): Prom
       return { name: model.name || model.id, session };
     },
     processes: new ClaudeCodeProcesses(),
+    holds: modelHolds,
   });
   const sessionFactory = new RoutingSessionFactory(piSessionFactory, claudeCodeSessionFactory);
   const agentFactory: ConversationAgentFactory =

@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { access, readFile } from "node:fs/promises";
 import path from "node:path";
 
+import { CLAUDE_CODE_PROVIDER } from "../../shared/claude-code.js";
 import type { ModelSelection } from "../../shared/contracts.js";
 import { WEB_SEARCH_METADATA } from "../../shared/plugin-tools/web.js";
 import { writeFileAtomically } from "../atomic-file.js";
@@ -9,6 +10,7 @@ import { WispBackendError } from "../backend-error.js";
 import { systemTimeZone } from "../../shared/time-zone.js";
 import { CONTEXT_SETTINGS_FILE, loadContextSettings, saveContextSettings } from "../context-session.js";
 import type { ConversationAgentContext } from "../conversation-agent.js";
+import type { ModelHolds } from "../model-holds.js";
 import type { RuntimeSession } from "../runtime-session.js";
 import { defaultToolRevision, type JobSessionSpec, type WispSessionBuilder } from "../wisp-session-plan.js";
 import { ClaudeCodeJobSession } from "./claude-code-job-session.js";
@@ -76,6 +78,8 @@ export interface ClaudeCodeSessionFactoryOptions {
   webSearch?: (wispId: string) => boolean;
   /** A session on the Wisp's fallback model for a turn Claude Code failed for good (ADR 021), or null. */
   fallback?: (context: ConversationAgentContext) => Promise<{ name: string; session: RuntimeSession } | null>;
+  /** Models on hold after a rate limit or an outage, shared with Pi's sessions (ADR 035). */
+  holds?: ModelHolds;
 }
 
 /** What a process of a conversation or of a job run starts with. */
@@ -147,6 +151,7 @@ export class ClaudeCodeSessionFactory {
       onSessionSaved: (session) => this.writeSession(context, session),
       onTurnResult: (result, converter) => this.recordTurn(context, prepared.model.id, result, converter),
       onFallback: (model) => this.appendUsage(context, claudeCodeFallbackEntry(model, new Date())),
+      ...(this.options.holds ? { hold: modelHold(this.options.holds, prepared.model.id) } : {}),
       ...(this.options.fallback ? { fallback: () => this.options.fallback!(context) } : {}),
       ...(this.options.recentTranscript ? { recentTranscript: () => this.options.recentTranscript!(context) } : {}),
     });
@@ -338,4 +343,10 @@ export class ClaudeCodeSessionFactory {
       `${JSON.stringify({ ...session, ...(pastSessionIds.length ? { pastSessionIds } : {}) }, null, 2)}\n`,
     );
   }
+}
+
+/** The hold on one of Claude Code's models, as a session reads and sets it. */
+function modelHold(holds: ModelHolds, modelId: string): { until(): number | undefined; set(until: number): void } {
+  const model = { provider: CLAUDE_CODE_PROVIDER, id: modelId };
+  return { until: () => holds.heldUntil(model), set: (until) => holds.hold(model, until) };
 }

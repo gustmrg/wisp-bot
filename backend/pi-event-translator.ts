@@ -54,8 +54,8 @@ export type PiAgentEvent =
   | { type: "auto_retry_end"; success?: boolean; finalError?: string }
   | { type: "compaction_start" }
   | { type: "compaction_end" }
-  /** Wisp's own: the turn moved to the fallback model, named here. */
-  | { type: "model_fallback"; model: string };
+  /** Wisp's own: the turn moved to the fallback model, named here, until a hold on the Wisp's model ends, if held. */
+  | { type: "model_fallback"; model: string; until?: string };
 
 type EventPublisher = (event: ConversationAgentEvent) => void;
 
@@ -165,7 +165,7 @@ export class PiEventTranslator {
         // The Wisp's own model failed before answering; its error is not this turn's.
         this.fallbackModel = event.model;
         this.lastErrorMessage = "";
-        this.publishNotice("fallback_started");
+        this.publishNotice("fallback_started", event.until);
         break;
       case "compaction_end":
         this.publishNotice("compaction_finished");
@@ -435,13 +435,17 @@ export class PiEventTranslator {
     return this.fallbackModel ? { fallbackModel: this.fallbackModel } : {};
   }
 
-  private publishNotice(kind: Extract<ConversationAgentEvent, { type: "conversation_notice" }>["kind"]): void {
+  private publishNotice(
+    kind: Extract<ConversationAgentEvent, { type: "conversation_notice" }>["kind"],
+    until?: string,
+  ): void {
     this.flush();
     this.publish({
       type: "conversation_notice",
       conversationId: this.conversationId,
       requestId: this.request?.requestId,
       kind,
+      ...(until ? { until } : {}),
     });
   }
 

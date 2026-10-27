@@ -172,6 +172,14 @@ A fallback model answers when a Wisp's model fails before answering
 A request too large for the model does not move to the fallback; compaction
 shortens it instead.
 
+A model that kept rate limiting or failing after the retries is **on hold**
+until the time its provider named, or for 10 minutes. A Claude Code plan
+limit holds it until the plan's window resets. While a model is on hold, the
+turns of Wisps with a fallback start on the fallback without trying it, and
+the Wisp's activity says "Answering with the fallback model until" and the
+time. The hold covers every Wisp of the environment that uses that model,
+and restarting the app or the server ends it.
+
 **Settings → AI Model → Fallback** chooses the global fallback; it is **Off**
 by default. A Wisp's **Model** tab chooses **Off**, **Use the global
 fallback**, or a model of its own. A Wisp on the global model uses the global

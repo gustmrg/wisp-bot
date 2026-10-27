@@ -10,6 +10,8 @@ import {
 } from "../../shared/conversations";
 import type { ToolApprovalRequest } from "../../shared/tool-policy";
 import { describeMcpAlias, getToolMetadata } from "../../shared/tool-catalog";
+import { systemTimeZone } from "../../shared/time-zone";
+import { formatClockTime } from "@/lib/clock-time";
 
 export interface ConversationRuntimeState {
   sequence: number;
@@ -276,7 +278,7 @@ export function reduceConversationAgentEvent(
         ...next,
         activity: {
           ...next.activity,
-          [event.conversationId]: noticeLabel(event.kind),
+          [event.conversationId]: noticeLabel(event.kind, event.until),
         },
       };
     case "tool_approval_requested":
@@ -593,9 +595,16 @@ function settleWork(state: ConversationRuntimeState, event: ConversationAgentEve
 
 function noticeLabel(
   kind: Extract<ConversationAgentEvent, { type: "conversation_notice" }>["kind"],
+  until?: string,
 ): string | undefined {
   if (kind === "retry_started") return "Retrying the request…";
   if (kind === "compaction_started") return "Compacting conversation context…";
-  if (kind === "fallback_started") return "The model failed. Answering with the fallback model…";
+  if (kind === "fallback_started") {
+    const ends = until ? new Date(until) : undefined;
+    // In the device's own zone and convention: the activity line is computed outside the settings' reach.
+    return ends && !Number.isNaN(ends.getTime())
+      ? `The model is limited. Answering with the fallback model until ${formatClockTime(ends, systemTimeZone())}…`
+      : "The model failed. Answering with the fallback model…";
+  }
   return undefined;
 }
