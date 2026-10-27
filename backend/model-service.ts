@@ -21,11 +21,29 @@ import {
 } from "../shared/contracts.js";
 import { CLAUDE_CODE_PROVIDER, type ClaudeCodeStatusView } from "../shared/claude-code.js";
 import { providerKind, type ProviderRuntime } from "../shared/provider-kinds.js";
+import {
+  MAX_CUSTOM_ENDPOINTS,
+  type CustomEndpointModelsView,
+  type CustomEndpointView,
+  type DetectedEndpointsView,
+  type LoadCustomEndpointModelsRequest,
+  type SaveCustomEndpointRequest,
+} from "../shared/custom-endpoints.js";
 import { isVoiceProviderId, type VoiceCredentialSource } from "../shared/voice.js";
 import { WispBackendError } from "./backend-error.js";
 import { AiSettingsStore } from "./ai-settings-store.js";
 import { EncryptedCredentialStore, type EncryptionService } from "./encrypted-credential-store.js";
 import type { SignInBrowser } from "./oauth-redirect.js";
+import {
+  CustomEndpointStore,
+  detectLocalEndpoints,
+  fetchEndpointModels,
+  newCustomEndpointId,
+  piProviderConfig,
+  sameOrigin,
+  type FetchFunction,
+  type StoredCustomEndpoint,
+} from "./custom-endpoints.js";
 import { CLAUDE_CODE_MODELS, CLAUDE_CODE_PROVIDER_NAME, claudeCodeModel } from "./claude-code/claude-code-models.js";
 import { claudeCodeUnavailableMessage, type ClaudeCodeStatusService } from "./claude-code/claude-code-status.js";
 
@@ -60,6 +78,9 @@ export interface ModelRuntimeLike {
   login(providerId: string, type: "oauth", interaction: AuthInteraction, options?: LoginOptions): Promise<unknown>;
   /** Deletes the provider's stored credential. */
   logout(providerId: string): Promise<void>;
+  /** Adds or replaces a provider of Wisp's own, such as a custom endpoint, beside the catalog's. */
+  registerProvider(providerId: string, config: Parameters<ModelRuntime["registerProvider"]>[1]): void;
+  unregisterProvider(providerId: string): void;
 }
 
 interface ModelServiceOptions {
@@ -80,6 +101,12 @@ interface ModelServiceOptions {
   signInBrowser?: () => Promise<SignInBrowser>;
   /** Whether Claude Code can run Wisps; without it, the `claude-code` provider is not offered (ADR 026). */
   claudeCode?: ClaudeCodeStatusSource;
+  /** The OpenAI-compatible endpoints the person added (ADR 031); without it, none can be added. */
+  customEndpoints?: CustomEndpointStore;
+  /** How endpoints' model lists are read; tests answer for them. */
+  fetch?: FetchFunction;
+  /** Where local model servers are looked for; tests point it away from real ones. */
+  localEndpoints?: ReadonlyArray<{ name: string; baseUrl: string }>;
 }
 
 export interface CreateModelServiceOptions {
@@ -90,6 +117,8 @@ export interface CreateModelServiceOptions {
   claudeCode?: ClaudeCodeStatusSource;
   openExternal?: (url: string) => Promise<void>;
   signInBrowser?: () => Promise<SignInBrowser>;
+  fetch?: FetchFunction;
+  localEndpoints?: ReadonlyArray<{ name: string; baseUrl: string }>;
 }
 
 /** A subscription sign-in waiting on the browser, or the last one that failed. */
@@ -190,6 +219,9 @@ export class ModelService {
   private readonly signInBrowser: ModelServiceOptions["signInBrowser"];
   private signIn: ProviderSignIn | undefined;
   private readonly claudeCode: ClaudeCodeStatusSource | undefined;
+  private readonly customEndpoints: CustomEndpointStore | undefined;
+  private readonly fetch: FetchFunction | undefined;
+  private readonly localEndpoints: ModelServiceOptions["localEndpoints"];
   private readonly runtimeRules: Record<ProviderRuntime, RuntimeRules> = {
     pi: {
       model: (selection) => this.catalogModel(selection),
@@ -210,6 +242,9 @@ export class ModelService {
     this.openExternal = options.openExternal;
     this.signInBrowser = options.signInBrowser;
     this.claudeCode = options.claudeCode;
+    this.customEndpoints = options.customEndpoints;
+    this.fetch = options.fetch;
+    this.localEndpoints = options.localEndpoints;
   }
 
   static async create(options: CreateModelServiceOptions): Promise<ModelService> {
@@ -240,13 +275,24 @@ export class ModelService {
       ...(options.openExternal ? { openExternal: options.openExternal } : {}),
       ...(options.signInBrowser ? { signInBrowser: options.signInBrowser } : {}),
       ...(options.claudeCode ? { claudeCode: options.claudeCode } : {}),
+      customEndpoints: new CustomEndpointStore(path.join(options.dataDirectory, "custom-endpoints.json")),
+      ...(options.fetch ? { fetch: options.fetch } : {}),
+      ...(options.localEndpoints ? { localEndpoints: options.localEndpoints } : {}),
     });
+    await service.registerCustomEndpoints();
     // Restore saved credentials and cached catalog entries offline, so the app
     // is usable without waiting on the network. The availability pass that
     // populates hasConfiguredAuth() must complete here, not on a network signal
     // that may time out, or saved keys would look unconfigured.
     service.catalogRefreshError = describeRefreshFailure(await runtime.refresh({ allowNetwork: false }));
     return service;
+  }
+
+  /** Gives Pi the saved custom endpoints, before the availability pass that finds their keys. */
+  async registerCustomEndpoints(): Promise<void> {
+    for (const endpoint of (await this.customEndpoints?.list()) ?? []) {
+      this.runtime.registerProvider(endpoint.id, piProviderConfig(endpoint));
+    }
   }
 
   /**
@@ -283,7 +329,8 @@ export class ModelService {
       .map((provider) => ({
         id: provider.id,
         name: provider.name,
-        credentialConfigured: credentialTypes.has(provider.id),
+        // A custom endpoint without a key is called without one.
+        credentialConfigured: providerKind(provider.id).credential === "optional" || credentialTypes.has(provider.id),
         ...(credentialTypes.has(provider.id)
           ? {
               credentialKind:
@@ -298,7 +345,7 @@ export class ModelService {
       .filter((provider) => provider.models.length > 0)
       .sort(compareByName);
 
-    const credentialProviders: ReadonlySet<string> = new Set(credentialTypes.keys());
+    const usableProviders = await this.usableProviders();
     const claudeCode = await this.claudeCodeStatus();
     if (claudeCode) {
       providers.push({
@@ -325,13 +372,14 @@ export class ModelService {
     return {
       selection,
       auxiliary: {
-        imageUnderstanding: this.auxiliaryView(auxiliary.imageUnderstanding, credentialProviders),
+        imageUnderstanding: this.auxiliaryView(auxiliary.imageUnderstanding, usableProviders),
       },
-      fallback: this.fallbackView(await this.settings.getFallback(), credentialProviders),
+      fallback: this.fallbackView(await this.settings.getFallback(), usableProviders),
       secureStorageAvailable: this.credentials.isSecureStorageAvailable(),
       providers,
       providerSignIn: this.signInView(),
       ...(claudeCode ? { claudeCode } : {}),
+      ...(this.customEndpoints ? { customEndpoints: await this.customEndpointViews(credentialTypes) } : {}),
       catalogError: errors.length > 0 ? errors.join("\n") : null,
     };
   }
@@ -346,8 +394,12 @@ export class ModelService {
     if (kind.credential === "external" && request.apiKey !== undefined) {
       throw new WispBackendError("invalid_request", "This provider signs in on its own and takes no API key.");
     }
+    // A custom endpoint's key is set with the endpoint, so it stays with the address it was given for.
+    if (kind.credential === "optional" && request.apiKey !== undefined) {
+      throw new WispBackendError("invalid_request", "Set this endpoint's API key under Custom endpoints.");
+    }
     await this.assertRuntimeAvailable(selection.providerId, "invalid_configuration");
-    if (kind.credential === "external") {
+    if (kind.credential !== "required") {
       await this.settings.setSelection(selection);
       return this.getView();
     }
@@ -379,7 +431,7 @@ export class ModelService {
    */
   async saveAuxiliary(task: AuxiliaryTask, selection: ModelSelection | null): Promise<AiSettingsView> {
     if (selection) {
-      const reason = this.auxiliaryUnavailableReason(selection, await this.listCredentialProviders());
+      const reason = this.auxiliaryUnavailableReason(selection, await this.usableProviders());
       if (reason) {
         throw new WispBackendError(
           "invalid_configuration",
@@ -402,7 +454,7 @@ export class ModelService {
   async getAuxiliaryModel(task: AuxiliaryTask): Promise<ModelSelection | null> {
     const selection = (await this.settings.getAuxiliary())[task];
     if (!selection) return null;
-    return this.auxiliaryUnavailableReason(selection, await this.listCredentialProviders()) ? null : selection;
+    return this.auxiliaryUnavailableReason(selection, await this.usableProviders()) ? null : selection;
   }
 
   /**
@@ -417,7 +469,7 @@ export class ModelService {
 
   /** Checks a fallback a person is choosing: a catalog model whose provider has a saved key. */
   async assertUsableFallback(selection: ModelSelection): Promise<void> {
-    const reason = this.fallbackUnavailableReason(selection, await this.listCredentialProviders());
+    const reason = this.fallbackUnavailableReason(selection, await this.usableProviders());
     if (reason) {
       throw new WispBackendError(
         "invalid_configuration",
@@ -439,7 +491,7 @@ export class ModelService {
     const choice = wispFallbackChoice(modelOverride, saved);
     if (choice === "off") return null;
     const selection = choice === "global" ? await this.settings.getFallback() : choice;
-    if (!selection || this.fallbackUnavailableReason(selection, await this.listCredentialProviders())) return null;
+    if (!selection || this.fallbackUnavailableReason(selection, await this.usableProviders())) return null;
     const primary = modelOverride ?? (await this.settings.getSelection());
     return primary && sameModel(primary, selection)
       ? null
@@ -499,6 +551,15 @@ export class ModelService {
     return new Set((await this.credentials.list()).map(({ providerId }) => providerId));
   }
 
+  /** Providers Wisps can use without more setup: a saved credential, or a kind that needs none. */
+  private async usableProviders(): Promise<ReadonlySet<string>> {
+    const providers = new Set(await this.listCredentialProviders());
+    for (const { id } of this.runtime.getProviders()) {
+      if (providerKind(id).credential === "optional") providers.add(id);
+    }
+    return providers;
+  }
+
   isSecureStorageAvailable(): boolean {
     return this.credentials.isSecureStorageAvailable();
   }
@@ -545,6 +606,9 @@ export class ModelService {
     const provider = this.runtime.getProvider(providerId);
     if (!provider?.auth.apiKey) {
       throw new WispBackendError("invalid_request", "The provider is invalid.");
+    }
+    if (providerKind(providerId).credential === "optional") {
+      throw new WispBackendError("invalid_request", "Remove this endpoint's API key under Custom endpoints.");
     }
 
     const credential = await this.credentials.read(providerId);
@@ -711,6 +775,118 @@ export class ModelService {
     return this.getView();
   }
 
+  /**
+   * Adds an endpoint, or changes one, and gives its models to Pi at once. A
+   * saved key stays with the address it was given for: moving the endpoint
+   * to another origin takes the key again, or its removal.
+   */
+  async saveCustomEndpoint(request: SaveCustomEndpointRequest): Promise<AiSettingsView> {
+    const store = this.requireCustomEndpoints();
+    const endpoints = await store.list();
+    const index = request.id === undefined ? -1 : endpoints.findIndex(({ id }) => id === request.id);
+    if (request.id !== undefined && index < 0) {
+      throw new WispBackendError("not_found", "That custom endpoint no longer exists.");
+    }
+    if (index < 0 && endpoints.length >= MAX_CUSTOM_ENDPOINTS) {
+      throw new WispBackendError("invalid_request", `Add at most ${MAX_CUSTOM_ENDPOINTS} custom endpoints.`);
+    }
+    const apiKey = request.apiKey?.trim();
+    if (request.apiKey !== undefined && !apiKey)
+      throw new WispBackendError("invalid_request", "Enter a valid API key.");
+    if (apiKey && request.removeKey) {
+      throw new WispBackendError("invalid_request", "Enter a new API key or remove the saved one, not both.");
+    }
+    if (apiKey) this.assertSecureStorage();
+
+    const previous = endpoints[index];
+    const id = previous?.id ?? newCustomEndpointId();
+    const keySaved = previous ? Boolean(await this.credentials.read(id)) : false;
+    if (previous && keySaved && !apiKey && !request.removeKey && !sameOrigin(previous.baseUrl, request.baseUrl)) {
+      throw new WispBackendError(
+        "invalid_request",
+        "Enter the API key again, or remove it, to use this endpoint at another address.",
+      );
+    }
+
+    const endpoint: StoredCustomEndpoint = {
+      id,
+      name: request.name,
+      baseUrl: request.baseUrl,
+      models: [...request.models],
+    };
+    await store.save(
+      index < 0
+        ? [...endpoints, endpoint]
+        : endpoints.map((saved, position) => (position === index ? endpoint : saved)),
+    );
+    // Registering again only replaces what it names, so the previous registration goes first.
+    if (previous) this.runtime.unregisterProvider(id);
+    this.runtime.registerProvider(id, piProviderConfig(endpoint));
+    if (apiKey) await this.storeApiKey(id, apiKey);
+    else if (request.removeKey) await this.removeEndpointKey(id);
+    return this.getView();
+  }
+
+  /** Removes an endpoint and its key. Wisps, fallbacks, and image models that chose one of its models keep the choice, shown as unavailable. */
+  async removeCustomEndpoint(id: string): Promise<AiSettingsView> {
+    const store = this.requireCustomEndpoints();
+    const endpoints = await store.list();
+    if (!endpoints.some((endpoint) => endpoint.id === id)) {
+      throw new WispBackendError("not_found", "That custom endpoint no longer exists.");
+    }
+    await store.save(endpoints.filter((endpoint) => endpoint.id !== id));
+    this.runtime.unregisterProvider(id);
+    await this.removeEndpointKey(id);
+    const selection = await this.settings.getSelection();
+    if (selection?.providerId === id) await this.settings.setSelection(null);
+    return this.getView();
+  }
+
+  /** The models an endpoint lists, with the key typed into the form, or a saved endpoint's key at its own address only. */
+  async loadCustomEndpointModels(request: LoadCustomEndpointModelsRequest): Promise<CustomEndpointModelsView> {
+    const store = this.requireCustomEndpoints();
+    let apiKey = request.apiKey?.trim() || undefined;
+    if (!apiKey && request.id !== undefined) {
+      const saved = (await store.list()).find(({ id }) => id === request.id);
+      if (saved && sameOrigin(saved.baseUrl, request.baseUrl)) {
+        const credential = await this.credentials.read(saved.id);
+        if (credential?.type === "api_key" && credential.key) apiKey = credential.key;
+      }
+    }
+    return { models: await fetchEndpointModels(request.baseUrl, apiKey, this.fetch ? { fetch: this.fetch } : {}) };
+  }
+
+  /** Local model servers answering on this computer at their usual addresses, asked without a key. */
+  async detectLocalEndpoints(): Promise<DetectedEndpointsView> {
+    this.requireCustomEndpoints();
+    return {
+      endpoints: await detectLocalEndpoints({
+        ...(this.fetch ? { fetch: this.fetch } : {}),
+        ...(this.localEndpoints ? { candidates: this.localEndpoints } : {}),
+      }),
+    };
+  }
+
+  private requireCustomEndpoints(): CustomEndpointStore {
+    if (!this.customEndpoints) throw new WispBackendError("unsupported", "Custom endpoints are not available here.");
+    return this.customEndpoints;
+  }
+
+  private async removeEndpointKey(id: string): Promise<void> {
+    await this.runtime.removeRuntimeApiKey(id);
+    await this.credentials.delete(id);
+  }
+
+  private async customEndpointViews(credentialTypes: ReadonlyMap<string, string>): Promise<CustomEndpointView[]> {
+    return ((await this.customEndpoints?.list()) ?? []).map(({ id, name, baseUrl, models }) => ({
+      id,
+      name,
+      baseUrl,
+      keySaved: credentialTypes.has(id),
+      models,
+    }));
+  }
+
   getModelRuntime(): ModelRuntimeLike {
     return this.runtime;
   }
@@ -719,17 +895,13 @@ export class ModelService {
     const selection = await this.settings.getSelection();
     if (!selection || !this.isValidSelection(selection)) return null;
     if (await this.runtimeUnavailable(selection.providerId)) return null;
-    if (providerKind(selection.providerId).credential === "external") return selection;
-    const credential = await this.credentials.read(selection.providerId);
-    return this.isUsableCredential(selection.providerId, credential) ? selection : null;
+    return (await this.hasUsableCredential(selection.providerId)) ? selection : null;
   }
 
   async validateConversationSelection(selection: ModelSelection): Promise<void> {
     this.assertValidSelection(selection);
     await this.assertRuntimeAvailable(selection.providerId, "configuration_required");
-    if (providerKind(selection.providerId).credential === "external") return;
-    const credential = await this.credentials.read(selection.providerId);
-    if (!this.isUsableCredential(selection.providerId, credential)) {
+    if (!(await this.hasUsableCredential(selection.providerId))) {
       throw new WispBackendError(
         "configuration_required",
         "Configure an API key for this provider in AI Model settings.",
@@ -740,6 +912,12 @@ export class ModelService {
   private offersSubscriptionSignIn(providerId: string): boolean {
     const provider = this.runtime.getProvider(providerId);
     return SUBSCRIPTION_SIGN_IN_PROVIDERS.has(providerId) && provider?.auth.oauth?.isSubscription === true;
+  }
+
+  /** Whether Wisp holds what the provider needs from it: nothing, for one that signs in on its own or needs no key. */
+  private async hasUsableCredential(providerId: string): Promise<boolean> {
+    if (providerKind(providerId).credential !== "required") return true;
+    return this.isUsableCredential(providerId, await this.credentials.read(providerId));
   }
 
   /** An API key, or a sign-in for a provider whose sign-in Wisp offers. */
@@ -762,29 +940,26 @@ export class ModelService {
     };
   }
 
-  private auxiliaryView(
-    selection: ModelSelection | null,
-    credentialProviders: ReadonlySet<string>,
-  ): AuxiliaryModelView {
+  private auxiliaryView(selection: ModelSelection | null, usableProviders: ReadonlySet<string>): AuxiliaryModelView {
     return {
       selection,
-      unavailable: selection ? this.auxiliaryUnavailableReason(selection, credentialProviders) : null,
+      unavailable: selection ? this.auxiliaryUnavailableReason(selection, usableProviders) : null,
     };
   }
 
-  private fallbackView(selection: ModelSelection | null, credentialProviders: ReadonlySet<string>): FallbackModelView {
+  private fallbackView(selection: ModelSelection | null, usableProviders: ReadonlySet<string>): FallbackModelView {
     return {
       selection,
-      unavailable: selection ? this.fallbackUnavailableReason(selection, credentialProviders) : null,
+      unavailable: selection ? this.fallbackUnavailableReason(selection, usableProviders) : null,
     };
   }
 
   private fallbackUnavailableReason(
     selection: ModelSelection,
-    credentialProviders: ReadonlySet<string>,
+    usableProviders: ReadonlySet<string>,
   ): FallbackModelUnavailableReason | null {
     if (!this.catalogModel(selection)) return "model_unavailable";
-    return credentialProviders.has(selection.providerId) ? null : "missing_key";
+    return usableProviders.has(selection.providerId) ? null : "missing_key";
   }
 
   /** The catalog model a selection names, from a provider that takes API keys. */
@@ -796,12 +971,12 @@ export class ModelService {
 
   private auxiliaryUnavailableReason(
     selection: ModelSelection,
-    credentialProviders: ReadonlySet<string>,
+    usableProviders: ReadonlySet<string>,
   ): AuxiliaryModelUnavailableReason | null {
     const model = this.catalogModel(selection);
     if (!model) return "model_unavailable";
     if (!model.input.includes("image")) return "no_image_input";
-    return credentialProviders.has(selection.providerId) ? null : "missing_key";
+    return usableProviders.has(selection.providerId) ? null : "missing_key";
   }
 
   /** The latest Claude Code status, checking again when it is stale; undefined without Claude Code support. */

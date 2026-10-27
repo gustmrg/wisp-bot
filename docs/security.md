@@ -23,7 +23,12 @@ operating-system-backed `safeStorage` API:
 - Windows: DPAPI-backed encryption for the current OS user;
 - Linux: the desktop secret store selected by Electron.
 
-Saved keys are never returned to the renderer. Wisp refuses to persist keys
+Saved keys are never returned to the renderer. A custom endpoint's key is kept
+with the model keys and sent only to that endpoint's origin: its model list is
+read without following redirects, and changing the endpoint's origin requires
+entering the key again or removing it. Wisp never puts a person's key in Pi's
+provider configuration, where a leading `!` would run a command and `$NAME`
+would read an environment variable. Wisp refuses to persist keys
 when secure storage is unavailable (including Electron's `basic_text` fallback
 on Linux); plaintext files, renderer storage, environment values, command-line
 arguments, telemetry, and logs are prohibited credential locations. Unreadable

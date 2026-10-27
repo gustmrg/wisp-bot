@@ -112,6 +112,18 @@ function completeBridge(): WispApi {
     finishProviderSignIn: async () => {
       throw new Error("not called");
     },
+    saveCustomEndpoint: async () => {
+      throw new Error("not called");
+    },
+    removeCustomEndpoint: async () => {
+      throw new Error("not called");
+    },
+    loadCustomEndpointModels: async () => {
+      throw new Error("not called");
+    },
+    detectLocalEndpoints: async () => {
+      throw new Error("not called");
+    },
     getConversationState: async () => {
       throw new Error("not called");
     },

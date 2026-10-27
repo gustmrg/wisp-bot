@@ -46,7 +46,9 @@ preset.
   [ADR 010](docs/decisions/010-wisp-entity.md).
 - **Bring your own keys, model per Wisp** — provider keys are stored encrypted
   and shared; each Wisp can use the global model or its own provider, model,
-  and reasoning level. See [AI models](docs/models.md).
+  and reasoning level. Local and self-hosted models run through any
+  OpenAI-compatible endpoint, such as Ollama or LM Studio. See
+  [AI models](docs/models.md).
 - **Persistent agent conversations** — one durable Pi session per Wisp, with
   streaming events, retries, and compaction.
 - **Bundled plugins** — web search and page reading (Brave Search,

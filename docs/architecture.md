@@ -142,8 +142,8 @@ wisp-bot/
 
 Conversations, Pi session files, usage history, and backend policy are stored
 under Electron's user-data directory, including versioned integration state
-(`plugins.json`, `mcp-servers.json`) and separately encrypted credential
-stores for model keys, plugin keys, and MCP secrets. Unpackaged dev runs
+(`plugins.json`, `mcp-servers.json`, `custom-endpoints.json`) and separately
+encrypted credential stores for model keys, plugin keys, and MCP secrets. Unpackaged dev runs
 redirect that directory to `wisp-bot-dev` (override with the `WISP_DATA_DIR`
 environment variable) so testing never touches the installed app's data.
 

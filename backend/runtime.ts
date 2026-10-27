@@ -11,6 +11,7 @@ import type { ConversationDelta, Wisp, WispsView } from "../shared/conversations
 import type { JobsView } from "../shared/jobs.js";
 import type { McpSettingsView } from "../shared/mcp.js";
 import type { PluginSettingsView } from "../shared/plugins.js";
+import { providerKind } from "../shared/provider-kinds.js";
 import type { MessageQueueView } from "../shared/message-queue.js";
 import type { ScheduledMessagesView } from "../shared/scheduled-messages.js";
 import type { AgentMode } from "./agent-mode.js";
@@ -464,6 +465,8 @@ export async function createBackendRuntime(options: BackendRuntimeOptions): Prom
     conversationRepository,
     new ModelPricingService({ cacheFilePath: path.join(dataDirectory, "model-pricing.json") }),
     (providerId, modelId) => {
+      // A custom endpoint's models list no price, which is not the same as costing nothing.
+      if (providerKind(providerId).prices === "unknown") return null;
       const model = modelService.getModelRuntime().getModel(providerId, modelId);
       return model ? catalogModelPricing(model.cost) : null;
     },

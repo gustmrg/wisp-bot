@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { AiSettingsView, ProviderSignInView, ProviderSummary, ThinkingLevel } from "../../shared/contracts";
 import { AdvancedSettings } from "@/components/advanced-settings";
 import { AuxiliaryModelSettings } from "@/components/auxiliary-model-settings";
+import { CustomEndpointSettings } from "@/components/custom-endpoint-settings";
 import { FallbackModelSettings } from "@/components/fallback-model-settings";
 import { ManualSignInForm } from "@/components/manual-sign-in";
 import { NoImageInputNote } from "@/components/no-image-input-note";
@@ -237,6 +238,20 @@ function ModelSettingsSection({
     return undefined;
   }
 
+  /** Offers a just-added endpoint's first model in the provider picker, ready to save. */
+  function handleEndpointCreated(nextView: AiSettingsView, endpointId: string): void {
+    applyAuxiliaryView(nextView);
+    const created = nextView.providers.find(({ id }) => id === endpointId);
+    if (!created) return;
+    setProviderId(endpointId);
+    setModelId(created.models[0]?.id ?? "");
+    setMaxOutputTokens("");
+    setThinkingLevel("off");
+    setApiKey("");
+    setError(null);
+    setSaved(false);
+  }
+
   /** Reads Claude Code's status again, after the person signed in or updated it, without losing edits. */
   async function handleCheckClaudeCode(): Promise<void> {
     setError(null);
@@ -403,6 +418,16 @@ function ModelSettingsSection({
           {/* Only Claude Code signs in outside Wisp (ADR 026). */}
           {kind?.credential === "external" ? (
             <ClaudeCodeStatusCard status={view.claudeCode} onCheckAgain={() => void handleCheckClaudeCode()} />
+          ) : kind?.credential === "optional" ? (
+            <SettingsGroup label="Credential">
+              <SettingsCard>
+                <SettingsRow>
+                  <SettingsRowDescription>
+                    {provider?.name}'s address and API key are set under Custom endpoints below.
+                  </SettingsRowDescription>
+                </SettingsRow>
+              </SettingsCard>
+            </SettingsGroup>
           ) : (
             <SettingsGroup label="Credential">
               <SettingsCard>
@@ -480,6 +505,13 @@ function ModelSettingsSection({
               </Button>
             </div>
           </div>
+
+          {/* A server from before custom endpoints reports none; it cannot add one either. */}
+          {view.customEndpoints ? (
+            <div className="mt-6 border-t border-border pt-2">
+              <CustomEndpointSettings view={view} onViewChange={applyAuxiliaryView} onCreated={handleEndpointCreated} />
+            </div>
+          ) : null}
 
           {showAuxiliaryModels ? (
             <div className="mt-6 border-t border-border pt-2">
