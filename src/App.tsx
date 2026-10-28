@@ -34,6 +34,7 @@ import { matchesShortcut, TOGGLE_SIDEBAR_SHORTCUT } from "@/lib/shortcuts";
 import { mainPanel } from "@/lib/ui-classes";
 import { cn } from "@/lib/utils";
 import type { SettingsPluginId } from "@/lib/plugin-access";
+import { createWispFromTemplate } from "@/lib/wisp-template-actions";
 
 export default function App() {
   const userProfile = useUserProfile();
@@ -152,6 +153,17 @@ function Workspace({
   function applyChatAction(chatId: string, action: ChatListAction) {
     if (action === "unread") setKeptUnreadChatId(chatId);
     void workspace.applyChatAction(chatId, action);
+  }
+
+  /** Creates a Wisp and shows its conversation, from the create dialog or a template. */
+  async function createWisp(...[wisp, options]: Parameters<typeof workspace.createWisp>): Promise<string | null> {
+    const id = await workspace.createWisp(wisp, options);
+    if (id) {
+      navigationVersion.current += 1;
+      if (mobile) setDetailsOpen(false);
+      setMobilePage("chat");
+    }
+    return id;
   }
 
   function selectChat(chatId: string) {
@@ -289,15 +301,7 @@ function Workspace({
               failedChats={workspace.failedChats}
               loading={workspace.loading}
               error={workspace.error}
-              onCreate={async (wisp, options) => {
-                const id = await workspace.createWisp(wisp, options);
-                if (id) {
-                  navigationVersion.current += 1;
-                  if (mobile) setDetailsOpen(false);
-                  setMobilePage("chat");
-                }
-                return id;
-              }}
+              onCreate={createWisp}
               onCreateCircle={async (circle) => {
                 const created = await workspace.createCircle(circle);
                 if (created) {
@@ -439,6 +443,13 @@ function Workspace({
             persistenceStatus={workspace.persistenceStatus}
             persistenceError={workspace.persistenceError}
             onPreferencesChange={workspace.updatePreferences}
+            onUseTemplate={({ template }) =>
+              createWispFromTemplate(
+                template,
+                wisps.map(({ name }) => name),
+                createWisp,
+              )
+            }
           />
           <UpdateToast
             displayName={APP_METADATA.displayName}

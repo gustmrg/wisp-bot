@@ -1,6 +1,6 @@
-import { render, screen, within } from "@testing-library/react";
+import { act, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { afterEach, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { BUILTIN_WISP_TEMPLATES } from "../../shared/builtin-wisp-templates";
 import { parseWispTemplate, type WispTemplateEntry } from "../../shared/wisp-template";
@@ -199,19 +199,96 @@ it("exports a template as a file", async () => {
   }
 });
 
-it("offers Use only when the section can start a Wisp from a template", async () => {
-  const user = userEvent.setup();
-  install();
-  const onUseTemplate = vi.fn();
-  const { unmount } = render(<TemplateSettingsSection />);
-  await screen.findByRole("button", { name: "Preview Atlas" });
-  expect(screen.queryByRole("button", { name: "Use Atlas" })).not.toBeInTheDocument();
-  unmount();
+describe("Use", () => {
+  const created = { status: "created", name: "Atlas", notices: [] } as const;
 
-  render(<TemplateSettingsSection onUseTemplate={onUseTemplate} />);
-  const card = (await screen.findByRole("button", { name: "Preview Atlas" })).closest("li")!;
-  await user.click(within(card).getByRole("button", { name: "Use Atlas" }));
-  expect(onUseTemplate).toHaveBeenCalledWith(expect.objectContaining({ id: "builtin-research" }));
+  it("is offered only when the section can create a Wisp", async () => {
+    install();
+    render(<TemplateSettingsSection />);
+    await screen.findByRole("button", { name: "Preview Atlas" });
+    expect(screen.queryByRole("button", { name: "Use Atlas" })).not.toBeInTheDocument();
+  });
+
+  it("creates a built-in template's Wisp at once and closes, without asking anything", async () => {
+    const user = userEvent.setup();
+    install();
+    const onUseTemplate = vi.fn(async () => created);
+    const onClose = vi.fn();
+    render(<TemplateSettingsSection onUseTemplate={onUseTemplate} onClose={onClose} />);
+
+    await user.click(await screen.findByRole("button", { name: "Use Atlas" }));
+
+    expect(onUseTemplate).toHaveBeenCalledWith(expect.objectContaining({ id: "builtin-research" }));
+    expect(onClose).toHaveBeenCalledOnce();
+  });
+
+  it("creates only one Wisp while the first is being made", async () => {
+    const user = userEvent.setup();
+    install();
+    let finish = (_result: typeof created) => undefined as void;
+    const onUseTemplate = vi.fn(() => new Promise<typeof created>((resolve) => (finish = resolve)));
+    render(<TemplateSettingsSection onUseTemplate={onUseTemplate} onClose={vi.fn()} />);
+
+    const use = await screen.findByRole("button", { name: "Use Atlas" });
+    await user.click(use);
+    expect(use).toBeDisabled();
+    expect(use).toHaveTextContent("Creating…");
+    expect(screen.getByRole("button", { name: "Use Pip" })).toBeDisabled();
+    await act(async () => finish(created));
+
+    expect(onUseTemplate).toHaveBeenCalledOnce();
+  });
+
+  it("opens a saved template with skills before using it, so its content is approved", async () => {
+    const user = userEvent.setup();
+    install();
+    const onUseTemplate = vi.fn(async () => ({ ...created, name: "Release Manager" }));
+    render(<TemplateSettingsSection onUseTemplate={onUseTemplate} onClose={vi.fn()} />);
+
+    await user.click(await screen.findByRole("button", { name: "Use Release Manager" }));
+    expect(onUseTemplate).not.toHaveBeenCalled();
+    expect(screen.getByRole("heading", { name: "Release Manager" })).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Use template" }));
+    expect(onUseTemplate).toHaveBeenCalledWith(expect.objectContaining({ id: saved.id }));
+  });
+
+  it("stays open to say what still needs the person", async () => {
+    const user = userEvent.setup();
+    install();
+    const notice = "Atlas asks for more access. Turn on what you want in its Access tab.";
+    const onClose = vi.fn();
+    render(
+      <TemplateSettingsSection
+        onUseTemplate={vi.fn(async () => ({ ...created, notices: [notice] }))}
+        onClose={onClose}
+      />,
+    );
+
+    await user.click(await screen.findByRole("button", { name: "Use Atlas" }));
+
+    expect(await screen.findByText(notice)).toBeInTheDocument();
+    expect(onClose).not.toHaveBeenCalled();
+    await user.click(screen.getByRole("button", { name: "Open Atlas" }));
+    expect(onClose).toHaveBeenCalledOnce();
+  });
+
+  it("leads to AI Model when no model can answer", async () => {
+    const user = userEvent.setup();
+    install();
+    const onOpenModelSettings = vi.fn();
+    render(
+      <TemplateSettingsSection
+        onUseTemplate={vi.fn(async () => ({ status: "needs_model" as const }))}
+        onOpenModelSettings={onOpenModelSettings}
+      />,
+    );
+
+    await user.click(await screen.findByRole("button", { name: "Use Atlas" }));
+    await user.click(await screen.findByRole("button", { name: "Open AI Model" }));
+
+    expect(onOpenModelSettings).toHaveBeenCalledOnce();
+  });
 });
 
 it("explains that an older server has no templates", async () => {

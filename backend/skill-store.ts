@@ -8,6 +8,7 @@ import {
   MAX_SKILLS_PER_WISP,
   checkSkillDocument,
   checkSkillDraft,
+  formatSkillFile,
   isValidSkillName,
   parseSkillFile,
   type SkillDraft,
@@ -17,7 +18,7 @@ import {
 import { writeFileAtomically } from "./atomic-file.js";
 import { WispBackendError } from "./backend-error.js";
 
-export { MAX_SKILL_FILE_BYTES, parseSkillFile, type SkillDraft };
+export { MAX_SKILL_FILE_BYTES, formatSkillFile, parseSkillFile, type SkillDraft };
 
 const SKILL_FILE = "SKILL.md";
 
@@ -125,11 +126,6 @@ export function validateSkillDraft(value: unknown): SkillDraft {
   const checked = checkSkillDraft(value);
   if (!checked.ok) throw new WispBackendError("invalid_request", checked.error);
   return checked.draft;
-}
-
-export function formatSkillFile(skill: SkillDraft): string {
-  // JSON strings are valid YAML double-quoted scalars.
-  return `---\nname: ${skill.name}\ndescription: ${JSON.stringify(skill.description)}\n---\n\n${skill.instructions}\n`;
 }
 
 /**
