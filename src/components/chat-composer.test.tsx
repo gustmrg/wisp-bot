@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -283,6 +283,20 @@ describe("ChatComposer", () => {
     expect(attachWorkspaceFiles).toHaveBeenCalledTimes(2);
   });
 
+  it("shows a message being queued on the send button, not in a line above the composer", async () => {
+    const user = userEvent.setup();
+    const { rerender } = render(<ChatComposer {...defaultProps} chat={wisp("one", "One")} />);
+    await user.type(screen.getByRole("combobox", { name: "Message One" }), "Hello");
+    rerender(<ChatComposer {...defaultProps} chat={wisp("one", "One")} acknowledging />);
+
+    const send = screen.getByRole("button", { name: "Send message" });
+    expect(send).toHaveAttribute("aria-busy", "true");
+    expect(send).toBeDisabled();
+    expect(send.querySelector("svg")).toHaveClass("animate-spin");
+    expect(screen.getByRole("status")).toBeEmptyDOMElement();
+    expect(screen.getByText("Queueing your message…")).toHaveClass("sr-only");
+  });
+
   it("says which file is being sent and cancels an attach that does not finish", async () => {
     const user = userEvent.setup();
     let signal: AbortSignal | undefined;
@@ -297,10 +311,13 @@ describe("ChatComposer", () => {
     render(<ChatComposer {...defaultProps} chat={wisp("one", "One")} />);
 
     await user.click(screen.getByRole("button", { name: "Attach files" }));
-    expect(await screen.findByText("Sending photo.jpg (2 of 2)…")).toBeInTheDocument();
+    // The progress is a chip in the composer, not a line above it.
+    const box = document.querySelector(".composer-box") as HTMLElement;
+    expect(await within(box).findByText("Sending photo.jpg (2 of 2)…")).toBeVisible();
+    expect(screen.getByRole("status")).toBeEmptyDOMElement();
     expect(screen.getByRole("button", { name: "Attach files" })).toBeDisabled();
 
-    await user.click(screen.getByRole("button", { name: "Cancel" }));
+    await user.click(screen.getByRole("button", { name: "Cancel attaching" }));
     expect(signal?.aborted).toBe(true);
     expect(screen.queryByText("Sending photo.jpg (2 of 2)…")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Attach files" })).toBeEnabled();
@@ -729,7 +746,9 @@ describe("ChatComposer voice input", () => {
     (input as HTMLTextAreaElement).setSelectionRange(7, 7);
 
     await user.click(screen.getByRole("button", { name: "Start voice input" }));
-    expect(await screen.findByText(/Recording… Press Ctrl\+Space/)).toBeInTheDocument();
+    // Screen readers hear it; on screen the field turns into the recording meter.
+    expect(await screen.findByText(/Recording… Press Ctrl\+Space/)).toHaveClass("sr-only");
+    expect(screen.getByRole("status")).toBeEmptyDOMElement();
     // The main button stops the recording instead of sending.
     expect(screen.queryByRole("button", { name: "Send message" })).toBeNull();
     await user.click(screen.getByRole("button", { name: "Stop recording and transcribe" }));

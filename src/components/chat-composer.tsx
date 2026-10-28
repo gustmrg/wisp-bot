@@ -103,7 +103,7 @@ export function ChatComposer({
 }: ChatComposerProps) {
   const [draft, setDraft] = useState(() => readComposerDraft(chat.id).text);
   const [attachments, setAttachments] = useState(() => readComposerDraft(chat.id).attachments);
-  // What attaching is doing, shown in place of a hint; null when not attaching.
+  // What attaching is doing, shown in a chip in the composer; null when not attaching.
   const [attachStatus, setAttachStatus] = useState<string | null>(null);
   const attaching = attachStatus !== null;
   const [attachError, setAttachError] = useState("");
@@ -170,6 +170,7 @@ export function ChatComposer({
   const voiceBusy = voiceInput.phase !== "idle";
   const recording = voiceInput.phase === "recording";
   const transcribing = voiceInput.phase === "transcribing";
+  const starting = voiceInput.phase === "starting";
   const voiceAvailable = !emptyCircle;
   const shortcutLabel = formatShortcut(voice.shortcut);
   const voiceDisabled =
@@ -180,6 +181,14 @@ export function ChatComposer({
   const voiceHint =
     (!recording && voiceInput.unavailableReason) ||
     `${recording ? "Stop recording" : "Voice input"} (${shortcutLabel})`;
+  // What the composer is busy with, for screen readers; on screen it shows in its buttons, field, and chips.
+  const progressAnnouncement = recording
+    ? `Recording… Press ${shortcutLabel} or the stop button to transcribe, Esc to cancel.`
+    : transcribing
+      ? "Transcribing…"
+      : starting
+        ? "Starting the microphone…"
+        : (attachStatus ?? (acknowledging ? "Queueing your message…" : ""));
 
   function submit(text: string, files: ReadonlyArray<WorkspaceAttachment>): void {
     setDraft("");
@@ -408,12 +417,12 @@ export function ChatComposer({
           type="button"
           className={className}
           data-variant={variant}
-          aria-label={transcribing ? "Transcribing" : "Start voice input"}
+          aria-label={transcribing ? "Transcribing" : starting ? "Starting the microphone" : "Start voice input"}
           aria-keyshortcuts={voice.shortcut.replaceAll("Ctrl", "Control").replace(/Key([A-Z])$/, "$1")}
           disabled={voiceDisabled}
           onClick={toggleVoiceInput}
         >
-          {transcribing ? (
+          {transcribing || starting ? (
             <LoaderCircleIcon aria-hidden="true" className="animate-spin" />
           ) : (
             <MicIcon aria-hidden="true" />
@@ -479,9 +488,14 @@ export function ChatComposer({
           className={PRIMARY_BUTTON}
           data-variant="send"
           aria-label={sendLabel}
+          aria-busy={acknowledging || undefined}
           disabled={!hasDraft || !canSend || voiceBusy}
         >
-          <ArrowUpIcon aria-hidden="true" />
+          {acknowledging ? (
+            <LoaderCircleIcon aria-hidden="true" className="animate-spin" />
+          ) : (
+            <ArrowUpIcon aria-hidden="true" />
+          )}
         </button>
       </ComposerTooltip>
     );
@@ -688,12 +702,6 @@ export function ChatComposer({
               </ComposerTooltip>
             ) : null}
           </ComposerError>
-        ) : recording ? (
-          `Recording… Press ${shortcutLabel} or the stop button to transcribe, Esc to cancel.`
-        ) : transcribing ? (
-          "Transcribing…"
-        ) : voiceInput.phase === "starting" ? (
-          "Starting the microphone…"
         ) : scheduleError || attachError || error ? (
           <ComposerError message={scheduleError || attachError || error || ""}>
             {attachError && !scheduleError && chat.kind === "wisp" ? (
@@ -706,26 +714,17 @@ export function ChatComposer({
               </button>
             ) : null}
           </ComposerError>
-        ) : attachStatus ? (
-          <span className="flex flex-wrap items-center gap-x-2">
-            <span>{attachStatus}</span>
-            <button
-              type="button"
-              className="font-medium text-foreground underline underline-offset-2"
-              onClick={cancelAttach}
-            >
-              Cancel
-            </button>
-          </span>
         ) : visionHint ? (
           <span className="flex items-start gap-1.5 text-warning">
             <EyeOffIcon aria-hidden="true" className="mt-px size-3.5 flex-none" />
             <span>{visionHint}</span>
           </span>
-        ) : acknowledging ? (
-          "Queueing your message…"
         ) : null}
       </div>
+      {/* Work in progress shows in the composer itself; screen readers still hear what it is doing. */}
+      <span className="sr-only" aria-live="polite">
+        {progressAnnouncement}
+      </span>
       <div
         ref={boxRef}
         className={cn(
@@ -737,7 +736,7 @@ export function ChatComposer({
         <div className="composer-input flex items-end gap-1">
           {leadButton()}
           <div className="composer-field flex min-w-0 flex-1 flex-col">
-            {scheduledAt || attachments.length ? (
+            {scheduledAt || attachments.length || attachStatus ? (
               <div className="composer-chips flex flex-wrap gap-1.5 px-1 pt-0.5 pb-1">
                 {scheduledAt ? (
                   <span className="flex h-6 items-center gap-1.5 rounded-full bg-blue/15 pr-0.5 pl-2 text-xs font-medium text-blue [&_svg]:size-3.5">
@@ -749,6 +748,22 @@ export function ChatComposer({
                         className="flex size-5 flex-none items-center justify-center rounded-full hover:bg-blue/15 [&_svg]:size-3"
                         aria-label="Remove the scheduled time"
                         onClick={() => setScheduledAt(null)}
+                      >
+                        <XIcon aria-hidden="true" />
+                      </button>
+                    </ComposerTooltip>
+                  </span>
+                ) : null}
+                {attachStatus ? (
+                  <span className="flex h-6 max-w-[280px] items-center gap-1 rounded-md border border-border bg-background pr-0.5 pl-1.5 text-xs [&_svg]:size-3">
+                    <LoaderCircleIcon aria-hidden="true" className="flex-none animate-spin text-dim" />
+                    <span className="truncate">{attachStatus}</span>
+                    <ComposerTooltip message="Stop attaching">
+                      <button
+                        type="button"
+                        className="flex size-4 flex-none items-center justify-center rounded text-dim hover:bg-accent hover:text-foreground"
+                        aria-label="Cancel attaching"
+                        onClick={cancelAttach}
                       >
                         <XIcon aria-hidden="true" />
                       </button>
