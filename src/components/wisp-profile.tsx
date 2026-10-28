@@ -33,7 +33,7 @@ import {
 import { useCopyFeedback } from "@/hooks/use-copy-feedback";
 import { useJobs } from "@/hooks/use-jobs";
 import { wispAccentStyle, wispColor } from "@/lib/wisp-appearance";
-import { serializeWispTemplate } from "@/lib/wisp-template";
+import { serializeWispTemplate, wispTemplateFrom } from "../../shared/wisp-template";
 
 interface WispProfileProps {
   chat: WispChatView;
@@ -90,7 +90,9 @@ function ShareTemplateButton({ chat, className }: { chat: WispChatView; classNam
   const copyFeedback = useCopyFeedback(chat.id);
   async function share(): Promise<void> {
     const model = await window.wisp.getConversationModel({ conversationId: chat.id }).catch(() => null);
-    await copyFeedback.copy(serializeWispTemplate(chat.wisp, model?.ok ? model.value.effective : null));
+    await copyFeedback.copy(
+      serializeWispTemplate(wispTemplateFrom(chat.wisp, model?.ok ? model.value.effective : null)),
+    );
   }
   return (
     <>
