@@ -74,6 +74,8 @@ import { WISP_RELEASES_URL, WISP_REPOSITORY_URL, type UpdateState } from "../../
 import type { SettingsPluginId } from "@/lib/plugin-access";
 import type { WispOption } from "@/lib/plugin-access";
 import type { ChatView } from "@/chat-data";
+import type { TemplateUseResult } from "@/lib/wisp-template-actions";
+import type { WispTemplateEntry } from "../../shared/wisp-template";
 
 type SettingsSection =
   | "general"
@@ -264,6 +266,8 @@ interface AppSettingsDialogProps {
   onOpenConversations?: () => void;
   /** Opens the mobile Approvals tab; without it the bar leaves the tab out. */
   onOpenApprovals?: () => void;
+  /** Creates a Wisp from a template; without it Templates offers no Use button. */
+  onUseTemplate?: (entry: WispTemplateEntry) => Promise<TemplateUseResult>;
   /** Counts for the mobile bar's badges. */
   navigationCounts?: { unread: number; approvals: number };
   appMetadata: AppMetadata;
@@ -299,6 +303,7 @@ function AppSettingsDialog({
   mobile = false,
   onOpenConversations,
   onOpenApprovals,
+  onUseTemplate,
   navigationCounts,
   currentUser,
   userProfile,
@@ -524,7 +529,13 @@ function AppSettingsDialog({
         </nav>
         {section === "usage" && open && !showOverview ? <UsageSettingsSection wisps={wisps} /> : null}
         {section === "jobs" && open && !showOverview ? <JobsSettingsSection wisps={wisps} /> : null}
-        {section === "templates" && open && !showOverview ? <TemplateSettingsSection /> : null}
+        {section === "templates" && open && !showOverview ? (
+          <TemplateSettingsSection
+            onUseTemplate={onUseTemplate}
+            onOpenModelSettings={() => openSection("model")}
+            onClose={() => onOpenChange(false)}
+          />
+        ) : null}
         {section === "storage" && open && !showOverview ? (
           <StorageSettingsSection
             key={initialStorageConversationId ?? "all"}

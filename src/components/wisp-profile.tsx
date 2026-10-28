@@ -33,6 +33,7 @@ import {
 import { useCopyFeedback } from "@/hooks/use-copy-feedback";
 import { useJobs } from "@/hooks/use-jobs";
 import { wispAccentStyle, wispColor } from "@/lib/wisp-appearance";
+import { SaveAsTemplateButton } from "@/components/save-as-template-button";
 import { serializeWispTemplate, wispTemplateFrom } from "../../shared/wisp-template";
 
 interface WispProfileProps {
@@ -247,6 +248,7 @@ export function WispProfile({
 
         <div className="wisp-profile-end">
           <ShareTemplateButton chat={chat} className="wisp-profile-end-button" />
+          <SaveAsTemplateButton conversationId={chat.id} wisp={chat.wisp} className="wisp-profile-end-button" />
           <DeleteWispButton chat={chat} className="wisp-profile-end-button" onDelete={onDelete} />
         </div>
       </div>

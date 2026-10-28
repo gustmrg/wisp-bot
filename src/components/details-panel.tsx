@@ -26,6 +26,7 @@ import { detailsLayoutStyle } from "@/lib/layout";
 import type { IntegrationSettingsTarget } from "@/lib/plugin-access";
 import { panelResizer } from "@/lib/ui-classes";
 import { cn } from "@/lib/utils";
+import { SaveAsTemplateButton } from "@/components/save-as-template-button";
 import { serializeWispTemplate, wispTemplateFrom } from "../../shared/wisp-template";
 
 interface DetailsPanelProps {
@@ -183,6 +184,7 @@ function DetailsPanel({
           generalActions={
             <>
               {shareControl}
+              <SaveAsTemplateButton conversationId={chat.id} wisp={chat.wisp} />
               {deleteControl}
             </>
           }

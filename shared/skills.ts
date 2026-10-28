@@ -40,6 +40,11 @@ export interface SkillDraft {
   instructions: string;
 }
 
+export function formatSkillFile(skill: SkillDraft): string {
+  // JSON strings are valid YAML double-quoted scalars.
+  return `---\nname: ${skill.name}\ndescription: ${JSON.stringify(skill.description)}\n---\n\n${skill.instructions}\n`;
+}
+
 /** A skill checked against the limits a Wisp's skills follow, or why it does not meet them. */
 export type SkillCheck = { ok: true; draft: SkillDraft } | { ok: false; error: string };
 

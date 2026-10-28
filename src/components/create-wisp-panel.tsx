@@ -58,7 +58,7 @@ const STEP_TITLES: Record<CreateWispStep, string> = {
   setup: "Workspace and commands",
 };
 
-const DEFAULT_WISP: WispSettingsDraft = {
+export const DEFAULT_WISP: WispSettingsDraft = {
   name: "",
   role: "",
   soul: "",
