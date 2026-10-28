@@ -32,7 +32,8 @@ the Wisp, or one derived from its name:
 
 The bottom bar has Wisps, Approvals, and Settings (see
 [ADR 015](decisions/015-mobile-bottom-bar.md)). It floats as a pill near the
-bottom edge; only the current tab shows its name. Wisps shows how many
+bottom edge, at the same distance on every tab, even while the conversation
+list scrolls under it; only the current tab shows its name. Wisps shows how many
 conversations are unread and Approvals how many tool approvals are pending.
 The Approvals screen lists every pending approval, the latest first, each in
 a card lit by the Wisp that asked and saying what it wants to do. With more

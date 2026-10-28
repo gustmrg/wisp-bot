@@ -20,9 +20,10 @@
     overscroll-behavior: contain;
     transition: none;
   }
+  /* Stuck to the bottom, the bar keeps the gap its margin gives it on the other tabs: a sticky offset ignores margins. */
   .workspace-sidebar > .mobile-navigation {
     position: sticky;
-    bottom: 0;
+    bottom: var(--mobile-navigation-gap);
     z-index: 2;
   }
 
@@ -236,11 +237,13 @@
 
   /* A pill near the bottom edge: the current tab is a filled capsule with its name. */
   .mobile-navigation {
+    /* The space between the bar and the bottom edge, the same on every tab. */
+    --mobile-navigation-gap: max(10px, env(safe-area-inset-bottom, 0px));
     display: flex;
     flex: none;
     align-self: center;
     gap: 4px;
-    margin: 6px auto max(10px, env(safe-area-inset-bottom, 0px));
+    margin: 6px auto var(--mobile-navigation-gap);
     padding: 5px;
     border: 1px solid var(--border);
     border-radius: 999px;
