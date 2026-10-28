@@ -83,6 +83,7 @@ import type {
 } from "./workspace.js";
 import type { SaveWispExecutionRequest, WispExecutionView, WispSetupView } from "./execution.js";
 import type { ImportSkillRequest, SkillRequest, SkillView } from "./skills.js";
+import type { DeleteWispTemplateRequest, SaveWispTemplateRequest, WispTemplateEntry } from "./wisp-template.js";
 import type {
   ResolveToolApprovalRequest,
   SaveWispToolPolicyRequest,
@@ -221,6 +222,9 @@ export const WISP_IPC_CHANNELS = {
   listSkills: "wisp:skills:list",
   deleteSkill: "wisp:skills:delete",
   importSkill: "wisp:skills:import",
+  listWispTemplates: "wisp:templates:list",
+  saveWispTemplate: "wisp:templates:save",
+  deleteWispTemplate: "wisp:templates:delete",
   getMemory: "wisp:memory:get",
   applyMemory: "wisp:memory:apply",
   exportMemory: "wisp:memory:export",
@@ -1030,6 +1034,10 @@ export interface WispApi {
   deleteSkill(request: SkillRequest): Promise<BackendResult<ReadonlyArray<SkillView>>>;
   /** Saves a SKILL.md the user picked, without going through the Wisp, and returns the updated list. */
   importSkill(request: ImportSkillRequest): Promise<BackendResult<ReadonlyArray<SkillView>>>;
+  /** The built-in templates, then the ones saved on this server by name. */
+  listWispTemplates(): Promise<BackendResult<ReadonlyArray<WispTemplateEntry>>>;
+  saveWispTemplate(request: SaveWispTemplateRequest): Promise<BackendResult<WispTemplateEntry>>;
+  deleteWispTemplate(request: DeleteWispTemplateRequest): Promise<EmptyResult>;
   /**
    * The memory a Wisp sees: the person's entries and its own, in every status (ADR 029).
    * Without a conversation, the person's own: the entries every Wisp shares.

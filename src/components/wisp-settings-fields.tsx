@@ -25,7 +25,7 @@ import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectVa
 import { Textarea } from "@/components/ui/textarea";
 import { ToggleSwitch } from "@/components/ui/toggle-switch";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { SOUL_TEMPLATES, type SoulTemplate } from "@/lib/soul-templates";
+import { SOUL_TEMPLATES, type SoulTemplate } from "../../shared/soul-templates";
 
 /** A Wisp as its settings form edits it, with its conversation's notification setting. */
 export type WispSettingsDraft = NewWisp & { notifyOnUpdatesEnabled: boolean };
