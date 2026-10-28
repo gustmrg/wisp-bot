@@ -19,6 +19,7 @@ import {
   InfoIcon,
   KeyboardIcon,
   KeyRoundIcon,
+  LayoutTemplateIcon,
   LoaderCircleIcon,
   MicIcon,
   PlugIcon,
@@ -33,6 +34,7 @@ import {
 import { GeneralSettingsSections, PreferenceSwitch } from "@/components/general-settings-sections";
 import { NotificationSettingsSection } from "@/components/notification-settings-section";
 import { StorageSettingsSection } from "@/components/storage-settings-section";
+import { TemplateSettingsSection } from "@/components/template-settings-section";
 import { UsageSettingsSection } from "@/components/usage-settings-section";
 import { JobsSettingsSection } from "@/components/jobs-settings-section";
 import { PermissionSettingsSection } from "@/components/permission-settings-section";
@@ -88,7 +90,8 @@ type SettingsSection =
   | "about"
   | "usage"
   | "storage"
-  | "jobs";
+  | "jobs"
+  | "templates";
 /** Sections other parts of the app can open the dialog at. */
 export type SettingsEntrySection =
   | "general"
@@ -100,7 +103,8 @@ export type SettingsEntrySection =
   | "mcp"
   | "storage"
   | "jobs"
-  | "usage";
+  | "usage"
+  | "templates";
 
 /** Navigation order; entries without a section are announced but not available yet. */
 const NAV_ITEMS: ReadonlyArray<
@@ -173,6 +177,13 @@ const NAV_ITEMS: ReadonlyArray<
     icon: ShieldCheckIcon,
   },
   {
+    section: "templates",
+    panelId: "template-settings-panel",
+    label: "Templates",
+    description: "Ready-made Wisps to start from",
+    icon: LayoutTemplateIcon,
+  },
+  {
     section: "jobs",
     panelId: "jobs-settings-panel",
     label: "Jobs",
@@ -219,7 +230,7 @@ const NAV_ITEMS: ReadonlyArray<
 /** How the navigation groups the sections, on the desktop and under the profile card on mobile. */
 const NAV_GROUPS: ReadonlyArray<{ label: string; sections: ReadonlyArray<SettingsSection> }> = [
   { label: "Account and server", sections: ["general", "connections", "remote-access"] },
-  { label: "Wisps", sections: ["model", "providers", "voice", "plugins", "mcp", "permissions", "jobs"] },
+  { label: "Wisps", sections: ["model", "providers", "voice", "plugins", "mcp", "permissions", "templates", "jobs"] },
   { label: "Notifications and input", sections: ["notifications", "shortcuts"] },
   { label: "Storage and data", sections: ["storage", "usage"] },
   { label: "App", sections: ["about"] },
@@ -329,6 +340,7 @@ function AppSettingsDialog({
     usage: "Token usage",
     storage: "Storage",
     jobs: "Jobs",
+    templates: "Templates",
   };
   function openSection(nextSection: typeof section) {
     setSection(nextSection);
@@ -512,6 +524,7 @@ function AppSettingsDialog({
         </nav>
         {section === "usage" && open && !showOverview ? <UsageSettingsSection wisps={wisps} /> : null}
         {section === "jobs" && open && !showOverview ? <JobsSettingsSection wisps={wisps} /> : null}
+        {section === "templates" && open && !showOverview ? <TemplateSettingsSection /> : null}
         {section === "storage" && open && !showOverview ? (
           <StorageSettingsSection
             key={initialStorageConversationId ?? "all"}
