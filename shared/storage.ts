@@ -15,6 +15,7 @@ export interface StorageWorkspace {
   kind: "wisp" | "circle";
   usedBytes: number;
   fileCount: number;
+  /** As in `WorkspaceView`: with `unlimited`, what the workspace can hold before its disk reaches the reserve. */
   quotaBytes: number;
   /** Some folders or files could not be read, so the numbers are a lower bound. */
   partial: boolean;
@@ -24,6 +25,10 @@ export interface StorageWorkspace {
    * field, and for circles from servers where a circle's size was fixed.
    */
   maxQuotaBytes?: number;
+  /** As in `WorkspaceView`: no size, only the disk holds it back; absent from older servers. */
+  unlimited?: boolean;
+  /** Free space on the disk holding the workspace; absent when it could not be measured and from older servers. */
+  freeDiskBytes?: number;
   /** The largest folders and files at the workspace root, largest first; absent from older servers. */
   folders?: ReadonlyArray<StorageUsageItem>;
   /** The largest files anywhere in the workspace, largest first; absent from older servers. */

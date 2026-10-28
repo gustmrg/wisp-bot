@@ -340,6 +340,55 @@ it("asks before giving a workspace less room than it uses", async () => {
   expect(screen.getByText(/1.0 GiB of 512 MiB \(200%\)/)).toBeInTheDocument();
 });
 
+it("shows a workspace without a size apart, and removes a limit from the list after asking", async () => {
+  const user = userEvent.setup();
+  const GIB = 1024 * MIB;
+  const setWorkspaceQuota = vi.fn(async () => ({
+    ok: true as const,
+    value: {
+      usedBytes: 460 * MIB,
+      quotaBytes: 30 * GIB,
+      maxQuotaBytes: 2 * GIB,
+      unlimited: true,
+      freeDiskBytes: 31 * GIB,
+    },
+  }));
+  const [atlas, nova, crew] = summary.workspaces as [
+    (typeof summary.workspaces)[number],
+    (typeof summary.workspaces)[number],
+    (typeof summary.workspaces)[number],
+  ];
+  install({
+    setWorkspaceQuota,
+    getStorageSummary: vi.fn(async () => ({
+      ok: true as const,
+      value: {
+        ...summary,
+        workspaces: [
+          { ...atlas, unlimited: false, freeDiskBytes: 31 * GIB },
+          { ...nova, quotaBytes: 40 * GIB, unlimited: true, freeDiskBytes: 31 * GIB },
+          { ...crew, unlimited: false },
+        ],
+      },
+    })),
+  });
+  render(<StorageSettingsSection />);
+
+  expect(await screen.findByText(/1 file · 2.0 MiB · no size limit/)).toBeInTheDocument();
+  expect(screen.queryByRole("progressbar", { name: "Nova usage" })).not.toBeInTheDocument();
+  // Nova's room is left out of what is allotted: 512 MiB for Atlas and Crew each.
+  expect(screen.getByText(/1 without a size limit · 45% of the others' combined sizes/)).toBeInTheDocument();
+  expect(screen.queryByText(/allotted/)).not.toBeInTheDocument();
+
+  await user.click(screen.getByRole("combobox", { name: "Workspace size for Atlas" }));
+  await user.click(await screen.findByRole("option", { name: "Unlimited" }));
+  expect(screen.getByRole("alert")).toHaveTextContent("(31.0 GiB free now)");
+  await user.click(screen.getByRole("button", { name: "Remove the limit" }));
+  expect(setWorkspaceQuota).toHaveBeenCalledWith({ conversationId: "a", quotaBytes: null });
+  expect(await screen.findByText(/12 files · 460 MiB · no size limit/)).toBeInTheDocument();
+  expect(screen.queryByText(/NaN|Infinity/)).not.toBeInTheDocument();
+});
+
 it("keeps a circle's size fixed and reports servers that cannot resize", async () => {
   const user = userEvent.setup();
   install({

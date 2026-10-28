@@ -21,7 +21,7 @@ import { ActiveConnectionContext } from "@/features/connections/active-connectio
 import { Wisp } from "@/components/wisp";
 import type { ChatView } from "@/chat-data";
 import type { StorageArchive, StorageSummary, StorageWorkspace } from "../../shared/storage";
-import { formatBytes, type WorkspaceView } from "../../shared/workspace";
+import { formatBytes, workspaceUsage, type WorkspaceView } from "../../shared/workspace";
 
 export function StorageSettingsSection({
   initialConversationId,
@@ -88,7 +88,13 @@ export function StorageSettingsSection({
               ...current.summary,
               workspaces: current.summary.workspaces.map((workspace) =>
                 workspace.conversationId === conversationId
-                  ? { ...workspace, quotaBytes: view.quotaBytes, maxQuotaBytes: view.maxQuotaBytes }
+                  ? {
+                      ...workspace,
+                      quotaBytes: view.quotaBytes,
+                      maxQuotaBytes: view.maxQuotaBytes,
+                      ...(view.unlimited === undefined ? {} : { unlimited: view.unlimited }),
+                      ...(view.freeDiskBytes === undefined ? {} : { freeDiskBytes: view.freeDiskBytes }),
+                    }
                   : workspace,
               ),
             },
@@ -249,9 +255,7 @@ function WorkspaceRow({
   onResized: (view: WorkspaceView) => void;
 }) {
   // The text tells how far past its size a workspace is; the bar stops at full.
-  const share = Math.round((workspace.usedBytes / workspace.quotaBytes) * 100);
-  const percent = Math.min(100, share);
-  const full = workspace.usedBytes >= workspace.quotaBytes;
+  const { share, percent, nearlyFull, full } = workspaceUsage(workspace);
   return (
     <SettingsRow className="flex-wrap">
       <WorkspaceAvatar workspace={workspace} conversation={conversation} />
@@ -260,29 +264,33 @@ function WorkspaceRow({
           <SettingsRowTitle className="truncate">{workspace.name}</SettingsRowTitle>
           {full ? (
             <span className="shrink-0 rounded-full bg-destructive/10 px-1.5 py-px text-2xs font-medium text-destructive">
-              Full
+              {workspace.unlimited ? "Disk full" : "Full"}
             </span>
           ) : null}
         </span>
         <SettingsRowDescription>
           {workspace.kind === "circle" ? "Circle · " : ""}
           {workspace.fileCount.toLocaleString("en-US")} {workspace.fileCount === 1 ? "file" : "files"} ·{" "}
-          {formatBytes(workspace.usedBytes)} of {formatBytes(workspace.quotaBytes)} ({share}%)
+          {share === null
+            ? `${formatBytes(workspace.usedBytes)} · no size limit`
+            : `${formatBytes(workspace.usedBytes)} of ${formatBytes(workspace.quotaBytes)} (${share}%)`}
           {workspace.partial ? " · partial" : ""}
         </SettingsRowDescription>
-        <div
-          className="mt-1 h-1 overflow-hidden rounded-full bg-muted"
-          role="progressbar"
-          aria-label={`${workspace.name} usage`}
-          aria-valuemin={0}
-          aria-valuemax={100}
-          aria-valuenow={percent}
-        >
+        {percent === null ? null : (
           <div
-            className={percent >= 90 ? "h-full bg-destructive" : "h-full bg-primary"}
-            style={{ width: `${percent}%` }}
-          />
-        </div>
+            className="mt-1 h-1 overflow-hidden rounded-full bg-muted"
+            role="progressbar"
+            aria-label={`${workspace.name} usage`}
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-valuenow={percent}
+          >
+            <div
+              className={nearlyFull ? "h-full bg-destructive" : "h-full bg-primary"}
+              style={{ width: `${percent}%` }}
+            />
+          </div>
+        )}
       </SettingsRowCopy>
       <div className="flex items-start gap-2">
         {workspace.kind === "wisp" ? (
@@ -292,6 +300,8 @@ function WorkspaceRow({
             usedBytes={workspace.usedBytes}
             quotaBytes={workspace.quotaBytes}
             maxQuotaBytes={workspace.maxQuotaBytes}
+            unlimited={workspace.unlimited}
+            freeDiskBytes={workspace.freeDiskBytes}
             className="w-28"
             onResized={onResized}
           />

@@ -12,15 +12,20 @@ import {
   SettingsRowDescription,
   SettingsRowTitle,
 } from "@/components/settings/settings-primitives";
+import { unlimitedWorkspaceNote } from "@/components/workspace-size-select";
 import { FormStatus } from "@/components/ui/form-status";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ToggleSwitch } from "@/components/ui/toggle-switch";
 
 /** What a new Wisp is given besides its profile and model. */
 export interface WispSetupDraft {
-  quotaBytes: number;
+  /** `null` for no size. */
+  quotaBytes: number | null;
   executionMode: ExecutionMode;
 }
+
+/** The size select's value for a workspace without a size. */
+const UNLIMITED = "unlimited";
 
 export const DEFAULT_WISP_SETUP: WispSetupDraft = { quotaBytes: WORKSPACE_QUOTA_BYTES, executionMode: "off" };
 
@@ -69,11 +74,15 @@ export function CreateWispSetupSection({ view, loadError, unsupported, draft, on
       <FormStatus pending="Checking the server…" error={loadError} />
     );
   }
-  const sizes = WORKSPACE_QUOTA_PRESETS.map((bytes) => ({
-    value: String(bytes),
-    label: formatBytes(bytes),
-    disabled: bytes > view.maxQuotaBytes,
-  }));
+  const sizes = [
+    ...WORKSPACE_QUOTA_PRESETS.map((bytes) => ({
+      value: String(bytes),
+      label: formatBytes(bytes),
+      disabled: bytes > view.maxQuotaBytes,
+    })),
+    // Servers older than unlimited workspaces leave the field out, and refuse one.
+    ...(view.unlimitedWorkspaces ? [{ value: UNLIMITED, label: "Unlimited", disabled: false }] : []),
+  ];
   const commands = draft.executionMode === "container";
   return (
     <SettingsCard>
@@ -86,9 +95,9 @@ export function CreateWispSetupSection({ view, loadError, unsupported, draft, on
         </SettingsRowCopy>
         <Select
           items={sizes}
-          value={String(draft.quotaBytes)}
+          value={draft.quotaBytes === null ? UNLIMITED : String(draft.quotaBytes)}
           onValueChange={(value) => {
-            if (value) onChange({ ...draft, quotaBytes: Number(value) });
+            if (value) onChange({ ...draft, quotaBytes: value === UNLIMITED ? null : Number(value) });
           }}
         >
           <SelectTrigger id="create-wisp-workspace-size" className="w-[120px] flex-none">
@@ -105,6 +114,12 @@ export function CreateWispSetupSection({ view, loadError, unsupported, draft, on
           </SelectContent>
         </Select>
       </SettingsRow>
+      {draft.quotaBytes === null ? (
+        // Creating the Wisp is the confirmation; the note says what it means for the disk first.
+        <p role="status" className="m-0 px-3.5 pb-3 text-xs text-warning">
+          No size limit. {unlimitedWorkspaceNote()}
+        </p>
+      ) : null}
       <SettingsRow className="min-h-0 p-[11px]">
         <SettingsRowCopy>
           <SettingsRowTitle>Run commands</SettingsRowTitle>
@@ -125,7 +140,7 @@ export function CreateWispSetupSection({ view, loadError, unsupported, draft, on
           {view.runtime.message}
         </p>
       )}
-      {commands && draft.quotaBytes < COMMAND_WORKSPACE_QUOTA_BYTES ? (
+      {commands && draft.quotaBytes !== null && draft.quotaBytes < COMMAND_WORKSPACE_QUOTA_BYTES ? (
         <p role="status" className="m-0 px-3.5 pb-3 text-xs text-warning">
           Packages installed by commands count toward the workspace. {formatBytes(COMMAND_WORKSPACE_QUOTA_BYTES)} or
           more is recommended.

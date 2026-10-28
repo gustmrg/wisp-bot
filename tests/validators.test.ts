@@ -147,13 +147,20 @@ describe("IPC request validators", () => {
     }
   });
 
-  it("accepts only the offered workspace sizes", () => {
+  it("accepts only the offered workspace sizes, or none", () => {
     const gib = 1024 * 1024 * 1024;
     expect(parseSetWorkspaceQuotaRequest({ conversationId: "wisp:one", quotaBytes: 2 * gib })).toEqual({
       conversationId: "wisp:one",
       quotaBytes: 2 * gib,
     });
-    for (const quotaBytes of [0, -1, 3 * gib, 2 * gib + 0.5, "2147483648", null]) {
+    expect(parseSetWorkspaceQuotaRequest({ conversationId: "wisp:one", quotaBytes: gib })).toMatchObject({
+      quotaBytes: gib,
+    });
+    expect(parseSetWorkspaceQuotaRequest({ conversationId: "wisp:one", quotaBytes: null })).toEqual({
+      conversationId: "wisp:one",
+      quotaBytes: null,
+    });
+    for (const quotaBytes of [0, -1, 3 * gib, 2 * gib + 0.5, "2147483648", undefined, "unlimited", Infinity]) {
       expect(() => parseSetWorkspaceQuotaRequest({ conversationId: "wisp:one", quotaBytes })).toThrow(WispBackendError);
     }
     expect(() => parseSetWorkspaceQuotaRequest({ conversationId: "../escape", quotaBytes: 2 * gib })).toThrow(

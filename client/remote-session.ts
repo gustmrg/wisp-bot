@@ -9,6 +9,7 @@ import {
 } from "../shared/remote-protocol.js";
 import {
   MAX_ATTACHMENTS_PER_REQUEST,
+  diskReserveMessage,
   formatBytes,
   type AttachWorkspaceFilesOptions,
   type AttachWorkspaceFilesResult,
@@ -163,11 +164,14 @@ export class RemoteSession {
     if (files.length > MAX_ATTACHMENTS_PER_REQUEST) {
       return invalid(`Attach at most ${MAX_ATTACHMENTS_PER_REQUEST} files at a time.`);
     }
-    // Checked here too, so a full workspace fails before any bytes are sent.
-    const { usedBytes, quotaBytes } = before.value;
+    // Checked here too, so a full workspace fails before any bytes are sent. Without a size,
+    // `quotaBytes` is what the disk leaves above the reserve, so the same check applies.
+    const { usedBytes, quotaBytes, unlimited, freeDiskBytes } = before.value;
     if (usedBytes + files.reduce((sum, file) => sum + file.content.size, 0) > quotaBytes) {
       return invalid(
-        `This Wisp's workspace is full (${formatBytes(usedBytes)} of ${formatBytes(quotaBytes)} used). Free some space before adding more files.`,
+        unlimited
+          ? diskReserveMessage(freeDiskBytes ?? 0, "before adding more files")
+          : `This Wisp's workspace is full (${formatBytes(usedBytes)} of ${formatBytes(quotaBytes)} used). Free some space before adding more files.`,
       );
     }
     const client = this.client;

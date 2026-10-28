@@ -80,8 +80,9 @@ and approving each `npm test` makes development impractical.
   approval: the token's scope is the authorization, so the user limits it to
   the repositories and permissions the Wisp needs.
 - **Size:** checked between commands. A command is refused while the workspace
-  holds more than its size; a running command cannot be stopped from writing
-  past it.
+  holds more than its size, or, for an unlimited workspace, while its disk has
+  less than 1 GiB free; a running command cannot be stopped from writing past
+  either.
 - **Cancellation:** each command runs in its own process group; Stop, the
   request deadline or a timeout kills the group. Whatever a command leaves in
   the background is killed when it ends.
@@ -218,8 +219,9 @@ Tracked in Linear as SWE-135.
 - Containers stop after 30 minutes without a command.
 - The internet stays open; only the local network is blocked, and a Wisp can
   be allowed it.
-- Each Wisp's workspace size is set per Wisp (512 MB to 100 GB) and also
-  bounds what its container installs.
+- Each Wisp's workspace size is set per Wisp (64 MiB to 100 GiB, or
+  unlimited up to 1 GiB short of a full disk) and also bounds what its
+  container installs.
 
 ## Rejected alternatives
 

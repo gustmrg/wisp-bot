@@ -3,14 +3,29 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { FieldError } from "@/components/ui/field";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { WORKSPACE_QUOTA_PRESETS, formatBytes, type WorkspaceView } from "../../shared/workspace";
+import {
+  WORKSPACE_DISK_RESERVE_BYTES,
+  WORKSPACE_QUOTA_PRESETS,
+  formatBytes,
+  type WorkspaceView,
+} from "../../shared/workspace";
 
 /** Shown when the server predates resizing workspaces. */
 const UNSUPPORTED = "This server is older than this app and cannot resize workspaces. Update the server to change it.";
+/** The select's value for a workspace without a size. */
+const UNLIMITED = "unlimited";
+
+/** What a workspace without a size means for its disk, as the person is told before choosing it. */
+export function unlimitedWorkspaceNote(freeDiskBytes?: number): string {
+  return `It can grow until its disk has ${formatBytes(WORKSPACE_DISK_RESERVE_BYTES)} left${
+    freeDiskBytes === undefined ? "" : ` (${formatBytes(freeDiskBytes)} free now)`
+  }, which Wisp keeps for conversations and settings. Then attachments, uploads, the Wisp's own writes and commands stop until space is freed.`;
+}
 
 /**
- * Picks a Wisp's workspace size from the offered ones. A size below what the
- * workspace holds is applied only after the person confirms it.
+ * Picks a Wisp's workspace size from the offered ones, or none. A size below
+ * what the workspace holds, and no size at all, are applied only after the
+ * person confirms them.
  */
 export function WorkspaceSizeSelect({
   id,
@@ -19,6 +34,8 @@ export function WorkspaceSizeSelect({
   usedBytes,
   quotaBytes,
   maxQuotaBytes,
+  unlimited,
+  freeDiskBytes,
   className,
   onResized,
 }: {
@@ -30,24 +47,32 @@ export function WorkspaceSizeSelect({
   quotaBytes: number;
   /** Sizes above it are offered disabled; unknown, every size is offered and the server decides. */
   maxQuotaBytes?: number;
+  /** The workspace has no size. Unknown, the server predates that and none is offered. */
+  unlimited?: boolean;
+  freeDiskBytes?: number;
   className?: string;
   onResized: (view: WorkspaceView) => void;
 }) {
-  const [pending, setPending] = useState<number | null>(null);
+  // Undefined while nothing waits for confirmation; `quotaBytes: null` is no size.
+  const [pending, setPending] = useState<{ quotaBytes: number | null }>();
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
+  const current = unlimited ? null : quotaBytes;
   // A size saved outside the offered ones is still shown as the current choice.
-  const sizes = [...new Set([...WORKSPACE_QUOTA_PRESETS, quotaBytes])]
-    .sort((a, b) => a - b)
-    .map((bytes) => ({
-      value: String(bytes),
-      label: formatBytes(bytes),
-      disabled: maxQuotaBytes !== undefined && bytes > maxQuotaBytes && bytes !== quotaBytes,
-    }));
+  const sizes = [
+    ...[...new Set([...WORKSPACE_QUOTA_PRESETS, ...(current === null ? [] : [current])])]
+      .sort((a, b) => a - b)
+      .map((bytes) => ({
+        value: String(bytes),
+        label: formatBytes(bytes),
+        disabled: maxQuotaBytes !== undefined && bytes > maxQuotaBytes && bytes !== current,
+      })),
+    ...(unlimited === undefined ? [] : [{ value: UNLIMITED, label: "Unlimited", disabled: false }]),
+  ];
 
-  async function resize(bytes: number) {
-    setPending(null);
+  async function resize(bytes: number | null) {
+    setPending(undefined);
     setError("");
     setSaving(true);
     try {
@@ -66,13 +91,14 @@ export function WorkspaceSizeSelect({
     <div className="flex flex-col gap-2">
       <Select
         items={sizes}
-        value={String(quotaBytes)}
+        value={current === null ? UNLIMITED : String(current)}
         disabled={saving}
         onValueChange={(value) => {
-          const bytes = Number(value);
-          if (!value || bytes === quotaBytes) return;
+          if (!value) return;
+          const bytes = value === UNLIMITED ? null : Number(value);
+          if (bytes === current) return;
           setError("");
-          if (bytes < usedBytes) setPending(bytes);
+          if (bytes === null || bytes < usedBytes) setPending({ quotaBytes: bytes });
           else void resize(bytes);
         }}
       >
@@ -87,22 +113,28 @@ export function WorkspaceSizeSelect({
           ))}
         </SelectContent>
       </Select>
-      {pending !== null ? (
+      {pending ? (
         <div
           role="alert"
           className="space-y-2.5 rounded-[10px] border border-warning-solid/40 bg-warning-solid/10 p-3 text-xs leading-relaxed"
         >
-          <p className="m-0">
-            <strong className="font-medium">Smaller than what it holds ({formatBytes(usedBytes)}).</strong> Nothing is
-            deleted, but attachments, uploads and the Wisp&apos;s own writes fail until about{" "}
-            {formatBytes(usedBytes - pending)} is freed.
-          </p>
+          {pending.quotaBytes === null ? (
+            <p className="m-0">
+              <strong className="font-medium">No size limit.</strong> {unlimitedWorkspaceNote(freeDiskBytes)}
+            </p>
+          ) : (
+            <p className="m-0">
+              <strong className="font-medium">Smaller than what it holds ({formatBytes(usedBytes)}).</strong> Nothing is
+              deleted, but attachments, uploads and the Wisp&apos;s own writes fail until about{" "}
+              {formatBytes(usedBytes - pending.quotaBytes)} is freed.
+            </p>
+          )}
           <div className="flex flex-wrap justify-end gap-2">
-            <Button size="sm" variant="ghost" onClick={() => setPending(null)}>
+            <Button size="sm" variant="ghost" onClick={() => setPending(undefined)}>
               Cancel
             </Button>
-            <Button size="sm" onClick={() => void resize(pending)}>
-              Set to {formatBytes(pending)} anyway
+            <Button size="sm" onClick={() => void resize(pending.quotaBytes)}>
+              {pending.quotaBytes === null ? "Remove the limit" : `Set to ${formatBytes(pending.quotaBytes)} anyway`}
             </Button>
           </div>
         </div>

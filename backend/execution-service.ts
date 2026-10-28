@@ -39,7 +39,7 @@ import {
 } from "./integration-tool-source.js";
 import type { ToolAuthorizationBroker } from "./tool-authorization-broker.js";
 import { defineWispTool } from "./tool-schema.js";
-import { measureTree, readWorkspaceQuota } from "./workspace-service.js";
+import { assertDiskReserve, freeDiskBytes, measureTree, readWorkspaceQuota } from "./workspace-service.js";
 
 export const RUN_COMMAND_TOOL = "run_command";
 export const PROCESS_TOOL = "process";
@@ -109,6 +109,8 @@ export interface ExecutionServiceOptions {
   gitForges?: (conversationId: string) => Promise<GitForges>;
   /** Closes a Wisp's browser, when it is turned off. */
   browser?: { close(storageId: string): Promise<void> };
+  /** Free space on the disk holding a folder; defaults to asking the operating system. */
+  freeDiskBytes?: (directory: string) => Promise<number>;
 }
 
 /**
@@ -246,7 +248,7 @@ export class ExecutionService implements IntegrationToolSource {
         "Run a command in the Wisp's container",
         signal,
       );
-      await assertRoomToRun(wisp);
+      await assertRoomToRun(wisp, this.options.freeDiskBytes);
       const startedAt = performance.now();
       const result = await base.execute(toolCallId, params, signal, onUpdate, ctx);
       const exitCode = (result.structuredContent as { exit_code?: unknown } | undefined)?.exit_code;
@@ -316,7 +318,12 @@ export class ExecutionService implements IntegrationToolSource {
       execute: async (toolCallId, params, signal) => {
         const request = parseProcessParams(params);
         await this.authorize(conversationId, toolCallId, PROCESS_TOOL, PROCESS_SUMMARIES[request.action], signal);
-        return { content: [{ type: "text", text: await processResult(request, run, signal, wisp) }], details: {} };
+        return {
+          content: [
+            { type: "text", text: await processResult(request, run, signal, wisp, this.options.freeDiskBytes) },
+          ],
+          details: {},
+        };
       },
     });
   }
@@ -409,11 +416,12 @@ async function processResult(
   run: ProcessRunner,
   signal: AbortSignal | undefined,
   wisp: ExecutionWisp,
+  measureFreeDisk: ((directory: string) => Promise<number>) | undefined,
 ): Promise<string> {
   const unknown = (id: string) => `There is no process ${id}. Use action=list to see the processes.`;
   switch (request.action) {
     case "start": {
-      await assertRoomToRun(wisp);
+      await assertRoomToRun(wisp, measureFreeDisk);
       const id = randomUUID().replace(/-/g, "").slice(0, 8);
       const result = (await run("start", [id, request.command, String(MAX_BACKGROUND_PROCESSES)], signal))!;
       if (result.exitCode === 3) {
@@ -478,15 +486,20 @@ function containerSpec(wisp: ExecutionWisp, settings: ExecutionSettings): Contai
 }
 
 /**
- * Commands are refused while the workspace holds more than its size. The
- * container cannot be stopped from writing past it mid-command, so this is
- * checked between commands.
+ * Commands are refused while the workspace holds more than its size, or,
+ * without one, while its disk is down to the reserve. The container cannot be
+ * stopped from writing past either mid-command, so this is checked between commands.
  */
-async function assertRoomToRun(wisp: ExecutionWisp): Promise<void> {
-  const [quota, tree] = await Promise.all([
-    readWorkspaceQuota(wisp.configDirectory),
-    measureTree(wisp.workspaceDirectory),
-  ]);
+async function assertRoomToRun(
+  wisp: ExecutionWisp,
+  measureFreeDisk: (directory: string) => Promise<number> = freeDiskBytes,
+): Promise<void> {
+  const quota = await readWorkspaceQuota(wisp.configDirectory);
+  if (quota === null) {
+    await assertDiskReserve(wisp.workspaceDirectory, 0, "before running more commands", measureFreeDisk);
+    return;
+  }
+  const tree = await measureTree(wisp.workspaceDirectory);
   if (tree.bytes >= quota) {
     throw new WispBackendError(
       "invalid_request",

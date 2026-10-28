@@ -26,7 +26,7 @@ import {
   type StorageUsageItem,
   type StorageWorkspace,
 } from "../shared/storage.js";
-import { WORKSPACE_INBOX_DIRECTORY, WORKSPACE_QUOTA_BYTES } from "../shared/workspace.js";
+import { WORKSPACE_INBOX_DIRECTORY, WORKSPACE_QUOTA_BYTES, unlimitedWorkspaceRoom } from "../shared/workspace.js";
 import { WispBackendError } from "./backend-error.js";
 import { freeDiskBytes, largestQuota, measureTree, type TreeMeasurement } from "./workspace-service.js";
 
@@ -64,8 +64,8 @@ export interface StorageServiceOptions {
   onCleanupFinished?: (conversationId: string) => void;
   /** Size of a workspace that was never resized. */
   quotaBytes?: number;
-  /** The size a Wisp's or circle's workspace was given; unset, every workspace has `quotaBytes`. */
-  resolveQuota?: (conversationId: string, fallback: number) => Promise<number>;
+  /** The size a Wisp's or circle's workspace was given, `null` for none; unset, every workspace has `quotaBytes`. */
+  resolveQuota?: (conversationId: string, fallback: number) => Promise<number | null>;
   /** Free space on the disk holding a folder; defaults to asking the operating system. */
   freeDiskBytes?: (directory: string) => Promise<number>;
   now?: () => Date;
@@ -150,16 +150,20 @@ export class StorageService {
         measureWorkspace(workspace.directory),
         this.quotaFor(workspace),
       ]);
-      const maxQuotaBytes = await this.maxQuotaFor(workspace.directory, tree);
+      const free = await this.freeDiskFor(workspace.directory);
+      // Like `WorkspaceView.maxQuotaBytes`; unknown when the disk or the workspace could not be measured.
+      const maxQuotaBytes = free === undefined || tree.partial ? undefined : largestQuota(tree.bytes + free);
       return {
         conversationId: workspace.conversationId,
         name: workspace.name,
         kind: workspace.kind,
         usedBytes: tree.bytes,
         fileCount: tree.files,
-        quotaBytes,
+        quotaBytes: quotaBytes ?? unlimitedWorkspaceRoom(tree.bytes, free ?? 0),
         partial: tree.partial,
         ...(maxQuotaBytes === undefined ? {} : { maxQuotaBytes }),
+        unlimited: quotaBytes === null,
+        ...(free === undefined ? {} : { freeDiskBytes: free }),
         folders,
         largestFiles,
       } satisfies StorageWorkspace;
@@ -167,17 +171,16 @@ export class StorageService {
     return measured.sort((a, b) => b.usedBytes - a.usedBytes || a.name.localeCompare(b.name));
   }
 
-  private async quotaFor({ conversationId }: { conversationId: string }): Promise<number> {
+  private async quotaFor({ conversationId }: { conversationId: string }): Promise<number | null> {
     if (!this.options.resolveQuota) return this.quotaBytes;
     // A size that cannot be read must not hide the rest of the summary.
     return this.options.resolveQuota(conversationId, this.quotaBytes).catch(() => this.quotaBytes);
   }
 
-  /** Like `WorkspaceView.maxQuotaBytes`; undefined when it cannot be known, so no size is wrongly offered. */
-  private async maxQuotaFor(directory: string, tree: TreeMeasurement): Promise<number | undefined> {
-    if (tree.partial) return undefined;
+  /** Free space on the disk holding a workspace; undefined when it cannot be measured, so no size is wrongly offered. */
+  private async freeDiskFor(directory: string): Promise<number | undefined> {
     try {
-      return largestQuota(tree.bytes + (await (this.options.freeDiskBytes ?? freeDiskBytes)(directory)));
+      return await (this.options.freeDiskBytes ?? freeDiskBytes)(directory);
     } catch {
       return undefined;
     }

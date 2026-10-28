@@ -159,7 +159,9 @@ export function parseSearchWorkspaceFilesRequest(value: unknown): SearchWorkspac
 export function parseSetWorkspaceQuotaRequest(value: unknown): SetWorkspaceQuotaRequest {
   const request = asRecord(value);
   const quotaBytes = request.quotaBytes;
-  if (typeof quotaBytes !== "number" || !WORKSPACE_QUOTA_PRESETS.includes(quotaBytes)) throw invalidRequest();
+  if (quotaBytes !== null && (typeof quotaBytes !== "number" || !WORKSPACE_QUOTA_PRESETS.includes(quotaBytes))) {
+    throw invalidRequest();
+  }
   return { conversationId: parseId(request.conversationId), quotaBytes };
 }
 
