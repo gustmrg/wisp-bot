@@ -438,6 +438,8 @@ export class McpService {
       }
       // The exchange has completed, so a cancel arriving from here on is too
       // late to undo; removal and identity changes are re-checked at commit.
+      // The view reads the tokens from the secret store, so they must be there first.
+      await provider.writesSettled();
       const tools = await connection.listTools();
       await connection.close();
       connection = null;

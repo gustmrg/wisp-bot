@@ -51,6 +51,84 @@ describe("McpOAuthProvider authorization redirect", () => {
   });
 });
 
+describe("McpOAuthProvider credential writes", () => {
+  /** A secret store whose writes finish only when released, as a slow disk would. */
+  function slowSecrets() {
+    const log: string[] = [];
+    const releases: Array<() => void> = [];
+    const write = (name: string) => () =>
+      new Promise<void>((resolve) => {
+        releases.push(() => {
+          log.push(name);
+          resolve();
+        });
+      });
+    const secrets = {
+      setOAuthTokens: vi.fn(write("set tokens")),
+      clearOAuthTokens: vi.fn(write("clear tokens")),
+      setOAuthClientRegistration: vi.fn(write("set registration")),
+    } as unknown as McpSecretStore;
+    const release = async () => {
+      // Each write starts only after the one before it, so release them one at a time.
+      for (let index = 0; index < 10; index += 1) {
+        await Promise.resolve();
+        releases.shift()?.();
+      }
+    };
+    return { secrets, log, release };
+  }
+
+  it("waits for saved tokens to reach the secret store", async () => {
+    const { secrets, log, release } = slowSecrets();
+    const provider = new McpOAuthProvider({ serverId: "server-1", secrets, openExternal: vi.fn() });
+
+    provider.saveTokens({ access_token: "token", token_type: "Bearer" });
+    let settled = false;
+    const waiting = provider.writesSettled().then(() => {
+      settled = true;
+    });
+    await Promise.resolve();
+    expect(settled).toBe(false);
+
+    await release();
+    await waiting;
+    expect(log).toEqual(["set tokens"]);
+    provider.dispose();
+  });
+
+  it("writes credentials in the order they were saved", async () => {
+    const { secrets, log, release } = slowSecrets();
+    const provider = new McpOAuthProvider({ serverId: "server-1", secrets, openExternal: vi.fn() });
+
+    provider.saveClientInformation({ client_id: "client", redirect_uris: [] } as never);
+    provider.invalidateCredentials("tokens");
+    provider.saveTokens({ access_token: "token", token_type: "Bearer" });
+    await release();
+    await provider.writesSettled();
+
+    // Clearing stale tokens never lands after the new ones.
+    expect(log).toEqual(["set registration", "clear tokens", "set tokens"]);
+    provider.dispose();
+  });
+
+  it("keeps writing after one write fails", async () => {
+    const setOAuthTokens = vi.fn(async () => undefined);
+    const secrets = {
+      setOAuthClientRegistration: vi.fn(async () => {
+        throw new Error("disk full");
+      }),
+      setOAuthTokens,
+    } as unknown as McpSecretStore;
+    const provider = new McpOAuthProvider({ serverId: "server-1", secrets, openExternal: vi.fn() });
+
+    provider.saveClientInformation({ client_id: "client", redirect_uris: [] } as never);
+    provider.saveTokens({ access_token: "token", token_type: "Bearer" });
+    await expect(provider.writesSettled()).resolves.toBeUndefined();
+    expect(setOAuthTokens).toHaveBeenCalledOnce();
+    provider.dispose();
+  });
+});
+
 function isListening(url: string): Promise<boolean> {
   const { hostname, port } = new URL(url);
   return new Promise((resolve) => {
