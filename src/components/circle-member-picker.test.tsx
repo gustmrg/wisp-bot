@@ -26,19 +26,20 @@ describe("CircleMemberPicker", () => {
     expect(screen.getByRole("status")).toHaveTextContent("Atlas added to circle.");
   });
 
-  it("crowns the first selected Wisp, the lead, once there are two", () => {
+  it("crowns the first selected Wisp, the lead, in the list once there are two, and never in the chips", () => {
     const { rerender } = render(
       <CircleMemberPicker availableWisps={[atlas, nova]} selectedIds={[nova.id]} onChange={vi.fn()} />,
     );
-    expect(screen.queryByRole("img", { name: "Lead" })).not.toBeInTheDocument();
+    expect(document.querySelector(".lead-crown")).toBeNull();
 
     rerender(
       <CircleMemberPicker availableWisps={[atlas, nova]} selectedIds={[nova.id, atlas.id]} onChange={vi.fn()} />,
     );
-    // Its chip names it; in the list below, the crown is decoration and the checkbox keeps the Wisp's name.
-    expect(screen.getByRole("img", { name: "Lead" })).toBeInTheDocument();
-    expect(document.querySelectorAll(".lead-crown")).toHaveLength(2);
-    expect(screen.getByRole("checkbox", { name: "Nova" })).toBeChecked();
+    const crowns = document.querySelectorAll(".lead-crown");
+    expect(crowns).toHaveLength(1);
+    // Beside the lead's checkbox in the list, as decoration: the checkbox keeps the Wisp's name.
+    expect(crowns[0]?.closest("label")).toBe(screen.getByRole("checkbox", { name: "Nova" }).closest("label"));
+    expect(screen.getByLabelText("Selected Wisps").querySelector(".lead-crown")).toBeNull();
   });
 
   it("provides accessible removal controls and deduplicates selected IDs", async () => {

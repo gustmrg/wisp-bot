@@ -23,8 +23,8 @@ label, description, notifications), **Members** (members and lead),
   never matches `@Adam`.
 - Any other message goes to the circle's **lead**, its first member. A small
   crown marks the lead on its avatar wherever its replies appear, after its
-  name under the circle's name, and in **Members**. A circle with one member
-  shows no crown.
+  name under the circle's name, and beside it in the **Members** list. A
+  circle with one member shows no crown.
 - Wisps answer one at a time. Each reply finishes before the next Wisp
   starts, and each Wisp sees the replies before its own, labeled with their
   authors. Every reply shows its author's avatar and name, in its color, and

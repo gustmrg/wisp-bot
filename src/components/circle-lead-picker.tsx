@@ -2,7 +2,6 @@ import { useId } from "react";
 
 import type { Wisp, WispId } from "@/chat-data";
 import { WispAvatar } from "@/components/chat-avatar";
-import { LeadCrown } from "@/components/lead-crown";
 
 interface CircleLeadPickerProps {
   /** The circle's members, in order. */
@@ -36,9 +35,7 @@ export function CircleLeadPicker({ members, leadId, onChange }: CircleLeadPicker
               checked={member.id === leadId}
               onChange={() => onChange(member.id)}
             />
-            <LeadCrown lead={members.length > 1 && member.id === leadId} decorative>
-              <WispAvatar wisp={member} size="sm" />
-            </LeadCrown>
+            <WispAvatar wisp={member} size="sm" />
             <span className="min-w-0 text-base [overflow-wrap:anywhere]">{member.name}</span>
           </label>
         ))}

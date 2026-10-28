@@ -51,9 +51,7 @@ export function CircleMemberPicker({
                 className="inline-flex max-w-full items-center gap-[7px] rounded-full bg-muted px-[9px] py-[5px]"
                 key={wisp.id}
               >
-                <LeadCrown lead={wisp.id === leadId}>
-                  <WispAvatar wisp={wisp} size="sm" />
-                </LeadCrown>
+                <WispAvatar wisp={wisp} size="sm" />
                 <span className="min-w-0 truncate">{wisp.name}</span>
                 <button
                   className="inline-flex size-[22px] flex-none items-center justify-center rounded-full border-0 bg-transparent text-dim hover:bg-accent focus-visible:outline-2 focus-visible:outline-blue focus-visible:outline-offset-2 [&_svg]:size-3.5"
