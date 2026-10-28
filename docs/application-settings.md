@@ -4,7 +4,7 @@
 and on a phone:
 
 - **Account and server**: **General**, **Connections**, **Remote access**
-- **Wisps**: **AI Model**, **Providers**, **Voice input**, **Plugins**, **MCP servers**, **Permissions**, **Jobs**
+- **Wisps**: **AI Model**, **Providers**, **Voice input**, **Plugins**, **MCP servers**, **Permissions**, **Templates**, **Jobs**
 - **Notifications and input**: **Notifications**, **Shortcuts**
 - **Storage and data**: **Token usage**, **Storage**
 - **App**: **About**
@@ -46,6 +46,7 @@ each panel's title shows the server's name or **This device**. **General** and
 | **Plugins** | Connections and their keys, **Default web providers**, which Wisps can use each one | Environment |
 | **MCP servers** | Servers, their credentials, which Wisps can use each one | Environment |
 | **Permissions** | **Auto-review file changes**, **Create files**, **Modify files**, **Integration blocks** | Environment |
+| **Templates** | Saved templates | Environment |
 | **Jobs** | Every Wisp's jobs | Environment |
 | **Token usage** | Nothing to set; shows the environment's usage | Environment |
 | **Storage** | Workspace size limits, and removing files and archives | Environment |
@@ -188,6 +189,34 @@ deleted Wisp's or circle's archive is measured once. **Measured** shows the
 oldest measurement on the page. Files changed outside Wisp, for example from
 a terminal, show after **Refresh**, which measures every workspace and archive
 again.
+
+## Templates
+
+**Templates** lists ready-made Wisps: six built in, one per starting soul,
+and the ones saved on the connected server, as cards with a search and an
+**All**, **Built in** and **Yours** filter. A template holds a Wisp's name,
+role, soul, look, model, skills, workspace size and commands, and the access
+it asks for ([ADR 040](decisions/040-wisp-templates.md)).
+
+- Opening a card previews everything the template sets up.
+- **Use** creates the Wisp at once, with nothing to fill in, and opens its
+  conversation. Using a template again creates **Atlas 2**, and so on. Without
+  a default model, **Use** creates nothing and leads to **AI Model**.
+- A saved template with skills opens its preview first, and **Use template**
+  there creates the Wisp.
+- Anything the template names that cannot be used here falls back to the
+  default, and a notice says so: a model without a key, a workspace too large
+  for the disk or unlimited, and commands without Docker or Podman.
+- Access the template asks for is never given. The Wisp is created without it,
+  and a notice points to its **Access** tab.
+- Saved templates can be duplicated, renamed, and deleted. Built-in templates
+  come with the app and cannot be changed.
+- **Yours → Import** reads a `.wisp-template.json` file, and **Export** in a
+  saved template's preview writes one. Templates stay on the server they were
+  saved on; exporting and importing is how one moves to another.
+
+A Wisp's settings and its profile page have **Save as template**, which keeps
+the Wisp's current setup as a template on its server.
 
 ## Shortcuts
 
