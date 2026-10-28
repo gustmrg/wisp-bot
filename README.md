@@ -38,8 +38,12 @@ preset.
 
 - **A team of specialized Wisps** — create as many as you need, each with its
   own name, role, appearance, and soul (its personality and behavior, written
-  in Markdown with starting templates). See
-  [ADR 010](docs/decisions/010-wisp-entity.md).
+  in Markdown). See [ADR 010](docs/decisions/010-wisp-entity.md).
+- **Templates** — create a Wisp ready for a job in one click, from a built-in
+  or saved template with its soul, skills, model and workspace, save any Wisp
+  as one, and share them as files; access a template asks for is only granted
+  when you turn it on. See
+  [ADR 040](docs/decisions/040-wisp-templates.md).
 - **Bring your own keys, model per Wisp** — provider keys are stored encrypted
   and shared; each Wisp can use the global model or its own provider, model,
   and reasoning level. See [AI models](docs/models.md).

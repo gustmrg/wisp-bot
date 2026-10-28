@@ -142,6 +142,21 @@ settings' delete button. Rules, auto-review and **Allow everything** cannot
 allow them, their cards offer no lasting decision, a Wisp cannot change or
 delete itself, and job runs never get these tools.
 
+## Wisp templates
+
+A template only describes a Wisp
+([ADR 040](decisions/040-wisp-templates.md)). It carries no credentials:
+plugins and MCP servers are named by ID, so it can ask only for ones set up
+in the environment. Nothing it asks for is granted with it: **Use** creates
+the Wisp without that access, and the person turns on what they want in its
+**Access** tab. A built-in template's skills come with the app. A saved
+template with skills opens its preview, which shows each `SKILL.md` in full,
+before **Use template** creates the Wisp, because a saved template may have
+come from a file. Each skill is added through the same operation as the Wisp's
+own settings and must pass the same checks as a skill the Wisp saves. Saved templates are files in the server's `wisp-templates/` folder,
+checked when saved and again when read; imported files are read by the app
+and sent as text, never as a path.
+
 ## Commands
 
 A Wisp runs commands only when **Wisp settings → General → Commands & browser** is set
