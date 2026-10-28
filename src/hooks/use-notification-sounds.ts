@@ -39,7 +39,7 @@ export function useNotificationSounds(options: NotificationSoundsOptions): void 
         document.hasFocus()
       )
         return;
-      playNotificationSound(kind, preferences.notificationVolume);
+      playNotificationSound(kind, preferences.notificationVolume, preferences.notificationSoundIds[kind]);
     }
 
     return window.wisp.subscribeToAgentEvents((event) => {

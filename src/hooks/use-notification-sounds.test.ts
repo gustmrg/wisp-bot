@@ -74,7 +74,21 @@ describe("useNotificationSounds", () => {
     emit(statusEvent("atlas", "working", 1));
     emit(statusEvent("atlas", "idle", 2));
 
-    expect(playNotificationSound).toHaveBeenCalledWith("finished", 100);
+    expect(playNotificationSound).toHaveBeenCalledWith("finished", 100, "chime");
+  });
+
+  it("plays the sound chosen for each event", () => {
+    const emit = installBridge();
+    const preferences = {
+      ...DEFAULT_PREFERENCES,
+      notificationSoundIds: { finished: "marimba", "needs-input": "bell", error: "pop" } as const,
+    };
+    renderHook(() => useNotificationSounds({ preferences, chats: { atlas: wispChat("atlas") } }));
+
+    emit(statusEvent("atlas", "working", 1));
+    emit(statusEvent("atlas", "idle", 2));
+
+    expect(playNotificationSound).toHaveBeenCalledWith("finished", 100, "marimba");
   });
 
   it("stays silent for a first status that has no prior working state", () => {
@@ -103,7 +117,7 @@ describe("useNotificationSounds", () => {
 
     emit({ type: "tool_approval_requested", conversationId: "atlas", request: approvalRequest("atlas"), sequence: 1 });
 
-    expect(playNotificationSound).toHaveBeenCalledWith("needs-input", 100);
+    expect(playNotificationSound).toHaveBeenCalledWith("needs-input", 100, "chime");
   });
 
   it("respects the per-Wisp notification toggle", () => {
@@ -156,7 +170,7 @@ describe("useNotificationSounds", () => {
 
     rerender({ chats: { atlas: wispChat("atlas", true) } });
     emit({ type: "tool_approval_requested", conversationId: "atlas", request: approvalRequest("atlas"), sequence: 2 });
-    expect(playNotificationSound).toHaveBeenCalledWith("needs-input", 100);
+    expect(playNotificationSound).toHaveBeenCalledWith("needs-input", 100, "chime");
   });
 
   it("applies event filters and volume without resubscribing", () => {
@@ -173,7 +187,7 @@ describe("useNotificationSounds", () => {
     rerender({ preferences: { ...DEFAULT_PREFERENCES, notifyOnCompletion: true, notificationVolume: 35 } });
     emit(statusEvent("atlas", "working", 3));
     emit(statusEvent("atlas", "idle", 4));
-    expect(playNotificationSound).toHaveBeenCalledWith("finished", 35);
+    expect(playNotificationSound).toHaveBeenCalledWith("finished", 35, "chime");
     expect(window.wisp.subscribeToAgentEvents).toHaveBeenCalledTimes(1);
   });
 
@@ -190,10 +204,10 @@ describe("useNotificationSounds", () => {
       error: { code: "internal_error", message: "Failed", retryable: true },
     });
     emit(statusEvent("atlas", "idle", 3));
-    expect(playNotificationSound).toHaveBeenCalledExactlyOnceWith("error", 100);
+    expect(playNotificationSound).toHaveBeenCalledExactlyOnceWith("error", 100, "chime");
     emit(statusEvent("atlas", "working", 4));
     emit(statusEvent("atlas", "idle", 5));
-    expect(playNotificationSound).toHaveBeenLastCalledWith("finished", 100);
+    expect(playNotificationSound).toHaveBeenLastCalledWith("finished", 100, "chime");
   });
 
   it("mutes the selected conversation only while visible and focused", () => {
@@ -276,7 +290,7 @@ describe("useNotificationSounds", () => {
       error: { code: "invalid_request", message: "The model change could not be applied.", retryable: true },
     });
     emit(statusEvent("atlas", "idle", 3));
-    expect(playNotificationSound).toHaveBeenCalledExactlyOnceWith("finished", 100);
+    expect(playNotificationSound).toHaveBeenCalledExactlyOnceWith("finished", 100, "chime");
   });
 
   it("does not play completion for cancelled turns", () => {

@@ -110,25 +110,37 @@ registration. Disable this option before removing the application.
 ## Notifications
 
 The **Notifications** panel contains the app-level **Notification sounds** toggle,
-a volume slider (0–100%), and a Test button for each sound. In the desktop
-app it also has **System notifications**, with a switch and a Test button per
-event; see [below](#system-notifications).
+a volume slider (0–100%), and, for each event, a sound and a Test button. In
+the desktop app it also has **System notifications**, with a switch and a Test
+button per event; see [below](#system-notifications).
 Existing sound preferences are preserved. New settings default to full volume,
-all three events enabled, and open-conversation muting off.
+the **Chime** for all three events, and open-conversation muting off.
 
-- **Response completed** — a rising chime when a Wisp finishes its turn.
-- **Approval needed** — a falling chime when a Wisp awaits tool approval.
-- **Execution error** — a lower falling chime when a Wisp's turn fails. Errors
-  outside a turn, such as a rejected model change, stay silent.
+Each event's sound is **None**, **Chime**, **Marimba**, **Bell**, **Glass**,
+**Pop**, or **Soft**. Choosing one plays it right away; **None** turns that
+event's sound off. Every sound is made by the app as it plays, so nothing is
+downloaded. In each of them a finished turn rises, an approval falls, and an
+error falls lower, so the three stay apart.
+
+- **Response completed** — plays when a Wisp finishes its turn.
+- **Approval needed** — plays when a Wisp awaits tool approval.
+- **Execution error** — plays when a Wisp's turn fails. Errors outside a turn,
+  such as a rejected model change, stay silent.
 - **Mute the open conversation** — skips sounds for the selected conversation
   while the app window is visible and focused; background conversations still notify.
 
 All live sounds respect both the global sound toggle and the individual Wisp's
 notification toggle. Failed or cancelled turns do not also play the completion
-sound. Volume zero is silent. Test buttons preview sounds at the chosen volume,
-even if that event is disabled, but are disabled when global sounds are off or
-volume is zero. Settings are saved on this device; disabling sounds retains the
-volume and event choices. There are no scheduled quiet hours.
+sound. A new sound cuts off one still playing, so sounds never overlap. Volume
+zero is silent. Test buttons preview an event's sound at the chosen volume, and
+are disabled when its sound is **None**, global sounds are off, or volume is
+zero. Settings are saved on this device; disabling sounds retains the volume
+and each event's sound. There are no scheduled quiet hours.
+
+System notifications are set apart: an event's **None** does not change its
+system notification. With a window open those are silent; with every window
+closed they play the system's own sound, which the system's notification
+settings control.
 
 ### System notifications
 
