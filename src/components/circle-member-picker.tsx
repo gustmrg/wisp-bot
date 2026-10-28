@@ -4,6 +4,7 @@ import { useId, useState } from "react";
 
 import type { Wisp, WispId } from "@/chat-data";
 import { WispAvatar } from "@/components/chat-avatar";
+import { crownedLeadId, LeadCrown } from "@/components/lead-crown";
 
 interface CircleMemberPickerProps {
   availableWisps: ReadonlyArray<Wisp>;
@@ -26,6 +27,7 @@ export function CircleMemberPicker({
     const wisp = availableById.get(id);
     return wisp ? [wisp] : [];
   });
+  const leadId = crownedLeadId(normalizedIds);
 
   function toggleMember(wisp: Wisp, selected: boolean): void {
     const next = selected ? [...normalizedIds, wisp.id] : normalizedIds.filter((id) => id !== wisp.id);
@@ -49,7 +51,9 @@ export function CircleMemberPicker({
                 className="inline-flex max-w-full items-center gap-[7px] rounded-full bg-muted px-[9px] py-[5px]"
                 key={wisp.id}
               >
-                <WispAvatar wisp={wisp} size="sm" />
+                <LeadCrown lead={wisp.id === leadId}>
+                  <WispAvatar wisp={wisp} size="sm" />
+                </LeadCrown>
                 <span className="min-w-0 truncate">{wisp.name}</span>
                 <button
                   className="inline-flex size-[22px] flex-none items-center justify-center rounded-full border-0 bg-transparent text-dim hover:bg-accent focus-visible:outline-2 focus-visible:outline-blue focus-visible:outline-offset-2 [&_svg]:size-3.5"
@@ -80,7 +84,9 @@ export function CircleMemberPicker({
                   <CheckIcon aria-hidden="true" />
                 </Checkbox.Indicator>
               </Checkbox.Root>
-              <WispAvatar wisp={wisp} />
+              <LeadCrown lead={wisp.id === leadId} decorative>
+                <WispAvatar wisp={wisp} />
+              </LeadCrown>
               <span className="min-w-0 text-base [overflow-wrap:anywhere]">{wisp.name}</span>
             </label>
           ))}

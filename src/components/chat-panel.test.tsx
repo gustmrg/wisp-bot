@@ -492,6 +492,59 @@ describe("ChatPanel circles", () => {
     expect(named).toEqual(["Quill", "Lumideleted", "Deleted Wispdeleted"]);
   });
 
+  it("crowns the lead on its replies and in the header, and moves the crown when the lead changes", () => {
+    const quill = testWisp("quill", { name: "Quill" });
+    const forge = testWisp("forge", { name: "Forge" });
+    const held: Message[] = [
+      { id: "1", type: "incoming", text: "Changelog is up.", authorId: "quill" },
+      { id: "2", type: "incoming", text: "Tests are green.", authorId: "forge" },
+    ];
+    const crowned = () =>
+      [...document.querySelectorAll(".message-author")]
+        .filter((author) => within(author as HTMLElement).queryByRole("img", { name: "Lead" }))
+        .map((author) => author.textContent);
+    const { rerender } = renderPanelIn(circleChatView("crew", [quill, forge]), held);
+
+    expect(crowned()).toEqual(["Quill"]);
+    expect(document.querySelector(".chat-subline")?.textContent).toBe("Quill, Forge");
+    expect(
+      within(document.querySelector(".chat-subline") as HTMLElement).getByRole("img", { name: "Lead" }),
+    ).toBeVisible();
+
+    rerender(
+      <ChatPanel
+        chat={circleChatView("crew", [forge, quill])}
+        transcript={transcript(held)}
+        status="idle"
+        acknowledging={false}
+        approvals={[]}
+        onAnswerPrompt={vi.fn()}
+        onAbort={vi.fn()}
+        onLoadOlder={vi.fn()}
+        onLoadNewer={vi.fn()}
+        onShowLatest={vi.fn()}
+        onOpenDetails={vi.fn()}
+        onRetry={vi.fn()}
+        onResolveApproval={vi.fn()}
+        onSend={vi.fn()}
+      />,
+    );
+    expect(crowned()).toEqual(["Forge"]);
+  });
+
+  it("crowns no one in a circle of one or in a Wisp's own conversation", () => {
+    const { unmount } = renderPanelIn(circleChatView("crew", [testWisp("quill", { name: "Quill" })]), [
+      { id: "1", type: "incoming", text: "Still here.", authorId: "quill" },
+    ]);
+    expect(screen.queryByRole("img", { name: "Lead" })).not.toBeInTheDocument();
+    unmount();
+
+    renderPanelIn(atlas, [{ id: "1", type: "incoming", text: "All quiet.", authorId: "atlas", authorName: "Atlas" }], {
+      wisps: { atlas: atlas.wisp },
+    });
+    expect(screen.queryByRole("img", { name: "Lead" })).not.toBeInTheDocument();
+  });
+
   it("leaves the replies in a Wisp's own conversation unnamed, though they keep their author", () => {
     renderPanelIn(
       atlas,
