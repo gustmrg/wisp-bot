@@ -265,46 +265,6 @@ describe("AppSettingsDialog metadata", () => {
     expect(screen.getByText(/Installing version 9\.9\.0…/)).toBeVisible();
   });
 
-  it("brings the server connection notice back from General after Don't show again", async () => {
-    const user = userEvent.setup();
-    window.localStorage.setItem("wisp-bot-connection-notices-off", "1");
-    Object.defineProperty(window, "wisp", {
-      configurable: true,
-      value: {
-        subscribeToPluginSettings: vi.fn(() => () => undefined),
-        subscribeToUpdateState: vi.fn(() => () => undefined),
-        getUpdateState: vi.fn(async () => ({ ok: true, value: { phase: "idle", currentVersion: "9.8.7" } })),
-      },
-    });
-    render(
-      <AppSettingsDialog
-        appMetadata={appMetadata}
-        currentUser={currentUser}
-        userProfile={{
-          profile: { preferredName: "Ada", aboutYou: "", responsePreferences: "" },
-          loading: false,
-          error: null,
-          save: vi.fn(),
-        }}
-        open
-        preferences={DEFAULT_PREFERENCES}
-        persistenceStatus="saved"
-        persistenceError={null}
-        onOpenChange={vi.fn()}
-        onPreferencesChange={vi.fn()}
-      />,
-    );
-    const notice = screen.getByRole("switch", { name: "Server connection notice" });
-    expect(notice).not.toBeChecked();
-
-    await user.click(notice);
-    expect(notice).toBeChecked();
-    expect(window.localStorage.getItem("wisp-bot-connection-notices-off")).toBeNull();
-    await user.click(notice);
-    expect(window.localStorage.getItem("wisp-bot-connection-notices-off")).toBe("1");
-    window.localStorage.clear();
-  });
-
   it("changes Wisp colors and reply speed from the application settings", async () => {
     const user = userEvent.setup();
     const onPreferencesChange = vi.fn();

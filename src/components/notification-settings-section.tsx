@@ -1,5 +1,6 @@
 import { PlayIcon } from "lucide-react";
 
+import { ConnectionNoticeSetting } from "@/components/connection-notice-setting";
 import { PreferenceSwitch } from "@/components/general-settings-sections";
 import {
   SettingsCard,
@@ -196,6 +197,11 @@ export function NotificationSettingsSection({
               ? " System notifications skip the conversation on screen while Wisp is in focus. If none show up, check that your system allows notifications from Wisp."
               : null}
           </p>
+        </SettingsGroup>
+        <SettingsGroup label="App notices">
+          <SettingsCard>
+            <ConnectionNoticeSetting />
+          </SettingsCard>
         </SettingsGroup>
         <p className="mt-4 text-xs text-dim" role={persistenceError ? "alert" : "status"} aria-live="polite">
           {persistenceError ??

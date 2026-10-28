@@ -1,4 +1,3 @@
-import { ConnectionNoticeSetting } from "@/components/connection-notice-setting";
 import { LaunchAtLoginSetting } from "@/components/launch-at-login-setting";
 import { isBrowserApp } from "@/lib/platform";
 import { UserProfileSettings } from "@/components/user-profile-settings";
@@ -592,7 +591,6 @@ function AppSettingsDialog({
                     onChange={(replyPace) => onPreferencesChange({ ...preferences, replyPace })}
                   />
                 </SettingsRow>
-                <ConnectionNoticeSetting open={open} />
                 {browserApp ? null : <LaunchAtLoginSetting open={open} />}
               </SettingsCard>
             </SettingsGroup>

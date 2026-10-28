@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 
 import { PreferenceSwitch } from "@/components/general-settings-sections";
 import {
@@ -11,14 +11,11 @@ import { connectionNoticesOff, setConnectionNoticesOff } from "@/features/connec
 
 /**
  * Brings back the "Connected to" notice turned off with its Don't show again
- * (SWE-230). It is kept apart from the preferences, so it is read again each
- * time the settings open.
+ * (SWE-230). It is kept apart from the preferences, so it is read when the
+ * setting mounts.
  */
-export function ConnectionNoticeSetting({ open }: { open: boolean }) {
+export function ConnectionNoticeSetting() {
   const [on, setOn] = useState(() => !connectionNoticesOff());
-  useEffect(() => {
-    if (open) setOn(!connectionNoticesOff());
-  }, [open]);
   return (
     <SettingsRow>
       <SettingsRowCopy>
