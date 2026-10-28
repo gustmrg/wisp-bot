@@ -16,7 +16,6 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { APP_METADATA } from "@/config/app-metadata";
-import { CONNECTION_NOTICES_OFF_STORAGE_KEY } from "@/features/persistence/storage-policy";
 import { useMobileLayout } from "@/hooks/use-mobile-layout";
 import { cn } from "@/lib/utils";
 import { LOCAL_CONNECTION_ID, type ConnectionsView } from "../../../shared/connections";
@@ -31,6 +30,7 @@ import {
   ServerChip,
 } from "./connection-screen";
 import { CONNECTION_BACKDROP, formatDuration, useNow } from "./connection-steps";
+import { connectionNoticesOff, setConnectionNoticesOff } from "./connection-notices";
 import { ConnectionsPanel } from "./connections-panel";
 import { SshPromptDialog } from "./ssh-prompt-dialog";
 import { compareVersions, UpdateServerDialog } from "./update-server-dialog";
@@ -446,23 +446,6 @@ type ToastContent = {
   connected?: boolean;
 };
 
-/** Whether the person turned the "Connected to" notice off on this device; storage that cannot be read leaves it on. */
-function connectionNoticesOff(): boolean {
-  try {
-    return window.localStorage.getItem(CONNECTION_NOTICES_OFF_STORAGE_KEY) === "1";
-  } catch {
-    return false;
-  }
-}
-
-function turnConnectionNoticesOff(): void {
-  try {
-    window.localStorage.setItem(CONNECTION_NOTICES_OFF_STORAGE_KEY, "1");
-  } catch {
-    // Storage is unavailable, so the notice keeps showing; nothing else depends on it.
-  }
-}
-
 /**
  * What the last change of connection deserves a toast for: a server just
  * connected, or set up or updated. Reconnecting quietly needs none, and nor
@@ -514,7 +497,7 @@ function ConnectionToast({ toast, onDismiss }: { toast: ToastContent; onDismiss:
             type="button"
             className="mt-1 justify-self-start text-xs text-dim hover:text-foreground hover:underline"
             onClick={() => {
-              turnConnectionNoticesOff();
+              setConnectionNoticesOff(true);
               onDismiss();
             }}
           >

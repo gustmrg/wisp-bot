@@ -159,8 +159,9 @@ says nothing more until the next update.
 
 Opening the app connects to its server without a "Connected to" notice. The
 notice appears when you switch to a server, or when connecting took failed
-attempts. **Don't show again** in it turns it off on this device; the notices
-that a server was set up or updated still show.
+attempts. **Don't show again** in it turns it off on this device, and
+**Server connection notice** in **Settings → General** turns it back on; the
+notices that a server was set up or updated always show.
 
 - **Linux** (AppImage and `.deb`) downloads and installs updates in place. The
   `.deb` asks for the administrator password. See
