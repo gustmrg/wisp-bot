@@ -8,6 +8,25 @@ describe("normalizePreferences", () => {
     expect(normalizePreferences({ chatListOrder: "alphabetical" }).chatListOrder).toBe("recent");
   });
 
+  it("keeps up to two valid voice backups, without repeats", () => {
+    expect(
+      normalizePreferences({
+        voiceFallbacks: [
+          { providerId: "openai", modelId: "whisper-1" },
+          { providerId: "openai", modelId: "whisper-1" },
+          { providerId: "openai", modelId: "voxtral-mini-latest" },
+          { providerId: "deepgram", modelId: "nova" },
+          { providerId: "mistral", modelId: "voxtral-mini-latest" },
+          { providerId: "groq", modelId: "whisper-large-v3" },
+        ],
+      }).voiceFallbacks,
+    ).toEqual([
+      { providerId: "openai", modelId: "whisper-1" },
+      { providerId: "mistral", modelId: "voxtral-mini-latest" },
+    ]);
+    expect(normalizePreferences({ voiceFallbacks: "openai" }).voiceFallbacks).toEqual([]);
+  });
+
   it("returns defaults when no saved preferences exist", () => {
     expect(normalizePreferences(undefined)).toEqual(DEFAULT_PREFERENCES);
   });

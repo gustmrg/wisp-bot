@@ -8,7 +8,9 @@ import {
   isVoiceLanguage,
   isVoiceModel,
   isVoiceProviderId,
+  MAX_VOICE_FALLBACKS,
   type VoiceLanguage,
+  type VoiceModelChoice,
   type VoiceProviderId,
 } from "../../shared/voice";
 import { systemTimeZone } from "../../shared/time-zone";
@@ -54,6 +56,8 @@ export interface AppPreferences {
   microphone: string;
   voiceProvider: VoiceProviderId;
   voiceModel: string;
+  /** Providers a recording goes to, in order, when the one above cannot transcribe it. */
+  voiceFallbacks: VoiceModelChoice[];
   voiceLanguage: VoiceLanguage;
   /** Send the message as soon as a recording is transcribed instead of leaving it in the composer. */
   voiceAutoSend: boolean;
@@ -92,6 +96,7 @@ export const DEFAULT_PREFERENCES: AppPreferences = {
   microphone: "default",
   voiceProvider: DEFAULT_VOICE_PROVIDER,
   voiceModel: defaultVoiceModel(DEFAULT_VOICE_PROVIDER),
+  voiceFallbacks: [],
   voiceLanguage: "auto",
   voiceAutoSend: false,
   shortcuts: DEFAULT_SHORTCUTS,
@@ -125,6 +130,21 @@ function isAutoReviewRule(value: unknown): value is AutoReviewRule {
 
 function preferenceRecord(value: unknown): Record<string, unknown> | undefined {
   return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : undefined;
+}
+
+/** The saved backups that still name a provider and one of its models, without repeats. */
+function voiceFallbacks(value: unknown): VoiceModelChoice[] {
+  if (!Array.isArray(value)) return [];
+  const choices: VoiceModelChoice[] = [];
+  for (const item of value) {
+    const choice = preferenceRecord(item);
+    const providerId = choice?.providerId;
+    if (!isVoiceProviderId(providerId) || !isVoiceModel(providerId, choice?.modelId)) continue;
+    const { modelId } = choice as { modelId: string };
+    if (choices.some((saved) => saved.providerId === providerId && saved.modelId === modelId)) continue;
+    choices.push({ providerId, modelId });
+  }
+  return choices.slice(0, MAX_VOICE_FALLBACKS);
 }
 
 function panelWidth(value: unknown, { defaultWidth, minWidth, maxWidth }: ResizablePanelLayout): number {
@@ -171,6 +191,7 @@ export function normalizePreferences(value: unknown): AppPreferences {
     microphone: typeof saved?.microphone === "string" && saved.microphone ? saved.microphone : "default",
     voiceProvider,
     voiceModel: isVoiceModel(voiceProvider, saved?.voiceModel) ? saved.voiceModel : defaultVoiceModel(voiceProvider),
+    voiceFallbacks: voiceFallbacks(saved?.voiceFallbacks),
     voiceLanguage: isVoiceLanguage(saved?.voiceLanguage) ? saved.voiceLanguage : "auto",
     voiceAutoSend: typeof saved?.voiceAutoSend === "boolean" ? saved.voiceAutoSend : false,
     shortcuts: normalizeShortcuts(saved?.shortcuts),

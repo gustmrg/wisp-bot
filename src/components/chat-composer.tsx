@@ -34,7 +34,7 @@ import type { ManagedConversationStatus } from "../../shared/conversations";
 import type { QueuedMessage } from "../../shared/message-queue";
 import type { ChatView } from "@/chat-data";
 import { chatName } from "@/lib/chat-schema";
-import type { VoiceLanguage, VoiceProviderId } from "../../shared/voice";
+import type { VoiceLanguage, VoiceModelChoice, VoiceProviderId } from "../../shared/voice";
 import {
   attachmentsNeedingVision,
   messageWithAttachments,
@@ -47,6 +47,8 @@ export interface VoiceInputSettings {
   deviceId: string;
   providerId: VoiceProviderId;
   modelId: string;
+  /** Backups for a transcription the provider cannot do. */
+  fallbacks?: ReadonlyArray<VoiceModelChoice>;
   language: VoiceLanguage;
   autoSend: boolean;
   shortcut: string;
@@ -164,6 +166,7 @@ export function ChatComposer({
     deviceId: voice.deviceId,
     providerId: voice.providerId,
     modelId: voice.modelId,
+    ...(voice.fallbacks ? { fallbacks: voice.fallbacks } : {}),
     language: voice.language,
     onTranscript: insertTranscript,
   });
@@ -676,6 +679,15 @@ export function ChatComposer({
           </div>
         ) : voiceInput.error ? (
           <ComposerError message={voiceInput.error.message}>
+            {voiceInput.error.retryable ? (
+              <button
+                type="button"
+                className="font-medium text-foreground underline underline-offset-2"
+                onClick={voiceInput.retry}
+              >
+                Try again
+              </button>
+            ) : null}
             {voiceInput.error.needsSetup && onConfigureVoice ? (
               <ComposerTooltip message="Set up voice input">
                 <button

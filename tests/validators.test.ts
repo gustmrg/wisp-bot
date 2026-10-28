@@ -91,6 +91,27 @@ describe("voice request validators", () => {
     expect(() => parseSaveVoiceCredentialRequest({ providerId: "openrouter", apiKey: "key" })).toThrow();
   });
 
+  it("accepts up to two backups, each a known provider and one of its models", () => {
+    const fallbacks = [
+      { providerId: "openai", modelId: "whisper-1" },
+      { providerId: "mistral", modelId: "voxtral-mini-latest" },
+    ];
+    expect(parseTranscribeAudioRequest({ ...valid, fallbacks })).toEqual({ ...valid, fallbacks });
+    // No backups is the same as none given.
+    expect(parseTranscribeAudioRequest({ ...valid, fallbacks: [] })).toEqual(valid);
+    for (const bad of [
+      [...fallbacks, { providerId: "groq", modelId: "whisper-large-v3" }],
+      [{ providerId: "openai", modelId: "voxtral-mini-latest" }],
+      [{ providerId: "deepgram", modelId: "nova" }],
+      [{ providerId: "openai", modelId: "whisper-1", apiKey: "key" }],
+      "openai",
+    ]) {
+      expect(() => parseTranscribeAudioRequest({ ...valid, fallbacks: bad })).toThrow(
+        "The backend request is invalid.",
+      );
+    }
+  });
+
   it("explains empty and oversized recordings", () => {
     expect(() => parseTranscribeAudioRequest({ ...valid, audio: new Uint8Array() })).toThrow("The recording is empty.");
     expect(() => parseTranscribeAudioRequest({ ...valid, audio: new Uint8Array(MAX_VOICE_AUDIO_BYTES + 1) })).toThrow(

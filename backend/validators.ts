@@ -61,11 +61,13 @@ import {
   isVoiceModel,
   isVoiceProviderId,
   MAX_VOICE_AUDIO_BYTES,
+  MAX_VOICE_FALLBACKS,
   VOICE_AUDIO_MIME_TYPES,
   type RemoveVoiceCredentialRequest,
   type SaveVoiceCredentialRequest,
   type TranscribeAudioRequest,
   type VoiceAudioMimeType,
+  type VoiceModelChoice,
 } from "../shared/voice.js";
 import type { QueuedMessageRequest, QueueMessageRequest, UpdateQueuedMessageRequest } from "../shared/message-queue.js";
 import type {
@@ -533,6 +535,7 @@ export function parseRemoveVoiceCredentialRequest(value: unknown): RemoveVoiceCr
 export function parseTranscribeAudioRequest(value: unknown): TranscribeAudioRequest {
   const request = asRecord(value);
   const { providerId, modelId, language, mimeType, audio } = request;
+  const fallbacks = request.fallbacks === undefined ? [] : parseVoiceFallbacks(request.fallbacks);
   if (
     !isVoiceProviderId(providerId) ||
     !isVoiceModel(providerId, modelId) ||
@@ -548,7 +551,24 @@ export function parseTranscribeAudioRequest(value: unknown): TranscribeAudioRequ
   if (audio.byteLength > MAX_VOICE_AUDIO_BYTES) {
     throw new WispBackendError("invalid_request", "The recording is too long to transcribe. Try a shorter one.");
   }
-  return { providerId, modelId, language, mimeType: mimeType as VoiceAudioMimeType, audio };
+  return {
+    providerId,
+    modelId,
+    ...(fallbacks.length ? { fallbacks } : {}),
+    language,
+    mimeType: mimeType as VoiceAudioMimeType,
+    audio,
+  };
+}
+
+function parseVoiceFallbacks(value: unknown): VoiceModelChoice[] {
+  if (!Array.isArray(value) || value.length > MAX_VOICE_FALLBACKS) throw invalidRequest();
+  return value.map((item) => {
+    const choice = asRecord(item);
+    if (Object.keys(choice).length !== 2 || !isVoiceProviderId(choice.providerId)) throw invalidRequest();
+    if (!isVoiceModel(choice.providerId, choice.modelId)) throw invalidRequest();
+    return { providerId: choice.providerId, modelId: choice.modelId };
+  });
 }
 
 function parseMessageText(value: unknown): string {

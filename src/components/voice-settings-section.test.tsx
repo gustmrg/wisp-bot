@@ -60,6 +60,50 @@ describe("VoiceSettingsSection", () => {
     expect(onPreferencesChange).toHaveBeenCalledWith(expect.objectContaining({ voiceAutoSend: true }));
   });
 
+  it("adds a backup from the providers with a saved key, and removes it", async () => {
+    const user = userEvent.setup();
+    const { onPreferencesChange } = renderSection(DEFAULT_PREFERENCES, ["groq", "openai"]);
+    const add = screen.getByRole("button", { name: "Add backup" });
+    await vi.waitFor(() => expect(add).toBeEnabled());
+
+    await user.click(add);
+    // The provider's other model comes first; Mistral has no key, so it is never offered.
+    expect(onPreferencesChange).toHaveBeenLastCalledWith({
+      ...DEFAULT_PREFERENCES,
+      voiceFallbacks: [{ providerId: "groq", modelId: "whisper-large-v3" }],
+    });
+  });
+
+  it("lists saved backups in order, at most two", async () => {
+    const user = userEvent.setup();
+    const voiceFallbacks = [
+      { providerId: "openai" as const, modelId: "whisper-1" },
+      { providerId: "mistral" as const, modelId: "voxtral-mini-latest" },
+    ];
+    const { onPreferencesChange } = renderSection({ ...DEFAULT_PREFERENCES, voiceFallbacks }, ["groq", "openai"]);
+
+    expect(await screen.findByRole("combobox", { name: "Backup 1" })).toHaveTextContent("OpenAI · Whisper");
+    // A backup whose key was removed stays listed, and says why it is skipped.
+    expect(screen.getByRole("combobox", { name: "Backup 2" })).toHaveTextContent(
+      "Mistral · Voxtral Mini Transcribe (no key)",
+    );
+    expect(screen.getByRole("button", { name: "Add backup" })).toBeDisabled();
+
+    await user.click(screen.getByRole("button", { name: "Remove backup 1" }));
+    expect(onPreferencesChange).toHaveBeenLastCalledWith({
+      ...DEFAULT_PREFERENCES,
+      voiceFallbacks: [{ providerId: "mistral", modelId: "voxtral-mini-latest" }],
+    });
+  });
+
+  it("says a key is needed before any backup can be added", async () => {
+    // Mistral has one model, so with only its key there is nothing to fall back to.
+    renderSection({ ...DEFAULT_PREFERENCES, voiceProvider: "mistral", voiceModel: "voxtral-mini-latest" }, ["mistral"]);
+
+    expect(await screen.findByText(/Save a key for another provider to use it as a backup/)).toBeVisible();
+    expect(screen.getByRole("button", { name: "Add backup" })).toBeDisabled();
+  });
+
   it("saves a key for the selected provider without keeping it in the form", async () => {
     const user = userEvent.setup();
     const { saveVoiceCredential } = renderSection();

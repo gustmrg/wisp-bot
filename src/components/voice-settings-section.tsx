@@ -1,3 +1,4 @@
+import { XIcon } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import { PreferenceSwitch, SettingsSelect, type SettingsOption } from "@/components/general-settings-sections";
@@ -18,10 +19,13 @@ import { notifyProviderCredentialsChanged } from "@/lib/voice-credentials";
 import {
   defaultVoiceModel,
   isVoiceLanguage,
+  isVoiceModel,
   isVoiceProviderId,
+  MAX_VOICE_FALLBACKS,
   VOICE_LANGUAGES,
   VOICE_PROVIDERS,
   voiceProvider,
+  type VoiceModelChoice,
   type VoiceSettingsView,
 } from "../../shared/voice";
 
@@ -243,6 +247,8 @@ function VoiceSettingsSection({ active, preferences, onPreferencesChange }: Voic
           </SettingsCard>
         </SettingsGroup>
 
+        <BackupProviders view={view} preferences={preferences} onPreferencesChange={onPreferencesChange} />
+
         <SettingsGroup label="Credential">
           <SettingsCard>
             <div className="flex flex-col gap-3 px-3.5 py-3.5">
@@ -306,6 +312,113 @@ function VoiceSettingsSection({ active, preferences, onPreferencesChange }: Voic
         </div>
       </div>
     </section>
+  );
+}
+
+const choiceValue = ({ providerId, modelId }: VoiceModelChoice) => `${providerId}:${modelId}`;
+
+function choiceOf(value: string): VoiceModelChoice | undefined {
+  const separator = value.indexOf(":");
+  const providerId = value.slice(0, separator);
+  const modelId = value.slice(separator + 1);
+  return isVoiceProviderId(providerId) && isVoiceModel(providerId, modelId) ? { providerId, modelId } : undefined;
+}
+
+function choiceLabel({ providerId, modelId }: VoiceModelChoice): string {
+  const provider = voiceProvider(providerId);
+  const model = provider?.models.find(({ id }) => id === modelId);
+  return `${provider?.name ?? providerId} · ${model?.name ?? modelId}`;
+}
+
+/**
+ * The providers a recording goes to, in order, when the one above cannot
+ * transcribe it (SWE-253). Only providers with a saved key can be added.
+ */
+function BackupProviders({
+  view,
+  preferences,
+  onPreferencesChange,
+}: {
+  view: VoiceSettingsView | null;
+  preferences: AppPreferences;
+  onPreferencesChange: (preferences: AppPreferences) => void;
+}) {
+  const backups = preferences.voiceFallbacks;
+  const keyed = new Set((view?.providers ?? []).filter((status) => status.credentialConfigured).map(({ id }) => id));
+  const primary = choiceValue({ providerId: preferences.voiceProvider, modelId: preferences.voiceModel });
+  const candidates = VOICE_PROVIDERS.filter(({ id }) => keyed.has(id))
+    .flatMap((provider) => provider.models.map((model) => ({ providerId: provider.id, modelId: model.id })))
+    .filter((choice) => choiceValue(choice) !== primary);
+  const unused = candidates.filter((choice) => !backups.some((backup) => choiceValue(backup) === choiceValue(choice)));
+  const change = (voiceFallbacks: VoiceModelChoice[]) => onPreferencesChange({ ...preferences, voiceFallbacks });
+  const next = unused[0];
+  return (
+    <SettingsGroup label="Backup providers">
+      <SettingsCard variant="stacked">
+        <SettingsRow>
+          <SettingsRowCopy>
+            <SettingsRowTitle>If the provider fails</SettingsRowTitle>
+            <SettingsRowDescription>
+              When the provider above can't be reached, takes too long, is rate limited, or rejects its key, the
+              recording goes to these, in order. A recording no provider could read is not sent again.
+              {candidates.length ? null : " Save a key for another provider to use it as a backup."}
+            </SettingsRowDescription>
+          </SettingsRowCopy>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="shrink-0"
+            disabled={!next || backups.length >= MAX_VOICE_FALLBACKS}
+            onClick={() => next && change([...backups, next])}
+          >
+            Add backup
+          </Button>
+        </SettingsRow>
+        {backups.map((backup, index) => {
+          const value = choiceValue(backup);
+          const options = [
+            ...(candidates.some((choice) => choiceValue(choice) === value)
+              ? []
+              : [
+                  {
+                    value,
+                    label: `${choiceLabel(backup)} ${value === primary ? "(same as the provider)" : "(no key)"}`,
+                  },
+                ]),
+            ...candidates
+              .filter((choice) => choiceValue(choice) === value || unused.includes(choice))
+              .map((choice) => ({ value: choiceValue(choice), label: choiceLabel(choice) })),
+          ];
+          return (
+            <SettingsRow key={value}>
+              <SettingsRowCopy>
+                <SettingsRowTitle htmlFor={`voice-backup-${index}`}>Backup {index + 1}</SettingsRowTitle>
+              </SettingsRowCopy>
+              <SettingsSelect
+                id={`voice-backup-${index}`}
+                value={value}
+                options={options}
+                onChange={(selected) => {
+                  const choice = choiceOf(selected);
+                  if (choice) change(backups.map((current, at) => (at === index ? choice : current)));
+                }}
+              />
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-sm"
+                aria-label={`Remove backup ${index + 1}`}
+                title={`Remove backup ${index + 1}`}
+                onClick={() => change(backups.filter((_, at) => at !== index))}
+              >
+                <XIcon aria-hidden="true" />
+              </Button>
+            </SettingsRow>
+          );
+        })}
+      </SettingsCard>
+    </SettingsGroup>
   );
 }
 
