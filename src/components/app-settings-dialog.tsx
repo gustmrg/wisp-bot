@@ -661,23 +661,6 @@ function AppSettingsDialog({
                     </Button>
                   )}
                 </SettingsRow>
-                {browserApp ? null : (
-                  <SettingsRow>
-                    <SettingsRowCopy>
-                      <SettingsRowTitle>Announce updates</SettingsRowTitle>
-                      <SettingsRowDescription>
-                        Say which version {appMetadata.displayName} updated to when it reopens, once per version.
-                      </SettingsRowDescription>
-                    </SettingsRowCopy>
-                    <PreferenceSwitch
-                      label="Announce updates"
-                      checked={preferences.announceUpdates}
-                      onChange={() =>
-                        onPreferencesChange({ ...preferences, announceUpdates: !preferences.announceUpdates })
-                      }
-                    />
-                  </SettingsRow>
-                )}
               </SettingsCard>
             </SettingsGroup>
             {browserApp ? (

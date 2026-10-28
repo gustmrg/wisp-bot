@@ -24,19 +24,13 @@ function bridge(state: UpdateState) {
   return { push: (next: UpdateState) => act(() => push(next)) };
 }
 
-/** The toast with its two preferences kept in state, as the app keeps them in this device's storage. */
-function Harness({ initial }: { initial: { announce: boolean; announcedVersion: string } }) {
-  const [preferences, setPreferences] = useState(initial);
+/** The toast with the announced version kept in state, as the app keeps it in this device's storage. */
+function Harness({ announcedVersion: initial }: { announcedVersion: string }) {
+  const [announcedVersion, setAnnouncedVersion] = useState(initial);
   return (
     <>
-      <UpdateToast
-        displayName="Wisp"
-        announce={preferences.announce}
-        announcedVersion={preferences.announcedVersion}
-        onAnnounced={(announcedVersion) => setPreferences((current) => ({ ...current, announcedVersion }))}
-        onSilence={() => setPreferences((current) => ({ ...current, announce: false }))}
-      />
-      <output data-testid="preferences">{JSON.stringify(preferences)}</output>
+      <UpdateToast displayName="Wisp" announcedVersion={announcedVersion} onAnnounced={setAnnouncedVersion} />
+      <output data-testid="announced">{announcedVersion}</output>
     </>
   );
 }
@@ -44,36 +38,47 @@ function Harness({ initial }: { initial: { announce: boolean; announcedVersion: 
 describe("UpdateToast", () => {
   it("announces an update once and records the version it announced", async () => {
     bridge(updated);
-    render(<Harness initial={{ announce: true, announcedVersion: "" }} />);
+    render(<Harness announcedVersion="" />);
 
     expect(await screen.findByText("Wisp updated to 0.26.0")).toBeVisible();
     expect(screen.getByText("Previously 0.25.2.")).toBeVisible();
-    expect(screen.getByTestId("preferences")).toHaveTextContent('"announcedVersion":"0.26.0"');
+    expect(screen.getByTestId("announced")).toHaveTextContent("0.26.0");
+    // Recording the version does not hide the toast that is showing.
+    expect(screen.getByText("Wisp updated to 0.26.0")).toBeVisible();
   });
 
-  it("says nothing on a later opening of the same version", async () => {
+  it("says nothing when the window reopens or reloads after announcing the version", async () => {
+    // The main process still reports the update until it quits.
     bridge(updated);
-    render(<Harness initial={{ announce: true, announcedVersion: "0.26.0" }} />);
+    render(<Harness announcedVersion="0.26.0" />);
 
     await act(async () => undefined);
     expect(screen.queryByText(/updated to/)).toBeNull();
   });
 
-  it("stops announcing updates on this device with Don't show again", async () => {
-    bridge(updated);
-    render(<Harness initial={{ announce: true, announcedVersion: "" }} />);
+  it("announces the next version once more", async () => {
+    bridge({ phase: "idle", currentVersion: "0.27.0", updatedFrom: "0.26.0" });
+    render(<Harness announcedVersion="0.26.0" />);
 
-    await userEvent.click(await screen.findByRole("button", { name: "Don't show again" }));
-    expect(screen.queryByText(/updated to/)).toBeNull();
-    expect(screen.getByTestId("preferences")).toHaveTextContent('"announce":false');
+    expect(await screen.findByText("Wisp updated to 0.27.0")).toBeVisible();
   });
 
-  it("still shows an install in progress with announcements off", async () => {
-    const { push } = bridge(updated);
-    render(<Harness initial={{ announce: false, announcedVersion: "" }} />);
+  it("offers no way to turn the announcement off", async () => {
+    bridge(updated);
+    render(<Harness announcedVersion="" />);
+
+    await screen.findByText("Wisp updated to 0.26.0");
+    expect(screen.queryByRole("button", { name: "Don't show again" })).toBeNull();
+    expect(screen.getByRole("button", { name: "See what's new" })).toBeVisible();
+    await userEvent.click(screen.getByRole("button", { name: "Dismiss" }));
+    expect(screen.queryByText(/updated to/)).toBeNull();
+  });
+
+  it("shows an install in progress", async () => {
+    const { push } = bridge({ phase: "idle", currentVersion: "0.26.0" });
+    render(<Harness announcedVersion="" />);
 
     await act(async () => undefined);
-    expect(screen.queryByText(/updated to/)).toBeNull();
     await push({ phase: "installing", currentVersion: "0.26.0", availableVersion: "0.27.0" });
     expect(screen.getByText("Installing version 0.27.0…")).toBeVisible();
   });

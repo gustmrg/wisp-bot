@@ -154,14 +154,13 @@ own. The update feed is turned off in development ("Updates are available only
 in an installed release").
 
 After an update installs, Wisp reopens and says which version it updated to,
-once per version: reopening the window or the app afterwards says nothing
-more. **Don't show again** in that notice, or **Announce updates** in
-**Settings → About**, turns the notice off on this device; the install itself
-is still shown, and **About** still checks for and installs updates.
+once per version on each device: reopening the window or the app afterwards
+says nothing more until the next update.
 
 Opening the app connects to its server without a "Connected to" notice. The
 notice appears when you switch to a server, or when connecting took failed
-attempts.
+attempts. **Don't show again** in it turns it off on this device; the notices
+that a server was set up or updated still show.
 
 - **Linux** (AppImage and `.deb`) downloads and installs updates in place. The
   `.deb` asks for the administrator password. See

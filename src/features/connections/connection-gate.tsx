@@ -16,6 +16,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { APP_METADATA } from "@/config/app-metadata";
+import { CONNECTION_NOTICES_OFF_STORAGE_KEY } from "@/features/persistence/storage-policy";
 import { useMobileLayout } from "@/hooks/use-mobile-layout";
 import { cn } from "@/lib/utils";
 import { LOCAL_CONNECTION_ID, type ConnectionsView } from "../../../shared/connections";
@@ -436,7 +437,31 @@ function VersionMismatchBanner({
 const CONNECTED_TOAST_MS = 4_000;
 const UPDATED_TOAST_MS = 12_000;
 
-type ToastContent = { key: string; title: string; detail: string; durationMs: number };
+type ToastContent = {
+  key: string;
+  title: string;
+  detail: string;
+  durationMs: number;
+  /** A plain "Connected to" a server, which the person can turn off; setups and updates always show. */
+  connected?: boolean;
+};
+
+/** Whether the person turned the "Connected to" notice off on this device; storage that cannot be read leaves it on. */
+function connectionNoticesOff(): boolean {
+  try {
+    return window.localStorage.getItem(CONNECTION_NOTICES_OFF_STORAGE_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function turnConnectionNoticesOff(): void {
+  try {
+    window.localStorage.setItem(CONNECTION_NOTICES_OFF_STORAGE_KEY, "1");
+  } catch {
+    // Storage is unavailable, so the notice keeps showing; nothing else depends on it.
+  }
+}
 
 /**
  * What the last change of connection deserves a toast for: a server just
@@ -463,7 +488,9 @@ function toastFor(previous: ConnectionsView | null, view: ConnectionsView, openi
     };
   }
   if (opening && !previous.status.retry && !previous.status.failure) return undefined;
+  if (connectionNoticesOff()) return undefined;
   return {
+    connected: true,
     key: `${view.activeId}:${view.status.epoch}:connected`,
     title: `Connected to ${profile.name}`,
     detail: `${addressOf(profile)}${version ? ` · server ${version}` : ""}`,
@@ -482,6 +509,18 @@ function ConnectionToast({ toast, onDismiss }: { toast: ToastContent; onDismiss:
       <div className="grid min-w-0 gap-0.5">
         <strong className="text-sm">{toast.title}</strong>
         <span className="truncate text-xs text-dim">{toast.detail}</span>
+        {toast.connected ? (
+          <button
+            type="button"
+            className="mt-1 justify-self-start text-xs text-dim hover:text-foreground hover:underline"
+            onClick={() => {
+              turnConnectionNoticesOff();
+              onDismiss();
+            }}
+          >
+            Don't show again
+          </button>
+        ) : null}
       </div>
       <Button
         variant="ghost"

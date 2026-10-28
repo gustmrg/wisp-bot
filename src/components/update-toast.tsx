@@ -10,14 +10,10 @@ const UPDATED_TOAST_MS = 12_000;
 
 interface UpdateToastProps {
   displayName: string;
-  /** Whether to say which version the app updated to; the install itself is always shown. */
-  announce: boolean;
   /** The last version announced on this device, so each update is announced once. */
   announcedVersion: string;
   /** Records that this version was announced, whether or not the toast was read. */
   onAnnounced: (version: string) => void;
-  /** "Don't show again": stops announcing updates on this device. */
-  onSilence: () => void;
 }
 
 /**
@@ -27,7 +23,7 @@ interface UpdateToastProps {
  * quits, so the version announced is remembered here, where a reopened window
  * or a reload still knows it.
  */
-export function UpdateToast({ displayName, announce, announcedVersion, onAnnounced, onSilence }: UpdateToastProps) {
+export function UpdateToast({ displayName, announcedVersion, onAnnounced }: UpdateToastProps) {
   const [state, setState] = useState<UpdateState | null>(null);
   const [updatedDismissed, setUpdatedDismissed] = useState(false);
 
@@ -49,11 +45,11 @@ export function UpdateToast({ displayName, announce, announcedVersion, onAnnounc
   const [announcing, setAnnouncing] = useState<string>();
   const updatedVersion = state?.updatedFrom ? state.currentVersion : undefined;
   useEffect(() => {
-    if (!announce || !updatedVersion || updatedVersion === announcedVersion || announcing) return;
+    if (!updatedVersion || updatedVersion === announcedVersion || announcing) return;
     setAnnouncing(updatedVersion);
     onAnnounced(updatedVersion);
-  }, [announce, updatedVersion, announcedVersion, announcing, onAnnounced]);
-  const showUpdated = announce && Boolean(announcing) && !updatedDismissed && state?.phase !== "installing";
+  }, [updatedVersion, announcedVersion, announcing, onAnnounced]);
+  const showUpdated = Boolean(announcing) && !updatedDismissed && state?.phase !== "installing";
   useEffect(() => {
     if (!showUpdated) return;
     const timer = setTimeout(() => setUpdatedDismissed(true), UPDATED_TOAST_MS);
@@ -80,25 +76,13 @@ export function UpdateToast({ displayName, announce, announcedVersion, onAnnounc
           {displayName} updated to {state.currentVersion}
         </strong>
         <span className="text-xs text-dim">Previously {state.updatedFrom}.</span>
-        <span className="mt-1 flex flex-wrap gap-x-3 gap-y-1">
-          <button
-            type="button"
-            className="text-xs text-blue hover:underline"
-            onClick={() => void window.wisp.openReleasesPage()}
-          >
-            See what's new
-          </button>
-          <button
-            type="button"
-            className="text-xs text-dim hover:text-foreground hover:underline"
-            onClick={() => {
-              setUpdatedDismissed(true);
-              onSilence();
-            }}
-          >
-            Don't show again
-          </button>
-        </span>
+        <button
+          type="button"
+          className="mt-1 justify-self-start text-xs text-blue hover:underline"
+          onClick={() => void window.wisp.openReleasesPage()}
+        >
+          See what's new
+        </button>
       </div>
       <Button
         variant="ghost"

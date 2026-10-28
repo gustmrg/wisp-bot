@@ -244,10 +244,6 @@ function Workspace({
     (announcedVersion: string) => updatePreferences({ ...latestPreferences.current, announcedVersion }),
     [updatePreferences],
   );
-  const silenceUpdates = useCallback(
-    () => updatePreferences({ ...latestPreferences.current, announceUpdates: false }),
-    [updatePreferences],
-  );
 
   useEffect(() => {
     function handleKeyDown(event: KeyboardEvent) {
@@ -444,10 +440,8 @@ function Workspace({
           />
           <UpdateToast
             displayName={APP_METADATA.displayName}
-            announce={workspace.preferences.announceUpdates}
             announcedVersion={workspace.preferences.announcedVersion}
             onAnnounced={announceVersion}
-            onSilence={silenceUpdates}
           />
           {/* The splash from opening stays until the Wisps have loaded. */}
           <SplashOverlay ready={!workspace.loading} />
