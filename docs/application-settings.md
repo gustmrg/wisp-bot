@@ -153,6 +153,16 @@ update steps. Checking runs only when you ask, and nothing downloads on its
 own. The update feed is turned off in development ("Updates are available only
 in an installed release").
 
+After an update installs, Wisp reopens and says which version it updated to,
+once per version: reopening the window or the app afterwards says nothing
+more. **Don't show again** in that notice, or **Announce updates** in
+**Settings → About**, turns the notice off on this device; the install itself
+is still shown, and **About** still checks for and installs updates.
+
+Opening the app connects to its server without a "Connected to" notice. The
+notice appears when you switch to a server, or when connecting took failed
+attempts.
+
 - **Linux** (AppImage and `.deb`) downloads and installs updates in place. The
   `.deb` asks for the administrator password. See
   [installing on Linux](installing-on-linux.md).

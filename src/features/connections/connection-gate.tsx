@@ -71,10 +71,13 @@ export function ConnectionGate({ children }: { children: ReactNode }) {
   const [view, error] = useConnections();
   const [toast, setToast] = useState<ToastContent>();
   const previous = useRef<ConnectionsView | null>(null);
+  // Whether this window has reached a backend yet; opening the app connects without announcing it.
+  const reached = useRef(false);
   useEffect(() => {
-    const next = view ? toastFor(previous.current, view) : undefined;
+    const next = view ? toastFor(previous.current, view, !reached.current) : undefined;
     if (next) setToast(next);
     previous.current = view;
+    if (view?.status.phase === "local" || view?.status.phase === "connected") reached.current = true;
   }, [view]);
   const dismissToast = useCallback(() => setToast(undefined), []);
   // OpenSSH can ask while connecting, reconnecting, or setting a server up.
@@ -437,9 +440,11 @@ type ToastContent = { key: string; title: string; detail: string; durationMs: nu
 
 /**
  * What the last change of connection deserves a toast for: a server just
- * connected, or set up or updated. Reconnecting quietly needs none.
+ * connected, or set up or updated. Reconnecting quietly needs none, and nor
+ * does the connection the app makes as it opens, unless it took failed
+ * attempts to get there (SWE-230).
  */
-function toastFor(previous: ConnectionsView | null, view: ConnectionsView): ToastContent | undefined {
+function toastFor(previous: ConnectionsView | null, view: ConnectionsView, opening: boolean): ToastContent | undefined {
   if (!previous || view.status.phase !== "connected" || previous.status.phase === "connected") return undefined;
   if (previous.status.phase === "reconnecting") return undefined;
   const profile = activeProfile(view);
@@ -457,6 +462,7 @@ function toastFor(previous: ConnectionsView | null, view: ConnectionsView): Toas
       durationMs: UPDATED_TOAST_MS,
     };
   }
+  if (opening && !previous.status.retry && !previous.status.failure) return undefined;
   return {
     key: `${view.activeId}:${view.status.epoch}:connected`,
     title: `Connected to ${profile.name}`,

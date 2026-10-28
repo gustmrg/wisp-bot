@@ -265,6 +265,63 @@ describe("AppSettingsDialog metadata", () => {
     expect(screen.getByText(/Installing version 9\.9\.0…/)).toBeVisible();
   });
 
+  it("turns update announcements off and back on from About", async () => {
+    const user = userEvent.setup();
+    const onPreferencesChange = vi.fn();
+    Object.defineProperty(window, "wisp", {
+      configurable: true,
+      value: {
+        subscribeToPluginSettings: vi.fn(() => () => undefined),
+        subscribeToUpdateState: vi.fn(() => () => undefined),
+        getUpdateState: vi.fn(async () => ({ ok: true, value: { phase: "idle", currentVersion: "9.8.7" } })),
+      },
+    });
+    const { rerender } = render(
+      <AppSettingsDialog
+        appMetadata={appMetadata}
+        currentUser={currentUser}
+        userProfile={{
+          profile: { preferredName: "Ada", aboutYou: "", responsePreferences: "" },
+          loading: false,
+          error: null,
+          save: vi.fn(),
+        }}
+        open
+        preferences={DEFAULT_PREFERENCES}
+        persistenceStatus="saved"
+        persistenceError={null}
+        onOpenChange={vi.fn()}
+        onPreferencesChange={onPreferencesChange}
+      />,
+    );
+    await user.click(screen.getByRole("button", { name: "About" }));
+    await user.click(screen.getByRole("switch", { name: "Announce updates" }));
+    expect(onPreferencesChange).toHaveBeenLastCalledWith({ ...DEFAULT_PREFERENCES, announceUpdates: false });
+
+    rerender(
+      <AppSettingsDialog
+        appMetadata={appMetadata}
+        currentUser={currentUser}
+        userProfile={{
+          profile: { preferredName: "Ada", aboutYou: "", responsePreferences: "" },
+          loading: false,
+          error: null,
+          save: vi.fn(),
+        }}
+        open
+        preferences={{ ...DEFAULT_PREFERENCES, announceUpdates: false }}
+        persistenceStatus="saved"
+        persistenceError={null}
+        onOpenChange={vi.fn()}
+        onPreferencesChange={onPreferencesChange}
+      />,
+    );
+    // Checking by hand stays where it was.
+    expect(screen.getByRole("button", { name: "Check for updates" })).toBeEnabled();
+    await user.click(screen.getByRole("switch", { name: "Announce updates" }));
+    expect(onPreferencesChange).toHaveBeenLastCalledWith({ ...DEFAULT_PREFERENCES, announceUpdates: true });
+  });
+
   it("changes Wisp colors and reply speed from the application settings", async () => {
     const user = userEvent.setup();
     const onPreferencesChange = vi.fn();

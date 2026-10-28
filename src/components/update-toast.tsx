@@ -8,11 +8,26 @@ import { Button } from "@/components/ui/button";
 // Long enough to notice after the window reopens, short enough not to linger.
 const UPDATED_TOAST_MS = 12_000;
 
+interface UpdateToastProps {
+  displayName: string;
+  /** Whether to say which version the app updated to; the install itself is always shown. */
+  announce: boolean;
+  /** The last version announced on this device, so each update is announced once. */
+  announcedVersion: string;
+  /** Records that this version was announced, whether or not the toast was read. */
+  onAnnounced: (version: string) => void;
+  /** "Don't show again": stops announcing updates on this device. */
+  onSilence: () => void;
+}
+
 /**
  * Announces update progress the user can't otherwise see from the workspace:
- * the restart while an update installs, and the new version once it reopens.
+ * the restart while an update installs, and the new version once it reopens,
+ * once per version (SWE-230). The main process remembers the update until it
+ * quits, so the version announced is remembered here, where a reopened window
+ * or a reload still knows it.
  */
-export function UpdateToast({ displayName }: { displayName: string }) {
+export function UpdateToast({ displayName, announce, announcedVersion, onAnnounced, onSilence }: UpdateToastProps) {
   const [state, setState] = useState<UpdateState | null>(null);
   const [updatedDismissed, setUpdatedDismissed] = useState(false);
 
@@ -30,7 +45,15 @@ export function UpdateToast({ displayName }: { displayName: string }) {
     };
   }, []);
 
-  const showUpdated = Boolean(state?.updatedFrom) && !updatedDismissed && state?.phase !== "installing";
+  // Kept for the toast's lifetime, so recording the version does not hide it while it shows.
+  const [announcing, setAnnouncing] = useState<string>();
+  const updatedVersion = state?.updatedFrom ? state.currentVersion : undefined;
+  useEffect(() => {
+    if (!announce || !updatedVersion || updatedVersion === announcedVersion || announcing) return;
+    setAnnouncing(updatedVersion);
+    onAnnounced(updatedVersion);
+  }, [announce, updatedVersion, announcedVersion, announcing, onAnnounced]);
+  const showUpdated = announce && Boolean(announcing) && !updatedDismissed && state?.phase !== "installing";
   useEffect(() => {
     if (!showUpdated) return;
     const timer = setTimeout(() => setUpdatedDismissed(true), UPDATED_TOAST_MS);
@@ -57,13 +80,25 @@ export function UpdateToast({ displayName }: { displayName: string }) {
           {displayName} updated to {state.currentVersion}
         </strong>
         <span className="text-xs text-dim">Previously {state.updatedFrom}.</span>
-        <button
-          type="button"
-          className="mt-1 justify-self-start text-xs text-blue hover:underline"
-          onClick={() => void window.wisp.openReleasesPage()}
-        >
-          See what's new
-        </button>
+        <span className="mt-1 flex flex-wrap gap-x-3 gap-y-1">
+          <button
+            type="button"
+            className="text-xs text-blue hover:underline"
+            onClick={() => void window.wisp.openReleasesPage()}
+          >
+            See what's new
+          </button>
+          <button
+            type="button"
+            className="text-xs text-dim hover:text-foreground hover:underline"
+            onClick={() => {
+              setUpdatedDismissed(true);
+              onSilence();
+            }}
+          >
+            Don't show again
+          </button>
+        </span>
       </div>
       <Button
         variant="ghost"
