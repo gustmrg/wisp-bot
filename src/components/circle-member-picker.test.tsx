@@ -30,16 +30,18 @@ describe("CircleMemberPicker", () => {
     const { rerender } = render(
       <CircleMemberPicker availableWisps={[atlas, nova]} selectedIds={[nova.id]} onChange={vi.fn()} />,
     );
-    expect(document.querySelector(".lead-crown")).toBeNull();
+    expect(document.querySelector(".lead-mark")).toBeNull();
 
     rerender(
       <CircleMemberPicker availableWisps={[atlas, nova]} selectedIds={[nova.id, atlas.id]} onChange={vi.fn()} />,
     );
-    const crowns = document.querySelectorAll(".lead-crown");
+    const crowns = document.querySelectorAll(".lead-mark");
     expect(crowns).toHaveLength(1);
-    // Beside the lead's checkbox in the list, as decoration: the checkbox keeps the Wisp's name.
+    // Beside the lead's name in the list, not over its avatar, as decoration: the checkbox keeps the Wisp's name.
+    expect(crowns[0]?.parentElement).toHaveTextContent("Nova");
     expect(crowns[0]?.closest("label")).toBe(screen.getByRole("checkbox", { name: "Nova" }).closest("label"));
-    expect(screen.getByLabelText("Selected Wisps").querySelector(".lead-crown")).toBeNull();
+    expect(document.querySelector(".lead-crown")).toBeNull();
+    expect(screen.getByLabelText("Selected Wisps").querySelector(".lead-mark")).toBeNull();
   });
 
   it("provides accessible removal controls and deduplicates selected IDs", async () => {
