@@ -13,6 +13,7 @@ import { registerRuntimeEventHandlers } from "./register-runtime-event-handlers.
 import { registerScheduledMessageHandlers } from "./register-scheduled-message-handlers.js";
 import { registerSessionReportHandlers } from "./register-session-report-handlers.js";
 import { registerStorageHandlers } from "./register-storage-handlers.js";
+import { registerTemplateHandlers } from "./register-template-handlers.js";
 import { registerToolPolicyHandlers } from "./register-tool-policy-handlers.js";
 import { registerVoiceHandlers } from "./register-voice-handlers.js";
 import { registerWorkspaceHandlers } from "./register-workspace-handlers.js";
@@ -47,6 +48,7 @@ export function registerRuntimeHandlers(
     registerWorkspaceHandlers(router, runtime.workspace, authorizeSender),
     registerExecutionHandlers(router, runtime.execution, runtime.workspace, authorizeSender),
     registerStorageHandlers(router, runtime.storage, authorizeSender),
+    registerTemplateHandlers(router, runtime.templates, authorizeSender),
     // A key added for voice input can make the saved chat model usable, so Wisps re-apply it.
     registerVoiceHandlers(router, runtime.transcription, authorizeSender, () => runtime.reapplySavedModel()),
     registerConversationHandlers(router, conversations, authorizeSender),
