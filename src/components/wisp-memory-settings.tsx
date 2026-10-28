@@ -23,6 +23,7 @@ import { FormStatus } from "@/components/ui/form-status";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { ToggleSwitch } from "@/components/ui/toggle-switch";
+import { downloadTextFile } from "@/lib/download-file";
 import { describeMemoryTextEdit, planMemoryTextEdit, type MemoryTextEdit } from "@/lib/memory-text-edit";
 import { cn } from "@/lib/utils";
 
@@ -485,12 +486,6 @@ function formatDate(iso: string): string {
   return new Date(iso).toLocaleDateString(undefined, { dateStyle: "medium" });
 }
 
-/** Saves a file through the browser's download, which works the same in the app and on the web. */
 function download({ fileName, markdown }: MemoryExport) {
-  const url = URL.createObjectURL(new Blob([markdown], { type: "text/markdown" }));
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = fileName;
-  link.click();
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  downloadTextFile(fileName, markdown, "text/markdown");
 }
