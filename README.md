@@ -24,11 +24,7 @@ credentials, and workspaces stay in your local user-data directory, and nothing
 goes through a Wisp Bot service.
 
 <p align="center">
-  <img src="docs/screenshot.png" alt="Wisp Bot showing a team of Wisps in the sidebar and a conversation with Atlas, the research Wisp" width="800" />
-</p>
-
-<p align="center">
-  <img src="docs/screenshot-identity.png" alt="A Wisp's settings: appearance, name, role, and soul" width="800" />
+  <img src="docs/screenshot.png" alt="Wisp Bot with a team of Wisps in the sidebar, a conversation with Atlas, the research Wisp, and Atlas's settings open beside it: appearance, name, role, and soul" width="800" />
 </p>
 
 Under the hood, each Wisp owns a persistent agent session on the
