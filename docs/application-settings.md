@@ -125,6 +125,8 @@ all three events enabled, and open-conversation muting off.
   outside a turn, such as a rejected model change, stay silent.
 - **Mute the open conversation** — skips sounds for the selected conversation
   while the app window is visible and focused; background conversations still notify.
+- **App notices → Server connection notice** — the "Connected to" notice shown
+  when you switch to a server; see [Updates (About)](#updates-about).
 
 All live sounds respect both the global sound toggle and the individual Wisp's
 notification toggle. Failed or cancelled turns do not also play the completion
@@ -152,6 +154,17 @@ Installed releases have explicit check, download, and restart-to-install
 update steps. Checking runs only when you ask, and nothing downloads on its
 own. The update feed is turned off in development ("Updates are available only
 in an installed release").
+
+After an update installs, Wisp reopens and says which version it updated to,
+once per version on each device: reopening the window or the app afterwards
+says nothing more until the next update.
+
+Opening the app connects to its server without a "Connected to" notice. The
+notice appears when you switch to a server, or when connecting took failed
+attempts. **Don't show again** in it turns it off on this device, and
+**Server connection notice** in **Settings → Notifications → App notices**
+turns it back on; the
+notices that a server was set up or updated always show.
 
 - **Linux** (AppImage and `.deb`) downloads and installs updates in place. The
   `.deb` asks for the administrator password. See

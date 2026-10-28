@@ -240,6 +240,10 @@ function Workspace({
     const preferences = latestPreferences.current;
     updatePreferences({ ...preferences, sidebarCollapsed: !preferences.sidebarCollapsed });
   }, [updatePreferences]);
+  const announceVersion = useCallback(
+    (announcedVersion: string) => updatePreferences({ ...latestPreferences.current, announcedVersion }),
+    [updatePreferences],
+  );
 
   useEffect(() => {
     function handleKeyDown(event: KeyboardEvent) {
@@ -434,7 +438,11 @@ function Workspace({
             persistenceError={workspace.persistenceError}
             onPreferencesChange={workspace.updatePreferences}
           />
-          <UpdateToast displayName={APP_METADATA.displayName} />
+          <UpdateToast
+            displayName={APP_METADATA.displayName}
+            announcedVersion={workspace.preferences.announcedVersion}
+            onAnnounced={announceVersion}
+          />
           {/* The splash from opening stays until the Wisps have loaded. */}
           <SplashOverlay ready={!workspace.loading} />
         </TooltipProvider>

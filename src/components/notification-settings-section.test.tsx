@@ -80,3 +80,18 @@ it("offers no system notifications in the browser app", () => {
   render(<Settings />);
   expect(screen.queryByRole("switch", { name: "System notifications" })).toBeNull();
 });
+
+it("brings the server connection notice back after Don't show again", async () => {
+  const user = userEvent.setup();
+  window.localStorage.setItem("wisp-bot-connection-notices-off", "1");
+  render(<Settings />);
+  const notice = screen.getByRole("switch", { name: "Server connection notice" });
+  expect(notice).not.toBeChecked();
+
+  await user.click(notice);
+  expect(notice).toBeChecked();
+  expect(window.localStorage.getItem("wisp-bot-connection-notices-off")).toBeNull();
+  await user.click(notice);
+  expect(window.localStorage.getItem("wisp-bot-connection-notices-off")).toBe("1");
+  window.localStorage.clear();
+});

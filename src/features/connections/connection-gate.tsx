@@ -30,6 +30,7 @@ import {
   ServerChip,
 } from "./connection-screen";
 import { CONNECTION_BACKDROP, formatDuration, useNow } from "./connection-steps";
+import { connectionNoticesOff, setConnectionNoticesOff } from "./connection-notices";
 import { ConnectionsPanel } from "./connections-panel";
 import { SshPromptDialog } from "./ssh-prompt-dialog";
 import { compareVersions, UpdateServerDialog } from "./update-server-dialog";
@@ -71,10 +72,13 @@ export function ConnectionGate({ children }: { children: ReactNode }) {
   const [view, error] = useConnections();
   const [toast, setToast] = useState<ToastContent>();
   const previous = useRef<ConnectionsView | null>(null);
+  // Whether this window has reached a backend yet; opening the app connects without announcing it.
+  const reached = useRef(false);
   useEffect(() => {
-    const next = view ? toastFor(previous.current, view) : undefined;
+    const next = view ? toastFor(previous.current, view, !reached.current) : undefined;
     if (next) setToast(next);
     previous.current = view;
+    if (view?.status.phase === "local" || view?.status.phase === "connected") reached.current = true;
   }, [view]);
   const dismissToast = useCallback(() => setToast(undefined), []);
   // OpenSSH can ask while connecting, reconnecting, or setting a server up.
@@ -433,13 +437,22 @@ function VersionMismatchBanner({
 const CONNECTED_TOAST_MS = 4_000;
 const UPDATED_TOAST_MS = 12_000;
 
-type ToastContent = { key: string; title: string; detail: string; durationMs: number };
+type ToastContent = {
+  key: string;
+  title: string;
+  detail: string;
+  durationMs: number;
+  /** A plain "Connected to" a server, which the person can turn off; setups and updates always show. */
+  connected?: boolean;
+};
 
 /**
  * What the last change of connection deserves a toast for: a server just
- * connected, or set up or updated. Reconnecting quietly needs none.
+ * connected, or set up or updated. Reconnecting quietly needs none, and nor
+ * does the connection the app makes as it opens, unless it took failed
+ * attempts to get there (SWE-230).
  */
-function toastFor(previous: ConnectionsView | null, view: ConnectionsView): ToastContent | undefined {
+function toastFor(previous: ConnectionsView | null, view: ConnectionsView, opening: boolean): ToastContent | undefined {
   if (!previous || view.status.phase !== "connected" || previous.status.phase === "connected") return undefined;
   if (previous.status.phase === "reconnecting") return undefined;
   const profile = activeProfile(view);
@@ -457,7 +470,10 @@ function toastFor(previous: ConnectionsView | null, view: ConnectionsView): Toas
       durationMs: UPDATED_TOAST_MS,
     };
   }
+  if (opening && !previous.status.retry && !previous.status.failure) return undefined;
+  if (connectionNoticesOff()) return undefined;
   return {
+    connected: true,
     key: `${view.activeId}:${view.status.epoch}:connected`,
     title: `Connected to ${profile.name}`,
     detail: `${addressOf(profile)}${version ? ` · server ${version}` : ""}`,
@@ -476,6 +492,18 @@ function ConnectionToast({ toast, onDismiss }: { toast: ToastContent; onDismiss:
       <div className="grid min-w-0 gap-0.5">
         <strong className="text-sm">{toast.title}</strong>
         <span className="truncate text-xs text-dim">{toast.detail}</span>
+        {toast.connected ? (
+          <button
+            type="button"
+            className="mt-1 justify-self-start text-xs text-dim hover:text-foreground hover:underline"
+            onClick={() => {
+              setConnectionNoticesOff(true);
+              onDismiss();
+            }}
+          >
+            Don't show again
+          </button>
+        ) : null}
       </div>
       <Button
         variant="ghost"

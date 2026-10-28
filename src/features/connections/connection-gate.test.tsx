@@ -432,17 +432,67 @@ describe("ConnectionGate", () => {
     expect(screen.getByRole("textbox", { name: "Host" })).toHaveValue("raspberrypi");
   });
 
-  it("says which server it connected to", async () => {
-    const { push } = bridge(view({ phase: "connecting" }));
+  it("says which server it connected to after switching to it", async () => {
+    const { push } = bridge(view({ phase: "local" }, "local"));
     render(
+      <ConnectionGate>
+        <App onMount={() => undefined} />
+      </ConnectionGate>,
+    );
+    await screen.findByText("Workspace");
+    await push(view({ phase: "connecting", epoch: 2 }));
+    await screen.findByRole("heading", { name: "Connecting to Home server" });
+    await push(view({ phase: "connected", epoch: 2, serverVersion: __APP_VERSION__ }));
+    expect(await screen.findByText("Connected to Home server")).toBeVisible();
+    expect(screen.getByText(`me@raspberrypi · server ${__APP_VERSION__}`)).toBeVisible();
+  });
+
+  it("stops saying which server it connected to after Don't show again, on this device", async () => {
+    window.localStorage.clear();
+    const { push } = bridge(view({ phase: "local" }, "local"));
+    render(
+      <ConnectionGate>
+        <App onMount={() => undefined} />
+      </ConnectionGate>,
+    );
+    await screen.findByText("Workspace");
+    await push(view({ phase: "connecting", epoch: 2 }));
+    await push(view({ phase: "connected", epoch: 2, serverVersion: __APP_VERSION__ }));
+    await userEvent.click(await screen.findByRole("button", { name: "Don't show again" }));
+    expect(screen.queryByText("Connected to Home server")).toBeNull();
+    expect(window.localStorage.getItem("wisp-bot-connection-notices-off")).toBe("1");
+
+    await push(view({ phase: "local", epoch: 3 }, "local"));
+    await push(view({ phase: "connecting", epoch: 4 }));
+    await push(view({ phase: "connected", epoch: 4, serverVersion: __APP_VERSION__ }));
+    await screen.findByText("Workspace");
+    expect(screen.queryByText("Connected to Home server")).toBeNull();
+    window.localStorage.clear();
+  });
+
+  it("connects quietly as the app opens, and says so only when it took failed attempts", async () => {
+    const { push } = bridge(view({ phase: "connecting" }));
+    const { unmount } = render(
       <ConnectionGate>
         <App onMount={() => undefined} />
       </ConnectionGate>,
     );
     await screen.findByRole("heading", { name: "Connecting to Home server" });
     await push(view({ phase: "connected", serverVersion: __APP_VERSION__ }));
+    await screen.findByText("Workspace");
+    expect(screen.queryByText("Connected to Home server")).toBeNull();
+    unmount();
+
+    const retry = { since: Date.now() - 20_000, attempt: 2, failures: [] };
+    const late = bridge(view({ phase: "connecting", failure: "unreachable", message: "Down.", retry }));
+    render(
+      <ConnectionGate>
+        <App onMount={() => undefined} />
+      </ConnectionGate>,
+    );
+    await screen.findByRole("heading", { name: "Cannot reach Home server" });
+    await late.push(view({ phase: "connected", serverVersion: __APP_VERSION__ }));
     expect(await screen.findByText("Connected to Home server")).toBeVisible();
-    expect(screen.getByText(`me@raspberrypi · server ${__APP_VERSION__}`)).toBeVisible();
   });
 
   it("does not offer a server setup for an address or this computer", async () => {

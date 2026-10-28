@@ -72,6 +72,8 @@ export interface AppPreferences {
   wispsRow: boolean;
   /** How this device orders the conversation list and the Wisps row. */
   chatListOrder: ChatListOrder;
+  /** The last version this device announced, so each update is announced once. */
+  announcedVersion: string;
 }
 
 export const DEFAULT_PREFERENCES: AppPreferences = {
@@ -104,6 +106,7 @@ export const DEFAULT_PREFERENCES: AppPreferences = {
   sidebarCollapsed: false,
   wispsRow: true,
   chatListOrder: "recent",
+  announcedVersion: "",
 };
 
 export function isRuleBehavior(value: unknown): value is RuleBehavior {
@@ -194,5 +197,6 @@ export function normalizePreferences(value: unknown): AppPreferences {
     chatListOrder: CHAT_LIST_ORDERS.includes(saved?.chatListOrder as ChatListOrder)
       ? (saved?.chatListOrder as ChatListOrder)
       : "recent",
+    announcedVersion: typeof saved?.announcedVersion === "string" ? saved.announcedVersion.slice(0, 64) : "",
   };
 }
