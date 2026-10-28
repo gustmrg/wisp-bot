@@ -66,6 +66,10 @@
   width: 34px;
   height: 34px;
 }
+/* The collapsed sidebar's item is barely wider than the avatar, so the ring stays inside it rather than crossing its background's edge. */
+.workspace-sidebar[data-collapsed] .conversation-avatar.wisp-halo::before {
+  inset: 0;
+}
 .conversation-role {
   margin-left: -4px;
   color: color-mix(in srgb, var(--wisp) 78%, var(--foreground));

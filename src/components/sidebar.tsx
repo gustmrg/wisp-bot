@@ -289,8 +289,8 @@ function Sidebar({
               <button
                 className={cn(
                   "conversation-list-item group/item relative mb-1 flex min-w-0 items-center gap-[9px] rounded-[10px] border-0 bg-transparent text-left hover:bg-muted data-[selected=true]:bg-accent",
-                  // In the rail the item is the 44px avatar itself, centered with a margin to the rail's edges.
-                  rail ? "mx-auto size-11 justify-center p-0" : "w-full p-2",
+                  // In the rail the item just holds the 44px avatar and its ring, centered with a margin to the rail's edges.
+                  rail ? "mx-auto size-12 justify-center p-0" : "w-full p-2",
                 )}
                 data-selected={selected}
                 data-unread={chat.unread ? true : undefined}
