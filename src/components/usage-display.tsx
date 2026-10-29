@@ -140,3 +140,8 @@ export function formatUsd(value: number | null): string {
   if (value > 0 && value < 0.01) return "<$0.01";
   return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 2 }).format(value);
 }
+
+/** A model's name without its vendor prefix: `gpt-oss-120b` for `openai/gpt-oss-120b`. */
+export function shortModelId(modelId: string): string {
+  return modelId.split("/").pop() || modelId;
+}

@@ -92,6 +92,57 @@ describe("usage history", () => {
     expect((await restoredService.getUsageReport({ period: "all" })).totals).toEqual(all.totals);
   });
 
+  it("splits usage by model for each Wisp and for every Wisp, adding up to the totals", async () => {
+    const { repository, service } = await setup();
+    const first = repository.getAgentContext("first");
+    const second = repository.getAgentContext("second");
+    const at = (seconds: number) => new Date(Date.now() - seconds * 1000).toISOString();
+    const compaction = {
+      type: "compaction",
+      id: "compact",
+      parentId: null,
+      timestamp: at(15),
+      summary: "Summary",
+      firstKeptEntryId: "kept",
+      tokensBefore: 9000,
+      usage: {
+        input: 900,
+        output: 100,
+        cacheRead: 0,
+        cacheWrite: 0,
+        totalTokens: 1000,
+        cost: { input: 0.009, output: 0.001, cacheRead: 0, cacheWrite: 0, total: 0.01 },
+      },
+    };
+    await writeFile(
+      path.join(first.sessionDirectory, "current.jsonl"),
+      [entry(at(30)), entry(at(20), "other/model"), compaction, entry(at(10))]
+        .map((line) => JSON.stringify(line))
+        .join("\n"),
+    );
+    await writeFile(path.join(second.sessionDirectory, "current.jsonl"), `${JSON.stringify(entry(at(10)))}\n`);
+
+    const report = await service.getUsageReport({ period: "all" });
+    const summary = (rows: typeof report.models) =>
+      rows?.map(({ key, kind, turns, totals }) => [key, kind, turns, totals.totalTokens, totals.costUsd]);
+
+    expect(summary(report.wisps[0]!.models)).toEqual([
+      ["openrouter:test/model", "model", 2, 2700, expect.closeTo(0.00302, 8)],
+      ["openrouter:other/model", "model", 1, 1350, null],
+      ["compaction", "compaction", 0, 1000, 0.01],
+    ]);
+    expect(summary(report.models)).toEqual([
+      ["openrouter:test/model", "model", 3, 4050, expect.closeTo(0.00453, 8)],
+      ["openrouter:other/model", "model", 1, 1350, null],
+      ["compaction", "compaction", 0, 1000, 0.01],
+    ]);
+    expect(report.models?.reduce((sum, row) => sum + row.totals.totalTokens, 0)).toBe(report.totals.totalTokens);
+    expect(report.models?.[0]?.totals.cacheSavingsUsd).toBeCloseTo(3 * (0.00009 - 0.00005), 12);
+    expect(report.models?.[2]?.totals.cacheSavingsUsd).toBe(0);
+    // An unpriced model keeps the totals' cost unknown, as before.
+    expect(report.totals.costUsd).toBeNull();
+  });
+
   it("reports a circle's members' usage in that circle alone, one row per member", async () => {
     const { repository, service } = await setup();
     const circle: CircleChat = {
@@ -232,6 +283,11 @@ describe("usage history", () => {
     const usage = await service.getUsageReport({ period: "all" });
     expect(usage.totals.totalTokens).toBe(2700);
     expect(usage.totals.costUsd).toBeCloseTo(0.00151, 8);
+    // A plan's turns are a row of their own, apart from the model's paid turns.
+    expect(usage.models?.map(({ key, plan, turns }) => [key, plan ?? false, turns])).toEqual([
+      ["plan:claude-code:claude-sonnet-5-5", true, 2],
+      ["openrouter:test/model", false, 1],
+    ]);
   });
 
   it("returns no activity before Pi writes its first message", async () => {

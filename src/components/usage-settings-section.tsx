@@ -4,13 +4,22 @@ import { ChartColumnIcon, CircleAlertIcon, RefreshCwIcon, TriangleAlertIcon } fr
 
 import { Wisp } from "@/components/wisp";
 import { SettingsCard, SettingsGroup } from "@/components/settings/settings-primitives";
-import { CacheStats, formatUsd, inputSplit, plural, TokenCount, TokenMix } from "@/components/usage-display";
+import {
+  CacheStats,
+  formatUsd,
+  inputSplit,
+  plural,
+  shortModelId,
+  TokenCount,
+  TokenMix,
+} from "@/components/usage-display";
 import { Button } from "@/components/ui/button";
 import { SegmentedControl } from "@/components/ui/segmented-control";
+import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useTimeZone } from "@/hooks/use-time-zone";
 import type { WispOption } from "@/lib/plugin-access";
 import { cn } from "@/lib/utils";
-import type { UsagePeriod, UsageReport, WispUsageRow } from "../../shared/contracts";
+import type { ModelUsageRow, UsagePeriod, UsageReport, WispUsageRow } from "../../shared/contracts";
 
 const PERIOD_OPTIONS: ReadonlyArray<{ value: UsagePeriod; label: string }> = [
   { value: "7d", label: "Last 7 days" },
@@ -19,6 +28,13 @@ const PERIOD_OPTIONS: ReadonlyArray<{ value: UsagePeriod; label: string }> = [
 ];
 
 type Totals = WispUsageRow["totals"];
+type Breakdown = "wisp" | "model";
+
+const BREAKDOWN_OPTIONS: ReadonlyArray<{ value: Breakdown; label: string }> = [
+  { value: "wisp", label: "By Wisp" },
+  { value: "model", label: "By model" },
+];
+const ALL_MODELS = "all";
 
 export function UsageSettingsSection({ wisps = [] }: { wisps?: ReadonlyArray<WispOption> }) {
   return (
@@ -31,7 +47,7 @@ export function UsageSettingsSection({ wisps = [] }: { wisps?: ReadonlyArray<Wis
         Token usage
       </h2>
       <p className="mb-4 text-xs leading-relaxed text-dim">
-        Tokens and estimated cost per Wisp, from saved session history on this device.
+        Tokens and estimated cost per Wisp and per model, from saved session history on this device.
       </p>
       <UsageReportPanel wisps={wisps} />
     </section>
@@ -46,7 +62,10 @@ interface UsageReportPanelProps {
   active?: boolean;
 }
 
-/** Token usage by Wisp, for a period: every Wisp's, or only what a circle's members used in it. */
+/**
+ * Token usage by Wisp or by model, for a period: every Wisp's, or only what a circle's members
+ * used in it. Choosing a model narrows the summary and the table to that model's usage.
+ */
 export function UsageReportPanel({ wisps = [], conversationId, active = true }: UsageReportPanelProps) {
   const [request, setRequest] = useState<{ period: UsagePeriod }>({ period: "30d" });
   const timeZone = useTimeZone();
@@ -54,6 +73,8 @@ export function UsageReportPanel({ wisps = [], conversationId, active = true }: 
   // switching periods or refreshing does not collapse the page.
   const [state, setState] = useState<{ report?: UsageReport; error?: string; loading: boolean }>({ loading: true });
   const [slide, setSlide] = useState<"animate-tab-forward" | "animate-tab-back">("animate-tab-forward");
+  const [breakdown, setBreakdown] = useState<Breakdown>("wisp");
+  const [modelKey, setModelKey] = useState(ALL_MODELS);
   useEffect(() => {
     if (!active) return;
     let current = true;
@@ -79,17 +100,26 @@ export function UsageReportPanel({ wisps = [], conversationId, active = true }: 
     setRequest({ period });
   };
   const refresh = () => setRequest((value) => ({ ...value }));
-  const report = state.report;
+  const fullReport = state.report;
+  // Servers older than the split send no models; the page then stays by Wisp.
+  const models = fullReport?.models;
+  const model = models?.find((row) => row.key === modelKey);
+  const report = fullReport && model ? forModel(fullReport, model) : fullReport;
   const wispsById = new Map(wisps.map((wisp) => [wisp.id, wisp]));
   const circle = conversationId !== undefined;
   return (
     <div className="@container min-w-0">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <SegmentedControl label="Period" value={request.period} options={PERIOD_OPTIONS} onChange={changePeriod} />
-        <Button size="sm" variant="ghost" disabled={state.loading} onClick={refresh}>
-          <RefreshCwIcon aria-hidden="true" className={cn(state.loading && "motion-safe:animate-spin")} />
-          Refresh
-        </Button>
+        <div className="flex items-center gap-1.5">
+          {models && models.length > 0 ? (
+            <ModelFilter models={models} value={model ? model.key : ALL_MODELS} onChange={setModelKey} />
+          ) : null}
+          <Button size="sm" variant="ghost" disabled={state.loading} onClick={refresh}>
+            <RefreshCwIcon aria-hidden="true" className={cn(state.loading && "motion-safe:animate-spin")} />
+            Refresh
+          </Button>
+        </div>
       </div>
       {state.error ? (
         <div role="alert" className="mt-4 flex gap-2.5 rounded-[10px] bg-popover p-3.5 text-xs leading-relaxed">
@@ -136,7 +166,7 @@ export function UsageReportPanel({ wisps = [], conversationId, active = true }: 
             />
           ) : (
             <>
-              <UsageSummary report={report} />
+              <UsageSummary report={report} model={model} />
               {report.incomplete ? (
                 <div
                   role="status"
@@ -149,9 +179,31 @@ export function UsageReportPanel({ wisps = [], conversationId, active = true }: 
                   </p>
                 </div>
               ) : null}
-              <SettingsGroup label="By Wisp">
-                <UsageTable report={report} wispsById={wispsById} />
-              </SettingsGroup>
+              {models ? (
+                <>
+                  <div className="mx-0.5 mb-[7px] mt-[18px]">
+                    <SegmentedControl<Breakdown>
+                      label="Show usage"
+                      value={breakdown}
+                      options={BREAKDOWN_OPTIONS}
+                      onChange={setBreakdown}
+                    />
+                  </div>
+                  {breakdown === "model" ? (
+                    <ModelTable
+                      models={model ? [model] : models}
+                      totals={report.totals}
+                      wisps={fullReport?.wisps ?? []}
+                    />
+                  ) : (
+                    <UsageTable report={report} wispsById={wispsById} model={model} />
+                  )}
+                </>
+              ) : (
+                <SettingsGroup label="By Wisp">
+                  <UsageTable report={report} wispsById={wispsById} />
+                </SettingsGroup>
+              )}
             </>
           )}
           <details className="mx-0.5 mt-4 text-xs leading-[1.45] text-dim">
@@ -188,7 +240,7 @@ export function UsageReportPanel({ wisps = [], conversationId, active = true }: 
   );
 }
 
-function UsageSummary({ report }: { report: UsageReport }) {
+function UsageSummary({ report, model }: { report: UsageReport; model?: ModelUsageRow }) {
   const { totals } = report;
   const unpriced = report.wisps.filter((wisp) => wisp.totals.costUsd === null).length;
   // With a Wisp missing prices the total is unknown; the priced part is still a floor worth showing.
@@ -210,7 +262,7 @@ function UsageSummary({ report }: { report: UsageReport }) {
                   : "Unknown"}
             </p>
             <p className="m-0 text-xs text-dim">
-              {plural(active, "Wisp")} with usage · {plural(sessions, "session")}
+              {plural(active, "Wisp")} with usage · {model ? modelActivity(model) : plural(sessions, "session")}
             </p>
           </div>
           <dl className="m-0 @max-[28rem]:w-full @[28rem]:text-right">
@@ -232,7 +284,16 @@ function UsageSummary({ report }: { report: UsageReport }) {
   );
 }
 
-function UsageTable({ report, wispsById }: { report: UsageReport; wispsById: Map<string, WispOption> }) {
+function UsageTable({
+  report,
+  wispsById,
+  model,
+}: {
+  report: UsageReport;
+  wispsById: Map<string, WispOption>;
+  /** The model the report is narrowed to: rows then count its turns rather than every session. */
+  model?: ModelUsageRow;
+}) {
   const rows = [...report.wisps].sort(
     (a, b) => (b.totals.costUsd ?? -1) - (a.totals.costUsd ?? -1) || b.totals.totalTokens - a.totals.totalTokens,
   );
@@ -241,7 +302,9 @@ function UsageTable({ report, wispsById }: { report: UsageReport; wispsById: Map
     <SettingsCard className="overflow-x-auto">
       {/* Below 35rem the rows stack into labelled cells; see .usage-table in styles.css. */}
       <table className="usage-table w-full text-right text-xs tabular-nums">
-        <caption className="sr-only">Token usage and estimated USD by Wisp</caption>
+        <caption className="sr-only">
+          Token usage and estimated USD by Wisp{model ? ` for ${modelLabel(model)}` : ""}
+        </caption>
         <thead>
           <tr className="text-dim">
             {["Wisp", "Cached input", "Uncached input", "Output", "Total", "Est. USD"].map((heading) => (
@@ -272,7 +335,9 @@ function UsageTable({ report, wispsById }: { report: UsageReport; wispsById: Map
                     />
                     <span className="min-w-0 break-words">
                       {wisp.name}
-                      <span className="block text-xs font-normal text-dim">{plural(wisp.sessions, "session")}</span>
+                      <span className="block text-xs font-normal text-dim">
+                        {model ? modelActivity(wispModel(wisp, model) ?? model) : plural(wisp.sessions, "session")}
+                      </span>
                     </span>
                   </span>
                 </th>
@@ -288,6 +353,155 @@ function UsageTable({ report, wispsById }: { report: UsageReport; wispsById: Map
                 All Wisps
               </th>
               <UsageCells totals={report.totals} />
+            </tr>
+          </tfoot>
+        ) : null}
+      </table>
+    </SettingsCard>
+  );
+}
+
+/** The report narrowed to one model: each Wisp's usage of it, and Wisps that never used it left out. */
+function forModel(report: UsageReport, model: ModelUsageRow): UsageReport {
+  return {
+    ...report,
+    wisps: report.wisps.flatMap((wisp) => {
+      const row = wispModel(wisp, model);
+      return row ? [{ ...wisp, totals: row.totals }] : [];
+    }),
+    totals: model.totals,
+  };
+}
+
+function wispModel(wisp: WispUsageRow, model: ModelUsageRow): ModelUsageRow | undefined {
+  return wisp.models?.find((row) => row.key === model.key);
+}
+
+function modelLabel(model: ModelUsageRow): string {
+  if (model.kind === "compaction") return "Context summaries";
+  return `${shortModelId(model.modelId ?? "")}${model.plan ? " (Claude plan)" : ""}`;
+}
+
+/** What a model did: turns it answered and calls it ran for a Wisp, or the summaries it wrote. */
+function modelActivity(model: ModelUsageRow): string {
+  if (model.kind === "compaction") return "summaries of long conversations";
+  const parts = [
+    ...(model.turns > 0 || model.auxiliaryCalls === 0 ? [plural(model.turns, "turn")] : []),
+    ...(model.auxiliaryCalls > 0 ? [plural(model.auxiliaryCalls, "image read")] : []),
+  ];
+  return parts.join(" · ");
+}
+
+/**
+ * Chooses one model, or all of them, in alphabetical order with context summaries last.
+ * Two models with the same short name also show their provider.
+ */
+function ModelFilter({
+  models,
+  value,
+  onChange,
+}: {
+  models: ReadonlyArray<ModelUsageRow>;
+  value: string;
+  onChange: (key: string) => void;
+}) {
+  const sorted = [...models].sort(
+    (a, b) =>
+      Number(a.kind === "compaction") - Number(b.kind === "compaction") || modelLabel(a).localeCompare(modelLabel(b)),
+  );
+  const labels = sorted.map(modelLabel);
+  const items = [
+    { value: ALL_MODELS, label: "All models" },
+    ...sorted.map((model, index) => ({
+      value: model.key,
+      label:
+        labels.indexOf(labels[index]!) === labels.lastIndexOf(labels[index]!)
+          ? labels[index]!
+          : `${labels[index]} · ${model.providerId}`,
+    })),
+  ];
+  return (
+    <Select
+      items={items}
+      value={value}
+      onValueChange={(next) => {
+        if (next !== null) onChange(next);
+      }}
+    >
+      <SelectTrigger aria-label="Model" size="sm" className="max-w-52">
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent align="end" alignItemWithTrigger={false}>
+        <SelectGroup>
+          {items.map((item) => (
+            <SelectItem key={item.value} value={item.value}>
+              {item.label}
+            </SelectItem>
+          ))}
+        </SelectGroup>
+      </SelectContent>
+    </Select>
+  );
+}
+
+function ModelTable({
+  models,
+  totals,
+  wisps,
+}: {
+  models: ReadonlyArray<ModelUsageRow>;
+  totals: Totals;
+  wisps: ReadonlyArray<WispUsageRow>;
+}) {
+  const rows = [...models].sort(
+    (a, b) => (b.totals.costUsd ?? -1) - (a.totals.costUsd ?? -1) || b.totals.totalTokens - a.totals.totalTokens,
+  );
+  const topCost = Math.max(0, ...rows.map((row) => row.totals.costUsd ?? 0));
+  return (
+    <SettingsCard className="overflow-x-auto">
+      <table className="usage-table w-full text-right text-xs tabular-nums">
+        <caption className="sr-only">Token usage and estimated USD by model</caption>
+        <thead>
+          <tr className="text-dim">
+            {["Model", "Cached input", "Uncached input", "Output", "Total", "Est. USD"].map((heading) => (
+              <th
+                scope="col"
+                key={heading}
+                className="whitespace-nowrap border-b border-border px-3 py-2 font-normal first:text-left"
+              >
+                {heading}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody className="[&>tr:not(:last-child)>*]:border-b [&>tr>*]:border-border">
+          {rows.map((model) => {
+            const users = wisps.filter((wisp) => wispModel(wisp, model)).length;
+            return (
+              <tr key={model.key}>
+                <th scope="row" className="max-w-52 px-3 py-2.5 text-left text-sm font-medium">
+                  <span
+                    className="block min-w-0 break-words"
+                    title={model.kind === "model" ? `${model.providerId} · ${model.modelId}` : undefined}
+                  >
+                    {modelLabel(model)}
+                    <span className="block text-xs font-normal text-dim">
+                      {modelActivity(model)} · {plural(users, "Wisp")}
+                    </span>
+                  </span>
+                </th>
+                <UsageCells totals={model.totals} topCost={topCost} />
+              </tr>
+            );
+          })}
+        </tbody>
+        {rows.length > 1 ? (
+          <tfoot className="font-semibold">
+            <tr className="[&>*]:border-t [&>*]:border-border">
+              <th scope="row" className="px-3 py-2.5 text-left text-sm">
+                All models
+              </th>
+              <UsageCells totals={totals} />
             </tr>
           </tfoot>
         ) : null}

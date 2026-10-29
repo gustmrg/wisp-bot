@@ -1,8 +1,8 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { UsageSettingsSection } from "./usage-settings-section";
-import type { UsageReport } from "../../shared/contracts";
+import type { ModelUsageRow, UsageReport } from "../../shared/contracts";
 
 const report: UsageReport = {
   generatedAt: "2026-09-05T00:00:00Z",
@@ -37,7 +37,109 @@ const report: UsageReport = {
   ],
 };
 
+function usage(totalTokens: number, costUsd: number | null) {
+  return {
+    inputTokens: totalTokens,
+    outputTokens: 0,
+    cacheReadTokens: 0,
+    cacheWriteTokens: 0,
+    totalTokens,
+    costUsd,
+    cacheSavingsUsd: costUsd === null ? null : 0,
+  };
+}
+
+function modelRow(key: string, modelId: string | null, totalTokens: number, costUsd: number | null): ModelUsageRow {
+  return {
+    key,
+    kind: modelId === null ? "compaction" : "model",
+    providerId: modelId === null ? null : "openrouter",
+    modelId,
+    turns: modelId === null ? 0 : 1,
+    auxiliaryCalls: 0,
+    totals: usage(totalTokens, costUsd),
+  };
+}
+
+const gpt = modelRow("openrouter:openai/gpt-oss-120b", "openai/gpt-oss-120b", 3000, 0.3);
+const claude = modelRow("openrouter:anthropic/claude-sonnet-5-5", "anthropic/claude-sonnet-5-5", 500, 0.5);
+const summaries = modelRow("compaction", null, 100, 0.01);
+
+/** Two Wisps: Research used both models and wrote a summary, Inbox used only gpt-oss. */
+const byModel: UsageReport = {
+  ...report,
+  totals: usage(3600, 0.81),
+  wisps: [
+    {
+      conversationId: "one",
+      name: "Research Wisp",
+      sessions: 2,
+      totals: usage(2600, 0.71),
+      models: [{ ...gpt, totals: usage(2000, 0.2) }, claude, summaries],
+    },
+    {
+      conversationId: "two",
+      name: "Inbox Wisp",
+      sessions: 1,
+      totals: usage(1000, 0.1),
+      models: [{ ...gpt, totals: usage(1000, 0.1) }],
+    },
+  ],
+  models: [gpt, claude, summaries],
+};
+
 describe("UsageSettingsSection", () => {
+  it("shows usage by model, and narrows the summary and each table to one model", async () => {
+    const getUsageReport = vi.fn(async () => ({ ok: true, value: byModel }));
+    Object.defineProperty(window, "wisp", { configurable: true, value: { getUsageReport } });
+    const user = userEvent.setup();
+    render(<UsageSettingsSection />);
+    expect(await screen.findByText("Inbox Wisp")).toBeVisible();
+    expect(screen.getByRole("radio", { name: "By Wisp" })).toBeChecked();
+
+    await user.click(screen.getByRole("radio", { name: "By model" }));
+    const models = screen.getByRole("table", { name: "Token usage and estimated USD by model" });
+    const rows = within(models)
+      .getAllByRole("row")
+      .map((row) => row.querySelector("th")?.textContent);
+    expect(rows).toEqual([
+      "Model",
+      "claude-sonnet-5-51 turn · 1 Wisp",
+      "gpt-oss-120b1 turn · 2 Wisps",
+      "Context summariessummaries of long conversations · 1 Wisp",
+      "All models",
+    ]);
+
+    await user.click(screen.getByRole("combobox", { name: "Model" }));
+    await user.click(await screen.findByRole("option", { name: "gpt-oss-120b" }));
+    expect(within(models).getAllByRole("row")).toHaveLength(2);
+    expect(within(models).getByText("$0.30")).toBeVisible();
+    expect(screen.getAllByText("$0.30")).toHaveLength(2);
+
+    await user.click(screen.getByRole("radio", { name: "By Wisp" }));
+    const wisps = screen.getByRole("table", { name: "Token usage and estimated USD by Wisp for gpt-oss-120b" });
+    expect(within(wisps).getByText("Research Wisp")).toBeVisible();
+    expect(within(wisps).getByText("Inbox Wisp")).toBeVisible();
+    expect(within(wisps).getByText("$0.20")).toBeVisible();
+
+    await user.click(screen.getByRole("combobox", { name: "Model" }));
+    await user.click(await screen.findByRole("option", { name: "claude-sonnet-5-5" }));
+    // A Wisp that never used the model is left out.
+    expect(screen.queryByText("Inbox Wisp")).not.toBeInTheDocument();
+    expect(screen.getAllByText("$0.50")[0]).toBeVisible();
+  });
+
+  it("stays by Wisp, without a model filter, for a server that does not split by model", async () => {
+    Object.defineProperty(window, "wisp", {
+      configurable: true,
+      value: { getUsageReport: vi.fn(async () => ({ ok: true, value: report })) },
+    });
+    render(<UsageSettingsSection />);
+    expect(await screen.findByText("Research Wisp")).toBeVisible();
+    expect(screen.queryByRole("radio", { name: "By model" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("combobox", { name: "Model" })).not.toBeInTheDocument();
+  });
+
   it("shows per-Wisp usage, filters periods, and refreshes", async () => {
     const getUsageReport = vi.fn(async () => ({ ok: true, value: report }));
     Object.defineProperty(window, "wisp", { configurable: true, value: { getUsageReport } });

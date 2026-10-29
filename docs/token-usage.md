@@ -16,6 +16,16 @@ sessions, including earlier session files and compacted turns, without adding
 duplicate usage. History is local and survives app restarts; the dashboard
 covers existing Wisps. Deleting a Wisp removes it from this view.
 
+**By model** shows the same usage one row per model, with the turns it
+answered and how many Wisps used it. A model's turns and its calls as the
+image model share one row; turns a Claude plan paid for have a row of their
+own. Context summaries, whose model is not recorded, are a **Context
+summaries** row, so the rows add up to the totals. The **Model** menu next to
+**Refresh** narrows the summary and both tables to one model; **By Wisp** then
+shows each Wisp's use of that model and leaves out Wisps that never used it.
+A server older than this version sends no split by model, so the page shows
+only **By Wisp** for it.
+
 Unreadable or oversized session files produce an explicit partial-history
 warning.
 
