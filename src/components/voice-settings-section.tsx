@@ -246,8 +246,6 @@ function VoiceSettingsSection({ active, preferences, onPreferencesChange }: Voic
           </SettingsCard>
         </SettingsGroup>
 
-        <FallbackVoiceModel view={view} preferences={preferences} onPreferencesChange={onPreferencesChange} />
-
         <SettingsGroup label="Credential">
           <SettingsCard>
             <div className="flex flex-col gap-3 px-3.5 py-3.5">
@@ -309,6 +307,8 @@ function VoiceSettingsSection({ active, preferences, onPreferencesChange }: Voic
             {saved ? <p className="m-0 text-xs text-dim">{provider.name} key saved.</p> : null}
           </div>
         </div>
+
+        <FallbackVoiceModel view={view} preferences={preferences} onPreferencesChange={onPreferencesChange} />
       </div>
     </section>
   );
