@@ -2,7 +2,6 @@ import { act, fireEvent, render, screen, waitFor, within } from "@testing-librar
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import App from "@/App";
-import { LEGACY_STORAGE_KEY } from "@/hooks/use-conversations";
 import { MOBILE_LAYOUT_QUERY } from "@/hooks/use-mobile-layout";
 import type { ConnectionsView } from "../shared/connections";
 import type { AiSettingsView, UpdateState, WispApi } from "../shared/contracts";
@@ -176,8 +175,8 @@ function createApi(initialState: ConversationStateView): WispApi {
     cancelProviderSignIn: vi.fn(async () => ({ ok: true as const, value: CONFIGURED_AI })),
     finishProviderSignIn: vi.fn(async () => ({ ok: true as const, value: CONFIGURED_AI })),
     getConversationState: vi.fn(async () => current()),
-    initializeConversations: vi.fn(async ({ chats }) => {
-      state = conversationState(true, chats);
+    initializeConversations: vi.fn(async () => {
+      state = conversationState(true);
       return current();
     }),
     createWisp: vi.fn(async ({ wisp, notifyOnUpdatesEnabled }) => {
@@ -248,7 +247,7 @@ function createApi(initialState: ConversationStateView): WispApi {
     getToolPolicy: vi.fn(async () => ({ ok: true as const, value: { autoReview: true, rules: [] } })),
     getUserProfile: async () => ({
       ok: true as const,
-      value: { preferredName: "Ada Lovelace", aboutYou: "", responsePreferences: "" },
+      value: { preferredName: "Ada Lovelace" },
     }),
     saveUserProfile: vi.fn(async (profile) => ({ ok: true as const, value: profile })),
     setUserTimeZone: vi.fn(async () => ({ ok: true as const, value: {} })),
@@ -405,7 +404,7 @@ describe("App", () => {
     render(<App />);
 
     expect(await screen.findByText("Create a Wisp to get started.")).toBeVisible();
-    expect(api.initializeConversations).toHaveBeenCalledWith({ chats: {} });
+    expect(api.initializeConversations).toHaveBeenCalledWith();
   });
 
   it("keeps the opening splash until the Wisps have loaded", async () => {
@@ -433,60 +432,7 @@ describe("App", () => {
     expect(screen.getByRole("button", { name: /Atlas/ })).toBeInTheDocument();
   });
 
-  it("ignores invalid legacy JSON during backend initialization", async () => {
-    window.localStorage.setItem(LEGACY_STORAGE_KEY, "{invalid json");
-    const api = createApi(conversationState(false));
-    exposeApi(api);
-
-    render(<App />);
-
-    expect(await screen.findByText("Create a Wisp to get started.")).toBeVisible();
-    expect(api.initializeConversations).toHaveBeenCalledWith({ chats: {} });
-  });
-
-  it("starts a server empty and leaves this computer's legacy conversations in local storage", async () => {
-    const legacy = JSON.stringify({
-      chats: { atlas: { ...atlas, kind: "wisp", name: "Atlas", label: "", description: "", shape: "circle" } },
-    });
-    window.localStorage.setItem(LEGACY_STORAGE_KEY, legacy);
-    const api: WispApi = {
-      ...createApi(conversationState(false)),
-      getConnections: async () => ({
-        ok: true as const,
-        value: {
-          ...localConnections,
-          activeId: "server",
-          profiles: [{ id: "server", kind: "url", name: "Server", url: "https://wisp.example.ts.net", paired: true }],
-          status: { profileId: "server", phase: "connected", epoch: 1 },
-        },
-      }),
-    };
-    exposeApi(api);
-
-    render(<App />);
-
-    expect(await screen.findByText("Create a Wisp to get started.")).toBeVisible();
-    expect(api.initializeConversations).toHaveBeenCalledWith({ chats: {} });
-    expect(window.localStorage.getItem(LEGACY_STORAGE_KEY)).toBe(legacy);
-  });
-
-  it("clears legacy conversations once this computer's backend is initialized", async () => {
-    window.localStorage.setItem(LEGACY_STORAGE_KEY, JSON.stringify({ chats: {} }));
-    const api = createApi(conversationState(true, { atlas }));
-    exposeApi(api);
-
-    render(<App />);
-
-    expect(await screen.findByRole("combobox", { name: "Message Atlas" })).toBeVisible();
-    expect(api.initializeConversations).not.toHaveBeenCalled();
-    expect(window.localStorage.getItem(LEGACY_STORAGE_KEY)).toBeNull();
-  });
-
-  it("retains legacy conversations when backend initialization fails", async () => {
-    const legacy = JSON.stringify({
-      chats: { atlas: { ...atlas, kind: "wisp", name: "Atlas", label: "", description: "", shape: "circle" } },
-    });
-    window.localStorage.setItem(LEGACY_STORAGE_KEY, legacy);
+  it("shows why the backend could not set up a new store", async () => {
     const api = createApi(conversationState(false));
     vi.mocked(api.initializeConversations).mockResolvedValueOnce({
       ok: false,
@@ -497,7 +443,6 @@ describe("App", () => {
     render(<App />);
 
     expect(await screen.findByText("Could not save conversations.")).toBeVisible();
-    expect(window.localStorage.getItem(LEGACY_STORAGE_KEY)).toBe(legacy);
   });
 
   it("tells the backend which time zone the person is in", async () => {
@@ -980,7 +925,7 @@ describe("Onboarding", () => {
     const api = createApi(conversationState(false));
     api.getUserProfile = async () => ({
       ok: true,
-      value: { preferredName: "", aboutYou: "", responsePreferences: "" },
+      value: { preferredName: "" },
     });
     vi.mocked(api.getAiSettings).mockResolvedValue({ ok: true, value: UNCONFIGURED_AI });
     exposeApi(api);
@@ -993,7 +938,7 @@ describe("Onboarding", () => {
     expect(continueButton).toBeDisabled();
     await user.type(screen.getByRole("textbox", { name: "What should Wisps call you?" }), "Ada");
     await user.click(continueButton);
-    expect(api.saveUserProfile).toHaveBeenCalledWith({ preferredName: "Ada", aboutYou: "", responsePreferences: "" });
+    expect(api.saveUserProfile).toHaveBeenCalledWith({ preferredName: "Ada" });
 
     expect(await screen.findByRole("heading", { name: "Choose an AI model" })).toBeVisible();
     expect(screen.getByRole("button", { name: "Continue" })).toBeDisabled();
@@ -1026,7 +971,7 @@ describe("Onboarding", () => {
     const api = createApi(conversationState(true, { atlas: wispChat("atlas") }));
     api.getUserProfile = async () => ({
       ok: true,
-      value: { preferredName: "", aboutYou: "", responsePreferences: "" },
+      value: { preferredName: "" },
     });
     exposeApi(api);
     render(<App />);
@@ -1045,7 +990,7 @@ describe("Onboarding", () => {
     const api = createApi(conversationState(false));
     api.getUserProfile = async () => ({
       ok: true,
-      value: { preferredName: "", aboutYou: "", responsePreferences: "" },
+      value: { preferredName: "" },
     });
     exposeApi(api);
     render(<App />);

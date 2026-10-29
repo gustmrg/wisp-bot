@@ -2,7 +2,7 @@ import type { BashOperations, ToolDefinition } from "@earendil-works/pi-coding-a
   "resolution-mode": "import",
 };
 import { randomUUID } from "node:crypto";
-import { readFile, rm } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { z } from "zod";
 
@@ -45,8 +45,6 @@ export const RUN_COMMAND_TOOL = "run_command";
 export const PROCESS_TOOL = "process";
 /** File inside a Wisp's config directory that holds where its commands run. */
 export const EXECUTION_SETTINGS_FILE = "execution-settings.json";
-/** Where GitHub tokens saved for each Wisp were kept, before git used only the GitHub plugin's; removed on start. */
-const LEGACY_CREDENTIALS_FILE = "execution-credentials.enc.json";
 
 function runCommandDescription(localNetwork: boolean): string {
   return [
@@ -204,10 +202,9 @@ export class ExecutionService implements IntegrationToolSource {
     };
   }
 
-  /** Removes containers whose Wisp was deleted, and the tokens once saved for each Wisp. */
+  /** Removes containers whose Wisp was deleted. */
   async reconcile(): Promise<void> {
     await this.options.manager.reconcile(this.options.listWispStorageIds());
-    await rm(path.join(this.options.dataDirectory, LEGACY_CREDENTIALS_FILE), { force: true });
   }
 
   /** The plugins' tokens, which the git gateway adds for this Wisp; a forge without a usable token is left out. */

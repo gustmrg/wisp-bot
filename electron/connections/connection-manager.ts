@@ -73,8 +73,6 @@ export interface ConnectionManagerOptions {
   /** Sends a push channel payload to every renderer window. */
   broadcast(channel: string, payload: unknown): void;
   logger: Pick<StructuredLogger, "info" | "warn">;
-  /** Whether this computer already has Wisps from a version that had no connection choice. */
-  hasLocalData(): Promise<boolean>;
 }
 
 // sshd gives up on a login after two minutes by default.
@@ -127,14 +125,13 @@ export class ConnectionManager {
 
   /**
    * Opens the connection chosen last time. On a first run nothing starts:
-   * the person chooses this computer or a server first. People upgrading
-   * with Wisps already on this computer keep using it.
+   * the person chooses this computer or a server first.
    */
   start(): Promise<void> {
     return this.serialized(async () => {
       const { store } = this.options;
       this.started = true;
-      if (!store.hasChoice && !(await this.options.hasLocalData())) {
+      if (!store.hasChoice) {
         this.setStatus({ profileId: LOCAL_CONNECTION_ID, phase: "choosing" });
       } else {
         await this.open(store.active.id, undefined, false);

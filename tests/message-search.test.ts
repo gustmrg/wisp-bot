@@ -8,12 +8,12 @@ import { ConversationRepository } from "../backend/conversation-repository.js";
 import { buildSnippet, MESSAGE_SEARCH_LIMIT, quotePhrase } from "../backend/message-search.js";
 import type { Chat, Message } from "../shared/conversations.js";
 import { messageSearchText } from "../shared/message-search.js";
+import { seedConversations } from "./helpers/seed-conversations.js";
 
 function chat(id: string, messages: Message[] = []): Chat {
   return {
     id,
     kind: "wisp",
-    shape: "circle",
     name: id,
     label: "",
     description: "",
@@ -36,7 +36,7 @@ async function repositoryWith(chats: Record<string, Chat>): Promise<Conversation
   });
   repositories.push(repository);
   await repository.load();
-  await repository.initialize(chats);
+  await seedConversations(repository, chats);
   return repository;
 }
 

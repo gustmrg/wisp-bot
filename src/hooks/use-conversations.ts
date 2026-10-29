@@ -28,8 +28,6 @@ import type { ChatViewCollection } from "@/chat-data";
 import { chatViews } from "@/lib/chat-schema";
 import type { ToolApprovalDecision, ToolApprovalRequest } from "../../shared/tool-policy";
 import type { QueuedMessage } from "../../shared/message-queue";
-import { LEGACY_CONVERSATIONS_STORAGE_KEY, MAX_LEGACY_BLOB_BYTES } from "@/features/persistence/storage-policy";
-import { LOCAL_CONNECTION_ID } from "../../shared/connections";
 import {
   createConversationRuntime,
   addPendingRequest,
@@ -57,8 +55,6 @@ import {
   type MessageWindow,
 } from "@/lib/message-windows";
 
-export const LEGACY_STORAGE_KEY = LEGACY_CONVERSATIONS_STORAGE_KEY;
-
 const NO_MESSAGES: ReadonlyArray<Message> = [];
 
 /**
@@ -71,46 +67,19 @@ interface PageLoad {
   deltas: ConversationDelta[];
 }
 
-function legacyChats(storage: Pick<Storage, "getItem">): unknown {
-  try {
-    const raw = storage.getItem(LEGACY_STORAGE_KEY);
-    if (!raw) return {};
-    if (new TextEncoder().encode(raw).byteLength > MAX_LEGACY_BLOB_BYTES) return {};
-    const parsed: unknown = JSON.parse(raw);
-    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
-    const chats = Reflect.get(parsed, "chats");
-    return chats && typeof chats === "object" && !Array.isArray(chats) ? chats : {};
-  } catch {
-    return {};
-  }
-}
-
 function resultError(result: { ok: false; error: BackendError }): Error {
   return new Error(result.error.message);
 }
 
-/**
- * Loads the backend's conversations, initializing it on first run. Local
- * storage holds this computer's conversations from before the backend stored
- * them, so only this computer's own backend adopts them; a server starts empty.
- */
+/** Loads the backend's conversations, setting up a new environment's store on its first run. */
 export async function bootstrapConversationState(
-  api: Pick<WispApi, "getConversationState" | "initializeConversations" | "getConnections">,
-  storage: Pick<Storage, "getItem" | "removeItem">,
+  api: Pick<WispApi, "getConversationState" | "initializeConversations">,
 ): Promise<ConversationStateView> {
-  const connections = await api.getConnections();
-  if (!connections.ok) throw resultError(connections);
-  const local = connections.value.activeId === LOCAL_CONNECTION_ID;
   const current = await api.getConversationState();
   if (!current.ok) throw resultError(current);
-  if (current.value.initialized) {
-    // The local backend may have adopted them from its own legacy file instead.
-    if (local) storage.removeItem(LEGACY_STORAGE_KEY);
-    return current.value;
-  }
-  const initialized = await api.initializeConversations({ chats: local ? legacyChats(storage) : {} });
+  if (current.value.initialized) return current.value;
+  const initialized = await api.initializeConversations();
   if (!initialized.ok) throw resultError(initialized);
-  if (local) storage.removeItem(LEGACY_STORAGE_KEY);
   return initialized.value;
 }
 
@@ -411,7 +380,7 @@ export function useConversations(): ConversationsController {
     });
     void (async () => {
       try {
-        const next = await bootstrapConversationState(window.wisp, window.localStorage);
+        const next = await bootstrapConversationState(window.wisp);
         if (cancelled) return;
         replaceState(next);
         replaceRuntime(

@@ -35,7 +35,6 @@ import type {
   CreateWispRequest,
   DeleteConversationRequest,
   DeleteWispRequest,
-  InitializeConversationsRequest,
   MarkConversationReadRequest,
   MarkConversationUnreadRequest,
   UpdateConversationRequest,
@@ -859,7 +858,8 @@ export interface WispApi {
   cancelProviderSignIn(request: ProviderSignInRequest): Promise<BackendResult<AiSettingsView>>;
   finishProviderSignIn(request: FinishProviderSignInRequest): Promise<BackendResult<AiSettingsView>>;
   getConversationState(): Promise<BackendResult<ConversationStateView>>;
-  initializeConversations(request: InitializeConversationsRequest): Promise<BackendResult<ConversationStateView>>;
+  /** Marks a new environment's store as set up; it starts with no Wisps or conversations. */
+  initializeConversations(): Promise<BackendResult<ConversationStateView>>;
   createWisp(request: CreateWispRequest): Promise<BackendResult<ConversationStateView>>;
   updateWisp(request: UpdateWispRequest): Promise<BackendResult<ConversationStateView>>;
   deleteWisp(request: DeleteWispRequest): Promise<BackendResult<ConversationStateView>>;

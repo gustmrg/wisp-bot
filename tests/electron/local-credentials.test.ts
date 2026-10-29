@@ -62,33 +62,4 @@ describe("local server credentials", () => {
     expect(replacement).not.toEqual(original);
     expect((await readdir(root)).some((name) => name.startsWith("local-server-key.json.unreadable-"))).toBe(true);
   });
-
-  it("re-encrypts keychain credentials for the server once, keeping a backup", async () => {
-    const root = await directory();
-    const file = path.join(root, "credentials.enc.json");
-    const secrets = JSON.stringify({ openrouter: { type: "api_key", key: "sk-secret" } });
-    await writeFile(
-      file,
-      JSON.stringify({ schemaVersion: 1, payload: keychain().encrypt(secrets).toString("base64") }),
-    );
-    const serverKey = new MasterKeyEncryption(randomBytes(32));
-
-    await migrateKeychainCredentials(root, keychain(), serverKey, silent);
-    const migrated = JSON.parse(await readFile(file, "utf8")) as { payload: string };
-    expect(serverKey.decrypt(Buffer.from(migrated.payload, "base64"))).toBe(secrets);
-    await access(`${file}.keychain-backup`);
-
-    // Already migrated: left alone.
-    await migrateKeychainCredentials(root, keychain(), serverKey, silent);
-    expect(JSON.parse(await readFile(file, "utf8"))).toEqual(migrated);
-  });
-
-  it("leaves files it cannot read for the server to ask again", async () => {
-    const root = await directory();
-    const file = path.join(root, "mcp-credentials.enc.json");
-    const unreadable = JSON.stringify({ schemaVersion: 1, payload: Buffer.from("not-hex-at-all").toString("base64") });
-    await writeFile(file, unreadable);
-    await migrateKeychainCredentials(root, keychain(), new MasterKeyEncryption(randomBytes(32)), silent);
-    expect(await readFile(file, "utf8")).toBe(unreadable);
-  });
 });

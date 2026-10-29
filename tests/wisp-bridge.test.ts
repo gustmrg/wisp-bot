@@ -182,7 +182,7 @@ function completeBridge(): WispApi {
     },
     getUserProfile: async () => ({
       ok: true as const,
-      value: { preferredName: "", aboutYou: "", responsePreferences: "" },
+      value: { preferredName: "" },
     }),
     saveUserProfile: async (profile) => ({ ok: true as const, value: profile }),
     setUserTimeZone: async () => ({ ok: true as const, value: {} }),

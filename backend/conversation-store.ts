@@ -6,8 +6,7 @@ import type { Job, JobRun } from "../shared/jobs.js";
 import type { QueuedMessage } from "../shared/message-queue.js";
 import type { ScheduledMessage } from "../shared/scheduled-messages.js";
 import { backUpBeforeUpgrade, IntactDatabaseError } from "./sqlite-backup.js";
-import { renamedSessionFile } from "./storage-layout.js";
-import type { ConversationRecord, WispRecord, WorkspaceRecords } from "./workspace-actions.js";
+import type { ConversationRecord, WispRecord } from "./workspace-actions.js";
 
 // The layout this build writes, and the oldest layout reader that can still
 // read and write a database it produced. Additive changes (new tables, indexes,
@@ -17,34 +16,14 @@ import type { ConversationRecord, WispRecord, WorkspaceRecords } from "./workspa
 // to an older release means restoring the backup made before the upgrade.
 // Beta releases share this database with stable ones, so once a beta ships an
 // upgrade it is never edited: a fix is a new upgrade with a new version.
-// Version 4 stored Wisps apart from conversations, and version 5 stores records
-// as columns instead of JSON; earlier readers understand neither. Version 6
-// drops the Wisp picture column, which version 5 writers still name. Version 7
-// adds unread counts; older writers keep `unread` right, and reads trust it.
-// Version 8 adds pinned conversations; older writers leave the column alone.
-// Version 9 adds each Wisp's thinking level; older writers leave it alone too,
-// so reads ignore it when the Wisp has no model of its own.
-// Version 10 adds jobs and their runs; older writers leave them alone, and
-// deleting a conversation removes them through foreign keys.
-// Version 11 adds each Wisp's fallback choice; older writers leave it alone,
-// and a Wisp they create has none, so it follows its model.
-// Version 12 follows the Wisp folders' new names (ADR 027) in each job run's
-// session file. Older readers look for the old folder names and would find
-// none, so it raises MIN_READER_VERSION: an older build refuses this database.
-// Version 13 names each reply's author in the reply itself, so a reply keeps a
-// name after its Wisp is deleted. Older readers ignore the field.
-// Version 14 adds whether a Wisp runs without memory; older writers leave it
-// alone, and a Wisp they create has memory.
-// Version 15 adds whether a job's runs read memory; older writers leave it
-// alone, and a job they create runs without memory.
 const STORE_VERSION = 15;
 const MIN_READER_VERSION = 12;
-/** The first layout whose job runs name their session files under the runtime-neutral folders. */
-const WISP_FOLDERS_VERSION = 12;
-/** The first layout whose replies carry their author's name. */
-const AUTHOR_NAMES_VERSION = 13;
-/** The first layout that stores records as columns rather than JSON. */
-const COLUMN_RECORDS_VERSION = 5;
+/**
+ * The oldest layout this build opens: the one v0.25.3 wrote. Older data is opened
+ * with that release first, which upgrades it (ADR 036).
+ */
+const OLDEST_STORE_VERSION = 15;
+const OLDEST_RELEASE = "v0.25.3";
 
 export const MESSAGE_PAGE_SIZE = 50;
 /** Messages on each side of the target in an "around" page. */
@@ -264,85 +243,6 @@ const JOBS_SCHEMA = `
   CREATE INDEX IF NOT EXISTS job_runs_by_job ON job_runs (job_id, seq);
 `;
 
-// Builds of layout 5 made before Wisp appearances stored a single shape. Each
-// Wisp keeps the closest body and the flat look it had, with no trail; this
-// matches `appearanceFromLegacyShape`.
-const UPGRADE_SHAPE_TO_APPEARANCE = `
-  ALTER TABLE wisps ADD COLUMN body TEXT NOT NULL DEFAULT 'round';
-  ALTER TABLE wisps ADD COLUMN trail TEXT NOT NULL DEFAULT 'none';
-  ALTER TABLE wisps ADD COLUMN tone TEXT NOT NULL DEFAULT 'vivid';
-  ALTER TABLE wisps ADD COLUMN eyes TEXT NOT NULL DEFAULT 'oval';
-  ALTER TABLE wisps ADD COLUMN eye_ink TEXT NOT NULL DEFAULT 'auto';
-  ALTER TABLE wisps ADD COLUMN finish TEXT NOT NULL DEFAULT 'solid';
-  ALTER TABLE wisps ADD COLUMN mark TEXT NOT NULL DEFAULT 'none';
-  UPDATE wisps SET body = CASE shape
-    WHEN 'pill' THEN 'pebble' WHEN 'pebble' THEN 'pebble' WHEN 'cloud' THEN 'pebble'
-    WHEN 'square' THEN 'block'
-    WHEN 'triangle' THEN 'crystal' WHEN 'diamond' THEN 'crystal' WHEN 'hexagon' THEN 'crystal'
-    WHEN 'drop' THEN 'drop'
-    ELSE 'round' END;
-  ALTER TABLE wisps DROP COLUMN shape;
-`;
-
-// Version 5 stored an uploaded picture for each Wisp. Wisps are only drawn now,
-// so the pictures go.
-const DROP_WISP_PICTURES = "ALTER TABLE wisps DROP COLUMN avatar_image;";
-
-// Builds before version 7 stored only whether a conversation was unread; reads
-// count one unread message for those.
-const ADD_UNREAD_COUNTS = "ALTER TABLE conversations ADD COLUMN unread_count INTEGER CHECK (unread_count >= 0);";
-
-// Builds before version 8 could not pin conversations.
-const ADD_PINNED_CONVERSATIONS =
-  "ALTER TABLE conversations ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0 CHECK (pinned IN (0, 1));";
-
-// Builds before version 9 could not choose a Wisp's thinking level; its Wisps think "off".
-const ADD_WISP_THINKING_LEVELS = "ALTER TABLE wisps ADD COLUMN model_thinking_level TEXT;";
-
-// Builds before version 11 could not choose a Wisp's fallback; its Wisps follow their model.
-const ADD_WISP_FALLBACKS = `
-  ALTER TABLE wisps ADD COLUMN fallback_mode TEXT;
-  ALTER TABLE wisps ADD COLUMN fallback_provider_id TEXT;
-  ALTER TABLE wisps ADD COLUMN fallback_model_id TEXT;
-`;
-
-// Builds before version 14 could not turn a Wisp's memory off; its Wisps have memory.
-const ADD_WISP_MEMORY_OFF =
-  "ALTER TABLE wisps ADD COLUMN memory_off INTEGER NOT NULL DEFAULT 0 CHECK (memory_off IN (0, 1));";
-
-// Builds before version 15 gave every job run the Wisp's memory; their jobs now run without it.
-const ADD_JOB_MEMORY =
-  "ALTER TABLE jobs ADD COLUMN use_memory INTEGER NOT NULL DEFAULT 0 CHECK (use_memory IN (0, 1));";
-
-// Replies stored before version 13 name their author only by ID; those whose Wisp
-// still exists take its name. Replies of Wisps already deleted stay unnamed.
-const NAME_MESSAGE_AUTHORS = `
-  UPDATE messages
-  SET body = json_set(body, '$.authorName', (SELECT name FROM wisps WHERE wisps.id = messages.author_id))
-  WHERE author_id IS NOT NULL
-    AND json_extract(body, '$.authorName') IS NULL
-    AND EXISTS (SELECT 1 FROM wisps WHERE wisps.id = messages.author_id);
-`;
-
-/** Tables layout 5 replaced; their rows held whole records as JSON. */
-const JSON_RECORD_TABLES = ["wisps", "conversations", "scheduled_messages", "queued_messages"];
-
-// Version 1 had no search index and no stored last activity.
-const UPGRADE_FROM_VERSION_1 = `
-  INSERT INTO message_search (message_search) VALUES ('delete-all');
-  INSERT INTO message_search (rowid, text) SELECT seq, ${searchTextOf("body")} FROM messages;
-  UPDATE conversations SET record = json_set(record, '$.chat.lastActivityAt', (
-    SELECT json_extract(body, '$.createdAt') FROM messages
-    WHERE conversation_id = conversations.id AND json_extract(body, '$.createdAt') IS NOT NULL
-    ORDER BY seq DESC LIMIT 1))
-  WHERE EXISTS (
-    SELECT 1 FROM messages
-    WHERE conversation_id = conversations.id AND json_extract(body, '$.createdAt') IS NOT NULL);
-  UPDATE conversations SET record = json_set(record, '$.chat.lastActivityAt', json_extract(record, '$.chat.timestamp'))
-  WHERE json_extract(record, '$.chat.lastActivityAt') IS NULL
-    AND json_extract(record, '$.chat.timestamp') GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]T*';
-`;
-
 /** Raw persisted state, validated by the repository before use. */
 export interface StoredConversationState {
   initialized: boolean;
@@ -536,22 +436,16 @@ function queuedMessageOf(row: Row): unknown {
  * preserve insertion order, and upserts keep a row's position. A full-text
  * index over messages is kept in sync by triggers. All writes run inside
  * `transaction`.
- *
- * A store from before layout 5 held whole records as JSON. It is read as such
- * until `rebuild` rewrites it in this layout.
  */
 export class ConversationStore {
   private readonly statements = new Map<string, StatementSync>();
 
-  private constructor(
-    private readonly db: DatabaseSync,
-    private jsonRecords: boolean,
-  ) {}
+  private constructor(private readonly db: DatabaseSync) {}
 
   /**
-   * Opens or creates the database. An older layout is upgraded in place as
-   * far as SQL alone can take it; `hasJsonRecords` then says it still needs
-   * `rebuild`. Throws if the file is not a usable SQLite database.
+   * Opens or creates the database. Throws `IntactDatabaseError` for a layout
+   * older than `OLDEST_STORE_VERSION` or newer than this build reads, and
+   * another error if the file is not a usable SQLite database.
    */
   static open(filePath: string): ConversationStore {
     const db = new DatabaseSync(filePath);
@@ -572,52 +466,23 @@ export class ConversationStore {
           `Conversations were saved by a newer version of Wisp Bot. Install it again, or replace ${path.basename(filePath)} with a ${path.basename(filePath)}.v<N>.backup beside it, N at most ${STORE_VERSION}.`,
         );
       }
-      if (version !== undefined && Number(version) < STORE_VERSION) backUpBeforeUpgrade(db, filePath, Number(version));
-      if (version === undefined) {
-        // Nothing was ever committed here, so any tables are empty leftovers
-        // of an interrupted first run, possibly in an older layout.
-        db.exec(
-          [...JSON_RECORD_TABLES, "circle_members", "participant_sessions", "messages"]
-            .map((table) => `DROP TABLE IF EXISTS ${table};`)
-            .join("\n"),
+      if (version !== undefined && Number(version) < OLDEST_STORE_VERSION) {
+        throw new IntactDatabaseError(
+          `Conversations were saved by a version of Wisp Bot older than ${OLDEST_RELEASE}. Open them with ${OLDEST_RELEASE} first, then with this version.`,
         );
       }
-      const jsonRecords = version !== undefined && Number(version) < COLUMN_RECORDS_VERSION;
-      if (!jsonRecords) db.exec(`${RECORD_SCHEMA}${PENDING_MESSAGES_SCHEMA}${JOBS_SCHEMA}`);
-      db.exec(`${MESSAGES_SCHEMA}${SEARCH_SCHEMA}`);
-      const store = new ConversationStore(db, jsonRecords);
-      if (Number(version) < 2) store.upgradeFromVersion1();
-      if (!jsonRecords) {
-        store.upgradeShapeToAppearance();
-        store.dropWispPictures();
-        store.addUnreadCounts();
-        store.addPinnedConversations();
-        store.addWispThinkingLevels();
-        store.addWispFallbacks();
-        store.addWispMemoryOff();
-        store.addJobMemory();
-        if (version !== undefined) store.renameJobRunSessionFiles(Number(version) < WISP_FOLDERS_VERSION);
-        if (version !== undefined && Number(version) < AUTHOR_NAMES_VERSION) store.nameMessageAuthors();
-      }
-      return store;
+      if (version !== undefined && Number(version) < STORE_VERSION) backUpBeforeUpgrade(db, filePath, Number(version));
+      db.exec(`${RECORD_SCHEMA}${PENDING_MESSAGES_SCHEMA}${JOBS_SCHEMA}${MESSAGES_SCHEMA}${SEARCH_SCHEMA}`);
+      return new ConversationStore(db);
     } catch (error) {
       db.close();
       throw error;
     }
   }
 
-  /**
-   * True once a transaction has committed here. Until then the database may be
-   * a leftover from an interrupted first run, so the legacy JSON store still
-   * wins.
-   */
+  /** True once a transaction has committed here; until then the database holds nothing to read. */
   isEstablished(): boolean {
     return this.getMeta("store_version") !== undefined;
-  }
-
-  /** True while the store holds records in the JSON layout from before version 5. */
-  hasJsonRecords(): boolean {
-    return this.jsonRecords;
   }
 
   read(): StoredConversationState {
@@ -627,7 +492,7 @@ export class ConversationStore {
     if (!Number.isInteger(minReader) || minReader > STORE_VERSION) {
       throw new Error("Unsupported conversation store version.");
     }
-    const { wisps, conversations } = this.jsonRecords ? this.readJsonRecords() : this.readRecords();
+    const { wisps, conversations } = this.readRecords();
     for (const row of this.db.prepare("SELECT conversation_id, body FROM messages ORDER BY seq").iterate()) {
       conversations[String(row.conversation_id)]?.chat.messages.push(JSON.parse(String(row.body)));
     }
@@ -706,48 +571,6 @@ export class ConversationStore {
       this.db.exec("ROLLBACK");
       throw error;
     }
-  }
-
-  /**
-   * Rewrites a store with JSON records in this layout, in one transaction:
-   * Wisps and conversations from `records` (messages stay where they are),
-   * and the pending messages given. Messages left without a conversation are
-   * removed.
-   */
-  rebuild(
-    records: Pick<WorkspaceRecords, "wisps" | "conversations">,
-    pending: { scheduled: ReadonlyArray<ScheduledMessage>; queued: ReadonlyArray<QueuedMessage> },
-  ): void {
-    // Dropping a parent table with foreign keys on would delete every message.
-    // The pragma has no effect inside a transaction, so it wraps it.
-    this.db.exec("PRAGMA foreign_keys = OFF");
-    try {
-      this.transaction(() => {
-        this.statements.clear();
-        this.db.exec(JSON_RECORD_TABLES.map((table) => `DROP TABLE IF EXISTS ${table};`).join("\n"));
-        this.db.exec(`${RECORD_SCHEMA}${PENDING_MESSAGES_SCHEMA}${JOBS_SCHEMA}`);
-        for (const column of MESSAGE_COLUMNS) this.db.exec(`ALTER TABLE messages ADD COLUMN ${column}`);
-        for (const record of Object.values(records.wisps)) this.putWisp(record);
-        for (const record of Object.values(records.conversations)) this.putConversation(record);
-        this.db.exec("DELETE FROM messages WHERE conversation_id NOT IN (SELECT id FROM conversations)");
-        this.db.exec(NAME_MESSAGE_AUTHORS);
-        for (const message of pending.scheduled) {
-          if (records.conversations[message.conversationId]) this.putScheduledMessage(message);
-        }
-        for (const message of pending.queued) {
-          if (records.conversations[message.conversationId]) this.putQueuedMessage(message);
-        }
-        if (this.db.prepare("PRAGMA foreign_key_check").all().length > 0) {
-          throw new Error("The rebuilt conversation store has broken references.");
-        }
-      });
-    } catch (error) {
-      this.statements.clear();
-      throw error;
-    } finally {
-      this.db.exec("PRAGMA foreign_keys = ON");
-    }
-    this.jsonRecords = false;
   }
 
   replaceAll(state: {
@@ -884,7 +707,6 @@ export class ConversationStore {
   /** Raw scheduled message records, soonest first; validated by the repository. */
   readScheduledMessages(): unknown[] {
     const order = "ORDER BY next_run_at, seq";
-    if (this.jsonRecords) return this.readJsonRows("scheduled_messages", order);
     return this.db.prepare(`SELECT * FROM scheduled_messages ${order}`).all().map(scheduledMessageOf);
   }
 
@@ -917,7 +739,6 @@ export class ConversationStore {
 
   /** Raw queued message records, oldest first; validated by the repository. */
   readQueuedMessages(): unknown[] {
-    if (this.jsonRecords) return this.readJsonRows("queued_messages", "ORDER BY seq");
     return this.db.prepare("SELECT * FROM queued_messages ORDER BY seq").all().map(queuedMessageOf);
   }
 
@@ -946,7 +767,6 @@ export class ConversationStore {
 
   /** Raw job records, soonest next run first and ended jobs last; validated by the repository. */
   readJobs(): unknown[] {
-    if (this.jsonRecords) return [];
     return this.db.prepare("SELECT * FROM jobs ORDER BY next_run_at IS NULL, next_run_at, seq").all().map(jobOf);
   }
 
@@ -992,7 +812,6 @@ export class ConversationStore {
 
   /** Raw run records of a job, newest first; validated by the repository. */
   readJobRuns(jobId: string, limit: number): unknown[] {
-    if (this.jsonRecords) return [];
     return this.statement("SELECT * FROM job_runs WHERE job_id = ? ORDER BY seq DESC LIMIT ?")
       .all(jobId, limit)
       .map(jobRunOf);
@@ -1072,196 +891,6 @@ export class ConversationStore {
     return { wisps, conversations };
   }
 
-  /** Records as layouts 1 to 4 stored them, for the repository to upgrade. */
-  private readJsonRecords() {
-    const wisps: Record<string, unknown> = {};
-    if (this.hasTable("wisps")) {
-      for (const row of this.db.prepare("SELECT id, record FROM wisps ORDER BY seq").iterate()) {
-        wisps[String(row.id)] = JSON.parse(String(row.record));
-      }
-    }
-    const conversations: Record<string, { chat: { messages: unknown[] } }> = {};
-    for (const row of this.db.prepare("SELECT id, record FROM conversations ORDER BY seq").iterate()) {
-      const record = JSON.parse(String(row.record)) as { chat: Record<string, unknown> };
-      conversations[String(row.id)] = { ...record, chat: { ...record.chat, messages: [] } };
-    }
-    return { wisps, conversations };
-  }
-
-  private readJsonRows(table: string, order: string): unknown[] {
-    if (!this.hasTable(table)) return [];
-    return this.db
-      .prepare(`SELECT record FROM ${table} ${order}`)
-      .all()
-      .map((row) => JSON.parse(String(row.record)));
-  }
-
-  private hasTable(name: string): boolean {
-    return this.db.prepare("SELECT 1 FROM sqlite_schema WHERE type = 'table' AND name = ?").get(name) !== undefined;
-  }
-
-  // Version 1 had no search index and no stored last activity. Its records
-  // stay JSON until the repository rebuilds the store.
-  private upgradeFromVersion1(): void {
-    if (!this.isEstablished()) return;
-    this.db.exec("BEGIN IMMEDIATE");
-    try {
-      this.db.exec(UPGRADE_FROM_VERSION_1);
-      this.db.prepare("UPDATE meta SET value = '2' WHERE key = 'store_version'").run();
-      this.db.exec("COMMIT");
-    } catch (error) {
-      this.db.exec("ROLLBACK");
-      throw error;
-    }
-  }
-
-  private upgradeShapeToAppearance(): void {
-    const columns = this.db.prepare("SELECT name FROM pragma_table_info('wisps')").all();
-    if (!columns.some((column) => column.name === "shape")) return;
-    this.db.exec("BEGIN IMMEDIATE");
-    try {
-      this.db.exec(UPGRADE_SHAPE_TO_APPEARANCE);
-      this.db.exec("COMMIT");
-    } catch (error) {
-      this.db.exec("ROLLBACK");
-      throw error;
-    }
-  }
-
-  // Raises the version markers in the same transaction, so a version 5 build
-  // never writes to the table without the column.
-  private dropWispPictures(): void {
-    const columns = this.db.prepare("SELECT name FROM pragma_table_info('wisps')").all();
-    if (!columns.some((column) => column.name === "avatar_image")) return;
-    this.db.exec("BEGIN IMMEDIATE");
-    try {
-      this.db.exec(DROP_WISP_PICTURES);
-      this.raiseVersions();
-      this.db.exec("COMMIT");
-    } catch (error) {
-      this.db.exec("ROLLBACK");
-      throw error;
-    }
-  }
-
-  private addUnreadCounts(): void {
-    const columns = this.db.prepare("SELECT name FROM pragma_table_info('conversations')").all();
-    if (columns.some((column) => column.name === "unread_count")) return;
-    this.db.exec("BEGIN IMMEDIATE");
-    try {
-      this.db.exec(ADD_UNREAD_COUNTS);
-      this.raiseVersions();
-      this.db.exec("COMMIT");
-    } catch (error) {
-      this.db.exec("ROLLBACK");
-      throw error;
-    }
-  }
-
-  private addPinnedConversations(): void {
-    const columns = this.db.prepare("SELECT name FROM pragma_table_info('conversations')").all();
-    if (columns.some((column) => column.name === "pinned")) return;
-    this.db.exec("BEGIN IMMEDIATE");
-    try {
-      this.db.exec(ADD_PINNED_CONVERSATIONS);
-      this.raiseVersions();
-      this.db.exec("COMMIT");
-    } catch (error) {
-      this.db.exec("ROLLBACK");
-      throw error;
-    }
-  }
-
-  private addWispThinkingLevels(): void {
-    const columns = this.db.prepare("SELECT name FROM pragma_table_info('wisps')").all();
-    if (columns.some((column) => column.name === "model_thinking_level")) return;
-    this.db.exec("BEGIN IMMEDIATE");
-    try {
-      this.db.exec(ADD_WISP_THINKING_LEVELS);
-      this.raiseVersions();
-      this.db.exec("COMMIT");
-    } catch (error) {
-      this.db.exec("ROLLBACK");
-      throw error;
-    }
-  }
-
-  private addWispFallbacks(): void {
-    const columns = this.db.prepare("SELECT name FROM pragma_table_info('wisps')").all();
-    if (columns.some((column) => column.name === "fallback_mode")) return;
-    this.db.exec("BEGIN IMMEDIATE");
-    try {
-      this.db.exec(ADD_WISP_FALLBACKS);
-      this.raiseVersions();
-      this.db.exec("COMMIT");
-    } catch (error) {
-      this.db.exec("ROLLBACK");
-      throw error;
-    }
-  }
-
-  private addWispMemoryOff(): void {
-    const columns = this.db.prepare("SELECT name FROM pragma_table_info('wisps')").all();
-    if (columns.some((column) => column.name === "memory_off")) return;
-    this.db.exec("BEGIN IMMEDIATE");
-    try {
-      this.db.exec(ADD_WISP_MEMORY_OFF);
-      this.raiseVersions();
-      this.db.exec("COMMIT");
-    } catch (error) {
-      this.db.exec("ROLLBACK");
-      throw error;
-    }
-  }
-
-  private addJobMemory(): void {
-    const columns = this.db.prepare("SELECT name FROM pragma_table_info('jobs')").all();
-    if (columns.some((column) => column.name === "use_memory")) return;
-    this.db.exec("BEGIN IMMEDIATE");
-    try {
-      this.db.exec(ADD_JOB_MEMORY);
-      this.raiseVersions();
-      this.db.exec("COMMIT");
-    } catch (error) {
-      this.db.exec("ROLLBACK");
-      throw error;
-    }
-  }
-
-  // A run's file is only ever deleted from inside the session folders, so one
-  // named under the old folder would be left on disk when its run is pruned.
-  // Runs again when an interrupted upgrade (the version is raised by whichever
-  // step comes first) left some behind.
-  private renameJobRunSessionFiles(upgrading: boolean): void {
-    const rows = this.db.prepare("SELECT DISTINCT session_file FROM job_runs WHERE session_file IS NOT NULL").all();
-    const renames = rows
-      .map(({ session_file: file }) => [String(file), renamedSessionFile(String(file))] as const)
-      .filter(([file, renamed]) => renamed !== file);
-    if (!upgrading && !renames.length) return;
-    this.db.exec("BEGIN IMMEDIATE");
-    try {
-      const update = this.db.prepare("UPDATE job_runs SET session_file = ? WHERE session_file = ?");
-      for (const [file, renamed] of renames) update.run(renamed, file);
-      this.raiseVersions();
-      this.db.exec("COMMIT");
-    } catch (error) {
-      this.db.exec("ROLLBACK");
-      throw error;
-    }
-  }
-
-  private nameMessageAuthors(): void {
-    this.db.exec("BEGIN IMMEDIATE");
-    try {
-      this.db.exec(NAME_MESSAGE_AUTHORS);
-      this.raiseVersions();
-      this.db.exec("COMMIT");
-    } catch (error) {
-      this.db.exec("ROLLBACK");
-      throw error;
-    }
-  }
-
   // Version markers only rise: an older build writing here must not lower them.
   private raiseVersions(): void {
     const raise = this.statement(
@@ -1271,7 +900,7 @@ export class ConversationStore {
     raise.run("min_reader_version", String(MIN_READER_VERSION));
   }
 
-  /** Prepares a statement once; `rebuild` drops the cache with the tables it replaces. */
+  /** Prepares a statement once. */
   private statement(sql: string): StatementSync {
     let statement = this.statements.get(sql);
     if (!statement) {

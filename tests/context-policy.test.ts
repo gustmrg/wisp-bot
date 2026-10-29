@@ -32,25 +32,21 @@ describe("context renewal policy", () => {
     expect(shouldRenewContext(policy, "2026-09-04T20:00:00Z", 20000, at, "Asia/Tokyo")).toBe(false);
     expect(shouldRenewContext(policy, "2026-09-04T20:00:00Z", 20000, at, "UTC")).toBe(true);
   });
-  it("rejects malformed IPC actions, oversized memory and invalid policies", () => {
+  it("rejects malformed IPC actions, invalid policies and the saved memory of earlier versions", () => {
+    const { renewal: _, ...incomplete } = DEFAULT_CONTEXT_POLICY;
     for (const command of [
       { action: "delete" },
       { action: "get", extra: true },
-      { action: "save", policy: DEFAULT_CONTEXT_POLICY, memory: "x".repeat(8001) },
-      { action: "save", policy: { ...DEFAULT_CONTEXT_POLICY, idleHours: 0 }, memory: "" },
-      { action: "save", policy: { ...DEFAULT_CONTEXT_POLICY, renewal: "delete" }, memory: "" },
+      { action: "save", policy: DEFAULT_CONTEXT_POLICY, memory: "" },
+      { action: "save", policy: incomplete },
+      { action: "save", policy: { ...DEFAULT_CONTEXT_POLICY, idleHours: 0 } },
+      { action: "save", policy: { ...DEFAULT_CONTEXT_POLICY, renewal: "delete" } },
     ]) {
       expect(() => parseContextRequest({ conversationId: "one", command })).toThrow();
     }
     expect(
-      parseContextRequest({
-        conversationId: "one",
-        command: { action: "save", policy: DEFAULT_CONTEXT_POLICY, memory: "Prefers concise responses" },
-      }).command.action,
-    ).toBe("save");
-    const { renewal: _, ...older } = DEFAULT_CONTEXT_POLICY;
-    expect(
-      parseContextRequest({ conversationId: "one", command: { action: "save", policy: older, memory: "" } }).command,
-    ).toEqual({ action: "save", policy: DEFAULT_CONTEXT_POLICY, memory: "" });
+      parseContextRequest({ conversationId: "one", command: { action: "save", policy: DEFAULT_CONTEXT_POLICY } })
+        .command,
+    ).toEqual({ action: "save", policy: DEFAULT_CONTEXT_POLICY });
   });
 });

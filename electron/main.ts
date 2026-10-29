@@ -29,12 +29,11 @@ import { UpdateService } from "./backend/update-service.js";
 import { disposeWithin } from "../backend/runtime.js";
 import { SshAskpass } from "./connections/ssh-askpass.js";
 import { createBackend } from "./create-backend.js";
-import { loadOrCreateLocalMasterKey, migrateKeychainCredentials } from "./local-server/local-credentials.js";
+import { loadOrCreateLocalMasterKey } from "./local-server/local-credentials.js";
 import { ChildProcessLocalServer } from "./local-server/local-server.js";
 import { RemoteAccessTray } from "./remote-access-tray.js";
 import { createElectronNotificationHost } from "./system-notification-host.js";
 import { SystemNotifier } from "./system-notifications.js";
-import { MasterKeyEncryption } from "../server/master-key.js";
 import {
   isAllowedExternalUrl,
   isAllowedPermission,
@@ -260,14 +259,6 @@ async function bootstrap(): Promise<void> {
     : undefined;
   const keychain = new SafeStorageEncryption();
   const masterKey = await loadOrCreateLocalMasterKey(userData, keychain);
-  if (masterKey) {
-    await migrateKeychainCredentials(
-      path.join(userData, "backend"),
-      keychain,
-      new MasterKeyEncryption(masterKey),
-      logger,
-    );
-  }
   let loadConversationState = async (): Promise<ConversationStateView | undefined> => undefined;
   const systemNotifier = new SystemNotifier(
     createElectronNotificationHost({

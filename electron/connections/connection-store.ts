@@ -23,8 +23,8 @@ export const LOCAL_PROFILE: LocalConnectionProfile = { id: LOCAL_CONNECTION_ID, 
 interface ProfilesFile {
   version: 1;
   activeId: string;
-  /** Whether the person has chosen where Wisps run; absent in files from before the first-run choice. */
-  chosen?: boolean;
+  /** Whether the person has chosen where Wisps run. */
+  chosen: boolean;
   profiles: RemoteConnectionProfile[];
 }
 
@@ -129,7 +129,7 @@ export class ConnectionStore {
         }
       }
       if (this.get(profiles.activeId)) this.activeId = profiles.activeId;
-      this.chosen = profiles.chosen ?? true;
+      this.chosen = profiles.chosen === true;
     }
     const stored = await readJson<CredentialsFile>(path.join(this.directory, CREDENTIALS_FILE));
     if (stored?.version === 1 && this.encryption.isAvailable()) {

@@ -7,6 +7,7 @@ import { ConversationRepository } from "../backend/conversation-repository.js";
 import { SessionReportService } from "../backend/session-report-service.js";
 import { ModelPricingService } from "../backend/model-pricing-service.js";
 import type { Chat, CircleChat } from "../shared/conversations.js";
+import { seedConversations } from "./helpers/seed-conversations.js";
 
 const directories: string[] = [];
 afterEach(async () => {
@@ -17,7 +18,6 @@ function chat(id: string): Chat {
     id,
     name: id,
     kind: "wisp",
-    shape: "circle",
     label: "Test",
     description: "Test",
     notifyOnUpdatesEnabled: true,
@@ -46,7 +46,7 @@ async function setup() {
   const directory = await mkdtemp(path.join(os.tmpdir(), "wisp-usage-"));
   directories.push(directory);
   const repository = new ConversationRepository({ dataDirectory: directory });
-  await repository.initialize({ first: chat("first"), second: chat("second") });
+  await seedConversations(repository, { first: chat("first"), second: chat("second") });
   const pricing = new ModelPricingService({
     cacheFilePath: path.join(directory, "pricing.json"),
     fetchModels: async () => ({

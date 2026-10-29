@@ -19,7 +19,6 @@ export const DEFAULT_CONTEXT_POLICY: ContextPolicy = {
 
 export interface ContextView {
   policy: ContextPolicy;
-  memory: string;
   summary: string | null;
   lastRenewedAt: string | null;
   lastActivityAt: string | null;
@@ -28,7 +27,7 @@ export interface ContextView {
 
 export type ContextCommand =
   | { action: "get" }
-  | { action: "save"; policy: ContextPolicy; memory: string }
+  | { action: "save"; policy: ContextPolicy }
   | { action: "compact" }
   | { action: "new_topic" };
 

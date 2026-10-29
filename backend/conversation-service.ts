@@ -403,8 +403,8 @@ export class ConversationService {
     return name === undefined ? { authorId: wispId } : { authorId: wispId, authorName: name };
   }
 
-  async initialize(chats: unknown): Promise<ConversationStateView> {
-    await this.repository.initialize(chats);
+  async initialize(): Promise<ConversationStateView> {
+    await this.repository.initialize();
     this.onConversationsRemoved();
     await this.registry.restore(this.agentContexts(), this.model);
     return this.getState();

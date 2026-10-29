@@ -151,10 +151,10 @@ bodies stay JSON (see [ADR 010](decisions/010-wisp-entity.md#storage-layout)). T
 stores in memory as its read model and adopts a change only after its
 transaction commits. Each conversation keeps its newest 10,000 messages; older
 ones leave the displayed transcript, while the Wisp's Pi session keeps its own
-full history. On first run the legacy `conversations.json` store is imported
-once and kept beside the database as `conversations.json.migrated-<time>`. A
-database that cannot be read, or that a newer app version wrote, is set aside
-as `conversations.sqlite.corrupt-<time>` and a fresh store starts.
+full history. A database that cannot be read is set aside as
+`conversations.sqlite.corrupt-<time>` and a fresh store starts. One written by
+a newer app version, or by one older than v0.25.3, is left in place and the
+app refuses to start ([ADR 036](decisions/036-upgrade-floor.md)).
 A trigram full-text index over message text (kept in sync by triggers) serves
 message search from a worker thread with its own read-only connection, and
 transcripts can be read a page at a time; each conversation also records its

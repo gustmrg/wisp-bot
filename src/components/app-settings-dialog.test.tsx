@@ -65,7 +65,7 @@ describe("AppSettingsDialog metadata", () => {
         appMetadata={appMetadata}
         currentUser={currentUser}
         userProfile={{
-          profile: { preferredName: "Ada", aboutYou: "", responsePreferences: "" },
+          profile: { preferredName: "Ada" },
           loading: false,
           error: null,
           save: vi.fn(),
@@ -121,7 +121,7 @@ describe("AppSettingsDialog metadata", () => {
         appMetadata={appMetadata}
         currentUser={currentUser}
         userProfile={{
-          profile: { preferredName: "Ada", aboutYou: "", responsePreferences: "" },
+          profile: { preferredName: "Ada" },
           loading: false,
           error: null,
           save: vi.fn(),
@@ -159,7 +159,7 @@ describe("AppSettingsDialog metadata", () => {
         appMetadata={appMetadata}
         currentUser={currentUser}
         userProfile={{
-          profile: { preferredName: "Ada", aboutYou: "", responsePreferences: "" },
+          profile: { preferredName: "Ada" },
           loading: false,
           error: null,
           save: vi.fn(),
@@ -229,7 +229,7 @@ describe("AppSettingsDialog metadata", () => {
         appMetadata={appMetadata}
         currentUser={currentUser}
         userProfile={{
-          profile: { preferredName: "Ada", aboutYou: "", responsePreferences: "" },
+          profile: { preferredName: "Ada" },
           loading: false,
           error: null,
           save: vi.fn(),
@@ -298,7 +298,7 @@ describe("AppSettingsDialog metadata", () => {
         appMetadata={appMetadata}
         currentUser={currentUser}
         userProfile={{
-          profile: { preferredName: "Ada", aboutYou: "", responsePreferences: "" },
+          profile: { preferredName: "Ada" },
           loading: false,
           error: null,
           save: vi.fn(),
@@ -342,7 +342,7 @@ describe("AppSettingsDialog on mobile", () => {
         appMetadata={appMetadata}
         currentUser={currentUser}
         userProfile={{
-          profile: { preferredName: "Ada", aboutYou: "", responsePreferences: "" },
+          profile: { preferredName: "Ada" },
           loading: false,
           error: null,
           save: vi.fn(),
@@ -392,7 +392,7 @@ describe("AppSettingsDialog on mobile", () => {
         appMetadata={appMetadata}
         currentUser={currentUser}
         userProfile={{
-          profile: { preferredName: "Ada", aboutYou: "", responsePreferences: "" },
+          profile: { preferredName: "Ada" },
           loading: false,
           error: null,
           save: vi.fn(),
@@ -421,7 +421,7 @@ describe("AppSettingsDialog on mobile", () => {
       appMetadata,
       currentUser,
       userProfile: {
-        profile: { preferredName: "Ada", aboutYou: "", responsePreferences: "" },
+        profile: { preferredName: "Ada" },
         loading: false,
         error: null,
         save: vi.fn(),

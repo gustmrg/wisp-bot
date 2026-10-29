@@ -9,7 +9,7 @@ it("saves the name when the field loses focus, keeping the fields that moved to 
   render(
     <UserProfileSettings
       controller={{
-        profile: { preferredName: "Ada", aboutYou: "Developer", responsePreferences: "Brief" },
+        profile: { preferredName: "Ada" },
         loading: false,
         error: null,
         save,
@@ -23,7 +23,7 @@ it("saves the name when the field loses focus, keeping the fields that moved to 
   await user.type(screen.getByLabelText("Name"), " Grace ");
   expect(save).not.toHaveBeenCalled();
   await user.tab();
-  expect(save).toHaveBeenCalledWith({ preferredName: " Grace ", aboutYou: "Developer", responsePreferences: "Brief" });
+  expect(save).toHaveBeenCalledWith({ preferredName: " Grace " });
   expect(screen.getByLabelText("Name")).toHaveValue("Grace");
 });
 
@@ -33,7 +33,7 @@ it("saves on Enter and skips a name that did not change", async () => {
   render(
     <UserProfileSettings
       controller={{
-        profile: { preferredName: "Ada", aboutYou: "", responsePreferences: "" },
+        profile: { preferredName: "Ada" },
         loading: false,
         error: null,
         save,
@@ -53,7 +53,7 @@ it("keeps the name required and never saves it empty", async () => {
   render(
     <UserProfileSettings
       controller={{
-        profile: { preferredName: "Ada", aboutYou: "", responsePreferences: "" },
+        profile: { preferredName: "Ada" },
         loading: false,
         error: null,
         save,

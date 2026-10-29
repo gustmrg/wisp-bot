@@ -17,7 +17,6 @@ import {
 import {
   DEFAULT_WISP_APPEARANCE,
   WISP_APPEARANCE_AXES,
-  appearanceFromLegacyShape,
   isWispAppearanceValue,
   nearestWispColor,
   wispPaletteColor,
@@ -40,16 +39,10 @@ export const MAX_WISP_SOUL_LENGTH = 12_000;
 const APPEARANCE_KEYS = Object.keys(WISP_APPEARANCE_AXES) as Array<keyof WispAppearance>;
 
 /**
- * A stored Wisp's appearance. Wisps saved before appearances had a shape, and
- * a value this build does not know (written by a newer one) falls back to the
- * default, so the Wisp still loads.
+ * A stored Wisp's appearance. A value this build does not know (written by a
+ * newer one) falls back to the default, so the Wisp still loads.
  */
 function storedAppearance(raw: Record<string, unknown>): WispAppearance {
-  if (raw.appearance === undefined) {
-    const legacy = appearanceFromLegacyShape(raw.shape);
-    if (!legacy) throw invalidRequest();
-    return legacy;
-  }
   const stored = asRecord(raw.appearance);
   const appearance = { ...DEFAULT_WISP_APPEARANCE };
   for (const key of APPEARANCE_KEYS) {
@@ -326,24 +319,6 @@ export function upsertNormalizedMessage(
   return { chat: { ...chat, messages: [...chat.messages.slice(droppedOldest), message] }, message, droppedOldest };
 }
 
-// Stored messages are keyed by (conversation, message ID), so IDs must be
-// unique within a chat. Later duplicates from legacy data get fresh short IDs.
-function withUniqueMessageIds(messages: ReadonlyArray<Message>): ReadonlyArray<Message> {
-  const taken = new Set(messages.flatMap(({ id }) => (id ? [id] : [])));
-  const seen = new Set<string>();
-  return messages.map((message, index) => {
-    if (!message.id || !seen.has(message.id)) {
-      if (message.id) seen.add(message.id);
-      return message;
-    }
-    let id = `message-${index}`;
-    for (let attempt = 1; taken.has(id); attempt += 1) id = `message-${index}-${attempt}`;
-    taken.add(id);
-    seen.add(id);
-    return { ...message, id };
-  });
-}
-
 export function normalizeWisp(value: unknown): Wisp {
   const raw = asRecord(value);
   const color = raw.color === undefined ? undefined : storedColor(raw.color);
@@ -394,9 +369,7 @@ export function normalizeChat(value: unknown): Chat {
     id,
     notifyOnUpdatesEnabled: raw.notifyOnUpdatesEnabled,
     preview: string(raw.preview),
-    messages: withUniqueMessageIds(
-      raw.messages.map((message, index) => normalizeMessage(message, `${id}:message:${index}`)),
-    ),
+    messages: raw.messages.map((message, index) => normalizeMessage(message, `${id}:message:${index}`)),
     ...unreadFields(raw),
     ...(raw.pinned === true ? { pinned: true } : {}),
     ...(raw.lastActivityAt === undefined ? {} : { lastActivityAt: timestamp(raw.lastActivityAt) }),

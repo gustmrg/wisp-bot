@@ -240,9 +240,7 @@ export class ClaudeCodeSession implements RuntimeSession {
         throw new WispBackendError("invalid_request", "Wait for the Wisp to finish before changing its context.");
       }
       if (command.action === "save") {
-        await context.save({ policy: command.policy, memory: command.memory });
-        // The memory is part of the system prompt, which the next process reads.
-        this.closeIdleProcess();
+        await context.save({ policy: command.policy });
       } else {
         const { turn, end } = this.beginTurn();
         try {
@@ -256,7 +254,6 @@ export class ClaudeCodeSession implements RuntimeSession {
     const settings = await context.load();
     return {
       policy: settings.policy,
-      memory: settings.memory,
       summary: null,
       lastRenewedAt: this.state.lastRenewedAt,
       lastActivityAt: this.state.lastActivityAt,

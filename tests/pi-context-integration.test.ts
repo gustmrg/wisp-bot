@@ -92,11 +92,11 @@ it("preserves continuity through real SDK compaction and a fresh-topic restart, 
     const factory = new SdkPiSessionFactory(runtime);
     const selection = { providerId: "openrouter", modelId: "openai/gpt-4o-mini" };
     session = await factory.create(context, selection);
-    await session.manageContext!({ action: "save", policy: DEFAULT_CONTEXT_POLICY, memory: "Legacy saved memory" });
+    await session.manageContext!({ action: "save", policy: { ...DEFAULT_CONTEXT_POLICY, idleHours: 6 } });
     // Settings survive even before the first assistant message creates the Pi transcript.
     session.dispose();
     session = await factory.create(context, selection);
-    expect((await session.manageContext!({ action: "get" })).memory).toBe("Legacy saved memory");
+    expect((await session.manageContext!({ action: "get" })).policy.idleHours).toBe(6);
     for (let turn = 0; turn < 3; turn++)
       await session.prompt(`Turn ${turn}: SQLite. ${"Synthetic background. ".repeat(500)}`);
     expect(JSON.stringify(requests[0])).toContain("Prefer Portuguese");

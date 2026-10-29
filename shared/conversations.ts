@@ -275,10 +275,6 @@ export interface ConversationDelta {
   updated: ReadonlyArray<Message>;
 }
 
-export interface InitializeConversationsRequest {
-  chats: unknown;
-}
-
 /** Creates a circle; a Wisp's own conversation is created with the Wisp. */
 export interface CreateConversationRequest {
   conversation: CircleChat;
