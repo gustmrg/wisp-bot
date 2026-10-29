@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { ArrowDownIcon, ChevronLeftIcon, SettingsIcon } from "lucide-react";
 
 import type { ChatView, Message, Wisp, WispCollection } from "@/chat-data";
@@ -10,6 +10,7 @@ import { conversationStarters } from "@/lib/conversation-starters";
 import { withDateDividers } from "@/lib/date-dividers";
 import { isAttached, type MessageWindow } from "@/lib/message-windows";
 import { mainPanel } from "@/lib/ui-classes";
+import { crownedLeadId, LeadMark } from "@/components/lead-crown";
 import { cn } from "@/lib/utils";
 import { DEFAULT_WISP_APPEARANCE } from "../../shared/wisp-appearance";
 import { isNeutralColor, wispAccentStyle, wispColor } from "@/lib/wisp-appearance";
@@ -168,6 +169,7 @@ function ChatPanel({
   const focusChatId = mobile && !hidden ? chat.id : null;
   const messages = transcript?.messages ?? NO_MESSAGES;
   const members = chat.kind === "circle" ? chat.members : NO_MEMBERS;
+  const leadId = chat.kind === "circle" ? crownedLeadId(chat.memberIds) : undefined;
   // Wisps that replied here but have since left the circle, as a key that changes only when they do.
   // A Wisp's own conversation records its replies' author too, but has no circle to leave.
   const formerMemberIds = [
@@ -402,7 +404,19 @@ function ChatPanel({
               // The text truncates on its own, so the line does not clip the pulse around its dot.
               <p className="chat-subline flex min-w-0 items-center gap-1.5 text-xs" data-tone={subline.tone}>
                 {subline.tone === "working" ? <span className="chat-subline-pulse" aria-hidden="true" /> : null}
-                <span className="truncate">{subline.text}</span>
+                <span className="truncate">
+                  {leadId && !subline.tone
+                    ? members.map((member, index) => (
+                        <Fragment key={member.id}>
+                          {index ? ", " : null}
+                          {member.name}
+                          {member.id === leadId ? (
+                            <LeadMark className="ml-0.5 inline-block size-2.5 align-[-1px]" />
+                          ) : null}
+                        </Fragment>
+                      ))
+                    : subline.text}
+                </span>
               </p>
             ) : null}
           </div>
@@ -498,6 +512,7 @@ function ChatPanel({
                     dense={message.type === "outgoing" && previous?.type === "outgoing"}
                     author={author}
                     authorDeleted={authorDeleted}
+                    lead={Boolean(leadId) && author?.id === leadId}
                     showAuthor={Boolean(author) && previousAuthor !== author?.id}
                     mentions={mentions}
                     fileMentions={chat.kind === "wisp"}

@@ -4,6 +4,7 @@ import { useId, useState } from "react";
 
 import type { Wisp, WispId } from "@/chat-data";
 import { WispAvatar } from "@/components/chat-avatar";
+import { crownedLeadId, LeadMark } from "@/components/lead-crown";
 
 interface CircleMemberPickerProps {
   availableWisps: ReadonlyArray<Wisp>;
@@ -26,6 +27,7 @@ export function CircleMemberPicker({
     const wisp = availableById.get(id);
     return wisp ? [wisp] : [];
   });
+  const leadId = crownedLeadId(normalizedIds);
 
   function toggleMember(wisp: Wisp, selected: boolean): void {
     const next = selected ? [...normalizedIds, wisp.id] : normalizedIds.filter((id) => id !== wisp.id);
@@ -81,7 +83,13 @@ export function CircleMemberPicker({
                 </Checkbox.Indicator>
               </Checkbox.Root>
               <WispAvatar wisp={wisp} />
-              <span className="min-w-0 text-base [overflow-wrap:anywhere]">{wisp.name}</span>
+              <span className="min-w-0 text-base [overflow-wrap:anywhere]">
+                {wisp.name}
+                {/* Beside the name at its size, so the Wisp's own look is left uncovered. */}
+                {wisp.id === leadId ? (
+                  <LeadMark className="ml-1.5 inline-block size-[1em] align-[-0.125em]" decorative />
+                ) : null}
+              </span>
             </label>
           ))}
           {!availableWisps.length ? (
