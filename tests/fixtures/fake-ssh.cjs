@@ -77,6 +77,11 @@ if (asks.has("password") && !read(process.env.FAKE_SSH_AUTHORIZED).trim()) {
     process.exit(255);
   }
 }
+/** Prints what the setup's command echoes first once the remote shell runs it. */
+function connected() {
+  const echoed = /echo "([^"]*)" >&2/.exec(command);
+  if (echoed) process.stderr.write(`${echoed[1]}\n`);
+}
 const separator = args.indexOf("--");
 const command = args.slice(separator + 2).join(" ");
 if (command.includes("authorized_keys")) {
@@ -95,6 +100,7 @@ if (command.includes("authorized_keys")) {
     process.exit(255);
   } else process.exit(0);
 } else if (command.includes("setup --json") && process.env.FAKE_SSH_INSTALL === "hang") {
+  connected();
   process.stderr.write("Installing @gustmrg/wisp-server@1.0.0…\n");
   // Runs until the test stops ssh.
   setInterval(() => undefined, 60_000);
@@ -108,6 +114,7 @@ if (command.includes("authorized_keys")) {
     ],
     systemd: ["The systemd user session is not running (Failed to connect to bus).", 1],
   };
+  connected();
   const outcome = outcomes[process.env.FAKE_SSH_INSTALL];
   if (outcome) {
     process.stderr.write(`${outcome[0]}\n`);

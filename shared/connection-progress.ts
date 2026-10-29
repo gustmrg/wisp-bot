@@ -17,8 +17,11 @@ export function connectSteps(kind: "local" | "ssh" | "url", paired: boolean): Co
   ];
 }
 
-/** The steps of setting a server up over SSH, ending with connecting to it. */
-export const INSTALL_STEPS: ConnectionStepId[] = ["download", "install", "service", "connect"];
+/**
+ * The steps of setting a server up over SSH: reaching the host and signing in
+ * come first, as when connecting, and connecting to the new server comes last.
+ */
+export const INSTALL_STEPS: ConnectionStepId[] = ["reach", "sign_in", "download", "install", "service", "connect"];
 
 export function createProgress(
   kind: ConnectionProgress["kind"],
