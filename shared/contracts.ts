@@ -334,8 +334,12 @@ export interface AuxiliaryModelView {
   unavailable: AuxiliaryModelUnavailableReason | null;
 }
 
-/** Why a saved fallback model is not used. The selection is kept so the person can see and fix it. */
-export type FallbackModelUnavailableReason = "missing_key" | "model_unavailable";
+/**
+ * Why a saved fallback model is not used. The selection is kept so the person
+ * can see and fix it. `same_provider` is a fallback from the provider of the
+ * model it stands in for, which fails along with it.
+ */
+export type FallbackModelUnavailableReason = "missing_key" | "model_unavailable" | "same_provider";
 
 export interface FallbackModelView {
   selection: ModelSelection | null;

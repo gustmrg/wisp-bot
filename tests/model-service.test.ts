@@ -486,9 +486,38 @@ describe("ModelService fallback models", () => {
 
     await expect(service.getFallbackModel(null, null)).resolves.toEqual(backup);
     await expect(service.getFallbackModel(own, null)).resolves.toBeNull();
-    await expect(service.getFallbackModel(own, "global")).resolves.toEqual(backup);
+    await expect(service.getFallbackModel(global, "global")).resolves.toEqual(backup);
     await expect(service.getFallbackModel(null, "off")).resolves.toBeNull();
     await expect(service.getFallbackModel(own, global)).resolves.toEqual(global);
+  });
+
+  it("uses no fallback from the provider of the model it stands in for, keeping a saved one", async () => {
+    const { service, settings } = await createService();
+    await service.save({ selection: global, apiKey: "main-key" });
+    await service.saveVoiceKey("provider-b", "secret-key");
+    const own = { providerId: "provider-b", modelId: "vision-b" };
+
+    // A Wisp's own fallback from its model's provider, saved before the rule.
+    await expect(service.getFallbackModel(own, backup)).resolves.toBeNull();
+    await expect(service.assertUsableFallback(backup, own)).rejects.toMatchObject({
+      code: "invalid_configuration",
+      message: expect.stringContaining("another provider"),
+    });
+    await expect(service.assertUsableFallback(global, own)).resolves.toBeUndefined();
+
+    // The global fallback is judged against the model of the Wisp that falls back.
+    await service.saveFallback(backup);
+    await expect(service.getFallbackModel(own, "global")).resolves.toBeNull();
+    await expect(service.getFallbackModel(null, null)).resolves.toEqual(backup);
+
+    // Moving the global model to the fallback's provider keeps the fallback, unused.
+    await settings.setSelection({ providerId: "provider-b", modelId: "model-b" });
+    expect((await service.getView()).fallback).toEqual({ selection: backup, unavailable: "same_provider" });
+    await expect(service.getFallbackModel(null, null)).resolves.toBeNull();
+    await expect(service.saveFallback(backup)).rejects.toMatchObject({ code: "invalid_configuration" });
+    await expect(service.getFallbackModel({ providerId: "openrouter", modelId: "model-a" }, "global")).resolves.toEqual(
+      backup,
+    );
   });
 
   it("has no fallback when it is the model that failed or cannot be used", async () => {
@@ -496,7 +525,7 @@ describe("ModelService fallback models", () => {
     await service.save({ selection: global, apiKey: "main-key" });
     await service.saveVoiceKey("provider-b", "secret-key");
 
-    // The model cannot stand in for itself.
+    // The model, or its provider, cannot stand in for itself.
     await expect(service.getFallbackModel(null, global)).resolves.toBeNull();
     await expect(service.getFallbackModel(backup, backup)).resolves.toBeNull();
     // A saved model that left the catalog, or whose key is gone, is kept but not used.

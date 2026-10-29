@@ -139,15 +139,22 @@ shortens it instead.
 by default. A Wisp's **Model** tab chooses **Off**, **Use the global
 fallback**, or a model of its own. A Wisp on the global model uses the global
 fallback until it chooses; a Wisp with its own model has none until it is
-turned on. Only models from providers with a saved key are listed.
+turned on. Only models from other providers with a saved key are listed: a
+provider that is down, rate limited, out of credits, or rejecting its key fails
+all of its models at once, so a fallback from the same provider would fail
+along with the model it stands in for. The global fallback is judged against
+the global model, and a Wisp's fallback against the Wisp's model. A Wisp with
+its own model on the global fallback's provider has no fallback from it, and
+its **Model** tab says so.
 
 Once the fallback answers, it answers for the rest of that turn; the next
 message tries the Wisp's model again. The fallback takes the output limit and
 reasoning level of the model it stands in for, reduced to what it supports.
 The Wisp's activity says when the fallback is answering, each reply it wrote
 carries a **Fallback** badge, and the session report lists the switch. A
-fallback whose key is removed or whose model leaves the catalog stays saved
-but is not used, and the setting says why.
+fallback whose key is removed, whose model leaves the catalog, or that is from
+the provider of the model it stands in for, for example after that model
+changed, stays saved but is not used, and the setting says why.
 
 ## Auxiliary models
 

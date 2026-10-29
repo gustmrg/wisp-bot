@@ -439,28 +439,31 @@ function FallbackSection({
       description: globalFallback ? modelName(catalog, globalFallback) : "None is set in Settings → AI Model",
       iconSrc: globalFallback ? modelLabLogo(globalFallback) : undefined,
     },
-    // The Wisp's own model cannot stand in for itself.
+    // A failing provider fails with all its models, so none from the Wisp's model's provider is offered.
     ...modelOptions(catalog, undefined, { claudeCode: false }).filter(
-      (option) => !effective || option.value !== modelOptionValue(effective),
+      (option) => !effective || parseModelOptionValue(option.value).providerId !== effective.providerId,
     ),
   ];
   if (typeof fallback === "object" && !options.some((option) => option.value === value)) {
     options.push(
-      modelOptions(catalog, undefined, { claudeCode: false }).find((option) => option.value === value) ??
+      (fallback.providerId !== effective?.providerId &&
+        modelOptions(catalog, undefined, { claudeCode: false }).find((option) => option.value === value)) ||
         unavailableModelOption(catalog, fallback),
     );
   }
+  const providerName = (providerId: string) =>
+    catalog.providers.find(({ id }) => id === providerId)?.name ?? providerId;
   const note =
     fallback !== FALLBACK_GLOBAL
-      ? typeof fallback === "object" && effective && value === modelOptionValue(effective)
-        ? "The fallback is this Wisp's own model, so it has no fallback. Choose another model."
+      ? typeof fallback === "object" && effective && fallback.providerId === effective.providerId
+        ? `This fallback is from ${providerName(fallback.providerId)}, the provider of this Wisp's model, so it fails along with it. Choose a model from another provider.`
         : null
       : !globalFallback
         ? "No global fallback is set, so this Wisp stops when its model fails. Choose one in Settings → AI Model."
-        : catalog.fallback.unavailable
-          ? "The global fallback cannot be used right now. Check it in Settings → AI Model."
-          : effective && modelOptionValue(globalFallback) === modelOptionValue(effective)
-            ? "The global fallback is this Wisp's own model, so it has no fallback. Choose another model."
+        : effective && globalFallback.providerId === effective.providerId
+          ? `The global fallback is from ${providerName(globalFallback.providerId)}, the provider of this Wisp's model, so it fails along with it. Choose a fallback from another provider for this Wisp.`
+          : catalog.fallback.unavailable && catalog.fallback.unavailable !== "same_provider"
+            ? "The global fallback cannot be used right now. Check it in Settings → AI Model."
             : null;
 
   return (
@@ -474,7 +477,7 @@ function FallbackSection({
         className="h-8 w-full text-base"
         searchLabel="Search fallback models"
         searchPlaceholder="Search model name or ID…"
-        emptyText="No models from providers with a saved key."
+        emptyText="No models from other providers with a saved key."
         onChange={(next) => {
           if (next === value) return;
           onChange(
@@ -488,7 +491,7 @@ function FallbackSection({
       />
       <p className="m-0 text-xs leading-relaxed text-dim">
         Answers when this Wisp's model fails for good, for example when the provider is out of credits. Each message
-        tries the Wisp's model first.
+        tries the Wisp's model first. Only models from another provider are listed.
       </p>
       {note ? (
         <p role="alert" className="m-0 text-xs leading-relaxed text-warning">
