@@ -34,21 +34,21 @@ memory. A timeline marker explains each boundary.
 
 **Memory** is a list of one-line entries, stored locally and included in every
 model request. It survives new topics and restarts; facts are not silently
-promoted from summaries into permanent memory. Open **Wisp settings → General → Memory**
-to see it in two groups:
+promoted from summaries into permanent memory. It comes in two lists:
 
-- **About you · every Wisp** (`USER.md`): facts and preferences about you,
-  shared by all of your Wisps, up to 1,500 characters.
+- **About you** (`USER.md`): facts and preferences about you, shared by all of
+  your Wisps, up to 1,500 characters. Open **Settings → General** to see it,
+  under your name. It is there even before you create a Wisp.
 - **This Wisp** (`MEMORY.md`): what only this Wisp remembers, up to 4,000
-  characters.
+  characters. Open **Wisp settings → General → Memory** to see it.
 
 Ask a Wisp to remember something ("remember that I prefer short answers") and
 it calls `save_memory`; an approval card shows the exact change, and nothing is
 written until you allow it. A Wisp saves only what you ask it to keep, never
 credentials, and never on its own. Each entry shows who wrote it (you or a
-Wisp) and when, and can be edited, removed, or restored later. **Edit as text** edits a group one line per entry and shows
+Wisp) and when, and can be edited, removed, or restored later. **Edit as text** edits a list one line per entry and shows
 what will change before saving; lines left as they are keep their history.
-Each group can be exported as Markdown. Deleting a Wisp keeps its `MEMORY.md`
+Each list can be exported as Markdown. Deleting a Wisp keeps its `MEMORY.md`
 in the archive. The saved memory and the profile's "About you" and "Response
 preferences" from earlier versions became entries on the first start. See
 [ADR 029](decisions/029-wisp-memory.md).
@@ -58,12 +58,12 @@ preferences" from earlier versions became entries on the first start. See
 Turn off **Use memory** at the top of **Wisp settings → General → Memory** to
 run a Wisp without memory: for a throwaway conversation, a work Wisp that
 should not pick up personal context, or to try the model without any. From the
-next message, the Wisp reads neither group, has no `save_memory`, and says that
+next message, the Wisp reads neither list, has no `save_memory`, and says that
 memory is off when you ask it to remember something. Its jobs run without
 memory too. The conversation header shows **Memory off**, which opens the
 Wisp's settings.
 
-Nothing is deleted. Both groups stay in settings, where you can still edit
+Nothing is deleted. Both lists stay in settings, where you can still edit
 them, and turning memory back on gives the Wisp the same entries in the same
 order. `USER.md` is shared, so your other Wisps keep using it.
 

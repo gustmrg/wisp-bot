@@ -27,7 +27,7 @@ export interface MemoryUsageView {
   limit: number;
 }
 
-/** A Wisp's memory: the person's entries and its own, in every status, `user` first. */
+/** A Wisp's memory: the person's entries and its own, in every status, `user` first. The person's alone has only `user`. */
 export interface MemoryView {
   entries: ReadonlyArray<MemoryEntryView>;
   usage: ReadonlyArray<MemoryUsageView>;
@@ -40,13 +40,16 @@ export type MemoryOperationRequest =
   | { op: "remove"; id: string }
   | { op: "restore"; id: string };
 
-export interface ApplyMemoryRequest {
-  conversationId: string;
+/** Whose memory settings show: a Wisp's, by its conversation, or without one the person's own (`user` only). */
+export interface MemoryRequest {
+  conversationId?: string;
+}
+
+export interface ApplyMemoryRequest extends MemoryRequest {
   operations: ReadonlyArray<MemoryOperationRequest>;
 }
 
-export interface ExportMemoryRequest {
-  conversationId: string;
+export interface ExportMemoryRequest extends MemoryRequest {
   scope: MemoryScope;
 }
 

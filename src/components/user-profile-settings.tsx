@@ -1,75 +1,73 @@
-import { useState } from "react";
-import { normalizeUserProfile, PROFILE_LIMITS } from "../../shared/user-profile";
+import { useState, type ReactNode } from "react";
+import { PROFILE_LIMITS } from "../../shared/user-profile";
 import type { UserProfileController } from "@/hooks/use-user-profile";
-import { SettingsCard, SettingsField, SettingsGroup } from "@/components/settings/settings-primitives";
+import {
+  SettingsCard,
+  SettingsGroup,
+  SettingsRow,
+  SettingsRowCopy,
+  SettingsRowDescription,
+  SettingsRowTitle,
+} from "@/components/settings/settings-primitives";
+import { FormStatus } from "@/components/ui/form-status";
 import { Input } from "@/components/ui/input";
-import { Button } from "@/components/ui/button";
 
-export function UserProfileSettings({ controller }: { controller: UserProfileController }) {
-  const [draft, setDraft] = useState(controller.profile);
+/**
+ * The person's name, saved when the field loses focus like the other settings on the page,
+ * and below it, in `children`, what every Wisp knows about them.
+ */
+export function UserProfileSettings({
+  controller,
+  children,
+}: {
+  controller: UserProfileController;
+  children?: ReactNode;
+}) {
+  const saved = controller.profile.preferredName;
+  const [name, setName] = useState(saved);
   const [saving, setSaving] = useState(false);
-  const [saved, setSaved] = useState(false);
-  const dirty = JSON.stringify(draft) !== JSON.stringify(controller.profile);
-  const nameMissing = !draft.preferredName.trim();
+  const nameMissing = !name.trim();
+
+  async function commit(): Promise<void> {
+    if (nameMissing || name.trim() === saved) return;
+    setSaving(true);
+    if (await controller.save({ ...controller.profile, preferredName: name })) setName(name.trim());
+    setSaving(false);
+  }
+
   return (
-    <SettingsGroup label="Your profile">
+    <SettingsGroup label="You">
       <SettingsCard>
-        <form
-          className="flex flex-col gap-3 px-3.5 py-3.5"
-          onSubmit={async (event) => {
-            event.preventDefault();
-            setSaving(true);
-            const success = await controller.save(draft);
-            if (success) setDraft(normalizeUserProfile(draft));
-            setSaved(success);
-            setSaving(false);
-          }}
-        >
-          <p className="m-0 text-xs leading-relaxed text-dim">
-            Saved on this device. Shared with your Wisps to personalize responses, including with their AI provider when
-            you chat.
-          </p>
-          <fieldset disabled={saving || controller.loading} className="m-0 flex min-w-0 flex-col border-0 p-0">
-            <SettingsField label="Preferred name" htmlFor="profile-name">
-              <Input
-                id="profile-name"
-                autoComplete="given-name"
-                maxLength={PROFILE_LIMITS.preferredName}
-                value={draft.preferredName}
-                placeholder="What should Wisps call you?"
-                onChange={(event) => {
-                  setDraft({ ...draft, preferredName: event.target.value });
-                  setSaved(false);
-                }}
-              />
-            </SettingsField>
-            <p className="m-0 text-xs leading-relaxed text-dim">
-              What your Wisps know about you, such as your work and how you like answers, is kept under Memory in any
-              Wisp's settings.
-            </p>
-            <div className="flex justify-end">
-              <Button type="submit" disabled={!dirty || nameMissing}>
-                {saving ? "Saving…" : "Save profile"}
-              </Button>
-            </div>
-          </fieldset>
-          {nameMissing ? (
-            <p role="alert" className="m-0 text-xs text-destructive">
-              Your preferred name is required.
-            </p>
-          ) : null}
-          {controller.error ? (
-            <p role="alert" className="m-0 text-xs text-destructive">
-              {controller.error}
-            </p>
-          ) : null}
-          {saved ? (
-            <p role="status" className="m-0 text-xs text-dim">
-              Profile saved.
-            </p>
-          ) : null}
-        </form>
+        <SettingsRow className="max-[620px]:flex-col max-[620px]:items-stretch">
+          <SettingsRowCopy>
+            <SettingsRowTitle htmlFor="profile-name">Name</SettingsRowTitle>
+            <SettingsRowDescription>
+              What your Wisps call you. They also send it to their AI provider when you chat.
+            </SettingsRowDescription>
+          </SettingsRowCopy>
+          <Input
+            id="profile-name"
+            autoComplete="given-name"
+            maxLength={PROFILE_LIMITS.preferredName}
+            value={name}
+            placeholder="Your name"
+            disabled={saving || controller.loading}
+            aria-invalid={nameMissing || undefined}
+            className="w-56 shrink-0 max-[620px]:w-full"
+            onChange={(event) => setName(event.target.value)}
+            onBlur={() => void commit()}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") event.currentTarget.blur();
+            }}
+          />
+        </SettingsRow>
       </SettingsCard>
+      <FormStatus
+        className="mx-0.5 mt-1.5"
+        error={nameMissing ? "Your name is required." : (controller.error ?? undefined)}
+        pending={saving ? "Saving…" : undefined}
+      />
+      {children ? <SettingsCard className="mt-2 px-3.5 py-3.5">{children}</SettingsCard> : null}
     </SettingsGroup>
   );
 }

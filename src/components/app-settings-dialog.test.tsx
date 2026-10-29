@@ -14,6 +14,12 @@ const currentUser: CurrentUser = {
   initials: "AL",
 };
 
+/** General shows what every Wisp knows about the person. */
+const memoryApi = {
+  getMemory: vi.fn(async () => ({ ok: true as const, value: { entries: [], usage: [] } })),
+  subscribeToAgentEvents: vi.fn(() => () => undefined),
+};
+
 const appMetadata: AppMetadata = {
   displayName: "Example Desktop",
   packageName: "example-desktop",
@@ -34,6 +40,7 @@ describe("AppSettingsDialog metadata", () => {
     Object.defineProperty(window, "wisp", {
       configurable: true,
       value: {
+        ...memoryApi,
         subscribeToPluginSettings: vi.fn(() => () => undefined),
         subscribeToUpdateState: vi.fn(() => () => undefined),
         getUpdateState: vi.fn(async () => ({
@@ -90,6 +97,7 @@ describe("AppSettingsDialog metadata", () => {
     Object.defineProperty(window, "wisp", {
       configurable: true,
       value: {
+        ...memoryApi,
         subscribeToPluginSettings: vi.fn(() => () => undefined),
         subscribeToUpdateState: vi.fn(() => () => undefined),
         getUpdateState: vi.fn(async () => ({
@@ -137,6 +145,7 @@ describe("AppSettingsDialog metadata", () => {
     Object.defineProperty(window, "wisp", {
       configurable: true,
       value: {
+        ...memoryApi,
         subscribeToPluginSettings: vi.fn(() => () => undefined),
         subscribeToUpdateState: vi.fn(() => () => undefined),
         getUpdateState: vi.fn(async () => ({
@@ -164,7 +173,10 @@ describe("AppSettingsDialog metadata", () => {
       />,
     );
 
-    expect(screen.getByLabelText("Preferred name")).toHaveValue("Ada");
+    expect(screen.getByLabelText("Name")).toHaveValue("Ada");
+    // What every Wisp knows about the person sits under the name, outside any Wisp.
+    expect(await screen.findByRole("region", { name: "About you" })).toBeVisible();
+    expect(memoryApi.getMemory).toHaveBeenCalledWith({});
     expect(screen.getByRole("button", { name: "Notifications" })).toBeEnabled();
     expect(screen.queryByRole("switch", { name: "Notification sounds" })).not.toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Notifications" }));
@@ -200,6 +212,7 @@ describe("AppSettingsDialog metadata", () => {
     Object.defineProperty(window, "wisp", {
       configurable: true,
       value: {
+        ...memoryApi,
         subscribeToPluginSettings: vi.fn(() => () => undefined),
         subscribeToUpdateState: vi.fn((listener: (state: UpdateState) => void) => {
           push = listener;
@@ -271,6 +284,7 @@ describe("AppSettingsDialog metadata", () => {
     Object.defineProperty(window, "wisp", {
       configurable: true,
       value: {
+        ...memoryApi,
         subscribeToPluginSettings: vi.fn(() => () => undefined),
         subscribeToUpdateState: vi.fn(() => () => undefined),
         getUpdateState: vi.fn(async () => ({
@@ -316,6 +330,7 @@ describe("AppSettingsDialog on mobile", () => {
     Object.defineProperty(window, "wisp", {
       configurable: true,
       value: {
+        ...memoryApi,
         subscribeToPluginSettings: vi.fn(() => () => undefined),
         subscribeToUpdateState: vi.fn(() => () => undefined),
         getUpdateState: vi.fn(async () => ({ ok: true, value: { phase: "idle", currentVersion: "9.8.7" } })),
@@ -356,7 +371,7 @@ describe("AppSettingsDialog on mobile", () => {
     expect(screen.queryByText("Your workspace")).not.toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "Ada Lovelace" }));
-    expect(screen.getByLabelText("Preferred name")).toHaveValue("Ada");
+    expect(screen.getByLabelText("Name")).toHaveValue("Ada");
   });
 
   it("shows or hides the row of Wisps above the conversations", async () => {
@@ -365,6 +380,7 @@ describe("AppSettingsDialog on mobile", () => {
     Object.defineProperty(window, "wisp", {
       configurable: true,
       value: {
+        ...memoryApi,
         subscribeToPluginSettings: vi.fn(() => () => undefined),
         subscribeToUpdateState: vi.fn(() => () => undefined),
         getUpdateState: vi.fn(async () => ({ ok: true, value: { phase: "idle", currentVersion: "9.8.7" } })),

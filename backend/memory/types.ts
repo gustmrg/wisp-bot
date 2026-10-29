@@ -38,8 +38,11 @@ export type MemoryOperation =
 
 /** Where a batch applies and who is writing it. */
 export interface MemoryWriteContext {
-  /** The Wisp whose `wisp` scope is reachable; its entries and the `user` ones are the only ones a batch can touch. */
-  wispId: string;
+  /**
+   * The Wisp whose `wisp` scope is reachable; its entries and the `user` ones are the only ones a batch can touch.
+   * `null` is the person in settings outside any Wisp, who reaches only the `user` scope.
+   */
+  wispId: string | null;
   source: MemorySource;
 }
 

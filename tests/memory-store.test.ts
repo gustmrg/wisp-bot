@@ -58,6 +58,23 @@ describe("MemoryStore", () => {
     expect(failure(() => store.apply([{ op: "remove", id: "m3" }], owner)).code).toBe("not_found");
   });
 
+  it("gives the person outside any Wisp their own entries and nothing of a Wisp's", () => {
+    const { store } = open();
+    const person: MemoryWriteContext = { wispId: null, source: "owner" };
+    store.apply([{ op: "add", scope: "wisp", text: "Lumi fact." }], owner);
+    store.apply([{ op: "add", scope: "user", text: "Lives in Brazil." }], person);
+
+    expect(store.list(null).map(({ id, text }) => [id, text])).toEqual([["m2", "Lives in Brazil."]]);
+    expect(store.active("lumi").map((entry) => entry.text)).toEqual(["Lives in Brazil.", "Lumi fact."]);
+    expect(store.usage(null)).toEqual([{ scope: "user", used: 16, limit: MEMORY_LIMITS.user }]);
+    expect(failure(() => store.apply([{ op: "remove", id: "m1" }], person)).code).toBe("not_found");
+    expect(failure(() => store.apply([{ op: "add", scope: "wisp", text: "Orphan." }], person)).code).toBe(
+      "invalid_state",
+    );
+    store.apply([{ op: "patch", id: "m2", text: "Lives in Portugal." }], person);
+    expect(store.active("lumi").map((entry) => entry.text)).toEqual(["Lives in Portugal.", "Lumi fact."]);
+  });
+
   it("lists user entries first, then the Wisp's, oldest first within each", () => {
     const { store } = open();
     store.apply([{ op: "add", scope: "wisp", text: "W1" }], owner);

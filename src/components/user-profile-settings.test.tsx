@@ -3,7 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { expect, it, vi } from "vitest";
 import { UserProfileSettings } from "./user-profile-settings";
 
-it("edits the preferred name and explicitly saves it, keeping the fields that moved to memory", async () => {
+it("saves the name when the field loses focus, keeping the fields that moved to memory", async () => {
   const user = userEvent.setup();
   const save = vi.fn(async () => true);
   render(
@@ -16,30 +16,52 @@ it("edits the preferred name and explicitly saves it, keeping the fields that mo
       }}
     />,
   );
-  await user.clear(screen.getByLabelText("Preferred name"));
-  await user.type(screen.getByLabelText("Preferred name"), "Grace");
   // Background and response preferences are memory entries now (ADR 029).
   expect(screen.queryByLabelText("About you (optional)")).not.toBeInTheDocument();
-  expect(screen.queryByLabelText("Response preferences (optional)")).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "Save profile" })).not.toBeInTheDocument();
+  await user.clear(screen.getByLabelText("Name"));
+  await user.type(screen.getByLabelText("Name"), " Grace ");
   expect(save).not.toHaveBeenCalled();
-  await user.click(screen.getByRole("button", { name: "Save profile" }));
-  expect(save).toHaveBeenCalledWith({ preferredName: "Grace", aboutYou: "Developer", responsePreferences: "Brief" });
-  expect(await screen.findByRole("status")).toHaveTextContent("Profile saved.");
+  await user.tab();
+  expect(save).toHaveBeenCalledWith({ preferredName: " Grace ", aboutYou: "Developer", responsePreferences: "Brief" });
+  expect(screen.getByLabelText("Name")).toHaveValue("Grace");
 });
 
-it("keeps the preferred name required", async () => {
+it("saves on Enter and skips a name that did not change", async () => {
   const user = userEvent.setup();
+  const save = vi.fn(async () => true);
   render(
     <UserProfileSettings
       controller={{
         profile: { preferredName: "Ada", aboutYou: "", responsePreferences: "" },
         loading: false,
         error: null,
-        save: vi.fn(async () => true),
+        save,
       }}
     />,
   );
-  await user.clear(screen.getByLabelText("Preferred name"));
-  expect(screen.getByRole("alert")).toHaveTextContent("Your preferred name is required.");
-  expect(screen.getByRole("button", { name: "Save profile" })).toBeDisabled();
+  await user.click(screen.getByLabelText("Name"));
+  await user.type(screen.getByLabelText("Name"), " {Enter}");
+  expect(save).not.toHaveBeenCalled();
+  await user.type(screen.getByLabelText("Name"), "x{Enter}");
+  expect(save).toHaveBeenCalledTimes(1);
+});
+
+it("keeps the name required and never saves it empty", async () => {
+  const user = userEvent.setup();
+  const save = vi.fn(async () => true);
+  render(
+    <UserProfileSettings
+      controller={{
+        profile: { preferredName: "Ada", aboutYou: "", responsePreferences: "" },
+        loading: false,
+        error: null,
+        save,
+      }}
+    />,
+  );
+  await user.clear(screen.getByLabelText("Name"));
+  await user.tab();
+  expect(screen.getByRole("alert")).toHaveTextContent("Your name is required.");
+  expect(save).not.toHaveBeenCalled();
 });

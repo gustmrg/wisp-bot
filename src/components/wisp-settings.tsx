@@ -104,6 +104,7 @@ export function WispSettingsSectionContent({ chat, section, onChangeWisp, onOpen
                 conversationId={id}
                 memoryOff={chat.wisp.memoryOff === true}
                 onChangeMemoryOff={(memoryOff) => onChangeWisp({ memoryOff })}
+                onOpenAboutYou={onOpenSettings ? () => onOpenSettings({ section: "general" }) : undefined}
               />
               <div className="border-t border-border pt-4">
                 <WispContextSettings conversationId={id} />

@@ -263,17 +263,23 @@ export class ConversationRepository {
     });
   }
 
-  /** The memory a Wisp's own conversation sees, in every status, for settings (ADR 029). */
-  async getMemory(conversationId: string): Promise<MemoryView> {
-    const wispId = this.requireWispConversation(conversationId).wispRecord.wisp.id;
+  /**
+   * The memory a Wisp's own conversation sees, in every status, for settings (ADR 029).
+   * Without a conversation, the person's own memory: the `user` scope every Wisp shares.
+   */
+  async getMemory(conversationId?: string): Promise<MemoryView> {
+    const wispId = this.memoryOwner(conversationId);
     const memory = await this.openMemory();
     return { entries: memory.list(wispId), usage: memory.usage(wispId) };
   }
 
-  /** Applies the person's changes to a Wisp's memory in one transaction. */
-  async applyMemory(conversationId: string, operations: ReadonlyArray<MemoryOperationRequest>): Promise<MemoryView> {
+  /** Applies the person's changes to a Wisp's memory, or to their own without a conversation, in one transaction. */
+  async applyMemory(
+    conversationId: string | undefined,
+    operations: ReadonlyArray<MemoryOperationRequest>,
+  ): Promise<MemoryView> {
     return this.enqueue(async () => {
-      const wispId = this.requireWispConversation(conversationId).wispRecord.wisp.id;
+      const wispId = this.memoryOwner(conversationId);
       const memory = await this.openMemory();
       try {
         memory.apply(operations, { wispId, source: "owner" });
@@ -286,10 +292,17 @@ export class ConversationRepository {
   }
 
   /** One scope's active entries as the Markdown file it exports to. */
-  async exportMemory(conversationId: string, scope: MemoryScope): Promise<MemoryExport> {
-    const wispId = this.requireWispConversation(conversationId).wispRecord.wisp.id;
+  async exportMemory(conversationId: string | undefined, scope: MemoryScope): Promise<MemoryExport> {
+    const wispId = this.memoryOwner(conversationId);
+    if (wispId === null && scope === "wisp")
+      throw new WispBackendError("invalid_request", "Only a Wisp has memory of its own.");
     const memory = await this.openMemory();
     return { fileName: MEMORY_FILE_NAMES[scope], markdown: exportMemoryMarkdown(scope, memory.active(wispId)) };
+  }
+
+  /** The Wisp whose memory settings show, or `null` for the person's own outside any Wisp. */
+  private memoryOwner(conversationId: string | undefined): string | null {
+    return conversationId === undefined ? null : this.requireWispConversation(conversationId).wispRecord.wisp.id;
   }
 
   /** What a Wisp's session reads and writes of its memory; its writes are the Wisp's (`agent`). */
