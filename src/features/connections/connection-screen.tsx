@@ -194,7 +194,12 @@ export function ConnectionScreen({
   const [editedName, setEditedName] = useState<string>();
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState("");
-  const [manage, setManage] = useState<{ open: boolean; editing: string | null }>({ open: false, editing: null });
+  // The connections list or a connection's settings, shown in the card in place of the status.
+  const [manage, setManage] = useState<{ open: boolean; editing: string | null; returned: boolean }>({
+    open: false,
+    editing: null,
+    returned: false,
+  });
   const [updating, setUpdating] = useState(false);
   const progress = status.progress;
   const retry = status.retry;
@@ -223,7 +228,9 @@ export function ConnectionScreen({
   const retryNow = () => act(() => window.wisp.retryConnection());
   const cancel = () =>
     act(() => (status.installing ? window.wisp.cancelServerInstall() : window.wisp.cancelConnection()));
-  const editConnection = () => setManage({ open: true, editing: view.activeId });
+  const editConnection = () => setManage({ open: true, editing: view.activeId, returned: false });
+  const toggleManage = () => setManage((current) => ({ open: !current.open, editing: null, returned: current.open }));
+  const closeManage = () => setManage({ open: false, editing: null, returned: true });
 
   const useLocal = canUseThisComputer(view) ? (
     <Button
@@ -254,6 +261,8 @@ export function ConnectionScreen({
   let actions: ReactNode;
   let aside: ReactNode = null;
   const waitingForAnswer = question !== undefined && !question.answered;
+  // OpenSSH's questions need the status in view.
+  const managing = canManage && manage.open && !waitingForAnswer;
   const steps = progress ? (
     <ConnectionSteps
       className="mt-4"
@@ -498,22 +507,25 @@ export function ConnectionScreen({
   }
 
   return (
-    <main className="flex h-full min-h-0 items-start justify-center overflow-y-auto bg-background p-6 text-foreground max-[760px]:p-3">
-      <AppBackdrop />
-      <div className="relative my-auto w-full max-w-lg">
-        <section
-          className={cn("relative overflow-hidden rounded-2xl border border-border bg-card shadow-lg", TONES[tone])}
-          aria-labelledby="connection-title"
-        >
-          {showProgress && progress ? <ProgressBar progress={progress} /> : null}
-          <div className="p-6 max-[760px]:px-4 max-[760px]:py-[18px]">
+    <ConnectionCard tone={TONES[tone]} labelledBy={managing ? undefined : "connection-title"} label="Connections">
+      {showProgress && progress && !managing ? <ProgressBar progress={progress} /> : null}
+      {managing ? (
+        <div key="manage" className={CARD_BODY + " animate-tab-forward"}>
+          <ConnectionsPanel
+            key={manage.editing ?? "list"}
+            view={view}
+            initialEditing={manage.editing}
+            {...(manage.editing ? { onExit: closeManage } : {})}
+          />
+        </div>
+      ) : (
+        <div key="status" className={cn("flex min-h-0 flex-1 flex-col", manage.returned && "animate-tab-back")}>
+          <div className={cn(CARD_BODY, (actions || aside || actionError) && "pb-5")}>
             {profile ? (
               <ServerChip
                 profile={profile}
                 serverVersion={status.serverVersion}
-                {...(canManage
-                  ? { onSwitch: () => setManage((current) => ({ open: !current.open, editing: null })) }
-                  : {})}
+                {...(canManage ? { onSwitch: toggleManage } : {})}
               />
             ) : null}
             <div className="mt-[18px] flex items-start gap-3.5">
@@ -536,44 +548,45 @@ export function ConnectionScreen({
             </div>
             {question ? <SshPromptForm key={question.prompt.id} question={question} layout="card" /> : null}
             {body}
-            {actions || aside ? (
-              <div className="mt-5 flex flex-wrap items-center gap-2 max-[760px]:flex-col max-[760px]:items-stretch">
-                {actions}
-                {aside}
-              </div>
-            ) : null}
-            {actionError ? (
-              <p role="alert" className="mt-3 mb-0 text-sm text-destructive">
-                {actionError}
-              </p>
-            ) : null}
           </div>
-          {canManage ? (
-            <button
-              type="button"
-              aria-label="Manage connections"
-              aria-expanded={manage.open}
-              className="flex w-full items-center gap-2 border-t border-border bg-[color-mix(in_srgb,var(--muted)_40%,var(--card))] px-6 py-2.5 text-left text-sm text-dim outline-none transition-colors hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring max-[760px]:px-4"
-              onClick={() => setManage((current) => ({ open: !current.open, editing: null }))}
-            >
-              <Settings2Icon aria-hidden="true" className="size-4" />
-              Connections
-              <span className="ml-auto flex items-center gap-1 text-xs font-medium">
-                {manage.open ? "Hide" : "Manage"}
-                <ChevronRightIcon
-                  aria-hidden="true"
-                  className={cn("size-3.5 transition-transform", manage.open && "rotate-90")}
-                />
-              </span>
-            </button>
+          {/* Outside the scrolling part, so what to do next stays in view when the card is taller than the window. */}
+          {actions || aside || actionError ? (
+            <div className="flex-none px-6 pb-6 max-[760px]:px-4 max-[760px]:pb-[18px]">
+              {actions || aside ? (
+                <div className="flex flex-wrap items-center gap-2 max-[760px]:flex-col max-[760px]:items-stretch">
+                  {actions}
+                  {aside}
+                </div>
+              ) : null}
+              {actionError ? (
+                <p role="alert" className="mt-3 mb-0 text-sm text-destructive">
+                  {actionError}
+                </p>
+              ) : null}
+            </div>
           ) : null}
-        </section>
-        {canManage && manage.open ? (
-          <section className="mt-4 rounded-2xl border border-border bg-card p-4" aria-label="Connections">
-            <ConnectionsPanel key={manage.editing ?? "list"} view={view} initialEditing={manage.editing} />
-          </section>
-        ) : null}
-      </div>
+        </div>
+      )}
+      {canManage ? (
+        <button
+          type="button"
+          aria-label={managing ? "Back to the connection" : "Manage connections"}
+          aria-expanded={managing}
+          disabled={waitingForAnswer}
+          className="flex w-full flex-none items-center gap-2 border-t border-border bg-[color-mix(in_srgb,var(--muted)_40%,var(--card))] px-6 py-2.5 text-left text-sm text-dim outline-none transition-colors hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring disabled:opacity-50 max-[760px]:px-4"
+          onClick={toggleManage}
+        >
+          <Settings2Icon aria-hidden="true" className="size-4" />
+          Connections
+          <span className="ml-auto flex items-center gap-1 text-xs font-medium">
+            {managing ? "Hide" : "Manage"}
+            <ChevronRightIcon
+              aria-hidden="true"
+              className={cn("size-3.5 transition-transform", managing && "rotate-90")}
+            />
+          </span>
+        </button>
+      ) : null}
       {updating && ssh && status.serverVersion ? (
         <UpdateServerDialog
           name={name}
@@ -586,6 +599,43 @@ export function ConnectionScreen({
           onCancel={() => setUpdating(false)}
         />
       ) : null}
+    </ConnectionCard>
+  );
+}
+
+/** The scrolling content of a `ConnectionCard`. */
+export const CARD_BODY = "min-h-0 flex-1 overflow-y-auto p-6 max-[760px]:px-4 max-[760px]:py-[18px]";
+
+/**
+ * The one card of the first run and the connection screen. Each step of
+ * choosing, connecting, and editing replaces its content, and it never grows
+ * past the window: what does not fit scrolls inside it.
+ */
+export function ConnectionCard({
+  tone,
+  labelledBy,
+  label,
+  children,
+}: {
+  /** Classes that set `--tone`, as `TONES` does. */
+  tone?: string;
+  labelledBy?: string | undefined;
+  /** The card's name when no heading names it. */
+  label: string;
+  children: ReactNode;
+}) {
+  return (
+    <main className="flex h-full min-h-0 items-center justify-center overflow-hidden bg-background p-6 text-foreground max-[760px]:p-3">
+      <AppBackdrop />
+      <section
+        className={cn(
+          "relative flex max-h-full w-full max-w-lg min-h-0 flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-lg",
+          tone,
+        )}
+        {...(labelledBy ? { "aria-labelledby": labelledBy } : { "aria-label": label })}
+      >
+        {children}
+      </section>
     </main>
   );
 }

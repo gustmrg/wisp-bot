@@ -246,7 +246,7 @@
   .manage { border-top: 1px solid var(--border); padding: 10px 24px; display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--text-dim); background: color-mix(in srgb, var(--muted) 40%, var(--card)); }
   .frame.mobile .manage { padding: 10px 16px; }
   .manage .btn { margin-left: auto; }
-  .panel-placeholder { margin-top: 12px; border: 1px dashed var(--input); border-radius: 14px; padding: 16px; font-size: 12px; color: var(--text-faint); text-align: center; }
+  .panel-placeholder { margin: 24px; border: 1px dashed var(--input); border-radius: 14px; padding: 16px; font-size: 12px; color: var(--text-faint); text-align: center; }
 
   /* ---------- app shell for the non-blocking states ---------- */
   .shell { flex: 1; min-height: 0; display: flex; flex-direction: column; }
@@ -380,11 +380,11 @@ function card({ tone, badge, spinning, title, text, body = "", actions = "", pro
         ${body}
         <div class="actions">${actions}</div>
       </div>
+      <div class="panel-placeholder" hidden>ConnectionsPanel, in place of the status (SWE-247).</div>
       <div class="manage">${icon("settings")} Connections
-        <button class="btn ghost xs" onclick="this.closest('.conn').querySelector('.panel-placeholder').hidden ^= 1">Manage</button>
+        <button class="btn ghost xs" onclick="const c = this.closest('.conn'); c.querySelector('.panel-placeholder').hidden ^= 1; c.querySelector('.card-body').hidden ^= 1">Manage</button>
       </div>
     </section>
-    <div class="panel-placeholder" hidden>ConnectionsPanel goes here, unchanged (out of scope).</div>
   </div>`;
 }
 
@@ -773,7 +773,7 @@ function render() {
     <hr><h2>Across all states</h2><ul>
       <li>One card, one stepper, one server chip: states differ by <b>tone</b> (blue working, amber needs you, red failed, grey canceled, green done).</li>
       <li>Blocking states use the card; <b>reconnecting</b> keeps the app and uses a banner.</li>
-      <li>The connections panel is <b>unchanged</b>, behind “Connections › Manage”.</li>
+      <li>The connections panel and <b>Edit connection</b> open <b>in the card</b>, in place of the status, behind “Connections › Manage”; <b>Back</b> or <b>Hide</b> returns to it (SWE-247).</li>
       <li>On mobile the actions stack full width and popovers become bottom sheets.</li>
     </ul>`;
 
