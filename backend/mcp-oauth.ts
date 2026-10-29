@@ -115,12 +115,30 @@ export class McpOAuthProvider implements OAuthClientProvider {
   saveClientInformation(clientInformation: StoredOAuthClientInformation): void {
     this.clientInformationSnapshot = clientInformation;
     if (this.cancelled) return;
-    void this.secrets
-      .setOAuthClientRegistration(this.serverId, {
+    this.persist(() =>
+      this.secrets.setOAuthClientRegistration(this.serverId, {
         clientId: clientInformation.client_id,
         ...(clientInformation.client_secret ? { clientSecret: clientInformation.client_secret } : {}),
-      })
-      .catch(() => undefined);
+      }),
+    );
+  }
+
+  /**
+   * The SDK saves credentials synchronously, so they reach the secret store
+   * in the background, one after another in the order they were saved.
+   */
+  private persist(write: () => Promise<unknown>): void {
+    this.writes = this.writes.then(write).catch(() => undefined);
+  }
+
+  private writes: Promise<unknown> = Promise.resolve();
+
+  /**
+   * Resolves once every credential saved so far is in the secret store, so a
+   * view built afterwards sees the sign-in that just completed.
+   */
+  async writesSettled(): Promise<void> {
+    await this.writes;
   }
 
   private clientInformationSnapshot: StoredOAuthClientInformation | undefined;
@@ -143,14 +161,14 @@ export class McpOAuthProvider implements OAuthClientProvider {
   saveTokens(tokens: StoredOAuthTokens): void {
     this.tokensSnapshot = tokens;
     if (this.cancelled) return;
-    void this.secrets
-      .setOAuthTokens(this.serverId, {
+    this.persist(() =>
+      this.secrets.setOAuthTokens(this.serverId, {
         accessToken: tokens.access_token,
         ...(tokens.refresh_token ? { refreshToken: tokens.refresh_token } : {}),
         ...(typeof tokens.expires_in === "number" ? { expiresAt: Date.now() + tokens.expires_in * 1_000 } : {}),
         ...(tokens.scope ? { scope: tokens.scope } : {}),
-      })
-      .catch(() => undefined);
+      }),
+    );
   }
 
   private tokensSnapshot: StoredOAuthTokens | undefined;
@@ -228,7 +246,7 @@ export class McpOAuthProvider implements OAuthClientProvider {
   invalidateCredentials(scope: "all" | "client" | "tokens" | "verifier" | "discovery"): void {
     if (scope === "all" || scope === "tokens") {
       this.tokensSnapshot = undefined;
-      void this.secrets.clearOAuthTokens(this.serverId).catch(() => undefined);
+      this.persist(() => this.secrets.clearOAuthTokens(this.serverId));
     }
     if (scope === "all" || scope === "client") this.clientInformationSnapshot = undefined;
     if (scope === "all" || scope === "verifier") this.codeVerifierValue = undefined;
