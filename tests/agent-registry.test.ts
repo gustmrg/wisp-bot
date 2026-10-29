@@ -66,6 +66,24 @@ describe("AgentRegistry", () => {
     await registry.disposeAll();
   });
 
+  it("reports when each turn starts and ends", async () => {
+    const turns: string[] = [];
+    const factory: ConversationAgentFactory = {
+      create: (agentContext) => new FakeConversationAgent(agentContext.conversationId, { latencyMs: 5 }),
+    };
+    const registry = new AgentRegistry(factory, () => undefined, undefined, {
+      onTurnStarted: (conversationId) => turns.push(`started:${conversationId}`),
+      onTurnEnded: (conversationId) => turns.push(`ended:${conversationId}`),
+    });
+    await registry.restore([context("one")], { providerId: "test", modelId: "test" });
+
+    await registry.send({ conversationId: "one", requestId: "a", text: "A" });
+    await registry.send({ conversationId: "one", requestId: "b", text: "B" });
+
+    expect(turns).toEqual(["started:one", "ended:one", "started:one", "ended:one"]);
+    await registry.disposeAll();
+  });
+
   it("keeps the registry entry in configuration_required when Pi restoration fails", async () => {
     const published: ConversationAgentEvent[] = [];
     const factory: ConversationAgentFactory = {

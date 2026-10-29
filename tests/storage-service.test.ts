@@ -21,10 +21,13 @@ async function setup(
     onCleanupFinished?: (id: string) => void;
     resolveQuota?: (id: string, fallback: number) => Promise<number | null>;
     freeDiskBytes?: (directory: string) => Promise<number>;
+    root?: string;
+    measurementsFile?: boolean;
+    now?: () => Date;
   } = {},
 ) {
-  const root = await mkdtemp(path.join(os.tmpdir(), "wisp-storage-"));
-  directories.push(root);
+  const root = options.root ?? (await mkdtemp(path.join(os.tmpdir(), "wisp-storage-")));
+  if (!options.root) directories.push(root);
   const atlas = path.join(root, "workspaces", "atlas");
   const circle = path.join(root, "workspaces", "circle");
   const archive = path.join(root, "deleted-conversations");
@@ -50,6 +53,8 @@ async function setup(
     ...(options.quotaBytes === undefined ? {} : { quotaBytes: options.quotaBytes }),
     ...(options.resolveQuota ? { resolveQuota: options.resolveQuota } : {}),
     freeDiskBytes: options.freeDiskBytes ?? (async () => 0),
+    ...(options.measurementsFile ? { measurementsFile: path.join(root, "storage-measurements.json") } : {}),
+    ...(options.now ? { now: options.now } : {}),
   });
   return { root, atlas, circle, archive, service };
 }
@@ -199,12 +204,76 @@ describe("StorageService largest consumers", () => {
     expect(workspaces.find(({ conversationId }) => conversationId === "atlas")).not.toHaveProperty("maxQuotaBytes");
   });
 
-  it("measures again after being invalidated", async () => {
-    const { atlas, service } = await setup();
+  it("measures again only the workspace that changed, and dates the summary by its oldest measurement", async () => {
+    let clock = Date.parse("2026-10-29T10:00:00.000Z");
+    const { atlas, circle, service } = await setup({ now: () => new Date(clock) });
     expect((await service.getSummary()).workspaceBytes).toBe(0);
     await writeFile(path.join(atlas, "a"), Buffer.alloc(10));
-    service.invalidate();
-    expect((await service.getSummary()).workspaceBytes).toBe(10);
+    await writeFile(path.join(circle, "b"), Buffer.alloc(20));
+    clock += 60_000;
+    // A second record of the same folder reaches the same measurement.
+    service.markChanged("atlas-dup");
+    service.markChanged("unknown");
+
+    const summary = await service.getSummary();
+
+    expect(summary.workspaces.map(({ conversationId, usedBytes }) => [conversationId, usedBytes])).toEqual([
+      ["atlas", 10],
+      ["circle", 0],
+    ]);
+    expect(summary.measuredAt).toBe("2026-10-29T10:00:00.000Z");
+    expect((await service.getSummary({ refresh: true })).measuredAt).toBe("2026-10-29T10:01:00.000Z");
+  });
+
+  it("reads a workspace's size again each time, without measuring its files", async () => {
+    let quota = 100;
+    const { atlas, service } = await setup({ resolveQuota: async () => quota });
+    await writeFile(path.join(atlas, "a"), Buffer.alloc(10));
+    expect((await service.getSummary()).workspaces[0]?.quotaBytes).toBe(100);
+    quota = 200;
+    await writeFile(path.join(atlas, "b"), Buffer.alloc(10));
+    const [workspace] = (await service.getSummary()).workspaces;
+    expect([workspace?.quotaBytes, workspace?.usedBytes]).toEqual([200, 10]);
+  });
+
+  it("measures each archive once, until it is deleted or everything is refreshed", async () => {
+    const { archive, service } = await setup();
+    await mkdir(path.join(archive, "old-1"), { recursive: true });
+    await writeFile(path.join(archive, "old-1", "x"), Buffer.alloc(7));
+    expect((await service.getSummary()).archiveBytes).toBe(7);
+    await writeFile(path.join(archive, "old-1", "y"), Buffer.alloc(3));
+    await mkdir(path.join(archive, "old-2"), { recursive: true });
+    await writeFile(path.join(archive, "old-2", "z"), Buffer.alloc(5));
+    // A new archive is measured; one already measured is not.
+    expect((await service.getSummary()).archiveBytes).toBe(12);
+    expect((await service.getSummary({ refresh: true })).archiveBytes).toBe(15);
+    await service.deleteArchives({ ids: ["old-1"] });
+    expect((await service.getSummary()).archives.map(({ id }) => id)).toEqual(["old-2"]);
+  });
+
+  it("keeps measurements across restarts, and ignores a file it cannot read", async () => {
+    const first = await setup({ measurementsFile: true });
+    await writeFile(path.join(first.atlas, "a"), Buffer.alloc(10));
+    await mkdir(path.join(first.archive, "old-1"), { recursive: true });
+    await writeFile(path.join(first.archive, "old-1", "x"), Buffer.alloc(7));
+    await first.service.getSummary();
+    await first.service.flush();
+    await writeFile(path.join(first.atlas, "b"), Buffer.alloc(10));
+
+    const restarted = await setup({ root: first.root, measurementsFile: true });
+    const kept = await restarted.service.getSummary();
+    expect([kept.workspaceBytes, kept.archiveBytes]).toEqual([10, 7]);
+    restarted.service.markChanged("atlas");
+    expect((await restarted.service.getSummary()).workspaceBytes).toBe(20);
+    await restarted.service.flush();
+
+    const again = await setup({ root: first.root, measurementsFile: true });
+    expect((await again.service.getSummary()).workspaceBytes).toBe(20);
+
+    await writeFile(path.join(first.root, "storage-measurements.json"), "{ not json");
+    await writeFile(path.join(first.atlas, "c"), Buffer.alloc(5));
+    const corrupt = await setup({ root: first.root, measurementsFile: true });
+    expect((await corrupt.service.getSummary()).workspaceBytes).toBe(25);
   });
 });
 

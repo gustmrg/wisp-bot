@@ -27,12 +27,31 @@ import {
   type StorageWorkspace,
 } from "../shared/storage.js";
 import { WORKSPACE_INBOX_DIRECTORY, WORKSPACE_QUOTA_BYTES, unlimitedWorkspaceRoom } from "../shared/workspace.js";
+import { writeFileAtomically } from "./atomic-file.js";
 import { WispBackendError } from "./backend-error.js";
 import { freeDiskBytes, largestQuota, measureTree, type TreeMeasurement } from "./workspace-service.js";
 
-/** How long a measurement is reused before the next summary measures again. */
-const SUMMARY_TTL_MS = 30_000;
 const MEASURE_CONCURRENCY = 4;
+const MEASUREMENTS_VERSION = 1;
+
+/** A workspace's files as last measured; its size and the free disk space are read again each time. */
+interface WorkspaceMeasurement {
+  measuredAt: string;
+  usedBytes: number;
+  fileCount: number;
+  folders: StorageUsageItem[];
+  largestFiles: StorageLargeFile[];
+}
+
+/** An archived conversation as measured once: archives do not change until they are deleted. */
+type ArchiveMeasurement = Omit<StorageArchive, "id" | "partial"> & { measuredAt: string };
+
+interface StoredMeasurements {
+  version: number;
+  /** Keyed by workspace folder, so two conversations sharing one are measured once. */
+  workspaces: Record<string, WorkspaceMeasurement>;
+  archives: Record<string, ArchiveMeasurement>;
+}
 
 async function mapLimited<T, R>(items: ReadonlyArray<T>, limit: number, task: (item: T) => Promise<R>): Promise<R[]> {
   const results = new Array<R>(items.length);
@@ -68,6 +87,8 @@ export interface StorageServiceOptions {
   resolveQuota?: (conversationId: string, fallback: number) => Promise<number | null>;
   /** Free space on the disk holding a folder; defaults to asking the operating system. */
   freeDiskBytes?: (directory: string) => Promise<number>;
+  /** Where measurements are kept between runs, so Storage opens without measuring every file again. */
+  measurementsFile?: string;
   now?: () => Date;
 }
 
@@ -80,7 +101,14 @@ export interface StorageServiceOptions {
 export class StorageService {
   private readonly options: StorageServiceOptions;
   private readonly quotaBytes: number;
-  private cache: { summary: StorageSummary; at: number } | undefined;
+  private readonly workspaceMeasurements = new Map<string, WorkspaceMeasurement>();
+  private readonly archiveMeasurements = new Map<string, ArchiveMeasurement>();
+  /** Raised for a workspace folder each time it may have changed, so a measurement taken meanwhile is not kept. */
+  private readonly changes = new Map<string, number>();
+  private loaded: Promise<void> | undefined;
+  /** Summaries run one at a time, so a workspace that changed is measured once however many ask. */
+  private summarizing: Promise<unknown> = Promise.resolve();
+  private saving: Promise<void> = Promise.resolve();
   private readonly cleaning = new Set<string>();
   private readonly writers = new Map<string, number>();
 
@@ -110,13 +138,25 @@ export class StorageService {
       const remaining = (this.writers.get(conversationId) ?? 1) - 1;
       if (remaining > 0) this.writers.set(conversationId, remaining);
       else this.writers.delete(conversationId);
-      this.cache = undefined;
+      this.markChanged(conversationId);
     };
   }
 
-  /** Drops the cached measurement, so the next summary measures again. */
-  invalidate(): void {
-    this.cache = undefined;
+  /**
+   * Notes that a conversation's workspace may have changed, so the next summary measures it
+   * again. Called when a turn or a job starts and ends there and after files are written or
+   * removed; changes made outside Wisp show after a refresh.
+   */
+  markChanged(conversationId: string): void {
+    let directory: string;
+    try {
+      directory = this.options.resolveWorkspace(conversationId);
+    } catch {
+      // A deleted conversation's workspace is gone from the summary.
+      return;
+    }
+    this.changes.set(directory, (this.changes.get(directory) ?? 0) + 1);
+    if (this.workspaceMeasurements.delete(directory)) this.save();
   }
 
   /** Whether files are being removed from the conversation's workspace; agents must not run meanwhile. */
@@ -124,51 +164,88 @@ export class StorageService {
     return this.cleaning.has(conversationId);
   }
 
+  /**
+   * Every workspace and archive with its size. Only what changed since it was last measured
+   * is measured again, so opening Storage costs what changed rather than every file; a
+   * refresh measures everything. `measuredAt` is the oldest measurement shown.
+   */
   async getSummary(request: StorageSummaryRequest = {}): Promise<StorageSummary> {
-    const now = this.now();
-    if (!request.refresh && this.cache && now.getTime() - this.cache.at < SUMMARY_TTL_MS) return this.cache.summary;
+    await this.load();
+    const run = this.summarizing.then(() => this.summarize(request.refresh === true));
+    this.summarizing = run.catch(() => undefined);
+    return run;
+  }
+
+  private async summarize(refresh: boolean): Promise<StorageSummary> {
+    if (refresh) {
+      this.workspaceMeasurements.clear();
+      this.archiveMeasurements.clear();
+    }
+    const before = this.measurementsKey();
     const [workspaces, archives] = await Promise.all([this.measureWorkspaces(), this.measureArchives()]);
-    const summary: StorageSummary = {
-      measuredAt: this.now().toISOString(),
-      workspaces,
+    if (this.measurementsKey() !== before) this.save();
+    const times = [...workspaces, ...archives].map(({ measuredAt }) => measuredAt);
+    return {
+      measuredAt: times.sort()[0] ?? this.now().toISOString(),
+      workspaces: workspaces.map(({ measuredAt: _measuredAt, ...workspace }) => workspace),
       workspaceBytes: workspaces.reduce((sum, { usedBytes }) => sum + usedBytes, 0),
-      archives,
+      archives: archives.map(({ measuredAt: _measuredAt, ...archive }) => archive),
       archiveBytes: archives.reduce((sum, { usedBytes }) => sum + usedBytes, 0),
       partial: [...workspaces, ...archives].some(({ partial }) => partial),
     };
-    this.cache = { summary, at: now.getTime() };
-    return summary;
   }
 
-  private async measureWorkspaces(): Promise<StorageWorkspace[]> {
+  private async measureWorkspaces(): Promise<Array<StorageWorkspace & { measuredAt: string }>> {
     // Each conversation has its own folder; should two records ever point at
     // the same one, it is measured and listed once rather than counted twice.
     const seen = new Set<string>();
     const unique = this.options.listWorkspaces().filter(({ directory }) => !seen.has(directory) && seen.add(directory));
+    for (const directory of this.workspaceMeasurements.keys()) {
+      if (!seen.has(directory)) this.workspaceMeasurements.delete(directory);
+    }
     const measured = await mapLimited(unique, MEASURE_CONCURRENCY, async (workspace) => {
-      const [{ tree, folders, largestFiles }, quotaBytes] = await Promise.all([
-        measureWorkspace(workspace.directory),
+      const [{ measurement, partial }, quotaBytes] = await Promise.all([
+        this.workspaceMeasurement(workspace.directory),
         this.quotaFor(workspace),
       ]);
       const free = await this.freeDiskFor(workspace.directory);
+      const { usedBytes } = measurement;
       // Like `WorkspaceView.maxQuotaBytes`; unknown when the disk or the workspace could not be measured.
-      const maxQuotaBytes = free === undefined || tree.partial ? undefined : largestQuota(tree.bytes + free);
+      const maxQuotaBytes = free === undefined || partial ? undefined : largestQuota(usedBytes + free);
       return {
         conversationId: workspace.conversationId,
         name: workspace.name,
         kind: workspace.kind,
-        usedBytes: tree.bytes,
-        fileCount: tree.files,
-        quotaBytes: quotaBytes ?? unlimitedWorkspaceRoom(tree.bytes, free ?? 0),
-        partial: tree.partial,
+        usedBytes,
+        fileCount: measurement.fileCount,
+        quotaBytes: quotaBytes ?? unlimitedWorkspaceRoom(usedBytes, free ?? 0),
+        partial,
         ...(maxQuotaBytes === undefined ? {} : { maxQuotaBytes }),
         unlimited: quotaBytes === null,
         ...(free === undefined ? {} : { freeDiskBytes: free }),
-        folders,
-        largestFiles,
-      } satisfies StorageWorkspace;
+        folders: measurement.folders,
+        largestFiles: measurement.largestFiles,
+        measuredAt: measurement.measuredAt,
+      } satisfies StorageWorkspace & { measuredAt: string };
     });
     return measured.sort((a, b) => b.usedBytes - a.usedBytes || a.name.localeCompare(b.name));
+  }
+
+  /**
+   * A workspace's last measurement, or a new one. A measurement is kept only when the
+   * folder could be read in full and did not change while it was being measured.
+   */
+  private async workspaceMeasurement(
+    directory: string,
+  ): Promise<{ measurement: WorkspaceMeasurement; partial: boolean }> {
+    const kept = this.workspaceMeasurements.get(directory);
+    if (kept) return { measurement: kept, partial: false };
+    const change = this.changes.get(directory);
+    const measuredAt = this.now().toISOString();
+    const { tree, folders, largestFiles } = await measureWorkspace(directory);
+    const measurement = { measuredAt, usedBytes: tree.bytes, fileCount: tree.files, folders, largestFiles };
+    if (!tree.partial && this.changes.get(directory) === change) this.workspaceMeasurements.set(directory, measurement);
+    return { measurement, partial: tree.partial };
   }
 
   private async quotaFor({ conversationId }: { conversationId: string }): Promise<number | null> {
@@ -186,7 +263,7 @@ export class StorageService {
     }
   }
 
-  private async measureArchives(): Promise<StorageArchive[]> {
+  private async measureArchives(): Promise<Array<StorageArchive & { measuredAt: string }>> {
     let names: string[];
     try {
       names = (await readdir(this.options.archiveDirectory, { withFileTypes: true }))
@@ -196,21 +273,30 @@ export class StorageService {
       if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
       throw new WispBackendError("internal_error", "The archived conversations could not be read.", true);
     }
+    const present = new Set(names);
+    for (const id of this.archiveMeasurements.keys()) {
+      if (!present.has(id)) this.archiveMeasurements.delete(id);
+    }
     const measured = await mapLimited(names, MEASURE_CONCURRENCY, async (id) => {
+      const kept = this.archiveMeasurements.get(id);
+      if (kept) return { id, ...kept, partial: false };
       const directory = path.join(this.options.archiveDirectory, id);
+      const measuredAt = this.now().toISOString();
       const tree = await measureTree(directory);
       const info = await lstat(directory).catch(() => null);
       const manifest = await readArchiveManifest(directory);
-      return {
-        id,
+      const measurement: ArchiveMeasurement = {
         name: manifest?.name ?? null,
         kind: manifest?.kind ?? null,
         usedBytes: tree.bytes,
         fileCount: tree.files,
         // Archives made before the manifest fall back to the folder's own timestamp.
         archivedAt: manifest?.archivedAt || (info ? info.mtime.toISOString() : null),
-        partial: tree.partial || !info,
-      } satisfies StorageArchive;
+        measuredAt,
+      };
+      const partial = tree.partial || !info;
+      if (!partial) this.archiveMeasurements.set(id, measurement);
+      return { id, ...measurement, partial };
     });
     return measured.sort((a, b) => b.usedBytes - a.usedBytes || a.id.localeCompare(b.id));
   }
@@ -284,7 +370,7 @@ export class StorageService {
       return { removed, failed, removedBytes };
     } finally {
       this.cleaning.delete(conversationId);
-      this.cache = undefined;
+      this.markChanged(conversationId);
       this.options.onCleanupFinished?.(conversationId);
     }
   }
@@ -310,7 +396,9 @@ export class StorageService {
         }
       }
     } finally {
-      this.cache = undefined;
+      // Archives are measured once; what is left of one that failed halfway is measured again.
+      for (const id of new Set(request.ids)) this.archiveMeasurements.delete(id);
+      this.save();
     }
     return { removed, failed };
   }
@@ -318,6 +406,106 @@ export class StorageService {
   private now(): Date {
     return this.options.now?.() ?? new Date();
   }
+
+  /** Reads the measurements kept by an earlier run, once. A file that cannot be read starts over. */
+  private load(): Promise<void> {
+    this.loaded ??= (async () => {
+      if (!this.options.measurementsFile) return;
+      try {
+        const stored = parseMeasurements(JSON.parse(await readFile(this.options.measurementsFile, "utf8")));
+        if (!stored) return;
+        for (const [directory, measurement] of Object.entries(stored.workspaces)) {
+          // A change noted before the file was read wins over what it says.
+          if (!this.changes.has(directory)) this.workspaceMeasurements.set(directory, measurement);
+        }
+        for (const [id, measurement] of Object.entries(stored.archives)) this.archiveMeasurements.set(id, measurement);
+      } catch {
+        // Missing or unreadable: everything is measured on the first summary.
+      }
+    })();
+    return this.loaded;
+  }
+
+  /** Writes the measurements, in order and in the background: losing them only means measuring again. */
+  private save(): void {
+    const file = this.options.measurementsFile;
+    if (!file) return;
+    this.saving = this.saving
+      .then(() => {
+        const stored: StoredMeasurements = {
+          version: MEASUREMENTS_VERSION,
+          workspaces: Object.fromEntries(this.workspaceMeasurements),
+          archives: Object.fromEntries(this.archiveMeasurements),
+        };
+        return writeFileAtomically(file, JSON.stringify(stored));
+      })
+      .catch(() => undefined);
+  }
+
+  /** Resolves once the measurements written so far are on disk; for tests and shutdown. */
+  flush(): Promise<void> {
+    return this.saving;
+  }
+
+  private measurementsKey(): string {
+    return [
+      ...[...this.workspaceMeasurements].map(([directory, { measuredAt }]) => `w:${directory}:${measuredAt}`),
+      ...[...this.archiveMeasurements].map(([id, { measuredAt }]) => `a:${id}:${measuredAt}`),
+    ]
+      .sort()
+      .join("\n");
+  }
+}
+
+/** The stored measurements, or null when the file is from another version or not what was written. */
+function parseMeasurements(value: unknown): StoredMeasurements | null {
+  if (!isRecord(value) || value.version !== MEASUREMENTS_VERSION) return null;
+  const { workspaces, archives } = value;
+  if (!isRecord(workspaces) || !isRecord(archives)) return null;
+  const validWorkspaces = Object.values(workspaces).every(
+    (item) =>
+      isRecord(item) &&
+      typeof item.measuredAt === "string" &&
+      isCount(item.usedBytes) &&
+      isCount(item.fileCount) &&
+      Array.isArray(item.folders) &&
+      item.folders.every(
+        (folder) =>
+          isRecord(folder) &&
+          typeof folder.path === "string" &&
+          (folder.type === "file" || folder.type === "directory") &&
+          isCount(folder.size) &&
+          isCount(folder.fileCount),
+      ) &&
+      Array.isArray(item.largestFiles) &&
+      item.largestFiles.every(
+        (file) =>
+          isRecord(file) &&
+          typeof file.path === "string" &&
+          isCount(file.size) &&
+          (file.modifiedAt === null || typeof file.modifiedAt === "string"),
+      ),
+  );
+  const validArchives = Object.entries(archives).every(
+    ([id, item]) =>
+      isArchiveId(id) &&
+      isRecord(item) &&
+      typeof item.measuredAt === "string" &&
+      isCount(item.usedBytes) &&
+      isCount(item.fileCount) &&
+      (item.name === null || typeof item.name === "string") &&
+      (item.kind === null || item.kind === "wisp" || item.kind === "circle") &&
+      (item.archivedAt === null || typeof item.archivedAt === "string"),
+  );
+  return validWorkspaces && validArchives ? (value as unknown as StoredMeasurements) : null;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isCount(value: unknown): value is number {
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
 }
 
 /**

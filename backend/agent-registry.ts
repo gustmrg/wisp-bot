@@ -55,6 +55,8 @@ export interface AgentRegistryOptions {
   isWorkspaceLocked?: (conversationId: string) => boolean;
   /** Called when a conversation's turn starts running, so follow-ups waiting for it can be handed over. */
   onTurnStarted?: (conversationId: string) => void;
+  /** Called when a conversation's turn stops running, however it ended. */
+  onTurnEnded?: (conversationId: string) => void;
 }
 
 type EventPublisher = (event: SequencedConversationAgentEvent) => void;
@@ -69,6 +71,7 @@ export class AgentRegistry {
   private readonly onAvailable: (conversationId: string) => void;
   private readonly isWorkspaceLocked: (conversationId: string) => boolean;
   private readonly onTurnStarted: (conversationId: string) => void;
+  private readonly onTurnEnded: (conversationId: string) => void;
   private model: ModelSelection | null = null;
   private eventSequence = 0;
   private activeAgents = 0;
@@ -88,6 +91,7 @@ export class AgentRegistry {
     this.onAvailable = options.onAvailable ?? (() => undefined);
     this.isWorkspaceLocked = options.isWorkspaceLocked ?? (() => false);
     this.onTurnStarted = options.onTurnStarted ?? (() => undefined);
+    this.onTurnEnded = options.onTurnEnded ?? (() => undefined);
   }
 
   async restore(contexts: ReadonlyArray<AgentContext>, model: ModelSelection | null): Promise<void> {
@@ -137,6 +141,7 @@ export class AgentRegistry {
         entry.status = entry.ready || event.status === "disposed" ? event.status : "configuration_required";
         this.publishEvent({ ...event, status: entry.status });
         if (entry.status === "working" && previous !== "working") this.onTurnStarted(conversationId);
+        if (entry.status !== "working" && previous === "working") this.onTurnEnded(conversationId);
         return;
       }
       if (event.type === "circle_turn_started") {
