@@ -85,7 +85,7 @@ export interface BackendHost {
     onProgress: (message: string, step: InstallStep) => void,
     signal: AbortSignal,
     interaction: SshInteraction | undefined,
-  ) => Promise<void>;
+  ) => Promise<number | undefined>;
   testSshConnection?: typeof testSshConnection;
   /** Native notifications and the badge, configured by the renderer. */
   systemNotifications?: SystemNotificationHandlers;
@@ -94,6 +94,7 @@ export interface BackendHost {
     profile: SshConnectionProfile,
     signal: AbortSignal,
     interaction: SshInteraction | undefined,
+    onServerPort: (port: number) => Promise<void>,
   ) => Promise<RemoteTransport>;
 }
 
@@ -127,7 +128,9 @@ export async function createBackend(host: BackendHost): Promise<Backend> {
   };
   // Receives OAuth redirects here for a server on another computer.
   const oauthRelay = new OAuthRedirectRelay({ openExternal: host.hostActions.openExternal });
-  const openTunnel = host.openSshTunnel ?? ((profile, signal) => openSshTunnel(profile, { signal, interaction }));
+  const openTunnel =
+    host.openSshTunnel ??
+    ((profile, signal, _interaction, onServerPort) => openSshTunnel(profile, { signal, interaction, onServerPort }));
   const install =
     host.installServer ??
     ((profile, onProgress, signal) =>
@@ -138,7 +141,7 @@ export async function createBackend(host: BackendHost): Promise<Backend> {
     onHostRequest: (request) => runHostAction(host.hostActions, oauthRelay, request),
     selectFiles: () => host.hostActions.selectFiles(),
     onSessionClosed: () => oauthRelay.closeAll(),
-    openSshTunnel: (profile, signal) => openTunnel(profile, signal, interaction),
+    openSshTunnel: (profile, signal, onServerPort) => openTunnel(profile, signal, interaction, onServerPort),
     installServer: (profile, onProgress, signal) => install(profile, onProgress, signal, interaction),
     deviceName: host.deviceName,
     broadcast,

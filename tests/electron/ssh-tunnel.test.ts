@@ -1,13 +1,16 @@
 import { execFile } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { createServer as createHttpServer } from "node:http";
+import type { AddressInfo } from "node:net";
 import os from "node:os";
 import path from "node:path";
 
 import { afterEach, describe, expect, it } from "vitest";
 
 import { StructuredLogger } from "../../backend/structured-logger.js";
-import { FatalTransportError } from "../../client/remote-session.js";
+import { RemoteError } from "../../client/remote-client.js";
+import { FatalTransportError, ServerMovedError } from "../../client/remote-session.js";
 import { questionKind, SshAskpass } from "../../electron/connections/ssh-askpass.js";
 import {
   describeKey,
@@ -29,6 +32,17 @@ import type { SshConnectionProfile, SshPromptView } from "../../shared/connectio
 const TEST_KEY = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIHRlc3R0ZXN0dGVzdHRlc3R0ZXN0dGVzdHRlc3Q= wisp@laptop";
 const fakeSsh = path.join(__dirname, "../fixtures/fake-ssh.cjs");
 const cleanups: Array<() => Promise<void> | void> = [];
+
+/** Another HTTP service on the loopback, as on a server where Wisp's default port is taken; resolves with its port. */
+async function anotherService(): Promise<number> {
+  const service = createHttpServer((_request, response) => {
+    response.writeHead(404, { "Content-Type": "text/html" });
+    response.end("<h1>Not found</h1>");
+  });
+  await new Promise<void>((resolve) => service.listen(0, "127.0.0.1", resolve));
+  cleanups.push(() => new Promise<void>((resolve) => service.close(() => resolve())));
+  return (service.address() as AddressInfo).port;
+}
 const environment = { ...process.env };
 
 afterEach(async () => {
@@ -106,7 +120,10 @@ describe("openSshTunnel", () => {
       expect.arrayContaining(["-N", "-o", "BatchMode=yes", "-p", "2222", "-l", "wisp", "--", "home-server"]),
     );
     expect(calls[0]?.at(-1)).toBe("home-server");
-    expect(calls[1]?.slice(-2)).toEqual(["home-server", 'PATH="$HOME/.local/bin:$PATH" wispctl pair --json']);
+    expect(calls[1]?.slice(-2)).toEqual([
+      "home-server",
+      'PATH="$HOME/.local/bin:$PATH" wispctl status --json && PATH="$HOME/.local/bin:$PATH" wispctl pair --json',
+    ]);
 
     tunnel.close();
     await tunnel.closed;
@@ -157,9 +174,62 @@ describe("openSshTunnel", () => {
     const tunnel = await openSshTunnel(profile(port), { sshPath: fakeSsh });
     cleanups.push(() => tunnel.close());
     await expect(fetch(`${tunnel.baseUrl}/health`)).rejects.toThrow();
-    await expect.poll(() => tunnel.explainFailure?.()?.message).toMatch(/nothing answers on its port \d+/);
+    await expect
+      .poll(async () => (await tunnel.explainFailure?.(undefined))?.message)
+      .toMatch(/nothing answers on its port \d+/);
     // Explained once: a later failure needs its own report.
-    expect(tunnel.explainFailure?.()).toBeUndefined();
+    expect(await tunnel.explainFailure?.(undefined)).toBeUndefined();
+  });
+
+  it("finds the server's port while pairing, and keeps the pairing code for the right port", async () => {
+    const { directory, instance } = await server();
+    const other = await anotherService();
+    process.env.FAKE_WISP_DATA_DIR = directory;
+    const found: number[] = [];
+    const tunnel = await openSshTunnel(profile(other), {
+      sshPath: fakeSsh,
+      onServerPort: async (port) => void found.push(port),
+    });
+    cleanups.push(() => tunnel.close());
+    const moved = tunnel.requestPairingCode?.();
+    await expect(moved).rejects.toBeInstanceOf(ServerMovedError);
+    await expect(moved).rejects.toMatchObject({
+      message: `The Wisp server on home-server listens on port ${instance.port}, not ${other}.`,
+      pairingCode: expect.stringMatching(/^[A-Z2-9]{5}-[A-Z2-9]{5}$/),
+    });
+    expect(found).toEqual([instance.port]);
+
+    // On the right port, pairing goes on as before.
+    const right = await openSshTunnel(profile(instance.port), { sshPath: fakeSsh });
+    cleanups.push(() => right.close());
+    expect(await right.requestPairingCode?.()).toMatch(/^[A-Z2-9]{5}-[A-Z2-9]{5}$/);
+  });
+
+  it("asks the server where it listens when another service answers on its port", async () => {
+    const { directory, instance } = await server();
+    const other = await anotherService();
+    process.env.FAKE_WISP_DATA_DIR = directory;
+    const found: number[] = [];
+    const tunnel = await openSshTunnel(profile(other), {
+      sshPath: fakeSsh,
+      onServerPort: async (port) => void found.push(port),
+    });
+    cleanups.push(() => tunnel.close());
+    // Only an answer that is not Wisp's makes it ask: a network failure does not.
+    expect(await tunnel.explainFailure?.(new RemoteError("network", "Down."))).toBeUndefined();
+    expect(found).toEqual([]);
+    const moved = await tunnel.explainFailure?.(new RemoteError("not_wisp", "The server answered with status 404."));
+    expect(moved).toBeInstanceOf(ServerMovedError);
+    expect(found).toEqual([instance.port]);
+
+    // When `wispctl status` cannot say, the app says what is wrong instead of retrying.
+    process.env.FAKE_WISP_DATA_DIR = path.join(directory, "elsewhere");
+    const unknown = await tunnel.explainFailure?.(new RemoteError("not_wisp", "The server answered with status 404."));
+    expect(unknown).toBeInstanceOf(FatalTransportError);
+    expect(unknown).toMatchObject({
+      failure: "wrong_port",
+      message: expect.stringMatching(new RegExp(`No Wisp server answers on port ${other} of home-server`)),
+    });
   });
 
   it("maps pairing command failures to what to do", () => {

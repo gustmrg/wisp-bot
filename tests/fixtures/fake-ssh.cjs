@@ -1,10 +1,10 @@
 #!/usr/bin/env node
 // Stands in for OpenSSH in tests. `-L 127.0.0.1:L:127.0.0.1:R` forwards a real
-// local port to R; a trailing remote command answers `wispctl pair` through the
-// server's admin socket. FAKE_SSH_FAIL makes it fail like OpenSSH does, and
-// FAKE_SSH_REMOTE=missing makes the remote shell lack wispctl, and
-// FAKE_SSH_INSTALL=no-node|not-published|systemd makes the server setup fail,
-// and FAKE_SSH_INSTALL=hang keeps it running until ssh is stopped.
+// local port to R; a trailing remote command answers `wispctl status` and
+// `wispctl pair` through the server's admin socket. FAKE_SSH_FAIL makes it
+// fail like OpenSSH does, FAKE_SSH_REMOTE=missing makes the remote shell lack
+// wispctl, FAKE_SSH_INSTALL=no-node|not-published|systemd makes the server
+// setup fail, and FAKE_SSH_INSTALL=hang keeps it running until ssh is stopped.
 // FAKE_SSH_ASK=hostkey|password|passphrase asks through SSH_ASKPASS like
 // OpenSSH does: the host key is trusted once in FAKE_SSH_KNOWN, the password
 // is "hunter2" until a key is added to FAKE_SSH_AUTHORIZED, and the
@@ -124,26 +124,32 @@ if (command.includes("authorized_keys")) {
   process.stdout.write(`${JSON.stringify({ version: "1.0.0", service: "started" })}\n`);
   process.exit(0);
 } else if (command) {
-  if (!command.includes("wispctl pair --json") || process.env.FAKE_SSH_REMOTE === "missing") {
+  // `wispctl status --json && wispctl pair --json`, or one of them, through the server's admin socket.
+  const commands = ["status", "pair"].filter((name) => command.includes(`wispctl ${name} --json`));
+  if (commands.length === 0 || process.env.FAKE_SSH_REMOTE === "missing") {
     process.stderr.write("bash: line 1: wispctl: command not found\n");
     process.exit(127);
   }
-  const request = http.request(
-    { socketPath: path.join(process.env.FAKE_WISP_DATA_DIR, "admin.sock"), path: "/admin", method: "POST" },
-    (response) => {
-      let text = "";
-      response.on("data", (chunk) => (text += chunk));
-      response.on("end", () => {
-        process.stdout.write(`${JSON.stringify(JSON.parse(text).value)}\n`);
-        process.exit(0);
-      });
-    },
-  );
-  request.on("error", () => {
-    process.stderr.write("wispctl: No Wisp server is running.\n");
-    process.exit(1);
-  });
-  request.end(JSON.stringify({ command: "pair" }));
+  const run = (index) => {
+    if (index === commands.length) process.exit(0);
+    const request = http.request(
+      { socketPath: path.join(process.env.FAKE_WISP_DATA_DIR, "admin.sock"), path: "/admin", method: "POST" },
+      (response) => {
+        let text = "";
+        response.on("data", (chunk) => (text += chunk));
+        response.on("end", () => {
+          process.stdout.write(`${JSON.stringify(JSON.parse(text).value)}\n`);
+          run(index + 1);
+        });
+      },
+    );
+    request.on("error", () => {
+      process.stderr.write("wispctl: No Wisp server is running.\n");
+      process.exit(1);
+    });
+    request.end(JSON.stringify({ command: commands[index] }));
+  };
+  run(0);
 } else {
   const spec = args[args.indexOf("-L") + 1].split(":");
   const server = net.createServer((socket) => {

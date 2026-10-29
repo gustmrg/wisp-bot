@@ -20,9 +20,15 @@ export interface SshConnectionProfile {
   user?: string;
   /** The SSH port; OpenSSH's configured port when omitted. */
   sshPort?: number;
-  /** The port the Wisp server listens on, on the server's loopback. */
+  /**
+   * The port the Wisp server listens on, on the server's loopback. Connecting
+   * corrects it when `wispctl status` says another one.
+   */
   serverPort: number;
 }
+
+/** The Wisp server's port when a connection does not give one, as `wispctl setup` uses. */
+export const DEFAULT_SERVER_PORT = 8787;
 
 export interface UrlConnectionProfile {
   id: string;
@@ -49,7 +55,8 @@ export type ConnectionPhase =
  * do about it: the host cannot be reached, it turned the SSH login away, its
  * host key is not trusted, the person cancelled, the Wisp server is missing
  * or stopped, Node.js is missing or too old, the server speaks another
- * protocol, it is another server than the one paired, or the setup failed.
+ * protocol, it is another server than the one paired, another service
+ * answers on the server's port, or the setup failed.
  */
 export type ConnectionFailure =
   | "unreachable"
@@ -61,6 +68,7 @@ export type ConnectionFailure =
   | "node"
   | "version"
   | "wrong_server"
+  | "wrong_port"
   | "install";
 
 /**
@@ -184,7 +192,7 @@ export interface AnswerSshPromptRequest {
 }
 
 export type SaveConnectionRequest =
-  | (Omit<SshConnectionProfile, "id"> & { id?: string })
+  | (Omit<SshConnectionProfile, "id" | "serverPort"> & { id?: string; serverPort?: number })
   | (Omit<UrlConnectionProfile, "id"> & { id?: string });
 
 export interface ConnectionRequest {

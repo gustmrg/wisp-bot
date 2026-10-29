@@ -46,6 +46,7 @@ export const FAILURE_LABELS: Record<ConnectionFailure, string> = {
   node: "Node.js is missing or too old",
   version: "Runs another version",
   wrong_server: "Another server than the one paired",
+  wrong_port: "Another service on this port",
   install: "The setup failed",
 };
 

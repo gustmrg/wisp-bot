@@ -48,13 +48,21 @@ export interface ConnectionManagerOptions {
    * connection, or for as long as the app runs while remote access is on.
    */
   localServer: LocalServer;
-  openSshTunnel(profile: SshConnectionProfile, signal: AbortSignal): Promise<RemoteTransport>;
-  /** Installs and starts the Wisp server on the machine behind an SSH profile; reports progress lines. */
+  /** Opens a tunnel; `onServerPort` hears the port `wispctl status` reports when it differs from the profile's. */
+  openSshTunnel(
+    profile: SshConnectionProfile,
+    signal: AbortSignal,
+    onServerPort: (port: number) => Promise<void>,
+  ): Promise<RemoteTransport>;
+  /**
+   * Installs and starts the Wisp server on the machine behind an SSH profile;
+   * reports progress lines, and resolves with the port the server listens on.
+   */
   installServer(
     profile: SshConnectionProfile,
     onProgress: (message: string, step: InstallStep) => void,
     signal: AbortSignal,
-  ): Promise<void>;
+  ): Promise<number | undefined>;
   /** Does what the local server asks on this computer's screen. */
   onHostRequest(request: HostRequest): Promise<HostResponse>;
   /** Shows a native multi-file picker; resolves with absolute paths, empty when dismissed. */
@@ -346,8 +354,9 @@ export class ConnectionManager {
       });
       // Still the screen of this setup: nobody chose another connection meanwhile.
       const showing = (): boolean => active && !this.disposed && this.status.profileId === id && !this.session;
+      let installedPort: number | undefined;
       try {
-        await this.options.installServer(
+        installedPort = await this.options.installServer(
           profile,
           (message, step) => {
             if (showing() && !signal.aborted) {
@@ -373,6 +382,7 @@ export class ConnectionManager {
         throw new WispBackendError("unavailable", message, true);
       }
       this.options.logger.info("server_installed", { profileId: id });
+      if (installedPort !== undefined) await this.recordServerPort(id, installedPort);
       return await this.serialized(async () => {
         if (signal.aborted) throw new WispBackendError("unavailable", "Setting up the server was cancelled.", true);
         // The setup's steps stay on screen while the app connects to the new server.
@@ -383,6 +393,15 @@ export class ConnectionManager {
     } finally {
       if (this.installation === installation) this.installation = undefined;
     }
+  }
+
+  /** Keeps the port the Wisp server on an SSH profile's machine listens on, as it reported. */
+  private async recordServerPort(id: string, port: number): Promise<void> {
+    const profile = this.options.store.get(id);
+    if (profile?.kind !== "ssh" || profile.serverPort === port) return;
+    this.options.logger.info("server_port_found", { profileId: id, from: profile.serverPort, port });
+    await this.options.store.setServerPort(id, port);
+    this.publish();
   }
 
   /** Stops a server setup in progress; the machine keeps what was already installed. */
@@ -457,7 +476,13 @@ export class ConnectionManager {
       serverName: local ? "Wisp on this computer" : profile.name,
       deviceName: this.options.deviceName,
       openTransport: async (signal) => {
-        if (profile.kind === "ssh") return this.options.openSshTunnel(profile, signal);
+        if (profile.kind === "ssh") {
+          // Connecting may have found the server on another port since this session started.
+          const current = store.get(profile.id);
+          return this.options.openSshTunnel(current?.kind === "ssh" ? current : profile, signal, (port) =>
+            this.recordServerPort(profile.id, port),
+          );
+        }
         if (profile.kind === "url") return directTransport(profile.url);
         const running = await localServer.ensureRunning();
         return {

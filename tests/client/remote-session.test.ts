@@ -1,6 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { mkdtemp, rm } from "node:fs/promises";
-import { createServer } from "node:net";
+import { createServer as createHttpServer } from "node:http";
+import { createServer, type AddressInfo } from "node:net";
 import os from "node:os";
 import path from "node:path";
 
@@ -10,6 +11,7 @@ import { StructuredLogger } from "../../backend/structured-logger.js";
 import {
   FatalTransportError,
   RemoteSession,
+  ServerMovedError,
   TransportError,
   type RemoteSessionPhase,
   type RemoteTransport,
@@ -284,6 +286,86 @@ describe("RemoteSession", () => {
     await stopped;
     expect(close).toBe(1);
     expect(client.phase()).not.toBe("connected");
+  });
+
+  it("reopens the transport at once where the server moved, pairing with the code it already got", async () => {
+    const { directory, port } = await setup();
+    const code = await pairCode(directory);
+    let opened = 0;
+    const client = session("", {
+      openTransport: async () => {
+        opened++;
+        return opened === 1
+          ? {
+              baseUrl: "http://127.0.0.1:9",
+              closed: new Promise(() => undefined),
+              close: () => undefined,
+              requestPairingCode: async () => {
+                throw new ServerMovedError("The Wisp server listens on another port.", code);
+              },
+            }
+          : {
+              baseUrl: `http://127.0.0.1:${port}`,
+              closed: new Promise(() => undefined),
+              close: () => undefined,
+              requestPairingCode: async () => {
+                throw new Error("The code from before is used.");
+              },
+            };
+      },
+    });
+    client.instance.start(undefined, true);
+    await waitUntil(() => client.phase() === "connected", "the connection");
+    expect(opened).toBe(2);
+    // Moving is not a failed attempt.
+    expect(client.phases).toEqual([["connected", undefined]]);
+  });
+
+  it("keeps its pairing when something other than a Wisp server answers, even with 401", async () => {
+    const other = createHttpServer((_request, response) => {
+      response.writeHead(401, { "Content-Type": "text/html" });
+      response.end("<h1>Sign in</h1>");
+    });
+    await new Promise<void>((resolve) => other.listen(0, "127.0.0.1", resolve));
+    cleanups.push(() => new Promise<void>((resolve) => other.close(() => resolve())));
+    let stored: DeviceCredentials | undefined = {
+      deviceId: "d",
+      serverId: "s",
+      accessToken: "a",
+      accessExpiresAt: new Date(Date.now() + 600_000).toISOString(),
+      refreshToken: "r",
+    };
+    const explained: unknown[] = [];
+    const phases: RemoteSessionPhase[] = [];
+    const paired = new RemoteSession({
+      serverName: "Test server",
+      deviceName: "Test device",
+      openTransport: async () => ({
+        baseUrl: `http://127.0.0.1:${(other.address() as AddressInfo).port}`,
+        closed: new Promise(() => undefined),
+        close: () => undefined,
+        explainFailure: (error) => {
+          explained.push(error);
+          return new FatalTransportError("Another service answers on port 8787.", "wrong_port");
+        },
+      }),
+      credentials: {
+        load: () => stored,
+        save: async (credentials) => {
+          stored = credentials as DeviceCredentials | undefined;
+        },
+      },
+      onStatus: (phase) => phases.push(phase),
+      onEvent: () => undefined,
+      onReset: () => undefined,
+      backoffMs: () => 50,
+    });
+    cleanups.push(() => paired.stop());
+    paired.start();
+    await waitUntil(() => phases.includes("error"), "the error");
+    expect(explained).toEqual([expect.objectContaining({ code: "not_wisp" })]);
+    expect(phases).not.toContain("pairing_required");
+    expect(stored).toBeDefined();
   });
 
   it("reports transport failures that retrying cannot fix and retries on request", async () => {
