@@ -1051,6 +1051,7 @@ describe("SdkPiSessionFactory", () => {
         tools: ["web_search", "edit", "save_skill", "search_history", "linear_create_issue"],
         skills: ["job-search"],
         runTools: [toolDefinition("skip_delivery"), toolDefinition("save_job_state")] as never,
+        memory: false,
       },
     );
 
@@ -1074,9 +1075,95 @@ describe("SdkPiSessionFactory", () => {
       factory.createJobSession(
         context,
         { providerId: "provider", modelId: "model" },
-        { runId: "run-2", runDirectory, tools: [], skills: ["deleted-skill"], runTools: [] },
+        { runId: "run-2", runDirectory, tools: [], skills: ["deleted-skill"], runTools: [], memory: false },
       ),
     ).rejects.toMatchObject({ code: "not_found" });
+  });
+
+  it("gives a job run only what a run uses, and memory only when the job asks for it (SWE-248)", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "wisp-pi-job-prompt-"));
+    const render = vi.fn(async () => "### USER.md\n- [m1] Prefers short answers.");
+    const context: ConversationAgentContext = {
+      conversationId: "atlas",
+      sessionId: "atlas-session",
+      name: "Atlas",
+      wispId: "atlas",
+      role: "Recruiter",
+      soul: "Find jobs.",
+      workspaceDirectory: directory,
+      sessionDirectory: directory,
+      configDirectory: path.join(directory, "config"),
+      piSessionId: null,
+      piSessionFile: null,
+      userTimeZone: () => "America/Sao_Paulo",
+      memory: { render } as never,
+    };
+    const runtime = {
+      hasConfiguredAuth: () => true,
+      getModel: () => ({ provider: "provider", id: "model" }),
+    } as unknown as ModelRuntimeLike;
+    const factory = new SdkPiSessionFactory(runtime);
+    const spec = {
+      runId: "run-1",
+      runDirectory: path.join(directory, "jobs"),
+      tools: ["read"],
+      skills: [],
+      runTools: [],
+    };
+    const promptOf = async () => {
+      const loader = sdk.loaderOptions.at(-1) as {
+        systemPromptOverride: () => string;
+        extensionFactories: Array<{ name: string; factory: (pi: unknown) => void }>;
+      };
+      let beforeStart: ((event: { systemPrompt: string }) => Promise<{ systemPrompt: string } | undefined>) | undefined;
+      loader.extensionFactories
+        .find(({ name }) => name === "wisp-continuity")!
+        .factory({ on: (_event: string, handler: typeof beforeStart) => (beforeStart = handler) });
+      const base = loader.systemPromptOverride();
+      return (await beforeStart!({ systemPrompt: base }))?.systemPrompt ?? base;
+    };
+
+    await factory.createJobSession(context, { providerId: "provider", modelId: "model" }, { ...spec, memory: false });
+    const lean = await promptOf();
+    expect(lean).toContain("Find jobs.");
+    expect(lean).toContain("## Background job");
+    expect(lean).toContain("1. The job's instructions.");
+    for (const unused of [
+      "## Self-description",
+      "## Date and time",
+      "## Skills",
+      "save_skill",
+      "web_search",
+      "## Memory",
+      "save_memory",
+      "saved under Memory",
+    ]) {
+      expect(lean).not.toContain(unused);
+    }
+    expect(render).not.toHaveBeenCalled();
+
+    await factory.createJobSession(
+      context,
+      { providerId: "provider", modelId: "model" },
+      { ...spec, tools: ["web_search"], memory: true },
+    );
+    const withMemory = await promptOf();
+    expect(withMemory).toContain("## Memory\n");
+    expect(withMemory).toContain("- [m1] Prefers short answers.");
+    expect(withMemory).toContain("saved under Memory");
+    expect(withMemory).toContain("When web_search is available");
+    // A run never saves memory, so it is not told how.
+    expect(withMemory).not.toContain("save_memory");
+
+    // A Wisp with memory off gives its jobs none, whatever the job asks.
+    render.mockClear();
+    await factory.createJobSession(
+      { ...context, memoryOff: true },
+      { providerId: "provider", modelId: "model" },
+      { ...spec, memory: true },
+    );
+    expect(await promptOf()).not.toContain("## Memory");
+    expect(render).not.toHaveBeenCalled();
   });
 
   it("offers the job tools in the conversation only, never in a job's runs", async () => {
@@ -1116,7 +1203,7 @@ describe("SdkPiSessionFactory", () => {
     await factory.createJobSession(
       context,
       { providerId: "provider", modelId: "model" },
-      { runId: "run-1", runDirectory: directory, tools: jobTools, skills: [], runTools: [] },
+      { runId: "run-1", runDirectory: directory, tools: jobTools, skills: [], runTools: [], memory: false },
     );
     const runOptions = sdk.createAgentSession.mock.calls.at(-1)?.[0] as { customTools: { name: string }[] };
     expect(runOptions.customTools.map(({ name }) => name)).not.toContain("schedule_job");
@@ -1189,7 +1276,7 @@ describe("SdkPiSessionFactory", () => {
     await factory.createJobSession(
       context,
       { providerId: "provider", modelId: "model" },
-      { runId: "run-1", runDirectory: directory, tools: wispTools, skills: [], runTools: [] },
+      { runId: "run-1", runDirectory: directory, tools: wispTools, skills: [], runTools: [], memory: false },
     );
     const runOptions = sdk.createAgentSession.mock.calls.at(-1)?.[0] as { customTools: { name: string }[] };
     expect(runOptions.customTools.map(({ name }) => name)).not.toContain("create_wisp");

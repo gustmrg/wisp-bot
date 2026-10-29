@@ -42,7 +42,7 @@ import type {
   UpdateWispRequest,
   WispsView,
 } from "./conversations.js";
-import type { JobRequest, JobRunsView, JobsView } from "./jobs.js";
+import type { JobRequest, JobRunsView, JobsView, SetJobMemoryRequest } from "./jobs.js";
 import type {
   RemoteAccessPairing,
   RemoteAccessView,
@@ -180,6 +180,7 @@ export const WISP_IPC_CHANNELS = {
   resumeJob: "wisp:jobs:resume",
   runJobNow: "wisp:jobs:run-now",
   deleteJob: "wisp:jobs:delete",
+  setJobMemory: "wisp:jobs:set-memory",
   jobsChanged: "wisp:jobs:changed",
   getSessionReport: "wisp:conversations:get-session-report",
   getUsageReport: "wisp:usage:get",
@@ -872,6 +873,8 @@ export interface WispApi {
   runJobNow(request: JobRequest): Promise<BackendResult<JobsView>>;
   /** Deletes a job with its runs. */
   deleteJob(request: JobRequest): Promise<BackendResult<JobsView>>;
+  /** Whether the job's next runs read the Wisp's memory; they do not by default. */
+  setJobMemory(request: SetJobMemoryRequest): Promise<BackendResult<JobsView>>;
   /** Pushes every job after any change, including runs. */
   subscribeToJobs(listener: (view: JobsView) => void): () => void;
   /** Every message waiting for its Wisp, oldest first. */

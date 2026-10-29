@@ -82,6 +82,7 @@ const WISP_IPC_CHANNELS = {
   resumeJob: "wisp:jobs:resume",
   runJobNow: "wisp:jobs:run-now",
   deleteJob: "wisp:jobs:delete",
+  setJobMemory: "wisp:jobs:set-memory",
   jobsChanged: "wisp:jobs:changed",
   getUsageReport: "wisp:usage:get",
   getToolPolicy: "wisp:tool-policy:get",
@@ -248,6 +249,7 @@ const wispApi: WispApi = {
   resumeJob: (request) => ipcRenderer.invoke(WISP_IPC_CHANNELS.resumeJob, request),
   runJobNow: (request) => ipcRenderer.invoke(WISP_IPC_CHANNELS.runJobNow, request),
   deleteJob: (request) => ipcRenderer.invoke(WISP_IPC_CHANNELS.deleteJob, request),
+  setJobMemory: (request) => ipcRenderer.invoke(WISP_IPC_CHANNELS.setJobMemory, request),
   subscribeToJobs: (listener) => {
     const handleView = (_event: Electron.IpcRendererEvent, view: Parameters<typeof listener>[0]): void =>
       listener(view);

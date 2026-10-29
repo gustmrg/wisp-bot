@@ -207,7 +207,14 @@ describe("WispSessionBuilder with many integration tools", () => {
     const claudeCode = await builder(server).plan(wisp);
     const job = await builder(server).plan(
       wisp,
-      { runId: "run", runDirectory: wisp.sessionDirectory, tools: server.aliases, skills: [], runTools: [] },
+      {
+        runId: "run",
+        runDirectory: wisp.sessionDirectory,
+        tools: server.aliases,
+        skills: [],
+        runTools: [],
+        memory: false,
+      },
       { deferTools: true },
     );
 

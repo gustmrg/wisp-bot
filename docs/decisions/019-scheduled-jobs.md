@@ -6,7 +6,7 @@
 - Scope: Tasks a Wisp runs on a schedule without anyone present, and where their results go
 - Related: [ADR 001](001-agent-runtime.md), [ADR 008](008-wisp-skills.md), [ADR 009](009-headless-server.md),
   [ADR 017](017-container-execution.md), [ADR 018](018-native-mobile-app.md),
-  [scheduled jobs](../jobs.md)
+  [scheduled jobs](../jobs.md), [ADR 029](029-wisp-memory.md); Linear SWE-248
 
 ## Context
 
@@ -122,9 +122,14 @@ runs, so a copy in the instructions could go out of date after `update_job`.
    the run starts, as the message scheduler does today. A crash loses that run
    but never repeats it.
 2. **Session:** the run starts a separate Pi session. It uses the Wisp's model,
-   system prompt, plugins, MCP servers, workspace and container, plus the
-   job's skills, but none of the conversation's history. The run's prompt
-   holds:
+   identity, plugins, MCP servers, workspace and container, plus the job's
+   skills, but none of the conversation's history. Its system prompt leaves
+   out what only a conversation uses: the self-description, the date note on
+   user messages, the skill index and how to save skills, how to save memory,
+   and the web tools unless the job may use one. The Wisp's memory is left out
+   too, unless the person turned on **Use memory** for the job (SWE-248); then
+   the run reads its entries without the instructions for saving them. The
+   run's prompt holds:
    - the instructions;
    - the saved state;
    - when the job last ran;
@@ -209,7 +214,8 @@ run, the last run and its status, and recent failures. From it the person can:
 - pause and resume a job;
 - run it now;
 - delete it;
-- open a run's record.
+- open a run's record;
+- turn **Use memory** on or off for it.
 
 Changing a job's instructions or schedule is done by asking the Wisp.
 
@@ -278,6 +284,8 @@ What differs:
   server is a supported place to run them.
 - Discord delivery is wanted but deferred
   ([SWE-143](https://linear.app/gustavomrg/issue/SWE-143)).
+- Runs have no memory by default, existing jobs included, and the person can
+  turn it on per job (SWE-248).
 
 ## Rejected alternatives
 

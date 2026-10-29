@@ -204,7 +204,14 @@ describe("ClaudeCodeSessionFactory", () => {
     session.dispose();
 
     chosen = true;
-    const job = { runId: "run-1", runDirectory: path.join(root, "jobs"), tools: ["read"], skills: [], runTools: [] };
+    const job = {
+      runId: "run-1",
+      runDirectory: path.join(root, "jobs"),
+      tools: ["read"],
+      skills: [],
+      runTools: [],
+      memory: false,
+    };
     const run = await factory.createJobSession(context, { providerId: "claude-code", modelId: "haiku" }, job);
     await run.prompt("Report.", new AbortController().signal);
     run.dispose();
@@ -314,7 +321,14 @@ describe("ClaudeCodeSessionFactory", () => {
 
   it("runs a job with the job's plan and tools in a process that keeps no session", async () => {
     const { factory, context, launches, root, builder } = await setup();
-    const job = { runId: "run-1", runDirectory: path.join(root, "jobs"), tools: ["read"], skills: [], runTools: [] };
+    const job = {
+      runId: "run-1",
+      runDirectory: path.join(root, "jobs"),
+      tools: ["read"],
+      skills: [],
+      runTools: [],
+      memory: false,
+    };
 
     const run = await factory.createJobSession(context, { providerId: "claude-code", modelId: "haiku" }, job);
     expect(launches).toHaveLength(0);

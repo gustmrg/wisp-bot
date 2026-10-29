@@ -78,6 +78,9 @@ describe("job records", () => {
     expect(normalizeJob({ ...job(), schedule: { kind: "hourly" } })).toBeUndefined();
     expect(normalizeJob({ ...job(), timeZone: "Mars/Olympus" })).toBeUndefined();
     expect(normalizeJob({ ...job(), tools: [""] })).toBeUndefined();
+    expect(normalizeJob({ ...job(), useMemory: true })).toEqual({ ...job(), useMemory: true });
+    expect(normalizeJob({ ...job(), useMemory: false })).not.toHaveProperty("useMemory");
+    expect(normalizeJob({ ...job(), useMemory: "yes" })).toBeUndefined();
     expect(normalizeJob({ ...job(), paused: { reason: "bored", at: "2026-10-13T13:00:00.000Z" } })).toBeUndefined();
 
     expect(normalizeJobRun(run(1))).toEqual(run(1));

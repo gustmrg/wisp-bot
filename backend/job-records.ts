@@ -101,6 +101,7 @@ export function normalizeJob(value: unknown): Job | undefined {
     !record.instructions.trim() ||
     !isNames(record.skills) ||
     !isNames(record.tools) ||
+    (record.useMemory !== undefined && typeof record.useMemory !== "boolean") ||
     !schedule ||
     !isTimeZone(record.timeZone) ||
     typeof record.state !== "string" ||
@@ -122,6 +123,7 @@ export function normalizeJob(value: unknown): Job | undefined {
     instructions: record.instructions,
     skills: [...record.skills],
     tools: [...record.tools],
+    ...(record.useMemory === true ? { useMemory: true } : {}),
     schedule,
     timeZone: record.timeZone,
     ...(nextRunAt.value ? { nextRunAt: nextRunAt.value } : {}),

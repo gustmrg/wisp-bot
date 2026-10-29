@@ -35,6 +35,10 @@ function stub(jobs: Job[]) {
     resumeJob: vi.fn(async () => ({ ok: true, value: view })),
     runJobNow: vi.fn(async () => ({ ok: true, value: view })),
     deleteJob: vi.fn(async () => ({ ok: true, value: { jobs: [] } })),
+    setJobMemory: vi.fn(async ({ useMemory }: { jobId: string; useMemory: boolean }) => {
+      view = { jobs: view.jobs.map(({ useMemory: _useMemory, ...job }) => (useMemory ? { ...job, useMemory } : job)) };
+      return { ok: true, value: view };
+    }),
     getJobRuns: vi.fn(async () => ({
       ok: true,
       value: {
@@ -61,6 +65,24 @@ function stub(jobs: Job[]) {
 }
 
 describe("JobsSettingsSection", () => {
+  it("runs a job without memory until the person turns it on (SWE-248)", async () => {
+    const api = stub([JOB]);
+    const user = userEvent.setup();
+    render(<JobsSettingsSection wisps={[{ id: "atlas", name: "Atlas" }]} />);
+    const toggle = await screen.findByRole("switch", { name: "Use memory in Job openings" });
+    expect(toggle).toHaveAttribute("aria-checked", "false");
+    expect(screen.getByText("Runs without the Wisp's memory")).toBeVisible();
+
+    await user.click(toggle);
+    expect(api.setJobMemory).toHaveBeenLastCalledWith({ jobId: "job-1", useMemory: true });
+    await waitFor(() => expect(toggle).toHaveAttribute("aria-checked", "true"));
+    expect(screen.getByText("Uses the Wisp's memory")).toBeVisible();
+
+    await user.click(toggle);
+    expect(api.setJobMemory).toHaveBeenLastCalledWith({ jobId: "job-1", useMemory: false });
+    await waitFor(() => expect(toggle).toHaveAttribute("aria-checked", "false"));
+  });
+
   it("lists each Wisp's jobs with their schedule, next run and last run", async () => {
     stub([JOB]);
     render(<JobsSettingsSection wisps={[{ id: "atlas", name: "Atlas" }]} />);

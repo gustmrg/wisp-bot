@@ -34,7 +34,7 @@ describe("RoutingSessionFactory", () => {
   });
 
   it("runs a Wisp's jobs on the same runtime as its conversations", async () => {
-    const job = { runId: "r1", runDirectory: "/runs", tools: [], skills: [], runTools: [] };
+    const job = { runId: "r1", runDirectory: "/runs", tools: [], skills: [], runTools: [], memory: false };
 
     await expect(factory.createJobSession(context, claude, job)).resolves.toEqual({ kind: "claude-code-job" });
     await expect(factory.createJobSession(context, openai, job)).resolves.toEqual({ kind: "pi-job" });

@@ -241,6 +241,7 @@ function createApi(initialState: ConversationStateView): WispApi {
     resumeJob: vi.fn(async () => ({ ok: true as const, value: { jobs: [] } })),
     runJobNow: vi.fn(async () => ({ ok: true as const, value: { jobs: [] } })),
     deleteJob: vi.fn(async () => ({ ok: true as const, value: { jobs: [] } })),
+    setJobMemory: vi.fn(async () => ({ ok: true as const, value: { jobs: [] } })),
     subscribeToJobs: vi.fn(() => () => undefined),
     getUsageReport: vi.fn(),
     getSessionReport: vi.fn(async () => ({ ok: true as const, value: null })),

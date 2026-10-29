@@ -61,6 +61,12 @@ export interface Job {
   skills: ReadonlyArray<string>;
   /** Tools a run may use; approving the job authorizes them for its runs. */
   tools: ReadonlyArray<string>;
+  /**
+   * Set when runs read the Wisp's memory (SWE-248). Runs have none by default:
+   * a job works from its instructions and saved state, and a fact saved in a
+   * conversation should not change what a scheduled job does.
+   */
+  useMemory?: boolean;
   schedule: Schedule;
   /** IANA time zone the job was created in, so wall-clock schedules follow it even on a server elsewhere. */
   timeZone: string;
@@ -124,6 +130,11 @@ export interface JobsView {
 
 export interface JobRequest {
   jobId: string;
+}
+
+export interface SetJobMemoryRequest {
+  jobId: string;
+  useMemory: boolean;
 }
 
 export interface JobRunsView {

@@ -68,6 +68,7 @@ const REQUIRED_WISP_METHODS = [
   "resumeJob",
   "runJobNow",
   "deleteJob",
+  "setJobMemory",
   "subscribeToJobs",
   "getMessageQueue",
   "queueMessage",

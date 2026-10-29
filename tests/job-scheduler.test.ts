@@ -339,6 +339,12 @@ describe("JobScheduler", () => {
       schedule: { kind: "weekly", weekdays: [6], time: "09:00" },
     });
     expect(updated).toMatchObject({ title: "Openings", nextRunAt: "2026-10-17T09:00:00.000Z", tools: ["web_search"] });
+    // A job runs without memory until the person turns it on (SWE-248).
+    expect(job).not.toHaveProperty("useMemory");
+    expect(await harness.scheduler.setMemory(job.id, true)).toMatchObject({ useMemory: true });
+    expect(await harness.scheduler.update(job.id, { title: "Openings again" })).toMatchObject({ useMemory: true });
+    expect(await harness.scheduler.setMemory(job.id, false)).not.toHaveProperty("useMemory");
+    await expect(harness.scheduler.setMemory("missing", true)).rejects.toMatchObject({ code: "not_found" });
     expect(await harness.scheduler.pause(job.id)).toMatchObject({ paused: { reason: "person" } });
     // Pausing twice changes nothing.
     expect(await harness.scheduler.pause(job.id)).toMatchObject({ paused: { reason: "person" } });

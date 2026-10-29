@@ -66,6 +66,7 @@ export const RUNTIME_OPERATIONS = [
   "resumeJob",
   "runJobNow",
   "deleteJob",
+  "setJobMemory",
   "getMessageQueue",
   "queueMessage",
   "updateQueuedMessage",
