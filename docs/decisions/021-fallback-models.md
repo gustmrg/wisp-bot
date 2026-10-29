@@ -28,7 +28,9 @@ Wisp gets **fallback models**: a global fallback, and a per-Wisp choice.
 
 - **Settings → AI Model → Fallback** chooses the global fallback model, or
   **Off** (the default). It lists models from providers with a saved key,
-  except the global model itself. It names a provider and model only: a
+  except the global model's provider (since SWE-254: a provider that fails
+  fails with all its models; before, only the global model itself was left
+  out). It names a provider and model only: a
   fallback takes the output limit and reasoning level of the model it stands
   in for, reduced to what it supports.
 - A Wisp's **Model** tab chooses its fallback: **Off**, **Use the global
@@ -39,8 +41,9 @@ Wisp gets **fallback models**: a global fallback, and a per-Wisp choice.
   version 1, like the auxiliary models. A Wisp's choice lives in its row in
   `conversations.sqlite` (layout version 11); a Wisp from before has none, so
   it follows its model.
-- A saved fallback whose key is removed, or whose model leaves the catalog,
-  stays saved but is not used, and the setting says why.
+- A saved fallback whose key is removed, whose model leaves the catalog, or
+  that is from the provider of the model it stands in for, stays saved but is
+  not used, and the setting says why (`same_provider` since SWE-254).
 
 ### When it answers
 
@@ -68,7 +71,8 @@ Wisp, so it changes with Pi.
   Wisp's model again; each new message starts on the Wisp's model. A Wisp
   moves at most once per turn, and a failing fallback reports its own error.
 - The fallback is read when a call fails, so a changed choice applies without
-  rebuilding the session. A fallback equal to the model that failed is none.
+  rebuilding the session. A fallback from the provider of the model that
+  failed is none.
 - Credentials resolved for the Wisp's provider are not sent to a fallback of
   another provider, and the request hook shapes the payload for the
   fallback's provider (OpenRouter reasoning options).

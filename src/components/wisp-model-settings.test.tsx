@@ -288,13 +288,32 @@ describe("WispModelSettings", () => {
     });
   });
 
-  it("warns when the Wisp's own fallback is its model", async () => {
+  it("keeps a fallback of its own from its model's provider, marked unavailable, and says why", async () => {
     const override: ModelSelection = { providerId: "provider-b", modelId: "model-b" };
     api({ ...baseView, override, effective: override, applied: override, fallback: override });
     render(<WispModelSettings conversationId="wisp-one" />);
 
-    expect(await screen.findByRole("combobox", { name: "Fallback model" })).toHaveTextContent("Model b");
-    expect(screen.getByRole("alert")).toHaveTextContent(/fallback is this Wisp's own model/);
+    expect(await screen.findByRole("combobox", { name: "Fallback model" })).toHaveTextContent("(unavailable)");
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "This fallback is from Provider b, the provider of this Wisp's model, so it fails along with it.",
+    );
+  });
+
+  it("offers no fallback from the provider of the Wisp's model", async () => {
+    const user = userEvent.setup();
+    const catalog = providers.map((provider) =>
+      provider.id === "provider-b"
+        ? { ...provider, models: [...provider.models, { ...provider.models[0]!, id: "mini-b", name: "Mini b" }] }
+        : provider,
+    );
+    const override: ModelSelection = { providerId: "provider-b", modelId: "model-b" };
+    api({ ...baseView, override, effective: override, applied: override, fallback: "off" }, true, undefined, catalog);
+    render(<WispModelSettings conversationId="wisp-one" />);
+
+    await user.click(await screen.findByRole("combobox", { name: "Fallback model" }));
+    expect(await screen.findByRole("option", { name: /^Model a/ })).toBeInTheDocument();
+    expect(screen.queryByRole("option", { name: /^Model b/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("option", { name: /^Mini b/ })).not.toBeInTheDocument();
   });
 
   it("shows the global reasoning level for a Wisp that follows the global model", async () => {
@@ -322,7 +341,7 @@ describe("WispModelSettings", () => {
     expect(select).toHaveTextContent("Off");
     await user.click(select);
     expect(await screen.findByRole("option", { name: /Use the global fallback.*Model a/ })).toBeInTheDocument();
-    // The Wisp's own model cannot stand in for itself.
+    // The provider of the Wisp's own model cannot stand in for it.
     expect(screen.queryByRole("option", { name: /^Model b/ })).not.toBeInTheDocument();
     await user.click(screen.getByRole("option", { name: /^Model a/ }));
     expect(applyFallbackModel).toHaveBeenCalledWith({ conversationId: "wisp-one", fallback: globalModel });
@@ -342,7 +361,7 @@ describe("WispModelSettings", () => {
     expect(screen.getByRole("alert")).toHaveTextContent(/No global fallback is set/);
   });
 
-  it("warns when the global fallback is the Wisp's own model", async () => {
+  it("warns when the global fallback is from the provider of the Wisp's own model", async () => {
     const override: ModelSelection = { providerId: "provider-b", modelId: "model-b" };
     api(
       { ...baseView, override, effective: override, applied: override, fallback: "global" },
@@ -356,7 +375,26 @@ describe("WispModelSettings", () => {
     );
     render(<WispModelSettings conversationId="wisp-one" />);
 
-    expect(await screen.findByRole("alert")).toHaveTextContent(/is this Wisp's own model/);
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "The global fallback is from Provider b, the provider of this Wisp's model, so it fails along with it.",
+    );
+  });
+
+  it("uses a global fallback from the global model's provider for a Wisp on another provider", async () => {
+    const override: ModelSelection = { providerId: "provider-b", modelId: "model-b" };
+    api(
+      { ...baseView, override, effective: override, applied: override, fallback: "global" },
+      true,
+      undefined,
+      providers,
+      { selection: globalModel, unavailable: "same_provider" },
+    );
+    render(<WispModelSettings conversationId="wisp-one" />);
+
+    expect(await screen.findByRole("combobox", { name: "Fallback model" })).toHaveTextContent(
+      "Use the global fallback",
+    );
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
 
   it("says when the applied model cannot see images", async () => {

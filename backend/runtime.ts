@@ -523,7 +523,10 @@ export async function createBackendRuntime(options: BackendRuntimeOptions): Prom
       await service.applyConversationModel(conversationId, model);
     },
     applyConversationFallback: async (conversationId, fallback) => {
-      if (typeof fallback === "object") await modelService.assertUsableFallback(fallback);
+      if (typeof fallback === "object") {
+        const { modelOverride } = conversationRepository.getAgentContext(conversationId);
+        await modelService.assertUsableFallback(fallback, modelOverride ?? null);
+      }
       await service.applyConversationFallback(conversationId, fallback);
     },
     abortConversation: async (conversationId) => ({

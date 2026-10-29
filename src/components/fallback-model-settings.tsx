@@ -1,6 +1,6 @@
 import { useState } from "react";
 
-import type { AiSettingsView, FallbackModelView } from "../../shared/contracts";
+import type { AiSettingsView, FallbackModelUnavailableReason } from "../../shared/contracts";
 import { SearchableCombobox } from "@/components/searchable-combobox";
 import {
   SettingsCard,
@@ -19,12 +19,14 @@ interface FallbackModelSettingsProps {
   onViewChange: (view: AiSettingsView) => void;
 }
 
-function unavailableText(fallback: FallbackModelView, providerName: string): string | null {
-  switch (fallback.unavailable) {
+function unavailableText(reason: FallbackModelUnavailableReason | null, providerName: string): string | null {
+  switch (reason) {
     case "missing_key":
       return `Add an API key for ${providerName} to use this model. Until then, Wisps have no fallback.`;
     case "model_unavailable":
       return "This model is no longer in the catalog, so Wisps have no fallback. Choose another model.";
+    case "same_provider":
+      return `This model is from ${providerName}, the global model's provider, so it fails along with it. Choose a model from another provider.`;
     default:
       return null;
   }
@@ -41,9 +43,9 @@ function FallbackModelSettings({ view, onViewChange }: FallbackModelSettingsProp
 
   const options = [
     { value: OFF, label: "Off", description: "Wisps stop when the global model fails" },
-    // The global model cannot stand in for itself.
+    // A failing provider fails with all its models, so none from the global model's provider is offered.
     ...modelOptions(view, undefined, { claudeCode: false }).filter(
-      ({ value }) => !primary || value !== modelOptionValue(primary),
+      ({ value }) => !primary || parseModelOptionValue(value).providerId !== primary.providerId,
     ),
   ];
   if (selected && !options.some(({ value }) => value === modelOptionValue(selected))) {
@@ -70,7 +72,10 @@ function FallbackModelSettings({ view, onViewChange }: FallbackModelSettingsProp
     }
   }
 
-  const unavailable = selected ? unavailableText(view.fallback, providerName(selected.providerId)) : null;
+  // Servers from before this rule do not report a fallback from the global model's provider.
+  const reason =
+    view.fallback.unavailable ?? (selected && selected.providerId === primary?.providerId ? "same_provider" : null);
+  const unavailable = selected ? unavailableText(reason, providerName(selected.providerId)) : null;
   return (
     <SettingsGroup label="Fallback">
       <SettingsCard>
@@ -80,8 +85,8 @@ function FallbackModelSettings({ view, onViewChange }: FallbackModelSettingsProp
             <SettingsRowDescription>
               Answers for Wisps on the global model when it fails for good, for example when the provider is out of
               credits or rejects the key. Each message tries the global model first. Wisps with a model of their own
-              choose their fallback in their settings. Only models from providers with a saved key are listed. Changes
-              save automatically.
+              choose their fallback in their settings. Only models from other providers with a saved key are listed: a
+              provider that is down or out of credits fails with all its models. Changes save automatically.
             </SettingsRowDescription>
             {unavailable ? (
               <span role="alert" className="text-xs leading-relaxed text-warning">
@@ -102,7 +107,7 @@ function FallbackModelSettings({ view, onViewChange }: FallbackModelSettingsProp
             className="h-8 w-[260px] max-w-[62%] text-base"
             searchLabel="Search fallback models"
             searchPlaceholder="Search model name or ID…"
-            emptyText="No models from providers with a saved key."
+            emptyText="No models from other providers with a saved key."
             onChange={(value) => void handleChange(value)}
           />
         </SettingsRow>

@@ -142,10 +142,6 @@ export function supportedThinkingLevels(model: Pick<CatalogModel, "reasoning" | 
   });
 }
 
-function sameModel(left: ModelSelection, right: ModelSelection): boolean {
-  return left.providerId === right.providerId && left.modelId === right.modelId;
-}
-
 function compareByName(left: { name: string }, right: { name: string }): number {
   return left.name.localeCompare(right.name, undefined, { sensitivity: "base" });
 }
@@ -310,7 +306,7 @@ export class ModelService {
       auxiliary: {
         imageUnderstanding: this.auxiliaryView(auxiliary.imageUnderstanding, credentialProviders),
       },
-      fallback: this.fallbackView(await this.settings.getFallback(), credentialProviders),
+      fallback: this.fallbackView(await this.settings.getFallback(), credentialProviders, savedSelection),
       secureStorageAvailable: this.credentials.isSecureStorageAvailable(),
       providers,
       providerSignIn: this.signInView(),
@@ -390,27 +386,36 @@ export class ModelService {
    * needs a saved key; a fallback never takes a key of its own.
    */
   async saveFallback(selection: ModelSelection | null): Promise<AiSettingsView> {
-    if (selection) await this.assertUsableFallback(selection);
+    if (selection) await this.assertUsableFallback(selection, null);
     await this.settings.setFallback(selection);
     return this.getView();
   }
 
-  /** Checks a fallback a person is choosing: a catalog model whose provider has a saved key. */
-  async assertUsableFallback(selection: ModelSelection): Promise<void> {
-    const reason = this.fallbackUnavailableReason(selection, await this.listCredentialProviders());
+  /**
+   * Checks a fallback a person is choosing: a catalog model whose provider has
+   * a saved key, from another provider than the model it stands in for, which
+   * is the global model when `modelOverride` is null.
+   */
+  async assertUsableFallback(selection: ModelSelection, modelOverride: ModelSelection | null): Promise<void> {
+    const primary = modelOverride ?? (await this.settings.getSelection());
+    const reason = this.fallbackUnavailableReason(selection, await this.listCredentialProviders(), primary);
     if (reason) {
       throw new WispBackendError(
         "invalid_configuration",
         reason === "missing_key"
           ? "Add an API key for this provider before choosing one of its models."
-          : "The selected provider and model are not available.",
+          : reason === "same_provider"
+            ? "Choose a fallback model from another provider. When a provider fails, all its models fail with it."
+            : "The selected provider and model are not available.",
       );
     }
   }
 
   /**
    * The model a Wisp answers with when its own fails for good, or null when it
-   * has none, its saved model cannot be used, or it is the model that failed.
+   * has none, its saved model cannot be used, or it is from the provider that
+   * failed. A fallback saved before fallbacks had to be from another provider
+   * is kept, but not used.
    */
   async getFallbackModel(
     modelOverride: ModelSelection | null,
@@ -419,9 +424,9 @@ export class ModelService {
     const choice = wispFallbackChoice(modelOverride, saved);
     if (choice === "off") return null;
     const selection = choice === "global" ? await this.settings.getFallback() : choice;
-    if (!selection || this.fallbackUnavailableReason(selection, await this.listCredentialProviders())) return null;
+    if (!selection) return null;
     const primary = modelOverride ?? (await this.settings.getSelection());
-    return primary && sameModel(primary, selection)
+    return this.fallbackUnavailableReason(selection, await this.listCredentialProviders(), primary)
       ? null
       : { providerId: selection.providerId, modelId: selection.modelId };
   }
@@ -755,19 +760,31 @@ export class ModelService {
     };
   }
 
-  private fallbackView(selection: ModelSelection | null, credentialProviders: ReadonlySet<string>): FallbackModelView {
+  /** The global fallback, judged against the global model. */
+  private fallbackView(
+    selection: ModelSelection | null,
+    credentialProviders: ReadonlySet<string>,
+    primary: ModelSelection | null,
+  ): FallbackModelView {
     return {
       selection,
-      unavailable: selection ? this.fallbackUnavailableReason(selection, credentialProviders) : null,
+      unavailable: selection ? this.fallbackUnavailableReason(selection, credentialProviders, primary) : null,
     };
   }
 
+  /**
+   * Why a fallback cannot stand in for `primary`. A provider that is down, out
+   * of credits or rejecting its key fails with all its models, so a fallback
+   * from the same provider would fail along with it.
+   */
   private fallbackUnavailableReason(
     selection: ModelSelection,
     credentialProviders: ReadonlySet<string>,
+    primary: ModelSelection | null,
   ): FallbackModelUnavailableReason | null {
     if (!this.catalogModel(selection)) return "model_unavailable";
-    return credentialProviders.has(selection.providerId) ? null : "missing_key";
+    if (!credentialProviders.has(selection.providerId)) return "missing_key";
+    return primary?.providerId === selection.providerId ? "same_provider" : null;
   }
 
   /** The catalog model a selection names, from a provider that takes API keys. */
