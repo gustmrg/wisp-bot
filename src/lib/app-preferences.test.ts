@@ -158,6 +158,22 @@ describe("normalizePreferences", () => {
   });
 });
 
+it("keeps each event's saved sound and falls back to the chime for an unknown one", () => {
+  expect(DEFAULT_PREFERENCES.notificationSoundIds).toEqual({
+    finished: "chime",
+    "needs-input": "chime",
+    error: "chime",
+  });
+  expect(
+    normalizePreferences({ notificationSoundIds: { finished: "bell", "needs-input": "kazoo", error: 3 } })
+      .notificationSoundIds,
+  ).toEqual({ finished: "bell", "needs-input": "chime", error: "chime" });
+  for (const value of [undefined, null, "bell", ["bell"]])
+    expect(normalizePreferences({ notificationSoundIds: value }).notificationSoundIds).toEqual(
+      DEFAULT_PREFERENCES.notificationSoundIds,
+    );
+});
+
 it("migrates notification settings and validates saved volume", () => {
   expect(normalizePreferences({ notificationSounds: false })).toEqual({
     ...DEFAULT_PREFERENCES,

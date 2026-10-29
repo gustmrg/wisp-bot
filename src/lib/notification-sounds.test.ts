@@ -1,9 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
 
 import {
+  NOTIFICATION_SOUNDS,
   createNotificationSoundPlayer,
+  isNotificationSoundId,
   type AudioContextLike,
   type CreateAudioContext,
+  type NotificationSoundId,
 } from "@/lib/notification-sounds";
 
 function audioParam(value = 0) {
@@ -23,7 +26,11 @@ function stubContext(state: AudioContextState = "running") {
     start: ReturnType<typeof vi.fn>;
     stop: ReturnType<typeof vi.fn>;
   }> = [];
-  const gains: Array<{ gain: ReturnType<typeof audioParam>; connect: ReturnType<typeof vi.fn> }> = [];
+  const gains: Array<{
+    gain: ReturnType<typeof audioParam>;
+    connect: ReturnType<typeof vi.fn>;
+    disconnect: ReturnType<typeof vi.fn>;
+  }> = [];
   const resume = vi.fn(async () => undefined);
   const context: AudioContextLike = {
     currentTime: 12.5,
@@ -42,7 +49,7 @@ function stubContext(state: AudioContextState = "running") {
       return oscillator as unknown as OscillatorNode;
     }),
     createGain: vi.fn(() => {
-      const gain = { gain: audioParam(), connect: vi.fn() };
+      const gain = { gain: audioParam(), connect: vi.fn(), disconnect: vi.fn() };
       gains.push(gain);
       return gain as unknown as GainNode;
     }),
@@ -128,6 +135,52 @@ describe("notification sound player", () => {
 
     expect(() => player.play("finished")).not.toThrow();
     expect(() => player.play("needs-input")).not.toThrow();
+  });
+
+  it("plays each event in every sound, completion rising and approval falling", () => {
+    for (const sound of NOTIFICATION_SOUNDS) {
+      // A note's pitch is its first oscillator at its start: a bell's overtone starts with it.
+      const pitches = (kind: "finished" | "needs-input" | "error") => {
+        const starts = new Map<number, number>();
+        for (const note of sound.notes[kind]) if (!starts.has(note.startAt)) starts.set(note.startAt, note.frequency);
+        return [...starts.entries()].sort(([a], [b]) => a - b).map(([, frequency]) => frequency);
+      };
+      const finished = pitches("finished");
+      const approval = pitches("needs-input");
+      const error = pitches("error");
+      expect(finished.at(-1)! > finished[0]!, sound.id).toBe(true);
+      expect(approval.at(-1)! < approval[0]!, sound.id).toBe(true);
+      expect(Math.max(...error) < Math.max(...approval), sound.id).toBe(true);
+
+      const stub = stubContext();
+      playerOver(stub).player.play("error", 100, sound.id);
+      expect(stub.oscillators, sound.id).toHaveLength(sound.notes.error.length);
+    }
+  });
+
+  it("plays the chosen sound's timbre and falls back to the chime for one it does not have", () => {
+    const marimba = stubContext();
+    playerOver(marimba).player.play("finished", 100, "marimba");
+    expect(marimba.oscillators.every(({ type }) => type === "triangle")).toBe(true);
+
+    const unknown = stubContext();
+    playerOver(unknown).player.play("finished", 100, "kazoo" as NotificationSoundId);
+    expect(unknown.oscillators.map(({ frequency }) => frequency.value)).toEqual([659.25, 880]);
+    expect(isNotificationSoundId("kazoo")).toBe(false);
+    expect(isNotificationSoundId("bell")).toBe(true);
+  });
+
+  it("cuts off a sound still playing when the next one starts, so previews never overlap", () => {
+    const stub = stubContext();
+    const { player } = playerOver(stub);
+
+    player.play("finished", 100, "bell");
+    const first = stub.oscillators.slice();
+    player.play("finished", 100, "glass");
+
+    for (const oscillator of first) expect(oscillator.stop).toHaveBeenLastCalledWith();
+    expect(stub.gains.slice(0, first.length).every(({ disconnect }) => disconnect.mock.calls.length === 1)).toBe(true);
+    expect(stub.gains.slice(first.length).every(({ disconnect }) => disconnect.mock.calls.length === 0)).toBe(true);
   });
 
   it("stays silent under the default factory when Web Audio is unavailable", () => {

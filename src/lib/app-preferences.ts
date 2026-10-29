@@ -1,6 +1,12 @@
 import { TIME_FORMATS, type TimeFormat } from "@/lib/clock-time";
 import { DEFAULT_SHORTCUTS, normalizeShortcuts, type ShortcutPreferences } from "@/lib/shortcuts";
 import { DETAILS_LAYOUT, SIDEBAR_LAYOUT, type ResizablePanelLayout } from "@/lib/layout";
+import {
+  DEFAULT_NOTIFICATION_SOUND,
+  isNotificationSoundId,
+  type NotificationSoundId,
+  type NotificationSoundKind,
+} from "@/lib/notification-sounds";
 import { normalizeTheme, type ThemePreference } from "@/lib/theme";
 import {
   DEFAULT_VOICE_PROVIDER,
@@ -42,6 +48,8 @@ export interface AppPreferences {
   launchAtLogin: boolean;
   notificationSounds: boolean;
   notificationVolume: number;
+  /** The sound each event plays; an event whose switch below is off plays none. */
+  notificationSoundIds: Record<NotificationSoundKind, NotificationSoundId>;
   notifyOnCompletion: boolean;
   notifyOnApproval: boolean;
   notifyOnError: boolean;
@@ -83,6 +91,11 @@ export const DEFAULT_PREFERENCES: AppPreferences = {
   launchAtLogin: false,
   notificationSounds: true,
   notificationVolume: 100,
+  notificationSoundIds: {
+    finished: DEFAULT_NOTIFICATION_SOUND,
+    "needs-input": DEFAULT_NOTIFICATION_SOUND,
+    error: DEFAULT_NOTIFICATION_SOUND,
+  },
   notifyOnCompletion: true,
   notifyOnApproval: true,
   notifyOnError: true,
@@ -136,6 +149,16 @@ function panelWidth(value: unknown, { defaultWidth, minWidth, maxWidth }: Resiza
     : defaultWidth;
 }
 
+/** Each event's saved sound; one this app does not have, or none saved, is the default. */
+function normalizeSoundIds(value: unknown): Record<NotificationSoundKind, NotificationSoundId> {
+  const saved = preferenceRecord(value);
+  const pick = (kind: NotificationSoundKind) => {
+    const id = saved?.[kind];
+    return isNotificationSoundId(id) ? id : DEFAULT_NOTIFICATION_SOUND;
+  };
+  return { finished: pick("finished"), "needs-input": pick("needs-input"), error: pick("error") };
+}
+
 /** The time zone the person chose, or this device's when they left it on auto-detect. */
 export function effectiveTimeZone(preferences: Pick<AppPreferences, "timezone">): string {
   return preferences.timezone === "auto" ? systemTimeZone() : preferences.timezone;
@@ -162,6 +185,7 @@ export function normalizePreferences(value: unknown): AppPreferences {
       typeof saved?.notificationVolume === "number" && Number.isFinite(saved.notificationVolume)
         ? Math.min(100, Math.max(0, saved.notificationVolume))
         : 100,
+    notificationSoundIds: normalizeSoundIds(saved?.notificationSoundIds),
     notifyOnCompletion: typeof saved?.notifyOnCompletion === "boolean" ? saved.notifyOnCompletion : true,
     notifyOnApproval: typeof saved?.notifyOnApproval === "boolean" ? saved.notifyOnApproval : true,
     notifyOnError: typeof saved?.notifyOnError === "boolean" ? saved.notifyOnError : true,
