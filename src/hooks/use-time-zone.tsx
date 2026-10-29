@@ -35,8 +35,7 @@ export function useTimeFormat(): TimeFormat {
 
 /**
  * Tells the server which time zone the person is in, now and whenever it
- * changes, so Wisps know their local time. An older server that cannot store
- * it keeps using its own.
+ * changes, so Wisps know their local time.
  */
 export function useReportedTimeZone(timeZone: string): void {
   useEffect(() => {

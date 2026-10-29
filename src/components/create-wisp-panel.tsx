@@ -84,7 +84,6 @@ function CreateWispPanel({ onCreate, active: open, onStatusChange, onDone }: Cre
   const [setupDraft, setSetupDraft] = useState<WispSetupDraft>(DEFAULT_WISP_SETUP);
   const [setupView, setSetupView] = useState<WispSetupView | null>(null);
   const [setupLoadError, setSetupLoadError] = useState("");
-  const [setupUnsupported, setSetupUnsupported] = useState(false);
   // Set when the Wisp exists but part of its setup could not be applied: the dialog only reports it.
   const [setupFailure, setSetupFailure] = useState("");
   const [saving, setSaving] = useState(false);
@@ -135,14 +134,13 @@ function CreateWispPanel({ onCreate, active: open, onStatusChange, onDone }: Cre
   }, [open, modelView]);
 
   useEffect(() => {
-    if (!open || setupView || setupLoadError || setupUnsupported) return;
+    if (!open || setupView || setupLoadError) return;
     let active = true;
     void window.wisp
       .getWispSetup()
       .then((result) => {
         if (!active) return;
         if (result.ok) setSetupView(result.value);
-        else if (result.error.code === "unsupported") setSetupUnsupported(true);
         else setSetupLoadError(result.error.message);
       })
       .catch(() => {
@@ -151,7 +149,7 @@ function CreateWispPanel({ onCreate, active: open, onStatusChange, onDone }: Cre
     return () => {
       active = false;
     };
-  }, [open, setupView, setupLoadError, setupUnsupported]);
+  }, [open, setupView, setupLoadError]);
 
   function closeImport() {
     setImportOpen(false);
@@ -266,7 +264,6 @@ function CreateWispPanel({ onCreate, active: open, onStatusChange, onDone }: Cre
           <CreateWispSetupSection
             view={setupView}
             loadError={setupLoadError}
-            unsupported={setupUnsupported}
             draft={setupDraft}
             onChange={setSetupDraft}
           />

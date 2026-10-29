@@ -156,15 +156,15 @@ export async function runCli(
         write(describeDevices(result as DeviceView[]));
         return;
       }
-      // Only for the address to open; an older server leaves it out, and always serves the browser app.
+      // Only for the address to open.
       const { publicOrigin, web } = (await adminRequest(dataDirectory, { command: "status" })) as {
         publicOrigin?: string;
-        web?: boolean;
+        web: boolean;
       };
       write(
         describePairing(result as PairingCode, publicOrigin, output.now?.() ?? new Date(), {
           qr: !flags.has("--no-qr"),
-          web: web !== false,
+          web,
         }),
       );
       return;

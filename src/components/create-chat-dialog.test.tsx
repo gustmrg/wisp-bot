@@ -311,14 +311,6 @@ describe("CreateChatDialog workspace and commands", () => {
     expect(api.setWorkspaceQuota).toHaveBeenCalledWith({ conversationId: "atlas", quotaBytes: null });
   });
 
-  it("offers no Unlimited size from servers older than it", async () => {
-    mockAiSettings();
-    const { user } = await openSetupStep();
-    await user.click(await screen.findByRole("combobox", { name: "Workspace size" }));
-    expect(await screen.findByRole("option", { name: "1.0 GiB" })).toBeInTheDocument();
-    expect(screen.queryByRole("option", { name: "Unlimited" })).not.toBeInTheDocument();
-  });
-
   it("keeps commands off when the server cannot run them", async () => {
     mockAiSettings(undefined, {
       getWispSetup: vi.fn(async () => ({
@@ -329,18 +321,6 @@ describe("CreateChatDialog workspace and commands", () => {
     await openSetupStep();
     expect(await screen.findByText("Install Docker or Podman.")).toBeVisible();
     expect(screen.getByRole("switch", { name: "Run commands in a container" })).toBeDisabled();
-  });
-
-  it("explains that an older server keeps the defaults", async () => {
-    mockAiSettings(undefined, {
-      getWispSetup: vi.fn(async () => ({
-        ok: false,
-        error: { code: "unsupported", message: "not offered", retryable: false },
-      })),
-    });
-    await openSetupStep();
-    expect(await screen.findByText(/This server is older than this app/)).toBeVisible();
-    expect(screen.queryByRole("combobox", { name: "Workspace size" })).not.toBeInTheDocument();
   });
 
   it("reports a setup that could not be applied without creating the Wisp again", async () => {

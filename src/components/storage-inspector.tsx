@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { ArrowLeftIcon, FolderOpenIcon } from "lucide-react";
 
-import { describeStorageFailure, formatMeasuredAt } from "@/lib/storage-format";
+import { formatMeasuredAt } from "@/lib/storage-format";
 import { ConfirmAction, SettingsCard } from "@/components/settings/settings-primitives";
 import { UsageBar } from "@/components/storage-overview";
 import { WorkspaceSizeSelect } from "@/components/workspace-size-select";
@@ -55,7 +55,7 @@ export function StorageInspector({
       .then((result) => {
         if (!active) return;
         if (result.ok) setListing({ entries: [...result.value.entries], nextCursor: result.value.nextCursor });
-        else setError(describeStorageFailure(result));
+        else setError(result.error.message);
         setLoading(false);
       })
       .catch(() => {
@@ -86,7 +86,7 @@ export function StorageInspector({
       });
       if (result.ok) {
         setListing({ entries: [...listing.entries, ...result.value.entries], nextCursor: result.value.nextCursor });
-      } else setError(describeStorageFailure(result));
+      } else setError(result.error.message);
     } catch {
       setError("Could not read more entries.");
     } finally {
@@ -101,7 +101,7 @@ export function StorageInspector({
     try {
       const result = await window.wisp.prepareStorageCleanup({ conversationId, paths: [...selected] });
       if (result.ok) setPreview(result.value);
-      else setError(describeStorageFailure(result));
+      else setError(result.error.message);
     } catch {
       setError("Could not prepare the cleanup.");
     } finally {
@@ -120,7 +120,7 @@ export function StorageInspector({
         fingerprint: preview.fingerprint,
       });
       if (!result.ok) {
-        setError(describeStorageFailure(result));
+        setError(result.error.message);
         // The files changed or the workspace is busy: the preview is stale either way.
         setPreview(null);
         return;
@@ -155,7 +155,7 @@ export function StorageInspector({
   const inInbox = folder === WORKSPACE_INBOX_DIRECTORY || folder.startsWith(`${WORKSPACE_INBOX_DIRECTORY}/`);
   const { nearlyFull } = workspaceUsage(workspace);
   const entries = listing?.entries ?? [];
-  const largestFiles = workspace.largestFiles ?? [];
+  const { largestFiles } = workspace;
 
   function toggle(entryPath: string, checked: boolean) {
     const next = new Set(selected);
@@ -194,57 +194,44 @@ export function StorageInspector({
       <div className="grid gap-3 sm:grid-cols-2">
         <SettingsCard className="space-y-3 p-3.5">
           <h4 className="m-0 text-xs font-medium text-dim">What takes the space</h4>
-          {workspace.folders ? (
-            workspace.usedBytes > 0 ? (
-              <UsageBar
-                label="Space by folder"
-                capacity={workspace.unlimited ? undefined : workspace.quotaBytes}
-                shares={workspace.folders.map((item) => ({
-                  key: item.path,
-                  label: item.type === "directory" ? `${item.path}/` : item.path,
-                  bytes: item.size,
-                }))}
-                restLabel={() => "Everything else"}
-              />
-            ) : (
-              <p className="m-0 text-xs text-dim">This workspace is empty.</p>
-            )
+          {workspace.usedBytes > 0 ? (
+            <UsageBar
+              label="Space by folder"
+              capacity={workspace.unlimited ? undefined : workspace.quotaBytes}
+              shares={workspace.folders.map((item) => ({
+                key: item.path,
+                label: item.type === "directory" ? `${item.path}/` : item.path,
+                bytes: item.size,
+              }))}
+              restLabel={() => "Everything else"}
+            />
           ) : (
-            <p className="m-0 text-xs text-dim">Update the server to see which folders take the space.</p>
+            <p className="m-0 text-xs text-dim">This workspace is empty.</p>
           )}
         </SettingsCard>
         <SettingsCard className="flex flex-col gap-1.5 p-3.5">
           <FieldLabel htmlFor={`size-${conversationId}`} className="font-medium">
             Workspace size
           </FieldLabel>
-          {/* Servers from before circles could be resized leave out a circle's room. */}
-          {workspace.kind === "wisp" || workspace.maxQuotaBytes !== undefined ? (
-            <>
-              <WorkspaceSizeSelect
-                id={`size-${conversationId}`}
-                conversationId={conversationId}
-                usedBytes={workspace.usedBytes}
-                quotaBytes={workspace.quotaBytes}
-                maxQuotaBytes={workspace.maxQuotaBytes}
-                unlimited={workspace.unlimited}
-                freeDiskBytes={workspace.freeDiskBytes}
-                className="w-full"
-                onResized={onResized}
-              />
-              <FieldDescription>
-                {workspace.unlimited
-                  ? `No size limit${workspace.freeDiskBytes === undefined ? "" : `; ${formatBytes(workspace.freeDiskBytes)} free on its disk`}.`
-                  : "The most this workspace can hold."}{" "}
-                {workspace.kind === "circle"
-                  ? "Every Wisp in the circle shares it. The same setting as in the circle's details."
-                  : "The same setting as in the Wisp's Workspace settings."}
-              </FieldDescription>
-            </>
-          ) : (
-            <FieldDescription>
-              {formatBytes(workspace.quotaBytes)}. Update the server to change the size of a circle&apos;s workspace.
-            </FieldDescription>
-          )}
+          <WorkspaceSizeSelect
+            id={`size-${conversationId}`}
+            conversationId={conversationId}
+            usedBytes={workspace.usedBytes}
+            quotaBytes={workspace.quotaBytes}
+            maxQuotaBytes={workspace.maxQuotaBytes}
+            unlimited={workspace.unlimited}
+            freeDiskBytes={workspace.freeDiskBytes}
+            className="w-full"
+            onResized={onResized}
+          />
+          <FieldDescription>
+            {workspace.unlimited
+              ? `No size limit${workspace.freeDiskBytes === undefined ? "" : `; ${formatBytes(workspace.freeDiskBytes)} free on its disk`}.`
+              : "The most this workspace can hold."}{" "}
+            {workspace.kind === "circle"
+              ? "Every Wisp in the circle shares it. The same setting as in the circle's details."
+              : "The same setting as in the Wisp's Workspace settings."}
+          </FieldDescription>
         </SettingsCard>
       </div>
 

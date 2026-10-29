@@ -32,17 +32,14 @@ import {
   createConversationRuntime,
   addPendingRequest,
   getRuntimeMessage,
-  markOutgoingFailed,
   overlayRuntimeMessages,
   pruneSettledRuntimeMessages,
   reduceConversationAgentEvent,
   reconcileConversationRuntime,
-  removeRuntimeMessage,
   removePendingRequest,
   retainPendingConversations,
   setConversationError,
   clearConversationError,
-  stageOutgoingMessage,
   type ConversationRuntimeState,
   type StoredConversations,
 } from "@/lib/conversation-stream";
@@ -417,42 +414,6 @@ export function useConversations(): ConversationsController {
     };
   }, [applyDelta, replaceRuntime, replaceState, replaceWisps]);
 
-  /** Sends the way servers without a message queue expect: saved to the transcript, then sent. */
-  const sendDirectly = useCallback(
-    async (conversationId: string, text: string): Promise<boolean> => {
-      const requestId = crypto.randomUUID();
-      const message: OutgoingMessage & { id: string } = {
-        id: requestId,
-        type: "outgoing",
-        text,
-        createdAt: new Date().toISOString(),
-        status: "queued",
-      };
-      // The message belongs at the end, so a window opened elsewhere in the transcript returns there.
-      openConversation(conversationId);
-      replaceRuntime(stageOutgoingMessage(runtimeRef.current, conversationId, message));
-      setPendingAcknowledgements((current) => addPendingRequest(current, conversationId, requestId));
-      const persisted = await enqueueDelta(() => window.wisp.appendConversationMessage({ conversationId, message }));
-      if (!persisted) {
-        setPendingAcknowledgements((current) => removePendingRequest(current, conversationId, requestId));
-        return false;
-      }
-      replaceRuntime(removeRuntimeMessage(runtimeRef.current, conversationId, requestId));
-      const result = await window.wisp.sendMessage({ conversationId, requestId, text });
-      setPendingAcknowledgements((current) => removePendingRequest(current, conversationId, requestId));
-      if (result.ok) return true;
-      const failed = markOutgoingFailed(runtimeRef.current, stored(), conversationId, requestId, result.error);
-      replaceRuntime(failed);
-      const outgoing = getRuntimeMessage(failed, conversationId, requestId);
-      if (outgoing?.type === "outgoing") {
-        const message: OutgoingMessage = { ...outgoing, type: "outgoing" };
-        void enqueueDelta(() => window.wisp.appendConversationMessage({ conversationId, message }));
-      }
-      return false;
-    },
-    [enqueueDelta, openConversation, replaceRuntime, stored],
-  );
-
   /**
    * Puts the message in the Wisp's queue. It joins the transcript when the
    * Wisp takes it, which the backend pushes as a change.
@@ -482,11 +443,10 @@ export function useConversations(): ConversationsController {
         replaceRuntime(clearConversationError(runtimeRef.current, conversationId));
         return true;
       }
-      if (result.error.code === "unsupported") return sendDirectly(conversationId, text);
       replaceRuntime(setConversationError(runtimeRef.current, conversationId, result.error));
       return false;
     },
-    [openConversation, replaceRuntime, sendDirectly],
+    [openConversation, replaceRuntime],
   );
 
   const retryMessage = useCallback(
@@ -510,8 +470,7 @@ export function useConversations(): ConversationsController {
 
   const abort = useCallback(async (conversationId: string): Promise<ReadonlyArray<QueuedMessage> | null> => {
     const result = await window.wisp.abortConversation({ conversationId });
-    // An older server answers without follow-ups.
-    if (result.ok) return result.value.followUps ?? [];
+    if (result.ok) return result.value.followUps;
     setError(result.error.message);
     return null;
   }, []);

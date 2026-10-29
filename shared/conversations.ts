@@ -52,7 +52,7 @@ export interface ChatBase {
   notifyOnUpdatesEnabled: boolean;
   preview: string;
   messages: ReadonlyArray<Message>;
-  /** Whether any messages are unread; kept beside `unreadCount` for older clients. */
+  /** Whether any messages are unread. */
   unread?: boolean;
   /** Replies and questions from Wisps since the person last read the conversation. */
   unreadCount?: number;

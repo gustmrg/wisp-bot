@@ -272,7 +272,7 @@ function createApi(initialState: ConversationStateView): WispApi {
     subscribeToUpdateState: vi.fn(() => () => undefined),
     getWorkspace: vi.fn(async () => ({
       ok: true as const,
-      value: { usedBytes: 0, quotaBytes: 1024, maxQuotaBytes: 1024 },
+      value: { usedBytes: 0, quotaBytes: 1024, maxQuotaBytes: 1024, unlimited: false },
     })),
     getWispToolPolicy: vi.fn(async ({ conversationId }: { conversationId: string }) => ({
       ok: true as const,
@@ -322,7 +322,7 @@ function createApi(initialState: ConversationStateView): WispApi {
     })),
     setWorkspaceQuota: vi.fn(async () => ({
       ok: true as const,
-      value: { usedBytes: 0, quotaBytes: 1024, maxQuotaBytes: 1024 },
+      value: { usedBytes: 0, quotaBytes: 1024, maxQuotaBytes: 1024, unlimited: false },
     })),
     getWispSetup: vi.fn(async () => ({
       ok: true as const,
@@ -346,7 +346,7 @@ function createApi(initialState: ConversationStateView): WispApi {
     openSkillsFolder: vi.fn(async () => ({ ok: true as const, value: {} })),
     attachWorkspaceFiles: vi.fn(async () => ({
       ok: true as const,
-      value: { files: [], workspace: { usedBytes: 0, quotaBytes: 1024, maxQuotaBytes: 1024 } },
+      value: { files: [], workspace: { usedBytes: 0, quotaBytes: 1024, maxQuotaBytes: 1024, unlimited: false } },
     })),
     searchWorkspaceFiles: vi.fn(async () => ({ ok: true as const, value: { paths: [], empty: true } })),
     listSkills: vi.fn(async () => ({ ok: true as const, value: [] })),
@@ -521,39 +521,6 @@ describe("App", () => {
 
     await user.click(within(list).getByRole("button", { name: /Atlas/ }));
     await waitFor(() => expect(api.markConversationRead).toHaveBeenCalledWith({ conversationId: "atlas" }));
-  });
-
-  it("saves and sends the message itself when the server has no message queue", async () => {
-    const user = userEvent.setup();
-    const api = createApi(conversationState(true, { atlas }));
-    vi.mocked(api.queueMessage).mockResolvedValue({
-      ok: false,
-      error: { code: "unsupported", message: "Update the server.", retryable: false },
-    });
-    exposeApi(api);
-    vi.spyOn(crypto, "randomUUID").mockReturnValue("00000000-0000-4000-8000-000000000001");
-
-    render(<App />);
-
-    const composer = await screen.findByRole("combobox", { name: "Message Atlas" });
-    await user.type(composer, "Prepare the launch brief");
-    await user.click(screen.getByRole("button", { name: "Send message" }));
-
-    await waitFor(() => {
-      expect(api.sendMessage).toHaveBeenCalledWith({
-        conversationId: "atlas",
-        requestId: "00000000-0000-4000-8000-000000000001",
-        text: "Prepare the launch brief",
-      });
-    });
-    expect(api.appendConversationMessage).toHaveBeenCalledWith({
-      conversationId: "atlas",
-      message: expect.objectContaining({
-        id: "00000000-0000-4000-8000-000000000001",
-        type: "outgoing",
-        text: "Prepare the launch brief",
-      }),
-    });
   });
 
   it("opens a message search result at that message", async () => {

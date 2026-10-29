@@ -4,7 +4,7 @@ import type { BackendResult } from "../../shared/contracts";
 import type { ScheduledMessage, ScheduledMessagesView } from "../../shared/scheduled-messages";
 
 export interface ScheduledMessagesController {
-  /** False until the backend answers, and when it cannot schedule messages (an older server). */
+  /** False until the backend answers, and when it could not. */
   available: boolean;
   /** Every scheduled message, soonest first. */
   messages: ReadonlyArray<ScheduledMessage>;

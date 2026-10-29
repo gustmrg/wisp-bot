@@ -109,13 +109,7 @@ function installBridge(
       },
     ),
     sendMessage: vi.fn(async () => ({ ok: true as const, value: {} })),
-    // Servers without a message queue; tests of the queue override this.
-    queueMessage: vi.fn(
-      async (): Promise<BackendResult<MessageQueueView>> => ({
-        ok: false,
-        error: { code: "unsupported", message: "Update the server.", retryable: false },
-      }),
-    ),
+    queueMessage: vi.fn(async (): Promise<BackendResult<MessageQueueView>> => ({ ok: true, value: { messages: [] } })),
     subscribeToAgentEvents: vi.fn((listener: (event: SequencedConversationAgentEvent) => void) => {
       agentListeners.add(listener);
       return () => agentListeners.delete(listener);
@@ -174,7 +168,15 @@ async function startTurn(bridge: ReturnType<typeof installBridge>) {
   await act(async () => {
     await hook.result.current.sendMessage("atlas", "Hello");
   });
-  const outgoing = bridge.api.appendConversationMessage.mock.calls[0]![0].message as Message & { id: string };
+  // The Wisp takes the message from its queue, and the backend stores it.
+  const outgoing: Message & { id: string } = {
+    id: "request-1",
+    type: "outgoing",
+    text: "Hello",
+    status: "queued",
+    createdAt: "2026-09-29T12:00:00.000Z",
+  };
+  bridge.push("atlas", { added: [outgoing] }, "Hello");
   const requestId = outgoing.id;
   bridge.emit({
     type: "assistant_message_started",
@@ -316,12 +318,13 @@ describe("useConversations", () => {
     });
     bridge.emit({ type: "assistant_message_completed", conversationId: "atlas", requestId, messageId: "reply" });
 
-    // Only the user's own message is written; reply text and delivery status belong to the backend.
-    expect(bridge.api.appendConversationMessage).toHaveBeenCalledTimes(1);
+    // The message goes to the queue; the transcript, reply text and delivery status belong to the backend.
+    expect(bridge.api.queueMessage).toHaveBeenCalledWith({ conversationId: "atlas", text: "Hello" });
+    expect(bridge.api.appendConversationMessage).not.toHaveBeenCalled();
     expect(bridge.api.getConversationState).toHaveBeenCalledTimes(1);
     expect(bridge.api.getConversationMessages).toHaveBeenCalledTimes(1);
     expect(hook.result.current.windows.atlas?.messages).toEqual([
-      expect.objectContaining({ id: requestId, type: "outgoing", status: "complete" }),
+      expect.objectContaining({ id: requestId, type: "outgoing" }),
       expect.objectContaining({ id: "reply", type: "incoming", text: "Hi there", status: "complete" }),
     ]);
   });
@@ -460,11 +463,8 @@ describe("useConversations", () => {
       await hook.result.current.retryMessage("atlas", "old-request");
     });
 
-    expect(bridge.api.appendConversationMessage).toHaveBeenCalledWith({
-      conversationId: "atlas",
-      message: expect.objectContaining({ type: "outgoing", text: "Try me" }),
-    });
+    expect(bridge.api.queueMessage).toHaveBeenCalledWith({ conversationId: "atlas", text: "Try me" });
     await waitFor(() => expect(hook.result.current.windows.atlas?.newerCursor).toBeNull());
-    expect(hook.result.current.windows.atlas?.messages.at(-1)).toMatchObject({ type: "outgoing", text: "Try me" });
+    expect(idsOf(hook.result.current.windows.atlas?.messages)).toEqual(["m2", "m3"]);
   });
 });

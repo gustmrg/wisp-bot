@@ -37,12 +37,9 @@ export interface WorkspaceView {
   quotaBytes: number;
   /** The largest size the workspace can be given now: the disk must have room to grow into it. */
   maxQuotaBytes: number;
-  /**
-   * The workspace has no size; only its disk's free space holds it back.
-   * Absent from servers older than unlimited workspaces, which cannot be given one.
-   */
-  unlimited?: boolean;
-  /** Free space on the disk holding the workspace; absent from older servers. */
+  /** The workspace has no size; only its disk's free space holds it back. */
+  unlimited: boolean;
+  /** Free space on the disk holding the workspace; absent when it could not be measured. */
   freeDiskBytes?: number;
 }
 

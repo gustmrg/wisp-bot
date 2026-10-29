@@ -43,8 +43,6 @@ export interface WispExecutionView {
 export interface WispSetupView {
   /** The largest workspace size the disk has room for. */
   maxQuotaBytes: number;
-  /** A new Wisp's workspace can be given no size; absent from servers older than unlimited workspaces. */
-  unlimitedWorkspaces?: boolean;
   runtime: ContainerRuntimeStatus;
 }
 

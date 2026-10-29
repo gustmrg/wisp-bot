@@ -8,7 +8,7 @@ import {
   reconcileConversationRuntime,
   reduceConversationAgentEvent,
   removePendingRequest,
-  stageOutgoingMessage,
+  type ConversationRuntimeState,
   type StoredConversations,
 } from "../src/lib/conversation-stream.js";
 import type { SequencedConversationAgentEvent } from "../shared/contracts.js";
@@ -28,6 +28,16 @@ function chat(id: string): ChatSummary {
   };
 }
 
+/** A message the person sent that has not reached the transcript yet. */
+function withOutgoing(
+  state: ConversationRuntimeState,
+  conversationId: string,
+  message: Message & { id: string },
+): ConversationRuntimeState {
+  const messages = [...(state.messages[conversationId] ?? []), { ...message, status: "queued" } as Message];
+  return { ...state, messages: { ...state.messages, [conversationId]: messages } };
+}
+
 /** Conversations that exist, with the messages loaded for them (none unless given). */
 function stored(ids: string[], windows: StoredConversations["windows"] = {}): StoredConversations {
   return { chats: Object.fromEntries(ids.map((id) => [id, chat(id)])), windows };
@@ -36,7 +46,7 @@ function stored(ids: string[], windows: StoredConversations["windows"] = {}): St
 describe("conversation stream reducer", () => {
   it("names each member's reply in a circle, and fails only the reply of a member that fails", () => {
     const chats = stored(["crew"]);
-    let state = stageOutgoingMessage(createConversationRuntime(0, { crew: "idle" }), "crew", {
+    let state = withOutgoing(createConversationRuntime(0, { crew: "idle" }), "crew", {
       id: "m1",
       type: "outgoing",
       text: "@Nova @Atlas go",
@@ -98,7 +108,7 @@ describe("conversation stream reducer", () => {
   it("reconciles queued and streaming messages by stable IDs and ignores event replay", () => {
     const chats = stored(["one", "two"]);
     let state = createConversationRuntime(0, { one: "idle", two: "idle" });
-    state = stageOutgoingMessage(state, "one", {
+    state = withOutgoing(state, "one", {
       id: "request-1",
       type: "outgoing",
       text: "Inspect",

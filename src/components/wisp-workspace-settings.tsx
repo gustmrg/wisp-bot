@@ -10,9 +10,6 @@ import { Field, FieldDescription, FieldGroup, FieldLabel, FieldTitle } from "@/c
 import { FormStatus } from "@/components/ui/form-status";
 import { WorkspaceSizeSelect } from "@/components/workspace-size-select";
 
-const OLD_SERVER_CIRCLE =
-  "This server is older than this app and cannot show a circle's workspace. Update the server to see and resize it.";
-
 /** A Wisp's or a circle's workspace: its usage, size, and folder. */
 export function WispWorkspaceSettings({
   conversationId,
@@ -52,8 +49,6 @@ function WorkspacePanel({
       .then((result) => {
         if (!active) return;
         if (result.ok) setView(result.value);
-        // Servers from before circles had a workspace size refuse circles as invalid.
-        else if (kind === "circle" && result.error.code === "invalid_request") setError(OLD_SERVER_CIRCLE);
         else setError(result.error.message);
       })
       .catch(() => {
@@ -62,7 +57,7 @@ function WorkspacePanel({
     return () => {
       active = false;
     };
-  }, [loadRequest, kind]);
+  }, [loadRequest]);
 
   async function openFolder() {
     setError("");

@@ -45,6 +45,11 @@ to bring older data up to it is removed.**
 - Settings files are read leniently instead of upgraded: keys a build no longer
   knows, such as the profile's old fields or a Wisp's saved memory, are left
   out and dropped the next time the file is saved.
+- The app treats a server as at least v0.25.3, and a server treats its apps
+  the same way. The fallbacks for servers without a message queue, Storage
+  details, circle workspace sizes, unlimited workspaces or a Wisp setup step
+  are removed. Fallbacks for what came after v0.25.3, such as usage by model,
+  stay until a later floor.
 - The next upgrade raises `STORE_VERSION` as before and backs the database up
   first. `OLDEST_STORE_VERSION` rises only with a decision like this one.
 
@@ -60,8 +65,7 @@ to bring older data up to it is removed.**
 
 ## Deferred
 
-- Client and server fallbacks for servers older than v0.25.3, and the
-  `unread` flag kept beside `unreadCount` for older clients.
+- Deriving `unread` from `unreadCount` instead of storing both.
 - Moving the per-Wisp settings files, such as `context-settings.json`, into
   the database.
 

@@ -21,7 +21,7 @@ export function registerExecutionHandlers(
       WISP_IPC_CHANNELS.getWispSetup,
       async (): Promise<WispSetupView> => {
         const [maxQuotaBytes, runtime] = await Promise.all([workspace.newWorkspaceRoom(), service.runtimeStatus()]);
-        return { maxQuotaBytes, unlimitedWorkspaces: true, runtime };
+        return { maxQuotaBytes, runtime };
       },
     ],
   ]);

@@ -668,7 +668,7 @@ export interface SessionReportModelUsage {
 export interface SessionReportToolCall {
   toolCallId: string;
   toolName: string;
-  /** A readable name for the tool, with the connection it came from for MCP tools; absent from older servers. */
+  /** A readable name for the tool, with the connection it came from for MCP tools; absent when there is none. */
   toolLabel?: string;
   argumentSummary: string;
   /** For commands: the programs run, without their arguments (`git clone · npm install`). */

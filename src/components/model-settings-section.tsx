@@ -430,7 +430,6 @@ function ModelSettingsSection({
                             : "The key is encrypted using your operating system's credential storage."}
                       </SettingsRowDescription>
                     </SettingsRowCopy>
-                    {/* A server from before sign-ins reports no credential kind; its credentials are keys. */}
                     {provider?.credentialConfigured && provider.credentialKind !== "subscription" ? (
                       <ConfirmAction
                         label="Remove key"
@@ -483,8 +482,7 @@ function ModelSettingsSection({
 
           {showAuxiliaryModels ? (
             <div className="mt-6 border-t border-border pt-2">
-              {/* A server from before fallbacks reports none; it cannot save one either. */}
-              {view.fallback ? <FallbackModelSettings view={view} onViewChange={applyAuxiliaryView} /> : null}
+              <FallbackModelSettings view={view} onViewChange={applyAuxiliaryView} />
               <AuxiliaryModelSettings view={view} onViewChange={applyAuxiliaryView} />
             </div>
           ) : null}

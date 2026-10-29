@@ -339,15 +339,10 @@ function conversationRecordOf(row: Row): { chat: Row & { messages: unknown[] }; 
   return { chat, storageId: row.storage_id, sessions: {}, createdAt: row.created_at, updatedAt: row.updated_at };
 }
 
-/**
- * `unread` decides whether a conversation has unread messages, since builds
- * before version 7 write it without the count: a count they left behind on a
- * read conversation is stale, and one they marked unread has at least one.
- */
+/** Whether a conversation has unread messages, and how many. */
 function unreadOf(row: Row): { unread?: boolean; unreadCount?: number } {
   if (row.unread === null) return {};
-  if (row.unread !== 1) return { unread: false, unreadCount: 0 };
-  return { unread: true, unreadCount: Math.max(1, Number(row.unread_count ?? 1)) };
+  return { unread: row.unread === 1, unreadCount: row.unread === 1 ? Number(row.unread_count ?? 1) : 0 };
 }
 
 function scheduledMessageOf(row: Row): unknown {

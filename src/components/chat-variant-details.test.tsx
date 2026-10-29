@@ -281,6 +281,7 @@ it("loads model and usage data lazily and keeps model details across tabs", asyn
     ok: true,
     value: {
       selection: { providerId: "test", modelId: "model" },
+      fallback: { selection: null, unavailable: null },
       secureStorageAvailable: true,
       providers: [
         {
@@ -306,6 +307,7 @@ it("loads model and usage data lazily and keeps model details across tabs", asyn
           applied: { providerId: "test", modelId: "model" },
           pending: null,
           status: "idle",
+          fallback: "global",
         },
       })),
       manageContext: vi.fn(async () => ({ ok: true, value: { tokens: 0 } })),
