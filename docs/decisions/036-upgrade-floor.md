@@ -67,7 +67,7 @@ to bring older data up to it is removed.**
 
 - Deriving `unread` from `unreadCount` instead of storing both.
 - Moving the per-Wisp settings files, such as `context-settings.json`, into
-  the database.
+  the database, proposed in [ADR 037](037-settings-in-database.md).
 
 ## Decisions taken with the user
 
