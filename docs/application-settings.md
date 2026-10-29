@@ -76,9 +76,11 @@ input needs HTTPS.
 [fallback model](models.md#fallback-models) in **AI Model**: **Fallback model**
 is a model a recording goes to when the provider above cannot transcribe it:
 it cannot be reached, takes longer than 30 seconds, is rate limited or down,
-rejects its key, or has no credit left. Only models from providers with a
-saved key are listed, and a fallback whose key is removed later is shown as
-unavailable and skipped. A recording that is empty, too long, or that a
+rejects its key, or has no credit left. Only models from other providers
+with a saved key are listed, since a provider that is down or refusing its key
+fails all of its models at once. A fallback whose key is removed later, or
+that is from the provider chosen above after a change, is shown as unavailable
+and skipped. A recording that is empty, too long, or that a
 provider could not read is not sent to the fallback, since it would fail the
 same way, and no provider gets the same recording twice.
 

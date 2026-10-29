@@ -131,6 +131,14 @@ function preferenceRecord(value: unknown): Record<string, unknown> | undefined {
   return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : undefined;
 }
 
+/** The fallbacks a recording goes to: the saved one, unless it is on the voice provider and would fail along with it. */
+export function transcriptionFallbacks(
+  preferences: Pick<AppPreferences, "voiceProvider" | "voiceFallback">,
+): VoiceModelChoice[] {
+  const fallback = preferences.voiceFallback;
+  return fallback && fallback.providerId !== preferences.voiceProvider ? [fallback] : [];
+}
+
 /** The saved fallback, while it still names a provider and one of its models. */
 function voiceFallback(value: unknown): VoiceModelChoice | null {
   const choice = preferenceRecord(value);

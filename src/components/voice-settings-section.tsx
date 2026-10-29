@@ -338,7 +338,8 @@ function modelOption({ providerId, modelId }: VoiceModelChoice) {
 /**
  * Chooses the model a recording goes to when the provider above cannot
  * transcribe it (SWE-253), like the fallback model in AI Model. Only models
- * from providers with a saved key are listed.
+ * from other providers with a saved key are listed: a provider that is down,
+ * rate limited, or refusing its key fails all of its models at once.
  */
 function FallbackVoiceModel({
   view,
@@ -351,15 +352,12 @@ function FallbackVoiceModel({
 }) {
   const selected = preferences.voiceFallback;
   const keyed = new Set((view?.providers ?? []).filter((status) => status.credentialConfigured).map(({ id }) => id));
-  const primary = choiceValue({ providerId: preferences.voiceProvider, modelId: preferences.voiceModel });
+  const primaryName = voiceProvider(preferences.voiceProvider)?.name ?? preferences.voiceProvider;
   const options = [
     { value: OFF, label: "Off", description: "Voice input stops when the provider fails" },
-    // The provider above cannot stand in for itself.
-    ...VOICE_PROVIDERS.filter(({ id }) => keyed.has(id))
-      .flatMap((provider) =>
-        provider.models.map((model) => modelOption({ providerId: provider.id, modelId: model.id })),
-      )
-      .filter(({ value }) => value !== primary),
+    ...VOICE_PROVIDERS.filter(({ id }) => keyed.has(id) && id !== preferences.voiceProvider).flatMap((provider) =>
+      provider.models.map((model) => modelOption({ providerId: provider.id, modelId: model.id })),
+    ),
   ];
   if (selected && !options.some(({ value }) => value === choiceValue(selected))) {
     const option = modelOption(selected);
@@ -372,8 +370,8 @@ function FallbackVoiceModel({
       ? null
       : !keyed.has(selected.providerId)
         ? `Add an API key for ${providerName} to use this model. Until then, voice input has no fallback.`
-        : choiceValue(selected) === primary
-          ? "This is the model above, so voice input has no fallback. Choose another model."
+        : selected.providerId === preferences.voiceProvider
+          ? `This model is from ${primaryName}, the provider above, so it fails along with it. Choose a model from another provider.`
           : null;
   return (
     <SettingsGroup label="Fallback">
@@ -384,7 +382,7 @@ function FallbackVoiceModel({
             <SettingsRowDescription>
               Transcribes the recording when the provider above fails for a reason another may not share: it can't be
               reached, takes too long, is rate limited, or rejects its key. A recording no provider could read is not
-              sent again. Only models from providers with a saved key are listed.
+              sent again. Only models from other providers with a saved key are listed.
             </SettingsRowDescription>
             {unavailable ? (
               <span role="alert" className="text-xs leading-relaxed text-warning">

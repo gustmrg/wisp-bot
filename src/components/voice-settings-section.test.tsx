@@ -60,7 +60,7 @@ describe("VoiceSettingsSection", () => {
     expect(onPreferencesChange).toHaveBeenCalledWith(expect.objectContaining({ voiceAutoSend: true }));
   });
 
-  it("lists fallback models from providers with a saved key, other than the model above, and saves the choice", async () => {
+  it("lists fallback models from other providers with a saved key, and saves the choice", async () => {
     const user = userEvent.setup();
     const { onPreferencesChange } = renderSection(DEFAULT_PREFERENCES, ["groq", "openai"]);
     const picker = screen.getByRole("combobox", { name: "Fallback model" });
@@ -68,8 +68,8 @@ describe("VoiceSettingsSection", () => {
 
     await user.click(picker);
     expect(await screen.findByRole("option", { name: /Off/ })).toBeInTheDocument();
-    // The model above cannot stand in for itself, and Mistral has no key.
-    expect(screen.queryByRole("option", { name: /Whisper Large v3 Turbo/ })).not.toBeInTheDocument();
+    // Groq is the provider above, so none of its models is offered, and Mistral has no key.
+    expect(screen.queryByRole("option", { name: /Whisper Large v3/ })).not.toBeInTheDocument();
     expect(screen.queryByRole("option", { name: /Voxtral/ })).not.toBeInTheDocument();
     await user.click(screen.getByRole("option", { name: /GPT-4o mini Transcribe/ }));
 
@@ -88,6 +88,18 @@ describe("VoiceSettingsSection", () => {
     await user.click(await screen.findByRole("option", { name: /Off/ }));
 
     expect(onPreferencesChange).toHaveBeenLastCalledWith({ ...DEFAULT_PREFERENCES, voiceFallback: null });
+  });
+
+  it("says a saved fallback on the provider above fails along with it", async () => {
+    const voiceFallback = { providerId: "groq" as const, modelId: "whisper-large-v3" };
+    renderSection({ ...DEFAULT_PREFERENCES, voiceFallback }, ["groq", "openai"]);
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "This model is from Groq, the provider above, so it fails along with it.",
+    );
+    expect(screen.getByRole("combobox", { name: "Fallback model" })).toHaveTextContent(
+      "Whisper Large v3 (unavailable)",
+    );
   });
 
   it("says why a saved fallback is not used and keeps it selected", async () => {
