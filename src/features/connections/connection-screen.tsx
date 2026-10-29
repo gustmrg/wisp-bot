@@ -124,6 +124,8 @@ function failureTitle(failure: ConnectionFailure | undefined, name: string): str
       return `Node.js is missing on ${name}`;
     case "version":
       return `${name} runs another version of Wisp`;
+    case "wrong_port":
+      return `${name} does not answer on its server port`;
     case "wrong_server":
       return `${name} is not the server this device paired with`;
     default:

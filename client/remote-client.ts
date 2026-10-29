@@ -34,7 +34,11 @@ const STREAM_IDLE_TIMEOUT_MS = 45_000;
 // An upload may take the request timeout plus the time to send its bytes at a slow mobile link's speed.
 const UPLOAD_MIN_BYTES_PER_SECOND = 32 * 1024;
 
-export type RemoteErrorCode = RemoteTransportErrorCode | "network";
+/**
+ * `network` when nothing answered, and `not_wisp` when something answered
+ * that is not a Wisp server, such as another service on the server's port.
+ */
+export type RemoteErrorCode = RemoteTransportErrorCode | "network" | "not_wisp";
 
 /** A failure to reach the server or to be accepted by it, as opposed to an operation's own error. */
 export class RemoteError extends Error {
@@ -84,6 +88,15 @@ function valueOf(body: unknown): unknown {
   return (body as { value?: unknown } | null)?.value;
 }
 
+/** The value of a response that names the server, such as its descriptor or a new session; anything else is not Wisp. */
+function serverValueOf(body: unknown): unknown {
+  const value = valueOf(body);
+  if (typeof (value as { serverId?: unknown } | null)?.serverId !== "string") {
+    throw new RemoteError("not_wisp", "The server sent an invalid response.");
+  }
+  return value;
+}
+
 export interface EventStreamHandlers {
   /** The stream is open and authorized. */
   onOpen(): void;
@@ -102,7 +115,7 @@ export class RemoteClient {
   }
 
   async pair(code: string, deviceName: string): Promise<StoredSession> {
-    const session = valueOf(
+    const session = serverValueOf(
       await this.request("/auth/pair", { code, deviceName, ...(this.options.cookies ? { mode: "web" } : {}) }),
     ) as StoredSession;
     await this.options.credentials.save(session);
@@ -116,7 +129,7 @@ export class RemoteClient {
   }
 
   async describe(): Promise<ServerDescriptor> {
-    return valueOf(await this.authorized("GET", "/server", undefined, CONNECT_TIMEOUT_MS)) as ServerDescriptor;
+    return serverValueOf(await this.authorized("GET", "/server", undefined, CONNECT_TIMEOUT_MS)) as ServerDescriptor;
   }
 
   /** Runs one operation; transport failures throw `RemoteError`, operation failures return their result. */
@@ -285,12 +298,13 @@ export class RemoteClient {
     try {
       return decodeRemoteJson(await response.text());
     } catch {
-      throw new RemoteError("network", "The server sent an invalid response.");
+      throw new RemoteError("not_wisp", "The server sent an invalid response.");
     }
   }
 
   private async failure(response: Response): Promise<RemoteError> {
-    let code: RemoteErrorCode = response.status === 401 ? "unauthorized" : "internal_error";
+    // A Wisp server describes every error; without that, something else answered.
+    let code: RemoteErrorCode = "not_wisp";
     let message = `The server answered with status ${response.status}.`;
     try {
       const body = JSON.parse(await response.text()) as {

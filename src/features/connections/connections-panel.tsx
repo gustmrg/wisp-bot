@@ -5,11 +5,12 @@ import { ConfirmAction, SettingsField, StatusDot, type StatusTone } from "@/comp
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { SegmentedControl } from "@/components/ui/segmented-control";
-import type {
-  ConnectionProfileView,
-  ConnectionsView,
-  ConnectionStatus,
-  SaveConnectionRequest,
+import {
+  DEFAULT_SERVER_PORT,
+  type ConnectionProfileView,
+  type ConnectionsView,
+  type ConnectionStatus,
+  type SaveConnectionRequest,
 } from "../../../shared/connections";
 import { InstallServerAction } from "./install-server-action";
 import { ServerSetupGuide } from "./server-setup-guide";
@@ -191,7 +192,7 @@ function draftFrom(profile?: Exclude<ConnectionProfileView, { kind: "local" }>):
     host: profile?.kind === "ssh" ? profile.host : "",
     user: profile?.kind === "ssh" ? (profile.user ?? "") : "",
     sshPort: profile?.kind === "ssh" && profile.sshPort ? String(profile.sshPort) : "",
-    serverPort: profile?.kind === "ssh" ? String(profile.serverPort) : "8787",
+    serverPort: profile?.kind === "ssh" ? String(profile.serverPort) : "",
     url: profile?.kind === "url" ? profile.url : "",
   };
 }
@@ -206,7 +207,7 @@ function requestFrom(draft: Draft, id?: string): SaveConnectionRequest {
     host: draft.host.trim(),
     ...(draft.user.trim() ? { user: draft.user.trim() } : {}),
     ...(draft.sshPort.trim() ? { sshPort: Number(draft.sshPort) } : {}),
-    serverPort: Number(draft.serverPort),
+    ...(draft.serverPort.trim() ? { serverPort: Number(draft.serverPort) } : {}),
   };
 }
 
@@ -334,11 +335,11 @@ function ConnectionForm({
                 onChange={(event) => update({ sshPort: event.target.value })}
               />
             </SettingsField>
-            <SettingsField label="Wisp server port">
+            <SettingsField label="Wisp server port (optional)">
               <Input
-                required
                 inputMode="numeric"
                 value={draft.serverPort}
+                placeholder={String(DEFAULT_SERVER_PORT)}
                 onChange={(event) => update({ serverPort: event.target.value })}
               />
             </SettingsField>
@@ -346,7 +347,7 @@ function ConnectionForm({
           <p className="mb-3 text-xs leading-relaxed text-dim">
             Wisp uses this computer&apos;s OpenSSH, with your SSH agent, keys, and known hosts. Connect once with{" "}
             <code>ssh</code> in a terminal so the host key is trusted. Pairing runs <code>wispctl pair</code> on the
-            server for you.
+            server for you, and uses the port the Wisp server reports there.
             {profile ? null : (
               <> If the Wisp server is not installed there yet, save, then open the server to install it.</>
             )}

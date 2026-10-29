@@ -40,7 +40,6 @@ describe("SSH form test", () => {
       name: "example",
       host: "example",
       user: "alice",
-      serverPort: 8787,
     });
     await user.type(screen.getByLabelText("SSH port (optional)"), "2222");
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();

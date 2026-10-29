@@ -61,8 +61,14 @@ export function installCommand(version: string, serverPort: number): string {
   return `sh -c '${script}'`;
 }
 
-/** Installs and starts the Wisp server on a machine reached over SSH, by running its `setup` there. */
-export async function installRemoteServer(profile: SshConnectionProfile, options: SshInstallOptions): Promise<void> {
+/**
+ * Installs and starts the Wisp server on a machine reached over SSH, by
+ * running its `setup` there. Resolves with the port the setup reports.
+ */
+export async function installRemoteServer(
+  profile: SshConnectionProfile,
+  options: SshInstallOptions,
+): Promise<number | undefined> {
   const command = installCommand(options.version, profile.serverPort);
   const ssh = options.sshPath ?? "ssh";
   const questions = new SshQuestions(options.interaction, ssh, profile, options.signal);
@@ -116,7 +122,8 @@ export async function installRemoteServer(profile: SshConnectionProfile, options
   child.stdin?.destroy();
   options.signal?.removeEventListener("abort", stop);
   if (options.signal?.aborted) throw new FatalTransportError("Installing the server was cancelled.", "cancelled");
-  if (code === 0 && /^\{.*\}$/m.test(stdout)) return;
+  const result = /^\{.*\}$/m.exec(stdout)?.[0];
+  if (code === 0 && result) return portOf(result);
   throw explainInstallFailure(profile, options.version, code, stderr, timedOut, spawnError, questions);
 }
 
@@ -176,4 +183,14 @@ export function explainInstallFailure(
     "install",
     details,
   );
+}
+
+/** The port in the setup's JSON result, when it is a valid one. */
+function portOf(result: string): number | undefined {
+  try {
+    const { port } = JSON.parse(result) as { port?: unknown };
+    return Number.isInteger(port) && (port as number) >= 1 && (port as number) <= 65_535 ? (port as number) : undefined;
+  } catch {
+    return undefined;
+  }
 }

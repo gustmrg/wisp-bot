@@ -27,8 +27,11 @@ export interface RemoteTransport {
   close(): void;
   /** Asks the server for a pairing code over an already authenticated channel, such as SSH. */
   requestPairingCode?(): Promise<string>;
-  /** A clearer reason for the last failure to reach the server, when the transport knows one. */
-  explainFailure?(): TransportError | undefined;
+  /**
+   * A clearer reason for the last failure to reach the server, when the
+   * transport knows one. A `ServerMovedError` reopens the transport right away.
+   */
+  explainFailure?(error: unknown): TransportError | undefined | Promise<TransportError | undefined>;
 }
 
 /**
@@ -51,6 +54,22 @@ export class TransportError extends Error {
 /** A transport failure that retrying cannot fix, such as an untrusted host key. */
 export class FatalTransportError extends TransportError {
   override name = "FatalTransportError";
+}
+
+/**
+ * The transport reached the host, but the server listens somewhere else, such
+ * as another port. The session reopens the transport at once, and keeps a
+ * pairing code the transport already got.
+ */
+export class ServerMovedError extends TransportError {
+  override name = "ServerMovedError";
+
+  constructor(
+    message: string,
+    readonly pairingCode?: string,
+  ) {
+    super(message);
+  }
 }
 
 export type RemoteSessionPhase = "connecting" | "pairing_required" | "connected" | "reconnecting" | "error";
@@ -104,6 +123,8 @@ export class RemoteSession {
   private connected = false;
   private everConnected = false;
   private pairingCode: string | undefined;
+  // Reopened once after the server moved, until connected: a server that keeps moving waits like any failure.
+  private moved = false;
   private deviceName: string | undefined;
   // Pairing over SSH happens only on a user's request: never silently after this device was revoked.
   private autoPair = false;
@@ -314,6 +335,7 @@ export class RemoteSession {
             {
               onOpen: () => {
                 attempt = 0;
+                this.moved = false;
                 this.connected = true;
                 this.options.onStatus("connected");
                 if (!this.everConnected || this.cursor === undefined) {
@@ -347,11 +369,24 @@ export class RemoteSession {
           );
           waitForUser = true;
         } else {
-          const explained = this.transport?.explainFailure?.() ?? error;
-          this.disconnected(
-            explained instanceof Error ? explained.message : "The server cannot be reached.",
-            failureOf(explained),
-          );
+          const explained = (await this.transport?.explainFailure?.(error)) ?? error;
+          if (signal.aborted) break;
+          if (explained instanceof ServerMovedError && !this.moved) {
+            this.moved = true;
+            if (explained.pairingCode) this.pairingCode = explained.pairingCode;
+            this.transport?.close();
+            this.transport = undefined;
+            continue;
+          }
+          if (explained instanceof FatalTransportError) {
+            this.options.onStatus("error", explained.message, failureOf(explained));
+            waitForUser = true;
+          } else {
+            this.disconnected(
+              explained instanceof Error ? explained.message : "The server cannot be reached.",
+              failureOf(explained),
+            );
+          }
         }
       }
       if (signal.aborted) break;

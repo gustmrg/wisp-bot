@@ -6,6 +6,7 @@ import { writeFileAtomically } from "../../backend/atomic-file.js";
 import { WispBackendError } from "../../backend/backend-error.js";
 import type { EncryptionService } from "../../backend/encrypted-credential-store.js";
 import {
+  DEFAULT_SERVER_PORT,
   LOCAL_CONNECTION_ID,
   type ConnectionProfile,
   type LocalConnectionProfile,
@@ -71,7 +72,9 @@ export function parseRemoteProfile(value: unknown, id: string): RemoteConnection
       host,
       ...(user ? { user } : {}),
       ...(input.sshPort === undefined || input.sshPort === null ? {} : { sshPort: port(input.sshPort) }),
-      serverPort: port(input.serverPort),
+      // Without one, the default; connecting finds the server's own port over SSH.
+      serverPort:
+        input.serverPort === undefined || input.serverPort === null ? DEFAULT_SERVER_PORT : port(input.serverPort),
     };
   }
   if (input.kind === "url") {
@@ -181,6 +184,18 @@ export class ConnectionStore {
     }
     await this.persistProfiles();
     return profile;
+  }
+
+  /**
+   * Records the port `wispctl status` reported for an SSH profile. The server
+   * is the same one, reached over the same SSH login, so its pairing stays.
+   */
+  async setServerPort(id: string, serverPort: number): Promise<void> {
+    const existing = this.profiles.find((profile) => profile.id === id);
+    if (existing?.kind !== "ssh" || existing.serverPort === serverPort) return;
+    const profile = { ...existing, serverPort: port(serverPort) };
+    this.profiles = this.profiles.map((candidate) => (candidate.id === id ? profile : candidate));
+    await this.persistProfiles();
   }
 
   async remove(id: string): Promise<void> {

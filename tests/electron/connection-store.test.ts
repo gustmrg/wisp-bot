@@ -54,6 +54,12 @@ describe("parseRemoteProfile", () => {
     });
   });
 
+  it("gives an SSH profile without a server port the default one", () => {
+    expect(parseRemoteProfile({ kind: "ssh", name: "Home", host: "raspberrypi" }, "a")).toMatchObject({
+      serverPort: 8787,
+    });
+  });
+
   it("rejects values that would become SSH options or leave the private network", () => {
     const ssh = { kind: "ssh", name: "x", host: "pi", serverPort: 8787 };
     for (const bad of [
@@ -99,6 +105,19 @@ describe("ConnectionStore", () => {
     await instance.remove(profile.id);
     expect(instance.active.id).toBe("local");
     await expect(instance.save({ ...profile })).rejects.toThrow(/no longer exists/);
+  });
+
+  it("records the port the server reported, keeping the pairing", async () => {
+    const { root, instance } = await store();
+    const profile = await instance.save({ kind: "ssh", name: "Home", host: "pi" });
+    await instance.saveCredentials(profile.id, credentials);
+    await instance.setServerPort(profile.id, 8788);
+    await instance.flush();
+    expect(instance.get(profile.id)).toMatchObject({ serverPort: 8788 });
+    expect(instance.loadCredentials(profile.id)).toEqual(credentials);
+    const { instance: reloaded } = await store(true, root);
+    expect(reloaded.get(profile.id)).toMatchObject({ serverPort: 8788 });
+    await expect(instance.setServerPort(profile.id, 0)).rejects.toThrow(/between 1 and 65535/);
   });
 
   it("keeps credentials only in memory without secure storage", async () => {

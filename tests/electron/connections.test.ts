@@ -1,7 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { EventEmitter } from "node:events";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
-import { get as httpGet } from "node:http";
+import { createServer as createHttpServer, get as httpGet } from "node:http";
 import { createServer as createNetServer, type AddressInfo } from "node:net";
 import os from "node:os";
 import path from "node:path";
@@ -83,6 +83,20 @@ async function startServer(): Promise<{ server: WispServer; directory: string }>
   return { server, directory };
 }
 
+/** Another HTTP service on the loopback, as on a server where Wisp's port is taken, counting what it was asked. */
+async function anotherService(port = 0): Promise<{ port: number; requests: number }> {
+  const service = { port: 0, requests: 0 };
+  const http = createHttpServer((_request, response) => {
+    service.requests++;
+    response.writeHead(404, { "Content-Type": "text/html" });
+    response.end("<h1>Not found</h1>");
+  });
+  await new Promise<void>((resolve) => http.listen(port, "127.0.0.1", resolve));
+  cleanups.push(() => new Promise<void>((resolve) => http.close(() => resolve())));
+  service.port = (http.address() as AddressInfo).port;
+  return service;
+}
+
 /** Each step of the connection's progress, with its state. */
 const stepsOf = (view: ConnectionsView) => view.status.progress?.steps.map(({ id, state }) => [id, state]);
 
@@ -136,10 +150,11 @@ async function desktop(
     tailscale: new Tailscale({ locate: tailscale.locate, run: tailscale.run }),
     testSshConnection: (profile, options) => testSshConnection(profile, { ...options, sshPath: fakeSsh }),
     ...(askpass ? { startSshAskpass: () => SshAskpass.start() } : {}),
-    openSshTunnel: (profile, signal, interaction) =>
+    openSshTunnel: (profile, signal, interaction, onServerPort) =>
       openSshTunnel(profile, {
         sshPath: fakeSsh,
         signal,
+        onServerPort,
         ...(interaction ? { interaction: { ...interaction, publicKeys: async () => [TEST_KEY] } } : {}),
       }),
     installServer: (profile, onProgress, signal, interaction) =>
@@ -535,6 +550,81 @@ describe("desktop connections", () => {
     const { retry } = (await app.view()).status;
     expect(retry?.failures.length).toBe(retry?.attempt);
     expect(retry?.failures[0]?.message).toMatch(/nothing answers on its port/);
+  });
+
+  it("finds the server's port over SSH when another service answers on the one given", async () => {
+    const { server, directory: serverDirectory } = await startServer();
+    process.env.FAKE_WISP_DATA_DIR = serverDirectory;
+    const log = path.join(serverDirectory, "ssh.log");
+    process.env.FAKE_SSH_LOG = log;
+    const other = await anotherService();
+    const app = await desktop();
+    const { profiles } = await app.invoke<ConnectionsView>(WISP_IPC_CHANNELS.saveConnection, {
+      kind: "ssh",
+      name: "Pi",
+      host: "raspberrypi",
+      serverPort: other.port,
+    });
+    const ssh = profiles.find((profile) => profile.kind === "ssh")!;
+    await app.invoke(WISP_IPC_CHANNELS.activateConnection, { id: ssh.id });
+    await app.waitForPhase("connected");
+    // Corrected without a failed attempt, and paired once, with the code got on the wrong port.
+    const view = await app.view();
+    expect(view.profiles.find((profile) => profile.id === ssh.id)).toMatchObject({ serverPort: server.port });
+    expect(view.status.retry).toBeUndefined();
+    expect(server.auth.devices()).toEqual([expect.objectContaining({ name: "Test computer" })]);
+    expect(other.requests).toBe(0);
+    const forwards = (await readFile(log, "utf8"))
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line) as string[])
+      .flatMap((args) => (args.includes("-L") ? [args[args.indexOf("-L") + 1]?.split(":").at(-1)] : []));
+    expect(forwards).toEqual([String(other.port), String(server.port)]);
+  });
+
+  it("follows a paired server to its new port and keeps the pairing", async () => {
+    const key = randomBytes(32);
+    const directory = await temporaryDirectory("wisp-remote-");
+    const start = (port = 0) =>
+      createWispServer({
+        dataDirectory: directory,
+        host: "127.0.0.1",
+        port,
+        encryption: new MasterKeyEncryption(key),
+        logger: silent,
+        agentMode: "fake",
+        appVersion: "1.0.0",
+        allowModelNetwork: false,
+      });
+    const first = await start();
+    const oldPort = first.port;
+    process.env.FAKE_WISP_DATA_DIR = directory;
+    const app = await desktop();
+    const { profiles } = await app.invoke<ConnectionsView>(WISP_IPC_CHANNELS.saveConnection, {
+      kind: "ssh",
+      name: "Pi",
+      host: "raspberrypi",
+      serverPort: oldPort,
+    });
+    const ssh = profiles.find((profile) => profile.kind === "ssh")!;
+    await app.invoke(WISP_IPC_CHANNELS.activateConnection, { id: ssh.id });
+    await app.waitForPhase("connected");
+
+    // The server moves to another port, and another service takes its old one.
+    await first.close();
+    const other = await anotherService(oldPort);
+    const moved = await start();
+    cleanups.push(() => moved.close());
+    await vi.waitFor(
+      async () => {
+        const view = await app.view();
+        expect(view.profiles.find((profile) => profile.id === ssh.id)).toMatchObject({ serverPort: moved.port });
+        expect(view.status.phase).toBe("connected");
+      },
+      { timeout: 15_000, interval: 50 },
+    );
+    expect(other.requests).toBeGreaterThan(0);
+    expect(moved.auth.devices()).toEqual([expect.objectContaining({ name: "Test computer" })]);
   });
 
   it("explains an SSH failure and goes back to this computer when the connection is removed", async () => {

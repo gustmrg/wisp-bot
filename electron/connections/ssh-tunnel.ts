@@ -1,7 +1,13 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import { createConnection, createServer } from "node:net";
 
-import { FatalTransportError, TransportError, type RemoteTransport } from "../../client/remote-session.js";
+import { RemoteError } from "../../client/remote-client.js";
+import {
+  FatalTransportError,
+  ServerMovedError,
+  TransportError,
+  type RemoteTransport,
+} from "../../client/remote-session.js";
 import type { SshConnectionProfile } from "../../shared/connections.js";
 import { SshQuestions, type SshInteraction } from "./ssh-auth.js";
 
@@ -11,10 +17,13 @@ const AUTHORIZE_TIMEOUT_MS = 30_000;
 const MAX_STDERR = 8 * 1024;
 // What the app shows of OpenSSH's own output, under "Technical details".
 const MAX_DETAILS = 2 * 1024;
-// A fixed command: the remote shell sees no user input. ~/.local/bin is where
+// Fixed commands: the remote shell sees no user input. ~/.local/bin is where
 // the server docs install wispctl, and it is often missing from the PATH of
-// non-interactive SSH sessions.
-const PAIR_COMMAND = 'PATH="$HOME/.local/bin:$PATH" wispctl pair --json';
+// non-interactive SSH sessions. Pairing reads the server's status first, which
+// says the port it listens on.
+const WISPCTL = 'PATH="$HOME/.local/bin:$PATH" wispctl';
+const STATUS_COMMAND = `${WISPCTL} status --json`;
+const PAIR_COMMAND = `${STATUS_COMMAND} && ${WISPCTL} pair --json`;
 // Adds the public keys read from stdin to authorized_keys, once each, like
 // ssh-copy-id. A fixed command run by sh, whatever the login shell: the keys
 // arrive on stdin, already checked to be plain key lines.
@@ -29,6 +38,11 @@ export interface SshTunnelOptions {
   signal?: AbortSignal;
   /** Lets OpenSSH ask the person questions; without it, SSH runs in BatchMode and fails instead. */
   interaction?: SshInteraction;
+  /**
+   * Called when `wispctl status` says the server listens on another port than
+   * the profile's, before the tunnel asks to be reopened on it.
+   */
+  onServerPort?: (port: number) => Promise<void>;
 }
 
 /**
@@ -143,30 +157,89 @@ export async function openSshTunnel(
     baseUrl: `http://127.0.0.1:${localPort}`,
     closed: exited,
     close: stop,
-    requestPairingCode: () => requestPairingCode(ssh, profile, options.interaction),
-    explainFailure: () => {
+    requestPairingCode: async () => {
+      const { code, port } = await requestPairingCode(ssh, profile, options.interaction);
+      if (port === undefined || port === profile.serverPort) return code;
+      throw await moved(port, code);
+    },
+    explainFailure: async (error) => {
       // Only what OpenSSH reported since the last failure explains this one.
       const recent = stderr().slice(explained);
       explained = stderr().length;
-      return /open failed: connect failed/i.test(recent)
-        ? new TransportError(
-            `SSH to ${profile.host} works, but nothing answers on its port ${profile.serverPort}. Start the Wisp server there (for example \`systemctl --user start wisp\`) or check the server port of this connection.`,
-            "not_running",
-            detailsOf(recent),
-          )
-        : undefined;
+      if (/open failed: connect failed/i.test(recent)) {
+        return new TransportError(
+          `SSH to ${profile.host} works, but nothing answers on its port ${profile.serverPort}. Start the Wisp server there (for example \`systemctl --user start wisp\`) or check the server port of this connection.`,
+          "not_running",
+          detailsOf(recent),
+        );
+      }
+      // Something answers on the port, but not the Wisp server: ask the server where it listens.
+      if (!(error instanceof RemoteError && error.code === "not_wisp")) return undefined;
+      const port = await serverPort(ssh, profile, options.interaction).catch(() => undefined);
+      if (port !== undefined && port !== profile.serverPort) return moved(port);
+      return new FatalTransportError(
+        `No Wisp server answers on port ${profile.serverPort} of ${profile.host}; another service does.${port === undefined ? " Check that the Wisp server runs there with `wispctl status`." : ""} Then check the server port of this connection.`,
+        "wrong_port",
+      );
     },
   };
+
+  /** The server listens on `port`: the profile takes it, and the session reopens the tunnel there. */
+  async function moved(port: number, pairingCode?: string): Promise<ServerMovedError> {
+    await options.onServerPort?.(port);
+    return new ServerMovedError(
+      `The Wisp server on ${profile.host} listens on port ${port}, not ${profile.serverPort}.`,
+      pairingCode,
+    );
+  }
 }
 
-/** Runs `wispctl pair` on the server over SSH, so pairing needs no code typed by hand. */
+/** Runs `wispctl pair` on the server over SSH, so pairing needs no code typed by hand, and reads its port. */
 async function requestPairingCode(
   ssh: string,
   profile: SshConnectionProfile,
   interaction: SshInteraction | undefined,
-): Promise<string> {
+): Promise<{ code: string; port?: number }> {
+  const run = await runWispctl(ssh, profile, interaction, PAIR_COMMAND);
+  if (run.exitCode === 0) {
+    const lines = parseLines(run.stdout);
+    const code = lines.map((line) => line.code).find((value) => typeof value === "string" && value);
+    if (typeof code === "string") {
+      const port = portOf(lines);
+      return { code, ...(port === undefined ? {} : { port }) };
+    }
+  }
+  throw explainPairingFailure(profile, run.exitCode, run.stderr, run.timedOut, run.spawnError, run.questions);
+}
+
+/** The port the Wisp server listens on, from `wispctl status` over SSH; undefined when it does not say. */
+async function serverPort(
+  ssh: string,
+  profile: SshConnectionProfile,
+  interaction: SshInteraction | undefined,
+): Promise<number | undefined> {
+  const run = await runWispctl(ssh, profile, interaction, STATUS_COMMAND);
+  return run.exitCode === 0 ? portOf(parseLines(run.stdout)) : undefined;
+}
+
+interface WispctlRun {
+  exitCode: number | null;
+  stdout: string;
+  stderr: string;
+  timedOut: boolean;
+  spawnError: Error | undefined;
+  questions: SshQuestions;
+}
+
+/** Runs a fixed `wispctl` command on the server over SSH. */
+async function runWispctl(
+  ssh: string,
+  profile: SshConnectionProfile,
+  interaction: SshInteraction | undefined,
+  command: string,
+): Promise<WispctlRun> {
   const questions = new SshQuestions(interaction, ssh, profile);
-  const child = spawn(ssh, ["-T", ...sshArguments(profile, questions.interactive), "--", profile.host, PAIR_COMMAND], {
+  const child = spawn(ssh, ["-T", ...sshArguments(profile, questions.interactive), "--", profile.host, command], {
     stdio: ["ignore", "pipe", "pipe"],
     windowsHide: true,
     ...(questions.env ? { env: questions.env } : {}),
@@ -188,7 +261,7 @@ async function requestPairingCode(
   };
   let timer = setTimeout(expire, PAIR_TIMEOUT_MS);
   let spawnError: Error | undefined;
-  const code = await new Promise<number | null>((resolve) => {
+  const exitCode = await new Promise<number | null>((resolve) => {
     child.once("exit", resolve);
     child.once("error", (error) => {
       spawnError = error;
@@ -197,15 +270,25 @@ async function requestPairingCode(
   });
   clearTimeout(timer);
   questions.close();
-  if (code === 0) {
+  return { exitCode, stdout, stderr: stderr(), timedOut, spawnError, questions };
+}
+
+/** Each line of `wispctl --json` output that is a JSON object. */
+function parseLines(stdout: string): Record<string, unknown>[] {
+  return stdout.split("\n").flatMap((line) => {
     try {
-      const value = (JSON.parse(stdout) as { code?: unknown }).code;
-      if (typeof value === "string" && value) return value;
+      const value = JSON.parse(line) as unknown;
+      return value && typeof value === "object" && !Array.isArray(value) ? [value as Record<string, unknown>] : [];
     } catch {
-      // Reported below.
+      return [];
     }
-  }
-  throw explainPairingFailure(profile, code, stderr(), timedOut, spawnError, questions);
+  });
+}
+
+/** The port `wispctl status` reported, when it is a valid one. */
+function portOf(lines: Record<string, unknown>[]): number | undefined {
+  const port = lines.map((line) => line.port).find((value) => typeof value === "number");
+  return Number.isInteger(port) && (port as number) >= 1 && (port as number) <= 65_535 ? (port as number) : undefined;
 }
 
 /**

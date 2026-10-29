@@ -304,9 +304,14 @@ server:
 
 - **SSH** uses this computer's OpenSSH client with your agent, keys,
   `~/.ssh/config`, and known hosts. Enter a host name, IP address, or alias,
-  an optional user and SSH port, and the server's port (8787 by default). Wisp
-  forwards a free local port to the server's loopback port; it never stores SSH
-  keys or passwords. The first time, the app shows the server's host key
+  and an optional user, SSH port, and server port. Wisp forwards a free local
+  port to the server's loopback port; it never stores SSH keys or passwords.
+  The server port starts at 8787; when you pair, Wisp asks the server for its
+  port with `wispctl status` and corrects the connection, so a server set up
+  with `--port` connects without typing it. A paired connection follows the
+  server to a new port the same way, and keeps its pairing. If another service
+  answers on the port and `wispctl status` cannot say where Wisp is, the app
+  says so ([ADR 035](decisions/035-discover-server-port.md)). The first time, the app shows the server's host key
   fingerprint and asks whether to trust it; a host key that changed is refused.
   Wisp signs in with SSH keys. If the server asks for a password, Wisp uses it
   once to add this computer's public key to `~/.ssh/authorized_keys` there,

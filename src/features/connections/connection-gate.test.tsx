@@ -612,7 +612,6 @@ describe("ConnectionGate", () => {
         name: "Office",
         host: "office-box",
         user: "wisp",
-        serverPort: 8787,
       }),
     );
     expect(await screen.findByRole("button", { name: /Add a server/ })).toBeVisible();
