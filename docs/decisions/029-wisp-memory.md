@@ -8,7 +8,7 @@
 - Related: [ADR 008](008-wisp-skills.md), [ADR 010](010-wisp-entity.md),
   [ADR 027](027-runtime-neutral-storage-folders.md),
   [context and memory](../context-and-memory.md); Linear SWE-162, SWE-153,
-  SWE-154, SWE-188, SWE-219
+  SWE-154, SWE-188, SWE-219, SWE-228
 
 ## Context
 
@@ -140,7 +140,8 @@ of task → skill) applies only to what a Wisp proposes on its own (SWE-154).
 ### In the prompt
 
 - The `## Memory` section is **always** present, empty or not, and says what
-  memory is for and how to save to it.
+  memory is for and how to save to it, unless the Wisp's memory is off (see
+  [Settings](#settings)).
 - It renders every active, unexpired entry of both scopes in Markdown, `USER.md`
   first, then `MEMORY.md`, oldest first, each line as `- [m12] text`. Each
   title carries the scope's use (`USER.md · 42% of 1,500 characters`).
@@ -184,6 +185,14 @@ read back, which is the two sources of truth the table exists to avoid.
   the old entry and adds a new one with `source = owner` and today's date; a
   missing line is removed. A summary ("2 added, 1 removed") is shown before
   confirming, and everything applies in one transaction.
+- **Use memory** turns a Wisp's memory off (SWE-228). The Wisp's `memoryOff`
+  flag is stored on the Wisp, not on the entries, so nothing is deleted. While
+  it is set, the agent context has no memory access, the prompt has no
+  `## Memory` section (a short `## Memory off` note says why instead, so the
+  Wisp does not promise to remember or save a fact as a skill), and
+  `save_memory` is not among the allowed tools. Both are read on every run and
+  refresh, so the change applies from the next message. One switch covers both
+  scopes; switching off only `MEMORY.md` is left for later.
 
 ### Migration
 

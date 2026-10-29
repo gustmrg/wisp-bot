@@ -25,6 +25,11 @@ export interface Wisp {
   appearance: WispAppearance;
   /** One of `WISP_COLORS`; without one, the color is derived from the name. */
   color?: string;
+  /**
+   * Set when the Wisp runs without memory: it neither reads nor saves any, and
+   * its saved entries are kept for when memory is turned back on.
+   */
+  memoryOff?: boolean;
 }
 
 export type WispCollection = Record<WispId, Wisp>;

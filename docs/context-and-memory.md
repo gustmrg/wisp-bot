@@ -53,6 +53,20 @@ in the archive. The saved memory and the profile's "About you" and "Response
 preferences" from earlier versions became entries on the first start. See
 [ADR 029](decisions/029-wisp-memory.md).
 
+### Turn memory off
+
+Turn off **Use memory** at the top of **Wisp settings → General → Memory** to
+run a Wisp without memory: for a throwaway conversation, a work Wisp that
+should not pick up personal context, or to try the model without any. From the
+next message, the Wisp reads neither group, has no `save_memory`, and says that
+memory is off when you ask it to remember something. Its jobs run without
+memory too. The conversation header shows **Memory off**, which opens the
+Wisp's settings.
+
+Nothing is deleted. Both groups stay in settings, where you can still edit
+them, and turning memory back on gives the Wisp the same entries in the same
+order. `USER.md` is shared, so your other Wisps keep using it.
+
 ## Skills
 
 Ask a Wisp to save a workflow as a skill and it drafts reusable instructions

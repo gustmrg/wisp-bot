@@ -354,12 +354,13 @@ export function normalizeWisp(value: unknown): Wisp {
     soul: string(raw.soul, MAX_WISP_SOUL_LENGTH),
     appearance: storedAppearance(raw),
     ...(color === undefined ? {} : { color }),
+    ...(raw.memoryOff === true ? { memoryOff: true } : {}),
   };
 }
 
 export function normalizeWispChanges(value: unknown): WispChanges {
   const raw = asRecord(value);
-  const allowed = new Set(["name", "role", "soul", "appearance", "color"]);
+  const allowed = new Set(["name", "role", "soul", "appearance", "color", "memoryOff"]);
   if (Object.keys(raw).some((key) => !allowed.has(key))) throw invalidRequest();
   const result: WispChanges = {};
   if (raw.name !== undefined) result.name = string(raw.name, MAX_WISP_NAME_LENGTH, false);
@@ -368,6 +369,10 @@ export function normalizeWispChanges(value: unknown): WispChanges {
   if (raw.appearance !== undefined) result.appearance = appearanceChange(raw.appearance);
   // Present but undefined clears the color.
   if (Object.hasOwn(raw, "color")) result.color = raw.color === undefined ? undefined : colorChange(raw.color);
+  if (raw.memoryOff !== undefined) {
+    if (typeof raw.memoryOff !== "boolean") throw invalidRequest();
+    result.memoryOff = raw.memoryOff;
+  }
   return result;
 }
 
@@ -375,6 +380,7 @@ export function normalizeWispChanges(value: unknown): WispChanges {
 export function applyWispChanges(wisp: Wisp, changes: WispChanges): Wisp {
   const next: Wisp = { ...wisp, ...changes };
   if (next.color === undefined) delete next.color;
+  if (!next.memoryOff) delete next.memoryOff;
   return next;
 }
 

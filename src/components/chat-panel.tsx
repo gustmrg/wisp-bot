@@ -422,6 +422,17 @@ function ChatPanel({
           </div>
         </div>
         <div className="flex flex-none items-center gap-2">
+          {chat.kind === "wisp" && chat.wisp.memoryOff ? (
+            // Says why the Wisp remembers nothing, so it does not look like it forgot.
+            <button
+              type="button"
+              className="rounded-full bg-foreground/[0.06] px-2.5 py-1 text-xs text-muted-foreground hover:bg-foreground/[0.1]"
+              title="This Wisp doesn't read or save memory. Turn it on in its Memory settings."
+              onClick={onOpenDetails}
+            >
+              Memory off
+            </button>
+          ) : null}
           <Button
             className="size-9 rounded-full border-0 bg-foreground/[0.06] hover:bg-foreground/[0.1] dark:hover:bg-foreground/[0.1]"
             variant="ghost"
