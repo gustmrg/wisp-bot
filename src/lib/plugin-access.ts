@@ -33,7 +33,8 @@ export type IntegrationSettingsTarget =
   | { section: "mcp" }
   | { section: "storage"; conversationId: string }
   | { section: "jobs" }
-  | { section: "usage" };
+  | { section: "usage" }
+  | { section: "general" };
 
 export function isPluginAvailable(plugin: PluginSummary | undefined): boolean {
   // A sign-in plugin whose access expired cannot be granted until it signs in again.

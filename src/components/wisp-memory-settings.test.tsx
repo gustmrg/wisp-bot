@@ -4,7 +4,7 @@ import { afterEach, expect, it, vi } from "vitest";
 
 import type { SequencedConversationAgentEvent } from "../../shared/contracts";
 import type { MemoryEntryView, MemoryView } from "../../shared/memory";
-import { WispMemorySettings } from "./wisp-memory-settings";
+import { UserMemorySettings, WispMemorySettings } from "./wisp-memory-settings";
 
 function entry(
   id: string,
@@ -63,19 +63,41 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-it("lists both scopes with their use, origin and history", async () => {
+it("lists the Wisp's own memory with its use, origin and history, and points to About you", async () => {
+  const user = userEvent.setup();
   mockWisp();
-  render(<WispMemorySettings conversationId="one" memoryOff={false} onChangeMemoryOff={vi.fn()} />);
+  const onOpenAboutYou = vi.fn();
+  render(
+    <WispMemorySettings
+      conversationId="one"
+      memoryOff={false}
+      onChangeMemoryOff={vi.fn()}
+      onOpenAboutYou={onOpenAboutYou}
+    />,
+  );
 
-  const about = await screen.findByRole("region", { name: "About you · every Wisp" });
+  const wisp = await screen.findByRole("region", { name: "This Wisp" });
+  expect(within(wisp).getByText("Works on Wisp Bot.")).toBeInTheDocument();
+  expect(within(wisp).getByText("18 / 4,000 characters")).toBeInTheDocument();
+  expect(within(wisp).getByText(/^Wisp · /)).toBeInTheDocument();
+  expect(within(wisp).getByText("Removed and replaced (1)")).toBeInTheDocument();
+  // What every Wisp knows about the person is kept in Settings → General.
+  expect(screen.queryByRole("region", { name: "About you" })).not.toBeInTheDocument();
+  expect(screen.queryByText("Prefers short answers.")).not.toBeInTheDocument();
+  await user.click(screen.getByRole("button", { name: "Open About you" }));
+  expect(onOpenAboutYou).toHaveBeenCalled();
+});
+
+it("lists what every Wisp knows about the person without a Wisp", async () => {
+  const { api } = mockWisp();
+  render(<UserMemorySettings />);
+
+  const about = await screen.findByRole("region", { name: "About you" });
+  expect(api.getMemory).toHaveBeenCalledWith({});
   expect(within(about).getByText("Prefers short answers.")).toBeInTheDocument();
   expect(within(about).getByText("22 / 1,500 characters")).toBeInTheDocument();
   expect(within(about).getByText(/^You · /)).toBeInTheDocument();
-
-  const wisp = screen.getByRole("region", { name: "This Wisp" });
-  expect(within(wisp).getByText("Works on Wisp Bot.")).toBeInTheDocument();
-  expect(within(wisp).getByText(/^Wisp · /)).toBeInTheDocument();
-  expect(within(wisp).getByText("Removed and replaced (1)")).toBeInTheDocument();
+  expect(screen.queryByRole("region", { name: "This Wisp" })).not.toBeInTheDocument();
 });
 
 it("turns the Wisp's memory off and on, keeping its entries, and says when it could not (SWE-228)", async () => {
@@ -142,11 +164,11 @@ it("adds, edits, removes and restores entries", async () => {
 it("edits a scope as text after showing what changes", async () => {
   const user = userEvent.setup();
   const { api } = mockWisp();
-  render(<WispMemorySettings conversationId="one" memoryOff={false} onChangeMemoryOff={vi.fn()} />);
-  const about = await screen.findByRole("region", { name: "About you · every Wisp" });
+  render(<UserMemorySettings />);
+  const about = await screen.findByRole("region", { name: "About you" });
 
   await user.click(within(about).getByRole("button", { name: "Edit as text" }));
-  const text = within(about).getByRole("textbox", { name: "About you · every Wisp as text" });
+  const text = within(about).getByRole("textbox", { name: "About you as text" });
   expect(text).toHaveValue("Prefers short answers.");
   await user.type(text, "{Enter}Lives in Recife.");
   await user.click(within(about).getByRole("button", { name: "Review changes" }));
@@ -155,10 +177,9 @@ it("edits a scope as text after showing what changes", async () => {
 
   await user.click(within(about).getByRole("button", { name: "Save changes" }));
   expect(api.applyMemory).toHaveBeenCalledWith({
-    conversationId: "one",
     operations: [{ op: "add", scope: "user", text: "Lives in Recife." }],
   });
-  expect(within(about).queryByRole("textbox", { name: "About you · every Wisp as text" })).not.toBeInTheDocument();
+  expect(within(about).queryByRole("textbox", { name: "About you as text" })).not.toBeInTheDocument();
 });
 
 it("shows why a change was refused", async () => {
@@ -170,11 +191,11 @@ it("shows why a change was refused", async () => {
     })),
   });
   render(<WispMemorySettings conversationId="one" memoryOff={false} onChangeMemoryOff={vi.fn()} />);
-  const about = await screen.findByRole("region", { name: "About you · every Wisp" });
-  await user.type(within(about).getByRole("textbox", { name: "New entry for About you · every Wisp" }), "x");
-  await user.click(within(about).getByRole("button", { name: "Add" }));
+  const wisp = await screen.findByRole("region", { name: "This Wisp" });
+  await user.type(within(wisp).getByRole("textbox", { name: "New entry for This Wisp" }), "x");
+  await user.click(within(wisp).getByRole("button", { name: "Add" }));
   expect(await screen.findByRole("alert")).toHaveTextContent("Memory already has this as m1.");
-  expect(within(about).getByRole("textbox", { name: "New entry for About you · every Wisp" })).toHaveValue("x");
+  expect(within(wisp).getByRole("textbox", { name: "New entry for This Wisp" })).toHaveValue("x");
 });
 
 it("exports a scope as a Markdown file", async () => {
@@ -201,6 +222,30 @@ it("reloads when the Wisp saves a memory", async () => {
     emit({
       type: "turn_item",
       conversationId: "one",
+      requestId: "request",
+      groupId: "request:work",
+      item: {
+        id: "tool",
+        toolName: "save_memory",
+        status: "completed",
+        startedAt: "2026-10-22T10:00:00.000Z",
+        type: "tool",
+      },
+      sequence: 1,
+    });
+  });
+  expect(api.getMemory).toHaveBeenCalledTimes(2);
+});
+
+it("reloads About you when any Wisp saves a memory", async () => {
+  const { api, emit } = mockWisp();
+  render(<UserMemorySettings />);
+  await screen.findByRole("region", { name: "About you" });
+  expect(api.getMemory).toHaveBeenCalledTimes(1);
+  await act(async () => {
+    emit({
+      type: "turn_item",
+      conversationId: "circle:team",
       requestId: "request",
       groupId: "request:work",
       item: {

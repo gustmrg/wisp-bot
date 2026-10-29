@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { PROFILE_LIMITS } from "../../shared/user-profile";
 import type { UserProfileController } from "@/hooks/use-user-profile";
 import {
@@ -12,8 +12,17 @@ import {
 import { FormStatus } from "@/components/ui/form-status";
 import { Input } from "@/components/ui/input";
 
-/** The person's name, saved when the field loses focus like the other settings on the page. */
-export function UserProfileSettings({ controller }: { controller: UserProfileController }) {
+/**
+ * The person's name, saved when the field loses focus like the other settings on the page,
+ * and below it, in `children`, what every Wisp knows about them.
+ */
+export function UserProfileSettings({
+  controller,
+  children,
+}: {
+  controller: UserProfileController;
+  children?: ReactNode;
+}) {
   const saved = controller.profile.preferredName;
   const [name, setName] = useState(saved);
   const [saving, setSaving] = useState(false);
@@ -58,6 +67,7 @@ export function UserProfileSettings({ controller }: { controller: UserProfileCon
         error={nameMissing ? "Your name is required." : (controller.error ?? undefined)}
         pending={saving ? "Saving…" : undefined}
       />
+      {children ? <SettingsCard className="mt-2 px-3.5 py-3.5">{children}</SettingsCard> : null}
     </SettingsGroup>
   );
 }

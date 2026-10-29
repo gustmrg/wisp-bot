@@ -168,6 +168,7 @@ export function WispDetails({
                 conversationId={chat.id}
                 memoryOff={chat.wisp.memoryOff === true}
                 onChangeMemoryOff={(memoryOff) => onChangeWisp({ memoryOff })}
+                onOpenAboutYou={onOpenSettings ? () => onOpenSettings({ section: "general" }) : undefined}
               />
             </SettingsAccordionSection>
             <SettingsAccordionSection value="context" label="Context">

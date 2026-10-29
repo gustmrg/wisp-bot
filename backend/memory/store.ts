@@ -16,6 +16,7 @@ import type {
 export const MEMORY_LIMITS: Readonly<Record<MemoryScope, number>> = { user: 1500, wisp: 4000 };
 
 const SCOPES: readonly MemoryScope[] = ["user", "wisp"];
+const USER_SCOPE: readonly MemoryScope[] = ["user"];
 
 const SCHEMA_VERSION = 1;
 
@@ -134,13 +135,16 @@ export class MemoryStore {
     return store;
   }
 
-  /** Every entry a Wisp can see, in every status, `user` first, oldest first. */
-  list(wispId: string): MemoryEntry[] {
+  /**
+   * Every entry a Wisp can see, in every status, `user` first, oldest first.
+   * Without a Wisp (`null`), the person's own: the `user` scope alone.
+   */
+  list(wispId: string | null): MemoryEntry[] {
     return this.rows(`SELECT * FROM memory_entries WHERE ${OWNED} ${ORDER}`, wispId);
   }
 
   /** The entries a Wisp's prompt holds: active and unexpired, in the order `list` gives. */
-  active(wispId: string): MemoryEntry[] {
+  active(wispId: string | null): MemoryEntry[] {
     return this.rows(
       `SELECT * FROM memory_entries WHERE ${OWNED} AND status = 'active' AND ${UNEXPIRED} ${ORDER}`,
       wispId,
@@ -148,10 +152,14 @@ export class MemoryStore {
     );
   }
 
-  /** How much of each scope's limit a Wisp's memory uses. */
-  usage(wispId: string): MemoryUsage[] {
+  /** How much of each scope's limit a Wisp's memory uses; without a Wisp, only the `user` scope's. */
+  usage(wispId: string | null): MemoryUsage[] {
     const entries = this.active(wispId);
-    return SCOPES.map((scope) => ({ scope, used: used(entries, scope), limit: MEMORY_LIMITS[scope] }));
+    return (wispId === null ? USER_SCOPE : SCOPES).map((scope) => ({
+      scope,
+      used: used(entries, scope),
+      limit: MEMORY_LIMITS[scope],
+    }));
   }
 
   /**
@@ -264,6 +272,8 @@ export class MemoryStore {
 
     switch (operation.op) {
       case "add": {
+        if (operation.scope === "wisp" && context.wispId === null)
+          fail("invalid_state", "Only a Wisp has memory of its own; add this in the Wisp's settings.");
         const text = lineOf(operation.text);
         unique(operation.scope, text);
         let expiresAt: string | null = null;
@@ -354,11 +364,12 @@ export class MemoryStore {
     this.db.prepare("UPDATE memory_entries SET status = ?, updated_at = ? WHERE id = ?").run(status, now, id);
   }
 
-  private find(id: string, wispId: string): MemoryEntry | undefined {
+  private find(id: string, wispId: string | null): MemoryEntry | undefined {
     return this.rows(`SELECT * FROM memory_entries WHERE id = ? AND ${OWNED}`, id, wispId)[0];
   }
 
-  private rows(sql: string, ...parameters: string[]): MemoryEntry[] {
+  /** A `null` Wisp ID matches no `wisp_id`, so `OWNED` leaves only the `user` scope. */
+  private rows(sql: string, ...parameters: Array<string | null>): MemoryEntry[] {
     return (this.db.prepare(sql).all(...parameters) as unknown as EntryRow[]).map(entryOf);
   }
 

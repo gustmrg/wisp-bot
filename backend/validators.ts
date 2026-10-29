@@ -36,6 +36,7 @@ import {
   MAX_MEMORY_TEXT_LENGTH,
   MEMORY_SCOPES,
   type ApplyMemoryRequest,
+  type MemoryRequest,
   type ExportMemoryRequest,
   type MemoryOperationRequest,
   type MemoryScope,
@@ -489,12 +490,21 @@ export function parseApplyMemoryRequest(value: unknown): ApplyMemoryRequest {
   const request = asRecord(value);
   const { operations } = request;
   if (!Array.isArray(operations) || operations.length > MAX_MEMORY_OPERATIONS) throw invalidRequest();
-  return { conversationId: parseId(request.conversationId), operations: operations.map(parseMemoryOperation) };
+  return { ...parseMemoryOwner(request), operations: operations.map(parseMemoryOperation) };
 }
 
 export function parseExportMemoryRequest(value: unknown): ExportMemoryRequest {
   const request = asRecord(value);
-  return { conversationId: parseId(request.conversationId), scope: parseMemoryScope(request.scope) };
+  return { ...parseMemoryOwner(request), scope: parseMemoryScope(request.scope) };
+}
+
+export function parseMemoryRequest(value: unknown): MemoryRequest {
+  return parseMemoryOwner(asRecord(value));
+}
+
+/** A Wisp's conversation, or none for the person's own memory. */
+function parseMemoryOwner(request: Record<string, unknown>): MemoryRequest {
+  return request.conversationId === undefined ? {} : { conversationId: parseId(request.conversationId) };
 }
 
 export function parseContextRequest(value: unknown): ContextRequest {

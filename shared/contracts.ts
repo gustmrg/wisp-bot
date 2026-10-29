@@ -948,8 +948,11 @@ export interface WispApi {
   deleteSkill(request: SkillRequest): Promise<BackendResult<ReadonlyArray<SkillView>>>;
   /** Saves a SKILL.md the user picked, without going through the Wisp, and returns the updated list. */
   importSkill(request: ImportSkillRequest): Promise<BackendResult<ReadonlyArray<SkillView>>>;
-  /** The memory a Wisp sees: the person's entries and its own, in every status (ADR 029). */
-  getMemory(request: ConversationRequest): Promise<BackendResult<import("./memory.js").MemoryView>>;
+  /**
+   * The memory a Wisp sees: the person's entries and its own, in every status (ADR 029).
+   * Without a conversation, the person's own: the entries every Wisp shares.
+   */
+  getMemory(request: import("./memory.js").MemoryRequest): Promise<BackendResult<import("./memory.js").MemoryView>>;
   /** Applies the person's changes in one transaction and returns the memory as it is after them. */
   applyMemory(
     request: import("./memory.js").ApplyMemoryRequest,

@@ -1,6 +1,7 @@
 import { LaunchAtLoginSetting } from "@/components/launch-at-login-setting";
 import { isBrowserApp } from "@/lib/platform";
 import { UserProfileSettings } from "@/components/user-profile-settings";
+import { UserMemorySettings } from "@/components/wisp-memory-settings";
 import type { UserProfileController } from "@/hooks/use-user-profile";
 import { useEffect, useRef, useState } from "react";
 import {
@@ -95,7 +96,7 @@ const NAV_ITEMS: ReadonlyArray<
     section: "general",
     panelId: "general-settings-panel",
     label: "General",
-    description: "Your name and how Wisp looks",
+    description: "You, what your Wisps know about you, and how Wisp looks",
     icon: SettingsIcon,
   },
   {
@@ -506,7 +507,9 @@ function AppSettingsDialog({
             {userProfile.loading ? (
               <p role="status">Loading profile…</p>
             ) : (
-              <UserProfileSettings controller={userProfile} />
+              <UserProfileSettings controller={userProfile}>
+                <UserMemorySettings />
+              </UserProfileSettings>
             )}
             <SettingsGroup label="Application">
               <SettingsCard variant="stacked">

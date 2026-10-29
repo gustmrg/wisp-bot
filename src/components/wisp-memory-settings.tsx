@@ -3,7 +3,6 @@ import { DownloadIcon, PencilIcon, RefreshCwIcon, Trash2Icon } from "lucide-reac
 
 import {
   MAX_MEMORY_TEXT_LENGTH,
-  MEMORY_SCOPES,
   type MemoryEntryView,
   type MemoryExport,
   type MemoryOperationRequest,
@@ -29,8 +28,9 @@ import { cn } from "@/lib/utils";
 
 const SCOPES: Record<MemoryScope, { title: string; description: string; file: string }> = {
   user: {
-    title: "About you · every Wisp",
-    description: "Facts and preferences about you. All of your Wisps see them.",
+    title: "About you",
+    description:
+      "Facts and preferences every Wisp knows about you. Add them here, or ask any Wisp to remember something.",
     file: "USER.md",
   },
   wisp: { title: "This Wisp", description: "What only this Wisp remembers.", file: "MEMORY.md" },
@@ -38,28 +38,19 @@ const SCOPES: Record<MemoryScope, { title: string; description: string; file: st
 
 type Apply = (operations: MemoryOperationRequest[]) => Promise<boolean>;
 
-interface WispMemorySettingsProps {
-  conversationId: string;
-  /** Whether the Wisp runs without memory (SWE-228). */
-  memoryOff: boolean;
-  /** Saves the switch; false when it could not be saved. */
-  onChangeMemoryOff: (memoryOff: boolean) => Promise<boolean> | void;
-}
-
-/** The memory part of a Wisp's Memory settings (ADR 029). */
-export function WispMemorySettings(props: WispMemorySettingsProps) {
-  return <MemoryPanel key={props.conversationId} {...props} />;
-}
-
-function MemoryPanel({ conversationId, memoryOff, onChangeMemoryOff }: WispMemorySettingsProps) {
+/**
+ * Loads and changes memory: a Wisp's own with its `conversationId`, or without one the
+ * person's, which every Wisp shares (ADR 029).
+ */
+function useMemory(conversationId: string | undefined) {
   const [view, setView] = useState<MemoryView | null>(null);
   const [busy, setBusy] = useState(false);
-  const [switching, setSwitching] = useState(false);
   const [error, setError] = useState("");
+  const owner = conversationId === undefined ? {} : { conversationId };
 
   const load = useCallback(async () => {
     try {
-      const result = await window.wisp.getMemory({ conversationId });
+      const result = await window.wisp.getMemory(conversationId === undefined ? {} : { conversationId });
       if (result.ok) {
         setView(result.value);
         setError("");
@@ -71,10 +62,10 @@ function MemoryPanel({ conversationId, memoryOff, onChangeMemoryOff }: WispMemor
 
   useEffect(() => {
     void load();
-    // A memory the Wisp just saved shows up without reopening settings.
+    // A memory a Wisp just saved shows up without reopening settings. Any Wisp may save about the person.
     return window.wisp.subscribeToAgentEvents((event) => {
       if (
-        event.conversationId === conversationId &&
+        (conversationId === undefined || event.conversationId === conversationId) &&
         event.type === "turn_item" &&
         event.item.toolName === "save_memory" &&
         event.item.status === "completed"
@@ -88,7 +79,7 @@ function MemoryPanel({ conversationId, memoryOff, onChangeMemoryOff }: WispMemor
     setBusy(true);
     setError("");
     try {
-      const result = await window.wisp.applyMemory({ conversationId, operations });
+      const result = await window.wisp.applyMemory({ ...owner, operations });
       if (!result.ok) {
         setError(result.error.message);
         return false;
@@ -103,22 +94,10 @@ function MemoryPanel({ conversationId, memoryOff, onChangeMemoryOff }: WispMemor
     }
   };
 
-  async function toggleMemory() {
-    setSwitching(true);
-    setError("");
-    try {
-      if ((await onChangeMemoryOff(!memoryOff)) === false) setError("Could not change memory. Please try again.");
-    } catch {
-      setError("Could not change memory. Please try again.");
-    } finally {
-      setSwitching(false);
-    }
-  }
-
   async function exportScope(scope: MemoryScope) {
     setError("");
     try {
-      const result = await window.wisp.exportMemory({ conversationId, scope });
+      const result = await window.wisp.exportMemory({ ...owner, scope });
       if (result.ok) download(result.value);
       else setError(result.error.message);
     } catch {
@@ -126,10 +105,79 @@ function MemoryPanel({ conversationId, memoryOff, onChangeMemoryOff }: WispMemor
     }
   }
 
+  return { view, busy, error, setError, load, apply, exportScope };
+}
+
+type MemoryController = ReturnType<typeof useMemory>;
+
+/** One scope's entries, with the load and save outcome below them. */
+function MemoryScopePanel({ scope, memory }: { scope: MemoryScope; memory: MemoryController }) {
+  const { view, busy, error, load, apply, exportScope } = memory;
+  return (
+    <>
+      {view === null && !error ? <FormStatus pending="Loading memory…" /> : null}
+      {view ? (
+        <ScopeSection scope={scope} view={view} busy={busy} apply={apply} onExport={() => void exportScope(scope)} />
+      ) : null}
+      <FormStatus error={error} />
+      {view === null && error ? (
+        <SettingsActions>
+          <Button variant="ghost" onClick={() => void load()}>
+            <RefreshCwIcon data-icon="inline-start" aria-hidden="true" />
+            Retry
+          </Button>
+        </SettingsActions>
+      ) : null}
+    </>
+  );
+}
+
+/** What every Wisp knows about the person, in Settings → General (ADR 029). */
+export function UserMemorySettings() {
+  const memory = useMemory(undefined);
+  return (
+    <FieldGroup className="gap-2">
+      <MemoryScopePanel scope="user" memory={memory} />
+    </FieldGroup>
+  );
+}
+
+interface WispMemorySettingsProps {
+  conversationId: string;
+  /** Whether the Wisp runs without memory (SWE-228). */
+  memoryOff: boolean;
+  /** Saves the switch; false when it could not be saved. */
+  onChangeMemoryOff: (memoryOff: boolean) => Promise<boolean> | void;
+  /** Opens Settings → General, where the person's own memory is kept. */
+  onOpenAboutYou?: () => void;
+}
+
+/** The memory part of a Wisp's Memory settings (ADR 029). */
+export function WispMemorySettings(props: WispMemorySettingsProps) {
+  return <MemoryPanel key={props.conversationId} {...props} />;
+}
+
+function MemoryPanel({ conversationId, memoryOff, onChangeMemoryOff, onOpenAboutYou }: WispMemorySettingsProps) {
+  const memory = useMemory(conversationId);
+  const [switching, setSwitching] = useState(false);
+
+  async function toggleMemory() {
+    setSwitching(true);
+    memory.setError("");
+    try {
+      if ((await onChangeMemoryOff(!memoryOff)) === false)
+        memory.setError("Could not change memory. Please try again.");
+    } catch {
+      memory.setError("Could not change memory. Please try again.");
+    } finally {
+      setSwitching(false);
+    }
+  }
+
   return (
     <FieldGroup className="gap-5">
       <FieldDescription>
-        Facts, preferences, and context your Wisps keep across conversations and new topics. Ask a Wisp to remember
+        Facts, preferences, and context this Wisp keeps across conversations and new topics. Ask it to remember
         something and approve the change, or add it here. Memory is stored on this device and included in model
         requests.
       </FieldDescription>
@@ -140,7 +188,7 @@ function MemoryPanel({ conversationId, memoryOff, onChangeMemoryOff }: WispMemor
             <SettingsRowDescription>
               {memoryOff
                 ? "Off: this Wisp doesn't read or save memory, in conversations or jobs. Every entry is kept for when you turn it back on."
-                : "This Wisp reads both lists below and can save to them when you ask."}
+                : "This Wisp reads its own memory and what every Wisp knows about you, and can save to them when you ask."}
             </SettingsRowDescription>
           </SettingsRowCopy>
           <ToggleSwitch
@@ -151,28 +199,22 @@ function MemoryPanel({ conversationId, memoryOff, onChangeMemoryOff }: WispMemor
           />
         </SettingsRow>
       </SettingsCard>
-      {view === null && !error ? <FormStatus pending="Loading memory…" /> : null}
-      {view
-        ? MEMORY_SCOPES.map((scope) => (
-            <ScopeSection
-              key={scope}
-              scope={scope}
-              view={view}
-              busy={busy}
-              apply={apply}
-              onExport={() => void exportScope(scope)}
-            />
-          ))
-        : null}
-      <FormStatus error={error} />
-      {view === null && error ? (
-        <SettingsActions>
-          <Button variant="ghost" onClick={() => void load()}>
-            <RefreshCwIcon data-icon="inline-start" aria-hidden="true" />
-            Retry
-          </Button>
-        </SettingsActions>
-      ) : null}
+      <MemoryScopePanel scope="wisp" memory={memory} />
+      <SettingsCard>
+        <SettingsRow className="min-h-0 p-[11px]">
+          <SettingsRowCopy>
+            <SettingsRowTitle>About you</SettingsRowTitle>
+            <SettingsRowDescription>
+              What every Wisp knows about you is kept in Settings → General.
+            </SettingsRowDescription>
+          </SettingsRowCopy>
+          {onOpenAboutYou ? (
+            <Button variant="outline" size="sm" aria-label="Open About you" onClick={onOpenAboutYou}>
+              Open
+            </Button>
+          ) : null}
+        </SettingsRow>
+      </SettingsCard>
     </FieldGroup>
   );
 }

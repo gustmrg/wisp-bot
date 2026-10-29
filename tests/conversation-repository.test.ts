@@ -301,6 +301,31 @@ describe("ConversationRepository", () => {
     await expect(repository.getMemory("missing")).rejects.toMatchObject({ code: "not_found" });
   });
 
+  it("lets the person change their own memory without a Wisp, which every Wisp then sees", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "wisp-memory-person-"));
+    const repository = await reload(directory);
+    await repository.initialize({ first: chat("first") });
+    await repository.applyMemory("first", [{ op: "add", scope: "wisp", text: "Works on Wisp Bot." }]);
+
+    const view = await repository.applyMemory(undefined, [
+      { op: "add", scope: "user", text: "Prefers short answers." },
+    ]);
+    expect(view.entries.map(({ id, scope, text }) => [id, scope, text])).toEqual([
+      ["m2", "user", "Prefers short answers."],
+    ]);
+    expect(view.usage).toEqual([{ scope: "user", used: 22, limit: 1500 }]);
+    expect((await repository.getMemory("first")).entries.map(({ id }) => id)).toEqual(["m2", "m1"]);
+    expect(await repository.exportMemory(undefined, "user")).toEqual({
+      fileName: "USER.md",
+      markdown: "# USER.md\n\n- Prefers short answers.\n",
+    });
+
+    await expect(repository.applyMemory(undefined, [{ op: "remove", id: "m1" }])).rejects.toMatchObject({
+      code: "invalid_request",
+    });
+    await expect(repository.exportMemory(undefined, "wisp")).rejects.toMatchObject({ code: "invalid_request" });
+  });
+
   it("refuses to start on memory saved by a newer version, leaving the database in place", async () => {
     const directory = await mkdtemp(path.join(os.tmpdir(), "wisp-memory-newer-"));
     const repository = await reload(directory);

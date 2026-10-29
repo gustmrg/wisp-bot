@@ -9,6 +9,7 @@ import {
   parseApplyModelRequest,
   parseApplyMemoryRequest,
   parseExportMemoryRequest,
+  parseMemoryRequest,
   parseConversationRequest,
   parseCreateConversationRequest,
   parseCreateWispRequest,
@@ -64,6 +65,16 @@ describe("memory request validators", () => {
       expect(() => parseApplyMemoryRequest({ conversationId: "wisp:one", operations })).toThrow(WispBackendError);
     }
     expect(() => parseExportMemoryRequest({ conversationId: "wisp:one", scope: "all" })).toThrow(WispBackendError);
+  });
+
+  it("reads a request without a conversation as the person's own memory", () => {
+    expect(parseMemoryRequest({})).toEqual({});
+    expect(parseMemoryRequest({ conversationId: "wisp:one" })).toEqual({ conversationId: "wisp:one" });
+    expect(parseApplyMemoryRequest({ operations: [] })).toEqual({ operations: [] });
+    expect(parseExportMemoryRequest({ scope: "user" })).toEqual({ scope: "user" });
+    for (const request of [undefined, { conversationId: "" }, { conversationId: null }]) {
+      expect(() => parseMemoryRequest(request)).toThrow(WispBackendError);
+    }
   });
 });
 

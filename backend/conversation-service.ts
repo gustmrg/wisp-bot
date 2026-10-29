@@ -130,7 +130,7 @@ export class ConversationService {
     return profile;
   }
 
-  getMemory(conversationId: string) {
+  getMemory(conversationId?: string) {
     return this.repository.getMemory(conversationId);
   }
 

@@ -4,8 +4,8 @@ import { registerGuardedHandlers, type HandlerRouter, type SenderAuthorizer } fr
 import {
   parseAnswerConversationPromptRequest,
   parseApplyMemoryRequest,
-  parseConversationRequest,
   parseExportMemoryRequest,
+  parseMemoryRequest,
   parseAppendConversationMessageRequest,
   parseCreateConversationRequest,
   parseCreateWispRequest,
@@ -28,7 +28,7 @@ export function registerConversationHandlers(
   return registerGuardedHandlers(router, authorizeSender, [
     [WISP_IPC_CHANNELS.getUserProfile, () => service.getUserProfile()],
     [WISP_IPC_CHANNELS.saveUserProfile, (payload) => service.saveUserProfile(payload)],
-    [WISP_IPC_CHANNELS.getMemory, (payload) => service.getMemory(parseConversationRequest(payload).conversationId)],
+    [WISP_IPC_CHANNELS.getMemory, (payload) => service.getMemory(parseMemoryRequest(payload).conversationId)],
     [WISP_IPC_CHANNELS.applyMemory, (payload) => service.applyMemory(parseApplyMemoryRequest(payload))],
     [WISP_IPC_CHANNELS.exportMemory, (payload) => service.exportMemory(parseExportMemoryRequest(payload))],
     [

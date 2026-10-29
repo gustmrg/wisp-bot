@@ -33,7 +33,8 @@ saved key.
   provider when you chat. It also supplies the sidebar name and initials. It is
   required, saved locally in `user-profile.json`, and saved when you leave the
   field or press Enter. Busy Wisps pick up a new name after their current turn.
-  What your Wisps know about you lives in [memory](context-and-memory.md#memory).
+  Below it, **About you** lists what every Wisp knows about you: add, edit,
+  remove, or export it as `USER.md`. See [memory](context-and-memory.md#memory).
 - **Application** — theme, Wisp colors, and launch at login. With **Wisp colors** off, replies, the send button, and the selected conversation keep the neutral look instead of each Wisp's color.
 - **Wisp** — timezone and auto-review. Auto-review shows one Allow / Ask /
   Block choice for **Create files** and one for **Modify files**; turning
