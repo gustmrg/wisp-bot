@@ -70,6 +70,25 @@ in **AI Model** is used too; see [subscription sign-in](models.md#subscription-s
 for how a voice key and a ChatGPT sign-in coexist. In the browser app, voice
 input needs HTTPS.
 
+### Fallback model
+
+**Settings → Voice input → Fallback** works like the
+[fallback model](models.md#fallback-models) in **AI Model**: **Fallback model**
+is a model a recording goes to when the provider above cannot transcribe it:
+it cannot be reached, takes longer than 30 seconds, is rate limited or down,
+rejects its key, or has no credit left. Only models from other providers
+with a saved key are listed, since a provider that is down or refusing its key
+fails all of its models at once. A fallback whose key is removed later, or
+that is from the provider chosen above after a change, is shown as unavailable
+and skipped. A recording that is empty, too long, or that a
+provider could not read is not sent to the fallback, since it would fail the
+same way, and no provider gets the same recording twice.
+
+When transcription fails, the composer keeps the recording: **Try again**
+sends it again to the providers as they are set then, so a key saved or a
+fallback chosen in the meantime is used without recording anew. Starting a new
+recording or leaving the conversation drops the kept one.
+
 ## Storage
 
 **Storage** measures the space each Wisp's and circle's workspace takes,

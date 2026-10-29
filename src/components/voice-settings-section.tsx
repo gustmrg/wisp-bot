@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 
 import { PreferenceSwitch, SettingsSelect, type SettingsOption } from "@/components/general-settings-sections";
+import { SearchableCombobox } from "@/components/searchable-combobox";
 import {
   ConfirmAction,
   SettingsCard,
@@ -18,10 +19,12 @@ import { notifyProviderCredentialsChanged } from "@/lib/voice-credentials";
 import {
   defaultVoiceModel,
   isVoiceLanguage,
+  isVoiceModel,
   isVoiceProviderId,
   VOICE_LANGUAGES,
   VOICE_PROVIDERS,
   voiceProvider,
+  type VoiceModelChoice,
   type VoiceSettingsView,
 } from "../../shared/voice";
 
@@ -304,8 +307,104 @@ function VoiceSettingsSection({ active, preferences, onPreferencesChange }: Voic
             {saved ? <p className="m-0 text-xs text-dim">{provider.name} key saved.</p> : null}
           </div>
         </div>
+
+        <FallbackVoiceModel view={view} preferences={preferences} onPreferencesChange={onPreferencesChange} />
       </div>
     </section>
+  );
+}
+
+const OFF = "off";
+
+const choiceValue = ({ providerId, modelId }: VoiceModelChoice) => `${providerId}:${modelId}`;
+
+function choiceOf(value: string): VoiceModelChoice | undefined {
+  const separator = value.indexOf(":");
+  const providerId = value.slice(0, separator);
+  const modelId = value.slice(separator + 1);
+  return isVoiceProviderId(providerId) && isVoiceModel(providerId, modelId) ? { providerId, modelId } : undefined;
+}
+
+function modelOption({ providerId, modelId }: VoiceModelChoice) {
+  const provider = voiceProvider(providerId);
+  const model = provider?.models.find(({ id }) => id === modelId);
+  return {
+    value: choiceValue({ providerId, modelId }),
+    label: model?.name ?? modelId,
+    description: `${provider?.name ?? providerId} · ${modelId}`,
+  };
+}
+
+/**
+ * Chooses the model a recording goes to when the provider above cannot
+ * transcribe it (SWE-253), like the fallback model in AI Model. Only models
+ * from other providers with a saved key are listed: a provider that is down,
+ * rate limited, or refusing its key fails all of its models at once.
+ */
+function FallbackVoiceModel({
+  view,
+  preferences,
+  onPreferencesChange,
+}: {
+  view: VoiceSettingsView | null;
+  preferences: AppPreferences;
+  onPreferencesChange: (preferences: AppPreferences) => void;
+}) {
+  const selected = preferences.voiceFallback;
+  const keyed = new Set((view?.providers ?? []).filter((status) => status.credentialConfigured).map(({ id }) => id));
+  const primaryName = voiceProvider(preferences.voiceProvider)?.name ?? preferences.voiceProvider;
+  const options = [
+    { value: OFF, label: "Off", description: "Voice input stops when the provider fails" },
+    ...VOICE_PROVIDERS.filter(({ id }) => keyed.has(id) && id !== preferences.voiceProvider).flatMap((provider) =>
+      provider.models.map((model) => modelOption({ providerId: provider.id, modelId: model.id })),
+    ),
+  ];
+  if (selected && !options.some(({ value }) => value === choiceValue(selected))) {
+    const option = modelOption(selected);
+    options.push({ ...option, label: `${option.label} (unavailable)` });
+  }
+  const providerName = selected ? (voiceProvider(selected.providerId)?.name ?? selected.providerId) : "";
+  // Said only once the keys are known, so the warning never flashes while they load.
+  const unavailable =
+    !selected || !view
+      ? null
+      : !keyed.has(selected.providerId)
+        ? `Add an API key for ${providerName} to use this model. Until then, voice input has no fallback.`
+        : selected.providerId === preferences.voiceProvider
+          ? `This model is from ${primaryName}, the provider above, so it fails along with it. Choose a model from another provider.`
+          : null;
+  return (
+    <SettingsGroup label="Fallback">
+      <SettingsCard>
+        <SettingsRow>
+          <SettingsRowCopy>
+            <SettingsRowTitle htmlFor="voice-fallback-model">Fallback model</SettingsRowTitle>
+            <SettingsRowDescription>
+              Transcribes the recording when the provider above fails for a reason another may not share: it can't be
+              reached, takes too long, is rate limited, or rejects its key. A recording no provider could read is not
+              sent again. Only models from other providers with a saved key are listed.
+            </SettingsRowDescription>
+            {unavailable ? (
+              <span role="alert" className="text-xs leading-relaxed text-warning">
+                {unavailable}
+              </span>
+            ) : null}
+          </SettingsRowCopy>
+          <SearchableCombobox
+            id="voice-fallback-model"
+            value={selected ? choiceValue(selected) : OFF}
+            options={options}
+            className="h-8 w-[260px] max-w-[62%] text-base"
+            searchLabel="Search fallback models"
+            searchPlaceholder="Search model name or ID…"
+            emptyText="No models from providers with a saved key."
+            onChange={(value) =>
+              onPreferencesChange({ ...preferences, voiceFallback: value === OFF ? null : (choiceOf(value) ?? null) })
+            }
+          />
+        </SettingsRow>
+      </SettingsCard>
+    </SettingsGroup>
   );
 }
 

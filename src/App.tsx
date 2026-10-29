@@ -27,7 +27,7 @@ import { ReplyPaceProvider } from "@/hooks/use-reply-pace";
 import { useSystemNotifications } from "@/hooks/use-system-notifications";
 import { TimeZoneProvider, useReportedTimeZone } from "@/hooks/use-time-zone";
 import { type UserProfileController, useUserProfile } from "@/hooks/use-user-profile";
-import { effectiveTimeZone } from "@/lib/app-preferences";
+import { effectiveTimeZone, transcriptionFallbacks } from "@/lib/app-preferences";
 import { CHIEF_WISP } from "@/lib/chief-wisp";
 import { DETAILS_LAYOUT, SIDEBAR_LAYOUT } from "@/lib/layout";
 import { matchesShortcut, TOGGLE_SIDEBAR_SHORTCUT } from "@/lib/shortcuts";
@@ -339,6 +339,7 @@ function Workspace({
                   deviceId: workspace.preferences.microphone,
                   providerId: workspace.preferences.voiceProvider,
                   modelId: workspace.preferences.voiceModel,
+                  fallbacks: transcriptionFallbacks(workspace.preferences),
                   language: workspace.preferences.voiceLanguage,
                   autoSend: workspace.preferences.voiceAutoSend,
                   shortcut: workspace.preferences.shortcuts.voiceInput,

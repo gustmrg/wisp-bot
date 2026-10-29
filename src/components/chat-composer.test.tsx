@@ -864,6 +864,72 @@ describe("ChatComposer voice input", () => {
     expect(onConfigureVoice).toHaveBeenCalledOnce();
   });
 
+  it("keeps a recording that failed to transcribe and sends it again on Try again, with the fallback", async () => {
+    const user = userEvent.setup();
+    const transcribeAudio = setup(
+      vi
+        .fn<WispApi["transcribeAudio"]>()
+        .mockResolvedValueOnce({
+          ok: false,
+          error: {
+            code: "model_unavailable",
+            message: "None of your voice providers could transcribe the recording (Groq, OpenAI). Try again.",
+            retryable: true,
+          },
+        })
+        .mockResolvedValueOnce({ ok: true, value: { text: "second try", providerId: "openai", modelId: "whisper-1" } }),
+    );
+    const fallbacks = [{ providerId: "openai" as const, modelId: "whisper-1" }];
+    render(
+      <ChatComposer
+        {...defaultProps}
+        chat={wisp("one", "One")}
+        voice={{
+          deviceId: "default",
+          providerId: "groq",
+          modelId: "whisper-large-v3-turbo",
+          fallbacks,
+          language: "auto",
+          autoSend: false,
+          shortcut: "Ctrl+Space",
+        }}
+      />,
+    );
+
+    await user.click(await screen.findByRole("button", { name: "Start voice input" }));
+    await user.click(await screen.findByRole("button", { name: "Stop recording and transcribe" }));
+    expect(await screen.findByText(/None of your voice providers/)).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "Try again" }));
+
+    const input = screen.getByRole("combobox", { name: "Message One" });
+    await waitFor(() => expect(input).toHaveValue("second try"));
+    // The same recording went again, without recording anew.
+    expect(getUserMedia).toHaveBeenCalledOnce();
+    const [first, second] = transcribeAudio.mock.calls.map(([request]) => request);
+    expect(second?.audio).toEqual(first?.audio);
+    expect(first).toMatchObject({ providerId: "groq", fallbacks });
+  });
+
+  it("drops a recording the provider could not read, since sending it again would fail the same way", async () => {
+    const user = userEvent.setup();
+    setup(
+      vi.fn(async () => ({
+        ok: false as const,
+        error: {
+          code: "invalid_configuration" as const,
+          message: "Groq could not transcribe this recording.",
+          retryable: false,
+        },
+      })),
+    );
+    render(<ChatComposer {...defaultProps} chat={wisp("one", "One")} />);
+
+    await user.click(await screen.findByRole("button", { name: "Start voice input" }));
+    await user.click(await screen.findByRole("button", { name: "Stop recording and transcribe" }));
+    expect(await screen.findByText("Groq could not transcribe this recording.")).toBeVisible();
+    expect(screen.queryByRole("button", { name: "Try again" })).toBeNull();
+  });
+
   it("explains a denied microphone", async () => {
     const user = userEvent.setup();
     setup();

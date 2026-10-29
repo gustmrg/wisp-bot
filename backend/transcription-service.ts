@@ -5,6 +5,7 @@ import {
   type SaveVoiceCredentialRequest,
   type TranscribeAudioRequest,
   type TranscriptionResult,
+  type VoiceModelChoice,
   type VoiceSettingsView,
 } from "../shared/voice.js";
 import { WispBackendError } from "./backend-error.js";
@@ -12,6 +13,8 @@ import type { ModelService } from "./model-service.js";
 import type { StructuredLogger } from "./structured-logger.js";
 
 const TRANSCRIPTION_TIMEOUT_MS = 60_000;
+/** How long one provider gets when a fallback waits behind it. */
+const FALLBACK_ATTEMPT_TIMEOUT_MS = 30_000;
 
 type VoiceCredentials = Pick<
   ModelService,
@@ -78,8 +81,47 @@ export class TranscriptionService {
     return this.getView();
   }
 
+  /**
+   * Transcribes with the provider asked for, then with each fallback in turn
+   * while a failure is one the next provider may not share (SWE-253). A
+   * failure caused by the recording itself ends the chain, and no provider is
+   * asked twice, so the same audio is never paid for again where it already
+   * failed.
+   */
   async transcribe(request: TranscribeAudioRequest): Promise<TranscriptionResult> {
-    const provider = voiceProvider(request.providerId);
+    const chain = uniqueChoices([
+      { providerId: request.providerId, modelId: request.modelId },
+      ...(request.fallbacks ?? []),
+    ]);
+    // With a fallback waiting, a provider that hangs gives way sooner.
+    const timeoutMs = chain.length > 1 ? Math.min(this.timeoutMs, FALLBACK_ATTEMPT_TIMEOUT_MS) : this.timeoutMs;
+    const failures: WispBackendError[] = [];
+    for (const [index, choice] of chain.entries()) {
+      try {
+        const text = await this.transcribeWith(choice, request, timeoutMs);
+        return { text, providerId: choice.providerId, modelId: choice.modelId };
+      } catch (error) {
+        if (!(error instanceof WispBackendError) || !movesToNextProvider(error)) throw error;
+        failures.push(error);
+        const next = chain[index + 1];
+        if (next) {
+          this.logger?.warn("transcription_fallback", {
+            providerId: choice.providerId,
+            nextProviderId: next.providerId,
+            code: error.code,
+          });
+        }
+      }
+    }
+    throw chainError(chain, failures);
+  }
+
+  private async transcribeWith(
+    choice: VoiceModelChoice,
+    request: TranscribeAudioRequest,
+    timeoutMs: number,
+  ): Promise<string> {
+    const provider = voiceProvider(choice.providerId);
     if (!provider) throw new WispBackendError("invalid_request", "The voice provider is invalid.");
     const apiKey = await this.credentials.getVoiceKey(provider.id);
     if (!apiKey) {
@@ -96,11 +138,11 @@ export class TranscriptionService {
       new Blob([new Uint8Array(request.audio)], { type: request.mimeType }),
       `recording.${FILE_EXTENSIONS[request.mimeType]}`,
     );
-    form.append("model", request.modelId);
+    form.append("model", choice.modelId);
     if (request.language !== "auto") form.append("language", request.language);
 
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), this.timeoutMs);
+    const timeout = setTimeout(() => controller.abort(), timeoutMs);
     this.inFlight.add(controller);
     let response: Response;
     try {
@@ -111,6 +153,10 @@ export class TranscriptionService {
         signal: controller.signal,
       });
     } catch {
+      this.logger?.warn("transcription_failed", {
+        providerId: provider.id,
+        status: controller.signal.aborted ? "timeout" : "network",
+      });
       throw new WispBackendError(
         "model_unavailable",
         controller.signal.aborted
@@ -131,7 +177,7 @@ export class TranscriptionService {
     if (typeof body?.text !== "string") {
       throw new WispBackendError("model_unavailable", `${provider.name} returned an unexpected response.`, true);
     }
-    return { text: body.text.trim() };
+    return body.text.trim();
   }
 
   /** Cancels transcriptions still waiting on a provider; used on shutdown. */
@@ -148,6 +194,15 @@ function transcriptionError(providerName: string, status: number): WispBackendEr
       `${providerName} rejected the API key. Update it in Settings to use voice input.`,
     );
   }
+  if (status === 402) {
+    return new WispBackendError(
+      "configuration_required",
+      `${providerName} has no credit left for this API key. Add credit or use another key.`,
+    );
+  }
+  if (status === 404) {
+    return new WispBackendError("model_unavailable", `${providerName} does not offer this transcription model.`);
+  }
   if (status === 413) {
     return new WispBackendError("invalid_request", "The recording is too long to transcribe. Try a shorter one.");
   }
@@ -158,10 +213,48 @@ function transcriptionError(providerName: string, status: number): WispBackendEr
       true,
     );
   }
-  if (status === 400 || status === 404 || status === 422) {
+  if (status === 400 || status === 422) {
     return new WispBackendError("invalid_configuration", `${providerName} could not transcribe this recording.`);
   }
   return new WispBackendError("model_unavailable", `${providerName} could not transcribe the recording.`, true);
+}
+
+/**
+ * Whether another provider may succeed where this one failed: it could not be
+ * reached, timed out, was rate limited or down, or has no usable key or credit.
+ * A recording that is empty, too long, or unreadable fails everywhere.
+ */
+function movesToNextProvider(error: WispBackendError): boolean {
+  return error.code === "model_unavailable" || error.code === "configuration_required";
+}
+
+/** What the person is told when every provider failed: the one asked for, unless a fallback was tried too. */
+function chainError(
+  chain: ReadonlyArray<VoiceModelChoice>,
+  failures: ReadonlyArray<WispBackendError>,
+): WispBackendError {
+  const [first] = failures;
+  if (!first || failures.length === 1)
+    return first ?? new WispBackendError("model_unavailable", "Could not transcribe the recording.", true);
+  // Only keys and credit left: the fix is in Settings.
+  if (failures.every((failure) => failure.code === "configuration_required")) return first;
+  const names = chain.map(({ providerId }) => voiceProvider(providerId)?.name ?? providerId);
+  return new WispBackendError(
+    "model_unavailable",
+    `None of your voice providers could transcribe the recording (${names.join(", ")}). Try again.`,
+    true,
+  );
+}
+
+/** The chain without repeats, so a fallback equal to the provider before it is not asked again. */
+function uniqueChoices(choices: ReadonlyArray<VoiceModelChoice>): VoiceModelChoice[] {
+  const seen = new Set<string>();
+  return choices.filter(({ providerId, modelId }) => {
+    const key = `${providerId}:${modelId}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
 
 /** Stands in for a provider in fake agent mode, so voice input works without keys or network. */

@@ -1,11 +1,32 @@
 import { describe, expect, it } from "vitest";
 
-import { DEFAULT_PREFERENCES, normalizePreferences } from "@/lib/app-preferences";
+import { DEFAULT_PREFERENCES, normalizePreferences, transcriptionFallbacks } from "@/lib/app-preferences";
 
 describe("normalizePreferences", () => {
   it("keeps a known conversation order and falls back to latest activity", () => {
     expect(normalizePreferences({ chatListOrder: "created" }).chatListOrder).toBe("created");
     expect(normalizePreferences({ chatListOrder: "alphabetical" }).chatListOrder).toBe("recent");
+  });
+
+  it("keeps a voice fallback that names a provider and one of its models", () => {
+    const voiceFallback = { providerId: "openai", modelId: "whisper-1" };
+    expect(normalizePreferences({ voiceFallback }).voiceFallback).toEqual(voiceFallback);
+    for (const saved of [
+      { providerId: "openai", modelId: "voxtral-mini-latest" },
+      { providerId: "deepgram", modelId: "nova" },
+      [voiceFallback],
+      "openai",
+    ]) {
+      expect(normalizePreferences({ voiceFallback: saved }).voiceFallback).toBeNull();
+    }
+  });
+
+  it("sends the voice fallback only when it is on another provider", () => {
+    const voiceFallback = { providerId: "openai" as const, modelId: "whisper-1" };
+    expect(transcriptionFallbacks({ voiceProvider: "groq", voiceFallback })).toEqual([voiceFallback]);
+    // On the provider itself it would fail along with it.
+    expect(transcriptionFallbacks({ voiceProvider: "openai", voiceFallback })).toEqual([]);
+    expect(transcriptionFallbacks({ voiceProvider: "groq", voiceFallback: null })).toEqual([]);
   });
 
   it("returns defaults when no saved preferences exist", () => {

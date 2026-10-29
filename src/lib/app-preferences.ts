@@ -15,6 +15,7 @@ import {
   isVoiceModel,
   isVoiceProviderId,
   type VoiceLanguage,
+  type VoiceModelChoice,
   type VoiceProviderId,
 } from "../../shared/voice";
 import { systemTimeZone } from "../../shared/time-zone";
@@ -62,6 +63,8 @@ export interface AppPreferences {
   microphone: string;
   voiceProvider: VoiceProviderId;
   voiceModel: string;
+  /** The model a recording goes to when the voice provider cannot transcribe it; null when off. */
+  voiceFallback: VoiceModelChoice | null;
   voiceLanguage: VoiceLanguage;
   /** Send the message as soon as a recording is transcribed instead of leaving it in the composer. */
   voiceAutoSend: boolean;
@@ -107,6 +110,7 @@ export const DEFAULT_PREFERENCES: AppPreferences = {
   microphone: "default",
   voiceProvider: DEFAULT_VOICE_PROVIDER,
   voiceModel: defaultVoiceModel(DEFAULT_VOICE_PROVIDER),
+  voiceFallback: null,
   voiceLanguage: "auto",
   voiceAutoSend: false,
   shortcuts: DEFAULT_SHORTCUTS,
@@ -141,6 +145,22 @@ function isAutoReviewRule(value: unknown): value is AutoReviewRule {
 
 function preferenceRecord(value: unknown): Record<string, unknown> | undefined {
   return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : undefined;
+}
+
+/** The fallbacks a recording goes to: the saved one, unless it is on the voice provider and would fail along with it. */
+export function transcriptionFallbacks(
+  preferences: Pick<AppPreferences, "voiceProvider" | "voiceFallback">,
+): VoiceModelChoice[] {
+  const fallback = preferences.voiceFallback;
+  return fallback && fallback.providerId !== preferences.voiceProvider ? [fallback] : [];
+}
+
+/** The saved fallback, while it still names a provider and one of its models. */
+function voiceFallback(value: unknown): VoiceModelChoice | null {
+  const choice = preferenceRecord(value);
+  const providerId = choice?.providerId;
+  const modelId = choice?.modelId;
+  return isVoiceProviderId(providerId) && isVoiceModel(providerId, modelId) ? { providerId, modelId } : null;
 }
 
 function panelWidth(value: unknown, { defaultWidth, minWidth, maxWidth }: ResizablePanelLayout): number {
@@ -198,6 +218,7 @@ export function normalizePreferences(value: unknown): AppPreferences {
     microphone: typeof saved?.microphone === "string" && saved.microphone ? saved.microphone : "default",
     voiceProvider,
     voiceModel: isVoiceModel(voiceProvider, saved?.voiceModel) ? saved.voiceModel : defaultVoiceModel(voiceProvider),
+    voiceFallback: voiceFallback(saved?.voiceFallback),
     voiceLanguage: isVoiceLanguage(saved?.voiceLanguage) ? saved.voiceLanguage : "auto",
     voiceAutoSend: typeof saved?.voiceAutoSend === "boolean" ? saved.voiceAutoSend : false,
     shortcuts: normalizeShortcuts(saved?.shortcuts),

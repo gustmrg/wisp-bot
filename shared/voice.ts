@@ -87,9 +87,23 @@ export interface RemoveVoiceCredentialRequest {
   providerId: VoiceProviderId;
 }
 
+/** How many fallback models a recording can go to after its provider (SWE-253), as with the AI model's fallback. */
+export const MAX_VOICE_FALLBACKS = 1;
+
+/** A speech-to-text provider and one of its models. */
+export interface VoiceModelChoice {
+  providerId: VoiceProviderId;
+  modelId: string;
+}
+
 export interface TranscribeAudioRequest {
   providerId: VoiceProviderId;
   modelId: string;
+  /**
+   * Tried in order when the provider before cannot transcribe for a reason
+   * another provider may not share, such as a timeout or a rejected key.
+   */
+  fallbacks?: ReadonlyArray<VoiceModelChoice>;
   language: VoiceLanguage;
   /** The container type without codec parameters. */
   mimeType: VoiceAudioMimeType;
@@ -98,6 +112,9 @@ export interface TranscribeAudioRequest {
 
 export interface TranscriptionResult {
   text: string;
+  /** The provider and model that transcribed it: the one asked for, or a backup. */
+  providerId?: VoiceProviderId;
+  modelId?: string;
 }
 
 export function voiceProvider(id: string): (typeof VOICE_PROVIDERS)[number] | undefined {

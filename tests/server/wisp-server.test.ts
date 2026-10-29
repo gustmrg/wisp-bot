@@ -384,7 +384,10 @@ describe("Wisp server", () => {
         mimeType: "audio/webm",
         audio: new Uint8Array([1, 2, 3]),
       }),
-    ).toEqual({ ok: true, value: { text: "This is a fake transcription." } });
+    ).toEqual({
+      ok: true,
+      value: { text: "This is a fake transcription.", providerId: "groq", modelId: "whisper-large-v3-turbo" },
+    });
     expect(await rpc(harness.server, credentials, "removeVoiceCredential", { providerId: "groq" })).toMatchObject({
       ok: true,
       value: { providers: expect.arrayContaining([{ id: "groq", name: "Groq", credentialConfigured: false }]) },

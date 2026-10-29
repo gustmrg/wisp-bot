@@ -5,6 +5,7 @@ import {
   VOICE_AUDIO_MIME_TYPES,
   type VoiceAudioMimeType,
   type VoiceLanguage,
+  type VoiceModelChoice,
   type VoiceProviderId,
 } from "../../shared/voice";
 import { subscribeToProviderCredentials } from "@/lib/voice-credentials";
@@ -15,12 +16,16 @@ export interface VoiceInputError {
   message: string;
   /** The provider key is missing or was rejected, so the fix is in Settings. */
   needsSetup: boolean;
+  /** The recording is kept, so `retry` sends it again without recording anew (SWE-253). */
+  retryable?: boolean;
 }
 
 export interface VoiceInputOptions {
   deviceId: string;
   providerId: VoiceProviderId;
   modelId: string;
+  /** Tried in order when the provider cannot transcribe the recording. */
+  fallbacks?: ReadonlyArray<VoiceModelChoice>;
   language: VoiceLanguage;
   onTranscript: (text: string) => void;
 }
@@ -102,6 +107,8 @@ export function useVoiceInput(options: VoiceInputOptions) {
   const phaseRef = useRef<VoicePhase>("idle");
   // Bumped on cancel and unmount so a transcription that is still running is ignored.
   const generation = useRef(0);
+  // The recording whose transcription failed, kept until it is transcribed or a new one starts.
+  const kept = useRef<{ blob: Blob; mimeType: VoiceAudioMimeType } | null>(null);
 
   useEffect(() => {
     const devices = navigator.mediaDevices;
@@ -177,21 +184,36 @@ export function useVoiceInput(options: VoiceInputOptions) {
     async (blob: Blob, mimeType: VoiceAudioMimeType) => {
       const attempt = generation.current;
       changePhase("transcribing");
-      const { providerId, modelId, language } = latest.current;
+      const { providerId, modelId, fallbacks, language } = latest.current;
       try {
         const audio = new Uint8Array(await blob.arrayBuffer());
-        const result = await window.wisp.transcribeAudio({ providerId, modelId, language, mimeType, audio });
+        const result = await window.wisp.transcribeAudio({
+          providerId,
+          modelId,
+          ...(fallbacks?.length ? { fallbacks: [...fallbacks] } : {}),
+          language,
+          mimeType,
+          audio,
+        });
         if (attempt !== generation.current) return;
         if (!result.ok) {
-          setError({ message: result.error.message, needsSetup: result.error.code === "configuration_required" });
+          const needsSetup = result.error.code === "configuration_required";
+          // A recording the provider could not read fails the same way again; one it never got to can be sent again.
+          const retryable = result.error.retryable || needsSetup;
+          kept.current = retryable ? { blob, mimeType } : null;
+          setError({ message: result.error.message, needsSetup, retryable });
         } else if (!result.value.text) {
+          kept.current = null;
           setError({ message: "No speech was detected.", needsSetup: false });
         } else {
+          kept.current = null;
           latest.current.onTranscript(result.value.text);
         }
       } catch {
-        if (attempt === generation.current)
-          setError({ message: "Could not transcribe the recording.", needsSetup: false });
+        if (attempt === generation.current) {
+          kept.current = { blob, mimeType };
+          setError({ message: "Could not transcribe the recording.", needsSetup: false, retryable: true });
+        }
       } finally {
         if (attempt === generation.current) changePhase("idle");
       }
@@ -202,6 +224,7 @@ export function useVoiceInput(options: VoiceInputOptions) {
   const start = useCallback(async () => {
     if (phaseRef.current !== "idle" || microphoneStatus !== "available" || credentialStatus !== "configured") return;
     setError(null);
+    kept.current = null;
     if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined") {
       setError({ message: "Voice input is not supported on this device.", needsSetup: false });
       return;
@@ -306,6 +329,14 @@ export function useVoiceInput(options: VoiceInputOptions) {
 
   const clearError = useCallback(() => setError(null), []);
 
+  /** Sends the recording whose transcription failed again, to the providers as they are set now. */
+  const retry = useCallback(() => {
+    const saved = kept.current;
+    if (!saved || phaseRef.current !== "idle") return;
+    setError(null);
+    void transcribe(saved.blob, saved.mimeType);
+  }, [transcribe]);
+
   useEffect(
     () => () => {
       generation.current += 1;
@@ -331,5 +362,5 @@ export function useVoiceInput(options: VoiceInputOptions) {
               ? "Add a speech-to-text API key in Settings to use voice input."
               : null;
 
-  return { phase, elapsed, levels, error, unavailableReason, start, stop, cancel, toggle, clearError };
+  return { phase, elapsed, levels, error, unavailableReason, start, stop, cancel, toggle, clearError, retry };
 }
