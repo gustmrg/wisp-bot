@@ -103,6 +103,15 @@ a share of its size, and the summary counts it apart from the allotted space;
 see [security](security.md#tool-authorization) for how its disk limits it. Sizes are the
 files' logical lengths, not the space allocated on disk.
 
+Storage keeps each workspace's last measurement, also across restarts in
+`backend/storage-measurements.json`, so opening it measures only what changed:
+a workspace is measured again after a turn or a job runs in its conversation,
+after files are attached or uploaded, and after a removal from Storage. Each
+deleted Wisp's or circle's archive is measured once. **Measured** shows the
+oldest measurement on the page. Files changed outside Wisp, for example from
+a terminal, show after **Refresh**, which measures every workspace and archive
+again.
+
 ## Shortcuts
 
 **Shortcuts** lists the keyboard shortcuts: search (`Cmd/Ctrl+K`), collapse or

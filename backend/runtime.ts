@@ -348,7 +348,12 @@ export async function createBackendRuntime(options: BackendRuntimeOptions): Prom
     {
       validateModel: (selection) => modelService.validateConversationSelection(selection),
       onAvailable: (conversationId) => messageQueue?.pump(conversationId),
-      onTurnStarted: (conversationId) => void messageQueue?.offerFollowUps(conversationId),
+      onTurnStarted: (conversationId) => {
+        // What a turn does to the workspace is measured again the next time Storage is opened.
+        storageService?.markChanged(conversationId);
+        void messageQueue?.offerFollowUps(conversationId);
+      },
+      onTurnEnded: (conversationId) => storageService?.markChanged(conversationId),
       isWorkspaceLocked: (conversationId) => storageService?.isCleaning(conversationId) ?? false,
     },
   );
@@ -445,7 +450,15 @@ export async function createBackendRuntime(options: BackendRuntimeOptions): Prom
   const jobs = new JobScheduler({
     repository: conversationRepository,
     // The fake agent mode never reaches a model, so its runs answer at once.
-    runJob: options.agentMode === "fake" ? fakeJobRun : jobRunner.run,
+    runJob: async (job, context) => {
+      // A job's commands and files change its conversation's workspace, as a turn does.
+      storageService?.markChanged(job.conversationId);
+      try {
+        return await (options.agentMode === "fake" ? fakeJobRun : jobRunner.run)(job, context);
+      } finally {
+        storageService?.markChanged(job.conversationId);
+      }
+    },
     deliver: (job, text, run) =>
       service.deliverJobMessage(
         job.conversationId,
@@ -478,6 +491,7 @@ export async function createBackendRuntime(options: BackendRuntimeOptions): Prom
     onCleanupFinished: (id) => queue.pump(id),
     resolveQuota: (id, fallback) =>
       readWorkspaceQuota(conversationRepository.getWorkspaceDirectories(id).settingsDirectory, fallback),
+    measurementsFile: path.join(dataDirectory, "storage-measurements.json"),
   });
   storageService = storage;
   const workspaceService = new WorkspaceService({
@@ -486,8 +500,6 @@ export async function createBackendRuntime(options: BackendRuntimeOptions): Prom
     resolveWorkspace: (id) => conversationRepository.getWorkspaceDirectories(id),
     openPath: options.openPath,
     selectFiles: options.selectFiles,
-    // The summary shows each workspace's size, so a resize must not wait for the cache to expire.
-    onQuotaChanged: () => storage.invalidate(),
     workspaceRoot: path.join(dataDirectory, "workspaces"),
   });
   const transcriptionService = new TranscriptionService({
@@ -544,6 +556,8 @@ export async function createBackendRuntime(options: BackendRuntimeOptions): Prom
       mcpService.dispose();
       toolAuthorizationBroker.dispose();
       await registry.disposeAll();
+      // After the agents, whose last turns mark their workspaces changed.
+      await storage.flush();
       // After the agents, so no command starts a container once they are stopped.
       await browserService.dispose().catch(() => undefined);
       await containerManager.dispose().catch(() => undefined);
