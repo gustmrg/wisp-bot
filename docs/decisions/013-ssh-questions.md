@@ -30,7 +30,7 @@ The app lets OpenSSH ask the person, through `SSH_ASKPASS` with
   server's `~/.ssh/authorized_keys`, like `ssh-copy-id`: the first key file
   OpenSSH would use for that host (from `ssh -G`, so `~/.ssh/config` counts),
   or else the first key in ssh-agent. Never every key in the agent, which may
-  hold keys meant for other machines, such as CI deploy keys. The dialog shows
+  hold keys meant for other machines, such as CI deploy keys. The question shows
   the key's comment and fingerprint. The password answers the tunnel and that
   one command, and is then forgotten. From then on Wisp connects with the key, so
   reconnects never ask again. Without a key on this computer, the app does not
@@ -43,9 +43,14 @@ The askpass helper is a script in a private temporary directory (mode 0700)
 that runs Electron as Node.js and reaches the main process over a Unix socket
 in that directory, with a random token for each ssh process. Questions reach
 the renderer in `ConnectionsView.sshPrompt`, one at a time, and are answered
-over IPC. A question unanswered for two minutes, sshd's default login grace
-time, is declined, as are questions from a connection that stopped. Declining
-ends the attempt without automatic retries.
+over IPC. While the connection screen shows a connection or a setup in
+progress, its card asks them, above the steps; over the app, such as while
+reconnecting, one dialog asks them. Either way the next question of a
+sign-in, such as a password after the host key, replaces the answered one in
+place instead of a new card or dialog opening. A question unanswered for two
+minutes, sshd's default login grace time, is declined, as are questions from
+a connection that stopped. Declining ends the attempt without automatic
+retries.
 
 When OpenSSH still turns the app away, the message names the user OpenSSH
 tried (which `~/.ssh/config` may set), says whether the server also accepts a

@@ -81,9 +81,14 @@ describe("ConnectionGate", () => {
       sshPrompt: { id: "ssh-1", kind: "host_key", host: "raspberrypi", message: hostKey },
     });
     expect(await screen.findByRole("dialog", { name: "Trust raspberrypi?" })).toHaveTextContent("SHA256:abc123");
+    const first = screen.getByRole("dialog");
     await userEvent.click(screen.getByRole("button", { name: "Trust and connect" }));
     expect(api.answerSshPrompt).toHaveBeenCalledWith({ id: "ssh-1", answer: "yes" });
 
+    // Between two questions, the dialog stays open and the next one replaces the answered one.
+    await push(view({ phase: "reconnecting" }));
+    expect(screen.getByRole("dialog", { name: "Trust raspberrypi?" })).toBe(first);
+    expect(screen.getByRole("button", { name: "Checking…" })).toBeDisabled();
     await push({
       ...view({ phase: "reconnecting" }),
       sshPrompt: {
@@ -96,6 +101,7 @@ describe("ConnectionGate", () => {
       },
     });
     const dialog = await screen.findByRole("dialog", { name: "Sign in to raspberrypi" });
+    expect(dialog).toBe(first);
     expect(dialog).toHaveTextContent("me@laptop (SHA256:xyz)");
     expect(screen.getByRole("alert")).toHaveTextContent("That was not accepted");
     await userEvent.type(screen.getByLabelText("me@raspberrypi's password:"), "hunter2");
@@ -393,12 +399,50 @@ describe("ConnectionGate", () => {
       ...connecting,
       sshPrompt: { id: "ssh-1", kind: "host_key", host: "raspberrypi", message: "fingerprint" },
     });
-    // The question's dialog hides the screen behind it from assistive technology.
-    expect(screen.getByRole("heading", { name: "Home server needs your answer", hidden: true })).toBeInTheDocument();
-    expect(screen.getByRole("list", { name: "Steps", hidden: true })).toHaveTextContent("Waiting for your answer");
+    // The card asks the question itself: no dialog opens over it.
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Connecting to Home server" })).toBeVisible();
+    expect(screen.getByRole("form", { name: "Trust raspberrypi?" })).toHaveTextContent("fingerprint");
+    expect(screen.getByRole("list", { name: "Steps" })).toHaveTextContent("Waiting for your answer");
+    await userEvent.click(screen.getByRole("button", { name: "Trust and connect" }));
+    expect(api.answerSshPrompt).toHaveBeenCalledWith({ id: "ssh-1", answer: "yes" });
+
+    // The next question replaces the answered one in the same card.
     await push(connecting);
+    expect(screen.getByRole("button", { name: "Checking…" })).toBeDisabled();
+    await push({
+      ...connecting,
+      sshPrompt: { id: "ssh-2", kind: "password", host: "raspberrypi", message: "me@raspberrypi's password:" },
+    });
+    expect(screen.getByRole("form", { name: "Sign in to raspberrypi" })).toBeVisible();
+    expect(screen.queryByRole("form", { name: "Trust raspberrypi?" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+
+    // The card's Cancel stops connecting, which declines the question.
     await userEvent.click(screen.getByRole("button", { name: "Cancel" }));
     expect(api.cancelConnection).toHaveBeenCalled();
+    await push(connecting);
+    await waitFor(() => expect(screen.queryByRole("form", { name: /Sign in to/ })).not.toBeInTheDocument());
+    expect(screen.getByRole("list", { name: "Steps" })).not.toHaveTextContent("Waiting for your answer");
+  });
+
+  it("opens no dialog for a question answered in the card when connecting then fails", async () => {
+    const connecting = view({ phase: "connecting" });
+    const { push } = bridge(connecting);
+    render(
+      <ConnectionGate>
+        <App onMount={() => undefined} />
+      </ConnectionGate>,
+    );
+    await push({
+      ...connecting,
+      sshPrompt: { id: "ssh-1", kind: "host_key", host: "raspberrypi", message: "fingerprint" },
+    });
+    await userEvent.click(screen.getByRole("button", { name: "Trust and connect" }));
+    await push(view({ phase: "error", failure: "auth", message: "raspberrypi turned the SSH login away." }));
+    expect(await screen.findByRole("heading", { name: "Could not sign in to Home server" })).toBeVisible();
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(screen.queryByRole("form", { name: "Trust raspberrypi?" })).not.toBeInTheDocument();
   });
 
   it("keeps trying a server it cannot reach, and says why and when it tries next", async () => {

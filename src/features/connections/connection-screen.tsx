@@ -29,6 +29,7 @@ import { WISP_SERVER_PACKAGE } from "../../../shared/server-package";
 import { AppBackdrop } from "./app-backdrop";
 import { ConnectionSteps, formatDuration, hostOf, useNow } from "./connection-steps";
 import { ConnectionsPanel } from "./connections-panel";
+import { SshPromptForm, type HeldSshPrompt } from "./ssh-prompt-dialog";
 import { UpdateServerDialog, compareVersions } from "./update-server-dialog";
 
 export function activeProfile(view: ConnectionsView): ConnectionProfileView | undefined {
@@ -175,7 +176,14 @@ function ProgressBar({ progress }: { progress: ConnectionProgress }) {
  * or cannot be used. One card for every state: which server, what is
  * happening step by step, what went wrong, and what the person can do.
  */
-export function ConnectionScreen({ view }: { view: ConnectionsView }) {
+export function ConnectionScreen({
+  view,
+  question,
+}: {
+  view: ConnectionsView;
+  /** OpenSSH's question while connecting or setting the server up, asked in the card. */
+  question?: HeldSshPrompt;
+}) {
   const { status } = view;
   const profile = activeProfile(view);
   const name = activeName(view);
@@ -243,14 +251,14 @@ export function ConnectionScreen({ view }: { view: ConnectionsView }) {
   let body: ReactNode = null;
   let actions: ReactNode;
   let aside: ReactNode = null;
-  const waitingForAnswer = Boolean(view.sshPrompt);
+  const waitingForAnswer = question !== undefined && !question.answered;
   const steps = progress ? (
     <ConnectionSteps
       className="mt-4"
       progress={progress}
       {...(profile ? { profile } : {})}
       {...(status.failure ? { failure: status.failure } : {})}
-      waitingForAnswer={waitingForAnswer && status.phase === "connecting"}
+      waitingForAnswer={waitingForAnswer}
       now={now}
     />
   ) : null;
@@ -463,17 +471,6 @@ export function ConnectionScreen({ view }: { view: ConnectionsView }) {
       </>
     );
     aside = useLocal;
-  } else if (waitingForAnswer) {
-    tone = "warn";
-    icon = <KeyRoundIcon aria-hidden="true" className="size-5" />;
-    title = `${name} needs your answer`;
-    text = "OpenSSH is asking a question. Answer it to continue.";
-    body = steps;
-    actions = canManage ? (
-      <Button type="button" variant="outline" disabled={busy} onClick={() => void cancel()}>
-        Cancel
-      </Button>
-    ) : null;
   } else {
     tone = "info";
     icon =
@@ -535,6 +532,7 @@ export function ConnectionScreen({ view }: { view: ConnectionsView }) {
                 ) : null}
               </div>
             </div>
+            {question ? <SshPromptForm key={question.prompt.id} question={question} layout="card" /> : null}
             {body}
             {actions || aside ? (
               <div className="mt-5 flex flex-wrap items-center gap-2 max-[760px]:flex-col max-[760px]:items-stretch">

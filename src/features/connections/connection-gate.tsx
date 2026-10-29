@@ -32,7 +32,7 @@ import {
 import { CONNECTION_BACKDROP, formatDuration, useNow } from "./connection-steps";
 import { connectionNoticesOff, setConnectionNoticesOff } from "./connection-notices";
 import { ConnectionsPanel } from "./connections-panel";
-import { SshPromptDialog } from "./ssh-prompt-dialog";
+import { SshPromptDialog, useHeldSshPrompt, type HeldSshPrompt } from "./ssh-prompt-dialog";
 import { compareVersions, UpdateServerDialog } from "./update-server-dialog";
 
 /** The active connection, kept current from the main process. */
@@ -82,18 +82,39 @@ export function ConnectionGate({ children }: { children: ReactNode }) {
   }, [view]);
   const dismissToast = useCallback(() => setToast(undefined), []);
   // OpenSSH can ask while connecting, reconnecting, or setting a server up.
+  const question = useHeldSshPrompt(view?.sshPrompt);
+  const inCard = view !== null && asksInCard(view);
   return (
     <>
-      <GateContent view={view} error={error}>
+      <GateContent view={view} error={error} {...(inCard && question ? { question } : {})}>
         {children}
       </GateContent>
-      {view?.sshPrompt ? <SshPromptDialog prompt={view.sshPrompt} /> : null}
+      <SshPromptDialog question={inCard ? undefined : question} />
       {toast ? <ConnectionToast key={toast.key} toast={toast} onDismiss={dismissToast} /> : null}
     </>
   );
 }
 
-function GateContent({ view, error, children }: { view: ConnectionsView | null; error: string; children: ReactNode }) {
+/**
+ * Whether the connection screen asks OpenSSH's questions in its own card:
+ * while it shows a connection or a setup in progress. Otherwise, as over the
+ * app while it reconnects, a dialog asks them.
+ */
+function asksInCard(view: ConnectionsView): boolean {
+  return view.status.phase === "connecting";
+}
+
+function GateContent({
+  view,
+  error,
+  question,
+  children,
+}: {
+  view: ConnectionsView | null;
+  error: string;
+  question?: HeldSshPrompt;
+  children: ReactNode;
+}) {
   const [dismissedVersion, setDismissedVersion] = useState("");
   const now = useNow(view?.status.phase === "reconnecting");
   if (!view) {
@@ -134,7 +155,7 @@ function GateContent({ view, error, children }: { view: ConnectionsView | null; 
     );
   }
   if (status.phase === "choosing") return <FirstRunChoice view={view} />;
-  return <ConnectionScreen view={view} />;
+  return <ConnectionScreen view={view} {...(question ? { question } : {})} />;
 }
 
 /**
