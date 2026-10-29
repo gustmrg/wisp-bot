@@ -586,7 +586,7 @@ describe("ConversationRepository", () => {
     expect(await upgraded.listQueuedMessages()).toEqual([queued]);
     expect(storedRows(directory, "SELECT key, value FROM meta WHERE key LIKE '%version'")).toEqual(
       expect.arrayContaining([
-        { key: "store_version", value: "14" },
+        { key: "store_version", value: "15" },
         { key: "min_reader_version", value: "12" },
       ]),
     );

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { WispBackendError } from "../backend/backend-error.js";
 import {
+  parseSetJobMemoryRequest,
   parseAppendConversationMessageRequest,
   parseMessagePageRequest,
   parseSearchMessagesRequest,
@@ -114,6 +115,15 @@ describe("voice request validators", () => {
     expect(() => parseTranscribeAudioRequest({ ...valid, audio: new Uint8Array(MAX_VOICE_AUDIO_BYTES + 1) })).toThrow(
       "too long",
     );
+  });
+});
+
+describe("job request validators", () => {
+  it("turns a job's memory on or off, and nothing else (SWE-248)", () => {
+    expect(parseSetJobMemoryRequest({ jobId: "job-1", useMemory: true })).toEqual({ jobId: "job-1", useMemory: true });
+    expect(() => parseSetJobMemoryRequest({ jobId: "job-1" })).toThrow(WispBackendError);
+    expect(() => parseSetJobMemoryRequest({ jobId: "job-1", useMemory: "on" })).toThrow(WispBackendError);
+    expect(() => parseSetJobMemoryRequest({ jobId: "", useMemory: true })).toThrow(WispBackendError);
   });
 });
 

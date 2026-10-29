@@ -35,7 +35,9 @@ import type { ConversationRecord, WispRecord, WorkspaceRecords } from "./workspa
 // name after its Wisp is deleted. Older readers ignore the field.
 // Version 14 adds whether a Wisp runs without memory; older writers leave it
 // alone, and a Wisp they create has memory.
-const STORE_VERSION = 14;
+// Version 15 adds whether a job's runs read memory; older writers leave it
+// alone, and a job they create runs without memory.
+const STORE_VERSION = 15;
 const MIN_READER_VERSION = 12;
 /** The first layout whose job runs name their session files under the runtime-neutral folders. */
 const WISP_FOLDERS_VERSION = 12;
@@ -228,6 +230,7 @@ const JOBS_SCHEMA = `
     instructions TEXT NOT NULL,
     skills TEXT NOT NULL CHECK (json_valid(skills)),
     tools TEXT NOT NULL CHECK (json_valid(tools)),
+    use_memory INTEGER NOT NULL DEFAULT 0 CHECK (use_memory IN (0, 1)),
     schedule TEXT NOT NULL CHECK (json_valid(schedule)),
     time_zone TEXT NOT NULL,
     next_run_at TEXT,
@@ -306,6 +309,10 @@ const ADD_WISP_FALLBACKS = `
 // Builds before version 14 could not turn a Wisp's memory off; its Wisps have memory.
 const ADD_WISP_MEMORY_OFF =
   "ALTER TABLE wisps ADD COLUMN memory_off INTEGER NOT NULL DEFAULT 0 CHECK (memory_off IN (0, 1));";
+
+// Builds before version 15 gave every job run the Wisp's memory; their jobs now run without it.
+const ADD_JOB_MEMORY =
+  "ALTER TABLE jobs ADD COLUMN use_memory INTEGER NOT NULL DEFAULT 0 CHECK (use_memory IN (0, 1));";
 
 // Replies stored before version 13 name their author only by ID; those whose Wisp
 // still exists take its name. Replies of Wisps already deleted stay unnamed.
@@ -469,6 +476,7 @@ function jobOf(row: Row): unknown {
     instructions: row.instructions,
     skills: json(row.skills),
     tools: json(row.tools),
+    ...(row.use_memory === 1 ? { useMemory: true } : {}),
     schedule: json(row.schedule),
     timeZone: row.time_zone,
     nextRunAt: optional(row.next_run_at),
@@ -587,6 +595,7 @@ export class ConversationStore {
         store.addWispThinkingLevels();
         store.addWispFallbacks();
         store.addWispMemoryOff();
+        store.addJobMemory();
         if (version !== undefined) store.renameJobRunSessionFiles(Number(version) < WISP_FOLDERS_VERSION);
         if (version !== undefined && Number(version) < AUTHOR_NAMES_VERSION) store.nameMessageAuthors();
       }
@@ -944,12 +953,12 @@ export class ConversationStore {
   putJob(job: Job): void {
     const nullableJson = (value: unknown) => (value === undefined ? null : JSON.stringify(value));
     this.statement(
-      `INSERT INTO jobs (id, conversation_id, title, instructions, skills, tools, schedule, time_zone, next_run_at,
-        retry, paused, state, run_count, consecutive_failures, last_run, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `INSERT INTO jobs (id, conversation_id, title, instructions, skills, tools, use_memory, schedule, time_zone,
+        next_run_at, retry, paused, state, run_count, consecutive_failures, last_run, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT (id) DO UPDATE SET
         title = excluded.title, instructions = excluded.instructions, skills = excluded.skills,
-        tools = excluded.tools, schedule = excluded.schedule, time_zone = excluded.time_zone,
+        tools = excluded.tools, use_memory = excluded.use_memory, schedule = excluded.schedule, time_zone = excluded.time_zone,
         next_run_at = excluded.next_run_at, retry = excluded.retry, paused = excluded.paused,
         state = excluded.state, run_count = excluded.run_count,
         consecutive_failures = excluded.consecutive_failures, last_run = excluded.last_run,
@@ -961,6 +970,7 @@ export class ConversationStore {
       job.instructions,
       JSON.stringify(job.skills),
       JSON.stringify(job.tools),
+      job.useMemory ? 1 : 0,
       JSON.stringify(job.schedule),
       job.timeZone,
       job.nextRunAt ?? null,
@@ -1196,6 +1206,20 @@ export class ConversationStore {
     this.db.exec("BEGIN IMMEDIATE");
     try {
       this.db.exec(ADD_WISP_MEMORY_OFF);
+      this.raiseVersions();
+      this.db.exec("COMMIT");
+    } catch (error) {
+      this.db.exec("ROLLBACK");
+      throw error;
+    }
+  }
+
+  private addJobMemory(): void {
+    const columns = this.db.prepare("SELECT name FROM pragma_table_info('jobs')").all();
+    if (columns.some((column) => column.name === "use_memory")) return;
+    this.db.exec("BEGIN IMMEDIATE");
+    try {
+      this.db.exec(ADD_JOB_MEMORY);
       this.raiseVersions();
       this.db.exec("COMMIT");
     } catch (error) {

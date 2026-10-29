@@ -1,9 +1,12 @@
 import { WISP_IPC_CHANNELS } from "../../shared/contracts.js";
 import type { JobScheduler } from "../job-scheduler.js";
-import { parseJobRequest } from "../validators.js";
+import { parseJobRequest, parseSetJobMemoryRequest } from "../validators.js";
 import { registerGuardedHandlers, type HandlerRouter, type SenderAuthorizer } from "./guarded-handlers.js";
 
-/** The jobs list: people see, pause, resume, run and delete jobs; only Wisps create or change them. */
+/**
+ * The jobs list: people see, pause, resume, run and delete jobs, and choose
+ * whether their runs read memory; only Wisps create or change what they do.
+ */
 export function registerJobHandlers(
   router: HandlerRouter,
   jobs: JobScheduler,
@@ -31,6 +34,14 @@ export function registerJobHandlers(
       WISP_IPC_CHANNELS.runJobNow,
       async (payload) => {
         await jobs.runNow(jobIdOf(payload));
+        return jobs.getView();
+      },
+    ],
+    [
+      WISP_IPC_CHANNELS.setJobMemory,
+      async (payload) => {
+        const { jobId, useMemory } = parseSetJobMemoryRequest(payload);
+        await jobs.setMemory(jobId, useMemory);
         return jobs.getView();
       },
     ],

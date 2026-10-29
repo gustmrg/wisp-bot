@@ -29,13 +29,22 @@ Nothing runs more than once a day. A Wisp can hold 20 jobs.
 **Settings → Jobs** lists every Wisp's jobs, and a Wisp's **Jobs** settings
 list its own, with the next run, the last run and its outcome, and the recent
 runs. From there you can **pause**, **resume**, **run now**, and **delete** a
-job. Changing what a job does or when it runs is done by asking the Wisp.
+job, and turn on **Use memory** for it. Changing what a job does or when it
+runs is done by asking the Wisp.
 
 ## How a run works
 
-- A run uses the Wisp's model, system prompt, plugins, MCP servers,
-  workspace, and container, plus the job's skills, but none of the
-  conversation's history. It knows its saved state and when it last ran.
+- A run uses the Wisp's model, identity, plugins, MCP servers, workspace,
+  and container, plus the job's skills, but none of the conversation's
+  history. It knows its saved state and when it last ran.
+- A run gets only what it uses. Its prompt leaves out how to answer questions
+  about the Wisp, how to save skills and memory, and the web unless the job
+  may use a web tool.
+- A run has no memory unless you turn on **Use memory** for its job in
+  **Settings → Jobs**. A job works from its instructions and saved state, so a
+  fact you save in a conversation does not change what it does. With memory on,
+  the run reads both groups but cannot save to them. A Wisp with
+  [memory off](context-and-memory.md#turn-memory-off) gives its jobs none.
 - No one is present, so nothing waits for an approval: the job's approved
   tools run, commands in the Wisp's container run as usual, and anything that
   would still ask is refused and the Wisp is told why.

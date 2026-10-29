@@ -169,6 +169,7 @@ function completeBridge(): WispApi {
     resumeJob: async () => ({ ok: true, value: { jobs: [] } }),
     runJobNow: async () => ({ ok: true, value: { jobs: [] } }),
     deleteJob: async () => ({ ok: true, value: { jobs: [] } }),
+    setJobMemory: async () => ({ ok: true, value: { jobs: [] } }),
     subscribeToJobs: () => () => undefined,
     getUsageReport: async () => {
       throw new Error("Not implemented in test");

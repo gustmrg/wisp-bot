@@ -71,6 +71,7 @@ export class JobRunner {
       runDirectory: path.join(agentContext.sessionDirectory, JOB_RUNS_DIRECTORY, job.id),
       tools: job.tools,
       skills: job.skills,
+      memory: job.useMemory === true,
       runTools,
     });
     context.recordSession(session.sessionFile ? { sessionFile: session.sessionFile } : {});

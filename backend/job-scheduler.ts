@@ -203,6 +203,16 @@ export class JobScheduler {
     );
   }
 
+  /** Turns memory on or off for the job's next runs; a run going now keeps what it started with. */
+  async setMemory(jobId: string, useMemory: boolean): Promise<Job> {
+    const at = this.now().toISOString();
+    return this.change(jobId, (current) => {
+      if ((current.useMemory === true) === useMemory) return undefined;
+      const { useMemory: _useMemory, ...rest } = current;
+      return { ...rest, ...(useMemory ? { useMemory: true } : {}), updatedAt: at };
+    });
+  }
+
   /** Resumes from now: occurrences missed while paused do not run, and the failure count starts over. */
   async resume(jobId: string): Promise<Job> {
     const now = this.now();

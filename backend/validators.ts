@@ -1,4 +1,4 @@
-import type { JobRequest } from "../shared/jobs.js";
+import type { JobRequest, SetJobMemoryRequest } from "../shared/jobs.js";
 import { isContextPolicy, withPolicyDefaults, type ContextRequest } from "../shared/context-policy.js";
 import {
   isThinkingLevel,
@@ -613,6 +613,12 @@ export function parseUpdateScheduledMessageRequest(value: unknown): UpdateSchedu
 
 export function parseJobRequest(value: unknown): JobRequest {
   return { jobId: parseId(asRecord(value).jobId) };
+}
+
+export function parseSetJobMemoryRequest(value: unknown): SetJobMemoryRequest {
+  const request = asRecord(value);
+  if (typeof request.useMemory !== "boolean") throw invalidRequest();
+  return { jobId: parseId(request.jobId), useMemory: request.useMemory };
 }
 
 export function parseScheduledMessageRequest(value: unknown): ScheduledMessageRequest {

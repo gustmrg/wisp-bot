@@ -101,6 +101,7 @@ describe("JobRunner", () => {
       runDirectory: "/data/pi-sessions/atlas-session/jobs/job-1",
       tools: ["web_search"],
       skills: ["job-search"],
+      memory: false,
     });
     expect(harness.specs[0]?.runTools.map(({ name }) => name)).toEqual(["skip_delivery", "save_job_state"]);
     expect(harness.grants).toEqual([{ conversationId: "atlas", approvedTools: new Set(["web_search"]) }]);
@@ -110,6 +111,12 @@ describe("JobRunner", () => {
       usage: { inputTokens: 10, outputTokens: 5, cacheReadTokens: 0, cacheWriteTokens: 0, totalTokens: 15 },
     });
     expect(harness.session.dispose).toHaveBeenCalled();
+  });
+
+  it("gives the run the Wisp's memory only when the job uses it (SWE-248)", async () => {
+    const harness = setup(async () => ({ text: "Done", stopReason: "stop" }));
+    await harness.runner.run({ ...JOB, useMemory: true }, harness.context);
+    expect(harness.specs[0]).toMatchObject({ memory: true });
   });
 
   it("finishes silently with skip_delivery and saves state with save_job_state", async () => {

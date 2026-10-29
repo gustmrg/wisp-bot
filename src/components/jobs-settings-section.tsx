@@ -11,6 +11,7 @@ import {
   SettingsRowTitle,
 } from "@/components/settings/settings-primitives";
 import { Button } from "@/components/ui/button";
+import { ToggleSwitch } from "@/components/ui/toggle-switch";
 import { useJobs, type JobsController } from "@/hooks/use-jobs";
 import { useTimeFormat, useTimeZone } from "@/hooks/use-time-zone";
 import { clockTimeOptions } from "@/lib/clock-time";
@@ -169,6 +170,16 @@ function JobRow({ job, controller }: { job: Job; controller: JobsController }) {
           <SettingsRowDescription className={cn(job.lastRun?.status === "failed" && "text-destructive")}>
             {last}
           </SettingsRowDescription>
+          {/* Runs work from the job's instructions and saved state; memory is the person's choice (SWE-248). */}
+          <div className="mt-1.5 flex items-center gap-2 text-xs text-dim">
+            <ToggleSwitch
+              checked={job.useMemory === true}
+              label={`Use memory in ${job.title}`}
+              disabled={busy}
+              onChange={() => void act((jobId) => controller.setMemory(jobId, !job.useMemory))}
+            />
+            <span>{job.useMemory ? "Uses the Wisp's memory" : "Runs without the Wisp's memory"}</span>
+          </div>
           {error ? (
             <p role="alert" className="m-0 text-xs text-destructive">
               {error}

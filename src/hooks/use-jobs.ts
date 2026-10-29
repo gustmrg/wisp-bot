@@ -13,6 +13,8 @@ export interface JobsController {
   resume: (jobId: string) => Promise<string | null>;
   runNow: (jobId: string) => Promise<string | null>;
   remove: (jobId: string) => Promise<string | null>;
+  /** Whether the job's next runs read the Wisp's memory. */
+  setMemory: (jobId: string, useMemory: boolean) => Promise<string | null>;
   /** A job's recent runs, newest first, or an error message. */
   loadRuns: (jobId: string) => Promise<ReadonlyArray<JobRun> | string>;
 }
@@ -59,6 +61,10 @@ export function useJobs(): JobsController {
   const resume = useCallback((jobId: string) => run(() => window.wisp.resumeJob({ jobId })), [run]);
   const runNow = useCallback((jobId: string) => run(() => window.wisp.runJobNow({ jobId })), [run]);
   const remove = useCallback((jobId: string) => run(() => window.wisp.deleteJob({ jobId })), [run]);
+  const setMemory = useCallback(
+    (jobId: string, useMemory: boolean) => run(() => window.wisp.setJobMemory({ jobId, useMemory })),
+    [run],
+  );
   const loadRuns = useCallback(async (jobId: string) => {
     try {
       const result = await window.wisp.getJobRuns({ jobId });
@@ -68,5 +74,5 @@ export function useJobs(): JobsController {
     }
   }, []);
 
-  return { available, jobs, pause, resume, runNow, remove, loadRuns };
+  return { available, jobs, pause, resume, runNow, remove, setMemory, loadRuns };
 }
