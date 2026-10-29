@@ -13,7 +13,7 @@ import type { ModelService } from "./model-service.js";
 import type { StructuredLogger } from "./structured-logger.js";
 
 const TRANSCRIPTION_TIMEOUT_MS = 60_000;
-/** How long one provider gets when backups wait behind it. */
+/** How long one provider gets when a fallback waits behind it. */
 const FALLBACK_ATTEMPT_TIMEOUT_MS = 30_000;
 
 type VoiceCredentials = Pick<
@@ -82,7 +82,7 @@ export class TranscriptionService {
   }
 
   /**
-   * Transcribes with the provider asked for, then with each backup in turn
+   * Transcribes with the provider asked for, then with each fallback in turn
    * while a failure is one the next provider may not share (SWE-253). A
    * failure caused by the recording itself ends the chain, and no provider is
    * asked twice, so the same audio is never paid for again where it already
@@ -93,7 +93,7 @@ export class TranscriptionService {
       { providerId: request.providerId, modelId: request.modelId },
       ...(request.fallbacks ?? []),
     ]);
-    // With backups waiting, a provider that hangs gives way sooner.
+    // With a fallback waiting, a provider that hangs gives way sooner.
     const timeoutMs = chain.length > 1 ? Math.min(this.timeoutMs, FALLBACK_ATTEMPT_TIMEOUT_MS) : this.timeoutMs;
     const failures: WispBackendError[] = [];
     for (const [index, choice] of chain.entries()) {
@@ -228,7 +228,7 @@ function movesToNextProvider(error: WispBackendError): boolean {
   return error.code === "model_unavailable" || error.code === "configuration_required";
 }
 
-/** What the person is told when every provider failed: the one asked for, unless backups were tried too. */
+/** What the person is told when every provider failed: the one asked for, unless a fallback was tried too. */
 function chainError(
   chain: ReadonlyArray<VoiceModelChoice>,
   failures: ReadonlyArray<WispBackendError>,
@@ -246,7 +246,7 @@ function chainError(
   );
 }
 
-/** The chain without repeats, so a backup equal to the provider before it is not asked again. */
+/** The chain without repeats, so a fallback equal to the provider before it is not asked again. */
 function uniqueChoices(choices: ReadonlyArray<VoiceModelChoice>): VoiceModelChoice[] {
   const seen = new Set<string>();
   return choices.filter(({ providerId, modelId }) => {

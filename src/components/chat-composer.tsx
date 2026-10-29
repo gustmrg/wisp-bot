@@ -47,7 +47,7 @@ export interface VoiceInputSettings {
   deviceId: string;
   providerId: VoiceProviderId;
   modelId: string;
-  /** Backups for a transcription the provider cannot do. */
+  /** The fallback for a transcription the provider cannot do. */
   fallbacks?: ReadonlyArray<VoiceModelChoice>;
   language: VoiceLanguage;
   autoSend: boolean;

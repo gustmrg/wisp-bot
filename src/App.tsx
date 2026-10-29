@@ -335,7 +335,7 @@ function Workspace({
                   deviceId: workspace.preferences.microphone,
                   providerId: workspace.preferences.voiceProvider,
                   modelId: workspace.preferences.voiceModel,
-                  fallbacks: workspace.preferences.voiceFallbacks,
+                  fallbacks: workspace.preferences.voiceFallback ? [workspace.preferences.voiceFallback] : [],
                   language: workspace.preferences.voiceLanguage,
                   autoSend: workspace.preferences.voiceAutoSend,
                   shortcut: workspace.preferences.shortcuts.voiceInput,

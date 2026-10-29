@@ -107,15 +107,12 @@ describe("TranscriptionService", () => {
     ).rejects.toMatchObject({ code: "model_unavailable" });
   });
 
-  describe("with backup providers", () => {
-    const withBackups: TranscribeAudioRequest = {
+  describe("with a fallback model", () => {
+    const withFallback: TranscribeAudioRequest = {
       ...request,
-      fallbacks: [
-        { providerId: "openai", modelId: "gpt-4o-mini-transcribe" },
-        { providerId: "mistral", modelId: "voxtral-mini-latest" },
-      ],
+      fallbacks: [{ providerId: "openai", modelId: "gpt-4o-mini-transcribe" }],
     };
-    const keys = { groq: "groq-key", openai: "openai-key", mistral: "mistral-key" };
+    const keys = { groq: "groq-key", openai: "openai-key" };
     const hosts = (fetch: ReturnType<typeof createService>["fetch"]) =>
       fetch.mock.calls.map(([url]) => new URL(String(url)).host);
 
@@ -128,11 +125,11 @@ describe("TranscriptionService", () => {
     ])("goes to the next provider when one %s, and says which one answered", async (_reason, failure) => {
       const { service, fetch, logger } = createService({
         keys,
-        responses: { "api.groq.com": failure, "api.openai.com": Response.json({ text: "From the backup." }) },
+        responses: { "api.groq.com": failure, "api.openai.com": Response.json({ text: "From the fallback." }) },
       });
 
-      await expect(service.transcribe(withBackups)).resolves.toEqual({
-        text: "From the backup.",
+      await expect(service.transcribe(withFallback)).resolves.toEqual({
+        text: "From the fallback.",
         providerId: "openai",
         modelId: "gpt-4o-mini-transcribe",
       });
@@ -145,10 +142,10 @@ describe("TranscriptionService", () => {
     });
 
     it("skips a provider without a key without calling it", async () => {
-      const { service, fetch } = createService({ keys: { mistral: "mistral-key" } });
+      const { service, fetch } = createService({ keys: { openai: "openai-key" } });
 
-      await expect(service.transcribe(withBackups)).resolves.toMatchObject({ providerId: "mistral" });
-      expect(hosts(fetch)).toEqual(["api.mistral.ai"]);
+      await expect(service.transcribe(withFallback)).resolves.toMatchObject({ providerId: "openai" });
+      expect(hosts(fetch)).toEqual(["api.openai.com"]);
     });
 
     it.each([
@@ -158,7 +155,7 @@ describe("TranscriptionService", () => {
     ])("stops at a recording the provider found %s, since every provider would", async (_reason, status) => {
       const { service, fetch } = createService({ keys, responses: { "api.groq.com": new Response("{}", { status }) } });
 
-      await expect(service.transcribe(withBackups)).rejects.toMatchObject({ retryable: false });
+      await expect(service.transcribe(withFallback)).rejects.toMatchObject({ retryable: false });
       expect(hosts(fetch)).toEqual(["api.groq.com"]);
     });
 
@@ -174,18 +171,18 @@ describe("TranscriptionService", () => {
     it("says every provider failed, and that trying again may work", async () => {
       const { service, fetch } = createService({ keys, response: new Response("{}", { status: 503 }) });
 
-      await expect(service.transcribe(withBackups)).rejects.toMatchObject({
+      await expect(service.transcribe(withFallback)).rejects.toMatchObject({
         code: "model_unavailable",
         retryable: true,
-        message: "None of your voice providers could transcribe the recording (Groq, OpenAI, Mistral). Try again.",
+        message: "None of your voice providers could transcribe the recording (Groq, OpenAI). Try again.",
       });
-      expect(hosts(fetch)).toEqual(["api.groq.com", "api.openai.com", "api.mistral.ai"]);
+      expect(hosts(fetch)).toEqual(["api.groq.com", "api.openai.com"]);
     });
 
     it("points to Settings when every provider lacks a usable key", async () => {
       const { service } = createService({ keys: {} });
 
-      await expect(service.transcribe(withBackups)).rejects.toMatchObject({
+      await expect(service.transcribe(withFallback)).rejects.toMatchObject({
         code: "configuration_required",
         message: "Add a Groq API key in Settings to use voice input.",
       });

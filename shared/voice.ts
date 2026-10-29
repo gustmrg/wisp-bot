@@ -87,8 +87,8 @@ export interface RemoveVoiceCredentialRequest {
   providerId: VoiceProviderId;
 }
 
-/** How many backups a recording can go to after its provider (SWE-253). */
-export const MAX_VOICE_FALLBACKS = 2;
+/** How many fallback models a recording can go to after its provider (SWE-253), as with the AI model's fallback. */
+export const MAX_VOICE_FALLBACKS = 1;
 
 /** A speech-to-text provider and one of its models. */
 export interface VoiceModelChoice {

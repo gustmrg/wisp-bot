@@ -845,7 +845,7 @@ describe("ChatComposer voice input", () => {
     expect(onConfigureVoice).toHaveBeenCalledOnce();
   });
 
-  it("keeps a recording that failed to transcribe and sends it again on Try again, with the backups", async () => {
+  it("keeps a recording that failed to transcribe and sends it again on Try again, with the fallback", async () => {
     const user = userEvent.setup();
     const transcribeAudio = setup(
       vi

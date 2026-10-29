@@ -1,7 +1,7 @@
-import { XIcon } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import { PreferenceSwitch, SettingsSelect, type SettingsOption } from "@/components/general-settings-sections";
+import { SearchableCombobox } from "@/components/searchable-combobox";
 import {
   ConfirmAction,
   SettingsCard,
@@ -21,7 +21,6 @@ import {
   isVoiceLanguage,
   isVoiceModel,
   isVoiceProviderId,
-  MAX_VOICE_FALLBACKS,
   VOICE_LANGUAGES,
   VOICE_PROVIDERS,
   voiceProvider,
@@ -247,7 +246,7 @@ function VoiceSettingsSection({ active, preferences, onPreferencesChange }: Voic
           </SettingsCard>
         </SettingsGroup>
 
-        <BackupProviders view={view} preferences={preferences} onPreferencesChange={onPreferencesChange} />
+        <FallbackVoiceModel view={view} preferences={preferences} onPreferencesChange={onPreferencesChange} />
 
         <SettingsGroup label="Credential">
           <SettingsCard>
@@ -315,6 +314,8 @@ function VoiceSettingsSection({ active, preferences, onPreferencesChange }: Voic
   );
 }
 
+const OFF = "off";
+
 const choiceValue = ({ providerId, modelId }: VoiceModelChoice) => `${providerId}:${modelId}`;
 
 function choiceOf(value: string): VoiceModelChoice | undefined {
@@ -324,17 +325,22 @@ function choiceOf(value: string): VoiceModelChoice | undefined {
   return isVoiceProviderId(providerId) && isVoiceModel(providerId, modelId) ? { providerId, modelId } : undefined;
 }
 
-function choiceLabel({ providerId, modelId }: VoiceModelChoice): string {
+function modelOption({ providerId, modelId }: VoiceModelChoice) {
   const provider = voiceProvider(providerId);
   const model = provider?.models.find(({ id }) => id === modelId);
-  return `${provider?.name ?? providerId} · ${model?.name ?? modelId}`;
+  return {
+    value: choiceValue({ providerId, modelId }),
+    label: model?.name ?? modelId,
+    description: `${provider?.name ?? providerId} · ${modelId}`,
+  };
 }
 
 /**
- * The providers a recording goes to, in order, when the one above cannot
- * transcribe it (SWE-253). Only providers with a saved key can be added.
+ * Chooses the model a recording goes to when the provider above cannot
+ * transcribe it (SWE-253), like the fallback model in AI Model. Only models
+ * from providers with a saved key are listed.
  */
-function BackupProviders({
+function FallbackVoiceModel({
   view,
   preferences,
   onPreferencesChange,
@@ -343,80 +349,62 @@ function BackupProviders({
   preferences: AppPreferences;
   onPreferencesChange: (preferences: AppPreferences) => void;
 }) {
-  const backups = preferences.voiceFallbacks;
+  const selected = preferences.voiceFallback;
   const keyed = new Set((view?.providers ?? []).filter((status) => status.credentialConfigured).map(({ id }) => id));
   const primary = choiceValue({ providerId: preferences.voiceProvider, modelId: preferences.voiceModel });
-  const candidates = VOICE_PROVIDERS.filter(({ id }) => keyed.has(id))
-    .flatMap((provider) => provider.models.map((model) => ({ providerId: provider.id, modelId: model.id })))
-    .filter((choice) => choiceValue(choice) !== primary);
-  const unused = candidates.filter((choice) => !backups.some((backup) => choiceValue(backup) === choiceValue(choice)));
-  const change = (voiceFallbacks: VoiceModelChoice[]) => onPreferencesChange({ ...preferences, voiceFallbacks });
-  const next = unused[0];
+  const options = [
+    { value: OFF, label: "Off", description: "Voice input stops when the provider fails" },
+    // The provider above cannot stand in for itself.
+    ...VOICE_PROVIDERS.filter(({ id }) => keyed.has(id))
+      .flatMap((provider) =>
+        provider.models.map((model) => modelOption({ providerId: provider.id, modelId: model.id })),
+      )
+      .filter(({ value }) => value !== primary),
+  ];
+  if (selected && !options.some(({ value }) => value === choiceValue(selected))) {
+    const option = modelOption(selected);
+    options.push({ ...option, label: `${option.label} (unavailable)` });
+  }
+  const providerName = selected ? (voiceProvider(selected.providerId)?.name ?? selected.providerId) : "";
+  // Said only once the keys are known, so the warning never flashes while they load.
+  const unavailable =
+    !selected || !view
+      ? null
+      : !keyed.has(selected.providerId)
+        ? `Add an API key for ${providerName} to use this model. Until then, voice input has no fallback.`
+        : choiceValue(selected) === primary
+          ? "This is the model above, so voice input has no fallback. Choose another model."
+          : null;
   return (
-    <SettingsGroup label="Backup providers">
-      <SettingsCard variant="stacked">
+    <SettingsGroup label="Fallback">
+      <SettingsCard>
         <SettingsRow>
           <SettingsRowCopy>
-            <SettingsRowTitle>If the provider fails</SettingsRowTitle>
+            <SettingsRowTitle htmlFor="voice-fallback-model">Fallback model</SettingsRowTitle>
             <SettingsRowDescription>
-              When the provider above can't be reached, takes too long, is rate limited, or rejects its key, the
-              recording goes to these, in order. A recording no provider could read is not sent again.
-              {candidates.length ? null : " Save a key for another provider to use it as a backup."}
+              Transcribes the recording when the provider above fails for a reason another may not share: it can't be
+              reached, takes too long, is rate limited, or rejects its key. A recording no provider could read is not
+              sent again. Only models from providers with a saved key are listed.
             </SettingsRowDescription>
+            {unavailable ? (
+              <span role="alert" className="text-xs leading-relaxed text-warning">
+                {unavailable}
+              </span>
+            ) : null}
           </SettingsRowCopy>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            className="shrink-0"
-            disabled={!next || backups.length >= MAX_VOICE_FALLBACKS}
-            onClick={() => next && change([...backups, next])}
-          >
-            Add backup
-          </Button>
+          <SearchableCombobox
+            id="voice-fallback-model"
+            value={selected ? choiceValue(selected) : OFF}
+            options={options}
+            className="h-8 w-[260px] max-w-[62%] text-base"
+            searchLabel="Search fallback models"
+            searchPlaceholder="Search model name or ID…"
+            emptyText="No models from providers with a saved key."
+            onChange={(value) =>
+              onPreferencesChange({ ...preferences, voiceFallback: value === OFF ? null : (choiceOf(value) ?? null) })
+            }
+          />
         </SettingsRow>
-        {backups.map((backup, index) => {
-          const value = choiceValue(backup);
-          const options = [
-            ...(candidates.some((choice) => choiceValue(choice) === value)
-              ? []
-              : [
-                  {
-                    value,
-                    label: `${choiceLabel(backup)} ${value === primary ? "(same as the provider)" : "(no key)"}`,
-                  },
-                ]),
-            ...candidates
-              .filter((choice) => choiceValue(choice) === value || unused.includes(choice))
-              .map((choice) => ({ value: choiceValue(choice), label: choiceLabel(choice) })),
-          ];
-          return (
-            <SettingsRow key={value}>
-              <SettingsRowCopy>
-                <SettingsRowTitle htmlFor={`voice-backup-${index}`}>Backup {index + 1}</SettingsRowTitle>
-              </SettingsRowCopy>
-              <SettingsSelect
-                id={`voice-backup-${index}`}
-                value={value}
-                options={options}
-                onChange={(selected) => {
-                  const choice = choiceOf(selected);
-                  if (choice) change(backups.map((current, at) => (at === index ? choice : current)));
-                }}
-              />
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon-sm"
-                aria-label={`Remove backup ${index + 1}`}
-                title={`Remove backup ${index + 1}`}
-                onClick={() => change(backups.filter((_, at) => at !== index))}
-              >
-                <XIcon aria-hidden="true" />
-              </Button>
-            </SettingsRow>
-          );
-        })}
       </SettingsCard>
     </SettingsGroup>
   );
