@@ -164,7 +164,7 @@ describe("AppSettingsDialog metadata", () => {
       />,
     );
 
-    expect(screen.getByLabelText("Preferred name")).toHaveValue("Ada");
+    expect(screen.getByLabelText("Name")).toHaveValue("Ada");
     expect(screen.getByRole("button", { name: "Notifications" })).toBeEnabled();
     expect(screen.queryByRole("switch", { name: "Notification sounds" })).not.toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Notifications" }));
@@ -356,7 +356,7 @@ describe("AppSettingsDialog on mobile", () => {
     expect(screen.queryByText("Your workspace")).not.toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "Ada Lovelace" }));
-    expect(screen.getByLabelText("Preferred name")).toHaveValue("Ada");
+    expect(screen.getByLabelText("Name")).toHaveValue("Ada");
   });
 
   it("shows or hides the row of Wisps above the conversations", async () => {

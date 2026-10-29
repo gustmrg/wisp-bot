@@ -95,7 +95,7 @@ const NAV_ITEMS: ReadonlyArray<
     section: "general",
     panelId: "general-settings-panel",
     label: "General",
-    description: "Your profile and how Wisp looks",
+    description: "Your name and how Wisp looks",
     icon: SettingsIcon,
   },
   {
