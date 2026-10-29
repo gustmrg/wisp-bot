@@ -144,6 +144,18 @@ describe("ConversationService", () => {
     await service.update("one", { kind: "wisp", notifyOnUpdatesEnabled: false });
     // Appearance and notifications do not change what the agent is told.
     expect(updateContext).not.toHaveBeenCalled();
+
+    // Memory does: the agent loses it from the next message, and gets it back the same way (SWE-228).
+    await service.updateWisp("one", { memoryOff: true });
+    expect(updateContext).toHaveBeenLastCalledWith(expect.objectContaining({ memoryOff: true }));
+    expect(updateContext).toHaveBeenLastCalledWith(
+      expect.not.objectContaining({ memory: expect.anything() }) as unknown as ConversationAgentContext,
+    );
+    await service.updateWisp("one", { memoryOff: false });
+    expect(updateContext).toHaveBeenLastCalledWith(expect.objectContaining({ memory: expect.anything() }));
+    expect(updateContext).toHaveBeenLastCalledWith(
+      expect.not.objectContaining({ memoryOff: true }) as unknown as ConversationAgentContext,
+    );
     await service.dispose();
   });
 

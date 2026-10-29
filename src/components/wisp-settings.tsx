@@ -100,7 +100,11 @@ export function WispSettingsSectionContent({ chat, section, onChangeWisp, onOpen
           {section === "usage" ? <WispSessionReportSection chatId={id} onOpenSettings={onOpenSettings} /> : null}
           {section === "memory" ? (
             <div className="flex flex-col gap-6">
-              <WispMemorySettings conversationId={id} />
+              <WispMemorySettings
+                conversationId={id}
+                memoryOff={chat.wisp.memoryOff === true}
+                onChangeMemoryOff={(memoryOff) => onChangeWisp({ memoryOff })}
+              />
               <div className="border-t border-border pt-4">
                 <WispContextSettings conversationId={id} />
               </div>

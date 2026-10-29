@@ -502,7 +502,7 @@ export class ConversationRepository {
       soul: wisp.soul,
       userName: this.profile.preferredName || undefined,
       userTimeZone: () => this.timeZone,
-      memory: this.memoryAccess(wisp.id),
+      ...(wisp.memoryOff ? { memoryOff: true } : { memory: this.memoryAccess(wisp.id) }),
       workspaceDirectory: path.join(this.workspaceRoot, record.storageId),
       sessionDirectory: path.join(this.sessionRoot, session.sessionId),
       configDirectory: path.join(this.configRoot, wispRecord.storageId),

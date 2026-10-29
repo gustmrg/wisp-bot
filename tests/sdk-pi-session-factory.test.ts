@@ -614,6 +614,61 @@ describe("SdkPiSessionFactory", () => {
     expect(store.active("one").map(({ id }) => id)).toEqual(["m2", "m3"]);
   });
 
+  it("runs a Wisp without memory, and turning memory back on restores it from the next message (SWE-228)", async () => {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "wisp-pi-memory-off-"));
+    const runtime = {
+      hasConfiguredAuth: vi.fn(() => true),
+      getModel: vi.fn(() => ({ provider: "provider", id: "model" })),
+    } as unknown as ModelRuntimeLike;
+    const context: ConversationAgentContext = {
+      conversationId: "one",
+      sessionId: "app-session",
+      name: "Atlas",
+      wispId: "one",
+      role: "Research",
+      soul: "",
+      workspaceDirectory: path.join(directory, "workspace"),
+      sessionDirectory: directory,
+      configDirectory: path.join(directory, "config"),
+      piSessionId: null,
+      piSessionFile: null,
+      memoryOff: true,
+    };
+    await mkdir(context.workspaceDirectory, { recursive: true });
+    const session = await new SdkPiSessionFactory(runtime, { authorize: vi.fn(async () => undefined) }).create(
+      context,
+      { providerId: "provider", modelId: "model" },
+    );
+    const loader = sdk.loaderOptions.at(-1) as {
+      systemPromptOverride: () => string;
+      extensionFactories: Array<{ name: string; factory: (pi: unknown) => void }>;
+    };
+    let beforeStart: ((event: { systemPrompt: string }) => Promise<{ systemPrompt: string } | undefined>) | undefined;
+    loader.extensionFactories
+      .find(({ name }) => name === "wisp-continuity")!
+      .factory({ on: (_event: string, handler: typeof beforeStart) => (beforeStart = handler) });
+
+    // The active tools the mock starts with are exactly those without save_memory, so none are set.
+    expect(sdk.session.setActiveToolsByName).not.toHaveBeenCalled();
+    // Without memory or skills, nothing is added to the system prompt.
+    const base = loader.systemPromptOverride();
+    expect(await beforeStart!({ systemPrompt: base })).toBeUndefined();
+    const off = base;
+    expect(off).not.toContain("## Memory\n");
+    expect(off).not.toContain("save_memory");
+    expect(off).not.toContain("as saved under Memory");
+    expect(off).toContain("## Memory off");
+
+    context.memoryOff = false;
+    context.memory = { render: async () => "### MEMORY.md\n- [m1] Works on Wisp Bot." } as never;
+    await session.reload();
+    expect(sdk.session.setActiveToolsByName).toHaveBeenLastCalledWith(expect.arrayContaining(["save_memory"]));
+    const on = (await beforeStart!({ systemPrompt: loader.systemPromptOverride() }))?.systemPrompt ?? "";
+    expect(on).toContain("## Memory\n");
+    expect(on).toContain("- [m1] Works on Wisp Bot.");
+    expect(on).not.toContain("## Memory off");
+  });
+
   it("saves skills only after approval and lists them in the next run's prompt", async () => {
     const directory = await mkdtemp(path.join(os.tmpdir(), "wisp-pi-skills-"));
     const runtime = {

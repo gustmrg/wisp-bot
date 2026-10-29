@@ -65,7 +65,7 @@ afterEach(() => {
 
 it("lists both scopes with their use, origin and history", async () => {
   mockWisp();
-  render(<WispMemorySettings conversationId="one" />);
+  render(<WispMemorySettings conversationId="one" memoryOff={false} onChangeMemoryOff={vi.fn()} />);
 
   const about = await screen.findByRole("region", { name: "About you · every Wisp" });
   expect(within(about).getByText("Prefers short answers.")).toBeInTheDocument();
@@ -78,10 +78,36 @@ it("lists both scopes with their use, origin and history", async () => {
   expect(within(wisp).getByText("Removed and replaced (1)")).toBeInTheDocument();
 });
 
+it("turns the Wisp's memory off and on, keeping its entries, and says when it could not (SWE-228)", async () => {
+  const user = userEvent.setup();
+  mockWisp();
+  const onChangeMemoryOff = vi.fn(async () => true);
+  const { rerender } = render(
+    <WispMemorySettings conversationId="one" memoryOff={false} onChangeMemoryOff={onChangeMemoryOff} />,
+  );
+  await screen.findByRole("region", { name: "This Wisp" });
+
+  const toggle = screen.getByRole("switch", { name: "Use memory" });
+  expect(toggle).toHaveAttribute("aria-checked", "true");
+  await user.click(toggle);
+  expect(onChangeMemoryOff).toHaveBeenLastCalledWith(true);
+
+  rerender(<WispMemorySettings conversationId="one" memoryOff onChangeMemoryOff={onChangeMemoryOff} />);
+  expect(screen.getByRole("switch", { name: "Use memory" })).toHaveAttribute("aria-checked", "false");
+  expect(screen.getByText(/Every entry is kept for when you turn it back on/)).toBeInTheDocument();
+  // The entries stay, to read and edit while memory is off.
+  expect(screen.getByText("Works on Wisp Bot.")).toBeInTheDocument();
+
+  onChangeMemoryOff.mockResolvedValueOnce(false);
+  await user.click(screen.getByRole("switch", { name: "Use memory" }));
+  expect(onChangeMemoryOff).toHaveBeenLastCalledWith(false);
+  expect(await screen.findByText("Could not change memory. Please try again.")).toBeInTheDocument();
+});
+
 it("adds, edits, removes and restores entries", async () => {
   const user = userEvent.setup();
   const { api } = mockWisp();
-  render(<WispMemorySettings conversationId="one" />);
+  render(<WispMemorySettings conversationId="one" memoryOff={false} onChangeMemoryOff={vi.fn()} />);
   const wisp = await screen.findByRole("region", { name: "This Wisp" });
 
   await user.type(within(wisp).getByRole("textbox", { name: "New entry for This Wisp" }), "Ships on Fridays.");
@@ -116,7 +142,7 @@ it("adds, edits, removes and restores entries", async () => {
 it("edits a scope as text after showing what changes", async () => {
   const user = userEvent.setup();
   const { api } = mockWisp();
-  render(<WispMemorySettings conversationId="one" />);
+  render(<WispMemorySettings conversationId="one" memoryOff={false} onChangeMemoryOff={vi.fn()} />);
   const about = await screen.findByRole("region", { name: "About you · every Wisp" });
 
   await user.click(within(about).getByRole("button", { name: "Edit as text" }));
@@ -143,7 +169,7 @@ it("shows why a change was refused", async () => {
       error: { code: "invalid_request", message: "Memory already has this as m1." },
     })),
   });
-  render(<WispMemorySettings conversationId="one" />);
+  render(<WispMemorySettings conversationId="one" memoryOff={false} onChangeMemoryOff={vi.fn()} />);
   const about = await screen.findByRole("region", { name: "About you · every Wisp" });
   await user.type(within(about).getByRole("textbox", { name: "New entry for About you · every Wisp" }), "x");
   await user.click(within(about).getByRole("button", { name: "Add" }));
@@ -157,7 +183,7 @@ it("exports a scope as a Markdown file", async () => {
   vi.stubGlobal("URL", Object.assign(URL, { createObjectURL, revokeObjectURL: vi.fn() }));
   const click = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => undefined);
   const { api } = mockWisp();
-  render(<WispMemorySettings conversationId="one" />);
+  render(<WispMemorySettings conversationId="one" memoryOff={false} onChangeMemoryOff={vi.fn()} />);
   const wisp = await screen.findByRole("region", { name: "This Wisp" });
 
   await user.click(within(wisp).getByRole("button", { name: "Export MEMORY.md" }));
@@ -168,7 +194,7 @@ it("exports a scope as a Markdown file", async () => {
 
 it("reloads when the Wisp saves a memory", async () => {
   const { api, emit } = mockWisp();
-  render(<WispMemorySettings conversationId="one" />);
+  render(<WispMemorySettings conversationId="one" memoryOff={false} onChangeMemoryOff={vi.fn()} />);
   await screen.findByRole("region", { name: "This Wisp" });
   expect(api.getMemory).toHaveBeenCalledTimes(1);
   await act(async () => {

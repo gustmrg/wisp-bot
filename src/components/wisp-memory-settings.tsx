@@ -10,12 +10,20 @@ import {
   type MemoryScope,
   type MemoryView,
 } from "../../shared/memory";
-import { SettingsActions } from "@/components/settings/settings-primitives";
+import {
+  SettingsActions,
+  SettingsCard,
+  SettingsRow,
+  SettingsRowCopy,
+  SettingsRowDescription,
+  SettingsRowTitle,
+} from "@/components/settings/settings-primitives";
 import { Button } from "@/components/ui/button";
 import { FieldDescription, FieldGroup, FieldTitle } from "@/components/ui/field";
 import { FormStatus } from "@/components/ui/form-status";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { ToggleSwitch } from "@/components/ui/toggle-switch";
 import { describeMemoryTextEdit, planMemoryTextEdit, type MemoryTextEdit } from "@/lib/memory-text-edit";
 import { cn } from "@/lib/utils";
 
@@ -30,14 +38,23 @@ const SCOPES: Record<MemoryScope, { title: string; description: string; file: st
 
 type Apply = (operations: MemoryOperationRequest[]) => Promise<boolean>;
 
-/** The memory part of a Wisp's Memory settings (ADR 029). */
-export function WispMemorySettings({ conversationId }: { conversationId: string }) {
-  return <MemoryPanel key={conversationId} conversationId={conversationId} />;
+interface WispMemorySettingsProps {
+  conversationId: string;
+  /** Whether the Wisp runs without memory (SWE-228). */
+  memoryOff: boolean;
+  /** Saves the switch; false when it could not be saved. */
+  onChangeMemoryOff: (memoryOff: boolean) => Promise<boolean> | void;
 }
 
-function MemoryPanel({ conversationId }: { conversationId: string }) {
+/** The memory part of a Wisp's Memory settings (ADR 029). */
+export function WispMemorySettings(props: WispMemorySettingsProps) {
+  return <MemoryPanel key={props.conversationId} {...props} />;
+}
+
+function MemoryPanel({ conversationId, memoryOff, onChangeMemoryOff }: WispMemorySettingsProps) {
   const [view, setView] = useState<MemoryView | null>(null);
   const [busy, setBusy] = useState(false);
+  const [switching, setSwitching] = useState(false);
   const [error, setError] = useState("");
 
   const load = useCallback(async () => {
@@ -86,6 +103,18 @@ function MemoryPanel({ conversationId }: { conversationId: string }) {
     }
   };
 
+  async function toggleMemory() {
+    setSwitching(true);
+    setError("");
+    try {
+      if ((await onChangeMemoryOff(!memoryOff)) === false) setError("Could not change memory. Please try again.");
+    } catch {
+      setError("Could not change memory. Please try again.");
+    } finally {
+      setSwitching(false);
+    }
+  }
+
   async function exportScope(scope: MemoryScope) {
     setError("");
     try {
@@ -104,6 +133,24 @@ function MemoryPanel({ conversationId }: { conversationId: string }) {
         something and approve the change, or add it here. Memory is stored on this device and included in model
         requests.
       </FieldDescription>
+      <SettingsCard>
+        <SettingsRow className="min-h-0 p-[11px]">
+          <SettingsRowCopy>
+            <SettingsRowTitle>Use memory</SettingsRowTitle>
+            <SettingsRowDescription>
+              {memoryOff
+                ? "Off: this Wisp doesn't read or save memory, in conversations or jobs. Every entry is kept for when you turn it back on."
+                : "This Wisp reads both lists below and can save to them when you ask."}
+            </SettingsRowDescription>
+          </SettingsRowCopy>
+          <ToggleSwitch
+            checked={!memoryOff}
+            label="Use memory"
+            disabled={switching}
+            onChange={() => void toggleMemory()}
+          />
+        </SettingsRow>
+      </SettingsCard>
       {view === null && !error ? <FormStatus pending="Loading memory…" /> : null}
       {view
         ? MEMORY_SCOPES.map((scope) => (

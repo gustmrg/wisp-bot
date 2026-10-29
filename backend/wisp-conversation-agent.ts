@@ -218,6 +218,7 @@ export class WispConversationAgent implements ConversationAgent {
       this.context.soul = context.soul;
       this.context.userName = context.userName;
       this.context.memory = context.memory;
+      this.context.memoryOff = context.memoryOff;
       this.context.userTimeZone = context.userTimeZone;
       this.context.circle = context.circle;
       if (!this.session) return;

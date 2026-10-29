@@ -33,7 +33,9 @@ import type { ConversationRecord, WispRecord, WorkspaceRecords } from "./workspa
 // none, so it raises MIN_READER_VERSION: an older build refuses this database.
 // Version 13 names each reply's author in the reply itself, so a reply keeps a
 // name after its Wisp is deleted. Older readers ignore the field.
-const STORE_VERSION = 13;
+// Version 14 adds whether a Wisp runs without memory; older writers leave it
+// alone, and a Wisp they create has memory.
+const STORE_VERSION = 14;
 const MIN_READER_VERSION = 12;
 /** The first layout whose job runs name their session files under the runtime-neutral folders. */
 const WISP_FOLDERS_VERSION = 12;
@@ -134,6 +136,7 @@ const RECORD_SCHEMA = `
     fallback_mode TEXT,
     fallback_provider_id TEXT,
     fallback_model_id TEXT,
+    memory_off INTEGER NOT NULL DEFAULT 0 CHECK (memory_off IN (0, 1)),
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
     CHECK ((model_provider_id IS NULL) = (model_id IS NULL)),
@@ -300,6 +303,10 @@ const ADD_WISP_FALLBACKS = `
   ALTER TABLE wisps ADD COLUMN fallback_model_id TEXT;
 `;
 
+// Builds before version 14 could not turn a Wisp's memory off; its Wisps have memory.
+const ADD_WISP_MEMORY_OFF =
+  "ALTER TABLE wisps ADD COLUMN memory_off INTEGER NOT NULL DEFAULT 0 CHECK (memory_off IN (0, 1));";
+
 // Replies stored before version 13 name their author only by ID; those whose Wisp
 // still exists take its name. Replies of Wisps already deleted stay unnamed.
 const NAME_MESSAGE_AUTHORS = `
@@ -380,6 +387,7 @@ function wispRecordOf(row: Row): unknown {
         mark: row.mark,
       },
       ...(color === undefined ? {} : { color }),
+      ...(row.memory_off === 1 ? { memoryOff: true } : {}),
     },
     storageId: row.storage_id,
     modelOverride:
@@ -578,6 +586,7 @@ export class ConversationStore {
         store.addPinnedConversations();
         store.addWispThinkingLevels();
         store.addWispFallbacks();
+        store.addWispMemoryOff();
         if (version !== undefined) store.renameJobRunSessionFiles(Number(version) < WISP_FOLDERS_VERSION);
         if (version !== undefined && Number(version) < AUTHOR_NAMES_VERSION) store.nameMessageAuthors();
       }
@@ -753,8 +762,8 @@ export class ConversationStore {
     this.statement(
       `INSERT INTO wisps (id, name, role, soul, body, trail, tone, eyes, eye_ink, finish, mark, color,
         storage_id, model_provider_id, model_id, model_max_output_tokens, model_thinking_level,
-        fallback_mode, fallback_provider_id, fallback_model_id, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        fallback_mode, fallback_provider_id, fallback_model_id, memory_off, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT (id) DO UPDATE SET
         name = excluded.name, role = excluded.role, soul = excluded.soul,
         body = excluded.body, trail = excluded.trail, tone = excluded.tone, eyes = excluded.eyes,
@@ -764,7 +773,7 @@ export class ConversationStore {
         model_max_output_tokens = excluded.model_max_output_tokens,
         model_thinking_level = excluded.model_thinking_level,
         fallback_mode = excluded.fallback_mode, fallback_provider_id = excluded.fallback_provider_id,
-        fallback_model_id = excluded.fallback_model_id,
+        fallback_model_id = excluded.fallback_model_id, memory_off = excluded.memory_off,
         created_at = excluded.created_at, updated_at = excluded.updated_at`,
     ).run(
       wisp.id,
@@ -787,6 +796,7 @@ export class ConversationStore {
       fallback === undefined ? null : typeof fallback === "string" ? fallback : "model",
       typeof fallback === "object" ? fallback.providerId : null,
       typeof fallback === "object" ? fallback.modelId : null,
+      wisp.memoryOff ? 1 : 0,
       record.createdAt,
       record.updatedAt,
     );
@@ -1172,6 +1182,20 @@ export class ConversationStore {
     this.db.exec("BEGIN IMMEDIATE");
     try {
       this.db.exec(ADD_WISP_FALLBACKS);
+      this.raiseVersions();
+      this.db.exec("COMMIT");
+    } catch (error) {
+      this.db.exec("ROLLBACK");
+      throw error;
+    }
+  }
+
+  private addWispMemoryOff(): void {
+    const columns = this.db.prepare("SELECT name FROM pragma_table_info('wisps')").all();
+    if (columns.some((column) => column.name === "memory_off")) return;
+    this.db.exec("BEGIN IMMEDIATE");
+    try {
+      this.db.exec(ADD_WISP_MEMORY_OFF);
       this.raiseVersions();
       this.db.exec("COMMIT");
     } catch (error) {

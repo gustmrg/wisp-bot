@@ -164,7 +164,11 @@ export function WispDetails({
           {/* Each of these sections saves its own changes. */}
           <Accordion multiple className="mt-4 border-t border-border">
             <SettingsAccordionSection value="memory" label="Memory">
-              <WispMemorySettings conversationId={chat.id} />
+              <WispMemorySettings
+                conversationId={chat.id}
+                memoryOff={chat.wisp.memoryOff === true}
+                onChangeMemoryOff={(memoryOff) => onChangeWisp({ memoryOff })}
+              />
             </SettingsAccordionSection>
             <SettingsAccordionSection value="context" label="Context">
               <WispContextSettings conversationId={chat.id} />

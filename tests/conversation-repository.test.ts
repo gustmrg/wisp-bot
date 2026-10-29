@@ -430,6 +430,14 @@ describe("ConversationRepository", () => {
 
     await repository.updateWisp("atlas", { soul: "# Identity\nA careful researcher", color: "#123456" });
     await repository.updateWisp("atlas", { color: undefined });
+    // Memory off leaves the Wisp's agent without memory; on again, the field is gone (SWE-228).
+    await repository.updateWisp("atlas", { memoryOff: true });
+    expect(repository.readWisps().atlas?.memoryOff).toBe(true);
+    expect(repository.getAgentContext("atlas")).toMatchObject({ memoryOff: true });
+    expect(repository.getAgentContext("atlas").memory).toBeUndefined();
+    expect((await reload(directory)).readWisps().atlas?.memoryOff).toBe(true);
+    await repository.updateWisp("atlas", { memoryOff: false });
+    expect(repository.getAgentContext("atlas").memory).toBeDefined();
     const restored = await reload(directory);
     expect(restored.readWisps().atlas).toEqual({ ...newWisp("atlas"), soul: "# Identity\nA careful researcher" });
     expect(restored.getAgentContext("atlas").soul).toBe("# Identity\nA careful researcher");
@@ -578,7 +586,7 @@ describe("ConversationRepository", () => {
     expect(await upgraded.listQueuedMessages()).toEqual([queued]);
     expect(storedRows(directory, "SELECT key, value FROM meta WHERE key LIKE '%version'")).toEqual(
       expect.arrayContaining([
-        { key: "store_version", value: "13" },
+        { key: "store_version", value: "14" },
         { key: "min_reader_version", value: "12" },
       ]),
     );

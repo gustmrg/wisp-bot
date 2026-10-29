@@ -431,7 +431,12 @@ export class ConversationService {
 
   async updateWisp(wispId: string, changes: WispChanges): Promise<ConversationStateView> {
     await this.repository.updateWisp(wispId, changes);
-    if (changes.name !== undefined || changes.role !== undefined || changes.soul !== undefined) {
+    if (
+      changes.name !== undefined ||
+      changes.role !== undefined ||
+      changes.soul !== undefined ||
+      changes.memoryOff !== undefined
+    ) {
       await this.registry.updateContext(this.repository.getAgentContext(wispId));
       // Every member's prompt names the members, so each circle the Wisp is in changes.
       await this.updateCirclesOf(wispId);

@@ -81,6 +81,11 @@ export interface ConversationAgentContext {
   userName?: string;
   /** The Wisp's memory, read on every run so a change applies at once (ADR 029). */
   memory?: WispMemoryAccess;
+  /**
+   * Set when the Wisp runs without memory: its prompt has no Memory section and
+   * it is offered no memory tool. `memory` is then unset.
+   */
+  memoryOff?: boolean;
   /** The person's current time zone, read on every message; without it the Wisp is not told the time. */
   userTimeZone?: () => string;
   modelOverride?: ModelSelection | null;

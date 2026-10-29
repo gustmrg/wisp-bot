@@ -360,6 +360,16 @@ describe("ChatPanel identity", () => {
     expect(screen.getByText("Research")).toBeInTheDocument();
   });
 
+  it("says in the header when the Wisp runs without memory, and opens its settings from there (SWE-228)", async () => {
+    const { props, show } = renderPanel(transcript(messages(0, 1)));
+    expect(screen.queryByRole("button", { name: "Memory off" })).not.toBeInTheDocument();
+    show(transcript(messages(0, 1)), {
+      chat: wispChatView("atlas", { wisp: { name: "Atlas", memoryOff: true } }),
+    });
+    await userEvent.setup().click(screen.getByRole("button", { name: "Memory off" }));
+    expect(props.onOpenDetails).toHaveBeenCalled();
+  });
+
   it("keeps the default composer button for a gray Wisp", () => {
     const { show } = renderPanel(transcript(messages(0, 1)), {
       chat: wispChatView("atlas", { wisp: { name: "Atlas", color: "#262626" } }),
