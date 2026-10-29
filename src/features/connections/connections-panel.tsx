@@ -52,13 +52,23 @@ export function ConnectionsPanel({
   view,
   serversOnly = false,
   initialEditing = null,
+  onExit,
+  bare = false,
+  connectOnSave = false,
 }: {
   view: ConnectionsView;
   serversOnly?: boolean;
-  /** Opens with this connection's settings, as "Edit connection" does on the connection screen. */
-  initialEditing?: string | null;
+  /** Opens with this connection's settings, as "Edit connection" does on the connection screen, or "new". */
+  initialEditing?: "new" | string | null;
+  /** Leaves the form opened with `initialEditing` for where it was opened from, instead of the list. */
+  onExit?: () => void;
+  /** Leaves out the form's back button and heading, for a screen that has its own. */
+  bare?: boolean;
+  /** Connects to a new connection once it is saved, as on the first run. */
+  connectOnSave?: boolean;
 }) {
   const [editing, setEditing] = useState<"new" | string | null>(initialEditing);
+  const leaveForm = () => (onExit && editing === initialEditing ? onExit() : setEditing(null));
   const [error, setError] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
 
@@ -82,7 +92,12 @@ export function ConnectionsPanel({
       <ConnectionForm
         key={editing}
         profile={editedProfile && editedProfile.kind !== "local" ? editedProfile : undefined}
-        onDone={() => setEditing(null)}
+        backLabel={onExit && editing === initialEditing ? "Back" : "Connections"}
+        bare={bare}
+        {...(connectOnSave && editing === "new"
+          ? { connectTo: (saved: ConnectionsView) => newProfileId(view, saved) }
+          : {})}
+        onDone={leaveForm}
       />
     );
   }
@@ -185,6 +200,12 @@ interface Draft {
   url: string;
 }
 
+/** The connection a save added: the one the saved view has and `before` did not. */
+function newProfileId(before: ConnectionsView, after: ConnectionsView): string | undefined {
+  const known = new Set(before.profiles.map(({ id }) => id));
+  return after.profiles.find(({ id }) => !known.has(id))?.id;
+}
+
 function draftFrom(profile?: Exclude<ConnectionProfileView, { kind: "local" }>): Draft {
   return {
     kind: profile?.kind ?? "ssh",
@@ -213,10 +234,17 @@ function requestFrom(draft: Draft, id?: string): SaveConnectionRequest {
 
 function ConnectionForm({
   profile,
+  backLabel,
+  bare,
+  connectTo,
   onDone,
 }: {
   profile?: Exclude<ConnectionProfileView, { kind: "local" }>;
-  /** Returns to the list after saving, removing, or going back. */
+  backLabel: string;
+  bare: boolean;
+  /** When set, connects to the connection it names in the saved view instead of going back. */
+  connectTo?: (saved: ConnectionsView) => string | undefined;
+  /** Goes back after saving, removing, or going back. */
   onDone: () => void;
 }) {
   const formId = useId();
@@ -254,8 +282,12 @@ function ConnectionForm({
     setError("");
     try {
       const result = await window.wisp.saveConnection(requestFrom(draft, profile?.id));
-      if (result.ok) onDone();
-      else setError(result.error.message);
+      if (!result.ok) return setError(result.error.message);
+      const id = connectTo?.(result.value);
+      if (!id) return onDone();
+      // The connection screen takes over once connecting starts.
+      const activated = await window.wisp.activateConnection({ id });
+      if (!activated.ok) setError(activated.error.message);
     } catch {
       setError("The connection could not be saved.");
     } finally {
@@ -281,19 +313,25 @@ function ConnectionForm({
   return (
     <form
       className="animate-tab-forward"
-      aria-labelledby={`${formId}-title`}
+      {...(bare
+        ? { "aria-label": profile ? `Edit ${profile.name}` : "Add a server" }
+        : { "aria-labelledby": `${formId}-title` })}
       onSubmit={(event) => {
         event.preventDefault();
         if (busy === null) void save();
       }}
     >
-      <Button type="button" variant="ghost" size="sm" className="mb-3 -ml-2" onClick={onDone}>
-        <ChevronLeftIcon aria-hidden="true" />
-        Connections
-      </Button>
-      <h3 id={`${formId}-title`} className="mb-3 mt-0 text-md font-medium">
-        {profile ? `Edit ${profile.name}` : "Add a server"}
-      </h3>
+      {bare ? null : (
+        <>
+          <Button type="button" variant="ghost" size="sm" className="mb-3 -ml-2" onClick={onDone}>
+            <ChevronLeftIcon aria-hidden="true" />
+            {backLabel}
+          </Button>
+          <h3 id={`${formId}-title`} className="mb-3 mt-0 text-md font-medium">
+            {profile ? `Edit ${profile.name}` : "Add a server"}
+          </h3>
+        </>
+      )}
       {profile ? null : (
         <SegmentedControl
           label="Connect with"
@@ -348,7 +386,9 @@ function ConnectionForm({
             Wisp uses this computer&apos;s OpenSSH, with your SSH agent, keys, and known hosts. Connect once with{" "}
             <code>ssh</code> in a terminal so the host key is trusted. Pairing runs <code>wispctl pair</code> on the
             server for you, and uses the port the Wisp server reports there.
-            {profile ? null : (
+            {profile ? null : connectTo ? (
+              <> If the Wisp server is not installed there yet, Wisp offers to install it.</>
+            ) : (
               <> If the Wisp server is not installed there yet, save, then open the server to install it.</>
             )}
           </p>
@@ -394,7 +434,7 @@ function ConnectionForm({
           </Button>
         ) : null}
         <Button type="submit" disabled={busy !== null}>
-          {busy === "save" ? "Saving…" : "Save"}
+          {busy === "save" ? (connectTo ? "Connecting…" : "Saving…") : connectTo ? "Save and connect" : "Save"}
         </Button>
         {profile ? (
           <ConfirmAction

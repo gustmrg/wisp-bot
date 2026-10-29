@@ -1,5 +1,6 @@
 import { Fragment, useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import {
+  ChevronLeftIcon,
   CircleCheckIcon,
   CircleXIcon,
   LaptopIcon,
@@ -20,12 +21,13 @@ import { useMobileLayout } from "@/hooks/use-mobile-layout";
 import { cn } from "@/lib/utils";
 import { LOCAL_CONNECTION_ID, type ConnectionsView } from "../../../shared/connections";
 import { ActiveConnectionContext } from "./active-connection";
-import { AppBackdrop } from "./app-backdrop";
 import {
   activeName,
   activeProfile,
   addressOf,
+  CARD_BODY,
   canUseThisComputer,
+  ConnectionCard,
   ConnectionScreen,
   ServerChip,
 } from "./connection-screen";
@@ -163,7 +165,13 @@ function GateContent({
  * the person chooses, and each place keeps its own Wisps and settings.
  */
 function FirstRunChoice({ view }: { view: ConnectionsView }) {
-  const [serverOpen, setServerOpen] = useState(false);
+  const [serverOpen, setServerOpenState] = useState(false);
+  // Whether the choices are shown again after the server step, to slide them back in.
+  const [returned, setReturned] = useState(false);
+  const setServerOpen = (open: boolean) => {
+    setReturned(!open);
+    setServerOpenState(open);
+  };
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
@@ -182,13 +190,34 @@ function FirstRunChoice({ view }: { view: ConnectionsView }) {
 
   const option =
     "flex w-full items-start gap-3 rounded-xl border border-border p-4 text-left outline-none transition-colors hover:bg-popover focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50";
+  if (serverOpen) {
+    // A new installation has no server yet, so the form opens right away; one saved earlier is listed.
+    const hasServer = view.profiles.some(({ kind }) => kind !== "local");
+    return (
+      <ConnectionCard labelledBy="first-run-title" label="Where Wisps run">
+        <div key="server" className={cn(CARD_BODY, "animate-tab-forward")}>
+          <Button type="button" variant="ghost" size="sm" className="mb-3 -ml-2" onClick={() => setServerOpen(false)}>
+            <ChevronLeftIcon aria-hidden="true" />
+            Where Wisps run
+          </Button>
+          <h1 id="first-run-title" className="m-0 text-lg font-semibold">
+            Connect to a Wisp server
+          </h1>
+          <p className="mb-4 mt-1 text-base leading-relaxed text-dim">
+            Wisps on the server keep working with this app closed. Reach it over SSH or a private HTTPS address.
+          </p>
+          {hasServer ? (
+            <ConnectionsPanel view={view} serversOnly />
+          ) : (
+            <ConnectionsPanel view={view} serversOnly initialEditing="new" bare connectOnSave />
+          )}
+        </div>
+      </ConnectionCard>
+    );
+  }
   return (
-    <main className="flex h-full min-h-0 items-start justify-center overflow-y-auto bg-background p-6 text-foreground max-[620px]:p-3">
-      <AppBackdrop />
-      <section
-        className="relative my-auto w-full max-w-lg rounded-2xl border border-border bg-card p-6 shadow-lg"
-        aria-labelledby="first-run-title"
-      >
+    <ConnectionCard labelledBy="first-run-title" label="Where Wisps run">
+      <div key="choice" className={cn(CARD_BODY, returned && "animate-tab-back")}>
         <h1 id="first-run-title" className="m-0 text-lg font-semibold">
           Where should your Wisps run?
         </h1>
@@ -208,13 +237,7 @@ function FirstRunChoice({ view }: { view: ConnectionsView }) {
               </span>
             </span>
           </button>
-          <button
-            type="button"
-            className={option}
-            aria-expanded={serverOpen}
-            disabled={busy}
-            onClick={() => setServerOpen(true)}
-          >
+          <button type="button" className={option} disabled={busy} onClick={() => setServerOpen(true)}>
             <ServerIcon aria-hidden="true" className="mt-0.5 size-5 shrink-0 text-dim" />
             <span>
               <span className="block text-base font-medium">On a Wisp server</span>
@@ -230,13 +253,8 @@ function FirstRunChoice({ view }: { view: ConnectionsView }) {
             {error}
           </p>
         ) : null}
-        {serverOpen ? (
-          <div className="mt-4 border-t border-border pt-4">
-            <ConnectionsPanel view={view} serversOnly />
-          </div>
-        ) : null}
-      </section>
-    </main>
+      </div>
+    </ConnectionCard>
   );
 }
 

@@ -613,8 +613,9 @@ describe("ConnectionGate", () => {
     expect(await screen.findByText("screen actions: no")).toBeVisible();
   });
 
-  it("asks where Wisps run on a new installation", async () => {
-    const { api } = bridge(view({ phase: "choosing" }, "local"));
+  it("asks where Wisps run on a new installation, and goes back from the server step", async () => {
+    const fresh: ConnectionsView = { ...view({ phase: "choosing" }, "local"), profiles: profiles.slice(0, 1) };
+    const { api } = bridge(fresh);
     render(
       <ConnectionGate>
         <App onMount={() => undefined} />
@@ -623,17 +624,70 @@ describe("ConnectionGate", () => {
     expect(await screen.findByRole("heading", { name: "Where should your Wisps run?" })).toBeVisible();
     expect(screen.queryByText("Workspace")).toBeNull();
     await userEvent.click(screen.getByRole("button", { name: /On a Wisp server/ }));
-    expect(screen.getByRole("button", { name: /Add a server/ })).toBeVisible();
+    // The server step replaces the choices in the same card, with the form already open.
+    expect(screen.getByRole("heading", { name: "Connect to a Wisp server" })).toBeVisible();
+    expect(screen.queryByRole("heading", { name: "Where should your Wisps run?" })).toBeNull();
+    expect(screen.getByRole("textbox", { name: "Host" })).toBeVisible();
+    expect(screen.getAllByRole("main")).toHaveLength(1);
     // Someone without a server yet learns how to set one up.
     await userEvent.click(screen.getByText("How to set up a Wisp server"));
-    expect(screen.getByText(/on the server for you/)).toBeVisible();
     expect(screen.getByRole("link", { name: /Full guide/ })).toHaveAttribute(
       "href",
       "https://github.com/gustmrg/wisp-bot/blob/main/docs/remote-server.md",
     );
+    await userEvent.click(screen.getByRole("button", { name: "Where Wisps run" }));
+    expect(screen.getByRole("heading", { name: "Where should your Wisps run?" })).toBeVisible();
+    expect(screen.queryByRole("textbox", { name: "Host" })).toBeNull();
     expect(api.activateConnection).not.toHaveBeenCalled();
     await userEvent.click(screen.getByRole("button", { name: /On this computer/ }));
     expect(api.activateConnection).toHaveBeenCalledWith({ id: "local" });
+  });
+
+  it("connects to the server added on the first run", async () => {
+    const fresh: ConnectionsView = { ...view({ phase: "choosing" }, "local"), profiles: profiles.slice(0, 1) };
+    const { api } = bridge(fresh);
+    api.saveConnection.mockResolvedValueOnce({ ok: true, value: { ...fresh, profiles } });
+    render(
+      <ConnectionGate>
+        <App onMount={() => undefined} />
+      </ConnectionGate>,
+    );
+    await userEvent.click(await screen.findByRole("button", { name: /On a Wisp server/ }));
+    await userEvent.type(screen.getByRole("textbox", { name: "Host" }), "raspberrypi");
+    await userEvent.click(screen.getByRole("button", { name: "Save and connect" }));
+    await waitFor(() => expect(api.activateConnection).toHaveBeenCalledWith({ id: "pi" }));
+    // Without a port, the server reports its own while pairing.
+    expect(api.saveConnection).toHaveBeenCalledWith({ kind: "ssh", name: "raspberrypi", host: "raspberrypi" });
+  });
+
+  it("lists a server saved earlier on the first run", async () => {
+    const { api } = bridge(view({ phase: "choosing" }, "local"));
+    render(
+      <ConnectionGate>
+        <App onMount={() => undefined} />
+      </ConnectionGate>,
+    );
+    await userEvent.click(await screen.findByRole("button", { name: /On a Wisp server/ }));
+    await userEvent.click(screen.getByRole("button", { name: "Switch to Home server" }));
+    expect(api.activateConnection).toHaveBeenCalledWith({ id: "pi" });
+  });
+
+  it("edits the connection in the card, in place of the status, and goes back to it", async () => {
+    bridge(view({ phase: "error", failure: "unreachable", message: "No answer." }));
+    render(
+      <ConnectionGate>
+        <App onMount={() => undefined} />
+      </ConnectionGate>,
+    );
+    expect(await screen.findByRole("heading", { name: "Cannot reach Home server" })).toBeVisible();
+    await userEvent.click(screen.getByRole("button", { name: "Edit connection" }));
+    expect(screen.getByRole("textbox", { name: "Host" })).toHaveValue("raspberrypi");
+    expect(screen.queryByRole("heading", { name: "Cannot reach Home server" })).toBeNull();
+    // One card: the form takes the status's place instead of opening a second box below it.
+    expect(screen.getAllByRole("region")).toHaveLength(1);
+    await userEvent.click(screen.getByRole("button", { name: "Back" }));
+    expect(screen.getByRole("heading", { name: "Cannot reach Home server" })).toBeVisible();
+    expect(screen.queryByRole("textbox", { name: "Host" })).toBeNull();
   });
 
   it("adds an SSH server from the connections list", async () => {

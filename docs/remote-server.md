@@ -299,6 +299,15 @@ chosen. Installations that already have Wisps on this computer keep using it.
 Each place keeps its own Wisps, conversations, settings, and credentials;
 nothing is copied between them.
 
+The first run happens in one card. **On a Wisp server** replaces the choices
+with the form for a server, and **Save and connect** connects to it right away;
+**Where Wisps run** goes back to the choices. While Wisp connects, pairs, or
+sets the server up, the same card shows the steps. If connecting fails, **Edit
+connection** opens the form in the card, already filled in, and **Back**
+returns to what went wrong. **Connections → Manage** at the bottom of the card
+lists every connection the same way. The card always fits the window; what
+does not fit scrolls inside it, with its buttons kept in view.
+
 To add or switch servers later, open **Settings → Connections** and add the
 server:
 
