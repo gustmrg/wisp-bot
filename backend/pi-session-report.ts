@@ -225,7 +225,8 @@ export function buildSessionReport(
     },
     compactionUsage,
     ...(auxiliaryUsage.totalTokens > 0 ? { auxiliaryUsage } : {}),
-    models: summarizeModelUsage(usageByModel, options.getPricing),
+    ...(compactionUsage.totalTokens > 0 ? { compactionCostUsd: compactionCost } : {}),
+    models: summarizeModelUsage(usageByModel, options),
     toolCalls: toolCalls.slice(-MAX_TOOL_CALLS),
     events: events.slice(-MAX_EVENTS),
   };
@@ -410,14 +411,15 @@ function accumulateAuxiliaryUsage(entry: AuxiliaryEntryUsage, usageByModel: Map<
 
 function summarizeModelUsage(
   usageByModel: Map<string, ModelUsageBucket>,
-  getPricing: SessionPricingLookup,
+  options: Pick<BuildSessionReportOptions, "getPricing" | "getCatalogPricing">,
 ): ReadonlyArray<SessionReportModelUsage> {
   return [...usageByModel.values()].map((bucket) => ({
     providerId: bucket.providerId,
     modelId: bucket.modelId,
     turns: bucket.turns,
     usage: bucket.usage,
-    costUsd: costForBucket(bucket, getPricing),
+    costUsd: costForBucket(bucket, options.getPricing),
+    cacheSavingsUsd: cacheSavingsForBucket(bucket, options),
     ...(bucket.auxiliary ? { auxiliary: { ...bucket.auxiliary } } : {}),
     ...(bucket.plan ? { plan: true as const } : {}),
   }));
@@ -470,19 +472,30 @@ function estimateCacheSavings(
 ): number | null {
   let total = 0;
   for (const bucket of usageByModel.values()) {
-    const { cacheReadTokens, cacheWriteTokens } = bucket.usage;
-    // A plan's turns cost nothing more, so its cache saves nothing.
-    if (bucket.plan || (cacheReadTokens === 0 && cacheWriteTokens === 0)) continue;
-    const pricing =
-      options.getPricing(bucket.providerId, bucket.modelId) ??
-      options.getCatalogPricing?.(bucket.providerId, bucket.modelId) ??
-      null;
-    if (!pricing || (cacheWriteTokens > 0 && pricing.cacheWritePerMillionTokens === undefined)) return null;
-    total +=
-      (cacheReadTokens / 1_000_000) * (pricing.inputPerMillionTokens - pricing.cacheReadPerMillionTokens) -
-      (cacheWriteTokens / 1_000_000) * ((pricing.cacheWritePerMillionTokens ?? 0) - pricing.inputPerMillionTokens);
+    const savings = cacheSavingsForBucket(bucket, options);
+    if (savings === null) return null;
+    total += savings;
   }
   return total;
+}
+
+/** One model's cache savings, as `estimateCacheSavings` adds them up; null when its price is unknown. */
+function cacheSavingsForBucket(
+  bucket: ModelUsageBucket,
+  options: Pick<BuildSessionReportOptions, "getPricing" | "getCatalogPricing">,
+): number | null {
+  const { cacheReadTokens, cacheWriteTokens } = bucket.usage;
+  // A plan's turns cost nothing more, so its cache saves nothing.
+  if (bucket.plan || (cacheReadTokens === 0 && cacheWriteTokens === 0)) return 0;
+  const pricing =
+    options.getPricing(bucket.providerId, bucket.modelId) ??
+    options.getCatalogPricing?.(bucket.providerId, bucket.modelId) ??
+    null;
+  if (!pricing || (cacheWriteTokens > 0 && pricing.cacheWritePerMillionTokens === undefined)) return null;
+  return (
+    (cacheReadTokens / 1_000_000) * (pricing.inputPerMillionTokens - pricing.cacheReadPerMillionTokens) -
+    (cacheWriteTokens / 1_000_000) * ((pricing.cacheWritePerMillionTokens ?? 0) - pricing.inputPerMillionTokens)
+  );
 }
 
 function summarizeWorkspacePath(value: string, workspaceDirectory: string): string {

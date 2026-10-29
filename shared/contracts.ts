@@ -658,6 +658,8 @@ export interface SessionReportModelUsage {
   turns: number;
   usage: SessionReportUsage;
   costUsd: number | null;
+  /** What reading from the cache saved; null when the model's price is unknown. Absent from older servers. */
+  cacheSavingsUsd?: number | null;
   /** Set on a row for an auxiliary model, which runs calls for the Wisp rather than turns. */
   auxiliary?: { task: AuxiliaryTask; calls: number };
   /** Set on a row for turns a Claude plan paid for (ADR 026), which cost nothing more. */
@@ -690,6 +692,8 @@ export interface SessionReportEvent {
 
 export interface WispSessionReport {
   compactionUsage?: SessionReportUsage;
+  /** The cost recorded for `compactionUsage`, whose model is not recorded; null when unknown. */
+  compactionCostUsd?: number | null;
   /** Tokens used by auxiliary models, such as the image model; included in the totals. */
   auxiliaryUsage?: SessionReportUsage;
   sessionId: string;
@@ -715,6 +719,23 @@ export interface WispUsageRow {
   name: string;
   sessions: number;
   totals: SessionReportTotals;
+  /** The same usage split by model; together the rows add up to `totals`. Absent from older servers. */
+  models?: ReadonlyArray<ModelUsageRow>;
+}
+
+/** One model's usage in a usage report, or context summaries, whose model is not recorded. */
+export interface ModelUsageRow {
+  /** `provider:model`, prefixed `plan:` for turns a Claude plan paid for; `compaction` for context summaries. */
+  key: string;
+  kind: "model" | "compaction";
+  providerId: string | null;
+  modelId: string | null;
+  /** Turns a Claude plan paid for (ADR 026), which cost nothing more. */
+  plan?: true;
+  turns: number;
+  /** Calls the model made as an auxiliary model, such as reading an image for a Wisp. */
+  auxiliaryCalls: number;
+  totals: SessionReportTotals;
 }
 
 export interface UsageReport {
@@ -725,6 +746,8 @@ export interface UsageReport {
   incomplete: boolean;
   wisps: ReadonlyArray<WispUsageRow>;
   totals: SessionReportTotals;
+  /** Every Wisp's usage split by model, adding up to `totals`. Absent from older servers. */
+  models?: ReadonlyArray<ModelUsageRow>;
 }
 
 export type UpdatePhase =

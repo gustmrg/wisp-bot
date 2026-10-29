@@ -7,7 +7,7 @@ import type { UsageReport, UsageReportRequest, WispUsageRow, WispSessionReport }
 import { WispBackendError } from "./backend-error.js";
 import type { ConversationRepository } from "./conversation-repository.js";
 import type { ModelPricingService } from "./model-pricing-service.js";
-import { addTotals, createUsageReport } from "./usage-report.js";
+import { addModelUsage, addTotals, createUsageReport, mergeModelUsage, type ModelUsage } from "./usage-report.js";
 import { buildSessionReport, emptyUsage, type SessionPricingLookup } from "./pi-session-report.js";
 import { CLAUDE_CODE_USAGE_FILE, claudeCodeFallbackSessionFiles } from "./claude-code/claude-code-usage-log.js";
 
@@ -77,8 +77,13 @@ export class SessionReportService {
         );
       }
     }
+    const models: ModelUsage = new Map();
+    for (const row of rows) {
+      addTotals(report.totals, row.totals);
+      mergeModelUsage(models, row.models ?? []);
+    }
     report.wisps = rows;
-    for (const row of rows) addTotals(report.totals, row.totals);
+    report.models = [...models.values()];
     return report;
   }
 
@@ -100,6 +105,7 @@ export class SessionReportService {
       sessions: 0,
       totals: { ...emptyUsage(), costUsd: 0, cacheSavingsUsd: 0 },
     };
+    const models: ModelUsage = new Map();
     const markIncomplete = () => {
       report.incomplete = true;
       row.totals.costUsd = null;
@@ -135,10 +141,12 @@ export class SessionReportService {
         });
         if (session.turns > 0) row.sessions += 1;
         addTotals(row.totals, session.totals);
+        addModelUsage(models, session);
       } catch {
         markIncomplete();
       }
     }
+    row.models = [...models.values()];
     return row;
   }
 

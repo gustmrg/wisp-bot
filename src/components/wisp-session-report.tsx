@@ -13,7 +13,7 @@ import type { SessionReportToolCall, WispSessionReport } from "../../shared/cont
 import { SettingsCard, SettingsGroup } from "@/components/settings/settings-primitives";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Button } from "@/components/ui/button";
-import { CacheStats, formatUsd, plural, TokenCount, TokenMix } from "@/components/usage-display";
+import { CacheStats, formatUsd, plural, shortModelId, TokenCount, TokenMix } from "@/components/usage-display";
 import { useTimeFormat, useTimeZone } from "@/hooks/use-time-zone";
 import { clockTimeOptions, type TimeFormat } from "@/lib/clock-time";
 import type { IntegrationSettingsTarget } from "@/lib/plugin-access";
@@ -529,10 +529,6 @@ function ReportSkeleton() {
 }
 
 /** The model's own name, without its vendor prefix (openai/gpt-oss-120b → gpt-oss-120b). */
-function shortModelId(modelId: string): string {
-  return modelId.split("/").pop() || modelId;
-}
-
 function formatTimestamp(value: string, timeZone: string, timeFormat: TimeFormat): string {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "";
