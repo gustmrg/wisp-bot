@@ -22,8 +22,11 @@ export interface SshInstallOptions {
   interaction?: SshInteraction;
 }
 
-/** Where the setup is: downloading itself, installing the server, or starting its service. */
+/** Where the setup is: downloading the server, installing it, or starting its service. */
 export type InstallStep = "download" | "install" | "service";
+
+/** What the setup's command prints first on the server: SSH reached the host and signed in. */
+export const CONNECTED_MESSAGE = "Connected. Downloading the Wisp server…";
 
 /** The step a line of the setup's output belongs to, given the step before it. */
 export function installStepOf(message: string, previous: InstallStep): InstallStep {
@@ -36,11 +39,13 @@ export function installStepOf(message: string, previous: InstallStep): InstallSt
  * The command run on the server. The remote shell sees only the app's own
  * version and the profile's port, both validated; never text from the user.
  * ~/.local/bin is added because it is often missing from the PATH of
- * non-interactive SSH sessions. The package goes into a new directory each
- * time, unlike `npx`, whose cache keeps a half-extracted install from an
- * interrupted setup and fails on it from then on. npm's output goes to stderr
- * so stdout carries only the setup's result. Without a terminal, ending ssh
- * does not stop the remote command, so it stops itself when its stdin closes.
+ * non-interactive SSH sessions. The first line tells the app that SSH reached
+ * the host and signed in, which OpenSSH itself does not report. The package
+ * goes into a new directory each time, unlike `npx`, whose cache keeps a
+ * half-extracted install from an interrupted setup and fails on it from then
+ * on. npm's output goes to stderr so stdout carries only the setup's result.
+ * Without a terminal, ending ssh does not stop the remote command, so it
+ * stops itself when its stdin closes.
  */
 export function installCommand(version: string, serverPort: number): string {
   if (!SERVER_VERSION_PATTERN.test(version))
@@ -51,6 +56,7 @@ export function installCommand(version: string, serverPort: number): string {
   const cli = `"$d/node_modules/${WISP_SERVER_PACKAGE}/server/cli.js"`;
   const script = [
     `PATH="$HOME/.local/bin:$PATH"`,
+    `echo "${CONNECTED_MESSAGE}" >&2`,
     `d=$(mktemp -d) || exit 1`,
     `npm install --prefix "$d" --no-audit --no-fund --loglevel=error ${WISP_SERVER_PACKAGE}@${version} >&2 && node ${cli} setup --json --no-pair --until-stdin-closes --port ${serverPort}`,
     `s=$?`,
@@ -77,6 +83,8 @@ export async function installRemoteServer(profile: SshConnectionProfile, options
   let stderr = "";
   let pending = "";
   let step: InstallStep = "download";
+  // Until the setup says it is connected, stderr is OpenSSH's own.
+  let connected = false;
   child.stdout?.setEncoding("utf8");
   child.stdout?.on("data", (chunk: string) => {
     stdout = (stdout + chunk).slice(-MAX_OUTPUT);
@@ -89,8 +97,9 @@ export async function installRemoteServer(profile: SshConnectionProfile, options
     pending = lines.pop() ?? "";
     for (const line of lines) {
       const message = line.trim();
+      if (message === CONNECTED_MESSAGE) connected = true;
       // npm's own chatter is not about Wisp.
-      if (message && !/^npm /i.test(message)) {
+      if (connected && message && !/^npm /i.test(message)) {
         step = installStepOf(message, step);
         options.onProgress?.(message.slice(0, 160), step);
       }

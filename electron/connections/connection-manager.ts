@@ -332,7 +332,7 @@ export class ConnectionManager {
           this.retrying = undefined;
           this.progress = advance(
             createProgress(fromVersion ? "update" : "install", INSTALL_STEPS, fromVersion),
-            "download",
+            "reach",
             `Connecting to ${profile.host} over SSH…`,
           );
           this.setStatus({

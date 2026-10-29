@@ -66,8 +66,9 @@ export type ConnectionFailure =
 /**
  * A step of connecting or of setting a server up. Connecting: start the
  * server on this computer, reach the host, sign in over SSH, pair this
- * device, reach the Wisp server, load the Wisps. Setting up: download the
- * setup, install the server, start its service, then connect.
+ * device, reach the Wisp server, load the Wisps. Setting up: reach the host,
+ * sign in over SSH, download the server, install it, start its service, then
+ * connect.
  */
 export type ConnectionStepId =
   | "start_local"
