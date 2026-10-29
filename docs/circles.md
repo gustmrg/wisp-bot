@@ -22,9 +22,9 @@ label, description, notifications), **Members** (members and lead),
   Names match without regard to case, and the longest name wins, so `@Ada`
   never matches `@Adam`.
 - Any other message goes to the circle's **lead**, its first member. A small
-  crown marks the lead on its avatar wherever its replies appear, after its
-  name under the circle's name, and beside it in the **Members** list. A
-  circle with one member shows no crown.
+  crown follows the lead's name wherever its replies are named, under the
+  circle's name, and in the **Members** list. A circle with one member shows
+  no crown.
 - Wisps answer one at a time. Each reply finishes before the next Wisp
   starts, and each Wisp sees the replies before its own, labeled with their
   authors. Every reply shows its author's avatar and name, in its color, and

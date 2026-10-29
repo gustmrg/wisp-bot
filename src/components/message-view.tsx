@@ -11,7 +11,7 @@ import {
 
 import type { Message, Wisp } from "@/chat-data";
 import { WispAvatar } from "@/components/chat-avatar";
-import { LeadCrown } from "@/components/lead-crown";
+import { LeadMark } from "@/components/lead-crown";
 import { splitMessageAttachments } from "../../shared/workspace";
 import { useRevealedText } from "@/hooks/use-reply-pace";
 import { useTimeFormat, useTimeZone } from "@/hooks/use-time-zone";
@@ -32,7 +32,7 @@ interface MessageViewProps {
   author?: Wisp;
   /** The author's Wisp was deleted, so `author` is drawn from what the reply kept of it. */
   authorDeleted?: boolean;
-  /** The author leads the circle, so its avatar wears the crown. */
+  /** The author leads the circle, so a crown follows its name. */
   lead?: boolean;
   showAuthor?: boolean;
   /** In a circle, its members, whose `@` mentions are set apart and open their conversation. */
@@ -118,10 +118,9 @@ function MessageView({
       <div className="relative flex flex-col items-start">
         {author && showAuthor ? (
           <span className="message-author">
-            <LeadCrown lead={lead}>
-              <WispAvatar wisp={author} size="sm" />
-            </LeadCrown>
+            <WispAvatar wisp={author} size="sm" />
             {author.name}
+            {lead ? <LeadMark className="size-[1em]" /> : null}
           </span>
         ) : null}
         <MessageSteps steps={message.steps} processStates={processStates} />
@@ -220,10 +219,9 @@ function MessageView({
     >
       {author && showAuthor && !outgoing ? (
         <span className="message-author">
-          <LeadCrown lead={lead}>
-            <WispAvatar wisp={author} size="sm" />
-          </LeadCrown>
+          <WispAvatar wisp={author} size="sm" />
           {author.name}
+          {lead ? <LeadMark className="size-[1em]" /> : null}
           {authorDeleted ? <span className="font-normal text-dim">deleted</span> : null}
         </span>
       ) : null}

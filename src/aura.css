@@ -311,8 +311,7 @@
   font-weight: 600;
 }
 .message-author > svg,
-.message-author > img,
-.message-author > .lead-crown > :first-child {
+.message-author > img {
   width: 18px;
   height: 18px;
 }

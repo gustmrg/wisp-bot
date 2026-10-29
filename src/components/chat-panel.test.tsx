@@ -506,6 +506,8 @@ describe("ChatPanel circles", () => {
     const { rerender } = renderPanelIn(circleChatView("crew", [quill, forge]), held);
 
     expect(crowned()).toEqual(["Quill"]);
+    // After the name, with the avatar left uncovered.
+    expect(document.querySelector(".message-author .lead-mark")?.previousSibling?.textContent).toBe("Quill");
     expect(document.querySelector(".chat-subline")?.textContent).toBe("Quill, Forge");
     expect(
       within(document.querySelector(".chat-subline") as HTMLElement).getByRole("img", { name: "Lead" }),
