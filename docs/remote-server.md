@@ -308,6 +308,7 @@ server:
   forwards a free local port to the server's loopback port; it never stores SSH
   keys or passwords. The first time, the app shows the server's host key
   fingerprint and asks whether to trust it; a host key that changed is refused.
+  While Wisp connects, it asks in the connection screen, above the steps.
   Wisp signs in with SSH keys. If the server asks for a password, Wisp uses it
   once to add this computer's public key to `~/.ssh/authorized_keys` there,
   like `ssh-copy-id`, and connects with the key from then on: the key OpenSSH
