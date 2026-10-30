@@ -3,6 +3,7 @@ import { cleanup } from "@testing-library/react";
 import { afterEach, vi } from "vitest";
 
 import { clearComposerDrafts } from "@/lib/composer-drafts";
+import { clearKeptRecordings } from "@/lib/kept-voice-recordings";
 
 class MatchMediaMock implements MediaQueryList {
   readonly matches = false;
@@ -34,6 +35,7 @@ afterEach(() => {
   cleanup();
   window.localStorage.clear();
   clearComposerDrafts();
+  clearKeptRecordings();
   document.documentElement.className = "";
   document.documentElement.removeAttribute("style");
 });

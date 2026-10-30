@@ -594,13 +594,16 @@ describe("ChatComposer voice input", () => {
     start() {
       this.state = "recording";
     }
+    // Like the real one, it stops at once and reports it later.
     stop() {
       this.state = "inactive";
-      this.dispatchEvent(Object.assign(new Event("dataavailable"), { data: new Blob(["voice"]) }));
-      this.dispatchEvent(new Event("stop"));
+      setTimeout(() => {
+        this.dispatchEvent(Object.assign(new Event("dataavailable"), { data: new Blob(["voice"]) }));
+        this.dispatchEvent(new Event("stop"));
+      });
     }
   }
-  const track = { stop: vi.fn() };
+  const track = Object.assign(new EventTarget(), { stop: vi.fn() });
   const getUserMedia = vi.fn(async () => ({ getTracks: () => [track] }) as unknown as MediaStream);
   const microphone = { kind: "audioinput", deviceId: "default", label: "" } as MediaDeviceInfo;
   const enumerateDevices = vi.fn(async () => [microphone]);
@@ -928,6 +931,186 @@ describe("ChatComposer voice input", () => {
     await user.click(await screen.findByRole("button", { name: "Stop recording and transcribe" }));
     expect(await screen.findByText("Groq could not transcribe this recording.")).toBeVisible();
     expect(screen.queryByRole("button", { name: "Try again" })).toBeNull();
+  });
+
+  describe("when a recording is cut short", () => {
+    const autoSendVoice = {
+      deviceId: "default",
+      providerId: "groq" as const,
+      modelId: "whisper-large-v3-turbo",
+      language: "auto" as const,
+      autoSend: true,
+      shortcut: "Ctrl+Space",
+    };
+
+    async function startRecording(user: ReturnType<typeof userEvent.setup>): Promise<void> {
+      await user.click(await screen.findByRole("button", { name: "Start voice input" }));
+      await screen.findByRole("button", { name: "Stop recording and transcribe" });
+    }
+
+    it("keeps it when the composer remounts, as after a reconnect that missed events", async () => {
+      const user = userEvent.setup();
+      const transcribeAudio = setup();
+      const first = render(<ChatComposer {...defaultProps} chat={wisp("one", "One")} />);
+      await startRecording(user);
+
+      first.unmount();
+      render(<ChatComposer {...defaultProps} chat={wisp("one", "One")} />);
+
+      expect(await screen.findByText(/The recording stopped early/)).toBeVisible();
+      expect(track.stop).toHaveBeenCalled();
+      expect(transcribeAudio).not.toHaveBeenCalled();
+      await user.click(screen.getByRole("button", { name: "Transcribe" }));
+      await waitFor(() => expect(screen.getByRole("combobox", { name: "Message One" })).toHaveValue("dictated words"));
+      expect(screen.queryByText(/The recording stopped early/)).toBeNull();
+      expect(transcribeAudio).toHaveBeenCalledOnce();
+    });
+
+    it("stops when the system takes the microphone, and leaves the text for review despite auto-send", async () => {
+      const user = userEvent.setup();
+      const transcribeAudio = setup();
+      const onSend = vi.fn();
+      render(<ChatComposer {...defaultProps} chat={wisp("one", "One")} onSend={onSend} voice={autoSendVoice} />);
+      await startRecording(user);
+
+      act(() => void track.dispatchEvent(new Event("mute")));
+
+      expect(await screen.findByText(/The recording stopped early/)).toBeVisible();
+      expect(transcribeAudio).not.toHaveBeenCalled();
+      await user.click(screen.getByRole("button", { name: "Transcribe" }));
+      await waitFor(() => expect(screen.getByRole("combobox", { name: "Message One" })).toHaveValue("dictated words"));
+      expect(onSend).not.toHaveBeenCalled();
+    });
+
+    it("treats a recorder that stops by itself the same way", async () => {
+      const user = userEvent.setup();
+      const stops: FakeMediaRecorder[] = [];
+      setup();
+      vi.stubGlobal(
+        "MediaRecorder",
+        class extends FakeMediaRecorder {
+          constructor() {
+            super();
+            stops.push(this);
+          }
+        },
+      );
+      render(<ChatComposer {...defaultProps} chat={wisp("one", "One")} />);
+      await startRecording(user);
+
+      act(() => stops[0]?.stop());
+
+      expect(await screen.findByText(/The recording stopped early/)).toBeVisible();
+    });
+
+    it("lets go of it on Discard", async () => {
+      const user = userEvent.setup();
+      const transcribeAudio = setup();
+      const first = render(<ChatComposer {...defaultProps} chat={wisp("one", "One")} />);
+      await startRecording(user);
+      first.unmount();
+      const second = render(<ChatComposer {...defaultProps} chat={wisp("one", "One")} />);
+
+      await user.click(await screen.findByRole("button", { name: "Discard" }));
+
+      expect(screen.queryByText(/The recording stopped early/)).toBeNull();
+      second.unmount();
+      render(<ChatComposer {...defaultProps} chat={wisp("one", "One")} />);
+      await screen.findByRole("button", { name: "Start voice input" });
+      expect(screen.queryByText(/The recording stopped early/)).toBeNull();
+      expect(transcribeAudio).not.toHaveBeenCalled();
+    });
+
+    it("keeps it with its conversation and its connection only", async () => {
+      const user = userEvent.setup();
+      setup();
+      const connection = (activeId: string) =>
+        ({
+          activeId,
+          profiles: [],
+          status: { profileId: activeId, phase: "connected", epoch: 1 },
+        }) as unknown as ConnectionsView;
+      const composer = (activeId: string, id: string) => (
+        <ActiveConnectionContext.Provider value={connection(activeId)}>
+          <ChatComposer {...defaultProps} key={id} chat={wisp(id, id)} />
+        </ActiveConnectionContext.Provider>
+      );
+      const view = render(composer("server", "one"));
+      await startRecording(user);
+      view.unmount();
+      const elsewhere = render(composer("server", "two"));
+      await screen.findByRole("button", { name: "Start voice input" });
+      await act(async () => new Promise((resolve) => setTimeout(resolve)));
+      expect(screen.queryByText(/The recording stopped early/)).toBeNull();
+      elsewhere.unmount();
+
+      const otherConnection = render(composer("local", "one"));
+      await screen.findByRole("button", { name: "Start voice input" });
+      expect(screen.queryByText(/The recording stopped early/)).toBeNull();
+      otherConnection.unmount();
+
+      render(composer("server", "one"));
+      expect(await screen.findByText(/The recording stopped early/)).toBeVisible();
+    });
+
+    it("keeps one whose transcription had not finished when the composer remounted", async () => {
+      const user = userEvent.setup();
+      const transcribeAudio = setup(
+        vi
+          .fn<WispApi["transcribeAudio"]>()
+          .mockReturnValueOnce(new Promise(() => undefined))
+          .mockResolvedValueOnce({ ok: true, value: { text: "dictated words" } }),
+      );
+      const first = render(<ChatComposer {...defaultProps} chat={wisp("one", "One")} />);
+      await startRecording(user);
+      await user.click(screen.getByRole("button", { name: "Stop recording and transcribe" }));
+      await waitFor(() => expect(transcribeAudio).toHaveBeenCalledOnce());
+
+      first.unmount();
+      render(<ChatComposer {...defaultProps} chat={wisp("one", "One")} />);
+
+      expect(await screen.findByText("This recording was not transcribed.")).toBeVisible();
+      await user.click(screen.getByRole("button", { name: "Try again" }));
+      await waitFor(() => expect(screen.getByRole("combobox", { name: "Message One" })).toHaveValue("dictated words"));
+    });
+
+    it("still discards a recording cancelled with Escape", async () => {
+      const user = userEvent.setup();
+      setup();
+      const first = render(<ChatComposer {...defaultProps} chat={wisp("one", "One")} />);
+      await startRecording(user);
+      await user.keyboard("{Escape}");
+      await screen.findByRole("button", { name: "Start voice input" });
+
+      first.unmount();
+      render(<ChatComposer {...defaultProps} chat={wisp("one", "One")} />);
+      await screen.findByRole("button", { name: "Start voice input" });
+      await act(async () => new Promise((resolve) => setTimeout(resolve)));
+      expect(screen.queryByText(/The recording stopped early/)).toBeNull();
+      expect(screen.queryByRole("button", { name: "Discard" })).toBeNull();
+    });
+  });
+
+  it("keeps the screen on only while recording", async () => {
+    const user = userEvent.setup();
+    setup();
+    const sentinel = { released: false, release: vi.fn(async () => undefined) };
+    const request = vi.fn(async () => sentinel);
+    Object.defineProperty(navigator, "wakeLock", { configurable: true, value: { request } });
+    try {
+      render(<ChatComposer {...defaultProps} chat={wisp("one", "One")} />);
+      const start = await screen.findByRole("button", { name: "Start voice input" });
+      await waitFor(() => expect(start).toBeEnabled());
+      expect(request).not.toHaveBeenCalled();
+
+      await user.click(start);
+      await waitFor(() => expect(request).toHaveBeenCalledWith("screen"));
+
+      await user.click(await screen.findByRole("button", { name: "Stop recording and transcribe" }));
+      await waitFor(() => expect(sentinel.release).toHaveBeenCalled());
+    } finally {
+      Reflect.deleteProperty(navigator, "wakeLock");
+    }
   });
 
   it("explains a denied microphone", async () => {
