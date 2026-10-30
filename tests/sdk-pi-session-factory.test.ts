@@ -1243,6 +1243,7 @@ describe("SdkPiSessionFactory", () => {
     );
     expect(circlePrompt).toContain("Write only your own reply, in your own voice.");
     expect(circlePrompt).toContain("To hand the task to another member, mention it with @ and its name in your reply");
+    expect(circlePrompt).toContain("Hand a task over only when it is another member's role and you cannot do it well");
   });
 
   it("offers the Wisp tools in the conversation only, never in a job's runs", async () => {

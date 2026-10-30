@@ -1,11 +1,12 @@
 import { type ReactNode, useState } from "react";
 
-import { circleLeadId, withCircleLead } from "../../shared/conversations";
+import { circleLeadId, withCircleLead, type CircleResponder } from "../../shared/conversations";
 import type { CircleChatChanges, CircleChatView, WispCollection, WispId } from "@/chat-data";
 import type { IntegrationSettingsTarget } from "@/lib/plugin-access";
 import { cn } from "@/lib/utils";
 import { ChatAvatar } from "@/components/chat-avatar";
 import { CircleLeadPicker } from "@/components/circle-lead-picker";
+import { CircleResponderPicker } from "@/components/circle-responder-picker";
 import { CircleMemberPicker } from "@/components/circle-member-picker";
 import {
   SettingsActions,
@@ -46,12 +47,13 @@ interface CircleSettingsDraft {
   label: string;
   description: string;
   memberIds: ReadonlyArray<WispId>;
+  responder: CircleResponder;
   notifyOnUpdatesEnabled: boolean;
 }
 
 function draftOf(chat: CircleChatView): CircleSettingsDraft {
   const { name, label, description, memberIds, notifyOnUpdatesEnabled } = chat;
-  return { name, label, description, memberIds, notifyOnUpdatesEnabled };
+  return { name, label, description, memberIds, responder: chat.responder ?? "lead", notifyOnUpdatesEnabled };
 }
 
 function sameIds(a: ReadonlyArray<WispId>, b: ReadonlyArray<WispId>): boolean {
@@ -84,6 +86,7 @@ export function CircleDetails({
     ...(draft.label !== chat.label && { label: draft.label }),
     ...(draft.description !== chat.description && { description: draft.description }),
     ...(!sameIds(draft.memberIds, chat.memberIds) && { memberIds: draft.memberIds }),
+    ...(draft.responder !== (chat.responder ?? "lead") && { responder: draft.responder }),
     ...(draft.notifyOnUpdatesEnabled !== chat.notifyOnUpdatesEnabled && {
       notifyOnUpdatesEnabled: draft.notifyOnUpdatesEnabled,
     }),
@@ -194,6 +197,11 @@ export function CircleDetails({
             onChange={(leadId) => edit({ memberIds: withCircleLead(draft.memberIds, leadId) })}
           />
         </div>
+        {members.length > 1 ? (
+          <div className="mt-[15px]">
+            <CircleResponderPicker value={draft.responder} onChange={(responder) => edit({ responder })} />
+          </div>
+        ) : null}
       </TabsContent>
       {/* The workspace saves its own changes. */}
       <TabsContent

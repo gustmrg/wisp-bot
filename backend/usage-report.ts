@@ -57,7 +57,8 @@ export function addModelUsage(models: ModelUsage, session: WispSessionReport): v
       ...(model.plan ? { plan: true as const } : {}),
     }));
     row.turns += model.turns;
-    row.auxiliaryCalls += model.auxiliary?.calls ?? 0;
+    if (model.auxiliary?.task === "decision") row.decisionCalls = (row.decisionCalls ?? 0) + model.auxiliary.calls;
+    else row.auxiliaryCalls += model.auxiliary?.calls ?? 0;
     addTotals(row.totals, {
       ...model.usage,
       costUsd: model.costUsd,
@@ -83,6 +84,7 @@ export function mergeModelUsage(target: ModelUsage, source: Iterable<ModelUsageR
     }));
     row.turns += other.turns;
     row.auxiliaryCalls += other.auxiliaryCalls;
+    if (other.decisionCalls) row.decisionCalls = (row.decisionCalls ?? 0) + other.decisionCalls;
     addTotals(row.totals, other.totals);
   }
 }

@@ -247,7 +247,7 @@ function UsageSummary({ report, model }: { report: UsageReport; model?: ModelUsa
   const pricedCost = report.wisps.reduce((sum, wisp) => sum + (wisp.totals.costUsd ?? 0), 0);
   const pricedSavings = report.wisps.reduce((sum, wisp) => sum + (wisp.totals.cacheSavingsUsd ?? 0), 0);
   const sessions = report.wisps.reduce((sum, wisp) => sum + wisp.sessions, 0);
-  const active = report.wisps.filter((wisp) => wisp.totals.totalTokens > 0).length;
+  const active = report.wisps.filter((wisp) => wisp.totals.totalTokens > 0 && !wisp.decisionModel).length;
   return (
     <SettingsGroup label="Summary">
       <SettingsCard className="space-y-4 p-4">
@@ -386,8 +386,9 @@ function modelLabel(model: ModelUsageRow): string {
 function modelActivity(model: ModelUsageRow): string {
   if (model.kind === "compaction") return "summaries of long conversations";
   const parts = [
-    ...(model.turns > 0 || model.auxiliaryCalls === 0 ? [plural(model.turns, "turn")] : []),
+    ...(model.turns > 0 || (model.auxiliaryCalls === 0 && !model.decisionCalls) ? [plural(model.turns, "turn")] : []),
     ...(model.auxiliaryCalls > 0 ? [plural(model.auxiliaryCalls, "image read")] : []),
+    ...(model.decisionCalls ? [plural(model.decisionCalls, "decision")] : []),
   ];
   return parts.join(" · ");
 }
@@ -476,7 +477,7 @@ function ModelTable({
         </thead>
         <tbody className="[&>tr:not(:last-child)>*]:border-b [&>tr>*]:border-border">
           {rows.map((model) => {
-            const users = wisps.filter((wisp) => wispModel(wisp, model)).length;
+            const users = wisps.filter((wisp) => !wisp.decisionModel && wispModel(wisp, model)).length;
             return (
               <tr key={model.key}>
                 <th scope="row" className="max-w-52 px-3 py-2.5 text-left text-sm font-medium">
@@ -486,7 +487,8 @@ function ModelTable({
                   >
                     {modelLabel(model)}
                     <span className="block text-xs font-normal text-dim">
-                      {modelActivity(model)} · {plural(users, "Wisp")}
+                      {modelActivity(model)}
+                      {users > 0 ? ` · ${plural(users, "Wisp")}` : ""}
                     </span>
                   </span>
                 </th>

@@ -6,7 +6,7 @@
 - Scope: A conversation between the person and several Wisps
 - Related: [ADR 010](010-wisp-entity.md), [ADR 001](001-agent-runtime.md),
   [ADR 008](008-wisp-skills.md), [ADR 023](023-wisp-permissions.md),
-  [ADR 026](026-claude-code-runtime.md), SWE-114, SWE-176
+  [ADR 026](026-claude-code-runtime.md), SWE-114, SWE-176, SWE-242
 
 ## Context
 
@@ -45,8 +45,41 @@ model, grants, and permissions, on Pi or on Claude Code.**
 mentioned Wisps, in the order they are first mentioned. A message without
 mentions goes to the circle's lead. The lead is the first member: choosing a
 lead moves that Wisp to the front, so the member order the store already
-keeps holds it, with no column of its own. A router (C) can come later as a
-lead that delegates.
+keeps holds it, with no column of its own.
+
+**Added for SWE-242: C as a choice of each circle.** A circle's
+`responder: "auto"` lets the decision model
+([ADR 012](012-auxiliary-models.md#decision-model)) choose who answers a message
+that mentions no one. The lead stays the default, and the fallback whenever the
+model is below a probability of 0.6, takes over 3 seconds, or fails, so a
+message is never lost or held up by it. Mentions and handoffs never reach the
+model. The choice belongs to the circle because one Wisp is in several; it is
+kept in a table of its own, `circle_responders`, holding a row only for `auto`,
+which older builds ignore and keep.
+
+- **What the model reads:** the circle's name and purpose, up to 4,000 characters
+  of its latest messages, the new message, and for each member its name, its role
+  when it has one, and the start of its soul (up to 1,500 characters, and 6,000 for
+  all members together). The soul is the one description every Wisp has, since a
+  role is optional, and it says who the Wisp is first.
+- **What the model does not read:** members' IDs, replaced by `member_1` and so on.
+- **`several`, as in OpenMausBot, is left out:** a single choice cannot say which
+  members. That case goes to the lead, which can hand off.
+- **Usage:** the decision runs before any member's session exists, so its calls go
+  to `circle-config/<storage ID>/decision-usage` as session entries, read into a
+  **Decision model** row of the usage reports.
+- **How much of a soul:** a member whose specialty comes after the limit is never
+  chosen, and the lead answers. In testing, 800 characters missed a specialty
+  after a long introduction, so the limit is 1,500. It is a limit, not a cure: a
+  soul should say early what the Wisp does.
+- **Time limit:** 1.5 seconds was too little. In testing with Jev, calls took
+  about 0.5 to 1.2 seconds while the circle was busy, but the first one of a
+  session and those after a pause of a few minutes passed the limit. A call past
+  the limit is left to finish, not cancelled: the provider may bill it, and
+  cancelling it left the next call slow too.
+- **Who decides later:** whoever answers can still hand off, and the prompt says
+  to only when the task is another member's role and it cannot do it well. A
+  stronger instruction made Wisps pass on work they had just done.
 
 A mention is `@` and a member's name, matched without regard to case, and
 not followed by a letter or digit, so `@Ada` does not match `@Adam`. The

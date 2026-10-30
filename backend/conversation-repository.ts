@@ -56,7 +56,12 @@ import {
   renderMemoryForPrompt,
 } from "./memory/index.js";
 import { backUpBeforeUpgrade, IntactDatabaseError } from "./sqlite-backup.js";
-import { CIRCLE_CONFIG_DIRECTORY, WISP_CONFIG_DIRECTORY, WISP_SESSIONS_DIRECTORY } from "./storage-layout.js";
+import {
+  CIRCLE_CONFIG_DIRECTORY,
+  CIRCLE_DECISION_USAGE_DIRECTORY,
+  WISP_CONFIG_DIRECTORY,
+  WISP_SESSIONS_DIRECTORY,
+} from "./storage-layout.js";
 import { ARCHIVE_MANIFEST_FILE, type ArchiveManifest } from "../shared/storage.js";
 import {
   applyWorkspaceAction,
@@ -400,6 +405,7 @@ export class ConversationRepository {
         ...this.agentContext(record, wispRecord, session),
         circle,
       })),
+      ...(chat.responder ? { responder: chat.responder } : {}),
       ...(normalizeUserName(userName) ? { userName: normalizeUserName(userName) } : {}),
     };
   }
@@ -491,6 +497,18 @@ export class ConversationRepository {
       workspaceDirectory: path.join(this.workspaceRoot, record.storageId),
       settingsDirectory: this.workspaceSettingsDirectory(record),
     };
+  }
+
+  /** Where a circle keeps what its decision model used; it runs before any member's session. */
+  circleDecisionUsageDirectory(conversationId: string): string {
+    return path.join(this.circleConfigRoot, this.require(conversationId).storageId, CIRCLE_DECISION_USAGE_DIRECTORY);
+  }
+
+  /** The same folder of every circle. */
+  listCircleDecisionUsageDirectories(): string[] {
+    return Object.values(this.state.conversations).flatMap(({ chat, storageId }) =>
+      chat.kind === "circle" ? [path.join(this.circleConfigRoot, storageId, CIRCLE_DECISION_USAGE_DIRECTORY)] : [],
+    );
   }
 
   private workspaceSettingsDirectory(record: ConversationRecord): string {

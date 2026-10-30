@@ -185,6 +185,23 @@ If the chosen model's provider key is removed, or the model leaves the catalog
 or stops accepting images, the choice stays saved but is not used, and the
 setting says why.
 
+### Decision model
+
+**Settings → AI Model → Auxiliary models → Decision model** chooses a model that
+decides which Wisp answers a message that mentions no one in a
+[circle](circles.md#who-answers). It is **Off** by default, and there is one for
+the whole app. Decision models only choose among options and cannot write text,
+so they are listed apart from every other model. Only models from providers with
+a saved key are listed.
+
+The message, the circle's recent messages, and a description of its Wisps go to
+the chosen provider. A model whose key is removed, or that leaves the catalog,
+stays saved but is not used, and the setting says why.
+
+A provider that offers only decision models, such as TypeSafe, has no model to
+choose in **Settings → AI Model → Provider**, so its API key is entered next to
+the **Decision model** setting.
+
 ## First-time setup
 
 Creating a Wisp without a provider is allowed, but sending is disabled until

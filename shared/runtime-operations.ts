@@ -16,6 +16,7 @@ export const RUNTIME_OPERATIONS = [
   "getAiSettings",
   "saveAiSettings",
   "saveAuxiliaryModel",
+  "saveProviderKey",
   "saveFallbackModel",
   "removeProviderCredential",
   "startProviderSignIn",
