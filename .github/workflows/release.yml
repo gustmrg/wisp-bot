@@ -97,7 +97,7 @@ jobs:
       fail-fast: true
       matrix:
         include:
-          - os: macos-14
+          - os: macos-15
             name: macos
             builder-args: --mac dmg zip --arm64
           - os: ubuntu-latest

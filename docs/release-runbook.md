@@ -26,7 +26,7 @@ The Windows installer is not code-signed. SmartScreen warns on its first launch,
    While a beta is out, a release must sort above it, or beta installs would never update to it. With `0.19.0-beta.2` out, `patch` (`0.18.1`) fails and names `0.19.0` instead, so release `minor`.
 3. The workflow:
    1. resolves the version on top of `main`, and fails if its tag already exists or if any install already runs a higher version;
-   2. runs lint, formatting, typecheck, tests, build, the production audit, and the SBOM against the bumped tree, while it packages macOS (on `macos-14`), Linux (on `ubuntu-latest`), and Windows (on `windows-latest`) at the same time;
+   2. runs lint, formatting, typecheck, tests, build, the production audit, and the SBOM against the bumped tree, while it packages macOS (on `macos-15`), Linux (on `ubuntu-latest`), and Windows (on `windows-latest`) at the same time;
    3. commits `chore(release): prepare vX.Y.Z` to `main` and pushes it with the `vX.Y.Z` tag in one atomic push;
    4. drafts the GitHub release with notes generated since the previous release, every artifact, every update feed, the SBOM, and `SHA256SUMS.txt`;
    5. publishes the server to npm and waits until npm serves it (see [The server package on npm](#the-server-package-on-npm));
