@@ -386,6 +386,69 @@ describe("ChatPanel identity", () => {
     expect(screen.getByText("Couldn't reply")).toBeInTheDocument();
   });
 
+  it("names a running tool in its step, not again in a bubble below it", () => {
+    const withStep = (status: "running" | "completed"): Message => ({
+      id: "r:work",
+      type: "incoming",
+      text: "",
+      status: "streaming",
+      steps: [
+        { id: "1", toolName: "linear_create_issue", status, startedAt: "2026-10-22T10:00:00.000Z", type: "tool" },
+      ],
+    });
+    const { scroller, show } = renderPanel(transcript([withStep("running")]), {
+      status: "working",
+      activity: "Creating a Linear issue…",
+    });
+
+    expect(document.querySelector(".chat-activity")).not.toBeInTheDocument();
+    expect(document.querySelector(".message-steps-label")).toHaveTextContent("Creating a Linear issue…");
+    expect(document.querySelector(".chat-subline")).toHaveTextContent("Creating a Linear issue…");
+    // A screen reader still hears what the Wisp is doing.
+    expect(within(scroller).getByRole("status")).toHaveClass("sr-only");
+    expect(within(scroller).getByRole("status")).toHaveTextContent("Creating a Linear issue…");
+
+    // Once the step ends and the Wisp waits for the model, the bubble is back, with no words of its own.
+    show(transcript([withStep("completed")]), { status: "working", activity: undefined });
+    expect(document.querySelector(".chat-activity")).toBeInTheDocument();
+    expect(document.querySelector(".chat-activity")).toHaveTextContent("Atlas is working…");
+  });
+
+  it("keeps a notice beside the bubble, since no step says it", () => {
+    renderPanel(transcript([{ id: "request", type: "outgoing", text: "Hello", status: "complete" }]), {
+      status: "working",
+      activity: "The model failed. Answering with the fallback model…",
+    });
+
+    expect(document.querySelector(".chat-activity")).toHaveTextContent(
+      "The model failed. Answering with the fallback model…",
+    );
+  });
+
+  it("shows no typing bubble while the Wisp waits for an approval", () => {
+    const { scroller } = renderPanel(
+      transcript([{ id: "request", type: "outgoing", text: "Hello", status: "complete" }]),
+      {
+        status: "working",
+        approvals: [
+          {
+            approvalId: "approval-1",
+            conversationId: "atlas",
+            toolCallId: "tool-1",
+            toolName: "write",
+            category: "create_file",
+            scope: { kind: "workspace_path", display: "notes.txt" },
+            summary: "Create notes.txt",
+            expiresAt: "2026-10-22T10:30:00.000Z",
+          },
+        ],
+      },
+    );
+
+    expect(document.querySelector(".chat-activity")).not.toBeInTheDocument();
+    expect(within(scroller).getByRole("status")).toHaveTextContent("Waiting for your approval");
+  });
+
   it("says under its name what the Wisp is doing while it works", () => {
     renderPanel(transcript(messages(0, 1)), { status: "working", activity: "Searching the web" });
     expect(document.querySelector(".chat-subline")).toHaveTextContent("Searching the web");

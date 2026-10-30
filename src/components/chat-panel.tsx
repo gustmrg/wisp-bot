@@ -236,6 +236,12 @@ function ChatPanel({
       (message) => message.type === "incoming" && message.status === "streaming" && Boolean(message.text.trim()),
     );
   const showActivity = attached && working && !responding;
+  // A running step says what the Wisp is doing and an approval what it waits for, so the bubble
+  // stands in only when nothing else does: waiting for the model, or a notice such as a retry.
+  const stepRunning = messages.some(
+    (message) => message.type === "incoming" && message.steps?.some(({ status }) => status === "running"),
+  );
+  const activityBubble = showActivity && !stepRunning && !approvals.length;
   const openKey = transcript && !hidden ? `${chat.id}:${transcript.epoch}` : null;
   // Steps arrive in a message of their own, so a new one moves the end as text does.
   const lastSteps = lastMessage?.type === "incoming" ? (lastMessage.steps?.length ?? 0) : 0;
@@ -551,7 +557,7 @@ function ChatPanel({
                 ))}
               </>
             ) : null}
-            {showActivity ? (
+            {activityBubble ? (
               <div role="status" className="chat-activity mt-3 flex items-center gap-2 text-dim text-sm">
                 <span
                   aria-hidden="true"
@@ -566,6 +572,10 @@ function ChatPanel({
                   ))}
                 </span>
                 {activity ? <span>{activity}</span> : <span className="sr-only">{`${name} is working…`}</span>}
+              </div>
+            ) : showActivity ? (
+              <div role="status" className="sr-only">
+                {subline.text}
               </div>
             ) : null}
           </div>

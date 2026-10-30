@@ -24,7 +24,11 @@ the Wisp, or one derived from its name:
   Wisp's role, or what it is doing ("Searching the web", or "Working…" when
   that is not known), "Waiting for your approval", or "Couldn't reply". A Wisp with nothing said yet introduces itself with the first
   paragraph of its soul. While it works, the tools it has used in this turn
-  show as a trail of steps, each checked, failed, or still running.
+  show as a trail of steps, each checked, failed, or still running. A running
+  step says what the Wisp is doing, in the same words as the header. The typing
+  bubble shows only when no step or approval says it: while the Wisp waits for
+  the model, or beside a notice such as a retry. A tool is always named in
+  words, never by its identifier.
 - **Circles.** Each run of replies is named by the Wisp that wrote it and
   tinted with that Wisp's color.
 

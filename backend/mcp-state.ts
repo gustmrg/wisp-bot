@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { MCP_ACCESS_LEVELS, type McpAccess, type McpAuthMode } from "../shared/mcp.js";
 import { isMcpPresetId, type McpPresetId } from "../shared/mcp-presets/index.js";
 import { invalidMcpRequest, mcpRecord, parseMcpExtraHeaders } from "./mcp-validation.js";
-import type { McpToolRecord } from "./mcp-tools.js";
+import { mcpToolLabel, type McpToolRecord } from "./mcp-tools.js";
 
 export interface McpServerRecord {
   serverId: string;
@@ -89,6 +89,7 @@ export function normalizeState(value: unknown): McpState {
       if (typeof snapshotRecord.discoveredAt !== "string" || !Array.isArray(snapshotRecord.tools))
         throw invalidMcpRequest();
       const tools: McpToolRecord[] = [];
+      const labels = new Set<string>();
       for (const tool of snapshotRecord.tools) {
         const toolRecord = mcpRecord(tool, ["name", "alias", "label", "description", "fingerprint", "inputSchema"]);
         if (
@@ -102,7 +103,8 @@ export function normalizeState(value: unknown): McpState {
         tools.push({
           name: toolRecord.name,
           alias: toolRecord.alias,
-          label: toolRecord.label,
+          // From the name again, so a server discovered by an older build reads the same as a new one.
+          label: mcpToolLabel(toolRecord.name, labels),
           description: toolRecord.description,
           fingerprint: toolRecord.fingerprint,
           inputSchema: toolRecord.inputSchema,

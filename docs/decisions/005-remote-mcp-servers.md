@@ -60,7 +60,8 @@ identity, two servers cannot shadow each other, and built-ins or bundled plugin
 tools cannot be shadowed. Dispatch always uses the original server tool name.
 Metadata (labels, activity labels, `integration_call` category) is registered in
 the shared tool catalog only after this derivation is validated; the catalog
-never accepts arbitrary names or a bare `mcp_` prefix.
+never accepts arbitrary names or a bare `mcp_` prefix. A label is the tool's name
+in words, worked out by the host, and never comes from what the server says.
 
 ## Authorization boundaries
 

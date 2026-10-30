@@ -957,7 +957,7 @@ export function McpServerForm({
             <ul className="mt-2 flex list-none flex-col gap-1 p-0">
               {server.tools.slice(0, 12).map((tool) => (
                 <li key={tool.alias} className="min-w-0 truncate">
-                  <span className="font-medium">{tool.label}</span>
+                  <span className="font-medium">{tool.name}</span>
                   {tool.description ? <span className="text-dim"> — {tool.description}</span> : null}
                 </li>
               ))}

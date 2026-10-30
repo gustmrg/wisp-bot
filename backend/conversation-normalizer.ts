@@ -170,6 +170,7 @@ function normalizeTurnItem(value: unknown): TurnItem {
     startedAt: timestamp(raw.startedAt),
     ...(raw.completedAt === undefined ? {} : { completedAt: timestamp(raw.completedAt) }),
     ...optional("label", 200),
+    ...optional("toolLabel", 200),
   };
   switch (raw.type) {
     case "command_execution":

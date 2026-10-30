@@ -46,6 +46,21 @@ describe("normalizeMessage", () => {
     expect(() => normalizeMessage({ id: "r", type: "incoming", text: "", error: "Stopped." })).toThrow();
   });
 
+  it("keeps the words a step's tool is named with", () => {
+    const step = {
+      id: "a",
+      toolName: "mcp_ee86e536b696_getentry",
+      toolLabel: "Get entry",
+      status: "completed",
+      startedAt: "2026-10-22T10:00:00.000Z",
+      type: "tool",
+    };
+
+    expect(normalizeMessage({ id: "r:work", type: "incoming", text: "", steps: [step] })).toMatchObject({
+      steps: [{ toolLabel: "Get entry" }],
+    });
+  });
+
   it("keeps a reply's steps, leaving out a step that does not load rather than the message", () => {
     const base = { toolName: "read", status: "completed", startedAt: "2026-10-22T10:00:00.000Z" };
     const steps = [

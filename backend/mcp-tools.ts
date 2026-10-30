@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 
 import { disambiguateMcpAlias, mcpToolAlias } from "../shared/mcp.js";
+import { humanizeToolName } from "../shared/tool-catalog.js";
 import { WispBackendError } from "./backend-error.js";
 import { convertMcpToolResult, type McpSdkTool } from "./mcp-bridge.js";
 import {
@@ -12,6 +13,7 @@ import {
 
 const MAX_ARGUMENT_JSON_BYTES = 200_000;
 const MAX_SUMMARY_ARGUMENT_CHARACTERS = 60;
+const MAX_TOOL_LABEL_CHARACTERS = 60;
 const SECRET_KEY_PATTERN = /token|secret|password|authorization|credential|api[-_]?key/i;
 
 /** A reviewed tool definition; its fingerprint is what grants and approvals are bound to. */
@@ -25,6 +27,17 @@ export interface McpToolRecord {
 }
 
 /**
+ * A server tool's label, in words. Two tools that would read the same keep their
+ * own names from the second on, so an approval never makes one look like the other.
+ */
+export function mcpToolLabel(name: string, taken: Set<string>): string {
+  const words = boundedText(humanizeToolName(name), MAX_TOOL_LABEL_CHARACTERS);
+  const label = taken.has(words) ? boundedText(name, MAX_TOOL_LABEL_CHARACTERS) : words;
+  taken.add(label);
+  return label;
+}
+
+/**
  * The reviewed tool set of a server: valid, bounded definitions with unique
  * aliases. A server without one usable tool is a configuration error.
  */
@@ -32,6 +45,7 @@ export function buildToolSnapshot(tools: ReadonlyArray<McpSdkTool>, serverId: st
   const records: McpToolRecord[] = [];
   const seenNames = new Set<string>();
   const usedAliases = new Set<string>();
+  const usedLabels = new Set<string>();
   for (const tool of tools) {
     if (!tool || typeof tool.name !== "string" || !TOOL_NAME_PATTERN.test(tool.name)) continue;
     if (seenNames.has(tool.name)) continue;
@@ -50,7 +64,7 @@ export function buildToolSnapshot(tools: ReadonlyArray<McpSdkTool>, serverId: st
     records.push({
       name: tool.name,
       alias,
-      label: boundedText(tool.name, 60),
+      label: mcpToolLabel(tool.name, usedLabels),
       description,
       fingerprint: createHash("sha256")
         .update(JSON.stringify([tool.name, description, schema]))
