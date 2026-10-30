@@ -1,19 +1,17 @@
 import { useEffect, useRef } from "react";
-import { ChevronRightIcon } from "lucide-react";
 
-import type { ChatId, ChatView, ChatViewCollection } from "@/chat-data";
-import { ChatAvatar, WispAvatar } from "@/components/chat-avatar";
+import type { ChatId, ChatViewCollection } from "@/chat-data";
+import { ApprovalSummaries } from "@/components/approval-summary";
+import { WispAvatar } from "@/components/chat-avatar";
 import { MobileNavigation } from "@/components/mobile-navigation";
-import { AllowAllApprovals, ToolApprovalCard, approvalAsk } from "@/components/tool-approval-card";
-import { approvalWispName, chatName } from "@/lib/chat-schema";
-import { wispAccentStyle, wispColor } from "@/lib/wisp-appearance";
+import { AllowAllApprovals, type ApprovalAnswer } from "@/components/tool-approval-card";
 import type { ToolApprovalDecision, ToolApprovalRequest } from "../../shared/tool-policy";
 
 interface MobileApprovalsProps {
   chats: ChatViewCollection;
   approvals: Record<string, ReadonlyArray<ToolApprovalRequest>>;
   unreadCount: number;
-  onResolve: (request: ToolApprovalRequest, decision: ToolApprovalDecision) => void;
+  onResolve: (request: ToolApprovalRequest, decision: ToolApprovalDecision) => ApprovalAnswer;
   onOpenChat: (chatId: ChatId) => void;
   onConversations: () => void;
   onSettings: () => void;
@@ -29,43 +27,6 @@ export function pendingApprovals(
     .flat()
     .filter((request) => chats[request.conversationId])
     .sort((left, right) => Date.parse(right.expiresAt) - Date.parse(left.expiresAt));
-}
-
-interface ApprovalEntryProps {
-  chat: ChatView;
-  request: ToolApprovalRequest;
-  onResolve: (decision: ToolApprovalDecision) => void;
-  onOpenChat: (chatId: ChatId) => void;
-}
-
-/** One pending approval, in a card lit by the Wisp that asked, with a way into its conversation. */
-export function ApprovalEntry({ chat, request, onResolve, onOpenChat }: ApprovalEntryProps) {
-  const name = chatName(chat);
-  const color = chat.kind === "wisp" ? wispColor(chat.wisp.name, chat.wisp.color) : undefined;
-  return (
-    <article
-      className="mobile-approval"
-      aria-label={`${name}: ${request.summary}`}
-      style={color ? wispAccentStyle(color) : undefined}
-    >
-      <button
-        type="button"
-        className="mobile-approval-chat"
-        aria-label={`Open the conversation with ${name}`}
-        onClick={() => onOpenChat(chat.id)}
-      >
-        <span className="wisp-halo">
-          <ChatAvatar chat={chat} size="sm" />
-        </span>
-        <span className="mobile-approval-who">
-          <strong>{name}</strong>
-          <small>{approvalAsk(request)}</small>
-        </span>
-        <ChevronRightIcon aria-hidden="true" />
-      </button>
-      <ToolApprovalCard request={request} wispName={approvalWispName(chat, request)} onResolve={onResolve} />
-    </article>
-  );
 }
 
 /** Every pending tool approval in one place, for the mobile Approvals tab (ADR 015). */
@@ -98,16 +59,12 @@ export function MobileApprovals({
         </div>
       </header>
       <div className="mobile-approvals-list">
-        <AllowAllApprovals requests={pending} onAllow={(request) => onResolve(request, "allow_once")} />
-        {pending.map((request) => (
-          <ApprovalEntry
-            key={request.approvalId}
-            chat={chats[request.conversationId]!}
-            request={request}
-            onResolve={(decision) => onResolve(request, decision)}
-            onOpenChat={onOpenChat}
-          />
-        ))}
+        <ApprovalSummaries
+          requests={pending}
+          chatOf={(request) => chats[request.conversationId]!}
+          onResolve={onResolve}
+          onOpenChat={onOpenChat}
+        />
         {pending.length ? null : (
           <div className="mobile-approvals-empty" role="status">
             {resting ? (
@@ -121,6 +78,7 @@ export function MobileApprovals({
           </div>
         )}
       </div>
+      <AllowAllApprovals requests={pending} onAllow={(request) => onResolve(request, "allow_once")} />
       <MobileNavigation
         current="approvals"
         onConversations={onConversations}

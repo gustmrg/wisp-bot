@@ -350,6 +350,42 @@ describe("AllowAllApprovals", () => {
     expect(screen.queryByRole("button", { name: /Allow all/ })).not.toBeInTheDocument();
   });
 
+  it("says what kinds of request it would allow", () => {
+    const command: ToolApprovalRequest = {
+      ...fileApproval("command"),
+      category: "container_command",
+      scope: { kind: "container", display: "container" },
+    };
+    const linear: ToolApprovalRequest = {
+      ...fileApproval("linear"),
+      category: "external_write",
+      scope: { kind: "integration", display: "Linear" },
+    };
+    render(
+      <AllowAllApprovals
+        requests={[command, { ...command, approvalId: "second" }, fileApproval("one"), linear]}
+        onAllow={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText("2 commands, 1 file change, 1 integration call")).toBeVisible();
+  });
+
+  it("offers again what did not reach the backend", async () => {
+    const user = userEvent.setup();
+    const onAllow = vi.fn(async ({ approvalId }: ToolApprovalRequest) => approvalId === "three");
+    render(
+      <AllowAllApprovals
+        requests={[fileApproval("one"), fileApproval("two"), fileApproval("three")]}
+        onAllow={onAllow}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Allow all 3 once" }));
+
+    expect(await screen.findByRole("button", { name: "Allow all 2 once" })).toBeVisible();
+  });
+
   it("is not offered for a single approval", () => {
     render(<AllowAllApprovals requests={[fileApproval("one")]} onAllow={vi.fn()} />);
     expect(screen.queryByRole("button", { name: /Allow all/ })).not.toBeInTheDocument();

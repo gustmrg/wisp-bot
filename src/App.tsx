@@ -347,7 +347,7 @@ function Workspace({
                 }}
                 onConfigureVoice={() => showSettings("voice")}
                 onRetry={(messageId) => void workspace.retryMessage(messageId)}
-                onResolveApproval={(request, decision) => void workspace.resolveApproval(request, decision)}
+                onResolveApproval={workspace.resolveApproval}
                 onSend={(text) => void workspace.sendMessage(text)}
                 scheduledMessages={scheduledMessages}
                 messageQueue={messageQueue}
@@ -410,7 +410,7 @@ function Workspace({
                 chats={workspace.chats}
                 approvals={workspace.approvals}
                 unreadCount={unreadCount}
-                onResolve={(request, decision) => void workspace.resolveApproval(request, decision)}
+                onResolve={workspace.resolveApproval}
                 onOpenChat={selectChat}
                 onConversations={showConversations}
                 onSettings={() => showSettings("general")}

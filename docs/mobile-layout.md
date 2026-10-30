@@ -35,12 +35,22 @@ The bottom bar has Wisps, Approvals, and Settings (see
 bottom edge, at the same distance on every tab, even while the conversation
 list scrolls under it; only the current tab shows its name. Wisps shows how many
 conversations are unread and Approvals how many tool approvals are pending.
-The Approvals screen lists every pending approval, the latest first, each in
-a card lit by the Wisp that asked and saying what it wants to do. With more
-than one waiting, "Allow all N once" above them answers every one a tap may
-answer; jobs and skills still need their own review. The chat offers the same
-above its approval cards. An approval answered there, from the list, or in the
-chat leaves all of them.
+The Approvals screen lists every pending approval, the latest first, each in a
+small card: who asks, what it wants to do, the request in one or two lines, and
+the time left. Deny and Allow once answer it there. A job or a skill must be
+read in full first, so it offers Review instead. Tapping a card opens a sheet
+from the bottom with the whole request, every answer, including Always allow and
+Always block, and a way into the conversation. A phone's chat shows the same
+cards, and its sheet has no way into the conversation, which is already open.
+
+With more than one waiting, a bar says how many there are and of what kinds,
+such as "2 commands, 1 file change", and "Allow all N once" answers every one a
+tap may answer; jobs and skills still need their own review. The bar stays on
+screen while the rest scroll: above the bottom bar on the Approvals screen, and
+above the composer in the chat, on the desktop too. An approval answered there,
+from the list, or in the chat leaves all of them. An approval left unanswered
+keeps waiting wherever the person goes, until it expires and counts as denied.
+See [ADR 039](decisions/039-small-approval-cards-on-a-phone.md).
 
 ## Conversation list
 
