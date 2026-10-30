@@ -481,7 +481,9 @@ function AppSettingsDialog({
           {NAV_GROUPS.map((group) => (
             <div
               key={group.label}
-              className={mobile ? "mobile-settings-group" : "flex flex-none flex-col gap-[3px] not-first-of-type:mt-2.5"}
+              className={
+                mobile ? "mobile-settings-group" : "flex flex-none flex-col gap-[3px] not-first-of-type:mt-2.5"
+              }
               role="group"
               aria-labelledby={`settings-group-${group.sections[0]}`}
             >
