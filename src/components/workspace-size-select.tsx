@@ -11,7 +11,6 @@ import {
 } from "../../shared/workspace";
 
 /** Shown when the server predates resizing workspaces. */
-const UNSUPPORTED = "This server is older than this app and cannot resize workspaces. Update the server to change it.";
 /** The select's value for a workspace without a size. */
 const UNLIMITED = "unlimited";
 
@@ -47,8 +46,8 @@ export function WorkspaceSizeSelect({
   quotaBytes: number;
   /** Sizes above it are offered disabled; unknown, every size is offered and the server decides. */
   maxQuotaBytes?: number;
-  /** The workspace has no size. Unknown, the server predates that and none is offered. */
-  unlimited?: boolean;
+  /** The workspace has no size. */
+  unlimited: boolean;
   freeDiskBytes?: number;
   className?: string;
   onResized: (view: WorkspaceView) => void;
@@ -68,7 +67,7 @@ export function WorkspaceSizeSelect({
         label: formatBytes(bytes),
         disabled: maxQuotaBytes !== undefined && bytes > maxQuotaBytes && bytes !== current,
       })),
-    ...(unlimited === undefined ? [] : [{ value: UNLIMITED, label: "Unlimited", disabled: false }]),
+    { value: UNLIMITED, label: "Unlimited", disabled: false },
   ];
 
   async function resize(bytes: number | null) {
@@ -78,7 +77,7 @@ export function WorkspaceSizeSelect({
     try {
       const result = await window.wisp.setWorkspaceQuota({ conversationId, quotaBytes: bytes });
       if (result.ok) onResized(result.value);
-      else setError(result.error.code === "unsupported" ? UNSUPPORTED : result.error.message);
+      else setError(result.error.message);
     } catch {
       setError("Could not change the workspace size.");
     } finally {

@@ -72,9 +72,7 @@ created by earlier versions stay where they are. The first stdin line carries
 the credential key and a one-time pairing code; stdin stays open, and the
 server shuts down when it closes, so it never outlives the app, even after a
 crash. The key is random and kept encrypted by the system keychain
-(`local-server-key.json`); on first start the app re-encrypts credentials that
-earlier versions encrypted with the keychain directly, keeping each original as
-`*.keychain-backup`. The local server starts only while **This computer** is
+(`local-server-key.json`). The local server starts only while **This computer** is
 the chosen connection and stops, after its Wisps settle, when you switch away
 or quit, unless [remote access](#remote-access-to-this-computer) is on.
 Disabling Electron's `RunAsNode` fuse would break this mode.

@@ -127,7 +127,7 @@ export async function createWispServer(options: WispServerOptions): Promise<Wisp
       },
       // A sign-in started from this computer's app uses this computer's browser.
       // The desktop app on another computer receives the redirect on its own
-      // loopback; devices that cannot (the browser app, an older app) get a
+      // loopback; a device that cannot (the browser app) gets a
       // page to open and paste the redirect back from.
       signInBrowser: async () => {
         const device = api?.callerDevice();

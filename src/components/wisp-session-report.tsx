@@ -385,7 +385,7 @@ function ToolCallList({ toolCalls }: { toolCalls: ReadonlyArray<SessionReportToo
   );
 }
 
-/** The tool's readable name; servers from before readable names send only the raw one. */
+/** The tool's readable name, or its raw one when it has none. */
 function toolCallLabel(toolCall: SessionReportToolCall): string {
   return toolCall.toolLabel ?? toolCall.toolName;
 }

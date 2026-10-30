@@ -4,7 +4,7 @@ import type { BackendResult } from "../../shared/contracts";
 import type { Job, JobRun, JobsView } from "../../shared/jobs";
 
 export interface JobsController {
-  /** False until the backend answers, and when it has no jobs (an older server). */
+  /** False until the backend answers, and when it could not. */
   available: boolean;
   /** Every job of every Wisp, soonest next run first. */
   jobs: ReadonlyArray<Job>;

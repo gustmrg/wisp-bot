@@ -144,7 +144,8 @@ restored directory first loads.
 - The data directory reads the same whichever runtime a Wisp uses, and a third
   runtime needs no new folder name.
 - One more store version, and a startup step that does nothing once the
-  folders have their new names.
+  folders have their new names. [ADR 036](036-upgrade-floor.md) removed the
+  step: every data directory it opens already has the new names.
 - Older ADRs still say `pi-config` and `pi-sessions`. They stay as written;
   they record what was decided then. [ADR 010](010-wisp-entity.md) gets a note
   pointing here.

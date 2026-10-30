@@ -9,7 +9,12 @@ it("loads usage and opens the workspace folder", async () => {
   const user = userEvent.setup();
   const getWorkspace = vi.fn(async () => ({
     ok: true as const,
-    value: { usedBytes: 5 * 1024 * 1024, quotaBytes: 512 * 1024 * 1024, maxQuotaBytes: 512 * 1024 * 1024 },
+    value: {
+      usedBytes: 5 * 1024 * 1024,
+      quotaBytes: 512 * 1024 * 1024,
+      maxQuotaBytes: 512 * 1024 * 1024,
+      unlimited: false,
+    },
   }));
   const openWorkspaceFolder = vi.fn(async () => ({
     ok: false as const,
@@ -36,7 +41,12 @@ it("links to the storage view, prominently when the workspace is nearly full", a
     value: {
       getWorkspace: vi.fn(async () => ({
         ok: true as const,
-        value: { usedBytes: 500 * 1024 * 1024, quotaBytes: 512 * 1024 * 1024, maxQuotaBytes: 512 * 1024 * 1024 },
+        value: {
+          usedBytes: 500 * 1024 * 1024,
+          quotaBytes: 512 * 1024 * 1024,
+          maxQuotaBytes: 512 * 1024 * 1024,
+          unlimited: false,
+        },
       })),
       openWorkspaceFolder: vi.fn(),
     },
@@ -52,14 +62,14 @@ it("resizes the workspace, offering only sizes the disk has room for", async () 
   const GIB = 1024 * MIB;
   const setWorkspaceQuota = vi.fn(async () => ({
     ok: true as const,
-    value: { usedBytes: 5 * MIB, quotaBytes: 10 * GIB, maxQuotaBytes: 10 * GIB },
+    value: { usedBytes: 5 * MIB, quotaBytes: 10 * GIB, maxQuotaBytes: 10 * GIB, unlimited: false },
   }));
   Object.defineProperty(window, "wisp", {
     configurable: true,
     value: {
       getWorkspace: vi.fn(async () => ({
         ok: true as const,
-        value: { usedBytes: 5 * MIB, quotaBytes: 512 * MIB, maxQuotaBytes: 10 * GIB },
+        value: { usedBytes: 5 * MIB, quotaBytes: 512 * MIB, maxQuotaBytes: 10 * GIB, unlimited: false },
       })),
       setWorkspaceQuota,
       openWorkspaceFolder: vi.fn(),
@@ -83,14 +93,14 @@ it("asks before giving the workspace less room than it uses", async () => {
   const GIB = 1024 * MIB;
   const setWorkspaceQuota = vi.fn(async () => ({
     ok: true as const,
-    value: { usedBytes: GIB, quotaBytes: 512 * MIB, maxQuotaBytes: 10 * GIB },
+    value: { usedBytes: GIB, quotaBytes: 512 * MIB, maxQuotaBytes: 10 * GIB, unlimited: false },
   }));
   Object.defineProperty(window, "wisp", {
     configurable: true,
     value: {
       getWorkspace: vi.fn(async () => ({
         ok: true as const,
-        value: { usedBytes: GIB, quotaBytes: 2 * GIB, maxQuotaBytes: 10 * GIB },
+        value: { usedBytes: GIB, quotaBytes: 2 * GIB, maxQuotaBytes: 10 * GIB, unlimited: false },
       })),
       setWorkspaceQuota,
       openWorkspaceFolder: vi.fn(),
@@ -111,17 +121,20 @@ it("asks before giving the workspace less room than it uses", async () => {
   expect(await screen.findByText("1.0 GiB of 512 MiB used")).toBeInTheDocument();
 });
 
-it("offers 1 GiB, and Unlimited only from servers that report it", async () => {
+it("offers the preset sizes, 1 GiB among them, and Unlimited", async () => {
   const user = userEvent.setup();
   const MIB = 1024 * 1024;
   const GIB = 1024 * MIB;
-  const view: WorkspaceView = { usedBytes: 5 * MIB, quotaBytes: 512 * MIB, maxQuotaBytes: 10 * GIB };
-  const getWorkspace = vi.fn(async () => ({ ok: true as const, value: view }));
+  const view: WorkspaceView = { usedBytes: 5 * MIB, quotaBytes: 512 * MIB, maxQuotaBytes: 10 * GIB, unlimited: false };
   Object.defineProperty(window, "wisp", {
     configurable: true,
-    value: { getWorkspace, setWorkspaceQuota: vi.fn(), openWorkspaceFolder: vi.fn() },
+    value: {
+      getWorkspace: vi.fn(async () => ({ ok: true as const, value: view })),
+      setWorkspaceQuota: vi.fn(),
+      openWorkspaceFolder: vi.fn(),
+    },
   });
-  const { unmount } = render(<WispWorkspaceSettings conversationId="one" />);
+  render(<WispWorkspaceSettings conversationId="one" />);
   await user.click(await screen.findByRole("combobox", { name: "Size" }));
   expect((await screen.findAllByRole("option")).map((option) => option.textContent)).toEqual([
     "64.0 MiB",
@@ -133,13 +146,8 @@ it("offers 1 GiB, and Unlimited only from servers that report it", async () => {
     "10.0 GiB",
     "50.0 GiB",
     "100 GiB",
+    "Unlimited",
   ]);
-  unmount();
-
-  getWorkspace.mockResolvedValue({ ok: true as const, value: { ...view, unlimited: false, freeDiskBytes: 20 * GIB } });
-  render(<WispWorkspaceSettings conversationId="one" />);
-  await user.click(await screen.findByRole("combobox", { name: "Size" }));
-  expect(await screen.findByRole("option", { name: "Unlimited" })).toBeInTheDocument();
 });
 
 it("asks before removing the limit, then shows usage and the disk's free space without a bar", async () => {

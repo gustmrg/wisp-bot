@@ -16,7 +16,7 @@ import {
 } from "@/components/settings/settings-primitives";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { describeStorageFailure, formatMeasuredAt } from "@/lib/storage-format";
+import { formatMeasuredAt } from "@/lib/storage-format";
 import { ActiveConnectionContext } from "@/features/connections/active-connection";
 import { Wisp } from "@/components/wisp";
 import type { ChatView } from "@/chat-data";
@@ -52,7 +52,7 @@ export function StorageSettingsSection({
         setState(
           result.ok
             ? { summary: result.value, loading: false }
-            : { summary: undefined, error: describeStorageFailure(result), loading: false },
+            : { summary: undefined, error: result.error.message, loading: false },
         );
       })
       .catch(() => {
@@ -92,7 +92,7 @@ export function StorageSettingsSection({
                       ...workspace,
                       quotaBytes: view.quotaBytes,
                       maxQuotaBytes: view.maxQuotaBytes,
-                      ...(view.unlimited === undefined ? {} : { unlimited: view.unlimited }),
+                      unlimited: view.unlimited,
                       ...(view.freeDiskBytes === undefined ? {} : { freeDiskBytes: view.freeDiskBytes }),
                     }
                   : workspace,
@@ -293,23 +293,17 @@ function WorkspaceRow({
         )}
       </SettingsRowCopy>
       <div className="flex items-start gap-2">
-        {workspace.kind === "wisp" ? (
-          <WorkspaceSizeSelect
-            conversationId={workspace.conversationId}
-            name={workspace.name}
-            usedBytes={workspace.usedBytes}
-            quotaBytes={workspace.quotaBytes}
-            maxQuotaBytes={workspace.maxQuotaBytes}
-            unlimited={workspace.unlimited}
-            freeDiskBytes={workspace.freeDiskBytes}
-            className="w-28"
-            onResized={onResized}
-          />
-        ) : (
-          <span className="flex h-8 items-center text-xs text-dim">
-            Circles keep {formatBytes(workspace.quotaBytes)}
-          </span>
-        )}
+        <WorkspaceSizeSelect
+          conversationId={workspace.conversationId}
+          name={workspace.name}
+          usedBytes={workspace.usedBytes}
+          quotaBytes={workspace.quotaBytes}
+          maxQuotaBytes={workspace.maxQuotaBytes}
+          unlimited={workspace.unlimited}
+          freeDiskBytes={workspace.freeDiskBytes}
+          className="w-28"
+          onResized={onResized}
+        />
         <Button
           size="sm"
           variant="outline"
@@ -337,7 +331,7 @@ function ArchiveList({ archives, onDeleted }: { archives: ReadonlyArray<StorageA
     try {
       const result = await window.wisp.deleteArchivedStorage({ ids: chosen });
       if (!result.ok) {
-        setMessage(describeStorageFailure(result));
+        setMessage(result.error.message);
         return;
       }
       const { removed, failed } = result.value;

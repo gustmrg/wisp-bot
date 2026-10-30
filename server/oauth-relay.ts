@@ -19,7 +19,7 @@ const CLOSE_TIMEOUT_MS = 10_000;
  * browser there can complete an OAuth sign-in for this server. Only the
  * redirect's query string comes back; the code is exchanged here with the
  * PKCE verifier that never leaves the server. Rejects when the app cannot
- * listen (the browser app, an older app), so the caller can fall back.
+ * listen (the browser app), so the caller can fall back.
  */
 export async function openOAuthRelay(ask: AskSignInDevice): Promise<McpOAuthRelay> {
   const [listenerId, portText] = await ask({ kind: "oauthListen" }, LISTEN_TIMEOUT_MS);

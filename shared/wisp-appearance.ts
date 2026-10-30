@@ -97,28 +97,6 @@ export function nearestWispColor(value: string): string | undefined {
   return nearest;
 }
 
-/**
- * Wisps saved before appearances had only a shape. Each keeps the closest
- * body, no trail, and the flat look it had.
- */
-const LEGACY_SHAPE_BODIES: Readonly<Record<string, WispBody>> = {
-  circle: "round",
-  pill: "pebble",
-  pebble: "pebble",
-  square: "block",
-  triangle: "crystal",
-  diamond: "crystal",
-  hexagon: "crystal",
-  cloud: "pebble",
-  drop: "drop",
-};
-
-export function appearanceFromLegacyShape(shape: unknown): WispAppearance | undefined {
-  const body = typeof shape === "string" ? LEGACY_SHAPE_BODIES[shape] : undefined;
-  if (!body) return undefined;
-  return { body, trail: "none", tone: "vivid", eyes: "oval", eyeInk: "auto", finish: "solid", mark: "none" };
-}
-
 export function isWispAppearanceValue<Key extends keyof WispAppearance>(
   key: Key,
   value: unknown,

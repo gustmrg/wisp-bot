@@ -36,7 +36,6 @@ import {
   type WispMemoryAccess,
 } from "./conversation-agent.js";
 import {
-  asRecord,
   normalizeChat,
   normalizeConversationId,
   normalizeMessage,
@@ -45,11 +44,9 @@ import {
 } from "./conversation-normalizer.js";
 import { ConversationStore, type StoredPageRequest } from "./conversation-store.js";
 import { normalizeJob, normalizeJobRun } from "./job-records.js";
-import { splitLegacyChat } from "./legacy-conversations.js";
 import { normalizeQueuedMessage } from "./message-queue.js";
 import { normalizeScheduledMessage } from "./message-schedule.js";
 import { buildSnippet, MessageSearchWorker } from "./message-search.js";
-import { CONTEXT_SETTINGS_FILE, loadContextSettings } from "./context-session.js";
 import {
   exportMemoryMarkdown,
   MEMORY_FILE_NAMES,
@@ -57,16 +54,9 @@ import {
   MemoryNewerSchemaError,
   MemoryStore,
   renderMemoryForPrompt,
-  splitLegacyMemory,
 } from "./memory/index.js";
 import { backUpBeforeUpgrade, IntactDatabaseError } from "./sqlite-backup.js";
-import {
-  CIRCLE_CONFIG_DIRECTORY,
-  migrateStorageFolders,
-  WISP_CONFIG_DIRECTORY,
-  WISP_SESSIONS_DIRECTORY,
-} from "./storage-layout.js";
-import { CONVERSATION_STORAGE_POLICY } from "./storage-policy.js";
+import { CIRCLE_CONFIG_DIRECTORY, WISP_CONFIG_DIRECTORY, WISP_SESSIONS_DIRECTORY } from "./storage-layout.js";
 import { ARCHIVE_MANIFEST_FILE, type ArchiveManifest } from "../shared/storage.js";
 import {
   applyWorkspaceAction,
@@ -79,24 +69,18 @@ import {
   type WorkspaceRecords,
 } from "./workspace-actions.js";
 
-// Version of the conversation record format. The legacy JSON store wrote
-// versions 1–3; SQLite stored version 4 until Wisps were stored apart from
-// conversations. Older records are upgraded when they are read.
-const SCHEMA_VERSION = 5;
-const REMOVED_DEMO_CONVERSATION_IDS = new Set(["chief", "sales", "inbox", "account", "talent", "expense", "offsite"]);
 const NEW_WISP_PREVIEW = "Ready for the first task.";
 
 export type { ConversationRecord, WispRecord } from "./workspace-actions.js";
 
 interface PersistedConversationState extends WorkspaceRecords {
-  schemaVersion: typeof SCHEMA_VERSION;
   initialized: boolean;
   wisps: Record<string, WispRecord>;
   conversations: Record<string, ConversationRecord>;
 }
 
 function emptyState(): PersistedConversationState {
-  return { schemaVersion: SCHEMA_VERSION, initialized: false, wisps: {}, conversations: {} };
+  return { initialized: false, wisps: {}, conversations: {} };
 }
 
 function chatsOf(records: Readonly<Record<string, ConversationRecord>>): ChatCollection {
@@ -149,7 +133,6 @@ export interface ConversationRepositoryOptions {
 export class ConversationRepository {
   private readonly dataDirectory: string;
   private readonly databasePath: string;
-  private readonly legacyStatePath: string;
   private readonly workspaceRoot: string;
   private readonly sessionRoot: string;
   private readonly configRoot: string;
@@ -170,7 +153,6 @@ export class ConversationRepository {
   constructor(options: ConversationRepositoryOptions) {
     this.dataDirectory = options.dataDirectory;
     this.databasePath = path.join(options.dataDirectory, "conversations.sqlite");
-    this.legacyStatePath = path.join(options.dataDirectory, "conversations.json");
     this.workspaceRoot = path.join(options.dataDirectory, "workspaces");
     this.sessionRoot = path.join(options.dataDirectory, WISP_SESSIONS_DIRECTORY);
     this.configRoot = path.join(options.dataDirectory, WISP_CONFIG_DIRECTORY);
@@ -183,8 +165,6 @@ export class ConversationRepository {
 
   async load(): Promise<void> {
     await mkdir(this.dataDirectory, { recursive: true });
-    // Before anything creates the folders under their new names (ADR 027).
-    await migrateStorageFolders(this.dataDirectory);
     try {
       this.profile = normalizeUserProfile(
         JSON.parse(await readFile(path.join(this.dataDirectory, "user-profile.json"), "utf8")),
@@ -210,16 +190,10 @@ export class ConversationRepository {
     try {
       store = await this.openStore();
       if (store.isEstablished()) stored = this.parsePersistedState(store.read());
-      if (stored && store.hasJsonRecords()) {
-        // Records from before they were stored as columns: rewrite them all at once.
-        store.rebuild(stored, {
-          scheduled: await this.readScheduledMessages(),
-          queued: await this.readQueuedMessages(),
-        });
-      }
     } catch (error) {
-      // Written by a newer app version, or not backed up before an upgrade:
-      // the file is fine, so leave it in place and refuse to start.
+      // Written by a newer app version or one older than the oldest it opens, or
+      // not backed up before an upgrade: the file is fine, so leave it in place
+      // and refuse to start.
       if (error instanceof IntactDatabaseError) throw error;
       // Unreadable or invalid: keep the file for inspection and start with an
       // empty store.
@@ -229,38 +203,10 @@ export class ConversationRepository {
     }
     if (stored) {
       this.state = stored;
-      this.addMissingCircleSessions(store);
       await this.ensureAllDirectories();
-    } else {
-      await this.migrateLegacyState(store);
-      this.addMissingCircleSessions(store);
     }
-    await this.importLegacyMemory();
-  }
-
-  /**
-   * Turns the saved memory of every Wisp and the profile's background and
-   * response preferences into memory entries, once (ADR 029). The old fields
-   * are left as they are, so an older build still finds them.
-   */
-  private async importLegacyMemory(): Promise<void> {
-    const memory = await this.openMemory();
-    if (!memory.needsLegacyImport()) return;
-    const wisps = await Promise.all(
-      Object.values(this.state.wisps).map(async ({ wisp, storageId }) => {
-        const settingsPath = path.join(this.configRoot, storageId, CONTEXT_SETTINGS_FILE);
-        // Unreadable settings had no memory the Wisp could see either.
-        const saved = await loadContextSettings(settingsPath).then(
-          (settings) => settings.memory,
-          () => "",
-        );
-        return { wispId: wisp.id, lines: splitLegacyMemory(saved) };
-      }),
-    );
-    memory.importLegacy({
-      user: [this.profile.aboutYou, this.profile.responsePreferences].flatMap(splitLegacyMemory),
-      wisps,
-    });
+    // Memory from a newer version stops the start here, rather than at a Wisp's first turn.
+    await this.openMemory();
   }
 
   /**
@@ -339,31 +285,6 @@ export class ConversationRepository {
   async renderMemory(wispId: string): Promise<string> {
     const memory = await this.openMemory();
     return renderMemoryForPrompt(memory.active(wispId), memory.usage(wispId));
-  }
-
-  /**
-   * Gives each circle member a session there; circles made before circles
-   * had agents have none (ADR 011).
-   */
-  private addMissingCircleSessions(store: ConversationStore): void {
-    const changed: ConversationRecord[] = [];
-    for (const record of Object.values(this.state.conversations)) {
-      if (record.chat.kind !== "circle") continue;
-      const missing = record.chat.memberIds.filter((wispId) => !record.sessions[wispId]);
-      if (!missing.length) continue;
-      changed.push({ ...record, sessions: { ...record.sessions, ...this.newSessions(missing) } });
-    }
-    if (!changed.length) return;
-    store.transaction(() => {
-      for (const record of changed) store.putConversation(record);
-    });
-    this.state = {
-      ...this.state,
-      conversations: {
-        ...this.state.conversations,
-        ...Object.fromEntries(changed.map((record) => [record.chat.id, record])),
-      },
-    };
   }
 
   getUserProfile(): UserProfile {
@@ -605,36 +526,11 @@ export class ConversationRepository {
     };
   }
 
-  /** First run: adopts the conversations the app kept in local storage before the backend stored them. */
-  async initialize(chats: unknown): Promise<void> {
+  /** First run: marks the store as set up, with no Wisps or conversations yet. */
+  async initialize(): Promise<void> {
     await this.enqueue(async () => {
       if (this.state.initialized) return;
-      const raw = asRecord(chats);
-      if (Object.keys(raw).length > CONVERSATION_STORAGE_POLICY.maxConversations) {
-        throw new WispBackendError("invalid_request", "The conversation data is invalid.");
-      }
-      const timestamp = this.now().toISOString();
       const next: PersistedConversationState = { ...emptyState(), initialized: true };
-      for (const [key, value] of Object.entries(raw)) {
-        // Early versions kept their bundled demo conversations in local storage too.
-        if (REMOVED_DEMO_CONVERSATION_IDS.has(key)) continue;
-        const { chat, wisp } = splitLegacyChat(value);
-        if (chat.id !== normalizeConversationId(key)) {
-          throw new WispBackendError("invalid_request", "The conversation data is invalid.");
-        }
-        if (wisp) {
-          next.wisps[wisp.id] = this.newWispRecord(wisp, null, timestamp);
-          next.conversations[chat.id] = this.newConversationRecord(chat, timestamp, [wisp.id]);
-        } else {
-          next.conversations[chat.id] = this.newConversationRecord(
-            chat,
-            timestamp,
-            chat.kind === "circle" ? chat.memberIds : [],
-          );
-        }
-      }
-      validateRecords(next);
-      await this.ensureAllDirectories(next);
       await this.commit(next, (store) => store.replaceAll(next));
     });
   }
@@ -1394,41 +1290,6 @@ export class ConversationRepository {
     return result;
   }
 
-  /**
-   * First run on SQLite: imports the legacy single-file JSON store, upgrading
-   * older record versions. The JSON file is kept as the migration backup; once
-   * the import commits, SQLite is authoritative.
-   */
-  private async migrateLegacyState(store: ConversationStore): Promise<void> {
-    let contents: string;
-    try {
-      contents = await readFile(this.legacyStatePath, "utf8");
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === "ENOENT") return;
-      throw error;
-    }
-    let persistedSchemaVersion: number;
-    try {
-      if (Buffer.byteLength(contents, "utf8") > CONVERSATION_STORAGE_POLICY.maxLegacyStateBytes) {
-        throw new Error("Conversation state exceeds the local storage limit.");
-      }
-      const parsed: unknown = JSON.parse(contents);
-      persistedSchemaVersion = this.schemaVersionOf(parsed);
-      if (![1, 2, 3, 4].includes(persistedSchemaVersion)) throw new Error("Invalid state");
-      this.state = this.parsePersistedState(parsed);
-    } catch {
-      await rename(this.legacyStatePath, `${this.legacyStatePath}.corrupt-${this.fileSuffix()}`);
-      this.recoveredCorruptState = true;
-      this.state = emptyState();
-      return;
-    }
-    if (persistedSchemaVersion === 1 || persistedSchemaVersion === 2) await this.removeBundledDemoConversations();
-    await this.ensureAllDirectories();
-    const state = this.state;
-    store.transaction(() => store.replaceAll(state));
-    await rename(this.legacyStatePath, `${this.legacyStatePath}.migrated-${this.fileSuffix()}`);
-  }
-
   private async preserveCorruptDatabase(): Promise<void> {
     this.store?.close();
     this.store = undefined;
@@ -1446,10 +1307,7 @@ export class ConversationRepository {
     return this.now().toISOString().replaceAll(":", "-");
   }
 
-  /**
-   * Validates stored state. Records saved before Wisps were stored apart from
-   * conversations are split into a Wisp and its conversation.
-   */
+  /** Validates stored state. */
   private parsePersistedState(value: unknown): PersistedConversationState {
     const raw = this.stateRecord(value);
     if (typeof raw.initialized !== "boolean") throw new Error("Invalid state");
@@ -1469,10 +1327,6 @@ export class ConversationRepository {
     }
     for (const [id, value] of Object.entries(this.stateRecord(raw.conversations))) {
       const record = this.stateRecord(value);
-      if (record.storageId === undefined) {
-        this.upgradeLegacyRecord(state, id, record);
-        continue;
-      }
       const chat = normalizeChat(record.chat);
       if (chat.id !== id) throw new Error("Invalid state");
       const createdAt = this.timestampOf(record.createdAt);
@@ -1486,54 +1340,6 @@ export class ConversationRepository {
     }
     validateRecords(state);
     return state;
-  }
-
-  /**
-   * Splits a record from before Wisps were stored apart. One ID named all of
-   * a Wisp's folders, so it keeps naming them: the Wisp's settings, its
-   * conversation's workspace, and its session there.
-   */
-  private upgradeLegacyRecord(state: PersistedConversationState, id: string, record: Record<string, unknown>): void {
-    const { chat: legacyChat, wisp } = splitLegacyChat(record.chat);
-    if (legacyChat.id !== id) throw new Error("Invalid state");
-    const createdAt = this.timestampOf(record.createdAt);
-    const chat = { ...legacyChat, createdAt };
-    const updatedAt = this.timestampOf(record.updatedAt);
-    if (!wisp) {
-      if (record.sessionId !== null) throw new Error("Invalid state");
-      state.conversations[id] = {
-        chat,
-        storageId: normalizeConversationId(this.createId()),
-        sessions: {},
-        createdAt,
-        updatedAt,
-      };
-      return;
-    }
-    const storageId = normalizeConversationId(record.sessionId);
-    state.wisps[id] = {
-      wisp,
-      storageId,
-      modelOverride: normalizeSelection(record.modelOverride),
-      createdAt,
-      updatedAt,
-    };
-    state.conversations[id] = {
-      chat,
-      storageId,
-      sessions: {
-        [id]: {
-          sessionId: storageId,
-          piSessionId: typeof record.piSessionId === "string" ? normalizeConversationId(record.piSessionId) : null,
-          piSessionFile:
-            typeof record.piSessionFile === "string"
-              ? this.relocatedPiSessionFile(storageId, record.piSessionFile)
-              : null,
-        },
-      },
-      createdAt,
-      updatedAt,
-    };
   }
 
   private parseSessions(value: unknown): Record<WispId, ParticipantSession> {
@@ -1556,12 +1362,6 @@ export class ConversationRepository {
   private stateRecord(value: unknown): Record<string, unknown> {
     if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Invalid state");
     return value as Record<string, unknown>;
-  }
-
-  private schemaVersionOf(value: unknown): number {
-    const version = this.stateRecord(value).schemaVersion;
-    if (typeof version !== "number") throw new Error("Invalid state");
-    return version;
   }
 
   private timestampOf(value: unknown): string {
@@ -1608,26 +1408,6 @@ export class ConversationRepository {
         ),
       ]),
     ]);
-  }
-
-  private async removeBundledDemoConversations(): Promise<void> {
-    let records: WorkspaceRecords = this.state;
-    const removed: Array<NonNullable<WorkspaceActionResult["deleted"]>> = [];
-    const updatedAt = this.now().toISOString();
-    for (const id of REMOVED_DEMO_CONVERSATION_IDS) {
-      const chat = records.conversations[id]?.chat;
-      if (!chat) continue;
-      const result = applyWorkspaceAction(
-        records,
-        chat.kind === "wisp"
-          ? { type: "delete-wisp", wispId: id, updatedAt }
-          : { type: "delete", conversationId: id, updatedAt },
-      );
-      if (result.deleted) removed.push(result.deleted);
-      records = result.records;
-    }
-    this.state = { ...this.state, wisps: { ...records.wisps }, conversations: { ...records.conversations } };
-    await Promise.allSettled(removed.map((deleted) => this.archiveDeleted(deleted)));
   }
 
   /** Moves the sessions of Wisps that left a circle into the archive, one entry for each. */

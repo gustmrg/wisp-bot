@@ -2,11 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import { DEFAULT_PREFERENCES } from "@/lib/app-preferences";
 import { loadPreferences, savePreferences } from "@/features/persistence/preference-storage";
-import {
-  LEGACY_CONVERSATIONS_STORAGE_KEY,
-  MAX_PREFERENCES_BLOB_BYTES,
-  PREFERENCES_STORAGE_KEY,
-} from "@/features/persistence/storage-policy";
+import { MAX_PREFERENCES_BLOB_BYTES, PREFERENCES_STORAGE_KEY } from "@/features/persistence/storage-policy";
 
 describe("preference storage", () => {
   it("normalizes partially valid saved preferences", () => {
@@ -30,14 +26,6 @@ describe("preference storage", () => {
       ok: false,
       value: DEFAULT_PREFERENCES,
     });
-  });
-
-  it("reads preferences from the legacy blob without deleting it", () => {
-    const storage = {
-      getItem: (key: string) =>
-        key === LEGACY_CONVERSATIONS_STORAGE_KEY ? JSON.stringify({ preferences: { theme: "light" } }) : null,
-    };
-    expect(loadPreferences(storage)).toMatchObject({ ok: true, value: { theme: "light" } });
   });
 
   it("reports quota failures instead of claiming success", () => {

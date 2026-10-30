@@ -19,20 +19,16 @@ export interface StorageWorkspace {
   quotaBytes: number;
   /** Some folders or files could not be read, so the numbers are a lower bound. */
   partial: boolean;
-  /**
-   * The largest size the workspace can be given now, as in `WorkspaceView`.
-   * Absent when the disk could not be measured, from servers older than this
-   * field, and for circles from servers where a circle's size was fixed.
-   */
+  /** The largest size the workspace can be given now, as in `WorkspaceView`; absent when the disk could not be measured. */
   maxQuotaBytes?: number;
-  /** As in `WorkspaceView`: no size, only the disk holds it back; absent from older servers. */
-  unlimited?: boolean;
-  /** Free space on the disk holding the workspace; absent when it could not be measured and from older servers. */
+  /** As in `WorkspaceView`: no size, only the disk holds it back. */
+  unlimited: boolean;
+  /** Free space on the disk holding the workspace; absent when it could not be measured. */
   freeDiskBytes?: number;
-  /** The largest folders and files at the workspace root, largest first; absent from older servers. */
-  folders?: ReadonlyArray<StorageUsageItem>;
-  /** The largest files anywhere in the workspace, largest first; absent from older servers. */
-  largestFiles?: ReadonlyArray<StorageLargeFile>;
+  /** The largest folders and files at the workspace root, largest first. */
+  folders: ReadonlyArray<StorageUsageItem>;
+  /** The largest files anywhere in the workspace, largest first. */
+  largestFiles: ReadonlyArray<StorageLargeFile>;
 }
 
 /** Most entries a workspace reports in `folders` and in `largestFiles`. */

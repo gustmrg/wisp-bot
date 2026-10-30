@@ -35,7 +35,6 @@ import type {
   CreateWispRequest,
   DeleteConversationRequest,
   DeleteWispRequest,
-  InitializeConversationsRequest,
   MarkConversationReadRequest,
   MarkConversationUnreadRequest,
   UpdateConversationRequest,
@@ -669,7 +668,7 @@ export interface SessionReportModelUsage {
 export interface SessionReportToolCall {
   toolCallId: string;
   toolName: string;
-  /** A readable name for the tool, with the connection it came from for MCP tools; absent from older servers. */
+  /** A readable name for the tool, with the connection it came from for MCP tools; absent when there is none. */
   toolLabel?: string;
   argumentSummary: string;
   /** For commands: the programs run, without their arguments (`git clone · npm install`). */
@@ -859,7 +858,8 @@ export interface WispApi {
   cancelProviderSignIn(request: ProviderSignInRequest): Promise<BackendResult<AiSettingsView>>;
   finishProviderSignIn(request: FinishProviderSignInRequest): Promise<BackendResult<AiSettingsView>>;
   getConversationState(): Promise<BackendResult<ConversationStateView>>;
-  initializeConversations(request: InitializeConversationsRequest): Promise<BackendResult<ConversationStateView>>;
+  /** Marks a new environment's store as set up; it starts with no Wisps or conversations. */
+  initializeConversations(): Promise<BackendResult<ConversationStateView>>;
   createWisp(request: CreateWispRequest): Promise<BackendResult<ConversationStateView>>;
   updateWisp(request: UpdateWispRequest): Promise<BackendResult<ConversationStateView>>;
   deleteWisp(request: DeleteWispRequest): Promise<BackendResult<ConversationStateView>>;

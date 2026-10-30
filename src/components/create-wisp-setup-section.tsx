@@ -29,10 +29,6 @@ const UNLIMITED = "unlimited";
 
 export const DEFAULT_WISP_SETUP: WispSetupDraft = { quotaBytes: WORKSPACE_QUOTA_BYTES, executionMode: "off" };
 
-/** Shown when the server predates choosing these while creating a Wisp. */
-const UNSUPPORTED =
-  "This server is older than this app, so the workspace size and commands can't be chosen here. Update the server, or change them in the Wisp's settings after creating it.";
-
 /**
  * Applies the setup to a Wisp that was just created. Resolves with what could
  * not be applied, as a sentence fragment, or an empty string when all of it was.
@@ -56,32 +52,22 @@ export async function applyWispSetup(conversationId: string, setup: WispSetupDra
 
 interface CreateWispSetupSectionProps {
   view: WispSetupView | null;
-  /** Why the view could not be loaded; "unsupported" when the server does not offer it. */
+  /** Why the view could not be loaded. */
   loadError: string;
-  unsupported: boolean;
   draft: WispSetupDraft;
   onChange: (draft: WispSetupDraft) => void;
 }
 
 /** Workspace size and commands: the step that gives a new Wisp somewhere to work. */
-export function CreateWispSetupSection({ view, loadError, unsupported, draft, onChange }: CreateWispSetupSectionProps) {
-  if (!view) {
-    return unsupported ? (
-      <p role="status" className="m-0 text-sm text-dim">
-        {UNSUPPORTED}
-      </p>
-    ) : (
-      <FormStatus pending="Checking the server…" error={loadError} />
-    );
-  }
+export function CreateWispSetupSection({ view, loadError, draft, onChange }: CreateWispSetupSectionProps) {
+  if (!view) return <FormStatus pending="Checking the server…" error={loadError} />;
   const sizes = [
     ...WORKSPACE_QUOTA_PRESETS.map((bytes) => ({
       value: String(bytes),
       label: formatBytes(bytes),
       disabled: bytes > view.maxQuotaBytes,
     })),
-    // Servers older than unlimited workspaces leave the field out, and refuse one.
-    ...(view.unlimitedWorkspaces ? [{ value: UNLIMITED, label: "Unlimited", disabled: false }] : []),
+    { value: UNLIMITED, label: "Unlimited", disabled: false },
   ];
   const commands = draft.executionMode === "container";
   return (

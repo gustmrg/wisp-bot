@@ -11,7 +11,6 @@ import {
   parseCreateWispRequest,
   parseDeleteConversationRequest,
   parseDeleteWispRequest,
-  parseInitializeConversationsRequest,
   parseMarkConversationReadRequest,
   parseMessagePageRequest,
   parseSearchMessagesRequest,
@@ -36,10 +35,7 @@ export function registerConversationHandlers(
       (payload) => service.saveUserTimeZone(parseSetUserTimeZoneRequest(payload).timeZone),
     ],
     [WISP_IPC_CHANNELS.getConversationState, () => service.getState()],
-    [
-      WISP_IPC_CHANNELS.initializeConversations,
-      (payload) => service.initialize(parseInitializeConversationsRequest(payload).chats),
-    ],
+    [WISP_IPC_CHANNELS.initializeConversations, () => service.initialize()],
     [
       WISP_IPC_CHANNELS.createWisp,
       (payload) => {

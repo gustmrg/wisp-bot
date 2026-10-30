@@ -335,14 +335,10 @@ describe("ExecutionService", () => {
     expect(manager.exec).toHaveBeenCalledTimes(1);
   });
 
-  it("removes the containers of deleted Wisps and the tokens once saved for each Wisp", async () => {
-    const { service, manager, root } = await setup();
-    const legacy = path.join(root, "execution-credentials.enc.json");
-    await writeFile(legacy, "{}");
+  it("removes the containers of deleted Wisps", async () => {
+    const { service, manager } = await setup();
     await service.reconcile();
     expect(manager.reconcile).toHaveBeenCalledWith(new Set(["s1"]));
-    await expect(readFile(legacy)).rejects.toMatchObject({ code: "ENOENT" });
-    await service.reconcile();
   });
 });
 

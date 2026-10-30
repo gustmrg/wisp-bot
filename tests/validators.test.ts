@@ -481,36 +481,6 @@ describe("IPC request validators", () => {
     ).toThrow(WispBackendError);
   });
 
-  it("gives a Wisp saved with a shape the closest body, no trail, and its flat look", () => {
-    for (const [shape, body] of [
-      ["circle", "round"],
-      ["pill", "pebble"],
-      ["square", "block"],
-      ["hexagon", "crystal"],
-      ["drop", "drop"],
-    ] as const) {
-      const request = parseCreateWispRequest({
-        wisp: { id: "legacy", name: "Legacy", role: "", soul: "", shape },
-        notifyOnUpdatesEnabled: true,
-      });
-      expect(request.wisp.appearance).toEqual({
-        body,
-        trail: "none",
-        tone: "vivid",
-        eyes: "oval",
-        eyeInk: "auto",
-        finish: "solid",
-        mark: "none",
-      });
-    }
-    expect(() =>
-      parseCreateWispRequest({
-        wisp: { id: "legacy", name: "Legacy", role: "", soul: "", shape: "star" },
-        notifyOnUpdatesEnabled: true,
-      }),
-    ).toThrow(WispBackendError);
-  });
-
   it("keeps a stored Wisp whose appearance has values this build does not know", () => {
     const request = parseCreateWispRequest({
       wisp: {

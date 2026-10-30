@@ -67,12 +67,6 @@ export interface MemoryStoreOptions {
   now?: () => Date;
 }
 
-/** Text from before memory had entries, to be turned into entries once. */
-export interface LegacyMemory {
-  user: string[];
-  wisps: Array<{ wispId: string; lines: string[] }>;
-}
-
 interface EntryRow {
   id: string;
   scope: MemoryScope;
@@ -217,36 +211,6 @@ export class MemoryStore {
   deleteWisp(wispId: string): void {
     this.transaction(() => {
       this.db.prepare("DELETE FROM memory_entries WHERE scope = 'wisp' AND wisp_id = ?").run(wispId);
-    });
-  }
-
-  /** Whether `importLegacy` has yet to run, so the caller reads the old memory only when needed. */
-  needsLegacyImport(): boolean {
-    return this.getMeta("legacy_imported") === undefined;
-  }
-
-  /**
-   * Turns memory kept before entries existed into active `owner` entries, once.
-   * Limits do not apply: nothing the person wrote is dropped. Returns false
-   * when an earlier start already did it.
-   */
-  importLegacy(legacy: LegacyMemory): boolean {
-    return this.transaction(() => {
-      if (this.getMeta("legacy_imported") !== undefined) return false;
-      const now = this.now().toISOString();
-      const insert = (scope: MemoryScope, wispId: string | null, lines: readonly string[]) => {
-        const seen = new Set<string>();
-        for (const raw of lines) {
-          const line = memoryLine(raw);
-          if (!("text" in line) || seen.has(line.text)) continue;
-          seen.add(line.text);
-          this.insert({ scope, wispId, text: line.text, source: "owner", replaces: null, expiresAt: null, now });
-        }
-      };
-      insert("user", null, legacy.user);
-      for (const { wispId, lines } of legacy.wisps) insert("wisp", wispId, lines);
-      this.setMeta("legacy_imported", now);
-      return true;
     });
   }
 

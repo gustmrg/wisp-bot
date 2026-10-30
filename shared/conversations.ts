@@ -52,7 +52,7 @@ export interface ChatBase {
   notifyOnUpdatesEnabled: boolean;
   preview: string;
   messages: ReadonlyArray<Message>;
-  /** Whether any messages are unread; kept beside `unreadCount` for older clients. */
+  /** Whether any messages are unread. */
   unread?: boolean;
   /** Replies and questions from Wisps since the person last read the conversation. */
   unreadCount?: number;
@@ -273,10 +273,6 @@ export interface ConversationDelta {
   added: ReadonlyArray<Message>;
   /** Earlier messages whose content changed; each keeps its position. */
   updated: ReadonlyArray<Message>;
-}
-
-export interface InitializeConversationsRequest {
-  chats: unknown;
 }
 
 /** Creates a circle; a Wisp's own conversation is created with the Wisp. */

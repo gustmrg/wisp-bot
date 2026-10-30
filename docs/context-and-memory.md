@@ -49,9 +49,7 @@ credentials, and never on its own. Each entry shows who wrote it (you or a
 Wisp) and when, and can be edited, removed, or restored later. **Edit as text** edits a list one line per entry and shows
 what will change before saving; lines left as they are keep their history.
 Each list can be exported as Markdown. Deleting a Wisp keeps its `MEMORY.md`
-in the archive. The saved memory and the profile's "About you" and "Response
-preferences" from earlier versions became entries on the first start. See
-[ADR 029](decisions/029-wisp-memory.md).
+in the archive. See [ADR 029](decisions/029-wisp-memory.md).
 
 ### Turn memory off
 

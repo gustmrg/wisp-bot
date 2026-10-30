@@ -230,8 +230,7 @@ function ContextForm({ conversationId }: { conversationId: string }) {
       <SettingsActions align="end">
         <Button
           disabled={disabled || !dirty || !isContextPolicy(policy)}
-          // Saved memory moved to memory entries (ADR 029); the old text is kept as it is.
-          onClick={() => void run({ action: "save", policy, memory: view.memory })}
+          onClick={() => void run({ action: "save", policy })}
         >
           Save context settings
         </Button>

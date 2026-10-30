@@ -15,6 +15,7 @@ import type { Message, Wisp } from "../../shared/conversations.js";
 import type { MessageQueueView } from "../../shared/message-queue.js";
 import type { ScheduledMessagesView } from "../../shared/scheduled-messages.js";
 import { DEFAULT_WISP_APPEARANCE } from "../../shared/wisp-appearance.js";
+import { seedConversations, type SeedChat } from "./seed-conversations.js";
 
 export const MODEL: ModelSelection = { providerId: "openai", modelId: "gpt-test" };
 export const START = new Date("2026-10-06T12:00:00.000Z");
@@ -29,7 +30,6 @@ export function wisp(id: string): Record<string, unknown> {
   return {
     id,
     kind: "wisp",
-    shape: "circle",
     name: id,
     label: "Test",
     description: "Test",
@@ -72,7 +72,10 @@ export async function setupMessaging(
     onFollowUpTaken: (_conversationId, queuedMessageId) => queue?.followUpTaken(queuedMessageId),
   });
   await service.start(options.model === undefined ? MODEL : options.model);
-  if (!repository.isInitialized()) await service.initialize({ one: wisp("one") });
+  if (!repository.isInitialized()) {
+    await seedConversations(repository, { one: wisp("one") as SeedChat });
+    await service.initialize();
+  }
   const queueViews: MessageQueueView[] = [];
   const scheduleViews: ScheduledMessagesView[] = [];
   let queueIds = 0;

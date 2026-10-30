@@ -4,7 +4,7 @@ import type { BackendResult } from "../../shared/contracts";
 import type { MessageQueueView, QueuedMessage } from "../../shared/message-queue";
 
 export interface MessageQueueController {
-  /** False until the backend answers, and when it has no message queue (an older server). */
+  /** False until the backend answers, and when it could not. */
   available: boolean;
   /** Every message waiting for its Wisp, oldest first. */
   messages: ReadonlyArray<QueuedMessage>;

@@ -249,7 +249,8 @@ it.
   The approval card is where the user stops what should not be shared.
 - Memory is read from the table only. The old fields in
   `context-settings.json` and `user-profile.json` stay behind, frozen at the
-  migration, until a later change removes them.
+  migration, until a later change removes them. [ADR 036](036-upgrade-floor.md)
+  removed them and the import.
 - Memory now costs prompt space in every Wisp, bounded by the two limits.
 
 ## Deferred

@@ -2,12 +2,7 @@ import { DatabaseSync } from "node:sqlite";
 
 import { describe, expect, it } from "vitest";
 
-import {
-  exportMemoryMarkdown,
-  MemoryStore,
-  renderMemoryForPrompt,
-  splitLegacyMemory,
-} from "../backend/memory/index.js";
+import { exportMemoryMarkdown, MemoryStore, renderMemoryForPrompt } from "../backend/memory/index.js";
 
 function storeWith(user: string[], wisp: string[]) {
   const store = MemoryStore.open(new DatabaseSync(":memory:"), { now: () => new Date("2026-10-23T12:00:00.000Z") });
@@ -59,28 +54,5 @@ describe("exportMemoryMarkdown", () => {
     expect(exportMemoryMarkdown("user", store.active("lumi"))).toBe("# USER.md\n\n- Prefers short answers.\n");
     expect(exportMemoryMarkdown("wisp", store.active("lumi"))).toBe("# MEMORY.md\n\n- Main project is Wisp Bot.\n");
     expect(exportMemoryMarkdown("wisp", [])).toBe("# MEMORY.md\n");
-  });
-});
-
-describe("splitLegacyMemory", () => {
-  it("makes an entry of each line or bullet, without markers, blanks or repeats", () => {
-    expect(
-      splitLegacyMemory(
-        "Prefers pt-BR.\r\n\n- Uses Debian.\n  * Has a Raspberry Pi.\n1. First.\n2) Second.\n• Dot.\n+ Plus.\nPrefers pt-BR.\n",
-      ),
-    ).toEqual(["Prefers pt-BR.", "Uses Debian.", "Has a Raspberry Pi.", "First.", "Second.", "Dot.", "Plus."]);
-  });
-
-  it("drops invisible characters but keeps text that only looks like a marker", () => {
-    expect(splitLegacyMemory("zero\u200Bwidth\n-5 degrees outside\n2026 was busy")).toEqual([
-      "zerowidth",
-      "-5 degrees outside",
-      "2026 was busy",
-    ]);
-  });
-
-  it("gives nothing for empty text", () => {
-    expect(splitLegacyMemory("")).toEqual([]);
-    expect(splitLegacyMemory("\n  \n")).toEqual([]);
   });
 });

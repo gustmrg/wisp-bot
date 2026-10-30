@@ -1,5 +1,5 @@
 import type { JobRequest, SetJobMemoryRequest } from "../shared/jobs.js";
-import { isContextPolicy, withPolicyDefaults, type ContextRequest } from "../shared/context-policy.js";
+import { isContextPolicy, type ContextRequest } from "../shared/context-policy.js";
 import {
   isThinkingLevel,
   type UsageReportRequest,
@@ -24,7 +24,6 @@ import type {
   CreateWispRequest,
   DeleteConversationRequest,
   DeleteWispRequest,
-  InitializeConversationsRequest,
   MarkConversationReadRequest,
   MessagePageRequest,
   SearchMessagesRequest,
@@ -288,11 +287,6 @@ export function parseApplyModelRequest(value: unknown): ApplyModelRequest {
 }
 
 /** The chats arrive in the app's old local-storage format; the repository reads them. */
-export function parseInitializeConversationsRequest(value: unknown): InitializeConversationsRequest {
-  const request = asRecord(value);
-  return { chats: asRecord(request.chats) };
-}
-
 export function parseCreateConversationRequest(value: unknown): CreateConversationRequest {
   const request = asRecord(value);
   const conversation = normalizeChat(request.conversation);
@@ -513,16 +507,10 @@ export function parseContextRequest(value: unknown): ContextRequest {
   const command = asRecord(request.command);
   if (Object.keys(request).some((key) => !["conversationId", "command"].includes(key))) throw invalidRequest();
   if (command.action === "save") {
-    // Clients older than a policy field send the policy without it.
-    const policy = withPolicyDefaults(command.policy);
-    if (
-      Object.keys(command).some((key) => !["action", "policy", "memory"].includes(key)) ||
-      !isContextPolicy(policy) ||
-      typeof command.memory !== "string" ||
-      command.memory.length > 8000
-    )
+    const { policy } = command;
+    if (Object.keys(command).some((key) => !["action", "policy"].includes(key)) || !isContextPolicy(policy))
       throw invalidRequest();
-    return { conversationId, command: { action: "save", policy, memory: command.memory } };
+    return { conversationId, command: { action: "save", policy } };
   }
   if (Object.keys(command).length !== 1 || !["get", "compact", "new_topic"].includes(String(command.action)))
     throw invalidRequest();

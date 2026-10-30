@@ -165,7 +165,7 @@ function largestRows(summary: StorageSummary, kind: LargestKind): LargestRow[] {
   if (kind === "folders") {
     return summary.workspaces
       .flatMap((workspace) =>
-        (workspace.folders ?? [])
+        workspace.folders
           .filter(({ type }) => type === "directory")
           .map((folder) => ({
             key: `${workspace.conversationId}/${folder.path}`,
@@ -182,7 +182,7 @@ function largestRows(summary: StorageSummary, kind: LargestKind): LargestRow[] {
   }
   return summary.workspaces
     .flatMap((workspace) =>
-      (workspace.largestFiles ?? []).map((file) => {
+      workspace.largestFiles.map((file) => {
         const slash = file.path.lastIndexOf("/");
         const folder = slash === -1 ? "" : file.path.slice(0, slash);
         return {
@@ -218,17 +218,11 @@ export function LargestConsumers({
 }) {
   const [kind, setKind] = useState<LargestKind>("folders");
   const rows = largestRows(summary, kind);
-  // Servers before folder and file details leave them out of every workspace.
-  const unsupported = summary.workspaces.every((workspace) => !workspace.folders);
   const top = rows[0]?.size ?? 0;
   return (
     <SettingsGroup label="Largest">
       <SegmentedControl label="Largest" value={kind} options={KIND_OPTIONS} onChange={setKind} className="mb-2" />
-      {unsupported ? (
-        <p className="mx-0.5 text-xs text-dim">
-          This server is older than this app and does not report folders and files. Update the server to see them.
-        </p>
-      ) : rows.length === 0 ? (
+      {rows.length === 0 ? (
         <p className="mx-0.5 text-xs text-dim">Nothing stored yet.</p>
       ) : (
         <SettingsCard variant="stacked">

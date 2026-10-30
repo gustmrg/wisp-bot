@@ -218,15 +218,12 @@ export function WispModelSettings({ conversationId }: { conversationId: string }
                 />
               </section>
             ) : null}
-            {/* A server from before fallbacks reports none; it cannot save one either. */}
-            {view.fallback && catalog.fallback ? (
-              <FallbackSection
-                catalog={catalog}
-                view={view}
-                disabled={saving}
-                onChange={(fallback) => void changeFallback(fallback)}
-              />
-            ) : null}
+            <FallbackSection
+              catalog={catalog}
+              view={view}
+              disabled={saving}
+              onChange={(fallback) => void changeFallback(fallback)}
+            />
             {!override && effective && canChooseThinkingLevel(effectiveModel) ? (
               <p className="m-0 text-xs text-dim">
                 Reasoning: {THINKING_LEVEL_LABELS[keepThinkingLevel(effective.thinkingLevel ?? "off", effectiveModel)]}{" "}

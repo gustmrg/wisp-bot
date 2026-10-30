@@ -8,12 +8,12 @@ import { ConversationRepository } from "../backend/conversation-repository.js";
 import { normalizeJob, normalizeJobRun } from "../backend/job-records.js";
 import type { Chat } from "../shared/conversations.js";
 import { MAX_JOB_RUNS_KEPT, type Job, type JobRun } from "../shared/jobs.js";
+import { seedConversations } from "./helpers/seed-conversations.js";
 
 function wispChat(id: string): Chat {
   return {
     id,
     kind: "wisp",
-    shape: "circle",
     name: id,
     label: "Test",
     description: "A test Wisp",
@@ -61,7 +61,7 @@ function run(index: number, overrides: Partial<JobRun> = {}): JobRun {
 async function setup() {
   const directory = await mkdtemp(path.join(os.tmpdir(), "wisp-jobs-"));
   const repository = new ConversationRepository({ dataDirectory: directory });
-  await repository.initialize({ atlas: wispChat("atlas"), echo: wispChat("echo") });
+  await seedConversations(repository, { atlas: wispChat("atlas"), echo: wispChat("echo") });
   return { directory, repository };
 }
 

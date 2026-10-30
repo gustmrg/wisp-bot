@@ -15,7 +15,8 @@ import { InProcessLocalServer } from "../helpers/in-process-local-server.js";
 import type { ConnectionsView } from "../../shared/connections.js";
 import { createBackend, type Backend } from "../../electron/create-backend.js";
 import { WISP_IPC_CHANNELS, type BackendResult } from "../../shared/contracts.js";
-import type { Chat, ConversationStateView } from "../../shared/conversations.js";
+import type { ConversationStateView, Wisp } from "../../shared/conversations.js";
+import { DEFAULT_WISP_APPEARANCE } from "../../shared/wisp-appearance.js";
 
 type Handler = (event: IpcMainInvokeEvent, payload?: unknown) => Promise<BackendResult<unknown>>;
 
@@ -40,18 +41,7 @@ const encryption: EncryptionService = {
   decrypt: (value) => value.toString("utf8"),
 };
 
-const atlas: Chat = {
-  id: "atlas",
-  name: "Atlas",
-  label: "Research",
-  description: "",
-  kind: "wisp",
-  shape: "circle",
-  notifyOnUpdatesEnabled: true,
-  preview: "Ready",
-  timestamp: "2026-09-29T12:00:00.000Z",
-  messages: [],
-};
+const atlas: Wisp = { id: "atlas", name: "Atlas", role: "Research", soul: "", appearance: DEFAULT_WISP_APPEARANCE };
 
 const directories: string[] = [];
 const backends: Backend[] = [];
@@ -140,7 +130,8 @@ describe("createBackend", () => {
       selection: { providerId: "openrouter", modelId: "openai/gpt-oss-120b" },
       apiKey: "test-key",
     });
-    await invoke(WISP_IPC_CHANNELS.initializeConversations, { chats: { atlas } });
+    await invoke(WISP_IPC_CHANNELS.initializeConversations);
+    await invoke(WISP_IPC_CHANNELS.createWisp, { wisp: atlas, notifyOnUpdatesEnabled: true });
     // Single-chat changes answer with what changed, not every conversation or transcript.
     await expect(
       invoke(WISP_IPC_CHANNELS.appendConversationMessage, {

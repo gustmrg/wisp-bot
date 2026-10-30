@@ -217,17 +217,6 @@ it("deletes archives with a warning about what they contain", async () => {
   expect(wisp.deleteArchivedStorage).toHaveBeenCalledWith({ ids: ["old-1"] });
 });
 
-it("explains when the server is too old", async () => {
-  install({
-    getStorageSummary: vi.fn(async () => ({
-      ok: false as const,
-      error: { code: "unsupported" as const, message: "x", retryable: false },
-    })),
-  });
-  render(<StorageSettingsSection />);
-  expect(await screen.findByRole("alert")).toHaveTextContent("Update the server");
-});
-
 it("charts usage with the same numbers as the list and counts full workspaces", async () => {
   install();
   render(<StorageSettingsSection />);
@@ -275,22 +264,6 @@ it("lists the largest folders across workspaces and opens one", async () => {
   expect(
     await screen.findByRole("img", { name: /Space by folder: inbox\/ 400 MiB, notes.txt 60.0 MiB/ }),
   ).toBeVisible();
-});
-
-it("explains that an older server does not report folders and files", async () => {
-  const user = userEvent.setup();
-  install({
-    getStorageSummary: vi.fn(async () => ({
-      ok: true as const,
-      value: {
-        ...summary,
-        workspaces: summary.workspaces.map(({ folders: _f, largestFiles: _l, maxQuotaBytes: _m, ...rest }) => rest),
-      },
-    })),
-  });
-  render(<StorageSettingsSection />);
-  await user.click(await screen.findByRole("radio", { name: "Files" }));
-  expect(screen.getByText(/does not report folders and files/)).toBeInTheDocument();
 });
 
 it("resizes a workspace from the list, confirming a size below its usage", async () => {
@@ -389,19 +362,18 @@ it("shows a workspace without a size apart, and removes a limit from the list af
   expect(screen.queryByText(/NaN|Infinity/)).not.toBeInTheDocument();
 });
 
-it("keeps a circle's size fixed and reports servers that cannot resize", async () => {
+it("resizes a circle's workspace like a Wisp's, and shows why a size was refused", async () => {
   const user = userEvent.setup();
   install({
     setWorkspaceQuota: vi.fn(async () => ({
       ok: false as const,
-      error: { code: "unsupported" as const, message: "x", retryable: false },
+      error: { code: "invalid_request" as const, message: "The disk has no room for that size.", retryable: false },
     })),
   });
   render(<StorageSettingsSection />);
-  expect(await screen.findByText("Circles keep 512 MiB")).toBeInTheDocument();
-  expect(screen.queryByRole("combobox", { name: "Workspace size for Crew" })).not.toBeInTheDocument();
+  expect(await screen.findByRole("combobox", { name: "Workspace size for Crew" })).toBeInTheDocument();
 
   await user.click(screen.getByRole("combobox", { name: "Workspace size for Nova" }));
   await user.click(await screen.findByRole("option", { name: "2.0 GiB" }));
-  expect(await screen.findByRole("alert")).toHaveTextContent("cannot resize workspaces");
+  expect(await screen.findByRole("alert")).toHaveTextContent("The disk has no room for that size.");
 });

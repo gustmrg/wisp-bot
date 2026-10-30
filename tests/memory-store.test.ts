@@ -234,8 +234,15 @@ describe("MemoryStore", () => {
   });
 
   it("allows a batch that shrinks a scope that is already over its limit", () => {
-    const { store } = open();
-    store.importLegacy({ user: ["a".repeat(1000), "b".repeat(1000)], wisps: [] });
+    const { db, store } = open();
+    // As a lower limit in a later version would leave it.
+    const at = "2026-10-23T12:00:00.000Z";
+    const insert = db.prepare(
+      "INSERT INTO memory_entries (id, scope, wisp_id, text, source, status, replaces, observed_at, expires_at, created_at, updated_at) VALUES (?, 'user', NULL, ?, 'owner', 'active', NULL, ?, NULL, ?, ?)",
+    );
+    insert.run("m1", "a".repeat(1000), at, at, at);
+    insert.run("m2", "b".repeat(1000), at, at, at);
+    db.prepare("INSERT OR REPLACE INTO memory_meta (key, value) VALUES ('next_id', '3')").run();
     store.apply([{ op: "patch", id: "m1", text: "a".repeat(900) }], owner);
     expect(store.usage("lumi")[0]?.used).toBe(1900);
     expect(failure(() => store.apply([{ op: "add", scope: "user", text: "c".repeat(200) }], owner)).code).toBe(
@@ -267,26 +274,6 @@ describe("MemoryStore", () => {
     store.deleteWisp("lumi");
     expect(store.list("lumi").map((entry) => entry.text)).toEqual(["Shared."]);
     expect(store.list("echo").map((entry) => entry.text)).toEqual(["Shared.", "Echo's."]);
-  });
-
-  it("imports legacy memory once, as the owner's, keeping everything", () => {
-    const { store } = open();
-    const legacy = {
-      user: ["Prefers pt-BR.", "Prefers pt-BR.", "", "x".repeat(2000)],
-      wisps: [
-        { wispId: "lumi", lines: ["Works on Wisp Bot."] },
-        { wispId: "echo", lines: ["Tracks the garden."] },
-      ],
-    };
-    expect(store.importLegacy(legacy)).toBe(true);
-    expect(store.importLegacy(legacy)).toBe(false);
-
-    expect(store.list("lumi").map(({ scope, text, source }) => [scope, text.slice(0, 20), source])).toEqual([
-      ["user", "Prefers pt-BR.", "owner"],
-      ["user", "x".repeat(20), "owner"],
-      ["wisp", "Works on Wisp Bot.", "owner"],
-    ]);
-    expect(store.list("echo").at(-1)?.text).toBe("Tracks the garden.");
   });
 
   it("joins a transaction the caller already opened", () => {

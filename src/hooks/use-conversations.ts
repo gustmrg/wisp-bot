@@ -28,23 +28,18 @@ import type { ChatViewCollection } from "@/chat-data";
 import { chatViews } from "@/lib/chat-schema";
 import type { ToolApprovalDecision, ToolApprovalRequest } from "../../shared/tool-policy";
 import type { QueuedMessage } from "../../shared/message-queue";
-import { LEGACY_CONVERSATIONS_STORAGE_KEY, MAX_LEGACY_BLOB_BYTES } from "@/features/persistence/storage-policy";
-import { LOCAL_CONNECTION_ID } from "../../shared/connections";
 import {
   createConversationRuntime,
   addPendingRequest,
   getRuntimeMessage,
-  markOutgoingFailed,
   overlayRuntimeMessages,
   pruneSettledRuntimeMessages,
   reduceConversationAgentEvent,
   reconcileConversationRuntime,
-  removeRuntimeMessage,
   removePendingRequest,
   retainPendingConversations,
   setConversationError,
   clearConversationError,
-  stageOutgoingMessage,
   type ConversationRuntimeState,
   type StoredConversations,
 } from "@/lib/conversation-stream";
@@ -56,8 +51,6 @@ import {
   windowFromPage,
   type MessageWindow,
 } from "@/lib/message-windows";
-
-export const LEGACY_STORAGE_KEY = LEGACY_CONVERSATIONS_STORAGE_KEY;
 
 const NO_MESSAGES: ReadonlyArray<Message> = [];
 
@@ -71,46 +64,19 @@ interface PageLoad {
   deltas: ConversationDelta[];
 }
 
-function legacyChats(storage: Pick<Storage, "getItem">): unknown {
-  try {
-    const raw = storage.getItem(LEGACY_STORAGE_KEY);
-    if (!raw) return {};
-    if (new TextEncoder().encode(raw).byteLength > MAX_LEGACY_BLOB_BYTES) return {};
-    const parsed: unknown = JSON.parse(raw);
-    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
-    const chats = Reflect.get(parsed, "chats");
-    return chats && typeof chats === "object" && !Array.isArray(chats) ? chats : {};
-  } catch {
-    return {};
-  }
-}
-
 function resultError(result: { ok: false; error: BackendError }): Error {
   return new Error(result.error.message);
 }
 
-/**
- * Loads the backend's conversations, initializing it on first run. Local
- * storage holds this computer's conversations from before the backend stored
- * them, so only this computer's own backend adopts them; a server starts empty.
- */
+/** Loads the backend's conversations, setting up a new environment's store on its first run. */
 export async function bootstrapConversationState(
-  api: Pick<WispApi, "getConversationState" | "initializeConversations" | "getConnections">,
-  storage: Pick<Storage, "getItem" | "removeItem">,
+  api: Pick<WispApi, "getConversationState" | "initializeConversations">,
 ): Promise<ConversationStateView> {
-  const connections = await api.getConnections();
-  if (!connections.ok) throw resultError(connections);
-  const local = connections.value.activeId === LOCAL_CONNECTION_ID;
   const current = await api.getConversationState();
   if (!current.ok) throw resultError(current);
-  if (current.value.initialized) {
-    // The local backend may have adopted them from its own legacy file instead.
-    if (local) storage.removeItem(LEGACY_STORAGE_KEY);
-    return current.value;
-  }
-  const initialized = await api.initializeConversations({ chats: local ? legacyChats(storage) : {} });
+  if (current.value.initialized) return current.value;
+  const initialized = await api.initializeConversations();
   if (!initialized.ok) throw resultError(initialized);
-  if (local) storage.removeItem(LEGACY_STORAGE_KEY);
   return initialized.value;
 }
 
@@ -411,7 +377,7 @@ export function useConversations(): ConversationsController {
     });
     void (async () => {
       try {
-        const next = await bootstrapConversationState(window.wisp, window.localStorage);
+        const next = await bootstrapConversationState(window.wisp);
         if (cancelled) return;
         replaceState(next);
         replaceRuntime(
@@ -448,42 +414,6 @@ export function useConversations(): ConversationsController {
     };
   }, [applyDelta, replaceRuntime, replaceState, replaceWisps]);
 
-  /** Sends the way servers without a message queue expect: saved to the transcript, then sent. */
-  const sendDirectly = useCallback(
-    async (conversationId: string, text: string): Promise<boolean> => {
-      const requestId = crypto.randomUUID();
-      const message: OutgoingMessage & { id: string } = {
-        id: requestId,
-        type: "outgoing",
-        text,
-        createdAt: new Date().toISOString(),
-        status: "queued",
-      };
-      // The message belongs at the end, so a window opened elsewhere in the transcript returns there.
-      openConversation(conversationId);
-      replaceRuntime(stageOutgoingMessage(runtimeRef.current, conversationId, message));
-      setPendingAcknowledgements((current) => addPendingRequest(current, conversationId, requestId));
-      const persisted = await enqueueDelta(() => window.wisp.appendConversationMessage({ conversationId, message }));
-      if (!persisted) {
-        setPendingAcknowledgements((current) => removePendingRequest(current, conversationId, requestId));
-        return false;
-      }
-      replaceRuntime(removeRuntimeMessage(runtimeRef.current, conversationId, requestId));
-      const result = await window.wisp.sendMessage({ conversationId, requestId, text });
-      setPendingAcknowledgements((current) => removePendingRequest(current, conversationId, requestId));
-      if (result.ok) return true;
-      const failed = markOutgoingFailed(runtimeRef.current, stored(), conversationId, requestId, result.error);
-      replaceRuntime(failed);
-      const outgoing = getRuntimeMessage(failed, conversationId, requestId);
-      if (outgoing?.type === "outgoing") {
-        const message: OutgoingMessage = { ...outgoing, type: "outgoing" };
-        void enqueueDelta(() => window.wisp.appendConversationMessage({ conversationId, message }));
-      }
-      return false;
-    },
-    [enqueueDelta, openConversation, replaceRuntime, stored],
-  );
-
   /**
    * Puts the message in the Wisp's queue. It joins the transcript when the
    * Wisp takes it, which the backend pushes as a change.
@@ -513,11 +443,10 @@ export function useConversations(): ConversationsController {
         replaceRuntime(clearConversationError(runtimeRef.current, conversationId));
         return true;
       }
-      if (result.error.code === "unsupported") return sendDirectly(conversationId, text);
       replaceRuntime(setConversationError(runtimeRef.current, conversationId, result.error));
       return false;
     },
-    [openConversation, replaceRuntime, sendDirectly],
+    [openConversation, replaceRuntime],
   );
 
   const retryMessage = useCallback(
@@ -541,8 +470,7 @@ export function useConversations(): ConversationsController {
 
   const abort = useCallback(async (conversationId: string): Promise<ReadonlyArray<QueuedMessage> | null> => {
     const result = await window.wisp.abortConversation({ conversationId });
-    // An older server answers without follow-ups.
-    if (result.ok) return result.value.followUps ?? [];
+    if (result.ok) return result.value.followUps;
     setError(result.error.message);
     return null;
   }, []);

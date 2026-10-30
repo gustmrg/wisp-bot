@@ -15,6 +15,7 @@ import {
 } from "../backend/job-scheduler.js";
 import type { Chat } from "../shared/conversations.js";
 import type { Job, JobsView } from "../shared/jobs.js";
+import { seedConversations } from "./helpers/seed-conversations.js";
 
 // Sunday, October 11, 2026, 12:00 UTC.
 const START = new Date("2026-10-11T12:00:00.000Z");
@@ -24,7 +25,6 @@ function wispChat(id: string): Chat {
   return {
     id,
     kind: "wisp",
-    shape: "circle",
     name: id,
     label: "Test",
     description: "A test Wisp",
@@ -50,7 +50,7 @@ async function setup(options: { directory?: string; runner?: Runner; deliver?: (
   const directory = options.directory ?? (await mkdtemp(path.join(os.tmpdir(), "wisp-job-scheduler-")));
   const repository = new ConversationRepository({ dataDirectory: directory });
   if (options.directory) await repository.load();
-  else await repository.initialize({ atlas: wispChat("atlas") });
+  else await seedConversations(repository, { atlas: wispChat("atlas") });
   let now = START;
   let ids = 0;
   const runs: Array<{ job: Job; context: JobRunContext }> = [];

@@ -10,6 +10,7 @@ import { CircleAgentFactory } from "../backend/circle-conversation-agent.js";
 import type { ConversationAgentContext, ConversationAgentFactory } from "../backend/conversation-agent.js";
 import { ConversationRepository } from "../backend/conversation-repository.js";
 import { ConversationService } from "../backend/conversation-service.js";
+import { seedConversations } from "./helpers/seed-conversations.js";
 import { FakeConversationAgent, FakeConversationAgentFactory } from "../backend/fake-conversation-agent.js";
 import { PiEventTranslator } from "../backend/pi-event-translator.js";
 import type { SequencedConversationAgentEvent } from "../shared/contracts.js";
@@ -27,7 +28,7 @@ function chat(id: string, circle = false): Chat {
     timestamp: "Now",
     messages: [],
   };
-  return circle ? { ...base, kind: "circle", memberIds: [] } : { ...base, kind: "wisp", shape: "circle" };
+  return circle ? { ...base, kind: "circle", memberIds: [] } : { ...base, kind: "wisp" };
 }
 
 function newWisp(id: string): Wisp {
@@ -55,7 +56,9 @@ describe("ConversationService", () => {
     const service = new ConversationService(repository, registry);
     await service.start(null);
 
-    const initialized = await service.initialize({ one: chat("one"), circle: chat("circle", true) });
+    const initialized = await seedConversations(repository, { one: chat("one"), circle: chat("circle", true) }).then(
+      () => service.initialize(),
+    );
     // A circle's agent is its members' (ADR 011).
     expect(registry.list()).toEqual(["one", "circle"]);
     expect(initialized.statuses).toEqual({ one: "configuration_required", circle: "configuration_required" });
@@ -81,7 +84,7 @@ describe("ConversationService", () => {
     const onSessionsEnding = vi.fn(async () => cleanup);
     const service = new ConversationService(repository, registry, () => [], { onSessionsEnding });
     await service.start(null);
-    await service.initialize({});
+    await service.initialize();
     await service.createWisp(newWisp("two"), { notifyOnUpdatesEnabled: true });
     const context = repository.getAgentContext("two");
 
@@ -102,7 +105,7 @@ describe("ConversationService", () => {
     const onWispsChanged = vi.fn<(view: WispsView) => void>();
     const service = new ConversationService(repository, registry, () => [], { onWispsChanged });
     await service.start(null);
-    await service.initialize({});
+    await service.initialize();
 
     await service.createWisp(newWisp("two"), { notifyOnUpdatesEnabled: true });
     expect(onWispsChanged).toHaveBeenLastCalledWith({
@@ -133,7 +136,7 @@ describe("ConversationService", () => {
     const registry = new AgentRegistry(factory, () => undefined);
     const service = new ConversationService(repository, registry);
     await service.start(null);
-    await service.initialize({ one: chat("one") });
+    await seedConversations(repository, { one: chat("one") }).then(() => service.initialize());
 
     const state = await service.updateWisp("one", { soul: "# Identity\nFinancial advisor" });
 
@@ -172,10 +175,13 @@ describe("ConversationService", () => {
       },
       () => undefined,
     );
-    const service = new ConversationService(new ConversationRepository({ dataDirectory: directory }), registry);
+    const repository = new ConversationRepository({ dataDirectory: directory });
+    const service = new ConversationService(repository, registry);
     await service.start(null);
-    await service.initialize({ one: chat("one"), two: chat("two"), circle: chat("circle", true) });
-    const profile = { preferredName: "Ada", aboutYou: "Developer", responsePreferences: "Be concise" };
+    await seedConversations(repository, { one: chat("one"), two: chat("two"), circle: chat("circle", true) }).then(() =>
+      service.initialize(),
+    );
+    const profile = { preferredName: "Ada" };
     await service.saveUserProfile(profile);
     expect(service.getUserProfile()).toEqual(profile);
     // The circle's agent too, which names the person to its members.
@@ -196,7 +202,7 @@ describe("ConversationService", () => {
     const service = new ConversationService(repository, registry);
     const globalModel = { providerId: "global", modelId: "global-model" };
     await service.start(globalModel);
-    await service.initialize({ follower: chat("follower") });
+    await seedConversations(repository, { follower: chat("follower") }).then(() => service.initialize());
 
     const override = { providerId: "other", modelId: "other-model", maxOutputTokens: 2048 };
     await service.createWisp(newWisp("custom"), { notifyOnUpdatesEnabled: true, model: override });
@@ -228,7 +234,7 @@ describe("ConversationService", () => {
     );
     service = new ConversationService(repository, registry);
     await service.start({ providerId: "test", modelId: "test" });
-    await service.initialize({ one: chat("one"), two: chat("two") });
+    await seedConversations(repository, { one: chat("one"), two: chat("two") }).then(() => service.initialize());
     await Promise.all([
       service.appendMessage("one", { id: "one-a", type: "outgoing", text: "A", status: "queued" }),
       service.appendMessage("one", { id: "one-b", type: "outgoing", text: "B", status: "queued" }),
@@ -308,7 +314,7 @@ describe("ConversationService", () => {
     );
     service = new ConversationService(repository, registry);
     await service.start({ providerId: "test", modelId: "test" });
-    await service.initialize({ atlas: chat("atlas"), nova: chat("nova") });
+    await seedConversations(repository, { atlas: chat("atlas"), nova: chat("nova") }).then(() => service.initialize());
     const created = await service.create({ ...(chat("crew", true) as CircleChat), memberIds: ["atlas", "nova"] });
     expect(created.statuses.crew).toBe("idle");
 
@@ -364,7 +370,7 @@ describe("ConversationService", () => {
     const onSessionsEnding = vi.fn(async () => ended);
     const service = new ConversationService(repository, registry, () => [], { onSessionsEnding });
     await service.start(null);
-    await service.initialize({ atlas: chat("atlas"), nova: chat("nova") });
+    await seedConversations(repository, { atlas: chat("atlas"), nova: chat("nova") }).then(() => service.initialize());
     await service.create({ ...(chat("crew", true) as CircleChat), memberIds: ["atlas", "nova"] });
     const nova = repository.getCircleAgentContext("crew").members[1]!;
 
@@ -409,7 +415,7 @@ describe("ConversationService", () => {
     );
     service = new ConversationService(repository, registry, () => [], { onConversationChanged });
     await service.start({ providerId: "test", modelId: "test" });
-    await service.initialize({ one: chat("one") });
+    await seedConversations(repository, { one: chat("one") }).then(() => service.initialize());
     // A message the user writes is new the first time and an update after that.
     await expect(
       service.appendMessage("one", { id: "request-1", type: "outgoing", text: "A", status: "queued" }),
@@ -453,7 +459,9 @@ describe("ConversationService", () => {
       type: "incoming" as const,
       text: `${index}`,
     }));
-    await service.initialize({ one: { ...chat("one"), messages: history } });
+    await seedConversations(repository, { one: { ...chat("one"), messages: history } }).then(() =>
+      service.initialize(),
+    );
     await service.appendMessage("one", { id: "request-1", type: "outgoing", text: "Go", status: "queued" });
 
     registry.dispatch({ conversationId: "one", requestId: "request-1", text: "Go" });
@@ -482,7 +490,7 @@ describe("ConversationService", () => {
       new AgentRegistry(new FakeConversationAgentFactory(), () => undefined),
     );
     await service.start(null);
-    await service.initialize({ one: chat("one") });
+    await seedConversations(repository, { one: chat("one") }).then(() => service.initialize());
     await repository.appendMessage("one", { id: "request-1:assistant", type: "incoming", text: "Real reply" });
 
     await expect(
@@ -512,7 +520,7 @@ describe("ConversationService", () => {
     );
     service = new ConversationService(repository, registry, () => [], { logger });
     await service.start({ providerId: "test", modelId: "test" });
-    await service.initialize({ one: chat("one") });
+    await seedConversations(repository, { one: chat("one") }).then(() => service.initialize());
     await service.appendMessage("one", { id: "request-1", type: "outgoing", text: "A", status: "queued" });
     const append = repository.appendMessage.bind(repository);
     vi.spyOn(repository, "appendMessage").mockImplementation((conversationId, message) =>
@@ -549,7 +557,7 @@ describe("ConversationService", () => {
     const registry = new AgentRegistry(new FakeConversationAgentFactory(), () => undefined);
     const service = new ConversationService(repository, registry);
     await service.start({ providerId: "test", modelId: "test" });
-    await service.initialize({ one: chat("one"), two: chat("two") });
+    await seedConversations(repository, { one: chat("one"), two: chat("two") }).then(() => service.initialize());
     await service.appendMessage("one", { id: "request-1", type: "outgoing", text: "A", status: "queued" });
     await service.appendMessage("two", { id: "request-2", type: "outgoing", text: "B", status: "queued" });
     const error = { code: "model_unavailable", message: "The provider is out of credits.", retryable: false } as const;
@@ -585,7 +593,7 @@ describe("ConversationService", () => {
       new AgentRegistry(new FakeConversationAgentFactory(), () => undefined),
     );
     await restored.start({ providerId: "test", modelId: "test" });
-    await restored.initialize({});
+    await restored.initialize();
     const failure = { code: "model_unavailable", message: "The provider is out of credits." };
     const { chats } = restored.getState();
     expect(chats.one?.messages).toContainEqual(
@@ -607,7 +615,7 @@ describe("ConversationService", () => {
       new AgentRegistry(new FakeConversationAgentFactory(), () => undefined),
     );
     await service.start({ providerId: "test", modelId: "test" });
-    await service.initialize({ one: chat("one") });
+    await seedConversations(repository, { one: chat("one") }).then(() => service.initialize());
     await service.appendMessage("one", { id: "request-1", type: "outgoing", text: "Fix it", status: "queued" });
     let sequence = 0;
     const translator = new PiEventTranslator(
@@ -654,7 +662,7 @@ describe("ConversationService", () => {
       new AgentRegistry(new FakeConversationAgentFactory(), () => undefined),
     );
     await restored.start({ providerId: "test", modelId: "test" });
-    await restored.initialize({});
+    await restored.initialize();
     const one = restored.getState().chats.one!;
     expect(one.messages.map((message) => [message.id, message.type === "incoming" ? message.text : ""])).toEqual([
       ["request-1", ""],
@@ -685,7 +693,7 @@ describe("ConversationService", () => {
     );
     service = new ConversationService(repository, registry);
     await service.start(null);
-    await service.initialize({ one: chat("one") });
+    await seedConversations(repository, { one: chat("one") }).then(() => service.initialize());
     await service.applyModel({ providerId: "provider", modelId: "model" });
     await service.appendMessage("one", { id: "request-1", type: "outgoing", text: "Wait", status: "queued" });
     registry.dispatch({ conversationId: "one", requestId: "request-1", text: "Wait" });
@@ -705,14 +713,17 @@ it("persists a Wisp override across restart without changing the global model or
   const directory = await mkdtemp(path.join(os.tmpdir(), "wisp-model-override-"));
   const global = { providerId: "provider-a", modelId: "default" };
   const override = { providerId: "provider-b", modelId: "custom", maxOutputTokens: 512 };
+  let repository = new ConversationRepository({ dataDirectory: directory });
   const makeService = () => {
-    const repository = new ConversationRepository({ dataDirectory: directory });
+    repository = new ConversationRepository({ dataDirectory: directory });
     const registry = new AgentRegistry(new FakeConversationAgentFactory(), () => undefined);
     return new ConversationService(repository, registry);
   };
   const first = makeService();
   await first.start(global);
-  await first.initialize({ one: chat("one"), two: chat("two"), circle: chat("circle", true) });
+  await seedConversations(repository, { one: chat("one"), two: chat("two"), circle: chat("circle", true) }).then(() =>
+    first.initialize(),
+  );
   await first.applyConversationModel("one", override);
   expect(first.getConversationModel("one")).toMatchObject({ override, applied: override });
   expect(first.getConversationModel("two").effective).toEqual(global);
@@ -734,14 +745,15 @@ it("persists a Wisp's fallback choice across restart, and the fallback badge on 
   const directory = await mkdtemp(path.join(os.tmpdir(), "wisp-fallback-"));
   const global = { providerId: "provider-a", modelId: "default" };
   const backup = { providerId: "provider-b", modelId: "backup" };
+  let repository = new ConversationRepository({ dataDirectory: directory });
   const makeService = () => {
-    const repository = new ConversationRepository({ dataDirectory: directory });
+    repository = new ConversationRepository({ dataDirectory: directory });
     const registry = new AgentRegistry(new FakeConversationAgentFactory(), () => undefined);
     return new ConversationService(repository, registry);
   };
   const first = makeService();
   await first.start(global);
-  await first.initialize({ one: chat("one"), two: chat("two") });
+  await seedConversations(repository, { one: chat("one"), two: chat("two") }).then(() => first.initialize());
   await first.applyConversationFallback("one", backup);
   expect(first.getConversationModel("one").fallback).toEqual(backup);
   expect(first.getConversationModel("two").fallback).toBe("global");

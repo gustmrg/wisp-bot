@@ -84,13 +84,9 @@ describe("context continuity", () => {
     expect(session.compact).not.toHaveBeenCalled();
     expect(session.state.messages).toHaveLength(2);
   });
-  it("persists memory and policy separately, including across a new topic and restart", async () => {
+  it("persists the policy across a new topic and restart", async () => {
     const { control, session, manager, settingsPath, onRenewed } = await fixture();
-    await control.command({
-      action: "save",
-      policy: { ...DEFAULT_CONTEXT_POLICY, idleHours: 48 },
-      memory: "Use Portuguese",
-    });
+    await control.command({ action: "save", policy: { ...DEFAULT_CONTEXT_POLICY, idleHours: 48 } });
     await control.command({ action: "new_topic" });
     expect(session.state.messages).toHaveLength(0);
     expect(control.view().summary).toBeNull();
@@ -103,7 +99,7 @@ describe("context continuity", () => {
     expect(restored.getEntries().filter((entry) => entry.type === "message")).toHaveLength(2);
     const reloaded = new ContextSession(session as unknown as AgentSession, settingsPath, vi.fn());
     await reloaded.load();
-    expect(reloaded.view()).toMatchObject({ memory: "Use Portuguese", policy: { idleHours: 48 } });
+    expect(reloaded.view()).toMatchObject({ policy: { idleHours: 48 } });
   });
   it("loads settings saved before the renewal choice existed", async () => {
     const { session, settingsPath } = await fixture();

@@ -47,19 +47,14 @@ afterEach(async () => {
   process.env = { ...environment };
 });
 
-/** A Wisp's conversation in the app's old local-storage format, which `initializeConversations` reads. */
-const wisp = (id: string, name: string): Record<string, unknown> => ({
-  id,
-  name,
-  label: "",
-  description: "",
-  kind: "wisp",
-  shape: "circle",
-  notifyOnUpdatesEnabled: true,
-  preview: "",
-  timestamp: "2026-10-05T12:00:00.000Z",
-  messages: [],
-});
+/** Sets up a new store with one Wisp, as the app does on a first run. */
+async function createLocalWisp(app: { invoke: (channel: string, payload?: unknown) => Promise<unknown> }) {
+  await app.invoke(WISP_IPC_CHANNELS.initializeConversations);
+  await app.invoke(WISP_IPC_CHANNELS.createWisp, {
+    wisp: { id: "local", name: "Local", role: "", soul: "", appearance: DEFAULT_WISP_APPEARANCE },
+    notifyOnUpdatesEnabled: true,
+  });
+}
 
 async function temporaryDirectory(prefix: string): Promise<string> {
   const directory = await mkdtemp(path.join(os.tmpdir(), prefix));
@@ -283,15 +278,6 @@ describe("desktop connections", () => {
     await chosen.waitForPhase("local");
   });
 
-  it("keeps using this computer after an upgrade from a version that never asked", async () => {
-    const directory = await temporaryDirectory("wisp-upgrade-");
-    await mkdir(path.join(directory, "backend"), { recursive: true });
-    await writeFile(path.join(directory, "backend", "conversations.json"), "{}");
-    const app = await desktop(directory, undefined, { choose: false });
-    await app.waitForPhase("local");
-    expect(app.localServer.starts).toBe(1);
-  });
-
   it("starts its own server on this computer, pairs with it, and lists only the local connection", async () => {
     const app = await desktop();
     await app.waitForPhase("local");
@@ -302,7 +288,7 @@ describe("desktop connections", () => {
       status: { profileId: "local", phase: "local" },
     });
     expect(view.status.epoch).toBeGreaterThan(0);
-    await app.invoke(WISP_IPC_CHANNELS.initializeConversations, { chats: { local: wisp("local", "Local") } });
+    await createLocalWisp(app);
     expect(await app.chats()).toEqual(["local"]);
     expect(app.localServer.starts).toBe(1);
     expect(app.localServer.server?.auth.devices()).toEqual([
@@ -313,7 +299,7 @@ describe("desktop connections", () => {
   it("does what the local server asks on this computer's screen", async () => {
     const app = await desktop();
     await app.waitForPhase("local");
-    await app.invoke(WISP_IPC_CHANNELS.initializeConversations, { chats: { local: wisp("local", "Local") } });
+    await createLocalWisp(app);
     await app.invoke(WISP_IPC_CHANNELS.openWorkspaceFolder, { conversationId: "local" });
     expect(app.hostActions.openPath).toHaveBeenCalledWith(expect.stringContaining(app.directory));
     const attachment = path.join(app.directory, "notes.txt");
@@ -330,7 +316,7 @@ describe("desktop connections", () => {
     const { server, directory: serverDirectory } = await startServer();
     const app = await desktop();
     await app.waitForPhase("local");
-    await app.invoke(WISP_IPC_CHANNELS.initializeConversations, { chats: { local: wisp("local", "Local") } });
+    await createLocalWisp(app);
     const added = await app.invoke<ConnectionsView>(WISP_IPC_CHANNELS.saveConnection, {
       kind: "url",
       name: "Home server",

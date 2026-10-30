@@ -6,7 +6,6 @@ import {
   messageFailure,
   type ManagedConversationStatus,
   type Message,
-  type TextMessage,
 } from "../../shared/conversations";
 import type { ToolApprovalRequest } from "../../shared/tool-policy";
 import { describeMcpAlias, getToolMetadata } from "../../shared/tool-catalog";
@@ -61,21 +60,6 @@ function groupApprovals(
   return grouped;
 }
 
-export function stageOutgoingMessage(
-  state: ConversationRuntimeState,
-  conversationId: string,
-  message: TextMessage & { id: string },
-): ConversationRuntimeState {
-  return setRuntimeMessage(
-    {
-      ...state,
-      errors: { ...state.errors, [conversationId]: undefined },
-    },
-    conversationId,
-    { ...message, status: "queued" },
-  );
-}
-
 /** Shows an error in the conversation's composer until the next message or reply. */
 export function setConversationError(
   state: ConversationRuntimeState,
@@ -91,32 +75,6 @@ export function clearConversationError(
 ): ConversationRuntimeState {
   if (!state.errors[conversationId]) return state;
   return { ...state, errors: { ...state.errors, [conversationId]: undefined } };
-}
-
-export function markOutgoingFailed(
-  state: ConversationRuntimeState,
-  stored: StoredConversations,
-  conversationId: string,
-  requestId: string,
-  error: BackendError,
-): ConversationRuntimeState {
-  let next = {
-    ...state,
-    errors: { ...state.errors, [conversationId]: error },
-  };
-  const outgoing = findMessage(next, stored, conversationId, requestId);
-  if (outgoing?.type === "outgoing") {
-    next = setRuntimeMessage(next, conversationId, { ...outgoing, id: requestId, status: "failed" });
-  }
-  return setRuntimeMessage(next, conversationId, {
-    id: assistantMessageId(requestId),
-    type: "incoming",
-    text: "",
-    status: "failed",
-    error: messageFailure(error),
-    retryable: error.retryable,
-    createdAt: new Date().toISOString(),
-  });
 }
 
 export function reduceConversationAgentEvent(
@@ -429,15 +387,6 @@ export function getRuntimeMessage(
   messageId: string,
 ): Message | undefined {
   return state.messages[conversationId]?.find(({ id }) => id === messageId);
-}
-
-export function removeRuntimeMessage(
-  state: ConversationRuntimeState,
-  conversationId: string,
-  messageId: string,
-): ConversationRuntimeState {
-  const messages = state.messages[conversationId]?.filter(({ id }) => id !== messageId) ?? [];
-  return { ...state, messages: { ...state.messages, [conversationId]: messages } };
 }
 
 function finalizeAssistant(

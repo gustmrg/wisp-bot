@@ -423,7 +423,7 @@ describe("ClaudeCodeSession steering", () => {
       context: {
         load: async () => {
           await loaded;
-          return { policy: DEFAULT_CONTEXT_POLICY, memory: "" };
+          return { policy: DEFAULT_CONTEXT_POLICY };
         },
         save: async () => undefined,
         timeZone: () => "UTC",
@@ -561,7 +561,7 @@ describe("ClaudeCodeSession context", () => {
   const NOW = new Date("2026-10-20T12:00:00Z");
 
   function contextHooks(policy: Partial<ContextPolicy> = {}) {
-    let settings = { policy: { ...DEFAULT_CONTEXT_POLICY, ...policy }, memory: "Prefers short answers." };
+    let settings = { policy: { ...DEFAULT_CONTEXT_POLICY, ...policy } };
     const renewed: string[] = [];
     const hooks: ClaudeCodeContextHooks = {
       load: async () => settings,
@@ -595,7 +595,7 @@ describe("ClaudeCodeSession context", () => {
     );
   };
 
-  it("shows the policy, memory, and context size, and saves new settings for the next process", async () => {
+  it("shows the policy and context size, and saves a new policy", async () => {
     const { hooks } = contextHooks();
     const { session, processes } = createSession({ context: hooks, now: () => NOW, answer: answerWithCompaction });
     await session.prompt("hello");
@@ -603,21 +603,16 @@ describe("ClaudeCodeSession context", () => {
     const view = await session.manageContext({ action: "get" });
     expect(view).toEqual({
       policy: DEFAULT_CONTEXT_POLICY,
-      memory: "Prefers short answers.",
       summary: null,
       lastRenewedAt: null,
       lastActivityAt: NOW.toISOString(),
       tokens: 15_020,
     });
 
-    const saved = await session.manageContext({
-      action: "save",
-      policy: { ...DEFAULT_CONTEXT_POLICY, mode: "none" },
-      memory: "Answers in Portuguese.",
-    });
-    expect(saved).toMatchObject({ memory: "Answers in Portuguese.", policy: { mode: "none" } });
-    // The memory is in the system prompt, which the next process reads.
-    expect(processes[0]!.closed).toBe(true);
+    const saved = await session.manageContext({ action: "save", policy: { ...DEFAULT_CONTEXT_POLICY, mode: "none" } });
+    expect(saved).toMatchObject({ policy: { mode: "none" } });
+    // The policy is not in the system prompt, so the running process stays.
+    expect(processes[0]!.closed).toBe(false);
   });
 
   it("compacts through Claude Code's /compact and starts a new topic as a new session", async () => {
