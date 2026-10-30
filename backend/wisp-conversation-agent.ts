@@ -12,6 +12,7 @@ import {
   type ConversationAgentListener,
 } from "./conversation-agent.js";
 import { currentTimeNote, scheduledMessageNote } from "./message-schedule.js";
+import type { RuntimeEventLog } from "./runtime-event-log.js";
 import { PiEventTranslator, sanitizeErrorMessage } from "./pi-event-translator.js";
 import { describeProviderError } from "./provider-error.js";
 import {
@@ -24,6 +25,8 @@ import { repeatedFailureMessage, ToolLoopGuard, type RepeatedToolFailure } from 
 
 export interface WispConversationAgentOptions {
   flushDelayMs?: number;
+  /** Where the session's raw events go while someone records them (SWE-215). */
+  runtimeEvents?: Pick<RuntimeEventLog, "record">;
 }
 
 export class WispConversationAgent implements ConversationAgent {
@@ -33,6 +36,7 @@ export class WispConversationAgent implements ConversationAgent {
   private readonly translator: PiEventTranslator;
   private session: RuntimeSession | null = null;
   private unsubscribeSession: (() => void) | null = null;
+  private readonly runtimeEvents: Pick<RuntimeEventLog, "record"> | undefined;
   private pendingModel: RuntimeModel | null = null;
   private appliedSelection: ModelSelection | null = null;
   private pendingSelection: ModelSelection | null = null;
@@ -56,6 +60,7 @@ export class WispConversationAgent implements ConversationAgent {
   ) {
     this.context = context;
     this.sessionFactory = sessionFactory;
+    this.runtimeEvents = options.runtimeEvents;
     this.translator = new PiEventTranslator(
       context.conversationId,
       (event) => this.emit(event),
@@ -336,7 +341,16 @@ export class WispConversationAgent implements ConversationAgent {
   private attachSession(session: RuntimeSession): void {
     this.unsubscribeSession?.();
     this.session = session;
-    this.unsubscribeSession = session.subscribe((event) => {
+    const { conversationId, wispId } = this.context;
+    const runtimeEvents = this.runtimeEvents;
+    // Claude Code's own messages are its raw events; a Pi session's events are Pi's own.
+    const unsubscribeRuntime =
+      runtimeEvents && session.subscribeRuntimeEvents
+        ? session.subscribeRuntimeEvents((event) => runtimeEvents.record(conversationId, "claude-code", event, wispId))
+        : undefined;
+    const recordPiEvents = runtimeEvents && !unsubscribeRuntime;
+    const unsubscribeEvents = session.subscribe((event) => {
+      if (recordPiEvents) runtimeEvents.record(conversationId, "pi", event, wispId);
       if (event.type === "message_start" && event.message?.role === "user") {
         // The turn's own message comes first; each later one is the oldest follow-up, which Pi hands over in order.
         const followUp = this.promptStarted ? this.followUps.shift() : undefined;
@@ -350,6 +364,10 @@ export class WispConversationAgent implements ConversationAgent {
       }
       if (event.type === "agent_settled") void this.applyPendingModel();
     });
+    this.unsubscribeSession = () => {
+      unsubscribeEvents();
+      unsubscribeRuntime?.();
+    };
     // Track the live session identity so a later rebuild reopens the exact same
     // session file instead of starting a new conversation or topic.
     this.context.piSessionId = session.sessionId;

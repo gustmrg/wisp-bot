@@ -5,6 +5,7 @@ import { SettingsActions, SettingsGroup } from "@/components/settings/settings-p
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Button } from "@/components/ui/button";
 import { FormStatus } from "@/components/ui/form-status";
+import { RuntimeEventsSection } from "@/components/runtime-events-section";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { WispContextSettings } from "@/components/wisp-context-settings";
 import { WispExecutionSettings } from "@/components/wisp-execution-settings";
@@ -227,7 +228,10 @@ export function WispDetails({
         className={cn("min-h-0 overflow-y-auto p-3.5", tab === "usage" && slideClass)}
       >
         {visited.has("usage") ? (
-          <WispSessionReportSection chatId={chat.id} active={tab === "usage"} onOpenSettings={onOpenSettings} />
+          <>
+            <WispSessionReportSection chatId={chat.id} active={tab === "usage"} onOpenSettings={onOpenSettings} />
+            <RuntimeEventsSection conversationId={chat.id} active={tab === "usage"} />
+          </>
         ) : null}
       </TabsContent>
       <TabsContent

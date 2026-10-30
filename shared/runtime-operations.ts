@@ -73,6 +73,8 @@ export const RUNTIME_OPERATIONS = [
   "cancelQueuedMessage",
   "getSessionReport",
   "getUsageReport",
+  "getRuntimeEvents",
+  "setRuntimeEventRecording",
   "getUserProfile",
   "saveUserProfile",
   "setUserTimeZone",

@@ -5,6 +5,7 @@ import type { ConversationAgentContext } from "../backend/conversation-agent.js"
 import type { RuntimeSessionFactory, RuntimeSession } from "../backend/runtime-session.js";
 import { WispConversationAgent } from "../backend/wisp-conversation-agent.js";
 import type { PiAgentEvent } from "../backend/pi-event-translator.js";
+import { RuntimeEventLog } from "../backend/runtime-event-log.js";
 
 class MockPiSession implements RuntimeSession {
   isIdle = true;
@@ -627,4 +628,72 @@ it("tells the model the user's local time before each message they send", async 
   } finally {
     vi.useRealTimers();
   }
+});
+
+describe("WispConversationAgent runtime events", () => {
+  it("records a Pi session's own events while its conversation records", async () => {
+    const sessions = new Map<string, MockPiSession>();
+    const runtimeEvents = new RuntimeEventLog();
+    const agent = new WispConversationAgent(context("one"), factoryFor(sessions), { flushDelayMs: 0, runtimeEvents });
+    await agent.start();
+    await agent.applyModel(selection());
+
+    const first = agent.send({ conversationId: "one", requestId: "r1", text: "Unrecorded" });
+    await vi.waitFor(() => expect(sessions.get("one")?.isIdle).toBe(false));
+    sessions.get("one")?.finishPrompt();
+    await first;
+    expect(runtimeEvents.read("one").events).toEqual([]);
+
+    runtimeEvents.setRecording("one", true);
+    const second = agent.send({ conversationId: "one", requestId: "r2", text: "Recorded" });
+    await vi.waitFor(() => expect(sessions.get("one")?.isIdle).toBe(false));
+    sessions.get("one")?.finishPrompt();
+    await second;
+
+    const events = runtimeEvents.read("one").events;
+    expect(events.map(({ type }) => type)).toEqual(["agent_start", "message_start", "message_update", "agent_settled"]);
+    expect(events.every(({ runtime, wispId }) => runtime === "pi" && wispId === "one")).toBe(true);
+    expect(events[2]?.payload).toEqual({
+      type: "message_update",
+      assistantMessageEvent: { type: "text_delta", delta: "reply:Recorded" },
+    });
+    await agent.dispose();
+  });
+
+  it("records a runtime's raw events instead of their Pi shape when the session has them", async () => {
+    class RawSession extends MockPiSession {
+      private readonly rawListeners = new Set<(event: unknown) => void>();
+      subscribeRuntimeEvents(listener: (event: unknown) => void): () => void {
+        this.rawListeners.add(listener);
+        return () => this.rawListeners.delete(listener);
+      }
+      override async prompt(text: string): Promise<void> {
+        for (const listener of this.rawListeners) listener({ type: "stream_event", text });
+        return super.prompt(text);
+      }
+    }
+    const sessions: RawSession[] = [];
+    const runtimeEvents = new RuntimeEventLog();
+    runtimeEvents.setRecording("one", true);
+    const factory: RuntimeSessionFactory = {
+      ...factoryFor(new Map()),
+      create: async (agentContext) => {
+        const session = new RawSession(agentContext.conversationId);
+        sessions.push(session);
+        return session;
+      },
+    };
+    const agent = new WispConversationAgent(context("one"), factory, { flushDelayMs: 0, runtimeEvents });
+    await agent.start();
+    await agent.applyModel(selection());
+    const sent = agent.send({ conversationId: "one", requestId: "r1", text: "Hello" });
+    await vi.waitFor(() => expect(sessions[0]?.isIdle).toBe(false));
+    sessions[0]?.finishPrompt();
+    await sent;
+
+    expect(runtimeEvents.read("one").events).toMatchObject([
+      { runtime: "claude-code", type: "stream_event", payload: { type: "stream_event", text: "Hello" } },
+    ]);
+    await agent.dispose();
+  });
 });

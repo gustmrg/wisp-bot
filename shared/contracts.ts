@@ -183,6 +183,8 @@ export const WISP_IPC_CHANNELS = {
   jobsChanged: "wisp:jobs:changed",
   getSessionReport: "wisp:conversations:get-session-report",
   getUsageReport: "wisp:usage:get",
+  getRuntimeEvents: "wisp:runtime-events:get",
+  setRuntimeEventRecording: "wisp:runtime-events:set-recording",
   getToolPolicy: "wisp:tool-policy:get",
   getUserProfile: "wisp:profile:get",
   saveUserProfile: "wisp:profile:save",
@@ -917,6 +919,14 @@ export interface WispApi {
   subscribeToMessageQueue(listener: (view: MessageQueueView) => void): () => void;
   getSessionReport(request: ConversationRequest): Promise<BackendResult<WispSessionReport | null>>;
   getUsageReport(request: UsageReportRequest): Promise<BackendResult<UsageReport>>;
+  /** A conversation's raw runtime events, recorded only while recording is on. */
+  getRuntimeEvents(
+    request: import("./runtime-events.js").RuntimeEventLogRequest,
+  ): Promise<BackendResult<import("./runtime-events.js").RuntimeEventLogView>>;
+  /** Starts recording a conversation's runtime events, or stops and forgets them. */
+  setRuntimeEventRecording(
+    request: import("./runtime-events.js").RuntimeEventRecordingRequest,
+  ): Promise<BackendResult<import("./runtime-events.js").RuntimeEventLogView>>;
   getToolPolicy(): Promise<BackendResult<ToolPolicySettings>>;
   getUserProfile(): Promise<BackendResult<import("./user-profile.js").UserProfile>>;
   saveUserProfile(

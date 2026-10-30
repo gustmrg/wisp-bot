@@ -8,6 +8,23 @@ retry notices are recorded for sessions used by this version of Wisp; older
 sessions may not contain them. Tool argument values, file contents, prompts,
 and raw provider error details are excluded from reports.
 
+## Runtime events
+
+For debugging, the **Usage** tab of a Wisp or a circle can record the raw
+events of the conversation's runtime: Pi's agent events, or the messages the
+Claude Code SDK yields. Turn on **Record runtime events**, send a message, and
+each event of the reply appears with its time, type and payload. **Copy
+events** copies the whole sequence as JSON, to attach to a bug report.
+
+- Recording is off by default and is set per conversation. The conversation
+  works the same either way.
+- Events stay only in the memory of the computer or server that runs the Wisp,
+  up to the latest 1,000 per conversation. Turning recording off, **Clear**, or
+  a restart forgets them.
+- Long texts are shortened, and values under keys such as `apiKey`,
+  `authorization` or `token` are replaced with `[redacted]`. Payloads still
+  hold prompts, replies and tool results, so read a copy before sharing it.
+
 ## Token usage dashboard
 
 Open **Settings → Token usage** for totals and a breakdown by Wisp over the

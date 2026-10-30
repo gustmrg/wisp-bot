@@ -44,6 +44,7 @@ import { ClaudeCodeStatusService } from "./claude-code/claude-code-status.js";
 import { RoutingSessionFactory } from "./claude-code/routing-session-factory.js";
 import { formatHistorySearch, recentTranscript } from "./claude-code/conversation-history.js";
 import { PluginService } from "./plugin-service.js";
+import { RuntimeEventLog } from "./runtime-event-log.js";
 import { SessionReportService } from "./session-report-service.js";
 import type { StructuredLogger } from "./structured-logger.js";
 import { WispToolPolicyStore } from "./wisp-tool-policy-store.js";
@@ -115,6 +116,8 @@ export interface BackendRuntime {
   messageQueue: MessageQueue;
   jobs: JobScheduler;
   sessionReports: SessionReportService;
+  /** Raw runtime events of the conversations someone is debugging, in memory only. */
+  runtimeEvents: RuntimeEventLog;
   workspace: WorkspaceService;
   storage: StorageService;
   transcription: TranscriptionService;
@@ -331,10 +334,11 @@ export async function createBackendRuntime(options: BackendRuntimeOptions): Prom
     processes: new ClaudeCodeProcesses(),
   });
   const sessionFactory = new RoutingSessionFactory(piSessionFactory, claudeCodeSessionFactory);
+  const runtimeEvents = new RuntimeEventLog();
   const agentFactory: ConversationAgentFactory =
     options.agentMode === "fake"
-      ? new FakeConversationAgentFactory({ latencyMs: 350, steering: true })
-      : new WispConversationAgentFactory(sessionFactory);
+      ? new FakeConversationAgentFactory({ latencyMs: 350, steering: true, runtimeEvents })
+      : new WispConversationAgentFactory(sessionFactory, { runtimeEvents });
   const registry = new AgentRegistry(
     new CircleAgentFactory(agentFactory, {
       // Through the service, so a member reads the replies before its own even before they are stored.
@@ -523,6 +527,7 @@ export async function createBackendRuntime(options: BackendRuntimeOptions): Prom
     messageQueue: queue,
     jobs,
     sessionReports: sessionReportService,
+    runtimeEvents,
     workspace: workspaceService,
     storage,
     transcription: transcriptionService,

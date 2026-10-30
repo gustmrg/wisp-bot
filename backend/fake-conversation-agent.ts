@@ -6,6 +6,7 @@ import type {
   ConversationAgentFactory,
   ConversationAgentListener,
 } from "./conversation-agent.js";
+import type { RuntimeEventLog } from "./runtime-event-log.js";
 
 interface PendingMessage {
   request: SendMessageRequest;
@@ -18,6 +19,8 @@ export interface FakeConversationAgentOptions {
   responseFor?: (request: SendMessageRequest) => string;
   /** Let a running turn take follow-ups, which it reads, like Pi, once its wait is over. */
   steering?: boolean;
+  /** Records the events it emits as its runtime's, so the runtime events view can be tried without a model. */
+  runtimeEvents?: Pick<RuntimeEventLog, "record">;
 }
 
 export class FakeConversationAgent implements ConversationAgent {
@@ -25,6 +28,7 @@ export class FakeConversationAgent implements ConversationAgent {
   private readonly latencyMs: number;
   private readonly responseFor: (request: SendMessageRequest) => string;
   private readonly steering: boolean;
+  private readonly runtimeEvents: Pick<RuntimeEventLog, "record"> | undefined;
   /** Follow-ups handed to the running turn, oldest first. */
   private followUps: SendMessageRequest[] = [];
   private readonly listeners = new Set<ConversationAgentListener>();
@@ -42,6 +46,7 @@ export class FakeConversationAgent implements ConversationAgent {
     this.latencyMs = options.latencyMs ?? 0;
     this.responseFor = options.responseFor ?? ((request) => `Fake response to: ${request.text}`);
     this.steering = options.steering ?? false;
+    this.runtimeEvents = options.runtimeEvents;
   }
 
   async start(): Promise<void> {
@@ -246,6 +251,7 @@ export class FakeConversationAgent implements ConversationAgent {
   }
 
   private emit(event: ConversationAgentEvent): void {
+    this.runtimeEvents?.record(this.conversationId, "fake", event);
     for (const listener of this.listeners) listener(event);
   }
 }

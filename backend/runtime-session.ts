@@ -20,6 +20,12 @@ export interface RuntimeSession {
   /** Snapshot revision the session's tool registry was built from. */
   readonly toolRevision: string;
   subscribe(listener: (event: PiAgentEvent) => void): () => void;
+  /**
+   * The runtime's own events, before they are shaped as Pi events, for the
+   * runtime events view. A Pi session has none: `subscribe` already gives
+   * Pi's events.
+   */
+  subscribeRuntimeEvents?(listener: (event: unknown) => void): () => void;
   manageContext?(command: ContextCommand): Promise<ContextView>;
   /** Must not start the model run once `signal` is aborted. */
   prompt(text: string, options?: { expandPromptTemplates?: boolean; signal?: AbortSignal }): Promise<void>;

@@ -77,6 +77,8 @@ const REQUIRED_WISP_METHODS = [
   "subscribeToMessageQueue",
   "getSessionReport",
   "getUsageReport",
+  "getRuntimeEvents",
+  "setRuntimeEventRecording",
   "getUserProfile",
   "saveUserProfile",
   "setUserTimeZone",
