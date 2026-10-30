@@ -354,7 +354,7 @@ describe("AppSettingsDialog navigation", () => {
         .getAllByRole("button")
         .map((button) => button.getAttribute("aria-label"));
     expect(names("Account and server")).toEqual(["General", "Connections", "Remote access"]);
-    expect(names("Wisps")).toEqual(["AI Model", "Voice input", "Plugins", "MCP servers", "Jobs"]);
+    expect(names("Wisps")).toEqual(["AI Model", "Voice input", "Plugins", "MCP servers", "Permissions", "Jobs"]);
     expect(names("Notifications and input")).toEqual(["Notifications", "Shortcuts"]);
     expect(names("Storage and data")).toEqual(["Token usage", "Storage"]);
     expect(names("App")).toEqual(["About"]);
@@ -398,7 +398,7 @@ describe("AppSettingsDialog on mobile", () => {
       within(wisps)
         .getAllByRole("button")
         .map((button) => button.getAttribute("aria-label")),
-    ).toEqual(["AI Model", "Voice input", "Plugins", "MCP servers", "Jobs"]);
+    ).toEqual(["AI Model", "Voice input", "Plugins", "MCP servers", "Permissions", "Jobs"]);
     expect(screen.getByRole("button", { name: "Storage" })).toHaveAccessibleDescription(
       "See the space used and clean up Wisp files",
     );

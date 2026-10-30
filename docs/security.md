@@ -90,7 +90,7 @@ For a workspace file change the card also offers **Always allow creating
 files** or **Always allow editing files**, and **Always block**. They apply to
 that Wisp and that category only, are kept in the Wisp's config directory, and
 can be changed in the Wisp's **Access** tab; a category the Wisp sets nothing
-for follows Settings → General → Auto-review. Blocking an integration call
+for follows **Settings → Permissions**. Blocking an integration call
 stores an app-wide integration-scope rule. See
 [ADR 023](decisions/023-wisp-permissions.md).
 

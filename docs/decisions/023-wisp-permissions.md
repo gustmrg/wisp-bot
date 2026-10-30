@@ -28,8 +28,9 @@ conversation that might ask, even for short tasks.
 - **Workspace files, per Wisp.** Allow, Ask or Block for **Create files** and
   **Edit files**, set in the Wisp's **Access** tab or with **Always allow** /
   **Always block** on a card, with or without auto-review. A category the Wisp
-  sets nothing for follows the app-wide setting in **Settings → General →
-  Auto-review**, which stays the default.
+  sets nothing for follows the app-wide setting in **Settings → Permissions**
+  (under **Settings → General** when this was decided), which stays the
+  default.
 - **Plugins.** A Linear write card offers **Always allow this tool** and
   **Always allow all of Linear**, for this Wisp. The Access tab adds **Write
   without asking** next to **Read and write**, lists the always-allowed tools,

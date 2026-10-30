@@ -4,7 +4,7 @@
 and on a phone:
 
 - **Account and server**: **General**, **Connections**, **Remote access**
-- **Wisps**: **AI Model**, **Voice input**, **Plugins**, **MCP servers**, **Jobs**
+- **Wisps**: **AI Model**, **Voice input**, **Plugins**, **MCP servers**, **Permissions**, **Jobs**
 - **Notifications and input**: **Notifications**, **Shortcuts**
 - **Storage and data**: **Token usage**, **Storage**
 - **App**: **About**
@@ -32,7 +32,6 @@ environment keeps its own, and nothing is copied between them.
 | **General** | **Theme**, **Wisp colors**, **Wisps row**, **Conversation order**, **Reply speed**, **Time format** | Device |
 | **General** | **Timezone** | Device, and reported to the environment |
 | **General** | **Launch at login** | This computer's system |
-| **General** | **Auto-review file changes**, **Create files**, **Modify files**, **Integration blocks** | Environment |
 | **Connections** | Saved servers and their pairing | Device |
 | **Remote access** | **Remote access**, **Address**, **Paired devices** | This computer |
 | **AI Model** | **Provider**, **Model**, **Maximum output tokens**, API keys, subscription sign-in, **Fallback**, **Auxiliary models** | Environment |
@@ -40,6 +39,7 @@ environment keeps its own, and nothing is copied between them.
 | **Voice input** | API key | Environment |
 | **Plugins** | Connections and their keys, **Default web providers**, which Wisps can use each one | Environment |
 | **MCP servers** | Servers, their credentials, which Wisps can use each one | Environment |
+| **Permissions** | **Auto-review file changes**, **Create files**, **Modify files**, **Integration blocks** | Environment |
 | **Jobs** | Every Wisp's jobs | Environment |
 | **Token usage** | Nothing to set; shows the environment's usage | Environment |
 | **Storage** | Workspace size limits, and removing files and archives | Environment |
@@ -58,7 +58,7 @@ same value:
 
 **Wisp settings** holds what applies to one Wisp, and some of it overrides a
 default here: **Wisp settings → Model** overrides **AI Model**, and **Wisp
-settings → Access → Without asking** overrides auto-review.
+settings → Access → Without asking** overrides **Permissions**.
 
 ## First-run setup
 
@@ -82,14 +82,7 @@ saved key.
   Below it, **About you** lists what every Wisp knows about you: add, edit,
   remove, or export it as `USER.md`. See [memory](context-and-memory.md#memory).
 - **Application** — theme, Wisp colors, and launch at login. With **Wisp colors** off, replies, the send button, and the selected conversation keep the neutral look instead of each Wisp's color.
-- **Wisp** — timezone and auto-review. Auto-review shows one Allow / Ask /
-  Block choice for **Create files** and one for **Modify files**; turning
-  auto-review off makes Wisp ask before every file change and disables the
-  choices. These are the defaults for every Wisp: **Always allow** and
-  **Always block** on an approval card, and the choices under **Without
-  asking** in a Wisp's **Access** tab, apply to that Wisp only, as do MCP
-  tools and plugins always allowed from a card. Integration blocks added from approval prompts are listed below them
-  (see [security](security.md) for how rules are applied).
+- **Date and time** — timezone and time format.
 
 **Timezone** defaults to auto-detect, which follows this device. Every date
 and time in the app is shown in it: message times, day dividers, the
@@ -105,6 +98,18 @@ settings dialog. Removing a connection or a provider API key asks for an
 inline confirmation first.
 
 Preferences are stored locally in the renderer.
+
+## Permissions
+
+**Settings → Permissions** holds what Wisps can do without asking. Auto-review
+shows one Allow / Ask / Block choice for **Create files** and one for **Modify
+files**; turning auto-review off makes Wisp ask before every file change and
+disables the choices. These are the defaults for every Wisp: **Always allow**
+and **Always block** on an approval card, and the choices under **Without
+asking** in a Wisp's **Access** tab, apply to that Wisp only, as do MCP tools
+and plugins always allowed from a card. Integration blocks added from approval
+prompts are listed below them (see [security](security.md) for how rules are
+applied).
 
 ## Voice input
 
