@@ -13,6 +13,7 @@ import {
   type SaveAiSettingsRequest,
   type SaveAuxiliaryModelRequest,
   type SaveFallbackModelRequest,
+  type SaveProviderKeyRequest,
   type SendMessageRequest,
   type SetUserTimeZoneRequest,
 } from "../shared/contracts.js";
@@ -231,7 +232,7 @@ export function parseSaveAiSettingsRequest(value: unknown): SaveAiSettingsReques
 
 export function parseSaveAuxiliaryModelRequest(value: unknown): SaveAuxiliaryModelRequest {
   const request = asRecord(value);
-  if (request.task !== "imageUnderstanding") throw invalidRequest();
+  if (request.task !== "imageUnderstanding" && request.task !== "decision") throw invalidRequest();
   if (request.selection === null) return { task: request.task, selection: null };
   const { providerId, modelId } = parseModelSelection(request.selection);
   return { task: request.task, selection: { providerId, modelId } };
@@ -255,6 +256,13 @@ export function parseApplyFallbackModelRequest(value: unknown): ApplyFallbackMod
     conversationId: parseId(request.conversationId),
     fallback: fallback === "off" || fallback === "global" ? fallback : parseModelChoice(fallback),
   };
+}
+
+export function parseSaveProviderKeyRequest(value: unknown): SaveProviderKeyRequest {
+  const request = asRecord(value);
+  const { apiKey } = request;
+  if (typeof apiKey !== "string" || apiKey.length > 20_000) throw invalidRequest();
+  return { providerId: parseId(request.providerId), apiKey };
 }
 
 export function parseRemoveProviderCredentialRequest(value: unknown): RemoveProviderCredentialRequest {

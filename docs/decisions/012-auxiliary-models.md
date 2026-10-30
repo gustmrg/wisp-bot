@@ -3,7 +3,7 @@
 - Status: Accepted
 - Date: 2026-10-08
 - Decision owners: Wisp product and model runtime
-- Scope: A second, user-chosen model that does one task the Wisp's own model cannot
+- Scope: Second, user-chosen models that do tasks apart from a Wisp's own turns
 - Related: [AI models](../models.md), [token usage](../token-usage.md), [security](../security.md),
   [ADR 001](001-agent-runtime.md)
 
@@ -133,6 +133,23 @@ unknown, not zero.
   read by the auxiliary model, instead of saying they cannot be read.
 - The Wisp's Model tab names the auxiliary model next to the no-image-input
   note.
+
+## Decision model
+
+A second task, `decision`, was added for SWE-242: a model that decides which
+Wisp answers a message that mentions no one in a circle. It is chosen in
+**Settings → AI Model → Auxiliary models → Decision model**, off by default and
+global, and stored in `auxiliary` like the image model.
+
+- **A separate catalog:** decision models have `type: "classifier"` and work only
+  with `classify()`. `getModels` returns only chat models, so the task is
+  validated with `getModelOfType("classifier", …)`, and it does not ask for image
+  input. `AiSettingsView.decisionProviders` lists them apart from `providers`, so
+  no picker of text models can offer one.
+- **A key without a model:** a provider's key is otherwise saved together with a
+  selection of its model, which would change the global model. TypeSafe offers
+  only decision models, so it is not in `providers`. `saveProviderKey` saves a
+  key alone, and its field appears next to the **Decision model** setting.
 
 ## Alternatives considered
 

@@ -8,6 +8,7 @@ import {
   parseSaveAiSettingsRequest,
   parseSaveAuxiliaryModelRequest,
   parseSaveFallbackModelRequest,
+  parseSaveProviderKeyRequest,
 } from "../validators.js";
 
 export function registerModelSettingsHandlers(
@@ -31,6 +32,13 @@ export function registerModelSettingsHandlers(
       (payload) => {
         const { task, selection } = parseSaveAuxiliaryModelRequest(payload);
         return modelService.saveAuxiliary(task, selection);
+      },
+    ],
+    [
+      WISP_IPC_CHANNELS.saveProviderKey,
+      (payload) => {
+        const { providerId, apiKey } = parseSaveProviderKeyRequest(payload);
+        return modelService.saveProviderKey(providerId, apiKey);
       },
     ],
     [

@@ -51,6 +51,8 @@ export interface ModelRuntimeLike {
   getProvider(providerId: string): ReturnType<ModelRuntime["getProvider"]>;
   getModels(providerId?: string): ReturnType<ModelRuntime["getModels"]>;
   getModel(providerId: string, modelId: string): ReturnType<ModelRuntime["getModel"]>;
+  getModelsOfType(type: "classifier", providerId?: string): ReadonlyArray<{ id: string; name: string }>;
+  getModelOfType(type: "classifier", providerId: string, modelId: string): { id: string } | undefined;
   getError(): string | undefined;
   hasConfiguredAuth(providerId: string): boolean;
   setRuntimeApiKey(providerId: string, apiKey: string): Promise<void>;
@@ -301,14 +303,28 @@ export class ModelService {
       (error): error is string => Boolean(error),
     );
     const auxiliary = await this.settings.getAuxiliary();
+    const decisionProviders = this.runtime.getProviders().flatMap((provider) => {
+      const models = provider.auth.apiKey ? this.runtime.getModelsOfType("classifier", provider.id) : [];
+      if (!models.length) return [];
+      return [
+        {
+          id: provider.id,
+          name: provider.name,
+          credentialConfigured: credentialTypes.has(provider.id),
+          models: models.map(({ id, name }) => ({ id, name })).sort(compareByName),
+        },
+      ];
+    });
     return {
       selection,
       auxiliary: {
-        imageUnderstanding: this.auxiliaryView(auxiliary.imageUnderstanding, credentialProviders),
+        imageUnderstanding: this.auxiliaryView("imageUnderstanding", auxiliary.imageUnderstanding, credentialProviders),
+        decision: this.auxiliaryView("decision", auxiliary.decision, credentialProviders),
       },
       fallback: this.fallbackView(await this.settings.getFallback(), credentialProviders, savedSelection),
       secureStorageAvailable: this.credentials.isSecureStorageAvailable(),
       providers,
+      decisionProviders: decisionProviders.sort(compareByName),
       providerSignIn: this.signInView(),
       ...(claudeCode ? { claudeCode } : {}),
       catalogError: errors.length > 0 ? errors.join("\n") : null,
@@ -355,7 +371,7 @@ export class ModelService {
    */
   async saveAuxiliary(task: AuxiliaryTask, selection: ModelSelection | null): Promise<AiSettingsView> {
     if (selection) {
-      const reason = this.auxiliaryUnavailableReason(selection, await this.listCredentialProviders());
+      const reason = this.auxiliaryUnavailableReason(task, selection, await this.listCredentialProviders());
       if (reason) {
         throw new WispBackendError(
           "invalid_configuration",
@@ -374,11 +390,27 @@ export class ModelService {
     return this.getView();
   }
 
+  /**
+   * Saves a provider's key without changing the global model, for a provider
+   * with no text models to choose, whose key the provider form cannot save.
+   */
+  async saveProviderKey(providerId: string, value: string): Promise<AiSettingsView> {
+    if (!this.runtime.getProvider(providerId)?.auth.apiKey) {
+      throw new WispBackendError("invalid_request", "The provider is invalid.");
+    }
+    const apiKey = value.trim();
+    if (!apiKey || apiKey.length > MAX_API_KEY_LENGTH) {
+      throw new WispBackendError("invalid_request", "Enter a valid API key.");
+    }
+    await this.storeApiKey(providerId, apiKey);
+    return this.getView();
+  }
+
   /** The model for an auxiliary task, or null when the task is off or its saved model cannot be used. */
   async getAuxiliaryModel(task: AuxiliaryTask): Promise<ModelSelection | null> {
     const selection = (await this.settings.getAuxiliary())[task];
     if (!selection) return null;
-    return this.auxiliaryUnavailableReason(selection, await this.listCredentialProviders()) ? null : selection;
+    return this.auxiliaryUnavailableReason(task, selection, await this.listCredentialProviders()) ? null : selection;
   }
 
   /**
@@ -751,12 +783,13 @@ export class ModelService {
   }
 
   private auxiliaryView(
+    task: AuxiliaryTask,
     selection: ModelSelection | null,
     credentialProviders: ReadonlySet<string>,
   ): AuxiliaryModelView {
     return {
       selection,
-      unavailable: selection ? this.auxiliaryUnavailableReason(selection, credentialProviders) : null,
+      unavailable: selection ? this.auxiliaryUnavailableReason(task, selection, credentialProviders) : null,
     };
   }
 
@@ -795,12 +828,21 @@ export class ModelService {
   }
 
   private auxiliaryUnavailableReason(
+    task: AuxiliaryTask,
     selection: ModelSelection,
     credentialProviders: ReadonlySet<string>,
   ): AuxiliaryModelUnavailableReason | null {
-    const model = this.catalogModel(selection);
-    if (!model) return "model_unavailable";
-    if (!model.input.includes("image")) return "no_image_input";
+    if (task === "decision") {
+      const { providerId, modelId } = selection;
+      const listed =
+        this.runtime.getProvider(providerId)?.auth.apiKey &&
+        this.runtime.getModelOfType("classifier", providerId, modelId);
+      if (!listed) return "model_unavailable";
+    } else {
+      const model = this.catalogModel(selection);
+      if (!model) return "model_unavailable";
+      if (!model.input.includes("image")) return "no_image_input";
+    }
     return credentialProviders.has(selection.providerId) ? null : "missing_key";
   }
 
