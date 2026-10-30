@@ -26,9 +26,9 @@ the Wisp, or one derived from its name:
   paragraph of its soul. While it works, the tools it has used in this turn
   show as a trail of steps, each checked, failed, or still running. A running
   step says what the Wisp is doing, in the same words as the header. The typing
-  bubble shows only when no step or approval says it: while the Wisp waits for
-  the model, or beside a notice such as a retry. A tool is always named in
-  words, never by its identifier.
+  bubble shows while the Wisp works, with no words beside it, and goes away
+  while the Wisp waits for an approval. A tool is always named in words, never
+  by its identifier.
 - **Circles.** Each run of replies is named by the Wisp that wrote it and
   tinted with that Wisp's color.
 

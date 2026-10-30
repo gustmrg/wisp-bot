@@ -113,8 +113,8 @@ describe("ChatPanel transcript", () => {
       activity: "Searching the web…",
     });
 
-    // The header says it too; below the messages it shows once.
-    expect(within(scroller).getAllByText("Searching the web…")).toHaveLength(1);
+    // The header says it on screen; beside the bubble only a screen reader hears it.
+    expect(within(scroller).getByText("Searching the web…")).toHaveClass("sr-only");
     expect(screen.queryByText("Atlas is working…")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Stop response" })).toBeInTheDocument();
 
@@ -386,7 +386,7 @@ describe("ChatPanel identity", () => {
     expect(screen.getByText("Couldn't reply")).toBeInTheDocument();
   });
 
-  it("names a running tool in its step, not again in a bubble below it", () => {
+  it("keeps the bubble while a tool runs, with the tool named only in its step and the header", () => {
     const withStep = (status: "running" | "completed"): Message => ({
       id: "r:work",
       type: "incoming",
@@ -401,28 +401,31 @@ describe("ChatPanel identity", () => {
       activity: "Creating a Linear issue…",
     });
 
-    expect(document.querySelector(".chat-activity")).not.toBeInTheDocument();
+    expect(document.querySelector(".chat-activity-bubble")).toBeInTheDocument();
     expect(document.querySelector(".message-steps-label")).toHaveTextContent("Creating a Linear issue…");
     expect(document.querySelector(".chat-subline")).toHaveTextContent("Creating a Linear issue…");
-    // A screen reader still hears what the Wisp is doing.
-    expect(within(scroller).getByRole("status")).toHaveClass("sr-only");
+    // Beside the bubble only a screen reader hears it.
     expect(within(scroller).getByRole("status")).toHaveTextContent("Creating a Linear issue…");
+    expect(within(within(scroller).getByRole("status")).getByText("Creating a Linear issue…")).toHaveClass("sr-only");
 
-    // Once the step ends and the Wisp waits for the model, the bubble is back, with no words of its own.
     show(transcript([withStep("completed")]), { status: "working", activity: undefined });
-    expect(document.querySelector(".chat-activity")).toBeInTheDocument();
-    expect(document.querySelector(".chat-activity")).toHaveTextContent("Atlas is working…");
+    expect(document.querySelector(".chat-activity-bubble")).toBeInTheDocument();
+    expect(within(scroller).getByText("Atlas is working…")).toHaveClass("sr-only");
   });
 
-  it("keeps a notice beside the bubble, since no step says it", () => {
-    renderPanel(transcript([{ id: "request", type: "outgoing", text: "Hello", status: "complete" }]), {
-      status: "working",
-      activity: "The model failed. Answering with the fallback model…",
-    });
-
-    expect(document.querySelector(".chat-activity")).toHaveTextContent(
-      "The model failed. Answering with the fallback model…",
+  it("says a notice in the header, not beside the bubble", () => {
+    const notice = "The model failed. Answering with the fallback model…";
+    const { scroller } = renderPanel(
+      transcript([{ id: "request", type: "outgoing", text: "Hello", status: "complete" }]),
+      {
+        status: "working",
+        activity: notice,
+      },
     );
+
+    expect(document.querySelector(".chat-subline")).toHaveTextContent(notice);
+    expect(document.querySelector(".chat-activity-bubble")).toBeInTheDocument();
+    expect(within(scroller).getByText(notice)).toHaveClass("sr-only");
   });
 
   it("shows no typing bubble while the Wisp waits for an approval", () => {
@@ -445,7 +448,7 @@ describe("ChatPanel identity", () => {
       },
     );
 
-    expect(document.querySelector(".chat-activity")).not.toBeInTheDocument();
+    expect(document.querySelector(".chat-activity-bubble")).not.toBeInTheDocument();
     expect(within(scroller).getByRole("status")).toHaveTextContent("Waiting for your approval");
   });
 
